@@ -15,6 +15,7 @@
 
 import { HTTPSource, type VaultSource } from "./source.ts";
 import { t } from "../i18n/index.ts";
+import { concat } from "./bytes.ts";
 
 /** Why a passkey could not remember or unlock the key. */
 export type PasskeyErrorCode =
@@ -84,7 +85,7 @@ export interface Binding {
 
 /** Each part prefixed with its length (32-bit big-endian), so no two bindings encode alike. */
 function framed(...parts: Uint8Array[]): Uint8Array {
-  return concat(...parts.flatMap((p) => {
+  return concat(parts.flatMap((p) => {
     const n = new Uint8Array(4);
     new DataView(n.buffer).setUint32(0, p.length);
     return [n, p];
@@ -94,18 +95,18 @@ function framed(...parts: Uint8Array[]): Uint8Array {
 /** HKDF info: binds the wrapping key to this purpose, the vault, its location and the credential. */
 function info(b: Binding, credentialId: Uint8Array): Uint8Array {
   if (b.location === undefined) {
-    return concat(encoder.encode(`${label} passkey key-wrap`), Uint8Array.of(0), encoder.encode(b.vaultId), Uint8Array.of(0), credentialId);
+    return concat([encoder.encode(`${label} passkey key-wrap`), Uint8Array.of(0), encoder.encode(b.vaultId), Uint8Array.of(0), credentialId]);
   }
-  return concat(encoder.encode(`${labelV2} passkey key-wrap`), Uint8Array.of(0),
-    framed(encoder.encode(b.vaultId), encoder.encode(b.location), credentialId));
+  return concat([encoder.encode(`${labelV2} passkey key-wrap`), Uint8Array.of(0),
+    framed(encoder.encode(b.vaultId), encoder.encode(b.location), credentialId)]);
 }
 
 /** AES-GCM additional data: a record cannot be moved to another vault, location or credential. */
 function aad(b: Binding, credentialId: Uint8Array): Uint8Array {
   if (b.location === undefined) {
-    return concat(encoder.encode(label), Uint8Array.of(0), encoder.encode(b.vaultId), Uint8Array.of(0), credentialId);
+    return concat([encoder.encode(label), Uint8Array.of(0), encoder.encode(b.vaultId), Uint8Array.of(0), credentialId]);
   }
-  return concat(encoder.encode(labelV2), Uint8Array.of(0), framed(encoder.encode(b.vaultId), encoder.encode(b.location), credentialId));
+  return concat([encoder.encode(labelV2), Uint8Array.of(0), framed(encoder.encode(b.vaultId), encoder.encode(b.location), credentialId)]);
 }
 
 /**
@@ -116,16 +117,6 @@ function aad(b: Binding, credentialId: Uint8Array): Uint8Array {
 export function recordPlace(record: StoredKey, location: string): "same" | "other" | "legacy" {
   if (record.location === undefined) return "legacy";
   return record.location === location ? "same" : "other";
-}
-
-function concat(...parts: Uint8Array[]): Uint8Array {
-  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-  let at = 0;
-  for (const p of parts) {
-    out.set(p, at);
-    at += p.length;
-  }
-  return out;
 }
 
 function buf(b: Uint8Array): Uint8Array<ArrayBuffer> {

@@ -7,6 +7,7 @@
 
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { ml_dsa65 } from "@noble/post-quantum/ml-dsa.js";
+import { concat } from "./bytes.ts";
 
 export const sizes = { ed25519PublicKey: 32, ed25519Signature: 64, mldsa65PublicKey: 1952, mldsa65Signature: 3309 };
 
@@ -74,13 +75,7 @@ export async function linkPublicKeys(secret: Uint8Array): Promise<LinkPublicKeys
 export async function linkMessage(next: Uint8Array, vaultId: string): Promise<Uint8Array> {
   const parts = [encoder.encode("sempere/1"), Uint8Array.of(0), encoder.encode("secret link"), Uint8Array.of(0),
     encoder.encode(vaultId.toLowerCase()), Uint8Array.of(0), await hkdf(next, "sempere/1 secret id")];
-  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-  let at = 0;
-  for (const p of parts) {
-    out.set(p, at);
-    at += p.length;
-  }
-  return out;
+  return concat(parts);
 }
 
 /** True when `link` is signed and BOTH signatures verify under `keys` over the link to `next`. */
