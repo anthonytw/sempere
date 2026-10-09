@@ -120,14 +120,10 @@ struct KeysPaper: ParsableCommand {
             }
             var name = locked.url.lastPathComponent
             if name.hasSuffix(".sempere") { name.removeLast(".sempere".count) }
-            info = .init(name: name, id: locked.vaultId.uuidString.lowercased(), created: locked.manifest.created,
-                         recipientCount: locked.recipients.count)
+            info = .init(vault: locked, name: name)
         }
         var kit = RecoveryKit(secret: secret, recipient: identity.recipient.string, vault: info, printed: Date())
-        if paper.lowercased() == "a4" {
-            kit.pageWidth = 595.28
-            kit.pageHeight = 841.89
-        }
+        if paper.lowercased() == "a4" { kit.useA4() }
         let code = try kit.qrCode()
         try writeNewSecretFile(try kit.pdf(), to: out)
 
