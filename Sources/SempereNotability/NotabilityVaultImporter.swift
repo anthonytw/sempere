@@ -226,7 +226,7 @@ public struct NotabilityVaultImporter: VaultImporter {
             rows.append([status, n.title.map { $0.isEmpty ? "(untitled)" : $0 } ?? "-", n.notebook ?? "-",
                          String(n.strokes), String(n.recognizedPages), n.source])
         }
-        if !rows.isEmpty { out(table(rows)) }
+        if !rows.isEmpty { out(ImporterPresentation.table(rows)) }
         for n in report.notes {
             switch n.status {
             case .skipped(let why) where !style.quiet: out("skipped \(n.source): \(why)")
@@ -270,17 +270,5 @@ public struct NotabilityVaultImporter: VaultImporter {
             failure = "\(unread) imported note(s) could not be recognised"
         }
         return ImporterPresentation(json: json, lines: lines, failure: failure)
-    }
-
-    /// Left-aligned columns separated by two spaces; the last column is not padded.
-    private static func table(_ rows: [[String]]) -> String {
-        guard let first = rows.first else { return "" }
-        var widths = [Int](repeating: 0, count: first.count)
-        for r in rows { for (i, c) in r.enumerated() { widths[i] = max(widths[i], c.count) } }
-        return rows.map { r in
-            r.enumerated().map { i, c in
-                i == r.count - 1 ? c : c.padding(toLength: widths[i], withPad: " ", startingAt: 0)
-            }.joined(separator: "  ").trimmingCharacters(in: .whitespaces)
-        }.joined(separator: "\n")
     }
 }

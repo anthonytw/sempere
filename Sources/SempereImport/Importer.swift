@@ -178,6 +178,18 @@ public struct ImporterPresentation: Sendable {
     public init(json: AnyEncodable? = nil, lines: [Line] = [], failure: String? = nil) {
         self.json = json; self.lines = lines; self.failure = failure
     }
+
+    /// Left-aligned columns separated by two spaces; the last column is not padded.
+    public static func table(_ rows: [[String]]) -> String {
+        guard let first = rows.first else { return "" }
+        var widths = [Int](repeating: 0, count: first.count)
+        for r in rows { for (i, c) in r.enumerated() { widths[i] = max(widths[i], c.count) } }
+        return rows.map { r in
+            r.enumerated().map { i, c in
+                i == r.count - 1 ? c : c.padding(toLength: widths[i], withPad: " ", startingAt: 0)
+            }.joined(separator: "  ").trimmingCharacters(in: .whitespaces)
+        }.joined(separator: "\n")
+    }
 }
 
 /// What an import did, for every host.

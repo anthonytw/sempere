@@ -2,6 +2,7 @@ import Age
 import ArgumentParser
 import Foundation
 import Sempere
+import SempereImport
 
 #if canImport(Glibc)
 import Glibc
@@ -194,16 +195,7 @@ enum Format {
     }
 
     /// Left-aligned columns separated by two spaces; the last column is not padded.
-    static func table(_ rows: [[String]]) -> String {
-        guard let first = rows.first else { return "" }
-        var widths = [Int](repeating: 0, count: first.count)
-        for r in rows { for (i, c) in r.enumerated() { widths[i] = max(widths[i], c.count) } }
-        return rows.map { r in
-            r.enumerated().map { i, c in
-                i == r.count - 1 ? c : c.padding(toLength: widths[i], withPad: " ", startingAt: 0)
-            }.joined(separator: "  ").trimmingCharacters(in: .whitespaces)
-        }.joined(separator: "\n")
-    }
+    static func table(_ rows: [[String]]) -> String { ImporterPresentation.table(rows) }
 }
 
 // MARK: - Files
