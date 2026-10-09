@@ -155,22 +155,17 @@ enum PDFPreparation {
         for i in 1...count {
             try autoreleasepool {
                 guard let page = document.page(at: i) else { throw Failure.pages(String(localized: "page \(i) of the PDF cannot be read", comment: "Why a PDF cannot be added: lower case, no final period (shown inside a sentence)")) }
-                let box = page.getBoxRect(.cropBox).intersection(page.getBoxRect(.mediaBox))
-                guard !box.isNull, box.width > 0, box.height > 0, box.width.isFinite, box.height.isFinite else {
+                guard let geometry = page.effectiveGeometry else {
                     throw Failure.pages(String(localized: "page \(i) of the PDF has no usable size", comment: "Why a PDF cannot be added: lower case, no final period (shown inside a sentence)"))
                 }
-                let rotation = ((Int(page.rotationAngle) % 360) + 360) % 360
-                let turned = rotation % 180 != 0
-                let w = turned ? box.height : box.width, h = turned ? box.width : box.height
+                let w = geometry.size.width, h = geometry.size.height
                 var media = CGRect(x: 0, y: 0, width: w, height: h)
                 let mediaData = Data(bytes: &media, count: MemoryLayout<CGRect>.size)
                 context.beginPDFPage([kCGPDFContextMediaBox: mediaData as CFData] as CFDictionary)
-                let m = PDFPageGeometry.userToEffective(x0: box.minX, y0: box.minY, x1: box.maxX, y1: box.maxY, rotation: rotation)
-                let toEffective = CGAffineTransform(a: m[0], b: m[1], c: m[2], d: m[3], tx: m[4], ty: m[5])
                 // Effective page (y down) → this page's user space (y up).
                 let flip = CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: h)
                 context.saveGState()
-                context.concatenate(toEffective.concatenating(flip))
+                context.concatenate(geometry.toEffective.concatenating(flip))
                 context.drawPDFPage(page)
                 context.restoreGState()
                 context.endPDFPage()
