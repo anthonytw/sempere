@@ -18,40 +18,17 @@ out=${SEMPERE_SHOTS_OUT:-build/screenshots}
 mkdir -p "$out"
 out=$(cd "$out" && pwd)   # the test runner needs an absolute path
 
-# The newest simulator on iOS 26 or newer whose name starts with $1: "iPad Pro 13-inch"
-# (2064x2752 pixels) or the newest "iPhone … Pro Max" (6.9": 1320x2868 or 1290x2796 pixels).
-pick_simulator() {
-  local prefix=$1
-  if [[ -n "${SEMPERE_SIM_ID:-}" ]]; then echo "$SEMPERE_SIM_ID"; return; fi
-  xcrun simctl list devices available --json | /usr/bin/python3 -c '
-import json, re, sys
-prefix = sys.argv[1]
-best = None
-for runtime, devs in json.load(sys.stdin)["devices"].items():
-    m = re.search(r"SimRuntime\.iOS-(\d+)-(\d+)", runtime)
-    if not m or (int(m.group(1)), int(m.group(2))) < (26, 0):
-        continue
-    for d in devs:
-        name = d["name"]
-        wanted = name.startswith(prefix) and (not prefix.startswith("iPhone") or name.endswith("Pro Max"))
-        if d.get("isAvailable") and wanted:
-            key = ((int(m.group(1)), int(m.group(2))), d["name"])
-            if best is None or key > best[0]:
-                best = (key, d["udid"], d["name"])
-if best is None:
-    sys.exit("no " + prefix + " simulator on iOS 26+ (xcrun simctl list devices; xcodebuild -downloadPlatform iOS)")
-print("using " + best[2], file=sys.stderr)
-print(best[1])
-' "$prefix"
-}
-
 pixels() { sips -g pixelWidth -g pixelHeight "$1" | awk '/pixelWidth/ {w=$2} /pixelHeight/ {h=$2} END {print w "x" h}'; }
 
 # One simulator family: $1 name (ipad|iphone), $2 simulator name prefix, $3 accepted sizes
 # ("2064x2752" or "1320x2868 1290x2796"), $4 status bar flags for the connectivity icons.
 simulator_shots() {
   local name=$1 prefix=$2 sizes=$3 sim dir="$out/$1"
-  sim=$(pick_simulator "$prefix")
+  # The newest simulator on iOS 26 or newer: "iPad Pro 13-inch" (2064x2752 pixels) or the newest
+  # "iPhone … Pro Max" (6.9": 1320x2868 or 1290x2796 pixels).
+  local suffix=
+  if [[ $prefix == iPhone* ]]; then suffix="Pro Max"; fi
+  sim=$(scripts/app.sh simulator "$prefix" "$suffix")
   rm -rf "$dir"; mkdir -p "$dir"
   xcrun simctl bootstatus "$sim" -b >/dev/null
   # No clutter: 9:41, full battery, full bars, light mode. (The iPad status bar also shows
