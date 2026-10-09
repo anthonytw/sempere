@@ -109,14 +109,7 @@ extension AppModel {
         if options.format == .pdf && options.pdfAttachments {
             // "PDF + attachments": iCloud fetches audio only when it is used (docs/attachments.md §4).
             // One that cannot be fetched is left out and reported by the export.
-            for (summary, state) in loaded {
-                for r in state.recordings {
-                    try? await ensureBlobLocal(r.blob, of: summary.id)
-                    if let t = r.transcript { try? await ensureBlobLocal(t, of: summary.id) }
-                }
-                // Video clips too (format.md §8.2.7): fetched only now, when they are embedded.
-                for clip in ExportVideos.clips(of: state) { try? await ensureBlobLocal(clip.ref, of: summary.id) }
-            }
+            for (summary, state) in loaded { await ensurePDFAttachmentsLocal(state, of: summary.id) }
             try ensureCurrent(gen)
         } else if options.format == .media {
             // "Media": every file the export writes, fetched now; one that cannot be is left out and reported.
@@ -146,6 +139,18 @@ extension AppModel {
 }
 
 extension AppModel {
+    /// Downloads (iCloud) every blob "PDF + attachments" embeds for `state`:
+    /// recordings and their transcripts, and video clips (format.md §8.2.7),
+    /// fetched only now, when they are embedded. Failures are left to the
+    /// export, which reports them.
+    func ensurePDFAttachmentsLocal(_ state: NoteState, of id: UUID) async {
+        for r in state.recordings {
+            try? await ensureBlobLocal(r.blob, of: id)
+            if let t = r.transcript { try? await ensureBlobLocal(t, of: id) }
+        }
+        for clip in ExportVideos.clips(of: state) { try? await ensureBlobLocal(clip.ref, of: id) }
+    }
+
     /// Downloads (iCloud) every blob a media export of `state` writes:
     /// recordings and their transcripts, clips, images and PDFs
     /// (`MediaExport.plan`). Failures are left to the export, which reports them.

@@ -149,11 +149,7 @@ extension AppModel {
                 if attachments {
                     // iCloud fetches recordings and clips only when they are embedded; one that
                     // cannot be fetched is left out of the PDF and reported there.
-                    for r in item.state.recordings {
-                        try? await ensureBlobLocal(r.blob, of: id)
-                        if let t = r.transcript { try? await ensureBlobLocal(t, of: id) }
-                    }
-                    for clip in ExportVideos.clips(of: item.state) { try? await ensureBlobLocal(clip.ref, of: id) }
+                    await ensurePDFAttachmentsLocal(item.state, of: id)
                     try ensureCurrent(gen)
                 } else if session.options.format == .media {
                     await ensureMediaLocal(item.state, of: id)
