@@ -80,14 +80,20 @@ public struct BlobKind: RawRepresentable, Hashable, Sendable, Codable, CustomStr
     /// type and subtype are compared ASCII case-insensitively and parameters
     /// (`; codecs=…`) are ignored.
     public init(mediaType: String) {
-        let essence = mediaType.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: false).first
-            .map { String($0).trimmingCharacters(in: .whitespaces).asciiLowercased() } ?? ""
+        let essence = Self.essence(of: mediaType)
         if essence == "application/pdf" { self = .pdf }
         else if essence == BlobRef.transcriptType { self = .transcript }
         else if essence.hasPrefix("image/") { self = .image }
         else if essence.hasPrefix("audio/") { self = .audio }
         else if essence.hasPrefix("video/") { self = .video }
         else { self = .bin }
+    }
+
+    /// `type/subtype` of a media type: ASCII-lowercased, parameters
+    /// (`; codecs=…`) and surrounding spaces dropped.
+    public static func essence(of mediaType: String) -> String {
+        mediaType.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: false).first
+            .map { String($0).trimmingCharacters(in: .whitespaces).asciiLowercased() } ?? ""
     }
 
     /// True for a kind a blob file name may carry: 1–16 lowercase ASCII

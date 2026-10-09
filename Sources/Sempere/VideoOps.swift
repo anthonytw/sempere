@@ -21,7 +21,7 @@ public enum VideoIngestRules {
 
     /// Checks that `poster` names a JPEG or PNG.
     public static func checkPoster(_ poster: BlobRef) throws {
-        let essence = poster.type.split(separator: ";").first.map { $0.trimmingCharacters(in: .whitespaces).lowercased() } ?? ""
+        let essence = BlobKind.essence(of: poster.type)
         guard posterTypes.contains(essence), poster.isValid else {
             throw AttachmentOpsError.invalidPoster("\(poster.type) is not a JPEG or PNG image")
         }
