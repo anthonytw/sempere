@@ -229,8 +229,7 @@ public final class WebDAVSync {
 
     private func checkSameVault(_ remoteRoot: [String: RemoteEntry]) throws {
         guard remoteRoot[Vault.manifestName] != nil,
-              let local = try? BoundedRead.contents(of: root.appendingPathComponent(Vault.manifestName),
-                                                    maxBytes: BoundedRead.maxManifestBytes),
+              let local = try? localMutable(Vault.manifestName),
               let localId = Self.vaultId(local) else { return }
         let remote = try client.get([Vault.manifestName]).data
         guard let remoteId = Self.vaultId(remote) else {
@@ -248,11 +247,16 @@ public final class WebDAVSync {
 
     // MARK: - Mutable files
 
+    /// The local file `name` under the vault root, nil when absent. Present
+    /// but unreadable or oversized is an error, not "absent".
+    func localMutable(_ name: String) throws -> Data? {
+        let url = root.appendingPathComponent(name)
+        return FileManager.default.fileExists(atPath: url.path)
+            ? try BoundedRead.contents(of: url, maxBytes: BoundedRead.maxManifestBytes) : nil
+    }
+
     func syncMutable(_ name: String, remote: RemoteEntry?) throws {
-        let localURL = root.appendingPathComponent(name)
-        // Absent is nil; present but unreadable or oversized is an error, not "absent".
-        let local = FileManager.default.fileExists(atPath: localURL.path)
-            ? try BoundedRead.contents(of: localURL, maxBytes: BoundedRead.maxManifestBytes) : nil
+        let local = try localMutable(name)
         let record = state.mutable[name]
 
         guard let local else {
@@ -310,9 +314,7 @@ public final class WebDAVSync {
         try requireLocalWrite("write \(name)")
         if name == Vault.manifestName {
             // Never let a list nobody with the key wrote replace ours (format.md §2.1).
-            let localURL = root.appendingPathComponent(name)
-            let local = FileManager.default.fileExists(atPath: localURL.path)
-                ? try BoundedRead.contents(of: localURL, maxBytes: BoundedRead.maxManifestBytes) : nil
+            let local = try localMutable(name)
             if let why = Vault.incomingManifestProblem(data, local: local, vault: vault) {
                 report.rejected.append(.init(path: name, message: SyncReport.printable(why)))
                 return

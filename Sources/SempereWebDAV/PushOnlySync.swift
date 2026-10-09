@@ -37,9 +37,7 @@ extension WebDAVSync {
     // MARK: Mutable files
 
     func pushMutable(_ name: String, remote: RemoteEntry?) throws {
-        let localURL = root.appendingPathComponent(name)
-        let local = FileManager.default.fileExists(atPath: localURL.path)
-            ? try BoundedRead.contents(of: localURL, maxBytes: BoundedRead.maxManifestBytes) : nil
+        let local = try localMutable(name)
         guard let local else {
             guard remote != nil else { return }
             // Nothing is ever pulled; a stale journal also blocks blob collection, so it may go.

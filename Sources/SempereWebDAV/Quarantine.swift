@@ -120,8 +120,7 @@ extension WebDAVSync {
 
     /// SHA-256 (hex) of the local `vault.json`, nil when absent or unreadable.
     func manifestHash() -> String? {
-        guard let data = try? BoundedRead.contents(of: root.appendingPathComponent(Vault.manifestName),
-                                                   maxBytes: BoundedRead.maxManifestBytes) else { return nil }
+        guard let data = try? localMutable(Vault.manifestName) else { return nil }
         return FileDigest.sha256(data)
     }
 
