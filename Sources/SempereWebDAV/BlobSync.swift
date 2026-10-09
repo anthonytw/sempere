@@ -24,7 +24,7 @@ extension WebDAVSync {
     /// with the vault's temporary-file prefix, so every listing ignores it,
     /// and is never a vault writer's own temporary name (those continue
     /// with a UUID).
-    static let partialPrefix = LocalFS.tempPrefix + "part-"
+    static let partialPrefix = FileIO.tempPrefix + "part-"
 
     /// One note's blobs on both sides, by file name.
     struct BlobSet {
@@ -80,7 +80,7 @@ extension WebDAVSync {
                     try budget.list(entries.count)
                     set.remoteListed = true
                     for e in entries {
-                        if e.name.hasPrefix(LocalFS.tempPrefix) { continue }   // another device's upload in flight
+                        if e.name.hasPrefix(FileIO.tempPrefix) { continue }   // another device's upload in flight
                         guard !e.isCollection, Self.isBlobName(e.name) else {
                             report.ignored.append(SyncReport.printable("notes/\(id)/\(Vault.attachmentsName)/\(e.name)"))
                             remoteJunk.append([Vault.notesName, id, Vault.attachmentsName, e.name])
@@ -100,7 +100,7 @@ extension WebDAVSync {
         }
 
         let att = attURL(id)
-        set.localListed = LocalFS.isDirectory(att)
+        set.localListed = FileIO.isDirectory(att)
         var partials: [String] = []
         for f in try LocalFS.entries(att) {
             if f.hasPrefix(Self.partialPrefix) { partials.append(f); continue }
@@ -283,7 +283,7 @@ extension WebDAVSync {
         report.uploaded.append(path)
         guard !options.dryRun else { return }
         try ensureCollection([Vault.notesName, id, Vault.attachmentsName])
-        let tempName = LocalFS.tempPrefix + UUID().uuidString.lowercased()
+        let tempName = FileIO.tempPrefix + UUID().uuidString.lowercased()
         let temp = [Vault.notesName, id, Vault.attachmentsName, tempName]
         let tempRel = temp.joined(separator: "/")
         state.remoteTemps = (state.remoteTemps ?? []) + [tempRel]
@@ -395,7 +395,7 @@ extension WebDAVSync {
         guard !options.dryRun, let temps = state.remoteTemps, !temps.isEmpty else { return }
         state.remoteTemps = temps.filter { rel in
             let comps = rel.split(separator: "/").map(String.init)
-            guard comps.last?.hasPrefix(LocalFS.tempPrefix) == true else { return false }
+            guard comps.last?.hasPrefix(FileIO.tempPrefix) == true else { return false }
             return (try? client.delete(comps)) == nil
         }
     }

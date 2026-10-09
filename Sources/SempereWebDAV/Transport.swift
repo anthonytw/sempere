@@ -1,4 +1,5 @@
 import Foundation
+import Sempere
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -262,7 +263,7 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
         /// Writes what was gathered; false (with the failure recorded) on error. Lock held.
         private func flush() -> Bool {
             guard let handle, !pendingWrite.isEmpty else { return true }
-            do { try LocalFS.autoreleasing { try handle.write(contentsOf: pendingWrite) } } catch {
+            do { try autoreleasing { try handle.write(contentsOf: pendingWrite) } } catch {
                 fileError = .io("write \(file?.path ?? "?"): \(error.localizedDescription)")
                 return false
             }

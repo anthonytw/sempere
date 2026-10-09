@@ -1,4 +1,5 @@
 import Foundation
+import Sempere
 
 #if canImport(Glibc)
 import Glibc
@@ -9,10 +10,8 @@ import Darwin
 #endif
 
 /// Atomic local writes: a half-written file never appears under its final name.
+/// Temporary files are `FileIO.tempURL(in:)` names, so every listing ignores leftovers.
 enum LocalFS {
-    /// Same prefix the vault layer uses, so every listing ignores leftovers.
-    static let tempPrefix = ".sempere-tmp-"
-
     /// Writes `data` to a temporary file next to `url`, flushes it, and moves it
     /// into place. With `replacing` false an existing file is never touched
     /// (`link(2)` fails with `EEXIST`) and the result is false.
@@ -21,7 +20,7 @@ enum LocalFS {
         let dir = url.deletingLastPathComponent()
         let fm = FileManager.default
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        let tmp = dir.appendingPathComponent(tempPrefix + UUID().uuidString.lowercased())
+        let tmp = FileIO.tempURL(in: dir)
         do {
             try data.write(to: tmp, options: [.withoutOverwriting])
             let h = try FileHandle(forWritingTo: tmp)
@@ -88,21 +87,6 @@ enum LocalFS {
         } catch {
             throw WebDAVError.io("read \(url.path): \(error.localizedDescription)")
         }
-    }
-
-    /// Runs `body` in its own autorelease pool on Apple platforms, where
-    /// `FileHandle` reads and writes autorelease their buffers. A no-op elsewhere.
-    static func autoreleasing<T>(_ body: () throws -> T) rethrows -> T {
-        #if canImport(ObjectiveC)
-        return try autoreleasepool { try body() }
-        #else
-        return try body()
-        #endif
-    }
-
-    static func isDirectory(_ url: URL) -> Bool {
-        var dir: ObjCBool = false
-        return FileManager.default.fileExists(atPath: url.path, isDirectory: &dir) && dir.boolValue
     }
 
     static func remove(_ url: URL) throws {
