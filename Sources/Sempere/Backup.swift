@@ -399,7 +399,7 @@ public enum Backup {
 
 
     static func fileSize(_ url: URL) -> Int? {
-        (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue
+        FileIO.size(url).map { Int($0) }
     }
 
     static func canonical(_ url: URL) -> String {

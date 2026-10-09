@@ -168,6 +168,11 @@ enum FileIO {
         return fm.fileExists(atPath: url.path, isDirectory: &dir) && dir.boolValue
     }
 
+    /// The size of the file at `url`; nil when it cannot be read.
+    static func size(_ url: URL) -> Int64? {
+        (try? fm.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value
+    }
+
     /// Entry names in `dir`, sorted. A directory that does not exist is
     /// empty (sync tools drop empty directories); any other failure to list
     /// it throws `VaultError.io`, so "could not read" never looks like

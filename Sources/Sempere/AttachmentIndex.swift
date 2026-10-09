@@ -365,7 +365,7 @@ extension Vault: AttachmentIndexSource {
         for e in try FileIO.entries(att) {
             let url = att.appendingPathComponent(e)
             guard let parsed = BlobName.parse(e), !FileIO.isDirectory(url) else { continue }
-            let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0
+            let bytes = FileIO.size(url) ?? 0
             out.append(.init(fileName: e, kind: parsed.kind, bytes: bytes, name: parsed.name))
         }
         return out

@@ -281,7 +281,7 @@ extension Vault {
                 if !e.hasPrefix(FileIO.tempPrefix) { inv.unknownEntries.append(e) }
                 continue
             }
-            let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0
+            let bytes = FileIO.size(url) ?? 0
             let sha = byName[parsed.name]
             inv.files.append(.init(fileName: e, kind: parsed.kind, bytes: bytes, sha256: sha,
                                    resolvesReference: sha.map { kinds[$0]?.contains(parsed.kind) == true } ?? false))
