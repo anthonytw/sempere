@@ -1,4 +1,5 @@
 import Foundation
+import FuzzSupport
 import TempDirSupport
 import XCTest
 
@@ -12,19 +13,8 @@ import XCTest
 /// scrypt output is covered by the CCTV `scrypt*` vectors (decrypt
 /// direction); our scrypt output is covered by our own round trips.
 final class InteropTests: TempDirTestCase {
-    static func which(_ name: String) -> URL? {
-        let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
-        var dirs: [String] = path.split(separator: ":").map { String($0) }
-        dirs += ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"]
-        for dir in dirs {
-            let url = URL(fileURLWithPath: dir).appendingPathComponent(name)
-            if FileManager.default.isExecutableFile(atPath: url.path) { return url }
-        }
-        return nil
-    }
-
     func tools() throws -> (age: URL, keygen: URL) {
-        guard let age = Self.which("age"), let keygen = Self.which("age-keygen") else {
+        guard let age = ExternalTool.find("age"), let keygen = ExternalTool.find("age-keygen") else {
             throw XCTSkip("age / age-keygen not on PATH")
         }
         return (age, keygen)
@@ -32,23 +22,9 @@ final class InteropTests: TempDirTestCase {
 
     @discardableResult
     func run(_ exe: URL, _ args: [String]) throws -> Data {
-        let p = Process()
-        p.executableURL = exe
-        p.arguments = args
-        let outPipe = Pipe(), errPipe = Pipe()
-        p.standardInput = FileHandle.nullDevice
-        p.standardOutput = outPipe
-        p.standardError = errPipe
-        try p.run()
-        // stderr from age is small; stdout is drained first so a large
-        // plaintext cannot fill the pipe and stall the child.
-        let out = outPipe.fileHandleForReading.readDataToEndOfFile()
-        let err = errPipe.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        XCTAssertEqual(
-            p.terminationStatus, 0,
-            "\(exe.lastPathComponent) \(args.joined(separator: " ")): \(String(decoding: err, as: UTF8.self))")
-        return out
+        let r = try ExternalTool.run(exe, args)
+        XCTAssertEqual(r.status, 0, "\(exe.lastPathComponent) \(args.joined(separator: " ")): \(r.errText)")
+        return r.out
     }
 
     func random(_ n: Int) -> Data {
@@ -122,7 +98,7 @@ final class InteropTests: TempDirTestCase {
             if required { XCTFail("SEMPERE_REQUIRE_AGE_PQ set but this OS lacks X-Wing") }
             throw XCTSkip("no X-Wing on this OS")
         }
-        guard let age = Self.which("age"), let keygen = Self.which("age-keygen") else {
+        guard let age = ExternalTool.find("age"), let keygen = ExternalTool.find("age-keygen") else {
             if required { XCTFail("SEMPERE_REQUIRE_AGE_PQ set but age is not on PATH") }
             throw XCTSkip("age / age-keygen not on PATH")
         }

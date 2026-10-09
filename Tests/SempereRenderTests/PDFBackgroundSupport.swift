@@ -1,4 +1,5 @@
 import Foundation
+import FuzzSupport
 import Sempere
 import SemperePDF
 import XCTest
@@ -54,12 +55,7 @@ struct FailingRasterizer: PDFPageRasterizer {
 enum Poppler {
     static var pdftoppm: String? {
         if let p = ProcessInfo.processInfo.environment["SEMPERE_PDFTOPPM"] { return p }
-        for dir in (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":")
-        + ["/usr/bin", "/usr/local/bin", "/opt/homebrew/bin"] {
-            let p = "\(dir)/pdftoppm"
-            if FileManager.default.isExecutableFile(atPath: p) { return p }
-        }
-        return nil
+        return ExternalTool.find("pdftoppm")?.path
     }
 
     /// Skips the test without Poppler, unless `SEMPERE_REQUIRE_POPPLER` is set (CI).

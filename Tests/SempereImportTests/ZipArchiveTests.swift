@@ -21,7 +21,7 @@ final class ZipArchiveTests: TempDirTestCase {
     }
 
     func testSystemZipTool() throws {
-        let zipTool = ["/usr/bin/zip", "/bin/zip"].first { FileManager.default.isExecutableFile(atPath: $0) }
+        let zipTool = ExternalTool.find("zip")?.path
         if zipTool == nil, RequiredTools.isRequired("zip") { XCTFail("no zip tool installed and SEMPERE_REQUIRE_TOOLS names zip") }
         guard let zipTool else { throw XCTSkip("no zip tool installed") }
         for (path, data) in files {

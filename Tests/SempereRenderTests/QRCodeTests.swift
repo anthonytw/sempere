@@ -184,23 +184,12 @@ final class QRCodeTests: XCTestCase {
 
     /// `zbarimg --raw` on a PNG; nil when zbarimg is not installed.
     static func zbar(_ png: Data) throws -> Data? {
-        let tool = ["/usr/bin/zbarimg", "/opt/homebrew/bin/zbarimg", "/usr/local/bin/zbarimg"]
-            .first { FileManager.default.isExecutableFile(atPath: $0) }
-        guard let tool else { return nil }
+        guard let tool = ExternalTool.find("zbarimg") else { return nil }
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("qr-\(UUID().uuidString).png")
         try png.write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: tool)
-        p.arguments = ["--raw", "-q", "-Sbinary", file.path]
-        let out = Pipe()
-        p.standardOutput = out
-        p.standardError = FileHandle.nullDevice
-        try p.run()
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
         // -Sbinary: the payload bytes exactly, no trailing newline added.
-        return data
+        return try ExternalTool.run(tool, ["--raw", "-q", "-Sbinary", file.path]).out
     }
 
     func testZbarDecodesEveryLevelAndManyVersions() throws {

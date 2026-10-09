@@ -1,3 +1,4 @@
+import FuzzSupport
 import TempDirSupport
 import XCTest
 import Foundation
@@ -22,18 +23,9 @@ final class ZipWriterTests: XCTestCase {
 
     /// `unzip -t` on the archive, when Info-ZIP is installed (nil otherwise).
     func unzipTest(_ archive: URL) throws -> (Int32, String)? {
-        let tool = ["/usr/bin/unzip", "/bin/unzip", "/opt/homebrew/bin/unzip"].first { FileManager.default.isExecutableFile(atPath: $0) }
-        guard let tool else { return nil }
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: tool)
-        p.arguments = ["-t", archive.path]
-        let pipe = Pipe()
-        p.standardOutput = pipe
-        p.standardError = pipe
-        try p.run()
-        let out = pipe.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        return (p.terminationStatus, String(decoding: out, as: UTF8.self))
+        guard let tool = ExternalTool.find("unzip") else { return nil }
+        let r = try ExternalTool.run(tool, ["-t", archive.path])
+        return (r.status, String(decoding: r.out + r.err, as: UTF8.self))
     }
 
     func testRoundTripWithUnicodeNamesAndFolders() throws {

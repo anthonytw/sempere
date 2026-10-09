@@ -65,13 +65,8 @@ final class CLIBulkExportTests: CLITestCase {
         XCTAssertEqual(Set(written.flatMap { $0["files"] as? [String] ?? [] }),
                        ["Groceries-bbbbbbbb/p001.png", "Physics-Week-3-aaaaaaaa/p001.png", "Physics-Week-3-aaaaaaaa/p002.png"])
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: path("out")), ["Notes.zip"])
-        if FileManager.default.isExecutableFile(atPath: "/usr/bin/unzip") {
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
-            p.arguments = ["-tq", archive]
-            p.standardOutput = FileHandle.nullDevice
-            try p.run(); p.waitUntilExit()
-            XCTAssertEqual(p.terminationStatus, 0)
+        if let unzip = ExternalTool.find("unzip") {
+            XCTAssertEqual(try ExternalTool.run(unzip, ["-tq", archive]).status, 0)
         }
     }
 
