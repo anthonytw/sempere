@@ -2,25 +2,32 @@ import Foundation
 import Sempere
 import SempereRender
 
+/// A request whose sheet shows in the window that asked for it.
+protocol WindowTargeted {
+    /// The window that asked (`WindowUI.id`): its sheet shows there. Nil: the
+    /// library window with the canvas.
+    var window: UUID? { get }
+}
+
+extension WindowTargeted {
+    /// `request` when window `window` shows it: the window that asked, or for
+    /// a request without one, the library window with the canvas (or any, when
+    /// none has it: `OpenedFile.shows`).
+    static func shown(_ request: Self?, in window: UUID, canvasWindow: UUID?) -> Self? {
+        guard let request else { return nil }
+        if let asker = request.window { return asker == window ? request : nil }
+        return OpenedFile.shows(in: window, canvasWindow: canvasWindow) ? request : nil
+    }
+}
+
 /// What the export sheet was asked to export.
-struct ExportRequest: Identifiable, Equatable {
+struct ExportRequest: Identifiable, Equatable, WindowTargeted {
     let id = UUID()
     var noteIDs: [UUID]
     var format: ShareFormat
     /// The window that asked (`WindowUI.id`): its sheet shows there. Nil: the
     /// library window with the canvas.
     var window: UUID?
-}
-
-extension ExportRequest {
-    /// `request` when window `window` shows it: the window that asked, or for
-    /// a request without one, the library window with the canvas (or any, when
-    /// none has it).
-    static func shown(_ request: ExportRequest?, in window: UUID, canvasWindow: UUID?) -> ExportRequest? {
-        guard let request else { return nil }
-        if let asker = request.window { return asker == window ? request : nil }
-        return canvasWindow == nil || canvasWindow == window ? request : nil
-    }
 }
 
 /// How far an export has come: notes read from the vault, then notes rendered.

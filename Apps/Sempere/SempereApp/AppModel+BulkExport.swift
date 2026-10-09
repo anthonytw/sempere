@@ -4,7 +4,7 @@ import Sempere
 import SempereRender
 
 /// What "Export Notes…" was asked to export (docs/io.md "Bulk export").
-struct BulkExportRequest: Identifiable, Equatable {
+struct BulkExportRequest: Identifiable, Equatable, WindowTargeted {
     let id = UUID()
     var scope: BulkExportScope
     /// The window that asked (`WindowUI.id`): its sheet shows there. Nil: the
@@ -60,13 +60,6 @@ extension BulkExportRequest {
         let plain = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_./"))
         if !s.isEmpty, s.unicodeScalars.allSatisfy({ $0.isASCII && plain.contains($0) }) { return s }
         return "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
-
-    /// `request` when window `window` shows it (`ExportRequest.shown`).
-    static func shown(_ request: BulkExportRequest?, in window: UUID, canvasWindow: UUID?) -> BulkExportRequest? {
-        guard let request else { return nil }
-        if let asker = request.window { return asker == window ? request : nil }
-        return canvasWindow == nil || canvasWindow == window ? request : nil
     }
 }
 
