@@ -408,15 +408,6 @@ public enum Backup {
         (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue
     }
 
-    static func canonical(_ url: URL) -> String {
-        url.standardizedFileURL.resolvingSymlinksInPath().path
-    }
-
-    static func overlaps(_ a: URL, _ b: URL) -> Bool {
-        let pa = canonical(a), pb = canonical(b)
-        return pa == pb || pa.hasPrefix(pb + "/") || pb.hasPrefix(pa + "/")
-    }
-
     /// Writes `data` atomically and reads it back to check the hash.
     static func copyVerified(_ data: Data, hash: String, to url: URL, replacing: Bool) throws {
         try FileIO.createDirectory(url.deletingLastPathComponent())
@@ -459,7 +450,7 @@ public enum Backup {
     ///   for `prune` without a readable source. Per-file failures are in the
     ///   report, not thrown.
     public static func run(source: Vault, to dest: URL, options: BackupOptions = BackupOptions()) throws -> BackupReport {
-        guard !overlaps(source.url, dest) else {
+        guard !source.url.overlaps(dest) else {
             throw BackupError.overlapping("the backup folder and the vault overlap: \(dest.path), \(source.url.path)")
         }
         if options.prune { _ = try source.requireReadable() }
@@ -702,9 +693,9 @@ public enum Backup {
             var onDisk = (try? formatFiles(in: dir)) ?? []
             if let walker = FileManager.default.enumerator(at: dir.appendingPathComponent(versionsName),
                                                           includingPropertiesForKeys: [.isRegularFileKey]) {
-                let base = canonical(dir)
+                let base = dir.canonicalPath
                 for case let u as URL in walker where !FileIO.isDirectory(u) {
-                    let p = canonical(u)
+                    let p = u.canonicalPath
                     if p.hasPrefix(base + "/") { onDisk.append(String(p.dropFirst(base.count + 1))) }
                 }
             }
@@ -805,10 +796,10 @@ public enum Backup {
         guard target.lastPathComponent.hasSuffix(".sempere"), target.lastPathComponent.count > ".sempere".count else {
             throw VaultError.invalidVaultName(target.lastPathComponent)
         }
-        if protecting.contains(where: { overlaps($0, target) }) {
+        if protecting.contains(where: { $0.overlaps(target) }) {
             throw BackupError.protectedTarget(target.path)
         }
-        guard !overlaps(backup, target) else {
+        guard !backup.overlaps(target) else {
             throw BackupError.overlapping("the restore target and the backup overlap: \(target.path), \(backup.path)")
         }
         guard FileIO.exists(backup.appendingPathComponent(BackupManifest.fileName))
@@ -908,7 +899,7 @@ public enum Backup {
     /// place. Refuses an existing `file`.
     public static func writeArchive(source: Vault, to file: URL, now: Date = Date()) throws -> ArchiveReport {
         guard !FileIO.exists(file) else { throw VaultError.alreadyExists(file.path) }
-        guard !overlaps(source.url, file) else {
+        guard !source.url.overlaps(file) else {
             throw BackupError.overlapping("the archive would be inside the vault: \(file.path)")
         }
         let root = source.url.lastPathComponent

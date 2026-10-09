@@ -184,9 +184,7 @@ extension AppModel {
     /// True when `url` is the vault folder or inside it.
     func isInsideVault(_ url: URL) -> Bool {
         guard let root = vault?.url ?? vaultURL else { return false }
-        let a = root.standardizedFileURL.resolvingSymlinksInPath().path
-        let b = url.standardizedFileURL.resolvingSymlinksInPath().path
-        return b == a || b.hasPrefix(a.hasSuffix("/") ? a : a + "/")
+        return url.isSameOrInside(root)
     }
 
     private func finishBulk(_ session: BulkExportSession, cancelled: Bool) async throws -> BulkExportResult {
