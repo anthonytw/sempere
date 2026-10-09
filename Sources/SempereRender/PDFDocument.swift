@@ -104,17 +104,17 @@ public enum PDFDocument {
         for (i, f) in usedFonts.enumerated() { fontObj[f] = fontBase + i }
         let pageBase = fontBase + usedFonts.count
 
-        var objects: [Data] = []
+        let objects = PDFObjects()
+        func add(_ body: String) { objects.set(objects.allocate(), Array(body.utf8)) }
         let kids = pages.indices.map { "\(pageBase + 2 * $0) 0 R" }.joined(separator: " ")
-        objects.append(Data("<< /Type /Catalog /Pages 2 0 R >>".utf8))
-        objects.append(Data("<< /Type /Pages /Kids [\(kids)] /Count \(pages.count) >>".utf8))
+        add("<< /Type /Catalog /Pages 2 0 R >>")
+        add("<< /Type /Pages /Kids [\(kids)] /Count \(pages.count) >>")
         var info = "<< "
         if let title, !title.isEmpty { info += "/Title \(PDFWriter.textString(title)) " }
         info += "/Producer (Sempere) >>"
-        objects.append(Data(info.utf8))
+        add(info)
         for f in usedFonts {
-            objects.append(Data(("<< /Type /Font /Subtype /Type1 /BaseFont /\(f.rawValue) "
-                + "/Encoding /WinAnsiEncoding >>").utf8))
+            add("<< /Type /Font /Subtype /Type1 /BaseFont /\(f.rawValue) /Encoding /WinAnsiEncoding >>")
         }
         for (i, p) in pages.enumerated() {
             let contentID = pageBase + 2 * i + 1
@@ -125,38 +125,17 @@ public enum PDFDocument {
                     .joined(separator: " ") + " >> "
             }
             res += ">>"
-            objects.append(Data(("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 \(fmt(p.width)) \(fmt(p.height))] "
-                + "/Resources \(res) /Contents \(contentID) 0 R >>").utf8))
+            add("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 \(fmt(p.width)) \(fmt(p.height))] "
+                + "/Resources \(res) /Contents \(contentID) 0 R >>")
             var stream = Data(p.content.utf8)
             var filter = ""
             if compress {
                 stream = try Zlib.compress(stream)
                 filter = " /Filter /FlateDecode"
             }
-            var body = Data("<< /Length \(stream.count)\(filter) >>\nstream\n".utf8)
-            body.append(stream)
-            body.append(Data("\nendstream".utf8))
-            objects.append(body)
+            objects.set(objects.allocate(), Array(PDFWriter.streamObject(dict: "/Length \(stream.count)\(filter)", stream)))
         }
-
-        var out = Data("%PDF-1.4\n".utf8)
-        out.append(contentsOf: [0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A])
-        var offsets: [Int] = []
-        for (i, body) in objects.enumerated() {
-            offsets.append(out.count)
-            out.append(Data("\(i + 1) 0 obj\n".utf8))
-            out.append(body)
-            out.append(Data("\nendobj\n".utf8))
-        }
-        let xrefPos = out.count
-        var xref = "xref\n0 \(objects.count + 1)\n0000000000 65535 f \n"
-        for o in offsets {
-            let digits = String(o)
-            xref += String(repeating: "0", count: max(10 - digits.count, 0)) + digits + " 00000 n \n"
-        }
-        xref += "trailer\n<< /Size \(objects.count + 1) /Root 1 0 R /Info 3 0 R >>\nstartxref\n\(xrefPos)\n%%EOF\n"
-        out.append(Data(xref.utf8))
-        return out
+        return try objects.serialize(version: "1.4", root: 1, info: 3)
     }
 
     /// A PDF literal string of printable ASCII; anything else becomes `?`.

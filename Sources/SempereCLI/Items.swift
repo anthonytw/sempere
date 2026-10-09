@@ -298,8 +298,7 @@ struct ItemsReplace: ParsableCommand {
         _ = try translating {
             try NoteOps.replaceImage(found.id, blob: ref, pixelSize: image.pixelSize, orientation: image.orientation, on: page)
         }
-        let stored = try translating { try vault.writeBlob(note: id, image.data, type: image.mediaType) }
-        guard stored == ref else { throw CLIError.failure("internal error: the stored blob differs from its reference") }
+        try storeBlob(vault, id, image.data, type: image.mediaType, expect: ref)
         let newID = UUID()
         let r = try editNote(vault, id) { state in
             try requireLive(state)
@@ -531,8 +530,7 @@ struct ItemsMath: ParsableCommand {
         let latex = try source.read()
         let rendering = try render.map { try MathRenderInput(path: $0) }
         if let rendering {
-            let stored = try translating { try vault.writeBlob(note: id, rendering.data, type: MathContent.renderType) }
-            guard stored == rendering.ref else { throw CLIError.failure("internal error: the stored blob differs from its reference") }
+            try storeBlob(vault, id, rendering.data, type: MathContent.renderType, expect: rendering.ref)
         }
         let r = try editNote(vault, id) { state in
             try requireLive(state)

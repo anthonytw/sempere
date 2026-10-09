@@ -180,6 +180,39 @@ func pageWithID(_ id: UUID, in state: NoteState) throws -> (number: Int, page: P
     return (i + 1, state.pages[i])
 }
 
+/// One item placed on the page `number` names (the first by default): `place`
+/// runs against the note as it is now, which is all a dry run does; otherwise
+/// `writeBlobs` stores what the item references, then one delta places it
+/// again on that page (found by id) of the note as it is when it is written.
+func placeOnPage(_ vault: Vault, _ id: UUID, page number: Int?, dryRun: Bool, writeBlobs: () throws -> Void = {},
+                 place: (NoteState, Page) throws -> ItemPlacement)
+    throws -> (placed: ItemPlacement, number: Int, pageID: UUID, file: String?) {
+    let before = try liveState(vault, id)
+    let target = try targetPage(before, number)
+    var placed = try place(before, target.page)
+    var number = target.number
+    var file: String?
+    if !dryRun {
+        try writeBlobs()
+        let pageID = target.page.id
+        let revision = try editNote(vault, id) { state in
+            try requireLive(state)
+            let current = try pageWithID(pageID, in: state)
+            number = current.number
+            placed = try place(state, current.page)
+            return placed.ops
+        }
+        file = revision?.name.filename
+    }
+    return (placed, number, target.page.id, file)
+}
+
+/// Writes `data` as a blob of the note and checks it is `ref`.
+func storeBlob(_ vault: Vault, _ id: UUID, _ data: Data, type: String, expect ref: BlobRef, what: String = "blob") throws {
+    let stored = try translating { try vault.writeBlob(note: id, data, type: type) }
+    guard stored == ref else { throw CLIError.failure("internal error: the stored \(what) differs from its reference") }
+}
+
 /// The recording `query` names in `state`: an id, a unique id prefix of 4 or more characters, or an exact title.
 func resolveRecording(_ query: String, in state: NoteState) throws -> Recording {
     let q = query.lowercased()
@@ -286,9 +319,9 @@ struct AttachImage: ParsableCommand {
         let data = try readInput(file, limit: ImageLimits.maxBlobBytes, what: "image (exports draw larger ones as placeholders)")
         let image = try translating { try ImageIngest.prepare(data, keepMetadata: keepMetadata) }
         let ref = BlobRef(content: image.data, type: image.mediaType)
-        let before = try liveState(vault, id)
-        let target = try targetPage(before, placement.page)
-        func place(_ state: NoteState, _ page: Page) throws -> ItemPlacement {
+        let r = try placeOnPage(vault, id, page: placement.page, dryRun: dryRun, writeBlobs: {
+            try storeBlob(vault, id, image.data, type: image.mediaType, expect: ref)
+        }) { state, page in
             try translating {
                 try NoteOps.placeImage(blob: ref, pixelSize: image.pixelSize, orientation: image.orientation, crop: crop?.rect,
                                        on: page, pageSize: state.meta.pageSize, frame: placement.frame?.rect,
@@ -296,27 +329,10 @@ struct AttachImage: ParsableCommand {
                                        layer: layer.layer, rec: try link(placement, in: state))
             }
         }
-        var placed = try place(before, target.page)
-        var out = AttachJSON(note: id.uuidString.lowercased(), dryRun: dryRun, blob: ref)
-        if !dryRun {
-            let stored = try translating { try vault.writeBlob(note: id, image.data, type: image.mediaType) }
-            guard stored == ref else { throw CLIError.failure("internal error: the stored blob differs from its reference") }
-            let pageID = target.page.id
-            var number = target.number
-            let revision = try editNote(vault, id) { state in
-                try requireLive(state)
-                let current = try pageWithID(pageID, in: state)
-                number = current.number
-                placed = try place(state, current.page)
-                return placed.ops
-            }
-            out.file = revision?.name.filename
-            out.items = [.init(page: number, pageId: pageID, item: placed.item)]
-        } else {
-            out.items = [.init(page: target.number, pageId: target.page.id, item: placed.item)]
-        }
-        let f = placed.item.frame
-        try report(out, output: output, summary: "image (\(Int(image.pixelSize.w)) × \(Int(image.pixelSize.h)) px) to page \(out.items[0].page) at "
+        var out = AttachJSON(note: id.uuidString.lowercased(), file: r.file, dryRun: dryRun, blob: ref)
+        out.items = [.init(page: r.number, pageId: r.pageID, item: r.placed.item)]
+        let f = r.placed.item.frame
+        try report(out, output: output, summary: "image (\(Int(image.pixelSize.w)) × \(Int(image.pixelSize.h)) px) to page \(r.number) at "
                    + "[\([f.x, f.y, f.w, f.h].map(AttachmentListing.number).joined(separator: ", "))]")
     }
 }
@@ -412,8 +428,7 @@ struct AttachPDF: ParsableCommand {
         var planned = try build(before, pageID)
         var out = AttachJSON(note: id.uuidString.lowercased(), dryRun: dryRun, blob: ref)
         if !dryRun {
-            let stored = try translating { try vault.writeBlob(note: id, data, type: "application/pdf") }
-            guard stored == ref else { throw CLIError.failure("internal error: the stored blob differs from its reference") }
+            try storeBlob(vault, id, data, type: "application/pdf", expect: ref)
             let revision = try editNote(vault, id) { state in
                 try requireLive(state)
                 if isFigure { pageID = try pageWithID(pageID ?? UUID(), in: state).page.id }
@@ -515,11 +530,9 @@ struct AttachText: ParsableCommand {
         let string = try text ?? readText()
         let style = TextStyle(font: font.font, size: size, color: color?.color ?? .black, align: align?.alignment,
                               bold: bold, italic: italic, lang: lang)
-        let before = try liveState(vault, id)
-        let target = try targetPage(before, placement.page)
         let laysOut = !noBreaks
         let keepHeight = placement.frame != nil
-        func place(_ state: NoteState, _ page: Page) throws -> ItemPlacement {
+        let r = try placeOnPage(vault, id, page: placement.page, dryRun: dryRun) { state, page in
             var placed = try translating {
                 try NoteOps.placeText(string, style: style, on: page, pageSize: state.meta.pageSize, frame: placement.frame?.rect,
                                       at: placement.at.map { ($0.x, $0.y) }, width: placement.width, layer: layer.layer,
@@ -529,22 +542,9 @@ struct AttachText: ParsableCommand {
             if laysOut { placed.item = laidOutText(placed.item, keepHeight: keepHeight) }
             return placed
         }
-        var placed = try place(before, target.page)
-        var number = target.number
-        var out = AttachJSON(note: id.uuidString.lowercased(), dryRun: dryRun)
-        if !dryRun {
-            let pageID = target.page.id
-            let revision = try editNote(vault, id) { state in
-                try requireLive(state)
-                let current = try pageWithID(pageID, in: state)
-                number = current.number
-                placed = try place(state, current.page)
-                return placed.ops
-            }
-            out.file = revision?.name.filename
-        }
-        out.items = [.init(page: number, pageId: target.page.id, item: placed.item)]
-        try report(out, output: output, summary: "text box (\(string.unicodeScalars.count) characters) to page \(number)")
+        var out = AttachJSON(note: id.uuidString.lowercased(), file: r.file, dryRun: dryRun)
+        out.items = [.init(page: r.number, pageId: r.pageID, item: r.placed.item)]
+        try report(out, output: output, summary: "text box (\(string.unicodeScalars.count) characters) to page \(r.number)")
     }
 
     private func readText() throws -> String { try readBoxText(file ?? "") }
@@ -758,8 +758,7 @@ struct AttachTranscript: ParsableCommand {
         var updated = target
         updated.transcript = ref
         if !dryRun {
-            let stored = try translating { try vault.writeBlob(note: id, content, type: BlobRef.transcriptType) }
-            guard stored == ref else { throw CLIError.failure("internal error: the stored blob differs from its reference") }
+            try storeBlob(vault, id, content, type: BlobRef.transcriptType, expect: ref)
             let revision = try editNote(vault, id) { state in
                 try requireLive(state)
                 return try translating { try NoteOps.setTranscript(ref, content: content, for: target.id, in: state) }
@@ -887,37 +886,20 @@ struct AttachMath: ParsableCommand {
         var content = try translating { try NoteOps.math(latex, display: !inline, size: size, color: color?.color ?? .black) }
         let rendering = try render.map { try MathRenderInput(path: $0) }
         if let rendering { content = rendering.content(content, engine: engine) }
-        let before = try liveState(vault, id)
-        let target = try targetPage(before, placement.page)
-        func place(_ state: NoteState, _ page: Page) throws -> ItemPlacement {
+        let r = try placeOnPage(vault, id, page: placement.page, dryRun: dryRun, writeBlobs: {
+            if let rendering { try storeBlob(vault, id, rendering.data, type: MathContent.renderType, expect: rendering.ref) }
+        }) { state, page in
             try translating {
                 try NoteOps.placeMath(content, on: page, pageSize: state.meta.pageSize, frame: placement.frame?.rect,
                                       at: placement.at.map { ($0.x, $0.y) }, width: placement.width, layer: layer.layer,
                                       rec: try link(placement, in: state))
             }
         }
-        var placed = try place(before, target.page)
-        var number = target.number
-        var out = AttachJSON(note: id.uuidString.lowercased(), dryRun: dryRun, blob: rendering?.ref)
-        if !dryRun {
-            if let rendering {
-                let stored = try translating { try vault.writeBlob(note: id, rendering.data, type: MathContent.renderType) }
-                guard stored == rendering.ref else { throw CLIError.failure("internal error: the stored blob differs from its reference") }
-            }
-            let pageID = target.page.id
-            let revision = try editNote(vault, id) { state in
-                try requireLive(state)
-                let current = try pageWithID(pageID, in: state)
-                number = current.number
-                placed = try place(state, current.page)
-                return placed.ops
-            }
-            out.file = revision?.name.filename
-        }
-        out.items = [.init(page: number, pageId: target.page.id, item: placed.item)]
+        var out = AttachJSON(note: id.uuidString.lowercased(), file: r.file, dryRun: dryRun, blob: rendering?.ref)
+        out.items = [.init(page: r.number, pageId: r.pageID, item: r.placed.item)]
         if rendering == nil && !output.json && !output.quiet {
             printStderr("Note: no rendering stored; exports draw the source until the equation is typeset in the app (or use --render).")
         }
-        try report(out, output: output, summary: "equation (\(content.latex.unicodeScalars.count) characters\(rendering == nil ? "" : ", typeset")) to page \(number)")
+        try report(out, output: output, summary: "equation (\(content.latex.unicodeScalars.count) characters\(rendering == nil ? "" : ", typeset")) to page \(r.number)")
     }
 }

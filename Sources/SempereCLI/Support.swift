@@ -2,6 +2,7 @@ import Age
 import ArgumentParser
 import Foundation
 import Sempere
+import SempereImport
 
 #if canImport(Glibc)
 import Glibc
@@ -194,29 +195,27 @@ enum Format {
     }
 
     /// Left-aligned columns separated by two spaces; the last column is not padded.
-    static func table(_ rows: [[String]]) -> String {
-        guard let first = rows.first else { return "" }
-        var widths = [Int](repeating: 0, count: first.count)
-        for r in rows { for (i, c) in r.enumerated() { widths[i] = max(widths[i], c.count) } }
-        return rows.map { r in
-            r.enumerated().map { i, c in
-                i == r.count - 1 ? c : c.padding(toLength: widths[i], withPad: " ", startingAt: 0)
-            }.joined(separator: "  ").trimmingCharacters(in: .whitespaces)
-        }.joined(separator: "\n")
-    }
+    static func table(_ rows: [[String]]) -> String { ImporterPresentation.table(rows) }
 }
 
 // MARK: - Files
 
 /// Creates `path` with mode 0600, refusing to overwrite.
 func writeNewSecretFile(_ text: String, to path: String) throws {
+    try writeNewSecretFile(Data(text.utf8), to: path)
+}
+
+/// Creates `path` with mode 0600 holding `data`, refusing to overwrite.
+func writeNewSecretFile(_ data: Data, to path: String) throws {
     let fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
     if fd < 0 {
         if errno == EEXIST { throw CLIError.failure("refusing to overwrite \(path)") }
         throw CLIError.failure("cannot create \(path): \(String(cString: strerror(errno)))")
     }
     let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
-    handle.write(Data(text.utf8))
+    do { try handle.write(contentsOf: data) } catch {
+        throw CLIError.failure("cannot write \(path): \(error.localizedDescription)")
+    }
 }
 
 /// Writes `data` to `url`, replacing it, readable by the owner only: a
@@ -327,13 +326,7 @@ func parseRecipient(_ s: String) throws -> NativeRecipient {
         }
         throw CLIError.usage("\(s) holds no age recipient (age1... or age1pq1...)")
     }
-    throw CLIError.usage("not an age recipient (age1... or age1pq1...): \(abbreviateKey(s))")
-}
-
-/// `age1pq1abcdefgh…stuvwxyz` for a post-quantum recipient (1959
-/// characters in full); other strings unchanged.
-func abbreviateKey(_ s: String) -> String {
-    s.count > 80 ? "\(s.prefix(16))…\(s.suffix(8))" : s
+    throw CLIError.usage("not an age recipient (age1... or age1pq1...): \(RecipientsProblem.abbreviate(s))")
 }
 
 /// How much unlocking a command needs.
@@ -450,7 +443,7 @@ final class UntaggedVaults: @unchecked Sendable {
             guard (try? Vault.open(at: url))?.manifest.recipientsTag != nil else { continue }
             printStderr("sempere: vault.json's device list is now authenticated (format.md §2.1); it trusts these "
                 + "\(recipients.count) recipient(s), check them with `sempere vault info`: "
-                + recipients.map { abbreviateKey($0.key) + ($0.label.isEmpty ? "" : " (\($0.label))") }.joined(separator: ", "))
+                + recipients.map { RecipientsProblem.abbreviate($0.key) + ($0.label.isEmpty ? "" : " (\($0.label))") }.joined(separator: ", "))
         }
     }
 }

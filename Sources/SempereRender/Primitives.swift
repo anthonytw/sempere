@@ -264,22 +264,25 @@ extension DrawCommand {
     }
 }
 
-/// Deterministic, locale-independent number formatting (<= 3 decimals).
-func fmt(_ v: Double) -> String {
+/// Deterministic, locale-independent number formatting: at most `decimals`
+/// decimals, trailing zeros dropped, `-0` and non-finite values as `0`.
+func trimmed(_ v: Double, decimals: Int) -> String {
     guard v.isFinite else { return "0" }
-    var s = String(format: "%.3f", v)
+    var s = String(format: "%.\(decimals)f", v)
     while s.hasSuffix("0") { s.removeLast() }
     if s.hasSuffix(".") { s.removeLast() }
     return (s == "-0" || s.isEmpty) ? "0" : s
 }
 
+/// Deterministic, locale-independent number formatting (<= 3 decimals).
+func fmt(_ v: Double) -> String { trimmed(v, decimals: 3) }
+
+/// Like `fmt`, with 6 decimals (matrices: 3 decimals of a scale factor are
+/// visible on a large page).
+func fmt6(_ v: Double) -> String { trimmed(v, decimals: 6) }
+
 /// A matrix coefficient: `fmt`, but with 6 decimals below 1 so that a large
 /// image scaled down to a small frame keeps its size.
 func coef(_ v: Double) -> String {
-    guard v.isFinite else { return "0" }
-    if abs(v) >= 1 || v == 0 { return fmt(v) }
-    var s = String(format: "%.6f", v)
-    while s.hasSuffix("0") { s.removeLast() }
-    if s.hasSuffix(".") { s.removeLast() }
-    return (s == "-0" || s.isEmpty) ? "0" : s
+    (abs(v) >= 1 || v == 0) ? fmt(v) : fmt6(v)
 }

@@ -275,15 +275,9 @@ extension AppModel {
     /// The recovery kit PDF of one of the open vault's keys.
     func recoveryKit(secret: String, recipient: String, a4: Bool) throws -> Data {
         guard let vault else { throw KeyError.notUnlocked }
-        var info = RecoveryKit.VaultInfo(name: vaultName ?? "vault", id: vault.vaultId.uuidString.lowercased(),
-                                         created: vault.manifest.created, recipientCount: vault.recipients.count)
-        info.name = vaultName ?? info.name
         var kit = RecoveryKit(secret: .identity(secret), recipient: recipient,
-                              vault: info, printed: Date())
-        if a4 {
-            kit.pageWidth = 595.28
-            kit.pageHeight = 841.89
-        }
+                              vault: .init(vault: vault, name: vaultName ?? "vault"), printed: Date())
+        if a4 { kit.useA4() }
         return try kit.pdf()
     }
 

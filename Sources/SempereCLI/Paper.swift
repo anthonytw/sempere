@@ -4,14 +4,6 @@ import Foundation
 import SempereRender
 import Sempere
 
-#if canImport(Glibc)
-import Glibc
-#elseif canImport(Musl)
-import Musl
-#elseif canImport(Darwin)
-import Darwin
-#endif
-
 struct KeysPaper: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "paper",
@@ -124,18 +116,14 @@ struct KeysPaper: ParsableCommand {
         var info: RecoveryKit.VaultInfo?
         if let locked {
             guard locked.recipients.contains(where: { $0.key == identity.recipient.string }) else {
-                throw CLIError.cannotDecrypt("this key is not a recipient of the vault (\(abbreviateKey(identity.recipient.string)))")
+                throw CLIError.cannotDecrypt("this key is not a recipient of the vault (\(RecipientsProblem.abbreviate(identity.recipient.string)))")
             }
             var name = locked.url.lastPathComponent
             if name.hasSuffix(".sempere") { name.removeLast(".sempere".count) }
-            info = .init(name: name, id: locked.vaultId.uuidString.lowercased(), created: locked.manifest.created,
-                         recipientCount: locked.recipients.count)
+            info = .init(vault: locked, name: name)
         }
         var kit = RecoveryKit(secret: secret, recipient: identity.recipient.string, vault: info, printed: Date())
-        if paper.lowercased() == "a4" {
-            kit.pageWidth = 595.28
-            kit.pageHeight = 841.89
-        }
+        if paper.lowercased() == "a4" { kit.useA4() }
         let code = try kit.qrCode()
         try writeNewSecretFile(try kit.pdf(), to: out)
 
@@ -156,18 +144,5 @@ struct KeysPaper: ParsableCommand {
                 printStderr("The PDF holds your secret key: print it, then delete the file (it is not encrypted).")
             }
         }
-    }
-}
-
-/// Creates `path` with mode 0600 holding `data`, refusing to overwrite.
-func writeNewSecretFile(_ data: Data, to path: String) throws {
-    let fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
-    if fd < 0 {
-        if errno == EEXIST { throw CLIError.failure("refusing to overwrite \(path)") }
-        throw CLIError.failure("cannot create \(path): \(String(cString: strerror(errno)))")
-    }
-    let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
-    do { try handle.write(contentsOf: data) } catch {
-        throw CLIError.failure("cannot write \(path): \(error.localizedDescription)")
     }
 }
