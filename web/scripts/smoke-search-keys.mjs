@@ -12,45 +12,23 @@
 //   recording with its segment marked;
 // - no CSP or Trusted Types violation, no page error.
 // Usage: npm run build && node scripts/smoke-search-keys.mjs
-import { createServer } from "node:http";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { extname, join } from "node:path";
-// PLAYWRIGHT: path to playwright/index.mjs when it is not installed here.
-const { chromium } = await import(process.env.PLAYWRIGHT ?? "playwright");
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { enterVault, launchChromium, serveVault, unlocked } from "./smoke-lib.mjs";
 
 const web = join(import.meta.dirname, "..");
 const fixtures = join(web, "..", "Tests", "SempereTests", "Fixtures");
 const vaults = { sample: join(fixtures, "sample.sempere"), search: join(web, "test", "fixtures", "search.sempere") };
-const dist = join(web, "dist");
 const kit = readFileSync(join(web, "test", "fixtures", "paper-kit-passphrase.txt"), "utf8");
 const secretLine = readFileSync(join(fixtures, "sample.key"), "utf8").split("\n").find((l) => l.startsWith("AGE-SECRET-KEY-PQ-1"));
-const types = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json" };
-
-const server = createServer((req, res) => {
-  const path = decodeURIComponent(new URL(req.url, "http://x").pathname);
-  const send = (status, body, type = "application/octet-stream") => { res.writeHead(status, { "content-type": type }); res.end(body); };
-  const m = /^\/dav\/(\w+)\/(.*)$/.exec(path);
-  if (m) {
-    const [, name, rel] = m;
-    if (!vaults[name] || rel.includes("..")) return send(400, "");
-    const file = join(vaults[name], rel);
-    if (req.method === "PROPFIND") {
-      if (!existsSync(file) || !statSync(file).isDirectory()) return send(404, "");
-      const items = readdirSync(file).map((n) => `<d:response><d:href>/dav/${name}/${rel}${encodeURIComponent(n)}${statSync(join(file, n)).isDirectory() ? "/" : ""}</d:href></d:response>`);
-      return send(207, `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:response><d:href>/dav/${name}/${rel}</d:href></d:response>${items.join("")}</d:multistatus>`, "application/xml");
-    }
-    if (rel === "sempere-index.json" || !existsSync(file) || statSync(file).isDirectory()) return send(404, "");
-    return send(200, readFileSync(file));
-  }
-  const f = join(dist, path === "/" ? "index.html" : path);
-  if (!existsSync(f)) return send(404, "");
-  send(200, readFileSync(f), types[extname(f)] ?? "application/octet-stream");
-});
-await new Promise((r) => server.listen(0, "127.0.0.1", r));
 // localhost, not 127.0.0.1: an IP address is not a valid WebAuthn RP ID.
-const base = `http://localhost:${server.address().port}`;
+const hideIndex = (rel) => rel === "sempere-index.json";
+const { base, close } = await serveVault({
+  mounts: Object.entries(vaults).map(([name, vaultDir]) => ({ prefix: `/dav/${name}/`, vaultDir, hide: hideIndex })),
+  host: "localhost",
+});
 
-const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
+const browser = await launchChromium();
 let failures = 0;
 const check = (ok, what) => {
   console.log(ok ? "ok  " : "FAIL", what);
@@ -78,13 +56,10 @@ async function newPage(authenticator) {
 
 async function openVault(page, name) {
   await page.goto(`${base}/`);
-  await page.fill("input[type=url]", `${base}/dav/${name}/`);
-  await page.selectOption("select", "webdav");
-  await page.click("form button[type=submit]");
+  await enterVault(page, `${base}/dav/${name}/`, { webdav: true });
   await page.waitForSelector("textarea");
 }
 
-const unlocked = (page) => page.waitForFunction(() => /\d+ notes?( ·|$)/.test(document.querySelector(".status")?.textContent ?? ""), null, { timeout: 60000 });
 const storedCard = (page) => page.locator("form.card", { hasText: "Unlock with your passphrase" });
 // Lock reloads the page (back to the open screen); the vault is opened again.
 const lock = async (page, name) => {
@@ -109,7 +84,7 @@ try {
     await again.waitFor();
     await again.locator("input[type=password]").fill("sempere-test");
     await again.locator("button[type=submit]").click();
-    await unlocked(page);
+    await unlocked(page, 60000);
     check(true, "the right passphrase unlocks");
     const stored = await page.evaluate(async () => (await indexedDB.databases()).map((d) => d.name));
     check(!stored.includes("sempere-viewer") || await page.evaluate(() => new Promise((resolve) => {
@@ -130,7 +105,7 @@ try {
     check(await field.isVisible(), "pasting a locked key shows the passphrase field");
     await field.fill("sempere-test");
     await page.click("form.card:has(textarea) button[type=submit]");
-    await unlocked(page);
+    await unlocked(page, 60000);
     check(true, "a pasted recovery kit copy unlocks with its passphrase");
     check(problems.length === 0, `no errors (CSP, Trusted Types, pages): ${problems.join(" | ")}`);
     await context.close();
@@ -149,7 +124,7 @@ try {
     await card.locator("button[type=submit]").click();
     await page.waitForSelector("button:has-text('Create passkey')", { timeout: 30000 });
     await page.click("button:has-text('Create passkey')");
-    await unlocked(page);
+    await unlocked(page, 60000);
     const records = await page.evaluate(() => new Promise((resolve) => {
       const r = indexedDB.open("sempere-viewer");
       r.onsuccess = () => {
@@ -162,7 +137,7 @@ try {
       "the passkey record holds neither the passphrase nor the key");
     await lock(page, "sample");
     await page.click("button:has-text('Unlock with passkey')");
-    await unlocked(page);
+    await unlocked(page, 60000);
     check(true, "the key unlocked with a passphrase unlocks with the passkey after Lock");
     check(problems.length === 0, `no errors: ${problems.join(" | ")}`);
     await context.close();
@@ -174,7 +149,7 @@ try {
     await openVault(page, "search");
     await page.fill("textarea", secretLine);
     await page.click("form.card:has(textarea) button[type=submit]");
-    await unlocked(page);
+    await unlocked(page, 60000);
     await page.fill("input[type=search]", "nass");
     await page.waitForTimeout(400);
     check((await page.locator(".note-list .spoken-hit").count()) === 0, "transcripts are not searched by default");
@@ -205,7 +180,7 @@ try {
   failures++;
 } finally {
   await browser.close();
-  server.close();
+  close();
 }
 console.log(failures ? `${failures} failure(s)` : "all passed");
 process.exit(failures ? 1 : 0);

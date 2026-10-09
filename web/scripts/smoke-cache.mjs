@@ -11,47 +11,23 @@
 //     (and, with sempere-index.json and "listing": "index", without PROPFIND).
 // Prints first- and second-visit timings (LATENCY_MS adds a delay to every request).
 // Usage: node scripts/smoke-cache.mjs VAULT_DIR KEY_FILE
-import { createServer } from "node:http";
-import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
-import { join, extname } from "node:path";
-const { chromium } = await import(process.env.PLAYWRIGHT ?? "playwright");
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { launchChromium, serveVault } from "./smoke-lib.mjs";
 
 const [vaultDir, keyFile] = process.argv.slice(2);
 const latency = Number(process.env.LATENCY_MS ?? "0");
-const dist = join(import.meta.dirname, "..", "dist");
-const types = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json" };
 
 let config = null;          // config.json body, or null for none
 let withSummaries = true;   // serve sempere-summaries.sealed when the vault has one
 let log = [];
 
-const server = createServer((req, res) => {
-  const url = new URL(req.url, "http://x");
-  const path = decodeURIComponent(url.pathname);
-  log.push(`${req.method} ${path}`);
-  const send = (status, body, type = "application/octet-stream") => setTimeout(() => {
-    res.writeHead(status, { "content-type": type }); res.end(body);
-  }, latency);
-  if (path.startsWith("/vault/")) {
-    const rel = path.slice("/vault/".length);
-    if (rel.includes("..")) return send(400, "");
-    const file = join(vaultDir, rel);
-    if (req.method === "PROPFIND") {
-      if (!existsSync(file) || !statSync(file).isDirectory()) return send(404, "");
-      const items = readdirSync(file).map((n) => `<d:response><d:href>/vault/${rel}${encodeURIComponent(n)}${statSync(join(file, n)).isDirectory() ? "/" : ""}</d:href></d:response>`);
-      return send(207, `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:response><d:href>/vault/${rel}</d:href></d:response>${items.join("")}</d:multistatus>`, "application/xml");
-    }
-    if (rel === "sempere-summaries.sealed" && !withSummaries) return send(404, "");
-    if (!existsSync(file) || statSync(file).isDirectory()) return send(404, "");
-    return send(200, readFileSync(file));
-  }
-  if (path === "/config.json") return config ? send(200, config, "application/json") : send(404, "");
-  const f = join(dist, path === "/" ? "index.html" : path);
-  if (!existsSync(f)) return send(404, "");
-  send(200, readFileSync(f), types[extname(f)] ?? "application/octet-stream");
+const { base, close } = await serveVault({
+  mounts: [{ prefix: "/vault/", vaultDir, hide: (rel) => rel === "sempere-summaries.sealed" && !withSummaries }],
+  latency,
+  onRequest: (method, path) => log.push(`${method} ${path}`),
+  extraRoutes: (path, send) => path === "/config.json" && (config ? send(200, config, "application/json") : send(404, ""), true),
 });
-await new Promise((r) => server.listen(0, "127.0.0.1", r));
-const base = `http://127.0.0.1:${server.address().port}`;
 const key = readFileSync(keyFile, "utf8");
 const isFileRead = (l) => /^GET \/vault\/notes\/[0-9a-f-]+\/(att\/)?[^/]+\.age$/.test(l);
 
@@ -100,7 +76,7 @@ async function visit(context, label, { query = "", expectPrompt = false } = {}) 
   return { ...r, titles, fileReads };
 }
 
-const browser = await chromium.launch();
+const browser = await launchChromium();
 try {
   // 1. Ad-hoc mode (no config.json), no summaries: first and second visit in one profile.
   config = null; withSummaries = false;
@@ -134,7 +110,7 @@ try {
   }
 } finally {
   await browser.close();
-  server.close();
+  close();
 }
 console.table(results.map(({ label, notes, unlockToFirstRowMs, unlockToListedMs, requests, revisionAndBlobGETs }) =>
   ({ label, notes, unlockToFirstRowMs, unlockToListedMs, requests, revisionAndBlobGETs })));
