@@ -1,5 +1,6 @@
 import Age
 import Foundation
+import FuzzSupport
 import XCTest
 @testable import Sempere
 
@@ -7,36 +8,16 @@ import XCTest
 /// `age -d -i key FILE.age | tail -c +38 | gunzip` yields the revision JSON.
 /// Skipped when `age` is not on PATH.
 final class RecoveryInteropTests: VaultTestCase {
-    static func which(_ name: String) -> URL? {
-        var dirs = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
-        dirs += ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
-        for dir in dirs {
-            let url = URL(fileURLWithPath: dir).appendingPathComponent(name)
-            if FileManager.default.isExecutableFile(atPath: url.path) { return url }
-        }
-        return nil
-    }
-
     func shell(_ script: String) throws -> Data {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/sh")
-        p.arguments = ["-c", script]
-        let out = Pipe(), err = Pipe()
-        p.standardInput = FileHandle.nullDevice
-        p.standardOutput = out
-        p.standardError = err
-        try p.run()
-        let stdout = out.fileHandleForReading.readDataToEndOfFile()
-        let stderr = err.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        XCTAssertEqual(p.terminationStatus, 0, String(decoding: stderr, as: UTF8.self))
-        return stdout
+        let r = try ExternalTool.run(URL(fileURLWithPath: "/bin/sh"), ["-c", script])
+        XCTAssertEqual(r.status, 0, r.errText)
+        return r.out
     }
 
-    func quote(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+    func quote(_ s: String) -> String { ExternalTool.shellQuote(s) }
 
     func testStockAgeRecoveryPipeline() throws {
-        guard let age = Self.which("age") else { throw XCTSkip("age not on PATH") }
+        guard let age = ExternalTool.find("age") else { throw XCTSkip("age not on PATH") }
         // A legacy X25519 vault: the library refuses its notes until it is
         // migrated, but the stock-CLI recovery path keeps working on it.
         let id = X25519Identity()
@@ -75,7 +56,7 @@ final class RecoveryInteropTests: VaultTestCase {
     /// `age` 1.3 or later (CI sets SEMPERE_REQUIRE_AGE_PQ).
     func testStockAgeRecoversNewerRevisions() throws {
         let required = ProcessInfo.processInfo.environment["SEMPERE_REQUIRE_AGE_PQ"] != nil
-        guard let age = Self.which("age") else {
+        guard let age = ExternalTool.find("age") else {
             if required { XCTFail("SEMPERE_REQUIRE_AGE_PQ set but age is not on PATH") }
             throw XCTSkip("age not on PATH")
         }

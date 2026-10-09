@@ -11,10 +11,10 @@
 // randomized, so the ciphertext changes on every run; the decrypted JSON does
 // not. Then run scripts/golden.sh.
 
-import { Encrypter, armor, identityToRecipient } from "age-encryption";
-import { createHash, createHmac } from "node:crypto";
+import { armor, identityToRecipient } from "age-encryption";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { createVaultWriter } from "./fixture-lib.ts";
 
 const web = join(import.meta.dirname, "..");
 const keyFile = join(web, "..", "Tests", "SempereTests", "Fixtures", "sample.key");
@@ -26,36 +26,7 @@ const recipient = await identityToRecipient(identity);
 const secret = new Uint8Array(32).map((_, i) => (i * 11 + 5) & 0xff);
 const enc = new TextEncoder();
 
-async function encrypt(data: Uint8Array): Promise<Uint8Array> {
-  const e = new Encrypter();
-  e.addRecipient(recipient);
-  return e.encrypt(data);
-}
-
-async function gzip(data: Uint8Array): Promise<Uint8Array> {
-  const s = new Blob([data as Uint8Array<ArrayBuffer>]).stream().pipeThrough(new CompressionStream("gzip"));
-  return new Uint8Array(await new Response(s).arrayBuffer());
-}
-
-async function frame(json: unknown, noteId: string, filename: string): Promise<Uint8Array> {
-  const gz = await gzip(enc.encode(JSON.stringify(json)));
-  const key = await crypto.subtle.importKey("raw", secret, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const parts = [enc.encode("sempere/1"), Uint8Array.of(0), enc.encode(noteId), Uint8Array.of(0),
-    enc.encode(filename), Uint8Array.of(0), gz];
-  const msg = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-  let at = 0;
-  for (const p of parts) {
-    msg.set(p, at);
-    at += p.length;
-  }
-  const tag = new Uint8Array(await crypto.subtle.sign("HMAC", key, msg));
-  const body = new Uint8Array(37 + gz.length);
-  body.set(enc.encode("SMPR"), 0);
-  body[4] = 1;
-  body.set(tag, 5);
-  body.set(gz, 37);
-  return body;
-}
+const { encrypt, frame, writeBlob } = createVaultWriter({ secret, out, recipient });
 
 const dev = "5ea4c400";
 const t0 = Date.UTC(2026, 9, 8, 9, 0, 0);
@@ -73,31 +44,9 @@ async function write(noteId: string, seq: number, at: number, ops: Json[]): Prom
   writeFileSync(join(dir, name), await encrypt(await frame(rev, noteId, name)));
 }
 
-function padme(n: number): number {
-  if (n < 2) return n;
-  const e = Math.floor(Math.log2(n)), z = e - (Math.floor(Math.log2(e)) + 1);
-  return Math.ceil(n / 2 ** z) * 2 ** z;
-}
-
-function blobName(sha: Buffer): string {
-  return createHmac("sha256", secret).update(Buffer.concat([enc.encode("sempere/1"), Uint8Array.of(0), enc.encode("blob"), Uint8Array.of(0), sha])).digest("hex");
-}
-
 /** Writes `content` as a blob of `noteId` (unless `skip`) and returns its reference. */
-async function blob(noteId: string, content: Uint8Array, type: string, kind: string, skip = false): Promise<Json> {
-  const sha = createHash("sha256").update(content).digest();
-  const plain = new Uint8Array(padme(45 + content.length));
-  plain.set(enc.encode("INKB"), 0);
-  plain[4] = 1;
-  plain.set(sha, 5);
-  new DataView(plain.buffer).setBigUint64(37, BigInt(content.length));
-  plain.set(content, 45);
-  if (!skip) {
-    const dir = join(out, "notes", noteId, "att");
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, `${blobName(sha)}.${kind}.age`), await encrypt(plain));
-  }
-  return { sha256: sha.toString("hex"), size: content.length, type };
+function blob(noteId: string, content: Uint8Array, type: string, kind: string, skip = false): Promise<Json> {
+  return writeBlob(noteId, content, type, kind, { skip });
 }
 
 const transcriptType = "application/vnd.sempere.transcript+json";

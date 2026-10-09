@@ -3,6 +3,7 @@
 import Age
 import Foundation
 import Sempere
+import TempDirSupport
 import XCTest
 
 /// Result of one `sempere` run.
@@ -15,18 +16,7 @@ public struct CLIResult {
 }
 
 /// Base class: a scratch directory per test, subprocess helper, fixture access.
-open class CLITestCase: XCTestCase {
-    public var tmp: URL!
-
-    override open func setUpWithError() throws {
-        tmp = FileManager.default.temporaryDirectory.appendingPathComponent("sempere-cli-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-    }
-
-    override open func tearDown() {
-        try? FileManager.default.removeItem(at: tmp)
-    }
-
+open class CLITestCase: TempDirTestCase {
     public static let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         .appendingPathComponent("SempereTests/Fixtures")
     public static var fixtureVault: String { fixtures.appendingPathComponent("sample.sempere").path }

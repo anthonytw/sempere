@@ -1,6 +1,7 @@
 import Foundation
 import Sempere
 import SempereFonts
+import TempDirSupport
 import XCTest
 
 @testable import SempereRender
@@ -61,11 +62,7 @@ final class MediaExportTests: XCTestCase {
         return n
     }
 
-    func scratch() -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("media-test-\(UUID().uuidString)")
-        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
-        return url
-    }
+    func scratch() -> URL { makeScratch("media-test") }
 
     // MARK: Attachment list
 

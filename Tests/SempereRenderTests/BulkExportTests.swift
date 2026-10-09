@@ -1,3 +1,5 @@
+import FuzzSupport
+import TempDirSupport
 import XCTest
 import Foundation
 import Sempere
@@ -21,23 +23,9 @@ final class BulkExportTests: XCTestCase {
         T.note(pages: (0..<pages).map { _ in [T.stroke([T.pt(10, 10), T.pt(80, 50), T.pt(120, 20)])] }, meta: T.meta(title: title))
     }
 
-    func scratch() throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("bulk-\(UUID().uuidString)")
-        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
-        return url
-    }
+    func scratch() throws -> URL { makeScratch("bulk") }
 
-    func listing(_ dir: URL) -> [String] {
-        let base = dir.standardizedFileURL.path
-        let e = FileManager.default.enumerator(atPath: dir.path)
-        var out: [String] = []
-        while let f = e?.nextObject() as? String {
-            var isDir: ObjCBool = false
-            if FileManager.default.fileExists(atPath: base + "/" + f, isDirectory: &isDir), !isDir.boolValue,
-               !f.hasPrefix(".") { out.append(f) }
-        }
-        return out.sorted()
-    }
+    func listing(_ dir: URL) -> [String] { FileTree.regularFiles(under: dir, skipHidden: true) }
 
     let vaultNotes: [NoteSummary] = [
         NoteSummary(id: UUID(uuidString: "00000003-0000-4000-8000-000000000000")!, title: "Week 1", tags: [],

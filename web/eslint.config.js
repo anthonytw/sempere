@@ -3,7 +3,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   // smoke*.mjs drive Playwright untyped (smoke-cache.mjs through the pinned dev dependency, the others a global one).
-  { ignores: ["dist/", "node_modules/", "test/fixtures/", "test/golden/", "scripts/smoke.mjs", "scripts/smoke-attachments.mjs", "scripts/smoke-video.mjs", "scripts/smoke-cache.mjs", "scripts/smoke-passkey.mjs", "scripts/smoke-search-keys.mjs", "scripts/smoke-pan.mjs", "scripts/smoke-language.mjs"] },
+  { ignores: ["dist/", "node_modules/", "test/fixtures/", "test/golden/", "scripts/smoke-lib.mjs", "scripts/smoke.mjs", "scripts/smoke-attachments.mjs", "scripts/smoke-video.mjs", "scripts/smoke-cache.mjs", "scripts/smoke-passkey.mjs", "scripts/smoke-search-keys.mjs", "scripts/smoke-pan.mjs", "scripts/smoke-language.mjs"] },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   {

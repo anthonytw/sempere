@@ -1,4 +1,5 @@
 import Foundation
+import FuzzSupport
 import Sempere
 import SempereFonts
 import XCTest
@@ -31,10 +32,7 @@ final class TextItemExportTests: XCTestCase {
         box("日本語のテキスト中文汉字", 140, lang: "ja"),
     ])
 
-    static func tool(_ name: String) -> String? {
-        ["/usr/bin/", "/usr/local/bin/", "/opt/homebrew/bin/"].map { $0 + name }
-            .first { FileManager.default.isExecutableFile(atPath: $0) }
-    }
+    static func tool(_ name: String) -> String? { ExternalTool.find(name)?.path }
 
     static func run(_ tool: String, _ args: [String], input pdf: Data) throws -> String {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("sempere-text-\(UUID().uuidString)")
@@ -42,16 +40,8 @@ final class TextItemExportTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: dir) }
         let file = dir.appendingPathComponent("in.pdf")
         try pdf.write(to: file)
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: tool)
-        p.arguments = args + [file.path] + (tool.hasSuffix("pdftotext") ? ["-"] : [])
-        let out = Pipe()
-        p.standardOutput = out
-        p.standardError = FileHandle.nullDevice
-        try p.run()
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        return String(decoding: data, as: UTF8.self)
+        let r = try ExternalTool.run(URL(fileURLWithPath: tool), args + [file.path] + (tool.hasSuffix("pdftotext") ? ["-"] : []))
+        return String(decoding: r.out, as: UTF8.self)
     }
 
     func testPDFTextIsSearchableAndFontsAreSubsets() throws {

@@ -1,5 +1,6 @@
 import Age
 import Foundation
+import TempDirSupport
 import XCTest
 @testable import Sempere
 @testable import SempereWebDAV
@@ -7,20 +8,12 @@ import XCTest
 /// A fresh post-quantum identity (vaults take no other kind).
 func pqIdentity() -> NativeIdentity { try! NativeIdentity.generate(.postQuantum) }
 
-class SyncTestCase: XCTestCase {
-    var tmp: URL!
+class SyncTestCase: TempDirTestCase {
     let identity = pqIdentity()
     let devA = DeviceID("aaaaaaaa")!
     let devB = DeviceID("bbbbbbbb")!
     let noteID = UUID(uuidString: "7e57c0de-0000-4000-8000-000000000001")!
     let baseMillis: Int64 = 1_759_632_000_000
-
-    override func setUpWithError() throws {
-        tmp = FileManager.default.temporaryDirectory.appendingPathComponent("sempere-webdav-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-    }
-
-    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: tmp) }
 
     func dir(_ name: String) -> URL { tmp.appendingPathComponent("\(name).sempere") }
 

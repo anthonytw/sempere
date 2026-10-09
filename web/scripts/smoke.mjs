@@ -2,43 +2,18 @@
 // origin, at /static/ (sempere-index.json) and /dav/ (minimal PROPFIND), and
 // drives the viewer in Chromium with Playwright.
 // Usage: node scripts/smoke.mjs VAULT_DIR KEY_FILE [SCREENSHOT_DIR [SEARCH_TERM]]
-import { createServer } from "node:http";
-import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
-import { join, extname } from "node:path";
-// PLAYWRIGHT: path to playwright/index.mjs when it is not installed here.
-const { chromium } = await import(process.env.PLAYWRIGHT ?? "playwright");
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { launchChromium, openVault, serveVault } from "./smoke-lib.mjs";
 
 const [vaultDir, keyFile, shots = ".", term] = process.argv.slice(2);
-const dist = join(import.meta.dirname, "..", "dist");
-const types = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json" };
-
-const server = createServer((req, res) => {
-  const url = new URL(req.url, "http://x");
-  const path = decodeURIComponent(url.pathname);
-  const send = (status, body, type = "application/octet-stream") => { res.writeHead(status, { "content-type": type }); res.end(body); };
-  for (const prefix of ["/static/", "/dav/"]) {
-    if (!path.startsWith(prefix)) continue;
-    const rel = path.slice(prefix.length);
-    if (rel.includes("..")) return send(400, "");
-    const file = join(vaultDir, rel);
-    if (req.method === "PROPFIND" && prefix === "/dav/") {
-      if (!existsSync(file) || !statSync(file).isDirectory()) return send(404, "");
-      const items = readdirSync(file).map((n) => `<d:response><d:href>${prefix}${rel}${encodeURIComponent(n)}${statSync(join(file, n)).isDirectory() ? "/" : ""}</d:href></d:response>`);
-      return send(207, `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:response><d:href>${prefix}${rel}</d:href></d:response>${items.join("")}</d:multistatus>`, "application/xml");
-    }
-    if (prefix === "/dav/" && rel === "sempere-index.json") return send(404, "");
-    if (!existsSync(file) || statSync(file).isDirectory()) return send(404, "");
-    return send(200, readFileSync(file));
-  }
-  const f = join(dist, path === "/" ? "index.html" : path);
-  if (!existsSync(f)) return send(404, "");
-  send(200, readFileSync(f), types[extname(f)] ?? "application/octet-stream");
-});
-await new Promise((r) => server.listen(0, "127.0.0.1", r));
-const base = `http://127.0.0.1:${server.address().port}`;
+const { base, close } = await serveVault({ mounts: [
+  { prefix: "/static/", vaultDir, propfind: false },
+  { prefix: "/dav/", vaultDir, hide: (rel) => rel === "sempere-index.json" },
+] });
 const key = readFileSync(keyFile, "utf8");
 
-const browser = await chromium.launch();
+const browser = await launchChromium();
 let failures = 0;
 for (const mount of ["static", "dav"]) {
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
@@ -47,11 +22,7 @@ for (const mount of ["static", "dav"]) {
   page.on("console", (m) => { if ((m.type() === "error" || m.type() === "warning") && !m.text().includes("404")) problems.push(m.text()); });
   page.on("pageerror", (e) => problems.push(String(e)));
   await page.goto(`${base}/`);
-  await page.fill("input[type=url]", `${base}/${mount}/`);
-  await page.click("form button[type=submit]");
-  await page.fill("textarea", key);
-  await page.click("form:has(textarea) button[type=submit]");
-  await page.waitForFunction(() => /\d+ notes?( ·|$)/.test(document.querySelector(".status")?.textContent ?? ""), null, { timeout: 30000 });
+  await openVault(page, `${base}/${mount}/`, key);
   const status = await page.textContent(".status");
   const titles = await page.$$eval(".note-list .title", (els) => els.map((e) => e.textContent));
   await page.click(".note-list button.note >> nth=0");
@@ -73,5 +44,5 @@ for (const mount of ["static", "dav"]) {
   await page.close();
 }
 await browser.close();
-server.close();
+close();
 process.exit(failures ? 1 : 0);

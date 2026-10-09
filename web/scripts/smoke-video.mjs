@@ -7,46 +7,15 @@
 // it, and that a missing clip says so. Fails on any console error or CSP
 // violation.
 // Usage: node scripts/smoke-video.mjs VAULT_DIR KEY_FILE [SCREENSHOT_DIR]
-import { createServer } from "node:http";
-import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
-import { join, extname } from "node:path";
-// PLAYWRIGHT: path to playwright/index.mjs when it is not installed here.
-const { chromium } = await import(process.env.PLAYWRIGHT ?? "playwright");
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { launchChromium, openVault, serveVault } from "./smoke-lib.mjs";
 
 const [vaultDir, keyFile, shots = "."] = process.argv.slice(2);
-const dist = join(import.meta.dirname, "..", "dist");
-const html = readFileSync(join(dist, "index.html"), "utf8");
-const csp = (/http-equiv="Content-Security-Policy" content="([^"]+)"/.exec(html)?.[1] ?? "").replaceAll("&#39;", "'");
-const types = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json" };
-
-const server = createServer((req, res) => {
-  const url = new URL(req.url, "http://x");
-  const path = decodeURIComponent(url.pathname);
-  const send = (status, body, type = "application/octet-stream") => {
-    res.writeHead(status, { "content-type": type, "content-security-policy": csp + "; frame-ancestors 'none'" });
-    res.end(body);
-  };
-  if (path.startsWith("/dav/")) {
-    const rel = path.slice(5);
-    if (rel.includes("..")) return send(400, "");
-    const file = join(vaultDir, rel);
-    if (req.method === "PROPFIND") {
-      if (!existsSync(file) || !statSync(file).isDirectory()) return send(404, "");
-      const items = readdirSync(file).map((n) => `<d:response><d:href>/dav/${rel}${encodeURIComponent(n)}${statSync(join(file, n)).isDirectory() ? "/" : ""}</d:href></d:response>`);
-      return send(207, `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:response><d:href>/dav/${rel}</d:href></d:response>${items.join("")}</d:multistatus>`, "application/xml");
-    }
-    if (!existsSync(file) || statSync(file).isDirectory()) return send(404, "");
-    return send(200, readFileSync(file));
-  }
-  const f = join(dist, path === "/" ? "index.html" : path);
-  if (!existsSync(f) || statSync(f).isDirectory()) return send(404, "");
-  send(200, readFileSync(f), types[extname(f)] ?? "application/octet-stream");
-});
-await new Promise((r) => server.listen(0, "127.0.0.1", r));
-const base = `http://127.0.0.1:${server.address().port}`;
+const { base, close } = await serveVault({ mounts: [{ prefix: "/dav/", vaultDir }], csp: true });
 const requests = [];
 
-const browser = await chromium.launch();
+const browser = await launchChromium();
 const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
 const problems = [];
 // 404s are expected: rewrap-journal.json, the index, and the fixture's missing blob.
@@ -54,12 +23,7 @@ page.on("console", (m) => { if ((m.type() === "error" || m.type() === "warning")
 page.on("pageerror", (e) => problems.push(String(e)));
 page.on("request", (r) => requests.push(r.url()));
 await page.goto(`${base}/`);
-await page.fill("input[type=url]", `${base}/dav/`);
-await page.selectOption("select", "webdav");
-await page.click("form button[type=submit]");
-await page.fill("textarea", readFileSync(keyFile, "utf8"));
-await page.click("form:has(textarea) button[type=submit]");
-await page.waitForFunction(() => /\d+ notes?( ·|$)/.test(document.querySelector(".status")?.textContent ?? ""), null, { timeout: 30000 });
+await openVault(page, `${base}/dav/`, readFileSync(keyFile, "utf8"), { webdav: true });
 await page.click(".note-list button.note:has(.title:text-is('Video clips'))");
 await page.waitForSelector(".page svg", { timeout: 30000 });
 // Three posters (photo, and the PNG twice: one set later by another device), two placeholders, five play marks.
@@ -87,7 +51,7 @@ const missing = await page.$eval(".videos .rec-status", (e) => e.textContent);
 const foreign = requests.filter((u) => !u.startsWith(base) && !u.startsWith("blob:") && !u.startsWith("data:"));
 console.log(JSON.stringify({ images, marks, src, state, closed, missing, foreign, problems }, null, 1));
 await browser.close();
-server.close();
+close();
 // Chromium builds without proprietary codecs cannot decode H.264 (MEDIA_ERR_SRC_NOT_SUPPORTED, 4): the
 // viewer then says so; what matters here is that the verified clip reached the element.
 const ok = images.length === 3 && images.every((h) => h === "blob:") && marks === 5 && src === "blob:" && closed === 0

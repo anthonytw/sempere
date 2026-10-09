@@ -6,41 +6,21 @@
 //     moves sideways, and nothing scrolls sideways;
 //   - zoomed in wider than the viewport, the wheel and a touch drag pan sideways.
 // Usage: node scripts/smoke-pan.mjs VAULT_DIR KEY_FILE
-import { createServer } from "node:http";
-import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
-import { join, extname } from "node:path";
-const { chromium } = await import(process.env.PLAYWRIGHT ?? "playwright");
+import { readFileSync } from "node:fs";
+import { launchChromium, serveVault } from "./smoke-lib.mjs";
 
 const [vaultDir, keyFile] = process.argv.slice(2);
-const dist = join(import.meta.dirname, "..", "dist");
-const types = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json" };
-const server = createServer((req, res) => {
-  const path = decodeURIComponent(new URL(req.url, "http://x").pathname);
-  const send = (status, body, type = "application/octet-stream") => { res.writeHead(status, { "content-type": type }); res.end(body); };
-  if (path === "/frame.html") return send(200, `<!doctype html><body style="margin:0"><iframe id="f" src="/" style="border:0;width:100%;height:100vh"></iframe>`, "text/html");
-  if (path.startsWith("/static/")) {
-    const rel = path.slice(8);
-    if (rel.includes("..")) return send(400, "");
-    const file = join(vaultDir, rel);
-    if (req.method === "PROPFIND") {
-      if (!existsSync(file) || !statSync(file).isDirectory()) return send(404, "");
-      const items = readdirSync(file).map((n) => `<d:response><d:href>/static/${rel}${encodeURIComponent(n)}${statSync(join(file, n)).isDirectory() ? "/" : ""}</d:href></d:response>`);
-      return send(207, `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:response><d:href>/static/${rel}</d:href></d:response>${items.join("")}</d:multistatus>`, "application/xml");
-    }
-    return !existsSync(file) || statSync(file).isDirectory() ? send(404, "") : send(200, readFileSync(file));
-  }
-  const f = join(dist, path === "/" ? "index.html" : path);
-  if (!existsSync(f) || statSync(f).isDirectory()) return send(404, "");
-  send(200, readFileSync(f), types[extname(f)] ?? "application/octet-stream");
+const { base, close } = await serveVault({
+  mounts: [{ prefix: "/static/", vaultDir }],
+  extraRoutes: (path, send) => path === "/frame.html"
+    && (send(200, `<!doctype html><body style="margin:0"><iframe id="f" src="/" style="border:0;width:100%;height:100vh"></iframe>`, "text/html"), true),
 });
-await new Promise((r) => server.listen(0, "127.0.0.1", r));
-const base = `http://127.0.0.1:${server.address().port}`;
 const key = readFileSync(keyFile, "utf8");
 
 let failures = 0;
 const check = (ok, what) => { console.log(ok ? "ok  " : "FAIL", what); if (!ok) failures++; };
 
-const browser = await chromium.launch();
+const browser = await launchChromium();
 for (const framed of [false, true]) {
   for (const width of [1000, 700]) {
     const ctx = await browser.newContext({ viewport: { width, height: 800 }, hasTouch: true });
@@ -115,5 +95,5 @@ for (const framed of [false, true]) {
   }
 }
 await browser.close();
-server.close();
+close();
 process.exit(failures ? 1 : 0);

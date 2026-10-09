@@ -8,16 +8,7 @@ import XCTest
 @testable import SempereNotability
 
 /// Parsing, mapping and import of the synthetic `.note` (no personal data).
-final class NotabilityTests: XCTestCase {
-    var tmp: URL!
-
-    override func setUpWithError() throws {
-        tmp = FileManager.default.temporaryDirectory.appendingPathComponent("inkimport-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-    }
-
-    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: tmp) }
-
+final class NotabilityTests: NotabilityTestCase {
     func testParseSyntheticNote() throws {
         let note = try NotabilityNote.parse(data: SyntheticNote.package())
         XCTAssertEqual(note.metadata.name, "Synthetic note")

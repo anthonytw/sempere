@@ -1,6 +1,7 @@
 import Crypto
 import Foundation
 import FuzzSupport
+import TempDirSupport
 import XCTest
 
 @testable import Age
@@ -8,18 +9,7 @@ import XCTest
 /// Streaming encryption and decryption, header-only rewrap and streaming
 /// re-encryption (attachments task B1). CCTV vectors through the streaming
 /// paths are in CCTVTests; `age` CLI interop in StreamingInteropTests.
-final class StreamingTests: XCTestCase {
-    var tmp: URL!
-
-    override func setUpWithError() throws {
-        tmp = FileManager.default.temporaryDirectory.appendingPathComponent("age-stream-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-    }
-
-    override func tearDownWithError() throws {
-        try? FileManager.default.removeItem(at: tmp)
-    }
-
+final class StreamingTests: TempDirTestCase {
     static let chunk = 64 * 1024
     static let sealedChunk = chunk + 16
 

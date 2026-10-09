@@ -9,38 +9,10 @@ import XCTest
 
 /// Attachments of Notability notes (docs/attachments.md §11, tasks D1 and D2):
 /// PDF page backgrounds and images, on synthetic packages only.
-final class NotabilityAttachmentTests: XCTestCase {
+final class NotabilityAttachmentTests: NotabilityTestCase {
     static let letter = (612.0, 792.0)
     static let slide = (1024.0, 768.0)
     static let k = 612 / 716.8
-
-    var tmp: URL!
-
-    override func setUpWithError() throws {
-        tmp = FileManager.default.temporaryDirectory.appendingPathComponent("sempere-att-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-    }
-
-    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: tmp) }
-
-    func makeVault() throws -> Vault {
-        let identity = try NativeIdentity.generate(.postQuantum)
-        return try Vault.create(at: tmp.appendingPathComponent("V-\(UUID().uuidString).sempere"),
-                                recipients: [identity.recipient], identities: [identity])
-    }
-
-    /// Writes `package` as a `.note` and imports it.
-    func importPackage(_ package: Data, into vault: Vault, options: NotabilityImporter.Options = .init())
-        throws -> (NotabilityImporter.NoteResult, NoteState) {
-        let path = tmp.appendingPathComponent("N-\(UUID().uuidString).note")
-        try package.write(to: path)
-        var clock = HybridClock()
-        let report = try NotabilityImporter.import(paths: [path], into: vault, device: DeviceID("0a0b0c0d")!,
-                                                   clock: &clock, options: options)
-        let r = try XCTUnwrap(report.notes.first)
-        XCTAssertEqual(r.status, .ok, "\(r.status)")
-        return (r, try vault.reconstruct(noteId: try XCTUnwrap(r.noteId)))
-    }
 
     func resolve(_ package: Data) throws -> (NotabilityNote, NotabilityAttachments) {
         let pkg = try NotePackage(data: package)
@@ -55,7 +27,7 @@ final class NotabilityAttachmentTests: XCTestCase {
         let pkg = AttachmentFixtures.package(session: SyntheticNote.session(typed: "", pdfPages: 3), pdf: pdf,
                                              thumbnails: [("thumb.png", 48, 62)])
         let vault = try makeVault()
-        let (r, state) = try importPackage(pkg, into: vault)
+        let (r, state) = try importFile(pkg, into: vault)
         XCTAssertEqual(r.dropped.pdfPages, 0)
         XCTAssertEqual(r.dropped.pdfs, 0)
         XCTAssertEqual(r.attachments.pdfPages, 3)
@@ -98,7 +70,7 @@ final class NotabilityAttachmentTests: XCTestCase {
         let pkg = AttachmentFixtures.package(session: SyntheticNote.session(pdfPages: 300), pdf: pdf,
                                              thumbnails: [("thumb.png", 48, 62)])
         let vault = try makeVault()
-        let (r, state) = try importPackage(pkg, into: vault)
+        let (r, state) = try importFile(pkg, into: vault)
         XCTAssertEqual(r.attachments.pdfPages, 300)
         XCTAssertEqual(state.pages.flatMap(\.items).filter { $0.kind == .pdfPage }.count, 300)
         for page in state.pages {
@@ -203,7 +175,7 @@ final class NotabilityAttachmentTests: XCTestCase {
                               (nil, "not in the package"), (Data("%PDF-1.4\n".utf8), "not readable")] as [(Data?, String)] {
             let pkg = AttachmentFixtures.package(session: SyntheticNote.session(typed: "", pdfPages: 2), pdf: pdf)
             let vault = try makeVault()
-            let (r, state) = try importPackage(pkg, into: vault)
+            let (r, state) = try importFile(pkg, into: vault)
             XCTAssertEqual(r.dropped.pdfPages, 2, expect)
             XCTAssertEqual(r.dropped.pdfs, 1, expect)
             XCTAssertEqual(r.attachments.pdfPages, 0, expect)
@@ -218,7 +190,7 @@ final class NotabilityAttachmentTests: XCTestCase {
         let pdf = AttachmentFixtures.pdf(pages: Array(repeating: Self.letter, count: 2))
         let pkg = AttachmentFixtures.package(session: SyntheticNote.session(typed: "", pdfPages: 2), pdf: pdf)
         let vault = try makeVault()
-        let (r, state) = try importPackage(pkg, into: vault, options: .init(attachments: false))
+        let (r, state) = try importFile(pkg, into: vault, options: .init(attachments: false))
         XCTAssertEqual(r.dropped.pdfPages, 2)
         XCTAssertEqual(r.dropped.pdfs, 1)
         XCTAssertTrue(r.attachments.isEmpty)
@@ -231,7 +203,7 @@ final class NotabilityAttachmentTests: XCTestCase {
         let pdf = AttachmentFixtures.pdf(pages: Array(repeating: Self.slide, count: 12))
         let pkg = AttachmentFixtures.package(session: SyntheticNote.session(typed: "", curves: [], pdfPages: 12), pdf: pdf,
                                              handwriting: false)
-        let (r, state) = try importPackage(pkg, into: try makeVault())
+        let (r, state) = try importFile(pkg, into: try makeVault())
         XCTAssertEqual(r.strokes, 0)
         XCTAssertEqual(r.attachments.pdfPages, 12)
         XCTAssertEqual(r.dropped.pdfPages, 0)
@@ -244,8 +216,8 @@ final class NotabilityAttachmentTests: XCTestCase {
         let pdf = AttachmentFixtures.pdf(pages: [Self.letter])
         let pkg = AttachmentFixtures.package(session: SyntheticNote.session(typed: "", pdfPages: 1), pdf: pdf)
         let vault = try makeVault()
-        let (_, first) = try importPackage(pkg, into: vault)
-        let (r, second) = try importPackage(pkg, into: vault, options: .init(overwrite: true))
+        let (_, first) = try importFile(pkg, into: vault)
+        let (r, second) = try importFile(pkg, into: vault, options: .init(overwrite: true))
         XCTAssertEqual(second.pages.count, 1)
         XCTAssertEqual(second.pages[0].items.count, 1)
         XCTAssertNotEqual(second.pages[0].items[0].id, first.pages[0].items[0].id)
@@ -287,7 +259,7 @@ final class NotabilityAttachmentTests: XCTestCase {
              AttachmentFixtures.imageObject(&a, file: Self.pngPath, origin: (10, 600), size: (80, 40))]
         }, files: [(Self.jpegPath, jpeg), (Self.pngPath, png)])
         let vault = try makeVault()
-        let (r, state) = try importPackage(pkg, into: vault)
+        let (r, state) = try importFile(pkg, into: vault)
         XCTAssertEqual(r.attachments.images, 2)
         XCTAssertEqual(r.attachments.blobs, 2)
         XCTAssertEqual(r.dropped.media, 0)
@@ -351,7 +323,7 @@ final class NotabilityAttachmentTests: XCTestCase {
         let pkg = imagePackage({ a in [AttachmentFixtures.imageObject(&a, file: Self.jpegPath, origin: (0, 0), size: (40, 30))] },
                                files: [(Self.jpegPath, jpeg)])
         let vault = try makeVault()
-        let (r, state) = try importPackage(pkg, into: vault, options: .init(keepImageMetadata: true))
+        let (r, state) = try importFile(pkg, into: vault, options: .init(keepImageMetadata: true))
         let item = try XCTUnwrap(state.pages[0].items.first)
         XCTAssertEqual(item.orientation, 3)
         XCTAssertEqual(item.pixelSize, Size(w: 40, h: 30))
@@ -405,7 +377,7 @@ final class NotabilityAttachmentTests: XCTestCase {
              a.object("ImageMediaObject", [("mysteryKey", a.string(Self.pngPath))]),
              a.object("AudioMediaObject", [("duration", .real(3))])]
         }, files: [("Images/anim.webp", AttachmentFixtures.webp), (Self.pngPath, AttachmentFixtures.png(width: 2, height: 2))])
-        let (r, state) = try importPackage(pkg, into: try makeVault())
+        let (r, state) = try importFile(pkg, into: try makeVault())
         XCTAssertEqual(r.dropped.media, 4)
         XCTAssertEqual(r.attachments.images, 0)
         XCTAssertTrue(state.pages[0].items.isEmpty)

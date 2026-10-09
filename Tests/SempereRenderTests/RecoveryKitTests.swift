@@ -1,4 +1,5 @@
 import Foundation
+import FuzzSupport
 import Sempere
 import XCTest
 @testable import SempereRender
@@ -218,8 +219,7 @@ final class RecoveryKitTests: XCTestCase {
     /// Rasterises the kit with poppler and decodes the QR code with zbar,
     /// where both are installed (apt install poppler-utils zbar-tools).
     func testPrintedQRDecodesWithZbar() throws {
-        guard let pdftoppm = ["/usr/bin/pdftoppm", "/opt/homebrew/bin/pdftoppm"]
-            .first(where: { FileManager.default.isExecutableFile(atPath: $0) }),
+        guard let pdftoppm = ExternalTool.find("pdftoppm"),
             try QRCodeTests.zbar(QRCodeTests.png(try QRCode.encode(text: "probe"))) != nil else {
             throw XCTSkip("pdftoppm or zbarimg not installed")
         }
@@ -229,12 +229,8 @@ final class RecoveryKitTests: XCTestCase {
         for (name, secret, payload) in [("plain", RecoveryKit.Secret.identity(Self.key), Self.key),
                                         ("locked", .passphraseWrapped(Self.armored), Self.armored)] {
             try kit(secret).pdf().write(to: dir.appendingPathComponent("\(name).pdf"))
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: pdftoppm)
-            p.arguments = ["-r", "150", "-f", "1", "-l", "1", "-png", "-singlefile",
-                           dir.appendingPathComponent("\(name).pdf").path, dir.appendingPathComponent(name).path]
-            try p.run()
-            p.waitUntilExit()
+            try ExternalTool.run(pdftoppm, ["-r", "150", "-f", "1", "-l", "1", "-png", "-singlefile",
+                                            dir.appendingPathComponent("\(name).pdf").path, dir.appendingPathComponent(name).path])
             let png = try Data(contentsOf: dir.appendingPathComponent("\(name).png"))
             XCTAssertEqual(String(decoding: try XCTUnwrap(try QRCodeTests.zbar(png)), as: UTF8.self), payload, name)
         }

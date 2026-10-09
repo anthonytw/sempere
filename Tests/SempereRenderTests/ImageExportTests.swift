@@ -1,6 +1,7 @@
 import Foundation
 import Age
 @testable import Sempere
+import FuzzSupport
 import XCTest
 
 @testable import SempereRender
@@ -152,8 +153,7 @@ final class ImageExportTests: XCTestCase {
     }
 
     func testPDFExportMatchesOracleThroughPoppler() throws {
-        guard let pdftoppm = ["/usr/bin/pdftoppm", "/opt/homebrew/bin/pdftoppm", "/usr/local/bin/pdftoppm"]
-            .first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
+        guard let pdftoppm = ExternalTool.find("pdftoppm")?.path else {
             throw XCTSkip("pdftoppm not installed")
         }
         for (name, data, w, h, tolerance) in [("png", try Self.pngData(Self.quadrants()), 40.0, 30.0, 8),
@@ -183,12 +183,9 @@ final class ImageExportTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: dir) }
         let file = dir.appendingPathComponent("in.pdf")
         try pdf.write(to: file)
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: pdftoppm)
-        p.arguments = ["-r", "\(dpi)", "-png", "-aa", "no", "-aaVector", "no", file.path, dir.appendingPathComponent("p").path]
-        try p.run()
-        p.waitUntilExit()
-        XCTAssertEqual(p.terminationStatus, 0)
+        let r = try ExternalTool.run(URL(fileURLWithPath: pdftoppm),
+                                     ["-r", "\(dpi)", "-png", "-aa", "no", "-aaVector", "no", file.path, dir.appendingPathComponent("p").path])
+        XCTAssertEqual(r.status, 0, r.errText)
         let names = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.hasSuffix(".png") }.sorted()
         return try names.map { try Data(contentsOf: dir.appendingPathComponent($0)) }
     }

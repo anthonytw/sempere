@@ -1,6 +1,7 @@
 import Age
 import CLITestSupport
 import Foundation
+import FuzzSupport
 import Sempere
 import XCTest
 
@@ -302,14 +303,8 @@ final class CLIPostQuantumTests: CLITestCase {
         for dir in dirs {
             let age = "\(dir)/age"
             guard FileManager.default.isExecutableFile(atPath: age) else { continue }
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: age)
-            p.arguments = ["--version"]
-            let pipe = Pipe()
-            p.standardOutput = pipe
-            guard (try? p.run()) != nil else { continue }
-            let v = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-            p.waitUntilExit()
+            guard let run = try? ExternalTool.run(URL(fileURLWithPath: age), ["--version"]) else { continue }
+            let v = String(decoding: run.out, as: UTF8.self)
             let parts = v.trimmingCharacters(in: .whitespacesAndNewlines).drop { $0 == "v" }
                 .split(separator: ".").prefix(2).compactMap { Int($0) }
             if parts.count == 2, parts[0] > 1 || (parts[0] == 1 && parts[1] >= 3) { return age }

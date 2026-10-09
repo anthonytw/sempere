@@ -1,5 +1,6 @@
 import CLITestSupport
 import Foundation
+import FuzzSupport
 import Sempere
 import XCTest
 
@@ -134,16 +135,8 @@ final class CLITranscribeTests: CLITestCase {
         XCTAssertNotNil(pdf.range(of: tone), "the audio is embedded byte for byte")
         XCTAssertNil(try Data(contentsOf: URL(fileURLWithPath: plain)).range(of: tone))
         XCTAssertEqual(try cli(["export", physics, "--format", "svg", "--out", path("x"), "--recordings", "attach"] + args).status, 2)
-        if let detach = ["/usr/bin/pdfdetach", "/opt/homebrew/bin/pdfdetach", "/usr/local/bin/pdfdetach"]
-            .first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: detach)
-            p.arguments = ["-list", attached]
-            let pipe = Pipe()
-            p.standardOutput = pipe
-            try p.run()
-            p.waitUntilExit()
-            let listing = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        if let detach = ExternalTool.find("pdfdetach") {
+            let listing = String(decoding: try ExternalTool.run(detach, ["-list", attached]).out, as: UTF8.self)
             XCTAssertTrue(listing.contains("Lecture.m4a"), listing)
         }
     }

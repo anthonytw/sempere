@@ -5,6 +5,8 @@
 // JPEG (baseline or progressive Huffman, 8 bits, 1 or 3 components) and
 // PNG, within the pixel limits, never anything it would have to sniff.
 
+import { concat } from "../vault/bytes.ts";
+
 export class ImageFormatError extends Error {
   constructor(message: string) {
     super(message);
@@ -167,16 +169,6 @@ export function imageInfo(d: Uint8Array, maxPixels = imageLimits.maxPixels): Ima
   } else throw new ImageFormatError("unsupported image type");
   checkPixels(info.width, info.height, d.length, maxPixels);
   return info;
-}
-
-function concat(parts: Uint8Array[]): Uint8Array {
-  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-  let at = 0;
-  for (const p of parts) {
-    out.set(p, at);
-    at += p.length;
-  }
-  return out;
 }
 
 /**

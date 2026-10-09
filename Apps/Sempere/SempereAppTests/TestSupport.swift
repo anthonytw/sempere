@@ -5,6 +5,26 @@ import PencilKit
 
 /// Test helpers shared by the app test suites.
 enum TS {
+    /// The regular files below `dir`, as paths relative to it, sorted; `skipHidden` leaves out dot files.
+    static func regularFiles(under dir: URL, skipHidden: Bool = false) -> [String] {
+        let base = dir.standardizedFileURL.path
+        let walker = FileManager.default.enumerator(atPath: base)
+        var out: [String] = []
+        while let rel = walker?.nextObject() as? String {
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: base + "/" + rel, isDirectory: &isDir), !isDir.boolValue,
+               !(skipHidden && (rel as NSString).lastPathComponent.hasPrefix(".")) { out.append(rel) }
+        }
+        return out.sorted()
+    }
+
+    /// Every regular file below `dir` with its bytes, by relative path.
+    static func fileSnapshot(of dir: URL) throws -> [String: Data] {
+        try Dictionary(uniqueKeysWithValues: regularFiles(under: dir).map {
+            ($0, try Data(contentsOf: dir.standardizedFileURL.appendingPathComponent($0)))
+        })
+    }
+
     /// A wavy stroke of `n` control points starting at (`x`, `y`).
     static func stroke(x: Double = 40, y: Double = 60, n: Int = 24, tool: InkTool = .pen,
                        color: Sempere.Color = Sempere.Color(r: 0x1A, g: 0x2B, b: 0x3C, a: 0xFF),

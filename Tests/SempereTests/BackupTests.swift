@@ -1,5 +1,6 @@
 import Age
 import Foundation
+import FuzzSupport
 import XCTest
 @testable import Sempere
 
@@ -668,16 +669,10 @@ final class BackupTests: VaultTestCase {
                        ["notes.tar"], "no temporary file is left behind")
 
         // The system tar reads it and gives back the vault.
-        let tar = ["/usr/bin/tar", "/bin/tar"].first { FileManager.default.isExecutableFile(atPath: $0) }
-        guard let tar else { return }
+        guard let tar = ExternalTool.find("tar") else { return }
         let out = tmp.appendingPathComponent("x")
         try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: tar)
-        p.arguments = ["xf", file.path, "-C", out.path]
-        try p.run()
-        p.waitUntilExit()
-        XCTAssertEqual(p.terminationStatus, 0)
+        XCTAssertEqual(try ExternalTool.run(tar, ["xf", file.path, "-C", out.path]).status, 0)
         let extracted = out.appendingPathComponent("Test.sempere")
         XCTAssertEqual(try contents(extracted), try contents(vault.url))
         XCTAssertTrue(try Vault.open(at: extracted, identities: [id]).verify().isHealthy)
