@@ -32,7 +32,7 @@ public enum IdentityFile {
         switch recipient {
         case .x25519(let r): return r.string + suffix
         case .mlkem768x25519(let r):
-            let digest = SHA256.hash(data: Data(r.string.utf8)).map { String(format: "%02x", $0) }.joined()
+            let digest = FileDigest.sha256(Data(r.string.utf8))
             return pqPrefix + digest + suffix
         }
     }

@@ -549,7 +549,7 @@ final class BackupTests: VaultTestCase {
         let bytes = Data("secret".utf8)
         try bytes.write(to: outside)
         var m = try BackupManifest.read(dest.appendingPathComponent(BackupManifest.fileName))
-        let entry = BackupManifest.Entry(sha256: Backup.sha256(bytes), size: bytes.count)
+        let entry = BackupManifest.Entry(sha256: FileDigest.sha256(bytes), size: bytes.count)
         for p in ["../outside.txt", outside.path, "notes/../../outside.txt", "a//b", "./vault.json"] { m.files[p] = entry }
         try m.write(to: dest.appendingPathComponent(BackupManifest.fileName))
         let report = Backup.verify(at: dest)

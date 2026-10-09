@@ -72,8 +72,8 @@ extension SecretLink: Codable {
     public init(from decoder: Decoder) throws {
         if let s = try? decoder.singleValueContainer().decode(String.self) { self = .legacy(s); return }
         guard let c = try? decoder.container(keyedBy: CodingKeys.self),
-              let ed = (try? c.decode(String.self, forKey: .ed25519)).flatMap({ RecipientsAuth.unhex($0, count: Self.ed25519SignatureSize) }),
-              let ml = (try? c.decode(String.self, forKey: .mldsa65)).flatMap({ RecipientsAuth.unhex($0, count: Self.mldsa65SignatureSize) })
+              let ed = (try? c.decode(String.self, forKey: .ed25519)).flatMap({ Hex.decode($0, count: Self.ed25519SignatureSize) }),
+              let ml = (try? c.decode(String.self, forKey: .mldsa65)).flatMap({ Hex.decode($0, count: Self.mldsa65SignatureSize) })
         else { self = .malformed; return }
         self = .signed(ed25519: ed, mldsa65: ml)
     }
@@ -82,8 +82,8 @@ extension SecretLink: Codable {
         switch self {
         case .signed(let ed, let ml):
             var c = encoder.container(keyedBy: CodingKeys.self)
-            try c.encode(RecipientsAuth.hex(ed), forKey: .ed25519)
-            try c.encode(RecipientsAuth.hex(ml), forKey: .mldsa65)
+            try c.encode(Hex.encode(ed), forKey: .ed25519)
+            try c.encode(Hex.encode(ml), forKey: .mldsa65)
         case .legacy(let s):
             var c = encoder.singleValueContainer()
             try c.encode(s)
@@ -207,7 +207,7 @@ extension RecipientsAuth {
 
     /// A legacy link, for tests and the upgrade's own checks.
     static func legacyLink(from old: VaultSecret, to new: VaultSecret, vaultId: UUID) -> SecretLink {
-        .legacy(hex(legacyLinkBytes(linkKey: legacyLinkKey(old), to: new, vaultId: vaultId)))
+        .legacy(Hex.encode(legacyLinkBytes(linkKey: legacyLinkKey(old), to: new, vaultId: vaultId)))
     }
 
     static func legacyLinkBytes(linkKey: Data, to new: VaultSecret, vaultId: UUID) -> Data {
@@ -215,7 +215,7 @@ extension RecipientsAuth {
     }
 
     static func verifyLegacyLink(_ link: String, linkKey: Data, to new: VaultSecret, vaultId: UUID) -> Bool {
-        guard let given = unhex(link), linkKey.count == 32 else { return false }
+        guard let given = Hex.decode(link), linkKey.count == 32 else { return false }
         return constantTimeEqual(given, legacyLinkBytes(linkKey: linkKey, to: new, vaultId: vaultId))
     }
 }

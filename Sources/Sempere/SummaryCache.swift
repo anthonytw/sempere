@@ -78,7 +78,7 @@ public final class SummaryCache: @unchecked Sendable {
 
     init(directory: URL, secret: VaultSecret) {
         key = Self.derive(secret, info: Self.keyInfo, bytes: 32)
-        let name = Self.derive(secret, info: Self.nameInfo, bytes: 16).map { String(format: "%02x", $0) }.joined()
+        let name = Hex.encode(Self.derive(secret, info: Self.nameInfo, bytes: 16))
         fileURL = directory.appendingPathComponent("\(name).summaries")
         load()
     }

@@ -11,7 +11,7 @@ public enum RecognitionBasis {
     /// mean the same ink; the empty set has a digest too.
     public static func digest<S: Sequence>(of ids: S) -> String where S.Element == UUID {
         let joined = ids.map { $0.uuidString.lowercased() }.sorted().joined(separator: "\n")
-        return SHA256.hash(data: Data(joined.utf8)).prefix(16).map { String(format: "%02x", $0) }.joined()
+        return Hex.encode(SHA256.hash(data: Data(joined.utf8)).prefix(16))
     }
 
     /// The digest of a page's live strokes.

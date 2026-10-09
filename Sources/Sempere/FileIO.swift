@@ -9,13 +9,14 @@ import Darwin
 #endif
 
 /// Small portable filesystem helpers (Foundation + POSIX `rename(2)`), so the
-/// vault layer behaves the same on Apple platforms and Linux.
-enum FileIO {
+/// vault layer behaves the same on Apple platforms and Linux. `package`
+/// members are shared with SempereWebDAV.
+package enum FileIO {
     static var fm: FileManager { FileManager.default }
 
     /// Prefix of in-flight temporary files. They start with a dot and carry no
     /// `.age` suffix, so every listing ignores them as unknown files.
-    static let tempPrefix = ".sempere-tmp-"
+    package static let tempPrefix = ".sempere-tmp-"
 
     /// Writes `data` to `url` atomically: a temporary file in the same
     /// directory is written and flushed to disk, then renamed into place.
@@ -88,7 +89,7 @@ enum FileIO {
     }
 
     /// A fresh temporary name in `dir` (ignored by every listing).
-    static func tempURL(in dir: URL) -> URL {
+    package static func tempURL(in dir: URL) -> URL {
         dir.appendingPathComponent(tempPrefix + UUID().uuidString.lowercased())
     }
 
@@ -163,9 +164,14 @@ enum FileIO {
 
     static func exists(_ url: URL) -> Bool { fm.fileExists(atPath: url.path) }
 
-    static func isDirectory(_ url: URL) -> Bool {
+    package static func isDirectory(_ url: URL) -> Bool {
         var dir: ObjCBool = false
         return fm.fileExists(atPath: url.path, isDirectory: &dir) && dir.boolValue
+    }
+
+    /// The size of the file at `url`; nil when it cannot be read.
+    static func size(_ url: URL) -> Int64? {
+        (try? fm.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value
     }
 
     /// Entry names in `dir`, sorted. A directory that does not exist is
@@ -196,7 +202,7 @@ enum FileIO {
 /// `FileHandle` reads and writes autorelease their buffers: in a loop over a
 /// large blob they would otherwise pile up until the caller's pool drains (a
 /// whole file's worth of memory). A no-op elsewhere.
-func autoreleasing<T>(_ body: () throws -> T) rethrows -> T {
+package func autoreleasing<T>(_ body: () throws -> T) rethrows -> T {
     #if canImport(ObjectiveC)
     return try autoreleasepool { try body() }
     #else

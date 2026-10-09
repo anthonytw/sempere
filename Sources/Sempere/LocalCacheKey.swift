@@ -38,7 +38,7 @@ public struct LocalCacheKey: Sendable {
         precondition(Self.isUsablePurpose(purpose), "reserved or malformed cache purpose: \(purpose)")
         key = Self.derive(secret, "sempere/1 \(purpose) key", 32)
         entryKey = Self.derive(secret, "sempere/1 \(purpose) entry", 32)
-        name = Self.hex(Self.derive(secret, "sempere/1 \(purpose) name", 16))
+        name = Hex.encode(Self.derive(secret, "sempere/1 \(purpose) name", 16))
         self.magic = magic
     }
 
@@ -66,11 +66,7 @@ public struct LocalCacheKey: Sendable {
     /// Lowercase hex SHA-256 of `text` (UTF-8): a stable name for a
     /// non-secret value (a vault id) that does not show the value itself.
     public static func digestHex(_ text: String) -> String {
-        hex(Data(SHA256.hash(data: Data(text.utf8))))
-    }
-
-    static func hex<D: DataProtocol>(_ d: D) -> String {
-        d.map { String(format: "%02x", $0) }.joined()
+        FileDigest.sha256(Data(text.utf8))
     }
 
     /// A file name stem for `label`: lowercase hex of the first 16 bytes of
@@ -78,7 +74,7 @@ public struct LocalCacheKey: Sendable {
     /// says nothing about the label without the vault secret.
     public func entryName(_ label: String) -> String {
         let mac = HMAC<SHA256>.authenticationCode(for: Data(label.utf8), using: SymmetricKey(data: entryKey))
-        return Self.hex(Data(mac).prefix(16))
+        return Hex.encode(Data(mac).prefix(16))
     }
 
     /// Encrypts `plain` for the file named `fileName`.

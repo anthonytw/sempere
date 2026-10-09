@@ -105,11 +105,21 @@ public enum VideoProbe {
 
     /// The video file at `url`.
     public static func probe(file url: URL) throws -> VideoInfo {
+        try reading(file: url, probe(size:read:))
+    }
+
+    /// The video file held in `data`.
+    public static func probe(_ data: Data) throws -> VideoInfo {
+        try reading(data, probe(size:read:))
+    }
+
+    /// `probe(size, read)` over the regular file at `url` (`AudioProbe` reads files the same way).
+    static func reading<T>(file url: URL, _ probe: (UInt64, (UInt64, Int) throws -> Data) throws -> T) throws -> T {
         let handle = try BoundedRead.openRegularFile(url)
         defer { try? handle.close() }
         let size: UInt64
         do { size = try handle.seekToEnd() } catch { throw VaultError.io("read \(url.path): \(error)") }
-        return try probe(size: size) { offset, count in
+        return try probe(size) { offset, count in
             do {
                 try handle.seek(toOffset: offset)
                 return try handle.read(upToCount: count) ?? Data()
@@ -119,9 +129,9 @@ public enum VideoProbe {
         }
     }
 
-    /// The video file held in `data`.
-    public static func probe(_ data: Data) throws -> VideoInfo {
-        try probe(size: UInt64(data.count)) { offset, count in
+    /// `probe(size, read)` over `data`.
+    static func reading<T>(_ data: Data, _ probe: (UInt64, (UInt64, Int) throws -> Data) throws -> T) throws -> T {
+        try probe(UInt64(data.count)) { offset, count in
             guard offset < UInt64(data.count) else { return Data() }
             let start = data.startIndex + Int(offset)
             return data[start..<start + min(count, data.endIndex - start)]

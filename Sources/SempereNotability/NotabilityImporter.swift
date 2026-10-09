@@ -1114,7 +1114,7 @@ public enum NotabilityImporter {
             put(c.width.bitPattern)
             for p in c.points { put(p.x.bitPattern); put(p.y.bitPattern) }
         }
-        return h.finalize().map { String(format: "%02x", $0) }.joined()
+        return Hex.encode(h.finalize())
     }
 
     /// The tags an import writes (the whole set, so an overwrite drops tags

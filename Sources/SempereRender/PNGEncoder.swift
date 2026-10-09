@@ -94,18 +94,11 @@ enum PNGEncoder {
         return pb <= pc ? b : c
     }
 
-    private static func be32(_ v: Int) -> [UInt8] {
-        [UInt8((v >> 24) & 0xFF), UInt8((v >> 16) & 0xFF), UInt8((v >> 8) & 0xFF), UInt8(v & 0xFF)]
-    }
-
     private static func appendChunk(_ type: String, _ body: [UInt8], to out: inout Data) {
         let name = Array(type.utf8)
         out.append(contentsOf: be32(body.count))
         out.append(contentsOf: name)
         out.append(contentsOf: body)
-        var crc = crc32(0, nil, 0)
-        crc = name.withUnsafeBufferPointer { crc32(crc, $0.baseAddress, uInt($0.count)) }
-        if !body.isEmpty { crc = body.withUnsafeBufferPointer { crc32(crc, $0.baseAddress, uInt($0.count)) } }
-        out.append(contentsOf: be32(Int(crc)))
+        out.append(contentsOf: be32(Int(Zlib.crc32(Zlib.crc32(0, name), body))))
     }
 }

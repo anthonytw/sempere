@@ -41,14 +41,14 @@ final class SecretLinkTests: VaultTestCase {
         let v = try JSONDecoder().decode(Vectors.self, from: Data(contentsOf: url))
         let old = try VaultSecret(bytes: Self.unhex(v.oldSecret)), new = try VaultSecret(bytes: Self.unhex(v.newSecret))
         let id = try XCTUnwrap(UUID(uuidString: v.vaultId))
-        XCTAssertEqual(RecipientsAuth.hex(RecipientsAuth.secretId(new)), v.secretIdNew)
-        XCTAssertEqual(RecipientsAuth.hex(RecipientsAuth.linkMessage(to: new, vaultId: id)), v.message)
+        XCTAssertEqual(Hex.encode(RecipientsAuth.secretId(new)), v.secretIdNew)
+        XCTAssertEqual(Hex.encode(RecipientsAuth.linkMessage(to: new, vaultId: id)), v.message)
         let signing = try LinkSigningKeys(secret: old)
-        XCTAssertEqual(RecipientsAuth.hex(signing.ed25519.rawRepresentation), v.ed25519Seed)
-        XCTAssertEqual(RecipientsAuth.hex(signing.mldsa65Seed), v.mldsa65Seed)
+        XCTAssertEqual(Hex.encode(signing.ed25519.rawRepresentation), v.ed25519Seed)
+        XCTAssertEqual(Hex.encode(signing.mldsa65Seed), v.mldsa65Seed)
         let keys = try LinkPublicKeys(secret: old)
-        XCTAssertEqual(RecipientsAuth.hex(keys.ed25519), v.ed25519PublicKey)
-        XCTAssertEqual(RecipientsAuth.hex(keys.mldsa65), v.mldsa65PublicKey, "FIPS 204 KeyGen_internal from the seed")
+        XCTAssertEqual(Hex.encode(keys.ed25519), v.ed25519PublicKey)
+        XCTAssertEqual(Hex.encode(keys.mldsa65), v.mldsa65PublicKey, "FIPS 204 KeyGen_internal from the seed")
         XCTAssertEqual(RecipientsAuth.legacyLink(from: old, to: new, vaultId: id), .legacy(v.legacyLink))
         XCTAssertGreaterThanOrEqual(v.links.count, 2, "a link made by noble and one made by swift-crypto")
         for l in v.links {
@@ -64,7 +64,7 @@ final class SecretLinkTests: VaultTestCase {
            case .signed(let ed, let ml) = mine {
             var out = v
             out.links.removeAll { $0.by == "swift-crypto" }
-            out.links.append(.init(by: "swift-crypto", ed25519: RecipientsAuth.hex(ed), mldsa65: RecipientsAuth.hex(ml)))
+            out.links.append(.init(by: "swift-crypto", ed25519: Hex.encode(ed), mldsa65: Hex.encode(ml)))
             let enc = JSONEncoder()
             enc.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes]
             let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -87,11 +87,11 @@ final class SecretLinkTests: VaultTestCase {
         XCTAssertNotEqual(try LinkPublicKeys(secret: new), keys)
 
         // Lowercase hex of exact sizes only; anything else reads as malformed.
-        let good = #"{"ed25519":"\#(RecipientsAuth.hex(ed))","mldsa65":"\#(RecipientsAuth.hex(ml))"}"#
+        let good = #"{"ed25519":"\#(Hex.encode(ed))","mldsa65":"\#(Hex.encode(ml))"}"#
         XCTAssertEqual(try JSONDecoder().decode(SecretLink.self, from: Data(good.utf8)), .signed(ed25519: ed, mldsa65: ml))
-        for bad in [#"{"ed25519":"\#(RecipientsAuth.hex(ed))"}"#,
-                    #"{"ed25519":"\#(RecipientsAuth.hex(ed).uppercased())","mldsa65":"\#(RecipientsAuth.hex(ml))"}"#,
-                    #"{"ed25519":"\#(RecipientsAuth.hex(ed))","mldsa65":"\#(RecipientsAuth.hex(ml.dropLast()))"}"#,
+        for bad in [#"{"ed25519":"\#(Hex.encode(ed))"}"#,
+                    #"{"ed25519":"\#(Hex.encode(ed).uppercased())","mldsa65":"\#(Hex.encode(ml))"}"#,
+                    #"{"ed25519":"\#(Hex.encode(ed))","mldsa65":"\#(Hex.encode(ml.dropLast()))"}"#,
                     "42", "[]", "true"] {
             XCTAssertEqual(try JSONDecoder().decode(SecretLink.self, from: Data(bad.utf8)), .malformed, bad)
         }
@@ -120,7 +120,7 @@ final class SecretLinkTests: VaultTestCase {
             try RecipientsAuth.link(from: attacker, to: attacker, vaultId: made.vaultId),
             // A legacy HMAC under every key the attacker could hold or guess.
             RecipientsAuth.legacyLink(from: attacker, to: attacker, vaultId: made.vaultId),
-            .legacy(RecipientsAuth.hex(RecipientsAuth.legacyLinkBytes(linkKey: RecipientsAuth.legacyLinkKey(real),
+            .legacy(Hex.encode(RecipientsAuth.legacyLinkBytes(linkKey: RecipientsAuth.legacyLinkKey(real),
                                                                        to: attacker, vaultId: made.vaultId))),
             // A real link (old → real) replayed for the attacker's secret.
             try RecipientsAuth.link(from: real, to: .random(), vaultId: made.vaultId),

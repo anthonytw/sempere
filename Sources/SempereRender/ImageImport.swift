@@ -153,17 +153,16 @@ enum HEIF {
         let d = [UInt8](data)
         var best: (Int, Int)?
         var visited = 0
-        func u32(_ i: Int) -> Int { Int(d[i]) << 24 | Int(d[i + 1]) << 16 | Int(d[i + 2]) << 8 | Int(d[i + 3]) }
         func scan(_ range: Range<Int>, depth: Int) {
             var pos = range.lowerBound
             while pos + 8 <= range.upperBound, visited < maxBoxes, depth < 8 {
                 visited += 1
-                var size = u32(pos)
+                var size = readBE32(d, pos)
                 let type = String(decoding: d[(pos + 4)..<(pos + 8)], as: UTF8.self)
                 var header = 8
                 if size == 1 {
-                    guard pos + 16 <= range.upperBound, u32(pos + 8) == 0 else { return }
-                    size = u32(pos + 12); header = 16
+                    guard pos + 16 <= range.upperBound, readBE32(d, pos + 8) == 0 else { return }
+                    size = readBE32(d, pos + 12); header = 16
                 } else if size == 0 {
                     size = range.upperBound - pos
                 }
@@ -176,7 +175,7 @@ enum HEIF {
                     scan(body, depth: depth + 1)
                 case "ispe":
                     if body.count >= 12 {
-                        let w = u32(body.lowerBound + 4), h = u32(body.lowerBound + 8)
+                        let w = readBE32(d, body.lowerBound + 4), h = readBE32(d, body.lowerBound + 8)
                         // Doubles: two u32 extents overflow an Int product.
                         if w > 0, h > 0, Double(w) * Double(h) > best.map({ Double($0.0) * Double($0.1) }) ?? 0 { best = (w, h) }
                     }

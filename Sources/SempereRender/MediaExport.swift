@@ -265,7 +265,7 @@ public enum MediaExport {
 
     /// The file extension of an image media type (`bin` when unknown).
     public static func imageExtension(_ type: String) -> String {
-        let base = type.split(separator: ";").first.map { $0.trimmingCharacters(in: .whitespaces).lowercased() } ?? ""
+        let base = BlobKind.essence(of: type)
         switch base {
         case "image/jpeg", "image/jpg": return "jpg"
         case "image/png": return "png"

@@ -470,7 +470,7 @@ final class SempereFuzzTests: VaultTestCase {
                 _ = Vault.incomingManifestProblem(input, local: manifest, vault: vault)
                 return nil
             }
-            _ = RecipientsAuth.unhex(m.recipientsTag ?? "")
+            _ = Hex.decode(m.recipientsTag ?? "")
             for rec in [record, nil] as [RecipientsTrustRecord?] {
                 let status = RecipientsAuth.evaluate(m, secret: secret, record: rec)
                 if case .verified = status, m.vaultId == vault.vaultId, m.recipients.map(\.key) != keys {

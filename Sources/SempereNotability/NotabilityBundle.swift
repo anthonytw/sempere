@@ -514,7 +514,7 @@ enum BundleFileName {
     /// (hex-encoded). Nil otherwise.
     static func name(in bytes: [UInt8]) -> String? {
         if hashByteCounts.contains(bytes.count), !bytes.allSatisfy({ $0 >= 0x20 && $0 < 0x7F }) {
-            return bytes.map { String(format: "%02x", $0) }.joined()
+            return Hex.encode(bytes)
         }
         for digits in hashByteCounts.map({ $0 * 2 }).reversed()
         where bytes.count >= digits && bytes.prefix(digits).allSatisfy(isHex) {

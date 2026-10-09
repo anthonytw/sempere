@@ -87,5 +87,5 @@ extension VaultTestCase {
 
 /// SHA-256 bytes without importing Crypto into every test.
 func SHA256Digest(_ data: Data) -> [UInt8] {
-    Array(SHA256Hex.bytes(SHA256Hex.digest(data))!)
+    Array(Hex.decode(FileDigest.sha256(data))!)
 }

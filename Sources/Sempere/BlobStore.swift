@@ -67,7 +67,7 @@ public struct NoteBlobSource: BlobSource {
 
 extension Vault {
     /// A note's attachment folder name (format.md §1).
-    static let attachmentsName = "att"
+    package static let attachmentsName = "att"
     /// The largest blob the in-memory APIs hold by default (format.md §8.1.4).
     public static let maxInMemoryBlobBytes = 16 << 20
     /// Plaintext piece size for streaming writes.

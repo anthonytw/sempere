@@ -37,23 +37,21 @@ extension WebDAVSync {
     // MARK: Mutable files
 
     func pushMutable(_ name: String, remote: RemoteEntry?) throws {
-        let localURL = root.appendingPathComponent(name)
-        let local = FileManager.default.fileExists(atPath: localURL.path)
-            ? try BoundedRead.contents(of: localURL, maxBytes: BoundedRead.maxManifestBytes) : nil
+        let local = try localMutable(name)
         guard let local else {
             guard remote != nil else { return }
             // Nothing is ever pulled; a stale journal also blocks blob collection, so it may go.
-            if reportExtraneous(name, remove: [name]) && name == Self.journalName { remoteJournal = false }
+            if reportExtraneous(name, remove: [name]) && name == Vault.journalName { remoteJournal = false }
             return
         }
-        let localHash = sha256Hex(local)
+        let localHash = FileDigest.sha256(local)
         guard let remote else {
             if try push(name, local, condition: .create) { try recordMutable(name, hash: localHash) }
             return
         }
         // A server file that cannot be read (too large, malformed) is just different.
         let current = try? client.get([name]).data
-        if let current, sha256Hex(current) == localHash {
+        if let current, FileDigest.sha256(current) == localHash {
             state.mutable[name] = .init(hash: localHash, stamp: remote.stamp)
             return
         }
@@ -61,7 +59,7 @@ extension WebDAVSync {
             // Replace only what this device put there: a copy changed since its last
             // sync was written by someone else (another device's key change, say).
             let record = state.mutable[name]
-            guard let record, let current, sha256Hex(current) == record.hash else {
+            guard let record, let current, FileDigest.sha256(current) == record.hash else {
                 report.conflicts.append(.init(path: name, remoteCopy: nil, detail: record == nil
                     ? "the server copy differs and this device never synced it; kept on the server"
                     : "the server copy changed since this device's last sync; kept on the server"))
@@ -77,14 +75,14 @@ extension WebDAVSync {
     // MARK: Notes
 
     func syncNotePushOnly(_ id: String, remoteEntries: [RemoteEntry]?) throws {
-        let dir = root.appendingPathComponent("notes").appendingPathComponent(id)
+        let dir = root.appendingPathComponent(Vault.notesName).appendingPathComponent(id)
         var R = Set<RevisionName>()
         var remoteAtt: RemoteEntry?
         for e in remoteEntries ?? [] {
-            if e.name == Self.attName && e.isCollection { remoteAtt = e; continue }
+            if e.name == Vault.attachmentsName && e.isCollection { remoteAtt = e; continue }
             guard !e.isCollection, let n = RevisionName(e.name), n.filename == e.name else {
                 report.ignored.append(SyncReport.printable("notes/\(id)/\(e.name)"))
-                remoteJunk.append(["notes", id, e.name])
+                remoteJunk.append([Vault.notesName, id, e.name])
                 continue
             }
             R.insert(n)
@@ -117,7 +115,7 @@ extension WebDAVSync {
             attempt(n) {
                 let path = "notes/\(key(id, n))"
                 guard S.contains(n) else {   // never synced: not ours
-                    if reportExtraneous(path, remove: ["notes", id, n.filename]) { R.remove(n) }
+                    if reportExtraneous(path, remove: [Vault.notesName, id, n.filename]) { R.remove(n) }
                     return
                 }
                 guard loaded != nil else {
@@ -138,7 +136,7 @@ extension WebDAVSync {
                     return
                 }
                 report.deleted.append(.init(side: "remote", path: path))
-                if !options.dryRun { try client.delete(["notes", id, n.filename]) }
+                if !options.dryRun { try client.delete([Vault.notesName, id, n.filename]) }
                 R.remove(n)
             }
         }
