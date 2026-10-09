@@ -39,9 +39,7 @@ extension NoteEditor {
         guard let page = pages.first(where: { $0.id == pageID }) else { throw ItemError.noPage }
         let planned = BlobRef(content: image.data, type: image.mediaType)
         _ = try NoteOps.replaceImage(id, blob: planned, pixelSize: image.pixelSize, orientation: image.orientation, on: page)
-        guard let writer = attachmentWriter else { throw ItemError.notEditable }
-        if let prepare = prepareBlobWrite { try await prepare(planned) }
-        let ref = try await writer.addBlob(image.data, type: image.mediaType)
+        let ref = try await storeBlob(image.data, type: image.mediaType)
         // The page as it is now: it may have changed while the blob was written.
         guard canEditItems else { throw ItemError.notEditable }
         guard let current = pages.first(where: { $0.id == pageID }) else { throw ItemError.noPage }
@@ -67,18 +65,10 @@ extension NoteEditor {
     func insertPDFPages(_ pdf: PreparedPDF, after index: Int) async throws -> [UUID] {
         guard canEditItems else { throw ItemError.notEditable }
         guard !isPageless else { throw AttachmentOpsError.pagelessNote }
-        guard let writer = attachmentWriter else { throw ItemError.notEditable }
         // Fail before anything is written when the pages cannot be added.
         _ = try NoteOps.insertPDFPages(blob: BlobRef(sha256: String(repeating: "0", count: 64), size: 1, type: "application/pdf"),
                                        pdf.pages, after: index, in: pages, pageSize: pageSize)
-        if let prepare = prepareBlobWrite {
-            let file = pdf.file
-            let planned = try await Task.detached(priority: .userInitiated) {
-                try BlobPlanning.ref(ofFile: file, type: "application/pdf")
-            }.value
-            try await prepare(planned)
-        }
-        let ref = try await writer.addBlob(from: pdf.file, type: "application/pdf")
+        let ref = try await storeBlob(file: pdf.file, type: "application/pdf")
         // The note may have changed (or closed) while the blob was written.
         guard canEditItems, !isPageless else { throw ItemError.notEditable }
         let before = Set(pages.map(\.id))

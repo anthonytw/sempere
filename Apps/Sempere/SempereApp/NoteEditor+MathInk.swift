@@ -75,9 +75,7 @@ extension NoteEditor {
         // Fail before writing anything when the ink is gone already.
         try checkConversion(request, content: content, placement: placement)
         let (data, value) = try MathTypesetter.rendered(content)
-        guard let writer = attachmentWriter else { throw ItemError.notEditable }
-        try await prepareBlobWrite?(BlobRef(content: data, type: MathContent.renderType))
-        let ref = try await writer.addBlob(data, type: MathContent.renderType)
+        let ref = try await storeBlob(data, type: MathContent.renderType)
         var stored = value
         stored.render = ref
         // The note may have changed (or closed) while the blob was written.
