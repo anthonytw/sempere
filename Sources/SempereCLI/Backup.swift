@@ -119,7 +119,7 @@ struct BackupVerify: ParsableCommand {
 
     func run() throws {
         let url = URL(fileURLWithPath: dir)
-        let hasManifest = FileManager.default.fileExists(atPath: url.appendingPathComponent("vault.json").path)
+        let hasManifest = FileManager.default.fileExists(atPath: url.appendingPathComponent(Vault.manifestName).path)
         // A legacy backup is migrate-only too: refused before any key is read.
         if hasManifest { try Vault.open(at: url).requireMigrated() }
         var identities: [any AgeIdentity] = try access.explicitIdentities()

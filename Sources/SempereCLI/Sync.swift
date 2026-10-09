@@ -146,7 +146,7 @@ struct SyncWebDAVCommand: ParsableCommand {
         let client = try login.client(remote)
 
         let dir = try access.vaultURL()
-        let hasManifest = FileManager.default.fileExists(atPath: dir.appendingPathComponent("vault.json").path)
+        let hasManifest = FileManager.default.fileExists(atPath: dir.appendingPathComponent(Vault.manifestName).path)
         if pushOnly && !hasManifest { throw CLIError.usage("--push-only needs an existing vault (no vault.json in \(dir.path))") }
         if !pushOnly { OpenedVaults.shared.record(dir) }   // a first pull creates the vault here
         let vault = hasManifest ? try access.openVault(.ifPossible) : nil
