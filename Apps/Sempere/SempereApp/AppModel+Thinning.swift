@@ -120,11 +120,9 @@ extension NoteWriter {
             }
             return try CloudVault.coordinatedRead(coordinated ? vault.url : nil) { () throws -> LoadedNote? in
                 try verify?()
-                let index = try vault.revisionIndex(of: noteID, cache: cache)
-                guard CompactionPlanner.mayDelete(index.revisions, noteId: noteID, mode: mode, now: now) else { return nil }
                 // 2. Something may go: the note in full.
-                let loaded = try vault.loadNote(noteID)
-                try verify?()
+                let loaded = try vault.loadForCompaction(noteID, mode: mode, now: now, cache: cache)
+                if loaded != nil { try verify?() }
                 return loaded
             }
         }.value
