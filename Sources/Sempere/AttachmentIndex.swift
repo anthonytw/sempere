@@ -372,7 +372,7 @@ extension Vault: AttachmentIndexSource {
     }
 
     public func blobNames(sha256: String) -> [String] {
-        guard let digest = SHA256Hex.bytes(sha256) else { return [] }
+        guard let digest = Hex.decode(sha256) else { return [] }
         return blobSecrets.map { BlobName.name(digest: digest, secret: $0) }
     }
 

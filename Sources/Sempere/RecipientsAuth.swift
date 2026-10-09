@@ -51,12 +51,12 @@ public enum RecipientsAuth {
 
     /// `recipientsTag` (lowercase hex) of `keys`, in order, under `secret`.
     public static func tag(vaultId: UUID, keys: [String], secret: VaultSecret) -> String {
-        hex(tagBytes(vaultId: vaultId, keys: keys, secret: secret))
+        Hex.encode(tagBytes(vaultId: vaultId, keys: keys, secret: secret))
     }
 
     /// True when `tag` is 64 lowercase hex digits and verifies over `keys`.
     public static func verifyTag(_ tag: String, vaultId: UUID, keys: [String], secret: VaultSecret) -> Bool {
-        guard let given = unhex(tag) else { return false }
+        guard let given = Hex.decode(tag) else { return false }
         return constantTimeEqual(given, tagBytes(vaultId: vaultId, keys: keys, secret: secret))
     }
 
@@ -87,7 +87,7 @@ public enum RecipientsAuth {
     /// longer than `maxSearchKeys`). Fewer deletions are tried first.
     static func verifiedSubset(of keys: [String], tag: String, vaultId: UUID,
                                secret: VaultSecret) -> (kept: [String], deleted: [String])? {
-        guard keys.count <= maxSearchKeys, let given = unhex(tag) else { return nil }
+        guard keys.count <= maxSearchKeys, let given = Hex.decode(tag) else { return nil }
         let key = derive(secret, recipientsInfo)
         var result: (kept: [String], deleted: [String])?
         func search(_ deletions: Int, from start: Int, removed: [Int]) {
@@ -160,36 +160,6 @@ public enum RecipientsAuth {
         }
         guard record != nil else { return .verified(.firstUse) }
         return .verified(rotated ? .rotated : .unchanged)
-    }
-
-    static func hex(_ d: Data) -> String {
-        let digits = Array("0123456789abcdef".utf8)
-        var out = [UInt8]()
-        out.reserveCapacity(d.count * 2)
-        for b in d { out.append(digits[Int(b >> 4)]); out.append(digits[Int(b & 0x0f)]) }
-        return String(decoding: out, as: UTF8.self)
-    }
-
-    /// `count` bytes (32 by default) from exactly `2 × count` lowercase hex
-    /// digits, else nil.
-    static func unhex(_ s: String, count: Int = 32) -> Data? {
-        let u = Array(s.utf8)
-        guard u.count == 2 * count else { return nil }
-        func nibble(_ c: UInt8) -> UInt8? {
-            switch c {
-            case 0x30...0x39: return c - 0x30
-            case 0x61...0x66: return c - 0x61 + 10
-            default: return nil
-            }
-        }
-        var out = Data(capacity: count)
-        var i = 0
-        while i < u.count {
-            guard let hi = nibble(u[i]), let lo = nibble(u[i + 1]) else { return nil }
-            out.append(hi << 4 | lo)
-            i += 2
-        }
-        return out
     }
 
     static func constantTimeEqual(_ a: Data, _ b: Data) -> Bool {
@@ -367,15 +337,15 @@ public struct RecipientsTrustRecord: Codable, Hashable, Sendable {
         switch format {
         case Self.formatName:
             let k = try c.nestedContainer(keyedBy: KeyCodingKeys.self, forKey: .linkPublicKeys)
-            guard let ed = RecipientsAuth.unhex(try k.decode(String.self, forKey: .ed25519), count: LinkPublicKeys.ed25519Size),
-                  let ml = RecipientsAuth.unhex(try k.decode(String.self, forKey: .mldsa65), count: LinkPublicKeys.mldsa65Size),
+            guard let ed = Hex.decode(try k.decode(String.self, forKey: .ed25519), count: LinkPublicKeys.ed25519Size),
+                  let ml = Hex.decode(try k.decode(String.self, forKey: .mldsa65), count: LinkPublicKeys.mldsa65Size),
                   let keys = LinkPublicKeys(ed25519: ed, mldsa65: ml) else {
                 throw DecodingError.dataCorruptedError(forKey: .linkPublicKeys, in: c,
                                                        debugDescription: "not 32 + 1952 bytes of lowercase hex")
             }
             anchor = .signed(keys)
         case Self.legacyFormatName:
-            guard let key = RecipientsAuth.unhex(try c.decode(String.self, forKey: .linkKey)) else {
+            guard let key = Hex.decode(try c.decode(String.self, forKey: .linkKey)) else {
                 throw DecodingError.dataCorruptedError(forKey: .linkKey, in: c, debugDescription: "not 64 hex digits")
             }
             anchor = .legacy(key)
@@ -393,10 +363,10 @@ public struct RecipientsTrustRecord: Codable, Hashable, Sendable {
         switch anchor {
         case .signed(let keys):
             var k = c.nestedContainer(keyedBy: KeyCodingKeys.self, forKey: .linkPublicKeys)
-            try k.encode(RecipientsAuth.hex(keys.ed25519), forKey: .ed25519)
-            try k.encode(RecipientsAuth.hex(keys.mldsa65), forKey: .mldsa65)
+            try k.encode(Hex.encode(keys.ed25519), forKey: .ed25519)
+            try k.encode(Hex.encode(keys.mldsa65), forKey: .mldsa65)
         case .legacy(let key):
-            try c.encode(RecipientsAuth.hex(key), forKey: .linkKey)
+            try c.encode(Hex.encode(key), forKey: .linkKey)
         }
         try c.encode(recipients, forKey: .recipients)
         try c.encodeIfPresent(markers, forKey: .markers)

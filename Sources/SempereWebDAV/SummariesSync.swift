@@ -26,7 +26,7 @@ extension WebDAVSync {
             var hashed = try WebIndex.encode(remoteRevisions)
             hashed.append(0)
             hashed.append(Data(vault.manifest.vaultSecret.utf8))
-            listing = SHA256.hash(data: hashed).map { String(format: "%02x", $0) }.joined()
+            listing = FileDigest.sha256(hashed)
         } catch {
             report.errors.append(.init(path: name, message: Self.describe(error)))
             return

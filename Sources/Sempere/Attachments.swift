@@ -123,14 +123,14 @@ public struct BlobRef: Hashable, Sendable, Codable {
 
     /// A reference to `content`: its hash and length.
     public init(content: Data, type: String) {
-        self.init(sha256: SHA256Hex.digest(content), size: Int64(content.count), type: type)
+        self.init(sha256: FileDigest.sha256(content), size: Int64(content.count), type: type)
     }
 
     /// The file-name kind (format.md §8.1.2).
     public var kind: BlobKind { BlobKind(mediaType: type) }
 
     /// The content hash as 32 raw bytes; nil when `sha256` is malformed.
-    public var digest: Data? { SHA256Hex.bytes(sha256) }
+    public var digest: Data? { Hex.decode(sha256) }
 
     /// True when every field is in range.
     public var isValid: Bool { digest != nil && (0...Self.maxSize).contains(size) }
@@ -159,35 +159,6 @@ public struct BlobRef: Hashable, Sendable, Codable {
         try c.encode(size, "size")
         try c.encode(type, "type")
         try c.encodeExtra(extra, excluding: Self.knownKeys)
-    }
-}
-
-/// Lowercase hex SHA-256 strings (format.md §8.1.1).
-enum SHA256Hex {
-    static func digest(_ data: Data) -> String {
-        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-    }
-
-    /// The 32 bytes of a 64-digit lowercase hex string; nil otherwise.
-    static func bytes(_ hex: String) -> Data? {
-        let u = Array(hex.utf8)
-        guard u.count == 64 else { return nil }
-        var out = Data(capacity: 32)
-        var i = 0
-        while i < 64 {
-            guard let hi = nibble(u[i]), let lo = nibble(u[i + 1]) else { return nil }
-            out.append(hi << 4 | lo)
-            i += 2
-        }
-        return out
-    }
-
-    private static func nibble(_ c: UInt8) -> UInt8? {
-        switch c {
-        case 0x30...0x39: return c - 0x30
-        case 0x61...0x66: return c - 0x61 + 10
-        default: return nil   // uppercase is not the canonical form
-        }
     }
 }
 
@@ -1058,7 +1029,7 @@ public struct CaptureAttribution: Hashable, Sendable, Codable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         device = try c.decode(String.self, forKey: .device)
         recipient = try c.decodeIfPresent(String.self, forKey: .recipient)
-        guard DeviceID(device) != nil, recipient.map({ RecipientsAuth.unhex($0) != nil }) ?? true else {
+        guard DeviceID(device) != nil, recipient.map({ Hex.decode($0) != nil }) ?? true else {
             throw DecodingError.dataCorruptedError(forKey: .device, in: c, debugDescription: "malformed attribution")
         }
     }

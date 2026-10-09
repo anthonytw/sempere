@@ -250,7 +250,7 @@ extension WebDAVSync {
         guard inventory.isComplete, remoteRevisions.isSubset(of: readable) else { return .judged { _ in false } }
         var referenced = Set<String>()
         for hash in inventory.referencedHashes {
-            guard let digest = Self.hexBytes(hash), let name = try? vault.blobName(sha256: digest) else {
+            guard let digest = Hex.decode(hash), let name = try? vault.blobName(sha256: digest) else {
                 // A malformed hash cannot be mapped to a name: keep everything.
                 return .judged { _ in false }
             }
@@ -260,25 +260,6 @@ extension WebDAVSync {
             guard let parsed = BlobName.parse(file) else { return false }
             return !referenced.contains(parsed.name)
         }
-    }
-
-    /// The 32 bytes of a 64-digit lowercase hex string.
-    static func hexBytes(_ hex: String) -> Data? {
-        let u = Array(hex.utf8)
-        guard u.count == 64 else { return nil }
-        func v(_ c: UInt8) -> UInt8? {
-            switch c {
-            case 0x30...0x39: return c - 0x30
-            case 0x61...0x66: return c - 0x61 + 10
-            default: return nil
-            }
-        }
-        var out = Data(capacity: 32)
-        for i in stride(from: 0, to: 64, by: 2) {
-            guard let hi = v(u[i]), let lo = v(u[i + 1]) else { return nil }
-            out.append(hi << 4 | lo)
-        }
-        return out
     }
 
     // MARK: Transfers

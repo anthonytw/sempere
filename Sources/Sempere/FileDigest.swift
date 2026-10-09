@@ -21,11 +21,11 @@ public enum FileDigest {
             guard size <= maxBytes else { throw VaultError.fileTooLarge(url.path, limit: Int(clamping: maxBytes)) }
             hasher.update(data: piece)
         }
-        return (hasher.finalize().map { String(format: "%02x", $0) }.joined(), size)
+        return (Hex.encode(hasher.finalize()), size)
     }
 
     /// Lowercase hex SHA-256 of `data`.
     public static func sha256(_ data: Data) -> String {
-        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        Hex.encode(SHA256.hash(data: data))
     }
 }

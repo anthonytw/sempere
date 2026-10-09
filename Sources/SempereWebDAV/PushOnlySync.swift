@@ -46,14 +46,14 @@ extension WebDAVSync {
             if reportExtraneous(name, remove: [name]) && name == Self.journalName { remoteJournal = false }
             return
         }
-        let localHash = sha256Hex(local)
+        let localHash = FileDigest.sha256(local)
         guard let remote else {
             if try push(name, local, condition: .create) { try recordMutable(name, hash: localHash) }
             return
         }
         // A server file that cannot be read (too large, malformed) is just different.
         let current = try? client.get([name]).data
-        if let current, sha256Hex(current) == localHash {
+        if let current, FileDigest.sha256(current) == localHash {
             state.mutable[name] = .init(hash: localHash, stamp: remote.stamp)
             return
         }
@@ -61,7 +61,7 @@ extension WebDAVSync {
             // Replace only what this device put there: a copy changed since its last
             // sync was written by someone else (another device's key change, say).
             let record = state.mutable[name]
-            guard let record, let current, sha256Hex(current) == record.hash else {
+            guard let record, let current, FileDigest.sha256(current) == record.hash else {
                 report.conflicts.append(.init(path: name, remoteCopy: nil, detail: record == nil
                     ? "the server copy differs and this device never synced it; kept on the server"
                     : "the server copy changed since this device's last sync; kept on the server"))

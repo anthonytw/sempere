@@ -247,7 +247,7 @@ extension Vault {
         var byName: [String: String] = [:]
         var kinds: [String: Set<BlobKind>] = [:]
         for r in inv.references.values.joined() {
-            guard let digest = SHA256Hex.bytes(r.sha256) else { continue }
+            guard let digest = Hex.decode(r.sha256) else { continue }
             kinds[r.sha256, default: []].insert(r.kind)
             for s in blobSecrets { byName[BlobName.name(digest: digest, secret: s)] = r.sha256 }
         }

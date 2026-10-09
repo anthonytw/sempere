@@ -96,7 +96,7 @@ public struct WebDAVLocalCopy: Sendable {
         for name in [WebDAVSync.manifestName, WebDAVSync.journalName] {
             let url = folder.appendingPathComponent(name)
             guard let data = try? BoundedRead.contents(of: url, maxBytes: BoundedRead.maxManifestBytes) else { continue }
-            if state?.mutable[name]?.hash != sha256Hex(data) { count += 1 }
+            if state?.mutable[name]?.hash != FileDigest.sha256(data) { count += 1 }
         }
         let notes = folder.appendingPathComponent("notes")
         for id in ((try? LocalFS.entries(notes)) ?? []) where WebDAVSync.isNoteID(id) {

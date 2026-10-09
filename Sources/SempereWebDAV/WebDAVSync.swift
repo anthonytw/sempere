@@ -267,7 +267,7 @@ public final class WebDAVSync {
             try pullMutable(name, remote: remote)
             return
         }
-        let localHash = sha256Hex(local)
+        let localHash = FileDigest.sha256(local)
 
         guard let remote else {
             // Never on the server, or wiped there: (re)create it, never overwriting.
@@ -277,7 +277,7 @@ public final class WebDAVSync {
 
         let (remoteData, getETag) = try client.get([name])
         try budget.downloaded(remoteData.count)
-        let remoteHash = sha256Hex(remoteData)
+        let remoteHash = FileDigest.sha256(remoteData)
         let stamp = remote.etag ?? getETag ?? remote.lastModified
         if remoteHash == localHash {
             state.mutable[name] = .init(hash: localHash, stamp: stamp)
@@ -323,7 +323,7 @@ public final class WebDAVSync {
         report.downloaded.append(name)
         guard !options.dryRun else { return }
         try LocalFS.write(data, to: root.appendingPathComponent(name), replacing: true)
-        state.mutable[name] = .init(hash: sha256Hex(data), stamp: stamp)
+        state.mutable[name] = .init(hash: FileDigest.sha256(data), stamp: stamp)
     }
 
     /// Uploads a mutable file; false when the precondition failed.

@@ -70,7 +70,7 @@ struct SyncState: Codable, Equatable {
             base = home.appendingPathComponent(".local/state", isDirectory: true)
         }
         let key = remote.absoluteString + "\n" + vault.standardizedFileURL.path
-        let id = SHA256.hash(data: Data(key.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
+        let id = Hex.encode(SHA256.hash(data: Data(key.utf8)).prefix(8))
         return base.appendingPathComponent("sempere/sync/\(id).json")
     }
 
@@ -89,8 +89,4 @@ struct SyncState: Codable, Equatable {
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
         try LocalFS.write(try enc.encode(self), to: url, replacing: true)
     }
-}
-
-func sha256Hex(_ data: Data) -> String {
-    SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
 }

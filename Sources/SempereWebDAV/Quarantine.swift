@@ -122,7 +122,7 @@ extension WebDAVSync {
     func manifestHash() -> String? {
         guard let data = try? BoundedRead.contents(of: root.appendingPathComponent(Self.manifestName),
                                                    maxBytes: BoundedRead.maxManifestBytes) else { return nil }
-        return sha256Hex(data)
+        return FileDigest.sha256(data)
     }
 
     /// True when `key` was quarantined by an earlier run against the same

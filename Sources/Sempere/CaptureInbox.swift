@@ -105,7 +105,7 @@ public struct CaptureKey: Hashable, Sendable {
     /// of its key string as written in `vault.json`, as in the names of
     /// post-quantum key files (§3.2).
     public static func fingerprint(of recipient: String) -> String {
-        RecipientsAuth.hex(Data(SHA256.hash(data: Data(recipient.utf8))))
+        FileDigest.sha256(Data(recipient.utf8))
     }
 
     private init(valid: Data) { bytes = valid }
@@ -283,7 +283,7 @@ public struct CaptureManifest: Codable, Hashable, Sendable {
         title = try c.decode(String.self, forKey: .title)
         notebook = try c.decodeIfPresent(String.self, forKey: .notebook)
         recipient = try c.decodeIfPresent(String.self, forKey: .recipient)
-        if let recipient, RecipientsAuth.unhex(recipient) == nil {
+        if let recipient, Hex.decode(recipient) == nil {
             throw DecodingError.dataCorruptedError(forKey: .recipient, in: c, debugDescription: "not 64 lowercase hex digits")
         }
         audio = try c.decode(BlobRef.self, forKey: .audio)
@@ -756,7 +756,7 @@ extension Vault {
                 // capture: the app transcribes the recording itself then.
                 // It must also come from the device the capture is attributed to (C2).
                 let bound = String(decoding: payload, as: UTF8.self)
-                if SHA256Hex.bytes(bound) != nil, pending.manifest.map({ $0.audio.sha256 == bound }) ?? true,
+                if Hex.decode(bound) != nil, pending.manifest.map({ $0.audio.sha256 == bound }) ?? true,
                    pending.manifest == nil || pending.recipient == entry.recipient {
                     pending.transcript = t
                     pending.transcriptContent = line

@@ -397,12 +397,6 @@ public enum Backup {
         path.split(separator: "/").reduce(root) { $0.appendingPathComponent(String($1)) }
     }
 
-    static func sha256(_ data: Data) -> String {
-        SHA256.hash(data: data).map { b in
-            let s = String(b, radix: 16)
-            return s.count == 1 ? "0" + s : s
-        }.joined()
-    }
 
     static func fileSize(_ url: URL) -> Int? {
         (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue
@@ -422,7 +416,7 @@ public enum Backup {
         try FileIO.createDirectory(url.deletingLastPathComponent())
         try FileIO.writeAtomically(data, to: url, replacing: replacing)
         let back = try FileIO.read(url, maxBytes: data.count)
-        guard sha256(back) == hash else {
+        guard FileDigest.sha256(back) == hash else {
             try? FileIO.remove(url)
             throw VaultError.io("\(url.path): the copy does not read back identical (SHA-256 differs)")
         }
@@ -508,7 +502,7 @@ public enum Backup {
                 versionDir = folder
             }
             let vpath = "\(folder)/\(path)"
-            let hash = sha256(old)
+            let hash = FileDigest.sha256(old)
             try copyVerified(old, hash: hash, to: url(dest, vpath), replacing: false)
             report.versioned.append(vpath)
             try wrote(vpath, old, hash)
@@ -526,7 +520,7 @@ public enum Backup {
         var trustSizes = !options.checksum
         if trustSizes {
             let sourceManifest = try? readFormatFile(source.url, Vault.manifestName)
-            if sourceManifest.map(sha256) != manifest.files[Vault.manifestName]?.sha256
+            if sourceManifest.map(FileDigest.sha256) != manifest.files[Vault.manifestName]?.sha256
                 || sourceFiles.contains(Vault.journalName) || FileIO.exists(url(dest, Vault.journalName)) {
                 trustSizes = false
             }
@@ -548,9 +542,9 @@ public enum Backup {
                         continue
                     }
                     let data = try readFormatFile(source.url, path)
-                    let hash = sha256(data)
+                    let hash = FileDigest.sha256(data)
                     let existing = try readFormatFile(dest, path)
-                    if sha256(existing) == hash {
+                    if FileDigest.sha256(existing) == hash {
                         manifest.files[path] = .init(sha256: hash, size: data.count)
                         report.unchanged += 1
                         continue
@@ -561,7 +555,7 @@ public enum Backup {
                     try wrote(path, data, hash)
                 } else {
                     let data = try readFormatFile(source.url, path)
-                    let hash = sha256(data)
+                    let hash = FileDigest.sha256(data)
                     try copyVerified(data, hash: hash, to: dst, replacing: false)
                     report.copied.append(path)
                     try wrote(path, data, hash)
@@ -689,7 +683,7 @@ public enum Backup {
                 }
                 do {
                     let data = try FileIO.read(u, maxBytes: maxBytes(forPath: path))
-                    if data.count != entry.size || sha256(data) != entry.sha256 {
+                    if data.count != entry.size || FileDigest.sha256(data) != entry.sha256 {
                         report.files.append(.init(path: path, status: .modified,
                                                   detail: "\(data.count) bytes, expected \(entry.size); SHA-256 differs"))
                     } else {
@@ -758,13 +752,13 @@ public enum Backup {
         for path in files {
             do {
                 let data = try readFormatFile(backup, path)
-                let hash = sha256(data)
+                let hash = FileDigest.sha256(data)
                 if let entry = manifest?.files[path], entry.sha256 != hash || entry.size != data.count {
                     report.errors.append(.init(path: path, message: "does not match backup.json (damaged); not restored"))
                     continue
                 }
                 let dst = url(target, path)
-                if FileIO.exists(dst), let have = try? readFormatFile(target, path), sha256(have) == hash {
+                if FileIO.exists(dst), let have = try? readFormatFile(target, path), FileDigest.sha256(have) == hash {
                     report.alreadyPresent += 1
                     continue
                 }
@@ -941,7 +935,7 @@ public enum Backup {
                 let member = "\(root)/\(path)"
                 try ensureDirs(member)
                 try writer.file(member, data)
-                expected[member] = sha256(data)
+                expected[member] = FileDigest.sha256(data)
             }
             try writer.finish()
             try out.synchronize()
@@ -951,14 +945,14 @@ public enum Backup {
             let written = try FileIO.read(tmp, maxBytes: fileSize(tmp) ?? 0)
             let members = try TarReader.files(written)
             guard members.count == expected.count,
-                  members.allSatisfy({ expected[$0.path] == sha256($0.data) }) else {
+                  members.allSatisfy({ expected[$0.path] == FileDigest.sha256($0.data) }) else {
                 throw VaultError.io("\(file.path): the archive does not read back identical")
             }
             guard !FileIO.exists(file) else { throw VaultError.alreadyExists(file.path) }
             try FileManager.default.moveItem(at: tmp, to: file)
             try FileIO.syncDirectory(dir)
             return ArchiveReport(archive: file.path, vaultId: source.vaultId.uuidString.lowercased(),
-                                 files: members.count, bytes: written.count, sha256: sha256(written))
+                                 files: members.count, bytes: written.count, sha256: FileDigest.sha256(written))
         } catch {
             try? FileManager.default.removeItem(at: tmp)
             if error is VaultError || error is BackupError { throw error }
