@@ -29,33 +29,51 @@ public struct FoundBlobReference: Hashable, Sendable {
 /// The structural reference test of format.md §8.1.1 / §8.1.6.
 enum BlobReferenceScan {
     /// Every object in `json` with a `sha256` key whose value is a string.
-    /// Iterative, so nesting depth costs no stack (Foundation's parser caps
-    /// it at 512 levels anyway).
     static func references(in json: Data) throws -> [FoundBlobReference] {
+        try facts(in: json).refs.map { FoundBlobReference(sha256: $0.sha256, type: $0.type, size: $0.size) }
+    }
+
+    /// The references with each one's holder hints (`duration`, `title` of
+    /// the object holding the reference object) and the revision's
+    /// top-level `wall`. Iterative, so nesting depth costs no stack
+    /// (Foundation's parser caps it at 512 levels anyway).
+    static func facts(in json: Data) throws -> AttachmentIndexEntry.RevisionFacts {
         let root = try JSONSerialization.jsonObject(with: json, options: [.fragmentsAllowed])
-        var out: [FoundBlobReference] = []
-        var stack: [Any] = [root]
-        while let value = stack.popLast() {
+        var refs: [AttachmentIndexEntry.Reference] = []
+        var stack: [(value: Any, holder: [String: Any]?)] = [(root, nil)]
+        while let top = stack.popLast() {
+            let (value, holder) = top
             if let object = value as? [String: Any] {
                 if let sha = object["sha256"] as? String {
-                    var found = FoundBlobReference(sha256: sha)
-                    found.type = object["type"] as? String
-                    // Booleans come back as NSNumber too, and `is Bool` is
-                    // also true for 0 and 1; their objCType is "c" (char),
-                    // never a JSON integer's.
-                    if let n = object["size"] as? NSNumber, String(cString: n.objCType) != "c" {
-                        let d = n.doubleValue
-                        // Range-checked before conversion (format.md §9).
-                        if d.isFinite, d >= 0, d <= Double(BlobRef.maxSize), d == d.rounded() { found.size = Int64(d) }
+                    var r = AttachmentIndexEntry.Reference(sha256: sha)
+                    r.type = object["type"] as? String
+                    r.size = integer(object["size"])
+                    if let holder {
+                        if let n = holder["duration"] as? NSNumber, String(cString: n.objCType) != "c",
+                           n.doubleValue.isFinite, n.doubleValue >= 0 { r.duration = n.doubleValue }
+                        if let t = holder["title"] as? String { r.title = String(t.prefix(AttachmentIndexer.maxTitle)) }
                     }
-                    out.append(found)
+                    refs.append(r)
                 }
-                stack.append(contentsOf: object.values)
+                for v in object.values { stack.append((v, object)) }
             } else if let array = value as? [Any] {
-                stack.append(contentsOf: array)
+                // An array's elements are held by whatever holds the array.
+                for v in array { stack.append((v, holder)) }
             }
         }
-        return out
+        let wall = ((root as? [String: Any])?["wall"] as? String).flatMap(RFC3339.parse)
+        return .init(refs: refs, wall: wall)
+    }
+
+    /// A JSON integer in `0...BlobRef.maxSize` (booleans and fractions refused).
+    /// Booleans come back as NSNumber too, and `is Bool` is also true for 0
+    /// and 1; their objCType is "c" (char), never a JSON integer's. Range-checked
+    /// before conversion (format.md §9).
+    static func integer(_ value: Any?) -> Int64? {
+        guard let n = value as? NSNumber, String(cString: n.objCType) != "c" else { return nil }
+        let d = n.doubleValue
+        guard d.isFinite, d >= 0, d <= Double(BlobRef.maxSize), d == d.rounded() else { return nil }
+        return Int64(d)
     }
 }
 
