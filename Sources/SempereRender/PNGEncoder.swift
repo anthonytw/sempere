@@ -94,10 +94,6 @@ enum PNGEncoder {
         return pb <= pc ? b : c
     }
 
-    private static func be32(_ v: Int) -> [UInt8] {
-        [UInt8((v >> 24) & 0xFF), UInt8((v >> 16) & 0xFF), UInt8((v >> 8) & 0xFF), UInt8(v & 0xFF)]
-    }
-
     private static func appendChunk(_ type: String, _ body: [UInt8], to out: inout Data) {
         let name = Array(type.utf8)
         out.append(contentsOf: be32(body.count))

@@ -47,7 +47,7 @@ enum PNG {
         var out: [Chunk] = []
         while true {
             guard pos + 12 <= d.count else { throw ImageError.truncated }
-            let len = Int(d[pos]) << 24 | Int(d[pos + 1]) << 16 | Int(d[pos + 2]) << 8 | Int(d[pos + 3])
+            let len = readBE32(d, pos)
             guard len <= Int(Int32.max) else { throw ImageError.malformed("chunk length") }
             guard pos + 12 + len <= d.count else { throw ImageError.truncated }
             let type = Array(d[(pos + 4)..<(pos + 8)])
@@ -55,8 +55,7 @@ enum PNG {
                 throw ImageError.malformed("chunk type")
             }
             let crcPos = pos + 8 + len
-            let stored = UInt32(d[crcPos]) << 24 | UInt32(d[crcPos + 1]) << 16 | UInt32(d[crcPos + 2]) << 8
-                | UInt32(d[crcPos + 3])
+            let stored = UInt32(truncatingIfNeeded: readBE32(d, crcPos))
             let computed = d.withUnsafeBufferPointer { b in
                 UInt32(crc32(0, b.baseAddress! + pos + 4, uInt(len + 4)))
             }
@@ -77,8 +76,7 @@ enum PNG {
             throw ImageError.malformed("IHDR")
         }
         let b = ihdr.body.lowerBound
-        func be32(_ i: Int) -> Int { Int(d[i]) << 24 | Int(d[i + 1]) << 16 | Int(d[i + 2]) << 8 | Int(d[i + 3]) }
-        let info = Info(width: be32(b), height: be32(b + 4), depth: Int(d[b + 8]), colorType: Int(d[b + 9]),
+        let info = Info(width: readBE32(d, b), height: readBE32(d, b + 4), depth: Int(d[b + 8]), colorType: Int(d[b + 9]),
                         interlaced: d[b + 12] == 1)
         guard info.width > 0, info.height > 0, info.width <= Int(Int32.max), info.height <= Int(Int32.max) else {
             throw ImageError.malformed("image size")

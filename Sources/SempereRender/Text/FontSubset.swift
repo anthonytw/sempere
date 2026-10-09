@@ -402,6 +402,8 @@ struct FontSubset {
 
 func be16(_ v: Int) -> [UInt8] { [UInt8((v >> 8) & 0xFF), UInt8(v & 0xFF)] }
 func be32(_ v: Int) -> [UInt8] { [UInt8((v >> 24) & 0xFF), UInt8((v >> 16) & 0xFF), UInt8((v >> 8) & 0xFF), UInt8(v & 0xFF)] }
+/// The big-endian 32-bit value at `d[i..<i + 4]`.
+func readBE32(_ d: [UInt8], _ i: Int) -> Int { Int(d[i]) << 24 | Int(d[i + 1]) << 16 | Int(d[i + 2]) << 8 | Int(d[i + 3]) }
 
 /// Rewrites a Type 2 charstring with every `callsubr`/`callgsubr` replaced by
 /// the subroutine's body (and `return` dropped), keeping operand bytes as they
