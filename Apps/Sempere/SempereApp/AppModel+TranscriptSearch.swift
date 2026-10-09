@@ -17,8 +17,7 @@ struct TranscriptSearchHit: Identifiable, Hashable, Sendable {
     /// `m:ss` (or `h:mm:ss`) of the start; "?:??" for a time that is not a sensible number.
     var timeText: String {
         guard start.isFinite, start >= 0, start < 3.6e9 else { return "?:??" }
-        let s = Int(start)
-        return s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60) : String(format: "%d:%02d", s / 60, s % 60)
+        return Transcript.clock(start)
     }
 }
 

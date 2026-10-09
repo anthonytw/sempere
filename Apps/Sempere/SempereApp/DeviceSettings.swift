@@ -454,9 +454,7 @@ enum StorageText {
         }
         var parts = [name]
         if kind == .audio || kind == .video, let d = lastUse?.duration, d.isFinite, d >= 0, d < 1e7 {
-            let s = Int(d.rounded())
-            parts.append(s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60)
-                                   : String(format: "%d:%02d", s / 60, s % 60))
+            parts.append(Transcript.clock(d.rounded()))
         }
         if let title = lastUse?.title, !title.isEmpty { parts.append(String(localized: "“\(title)”", comment: "A recording's title in quotes")) }
         return parts.joined(separator: ", ")
