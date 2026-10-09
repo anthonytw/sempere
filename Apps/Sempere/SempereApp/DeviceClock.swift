@@ -15,11 +15,7 @@ actor DeviceClock {
 
     /// `Application Support/Sempere/device.json` in the app's container
     /// (on iPad and in the Catalyst sandbox that is per installation).
-    static var defaultURL: URL {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
-        return support.appendingPathComponent("Sempere/device.json")
-    }
+    static var defaultURL: URL { AppSupport.sempere.appendingPathComponent("device.json") }
 
     /// Loads the state file at `url`, creating it with a fresh device id.
     init(url: URL = DeviceClock.defaultURL, onWrite: (@Sendable (UUID) -> Void)? = nil) throws {
