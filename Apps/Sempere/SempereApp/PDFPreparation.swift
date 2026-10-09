@@ -62,13 +62,16 @@ enum PDFPreparation {
     }
 
     /// Copies a picked file (security-scoped, from the file importer or a
-    /// drop) into a work folder; the copy is what `prepare` reads.
-    static func copyPicked(_ url: URL) throws -> URL {
+    /// drop) into a work folder; the copy is what `prepare` reads. A file
+    /// larger than `limit` (nil: none) is refused before it is copied.
+    static func copyPicked(_ url: URL, fallbackName: String = "picked.pdf", limit: Int? = maxBytes) throws -> URL {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-        guard size <= maxBytes else { throw Failure.tooLarge }
-        let copy = try workFolder().appendingPathComponent(url.lastPathComponent.isEmpty ? "picked.pdf" : url.lastPathComponent)
+        if let limit {
+            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            guard size <= limit else { throw Failure.tooLarge }
+        }
+        let copy = try workFolder().appendingPathComponent(url.lastPathComponent.isEmpty ? fallbackName : url.lastPathComponent)
         try FileManager.default.copyItem(at: url, to: copy)
         return copy
     }
