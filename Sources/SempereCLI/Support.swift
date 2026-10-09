@@ -334,13 +334,7 @@ func parseRecipient(_ s: String) throws -> NativeRecipient {
         }
         throw CLIError.usage("\(s) holds no age recipient (age1... or age1pq1...)")
     }
-    throw CLIError.usage("not an age recipient (age1... or age1pq1...): \(abbreviateKey(s))")
-}
-
-/// `age1pq1abcdefgh…stuvwxyz` for a post-quantum recipient (1959
-/// characters in full); other strings unchanged.
-func abbreviateKey(_ s: String) -> String {
-    s.count > 80 ? "\(s.prefix(16))…\(s.suffix(8))" : s
+    throw CLIError.usage("not an age recipient (age1... or age1pq1...): \(RecipientsProblem.abbreviate(s))")
 }
 
 /// How much unlocking a command needs.
@@ -457,7 +451,7 @@ final class UntaggedVaults: @unchecked Sendable {
             guard (try? Vault.open(at: url))?.manifest.recipientsTag != nil else { continue }
             printStderr("sempere: vault.json's device list is now authenticated (format.md §2.1); it trusts these "
                 + "\(recipients.count) recipient(s), check them with `sempere vault info`: "
-                + recipients.map { abbreviateKey($0.key) + ($0.label.isEmpty ? "" : " (\($0.label))") }.joined(separator: ", "))
+                + recipients.map { RecipientsProblem.abbreviate($0.key) + ($0.label.isEmpty ? "" : " (\($0.label))") }.joined(separator: ", "))
         }
     }
 }

@@ -116,7 +116,7 @@ struct KeysPaper: ParsableCommand {
         var info: RecoveryKit.VaultInfo?
         if let locked {
             guard locked.recipients.contains(where: { $0.key == identity.recipient.string }) else {
-                throw CLIError.cannotDecrypt("this key is not a recipient of the vault (\(abbreviateKey(identity.recipient.string)))")
+                throw CLIError.cannotDecrypt("this key is not a recipient of the vault (\(RecipientsProblem.abbreviate(identity.recipient.string)))")
             }
             var name = locked.url.lastPathComponent
             if name.hasSuffix(".sempere") { name.removeLast(".sempere".count) }
@@ -150,4 +150,3 @@ struct KeysPaper: ParsableCommand {
         }
     }
 }
-
