@@ -56,9 +56,7 @@ enum PNG {
             }
             let crcPos = pos + 8 + len
             let stored = UInt32(truncatingIfNeeded: readBE32(d, crcPos))
-            let computed = d.withUnsafeBufferPointer { b in
-                UInt32(crc32(0, b.baseAddress! + pos + 4, uInt(len + 4)))
-            }
+            let computed = Zlib.crc32(0, d[(pos + 4)..<crcPos])
             guard stored == computed else { throw ImageError.malformed("CRC of \(String(decoding: type, as: UTF8.self))") }
             out.append(Chunk(type: type, body: (pos + 8)..<crcPos, whole: pos..<(crcPos + 4)))
             pos = crcPos + 4

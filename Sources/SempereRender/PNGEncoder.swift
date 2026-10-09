@@ -99,9 +99,6 @@ enum PNGEncoder {
         out.append(contentsOf: be32(body.count))
         out.append(contentsOf: name)
         out.append(contentsOf: body)
-        var crc = crc32(0, nil, 0)
-        crc = name.withUnsafeBufferPointer { crc32(crc, $0.baseAddress, uInt($0.count)) }
-        if !body.isEmpty { crc = body.withUnsafeBufferPointer { crc32(crc, $0.baseAddress, uInt($0.count)) } }
-        out.append(contentsOf: be32(Int(crc)))
+        out.append(contentsOf: be32(Int(Zlib.crc32(Zlib.crc32(0, name), body))))
     }
 }
