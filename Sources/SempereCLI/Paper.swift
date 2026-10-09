@@ -4,14 +4,6 @@ import Foundation
 import SempereRender
 import Sempere
 
-#if canImport(Glibc)
-import Glibc
-#elseif canImport(Musl)
-import Musl
-#elseif canImport(Darwin)
-import Darwin
-#endif
-
 struct KeysPaper: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "paper",
@@ -159,15 +151,3 @@ struct KeysPaper: ParsableCommand {
     }
 }
 
-/// Creates `path` with mode 0600 holding `data`, refusing to overwrite.
-func writeNewSecretFile(_ data: Data, to path: String) throws {
-    let fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
-    if fd < 0 {
-        if errno == EEXIST { throw CLIError.failure("refusing to overwrite \(path)") }
-        throw CLIError.failure("cannot create \(path): \(String(cString: strerror(errno)))")
-    }
-    let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
-    do { try handle.write(contentsOf: data) } catch {
-        throw CLIError.failure("cannot write \(path): \(error.localizedDescription)")
-    }
-}

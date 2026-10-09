@@ -210,13 +210,20 @@ enum Format {
 
 /// Creates `path` with mode 0600, refusing to overwrite.
 func writeNewSecretFile(_ text: String, to path: String) throws {
+    try writeNewSecretFile(Data(text.utf8), to: path)
+}
+
+/// Creates `path` with mode 0600 holding `data`, refusing to overwrite.
+func writeNewSecretFile(_ data: Data, to path: String) throws {
     let fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
     if fd < 0 {
         if errno == EEXIST { throw CLIError.failure("refusing to overwrite \(path)") }
         throw CLIError.failure("cannot create \(path): \(String(cString: strerror(errno)))")
     }
     let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
-    handle.write(Data(text.utf8))
+    do { try handle.write(contentsOf: data) } catch {
+        throw CLIError.failure("cannot write \(path): \(error.localizedDescription)")
+    }
 }
 
 /// Writes `data` to `url`, replacing it, readable by the owner only: a
