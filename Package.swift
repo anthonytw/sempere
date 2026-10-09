@@ -98,7 +98,7 @@ let package = Package(
         .testTarget(name: "SempereImportTests",
                     dependencies: ["SempereImport", "Sempere", "SempereRender", "Age", "CZlib", "FuzzSupport", "TempDirSupport", "ImportTestSupport"]),
         .testTarget(name: "SempereWebDAVTests", dependencies: ["SempereWebDAV", "Sempere", "Age", "FuzzSupport", "TempDirSupport"]),
-        .testTarget(name: "CLITests", dependencies: ["Age", "Sempere", "CLITestSupport"]),
+        .testTarget(name: "CLITests", dependencies: ["Age", "Sempere", "CLITestSupport", "FuzzSupport"]),
     ] + (hasNotability ? [
         // The Notability importer (docs/import-notability.md "Structure"). Optional: delete this directory
         // (and Tests/SempereNotabilityTests) and everything else still builds.

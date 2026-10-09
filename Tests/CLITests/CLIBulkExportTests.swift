@@ -1,3 +1,4 @@
+import FuzzSupport
 import XCTest
 import CLITestSupport
 import Foundation
@@ -7,16 +8,7 @@ import Foundation
 /// unchanged notes, `--overwrite`, and failures that do not stop the batch.
 /// The app's "Export Notes…" writes the same files (docs/cli.md "Bulk export").
 final class CLIBulkExportTests: CLITestCase {
-    func files(_ dir: String) -> [String] {
-        let e = FileManager.default.enumerator(atPath: dir)
-        var out: [String] = []
-        while let f = e?.nextObject() as? String {
-            var isDir: ObjCBool = false
-            if FileManager.default.fileExists(atPath: dir + "/" + f, isDirectory: &isDir), !isDir.boolValue,
-               !f.hasPrefix(".") { out.append(f) }
-        }
-        return out.sorted()
-    }
+    func files(_ dir: String) -> [String] { FileTree.regularFiles(under: URL(fileURLWithPath: dir), skipHidden: true) }
 
     func testNotebookLayoutAndResume() throws {
         let (_, _, key) = try makeVault()

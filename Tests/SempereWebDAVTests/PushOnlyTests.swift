@@ -1,4 +1,5 @@
 import Foundation
+import FuzzSupport
 import XCTest
 @testable import Sempere
 @testable import SempereWebDAV
@@ -22,16 +23,7 @@ final class PushOnlyTests: BlobSyncTestCase {
     }
 
     /// Every file under the vault folder, by relative path.
-    func tree(_ name: String) throws -> [String: Data] {
-        var out: [String: Data] = [:]
-        let base = dir(name)
-        let e = FileManager.default.enumerator(at: base, includingPropertiesForKeys: [.isRegularFileKey])
-        while let u = e?.nextObject() as? URL {
-            guard (try? u.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true else { continue }
-            out[String(u.path.dropFirst(base.path.count))] = try Data(contentsOf: u)
-        }
-        return out
-    }
+    func tree(_ name: String) throws -> [String: Data] { try FileTree.snapshot(of: dir(name)) }
 
     func noteRel(_ file: String) -> String { "notes/\(id)/\(file)" }
 

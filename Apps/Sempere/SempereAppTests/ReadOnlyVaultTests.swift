@@ -26,17 +26,6 @@ struct ReadOnlyVaultTests {
         return (vault, try String(contentsOf: fixtures.appendingPathComponent("sample.key"), encoding: .utf8))
     }
 
-    /// Every regular file under `url` with its bytes.
-    static func files(_ url: URL) throws -> [String: Data] {
-        var out: [String: Data] = [:]
-        let e = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey])
-        while let f = e?.nextObject() as? URL {
-            guard (try f.resourceValues(forKeys: [.isRegularFileKey])).isRegularFile == true else { continue }
-            out[String(f.path.dropFirst(url.path.count))] = try Data(contentsOf: f)
-        }
-        return out
-    }
-
     @Test func opensReadOnlyAndShowsWhatItUnderstands() async throws {
         let (url, keyText) = try Self.newerVault()
         let model = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .seconds(60))
@@ -70,7 +59,7 @@ struct ReadOnlyVaultTests {
         model.automaticThinning = true
         try await model.openVault(at: url)
         try await model.unlock(identityText: keyText)
-        let before = try Self.files(url)
+        let before = try TS.fileSnapshot(of: url)
 
         await #expect(throws: VaultError.self) {
             _ = try await model.createNote(title: "x", paper: .ruled, notebook: nil)
@@ -96,7 +85,7 @@ struct ReadOnlyVaultTests {
         model.close()
         await editor.flush()
 
-        #expect(try Self.files(url) == before, "nothing in the vault changed")
+        #expect(try TS.fileSnapshot(of: url) == before, "nothing in the vault changed")
     }
 
     /// A newer revision that arrives while its note is open (another device,
@@ -134,10 +123,10 @@ struct ReadOnlyVaultTests {
         #expect(editor.isReadOnly)
         #expect(editor.readOnlyReason?.contains("newer version") == true)
         #expect(editor.pages.first?.strokes.count == 2)
-        let before = try Self.files(url)
+        let before = try TS.fileSnapshot(of: url)
         await editor.flush()
         #expect(editor.deltasWritten == 0)
-        #expect(try Self.files(url) == before)
+        #expect(try TS.fileSnapshot(of: url) == before)
     }
 }
 
