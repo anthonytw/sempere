@@ -141,9 +141,7 @@ struct RecordingSettings: Hashable, Sendable {
 
     /// "About 29 MB per hour".
     func sizePerHourText(inputChannels: Int = 1) -> String {
-        let f = ByteCountFormatter()
-        f.countStyle = .file
-        let size = f.string(fromByteCount: bytesPerHour(inputChannels: inputChannels))
+        let size = StorageText.bytes(bytesPerHour(inputChannels: inputChannels))
         return String(localized: "About \(size) per hour", comment: "Settings ▸ Recording ▸ Size: estimated file size of one hour of audio, e.g. 28.8 MB")
     }
 }
