@@ -1,4 +1,5 @@
 import Foundation
+import TempDirSupport
 import XCTest
 
 @testable import Age
@@ -10,18 +11,7 @@ import XCTest
 /// passphrases only from a terminal, so they cannot be scripted. Reference
 /// scrypt output is covered by the CCTV `scrypt*` vectors (decrypt
 /// direction); our scrypt output is covered by our own round trips.
-final class InteropTests: XCTestCase {
-    var tmp: URL!
-
-    override func setUpWithError() throws {
-        tmp = FileManager.default.temporaryDirectory.appendingPathComponent("age-interop-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-    }
-
-    override func tearDownWithError() throws {
-        try? FileManager.default.removeItem(at: tmp)
-    }
-
+final class InteropTests: TempDirTestCase {
     static func which(_ name: String) -> URL? {
         let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
         var dirs: [String] = path.split(separator: ":").map { String($0) }

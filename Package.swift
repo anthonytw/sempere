@@ -79,23 +79,25 @@ let package = Package(
         ),
         // Seeded mutation fuzzer shared by the test targets (Foundation only).
         .target(name: "FuzzSupport", path: "Tests/FuzzSupport"),
+        // The base class of the tests that need a scratch directory (XCTest).
+        .target(name: "TempDirSupport", path: "Tests/TempDirSupport"),
         // The base class of the CLI tests (a subprocess driver, fixture vaults); shared with the importers' CLI tests.
-        .target(name: "CLITestSupport", dependencies: ["Age", "Sempere"], path: "Tests/CLITestSupport"),
+        .target(name: "CLITestSupport", dependencies: ["Age", "Sempere", "TempDirSupport"], path: "Tests/CLITestSupport"),
         // Plist, keyed-archive and zip writers for the importers' tests (Foundation and zlib only).
         .target(name: "ImportTestSupport", dependencies: ["CZlib"], path: "Tests/ImportTestSupport"),
-        .testTarget(name: "AgeTests", dependencies: ["Age", "CZlib", "FuzzSupport"],
+        .testTarget(name: "AgeTests", dependencies: ["Age", "CZlib", "FuzzSupport", "TempDirSupport"],
                     resources: [.copy("Vectors")]),
         .testTarget(name: "SempereTests",
-                    dependencies: ["Sempere", "FuzzSupport", .product(name: "Crypto", package: "swift-crypto")],
+                    dependencies: ["Sempere", "FuzzSupport", "TempDirSupport", .product(name: "Crypto", package: "swift-crypto")],
                     resources: [.copy("Fixtures")]),
-        .testTarget(name: "SempereRenderTests", dependencies: ["SempereRender", "SempereFonts", "Age", "FuzzSupport"],
+        .testTarget(name: "SempereRenderTests", dependencies: ["SempereRender", "SempereFonts", "Age", "FuzzSupport", "TempDirSupport"],
                     exclude: ["generate_sample_note.py", "generate_qr_vectors.py", "generate_image_fixtures.py", "generate_legacy_image_fixtures.py", "generate_shaping_fixtures.py"],
                     resources: [.copy("Fixtures")]),
         .testTarget(name: "SemperePDFTests", dependencies: ["SemperePDF", "FuzzSupport"],
                     exclude: ["generate_fixtures.py"], resources: [.copy("Fixtures")]),
         .testTarget(name: "SempereImportTests",
-                    dependencies: ["SempereImport", "Sempere", "SempereRender", "Age", "CZlib", "FuzzSupport", "ImportTestSupport"]),
-        .testTarget(name: "SempereWebDAVTests", dependencies: ["SempereWebDAV", "Sempere", "Age", "FuzzSupport"]),
+                    dependencies: ["SempereImport", "Sempere", "SempereRender", "Age", "CZlib", "FuzzSupport", "TempDirSupport", "ImportTestSupport"]),
+        .testTarget(name: "SempereWebDAVTests", dependencies: ["SempereWebDAV", "Sempere", "Age", "FuzzSupport", "TempDirSupport"]),
         .testTarget(name: "CLITests", dependencies: ["Age", "Sempere", "CLITestSupport"]),
     ] + (hasNotability ? [
         // The Notability importer (docs/import-notability.md "Structure"). Optional: delete this directory
@@ -106,7 +108,7 @@ let package = Package(
         ),
         .testTarget(name: "SempereNotabilityTests",
                     dependencies: ["SempereNotability", "SempereImport", "Sempere", "SempereRender", "Age", "CZlib", "FuzzSupport",
-                                   "ImportTestSupport", "CLITestSupport"],
+                                   "TempDirSupport", "ImportTestSupport", "CLITestSupport"],
                     exclude: ["Fixtures"]),
     ] : []),
     swiftLanguageModes: [.v6]

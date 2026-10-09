@@ -1,3 +1,4 @@
+import TempDirSupport
 import XCTest
 import Foundation
 import ImportTestSupport
@@ -11,12 +12,7 @@ private typealias StreamZip = SempereRender.ZipWriter
 /// `SempereRender.ZipWriter` (bulk export archives), read back with the importer's
 /// `ZipArchive` and, when installed, Info-ZIP `unzip -t`.
 final class ZipWriterTests: XCTestCase {
-    func scratch() throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("zipw-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
-        return url
-    }
+    func scratch() throws -> URL { try makeScratchDirectory("zipw") }
 
     func file(_ dir: URL, _ name: String, _ data: Data) throws -> URL {
         let url = dir.appendingPathComponent(name)

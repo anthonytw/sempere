@@ -9,22 +9,7 @@ import XCTest
 /// Whole-backup behaviour on synthetic data: copies and versions of one
 /// note, short per-curve arrays, shapes, and `.ntb` bundles
 /// (`docs/import-notability.md`, "Duplicates and versions", ".ntb format").
-final class NotabilityBackupTests: XCTestCase {
-    var tmp: URL!
-
-    override func setUpWithError() throws {
-        tmp = FileManager.default.temporaryDirectory.appendingPathComponent("nbk-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-    }
-
-    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: tmp) }
-
-    func makeVault() throws -> Vault {
-        let identity = try NativeIdentity.generate(.postQuantum)
-        return try Vault.create(at: tmp.appendingPathComponent("V-\(UUID().uuidString).sempere"),
-                                recipients: [identity.recipient], identities: [identity])
-    }
-
+final class NotabilityBackupTests: NotabilityTestCase {
     func run(_ files: [TestZip.File], vault: Vault? = nil, name: String = "backup.zip") throws
         -> (NotabilityImporter.ImportReport, Vault) {
         let url = tmp.appendingPathComponent(name)

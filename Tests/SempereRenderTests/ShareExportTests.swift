@@ -1,3 +1,4 @@
+import TempDirSupport
 import XCTest
 import Foundation
 import Sempere
@@ -17,11 +18,7 @@ final class ShareExportTests: XCTestCase {
         return (summary, state)
     }
 
-    func scratch() throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("share-\(UUID().uuidString)")
-        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
-        return url
-    }
+    func scratch() throws -> URL { makeScratch("share") }
 
     func names(_ urls: [URL]) -> [String] { urls.map(\.lastPathComponent).sorted() }
 

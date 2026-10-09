@@ -1,9 +1,34 @@
+import Age
 import CZlib
 import Foundation
 import ImportTestSupport
+import Sempere
+import TempDirSupport
 import XCTest
 @testable import SempereImport
 @testable import SempereNotability
+
+/// A scratch directory, a fresh vault in it, and a one-file import.
+class NotabilityTestCase: TempDirTestCase {
+    func makeVault() throws -> Vault {
+        let identity = try NativeIdentity.generate(.postQuantum)
+        return try Vault.create(at: tmp.appendingPathComponent("V-\(UUID().uuidString).sempere"),
+                                recipients: [identity.recipient], identities: [identity])
+    }
+
+    /// Writes `data` as a `.<ext>` file and imports it, expecting one note that imports cleanly.
+    func importFile(_ data: Data, ext: String = "note", into vault: Vault, options: NotabilityImporter.Options = .init())
+        throws -> (NotabilityImporter.NoteResult, NoteState) {
+        let path = tmp.appendingPathComponent("N-\(UUID().uuidString).\(ext)")
+        try data.write(to: path)
+        var clock = HybridClock()
+        let report = try NotabilityImporter.import(paths: [path], into: vault, device: DeviceID("0a0b0c0d")!,
+                                                   clock: &clock, options: options)
+        let r = try XCTUnwrap(report.notes.first)
+        XCTAssertEqual(r.status, .ok, "\(r.status)")
+        return (r, try vault.reconstruct(noteId: try XCTUnwrap(r.noteId)))
+    }
+}
 
 // MARK: - Synthetic Notability note
 
