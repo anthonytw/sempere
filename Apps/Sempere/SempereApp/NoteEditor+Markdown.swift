@@ -27,10 +27,8 @@ extension NoteEditor {
                   MathTypesetter.problem(f.latex) == nil,
                   let typeset = try? MathTypesetter.formula(MathContent(latex: f.latex, display: f.display, size: f.size,
                                                                         color: f.color)),
-                  let ref = typeset.formula.math.render else { continue }
-            guard let writer = attachmentWriter else { throw ItemError.notEditable }
-            try await prepareBlobWrite?(ref)
-            let stored = try await writer.addBlob(typeset.data, type: MathContent.renderType)
+                  typeset.formula.math.render != nil else { continue }
+            let stored = try await storeBlob(typeset.data, type: MathContent.renderType)
             var entry = typeset.formula
             entry.math.render = stored
             entries.append(entry)

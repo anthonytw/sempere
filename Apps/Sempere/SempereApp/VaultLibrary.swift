@@ -230,14 +230,7 @@ final class VaultLibrary {
     // MARK: - Places
 
     /// `Application Support/Sempere/recents.json`.
-    static var defaultStoreURL: URL { supportDirectory.appendingPathComponent("recents.json") }
-
-    private static var supportDirectory: URL {
-        let base = (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
-                                                 appropriateFor: nil, create: true))
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        return base.appendingPathComponent("Sempere", isDirectory: true)
-    }
+    static var defaultStoreURL: URL { AppSupport.sempere.appendingPathComponent("recents.json") }
 
     /// The app container's Documents folder, where "On This Device" vaults live.
     static var onDeviceFolder: URL {

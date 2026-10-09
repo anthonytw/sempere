@@ -194,11 +194,8 @@ final class QuickCapture {
     /// the Lock Screen is assembled, read and sealed from closed segment files before any unlock.
     static let protection = FileProtectionType.completeUntilFirstUserAuthentication
 
-    nonisolated static var defaultRoot: URL { appSupport.appendingPathComponent("Sempere/QuickCapture", isDirectory: true) }
-    nonisolated static var defaultQueueRoot: URL { appSupport.appendingPathComponent("Sempere/CaptureQueue", isDirectory: true) }
-    nonisolated private static var appSupport: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-    }
+    nonisolated static var defaultRoot: URL { AppSupport.folder("QuickCapture") }
+    nonisolated static var defaultQueueRoot: URL { AppSupport.folder("CaptureQueue") }
 
     /// Hooks the intents (Siri, Shortcuts, widgets, Control Center) up to the shared instance.
     /// Also ends Live Activities left by an earlier process (killed, crashed or

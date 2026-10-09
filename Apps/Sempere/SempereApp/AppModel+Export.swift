@@ -2,25 +2,32 @@ import Foundation
 import Sempere
 import SempereRender
 
+/// A request whose sheet shows in the window that asked for it.
+protocol WindowTargeted {
+    /// The window that asked (`WindowUI.id`): its sheet shows there. Nil: the
+    /// library window with the canvas.
+    var window: UUID? { get }
+}
+
+extension WindowTargeted {
+    /// `request` when window `window` shows it: the window that asked, or for
+    /// a request without one, the library window with the canvas (or any, when
+    /// none has it: `OpenedFile.shows`).
+    static func shown(_ request: Self?, in window: UUID, canvasWindow: UUID?) -> Self? {
+        guard let request else { return nil }
+        if let asker = request.window { return asker == window ? request : nil }
+        return OpenedFile.shows(in: window, canvasWindow: canvasWindow) ? request : nil
+    }
+}
+
 /// What the export sheet was asked to export.
-struct ExportRequest: Identifiable, Equatable {
+struct ExportRequest: Identifiable, Equatable, WindowTargeted {
     let id = UUID()
     var noteIDs: [UUID]
     var format: ShareFormat
     /// The window that asked (`WindowUI.id`): its sheet shows there. Nil: the
     /// library window with the canvas.
     var window: UUID?
-}
-
-extension ExportRequest {
-    /// `request` when window `window` shows it: the window that asked, or for
-    /// a request without one, the library window with the canvas (or any, when
-    /// none has it).
-    static func shown(_ request: ExportRequest?, in window: UUID, canvasWindow: UUID?) -> ExportRequest? {
-        guard let request else { return nil }
-        if let asker = request.window { return asker == window ? request : nil }
-        return canvasWindow == nil || canvasWindow == window ? request : nil
-    }
 }
 
 /// How far an export has come: notes read from the vault, then notes rendered.
@@ -102,14 +109,7 @@ extension AppModel {
         if options.format == .pdf && options.pdfAttachments {
             // "PDF + attachments": iCloud fetches audio only when it is used (docs/attachments.md §4).
             // One that cannot be fetched is left out and reported by the export.
-            for (summary, state) in loaded {
-                for r in state.recordings {
-                    try? await ensureBlobLocal(r.blob, of: summary.id)
-                    if let t = r.transcript { try? await ensureBlobLocal(t, of: summary.id) }
-                }
-                // Video clips too (format.md §8.2.7): fetched only now, when they are embedded.
-                for clip in ExportVideos.clips(of: state) { try? await ensureBlobLocal(clip.ref, of: summary.id) }
-            }
+            for (summary, state) in loaded { await ensurePDFAttachmentsLocal(state, of: summary.id) }
             try ensureCurrent(gen)
         } else if options.format == .media {
             // "Media": every file the export writes, fetched now; one that cannot be is left out and reported.
@@ -139,6 +139,18 @@ extension AppModel {
 }
 
 extension AppModel {
+    /// Downloads (iCloud) every blob "PDF + attachments" embeds for `state`:
+    /// recordings and their transcripts, and video clips (format.md §8.2.7),
+    /// fetched only now, when they are embedded. Failures are left to the
+    /// export, which reports them.
+    func ensurePDFAttachmentsLocal(_ state: NoteState, of id: UUID) async {
+        for r in state.recordings {
+            try? await ensureBlobLocal(r.blob, of: id)
+            if let t = r.transcript { try? await ensureBlobLocal(t, of: id) }
+        }
+        for clip in ExportVideos.clips(of: state) { try? await ensureBlobLocal(clip.ref, of: id) }
+    }
+
     /// Downloads (iCloud) every blob a media export of `state` writes:
     /// recordings and their transcripts, clips, images and PDFs
     /// (`MediaExport.plan`). Failures are left to the export, which reports them.

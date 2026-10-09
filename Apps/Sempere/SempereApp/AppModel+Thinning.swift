@@ -109,8 +109,7 @@ extension NoteWriter {
         var stage = "metadata"
         defer { Perf.end(interval, "note=\(Perf.short(noteID)) \(stage)") }
         let empty = PreparedCompaction.nothing(noteID)
-        let folder = coordinated ? vault.url.appendingPathComponent("notes", isDirectory: true)
-            .appendingPathComponent(noteID.uuidString.lowercased(), isDirectory: true) : nil
+        let folder = coordinated ? CloudScan.noteFolder(inVault: vault.url, id: noteID) : nil
         // 1. Metadata only.
         let loaded: LoadedNote? = try await Task.detached(priority: .utility) { () throws -> LoadedNote? in
             let names = try vault.revisionNames(of: noteID)
@@ -120,11 +119,9 @@ extension NoteWriter {
             }
             return try CloudVault.coordinatedRead(coordinated ? vault.url : nil) { () throws -> LoadedNote? in
                 try verify?()
-                let index = try vault.revisionIndex(of: noteID, cache: cache)
-                guard CompactionPlanner.mayDelete(index.revisions, noteId: noteID, mode: mode, now: now) else { return nil }
                 // 2. Something may go: the note in full.
-                let loaded = try vault.loadNote(noteID)
-                try verify?()
+                let loaded = try vault.loadForCompaction(noteID, mode: mode, now: now, cache: cache)
+                if loaded != nil { try verify?() }
                 return loaded
             }
         }.value

@@ -181,13 +181,24 @@ extension Vault {
     /// - Throws: as `revisionIndex` and `planCompaction`.
     public func prepareCompaction(_ noteId: UUID, mode: CompactionMode, now: Date = Date(), device: DeviceID,
                                   clock: inout HybridClock, app: String, cache: SummaryCache?) throws -> PreparedCompaction {
-        let index = try revisionIndex(of: noteId, cache: cache)
-        guard CompactionPlanner.mayDelete(index.revisions, noteId: noteId, mode: mode, now: now) else {
+        guard let loaded = try loadForCompaction(noteId, mode: mode, now: now, cache: cache) else {
             return .nothing(noteId)
         }
-        let plan = try planCompaction(noteId, loaded: try loadNote(noteId), mode: mode, now: now, device: device,
+        let plan = try planCompaction(noteId, loaded: loaded, mode: mode, now: now, device: device,
                                       clock: &clock, app: app)
         return try prepare(plan)
+    }
+
+    /// The note read in full for compacting it, or nil when its revision
+    /// metadata (`revisionIndex`, from `cache` when it can) shows nothing
+    /// `mode` may delete; then nothing more of it is read.
+    ///
+    /// - Throws: as `revisionIndex` and `loadNote`.
+    public func loadForCompaction(_ noteId: UUID, mode: CompactionMode, now: Date = Date(),
+                                  cache: SummaryCache?) throws -> LoadedNote? {
+        let index = try revisionIndex(of: noteId, cache: cache)
+        guard CompactionPlanner.mayDelete(index.revisions, noteId: noteId, mode: mode, now: now) else { return nil }
+        return try loadNote(noteId)
     }
 }
 

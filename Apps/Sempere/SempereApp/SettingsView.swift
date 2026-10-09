@@ -805,9 +805,8 @@ struct ThinningPreviewView: View {
             }
             return String(localized: "Nothing to remove: no autosave is old enough to be thinned.")
         }
-        let bytes = ByteCountFormatter()
         // Two counts in one sentence: each is its own (plural) noun phrase.
-        let deletedSize = bytes.string(fromByteCount: Int64(r.bytesDeleted))
+        let deletedSize = StorageText.bytes(Int64(r.bytesDeleted))
         let files = String(localized: "\(r.deletions) old autosaves (\(deletedSize))",
                            comment: "Thinning summary: noun phrase, number of autosaves removed and their size; used in “Removes %@ from %@.”")
         let notes = String(localized: "\(r.notes.count) notes",
@@ -816,7 +815,7 @@ struct ThinningPreviewView: View {
             ? String(localized: "Removed \(files) from \(notes).", comment: "Thinning done: “Removed 120 old autosaves (1.2 MB) from 4 notes.”")
             : String(localized: "Removes \(files) from \(notes).", comment: "Thinning preview: “Removes 120 old autosaves (1.2 MB) from 4 notes.”")
         if r.snapshots > 0 {
-            let addedSize = bytes.string(fromByteCount: Int64(r.bytesAdded))
+            let addedSize = StorageText.bytes(Int64(r.bytesAdded))
             s += " " + (done
                 ? String(localized: "To keep saved versions and the last autosave of each session restorable, \(r.snapshots) snapshots (\(addedSize)) were added.")
                 : String(localized: "To keep saved versions and the last autosave of each session restorable, \(r.snapshots) snapshots (\(addedSize)) will be added."))

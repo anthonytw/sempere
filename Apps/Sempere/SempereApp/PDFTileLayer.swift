@@ -32,17 +32,12 @@ enum PDFItemDrawing {
     static func draw(_ document: CGPDFDocument, item: Item, in ctx: CGContext) -> Bool {
         guard let index = item.pageIndex, index >= 0, index < document.numberOfPages,
               let page = document.page(at: index + 1) else { return false }
-        let box = page.getBoxRect(.cropBox).intersection(page.getBoxRect(.mediaBox))
-        guard !box.isNull, box.width > 0, box.height > 0, box.width.isFinite, box.height.isFinite else { return false }
-        let rotation = ((Int(page.rotationAngle) % 360) + 360) % 360
-        let turned = rotation % 180 != 0
-        let ew = turned ? box.height : box.width, eh = turned ? box.width : box.height
+        guard let geometry = page.effectiveGeometry else { return false }
+        let ew = geometry.size.width, eh = geometry.size.height
         let stored = item.pageSize.flatMap { $0.isPositive ? $0 : nil } ?? Size(w: Double(ew), h: Double(eh))
         let crop = item.shownCrop ?? Rect(x: 0, y: 0, w: stored.w, h: stored.h)
         guard crop.w > 0, crop.h > 0, item.frame.w > 0, item.frame.h > 0 else { return false }
         let fw = CGFloat(item.frame.w), fh = CGFloat(item.frame.h)
-        let m = PDFPageGeometry.userToEffective(x0: box.minX, y0: box.minY, x1: box.maxX, y1: box.maxY, rotation: rotation)
-        let toEffective = CGAffineTransform(a: m[0], b: m[1], c: m[2], d: m[3], tx: m[4], ty: m[5])
         let toStored = CGAffineTransform(scaleX: CGFloat(stored.w) / ew, y: CGFloat(stored.h) / eh)
         let sx = fw / CGFloat(crop.w), sy = fh / CGFloat(crop.h)
         let toFrame = CGAffineTransform(a: sx, b: 0, c: 0, d: sy, tx: -CGFloat(crop.x) * sx, ty: -CGFloat(crop.y) * sy)
@@ -52,7 +47,7 @@ enum PDFItemDrawing {
         ctx.clip(to: local)
         ctx.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
         ctx.fill(local)
-        ctx.concatenate(toEffective.concatenating(toStored).concatenating(toFrame))
+        ctx.concatenate(geometry.toEffective.concatenating(toStored).concatenating(toFrame))
         ctx.interpolationQuality = .high
         ctx.drawPDFPage(page)
         return true

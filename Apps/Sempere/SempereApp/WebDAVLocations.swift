@@ -51,14 +51,8 @@ final class WebDAVLocationStore {
         }
     }
 
-    static var supportDirectory: URL {
-        let base = (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
-                                                 appropriateFor: nil, create: true))
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        return base.appendingPathComponent("Sempere", isDirectory: true)
-    }
-    static var defaultStoreURL: URL { supportDirectory.appendingPathComponent("webdav.json") }
-    static var defaultRoot: URL { supportDirectory.appendingPathComponent("WebDAV", isDirectory: true) }
+    static var defaultStoreURL: URL { AppSupport.sempere.appendingPathComponent("webdav.json") }
+    static var defaultRoot: URL { AppSupport.folder("WebDAV") }
 
     /// The local copy of `location`.
     nonisolated func copy(of location: WebDAVLocation) -> WebDAVLocalCopy {

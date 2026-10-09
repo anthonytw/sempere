@@ -192,10 +192,7 @@ final class RecordingSession {
     static var busy: Set<UUID> = []
 
     /// Where sessions keep their files: Application Support, not backed up.
-    nonisolated static var root: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("Sempere/Recordings", isDirectory: true)
-    }
+    nonisolated static var root: URL { AppSupport.folder("Recordings") }
 
     /// The Data Protection class of the session's files (iOS).
     let protection: FileProtectionType

@@ -14,18 +14,13 @@ struct BulkExportSheet: View {
     @State private var options = BulkExportOptions(format: .pdf)
     @State private var asZip: Bool
     @State private var pickingFolder = false
-    @State private var sharing = false
-    @State private var saving = false
-    /// The view the Mac's share picker and save panel are presented from (`ExportHandOff`).
-    @State private var anchor = PresentationAnchor.Box()
+    @State private var handOff = ExportHandOffState()
 
     init(request: BulkExportRequest) {
         self.request = request
         // A Mac writes into a folder; an iPad or iPhone hands a zip to the share sheet or Files.
         _asZip = State(initialValue: !Platform.isMac)
     }
-
-    private static let resolutions: [Double] = [72, 144, 216, 300]
 
     var body: some View {
         NavigationStack {
@@ -79,12 +74,7 @@ struct BulkExportSheet: View {
                 run.start(model: model, request: request, options: options, target: .folder(url, scoped: true))
             }
         }
-        .sheet(isPresented: $sharing) {
-            if case .finished(let result) = run.state { ShareSheet(items: [result.output]) { sharing = false } }
-        }
-        .sheet(isPresented: $saving) {
-            if case .finished(let result) = run.state { SaveToFiles(items: [result.output]) { saving = false } }
-        }
+        .exportHandOff($handOff)
     }
 
     private var noteCount: Int { model.bulkExportJobs(request.scope, options: options).count }
@@ -112,9 +102,7 @@ struct BulkExportSheet: View {
                 Toggle("Paper Background and Ruling", isOn: $options.paper)
             }
             if options.format == .png {
-                Picker("Resolution", selection: $options.dpi) {
-                    ForEach(Self.resolutions, id: \.self) { Text("\(Int($0)) dpi").tag($0) }
-                }
+                ResolutionPicker(dpi: $options.dpi)
             }
             Picker("Save As", selection: $asZip) {
                 Text("Files in a Folder").tag(false)
@@ -178,22 +166,10 @@ struct BulkExportSheet: View {
         }
         if case .zip = destinationKind(result), !result.exported.isEmpty, !result.cancelled {
             Section {
-                Button("Share…", systemImage: "square.and.arrow.up") { deliver(result, save: false) }
-                    .background(PresentationAnchor(box: anchor))
-                Button(Platform.isMac ? LocalizedStringKey("Save…") : LocalizedStringKey("Save to Files…"),
-                       systemImage: "folder") { deliver(result, save: true) }
+                ExportHandOffButtons(state: $handOff, items: [result.output])
             } footer: {
                 Text("The archive is deleted from the app when you close this sheet.")
             }
-        }
-    }
-
-    /// The finished zip's Share… and Save…: on a Mac presented by UIKit from
-    /// the button (`ExportHandOff`), never from inside this SwiftUI sheet
-    /// (the build 7 Mac export crash, #103).
-    private func deliver(_ result: BulkExportResult, save: Bool) {
-        ExportHandOff.deliver([result.output], save: save, anchor: anchor) { save in
-            if save { saving = true } else { sharing = true }
         }
     }
 

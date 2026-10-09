@@ -64,12 +64,7 @@ extension NoteEditor {
     func addAttachment(file: URL, type: String, on pageID: UUID,
                        item make: @Sendable (BlobRef) throws -> Item) async throws -> Item {
         _ = try page(pageID)
-        guard let writer = attachmentWriter else { throw ItemError.notEditable }
-        if let prepare = prepareBlobWrite {
-            let planned = try await Task.detached(priority: .userInitiated) { try BlobPlanning.ref(ofFile: file, type: type) }.value
-            try await prepare(planned)
-        }
-        let ref = try await writer.addBlob(from: file, type: type)
+        let ref = try await storeBlob(file: file, type: type)
         return try addItems([try make(ref)], on: pageID)[0]
     }
 
@@ -78,10 +73,33 @@ extension NoteEditor {
     func addAttachment(data: Data, type: String, on pageID: UUID,
                        item make: @Sendable (BlobRef) throws -> Item) async throws -> Item {
         _ = try page(pageID)
+        let ref = try await storeBlob(data, type: type)
+        return try addItems([try make(ref)], on: pageID)[0]
+    }
+
+    /// Writes `data` as a blob of this note (format.md §8.1.4), after
+    /// `prepareBlobWrite` has seen the reference it will have. Returns it.
+    ///
+    /// - Throws: `ItemError.notEditable` when the note is closed, or a write error.
+    func storeBlob(_ data: Data, type: String) async throws -> BlobRef {
         guard let writer = attachmentWriter else { throw ItemError.notEditable }
         if let prepare = prepareBlobWrite { try await prepare(BlobRef(content: data, type: type)) }
-        let ref = try await writer.addBlob(data, type: type)
-        return try addItems([try make(ref)], on: pageID)[0]
+        return try await writer.addBlob(data, type: type)
+    }
+
+    /// `storeBlob(_:type:)` for the file at `file`, streamed, with `edits`
+    /// changing bytes on the way (a video's metadata). The reference is
+    /// planned off the main actor, and only when `prepareBlobWrite` wants it.
+    func storeBlob(file: URL, type: String, edits: [ByteEdit]? = nil) async throws -> BlobRef {
+        guard let writer = attachmentWriter else { throw ItemError.notEditable }
+        if let prepare = prepareBlobWrite {
+            let planned = try await Task.detached(priority: .userInitiated) {
+                if let edits { try Vault.blobRef(contentsOf: file, type: type, edits: edits) }
+                else { try BlobPlanning.ref(ofFile: file, type: type) }
+            }.value
+            try await prepare(planned)
+        }
+        return try await writer.addBlob(from: file, type: type, edits: edits ?? [])
     }
 
     /// Moves or resizes an item (one `setItem(frame)`). A text box that gets

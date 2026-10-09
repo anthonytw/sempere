@@ -69,10 +69,7 @@ final class MathModels {
         refresh()
     }
 
-    nonisolated static var defaultRoot: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Sempere/MathModels", isDirectory: true)
-    }
+    nonisolated static var defaultRoot: URL { AppSupport.folder("MathModels") }
 
     /// `SEMPERE_DEBUG_MATH_MODEL` (DEBUG builds): a converted model folder to
     /// use without a catalogue entry (`~/` is the app's data container).

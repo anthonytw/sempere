@@ -10,20 +10,12 @@ struct ExportSheet: View {
     let request: ExportRequest
     @State private var job = ExportJob()
     @State private var options: ShareOptions
-    @State private var sharing = false
-    @State private var saving = false
-    /// The files the share sheet or the export picker were handed: theirs
-    /// until they report back, whatever the job does meanwhile.
-    @State private var handOff: [URL] = []
-    /// The view the Mac's share picker and save panel are presented from (`ExportHandOff`).
-    @State private var anchor = PresentationAnchor.Box()
+    @State private var handOff = ExportHandOffState()
 
     init(request: ExportRequest) {
         self.request = request
         _options = State(initialValue: ShareOptions(format: request.format))
     }
-
-    private static let resolutions: [Double] = [72, 144, 216, 300]
 
     var body: some View {
         NavigationStack {
@@ -64,24 +56,7 @@ struct ExportSheet: View {
         }
         .interactiveDismissDisabled(job.isRunning)
         .onDisappear { job.discard() }
-        .sheet(isPresented: $sharing) {
-            if !handOff.isEmpty { ShareSheet(items: handOff) { sharing = false } }
-        }
-        .sheet(isPresented: $saving) {
-            if !handOff.isEmpty { SaveToFiles(items: handOff) { saving = false } }
-        }
-    }
-
-    /// Share… and Save to Files… for the finished export. On a Mac the system's
-    /// share picker and save panel are presented by UIKit from the button
-    /// (`ExportHandOff`): hosted inside a SwiftUI sheet, as on the iPad, they
-    /// have no anchor there (TestFlight build 7: the export of a note with a
-    /// recording crashed on the Mac when it was shared or saved).
-    private func deliver(_ outcome: ExportJob.Outcome, save: Bool) {
-        handOff = outcome.items
-        ExportHandOff.deliver(outcome.items, save: save, anchor: anchor) { save in
-            if save { saving = true } else { sharing = true }
-        }
+        .exportHandOff($handOff)
     }
 
     @ViewBuilder
@@ -101,9 +76,7 @@ struct ExportSheet: View {
                 Toggle("Paper Background and Ruling", isOn: $options.paper)
             }
             if options.format == .png || (options.format == .markdown && options.markdownImages == .png) {
-                Picker("Resolution", selection: $options.dpi) {
-                    ForEach(Self.resolutions, id: \.self) { Text("\(Int($0)) dpi").tag($0) }
-                }
+                ResolutionPicker(dpi: $options.dpi)
             }
             if options.format == .pdf {
                 // "PDF" and "PDF + attachments" side by side (docs/attachments.md §13 "Export options").
@@ -170,9 +143,7 @@ struct ExportSheet: View {
             }
         }
         Section {
-            Button("Share…", systemImage: "square.and.arrow.up") { deliver(outcome, save: false) }
-                .background(PresentationAnchor(box: anchor))
-            Button(Platform.isMac ? LocalizedStringKey("Save…") : LocalizedStringKey("Save to Files…"), systemImage: "folder") { deliver(outcome, save: true) }
+            ExportHandOffButtons(state: $handOff, items: outcome.items)
         } footer: {
             Text("The files are deleted from the app when you close this sheet.")
         }
@@ -284,6 +255,72 @@ struct SaveToFiles: UIViewControllerRepresentable {
         }
         nonisolated func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
             ExportHandOff.onMain(done)
+        }
+    }
+}
+
+/// Share… and Save… for finished export files, as the export sheets offer
+/// them (`ExportHandOff`): the files handed off, whether the SwiftUI share
+/// sheet or Save to Files is up, and the Mac's anchor.
+@MainActor
+struct ExportHandOffState {
+    /// The files the share sheet or the export picker were handed: theirs
+    /// until they report back, whatever the export does meanwhile.
+    var items: [URL] = []
+    var sharing = false
+    var saving = false
+    /// The view the Mac's share picker and save panel are presented from.
+    let anchor = PresentationAnchor.Box()
+}
+
+extension View {
+    /// The `ShareSheet` and `SaveToFiles` sheets of `state` (the iPad's; a
+    /// Mac presents from the anchor instead).
+    func exportHandOff(_ state: Binding<ExportHandOffState>) -> some View {
+        sheet(isPresented: state.sharing) {
+            let items = state.wrappedValue.items
+            if !items.isEmpty { ShareSheet(items: items) { state.wrappedValue.sharing = false } }
+        }
+        .sheet(isPresented: state.saving) {
+            let items = state.wrappedValue.items
+            if !items.isEmpty { SaveToFiles(items: items) { state.wrappedValue.saving = false } }
+        }
+    }
+}
+
+/// The Share… and Save… buttons for `items`. On a Mac the system's share
+/// picker and save panel are presented by UIKit from the Share… button
+/// (`ExportHandOff`): hosted inside a SwiftUI sheet, as on the iPad, they
+/// have no anchor there (TestFlight build 7: the export of a note with a
+/// recording crashed on the Mac when it was shared or saved, #103).
+struct ExportHandOffButtons: View {
+    @Binding var state: ExportHandOffState
+    let items: [URL]
+
+    var body: some View {
+        Button("Share…", systemImage: "square.and.arrow.up") { deliver(save: false) }
+            .background(PresentationAnchor(box: state.anchor))
+        Button(Platform.isMac ? LocalizedStringKey("Save…") : LocalizedStringKey("Save to Files…"),
+               systemImage: "folder") { deliver(save: true) }
+    }
+
+    private func deliver(save: Bool) {
+        state.items = items
+        ExportHandOff.deliver(items, save: save, anchor: state.anchor) { save in
+            if save { state.saving = true } else { state.sharing = true }
+        }
+    }
+}
+
+/// The PNG resolution of the export sheets.
+struct ResolutionPicker: View {
+    @Binding var dpi: Double
+
+    static let resolutions: [Double] = [72, 144, 216, 300]
+
+    var body: some View {
+        Picker("Resolution", selection: $dpi) {
+            ForEach(Self.resolutions, id: \.self) { Text("\(Int($0)) dpi").tag($0) }
         }
     }
 }

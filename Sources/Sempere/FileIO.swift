@@ -257,3 +257,23 @@ public enum BoundedRead {
         return data
     }
 }
+
+extension URL {
+    /// The path with `.`, `..` and symbolic links resolved: two locations
+    /// compare by it.
+    public var canonicalPath: String {
+        standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
+    /// Whether this location and `other` are the same or one is inside the other.
+    public func overlaps(_ other: URL) -> Bool {
+        let a = canonicalPath, b = other.canonicalPath
+        return a == b || a.hasPrefix(b + "/") || b.hasPrefix(a + "/")
+    }
+
+    /// Whether this location is `root` or inside it.
+    public func isSameOrInside(_ root: URL) -> Bool {
+        let p = canonicalPath, r = root.canonicalPath
+        return p == r || p.hasPrefix(r.hasSuffix("/") ? r : r + "/")
+    }
+}

@@ -108,15 +108,9 @@ extension NoteEditor {
     @discardableResult
     func addRecording(file: URL, started: Date, id: UUID = UUID(), title: String? = nil,
                       place: Bool = false) async throws -> Recording {
-        guard canEditItems, let writer = attachmentWriter else { throw ItemError.notEditable }
+        guard canEditItems else { throw ItemError.notEditable }
         let info = try? await Task.detached(priority: .userInitiated) { try AudioProbe.probe(file: file) }.value
-        if let prepare = prepareBlobWrite {
-            let planned = try await Task.detached(priority: .userInitiated) {
-                try BlobPlanning.ref(ofFile: file, type: "audio/mp4")
-            }.value
-            try await prepare(planned)
-        }
-        let ref = try await writer.addBlob(from: file, type: "audio/mp4")
+        let ref = try await storeBlob(file: file, type: "audio/mp4")
         let recording = NoteOps.recording(blob: ref, started: started, info: info, title: title, id: id)
         var ops = try NoteOps.addRecording(recording, to: recordings)
         await flush()   // the card goes on the page as it is after the ink still pending
