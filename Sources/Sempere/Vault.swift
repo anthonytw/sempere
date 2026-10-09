@@ -158,11 +158,12 @@ public struct Vault: Sendable {
     /// not read the store each time.
     let trustMemo = TrustMemo()
 
-    static let manifestName = "vault.json"
-    static let keysName = "keys"
-    static let notesName = "notes"
+    // `package`: SempereWebDAV walks the same layout.
+    package static let manifestName = "vault.json"
+    package static let keysName = "keys"
+    package static let notesName = "notes"
     /// Recipient-change journal (docs/io.md). An unknown file to other readers.
-    static let journalName = "rewrap-journal.json"
+    package static let journalName = "rewrap-journal.json"
 
     var manifestURL: URL { url.appendingPathComponent(Self.manifestName) }
     var keysURL: URL { url.appendingPathComponent(Self.keysName) }
@@ -1103,7 +1104,7 @@ public struct Vault: Sendable {
         try FileIO.entries(notesURL).filter { Self.isNoteDirectoryName($0) && FileIO.isDirectory(notesURL.appendingPathComponent($0)) }
     }
 
-    static func isNoteDirectoryName(_ s: String) -> Bool {
+    package static func isNoteDirectoryName(_ s: String) -> Bool {
         guard let u = UUID(uuidString: s) else { return false }
         return u.uuidString.lowercased() == s
     }

@@ -335,16 +335,13 @@ public enum Backup {
                 out.append("\(Vault.notesName)/\(d)/\(f)")
             }
             // Attachment blobs (format.md §8.1.2): write-once like revisions.
-            let att = dir.appendingPathComponent(attachmentsName)
+            let att = dir.appendingPathComponent(Vault.attachmentsName)
             for f in try FileIO.entries(att) where isBlobFileName(f) && !FileIO.isDirectory(att.appendingPathComponent(f)) {
-                out.append("\(Vault.notesName)/\(d)/\(attachmentsName)/\(f)")
+                out.append("\(Vault.notesName)/\(d)/\(Vault.attachmentsName)/\(f)")
             }
         }
         return out
     }
-
-    /// A note's attachment folder (format.md §8.1.2).
-    static let attachmentsName = "att"
 
     /// The most a reader takes of the format file at `path` (relative to a
     /// vault or backup root, possibly under `versions/<time>/`), by kind:
@@ -355,7 +352,7 @@ public enum Backup {
         if last == Vault.manifestName || last == Vault.journalName { return BoundedRead.maxManifestBytes }
         if parts.count == 1, last == SharedSettings.fileName { return SharedSettings.maxFileBytes }
         if parts.count >= 2, parts[parts.count - 2] == Vault.keysName { return BoundedRead.maxSmallFileBytes }
-        if parts.count >= 2, parts[parts.count - 2] == attachmentsName { return BoundedRead.maxBlobFileBytes }
+        if parts.count >= 2, parts[parts.count - 2] == Vault.attachmentsName { return BoundedRead.maxBlobFileBytes }
         return BoundedRead.maxRevisionBytes
     }
 
@@ -373,7 +370,7 @@ public enum Backup {
     /// something a backup can prove from the files it sees.
     static func isBlobPath(_ path: String) -> Bool {
         let parts = path.split(separator: "/")
-        return parts.count == 4 && parts[0] == Vault.notesName[...] && parts[2] == attachmentsName[...]
+        return parts.count == 4 && parts[0] == Vault.notesName[...] && parts[2] == Vault.attachmentsName[...]
     }
 
     /// A `keys/` entry is any `<stem>.key.age`: whatever the stem (an `age1…`

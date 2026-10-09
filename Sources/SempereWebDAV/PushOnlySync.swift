@@ -43,7 +43,7 @@ extension WebDAVSync {
         guard let local else {
             guard remote != nil else { return }
             // Nothing is ever pulled; a stale journal also blocks blob collection, so it may go.
-            if reportExtraneous(name, remove: [name]) && name == Self.journalName { remoteJournal = false }
+            if reportExtraneous(name, remove: [name]) && name == Vault.journalName { remoteJournal = false }
             return
         }
         let localHash = FileDigest.sha256(local)
@@ -77,14 +77,14 @@ extension WebDAVSync {
     // MARK: Notes
 
     func syncNotePushOnly(_ id: String, remoteEntries: [RemoteEntry]?) throws {
-        let dir = root.appendingPathComponent("notes").appendingPathComponent(id)
+        let dir = root.appendingPathComponent(Vault.notesName).appendingPathComponent(id)
         var R = Set<RevisionName>()
         var remoteAtt: RemoteEntry?
         for e in remoteEntries ?? [] {
-            if e.name == Self.attName && e.isCollection { remoteAtt = e; continue }
+            if e.name == Vault.attachmentsName && e.isCollection { remoteAtt = e; continue }
             guard !e.isCollection, let n = RevisionName(e.name), n.filename == e.name else {
                 report.ignored.append(SyncReport.printable("notes/\(id)/\(e.name)"))
-                remoteJunk.append(["notes", id, e.name])
+                remoteJunk.append([Vault.notesName, id, e.name])
                 continue
             }
             R.insert(n)
@@ -117,7 +117,7 @@ extension WebDAVSync {
             attempt(n) {
                 let path = "notes/\(key(id, n))"
                 guard S.contains(n) else {   // never synced: not ours
-                    if reportExtraneous(path, remove: ["notes", id, n.filename]) { R.remove(n) }
+                    if reportExtraneous(path, remove: [Vault.notesName, id, n.filename]) { R.remove(n) }
                     return
                 }
                 guard loaded != nil else {
@@ -138,7 +138,7 @@ extension WebDAVSync {
                     return
                 }
                 report.deleted.append(.init(side: "remote", path: path))
-                if !options.dryRun { try client.delete(["notes", id, n.filename]) }
+                if !options.dryRun { try client.delete([Vault.notesName, id, n.filename]) }
                 R.remove(n)
             }
         }

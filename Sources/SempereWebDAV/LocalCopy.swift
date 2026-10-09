@@ -33,7 +33,7 @@ public struct WebDAVLocalCopy: Sendable {
 
     /// True when the copy holds a vault (`vault.json`).
     public var exists: Bool {
-        FileManager.default.fileExists(atPath: folder.appendingPathComponent("vault.json").path)
+        FileManager.default.fileExists(atPath: folder.appendingPathComponent(Vault.manifestName).path)
     }
 
     /// Options every run of a copy uses: the caller's, with the state's quarantine folder.
@@ -93,19 +93,19 @@ public struct WebDAVLocalCopy: Sendable {
     public func unconfirmedChanges() -> Int {
         let state = (try? SyncState.load(stateURL)) ?? nil
         var count = 0
-        for name in [WebDAVSync.manifestName, WebDAVSync.journalName] {
+        for name in [Vault.manifestName, Vault.journalName] {
             let url = folder.appendingPathComponent(name)
             guard let data = try? BoundedRead.contents(of: url, maxBytes: BoundedRead.maxManifestBytes) else { continue }
             if state?.mutable[name]?.hash != FileDigest.sha256(data) { count += 1 }
         }
-        let notes = folder.appendingPathComponent("notes")
-        for id in ((try? LocalFS.entries(notes)) ?? []) where WebDAVSync.isNoteID(id) {
+        let notes = folder.appendingPathComponent(Vault.notesName)
+        for id in ((try? LocalFS.entries(notes)) ?? []) where Vault.isNoteDirectoryName(id) {
             let dir = notes.appendingPathComponent(id)
             for f in (try? LocalFS.entries(dir)) ?? [] {
                 if let n = RevisionName(f), n.filename == f, state?.files["\(id)/\(f)"] == nil { count += 1 }
             }
-            for f in (try? LocalFS.entries(dir.appendingPathComponent(WebDAVSync.attName))) ?? []
-            where WebDAVSync.isBlobName(f) && state?.files["\(id)/\(WebDAVSync.attName)/\(f)"] == nil {
+            for f in (try? LocalFS.entries(dir.appendingPathComponent(Vault.attachmentsName))) ?? []
+            where WebDAVSync.isBlobName(f) && state?.files["\(id)/\(Vault.attachmentsName)/\(f)"] == nil {
                 count += 1
             }
         }
@@ -146,7 +146,7 @@ public struct WebDAVLocalCopy: Sendable {
         let sync = WebDAVSync(directory: stagingFolder, vault: nil, client: client, stateURL: stagingStateURL, options: o)
         let report = try sync.run()
         guard report.errors.isEmpty, report.stoppedEarly == nil, report.conflicts.isEmpty,
-              fm.fileExists(atPath: stagingFolder.appendingPathComponent("vault.json").path) else {
+              fm.fileExists(atPath: stagingFolder.appendingPathComponent(Vault.manifestName).path) else {
             return (report, false)
         }
         // The staging folder had no vault.json, so the run took the server's unchecked: it must be one
@@ -155,7 +155,7 @@ public struct WebDAVLocalCopy: Sendable {
         // this device's only offline one, would be gone.
         if let why = incomingManifestProblem(identities: identities) {
             var refused = report
-            refused.errors.append(.init(path: WebDAVSync.manifestName, message: SyncReport.printable(why)))
+            refused.errors.append(.init(path: Vault.manifestName, message: SyncReport.printable(why)))
             return (refused, false)
         }
         try swapIn()
@@ -165,7 +165,7 @@ public struct WebDAVLocalCopy: Sendable {
     /// Why the downloaded `vault.json` may not replace the copy's, or nil (`Vault.incomingManifestProblem`
     /// against the copy's own, under `identities`).
     private func incomingManifestProblem(identities: [any AgeIdentity]) -> String? {
-        let name = WebDAVSync.manifestName
+        let name = Vault.manifestName
         guard let incoming = try? BoundedRead.contents(of: stagingFolder.appendingPathComponent(name),
                                                        maxBytes: BoundedRead.maxManifestBytes) else {
             return "the downloaded vault.json cannot be read"
@@ -184,22 +184,22 @@ public struct WebDAVLocalCopy: Sendable {
             try fm.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
             do { try fm.linkItem(at: from, to: to) } catch { try fm.copyItem(at: from, to: to) }
         }
-        let keys = folder.appendingPathComponent("keys")
+        let keys = folder.appendingPathComponent(Vault.keysName)
         for f in (try? LocalFS.entries(keys)) ?? [] where !f.hasPrefix(".") {
-            try place(keys.appendingPathComponent(f), target.appendingPathComponent("keys").appendingPathComponent(f))
+            try place(keys.appendingPathComponent(f), target.appendingPathComponent(Vault.keysName).appendingPathComponent(f))
         }
-        let notes = folder.appendingPathComponent("notes")
-        for id in (try? LocalFS.entries(notes)) ?? [] where WebDAVSync.isNoteID(id) {
+        let notes = folder.appendingPathComponent(Vault.notesName)
+        for id in (try? LocalFS.entries(notes)) ?? [] where Vault.isNoteDirectoryName(id) {
             let dir = notes.appendingPathComponent(id)
-            let out = target.appendingPathComponent("notes").appendingPathComponent(id)
+            let out = target.appendingPathComponent(Vault.notesName).appendingPathComponent(id)
             for f in (try? LocalFS.entries(dir)) ?? [] {
                 if let n = RevisionName(f), n.filename == f {
                     try place(dir.appendingPathComponent(f), out.appendingPathComponent(f))
                 }
             }
-            let att = dir.appendingPathComponent(WebDAVSync.attName)
+            let att = dir.appendingPathComponent(Vault.attachmentsName)
             for f in (try? LocalFS.entries(att)) ?? [] where WebDAVSync.isBlobName(f) {
-                try place(att.appendingPathComponent(f), out.appendingPathComponent(WebDAVSync.attName).appendingPathComponent(f))
+                try place(att.appendingPathComponent(f), out.appendingPathComponent(Vault.attachmentsName).appendingPathComponent(f))
             }
         }
     }
@@ -232,7 +232,7 @@ public struct WebDAVLocalCopy: Sendable {
 
     private func requireRemoteVault(_ client: WebDAVClient) throws {
         guard let root = try client.list([]) else { throw WebDAVError.http(method: "PROPFIND", path: "", status: 404) }
-        guard root.contains(where: { $0.name == WebDAVSync.manifestName && !$0.isCollection }) else {
+        guard root.contains(where: { $0.name == Vault.manifestName && !$0.isCollection }) else {
             throw WebDAVError.io("there is no vault at \(SyncReport.printable(client.baseURL.absoluteString)) (no vault.json)")
         }
     }
