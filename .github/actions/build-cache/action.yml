@@ -1,0 +1,27 @@
+name: Build cache
+description: Restores a build folder from the cache. Main saves it afterwards with `cache/save`, under the returned key.
+inputs:
+  prefix:
+    description: Start of the key (linux, macos or app)
+    required: true
+  version-cmd:
+    description: Prints the toolchain version; its first line goes into the key
+    required: true
+  path:
+    description: The folder to restore
+    default: .build
+outputs:
+  key:
+    description: The key without the commit; save under `<key>-<sha>`
+    value: ${{ steps.cachekey.outputs.key }}
+runs:
+  using: composite
+  steps:
+    - id: cachekey
+      shell: bash
+      run: echo "key=${{ inputs.prefix }}-$(echo "$GITHUB_WORKSPACE" | cksum | cut -d" " -f1)-$(${{ inputs.version-cmd }} 2>&1 | head -1 | cksum | cut -d' ' -f1)-${{ hashFiles('Package.resolved') }}" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache/restore@v4
+      with:
+        path: ${{ inputs.path }}
+        key: ${{ steps.cachekey.outputs.key }}-${{ github.sha }}
+        restore-keys: ${{ steps.cachekey.outputs.key }}-
