@@ -56,26 +56,12 @@ public enum AudioProbe {
 
     /// The audio file at `url`.
     public static func probe(file url: URL) throws -> AudioInfo {
-        let handle = try BoundedRead.openRegularFile(url)
-        defer { try? handle.close() }
-        let size: UInt64
-        do { size = try handle.seekToEnd() } catch { throw VaultError.io("read \(url.path): \(error)") }
-        return try probe(size: size) { offset, count in
-            do {
-                try handle.seek(toOffset: offset)
-                return try handle.read(upToCount: count) ?? Data()
-            } catch {
-                throw VaultError.io("read \(url.path): \(error)")
-            }
-        }
+        try VideoProbe.reading(file: url, probe(size:read:))
     }
 
     /// The audio file held in `data`.
     public static func probe(_ data: Data) throws -> AudioInfo {
-        try probe(size: UInt64(data.count)) { offset, count in
-            let start = data.startIndex + Int(offset)
-            return data[start..<min(start + count, data.endIndex)]
-        }
+        try VideoProbe.reading(data, probe(size:read:))
     }
 
     static func probe(size: UInt64, read: (UInt64, Int) throws -> Data) throws -> AudioInfo {
@@ -125,13 +111,9 @@ public enum AudioProbe {
         var body: Range<Int>
     }
 
-    private static func be32(_ d: [UInt8], _ i: Int) -> UInt32 {
-        UInt32(d[i]) << 24 | UInt32(d[i + 1]) << 16 | UInt32(d[i + 2]) << 8 | UInt32(d[i + 3])
-    }
-
-    private static func be64(_ d: [UInt8], _ i: Int) -> UInt64 { UInt64(be32(d, i)) << 32 | UInt64(be32(d, i + 4)) }
-
-    private static func be16(_ d: [UInt8], _ i: Int) -> Int { Int(d[i]) << 8 | Int(d[i + 1]) }
+    private static func be16(_ d: [UInt8], _ i: Int) -> Int { VideoProbe.be16(d, i) }
+    private static func be32(_ d: [UInt8], _ i: Int) -> UInt32 { VideoProbe.be32(d, i) }
+    private static func be64(_ d: [UInt8], _ i: Int) -> UInt64 { VideoProbe.be64(d, i) }
 
     /// The boxes directly inside `range` of `d`.
     private static func children(_ d: [UInt8], _ range: Range<Int>, budget: inout Int) throws -> [Box] {

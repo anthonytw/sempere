@@ -412,7 +412,7 @@ public enum CaptureFile {
         let stored = plaintext[b + 5..<b + headerSize]
         let rest = plaintext[(b + headerSize)...]
         let expected = tag(key, filename: filename, rest: rest)
-        guard constantTimeEqual(Data(stored), expected) else { throw CaptureError.badTag }
+        guard RecipientsAuth.constantTimeEqual(Data(stored), expected) else { throw CaptureError.badTag }
         guard let nl = rest.prefix(maxLineBytes + 1).firstIndex(of: 0x0A) else {
             throw CaptureError.notCapture("no JSON line")
         }
@@ -430,13 +430,6 @@ public enum CaptureFile {
         out.append(tag(key, filename: filename, rest: rest))
         out.append(rest)
         return out
-    }
-
-    static func constantTimeEqual(_ a: Data, _ b: Data) -> Bool {
-        guard a.count == b.count else { return false }
-        var diff: UInt8 = 0
-        for (x, y) in zip(a, b) { diff |= x ^ y }
-        return diff == 0
     }
 
     /// How much of a capture's JSON line is scanned for its device claim:
@@ -837,7 +830,7 @@ extension Vault {
             throw CaptureError.notCapture("too short")
         }
         let stored = Data(head.suffix(32))
-        for (i, h) in hmacs.enumerated() where CaptureFile.constantTimeEqual(Data(h.finalize()), stored) { return chosen[i] }
+        for (i, h) in hmacs.enumerated() where RecipientsAuth.constantTimeEqual(Data(h.finalize()), stored) { return chosen[i] }
         throw CaptureError.badTag
     }
 
