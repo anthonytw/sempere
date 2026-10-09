@@ -101,8 +101,7 @@ actor NoteWriter {
     /// The note's folder, coordinated on for writes; nil outside iCloud Drive.
     private var coordinationURL: URL? {
         guard coordinated else { return nil }
-        return vault.url.appendingPathComponent("notes", isDirectory: true)
-            .appendingPathComponent(noteID.uuidString.lowercased(), isDirectory: true)
+        return CloudScan.noteFolder(inVault: vault.url, id: noteID)
     }
 
     /// Writes one delta of `ops` to a note that is not loaded (the browser's

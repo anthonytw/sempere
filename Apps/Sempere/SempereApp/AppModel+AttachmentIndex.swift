@@ -228,7 +228,7 @@ extension AppModel {
             }
             let records = attachmentIndex[note]?.unusedSince ?? [:]
             let now = attachmentNow()
-            let folder = cloud ? url.appendingPathComponent("notes/\(note.uuidString.lowercased())", isDirectory: true) : nil
+            let folder = cloud ? CloudScan.noteFolder(inVault: url, id: note) : nil
             let outcome: (BlobCollectionReport, [String: Date])
             do {
                 outcome = try await offMain(priority: .userInitiated) { () throws -> (BlobCollectionReport, [String: Date]) in
