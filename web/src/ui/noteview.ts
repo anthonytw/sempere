@@ -19,7 +19,7 @@ import { cmpItems } from "../format/registers.ts";
 import { PreparedPage, chunkHeight, defaultRenderOptions, elementSpec } from "../render/page.ts";
 import { expandMarkdown } from "../render/markdown.ts";
 import { RenderLimits } from "../render/primitives.ts";
-import { applyTransform, meanScale, transformOf } from "../render/stroke.ts";
+import { meanScale, transformOf } from "../render/stroke.ts";
 import { type Measure, fontStacks } from "../render/text.ts";
 import { BlobError, type NoteBlobs } from "../vault/blobs.ts";
 import { type BlobKind, blobProblem } from "./errors.ts";
@@ -39,12 +39,14 @@ export function pageExtent(page: Page, state: NoteState): number {
     if (n === 0) continue;
     const xf = transformOf(st);
     let radius = Math.abs(st.ink.width), lo = Infinity, hi = -Infinity;
+    // Only y is needed: applyTransform's y, inlined, with no allocation per point.
+    const pts = st.points, b = xf[1], d = xf[3], ty = xf[5];
     for (let i = 0; i < n; i++) {
-      const b = i * pointStride;
-      const q = applyTransform(xf, st.points[b] ?? 0, st.points[b + 1] ?? 0);
-      lo = Math.min(lo, q.y);
-      hi = Math.max(hi, q.y);
-      radius = Math.max(radius, Math.abs(st.points[b + 3] ?? 0), Math.abs(st.points[b + 4] ?? 0));
+      const at = i * pointStride;
+      const y = b * (pts[at] ?? 0) + d * (pts[at + 1] ?? 0) + ty;
+      lo = Math.min(lo, y);
+      hi = Math.max(hi, y);
+      radius = Math.max(radius, Math.abs(pts[at + 3] ?? 0), Math.abs(pts[at + 4] ?? 0));
     }
     spans.push({ maxY: hi + Math.min(radius * meanScale(xf), RenderLimits.maxNibWidth) / 2 + 1, centreY: lo / 2 + hi / 2 });
   }

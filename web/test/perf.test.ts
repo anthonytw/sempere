@@ -5,6 +5,10 @@
 import { describe, expect, it } from "vitest";
 import { CachingSource, FileCache, MemoryFileStore } from "../src/vault/cache.ts";
 import { type VaultSource } from "../src/vault/source.ts";
+import { type Page, pointStride } from "../src/format/model.ts";
+import { PreparedPage, defaultRenderOptions } from "../src/render/page.ts";
+import { pageExtent } from "../src/ui/noteview.ts";
+import { emptyState, stroke } from "./builders.ts";
 import { type SearchableNote, isWithinNotebook, notebookCounts, notebookTree, refinesQuery, search } from "../src/format/search.ts";
 
 const enabled = process.env.SEMPERE_WEB_PERF === "1";
@@ -114,5 +118,35 @@ describe.skipIf(!enabled)("perf", () => {
     const dropped = await src.retain(listing);
     console.log(`PERF retain of 90,000 cached revisions: ${(performance.now() - t0).toFixed(1)} ms`);
     expect(dropped).toBe(0);
+  }, 600_000);
+
+  it("page extent and PreparedPage of a dense page (2,000 strokes × 200 points)", () => {
+    const r = rng(5);
+    const pg: Page = { id: "p", order: "a", strokes: [], items: [] };
+    for (let k = 0; k < 2000; k++) {
+      const st = stroke();
+      const pts = new Float64Array(200 * pointStride);
+      let x = r() * 600, y = r() * 780;
+      for (let i = 0; i < 200; i++) {
+        x += r() - 0.5;
+        y += r() - 0.5;
+        pts.set([x, y, i / 100, 2, 2, 1, 0, 0, Math.PI / 2], i * pointStride);
+      }
+      st.points = pts;
+      if (k % 3 === 0) st.transform = [1, 0.01, -0.01, 1, 3, 5];
+      pg.strokes.push(st);
+    }
+    const state = emptyState(0, [pg]);
+    let e = 0;
+    time("pageExtent x10", () => { for (let i = 0; i < 10; i++) e = pageExtent(pg, state); });
+    let prepared: PreparedPage | undefined;
+    const runs: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      const t0 = performance.now();
+      prepared = new PreparedPage(pg, state.meta, defaultRenderOptions);
+      runs.push(performance.now() - t0);
+    }
+    console.log(`PERF new PreparedPage, best of 5: ${Math.min(...runs).toFixed(1)} ms`);
+    expect(prepared?.extent).toBe(e);
   }, 600_000);
 });
