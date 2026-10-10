@@ -2,7 +2,8 @@
 // notebooks, tags and notes, search, and read a note. Read-only throughout.
 
 import { type NoteState } from "../format/model.ts";
-import { type NotebookNode, type SearchHit, canonicalNotebook, isWithinNotebook, notebookTree, refinesQuery, search } from "../format/search.ts";
+import { type NotebookNode, type SearchHit, canonicalNotebook, isWithinNotebook, notebookCounts, notebookTree, refinesQuery,
+  search } from "../format/search.ts";
 import { tagKey } from "../format/tags.ts";
 import { type LoadedNote, type NoteSummary, loadNote, summarize } from "../vault/library.ts";
 import { CachingSource, cacheNamespace } from "../vault/cache.ts";
@@ -481,8 +482,10 @@ export class App {
       h("li", {}, h("button", {
         class: isActive(f) ? "active" : "", attrs: { type: "button" }, on: { click: () => this.setFilter(f) },
       }, h("span", { class: "label", text: label }), count !== undefined ? h("span", { class: "count", text: String(count) }) : null));
+    const notebooks = live.map((n) => n.notebook);
+    const counts = notebookCounts(notebooks);
     const tree = (nodes: NotebookNode[]): HTMLElement => h("ul", {}, ...nodes.map((n) => {
-      const li = item(n.name, { kind: "notebook", path: n.path }, live.filter((x) => isWithinNotebook(x.notebook, n.path)).length);
+      const li = item(n.name, { kind: "notebook", path: n.path }, counts.get(n.path) ?? 0);
       if (n.children.length) li.append(tree(n.children));
       return li;
     }));
@@ -500,7 +503,7 @@ export class App {
     clear(this.sidebar);
     this.sidebar.append(
       h("ul", {}, item(t("All notes"), { kind: "all" }, live.length), item(t("Favorites"), { kind: "favorites" }, live.filter((n) => n.favorite).length)),
-      h("h3", { text: t("Notebooks") }), tree(notebookTree(live.map((n) => n.notebook))),
+      h("h3", { text: t("Notebooks") }), tree(notebookTree(notebooks)),
       h("h3", { text: t("Tags") }), h("ul", {}, ...tagList.map(([k, v]) => item(`#${v.label}`, { kind: "tag", key: k, label: v.label }, v.count))),
       h("h3", { text: t("Other") }),
       h("ul", {}, item(t("Deleted"), { kind: "deleted" }, all.length - live.length), problems ? item(t("Problems"), { kind: "problems" }, problems) : null));

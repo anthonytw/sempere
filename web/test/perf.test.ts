@@ -3,7 +3,7 @@
 // test/perf.test.ts`); correctness of the same code is covered by the ordinary tests.
 
 import { describe, expect, it } from "vitest";
-import { type SearchableNote, refinesQuery, search } from "../src/format/search.ts";
+import { type SearchableNote, isWithinNotebook, notebookCounts, notebookTree, refinesQuery, search } from "../src/format/search.ts";
 
 const enabled = process.env.SEMPERE_WEB_PERF === "1";
 
@@ -68,5 +68,20 @@ describe.skipIf(!enabled)("perf", () => {
       }
     });
     expect(hits).toBeGreaterThan(0);
+  }, 600_000);
+
+  it("sidebar notebook counts, 5,000 notes in about 100 nested notebooks", () => {
+    const names = Array.from({ length: 5000 }, (_, i) => `School/Term ${i % 10}/Course ${i % 9}`);
+    const walk = (nodes: ReturnType<typeof notebookTree>): string[] => nodes.flatMap((n) => [n.path, ...walk(n.children)]);
+    let paths: string[] = [];
+    time("notebookTree", () => (paths = walk(notebookTree(names))));
+    console.log(`PERF (${paths.length} notebooks)`);
+    let before: number[] = [], after: number[] = [];
+    time("counts, one filter per notebook (before)", () => (before = paths.map((p) => names.filter((n) => isWithinNotebook(n, p)).length)));
+    time("counts, notebookCounts (after)", () => {
+      const c = notebookCounts(names);
+      after = paths.map((p) => c.get(p) ?? 0);
+    });
+    expect(after).toEqual(before);
   }, 600_000);
 });

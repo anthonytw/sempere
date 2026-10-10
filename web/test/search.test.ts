@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import {
   type PageTextEntry, type SearchableNote, canonicalNotebook, equationMarker, fold, foldText, isWithinNotebook, maxWords,
-  notebookComponents, notebookTree, pageSnippet, refinesQuery, search,
+  notebookComponents, notebookCounts, notebookTree, pageSnippet, refinesQuery, search,
 } from "../src/format/search.ts";
 
 let counter = 0;
@@ -200,6 +200,43 @@ describe("notebooks", () => {
     expect(notebookTree([])).toEqual([]);
     const twins = notebookTree(["A/Notes", "B/Notes"]);
     expect(twins.flatMap((n) => [n.path, ...n.children.map((c) => c.path)])).toEqual(["A", "A/Notes", "B", "B/Notes"]);
+  });
+
+  it("counts notes within each notebook as isWithinNotebook does", () => {
+    const segs = ["A", "B", " a ", "Math 9", "Math 10", "é", "e\u0301", ""];
+    let seed = 3;
+    const pick = () => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return segs[seed % segs.length] ?? "";
+    };
+    const names: (string | undefined)[] = [undefined, "  ", "/"];
+    for (let i = 0; i < 300; i++) names.push(Array.from({ length: 1 + (i % 4) }, pick).join("/"));
+    names.push(Array.from({ length: 70 }, (_, i) => `d${i}`).join("/"));
+    const counts = notebookCounts(names);
+    const walk = (nodes: ReturnType<typeof notebookTree>): string[] => nodes.flatMap((n) => [n.path, ...walk(n.children)]);
+    const paths = walk(notebookTree(names));
+    expect([...counts.keys()].sort()).toEqual([...paths].sort());
+    for (const p of paths) expect(counts.get(p)).toBe(names.filter((n) => isWithinNotebook(n, p)).length);
+  });
+
+  it("builds the same tree as filtering level by level", () => {
+    // The tree before it was built as a trie (kept here as the reference).
+    const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+    const reference = (names: (string | undefined)[]) => {
+      const paths = names.map((n) => notebookComponents(n).slice(0, 64)).filter((p) => p.length > 0);
+      const build = (below: string[][], depth: number, prefix: string[]): ReturnType<typeof notebookTree> => {
+        const here = below.filter((p) => p.length > depth);
+        const segs = [...new Set(here.map((p) => p[depth] ?? ""))].sort((a, b) => collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0));
+        return segs.map((name) => {
+          const path = [...prefix, name];
+          return { name, path: path.join("/"), children: build(here.filter((p) => p[depth] === name), depth + 1, path) };
+        });
+      };
+      return build(paths, 0, []);
+    };
+    const names = ["School/Math 10", "School/Math 9", "school/math 9", "Research/Daily log/2026", "School", undefined, "Archive",
+      "é/x", "e\u0301/y", "E/z", "A/B/C/D", "A/b", "a/B", Array.from({ length: 70 }, (_, i) => `d${i}`).join("/")];
+    expect(notebookTree(names)).toEqual(reference(names));
   });
 });
 

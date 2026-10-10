@@ -29,17 +29,41 @@ const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "bas
 
 /** The forest of notebooks named by `names`; intermediate levels exist implicitly. */
 export function notebookTree(names: (string | undefined)[]): NotebookNode[] {
-  const paths = names.map((n) => notebookComponents(n).slice(0, maxNotebookDepth)).filter((p) => p.length > 0);
-  const build = (below: string[][], depth: number, prefix: string[]): NotebookNode[] => {
-    const here = below.filter((p) => p.length > depth);
-    const segs = [...new Set(here.map((p) => p[depth] ?? ""))]
-      .sort((a, b) => collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0));
-    return segs.map((name) => {
-      const path = [...prefix, name];
-      return { name, path: path.join("/"), children: build(here.filter((p) => p[depth] === name), depth + 1, path) };
+  interface Trie { children: Map<string, Trie> }
+  const root: Trie = { children: new Map() };
+  for (const name of names) {
+    let at = root;
+    for (const seg of notebookComponents(name).slice(0, maxNotebookDepth)) {
+      let next = at.children.get(seg);
+      if (!next) {
+        next = { children: new Map() };
+        at.children.set(seg, next);
+      }
+      at = next;
+    }
+  }
+  const build = (t: Trie, prefix: string): NotebookNode[] =>
+    [...t.children.keys()].sort((a, b) => collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0)).map((name) => {
+      const path = prefix === "" ? name : `${prefix}/${name}`;
+      return { name, path, children: build(t.children.get(name) ?? { children: new Map() }, path) };
     });
-  };
-  return build(paths, 0, []);
+  return build(root, "");
+}
+
+/**
+ * How many of `names` are within each notebook of `notebookTree(names)`, by path: what
+ * `isWithinNotebook` counts node by node, in one pass.
+ */
+export function notebookCounts(names: (string | undefined)[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const name of names) {
+    let path = "";
+    for (const seg of notebookComponents(name).slice(0, maxNotebookDepth)) {
+      path = path === "" ? seg : `${path}/${seg}`;
+      counts.set(path, (counts.get(path) ?? 0) + 1);
+    }
+  }
+  return counts;
 }
 
 // MARK: - Search
