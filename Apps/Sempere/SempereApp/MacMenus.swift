@@ -264,6 +264,12 @@ final class SempereAppDelegate: UIResponder, UIApplicationDelegate {
     /// The menu tree is logged once per launch (DEBUG).
     @MainActor private static var dumped = false
 
+    /// Quitting (⌘Q on a Mac): decrypted attachments are deleted where the
+    /// system does not encrypt them at rest (`BlobCache.purgeAtQuit`).
+    func applicationWillTerminate(_ application: UIApplication) {
+        BlobCache.purgeAtQuit()
+    }
+
     /// A UIKit menu item of the app chosen with no window focused (the
     /// responder chain ends here): only Settings… runs without one.
     @objc func sempereMenuCommand(_ sender: UICommand) {

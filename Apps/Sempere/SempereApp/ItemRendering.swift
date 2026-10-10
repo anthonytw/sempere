@@ -198,7 +198,10 @@ enum ItemRendering {
                 return .failed("\(error)")
             }
         }.value
-        if let cache, let transcript, files[transcript.sha256] != nil { await cache.release(note: note, ref: transcript) }
+        // Transcripts are never kept (docs/attachments.md §13; `BlobCache` discards them in any case).
+        if let cache, let transcript, files[transcript.sha256] != nil {
+            await cache.release(note: note, ref: transcript, discard: true)
+        }
         switch outcome {
         case .pixels(let image, let bounds):
             guard let cg = cgImage(image) else { return .placeholder(.unavailable("cannot be drawn")) }

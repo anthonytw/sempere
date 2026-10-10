@@ -711,3 +711,16 @@ web viewer". Each fix has a test that encodes the attack and fails on the code b
   its manifest), `ZipWriter` (archive 0600), `TreeExporter` (Markdown/HTML), `MediaExport`, and the CLI's
   per-note `export` and `recognize-math --save-image` (`writePrivateFile`). `docs/cli.md` "Export" says so.
   Tests: `BulkExportTests.testStagingAndExportsAreOwnerOnly`, `CLIBulkExportTests.testExportsAreOwnerOnly`.
+- **S11 (Low): on a Mac, decrypted attachments outlived quit and crash.** The launch-time delete ran only
+  inside `attachmentCache()`, after an unlock and a first attachment use, so `security.md`'s "deleted at
+  each launch" did not hold. Fix: `BlobCache.purgeAtLaunch` in `SempereApp.init` (every vault's folder
+  renamed aside before any vault opens, deleted in the background) and `BlobCache.purgeAtQuit` from
+  `applicationWillTerminate` (⌘Q), both only where `keepsAcrossLaunches` is false. `security.md`,
+  `format.md` §10.1 and `io.md` say "deleted when the app quits, and after a crash at the next launch".
+  Test: `AttachmentPersistenceTests.withoutDataProtectionQuitAndLaunchDeleteEveryDecryptedFile`.
+- **S12 (Low): transcripts drawn on an audio card, and recordings of a killed session, stayed in the blob
+  cache.** Fix: `BlobCache.isTransient` (audio, video, transcript) files are deleted at pin zero whatever
+  the caller passes, are named with a `t-` prefix, and `indexFolder` deletes such files instead of
+  adopting them; `ItemRendering.audioPicture` also passes `discard: true`. Test:
+  `AttachmentPersistenceTests.transcriptsAndRecordingsNeverStayInTheCache` (on the old code the transcript
+  file survives its release and the next launch adopts the recording).

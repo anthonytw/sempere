@@ -104,6 +104,24 @@ actor BlobCache {
         self.fetch = fetch
     }
 
+    /// Recordings, video clips and transcripts (docs/attachments.md §13,
+    /// format.md §10.1): their files are deleted as soon as nothing plays or
+    /// reads them (`release`), and a launch deletes any an earlier one left
+    /// (`indexFolder`), so their plaintext never stays in the cache.
+    nonisolated static func isTransient(_ ref: BlobRef) -> Bool {
+        let kind = BlobKind(mediaType: ref.type)
+        return kind == .audio || kind == .video || kind == .transcript
+    }
+
+    /// The prefix of transient files' names (`isTransient`), which tells a
+    /// launch to delete them without knowing the vault secret.
+    nonisolated static let transientPrefix = "t-"
+
+    /// The name of `ref`'s file: `naming`'s, marked when it is transient.
+    private func fileName(_ note: UUID, _ ref: BlobRef) -> String {
+        (Self.isTransient(ref) ? Self.transientPrefix : "") + naming(note, ref)
+    }
+
     /// `<sha256>-<note><ext>`.
     nonisolated static func plainName(_ note: UUID, _ ref: BlobRef) -> String {
         ref.sha256 + "-" + note.uuidString.lowercased() + pathExtension(ref)
@@ -145,6 +163,24 @@ actor BlobCache {
     /// class, so there a launch starts from an empty folder.
     nonisolated static var keepsAcrossLaunches: Bool { !ProcessInfo.processInfo.isMacCatalystApp }
 
+    /// At launch, where decrypted files are not encrypted at rest (a Mac,
+    /// `keepsAcrossLaunches` false): every vault's folder in `folder` is
+    /// renamed aside at once, before any vault opens, and deleted in the
+    /// background. A launch after a crash (no `purgeAtQuit`) so starts empty.
+    nonisolated static func purgeAtLaunch(in folder: URL = BlobCache.folder,
+                                          keepsAcrossLaunches: Bool = BlobCache.keepsAcrossLaunches) {
+        guard !keepsAcrossLaunches else { return }
+        removeOthers(in: folder, keeping: "")
+    }
+
+    /// When the app quits (Mac: ⌘Q, `applicationWillTerminate`): deletes
+    /// every decrypted file at once, so none outlives the session.
+    nonisolated static func purgeAtQuit(in folder: URL = BlobCache.folder,
+                                        keepsAcrossLaunches: Bool = BlobCache.keepsAcrossLaunches) {
+        guard !keepsAcrossLaunches else { return }
+        try? FileManager.default.removeItem(at: folder)
+    }
+
     /// Moves the folder `dir` aside at once (a `.closed-` sibling, which
     /// `removeOthers` deletes in the background), so nothing in it is reused.
     nonisolated static func retire(_ dir: URL) {
@@ -174,7 +210,7 @@ actor BlobCache {
         guard !closed else { throw CacheError.cleared }
         guard ref.isValid else { throw CacheError.invalidReference }
         indexFolder()
-        let name = naming(note, ref)
+        let name = fileName(note, ref)
         if var entry = entries[name], entry.verified, FileManager.default.fileExists(atPath: entry.url.path) {
             tick &+= 1
             entry.lastUse = tick
@@ -257,7 +293,9 @@ actor BlobCache {
         for url in urls {
             let name = url.lastPathComponent
             guard let v = try? url.resourceValues(forKeys: Set(keys)), v.isRegularFile == true else { continue }
-            if name.hasPrefix(".") {   // an interrupted fetch
+            // An interrupted fetch, or a recording or transcript a killed session was still playing or
+            // reading (`isTransient`): deleted, never adopted.
+            if name.hasPrefix(".") || name.hasPrefix(Self.transientPrefix) {
                 try? FileManager.default.removeItem(at: url)
                 continue
             }
@@ -298,13 +336,14 @@ actor BlobCache {
 
     /// Ends one use of `ref`'s file (after `acquire`). With `discard`, the
     /// file is deleted as soon as no use is left, instead of being kept for
-    /// later: recordings and transcripts (docs/attachments.md §13), whose
-    /// plaintext is kept on disk only while it is played or read.
+    /// later. Recordings, clips and transcripts (`isTransient`,
+    /// docs/attachments.md §13) are always discarded so, whatever the caller
+    /// passes: their plaintext is on disk only while it is played or read.
     func release(note: UUID, ref: BlobRef, discard: Bool = false) {
-        let name = naming(note, ref)
+        let name = fileName(note, ref)
         guard var entry = entries[name] else { return }
         entry.pins = max(0, entry.pins - 1)
-        if discard && entry.pins == 0 {
+        if (discard || Self.isTransient(ref)) && entry.pins == 0 {
             try? FileManager.default.removeItem(at: entry.url)
             entries[name] = nil
             return
@@ -317,7 +356,7 @@ actor BlobCache {
     /// launch's file counts once listed, before it is checked).
     func contains(note: UUID, ref: BlobRef) -> Bool {
         indexFolder()
-        return entries[naming(note, ref)] != nil
+        return entries[fileName(note, ref)] != nil
     }
 
     /// Bytes held.

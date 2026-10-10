@@ -372,8 +372,12 @@ SwiftUI `List`.
     the decrypted, verified blob files PDFKit and ImageIO read. File names are
     keyed (`format.md` §10.1); a file left by an earlier launch is hashed again
     before use (`adopted`), never decrypted again. Not on a Mac: there files
-    are not encrypted at rest, so a launch deletes what an earlier one left
+    are not encrypted at rest, so quitting deletes them (`purgeAtQuit`), a launch
+    deletes what a crashed one left before any vault opens (`purgeAtLaunch`),
     and a reopened PDF is decrypted again (its preview still shows at once).
+    Recordings, clips and transcripts are never kept (`BlobCache.isTransient`):
+    deleted when nothing plays or reads them, and at the next launch if a
+    session was killed first.
   - `RenderCache` (`Library/Caches/Sempere/Renders`, 256 MB,
     `Sempere.renderCacheMegabytes`, plus 96 MB of decoded images in memory):
     image items as drawn (`ItemRendering`), and one preview bitmap per PDF page

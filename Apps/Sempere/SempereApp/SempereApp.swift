@@ -62,6 +62,9 @@ struct SempereApp: App {
         TranscriptionPreference.installSettingsHooks()
         // Per-session attachment caches of earlier builds (the app's is in Caches now, `BlobCache.folder`).
         BlobCache.purgeStale()
+        // A Mac has no data protection: decrypted attachments a crashed or killed run left are deleted
+        // before any vault opens (a quit deletes them itself, `SempereAppDelegate`).
+        BlobCache.purgeAtLaunch()
     }
 
     var body: some Scene {

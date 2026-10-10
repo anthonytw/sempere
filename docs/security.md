@@ -72,7 +72,8 @@ They cannot see titles, text, ink, tags, notebooks, attachments or transcripts.
   opened for display, a recording until it is saved into the note, a voice note
   until it is sealed, and files staged for an export or a drag. They rely on the
   system's data protection where the platform has it (on a Mac, which has none,
-  the attachment cache is deleted at each launch instead). The caches of note
+  the attachment cache is deleted when the app quits, and after a crash at the
+  next launch, before any vault opens). The caches of note
   listings, drawings and attachment previews are encrypted under the vault's
   secret ([`format.md`](format.md) §10). Details: [`io.md`](io.md),
   [`quick-capture.md`](quick-capture.md).
