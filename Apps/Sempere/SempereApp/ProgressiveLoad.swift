@@ -30,6 +30,23 @@ enum ProgressiveLoad {
         /// Revision files listed, and how many of them are local.
         var files = 0
         var localFiles = 0
+        /// Notes whose listed files were all local (`current`), each with a
+        /// digest of its listing (`listingDigest`): passed back as `settled`,
+        /// a later pass does not ask iCloud about them while the listing is
+        /// the same.
+        var settled: [UUID: Int] = [:]
+    }
+
+    /// A digest of a note's listing: file names and whether each was a
+    /// placeholder. Revision files are write-once, so the same listing is
+    /// the same files. In-memory only (`Hasher` is seeded per process).
+    static func listingDigest(_ items: [CloudScan.Item]) -> Int {
+        var h = Hasher()
+        for item in items.sorted(by: { $0.url.lastPathComponent < $1.url.lastPathComponent }) {
+            h.combine(item.url.lastPathComponent)
+            h.combine(item.placeholder)
+        }
+        return h.finalize()
     }
 
     /// One pass over the vault at `root` (every note, or only `notes`).
@@ -41,11 +58,16 @@ enum ProgressiveLoad {
     /// This asks iCloud for the state of every file it covers, which is
     /// slow on a device (one round trip per file): the model runs it only
     /// for notes whose names changed (`IndexDiff`) and, at low priority, in
-    /// the background validation.
+    /// the background validation. A note in `settled` whose listing digest
+    /// is unchanged counts as ready without asking (an earlier pass saw all
+    /// of its files current); an eviction that keeps the listing the same
+    /// (dataless files under their real names) is then seen only by a pass
+    /// without `settled`.
     ///
     /// - Throws: when a folder cannot be listed.
     static func pass(vault root: URL, notes: Set<UUID>? = nil, priority: UUID? = nil, window: Int = defaultWindow,
-                     requestMissing: Bool = true, hooks: CloudVault.Hooks = .live) throws -> Pass {
+                     requestMissing: Bool = true, settled: [UUID: Int] = [:],
+                     hooks: CloudVault.Hooks = .live) throws -> Pass {
         var pass = Pass()
         var pendingItems: [UUID: [CloudScan.Item]] = [:]
         let groups: [CloudScan.NoteGroup]
@@ -65,14 +87,24 @@ enum ProgressiveLoad {
             var missing: [CloudScan.Item] = []
             var stale: [CloudScan.Item] = []
             pass.files += group.items.count
+            let digest = group.items.isEmpty ? nil : listingDigest(group.items)
+            if let digest, settled[id] == digest {
+                pass.localFiles += group.items.count
+                pass.ready.append(id)
+                pass.settled[id] = digest
+                continue
+            }
             if group.items.isEmpty {
                 // Not listed yet: ask for the folder itself, which makes iCloud
                 // list (and fetch) what is in it.
                 pass.unlisted.append(id)
                 missing.append(CloudScan.Item(url: group.url, placeholder: false))
             }
+            var allCurrent = true
             for item in group.items {
-                switch hooks.state(item) {
+                let state = hooks.state(item)
+                if state != .current || item.placeholder { allCurrent = false }
+                switch state {
                 case .missing: missing.append(item)
                 case .stale: stale.append(item)
                 case .failed(let reason): missing.append(item); pass.failures[id] = reason
@@ -80,6 +112,7 @@ enum ProgressiveLoad {
                 }
             }
             pass.localFiles += stale.count
+            if let digest, allCurrent { pass.settled[id] = digest }
             if missing.isEmpty { pass.ready.append(id) } else {
                 pass.pending.append(id)
                 pendingItems[id] = missing

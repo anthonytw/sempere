@@ -296,6 +296,12 @@ final class AppModel {
     @ObservationIgnored var validationRun = 0
     /// When the background validation (`validateVault`) last finished.
     @ObservationIgnored var lastValidation: ContinuousClock.Instant?
+    /// Notes the last validation saw entirely local, with their listing
+    /// digests (`ProgressiveLoad.Pass.settled`): the next one does not ask
+    /// iCloud about them while their listing is the same.
+    @ObservationIgnored var settledCloudNotes: [UUID: Int] = [:]
+    /// Validations since the last one that asked about every file (0: none yet).
+    @ObservationIgnored var validationsSinceFull = 0
     /// How often the background validation runs while the vault is open
     /// (also once, shortly after the list settles).
     var cloudValidationInterval = Duration.seconds(30 * 60)
@@ -1099,6 +1105,8 @@ final class AppModel {
         dirtyNoteIDs = []
         dirtyAll = false
         lastValidation = nil
+        settledCloudNotes = [:]
+        validationsSinceFull = 0
         reportedNoteIDs = []
         pendingCheckCursor = ""
         // Saves are throttled while notes arrive: what the last passes read is kept.

@@ -114,6 +114,15 @@ final class FakeCloud: @unchecked Sendable {
     }
 }
 
+/// The note folders `hooks.state` was asked about.
+final class AskLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var names: [String] = []
+    var value: [String] { lock.withLock { names } }
+    func add(_ name: String) { lock.withLock { names.append(name) } }
+    func clear() { lock.withLock { names = [] } }
+}
+
 @MainActor
 struct ProgressiveLoadTests {
     static let lecture = UUID(uuidString: "11111111-1111-4111-8111-111111111111")!
@@ -129,6 +138,50 @@ struct ProgressiveLoadTests {
         #expect(pass.pending == [Self.other])
         #expect(pass.failures.isEmpty)
         #expect(cloud.requestedNotes == [Self.other.uuidString.lowercased()])
+    }
+
+    @Test func settledNotesAreNotAskedAboutWhileTheirListingIsTheSame() throws {
+        let (url, _) = try AppModelTests.fixtureVault()
+        let cloud = FakeCloud(vault: url)
+        let asked = AskLog()
+        var hooks = cloud.hooks
+        hooks.state = { item in
+            asked.add(item.url.deletingLastPathComponent().lastPathComponent)
+            return cloud.state(item)
+        }
+        let first = try ProgressiveLoad.pass(vault: url, requestMissing: false, hooks: hooks)
+        #expect(Set(first.settled.keys) == [Self.lecture, Self.other])
+        let total = asked.value.count
+        #expect(total == first.files)
+
+        asked.clear()
+        let second = try ProgressiveLoad.pass(vault: url, requestMissing: false, settled: first.settled, hooks: hooks)
+        #expect(asked.value.isEmpty)
+        #expect(second.ready == first.ready && second.files == first.files && second.localFiles == first.localFiles)
+        #expect(second.settled == first.settled)
+
+        // A new file in one note: only that note is asked about again.
+        let dir = url.appendingPathComponent("notes/\(Self.other.uuidString.lowercased())")
+        let name = try #require(try FileManager.default.contentsOfDirectory(atPath: dir.path).first { $0.hasSuffix(".age") })
+        try Data(contentsOf: dir.appendingPathComponent(name))
+            .write(to: dir.appendingPathComponent("99999999999999999-cccccccc-1.delta.age"))
+        asked.clear()
+        let third = try ProgressiveLoad.pass(vault: url, requestMissing: false, settled: second.settled, hooks: hooks)
+        #expect(Set(asked.value) == [Self.other.uuidString.lowercased()])
+        #expect(third.files == first.files + 1)
+
+        // Evicted to placeholders: the listing changes, so it is asked about and pending.
+        try cloud.evict(Self.lecture)
+        asked.clear()
+        let fourth = try ProgressiveLoad.pass(vault: url, requestMissing: false, settled: third.settled, hooks: hooks)
+        #expect(asked.value.contains(Self.lecture.uuidString.lowercased()))
+        #expect(fourth.pending == [Self.lecture])
+        #expect(fourth.settled[Self.lecture] == nil)
+
+        // A file that is not current is never settled.
+        var stale = cloud.hooks
+        stale.state = { _ in .stale }
+        #expect(try ProgressiveLoad.pass(vault: url, requestMissing: false, hooks: stale).settled.isEmpty)
     }
 
     @Test func theOpenedNoteIsRequestedFirstAndRequestsAreWindowed() throws {
