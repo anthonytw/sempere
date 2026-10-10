@@ -171,11 +171,11 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   Linux scratch package needs shims for `isUbiquitousItem`,
   `startDownloadingUbiquitousItem`, `ubiquitousItemDownloading*` resource
   values and `NSFileCoordinator` as well.
-- The app's deployment target is iPadOS 26 and the user's iPad cannot update
-  to 27: any iPadOS 27 API (`PKStroke.id`, `PKStroke.substroke`,
-  `PKDrawing.erasePath`, recognition) must sit behind `if #available` with a
-  tested 26 path. Run `SEMPERE_SIM_ID=<iOS 26.x iPad> scripts/app.sh test`
-  as well as the default (newest) simulator.
+- The app's deployment target is iPadOS/iOS 27 and Mac Catalyst 27 (the
+  user's iPad runs 27): iOS 27 APIs are used directly in `Apps/`, with no
+  `#available` gate and no iOS 26 path. The package keeps its own minimum
+  (`Package.swift`: macOS 14 / iOS 17) so the CLI builds on older macOS and
+  Linux; code in `Sources/` still gates newer Apple APIs with `#available`.
 - PencilKit stores control points in reduced precision (Float32 locations,
   quantized opacity/azimuth/altitude): compare converted strokes within a
   tolerance, never with `==`. Stroke identity across canvas edits comes from
