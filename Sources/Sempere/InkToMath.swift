@@ -58,18 +58,42 @@ public enum InkLasso {
 
     /// Whether the lasso `polygon` (from `polygon(_:)`) takes `stroke`.
     public static func takes(_ stroke: Stroke, in polygon: [Point]) -> Bool {
-        guard !stroke.points.isEmpty, polygon.count >= 3 else { return false }
-        // Cheap reject on the loop's bounds.
+        guard polygon.count >= 3 else { return false }
+        return takes(stroke, in: polygon, bounds: Bounds(polygon))
+    }
+
+    /// A lasso's bounds, for the cheap reject.
+    struct Bounds {
         var minX = Double.infinity, minY = Double.infinity, maxX = -Double.infinity, maxY = -Double.infinity
-        for v in polygon {
-            minX = min(minX, v.x); maxX = max(maxX, v.x); minY = min(minY, v.y); maxY = max(maxY, v.y)
+
+        init(_ polygon: [Point]) {
+            for v in polygon {
+                minX = min(minX, v.x); maxX = max(maxX, v.x); minY = min(minY, v.y); maxY = max(maxY, v.y)
+            }
         }
-        var inside = 0, counted = 0
+
+        func contains(_ x: Double, _ y: Double) -> Bool { x >= minX && x <= maxX && y >= minY && y <= maxY }
+    }
+
+    /// `takes(_:in:)` with the lasso's bounds computed once for every stroke.
+    /// Stops as soon as the answer is certain: once enough points are inside
+    /// even if every remaining point counts, or too few can be even if
+    /// every remaining point is inside.
+    static func takes(_ stroke: Stroke, in polygon: [Point], bounds: Bounds) -> Bool {
+        guard !stroke.points.isEmpty, polygon.count >= 3 else { return false }
+        let total = stroke.points.count
+        var inside = 0, counted = 0, seen = 0
         for c in stroke.points {
+            seen += 1
             let p = InkGeometry.page(c, stroke.transform)
             guard p.x.isFinite, p.y.isFinite else { continue }
             counted += 1
-            if p.x >= minX, p.x <= maxX, p.y >= minY, p.y <= maxY, contains(polygon, Point(x: p.x, y: p.y)) { inside += 1 }
+            if bounds.contains(p.x, p.y), contains(polygon, Point(x: p.x, y: p.y)) { inside += 1 }
+            // Taken whatever comes: `counted` can only end at `total` or below.
+            if counted > 0, Double(inside) >= threshold * Double(total) { return true }
+            // Not taken whatever comes: even if every remaining point counts and is inside.
+            let left = total - seen
+            if Double(inside + left) < threshold * Double(counted + left) { return false }
         }
         return counted > 0 && Double(inside) >= threshold * Double(counted)
     }
@@ -78,7 +102,8 @@ public enum InkLasso {
     /// Empty when the lasso has fewer than three usable points.
     public static func select(_ strokes: [Stroke], lasso points: [Point]) -> [UUID] {
         guard let polygon = polygon(points) else { return [] }
-        return strokes.filter { takes($0, in: polygon) }.map(\.id)
+        let bounds = Bounds(polygon)
+        return strokes.filter { takes($0, in: polygon, bounds: bounds) }.map(\.id)
     }
 }
 
