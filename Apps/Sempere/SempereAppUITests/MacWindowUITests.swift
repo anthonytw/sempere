@@ -41,7 +41,7 @@ final class MacWindowUITests: XCTestCase {
         defer { app.terminate() }
         XCTAssertTrue(app.staticTexts["Cellular Respiration"].firstMatch.waitForExistence(timeout: 60))
         // The library window has the focus (the menu acts on the focused window's selection).
-        app.cells.containing(NSPredicate(format: "label == %@", "Cellular Respiration")).firstMatch.click()
+        center(of: noteRow(app)).click()
         app.typeKey("n", modifierFlags: [.command, .option])
         assertOneNoteWindow(app, "shortcut")
     }
@@ -52,12 +52,12 @@ final class MacWindowUITests: XCTestCase {
         let app = launch()
         defer { app.terminate() }
         // The note list's row (the open note's title is also in the canvas toolbar).
-        let row = app.cells.containing(NSPredicate(format: "label == %@", "Cellular Respiration")).firstMatch
+        let row = noteRow(app)
         XCTAssertTrue(row.waitForExistence(timeout: 60))
         let item = app.menuItems["Open in New Window"].firstMatch
         // The list may still be settling when the first click lands: try again a couple of times.
         for _ in 0..<3 where !item.exists {
-            row.rightClick()
+            center(of: row).rightClick()
             if item.waitForExistence(timeout: 5) { break }
             app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
         }
@@ -72,9 +72,9 @@ final class MacWindowUITests: XCTestCase {
     func testADoubleClickOpensANoteWindow() throws {
         let app = launch()
         defer { app.terminate() }
-        let row = app.cells.containing(NSPredicate(format: "label == %@", "Cellular Respiration")).firstMatch
+        let row = noteRow(app)
         XCTAssertTrue(row.waitForExistence(timeout: 60))
-        row.doubleClick()
+        center(of: row).doubleClick()
         assertOneNoteWindow(app, "double-click")
     }
 
@@ -113,6 +113,19 @@ final class MacWindowUITests: XCTestCase {
         XCTAssertTrue(editTitles.contains("Find Notes"), "\(editTitles)")
         XCTAssertFalse(editTitles.contains("Find…"), "no system Find")
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+    }
+
+    /// The note list's row of the demo note (its title is also in the canvas toolbar).
+    @MainActor
+    private func noteRow(_ app: XCUIApplication) -> XCUIElement {
+        app.cells.containing(NSPredicate(format: "label == %@", "Cellular Respiration")).firstMatch
+    }
+
+    /// The middle of a row. On macOS 27 the row's content fills the cell, so
+    /// XCTest finds no free point on the cell itself ("No unoccluded regions").
+    @MainActor
+    private func center(of row: XCUIElement) -> XCUICoordinate {
+        row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
     }
 
     @MainActor
