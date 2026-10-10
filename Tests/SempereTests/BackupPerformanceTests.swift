@@ -193,4 +193,29 @@ final class BackupPerformanceTests: VaultTestCase {
         XCTAssertTrue(r.errors.allSatisfy { $0.message.contains("damaged") })
         XCTAssertFalse(FileManager.default.fileExists(atPath: target.appendingPathComponent(note).path))
     }
+
+    /// Prints the time `--prune` spends finding one note's covering
+    /// snapshots: the old way (every revision with stroke geometry) and
+    /// `Backup.prunable`'s (the snapshots the backup holds, without points).
+    func testPruneCoverageReadsOnlySnapshotsWithoutGeometry() throws {
+        let vault = try makeVault(pqIdentity())
+        let strokes = benchmark ? 20_000 : 500
+        try SyntheticVault.populate(vault, notes: 1, strokes: strokes, points: 60)
+        let id = try XCTUnwrap(try vault.noteIDs().first)
+        var clock = HybridClock()
+        _ = try vault.snapshot(noteId: id, device: devC, clock: &clock, wall: Date(), app: "test/0")
+        let note = id.uuidString.lowercased()
+        var t = Date()
+        let old = try vault.loadNote(id).revisions.filter { $0.name.kind == .snapshot }.compactMap(SnapshotCoverage.init)
+        let before = Date().timeIntervalSince(t)
+        t = Date()
+        let delta = try XCTUnwrap(try vault.revisionNames(of: id).first { $0.kind == .delta })
+        let gone = "notes/\(note)/\(delta.filename)"
+        let allowed = Backup.prunable(note: note, paths: [gone], source: vault, backup: nil, backupHolds: { _ in true })
+        let after = Date().timeIntervalSince(t)
+        XCTAssertEqual(old.count, 1)
+        XCTAssertEqual(allowed, [gone], "the old delta is covered by the snapshot")
+        print(String(format: "bench: prune coverage, %d strokes x 60 points: full load %.3f s, snapshots only %.3f s",
+                     strokes, before, after))
+    }
 }

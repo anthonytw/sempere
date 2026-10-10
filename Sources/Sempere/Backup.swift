@@ -682,10 +682,14 @@ public enum Backup {
     /// applied by the source's compaction). Anything unreadable is kept.
     static func prunable(note: String, paths: [String], source: Vault, backup: Vault?,
                          backupHolds: (String) -> Bool) -> Set<String> {
-        guard let id = UUID(uuidString: note), let loaded = try? source.loadNote(id) else { return [] }
+        guard let id = UUID(uuidString: note), let names = try? source.revisionNames(of: id) else { return [] }
         let epoch = Date(timeIntervalSince1970: 0)
-        let cover = loaded.revisions
-            .filter { $0.name.kind == .snapshot && backupHolds("\(Vault.notesName)/\(note)/\($0.name.filename)") }
+        // Only snapshots the backup holds identically count, and coverage needs
+        // only their `included` and `wall`: deltas are not read, and stroke
+        // geometry is not decoded (`.withoutStrokePoints`).
+        let cover = names
+            .filter { $0.kind == .snapshot && backupHolds("\(Vault.notesName)/\(note)/\($0.filename)") }
+            .compactMap { try? source.readRevision(noteId: id, name: $0, detail: .withoutStrokePoints) }
             .compactMap(SnapshotCoverage.init)
         guard !cover.isEmpty else { return [] }
         var out = Set<String>()
@@ -694,7 +698,7 @@ public enum Backup {
             var snaps = cover
             if name.kind == .snapshot {
                 // Its coverage comes from the backup's own copy.
-                guard let backup, let rev = try? backup.readRevision(noteId: id, name: name),
+                guard let backup, let rev = try? backup.readRevision(noteId: id, name: name, detail: .withoutStrokePoints),
                       var own = SnapshotCoverage(rev) else { continue }
                 own.wall = epoch
                 snaps.append(own)
