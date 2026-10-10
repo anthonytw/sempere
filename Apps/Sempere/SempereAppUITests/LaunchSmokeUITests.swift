@@ -227,11 +227,16 @@ final class LaunchSmokeUITests: XCTestCase {
 
         let field = app.secureTextFields["Passphrase"].firstMatch
         require(field, "unlock sheet's passphrase field", in: app, timeout: 90)
-        #if targetEnvironment(macCatalyst)
-        field.click()
-        #else
-        field.tap()
-        #endif
+        // A slow runner can drop the first tap while the sheet settles: tap until the field has the keyboard.
+        let focused = NSPredicate(format: "hasKeyboardFocus == true")
+        for _ in 0..<5 where !focused.evaluate(with: field) {
+            #if targetEnvironment(macCatalyst)
+            field.click()
+            #else
+            field.tap()
+            #endif
+            _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: focused, object: field)], timeout: 2)
+        }
         field.typeText(Self.passphrase + "\n")   // onSubmit unlocks
         // After a manual unlock the sheet offers to remember the key.
         let notNow = app.buttons["Not Now"].firstMatch
@@ -315,7 +320,8 @@ final class LaunchSmokeUITests: XCTestCase {
     private func focusLibrary(_ app: XCUIApplication) {
         #if targetEnvironment(macCatalyst)
         let row = noteRow(app)
-        if row.waitForExistence(timeout: 10) { row.click() }
+        // The row's content fills the cell, so XCTest finds no free point on the cell itself.
+        if row.waitForExistence(timeout: 10) { row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click() }
         #endif
     }
 
