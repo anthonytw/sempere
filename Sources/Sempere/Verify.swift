@@ -169,7 +169,7 @@ extension Vault {
                     let data = try FileIO.read(file, maxBytes: BoundedRead.maxRevisionBytes)
                     let json = try revisionJSON(data, note: note, name: name, secret: secret)
                     let rev = try Self.decodeRevisionJSON(json, note: note, name: name, detail: .full)
-                    refs += (try? BlobReferenceScan.references(in: json)) ?? []
+                    refs += (try? BlobReferenceScan.references(inDecoded: json)) ?? []
                     let stanzas = (try? Self.stanzaCounts(data)) ?? [:]
                     if let newer = rev.newer {
                         if let id = UUID(uuidString: note) { noteNewerContent(in: id) }
