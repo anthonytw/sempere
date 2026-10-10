@@ -681,7 +681,8 @@ Each request is bounded by size and time, but a run is not:
   - Not fixed here: requiring an `OwnerAuthenticator` there changes every key-management path and its app
     tests (which cannot run outside the macOS CI job), and the policy (Face ID only? the passcode on a Mac
     without Touch ID?) is the maintainer's call. The paper recovery kit (`recoveryKitPDF`) has the same gap.
-- P2, Low: the share sheet's Copy puts the key file on the general pasteboard.
+- P2, Low: the share sheet's Copy puts the key file on the general pasteboard. Fixed in stage 4 with S14
+  (below).
 - P3, Low: the remembered record is chosen by an unauthenticated vault id; the doc says otherwise. Fixed
   in #130 (above).
 - Info: the IndexedDB database is created before the user opts in; old passkeys are not signalled unknown
@@ -732,3 +733,12 @@ web viewer". Each fix has a test that encodes the attack and fails on the code b
   reduction), and `AttachmentThumbnail` passes the restricted `ImageIODecoder`. Tests:
   `ImageInsertTests.storageThumbnailsDecodeOnlyTheCanvasFormats` (GIF and TIFF give no thumbnail; on the
   old code both did), `ImageCodecTests.testImagePreviewDecodesOnlyWhatItemsDecode`.
+- **S14 (Low), and P2: a `ShareLink` of the raw secret key, and selectable key text, bypassed the
+  local-only expiring Copy Key** on the new-vault and upgrade screens (the share sheet's Copy and ⌘C write
+  the general pasteboard with no expiry, which Universal Clipboard sends to other devices). Fix: those
+  screens copy through `SecretPasteboard` (local only, 180 s), their key text is not selectable, and they
+  share through `ShareSheet(items:secret: true)`, whose `SecretSharing.controller` excludes
+  `.copyToPasteboard`; `KeyFileActions` ("Share…" of a key file) uses the same, which closes P2.
+  Tests: `KeyExportTests.secretShareSheetsLeaveCopyOut`, `SecretKeySharingTests` (sources, Linux: no
+  `ShareLink` or selectable text in the key views, the general pasteboard written only by
+  `SecretPasteboard` and the public key's Copy).

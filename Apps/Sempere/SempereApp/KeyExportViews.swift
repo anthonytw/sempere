@@ -50,7 +50,7 @@ struct KeyFileActions: View {
             if case .failure(let error) = result { failure = String(localized: "The key was not saved: \(error.localizedDescription)") }
         }
         .sheet(isPresented: Binding(get: { shared != nil }, set: { if !$0 { unshare() } })) {
-            if let shared { ShareSheet(items: [shared]) { unshare() } }
+            if let shared { ShareSheet(items: [shared], secret: true) { unshare() } }
         }
         Section {
             Button("Print Recovery Kit…", systemImage: "printer") { printKit() }

@@ -13453,18 +13453,6 @@
         }
       }
     },
-    "Sempere secret key" : {
-      "comment" : "Subject when sharing the new vault's secret key",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clave secreta de Sempere"
-          }
-        }
-      }
-    },
     "Serif" : {
       "comment" : "Typeface",
       "extractionState" : "manual",
