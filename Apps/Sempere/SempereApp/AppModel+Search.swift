@@ -63,6 +63,20 @@ struct RecognitionResults: Equatable, Sendable {
     func entry(for id: UUID) -> RecognizedNote? { notes.first { $0.id == id } }
 }
 
+/// The query, scope and selection `searchResults` were computed for, and the
+/// notes changed since (merged in by the next `NoteSearch.updated`).
+struct CompletedSearch: Equatable {
+    var query: String
+    var scope: SearchScope
+    var selection: SidebarItem?
+    var generation: Int
+    var changed: Set<UUID> = []
+
+    func answers(_ other: CompletedSearch) -> Bool {
+        query == other.query && scope == other.scope && selection == other.selection && generation == other.generation
+    }
+}
+
 extension AppModel {
     // MARK: - Search
 
@@ -81,19 +95,33 @@ extension AppModel {
         !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// Every note by id (computed once per change of `notes`).
+    var notesByID: [UUID: NoteSummary] {
+        let version = listVersion
+        if let m = derived.byID, m.version == version { return m.value }
+        let map = Dictionary(notes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        derived.byID = (version, map)
+        return map
+    }
+
     /// The summary of a hit's note.
     func note(for hit: NoteSearchHit) -> NoteSummary? {
-        notes.first { $0.id == hit.note }
+        notesByID[hit.note]
     }
 
     /// Re-runs the search after `searchDebounce`, off the main actor; an
-    /// older search still running is dropped. Called whenever the query, the
-    /// scope, the selection or the notes change.
-    func updateSearch() {
+    /// older search still running is cancelled. Called whenever the query, the
+    /// scope, the selection or the notes change. `changed`: the notes a list
+    /// update may have changed; when the results answer the same query, scope
+    /// and selection (and transcripts are not searched), only those notes are
+    /// searched again and merged in (`NoteSearch.updated`, the same result as a
+    /// full search).
+    func updateSearch(changed: Set<UUID>? = nil) {
         searchTask?.cancel()
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else {
             searchTask = nil
+            completedSearch = nil
             isSearching = false
             if !searchResults.isEmpty { searchResults = [] }
             if !transcriptHits.isEmpty { transcriptHits = [] }
@@ -105,12 +133,39 @@ extension AppModel {
         let gen = generation
         let delay = searchDebounce
         let withTranscripts = searchTranscripts
+        let index = searchIndex
+        let key = CompletedSearch(query: query, scope: searchScope, selection: sidebarSelection, generation: gen)
         if !withTranscripts, !transcriptHits.isEmpty { transcriptHits = [] }
+        if let changed, !withTranscripts, var done = completedSearch, done.answers(key) {
+            // A list update with the results current: re-test the notes it changed (and those of
+            // updates whose re-test was cancelled), against the results they were merged into.
+            done.changed.formUnion(changed)
+            completedSearch = done
+            let previous = searchResults, retest = done.changed
+            searchTask = Task { [weak self] in
+                do { try await Task.sleep(for: delay) } catch { return }
+                let job = Task.detached(priority: .userInitiated) {
+                    NoteSearch.updated(previous, query: query, changed: retest, in: candidates, index: index)
+                }
+                let hits = await withTaskCancellationHandler { await job.value } onCancel: { job.cancel() }
+                guard !Task.isCancelled, let self, gen == self.generation else { return }
+                self.searchResults = hits
+                self.completedSearch = key
+                self.isSearching = false
+            }
+            return
+        }
+        completedSearch = nil
         searchTask = Task { [weak self] in
             do { try await Task.sleep(for: delay) } catch { return }
-            let hits = await Task.detached(priority: .userInitiated) { NoteSearch.search(query, in: candidates) }.value
+            // Cancelling this task (the next keystroke) stops the scan between notes.
+            let job = Task.detached(priority: .userInitiated) {
+                NoteSearch.search(query, in: candidates, index: index, isCancelled: { Task.isCancelled })
+            }
+            let hits = await withTaskCancellationHandler { await job.value } onCancel: { job.cancel() }
             guard !Task.isCancelled, let self, gen == self.generation else { return }
             self.searchResults = hits
+            if !withTranscripts { self.completedSearch = key }
             if withTranscripts {
                 self.transcriptHits = []
                 // The notes' hits are in; the transcripts follow as they are read.

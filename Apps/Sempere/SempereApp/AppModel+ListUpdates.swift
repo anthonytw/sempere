@@ -62,7 +62,9 @@ extension AppModel {
         let interval = Perf.begin(.listUpdate)
         var changed = false
         if let next = NoteListDiff.apply(upserts: upserts, removals: removals, to: notes) {
+            listChangeIDs = Set(upserts.map(\.id)).union(removals)
             notes = next
+            listChangeIDs = nil
             changed = true
         }
         Perf.end(interval, "upserts=\(upserts.count) removals=\(removals.count) notes=\(notes.count) changed=\(changed)")
@@ -136,6 +138,7 @@ struct DerivedLists {
     }
 
     var visible: (key: VisibleKey, value: [NoteSummary])?
+    var byID: (version: Int, value: [UUID: NoteSummary])?
     var tags: (version: Int, value: [String])?
     var tree: (version: Int, value: [NotebookNode])?
 }
