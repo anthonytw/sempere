@@ -35,15 +35,16 @@ final class SyncPerfTests: BlobSyncTestCase {
         #endif
     }
 
-    func options(pushOnly: Bool) -> WebDAVSyncOptions {
+    func options(pushOnly: Bool, skip: Bool) -> WebDAVSyncOptions {
         var o = WebDAVSyncOptions(deviceLabel: "A")
         o.pushOnly = pushOnly
+        o.skipUnchangedNotes = skip
         return o
     }
 
-    func run(_ server: MockDAV, vault: Vault, pushOnly: Bool) throws -> (SyncReport, Double) {
+    func run(_ server: MockDAV, vault: Vault, pushOnly: Bool, skip: Bool = false) throws -> (SyncReport, Double) {
         let s = WebDAVSync(directory: dir("A"), vault: vault, client: try client(server),
-                           stateURL: tmp.appendingPathComponent("state-A.json"), options: options(pushOnly: pushOnly))
+                           stateURL: tmp.appendingPathComponent("state-A.json"), options: options(pushOnly: pushOnly, skip: skip))
         let t0 = Date()
         let r = try s.run()
         let t = Date().timeIntervalSince(t0)
@@ -102,5 +103,26 @@ final class SyncPerfTests: BlobSyncTestCase {
         XCTAssertTrue(r.errors.isEmpty, "\(r)")
         XCTAssertEqual(r.uploaded.filter { $0.contains("/att/") }.count, 50)
         print("perf: 50 blob uploads with \(records) state records:", String(format: "%.3f s", t))
+    }
+
+    /// The app's push after one note changed, with `skipUnchangedNotes` on a
+    /// server whose folder ETags follow their children.
+    func testPushAfterOneEditSkippingUnchangedNotes() throws {
+        let server = MockDAV()
+        server.collectionETags = .direct
+        let a = try makeVault("A")
+        try populate(a, revisions: 2)
+        for _ in 0..<2 { _ = try run(server, vault: a, pushOnly: true, skip: true) }
+        _ = try delta(a, device: devA, t: 50, title: "edit", note: UUID(uuidString: "7e57c0de-0000-4000-8000-000000000000")!)
+        _ = try run(server, vault: a, pushOnly: true, skip: true)   // the write is checked on the next run
+        _ = try delta(a, device: devA, t: 60, title: "edit 2", note: UUID(uuidString: "7e57c0de-0000-4000-8000-000000000001")!)
+        for skip in [false, true] {
+            let before = server.requestLog.count
+            let (r, t) = try run(server, vault: a, pushOnly: true, skip: skip)
+            XCTAssertTrue(r.errors.isEmpty, "\(r)")
+            let log = server.requestLog.dropFirst(before)
+            print("perf: push-only run, \(notes) notes, skip \(skip):", String(format: "%.3f s,", t),
+                  log.filter { $0.method == "PROPFIND" }.count, "PROPFIND,", log.count, "requests")
+        }
     }
 }

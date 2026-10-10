@@ -83,6 +83,8 @@ public struct WebDAVLocalCopy: Sendable {
         var o = runOptions(options)
         o.pushOnly = true
         o.keepServerChanges = true
+        // The app pushes after every write and every few minutes: list only the notes that changed.
+        o.skipUnchangedNotes = true
         let sync = WebDAVSync(directory: folder, vault: vault, client: client, stateURL: stateURL, options: o)
         return try sync.run()
     }

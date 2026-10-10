@@ -60,6 +60,17 @@ public struct WebDAVSyncOptions: Sendable {
     /// checked fully rather than for their structure only (format.md §9.1).
     public var firstPullIdentities: [any AgeIdentity] = []
 
+    /// Skip listing a note folder on the server when its ETag in the
+    /// `notes/` listing is the one recorded when the last run left the
+    /// note in step on both sides, and the local folder holds exactly the
+    /// recorded revisions (docs/io.md "Unchanged notes"). Only on a server
+    /// seen to change a folder's ETag when this device wrote into it, never
+    /// with a weak or missing ETag, and with a run that lists every note at
+    /// least every `fullListingInterval`. A note's `att/` is still listed.
+    public var skipUnchangedNotes = false
+    /// With `skipUnchangedNotes`: the longest time between two runs that list every note.
+    public var fullListingInterval: TimeInterval = 24 * 3600
+
     /// The largest blob file a reader opens (`BoundedRead.maxBlobFileBytes`,
     /// 1 GiB + 64 MiB).
     public static let defaultMaxBlobBytes = BoundedRead.maxBlobFileBytes
@@ -125,6 +136,13 @@ public final class WebDAVSync {
     /// How many notes this run read through `vault` (decrypted every
     /// revision of) to judge deletions or record snapshot coverage.
     var notesRead = 0
+    /// Strong ETags of the note folders in this run's `notes/` listing.
+    var noteETags: [String: String] = [:]
+    /// Whether this run lists only the notes whose folder ETag changed
+    /// (`WebDAVSyncOptions.skipUnchangedNotes`); decided once `notes/` is listed.
+    var skipsUnchangedNotes = false
+    /// Notes whose listing this run skipped.
+    var notesNotListed = 0
     /// `encodedWebIndex()`, once the notes loop is done.
     private var encodedIndex: Data?
     /// The remote `vault.json` as `checkSameVault` fetched it this run, for
@@ -198,23 +216,29 @@ public final class WebDAVSync {
         }
 
         do {
+            recordedFiles = state.fileNamesByNote()
             let remoteNotes = try listRemoteNotes(rootEntries)
             let localNotes = try localNoteIDs()
-            recordedFiles = state.fileNamesByNote()
             for (id, entries) in remoteNotes {
                 remoteRevisions[id] = entries.compactMap { e in
                     RevisionName(e.name).flatMap { !e.isCollection && $0.filename == e.name ? e.name : nil }
                 }
             }
-            for id in Set(remoteNotes.keys).union(localNotes).sorted() {
+            let all = Set(remoteNotes.keys).union(localNotes)
+            for id in all.sorted() {
+                // Recorded again below only if the note ends unchanged and in step on both sides.
+                state.notes?[id] = nil
                 do {
                     try budget.checkTime()
+                    let mark = NoteMark(report)
                     try syncNote(id, remoteEntries: remoteNotes[id])
+                    recordNoteStamp(id, remoteEntries: remoteNotes[id], since: mark)
                 } catch {
                     try rethrowRunLimit(error)
                     report.errors.append(.init(path: "notes/\(id)", message: Self.describe(error)))
                 }
             }
+            finishNoteStamps(notes: all)
         } catch let e as WebDAVError where e.isRunLimit {
             // Stop here: what was done is recorded below, the next run continues.
             report.stoppedEarly = Self.describe(e)
@@ -422,6 +446,7 @@ public final class WebDAVSync {
         if noteDirs > options.limits.maxNotes {
             throw WebDAVError.limitExceeded("the server lists \(noteDirs) notes, more than \(options.limits.maxNotes) (--max-notes)")
         }
+        checkNoteStamps(dirs)
         var out: [String: [RemoteEntry]] = [:]
         for d in dirs {
             guard d.isCollection, Vault.isNoteDirectoryName(d.name) else {
@@ -430,6 +455,10 @@ public final class WebDAVSync {
                 continue
             }
             try budget.checkTime()
+            if let unchanged = unchangedNoteEntries(d) {
+                out[d.name] = unchanged
+                continue
+            }
             let entries = try client.list([Vault.notesName, d.name]) ?? []
             try budget.list(entries.count)
             out[d.name] = entries

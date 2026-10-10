@@ -52,6 +52,27 @@ struct SyncState: Codable, Equatable {
     /// matched it; nil in state files from before it existed.
     var webIndex: WebIndexRecord?
 
+    /// Per note folder on the server, the ETag it had when the last run
+    /// left the note unchanged and in step on both sides (`NoteStamps.swift`).
+    var notes: [String: NoteStamp]?
+    /// Note folders this device wrote a revision into, with their ETag from
+    /// before: the next run checks the server changed it.
+    var stampProbes: [String: String]?
+    /// Whether the server was seen to change a note folder's ETag when a
+    /// revision was written into it (true), or seen not to (false, for
+    /// good); nil until a write was checked.
+    var folderETagsChange: Bool?
+    /// When a run last listed every note folder.
+    var lastFullListing: Date?
+
+    /// A note folder's recorded ETag.
+    struct NoteStamp: Codable, Equatable {
+        /// Its strong ETag in the `notes/` listing.
+        var etag: String
+        /// Whether it held an `att/` folder (listed every run regardless).
+        var att: Bool
+    }
+
     /// What the server's `sempere-index.json` held when this device last
     /// wrote it or found it current.
     struct WebIndexRecord: Codable, Equatable {
