@@ -189,7 +189,9 @@ struct ItemsPoster: ParsableCommand {
         } else if fromClip {
             #if canImport(AVFoundation) && canImport(ImageIO)
             let time = posterTime
-            prepared = try vault.withBlobFile(note: id, clip, pathExtension: clip.type == "video/quicktime" ? "mov" : "mp4") { url in
+            // Compared on the essence (format.md §8.1.2), as exports name the clip.
+            let ext = BlobKind.essence(of: clip.type) == "video/quicktime" ? "mov" : "mp4"
+            prepared = try vault.withBlobFile(note: id, clip, pathExtension: ext) { url in
                 try blockingThrowing { try await VideoPoster.jpeg(file: url, at: time) }
             }
             #else

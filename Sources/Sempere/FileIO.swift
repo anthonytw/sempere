@@ -51,7 +51,7 @@ package enum FileIO {
         guard rc == 0 else {
             let code = errno
             try? fm.removeItem(at: tmp)
-            throw VaultError.io("rename to \(url.path): errno \(code)")
+            throw VaultError.io("rename to \(url.path): \(errnoText(code))")
         }
         try syncDirectory(dir)
     }
@@ -61,12 +61,12 @@ package enum FileIO {
     /// failure the file is removed and the error rethrown. For streamed
     /// files (attachment blobs) written under a temporary name and then put
     /// in place with `placeNew` / `place(_:replacing:)`.
-    static func writeNewFile(_ url: URL, _ body: (_ write: (Data) throws -> Void) throws -> Void) throws {
+    package static func writeNewFile(_ url: URL, _ body: (_ write: (Data) throws -> Void) throws -> Void) throws {
         let fd = url.withUnsafeFileSystemRepresentation { path -> Int32 in
             guard let path else { return -1 }
             return open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
         }
-        guard fd >= 0 else { throw VaultError.io("create \(url.path): errno \(errno)") }
+        guard fd >= 0 else { throw VaultError.io("create \(url.path): \(errnoText(errno))") }
         let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
         do {
             try body { data in
@@ -101,7 +101,7 @@ package enum FileIO {
     /// fsynced. `tmp` is removed in every case.
     ///
     /// - Throws: `VaultError.alreadyExists` if `url` exists, `.io` otherwise.
-    static func placeNew(_ tmp: URL, at url: URL) throws {
+    package static func placeNew(_ tmp: URL, at url: URL) throws {
         defer { try? fm.removeItem(at: tmp) }
         let rc = tmp.withUnsafeFileSystemRepresentation { src in
             url.withUnsafeFileSystemRepresentation { dst -> Int32 in
@@ -113,7 +113,7 @@ package enum FileIO {
             let code = errno
             if code == EEXIST { throw VaultError.alreadyExists(url.path) }
             guard [EPERM, ENOTSUP, EOPNOTSUPP, EXDEV, ENOSYS, EMLINK].contains(code) else {
-                throw VaultError.io("link to \(url.path): errno \(code)")
+                throw VaultError.io("link to \(url.path): \(errnoText(code))")
             }
             guard !exists(url) else { throw VaultError.alreadyExists(url.path) }
             try place(tmp, at: url)
@@ -124,7 +124,7 @@ package enum FileIO {
 
     /// Renames the finished temporary file `tmp` onto `url` (replacing it),
     /// then fsyncs the directory. `tmp` is removed on failure.
-    static func place(_ tmp: URL, at url: URL) throws {
+    package static func place(_ tmp: URL, at url: URL) throws {
         let rc = tmp.withUnsafeFileSystemRepresentation { src in
             url.withUnsafeFileSystemRepresentation { dst -> Int32 in
                 guard let src, let dst else { return -1 }
@@ -134,7 +134,7 @@ package enum FileIO {
         guard rc == 0 else {
             let code = errno
             try? fm.removeItem(at: tmp)
-            throw VaultError.io("rename to \(url.path): errno \(code)")
+            throw VaultError.io("rename to \(url.path): \(errnoText(code))")
         }
         try syncDirectory(url.deletingLastPathComponent())
     }
@@ -147,12 +147,12 @@ package enum FileIO {
             guard let path else { return -1 }
             return open(path, O_RDONLY)
         }
-        guard fd >= 0 else { throw VaultError.io("open \(dir.path) for fsync: errno \(errno)") }
+        guard fd >= 0 else { throw VaultError.io("open \(dir.path) for fsync: \(errnoText(errno))") }
         defer { _ = close(fd) }
         if fsync(fd) != 0 {
             let code = errno
             guard code == EINVAL || code == ENOTSUP else {
-                throw VaultError.io("fsync \(dir.path): errno \(code)")
+                throw VaultError.io("fsync \(dir.path): \(errnoText(code))")
             }
         }
     }
@@ -160,6 +160,11 @@ package enum FileIO {
     /// Reads a whole regular file of at most `maxBytes` (`BoundedRead`).
     static func read(_ url: URL, maxBytes: Int) throws -> Data {
         try BoundedRead.contents(of: url, maxBytes: maxBytes)
+    }
+
+    /// `strerror(3)` text with the number, for error messages people read.
+    static func errnoText(_ code: Int32) -> String {
+        "\(String(cString: strerror(code))) (errno \(code))"
     }
 
     static func exists(_ url: URL) -> Bool { fm.fileExists(atPath: url.path) }
@@ -185,14 +190,14 @@ package enum FileIO {
         }
     }
 
-    static func createDirectory(_ url: URL) throws {
+    package static func createDirectory(_ url: URL) throws {
         do { try fm.createDirectory(at: url, withIntermediateDirectories: true) } catch {
             throw VaultError.io("mkdir \(url.path): \(error)")
         }
     }
 
     /// Removes a file and flushes its directory.
-    static func remove(_ url: URL) throws {
+    package static func remove(_ url: URL) throws {
         do { try fm.removeItem(at: url) } catch { throw VaultError.io("remove \(url.path): \(error)") }
         try syncDirectory(url.deletingLastPathComponent())
     }
@@ -221,8 +226,10 @@ public enum BoundedRead {
     /// The largest identity file (`keys/*.key.age`) or device-state file a reader opens.
     public static let maxSmallFileBytes = 1 << 20
     /// The largest attachment blob file a reader opens: 1 GiB of content
-    /// (format.md §8.4) plus room for its framing and age overhead.
-    public static let maxBlobFileBytes = (1 << 30) + (16 << 20)
+    /// (format.md §8.4) plus 64 MiB for its framing and age overhead (padme of
+    /// a 1 GiB blob adds up to 32 MiB, age's chunk tags 264 KiB, its header at
+    /// most 2 MiB).
+    public static let maxBlobFileBytes = (1 << 30) + (64 << 20)
     /// The largest `backup.json` a reader opens (one entry per backed-up file).
     public static let maxBackupManifestBytes = 256 << 20
 
@@ -235,7 +242,7 @@ public enum BoundedRead {
             guard let path else { return -1 }
             return open(path, O_RDONLY | O_NONBLOCK)
         }
-        guard fd >= 0 else { throw VaultError.io("open \(url.path): errno \(errno)") }
+        guard fd >= 0 else { throw VaultError.io("open \(url.path): \(FileIO.errnoText(errno))") }
         var st = stat()
         guard fstat(fd, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG else {
             _ = close(fd)

@@ -157,7 +157,7 @@
         "quickCapture.notebook" : {
           "default" : "Inbox",
           "description" : "Notebook of quick voice notes. Used by: ipad, iphone.",
-          "maxLength" : 1024,
+          "maxLength" : 300,
           "minLength" : 1,
           "type" : "string"
         },

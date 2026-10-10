@@ -2640,7 +2640,9 @@ A recording belongs to the note, not to a page (`recordings`, §5.4):
   allowed and may be unplayable.
 - `started`: RFC 3339 wall time of the first sample (sorting, display).
 - `duration` (seconds, 3 decimals), `codec`, `sampleRate`, `channels`,
-  `bitRate` (bits per second, average): informational.
+  `bitRate` (bits per second, average): informational. `duration` is the
+  sound track's `mdhd` duration (what plays), the movie's `mvhd` duration
+  when that is absent or 0.
 - `captured` (*new: capture attribution*, optional, immutable): for a voice
   note adopted from the inbox (§11.3), who captured it:
   `{ "device": "a1b2c3d4", "recipient": "…(64 hex digits)…" }`. `device` is
@@ -3039,7 +3041,7 @@ where the table says how they degrade.
 | subsets tried to find the last verified list (§2.1) | up to 3 entries deleted, lists of at most 16 keys (C(16, ≤3) = 696 tags) | `RecipientsAuth.maxSearchDeletions` |
 | blob collector state (device-local, §8.1.6) | 64 MiB | `BlobCollectorState` |
 | identity file, device state | 1 MiB | `BoundedRead` |
-| attachment blob file (§8) | 1 GiB of content plus 16 MiB of framing and age overhead | `BoundedRead` |
+| attachment blob file (§8) | 1 GiB of content plus 64 MiB of framing and age overhead (padme of a 1 GiB blob adds up to 32 MiB) | `BoundedRead` |
 | `backup.json`, export manifest (`.sempere-export-*.json`) | 256 MiB | `BoundedRead` |
 | files read at all | regular files only (no FIFOs or devices; symlinks followed in a vault, not in an imported package) | `BoundedRead` |
 | JSON nesting | 512 levels (Foundation's decoder) | |
@@ -3051,7 +3053,8 @@ where the table says how they degrade.
 | WebDAV response | 256 MiB for a revision, 16 MiB otherwise; PROPFIND bodies must be UTF-8 with no DTD or processing instruction | `WebDAVClient` |
 | WebDAV sync run (§9.1) | 100 000 note folders, 10⁶ listed entries, 64 GiB downloaded, 12 hours; the run stops there with an error and the next one continues | `SyncLimits` |
 | zip entry (import) | 1 GiB uncompressed, CRC and size checked | `ZipArchive` |
-| binary plist (import) | 64 levels; no cycles; each object parsed once; XML plists refused | `BinaryPlist` |
+| binary plist (import) | 64 levels; no cycles; each object parsed once; keyed archives must be binary | `BinaryPlist` |
+| XML plist (import: a recordings library, a PDF metadata index, a few small Notability plists) | 4 MiB, 64 levels; only the five predefined entities and numeric character references; a DOCTYPE with an internal subset refused | `XMLPlist` |
 | keyed-archive UID chain | 64 hops | `KeyedArchive` |
 | Notability coordinates and widths | ±10⁶ units, finite; recognised pages up to 100 000; dates outside 0001…9999 dropped (`.note` and `.ntb`) | `NotabilityNote` |
 | `.ntb` bundle (import) | geometry, erase lists and titles decoded: 4 × the bundle's size + 64 KiB; pages below 100 000 | `NotabilityBundle.decodeBudgetFactor` |
@@ -3069,6 +3072,7 @@ where the table says how they degrade.
 | font file (font packs, render) | 64 MiB; 512 tables; composite glyphs 8 levels and 65 536 points; CFF subroutines 10 levels, 65 536 charstring operations, 48 operands; layout substitutions 2^20 steps, nested lookups 8 levels; any failure falls back to another font | `OpenTypeFont`, `CFFFont`, `GSUBApplier` |
 | font-pack scan | 20 000 font files, 64 faces per collection | `FontLibrary` |
 | notebook levels shown | 64 | `NotebookNode.maxDepth` |
+| notebook name (a capture's title and notebook, §11.3; the `quickCapture.notebook` setting) | 300 characters and 1 200 Unicode scalars; a capture cuts a longer name, the setting refuses it | `CaptureAdoption.maxNameLength`, `.maxNameScalars` |
 | LaTeX source (`math`, §8.2.8) | 8 192 UTF-8 bytes (else the revision is rejected); typeset only within 4 096 tokens, balanced groups and 64 levels of nesting (else drawn as source text) | `MathSource.check` |
 | PDF attachment (export, `SemperePDF`) | 1 GiB file; 10⁶ objects; 256 MiB per decoded stream, 1 GiB decoded per file; nesting and page-tree depth 64; 32 reference hops; 4 096 cross-reference sections; 16 filters per stream; encrypted files refused | `PDFLimits` |
 | PDF page drawn as pixels (SVG, PNG) | 16 M pixels per page (drawn at a lower resolution beyond), 256 M per export (placeholders beyond) | `RenderLimits.maxBackgroundPixels…` |

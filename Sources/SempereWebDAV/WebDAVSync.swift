@@ -60,8 +60,9 @@ public struct WebDAVSyncOptions: Sendable {
     /// checked fully rather than for their structure only (format.md §9.1).
     public var firstPullIdentities: [any AgeIdentity] = []
 
-    /// 1 GiB + 64 MiB.
-    public static let defaultMaxBlobBytes = (1 << 30) + (64 << 20)
+    /// The largest blob file a reader opens (`BoundedRead.maxBlobFileBytes`,
+    /// 1 GiB + 64 MiB).
+    public static let defaultMaxBlobBytes = BoundedRead.maxBlobFileBytes
 
     public init(dryRun: Bool = false, deviceLabel: String = "device", now: Date = Date(), maxFileBytes: Int = 256 << 20,
                 maxBlobBytes: Int = WebDAVSyncOptions.defaultMaxBlobBytes,
@@ -230,19 +231,14 @@ public final class WebDAVSync {
     private func checkSameVault(_ remoteRoot: [String: RemoteEntry]) throws {
         guard remoteRoot[Vault.manifestName] != nil,
               let local = try? localMutable(Vault.manifestName),
-              let localId = Self.vaultId(local) else { return }
-        let remote = try client.get([Vault.manifestName]).data
-        guard let remoteId = Self.vaultId(remote) else {
+              let localId = WebDAVConnection.manifestFields(local)?.vaultId else { return }
+        let remote = try client.get([Vault.manifestName], maxBytes: BoundedRead.maxManifestBytes).data
+        guard let remoteId = WebDAVConnection.manifestFields(remote)?.vaultId else {
             // A mirror is repaired from the local manifest; a two-way sync has nothing to compare.
             if options.pushOnly { return }
             throw WebDAVError.malformedResponse("remote vault.json is not a vault manifest")
         }
         if localId != remoteId { throw WebDAVError.vaultMismatch(local: localId, remote: remoteId) }
-    }
-
-    private static func vaultId(_ manifest: Data) -> String? {
-        guard let obj = try? JSONSerialization.jsonObject(with: manifest) as? [String: Any] else { return nil }
-        return (obj["vaultId"] as? String)?.lowercased()
     }
 
     // MARK: - Mutable files
@@ -570,14 +566,16 @@ public final class WebDAVSync {
         try requireLocalWrite("download notes/\(key(id, n))")
         let path = "notes/\(key(id, n))"
         let size = entry?.size
-        if let size, size > options.maxFileBytes { throw WebDAVError.io("\(path) is \(size) bytes, over the limit; skipped") }
+        if let size, size > options.maxFileBytes { throw WebDAVError.responseTooLarge(path: path, limit: options.maxFileBytes) }
         if skipQuarantined(key(id, n), path: path, entry: entry) { return false }
         try budget.willDownload(size)
         report.downloaded.append(path)
         guard !options.dryRun else { return true }
         let (data, _) = try client.get([Vault.notesName, id, n.filename], maxBytes: options.maxFileBytes)
         try budget.downloaded(data.count)
-        guard data.count <= options.maxFileBytes else { throw WebDAVError.io("\(path) is over the size limit; skipped") }
+        guard data.count <= options.maxFileBytes else {
+            throw WebDAVError.responseTooLarge(path: path, limit: options.maxFileBytes)
+        }
         var problem: String?
         if !data.starts(with: Self.ageMagic) {
             problem = "not an age file"

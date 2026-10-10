@@ -1177,7 +1177,7 @@ any vault. A download that stops (offline, the app quit) continues where it
 stopped when the vault is opened again; the copy is opened only after a
 download run that finished without errors (`WebDAVLocation.downloaded`).
 
-**When it pushes** (`WebDAVPushScheduler`, pure logic): once after the vault
+**When it pushes** (`WebDAVPushSchedule`, pure logic): once after the vault
 is unlocked, 10 s after the last write (every `NoteWriter` delta and blob
 counts), when the app becomes active and when it goes to the background (in
 the seconds iPadOS leaves it; a push cut off there is retried when the app
@@ -1185,7 +1185,8 @@ comes back), every 5 minutes while the vault is open and on "Sync Now".
 Never while locked (deletions need the vault unlocked), no background task
 or scheduled refresh, at most one run at a time; a write during a run
 schedules another. After a failure the next automatic try waits 30 s,
-doubling up to 15 minutes; "Sync Now" and a write retry at once.
+doubling up to 15 minutes; "Sync Now" (and unlocking or the app becoming
+active) retries at once, and a write still runs 10 s after the last write.
 
 **Status** (`WebDAVSession`, `WebDAVSyncProblem`): the note list shows a bar
 for a WebDAV vault (`WebDAVStatusBar`): uploading, up to date, the number of

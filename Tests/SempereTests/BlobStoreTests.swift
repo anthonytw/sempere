@@ -25,6 +25,16 @@ final class BlobStoreTests: VaultTestCase {
         XCTAssertEqual(BlobFraming.paddedPlaintextLength(contentLength: 16), 64)
     }
 
+    /// A reader opens every blob file a conforming writer produces: the
+    /// largest content, padded (§8.1.3), sealed with age (64 KiB chunks with
+    /// a 16-byte tag each, and a header of at most 2 MiB).
+    func testTheLargestPaddedBlobIsUnderTheReadLimit() {
+        let plain = BlobFraming.paddedPlaintextLength(contentLength: 1 << 30)
+        XCTAssertEqual(plain, (1 << 30) + (1 << 25))
+        let chunks = (plain + 65_535) / 65_536
+        XCTAssertLessThanOrEqual(plain + chunks * 16 + (2 << 20), Int64(BoundedRead.maxBlobFileBytes))
+    }
+
     func testPadme() {
         XCTAssertEqual(BlobFraming.padme(0), 0)
         XCTAssertEqual(BlobFraming.padme(1), 1)

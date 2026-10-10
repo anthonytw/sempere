@@ -210,6 +210,15 @@ final class SharedSettingsTests: VaultTestCase {
         XCTAssertNil(v("newNote.titlePattern", .string("   ")))
         XCTAssertNil(v("newNote.titlePattern", .string("'open")))
         XCTAssertEqual(v("newNote.titlePattern", .string("'Lecture' d MMM")), .string("'Lecture' d MMM"))
+        // Lengths count characters, as the schema and DefaultTitle's message say.
+        let wide = "'" + String(repeating: "日", count: 150) + "'"
+        XCTAssertEqual(v("newNote.titlePattern", .string(wide)), .string(wide))
+        XCTAssertNil(v("newNote.titlePattern", .string("'" + String(repeating: "a", count: DefaultTitle.maxFormatLength) + "'")))
+        // A default notebook is never longer than a capture keeps (CaptureAdoption.boundedName).
+        let longest = String(repeating: "é", count: CaptureAdoption.maxNameLength)
+        XCTAssertEqual(v("quickCapture.notebook", .string(longest)), .string(longest))
+        XCTAssertEqual(CaptureAdoption.boundedName(longest), longest)
+        XCTAssertNil(v("quickCapture.notebook", .string(longest + "e")))
         XCTAssertEqual(v("transcription.language", .null), .null)
         XCTAssertEqual(v("transcription.language", .string("es_ES")), .string("es_ES"))
         XCTAssertNil(v("transcription.language", .string("es ES")))
