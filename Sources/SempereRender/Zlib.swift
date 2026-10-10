@@ -22,15 +22,21 @@ enum Zlib {
     }
 
     static func compress(_ data: Data, level: Int32 = 6) throws -> Data {
-        var destLen = compressBound(uLong(data.count))
-        var dest = [UInt8](repeating: 0, count: Int(destLen))
-        let rc: Int32 = data.withUnsafeBytes { (src: UnsafeRawBufferPointer) -> Int32 in
+        Data(try compressedBytes(data, level: level))
+    }
+
+    /// `compress`, as bytes (no copy into `Data`).
+    static func compressedBytes(_ bytes: some ContiguousBytes, level: Int32 = 6) throws -> [UInt8] {
+        try bytes.withUnsafeBytes { (src: UnsafeRawBufferPointer) -> [UInt8] in
+            var destLen = compressBound(uLong(src.count))
+            var dest = [UInt8](repeating: 0, count: Int(destLen))
             let base = src.bindMemory(to: Bytef.self).baseAddress
-            return dest.withUnsafeMutableBufferPointer { d in
-                compress2(d.baseAddress, &destLen, base, uLong(data.count), level)
+            let rc = dest.withUnsafeMutableBufferPointer { d in
+                compress2(d.baseAddress, &destLen, base, uLong(src.count), level)
             }
+            guard rc == Z_OK else { throw RenderError.compressionFailed(rc) }
+            dest.removeLast(dest.count - Int(destLen))
+            return dest
         }
-        guard rc == Z_OK else { throw RenderError.compressionFailed(rc) }
-        return Data(dest[0..<Int(destLen)])
     }
 }
