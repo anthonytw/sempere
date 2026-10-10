@@ -9,7 +9,9 @@ import UIKit
 ///
 /// While it is active, `PageCanvasHost` turns PencilKit's drawing gesture off
 /// and this controller's gesture takes the touches: every stroke whose ink
-/// the swept circle touches is removed from `canvas.drawing` at once. Setting
+/// the swept circle touches is removed from `canvas.drawing` (at the next
+/// display frame, and at touch-up). Only strokes near the sweep are looked
+/// at (`StrokeBoundsGrid`). Setting
 /// `drawing` reaches the canvas delegate like any PencilKit edit, so the
 /// `StrokeLedger` turns it into the same `removeStroke` ops as PencilKit's own
 /// eraser, and autosave is unchanged. One gesture is one undo step on the
@@ -29,11 +31,23 @@ final class ObjectEraserController: NSObject, UIGestureRecognizerDelegate {
     /// The scroll view's pan touch types before the eraser took the Pencil.
     private var savedPanTouchTypes: [NSNumber]?
 
-    // One gesture's state.
+    // One gesture's state. The strokes are taken once at touch-down; erased
+    // ones are marked dead rather than removed, so indices stay valid.
     private var before: PKDrawing?
     private var remaining: [PKStroke] = []
+    private var alive: [Bool] = []
+    private var bounds: [StrokeBoundsGrid.Box] = []
+    private var grid: StrokeBoundsGrid?
     private var shapes: [StrokeHitShape?] = []
     private var last: EraserPoint?
+    /// Strokes erased since the canvas was last given the drawing. The
+    /// first erase gives it at once; later ones wait for the next display
+    /// frame (`frameLink`), so the canvas, and the ledger behind it, take
+    /// at most about one drawing per frame; touch-up gives the rest.
+    private var pending = false
+    private var frameLink: CADisplayLink?
+    /// The stroke count of the drawing this gesture last gave the canvas.
+    private var shownCount = 0
     private var radius = ObjectEraserSize.defaultRadius
 
     /// Whether the eraser takes touches (object eraser selected, note editable).
@@ -141,8 +155,16 @@ final class ObjectEraserController: NSObject, UIGestureRecognizerDelegate {
     func begin(at p: EraserPoint) {
         guard let canvas else { return }
         radius = ObjectEraserSize.load()
-        before = canvas.drawing
-        remaining = canvas.drawing.strokes
+        let drawing = canvas.drawing
+        before = drawing
+        remaining = drawing.strokes
+        alive = Array(repeating: true, count: remaining.count)
+        shownCount = remaining.count
+        bounds = remaining.map { stroke in
+            let b = stroke.renderBounds
+            return StrokeBoundsGrid.Box(minX: Double(b.minX), minY: Double(b.minY), maxX: Double(b.maxX), maxY: Double(b.maxY))
+        }
+        grid = StrokeBoundsGrid(bounds)
         shapes = Array(repeating: nil, count: remaining.count)
         last = p
         erase(to: p)
@@ -156,6 +178,7 @@ final class ObjectEraserController: NSObject, UIGestureRecognizerDelegate {
     /// Touch-up (or a cancelled gesture): one undo step for the whole gesture.
     func end(at p: EraserPoint) {
         erase(to: p)
+        flush()
         finish()
     }
 
@@ -164,10 +187,9 @@ final class ObjectEraserController: NSObject, UIGestureRecognizerDelegate {
     /// the gesture erases nothing, and it registers no undo, so strokes of
     /// the old page can never be written onto the new one.
     func cancelGesture() {
+        stopFrames()
         before = nil
-        remaining = []
-        shapes = []
-        last = nil
+        reset()
     }
 
     @objc private func hovered(_ g: UIHoverGestureRecognizer) {
@@ -195,42 +217,80 @@ final class ObjectEraserController: NSObject, UIGestureRecognizerDelegate {
     }
 
     private func erase(to p: EraserPoint) {
-        guard let canvas, let from = last else { return }
-        // Defence in depth for `cancelGesture`: a drawing replaced behind the
-        // gesture's back is never overwritten with this gesture's strokes.
-        guard canvas.drawing.strokes.count == remaining.count else {
-            cancelGesture()
-            return
-        }
+        guard canvas != nil, let from = last, let grid else { return }
         last = p
-        var hit = IndexSet()
-        for i in remaining.indices {
+        let r = radius
+        let sweep = StrokeBoundsGrid.Box(minX: min(from.x, p.x) - r, minY: min(from.y, p.y) - r,
+                                         maxX: max(from.x, p.x) + r, maxY: max(from.y, p.y) + r)
+        var hit = false
+        for i in grid.candidates(sweep) where alive[i] {
             if shapes[i] == nil {
                 // Cheap reject on PencilKit's bounds before sampling the path.
-                let b = remaining[i].renderBounds
-                let r = radius
-                if Double(b.maxX) < min(from.x, p.x) - r || Double(b.minX) > max(from.x, p.x) + r
-                    || Double(b.maxY) < min(from.y, p.y) - r || Double(b.minY) > max(from.y, p.y) + r {
+                let b = bounds[i]
+                if b.maxX < sweep.minX || b.minX > sweep.maxX || b.maxY < sweep.minY || b.minY > sweep.maxY {
                     continue
                 }
                 shapes[i] = StrokeHitShape(remaining[i])
             }
-            if shapes[i]?.intersects(sweepFrom: from, to: p, radius: radius) == true { hit.insert(i) }
+            if shapes[i]?.intersects(sweepFrom: from, to: p, radius: r) == true {
+                alive[i] = false
+                hit = true
+            }
         }
-        guard !hit.isEmpty else { return }
-        for i in hit.reversed() {
-            remaining.remove(at: i)
-            shapes.remove(at: i)
+        guard hit else { return }
+        pending = true
+        if frameLink == nil {
+            flush()
+            guard isErasing else { return }
+            let link = CADisplayLink(target: self, selector: #selector(frame))
+            link.add(to: .main, forMode: .common)
+            frameLink = link
         }
-        canvas.drawing = PKDrawing(strokes: remaining)
+    }
+
+    /// A display frame: gives the canvas what was erased since the last one;
+    /// with nothing new, waits for the next erase to give it at once again.
+    @objc private func frame() {
+        if pending { flush() } else { stopFrames() }
+    }
+
+    /// Gives the canvas the strokes still alive, if any were erased since it
+    /// last got them. Setting `drawing` reaches the canvas delegate, so the
+    /// ledger sees the change. A drawing replaced behind the gesture's back
+    /// (defence in depth for `cancelGesture`) is never overwritten: the
+    /// gesture is dropped instead.
+    private func flush() {
+        guard pending, let canvas else { return }
+        pending = false
+        guard canvas.drawing.strokes.count == shownCount else {
+            cancelGesture()
+            return
+        }
+        let kept = remaining.indices.filter { alive[$0] }.map { remaining[$0] }
+        shownCount = kept.count
+        canvas.drawing = PKDrawing(strokes: kept)
+    }
+
+    private func stopFrames() {
+        frameLink?.invalidate()
+        frameLink = nil
+        pending = false
+    }
+
+    private func reset() {
+        remaining = []
+        alive = []
+        bounds = []
+        grid = nil
+        shapes = []
+        last = nil
     }
 
     private func finish() {
+        stopFrames()
         defer {
             before = nil
-            remaining = []
-            shapes = []
-            last = nil
+            reset()
             if !hover.isEnabled || hover.state == .possible { cursor.isHidden = true }
         }
         guard let canvas, let before else { return }

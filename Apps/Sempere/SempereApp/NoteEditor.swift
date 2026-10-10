@@ -92,6 +92,8 @@ final class NoteEditor {
     /// ledger's entries: shown again as it is (no conversion) while the
     /// ledger exists.
     @ObservationIgnored private var canvasDrawings: [UUID: PKDrawing] = [:]
+    /// The last stroke ids digested per page, and their digest (`strokeDigest`).
+    @ObservationIgnored private var strokeDigests: [UUID: (ids: [UUID], digest: String)] = [:]
     /// Pages whose drawing is being prepared off the main actor.
     @ObservationIgnored private var preparing: [UUID: Task<PreparedDrawing?, Never>] = [:]
     /// Pages whose strokes changed since the note was read.
@@ -190,6 +192,8 @@ final class NoteEditor {
     var listeningToInk = false
     /// Strokes highlighted because playback is at the moment they were written, per page.
     var playbackHighlight: [UUID: Set<UUID>] = [:]
+    /// The strokes playback highlights, indexed (`updatePlaybackHighlight`).
+    @ObservationIgnored var playbackIndex: PlaybackIndex?
     /// Recordings being transcribed now.
     var transcribing: Set<UUID> = []
     /// The last recording, playback or transcription failure.
@@ -475,13 +479,9 @@ final class NoteEditor {
 
     // MARK: - Pages
 
-    /// The ledger of a page, created from its stored strokes on first use.
-    private func ledger(_ pageID: UUID) -> StrokeLedger {
-        if let l = ledgers[pageID] { return l }
-        let stored = pages.first { $0.id == pageID }?.strokes ?? []
-        let l = StrokeLedger(stored: stored, info: CanvasStrokeInfo.init(stored:))
-        ledgers[pageID] = l
-        return l
+    /// A ledger for the page's stored strokes (not kept), for its first change.
+    private func newLedger(_ pageID: UUID) -> StrokeLedger {
+        StrokeLedger(stored: pages.first { $0.id == pageID }?.strokes ?? [], info: CanvasStrokeInfo.init(stored:))
     }
 
     /// The drawing to show for a page: its live strokes, one canvas stroke
@@ -490,12 +490,13 @@ final class NoteEditor {
     func drawing(for pageID: UUID) -> PKDrawing {
         // No ledger before the strokes are read (or when they could not be).
         if isPreparing || loadFailed { return canvasDrawings[pageID] ?? PKDrawing() }
-        var l = ledger(pageID)
-        l.rebase(info: CanvasStrokeInfo.init(stored:))
-        ledgers[pageID] = l
-        let drawing = l.drawing
-        canvasDrawings[pageID] = drawing
-        return drawing
+        // Converted once; the ledger is fingerprinted from exactly the strokes shown.
+        let prepared = DrawingPreparation.convert(liveStrokes(of: pageID))
+        if ledgers[pageID]?.rebase(infos: prepared.infos) == nil {
+            ledgers[pageID] = StrokeLedger(stored: liveStrokes(of: pageID), infos: prepared.infos)
+        }
+        canvasDrawings[pageID] = prepared.drawing
+        return prepared.drawing
     }
 
     /// The drawing the page's canvas can show right away, without converting
@@ -596,7 +597,12 @@ final class NoteEditor {
 
     /// Live strokes of a page (saved or not). Empty while the note is being
     /// read (`isPreparing`).
-    func liveStrokes(of pageID: UUID) -> [Stroke] { isPreparing || loadFailed ? [] : ledger(pageID).live }
+    /// No ledger is made for it: a page without one has its stored strokes
+    /// live, which is all a new ledger would hold.
+    func liveStrokes(of pageID: UUID) -> [Stroke] {
+        guard !isPreparing, !loadFailed else { return [] }
+        return ledgers[pageID]?.live ?? pages.first { $0.id == pageID }?.strokes ?? []
+    }
 
     /// Ink changes per page, so page thumbnails can follow them.
     private(set) var inkRevisions: [UUID: Int] = [:]
@@ -608,6 +614,13 @@ final class NoteEditor {
     /// the canvas, else as loaded (no ledger is made just for a thumbnail).
     func thumbnailStrokes(of page: Page) -> [Stroke] {
         ledgers[page.id]?.live ?? page.strokes
+    }
+
+    /// What a page thumbnail draws: the drawing the page's canvas shows when
+    /// there is one (no conversion), else `thumbnailStrokes`.
+    func thumbnailSource(of page: Page) -> PageThumbnail.Source {
+        if !isPreparing, !loadFailed, ledgers[page.id] != nil, let drawing = canvasDrawings[page.id] { return .drawing(drawing) }
+        return .strokes(thumbnailStrokes(of: page))
     }
 
     /// Shows the page `id` (a search hit); no-op when the note has no such page.
@@ -785,7 +798,7 @@ final class NoteEditor {
     /// Whether anything is waiting to be written (page ops, ink, page size).
     var hasPendingChanges: Bool {
         !pendingPageOps.isEmpty || pageSize != committedPageSize
-            || pages.contains { page in ledgers[page.id].map { !$0.pendingOps(page: page.id, live: $0.live).isEmpty } ?? false }
+            || pages.contains { page in ledgers[page.id]?.hasPending ?? false }
     }
 
     /// `pages` with each page's live strokes (saved or not).
@@ -880,10 +893,16 @@ final class NoteEditor {
     /// moved, undone, redone). Updates ids now; saves after the pause.
     @discardableResult
     func drawingDidChange(pageID: UUID, items: [StrokeLedger.Item], inkMaxY: Double?) -> StrokeLedger.Change {
+        drawingDidChange(pageID: pageID, inkMaxY: inkMaxY) { $0.update(items) }
+    }
+
+    /// The canvas's drawing changed: `update` brings the page's ledger (made
+    /// when missing) up to it, in place.
+    private func drawingDidChange(pageID: UUID, inkMaxY: Double?,
+                                  update: (inout StrokeLedger) -> StrokeLedger.Change) -> StrokeLedger.Change {
         guard !isReadOnly, !isShutDown else { return .init() }
-        var l = ledger(pageID)
-        let change = l.update(items)
-        ledgers[pageID] = l
+        // In place: a copy taken out of the dictionary would copy every entry on write.
+        let change = update(&ledgers[pageID, default: newLedger(pageID)])
         if !change.isEmpty {
             inkRevisions[pageID, default: 0] &+= 1
             dirtyPages.insert(pageID)
@@ -902,8 +921,11 @@ final class NoteEditor {
     func drawingDidChange(pageID: UUID, drawing: PKDrawing, tool: PKTool?) -> StrokeLedger.Change {
         guard !isReadOnly else { return .init() }
         let bounds = drawing.bounds
-        let change = drawingDidChange(pageID: pageID, items: StrokeLedger.items(for: drawing, tool: tool, stamp: recordingStamp),
-                                      inkMaxY: bounds.isNull ? nil : Double(bounds.maxY))
+        let strokes = drawing.strokes
+        let stamp = recordingStamp
+        let change = drawingDidChange(pageID: pageID, inkMaxY: bounds.isNull ? nil : Double(bounds.maxY)) {
+            $0.update(strokes, tool: tool, stamp: stamp)
+        }
         canvasDrawings[pageID] = drawing   // the ledger's entries now fingerprint exactly these strokes
         return change
     }
@@ -968,7 +990,7 @@ final class NoteEditor {
     func storeForNextOpen() {
         guard let cache = drawingCache, let base = cacheKey, !isPreparing, readOnlyReason == nil, saveError == nil,
               pendingPageOps.isEmpty, pageSize == committedPageSize,
-              !pages.contains(where: { page in ledgers[page.id].map { !$0.pendingOps(page: page.id, live: $0.live).isEmpty } ?? false })
+              !pages.contains(where: { page in ledgers[page.id]?.hasPending ?? false })
         else { return }
         let key = DrawingCache.Key(note: noteID, revisions: base.revisions + writtenNames)
         guard key != base else { return }   // nothing written: the cache already has this version
@@ -1023,8 +1045,7 @@ final class NoteEditor {
         // roll back if it fails.
         var saves: [(UUID, StrokeLedger.Save)] = []
         for page in pages {
-            guard var l = ledgers[page.id], let save = l.beginSave(page: page.id) else { continue }
-            ledgers[page.id] = l
+            guard let save = ledgers[page.id]?.beginSave(page: page.id) else { continue }
             ops += save.ops
             saves.append((page.id, save))
         }
@@ -1193,13 +1214,20 @@ extension NoteEditor {
             let old = oldPages[page.id]
             if var l = ledgers[page.id] {
                 let previous = canvasDrawings[page.id]
-                let merge = l.mergeStored(page.strokes, info: CanvasStrokeInfo.init(stored:))
+                // Strokes converted to fingerprint them are the ones shown (converted once).
+                var converted: [UUID: PKStroke] = [:]
+                let merge = l.mergeStored(page.strokes, info: { s in
+                    let pk = StrokeConversion.pkStroke(s)
+                    converted[s.id] = pk
+                    return CanvasStrokeInfo(pk)
+                })
                 if merge.changesCanvas {
                     if let previous, previous.strokes.count == merge.previousCount {
+                        let shown = previous.strokes
                         canvasDrawings[page.id] = PKDrawing(strokes: merge.sources.map { source -> PKStroke in
                             switch source {
-                            case .kept(let i): return previous.strokes[i]
-                            case .converted(let s): return StrokeConversion.pkStroke(s)
+                            case .kept(let i): return shown[i]
+                            case .converted(let s): return converted[s.id] ?? StrokeConversion.pkStroke(s)
                             }
                         })
                     } else {
@@ -1284,6 +1312,21 @@ extension NoteEditor {
         ledgers[page.id]?.live ?? page.strokes
     }
 
+    /// `RecognitionBasis.digest` of `strokes`' ids, the strokes of page
+    /// `pageID`: reused while the page's ids are the ones last digested
+    /// (compared one by one, which costs far less than the digest), so a
+    /// pass after a pen-up digests only the page that changed.
+    func strokeDigest(of pageID: UUID, _ strokes: [Stroke]) -> String {
+        if let cached = strokeDigests[pageID], cached.ids.count == strokes.count,
+           zip(cached.ids, strokes).allSatisfy({ $0 == $1.id }) {
+            return cached.digest
+        }
+        let ids = strokes.map(\.id)
+        let digest = RecognitionBasis.digest(of: ids)
+        strokeDigests[pageID] = (ids, digest)
+        return digest
+    }
+
     /// Recognises the pages that need it after `recognitionDelay` without
     /// further stroke changes (and once when the note opens).
     func scheduleRecognition() {
@@ -1326,8 +1369,8 @@ extension NoteEditor {
         for page in pages {
             guard recognitionWanted else { return }
             let strokes = currentStrokes(of: page)
-            let digest = RecognitionBasis.digest(of: strokes.map(\.id))
-            guard RecognitionPolicy.needsRecognition(page.recognition, strokeIDs: strokes.map(\.id),
+            let digest = strokeDigest(of: page.id, strokes)
+            guard RecognitionPolicy.needsRecognition(page.recognition, hasStrokes: !strokes.isEmpty, digest: digest,
                                                      touched: touchedPages.contains(page.id)) else { continue }
             var result: Recognition?
             if !strokes.isEmpty {
@@ -1348,7 +1391,7 @@ extension NoteEditor {
         // Only pages whose strokes are still the ones that were read.
         let current = read.filter { r in
             guard let page = pages.first(where: { $0.id == r.pageID }) else { return false }
-            return RecognitionBasis.digest(of: currentStrokes(of: page).map(\.id)) == r.digest
+            return strokeDigest(of: page.id, currentStrokes(of: page)) == r.digest
         }
         guard !current.isEmpty else { return }
         let ops = current.map { Op.setPageRecognition(pageId: $0.pageID, recognition: $0.recognition) }

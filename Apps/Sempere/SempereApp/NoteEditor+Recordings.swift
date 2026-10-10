@@ -202,13 +202,19 @@ extension NoteEditor {
 
     /// Highlights the strokes written in the moments before `position` of
     /// `recording` (on every page), as playback goes on.
+    ///
+    /// The strokes linked to the recording are indexed by `at` once per ink
+    /// change (`PlaybackIndex`), so a tick is two binary searches, and no
+    /// page is converted or given a ledger for it. The result is
+    /// `RecordingSync.highlighted` of every page's live strokes.
     func updatePlaybackHighlight(_ recording: Recording, at position: Double) {
-        let state = recordingState
-        var next: [UUID: Set<UUID>] = [:]
-        for page in pages {
-            let ids = RecordingSync.highlighted(liveStrokes(of: page.id), recording: recording.id, at: position, in: state)
-            if !ids.isEmpty { next[page.id] = ids }
+        let basis = PlaybackIndex.Basis(recording: recording.id, recordings: recordings, pages: pages.map(\.id),
+                                        revisions: pages.map { inkRevisions[$0.id] ?? 0 }, ready: !(isPreparing || loadFailed))
+        if playbackIndex?.basis != basis {
+            playbackIndex = PlaybackIndex(basis: basis, pages: pages.map { ($0.id, liveStrokes(of: $0.id)) },
+                                          state: recordingState)
         }
+        let next = playbackIndex?.highlighted(at: position) ?? [:]
         if next != playbackHighlight { playbackHighlight = next }
     }
 
@@ -226,7 +232,8 @@ extension NoteEditor {
     /// Where a tap at page point (`x`, `y`) should play from: the recording
     /// and time of the earliest linked stroke under it, minus the lead-in.
     func seekTarget(pageID: UUID, x: Double, y: Double, tolerance: Double = 12) -> (recording: Recording, time: Double)? {
-        let hits = RecordingSync.hit(x: x, y: y, in: liveStrokes(of: pageID), tolerance: tolerance)
+        // Only linked strokes can be a target: the others are not measured.
+        let hits = RecordingSync.hit(x: x, y: y, in: liveStrokes(of: pageID).filter { $0.rec != nil }, tolerance: tolerance)
         return RecordingSync.seekTarget(for: hits, in: recordingState)
     }
 
@@ -234,5 +241,58 @@ extension NoteEditor {
     func inkTapped(pageID: UUID, x: Double, y: Double) {
         guard let target = seekTarget(pageID: pageID, x: x, y: y) else { return }
         onPlayRequest?(target.recording, target.time)
+    }
+}
+
+/// The strokes of a note linked to one recording, sorted by the moment they
+/// were drawn (`RecordingLink.at`), for the playback highlight.
+struct PlaybackIndex {
+    /// What the index was built from: rebuilt when any of it changes (every
+    /// change of a page's ink bumps its `inkRevisions`; a note still being
+    /// read has no strokes yet).
+    struct Basis: Equatable {
+        var recording: UUID
+        var recordings: [Recording]
+        var pages: [UUID]
+        var revisions: [Int]
+        var ready: Bool
+    }
+
+    let basis: Basis
+    /// (at, page, stroke), sorted by `at`; only finite moments (no other can
+    /// fall in a window around a finite position).
+    private var links: [(at: Double, page: UUID, stroke: UUID)] = []
+
+    init(basis: Basis, pages: [(id: UUID, strokes: [Stroke])], state: NoteState) {
+        self.basis = basis
+        var resolved: [UUID: Bool] = [:]   // link id -> names this recording
+        for (page, strokes) in pages {
+            for s in strokes {
+                guard let link = s.rec, link.at.isFinite else { continue }
+                let ours = resolved[link.id] ?? (state.recording(for: link)?.id == basis.recording)
+                resolved[link.id] = ours
+                if ours { links.append((link.at, page, s.id)) }
+            }
+        }
+        links.sort { $0.at < $1.at }
+    }
+
+    /// `RecordingSync.highlighted` per page: the strokes drawn in the
+    /// `window` seconds up to `position`, by page; pages without any left out.
+    func highlighted(at position: Double, window: Double = RecordingSync.highlightWindow) -> [UUID: Set<UUID>] {
+        guard position.isFinite else { return [:] }
+        let from = position - window
+        var lo = 0, hi = links.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if links[mid].at < from { lo = mid + 1 } else { hi = mid }
+        }
+        var result: [UUID: Set<UUID>] = [:]
+        var i = lo
+        while i < links.count, links[i].at <= position {
+            result[links[i].page, default: []].insert(links[i].stroke)
+            i += 1
+        }
+        return result
     }
 }

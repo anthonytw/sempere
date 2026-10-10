@@ -151,3 +151,67 @@ enum ObjectEraserSize {
         }
     }
 }
+
+/// Stroke bounds bucketed in a uniform grid, so a touch sample of the
+/// object eraser looks only at the strokes near it rather than at every
+/// stroke of the page. A prefilter only: every stroke whose bounds overlap
+/// the query box is among the candidates (and maybe others); the caller
+/// still applies its exact test.
+struct StrokeBoundsGrid {
+    struct Box: Equatable, Sendable {
+        var minX: Double, minY: Double, maxX: Double, maxY: Double
+    }
+
+    /// Cell size in page points.
+    let cell: Double
+    /// A stroke spanning more cells than this (or with bounds that are not
+    /// finite, or far off the page) is a candidate of every query instead.
+    let maxCells: Int
+    private var cells: [Int: [Int]] = [:]
+    private var everywhere: [Int] = []
+    private let count: Int
+    /// Cell coordinates beyond this many cells from the origin are not bucketed.
+    private static let reach = 1 << 24
+
+    init(_ boxes: [Box], cell: Double = 64, maxCells: Int = 64) {
+        self.cell = cell
+        self.maxCells = maxCells
+        count = boxes.count
+        for (i, b) in boxes.enumerated() {
+            guard let (x0, y0, x1, y1) = cellRange(b), (x1 - x0 + 1) * (y1 - y0 + 1) <= maxCells else {
+                everywhere.append(i)
+                continue
+            }
+            for cy in y0...y1 {
+                for cx in x0...x1 { cells[Self.key(cx, cy), default: []].append(i) }
+            }
+        }
+    }
+
+    /// The candidates for `box`, ascending, each once.
+    func candidates(_ box: Box) -> [Int] {
+        guard let (x0, y0, x1, y1) = cellRange(box), (x1 - x0 + 1) * (y1 - y0 + 1) <= 4 * maxCells else {
+            return Array(0..<count)
+        }
+        var found = everywhere
+        for cy in y0...y1 {
+            for cx in x0...x1 { found += cells[Self.key(cx, cy)] ?? [] }
+        }
+        found.sort()
+        var unique: [Int] = []
+        unique.reserveCapacity(found.count)
+        for i in found where unique.last != i { unique.append(i) }
+        return unique
+    }
+
+    /// The cells `b` covers, or nil when it cannot be bucketed.
+    private func cellRange(_ b: Box) -> (Int, Int, Int, Int)? {
+        let lo = -Double(Self.reach), hi = Double(Self.reach)
+        let x0 = (b.minX / cell).rounded(.down), y0 = (b.minY / cell).rounded(.down)
+        let x1 = (b.maxX / cell).rounded(.down), y1 = (b.maxY / cell).rounded(.down)
+        guard x0 >= lo, y0 >= lo, x1 <= hi, y1 <= hi, x0 <= x1, y0 <= y1 else { return nil }   // NaN fails too
+        return (Int(x0), Int(y0), Int(x1), Int(y1))
+    }
+
+    private static func key(_ x: Int, _ y: Int) -> Int { (x + reach) &* (2 * reach + 1) &+ (y + reach) }
+}
