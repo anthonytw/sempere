@@ -51,20 +51,32 @@ public enum PNGWriter {
     /// `imageName`.
     public static func renderNamed(note: NoteState, options: RenderOptions = RenderOptions(), png: PNGOptions = PNGOptions(),
                                    report: inout RenderReport) throws -> [(name: String, png: Data)] {
+        var images: [(name: String, png: Data)] = []
+        try renderNamed(note: note, options: options, png: png, report: &report) { images.append(($0, $1)) }
+        return images
+    }
+
+    /// Like `renderNamed(note:options:png:report:)`, handing each image to
+    /// `each` as soon as its page is drawn, so that only one page's images
+    /// are held at a time.
+    public static func renderNamed(note: NoteState, options: RenderOptions = RenderOptions(), png: PNGOptions = PNGOptions(),
+                                   report: inout RenderReport, each: (_ name: String, _ png: Data) throws -> Void) throws {
         guard png.scale.isFinite, png.scale > 0 else { throw RenderError.invalidScale }
         let backgrounds = PDFBackgrounds(blobs: options.blobs, rasterizer: options.pdfRasterizer)
         let store = ImageStore(options: options, blobs: options.blobs, recordings: note.recordings)
-        var images: [(name: String, png: Data)] = []
+        var any = false
         for (i, page) in note.pages.enumerated() {
             let chunks = try render(page: page, meta: note.meta, options: options, png: png, pageNumber: i + 1,
                                     backgrounds: backgrounds, images: store, report: &report)
-            images += chunks.enumerated().map { (imageName(page: i + 1, chunk: $0), $1) }
+            for (k, data) in chunks.enumerated() {
+                any = true
+                try each(imageName(page: i + 1, chunk: k), data)
+            }
         }
-        if images.isEmpty {
+        if !any {
             let blank = try render(page: Page(order: "a"), meta: note.meta, options: options, png: png)
-            images = blank.prefix(1).map { (imageName(page: 1, chunk: 0), $0) }
+            if let first = blank.first { try each(imageName(page: 1, chunk: 0), first) }
         }
-        return images
     }
 
     /// The file name (without `.png`) of image `chunk` (from 0) of note page

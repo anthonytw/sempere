@@ -228,6 +228,47 @@ final class BulkExportTests: XCTestCase {
               + String(format: "%.3f s", Date().timeIntervalSince(t)))
     }
 
+    /// Prints time and peak memory of a PNG bulk export of one long note
+    /// (`SEMPERE_BENCH_PNG_PAGES`, default 10, of dense ink at 150 dpi).
+    func testPNGExportTimings() throws {
+        let pages = Int(ProcessInfo.processInfo.environment["SEMPERE_BENCH_PNG_PAGES"] ?? "") ?? 10
+        let root = try scratch()
+        let dense = RenderBenchmarkTests.denseNote(strokes: 400, points: 40)
+        let note = NoteState(meta: dense.meta, pages: (0..<pages).map { Page(order: "a\($0)", strokes: dense.pages[0].strokes) })
+        let jobs = BulkExportPlan.jobs(for: .vault, from: [summary(1, "Long")], format: .png, layout: .flat)
+        let session = try BulkExportSession(destination: .folder(root), options: BulkExportOptions(format: .png, dpi: 150),
+                                            jobs: jobs)
+        let t = Date()
+        let outcome = try session.export(jobs[0], state: note, version: "v1", blobs: nil)
+        _ = try session.finish(cancelled: false)
+        XCTAssertEqual(outcome.files.count, pages)
+        let bytes = outcome.files.reduce(0) { $0 + ((try? Data(contentsOf: root.appendingPathComponent($1)).count) ?? 0) }
+        print("bench: PNG bulk export, \(pages) pages: " + String(format: "%.3f s", Date().timeIntervalSince(t))
+              + ", \(bytes / 1024) KiB written, peak \(Int(peakRSSMegabytes())) MB")
+    }
+
+    /// A note that fails part way through leaves the earlier version's
+    /// pages in place, and no temporary files.
+    func testPNGFailureKeepsTheEarlierPages() throws {
+        let root = try scratch()
+        let s = summary(1, "Pages")
+        let jobs = BulkExportPlan.jobs(for: .vault, from: [s], format: .png, layout: .flat)
+        let options = BulkExportOptions(format: .png, dpi: 36)
+        var session = try BulkExportSession(destination: .folder(root), options: options, jobs: jobs)
+        try session.export(jobs[0], state: state("Pages", pages: 2), version: "v1", blobs: nil)
+        _ = try session.finish(cancelled: false)
+        let before = try listing(root).map { try Data(contentsOf: root.appendingPathComponent($0)) }
+        // Page 2 has a non-finite point: rendering throws after page 1 was drawn.
+        var broken = state("Pages", pages: 3)
+        broken.pages[1].strokes = [T.stroke([T.pt(10, 10), T.pt(.nan, 20)])]
+        session = try BulkExportSession(destination: .folder(root), options: options, jobs: jobs)
+        let outcome = try session.export(jobs[0], state: broken, version: "v2", blobs: nil)
+        _ = try session.finish(cancelled: false)
+        guard case .failed = outcome.status else { return XCTFail("\(outcome.status)") }
+        XCTAssertEqual(listing(root), ["Pages-0d1c6a1e/p001.png", "Pages-0d1c6a1e/p002.png"])
+        XCTAssertEqual(try listing(root).map { try Data(contentsOf: root.appendingPathComponent($0)) }, before)
+    }
+
     func testPNGPagesAndStalePagesRemoved() throws {
         let root = try scratch()
         let s = summary(1, "Pages")

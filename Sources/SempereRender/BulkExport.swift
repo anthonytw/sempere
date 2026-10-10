@@ -546,16 +546,37 @@ public final class BulkExportSession: @unchecked Sendable {
                                               keepMetadata: options.keepImageMetadata, report: &report)
                 written = r.files.map { folder + "/" + $0 }
             case .png:
-                let pages = try PNGWriter.renderNamed(note: state, options: render, png: PNGOptions(dpi: options.dpi),
-                                                      report: &report)
+                // Each page is written under a temporary name as soon as it is drawn (one page in
+                // memory, not the note), and renamed once every page is: a note that fails to render
+                // leaves the earlier version's files as they were.
                 let folder = job.path(.png)
                 try fm.createDirectory(at: url(folder), withIntermediateDirectories: true)
+                var staged: [String] = []
+                func removeStaged() { for rel in staged { try? fm.removeItem(at: url(rel + ".partial")) } }
+                do {
+                    try PNGWriter.renderNamed(note: state, options: render, png: PNGOptions(dpi: options.dpi),
+                                              report: &report) { name, data in
+                        try Task.checkCancellation()
+                        let rel = folder + "/" + name + ".png"
+                        try data.write(to: url(rel + ".partial"), options: .atomic)
+                        staged.append(rel)
+                    }
+                } catch {
+                    removeStaged()
+                    throw error
+                }
                 removeEarlier(folder)
-                for (name, data) in pages {
-                    try Task.checkCancellation()
-                    let rel = folder + "/" + name + ".png"
-                    try data.write(to: url(rel), options: .atomic)
-                    written.append(rel)
+                do {
+                    while let rel = staged.first {
+                        try Task.checkCancellation()
+                        _ = try? fm.removeItem(at: url(rel))
+                        try fm.moveItem(at: url(rel + ".partial"), to: url(rel))
+                        staged.removeFirst()
+                        written.append(rel)
+                    }
+                } catch {
+                    removeStaged()
+                    throw error
                 }
             }
         } catch is CancellationError {
