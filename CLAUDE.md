@@ -180,6 +180,9 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   quantized opacity/azimuth/altitude): compare converted strokes within a
   tolerance, never with `==`. Stroke identity across canvas edits comes from
   `StrokeLedger`'s fingerprints, which are always taken from the `PKStroke`.
+  A loaded stroke's `PKStroke.id` is its stored id; the ledger uses a canvas
+  stroke's id only to name an edit's parent (PencilKit gives erased pieces
+  new ids), and never writes it.
 - `PKStrokePoint.size` is not the drawn width: a pen or monoline of size `s`
   is drawn `2s − 4` wide (invisible below 2), markers and textured inks
   differ again. Point sizes go through `NibSize` (StrokeConversion.swift);

@@ -42,27 +42,37 @@ struct CanvasStrokeInfo: Hashable, Sendable {
     /// of a masked (pixel-erased) stroke and the stroke they came from.
     var pathSignature: [Double]
     var bounds: Bounds
+    /// The canvas stroke's `PKStroke.id` (iOS 27): the stored id for a loaded
+    /// stroke, PencilKit's own for one drawn since. Not part of `key`; it only
+    /// names the parent of an edit that kept it (`StrokeLedger`).
+    var canvasID: UUID? = nil
 }
 
 /// The stable-id side table for one page.
 ///
-/// The ledger predates `PKStroke.id` (iOS 27) and does not use it: it
-/// keeps, in canvas order, which stored strokes (our ids) each canvas stroke
-/// stands for, keyed by `CanvasStrokeInfo.Key`. On every
+/// The ledger keeps, in canvas order, which stored strokes (our ids) each
+/// canvas stroke stands for, keyed by `CanvasStrokeInfo.Key`. On every
 /// drawing change it matches the new canvas strokes against that table as a
 /// multiset, in order: a matched stroke keeps its ids; an unmatched old one
 /// was removed; an unmatched new one was added and gets fresh ids.
+///
+/// `PKStroke.id` (iOS 27) is not the key: an edit changes the content but
+/// may keep the id, and PencilKit gives the pieces of a pixel erase (and a
+/// `substroke`) new ids, so matching stays by content. The id only names a
+/// parent (2 below).
 ///
 /// A new stroke's `parent` (format.md §5.6) is, in order of preference:
 /// 1. the stroke retired under the same key (an undo of an erase, or a redo,
 ///    brings back identical content). If that stroke's removal has not been
 ///    written yet, it simply comes back with its old ids; once the removal is
 ///    on disk it must get new ids (format.md §5.2) and becomes the parent;
-/// 2. a stroke removed in the same change with the same path signature and
+/// 2. a stroke removed in the same change with the same `PKStroke.id`
+///    (`CanvasStrokeInfo.canvasID`): PencilKit edited it and kept its id;
+/// 3. a stroke removed in the same change with the same path signature and
 ///    family (PencilKit's pixel eraser keeps the path and adds a mask);
-/// 3. a stroke removed in the same change of the same family whose bounds
+/// 4. a stroke removed in the same change of the same family whose bounds
 ///    contain the new one (a slice that rewrote the path);
-/// 4. a stroke removed in the same change with the same ink type, path
+/// 5. a stroke removed in the same change with the same ink type, path
 ///    signature and path creation date (a lasso move, resize or recolour:
 ///    the path stays, colour or transform change). So the edit replaces the
 ///    original (format.md §5.6.1) and a concurrent edit of it on another
@@ -360,6 +370,9 @@ struct StrokeLedger {
         if var stack = retired[info.key], let last = stack.popLast() {
             retired[info.key] = stack
             return last
+        }
+        if let id = info.canvasID, let e = removed.first(where: { $0.info.canvasID == id }) {
+            return e.strokes
         }
         if let e = removed.first(where: { $0.info.family == info.family && $0.info.pathSignature == info.pathSignature }) {
             return e.strokes

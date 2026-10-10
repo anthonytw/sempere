@@ -34,7 +34,8 @@ extension CanvasStrokeInfo {
         let b = pk.renderBounds
         self.init(key: Key(ink: ink, values: key), family: Family(ink: ink, values: family),
                   pathSignature: signature,
-                  bounds: Bounds(minX: Double(b.minX), minY: Double(b.minY), maxX: Double(b.maxX), maxY: Double(b.maxY)))
+                  bounds: Bounds(minX: Double(b.minX), minY: Double(b.minY), maxX: Double(b.maxX), maxY: Double(b.maxY)),
+                  canvasID: pk.id)
     }
 
     /// The fingerprint of the canvas stroke a stored stroke is shown as.
