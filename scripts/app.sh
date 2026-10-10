@@ -25,6 +25,13 @@ derived=${SEMPERE_DERIVED_DATA:-.build/xcode}
 # Tests assert English strings: run them in English whatever the Mac's language (es catalog, #92).
 lang=(-testLanguage en -testRegion US)
 mac_ui_signing=(CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES)
+# UI tests on CI run a failed test once more: the hosted runners are slow and a UI query
+# times out now and then. A real bug fails both tries and still fails the job. Unit tests
+# and local runs never retry.
+ui_retry=()
+if [[ "${CI:-}" == true ]]; then
+  ui_retry=(-retry-tests-on-failure -test-iterations 2)
+fi
 if [[ "${CI:-}" != true && "${SEMPERE_MAC_UI_SIGNING:-}" != ci ]]; then
   mac_ui_signing+=(ENABLE_HARDENED_RUNTIME=NO)
 fi
@@ -90,7 +97,7 @@ case "${1:-}" in
       echo "PSEUDO-TIME $mode start $(date -u +%H:%M:%S)"
       TEST_RUNNER_SEMPERE_PSEUDO=$mode xcodebuild test -project "$project" -scheme SempereScreenshots \
         -derivedDataPath "$derived" -destination "platform=iOS Simulator,id=$sim" \
-        -only-testing:SempereAppUITests/PseudoLanguageUITests -parallel-testing-enabled NO \
+        -only-testing:SempereAppUITests/PseudoLanguageUITests -parallel-testing-enabled NO ${ui_retry[@]+"${ui_retry[@]}"} \
         -resultBundlePath "build/pseudo/$mode.xcresult" CODE_SIGNING_ALLOWED=NO || status=$?
       echo "PSEUDO-TIME $mode end $(date -u +%H:%M:%S) status=$status"
     done
@@ -111,13 +118,13 @@ case "${1:-}" in
     # The UI tests live in the SempereScreenshots scheme (never built by `test`).
     xcodebuild test -project "$project" -scheme SempereScreenshots -derivedDataPath "$derived" \
       -destination 'platform=macOS,variant=Mac Catalyst' -only-testing:SempereAppUITests/MacWindowUITests \
-      -only-testing:SempereAppUITests/SidebarDropUITests "${mac_ui_signing[@]}"
+      -only-testing:SempereAppUITests/SidebarDropUITests "${mac_ui_signing[@]}" ${ui_retry[@]+"${ui_retry[@]}"}
     ;;
   test-mac-smoke)
     # Fresh-state launches, every column layout, every window and sheet (docs/HANDOFF.md "CI").
     xcodebuild test -project "$project" -scheme SempereScreenshots -derivedDataPath "$derived" \
       -destination 'platform=macOS,variant=Mac Catalyst' -only-testing:SempereAppUITests/LaunchSmokeUITests \
-      "${mac_ui_signing[@]}"
+      "${mac_ui_signing[@]}" ${ui_retry[@]+"${ui_retry[@]}"}
     ;;
   test-ui)
     # The UI tests live in the SempereScreenshots scheme (never built by `test`). The launch smoke
@@ -129,7 +136,7 @@ case "${1:-}" in
       -only-testing:SempereAppUITests/LaunchSmokeUITests/testFreshLaunchDefaultLayoutShowsSidebarListAndNote \
       -only-testing:SempereAppUITests/LaunchSmokeUITests/testFreshLaunchDoubleColumn \
       -only-testing:SempereAppUITests/LaunchSmokeUITests/testFirstUnlockShowsKeyNoticeThenTour \
-      -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO
+      -parallel-testing-enabled NO ${ui_retry[@]+"${ui_retry[@]}"} CODE_SIGNING_ALLOWED=NO
     ;;
   *)
     echo "usage: $0 test|test-phone|test-ui|pseudo|catalyst|test-mac|test-mac-ui|test-mac-smoke|simulator" >&2
