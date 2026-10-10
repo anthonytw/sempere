@@ -165,7 +165,7 @@ struct RecognizeMathCommand: ParsableCommand {
             guard let image = try MathInkImage.render(strokes: ink, spec: spec) else {
                 throw CLIError.failure("the picked strokes have no ink to draw")
             }
-            try image.png().write(to: URL(fileURLWithPath: saveImage))
+            try writePrivateFile(try image.png(), to: URL(fileURLWithPath: saveImage))
             out.image = saveImage
         }
         if let given = try source.read() {

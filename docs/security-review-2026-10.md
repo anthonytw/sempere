@@ -698,3 +698,16 @@ Each request is bounded by size and time, but a run is not:
 - Fixed by R4: summaries sealed under the journal's previous secret were accepted during a rewrap. The web
   viewer now derives the previous summaries key only from a journal secret that `secretLink` links.
 - Summaries are encrypted. `vault.json` and the journal are never cached. Nothing decrypted is persisted.
+
+## Audit 2026-10 stage 4: plaintext the app and CLI leave at rest (2026-10-10)
+
+Findings S10 to S17 of the October 2026 pre-release audit (stage 4), area "app storage, app surfaces, CLI,
+web viewer". Each fix has a test that encodes the attack and fails on the code before it.
+
+- **S17 (Low): CLI exports followed the umask, and `--zip` staged plaintext in a default-mode folder.**
+  Fix: `FileIO.writePrivate` (0600 temporary file, renamed), `createPrivateDirectory` (0700 for folders
+  the run creates; an existing folder keeps its mode) and `createStagingDirectory` (`mkdir(2)` 0700,
+  refusing anything already there). Used by `BulkExportSession` (zip staging, folder exports, PNG pages,
+  its manifest), `ZipWriter` (archive 0600), `TreeExporter` (Markdown/HTML), `MediaExport`, and the CLI's
+  per-note `export` and `recognize-math --save-image` (`writePrivateFile`). `docs/cli.md` "Export" says so.
+  Tests: `BulkExportTests.testStagingAndExportsAreOwnerOnly`, `CLIBulkExportTests.testExportsAreOwnerOnly`.

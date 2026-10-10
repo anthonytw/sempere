@@ -1731,6 +1731,10 @@ sempere export (ID|TITLE | --all) --format pdf|svg|png|json|markdown|html|media 
 
 - `--at REVISION` (single note only) exports the note as it was at that
   revision, named as for `notes restore --to`.
+- Exports are plaintext, so they are written for their owner only, whatever the umask: files mode 0600
+  (written under a temporary name and renamed), folders the command creates 0700. A folder that already
+  exists keeps its mode. `--zip` stages the files in a fresh 0700 folder of its own in the temporary
+  directory (deleted when the run ends) and writes the archive 0600.
 
 - `pdf`: one file per note; `--merge` puts every selected note in one PDF
   (`--out` is then the file). A paged note gives one PDF page per page (plus,

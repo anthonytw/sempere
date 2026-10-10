@@ -228,6 +228,39 @@ package enum FileIO {
         return out.sorted()
     }
 
+    /// Writes `data` to `url`, replacing it, readable by the owner only: a
+    /// temporary file in the same directory is created with mode 0600
+    /// (`O_EXCL`, so the bytes never sit in a file others can open), flushed
+    /// and renamed over `url`. For plaintext a user exported.
+    package static func writePrivate(_ data: Data, to url: URL) throws {
+        let tmp = tempURL(in: url.deletingLastPathComponent())
+        try writeNewFile(tmp) { write in try write(data) }
+        try place(tmp, at: url)
+    }
+
+    /// Creates `url` and any missing parents with mode 0700. Directories
+    /// that already exist keep their mode: a folder the user chose is theirs.
+    package static func createPrivateDirectory(_ url: URL) throws {
+        do {
+            try fm.createDirectory(at: url, withIntermediateDirectories: true,
+                                   attributes: [.posixPermissions: 0o700])
+        } catch {
+            throw VaultError.io("mkdir \(url.path): \(error)")
+        }
+    }
+
+    /// Creates the directory `url` itself with `mkdir(2)` mode 0700, failing
+    /// if anything is already there (a planted folder or symlink is never
+    /// used). Its parent must exist. For staging plaintext in a shared
+    /// temporary directory.
+    package static func createStagingDirectory(_ url: URL) throws {
+        let rc = url.withUnsafeFileSystemRepresentation { path -> Int32 in
+            guard let path else { return -1 }
+            return mkdir(path, 0o700)
+        }
+        guard rc == 0 else { throw VaultError.io("mkdir \(url.path): \(errnoText(errno))") }
+    }
+
     package static func createDirectory(_ url: URL) throws {
         do { try fm.createDirectory(at: url, withIntermediateDirectories: true) } catch {
             throw VaultError.io("mkdir \(url.path): \(error)")
