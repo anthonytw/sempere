@@ -1727,8 +1727,9 @@ sempere export (ID|TITLE | --all) --format pdf|svg|png|json|markdown|html|media 
   or `<name>/p001.png` with `--all`). Pure Swift, no system imaging library.
   Paper, strokes and tool opacity match the PDF; edges are anti-aliased. An
   infinite page is split into images exactly as it is split into PDF pages
-  (`--breaks` applies), so
-  numbering counts output pages. `--dpi N` sets the resolution (default 144,
+  (`--breaks` applies); the number is the note page's, and the further images
+  of a split page add `-2`, `-3`, ... (`p001.png`, `p001-2.png`, `p002.png`),
+  as everywhere PNG pages are written. `--dpi N` sets the resolution (default 144,
   i.e. 2x the 72 pt/inch page; `0 < N <= 2400`, else exit 2). An image over
   40 million pixels (a letter page above about 620 dpi) is an error naming the
   limit, not an allocation; lower `--dpi`. With `--no-paper` the background is
@@ -2038,7 +2039,7 @@ shared folder cannot make an export write or `--clean` delete elsewhere.
 pages from the SVG writer; light and dark CSS; title, notebook, dates and
 tags; a link back to the index) and `index.html`: notes grouped by notebook
 and a search box filtering as you type over title, notebook, tags and
-recognised text (a few lines of inline script; the page works without it,
+recognised text, ignoring case, accents and width as the app's search does (a few lines of inline script; the page works without it,
 unfiltered). Recognised words are also laid over the ink as an invisible
 selectable SVG text layer, and each page's text is listed below it in a
 collapsed "Machine-recognized text" block, and the text of its text boxes in a

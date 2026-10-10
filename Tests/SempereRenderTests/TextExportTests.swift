@@ -127,13 +127,17 @@ final class TextExportTests: XCTestCase {
             ExportIndexEntry(title: "Zebra & co", href: "A/Zebra co-1.html", notebook: "A", tags: ["t1"], pages: 1,
                              searchText: "Line one\nLINE two"),
             ExportIndexEntry(title: "Alpha", href: "Alpha-2.html", pages: 2),
+            ExportIndexEntry(title: "Café ＡＢＣ", href: "Cafe-3.html", pages: 1, searchText: "Cafe\u{301} Über"),
         ]
         let html = HTMLExport.indexPage(entries: entries)
         let d = Self.parse(html)
-        XCTAssertEqual(d.elements["li"], 2)
+        XCTAssertEqual(d.elements["li"], 3)
         XCTAssertEqual(d.elements["input"], 1)
         XCTAssertTrue(html.contains("data-text=\"zebra &amp; co a t1 line one line two\""), html)
         XCTAssertTrue(html.contains("href=\"A/Zebra%20co-1.html\""), html)
+        // Folded like the app's search; the script folds the query the same way.
+        XCTAssertTrue(html.contains("data-text=\"cafe abc cafe uber\""), html)
+        XCTAssertTrue(html.contains("normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '').normalize('NFC').toLowerCase()"), html)
         // No-notebook notes come first, then notebooks.
         XCTAssertLessThan(html.range(of: "Alpha")!.lowerBound, html.range(of: "Zebra")!.lowerBound)
         Self.assertNoExternalResources(html, parsed: d)

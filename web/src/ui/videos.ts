@@ -7,7 +7,8 @@
 import { t, tn } from "../i18n/index.ts";
 import type { NoteState } from "../format/model.ts";
 import { cmpItems } from "../format/registers.ts";
-import { BlobError, type BlobRef, type NoteBlobs, asBlobRef, essence } from "../vault/blobs.ts";
+import { type BlobRef, type NoteBlobs, asBlobRef, essence } from "../vault/blobs.ts";
+import { blobProblem } from "./errors.ts";
 import { h } from "./dom.ts";
 import { formatDuration } from "./recordings.ts";
 
@@ -47,9 +48,7 @@ export function videoEntries(state: NoteState): VideoEntry[] {
 }
 
 function problem(e: unknown): string {
-  if (e instanceof BlobError && e.code === "missing") return t("The video file is missing from the vault (or not synced yet).");
-  if (e instanceof BlobError && e.code === "tooLarge") return t("The clip is larger than this viewer plays ({size} MiB); export it with the CLI.", { size: maxVideoBytes / 2 ** 20 });
-  return e instanceof Error ? e.message : String(e);
+  return blobProblem(e, "video", maxVideoBytes) ?? (e instanceof Error ? e.message : String(e));
 }
 
 export class VideosPanel {

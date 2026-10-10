@@ -6,6 +6,7 @@
 // name binding to the vault secret.
 
 import { sha256 } from "@noble/hashes/sha2.js";
+import { maxBlobSize } from "../format/attachments.ts";
 import { isObject } from "../format/json.ts";
 import { type UnlockedVault } from "./vault.ts";
 import { SourceError, type VaultSource, openStream } from "./source.ts";
@@ -26,9 +27,6 @@ export function asBlobRef(v: unknown): BlobRef | undefined {
   }
   return { sha256: sha, size, type };
 }
-
-/** Largest blob content (§8.4). */
-export const maxBlobSize = 2 ** 30;
 
 /** The media type's type and subtype, lowercased, parameters dropped (§8.1.2). */
 export function essence(type: string): string {

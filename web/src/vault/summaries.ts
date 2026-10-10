@@ -118,7 +118,7 @@ export function decodeEntry(v: unknown): SummaryEntry | undefined {
     const r = revisions[i] ?? "";
     if (!isRevisionFile(r) || (i > 0 && !((revisions[i - 1] ?? "") < r))) return undefined;
   }
-  if (notebook !== undefined && typeof notebook !== "string") return undefined;
+  if (notebook != null && typeof notebook !== "string") return undefined;   // null reads as absent
   if (typeof favorite !== "boolean" || typeof deleted !== "boolean") return undefined;
   if (typeof pages !== "number" || !Number.isSafeInteger(pages) || pages < 0) return undefined;
   const created = typeof v.created === "string" ? parseRFC3339(v.created) : undefined;
@@ -133,7 +133,7 @@ export function decodeEntry(v: unknown): SummaryEntry | undefined {
     pageTexts.push({ number: p.page, text: p.text });
   }
   const e: SummaryEntry = { revisions, title, tags, favorite, deleted, created, modified, pages, pageTexts };
-  if (notebook !== undefined) e.notebook = notebook;
+  if (typeof notebook === "string") e.notebook = notebook;
   return e;
 }
 
