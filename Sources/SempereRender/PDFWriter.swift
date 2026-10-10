@@ -124,14 +124,22 @@ public enum PDFWriter {
 
         func addPage(_ chunk: PageChunk, _ cs: ContentStream, xobjects: [Int]) throws {
             let content = doc.allocate()
-            var stream = Data(cs.text.utf8)
-            var dict = ""
-            if options.compress {
-                stream = try Zlib.compress(stream)
-                dict = " /Filter /FlateDecode"
+            // The text's UTF-8 is compressed (or copied) once, straight into the body.
+            var text = cs.text
+            let body = try text.withUTF8 { utf8 -> [UInt8] in
+                let raw = UnsafeRawBufferPointer(utf8)
+                let stream = options.compress ? try Zlib.compressedBytes(raw) : nil
+                let count = stream?.count ?? raw.count
+                let head = Array("<< /Length \(count)\(options.compress ? " /Filter /FlateDecode" : "") >>\nstream\n".utf8)
+                let tail = Array("\nendstream".utf8)
+                var body = [UInt8]()
+                body.reserveCapacity(head.count + count + tail.count)
+                body += head
+                if let stream { body += stream } else { body.append(contentsOf: raw) }
+                body += tail
+                return body
             }
-            doc.set(content, Array("<< /Length \(stream.count)\(dict) >>\nstream\n".utf8) + [UInt8](stream)
-                + Array("\nendstream".utf8))
+            doc.set(content, body)
             pages.append(OutPage(width: chunk.width, height: chunk.height, content: content,
                                  alphas: cs.alphas.sorted(), xobjects: xobjects, fonts: cs.usedFonts.sorted()))
         }
@@ -554,9 +562,15 @@ struct ContentStream {
             text += "\(fmt(x - r)) \(fmt(y - k)) \(fmt(x - k)) \(fmt(y - r)) \(fmt(x)) \(fmt(y - r)) c\n"
             text += "\(fmt(x + k)) \(fmt(y - r)) \(fmt(x + r)) \(fmt(y - k)) \(fmt(x + r)) \(fmt(y)) c\nh \(op)\n"
         case let .path(subs):
+            // Appended piece by piece: an interpolated line per vertex costs an allocation each.
             for sp in subs where !sp.points.isEmpty {
-                for (i, p) in sp.points.enumerated() {
-                    text += "\(fmt(p.x)) \(fmt(p.y)) \(i == 0 ? "m" : "l")\n"
+                var op = " m\n"
+                for p in sp.points {
+                    text += fmt(p.x)
+                    text += " "
+                    text += fmt(p.y)
+                    text += op
+                    op = " l\n"
                 }
                 if sp.closed { text += "h\n" }
             }

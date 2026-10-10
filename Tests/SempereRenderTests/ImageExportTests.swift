@@ -444,6 +444,44 @@ final class ImageExportTests: XCTestCase {
         XCTAssertEqual(RenderOptions().maxImagePixels, 100_000_000, "format.md §8.4")
     }
 
+    /// A decoder-only (HEIC) image is decoded to learn its size once, not
+    /// each time an item or page shows it.
+    func testDecoderImagesAreMeasuredOnce() throws {
+        final class Counting: ImageDecoding, @unchecked Sendable {
+            private let lock = NSLock()
+            private var counts: [Int: Int] = [:]
+            func decode(_ data: Data, type: String, maxPixels: Int) throws -> RGBAImage? {
+                let side = Int(data.last ?? 2)
+                lock.lock(); counts[side, default: 0] += 1; lock.unlock()
+                return try RGBAImage(width: side, height: side, pixels: [UInt8](repeating: 200, count: side * side * 4))
+            }
+            var total: Int { lock.lock(); defer { lock.unlock() }; return counts.values.reduce(0, +) }
+        }
+        let a = Data("....ftypheic-a".utf8) + Data([3]), b = Data("....ftypheic-b".utf8) + Data([5])
+        let refA = BlobRef(content: a, type: "image/heic"), refB = BlobRef(content: b, type: "image/heic")
+        func item(_ ref: BlobRef, _ x: Double, _ z: String) -> Item {
+            Item.image(blob: ref, pixelSize: Size(w: 4, h: 4), frame: Rect(x: x, y: 50, w: 40, h: 40), z: z)
+        }
+        // A, B, A, B on each of three pages.
+        let page = { (o: String) in
+            Page(order: o, items: [item(refA, 10, "a"), item(refB, 60, "b"), item(refA, 110, "c"), item(refB, 160, "d")])
+        }
+        let note = NoteState(meta: Self.meta(), pages: [page("a"), page("b"), page("c")])
+        let decoder = Counting()
+        var report = RenderReport()
+        _ = try PDFWriter.render(note: note, options: RenderOptions(blobs: MemoryBlobSource([a, b]), imageDecoder: decoder),
+                                 report: &report)
+        XCTAssertTrue(report.placeholders.isEmpty, "\(report.placeholders)")
+        // Two to measure (cached; 12 before), and the Image XObjects are shared by content hash.
+        XCTAssertEqual(decoder.total, 2)
+        let png = Counting()
+        _ = try PNGWriter.render(note: note, options: RenderOptions(blobs: MemoryBlobSource([a, b]), imageDecoder: png),
+                                 png: PNGOptions(scale: 1), report: &report)
+        // Measured once each (12 decodes before), and drawn from the few reduced
+        // bitmaps kept: at most one more decode per image (24 before).
+        XCTAssertLessThanOrEqual(png.total, 4)
+    }
+
     /// A background item (layer 0) hides the ruling inside its frame; ink and
     /// later items draw over it; infinite pages grow to hold items.
     func testLayersOrderAndExtent() throws {

@@ -183,4 +183,66 @@ final class PDFTextTests: XCTestCase {
         XCTAssertGreaterThan(report.cases, 0)
         for f in report.failures { XCTFail("\(f)") }
     }
+
+    /// `pages` pages sharing indirect Type 0 font 5 (a ToUnicode CMap of
+    /// `entries` codes), a header form 7, and a direct font named /F2 that
+    /// differs between odd and even pages.
+    static func sharedFontsPDF(pages: Int, entries: Int) -> Data {
+        var cmap = "/CIDInit /ProcSet findresource begin 12 dict begin begincmap\n"
+            + "1 begincodespacerange <0000> <FFFF> endcodespacerange\n"
+        var k = 0
+        while k < entries {
+            let n = min(100, entries - k)
+            cmap += "\(n) beginbfchar\n"
+            for c in k..<(k + n) { cmap += String(format: "<%04X> <%04X>\n", c + 1, 0x4E00 + c % 20_000) }
+            cmap += "endbfchar\n"
+            k += n
+        }
+        cmap += "endcmap CMapName currentdict /CMap defineresource pop end end"
+        let form = "BT /F1 9 Tf 10 90 Td <00010002> Tj ET"
+        var objects: [(Int, String)] = [
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [\((0..<pages).map { "\(100 + 2 * $0) 0 R" }.joined(separator: " "))] "
+                + "/Count \(pages) /MediaBox [0 0 100 100] >>"),
+            (5, "<< /Type /Font /Subtype /Type0 /BaseFont /F /Encoding /Identity-H /ToUnicode 6 0 R >>"),
+            (6, "<< /Length \(cmap.utf8.count) >>\nstream\n\(cmap)\nendstream"),
+            (7, "<< /Type /XObject /Subtype /Form /BBox [0 0 100 100] /Resources << /Font << /F1 5 0 R >> >> "
+                + "/Length \(form.utf8.count) >>\nstream\n\(form)\nendstream"),
+        ]
+        for p in 0..<pages {
+            let direct = p % 2 == 0 ? "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"
+                : "<< /Type /Font /Subtype /Type1 /BaseFont /X /Encoding << /Differences [65 /eacute] >> >>"
+            let codes = (0..<20).map { String(format: "%04X", ($0 * 37 + p) % entries + 1) }.joined()
+            let contents = "/X1 Do BT /F1 10 Tf 10 50 Td <\(codes)> Tj 0 -12 Td /F2 10 Tf (AB page \(p)) Tj ET"
+            objects.append((100 + 2 * p, "<< /Type /Page /Parent 2 0 R /Contents \(101 + 2 * p) 0 R /Resources "
+                + "<< /Font << /F1 5 0 R /F2 \(direct) >> /XObject << /X1 7 0 R >> >> >>"))
+            objects.append((101 + 2 * p, "<< /Length \(contents.utf8.count) >>\nstream\n\(contents)\nendstream"))
+        }
+        return Data(PDFBuild.file(objects))
+    }
+
+    /// Fonts and forms shared across pages give each page the text a fresh
+    /// extraction gives it; direct fonts with the same name stay per page.
+    func testSharedFontsAndFormsAcrossPages() throws {
+        let data = Self.sharedFontsPDF(pages: 6, entries: 300)
+        let all = try PDFText.pageTexts(data)
+        XCTAssertEqual(all.count, 6)
+        for p in 0..<6 {
+            XCTAssertEqual(all[p], try PDFText.pageText(PDFFile(data: data), page: p), "page \(p)")
+        }
+        XCTAssertTrue(all[0]?.contains("AB page 0") ?? false, all[0] ?? "")
+        XCTAssertTrue(all[1]?.contains("éB page 1") ?? false, all[1] ?? "")
+        XCTAssertTrue(all[0]?.hasPrefix("一丁") ?? false, all[0] ?? "")
+    }
+
+    /// Prints how long a long PDF sharing one large CMap takes
+    /// (`SEMPERE_BENCH_PDF_PAGES`, default 30).
+    func testSharedFontTimings() throws {
+        let pages = Int(ProcessInfo.processInfo.environment["SEMPERE_BENCH_PDF_PAGES"] ?? "") ?? 30
+        let data = Self.sharedFontsPDF(pages: pages, entries: 20_000)
+        let t = Date()
+        let texts = try PDFText.pageTexts(data)
+        print("bench: PDF text, \(pages) pages sharing a 20k-entry CMap: "
+              + String(format: "%.3f s", Date().timeIntervalSince(t)) + ", \(texts.count) pages, peak \(Int(peakRSS())) MB")
+    }
 }

@@ -53,6 +53,34 @@ struct SearchTests {
         #expect(editor.currentPage?.id == pages[0])
     }
 
+    /// A list update with a search open re-tests only the notes it changed and merges them into the
+    /// results (`NoteSearch.updated`): changed recognition text is found or dropped, the rest stays.
+    @Test func aListUpdateReSearchesTheChangedNotes() async throws {
+        let (model, _, _) = try await Self.model()
+        model.searchTranscripts = false
+        let other = try await model.createNote(title: "Momentum problems", paper: .ruled, notebook: nil)
+        model.searchText = "momentum"
+        #expect(await TS.waitUntil { Set(model.searchResults.map(\.note)) == [Self.lecture, other] && !model.isSearching })
+        #expect(model.completedSearch != nil)
+
+        var lecture = try #require(model.notes.first { $0.id == Self.lecture })
+        let pageID = try #require(lecture.pageTexts.first?.pageId)
+        lecture.pageTexts = [PageText(pageId: pageID, number: 1, text: "nothing to see")]
+        model.applyListChanges(upserts: [lecture], removals: [])
+        #expect(await TS.waitUntil { model.searchResults.map(\.note) == [other] && !model.isSearching })
+
+        lecture.pageTexts = [PageText(pageId: pageID, number: 1, text: "momentum, recognised again")]
+        model.applyListChanges(upserts: [lecture], removals: [])
+        #expect(await TS.waitUntil { Set(model.searchResults.map(\.note)) == [Self.lecture, other] && !model.isSearching })
+        #expect(model.searchResults.first { $0.note == Self.lecture }?.page?.text == "momentum, recognised again")
+        // The same as a full search of the list.
+        #expect(model.searchResults == NoteSearch.search("momentum", in: model.searchCandidates))
+
+        model.applyListChanges(upserts: [], removals: [other])
+        #expect(await TS.waitUntil { model.searchResults.map(\.note) == [Self.lecture] && !model.isSearching })
+        model.close()
+    }
+
     /// GA-07: the words found inside a text box are highlighted too, in the box's frame.
     @Test func highlightsTheWordsInsideATextBox() async throws {
         let (model, vault, pages) = try await Self.model(texts: nil)

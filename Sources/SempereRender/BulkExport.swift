@@ -379,10 +379,15 @@ public final class BulkExportSession: @unchecked Sendable {
     private let total: Int
     private var outcomes: [BulkNoteOutcome] = []
     private var manifest = BulkExportManifest()
+    /// `manifest.files`' paths by note id, kept in step with it (`record`,
+    /// `forget`): skip and removeEarlier look at one note's files, not all.
+    private var filesByNote: [String: Set<String>] = [:]
     private var zip: ZipWriter?
     private var unsaved = 0
     private var finished = false
-    /// Notes between two saves of the folder's manifest (and at the end).
+    /// Notes between two saves of the folder's manifest (and at the end), at
+    /// least: a manifest of F files is saved every F / 1000 notes, so that
+    /// saving costs linear time in all.
     static let manifestSaveInterval = 10
 
     /// - Parameters:
@@ -406,6 +411,7 @@ public final class BulkExportSession: @unchecked Sendable {
                                                     maxBytes: BulkExportManifest.maxBytes),
                let old = try? JSONDecoder().decode(BulkExportManifest.self, from: data), old.version == 1 {
                 manifest = old
+                for (rel, e) in old.files { filesByNote[e.note, default: []].insert(rel) }
             }
         case .zip(let archive, let staging):
             do {
@@ -431,6 +437,28 @@ public final class BulkExportSession: @unchecked Sendable {
     /// Outcomes so far, in job order.
     public var progress: [BulkNoteOutcome] { outcomes }
 
+    /// Sets the manifest entry of `rel`, keeping `filesByNote` in step.
+    private func record(_ rel: String, _ entry: BulkExportManifest.FileEntry) {
+        if let old = manifest.files[rel], old.note != entry.note { filesByNote[old.note]?.remove(rel) }
+        manifest.files[rel] = entry
+        filesByNote[entry.note, default: []].insert(rel)
+    }
+
+    /// Removes the manifest entry of `rel`, keeping `filesByNote` in step.
+    private func forget(_ rel: String) {
+        guard let old = manifest.files.removeValue(forKey: rel) else { return }
+        filesByNote[old.note]?.remove(rel)
+    }
+
+    /// The manifest entries of note `id` whose path passes `include`.
+    private func entries(of id: String, where include: (String) -> Bool) -> [String: BulkExportManifest.FileEntry] {
+        var out: [String: BulkExportManifest.FileEntry] = [:]
+        for rel in filesByNote[id] ?? [] where include(rel) {
+            if let e = manifest.files[rel] { out[rel] = e }
+        }
+        return out
+    }
+
     private var root: URL {
         switch destination {
         case .folder(let url): return url
@@ -445,9 +473,7 @@ public final class BulkExportSession: @unchecked Sendable {
         guard case .folder(let root) = destination else { return false }
         let id = job.noteId.uuidString.lowercased()
         let prefix = job.path(options.format)
-        let mine = manifest.files.filter { rel, e in
-            e.note == id && (options.format.isFolder ? rel.hasPrefix(prefix + "/") : rel == prefix)
-        }
+        let mine = entries(of: id) { rel in options.format.isFolder ? rel.hasPrefix(prefix + "/") : rel == prefix }
         guard !mine.isEmpty else { return false }
         let fm = FileManager.default
         for (rel, entry) in mine {
@@ -485,10 +511,10 @@ public final class BulkExportSession: @unchecked Sendable {
         /// Files an earlier, longer version of the note left in its folder (pages, media).
         func removeEarlier(_ folder: String) {
             guard case .folder = destination else { return }
-            for (rel, e) in manifest.files where rel.hasPrefix(folder + "/") && BulkExportManifest.isSafe(rel)
-                && e.note == job.noteId.uuidString.lowercased() {
+            let id = job.noteId.uuidString.lowercased()
+            for rel in entries(of: id, where: { $0.hasPrefix(folder + "/") && BulkExportManifest.isSafe($0) }).keys {
                 try? fm.removeItem(at: url(rel))
-                manifest.files[rel] = nil
+                forget(rel)
             }
         }
         var outcome = BulkNoteOutcome(job: job, status: .exported)
@@ -520,16 +546,37 @@ public final class BulkExportSession: @unchecked Sendable {
                                               keepMetadata: options.keepImageMetadata, report: &report)
                 written = r.files.map { folder + "/" + $0 }
             case .png:
-                let pages = try PNGWriter.renderNamed(note: state, options: render, png: PNGOptions(dpi: options.dpi),
-                                                      report: &report)
+                // Each page is written under a temporary name as soon as it is drawn (one page in
+                // memory, not the note), and renamed once every page is: a note that fails to render
+                // leaves the earlier version's files as they were.
                 let folder = job.path(.png)
                 try fm.createDirectory(at: url(folder), withIntermediateDirectories: true)
+                var staged: [String] = []
+                func removeStaged() { for rel in staged { try? fm.removeItem(at: url(rel + ".partial")) } }
+                do {
+                    try PNGWriter.renderNamed(note: state, options: render, png: PNGOptions(dpi: options.dpi),
+                                              report: &report) { name, data in
+                        try Task.checkCancellation()
+                        let rel = folder + "/" + name + ".png"
+                        try data.write(to: url(rel + ".partial"), options: .atomic)
+                        staged.append(rel)
+                    }
+                } catch {
+                    removeStaged()
+                    throw error
+                }
                 removeEarlier(folder)
-                for (name, data) in pages {
-                    try Task.checkCancellation()
-                    let rel = folder + "/" + name + ".png"
-                    try data.write(to: url(rel), options: .atomic)
-                    written.append(rel)
+                do {
+                    while let rel = staged.first {
+                        try Task.checkCancellation()
+                        _ = try? fm.removeItem(at: url(rel))
+                        try fm.moveItem(at: url(rel + ".partial"), to: url(rel))
+                        staged.removeFirst()
+                        written.append(rel)
+                    }
+                } catch {
+                    removeStaged()
+                    throw error
                 }
             }
         } catch is CancellationError {
@@ -553,10 +600,10 @@ public final class BulkExportSession: @unchecked Sendable {
             let id = job.noteId.uuidString.lowercased()
             for rel in written {
                 let size = ((try? fm.attributesOfItem(atPath: url(rel).path))?[.size] as? NSNumber)?.int64Value ?? -1
-                manifest.files[rel] = .init(note: id, version: version, options: options.fingerprint, size: size)
+                record(rel, .init(note: id, version: version, options: options.fingerprint, size: size))
             }
             unsaved += 1
-            if unsaved >= Self.manifestSaveInterval { saveManifest() }
+            if unsaved >= max(Self.manifestSaveInterval, manifest.files.count / 1000) { saveManifest() }
         case .zip:
             guard let zip else { break }
             for rel in written {

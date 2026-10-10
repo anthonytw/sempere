@@ -223,18 +223,30 @@ public enum SVGWriter {
         case let .circle(center, r):
             return "<circle cx=\"\(fmt(center.x))\" cy=\"\(fmt(center.y))\" r=\"\(fmt(r))\" \(attrs(c))/>"
         case let .path(subs):
+            // Appended piece by piece: a string per vertex costs an allocation each.
             if subs.count == 1, !subs[0].closed, c.fill == nil {
-                let pts = subs[0].points.map { "\(fmt($0.x)),\(fmt($0.y))" }.joined(separator: " ")
-                return "<polyline points=\"\(pts)\" \(attrs(c))/>"
-            }
-            var d = ""
-            for sp in subs where !sp.points.isEmpty {
-                for (i, p) in sp.points.enumerated() {
-                    d += (i == 0 ? "M" : "L") + "\(fmt(p.x)) \(fmt(p.y))"
+                var out = "<polyline points=\""
+                for (i, p) in subs[0].points.enumerated() {
+                    if i > 0 { out += " " }
+                    out += fmt(p.x)
+                    out += ","
+                    out += fmt(p.y)
                 }
-                if sp.closed { d += "Z" }
+                return out + "\" \(attrs(c))/>"
             }
-            return "<path d=\"\(d)\" \(attrs(c))/>"
+            var out = "<path d=\""
+            for sp in subs where !sp.points.isEmpty {
+                var op = "M"
+                for p in sp.points {
+                    out += op
+                    out += fmt(p.x)
+                    out += " "
+                    out += fmt(p.y)
+                    op = "L"
+                }
+                if sp.closed { out += "Z" }
+            }
+            return out + "\" \(attrs(c))/>"
         }
     }
 }

@@ -36,6 +36,11 @@ public final class FontLibrary: @unchecked Sendable {
     private let packDirectories: [URL]
     private var loaded: [String: FontFace?] = [:]
     private var packs: [PackEntry]?
+    /// `fallback`'s answers: its choice depends only on these inputs and the
+    /// packs, which are scanned once, so entries never go stale.
+    private var fallbacks: [FallbackKey: FontFace?] = [:]
+    /// Cleared when it reaches this many entries (distinct characters × styles).
+    static let maxCachedFallbacks = 65_536
 
     /// What a pack scan keeps per face: its names and cmap, not its bytes.
     private struct PackEntry {
@@ -46,6 +51,33 @@ public final class FontLibrary: @unchecked Sendable {
         var weight: Int
         var italic: Bool
         var cmap: CharacterMap
+        /// "family subfamily", lowercased, and what `fallback` looks for in it.
+        var name: String
+        var isSerif: Bool
+        var isMono: Bool
+        var isNoto: Bool
+
+        init(url: URL, face: Int, family: String, subfamily: String, weight: Int, italic: Bool, cmap: CharacterMap) {
+            self.url = url
+            self.face = face
+            self.family = family
+            self.subfamily = subfamily
+            self.weight = weight
+            self.italic = italic
+            self.cmap = cmap
+            name = (family + " " + subfamily).lowercased()
+            isSerif = name.contains("serif") || name.contains("mincho") || name.contains("ming") || name.contains("song")
+            isMono = name.contains("mono")
+            isNoto = name.contains("noto")
+        }
+    }
+
+    private struct FallbackKey: Hashable {
+        var scalar: UInt32
+        var region: String?
+        var generic: TextContent.Font
+        var bold: Bool
+        var italic: Bool
     }
 
     /// - Parameters:
@@ -106,23 +138,30 @@ public final class FontLibrary: @unchecked Sendable {
     /// `lang` (Chinese, Japanese and Korean share code points), then `generic`
     /// (serif/mono), then the weight and slant asked for.
     public func fallback(for scalar: UInt32, lang: String?, generic: TextContent.Font, bold: Bool, italic: Bool) -> FontFace? {
+        let wanted = Self.cjkRegion(lang: lang, scalar: scalar)
+        let key = FallbackKey(scalar: scalar, region: wanted, generic: generic.effective, bold: bold, italic: italic)
+        lock.lock()
+        if let f = fallbacks[key] { lock.unlock(); return f }
+        lock.unlock()
         let entries = scanPacks()
         var best: (score: Int, entry: PackEntry)?
-        let wanted = Self.cjkRegion(lang: lang, scalar: scalar)
+        let region = wanted.map { " " + $0 }
         for (order, e) in entries.enumerated() where e.cmap.glyph(scalar) != 0 {
             var score = -order   // earlier directories (SEMPERE_FONT_DIR) win ties
-            let name = (e.family + " " + e.subfamily).lowercased()
-            if let wanted, name.contains(" \(wanted)") { score += 100_000 }
-            let serif = name.contains("serif") || name.contains("mincho") || name.contains("ming") || name.contains("song")
-            if (generic.effective == .serif) == serif { score += 10_000 }
-            if (generic.effective == .mono) == name.contains("mono") { score += 5_000 }
+            if let region, e.name.contains(region) { score += 100_000 }
+            if (key.generic == .serif) == e.isSerif { score += 10_000 }
+            if (key.generic == .mono) == e.isMono { score += 5_000 }
             if (e.weight >= 600) == bold { score += 2_000 }
             if e.italic == italic { score += 1_000 }
-            if name.contains("noto") { score += 500 }
+            if e.isNoto { score += 500 }
             if score > (best?.score ?? Int.min) { best = (score, e) }
         }
-        guard let e = best?.entry else { return nil }
-        return load(e.url, face: e.face)
+        let face = best.flatMap { load($0.entry.url, face: $0.entry.face) }
+        lock.lock()
+        if fallbacks.count >= Self.maxCachedFallbacks { fallbacks.removeAll() }
+        fallbacks[key] = face
+        lock.unlock()
+        return face
     }
 
     /// The CJK region suffix Noto CJK families use (`jp`, `kr`, `sc`, `tc`,

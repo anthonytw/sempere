@@ -182,6 +182,52 @@ struct ItemLayerTests {
         #expect(layer.shownItemIDs.isEmpty)
     }
 
+    /// A gesture's preview moves and turns only that item's sublayer, to where a full layout puts it.
+    @Test func previewsPlaceTheSublayerAsALayoutWould() {
+        let text = AttachmentEditorTests.textItem()
+        var other = AttachmentEditorTests.textItem("Other")
+        other.frame = Rect(x: 300, y: 300, w: 80, h: 30)
+        let moved = Rect(x: 50, y: 60, w: 200, h: 40)
+        let layer = ItemLayerView(frame: .zero)
+        layer.show([text, other], note: Self.lecture, paper: .blank, source: ItemLayerSource())
+        let otherBefore = layer.sublayerGeometry(of: other.id)?.frame
+        layer.preview(text.id, frame: moved)
+        #expect(layer.sublayerGeometry(of: text.id)?.frame == CGRect(x: 50, y: 60, width: 200, height: 40))
+        layer.preview(text.id, turn: 30)
+        var stored = text
+        stored.frame = moved
+        let reference = ItemLayerView(frame: .zero)
+        reference.show([stored, other], note: Self.lecture, paper: .blank, source: ItemLayerSource())
+        reference.preview(stored.id, frame: nil)
+        let got = layer.sublayerGeometry(of: text.id)
+        #expect(CATransform3DEqualToTransform(got?.transform ?? CATransform3DIdentity,
+                                              CATransform3DMakeRotation(CGFloat(30 * Double.pi / 180), 0, 0, 1)))
+        #expect(layer.sublayerGeometry(of: other.id)?.frame == otherBefore)
+        #expect(layer.shownFrames() == [text.id: moved, other.id: other.frame])
+        layer.preview(text.id, turn: nil)
+        #expect(CATransform3DIsIdentity(layer.sublayerGeometry(of: text.id)?.transform ?? CATransform3DIdentity))
+        #expect(layer.sublayerGeometry(of: text.id)?.frame == reference.sublayerGeometry(of: stored.id)?.frame)
+        layer.preview(text.id, frame: nil)
+        #expect(layer.shownFrame(of: text.id) == text.frame)
+    }
+
+    /// Prints what one drag frame costs on a page of 300 text boxes.
+    @Test func previewTimings() {
+        let items = (0..<300).map { i -> Item in
+            var t = AttachmentEditorTests.textItem("Box \(i)")
+            t.frame = Rect(x: Double(i % 20) * 30, y: Double(i / 20) * 50, w: 28, h: 40)
+            return t
+        }
+        let layer = ItemLayerView(frame: CGRect(x: 0, y: 0, width: 800, height: 1000))
+        layer.show(items, note: Self.lecture, paper: .blank, source: ItemLayerSource())
+        let clock = ContinuousClock()
+        let elapsed = clock.measure {
+            for k in 0..<200 { layer.preview(items[0].id, frame: Rect(x: Double(k), y: 10, w: 28, h: 40)) }
+        }
+        print("bench: 200 drag frames, 300 items: \(elapsed / 200) per frame")
+        layer.preview(items[0].id, frame: nil)
+    }
+
     @Test func showingAPageAsksForItsBlobs() {
         var asked: [[Item]] = []
         let source = ItemLayerSource(cache: nil, prefetch: { _, items in asked.append(items) })

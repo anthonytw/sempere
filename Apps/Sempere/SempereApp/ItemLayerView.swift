@@ -133,7 +133,7 @@ final class ItemLayerView: UIView {
     /// Shows `frame` for item `id` while a gesture changes it (nil: the stored one).
     func preview(_ id: UUID, frame: Rect?) {
         previews[id] = frame
-        layout()
+        if !placeOnly(id) { layout() }
     }
 
     /// Shows item `id` turned by `degrees` more than its rotation while a two-finger
@@ -141,7 +141,24 @@ final class ItemLayerView: UIView {
     /// frame's centre; PDF page tiles are not turned until the turn ends.
     func preview(_ id: UUID, turn degrees: Double?) {
         turns[id] = degrees
-        layout()
+        if !placeOnly(id) { layout() }
+    }
+
+    /// A gesture frame of one item: places its sublayer as `layout` would, without
+    /// laying out every item (the pictures wanted do not depend on previews). False
+    /// when `layout` must run: the item is not laid out yet or is a PDF page (tiles).
+    private func placeOnly(_ id: UUID) -> Bool {
+        guard let item = items.first(where: { $0.id == id }), item.kind != .pdfPage, tiles[id] == nil,
+              let sub = sublayers[id], sub.item?.id == id else { return false }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        sub.transform = CATransform3DIdentity   // `place` sets the frame, which a transform would skew
+        sub.place(frame: previews[id] ?? item.frame, rotation: item.rotation, zoom: zoom)
+        if let degrees = turns[id] {
+            sub.transform = CATransform3DMakeRotation(CGFloat(degrees * .pi / 180), 0, 0, 1)
+        }
+        return true
     }
 
     /// The item being edited in place (a text box under its editor): not drawn.
@@ -158,6 +175,18 @@ final class ItemLayerView: UIView {
     /// The frame item `id` is shown with (a preview's while one is set).
     func shownFrame(of id: UUID) -> Rect? {
         previews[id] ?? items.first { $0.id == id }?.frame
+    }
+
+    /// `shownFrame(of:)` of every item at once (one pass, not a search per item).
+    func shownFrames() -> [UUID: Rect] {
+        var out = Dictionary(items.map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
+        for (id, frame) in previews { out[id] = frame }
+        return out
+    }
+
+    /// The frame and transform of item `id`'s sublayer (tests).
+    func sublayerGeometry(of id: UUID) -> (frame: CGRect, transform: CATransform3D)? {
+        sublayers[id].map { ($0.frame, $0.transform) }
     }
 
     private var scaleStep: Double {

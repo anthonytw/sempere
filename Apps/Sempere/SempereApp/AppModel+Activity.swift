@@ -27,7 +27,7 @@ extension AppModel {
 
     /// What the last run read in note `id` ("Read 2 of 5 pages"), while it is recent.
     func recognizedEntry(for id: UUID) -> RecognizedNote? {
-        notes.first { $0.id == id }.flatMap(recognizedEntry(of:))
+        notesByID[id].flatMap(recognizedEntry(of:))
     }
 
     /// `recognizedEntry(for:)` of a summary in hand (a list row: no lookup).

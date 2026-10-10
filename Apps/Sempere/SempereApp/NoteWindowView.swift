@@ -25,7 +25,7 @@ struct NoteWindowView: View {
         guard let open = model.windowEditors[value.noteID], !open.isShutDown else { return nil }
         return open
     }
-    private var note: NoteSummary? { model.notes.first { $0.id == value.noteID } }
+    private var note: NoteSummary? { model.notesByID[value.noteID] }
     private var otherVault: Bool { model.phase == .unlocked && model.vault?.vaultId != value.vaultID }
     private var ready: Bool { model.phase == .unlocked && !otherVault && note != nil }
 

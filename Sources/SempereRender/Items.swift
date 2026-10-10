@@ -434,6 +434,15 @@ final class ImageStore {
     private var loaded: [String: Result<LoadedImage, PlaceholderReason>] = [:]
     private var decoded: [String: Result<RGBAImage, PlaceholderReason>] = [:]
     private var reduced: [String: Result<RGBAImage, PlaceholderReason>] = [:]
+    /// The successful `reduced` keys, least recently used first.
+    private var reducedOrder: [String] = []
+    /// At most this many reduced bitmaps are kept, and beyond the most
+    /// recent one only while together they hold at most `maxReducedBytes`.
+    static let maxReducedImages = 4
+    static let maxReducedBytes = 64 << 20
+    /// The pixel size of decoder-only images (HEIC), learnt from their first
+    /// full decode, so that placing them again does not decode them again.
+    private var measured: [String: (width: Int, height: Int)] = [:]
     /// The note's recordings for `audio` items (format.md §8.2.9); nil when
     /// drawing a page without its note (its audio items are placeholders).
     let audio: AudioSources?
@@ -461,13 +470,20 @@ final class ImageStore {
         case .failure(let r): return .failure(r)
         case .success(let image):
             if case .other = image.format {
-                // Measured when decoded (HEIC through the app's decoder).
-                switch decodeFull(ref, image) {
-                case .failure(let r): return .failure(r)
-                case .success(let rgba):
-                    loadedImage = LoadedImage(data: image.data, format: .other, type: image.type,
-                                              width: rgba.width, height: rgba.height)
+                // Measured when first decoded (HEIC through the app's decoder).
+                let size: (width: Int, height: Int)
+                if let known = measured[ref.sha256] {
+                    size = known
+                } else {
+                    switch decodeFull(ref, image) {
+                    case .failure(let r): return .failure(r)
+                    case .success(let rgba):
+                        size = (rgba.width, rgba.height)
+                        measured[ref.sha256] = size
+                    }
                 }
+                loadedImage = LoadedImage(data: image.data, format: .other, type: image.type,
+                                          width: size.width, height: size.height)
             } else {
                 loadedImage = image
             }
@@ -554,7 +570,9 @@ final class ImageStore {
     /// The image for drawing at `reduction` source pixels per output pixel:
     /// a JPEG decoded with DCT scaling (1/2, 1/4, 1/8) where that keeps at
     /// least one decoded pixel per output pixel, then reduced by an integer
-    /// box average while two or more remain (docs/attachments.md §10). Cached per size.
+    /// box average while two or more remain (docs/attachments.md §10). Cached
+    /// per size: the few most recent (`maxReducedImages`, `maxReducedBytes`),
+    /// so items alternating between images do not decode them again.
     func forRaster(_ ref: BlobRef, _ image: LoadedImage, reduction: Double) -> Result<RGBAImage, PlaceholderReason> {
         var dct = 1
         if case .jpeg = image.format, reduction.isFinite {
@@ -563,13 +581,27 @@ final class ImageStore {
         let rest = reduction.isFinite ? reduction / Double(dct) : 1
         let box = rest >= 2 ? Int(min(rest, 65_536)) : 1
         let key = "\(ref.sha256)-\(dct)-\(box)"
-        if let r = reduced[key] { return r }
+        if let r = reduced[key] {
+            if let i = reducedOrder.firstIndex(of: key) { reducedOrder.append(reducedOrder.remove(at: i)) }
+            return r
+        }
         let r = Result { () -> RGBAImage in
             let base = dct == 1 ? try decodeFull(ref, image).get() : try decode(image, scale: dct)
             return base.boxReduced(by: box)
         }.mapError(Self.reason)
-        reduced = reduced.filter { if case .failure = $0.value { return true } else { return false } }   // one bitmap at a time
         reduced[key] = r
+        if case .success = r {
+            reducedOrder.append(key)
+            func bytes() -> Int {
+                reducedOrder.reduce(0) { total, k in
+                    guard case .success(let img)? = reduced[k] else { return total }
+                    return total + img.pixels.count
+                }
+            }
+            while reducedOrder.count > 1, reducedOrder.count > Self.maxReducedImages || bytes() > Self.maxReducedBytes {
+                reduced[reducedOrder.removeFirst()] = nil
+            }
+        }
         return r
     }
 
