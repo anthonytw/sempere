@@ -38,7 +38,8 @@ all run natively on Linux, and CI publishes a static Linux binary. The CLI ships
 | `docs/plan.md` | Phases and task board |
 
 Everything under `Sources/` builds and tests on Linux and macOS with
-`swift test`. The apps need Xcode 26 or newer: open
+`swift test` (Swift 6.0 or newer). The apps need Xcode 27 or newer and run on
+iPadOS/iOS 27 and macOS 27 (Mac Catalyst): open
 `Apps/Sempere/Sempere.xcodeproj` (scheme `SempereApp`), or run
 `scripts/app.sh test` (iPad simulator) and `scripts/app.sh catalyst` (Mac).
 

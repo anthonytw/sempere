@@ -24,7 +24,7 @@ pixels() { sips -g pixelWidth -g pixelHeight "$1" | awk '/pixelWidth/ {w=$2} /pi
 # ("2064x2752" or "1320x2868 1290x2796"), $4 status bar flags for the connectivity icons.
 simulator_shots() {
   local name=$1 prefix=$2 sizes=$3 sim dir="$out/$1"
-  # The newest simulator on iOS 26 or newer: "iPad Pro 13-inch" (2064x2752 pixels) or the newest
+  # The newest simulator on iOS 27 or newer: "iPad Pro 13-inch" (2064x2752 pixels) or the newest
   # "iPhone … Pro Max" (6.9": 1320x2868 or 1290x2796 pixels).
   local suffix=
   if [[ $prefix == iPhone* ]]; then suffix="Pro Max"; fi

@@ -11,7 +11,7 @@ swift build                 # macOS or Linux
 swift test                  # all targets
 swift test --filter AgeTests
 scripts/test-linux.sh       # on a Mac with Docker, or in a cloud VM: run tests in swift:6.4-noble
-scripts/app.sh test         # iPad app: xcodebuild test on the newest iPadOS 26+ simulator
+scripts/app.sh test         # iPad app: xcodebuild test on the newest iPadOS 27+ simulator
 scripts/app.sh catalyst     # iPad app: unsigned Mac Catalyst build
 SEMPERE_FUZZ_LONG=1 swift test --filter Fuzz   # deep fuzz run (quick mode runs in every swift test)
 (cd web && npm ci && npm run lint && npm run typecheck && npm test)   # web viewer

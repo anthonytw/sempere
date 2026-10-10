@@ -18,7 +18,7 @@ scripts/test-linux.sh       # on a Mac with Docker: tests in swift:6.4-noble
 ```
 
 On Linux install `zlib1g-dev` (and the `age` CLI for the interop tests). The iPad/Mac app needs
-Xcode 26 or newer: `scripts/app.sh test` and `scripts/app.sh catalyst`. In `swift test` output,
+Xcode 27 or newer (the app's minimum is iPadOS/iOS 27; the package and CLI need only Swift 6.0): `scripts/app.sh test` and `scripts/app.sh catalyst`. In `swift test` output,
 the XCTest `Executed N tests` line is the one that matters.
 
 ## Pull requests

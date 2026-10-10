@@ -245,8 +245,8 @@ scripts/import-eval.sh --out data/eval-full data/Notability-*-1-00{1,2,3}.zip   
 SEMPERE_EVAL_SKIP_CANVAS=1 scripts/import-eval.sh …   # import + PDF + thumbnails only (minutes, no simulator)
 ```
 
-It needs macOS, Xcode with an iPadOS 26+ simulator (`SEMPERE_SIM_ID`
-picks one; use an iPadOS 26.x one, the user's iPad cannot run 27) and `uv`.
+It needs macOS, Xcode with an iPadOS 27+ simulator (`SEMPERE_SIM_ID`
+picks one) and `uv`.
 The output directory (default `data/eval`, git-ignored) must be ignored by
 git, since everything in it is derived from personal notes; the script
 refuses otherwise. Notes are named only by the first 8 hex digits of their

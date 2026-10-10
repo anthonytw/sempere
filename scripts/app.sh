@@ -35,7 +35,7 @@ for runtime, devs in devices.items():
     if not m:
         continue
     version = (int(m.group(1)), int(m.group(2)))
-    if version < (26, 0):  # the app targets iPadOS 26 and iOS 26
+    if version < (27, 0):  # the app targets iPadOS 27 and iOS 27
         continue
     for d in devs:
         if d.get("isAvailable") and d["name"].startswith(family) and d["name"].endswith(suffix):
@@ -43,7 +43,7 @@ for runtime, devs in devices.items():
             if best is None or key > best[0]:
                 best = (key, d["udid"], d["name"], version)
 if best is None:
-    sys.exit("no available " + family + " simulator on iOS 26 or newer (xcrun simctl list runtimes; xcodebuild -downloadPlatform iOS)")
+    sys.exit("no available " + family + " simulator on iOS 27 or newer (xcrun simctl list runtimes; xcodebuild -downloadPlatform iOS)")
 print(f"using {best[2]} (iOS {best[3][0]}.{best[3][1]})", file=sys.stderr)
 print(best[1])
 ' "$family" "${2:-}"
