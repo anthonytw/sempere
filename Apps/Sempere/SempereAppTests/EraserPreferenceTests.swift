@@ -69,8 +69,8 @@ struct EraserPreferenceTests {
     }
 
     /// What the platform's picker keeps for each eraser item type (printed for the CI and
-    /// Catalyst logs: iPadOS 26 keeps a pixel eraser as `.fixedWidthBitmap`; macOS 27
-    /// Catalyst does not keep a `.fixedWidthBitmap` item).
+    /// Catalyst logs: iPadOS 26 kept a pixel eraser as `.fixedWidthBitmap`; macOS 27
+    /// Catalyst does not keep a `.fixedWidthBitmap` item; the iPadOS 27.0 simulator keeps neither).
     @Test func thePixelTypeIsOneThePickerKeeps() {
         for candidate in EraserPreference.pixelCandidates {
             let kept = EraserPreference.eraserType(in: EraserPreference.picker(eraserItem: candidate))

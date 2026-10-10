@@ -418,7 +418,7 @@ There is no Pencil, so on a Mac:
   fingers only, so on a Mac the default eraser did nothing.
 * **The remembered eraser mode** (object or pixel, `EraserPreference`) holds
   on the Mac too. macOS 27's Catalyst picker does not keep a
-  `.fixedWidthBitmap` eraser item, the iPadOS 26 one's pixel eraser, so the
+  `.fixedWidthBitmap` eraser item, the pixel eraser iPadOS 26 kept, so the
   picker gets whichever pixel type this platform keeps (`pixelPickerType`,
   probed once per launch; `EraserPreferenceTests` print what each type comes
   back as, `ERASER-PROBE`). Where none is kept, a canvas starts with the

@@ -199,9 +199,10 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   given, and its saved eraser is the pixel eraser. `EraserPreference` drops
   that saved eraser entry before building a picker, so the object eraser is
   the default and the user's last choice (stored under `Sempere.eraserType`)
-  wins. On iPadOS 26 the picker's pixel eraser is `.fixedWidthBitmap`: a
-  `.bitmap` eraser item comes back as that; macOS 27 Catalyst does not keep a
-  `.fixedWidthBitmap` item. So the preference is two modes (object, pixel:
+  wins (still needed on iPadOS 27: measured on the 27.0 simulator). On iPadOS
+  26 the picker's pixel eraser was `.fixedWidthBitmap`: a `.bitmap` eraser item
+  came back as that; macOS 27 Catalyst does not keep a `.fixedWidthBitmap`
+  item, and the iPadOS 27.0 simulator keeps no pixel eraser item at all. So the preference is two modes (object, pixel:
   `EraserPreference.canonical`) and the picker gets the pixel type the
   platform keeps (`pixelPickerType`, probed); never compare eraser types
   with `==` across platforms, use `isPixel`.

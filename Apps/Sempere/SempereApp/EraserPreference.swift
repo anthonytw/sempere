@@ -14,18 +14,20 @@ import PencilKit
 /// (`PKPaletteNamedDefaults` → `PKPaletteTools`, one entry per tool) and
 /// restores it in `PKToolPicker.init`, overriding the eraser item the app
 /// passes in; its eraser defaults to the pixel eraser. Measured on the iPadOS
-/// 26.5 simulator: a `.vector` eraser item comes back `.fixedWidthBitmap`
-/// while that entry exists, and as `.vector` once it is gone (also with a
-/// `stateAutosaveName`). So `makeToolPicker` drops PencilKit's saved eraser
+/// 26.5 and 27.0 simulators: a `.vector` eraser item comes back
+/// `.fixedWidthBitmap` while that entry exists, and as `.vector` once it is
+/// gone (also with a `stateAutosaveName` on 26.5). So `makeToolPicker` drops PencilKit's saved eraser
 /// entry first and this preference decides the eraser; the other tools keep
 /// PencilKit's saved state. If PencilKit stores something else there, nothing
 /// is removed and the picker shows PencilKit's choice.
 ///
 /// The preference is one of two modes, object or pixel. Which pixel eraser
-/// type a picker keeps differs by platform: the iPadOS 26 picker turns a
-/// `.bitmap` item into `.fixedWidthBitmap`, and the Mac Catalyst picker on
+/// type a picker keeps differs by platform: the iPadOS 26 picker turned a
+/// `.bitmap` item into `.fixedWidthBitmap`; the Mac Catalyst picker on
 /// macOS 27 does not keep a `.fixedWidthBitmap` item (the maintainer's
-/// Catalyst run of `EraserPreferenceTests`, after TestFlight build 7). So the
+/// Catalyst run of `EraserPreferenceTests`, after TestFlight build 7); the
+/// iPadOS 27.0 simulator keeps neither pixel type (both come back `.vector`,
+/// `ERASER-PROBE`). So the
 /// stored mode is canonical (`canonical`: any pixel type is `pixelType`) and
 /// `makeToolPicker` gives the picker the pixel type this platform keeps
 /// (`pixelPickerType`, probed once). If the platform's picker keeps no pixel
