@@ -5,11 +5,16 @@ import UniformTypeIdentifiers
 /// Settings → Backups (docs/io.md "Backups"): the folder, Back Up Now,
 /// Verify Backup, the last backup, the reminder and Restore from Backup.
 /// The work is `AppModel+Backup`, on the same core as `sempere backup`.
+///
+/// Restore from Backup… sets `restoring`; the owner of the `Form` presents
+/// `RestoreBackupView` from the form, not from this section. Attached to the
+/// section (rows of a lazy list), the sheet never appeared from the Mac
+/// Catalyst 27 Settings window: the window went modal with no sheet in it.
 struct BackupSettingsSection: View {
     @AppModelEnvironment private var model
+    @Binding var restoring: Bool
     @State private var record = BackupRecord()
     @State private var picking = false
-    @State private var restoring = false
     @State private var message: String?
     @State private var problems: [String] = []
     @State private var notificationsOff = false
@@ -82,7 +87,6 @@ struct BackupSettingsSection: View {
             }
             reload()
         }
-        .sheet(isPresented: $restoring) { RestoreBackupView() }
     }
 
     private var busy: Bool { model.backupProgress != nil }

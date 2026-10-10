@@ -15,6 +15,8 @@ struct SettingsView: View {
     var showsDone = true
     /// A section to scroll to when the panel opens (`QuickCaptureSettingsSection.anchor`).
     var scrollTo: String?
+    /// Settings ▸ Backups ▸ Restore from Backup… (`BackupSettingsSection`).
+    @State private var restoringBackup = false
 
     var body: some View {
         NavigationStack {
@@ -32,11 +34,12 @@ struct SettingsView: View {
                     QuickCaptureSettingsSection()
                     PhotoSettingsSection()
                     HistorySettingsSection()
-                    BackupSettingsSection().id(model.settingsAppliedRevision)
+                    BackupSettingsSection(restoring: $restoringBackup).id(model.settingsAppliedRevision)
                     DeviceKeySettingsSection().id(model.settingsAppliedRevision)
                     StorageSettingsSection()
                     AboutSettingsSection()
                 }
+                .sheet(isPresented: $restoringBackup) { RestoreBackupView() }
                 .task {
                     guard let scrollTo else { return }
                     // After the first layout, or the Form has no rows to scroll to yet.

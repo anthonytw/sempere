@@ -233,10 +233,12 @@ struct KeyNoticeView: View {
 /// Settings ▸ Backups on its own, for the key notice's pointer.
 private struct BackupSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @State private var restoring = false
 
     var body: some View {
         NavigationStack {
-            Form { BackupSettingsSection() }
+            Form { BackupSettingsSection(restoring: $restoring) }
+                .sheet(isPresented: $restoring) { RestoreBackupView() }
                 .navigationTitle("Backups")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
