@@ -92,11 +92,24 @@ final class LaunchSmokeUITests: XCTestCase {
         require(settings, "Settings window", in: app)
         let restore = app.buttons["Restore from Backup…"].firstMatch
         // The form is a lazy list: rows below the window are not built (and not in the
-        // accessibility tree) until scrolled to. Scroll-wheel steps, trying either sign.
-        for deltaY in Array(repeating: -400.0, count: 10) + Array(repeating: 400.0, count: 10) where !restore.exists {
+        // accessibility tree) until scrolled to. Scroll-wheel steps, trying either sign, until
+        // the button is wholly inside the form: a row half below the window's edge exists too,
+        // and a click at its middle misses it (no action ran; the sheet never came, #152).
+        func shown() -> Bool { restore.exists && settings.frame.contains(restore.frame) }
+        for deltaY in Array(repeating: -400.0, count: 10) + Array(repeating: 400.0, count: 10) where !shown() {
             settings.scroll(byDeltaX: 0, deltaY: deltaY)
         }
         require(restore, "Restore from Backup… button", in: app)
+        // Scrolling may still be settling: click where the button is once it stays put.
+        var frame = restore.frame
+        for _ in 0..<10 {
+            Thread.sleep(forTimeInterval: 0.3)
+            let now = restore.frame
+            if now == frame { break }
+            frame = now
+        }
+        XCTAssertTrue(settings.frame.contains(restore.frame),
+                      "Restore from Backup… is inside the form (\(restore.frame) in \(settings.frame))")
         restore.click()
         requireSheet("restoreBackupSheet", titled: "Restore from Backup", "Restore from Backup sheet", in: app)
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
