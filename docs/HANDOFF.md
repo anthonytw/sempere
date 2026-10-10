@@ -525,8 +525,9 @@ iPadOS 27 only; the user's iPad is capped at 26, so do not depend on them.
 
 
 See `CLAUDE.md § Gotchas` (case-insensitive paths, FoundationXML, static
-link flags, test-output grepping, the app project). Also: GitHub's `macos-26` runner has an
-older compiler than local Xcode 27, so dense expressions that compile locally
-can time out there; swift-crypto types are not `Sendable` on Linux (store raw
+link flags, test-output grepping, the app project). Also: the app and screenshot jobs
+run on GitHub's `xcode-27` image (the app needs the iOS 27 SDK), while the package job and
+the CLI release build stay on `macos-26`, which has an older compiler than local Xcode 27,
+so dense expressions in `Sources/` that compile locally can time out there; swift-crypto types are not `Sendable` on Linux (store raw
 bytes); SempereImport reads binary plists with its own `BinaryPlist` reader, since
 `PropertyListSerialization` crashes on some hostile binary plists on Linux.
