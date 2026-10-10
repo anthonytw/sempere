@@ -257,7 +257,7 @@ final class CLICommandTests: CLITestCase {
         let huge = try cli(["export", "Groceries", "--format", "png", "--dpi", "2400", "--out", path("huge"),
                             "--vault", v, "--identity", keyPath])
         XCTAssertEqual(huge.status, 1)
-        XCTAssertTrue(huge.err.contains("exceeds the limit"), huge.err)
+        XCTAssertTrue(huge.err.contains("exceeds the limit of 40000000; lower --dpi"), huge.err)
 
         // JSON: the reconstructed NoteState.
         let jsonDir = path("json")

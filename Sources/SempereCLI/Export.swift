@@ -367,7 +367,7 @@ struct ExportCommand: ParsableCommand {
         if let treeFormat = format.tree {
             var tree = TreeExporter(root: URL(fileURLWithPath: out), format: treeFormat, images: images, options: options,
                                     png: PNGOptions(dpi: dpi), source: "sempere", clean: clean, notebookFilter: notebook,
-                                    errorText: { CLIError.from($0).message })
+                                    errorText: Self.errorText)
             let blobVault = vault
             tree.blobs = { blobVault.blobSource(note: $0) }
             let warnFormat = format
@@ -471,12 +471,20 @@ struct ExportCommand: ParsableCommand {
                     throw e
                 } catch {
                     failures += 1
-                    printError("\(s.id.uuidString.lowercased()): \(CLIError.from(error).message)")
+                    printError("\(s.id.uuidString.lowercased()): \(Self.errorText(error))")
                 }
             }
         }
         if output.json { try output.emitJSON(written) }
         if failures > 0 { throw CLIError.failure("\(failures) note(s) could not be exported") }
+    }
+
+    /// A failed note's error; an image over the pixel cap adds the `--dpi` hint
+    /// (the library's message names no option: recognition has none).
+    @Sendable static func errorText(_ error: Error) -> String {
+        let message = CLIError.from(error).message
+        if case RenderError.imageTooLarge = error { return message + "; lower --dpi" }
+        return message
     }
 
     /// `to` relative to the directory `from` (both relative to the current

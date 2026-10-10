@@ -313,7 +313,7 @@ final class PNGWriterTests: XCTestCase {
         }
         XCTAssertThrowsError(try PNGWriter.render(note: note, png: PNGOptions(maxPixels: -5)))
         let msg = (RenderError.imageTooLarge(pixels: 2e9, limit: 4e7 > 0 ? 40_000_000 : 0) as LocalizedError).errorDescription
-        XCTAssertTrue(msg?.contains("limit") == true)
+        XCTAssertEqual(msg, "image of 2000000000 pixels exceeds the limit of 40000000", "no CLI option in the library")
     }
 
     func testCapAppliesToEveryChunkBeforeRendering() throws {
