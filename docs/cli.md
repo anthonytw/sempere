@@ -716,13 +716,18 @@ for `--prune` and for a full `verify`.
   `vaultId`, `destination`, `copied`, `replaced`, `versioned`, `unchanged`,
   `pruned`, `kept` and `errors` (`{path, message}`). One failing file does not
   stop the run. Exit 0 ok, 1 some files failed, 2 usage, 4 `--prune` without a key.
+  `DIR` may live on storage others can write to, so no symbolic link in it is
+  followed: a file that is a link is reported and replaced by the vault's
+  copy (never read, hashed or kept under `versions/`), and a file reached
+  through a linked folder is reported and skipped.
 - `backup V --archive FILE.tar` writes one uncompressed POSIX tar of the
   encrypted files under `<name>.sempere/` (refuses an existing file). It is
   written to a temporary file, read back and checked member by member, then
   renamed. `tar xf FILE.tar` gives back a vault folder. `--json`: `archive`,
   `vaultId`, `files`, `bytes`, `sha256`.
 - `backup verify DIR` without a key checks every file in `backup.json` (present,
-  same size and SHA-256: a flipped byte or a missing file is found) and that
+  same size and SHA-256: a flipped byte or a missing file is found; a symbolic
+  link counts as missing and is not followed) and that
   `vault.json` is well formed. With `--identity` (or a scripted passphrase for
   the key file the backup holds) it also decrypts, tag-checks and decodes every
   revision like `vault verify`. Files on disk that `backup.json` does not list
@@ -755,7 +760,8 @@ for `--prune` and for a full `verify`.
 - `restore DIR --to NEWPATH` copies `vault.json`, `keys/` and `notes/` (not
   `versions/` or `backup.json`) into a new or empty folder ending in
   `.sempere`, checking every file against `backup.json`; a file that does not
-  match is not restored and is reported. `DIR` may also be any vault folder
+  match, that `backup.json` does not list, or that is (or lies under) a
+  symbolic link is not restored and is reported. `DIR` may also be any vault folder
   (say, an extracted tar). `vault.json` is written last, so an interrupted
   restore is never mistaken for a vault; the same command finishes it. The
   result is then verified: every revision with `--identity`, structure only

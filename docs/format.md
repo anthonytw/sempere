@@ -3043,7 +3043,7 @@ where the table says how they degrade.
 | identity file, device state | 1 MiB | `BoundedRead` |
 | attachment blob file (§8) | 1 GiB of content plus 64 MiB of framing and age overhead (padme of a 1 GiB blob adds up to 32 MiB) | `BoundedRead` |
 | `backup.json`, export manifest (`.sempere-export-*.json`) | 256 MiB | `BoundedRead` |
-| files read at all | regular files only (no FIFOs or devices; symlinks followed in a vault, not in an imported package) | `BoundedRead` |
+| files read at all | regular files only (no FIFOs or devices; symlinks followed in a vault, not in an imported package, and never below a backup folder or a restore source: a backup run, verify or restore reports a link there and does not read through it) | `BoundedRead` |
 | JSON nesting | 512 levels (Foundation's decoder) | |
 | names of skipped ops, fields and features reported (§7.4) | 64 characters each; 32 distinct per note (or vault), the rest counted together | `NewerContent.maxNameLength`, `.maxNames` |
 | unknown fields kept verbatim (§7.5, §8) | 24 levels deep from the document root; 16 384 values per file | `JSONValue.maxDepth`, `.maxValues` |

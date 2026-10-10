@@ -562,6 +562,112 @@ final class BackupTests: VaultTestCase {
         }
     }
 
+    // MARK: - Symbolic links (security review S3)
+
+    /// Every regular file under `root` that holds `needle`, found without
+    /// following a symbolic link (a link to the secret must not count).
+    private func filesHolding(_ needle: Data, under root: URL) throws -> [String] {
+        var out: [String] = []
+        let fm = FileManager.default
+        guard let walker = fm.enumerator(atPath: root.path) else { return [] }
+        for case let rel as String in walker {
+            let u = root.appendingPathComponent(rel)
+            guard (try fm.attributesOfItem(atPath: u.path))[.type] as? FileAttributeType == .typeRegular else { continue }
+            if try Data(contentsOf: u).range(of: needle) != nil { out.append(rel) }
+        }
+        return out
+    }
+
+    /// A secret file outside every folder involved, like `~/.ssh/id_ed25519`.
+    private func plantSecret() throws -> (url: URL, bytes: Data) {
+        let bytes = Data("-----BEGIN OPENSSH PRIVATE KEY----- s3-secret".utf8)
+        let url = tmp.appendingPathComponent("home-secret")
+        try bytes.write(to: url)
+        return (url, bytes)
+    }
+
+    func testRunNeverCopiesTheTargetOfALinkPlantedInTheBackup() throws {
+        _ = try Backup.run(source: vault, to: dest)
+        let secret = try plantSecret()
+        let fm = FileManager.default
+        // A revision and the manifest replaced by links to the secret (the
+        // attack), and a note folder replaced by a link to a folder of it.
+        let rev = try XCTUnwrap(try Backup.formatFiles(in: dest).first { $0.hasPrefix("notes/") })
+        try fm.removeItem(at: Backup.url(dest, rev))
+        try fm.createSymbolicLink(at: Backup.url(dest, rev), withDestinationURL: secret.url)
+        try fm.removeItem(at: Backup.url(dest, "vault.json"))
+        try fm.createSymbolicLink(atPath: Backup.url(dest, "vault.json").path, withDestinationPath: "../home-secret")
+
+        let report = try Backup.run(source: vault, to: dest)
+        XCTAssertEqual(Set(report.errors.map(\.path)), [rev, "vault.json"], "\(report.errors)")
+        XCTAssertTrue(report.versioned.isEmpty, "a link's target is never kept under versions/")
+        XCTAssertEqual(try filesHolding(secret.bytes, under: dest), [])
+        for p in [rev, "vault.json"] {
+            let type = try FileManager.default.attributesOfItem(atPath: Backup.url(dest, p).path)[.type]
+            XCTAssertEqual(type as? FileAttributeType, .typeRegular, "the link is replaced by the vault's copy")
+            XCTAssertEqual(try Data(contentsOf: Backup.url(dest, p)), try Data(contentsOf: Backup.url(vault.url, p)))
+        }
+        XCTAssertTrue(try Backup.run(source: vault, to: dest).errors.isEmpty, "the next run is clean")
+
+        // A note folder that is a link: nothing is read or written through it.
+        let noteDir = "notes/\(testNote.uuidString.lowercased())"
+        let elsewhere = tmp.appendingPathComponent("elsewhere")
+        try fm.moveItem(at: Backup.url(dest, noteDir), to: elsewhere)
+        for f in try fm.contentsOfDirectory(atPath: elsewhere.path) {
+            try secret.bytes.write(to: elsewhere.appendingPathComponent(f))   // same names, other bytes
+        }
+        try fm.createSymbolicLink(at: Backup.url(dest, noteDir), withDestinationURL: elsewhere)
+        let linked = try Backup.run(source: vault, to: dest, options: BackupOptions(checksum: true))
+        XCTAssertFalse(linked.errors.isEmpty)
+        XCTAssertTrue(linked.errors.allSatisfy { $0.message.contains("symbolic link") }, "\(linked.errors)")
+        XCTAssertTrue(linked.versioned.isEmpty)
+        XCTAssertEqual(try filesHolding(secret.bytes, under: dest), [])
+        XCTAssertTrue(try fm.contentsOfDirectory(atPath: elsewhere.path).allSatisfy {
+            (try? Data(contentsOf: elsewhere.appendingPathComponent($0))) == secret.bytes
+        }, "nothing is written through the link")
+    }
+
+    func testRestoreNeverFollowsLinksAndNeedsAnIndexEntry() throws {
+        _ = try Backup.run(source: vault, to: dest)
+        let secret = try plantSecret()
+        let fm = FileManager.default
+        let rev = try XCTUnwrap(try Backup.formatFiles(in: dest).first { $0.hasPrefix("notes/") })
+        try fm.removeItem(at: Backup.url(dest, rev))
+        try fm.createSymbolicLink(at: Backup.url(dest, rev), withDestinationURL: secret.url)
+        // A file backup.json does not list: an extra key file.
+        let extra = "keys/age1pq-\(String(repeating: "cd", count: 32)).key.age"
+        try fm.createDirectory(at: Backup.url(dest, "keys"), withIntermediateDirectories: true)
+        try secret.bytes.write(to: Backup.url(dest, extra))
+
+        let target = tmp.appendingPathComponent("Restored.sempere")
+        let report = try Backup.restore(from: dest, to: target, identities: [id])
+        XCTAssertEqual(Set(report.errors.map(\.path)), [rev, extra], "\(report.errors)")
+        XCTAssertFalse(report.restored.contains(rev))
+        XCTAssertFalse(report.restored.contains(extra))
+        XCTAssertEqual(try filesHolding(secret.bytes, under: target), [])
+
+        // A plain vault folder (no backup.json): its links are not followed either.
+        let plain = tmp.appendingPathComponent("Plain.sempere")
+        try fm.copyItem(at: vault.url, to: plain)
+        try fm.removeItem(at: Backup.url(plain, rev))
+        try fm.createSymbolicLink(at: Backup.url(plain, rev), withDestinationURL: secret.url)
+        let fromPlain = try Backup.restore(from: plain, to: tmp.appendingPathComponent("P2.sempere"))
+        XCTAssertEqual(fromPlain.errors.map(\.path), [rev])
+        XCTAssertTrue(fromPlain.errors.first?.message.contains("symbolic link") == true, "\(fromPlain.errors)")
+        XCTAssertEqual(try filesHolding(secret.bytes, under: tmp.appendingPathComponent("P2.sempere")), [])
+    }
+
+    func testVerifyDoesNotFollowLinks() throws {
+        _ = try Backup.run(source: vault, to: dest)
+        let rev = try XCTUnwrap(try Backup.formatFiles(in: dest).first { $0.hasPrefix("notes/") })
+        let copy = tmp.appendingPathComponent("copy")
+        try FileManager.default.moveItem(at: Backup.url(dest, rev), to: copy)
+        try FileManager.default.createSymbolicLink(at: Backup.url(dest, rev), withDestinationURL: copy)
+        let f = Backup.verify(at: dest).files.first { $0.path == rev }
+        XCTAssertEqual(f?.status, .missing, "an identical file behind a link is not the backup's copy")
+        XCTAssertTrue(f?.detail?.contains("symbolic link") == true, "\(String(describing: f))")
+    }
+
     func testPathSafety() {
         for ok in ["vault.json", "notes/a/b.age", "versions/2026-01-01T00:00:00Z/keys/k.key.age"] {
             XCTAssertTrue(Backup.isSafeRelativePath(ok), ok)
