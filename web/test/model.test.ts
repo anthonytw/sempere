@@ -93,6 +93,18 @@ describe("revisions", () => {
     expect(state.pages[0]?.orderClock).toBeUndefined();
   });
 
+  it("reads null markers and null pages as absent, as Swift's decodeIfPresent", () => {
+    const meta = { title: "", tags: [], favorite: false, created: "1970-01-01T00:00:00Z", paper: { kind: "blank" },
+      pageSize: { width: 612, height: 792, infinite: false } };
+    const rev = decodeRevision({
+      ...goodDelta, type: "snapshot", included: {}, format: null, features: null, state: { deleted: false, pages: null, meta },
+    });
+    expect(rev.newer).toBeUndefined();
+    expect(snapshotParts(rev).state.pages).toEqual([]);
+    // The key itself stays required.
+    expect(() => decodeRevision({ ...goodDelta, type: "snapshot", included: {}, state: { deleted: false, meta } })).toThrow();
+  });
+
   it("rejects an unknown type and bad fields", () => {
     expect(() => decodeRevision(goodDelta)).not.toThrow();
     for (const [k, v] of [["type", "patch"], ["hlc", "1"], ["device", "A1B2C3D4"], ["seq", 0], ["seq", 1.5],
