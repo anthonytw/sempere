@@ -152,6 +152,28 @@ struct StrokeLedgerIncrementalTests {
         #expect(again.isEmpty)
     }
 
+    // MARK: - Parents (indexed lookups keep the first match)
+
+    /// Two strokes removed in one change that both qualify as the parent of a
+    /// new one by path and family: the first in canvas order is chosen, as
+    /// before the lookups were indexed.
+    @Test func theFirstRemovedCandidateIsTheParent() throws {
+        let a = TS.stroke(x: 40), b = TS.stroke(x: 40)
+        let created = Date(timeIntervalSinceReferenceDate: 1000)
+        let pa = TS.canvasStroke(a, created: created), pb = TS.canvasStroke(b, created: created)
+        var l = StrokeLedger(stored: [], info: CanvasStrokeInfo.init(stored:))
+        l.update(TS.items([pa, pb]))
+        let ids = l.live.map(\.id)
+        _ = l.beginSave(page: Self.page)
+        // Both masked away and replaced by one piece with the same path.
+        // A new canvas id, so the path rule (not the id rule) picks the parent.
+        let piece = PKStroke(ink: pa.ink, path: pa.path, transform: pa.transform,
+                             mask: UIBezierPath(rect: CGRect(x: 0, y: -100, width: 60, height: 400)), randomSeed: 7)
+        let change = l.update(TS.items([piece]))
+        #expect(Set(change.removed.map(\.id)) == Set(ids))
+        #expect(change.added.first?.parent == ids[0])
+    }
+
     static func ops(_ l: inout StrokeLedger) -> [Op] {
         let live = l.live
         let ops = l.pendingOps(page: page, live: live)
