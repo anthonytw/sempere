@@ -70,7 +70,9 @@ They cannot see titles, text, ink, tags, notebooks, attachments or transcripts.
   Touch ID when you choose it.
 - **Plaintext the app keeps on the device for speed or safety:** attachments
   opened for display, a recording until it is saved into the note, a voice note
-  until it is sealed, and files staged for an export or a drag. They rely on the
+  until it is sealed, and files staged for an export or a drag; on a Mac, the
+  titles of note windows open when the app quits, which the system keeps to
+  restore its windows. They rely on the
   system's data protection where the platform has it (on a Mac, which has none,
   the attachment cache is deleted when the app quits, and after a crash at the
   next launch, before any vault opens). The caches of note

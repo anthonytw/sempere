@@ -68,6 +68,10 @@ struct RootView: View {
                 if ready { restoreSelection() }
             }
             .onChange(of: model.selectedNoteID) { saveSelection() }
+            // A closed vault leaves nothing of its selection in the window's saved state.
+            .onChange(of: model.phase) { _, phase in
+                if SelectionStorage.shouldClear(phase: phase) { storedSelection = "" }
+            }
             .onChange(of: model.sidebarSelection) { saveSelection() }
             .menuBarRequests()
     }
@@ -295,8 +299,8 @@ struct RootView: View {
 
     private func saveSelection() {
         guard SelectionStorage.shouldSave(isMac: Platform.isMac, unlocked: model.phase == .unlocked, vault: model.vault?.vaultId, restored: restoredVault),
-              let vaultID = model.vault?.vaultId else { return }
-        storedSelection = RestorableSelection(sidebar: model.sidebarSelection, note: model.selectedNoteID, vault: vaultID).stored
+              let saved = model.restorableSelection() else { return }
+        storedSelection = saved.stored
     }
 
     // MARK: - Menu commands (Mac)

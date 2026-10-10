@@ -207,7 +207,13 @@ calls the callbacks off the main thread.
 * The library window saves its selection (sidebar item, note, vault id) with
   `@SceneStorage` and applies it once the same vault is unlocked again
   (`AppModel.restore`; a notebook, tag or note that is gone falls back to All
-  Notes or no note).
+  Notes or no note). The system keeps scene storage in plaintext (Saved
+  Application State), so a notebook or tag is saved as a digest keyed by the
+  vault secret (`RestorableSelection`, `LocalCacheKey` purpose `selection`),
+  never by name, and the saved selection is cleared when the vault closes
+  (security review 2026-10 stage 4, S13). A note window shows its note's title
+  only while the vault is unlocked; the titles of note windows open when the
+  app quits can still be in the system's saved window state.
 * Multiple scenes are switched on for Mac Catalyst only
   (`INFOPLIST_KEY_UIApplicationSupportsMultipleScenes[sdk=macosx*]`); the iPad
   keeps its single scene.

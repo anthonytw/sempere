@@ -166,7 +166,8 @@ struct NoteWindowTests {
     @Test func aSavedSelectionIsAppliedWhenItsNoteAndTagStillExist() async throws {
         let (model, _) = try await Self.unlockedModel()
         let vault = try #require(model.vault?.vaultId)
-        let saved = RestorableSelection(sidebar: .tag("fixture"), note: Self.lecture, vault: vault)
+        let digest = try #require(model.selectionDigest())
+        let saved = RestorableSelection(sidebar: .tag("fixture"), note: Self.lecture, vault: vault, digest: digest)
         #expect(model.restore(saved))
         #expect(model.sidebarSelection == .tag("fixture"))
         #expect(model.selectedNoteID == Self.lecture)
@@ -175,23 +176,60 @@ struct NoteWindowTests {
     @Test func aSavedSelectionFallsBackWhenItsPartsAreGone() async throws {
         let (model, _) = try await Self.unlockedModel()
         let vault = try #require(model.vault?.vaultId)
-        #expect(model.restore(RestorableSelection(sidebar: .tag("gone"), note: UUID(), vault: vault)))
+        let digest = try #require(model.selectionDigest())
+        #expect(model.restore(RestorableSelection(sidebar: .tag("gone"), note: UUID(), vault: vault, digest: digest)))
         #expect(model.sidebarSelection == .allNotes)
         #expect(model.selectedNoteID == nil)
-        #expect(model.restore(RestorableSelection(sidebar: .notebook("Nowhere/Here"), note: nil, vault: vault)))
+        #expect(model.restore(RestorableSelection(sidebar: .notebook("Nowhere/Here"), note: nil, vault: vault, digest: digest)))
         #expect(model.sidebarSelection == .allNotes)
-        #expect(model.restore(RestorableSelection(sidebar: .deleted, note: AppModelTests.deleted, vault: vault)))
+        #expect(model.restore(RestorableSelection(sidebar: .deleted, note: AppModelTests.deleted, vault: vault, digest: digest)))
         #expect(model.sidebarSelection == .deleted)
         #expect(model.selectedNoteID == AppModelTests.deleted)
     }
 
     @Test func aSelectionOfAnotherVaultIsIgnored() async throws {
         let (model, _) = try await Self.unlockedModel()
-        #expect(!model.restore(RestorableSelection(sidebar: .deleted, note: Self.lecture, vault: UUID())))
+        #expect(!model.restore(RestorableSelection(sidebar: .deleted, note: Self.lecture, vault: UUID(), digest: { $0 })))
         #expect(model.sidebarSelection == .allNotes)
         #expect(model.selectedNoteID == nil)
         let closed = AppModel(deviceStateURL: TS.deviceStateURL())
-        #expect(!closed.restore(RestorableSelection(sidebar: .allNotes, note: nil, vault: nil)))
+        #expect(!closed.restore(RestorableSelection(sidebar: .allNotes, note: nil, vault: nil, digest: { $0 })))
+        #expect(closed.selectionDigest() == nil)
+        #expect(closed.restorableSelection() == nil)
+    }
+
+    /// Security review 2026-10 stage 4, S13: the library window's saved selection (scene storage, which a
+    /// Mac keeps in plaintext in Saved Application State) named the notebook or tag. It now holds a digest
+    /// keyed by the vault secret, still restores, is forgotten when the vault closes, and older saved values
+    /// (`tag:<name>`) are still read.
+    @Test func theSavedSelectionNamesNoNotebookOrTag() async throws {
+        let (model, _) = try await Self.unlockedModel()
+        let vault = try #require(model.vault?.vaultId)
+        model.sidebarSelection = .tag("fixture")
+        model.selectedNoteID = Self.lecture
+        let saved = try #require(model.restorableSelection())
+        #expect(!saved.stored.contains("fixture"))
+        #expect(saved.stored.contains("tag#"))
+        _ = try await model.createNote(title: "Plans", paper: Paper(kind: .ruled), notebook: "Secret Project/Plans")
+        let notebook = try #require(model.notebooks.first { NotebookPath.canonical($0) == "Secret Project/Plans" })
+        model.sidebarSelection = .notebook(notebook)
+        let savedNotebook = try #require(model.restorableSelection())
+        #expect(!savedNotebook.stored.contains("Secret") && !savedNotebook.stored.contains("Plans"))
+
+        model.sidebarSelection = .allNotes
+        model.selectedNoteID = nil
+        let restored = try #require(RestorableSelection(stored: saved.stored))
+        #expect(model.restore(restored))
+        #expect(model.sidebarSelection == .tag("fixture"))
+        #expect(model.selectedNoteID == Self.lecture)
+        #expect(model.restore(try #require(RestorableSelection(stored: savedNotebook.stored))))
+        #expect(model.sidebarSelection == .notebook(notebook))
+        // A value an older build saved is still applied (and replaced at the next save).
+        let legacy = #"{"sidebar":"tag:fixture","vault":"\#(vault.uuidString)"}"#
+        #expect(model.restore(try #require(RestorableSelection(stored: legacy))))
+        #expect(model.sidebarSelection == .tag("fixture"))
+        #expect(SelectionStorage.shouldClear(phase: .noVault))
+        #expect(!SelectionStorage.shouldClear(phase: .unlocked))
     }
 
     // MARK: - PDF export (drag to Finder)

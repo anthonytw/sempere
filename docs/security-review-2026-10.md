@@ -752,3 +752,14 @@ web viewer". Each fix has a test that encodes the attack and fails on the code b
   `setRecording` naming it is invalid instead of an unknown register that could rewrite it. Tests:
   `web/test/captured.test.ts` (mirrors `RecipientsAlertTests.capturedByNamesTheDevice` and
   `CaptureAttributionTests.testMalformedAttributionReadsAsAbsent`).
+- **S13 (Low): on a Mac, window restoration kept notebook and tag names and note titles in plaintext.**
+  The library window's `@SceneStorage` selection (Saved Application State) held `notebook:<path>` or
+  `tag:<name>` and survived closing the vault. Fix: `RestorableSelection` stores a notebook or tag as
+  `notebook#<digest>` / `tag#<digest>`, the `LocalCacheKey` (purpose `selection`) `entryName` of the
+  canonical path or tag key, which `AppModel.restore` resolves against the unlocked vault (older
+  `notebook:`/`tag:` values are still read, never written); the saved selection is cleared when the vault
+  closes (`SelectionStorage.shouldClear`); a note window's title is the note's only while the vault is
+  unlocked. The titles of note windows open at quit can still be in the system's window state:
+  documented in `security.md` and `mac.md`; `format.md` §10.1 lists the purpose. Tests:
+  `NoteWindowTests.theSavedSelectionNamesNoNotebookOrTag` (on the old code the stored value contains the
+  tag and notebook names), `MacSupportTests.aSelectionRoundTripsThroughItsStoredString`.

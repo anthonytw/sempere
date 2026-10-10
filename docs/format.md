@@ -3227,6 +3227,11 @@ It keeps four more, under the same derivation:
 - the **activity** file (purpose `activity`, magic `SMPA` ‖ `0x01`, one entry
   named `activity`, not keyed by `entryName`): the notes "Recognize All" read in
   the last seven days and the recent search queries, kept across launches;
+- the **saved selection** (purpose `selection`, Mac; no file): the library
+  window's selection, which the system keeps in plaintext with its window
+  state, names a notebook or tag only as `entryName("notebook|<canonical
+  path>")` or `entryName("tag|<tag key>")`, resolved against the unlocked
+  vault's notebooks and tags;
 - the **blob cache** (purpose `blob-cache`): decrypted attachment content
   (§8.1), which PDF and image readers need as plain files, so its entries are
   **not** sealed: each file holds a blob's verified content, is named
