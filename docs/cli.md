@@ -423,8 +423,9 @@ another note's blobs. NOTE is an id or a title; without one, every note.
   `-q` prints only the hash). It adds no item; until a revision references
   the blob it is unreferenced. The first blob adds `features: ["attachments"]`
   to `vault.json`.
-- `copy` copies a blob that NOTE `--from` references into NOTE `--to` (a byte
-  copy, verified as it is read), before a revision there uses it.
+- `copy` copies a blob that NOTE `--from` references (SHA256, or a unique
+  prefix of at least 8 digits) into NOTE `--to` (a byte copy, verified as it
+  is read), before a revision there uses it.
 - `unused` shows what the app's Settings → Storage shows, from the same code
   (`AttachmentStorageReport`, `docs/attachments.md` §4): blobs no revision of
   their note references, each with the date this device first found it
