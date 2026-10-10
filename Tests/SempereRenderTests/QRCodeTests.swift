@@ -1,4 +1,5 @@
 import Foundation
+import FuzzSupport
 import XCTest
 @testable import SempereRender
 
@@ -204,6 +205,7 @@ final class QRCodeTests: XCTestCase {
 
     func testZbarDecodesEveryLevelAndManyVersions() throws {
         guard try Self.zbar(Self.png(try QRCode.encode(text: "probe"))) != nil else {
+            if RequiredTools.isRequired("zbar") { XCTFail("zbarimg not installed and SEMPERE_REQUIRE_TOOLS names zbar") }
             throw XCTSkip("zbarimg not installed (apt install zbar-tools)")
         }
         let key = "AGE-SECRET-KEY-1JQ4L7CGCHC2TE7JUJ7YG4Y4DREUWFD7Y6U5XKFZ3EYTNY62Z5PES6MWJVN"

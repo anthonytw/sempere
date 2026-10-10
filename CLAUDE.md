@@ -134,7 +134,8 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   (Xcode 16+): add or remove `.swift` files under `Apps/Sempere/SempereApp/` or
   `SempereAppTests/` without touching the project file. Only new targets,
   package products, build settings or resources need a pbxproj edit; keep object
-  ids as 24 hex digits and check with `plutil -lint`.
+  ids as 24 hex digits and check with `plutil -lint`. Two branches that each take the next
+  free id merge cleanly into a broken project: `release-check.sh` fails on a duplicate id.
 - App tests read the package's fixture vault through a folder reference to
   `Tests/SempereTests/Fixtures` (copied into the test bundle as `Fixtures/`);
   copy the vault to a temp dir before anything could write to it.
@@ -219,10 +220,10 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   `SempereWidgets/`). A new entitlement, package product or API category means updating the
   script's tables, the manifest and `docs/release/app-store.md` in the same PR.
   It also fails on networking (`URLSession`, Network.framework, sockets, WebKit, …) in any
-  non-test folder of `Apps/Sempere` or a linked `Sources/` target outside `NETWORK_ALLOWED` (only
-  the dormant math-model downloader, `MathModels.swift`) and on a non-empty
-  `MathModelCatalog.entries`: the privacy policy says the app makes no connections (DESIGN.md
-  "Network"). The CLI release refuses a CHANGELOG section with `TODO(user)` or no date
+  non-test folder of `Apps/Sempere` or a linked `Sources/` target outside `NETWORK_ALLOWED` (the
+  WebDAV client: `WebDAVRemote.swift`, `SempereWebDAV`'s transport and client; and the dormant
+  math-model downloader, `MathModels.swift`) and on a non-empty `MathModelCatalog.entries`: the
+  privacy policy names the only connections (a WebDAV server the user sets up; DESIGN.md "Network"). The CLI release refuses a CHANGELOG section with `TODO(user)` or no date
   (`scripts/changelog-section.sh`); never fill in the release date yourself.
   `ITSAppUsesNonExemptEncryption` stays `NO` while France is excluded
   (`docs/release/export-compliance.md`). The privacy policy has two copies
@@ -417,6 +418,13 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   elsewhere without `Vault.incomingManifestProblem`. The committed
   `Fixtures/sample.sempere` is tagged; copies share its vault id, so an
   untagged copy reads as a downgrade on a device that wrote to a tagged one.
+  `format` and `features` are authenticated too (`markersTag`, §2.1 "Version
+  markers", `MarkersAuth.swift`, mirrored in `web/src/vault/vault.ts`): every
+  `vault.json` write goes through `Vault.writeManifest(…, secret:)`, which tags
+  them; a test that edits `features` the way an older build would also drops
+  `markersTag` and `markers-tag`, or it reads as tampering (`markers*` reasons).
+  Capture profiles hold their device's capture key (`CaptureKey.derive(from:device:)`,
+  §11.1); `Vault.captureKeyRing` is what verifies inbox files, never one key alone.
 - Remembered vault keys (`VaultKeyStore.swift`, `RememberedKeys.swift`): the
   age identity text is stored only in the Keychain, never logged, never in
   `UserDefaults` or files. Device-only items are
@@ -447,6 +455,14 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   that into ordinary `removeStroke` ops. The pixel eraser stays PencilKit's.
   Radius presets (`ObjectEraserSize`, page points) are in `UserDefaults`
   under `Sempere.objectEraserRadius`; the size menu is in the editor toolbar.
+- The Mac menu-bar item (`docs/mac.md` "Menu-bar item") is an AppKit bundle, target
+  `SempereStatusItem` (`Apps/Sempere/SempereStatusItem/`, SDK macOS, Swift 5 mode), embedded in
+  `PlugIns` for Catalyst only (`platformFilter = maccatalyst` on the dependency and the embed
+  phase). The Catalyst app cannot link AppKit types, so `StatusItemHost` loads the bundle and the
+  two only post notifications on the default center (`StatusItemProtocol`, in `StatusItemShared/`,
+  compiled into both): state and localized titles go in, the chosen entry comes out. The bundle
+  has no strings, no logic and no network; keep it that way. The app must work with it missing.
+  A new entry is a case of `StatusItemProtocol.Action` handled in `StatusItemHost.run`.
 - Mac (Catalyst) behaviour is in `docs/mac.md`. Menu entries are cases of
   `MenuCommand` (title, shortcut, enabling in one place; `MenuCommandTests`
   checks shortcut clashes); never add a menu item elsewhere. Menus act through
@@ -488,6 +504,14 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   A new window, sheet or column layout gets a step there; a new scene must
   inject the app environment, which `AppSceneEnvironmentTests` (Linux) checks,
   along with the wrapper rule above: no view reads the three with a plain `@Environment`.
+- Expectations (`Expectations.swift`, `ExpectationsViews.swift`, `docs/security.md`): "About Your Key"
+  shows by itself once per (vault, key) on a device (`OnboardingMemory`, digests only), then the
+  quick tour once per device; both only in the canvas window, after the unlock sheet and never over
+  the new-vault sheet (`holdsOnboarding`). Scripted debug launches skip them unless
+  `SEMPERE_DEBUG_ONBOARDING` is set. Tour pages claim only what `main` does. The CLI's `--version`
+  and the app's About share `SempereAbout` (Sources/Sempere/About.swift); a new dependency goes in
+  its `components` and the app's `ThirdPartyNotices.txt` (`AboutTests` checks both). Wording: describe
+  the design and its limits, never promise outcomes.
 - Every icon-only control in the app has `.help("…")` (Mac tooltips);
   `scripts/check-help.py` fails the `app` CI job otherwise (`docs/mac.md`
   "Tooltips"). Menu-only view builders are marked `// help-lint: titled`.
@@ -578,6 +602,13 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   `PageStackLayout.revealOffset`): embedded canvases never scroll. "Recognize All" results
   (`recognitionResults`) live in the model until the next run or `close()`, never on disk.
   A run writes each page only if its digest still matches (`RecognitionJob.ops`).
+- Favorites (`meta.favorite`): written only via `NoteOps.setFavorite` (CLI `notes favorite`, the app's
+  `AppModel.setFavorite`); the sidebar's Favorites is `SidebarItem.favorites`. The quick-voice-notes notebook is
+  the capture profile's alone (Settings ▸ Quick Voice Notes); `LegacyVoiceNotebook` only carries over what
+  older builds stored in New Notes. The Mac's item commands (`duplicateItem`, `bringItemToFront`, `deleteItem`)
+  run on the selected item through `CanvasCommandTarget.perform(itemCommand:)`, enabled from
+  `NoteEditor.hasItemSelection` (each canvas reports its page); rotation is `ItemActions.rotate` (menu quarter
+  turns, the controller's `UIRotationGestureRecognizer`).
 - Newer format versions (`format.md` §7): a vault whose `format` is a later
   `sempere/<major>` or whose `features` are unknown, and revisions marked newer
   (their `format`/`features`), open read-only. Newer revisions decode
@@ -600,6 +631,19 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   item's `pageText` register, kept in `extra` (`Item.pageText`): fill it with a
   `PDFTextExtracting` (`BuiltinPDFTextExtractor`, the CLI's `pdftotext`,
   the app's `PDFKitTextExtractor`) through `PDFIngest.withText`.
+- Markdown text boxes (`format.md` §8.2.4 "Markdown text", §8.5.4, PR #129): `markup: "markdown"`; the source
+  IS the box's text (one run, no `breaks`), so older readers show and edit it as plain text. Readers ignore run
+  attributes and `breaks` of such a box; `layout` (rendered breaks as SOURCE offsets) counts only when its `of`
+  equals `MarkdownText.hash` of the text (an older editor keeps the field after changing the source); `math`
+  entries match a formula by latex/display/size/colour (stale ones are ignored, their blobs still referenced).
+  One parser and layout: `MarkdownDocument` / `MarkdownPlan` (core), `MarkdownLayout` / `MarkdownItems`
+  (SempereRender: a box is expanded at `PreparedPage` into text items with fixed breaks, `math` items and an
+  `underlay` of shapes, so every writer and `ItemRaster` draws it), ported in `web/src/format/markdown.ts` and
+  `web/src/render/markdown.ts`: change all of them together and regenerate `Fixtures/text/markdown.json`
+  (`SEMPERE_WRITE_MARKDOWN_FIXTURE=1 swift test --filter MarkdownLayoutTests`) and the web goldens. Writers relayout
+  with `MarkdownLayout.relayout` (the app through `TextKitBreaks.relayout`, the CLI through `laidOutText`). Search
+  and reports use `MarkdownText.searchText`. The app typesets formulas on close (`NoteEditor.preparedMarkdown`:
+  renders first, then one delta); the CLI never typesets.
 - Recordings (tasks E4, E5, `docs/attachments.md` §14): pure logic (format, `RecordingTimeline`,
   `RecordingSync`, `TranscriptBuilder`, `TranscriptionLanguage`) in `Sources/Sempere/RecordingSupport.swift`;
   the Speech framework only in `Sources/SempereSpeech` (behind `#if canImport(Speech)`, shared by the app and
@@ -687,6 +731,18 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   `AppModel*` needs a `String(localized:)` shim (the Linux Foundation lacks the interpolated
   form and `comment:`). `scripts/app.sh pseudo` checks double-length, right-to-left and
   Spanish layouts.
+- WebDAV vaults in the app (`AppModel+WebDAV`, `WebDAVSession`, docs/io.md "WebDAV vaults in the
+  app"): a local copy in Application Support (`WebDAVLocalCopy`, `WebDAVLocationStore`) opened like any
+  folder, and a push-only sync (`WebDAVLocalCopy.push`: `pushOnly` + `keepServerChanges`) scheduled by
+  `WebDAVPushSchedule`; never take anything from the server except through a download into a new copy
+  (`download`, `redownload`). The password is only in the Keychain (`KeychainWebDAVPasswordStore`);
+  certificate pins are checked by `PinnedServerTrust` (Security, app only) behind the library's
+  `WebDAVServerTrust` hook, never by disabling evaluation. Key changes are refused for a WebDAV copy
+  (`requireLocalKeyChanges`): a rewrap in place never reaches the server. App tests use
+  `FakeWebDAVRemote` and `MemoryWebDAVPasswordStore`; the library's sync runs against wsgidav
+  (`scripts/test-webdav.sh`). A recent WebDAV vault is a `RecentVault` with `webdav` set and no bookmark.
+- Vaults in another app's provider storage (`StorageLocation`) are coordinated like iCloud ones
+  (`isCloudVault`), even when the provider does not report its files as ubiquitous.
 - Web viewer (`web/`, `docs/web-viewer.md`): a TypeScript port of the reader
   (`NoteReducer`, `SempereRender`, framing, decoding rules). A change to
   merging, decoding or rendering in Swift needs the same change in

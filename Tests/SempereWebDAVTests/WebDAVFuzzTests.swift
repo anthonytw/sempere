@@ -185,6 +185,36 @@ final class WebDAVFuzzTests: SyncTestCase {
         })
     }
 
+    /// "Test Connection" and the vault list against a server whose listings and
+    /// manifests are mutated: no trap or hang, and whatever is listed is safe to
+    /// show (escaped, bounded) and names a UUID vault id.
+    func testFuzzConnectionCheck() throws {
+        let server = MockDAV()
+        _ = try makeVault()
+        try sync("A", server)
+        let corpus = [try vaultJSON("A"), Self.laughs]
+        assertClean(Fuzz.run("connection-check", seeds: [Data([1]), try vaultJSON("A")], quick: 300) { input in
+            var seed: UInt64 = 0xDA7
+            for b in input { seed = (seed ^ UInt64(b)) &* 0x100_0000_01B3 }
+            if let f = WebDAVConnection.manifestFields(input), UUID(uuidString: f.vaultId) == nil {
+                return "manifestFields accepted a vault id that is not a UUID"
+            }
+            let hostile = HostileDAV(inner: server, seed: seed, corpus: corpus.map { [UInt8]($0) })
+            for path in ["/dav/", "/dav/vault/"] {
+                guard let c = try? WebDAVClient(baseURL: URL(string: "https://dav.example.com\(path)")!, transport: hostile),
+                      let r = try? WebDAVConnection.check(c) else { continue }
+                for v in r.vaults {
+                    if v.name.count > WebDAVConnection.maxNameLength { return "unbounded name" }
+                    if v.name.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) {
+                        return "control character in a name"
+                    }
+                    if UUID(uuidString: v.vaultId) == nil { return "vault id \(v.vaultId) is not a UUID" }
+                }
+            }
+            return nil
+        })
+    }
+
     final class Counter: @unchecked Sendable {
         private var n = 0
         private let lock = NSLock()

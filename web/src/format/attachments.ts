@@ -152,8 +152,12 @@ function blobRef(v: unknown, path: string, c: Ctx): JSONObject {
 // MARK: - Text (§8.2.4)
 
 const textLimits = { utf8Bytes: 65_536, runs: 1_000, breaks: 10_000, size: 1_000 };
-const runKeys: ReadonlySet<string> = new Set(["t", "b", "i", "u", "s", "color", "size", "lang"]);
-const textKeys: ReadonlySet<string> = new Set(["font", "family", "size", "color", "align", "dir", "lang", "runs", "breaks"]);
+const runKeys: ReadonlySet<string> = new Set(["t", "b", "i", "u", "s", "color", "size", "lang", "font"]);
+const textKeys: ReadonlySet<string> = new Set(["font", "family", "size", "color", "align", "dir", "lang", "runs", "breaks",
+  "markup", "layout", "math"]);
+const layoutKeys: ReadonlySet<string> = new Set(["of", "breaks"]);
+/** Most typeset formulas of one Markdown box (Swift `TextContent.Limits.formulas`). */
+const maxFormulas = 1000;
 
 function isValidTextSize(s: number): boolean {
   const r = round3(s);
@@ -185,6 +189,7 @@ function textRun(v: unknown, path: string, c: Ctx): string {
   optWith(o, "color", path, color);
   const sz = optWith(o, "size", path, num);
   optWith(o, "lang", path, str);
+  optWith(o, "font", path, str);
   extra(o, runKeys, path, c.depth, c.budget);
   if (sz !== undefined && !isValidTextSize(sz)) fail(path, "run size out of range");
   if (!isValidRunText(t)) fail(path, "run text holds a control character");
@@ -211,10 +216,44 @@ function textContent(v: unknown, path: string, c: Ctx): JSONObject {
   const runCtx = child(child(c));
   const runs = reqWith(o, "runs", path, (r, p) => bounded(r, p, textLimits.runs, (e, q) => textRun(e, q, runCtx)));
   optWith(o, "breaks", path, (b, p) => bounded(b, p, textLimits.breaks, int));
+  // Markdown boxes (§8.2.4 "Markdown text"): Swift `RenderedLayout`, `TypesetFormula`.
+  optWith(o, "markup", path, str);
+  optWith(o, "layout", path, (l, p) => renderedLayout(l, p, child(c)));
+  optWith(o, "math", path, (m, p) => bounded(m, p, maxFormulas, (e, q) => typesetFormula(e, q, child(child(c)))));
   extra(o, textKeys, path, c.depth, c.budget);
   // `limitViolation`; the run and break counts were checked above.
   if (!isValidTextSize(sz)) fail(path, "text size out of range");
   if (utf8Length(runs.join("")) > textLimits.utf8Bytes) fail(path, `text longer than ${textLimits.utf8Bytes} bytes`);
+  return o;
+}
+
+/** A Markdown box's `layout` (Swift `RenderedLayout`). */
+function renderedLayout(v: unknown, path: string, c: Ctx): JSONObject {
+  const o = obj(v, path);
+  const of = reqWith(o, "of", path, str);
+  const breaks = reqWith(o, "breaks", path, (b, p) => bounded(b, p, textLimits.breaks, int));
+  extra(o, layoutKeys, path, c.depth, c.budget);
+  if (!/^[0-9a-f]{8}$/.test(of)) fail(path, "layout hash is not 8 lowercase hexadecimal digits");
+  let last = -1;
+  for (const b of breaks) {
+    if (!(b > last)) fail(path, "layout breaks are not strictly increasing");
+    last = b;
+  }
+  return o;
+}
+
+/** A Markdown box's typeset formula (Swift `TypesetFormula`): a math value with its render and a depth. */
+function typesetFormula(v: unknown, path: string, c: Ctx): JSONObject {
+  const o = mathContent(v, path, c);
+  const depth = o.depth;
+  if (typeof depth !== "number") fail(path, "typeset formula without a depth");
+  const rs = o.renderSize;
+  if (o.render === undefined || !Array.isArray(rs)) fail(path, "typeset formula without a render");
+  const h = Array.isArray(rs) && typeof rs[1] === "number" ? rs[1] : 0;
+  const d = typeof depth === "number" ? depth : NaN;
+  if (!Number.isFinite(d) || Math.round(d * 1000) / 1000 < 0 || Math.round(d * 1000) / 1000 > Math.round(h * 1000) / 1000) {
+    fail(path, "formula depth out of range");
+  }
   return o;
 }
 

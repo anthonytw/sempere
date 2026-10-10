@@ -75,7 +75,7 @@ jobs:
       - name: Verify the CLI is static and reports the tag's version
         run: |
           bin=.build/release/sempere
-          test "$($bin --version)" = "${{ needs.prepare.outputs.version }}"
+          test "$($bin --version | sed -n 1p)" = "sempere ${{ needs.prepare.outputs.version }}"
           ldd "$bin"
           if ldd "$bin" | grep -Eq 'libswift|libFoundation'; then echo "not static" >&2; exit 1; fi
       - name: Package
@@ -101,7 +101,7 @@ jobs:
           bin="$(swift build -c release --product sempere --arch arm64 --arch x86_64 --show-bin-path)/sempere"
           lipo -archs "$bin" | tee /dev/stderr | grep -q arm64
           lipo -archs "$bin" | grep -q x86_64
-          test "$("$bin" --version)" = "${{ needs.prepare.outputs.version }}"
+          test "$("$bin" --version | sed -n 1p)" = "sempere ${{ needs.prepare.outputs.version }}"
           echo "BIN=$bin" >> "$GITHUB_ENV"
       - name: Package
         run: scripts/package-cli.sh "$BIN" "${{ needs.prepare.outputs.version }}" macos-universal dist

@@ -16,6 +16,8 @@ import UIKit
 /// - `SEMPERE_DEBUG_SNAPSHOT`: path to write a PNG of the canvas to, once shown.
 /// - `SEMPERE_DEMO`: a synthetic vault for the App Store screenshots (`DemoLaunch`).
 /// - `SEMPERE_DEBUG_FRESH`: start as a first launch (`resetForFreshLaunch`).
+/// - `SEMPERE_DEBUG_ONBOARDING`: show the key notice and the quick tour by themselves, which
+///   every other scripted launch skips (`OnboardingPolicy.automatic`).
 ///
 /// Release builds compile none of this.
 enum DebugLaunch {

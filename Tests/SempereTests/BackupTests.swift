@@ -214,6 +214,24 @@ final class BackupTests: VaultTestCase {
         }
     }
 
+    func testSharedSettingsAreBackedUpVersionedAndRestored() throws {
+        var s = SharedSettings()
+        try s.set(SettingSlotKey("photos.removeMetadata"), to: .bool(false), type: .ipad, now: wallAt(baseMillis))
+        try vault.writeSharedSettings(s)
+        let first = try Backup.run(source: vault, to: dest)
+        XCTAssertTrue(first.copied.contains("settings.age"))
+        XCTAssertEqual(first.copied.suffix(2), ["settings.age", "vault.json"], "with the small mutable files, last")
+        try s.set(SettingSlotKey("photos.removeMetadata"), to: .bool(true), type: .mac, now: wallAt(baseMillis + 1))
+        try vault.writeSharedSettings(s)
+        let second = try Backup.run(source: vault, to: dest)
+        XCTAssertEqual(second.replaced, ["settings.age"])
+        XCTAssertTrue(second.versioned.contains { $0.hasSuffix("/settings.age") }, "the previous copy is kept")
+        XCTAssertTrue(Backup.verify(at: dest, identities: [id]).isHealthy)
+        let target = tmp.appendingPathComponent("Restored.sempere")
+        XCTAssertTrue(try Backup.restore(from: dest, to: target, identities: [id]).errors.isEmpty)
+        XCTAssertEqual(try Vault.open(at: target, identities: [id]).readSharedSettings(), s)
+    }
+
     // MARK: - Status, preview and protected targets
 
     func testStatusReadsTheIndexOnly() throws {
@@ -244,6 +262,59 @@ final class BackupTests: VaultTestCase {
         XCTAssertEqual(later.updated, t0.addingTimeInterval(120))
         XCTAssertGreaterThan(later.versionFiles, 0)
         XCTAssertEqual(later.totalBytes, later.bytes + later.versionBytes)
+    }
+
+    /// `completed` (the overdue check's base) moves only with a run that
+    /// finished without a file error; `updated` moves with every run.
+    func testCompletedCountsOnlyRunsWithoutErrors() throws {
+        let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertThrowsError(try Backup.run(source: vault, to: dest, options: BackupOptions(now: t0, afterEachFile: { _ in
+            throw Stop()
+        })))
+        let cut = try Backup.status(at: dest)
+        XCTAssertNil(cut.completed, "an interrupted first run is no backup")
+        XCTAssertEqual(cut.lastBackupBase, t0, "counted from the folder's first run")
+
+        _ = try Backup.run(source: vault, to: dest, options: BackupOptions(now: t0.addingTimeInterval(60)))
+        XCTAssertEqual(try Backup.status(at: dest).completed, t0.addingTimeInterval(60))
+
+        // A file that cannot be written (a directory in its place) is an error: `completed` stays.
+        try vault.writeIdentityFile(id, passphrase: "pw", workFactor: 15)
+        let key = try XCTUnwrap(try Backup.formatFiles(in: vault.url).first { $0.hasPrefix("keys/") })
+        try FileManager.default.createDirectory(at: Backup.url(dest, key), withIntermediateDirectories: true)
+        let failed = try Backup.run(source: vault, to: dest, options: BackupOptions(now: t0.addingTimeInterval(120)))
+        XCTAssertEqual(failed.errors.map(\.path), [key])
+        let after = try Backup.status(at: dest)
+        XCTAssertEqual(after.updated, t0.addingTimeInterval(120))
+        XCTAssertEqual(after.completed, t0.addingTimeInterval(60))
+
+        // An index written before the field: decodes, and counts from `created`.
+        let url = dest.appendingPathComponent(BackupManifest.fileName)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        json["completed"] = nil
+        try JSONSerialization.data(withJSONObject: json).write(to: url)
+        XCTAssertNil(try Backup.status(at: dest).completed)
+        XCTAssertEqual(try Backup.status(at: dest).lastBackupBase, t0)
+    }
+
+    func testOverdueRule() throws {
+        let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+        let day: TimeInterval = 86_400
+        var s = BackupStatus(vaultId: "v", created: t0, updated: t0, completed: t0.addingTimeInterval(day), notes: 0,
+                             files: 0, bytes: 0, versionFiles: 0, versionBytes: 0, totalBytes: 0)
+        XCTAssertEqual(s.dueDate(maxAgeDays: 7), t0.addingTimeInterval(8 * day))
+        XCTAssertFalse(s.isOverdue(maxAgeDays: 7, now: t0.addingTimeInterval(8 * day - 1)))
+        XCTAssertTrue(s.isOverdue(maxAgeDays: 7, now: t0.addingTimeInterval(8 * day)))
+        s.completed = nil
+        XCTAssertTrue(s.isOverdue(maxAgeDays: 7, now: t0.addingTimeInterval(7 * day)), "never completed: from created")
+        // A date far ahead of the clock is not trusted to postpone the check.
+        s.completed = t0.addingTimeInterval(400 * day)
+        XCTAssertTrue(s.isOverdue(maxAgeDays: 7, now: t0))
+        s.completed = t0.addingTimeInterval(day / 2)
+        XCTAssertFalse(s.isOverdue(maxAgeDays: 7, now: t0), "a little clock skew is tolerated")
+        // Out-of-range days are clamped, never overflow.
+        XCTAssertEqual(BackupSchedule.dueDate(since: t0, days: .max), t0.addingTimeInterval(3650 * day))
+        XCTAssertEqual(BackupSchedule.dueDate(since: t0, days: -3), t0)
     }
 
     func testStatusClampsHostileSizes() throws {

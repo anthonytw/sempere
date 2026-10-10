@@ -125,7 +125,7 @@ extension AppModel {
             if !tags.contains(where: { NoteOps.tagKey($0) == NoteOps.tagKey(tag) }) { item = .allNotes }
         case .recentlyRecognized:
             if recentlyRecognizedNotes.isEmpty { item = .allNotes }
-        case .allNotes, .deleted:
+        case .allNotes, .deleted, .favorites:
             break
         }
         sidebarSelection = item

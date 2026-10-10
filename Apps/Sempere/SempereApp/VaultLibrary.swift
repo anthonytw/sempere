@@ -69,15 +69,19 @@ enum VaultLocator {
     }
 }
 
-/// A vault the app has opened before, reachable through a bookmark.
+/// A vault the app has opened before, reachable through a bookmark, or a
+/// WebDAV location's local copy.
 struct RecentVault: Codable, Identifiable, Hashable, Sendable {
     var id: UUID
     /// Folder name without `.sempere`, for display.
     var name: String
     /// Bookmark of the vault folder. On iOS a bookmark made from a
-    /// document-picker URL carries its security scope.
+    /// document-picker URL carries its security scope. Empty for a WebDAV vault.
     var bookmark: Data
     var lastOpened: Date
+    /// The WebDAV location (`WebDAVLocationStore`) whose local copy this is;
+    /// nil for a folder. Opened with `AppModel.openWebDAV`, never through the bookmark.
+    var webdav: UUID?
 }
 
 /// Whether the app may use a folder it was given access to (a picked folder,
@@ -265,9 +269,29 @@ final class VaultLibrary {
         return entry
     }
 
+    /// Records that the local copy of the WebDAV location `location` was opened.
+    @discardableResult
+    func rememberWebDAV(_ location: UUID, name: String) -> RecentVault {
+        recents.removeAll { $0.webdav == location }
+        let entry = RecentVault(id: UUID(), name: name, bookmark: Data(), lastOpened: Date(), webdav: location)
+        recents.insert(entry, at: 0)
+        if recents.count > Self.maxRecents { recents.removeLast(recents.count - Self.maxRecents) }
+        save()
+        return entry
+    }
+
+    /// Drops the recent entries of the WebDAV location `location` (it was removed).
+    func forgetWebDAV(_ location: UUID) {
+        guard recents.contains(where: { $0.webdav == location }) else { return }
+        recents.removeAll { $0.webdav == location }
+        save()
+    }
+
     /// Resolves a recent entry to a URL, re-saving a stale bookmark. A
-    /// bookmark that no longer resolves is dropped from the list.
+    /// bookmark that no longer resolves is dropped from the list. A WebDAV
+    /// entry has no bookmark: `AppModel.open(recent:)` opens it by its location.
     func resolve(_ entry: RecentVault) throws -> URL {
+        if entry.webdav != nil { throw LibraryError.cannotResolve(name: entry.name) }
         do {
             let resolved = try VaultBookmark.resolve(entry.bookmark)
             if let fresh = resolved.refreshed, let i = recents.firstIndex(where: { $0.id == entry.id }) {

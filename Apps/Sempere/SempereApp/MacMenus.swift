@@ -46,6 +46,13 @@ enum MacMenus {
                             input: String(shortcut.key), modifierFlags: flags, propertyList: command.rawValue)
     }
 
+    /// A menu item with no key equivalent for `command` (About Sempere, the Help
+    /// menu), sent to the focused window like `nativeItem`.
+    @MainActor
+    static func nativeCommand(_ command: MenuCommand) -> UICommand {
+        UICommand(title: command.title, action: #selector(UIWindow.sempereMenuCommand(_:)), propertyList: command.rawValue)
+    }
+
     /// Rebuilds the File and Edit menus being built: UIKit's Open… and Find
     /// become Open Vault… and Find Notes, its document commands and New
     /// Window go.
@@ -78,6 +85,16 @@ enum MacMenus {
                 builder.insertChild(menu, atStartOfMenu: .application)
             }
             built.append("Settings… added")
+        }
+        if builder.menu(for: .about) != nil {
+            // UIKit's About opens the standard panel: the app's About shows the licence, links and acknowledgements.
+            builder.replaceChildren(ofMenu: .about) { _ in [nativeCommand(.showAbout)] }
+            built.append("about → About Sempere")
+        }
+        if builder.menu(for: .help) != nil {
+            // UIKit's "Sempere Help" opens no help book: the tour and the key notice instead.
+            builder.replaceChildren(ofMenu: .help) { _ in MenuLayout.help.flatMap { $0 }.map { nativeCommand($0) as UIMenuElement } }
+            built.append("help → Quick Tour, About Your Key")
         }
         for identifier in pruned {
             guard let menu = builder.menu(for: identifier) else { continue }
@@ -134,9 +151,22 @@ final class MenuRouting {
     static let settingsSceneID = SceneRestoration.settingsSceneID
 
     private var routers: [ObjectIdentifier: CommandRouter] = [:]
+    private var scenes: [ObjectIdentifier: WeakScene] = [:]
+
+    private struct WeakScene {
+        weak var scene: UIWindowScene?
+    }
 
     func set(_ router: CommandRouter?, for scene: UIWindowScene) {
-        routers[ObjectIdentifier(scene)] = router
+        let id = ObjectIdentifier(scene)
+        routers[id] = router
+        scenes[id] = router == nil ? nil : WeakScene(scene: scene)
+    }
+
+    /// A scene showing a library window (the menu-bar item brings it forward).
+    func libraryScene() -> UIWindowScene? {
+        routers.first { $0.value.context.window == .library && scenes[$0.key]?.scene != nil }
+            .flatMap { scenes[$0.key]?.scene }
     }
 
     func router(for scene: UIWindowScene?) -> CommandRouter? {

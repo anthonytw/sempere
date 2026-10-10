@@ -76,7 +76,7 @@ struct NoteWindowValue: Codable, Hashable, Sendable {
 /// The library window's selection, saved with the scene (`@SceneStorage`) and
 /// applied once the vault is unlocked again.
 struct RestorableSelection: Codable, Equatable, Sendable {
-    /// `all`, `deleted`, `notebook:<path>` or `tag:<name>`.
+    /// `all`, `deleted`, `favorites`, `recognized`, `notebook:<path>` or `tag:<name>`.
     var sidebar: String
     var note: UUID?
     /// The vault the selection belongs to.
@@ -87,6 +87,7 @@ struct RestorableSelection: Codable, Equatable, Sendable {
     var sidebarItem: SidebarItem {
         if sidebar == "deleted" { return .deleted }
         if sidebar == "recognized" { return .recentlyRecognized }
+        if sidebar == "favorites" { return .favorites }
         if sidebar.hasPrefix("notebook:") { return .notebook(String(sidebar.dropFirst("notebook:".count))) }
         if sidebar.hasPrefix("tag:") { return .tag(String(sidebar.dropFirst("tag:".count))) }
         return .allNotes
@@ -96,6 +97,7 @@ struct RestorableSelection: Codable, Equatable, Sendable {
         switch item ?? .allNotes {
         case .allNotes: return "all"
         case .recentlyRecognized: return "recognized"
+        case .favorites: return "favorites"
         case .deleted: return "deleted"
         case .notebook(let path): return "notebook:" + path
         case .tag(let tag): return "tag:" + tag

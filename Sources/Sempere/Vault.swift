@@ -131,7 +131,7 @@ public struct Vault: Sendable {
     /// The `.sempere` directory.
     public let url: URL
     /// The manifest as last read or written.
-    public private(set) var manifest: VaultManifest
+    public internal(set) var manifest: VaultManifest
     let identities: [any AgeIdentity]
     /// The vault secret; nil when locked.
     private(set) var secret: VaultSecret?
@@ -149,7 +149,7 @@ public struct Vault: Sendable {
     let readOnlyLatch = ReadOnlyLatch()
     /// How `vault.json`'s recipients checked when the vault was unlocked or
     /// last changed (format.md §2.1); `.notChecked` while locked.
-    public private(set) var recipientsStatus: RecipientsStatus = .notChecked
+    public internal(set) var recipientsStatus: RecipientsStatus = .notChecked
     /// Where this device keeps its trust record (format.md §2.1); nil keeps
     /// none (tests): downgrades are then caught by `features` alone, and
     /// every secret is a first use.
@@ -240,7 +240,10 @@ public struct Vault: Sendable {
         try requireTrustedRecipients()
         switch recipientsStatus {
         case .untagged: try tagOnDisk()
-        case .verified: try rememberRecipients()   // a writer keeps a trust record (format.md §2.1)
+        case .verified:
+            try rememberRecipients()   // a writer keeps a trust record (format.md §2.1)
+            // Markers written before they were authenticated are tagged by the first write (N3).
+            if manifest.markersTag == nil { try tagMarkersOnDisk() }
         case .notChecked, .tampered: break
         }
     }
@@ -266,8 +269,13 @@ public struct Vault: Sendable {
         if manifest.features.contains(feature) { return }
         var onDisk = try Self.readManifest(FileIO.read(manifestURL, maxBytes: BoundedRead.maxManifestBytes))
         if onDisk.features.contains(feature) { return }
+        let secret = try requireSecret()
+        // Never re-tag markers someone changed on disk since the vault was opened (format.md §2.1).
+        guard onDisk.markersIntact(secret: secret) else {
+            throw VaultError.manifestCorrupt("vault.json's version markers changed since it was opened; open the vault again")
+        }
         onDisk.features.append(feature)
-        _ = try Self.writeManifest(onDisk, to: manifestURL, replacing: true)
+        _ = try Self.writeManifest(onDisk, to: manifestURL, replacing: true, secret: secret)
     }
 
     /// Test seam (internal): a blob rename stops (`VaultError.interrupted`)
@@ -338,7 +346,7 @@ public struct Vault: Sendable {
         try FileIO.createDirectory(url)
         try FileIO.createDirectory(url.appendingPathComponent(keysName))
         try FileIO.createDirectory(url.appendingPathComponent(notesName))
-        let written = try writeManifest(manifest, to: manifestURL, replacing: false)
+        let written = try writeManifest(manifest, to: manifestURL, replacing: false, secret: secret)
         var vault = Vault(url: url, manifest: written, identities: identities, secret: secret, previousSecret: nil,
                           journalProblem: nil, recipientsStatus: .verified(.firstUse), trustStore: trust)
         try? vault.rememberRecipients()   // else saved by the first write (requireWritable)
@@ -430,8 +438,12 @@ public struct Vault: Sendable {
     }
 
     /// Writes the manifest atomically and returns it as it will read back
-    /// (dates at millisecond precision).
-    static func writeManifest(_ m: VaultManifest, to url: URL, replacing: Bool) throws -> VaultManifest {
+    /// (dates at millisecond precision). Its version markers are tagged under
+    /// `secret` (format.md §2.1 "Version markers"): every write of `vault.json`
+    /// by this implementation carries `markersTag` for what it writes.
+    static func writeManifest(_ m: VaultManifest, to url: URL, replacing: Bool, secret: VaultSecret) throws -> VaultManifest {
+        var m = m
+        m.tagMarkers(secret: secret)
         let data = try m.encoded()
         try FileIO.writeAtomically(data, to: url, replacing: replacing)
         return try VaultManifest.decode(data)
@@ -510,6 +522,10 @@ public struct Vault: Sendable {
         /// device cannot decrypt them: never adopted, so they do not keep
         /// the journal.
         public var inboxSkipped: [String] = []
+        /// `settings.age` (format.md §13) when it was left as it is because it
+        /// cannot be decrypted or verified here: it does not keep the journal,
+        /// and the next settings write replaces it.
+        public var settingsSkipped: [String] = []
 
         public init() {}
 
@@ -522,6 +538,7 @@ public struct Vault: Sendable {
             blobMethod = o.blobMethod ?? blobMethod
             failures.merge(o.failures) { $1 }
             inboxSkipped += o.inboxSkipped
+            settingsSkipped += o.settingsSkipped
         }
     }
 
@@ -673,8 +690,10 @@ public struct Vault: Sendable {
     /// Rewraps, then removes the journal only if every file is complete.
     /// Otherwise the journal (and the outgoing secret in it) stays, so the
     /// files that failed can still be verified and rewrapped by a retry.
-    mutating func finishRewrap(blobs: RewrapMethod, stopAfter: Int?) throws -> RewrapReport {
-        let report = try rewrapNotes(blobs: blobs, stopAfter: stopAfter)
+    ///
+    /// `rotating` is true only in the run that rotated the secret (C3).
+    mutating func finishRewrap(blobs: RewrapMethod, stopAfter: Int?, rotating: Bool = false) throws -> RewrapReport {
+        let report = try rewrapNotes(blobs: blobs, stopAfter: stopAfter, rotating: rotating)
         guard report.isComplete else { return report }
         try FileIO.remove(journalURL)
         previousSecret = nil
@@ -697,9 +716,18 @@ public struct Vault: Sendable {
         // `features` as on disk: a blob writer may have added one since open.
         // A newer vault.json synced in since open makes the vault read-only
         // (format.md §7.3): refuse before the journal is written.
-        let onDisk = (try? Self.readManifest(FileIO.read(manifestURL, maxBytes: BoundedRead.maxManifestBytes))) ?? manifest
+        var onDisk = (try? Self.readManifest(FileIO.read(manifestURL, maxBytes: BoundedRead.maxManifestBytes))) ?? manifest
         let reasons = Self.readOnlyReasons(onDisk)
         if !reasons.isEmpty { throw VaultError.readOnly(reasons) }
+        // Markers changed on disk since open are not re-tagged under the new secret (N3).
+        // A repair restores them instead: the larger of those on disk and this
+        // device's record, as `repairMarkers` would (an attacker who changed the
+        // list may have changed them too, and neither repair could run first).
+        if repairing {
+            onDisk = try Self.restoringMarkers(onDisk, recorded: recordedMarkers)
+        } else if !onDisk.markersIntact(secret: current) {
+            throw VaultError.manifestCorrupt("vault.json's version markers changed since it was opened; open the vault again")
+        }
         let ageNext = try next.map { r in
             do { return try NativeRecipient(string: r.key) } catch { throw VaultError.invalidRecipient(r.key) }
         }
@@ -721,12 +749,12 @@ public struct Vault: Sendable {
         m.recipientsTag = RecipientsAuth.tag(vaultId: m.vaultId, keys: next.map(\.key), secret: newSecret)
         Self.addAuthFeatures(&m)
         m.secretLink = link
-        manifest = try Self.writeManifest(m, to: manifestURL, replacing: true)
+        manifest = try Self.writeManifest(m, to: manifestURL, replacing: true, secret: newSecret)
         secret = newSecret
         recipientsStatus = .verified(.unchanged)
         try? rememberRecipients()   // else saved by the next write (requireWritable)
 
-        return try finishRewrap(blobs: method, stopAfter: stopAfter)
+        return try finishRewrap(blobs: method, stopAfter: stopAfter, rotating: rotate)
     }
 
     // MARK: - Authenticated recipients (format.md §2.1)
@@ -738,11 +766,21 @@ public struct Vault: Sendable {
     /// With `replacing`, the record is saved without reading the old one
     /// (the user confirmed the list: an unreadable record is replaced).
     /// A legacy (`sempere-trust/1`) record is replaced by a signed one here.
-    func rememberRecipients(replacing: Bool = false) throws {
+    ///
+    /// The record keeps the version markers last verified (`markers`, else
+    /// those of `manifest` when tagged, format.md §2.1 "Version markers"),
+    /// never fewer than it held: they only grow.
+    func rememberRecipients(replacing: Bool = false, markers: VaultMarkers? = nil) throws {
         guard let trustStore, let secret else { return }
-        let record = try RecipientsTrustRecord(vaultId: vaultId, secret: secret, recipients: manifest.recipients.map(\.key))
+        var record = try RecipientsTrustRecord(vaultId: vaultId, secret: secret, recipients: manifest.recipients.map(\.key),
+                                               markers: markers ?? (manifest.markersTag != nil ? VaultMarkers(manifest) : nil))
+        if let memo = trustMemo.last, memo.vaultId == vaultId, let seen = memo.markers {
+            record.markers = record.markers.map { $0.merged(with: seen) } ?? seen
+        }
         guard replacing || trustMemo.last != record else { return }
-        if try replacing || trustStore.record(for: vaultId) != record { try trustStore.save(record) }
+        let stored = replacing ? nil : try trustStore.record(for: vaultId)
+        if let seen = stored?.markers { record.markers = record.markers.map { $0.merged(with: seen) } ?? seen }
+        if replacing || stored != record { try trustStore.save(record) }
         trustMemo.last = record
     }
 
@@ -790,9 +828,13 @@ public struct Vault: Sendable {
         m.recipientsTag = RecipientsAuth.tag(vaultId: m.vaultId, keys: keys, secret: secret)
         m.secretLink = try upgradedLink(m.secretLink).link
         Self.addAuthFeatures(&m)
-        let written = try Self.writeManifest(m, to: manifestURL, replacing: true)
+        guard m.markersIntact(secret: secret) else {
+            throw VaultError.manifestCorrupt("vault.json's version markers changed since it was opened; open the vault again")
+        }
+        let written = try Self.writeManifest(m, to: manifestURL, replacing: true, secret: secret)
         if let trustStore {
-            let record = try RecipientsTrustRecord(vaultId: vaultId, secret: secret, recipients: keys)
+            let record = try RecipientsTrustRecord(vaultId: vaultId, secret: secret, recipients: keys,
+                                                   markers: VaultMarkers(written))
             try trustStore.save(record)
             trustMemo.last = record
         }
@@ -819,7 +861,8 @@ public struct Vault: Sendable {
         var m = try Self.readManifest(FileIO.read(manifestURL, maxBytes: BoundedRead.maxManifestBytes))
         guard m.recipients.map(\.key) == manifest.recipients.map(\.key), m.vaultSecret == manifest.vaultSecret,
               let tag = m.recipientsTag,
-              RecipientsAuth.verifyTag(tag, vaultId: vaultId, keys: m.recipients.map(\.key), secret: secret) else {
+              RecipientsAuth.verifyTag(tag, vaultId: vaultId, keys: m.recipients.map(\.key), secret: secret),
+              m.markersIntact(secret: secret) else {
             throw VaultError.manifestCorrupt("vault.json changed since it was opened; open the vault again")
         }
         if case .untagged = recipientsStatus {   // `requireWritable` just tagged it on disk
@@ -834,7 +877,7 @@ public struct Vault: Sendable {
         }
         m.secretLink = link
         Self.addAuthFeatures(&m)
-        manifest = try Self.writeManifest(m, to: manifestURL, replacing: true)
+        manifest = try Self.writeManifest(m, to: manifestURL, replacing: true, secret: secret)
         return SecretLinkUpgrade(link: change, featureAdded: featureAdded, recordUpgraded: recordUpgraded)
     }
 
@@ -898,6 +941,12 @@ public struct Vault: Sendable {
         guard problem.reason != .tagMismatch else {
             throw VaultError.recipientsNotRepairable("the tag does not verify: repair the list instead")
         }
+        // Version markers changed without the key are never confirmed away:
+        // only `repairMarkers` restores them (format.md §2.1 "Version markers").
+        guard !problem.reason.isMarkers else {
+            throw VaultError.recipientsNotRepairable("the vault's format or features were changed without its key: "
+                + "repair them instead (sempere vault markers repair)")
+        }
         // A device whose trust record is unreadable confirms only a list it
         // can check: tagged under the secret it holds, or untagged (then
         // tagged now), never a tag that does not verify (R5).
@@ -914,6 +963,22 @@ public struct Vault: Sendable {
                 throw VaultError.recipientsNotRepairable("the vault's secret was replaced and its list carries no tag that "
                     + "verifies: restore vault.json from a backup or another device")
             }
+        }
+        // Nor does confirming the list accept markers that do not check: the
+        // list's problems are decided before the markers are looked at (N3).
+        // They are restored instead, as a repair would: the larger of those on
+        // disk and this device's record, tagged (markers only grow, so this
+        // never lowers them; a backup older than both tags needs it).
+        let secret = try requireSecret()
+        let recorded = (try? trustStore?.record(for: vaultId)) ?? nil
+        if RecipientsAuth.markersProblem(manifest, secret: secret, record: recorded) != nil {
+            let m = try Self.readManifest(FileIO.read(manifestURL, maxBytes: BoundedRead.maxManifestBytes))
+            guard m.recipients.map(\.key) == manifest.recipients.map(\.key), m.vaultSecret == manifest.vaultSecret else {
+                throw VaultError.manifestCorrupt("vault.json changed since it was opened; open the vault again")
+            }
+            try requireNotReadOnly()
+            manifest = try Self.writeManifest(try Self.restoringMarkers(m, recorded: recorded?.markers), to: manifestURL,
+                                              replacing: true, secret: secret)
         }
         if manifest.recipientsTag == nil { manifest = try tagOnDisk() }   // a tag removed: written again for this list
         recipientsStatus = .verified(.unchanged)
@@ -961,7 +1026,7 @@ public struct Vault: Sendable {
     /// matching type per recipient (and no other stanzas) and its tag
     /// verifies under the current secret; such files are skipped, which is
     /// what makes a second run finish an interrupted one.
-    func rewrapNotes(blobs: RewrapMethod = .reencrypt, stopAfter: Int?) throws -> RewrapReport {
+    func rewrapNotes(blobs: RewrapMethod = .reencrypt, stopAfter: Int?, rotating: Bool = false) throws -> RewrapReport {
         let current = try requireSecret()
         let recips = try ageRecipients()
         let expected = Self.expectedStanzas(recips)
@@ -1005,7 +1070,8 @@ public struct Vault: Sendable {
             }
             try rewrapBlobs(note: note, recipients: recips, method: blobs, report: &report, stopAfter: stopAfter)
         }
-        try rewrapInbox(recipients: recips, report: &report, stopAfter: stopAfter)
+        try rewrapInbox(recipients: recips, report: &report, stopAfter: stopAfter, legacyPrevious: rotating)
+        try rewrapSharedSettings(recipients: recips, report: &report, stopAfter: stopAfter)
         return report
     }
 

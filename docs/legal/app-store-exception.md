@@ -54,5 +54,6 @@ any third party may ship a fork there under the same conditions.
   with App Store distribution (MIT, BSD, Apache-2.0, ISC). Code under GPL-only without this
   permission, or AGPL, cannot be accepted: the exception could not apply to it.
 - Release tarballs and the Homebrew package ship `LICENSE` and `LICENSE-EXCEPTION`.
-- The App Store listing and the in-app About screen should link to the source repository (the
-  exception's condition 1).
+- The App Store listing and the in-app About screen (Settings ▸ About ▸ About Sempere ▸ Source
+  Code) link to the source repository (the exception's condition 1). A revised exception for a
+  lawyer to review is drafted, not applied, in `docs/appstore/app-store-exception-draft.md`.

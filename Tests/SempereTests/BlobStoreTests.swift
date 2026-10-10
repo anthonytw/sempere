@@ -307,25 +307,26 @@ final class BlobStoreTests: VaultTestCase {
         let id = pqIdentity()
         let vault = try makeVault(id)
         let manifestURL = vault.url.appendingPathComponent("vault.json")
-        XCTAssertEqual(try Vault.open(at: vault.url).manifest.features, ["recipients-tag", "signed-secret-link"], "format.md §2.1")
+        XCTAssertEqual(try Vault.open(at: vault.url).manifest.features, ["recipients-tag", "signed-secret-link", "markers-tag"], "format.md §2.1")
         var log = LogBuilder()
         try vault.write(log.delta(devA, 0, [.addPage(Page(id: blobPage, order: "a0"))]))
-        XCTAssertEqual(try Vault.open(at: vault.url).manifest.features, ["recipients-tag", "signed-secret-link"], "plain revisions add nothing")
+        XCTAssertEqual(try Vault.open(at: vault.url).manifest.features, ["recipients-tag", "signed-secret-link", "markers-tag"], "plain revisions add nothing")
         let ref = try vault.writeBlob(note: testNote, Data("x".utf8), type: "image/png")
-        XCTAssertEqual(try Vault.open(at: vault.url).manifest.features, ["recipients-tag", "signed-secret-link", "attachments"])
+        XCTAssertEqual(try Vault.open(at: vault.url).manifest.features, ["recipients-tag", "signed-secret-link", "markers-tag", "attachments"])
         try vault.write(referencingDelta(&log, 10, refs: [ref], newPage: false))
-        XCTAssertEqual(try Vault.open(at: vault.url).manifest.features, ["recipients-tag", "signed-secret-link", "attachments"], "added once")
+        XCTAssertEqual(try Vault.open(at: vault.url).manifest.features, ["recipients-tag", "signed-secret-link", "markers-tag", "attachments"], "added once")
         XCTAssertTrue(vault.verify().isHealthy, "a feature added after open is not a manifest change")
 
         // A revision with attachment ops adds it too (fresh vault).
         let v2 = try makeVault(id, name: "Two")
         var log2 = LogBuilder()
         try v2.write(referencingDelta(&log2, 0, refs: [BlobRef(content: Data("y".utf8), type: "image/png")]))
-        XCTAssertEqual(try Vault.open(at: v2.url).manifest.features, ["recipients-tag", "signed-secret-link", "attachments"])
+        XCTAssertEqual(try Vault.open(at: v2.url).manifest.features, ["recipients-tag", "signed-secret-link", "markers-tag", "attachments"])
 
         // An unknown feature: readable, never written.
         var m = try Vault.open(at: vault.url).manifest
         m.features.append("holograms")
+        m.tagMarkers(secret: try vault.requireSecret())   // as the newer writer would (format.md §7.6)
         try m.encoded().write(to: manifestURL)
         let newer = try Vault.open(at: vault.url, identities: [id])
         XCTAssertEqual(try newer.readBlob(note: testNote, ref), Data("x".utf8))

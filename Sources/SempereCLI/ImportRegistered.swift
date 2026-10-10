@@ -94,6 +94,7 @@ struct RegisteredImportCommand<Tag: ImporterTag>: ParsableCommand {
             recognizeImported(result, in: vault)
         } else {
             let vault = try access.openVault(.required)
+            try vault.requireWritable()   // format.md §7.3: exit 7, not a per-note failure
             let stateURL = DeviceState.defaultURL()
             var state = try DeviceState.loadOrCreate(at: stateURL)
             var clock = state.clock

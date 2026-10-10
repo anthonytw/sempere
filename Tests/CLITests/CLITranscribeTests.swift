@@ -45,6 +45,19 @@ final class CLITranscribeTests: CLITestCase {
         #endif
     }
 
+    /// GA-05: `--download-model` stands alone, needs no vault, and on Linux (no Speech) fails
+    /// with a typed message and exit 1.
+    func testDownloadModelStandsAloneAndNeedsNoVault() throws {
+        XCTAssertEqual(try cli(["transcribe", "--download-model", "--check"]).status, 2)
+        XCTAssertEqual(try cli(["transcribe", "--download-model", "--all"]).status, 2)
+        XCTAssertEqual(try cli(["transcribe", "--download-model", "--language", "not a tag"]).status, 2)
+        #if !canImport(Speech)
+        let r = try cli(["transcribe", "--download-model", "--language", "es-ES"])
+        XCTAssertEqual(r.status, 1, r.err)
+        XCTAssertTrue(r.err.contains("Speech framework"), r.err)
+        #endif
+    }
+
     func testDryRunSelectsRecordingsWithoutATranscript() throws {
         let (vault, args, ids) = try setUp(recordings: ["One", "Two"])
         let before = try revisionCount(vault)

@@ -30,6 +30,8 @@ struct RootView: View {
     @State private var restoredVault: UUID?
     /// Settings ▸ Quick Voice Notes asked for by a widget or the control (`VoiceNoteLink.settings`).
     @State private var showingVoiceSettings = false
+    /// Choose Devices to Keep from the recipients alert (format.md §2.1 "Repair").
+    @State private var repairChoice: RecipientsRepairChoice?
 
     /// The stack column an iPhone shows (`CompactNavigation`); the other devices ignore it.
     @State private var compactColumn: NavigationSplitViewColumn = .sidebar
@@ -37,8 +39,8 @@ struct RootView: View {
     /// The split view's columns. An iPhone leaves them to the system (a stack when
     /// compact, columns in a wide landscape) and never stores a hidden list.
     private var columns: Binding<NavigationSplitViewVisibility> {
-        Binding(get: { Platform.isPhone ? .automatic : ColumnLayout.visibility(from: storedColumns) },
-                set: { if !Platform.isPhone { storedColumns = ColumnLayout.stored($0) } })
+        Binding(get: { ColumnLayout.visibility(from: storedColumns, isPhone: Platform.isPhone) },
+                set: { storedColumns = ColumnLayout.storing($0, over: storedColumns, isPhone: Platform.isPhone) })
     }
 
     /// The window: its content, then what the Mac menus and scene restoration need.
@@ -67,6 +69,7 @@ struct RootView: View {
             }
             .onChange(of: model.selectedNoteID) { saveSelection() }
             .onChange(of: model.sidebarSelection) { saveSelection() }
+            .menuBarRequests()
     }
 
     private var content: some View {
@@ -135,6 +138,7 @@ struct RootView: View {
             // iCloud may have delivered files while the app was away; no
             // polling while it is in the background.
             if phase == .active { model.enterForeground() }
+            if phase == .active { model.scheduleSettingsSync() }   // another device may have changed the vault's settings
             if phase == .active, model.isCloudVault { model.startCloudSync() }
             if phase == .active {
                 // Live Activities may have been switched in Settings ▸ Sempere meanwhile.
@@ -155,9 +159,15 @@ struct RootView: View {
             if let progress = model.cloudProgress {
                 CloudProgressView(progress: progress) { model.cancelCloudDownload() }
             }
+            if let name = model.webdavDownloading {
+                WebDAVDownloadOverlay(name: name)
+            }
         }
         .sheet(isPresented: $creatingVault) {
             NewVaultView()
+        }
+        .sheet(item: $repairChoice) { choice in
+            RecipientsRepairView(choice: choice)
         }
         .sheet(isPresented: .constant(model.phase == .locked || keys.holdsUnlockSheet(model))) {
             UnlockView()
@@ -195,7 +205,7 @@ struct RootView: View {
             Text(model.errorMessage ?? "")
         }
         // format.md §2.1: never write to a list nobody with the key wrote.
-        .alert(RecipientsAlert.title, isPresented: Binding(get: { model.recipientsAlert != nil },
+        .alert(model.recipientsAlert?.displayTitle ?? RecipientsAlert.title, isPresented: Binding(get: { model.recipientsAlert != nil },
                                                            set: { if !$0 { model.dismissRecipientsAlert() } })) {
             if model.recipientsAlert?.canRemove == true {
                 Button("Remove", role: .destructive) {
@@ -205,6 +215,16 @@ struct RootView: View {
             if model.recipientsAlert?.canConfirm == true {
                 Button("Trust This List") {
                     Task { await model.report { try await model.confirmRecipientsList() } }
+                }
+            }
+            if model.recipientsAlert?.canChoose == true {
+                Button("Choose Devices to Keep…") {
+                    // Taken now (the alert's dismissal clears it); shown once the alert is gone.
+                    let choice = model.recipientsRepairChoice()
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(400))
+                        repairChoice = choice
+                    }
                 }
             }
             Button("Cancel", role: .cancel) { model.dismissRecipientsAlert() }
@@ -267,13 +287,15 @@ struct RootView: View {
     /// Applies the selection saved with this scene once the vault is unlocked
     /// (Mac only; the iPad keeps starting empty).
     private func restoreSelection() {
-        guard Platform.isMac, let vaultID = model.vault?.vaultId, restoredVault != vaultID else { return }
+        guard SelectionStorage.shouldRestore(isMac: Platform.isMac, vault: model.vault?.vaultId, restored: restoredVault),
+              let vaultID = model.vault?.vaultId else { return }
         restoredVault = vaultID
         if let saved = RestorableSelection(stored: storedSelection) { model.restore(saved) }
     }
 
     private func saveSelection() {
-        guard Platform.isMac, model.phase == .unlocked, let vaultID = model.vault?.vaultId, restoredVault == vaultID else { return }
+        guard SelectionStorage.shouldSave(isMac: Platform.isMac, unlocked: model.phase == .unlocked, vault: model.vault?.vaultId, restored: restoredVault),
+              let vaultID = model.vault?.vaultId else { return }
         storedSelection = RestorableSelection(sidebar: model.sidebarSelection, note: model.selectedNoteID, vault: vaultID).stored
     }
 
@@ -305,38 +327,22 @@ struct RootView: View {
                              paletteVisible: paletteVisible, exportIDs: exportIDs, windowID: ui.id,
                              perform: { command in perform(command, editor: shown, exportIDs: exportIDs) },
                              openRecent: { id in
-                                 if let entry = library.recents.first(where: { $0.id == id }) { Task { await reopen(entry) } }
+                                 if let entry = LibraryCommands.recent(withID: id, in: library.recents) { Task { await reopen(entry) } }
                              })
     }
 
     private func perform(_ command: MenuCommand, editor: NoteEditor?, exportIDs: [UUID]) {
         if EditorCommands.perform(command, editor: editor, ui: ui) { return }
         if WindowCommands.perform(command, model: model, ui: ui, exportIDs: exportIDs) { return }
-        let selected = model.selectedNoteID
-        switch command {
-        case .newNote: ui.creatingNote = true
-        case .openNoteInWindow:
-            if let value = model.noteWindowValue(for: selected) { openWindow(id: NoteWindowValue.sceneID, value: value) }
-        case .newVault: creatingVault = true
-        case .openVault: pickingVault = true
-        case .reopenVault:
-            if let last = library.recents.first { Task { await reopen(last) } }
-        case .closeVault: model.close()
-        case .reloadVault: Task { await model.report { try await model.reload() } }
-        case .bulkExport: model.requestBulkExport(model.bulkExportScope, window: ui.id)
-        case .renameNote: ui.renameNoteID = selected
-        case .editTags: ui.tagsNoteID = selected
-        case .saveVersion: ui.saveVersionNoteID = selected
-        case .versionHistory: ui.historyNoteID = selected
-        case .deleteNote:
-            if let selected { Task { await model.report { try await model.deleteNote(selected) } } }
-        case .restoreNote:
-            if let selected { Task { await model.report { try await model.restoreNote(selected) } } }
-        case .find:
-            if ColumnLayout.visibility(from: storedColumns) == .detailOnly { storedColumns = "doubleColumn" }
-            ui.searchPresented = true
-        case .toggleNoteList: storedColumns = ColumnLayout.toggled(storedColumns)
-        default: break
+        let outcome = LibraryCommands.perform(command, model: model, ui: ui, recents: library.recents,
+                                              storedColumns: storedColumns)
+        if let columns = outcome.columns { storedColumns = columns }
+        switch outcome.effect {
+        case .pickVault: pickingVault = true
+        case .createVault: creatingVault = true
+        case .openNoteWindow(let value): openWindow(id: NoteWindowValue.sceneID, value: value)
+        case .reopen(let last): Task { await reopen(last) }
+        case nil: break
         }
     }
 
@@ -355,17 +361,8 @@ struct RootView: View {
 
     /// Reopens a recent vault; on failure explains and falls back to the picker.
     private func reopen(_ entry: RecentVault, pickOnFailure: Bool = true) async {
-        do {
-            try await model.open(recent: entry, library: library)
-        } catch is CancellationError {
-            // The user stopped the iCloud download.
-        } catch {
-            let detail = "\(error)"
-            model.errorMessage = pickOnFailure
-                ? String(localized: "Could not reopen “\(entry.name)”: \(detail)\n\nChoose the vault folder again.",
-                         comment: "First %@ is the vault's name, second the error (English)")
-                : String(localized: "Could not reopen “\(entry.name)”: \(detail)", comment: "First %@ is the vault's name, second the error (English)")
-            pickAfterAlert = pickOnFailure
+        if let pick = await LibraryCommands.reopen(entry, pickOnFailure: pickOnFailure, model: model, library: library) {
+            pickAfterAlert = pick
         }
     }
 }

@@ -11,6 +11,7 @@ struct WelcomeView: View {
 
     @State private var onDevice: [URL] = []
     @State private var restoring = false
+    @State private var connectingWebDAV = false
 
     var body: some View {
         NavigationStack {
@@ -18,6 +19,8 @@ struct WelcomeView: View {
                 Section {
                     Button("New Vault…", systemImage: "plus.circle", action: newVault)
                     Button("Open Vault…", systemImage: "folder", action: openFolder)
+                    Button("Open from WebDAV…", systemImage: "server.rack") { connectingWebDAV = true }
+                        .accessibilityIdentifier("openWebDAV")
                     Button("Restore from Backup…", systemImage: "clock.arrow.circlepath") { restoring = true }
                     ICloudDriveHelpButton()
                 } footer: {
@@ -37,6 +40,7 @@ struct WelcomeView: View {
                         }
                     }
                 }
+                WebDAVLocationsSection()
                 if !onDevice.isEmpty {
                     Section("On This Device") {
                         ForEach(onDevice, id: \.self) { url in
@@ -47,6 +51,7 @@ struct WelcomeView: View {
             }
             .navigationTitle("Sempere")
             .onAppear { onDevice = VaultLibrary.vaults(in: VaultLibrary.onDeviceFolder) }
+            .sheet(isPresented: $connectingWebDAV) { WebDAVConnectSheet() }
             .sheet(isPresented: $restoring, onDismiss: { onDevice = VaultLibrary.vaults(in: VaultLibrary.onDeviceFolder) }) {
                 RestoreBackupView()
             }

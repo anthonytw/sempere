@@ -45,6 +45,9 @@ protocol CanvasCommandTarget: AnyObject {
     func zoomToActualSize()
     /// Shows or hides PencilKit's ruler (straight lines with a mouse).
     func toggleRuler()
+    /// Runs an item command (`duplicateItem`, `bringItemToFront`, `deleteItem`) on the
+    /// selected item; false when none is selected or it is not an item command.
+    @discardableResult func perform(itemCommand: MenuCommand) -> Bool
     /// The part of the page on screen, in page points (nil before layout):
     /// where inserted images go.
     var visiblePageRect: CGRect? { get }

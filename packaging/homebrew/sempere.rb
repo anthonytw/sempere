@@ -34,7 +34,8 @@ class Sempere < Formula
   end
 
   test do
-    assert_equal version.to_s, shell_output("#{bin}/sempere --version").strip
+    assert_equal "sempere #{version}", shell_output("#{bin}/sempere --version").lines.first.strip
+    assert_match "ABSOLUTELY NO WARRANTY", shell_output("#{bin}/sempere --version")
     # A fresh identity is an age secret key.
     assert_match "AGE-SECRET-KEY-", shell_output("#{bin}/sempere keys generate")
   end

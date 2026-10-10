@@ -9,6 +9,63 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
 
 ### Added
 
+- Mac menu bar: Note, Tools and View entries for what was toolbar-only (Version History, Add Page After
+  This One / at End, Duplicate, Delete and Undo Delete Page, the Pages/Pageless switch, Show Pages, the
+  Text and Select tools, Smaller/Larger Object Eraser, the compact palette), and a Sempere icon in the
+  system menu bar (Settings → General → Show in Menu Bar) with Quick Voice Note, New Note and Open
+  Sempere. A voice note from it is sealed into the vault's inbox without unlocking, as on the iPad;
+  File > Start/Stop Voice Note (⇧⌘M) does the same from the menu.
+- iPhone: the overflow menu's Pages submenu has the page layout switch, Add Page After This One / at
+  End, Insert PDF at this page, Duplicate, Delete, Undo Delete and the page thumbnails; swiping left or
+  right turns pages while reading; the paper picker has a compact layout.
+- Setting expectations. `sempere --version` prints the GPL notice ("This program comes with ABSOLUTELY
+  NO WARRANTY…") with links to the licence and the security policy; `sempere about` (`--json`) adds the
+  source, where to report a vulnerability, the security limits and the third-party software. The app
+  shows "About Your Key" the first time a vault is unlocked with a key on a device (a new vault
+  included): only the key opens the notes, nobody can recover them if every copy is lost, with
+  buttons to save the key and recovery kit and to the backup settings; "I Understand" closes it. A
+  six-page quick tour follows once per device. Settings ▸ About shows the version, the licence
+  (bundled), acknowledgments and the links, and reopens both; on the Mac, Sempere ▸ About Sempere and
+  Help ▸ Quick Tour / About Your Key. New `docs/security.md` says what the encryption protects and
+  what it does not; `SECURITY.md` describes the advisory process.
+- Device list repair and key replacement in the app (GA-17): the "device list was changed without
+  its key" alert offers Choose Devices to Keep… (the CLI's `vault recipients repair --keep`), which
+  always keeps this device's key and asks for Face ID or Touch ID before keeping a key this device
+  never confirmed; the Vault Keys window has Replace… (`vault recipients replace`) for another
+  device's key, pasted or generated.
+- `sempere backup status DIR --max-age DAYS` exits 3 when no backup run completed in DAYS days, the
+  app's Remind Me for scripts (GA-18). `backup.json` records the last run without file errors
+  (`completed`), which the check counts from; the app and the CLI share the rule.
+- Markdown text boxes with LaTeX math (`format.md` §8.2.4 "Markdown text", §8.5.4): headings, bold,
+  italic, strikethrough, code, bullet, numbered and task lists, links, block quotes, code blocks, rules,
+  inline `$…$` and display `$$…$$` math. The source is the box's text, so older versions show it as plain
+  text; the rendered lines are stored with it and the same in the app, its exports, `sempere export` and the
+  web viewer. App: new text boxes are Markdown, edited as source with a Markdown bar of helpers and drawn
+  rendered; formulas are typeset with SwiftMath when the edit closes. CLI: `attach text --markdown`,
+  `items text` (with `--markdown`/`--no-markdown`); search sees the text without markup; Markdown exports
+  keep the source, HTML exports render it. Styled text boxes keep working unchanged.
+- WebDAV vaults in the app: Open from WebDAV… (server folder URL, user, password, Test Connection, the
+  vaults found there). The vault is downloaded into a copy on the device, which works offline, and
+  every change is pushed to the server shortly after it is made, when the app comes back and every five
+  minutes; the server is never trusted to change the vault (push-only). The password stays in the
+  Keychain only; https only, and a self-signed server needs an explicit "Trust This Certificate" with
+  its fingerprint, after which only that certificate is accepted. The note list shows the sync state
+  (Offline, changes not uploaded, a problem and what to do) with Sync Now, Download Again… (to get other
+  devices' notes) and Server Settings…. CLI: `sempere webdav check` and `sync webdav --push-only
+  --keep-server-changes`. The Mac build may now make outgoing connections (`network.client`), only to
+  the server you configure.
+- Vaults in another app's Files provider storage (Proton Drive) are read and written through file
+  coordination even when the provider does not report its files as cloud items, so they are fetched and
+  uploaded; what still needs a device test is listed in `docs/io.md` ("Other Files providers").
+- Settings sync through the vault (`docs/settings-sync.md`, `format.md` §13): the vault can hold
+  `settings.age`, a VS Code-style settings.json encrypted and tagged like a revision, that devices
+  which opt in (Settings ▸ Sync Settings with This Vault) follow. Every setting syncs; keys only some
+  kinds of device use are ignored by the others, and `[mac]` / `[ipad]` / `[iphone]` blocks hold
+  per-type values. Merged per key (last writer wins), so concurrent edits on two devices both survive.
+  "Only on This Device" keeps a setting local until "Use Synced Value". `$schemaVersion` and
+  `$minReaderVersion` keep older and newer apps compatible (older apps pause rather than write).
+  CLI: `sempere settings list|get|set|reset|edit|validate|schema` (`--type` for a type block); the
+  schema is `docs/settings.schema.json`. Backups copy the file and `sempere sync webdav` merges it.
 - Web viewer in Spanish: the interface is in English or Spanish, taken from the browser's language list
   with a Language selector (Automatic, English, Español) that overrides it and is remembered in the
   browser. Notes, notebook and tag names, recording titles and transcripts are shown as written; dates,
@@ -309,6 +366,19 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
   the App Store answers and `DESIGN.md` now say exactly what network code the app contains and that it never
   runs in this version. The CLI release refuses a CHANGELOG section that still holds `TODO(user)` or has no
   date.
+- Security review 2026-10, the open findings (#125). **C2:** each capture profile now holds its own
+  device's capture key (`format.md` §11.1), so a voice note is attributed to the device that recorded it
+  (`captured` on the recording, "Voice note from iPad" in the app, `from …` in `sempere inbox list` and
+  `import`) and no other profile can pass as it or add a transcript to its voice notes; profiles made
+  before are replaced at unlock, and their captures adopted as unattributed. **C3:** a device removed from
+  the vault can no longer add voice notes, also while the rewrap of its removal is unfinished; its waiting
+  captures are reported and kept. **N3:** `format` and `features` in `vault.json` are authenticated
+  (`markersTag`, `format.md` §2.1 "Version markers") and kept in the trust record: a downgraded, stripped
+  or replayed manifest is refused for writing (exit 6) and reported; older vaults are tagged at their
+  next unlock or write; `sempere vault markers [status|tag|repair]`. Older Sempere versions read such a
+  vault and stop writing to it (the new `markers-tag` feature). **P4:** the web viewer's ciphertext cache
+  is keyed by the vault's key state, so a recipient change or a finished rewrap drops copies a removed key
+  could open. **C8:** the comment in `QuickCapture.swift` now names the protection class it uses.
 - Security review of October 2026 (`docs/security-review-2026-10.md`):
   - A `rewrap-journal.json` planted in the vault folder, or sent by a sync server, made revisions and
     blobs tagged under a secret of the attacker's verify, and a resumed rewrap re-tagged them under the real

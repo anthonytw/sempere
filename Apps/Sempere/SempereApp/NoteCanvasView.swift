@@ -145,6 +145,7 @@ struct EditorView: View {
     @State private var selectingItems = false
     /// The text tool: a tap edits a text box or starts a new one (`TextBoxEditorController`).
     @State private var addingText = false
+    /// PencilKit's palette floats above sheets; it hides while a notice or the tour is up.
     @AppStorage(ToolPalette.visibleKey) private var paletteVisible = true
     @AppStorage(ToolPalette.compactKey) private var paletteCompact = false
     @AppStorage(ObjectEraserSize.defaultsKey) private var eraserRadius = ObjectEraserSize.defaultRadius
@@ -195,7 +196,7 @@ struct EditorView: View {
                 // Paged: every page in one scroll (lazy canvases), the current page follows it.
                 PageStackView(editor: editor, pageIDs: editor.pages.map(\.id), pageSize: editor.pageSize,
                               pageJump: editor.pageJump,
-                              paletteVisible: paletteVisible,
+                              paletteVisible: paletteVisible && ui.expectations == nil,
                               paletteCompact: PhoneReading.paletteCompact(isPhone: Platform.isPhone, stored: paletteCompact),
                               drawingSuspended: PhoneReading.drawingSuspended(isPhone: Platform.isPhone, annotating: annotating),
                               generation: editor.canvasGeneration,
@@ -208,7 +209,7 @@ struct EditorView: View {
                     .ignoresSafeArea(.container, edges: .bottom)
             } else if let page = editor.currentPage {
                 PageCanvasView(editor: editor, pageID: page.id, paper: editor.displayedPaper(of: page), pageSize: editor.pageSize,
-                               paletteVisible: paletteVisible,
+                               paletteVisible: paletteVisible && ui.expectations == nil,
                                paletteCompact: PhoneReading.paletteCompact(isPhone: Platform.isPhone, stored: paletteCompact),
                                drawingSuspended: PhoneReading.drawingSuspended(isPhone: Platform.isPhone, annotating: annotating),
                                generation: editor.canvasGeneration,
@@ -311,12 +312,17 @@ struct EditorView: View {
         }
     }
 
+    private var phoneItems: PhoneToolbar.Items {
+        PhoneToolbar.items(readOnly: editor.isReadOnly, annotating: annotating, pageCount: editor.pages.count,
+                           hasPage: editor.currentPage != nil, pageEntries: !phonePageEntries.isEmpty)
+    }
+
     /// The iPhone's toolbar: one pencil button for light annotation, page
     /// controls in the bottom bar (in a menu while annotating, so the bar does
-    /// not sit on the palette), the rest in the overflow menu.
+    /// not sit on the palette), the rest in the overflow menu (`PhoneToolbar`).
     @ToolbarContentBuilder
     private var phoneToolbar: some ToolbarContent {
-        if !editor.isReadOnly {
+        if phoneItems.writes {
             ToolbarItem(placement: .primaryAction) {
                 Toggle("Annotate", systemImage: annotating ? "pencil.tip.crop.circle.fill" : "pencil.tip.crop.circle",
                        isOn: $annotating)
@@ -328,13 +334,14 @@ struct EditorView: View {
                     .disabled(editor.currentPage == nil)
                     .help("Choose the paper (ruling, colour) of this page or all pages")
             }
+            ToolbarItem(placement: .secondaryAction) { favoriteButton }
             ToolbarItem(placement: .secondaryAction) { insertMenu }
             ToolbarItem(placement: .secondaryAction) { recordingsMenu }
             ToolbarItem(placement: .secondaryAction) { recordingsListButton }
-            if annotating {
+            if phoneItems.writingTools {
                 ToolbarItem(placement: .secondaryAction) { textToolToggle }
                 ToolbarItem(placement: .secondaryAction) { eraserSizeMenu }
-                if showsItemSelection {
+                if phoneItems.selectToggle {
                     ToolbarItem(placement: .secondaryAction) { itemSelectionToggle }
                 }
             }
@@ -342,13 +349,13 @@ struct EditorView: View {
         // The page actions (layout, add, duplicate, delete, undo, PDF at this page, thumbnails)
         // are in this menu whether or not the pencil is on; while annotating it also turns pages,
         // since the bottom bar gives way to the palette then.
-        if annotating && (editor.pages.count > 1 || !editor.isReadOnly) || !phonePageEntries.isEmpty {
+        if phoneItems.pagesMenu {
             ToolbarItem(placement: .secondaryAction) {
                 Menu("Pages", systemImage: "doc.on.doc") { pageButtons }
                     .help("Go to another page, add, duplicate or delete one, or show the thumbnails")
             }
         }
-        if !annotating, editor.pages.count > 1 {
+        if phoneItems.pageBar {
             ToolbarItemGroup(placement: .bottomBar) {
                 Button("Previous Page", systemImage: "chevron.left") { editor.selectPage(editor.pageIndex - 1) }
                     .disabled(editor.pageIndex == 0)
@@ -456,6 +463,17 @@ struct EditorView: View {
         Text(editor.pages.isEmpty ? "No pages" : "Page \(editor.pageIndex + 1) of \(editor.pages.count)")
     }
 
+    /// Marks this note as a favorite or not (Favorites in the sidebar).
+    private var favoriteButton: some View {
+        let on = model.notes.first { $0.id == editor.noteID }?.favorite ?? false
+        return Button(LocalizedStringKey(on ? "Remove from Favorites" : "Add to Favorites"),
+                      systemImage: on ? "star.fill" : "star") {
+            Task { await model.report { try await model.setFavorite(!on, for: editor.noteID) } }
+        }
+        .disabled(model.isVaultReadOnly)
+        .help(LocalizedStringKey(on ? "Remove this note from Favorites" : "Add this note to Favorites"))
+    }
+
     @ViewBuilder
     // help-lint: titled
     private func phonePageButton(_ entry: PhonePageMenu.Entry) -> some View {
@@ -543,6 +561,7 @@ struct EditorView: View {
                     .help("Show or hide the tool palette; press and hold for the compact palette")
                 }
             }
+            ToolbarItem(placement: .primaryAction) { favoriteButton }
             if !editor.isReadOnly, editor.currentPage != nil {
                 ToolbarItem(placement: .primaryAction) { textToolToggle }
             }

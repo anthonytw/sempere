@@ -1,0 +1,410 @@
+{
+  "cases" : [
+    {
+      "boxes" : [
+
+      ],
+      "frame" : [
+        72,
+        90,
+        240,
+        10
+      ],
+      "height" : 271.44,
+      "lines" : [
+        {
+          "baseline" : 108.24,
+          "paragraph" : 0,
+          "start" : 2,
+          "text" : "Lecture 3: kernels"
+        },
+        {
+          "baseline" : 124.44,
+          "paragraph" : 1,
+          "start" : 21,
+          "text" : "A map is injective exactly when its kernel is"
+        },
+        {
+          "baseline" : 138.84,
+          "paragraph" : 1,
+          "start" : 73,
+          "text" : "trivial; see the notes and ker f."
+        },
+        {
+          "baseline" : 159.24,
+          "paragraph" : 2,
+          "start" : 137,
+          "text" : "first point with enough words to wrap"
+        },
+        {
+          "baseline" : 173.64,
+          "paragraph" : 2,
+          "start" : 175,
+          "text" : "onto a second line"
+        },
+        {
+          "baseline" : 188.04,
+          "paragraph" : 3,
+          "start" : 198,
+          "text" : "nested idea"
+        },
+        {
+          "baseline" : 202.44,
+          "paragraph" : 4,
+          "start" : 220,
+          "text" : "checked task"
+        },
+        {
+          "baseline" : 216.84,
+          "paragraph" : 5,
+          "start" : 239,
+          "text" : "open task"
+        },
+        {
+          "baseline" : 231.24,
+          "paragraph" : 6,
+          "start" : 252,
+          "text" : "one"
+        },
+        {
+          "baseline" : 245.64,
+          "paragraph" : 7,
+          "start" : 259,
+          "text" : "two"
+        },
+        {
+          "baseline" : 266.04,
+          "paragraph" : 8,
+          "start" : 266,
+          "text" : "Quoted text that wraps across the narrow"
+        },
+        {
+          "baseline" : 280.44,
+          "paragraph" : 8,
+          "start" : 307,
+          "text" : "column width."
+        },
+        {
+          "baseline" : 312.24,
+          "paragraph" : 10,
+          "start" : 329,
+          "text" : "let x = 1"
+        },
+        {
+          "baseline" : 326.64,
+          "paragraph" : 10,
+          "start" : 339,
+          "text" : "  indented"
+        },
+        {
+          "baseline" : 344.04,
+          "paragraph" : 11,
+          "start" : 354,
+          "text" : "Inline source math a^2 + b^2 and display:"
+        },
+        {
+          "baseline" : 358.44,
+          "paragraph" : 12,
+          "start" : 401,
+          "text" : "\\int_0^1 x\\,dx"
+        }
+      ],
+      "name" : "mixed",
+      "plain" : "Lecture 3: kernels\nA map is injective exactly when its kernel is trivial; see the notes and ker f.\nfirst point with enough words to wrap onto a second line\nnested idea\nchecked task\nopen task\none\ntwo\nQuoted text that wraps across the narrow column width.\nlet x = 1\n  indented\nInline source math a^2 + b^2 and display:\n\\int_0^1 x\\,dx",
+      "storedLayout" : true,
+      "text" : {
+        "color" : "#1A1A1AFF",
+        "font" : "sans",
+        "lang" : "en",
+        "layout" : {
+          "breaks" : [
+            73,
+            175,
+            307
+          ],
+          "of" : "a81928d1"
+        },
+        "markup" : "markdown",
+        "runs" : [
+          {
+            "t" : "# Lecture 3: kernels\nA map is **injective** exactly when its *kernel* is trivial; see [the notes](https://example.org/n) and `ker f`.\n\n- first point with enough words to wrap onto a second line\n  - nested ~~idea~~\n- [x] checked task\n- [ ] open task\n1. one\n2. two\n\n> Quoted text that wraps across the narrow column width.\n---\n```\nlet x = 1\n  indented\n```\nInline source math $a^2 + b^2$ and display:\n$$\n\\int_0^1 x\\,dx\n$$"
+          }
+        ],
+        "size" : 12
+      }
+    },
+    {
+      "boxes" : [
+        [
+          60,
+          46.5,
+          16.2
+        ],
+        [
+          63.7,
+          7.2,
+          12.3
+        ],
+        [
+          76.2,
+          38,
+          30.5
+        ],
+        [
+          112.7,
+          12.5,
+          28
+        ]
+      ],
+      "frame" : [
+        40,
+        60,
+        200,
+        10
+      ],
+      "height" : 80.7,
+      "lines" : [
+        {
+          "baseline" : 72.1,
+          "paragraph" : 0,
+          "start" : 0,
+          "text" : "Let ￼ be convex and ￼ linear;"
+        },
+        {
+          "baseline" : 94.7,
+          "paragraph" : 0,
+          "start" : 43,
+          "text" : "then ￼ grows."
+        },
+        {
+          "baseline" : 130.7,
+          "paragraph" : 1,
+          "start" : 72,
+          "text" : "￼"
+        }
+      ],
+      "name" : "formula-boxes",
+      "plain" : "Let f(x) = x^2 be convex and g linear; then \\sum_i f(i) grows.\n\\frac{a}{b}",
+      "storedLayout" : true,
+      "text" : {
+        "color" : "#1A1A1AFF",
+        "font" : "sans",
+        "lang" : "en",
+        "layout" : {
+          "breaks" : [
+            43
+          ],
+          "of" : "f179d3ed"
+        },
+        "markup" : "markdown",
+        "math" : [
+          {
+            "color" : "#1A1A1AFF",
+            "depth" : 4.1,
+            "display" : false,
+            "engine" : "test",
+            "latex" : "f(x) = x^2",
+            "render" : {
+              "sha256" : "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "size" : 1200,
+              "type" : "application/pdf"
+            },
+            "renderSize" : [
+              46.5,
+              16.2
+            ],
+            "size" : 12
+          },
+          {
+            "color" : "#1A1A1AFF",
+            "depth" : 3.9,
+            "display" : false,
+            "engine" : "test",
+            "latex" : "g",
+            "render" : {
+              "sha256" : "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "size" : 1200,
+              "type" : "application/pdf"
+            },
+            "renderSize" : [
+              7.2,
+              12.3
+            ],
+            "size" : 12
+          },
+          {
+            "color" : "#1A1A1AFF",
+            "depth" : 12,
+            "display" : true,
+            "engine" : "test",
+            "latex" : "\\sum_i f(i)",
+            "render" : {
+              "sha256" : "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "size" : 1200,
+              "type" : "application/pdf"
+            },
+            "renderSize" : [
+              38,
+              30.5
+            ],
+            "size" : 12
+          },
+          {
+            "color" : "#1A1A1AFF",
+            "depth" : 10,
+            "display" : true,
+            "engine" : "test",
+            "latex" : "\\frac{a}{b}",
+            "render" : {
+              "sha256" : "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "size" : 1200,
+              "type" : "application/pdf"
+            },
+            "renderSize" : [
+              12.5,
+              28
+            ],
+            "size" : 12
+          }
+        ],
+        "runs" : [
+          {
+            "t" : "Let $f(x) = x^2$ be convex and $g$ linear; then $$\\sum_i f(i)$$ grows.\n\n$$\\frac{a}{b}$$"
+          }
+        ],
+        "size" : 12
+      }
+    },
+    {
+      "boxes" : [
+
+      ],
+      "frame" : [
+        10,
+        10,
+        300,
+        10
+      ],
+      "height" : 51.84,
+      "lines" : [
+        {
+          "baseline" : 28.24,
+          "paragraph" : 0,
+          "start" : 2,
+          "text" : "Short"
+        },
+        {
+          "baseline" : 44.44,
+          "paragraph" : 1,
+          "start" : 8,
+          "text" : "line one"
+        },
+        {
+          "baseline" : 58.84,
+          "paragraph" : 1,
+          "start" : 17,
+          "text" : "line two"
+        }
+      ],
+      "name" : "stale-layout",
+      "plain" : "Short\nline one\nline two",
+      "storedLayout" : false,
+      "text" : {
+        "color" : "#1A1A1AFF",
+        "font" : "sans",
+        "lang" : "en",
+        "layout" : {
+          "breaks" : [
+            9
+          ],
+          "of" : "00000000"
+        },
+        "markup" : "markdown",
+        "runs" : [
+          {
+            "t" : "# Short\nline one\nline two"
+          }
+        ],
+        "size" : 12
+      }
+    },
+    {
+      "boxes" : [
+
+      ],
+      "frame" : [
+        20,
+        30,
+        180,
+        10
+      ],
+      "height" : 33.6,
+      "lines" : [
+        {
+          "baseline" : 43.3,
+          "paragraph" : 0,
+          "start" : 0,
+          "text" : "مرحبا بكم في الدرس الثالث اليوم"
+        },
+        {
+          "baseline" : 60.1,
+          "paragraph" : 1,
+          "start" : 38,
+          "text" : "عنصر أول"
+        }
+      ],
+      "name" : "rtl",
+      "plain" : "مرحبا بكم في الدرس الثالث اليوم\nعنصر أول",
+      "storedLayout" : true,
+      "text" : {
+        "color" : "#1A1A1AFF",
+        "font" : "sans",
+        "lang" : "en",
+        "layout" : {
+          "breaks" : [
+
+          ],
+          "of" : "35d90b20"
+        },
+        "markup" : "markdown",
+        "runs" : [
+          {
+            "t" : "مرحبا بكم في **الدرس** الثالث اليوم\n- عنصر أول"
+          }
+        ],
+        "size" : 14
+      }
+    },
+    {
+      "boxes" : [
+
+      ],
+      "frame" : [
+        0,
+        0,
+        100,
+        10
+      ],
+      "height" : 0,
+      "lines" : [
+
+      ],
+      "name" : "empty",
+      "plain" : "",
+      "storedLayout" : false,
+      "text" : {
+        "color" : "#1A1A1AFF",
+        "font" : "sans",
+        "lang" : "en",
+        "markup" : "markdown",
+        "runs" : [
+          {
+            "t" : ""
+          }
+        ],
+        "size" : 12
+      }
+    }
+  ],
+  "comment" : "Shared Markdown text box fixtures (format.md §8.5.4): each box, its stored layout and the rendered lines every renderer must produce (paragraph, source offset of the first item, drawn text, baseline), formula boxes [y, w, h] and the plain text. Synthetic text. Read by SempereRenderTests, the web viewer's tests and the app's tests."
+}

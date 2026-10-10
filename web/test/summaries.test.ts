@@ -42,7 +42,9 @@ describe("published summaries", () => {
         if (!entry) continue;
         expect(entry.revisions).toEqual(await source.listRevisions(id));
         const mine = summarize(note);
-        expect(entrySummary(id, entry)).toEqual({ ...mine, hasAttachments: false });
+        // Published summaries carry the page texts only (format.md §12), not which part is an equation.
+        const texts = mine.pageTexts.map(({ number, text }) => ({ number, text }));
+        expect(entrySummary(id, entry)).toEqual({ ...mine, pageTexts: texts, hasAttachments: false });
       }
     });
   }

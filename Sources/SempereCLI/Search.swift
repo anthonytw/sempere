@@ -167,7 +167,7 @@ struct SearchCommand: ParsableCommand {
                                           box: [item.frame.x, item.frame.y, item.frame.w, item.frame.h]))
                 }
                 for item in page.items where item.kind == .text {
-                    guard let text = item.text?.string else { continue }
+                    guard let text = item.text.map(MarkdownText.searchText) else { continue }
                     let found = RecognitionSearch.ranges(of: needle, in: text)
                     guard let first = found.first else { continue }
                     var hit = SearchHit(noteId: noteId, title: title, notebook: state.meta.notebook, page: index + 1,

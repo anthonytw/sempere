@@ -89,10 +89,10 @@ jobs:
     container: swift:6.4-noble
     steps:
       - uses: actions/checkout@v4
-      - name: Install zlib headers, zbar, poppler (QR decode, text extraction, PDF background pixel checks) and the UCD (BidiTest.txt)
+      - name: Install zlib headers, zbar, zip, poppler (QR decode, zip interop, text extraction, PDF background pixel checks) and the UCD (BidiTest.txt)
         run: |
           apt-get update -q
-          apt-get install -y -q zlib1g-dev curl zbar-tools poppler-utils unicode-data
+          apt-get install -y -q zlib1g-dev curl zbar-tools zip poppler-utils unicode-data
       - name: Install age v1.3.2 (post-quantum interop; Ubuntu's package is 1.1)
         run: |
           curl -fsSL -o /tmp/age.tgz https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz
@@ -115,6 +115,9 @@ jobs:
           SEMPERE_REQUIRE_AGE_PQ: "1"
           # PDF background pixel checks against pdftoppm (poppler-utils, installed above).
           SEMPERE_REQUIRE_POPPLER: "1"
+          # A missing tool fails its test instead of skipping it (Tests/FuzzSupport/RequiredTools.swift):
+          # zbarimg (QR decode), zip (archive interop), pdftotext (PDF text), BidiTest.txt (UCD 15.1).
+          SEMPERE_REQUIRE_TOOLS: "zbar,zip,pdftotext,bidi"
         run: swift test --skip-build --parallel
       - uses: actions/cache/save@v4
         if: success() && github.ref == 'refs/heads/main'
@@ -184,6 +187,9 @@ jobs:
         run: |
           sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)/Contents/Developer"
           swift --version
+      # poppler (pdftoppm, pdftotext) and zbar are required here too: their tests fail, not skip.
+      - name: Install poppler and zbar
+        run: brew install poppler zbar
       - name: Install age v1.3.2 (post-quantum interop)
         run: |
           curl -fsSL -o /tmp/age.tgz https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-darwin-arm64.tar.gz
@@ -204,12 +210,47 @@ jobs:
       - name: Test
         env:
           SEMPERE_REQUIRE_AGE_PQ: "1"
+          SEMPERE_REQUIRE_POPPLER: "1"
+          # /usr/bin/zip ships with macOS; zbarimg and pdftotext come from brew above.
+          # (BidiTest.txt is Linux-only: macOS has no system UCD.)
+          SEMPERE_REQUIRE_TOOLS: "zbar,zip,pdftotext"
         run: swift test --skip-build --parallel
       - uses: actions/cache/save@v4
         if: success() && github.ref == 'refs/heads/main'
         with:
           path: .build
           key: ${{ steps.cachekey.outputs.key }}-${{ github.sha }}
+
+  # The WebDAV integration tests (IntegrationTests, BlobIntegrationTests, CLIWebDAVTests) need a
+  # real server and skip without one. scripts/test-webdav.sh starts wsgidav (Basic auth) and
+  # fails if any of them skips.
+  webdav:
+    name: WebDAV integration tests (wsgidav)
+    needs: changes
+    if: needs.changes.outputs.package == 'true'
+    runs-on: ubuntu-24.04
+    container: swift:6.4-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install zlib headers, curl and wsgidav
+        run: |
+          apt-get update -q
+          apt-get install -y -q zlib1g-dev curl python3-venv
+          python3 -m venv /opt/dav
+          /opt/dav/bin/pip install --quiet wsgidav==4.3.3 cheroot==10.0.1
+      # Restores the Linux job's cache from main (same key); never saves.
+      - id: cachekey
+        name: Cache key (toolchain + resolved packages)
+        run: echo "key=linux-$(echo "$GITHUB_WORKSPACE" | cksum | cut -d" " -f1)-$(swift --version 2>&1 | head -1 | cksum | cut -d' ' -f1)-${{ hashFiles('Package.resolved') }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        with:
+          path: .build
+          key: ${{ steps.cachekey.outputs.key }}-${{ github.sha }}
+          restore-keys: ${{ steps.cachekey.outputs.key }}-
+      - name: Integration tests against the server
+        env:
+          SEMPERE_WEBDAV_LARGE_MB: "64"
+        run: PATH=/opt/dav/bin:$PATH scripts/test-webdav.sh
 
   app:
     name: iPad and iPhone app (simulators + Mac Catalyst)
@@ -236,6 +277,7 @@ jobs:
       - name: Tooltips on icon-only controls
         run: scripts/check-help.py --self-test && scripts/check-help.py
       - name: Test on an iPad simulator
+        timeout-minutes: 40
         shell: bash
         run: mkdir -p build && scripts/app.sh test 2>&1 | tee build/app-test.log
       # The packages are resolved now: scan SwiftMath's sources (networking, required-reason APIs,
@@ -253,6 +295,13 @@ jobs:
         timeout-minutes: 25
         shell: bash
         run: mkdir -p build && scripts/app.sh test-ui 2>&1 | tee build/app-test-ui.log
+      # Layout in double-length, right-to-left and Spanish text (docs/localization.md "Checking
+      # layouts"); the build products are test-ui's, so this adds 18 launches of the demo vault.
+      - name: Pseudo-language layout tests on the iPad simulator
+        if: ${{ !cancelled() }}
+        timeout-minutes: 45
+        shell: bash
+        run: mkdir -p build && scripts/app.sh pseudo 2>&1 | tee build/app-test-pseudo.log
       # A first launch on the Mac in every column layout, then every window and sheet
       # (LaunchSmokeUITests; a build that crashed there shipped). Every run, PRs included:
       # a Catalyst build of the app and its UI tests, then four launches (docs/HANDOFF.md "CI").
@@ -364,18 +413,47 @@ jobs:
         run: |
           npm run build
           grep -q 'Content-Security-Policy' dist/index.html
-      # Browser smoke of opening fast: config.json modes, and a second visit fetches no unchanged file.
+
+  # All the browser smoke scripts (web/scripts/smoke-all.sh), in the Swift image: the CLI gives a
+  # copy of the sample vault its sealed summaries and index, so smoke-cache covers the summaries and
+  # index listings too (the committed fixture has neither file). Node and Chromium come on top.
+  web-smoke:
+    name: Web viewer browser smoke tests (Chromium)
+    needs: changes
+    if: needs.changes.outputs.webgolden == 'true'
+    runs-on: ubuntu-24.04
+    container: swift:6.4-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install zlib headers
+        run: apt-get update -q && apt-get install -y -q zlib1g-dev curl
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # Restores the Linux job's cache from main (same key); never saves.
+      - id: cachekey
+        name: Cache key (toolchain + resolved packages)
+        run: echo "key=linux-$(echo "$GITHUB_WORKSPACE" | cksum | cut -d" " -f1)-$(swift --version 2>&1 | head -1 | cksum | cut -d' ' -f1)-${{ hashFiles('Package.resolved') }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        with:
+          path: .build
+          key: ${{ steps.cachekey.outputs.key }}-${{ github.sha }}
+          restore-keys: ${{ steps.cachekey.outputs.key }}-
+      - name: Build the CLI
+        run: swift build --product sempere
+      - name: Install and build the viewer
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
       - name: Install Chromium for Playwright
+        working-directory: web
         run: npx playwright install --with-deps chromium
-      - name: Smoke test (cache and config.json, Chromium)
-        run: node scripts/smoke-cache.mjs ../Tests/SempereTests/Fixtures/sample.sempere ../Tests/SempereTests/Fixtures/sample.key
-      - name: Smoke test (no sideways pan unless zoomed in, top level and iframe, Chromium)
-        run: node scripts/smoke-pan.mjs ../Tests/SempereTests/Fixtures/sample.sempere ../Tests/SempereTests/Fixtures/sample.key
-      - name: Smoke test (interface language, override and Spanish session, Chromium)
-        run: node scripts/smoke-language.mjs test/fixtures/render.sempere ../Tests/SempereTests/Fixtures/sample.key
-      # Passphrase-wrapped keys (scrypt in the key worker, under the CSP and Trusted Types) and transcript search.
-      - name: Smoke test (passphrase keys and transcript search, Chromium)
-        run: node scripts/smoke-search-keys.mjs
+      - name: Browser smoke scripts (cache and config.json, sideways pan, listing, attachments, video, passkey, interface language, passphrase keys and transcript search)
+        working-directory: web
+        run: scripts/smoke-all.sh
 
   web-golden:
     name: Web viewer goldens match the Swift CLI

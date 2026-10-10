@@ -74,6 +74,7 @@ struct ImportPDFCommand: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
+        if !dryRun { try vault.requireWritable() }   // format.md §7.3: exit 7, not a failure per file
         let extractor = try pdfText.extractor()
         let known = NoteOps.normalizedTags(tags).isEmpty
             ? [] : NoteOps.vaultTags(try vault.summaries(of: nil, cache: cache.cache(for: vault)))

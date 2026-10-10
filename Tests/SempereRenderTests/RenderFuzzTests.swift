@@ -289,6 +289,46 @@ final class TextFuzzTests: XCTestCase {
 
     /// Random text from a pool of scripts, controls and marks, any direction
     /// and alignment, random stored breaks, in tiny and huge frames.
+    /// Markdown boxes laid out and expanded (format.md §8.5.4) with any
+    /// source, frame, stored layout and typeset formulas: no trap, finite
+    /// geometry, and a stored layout of the same text always used.
+    func testFuzzMarkdownLayout() throws {
+        let seeds = ["# H\n\n- [x] **a** `d` $x$\n> q\n```\nc\n```\n$$y$$", "a b c d e f g h i j k l m n o p",
+                     "مرحبا $x$ بكم", "$x$$x$$y$$"].map { Data($0.utf8) }
+        let render = BlobRef(sha256: String(repeating: "a", count: 64), size: 10, type: "application/pdf")
+        let report = Fuzz.run("markdown-layout", seeds: seeds, quick: 300, maxSize: 600) { input in
+            let b = [UInt8](input)
+            let source = String(decoding: input, as: UTF8.self)
+            var content = TextContent(size: [1, 12, 300][Int(b.first ?? 0) % 3], color: .black, runs: [TextRun(source)],
+                                      markup: .markdown)
+            content.math = ["x", "y", "\\frac{a}{b}"].map { latex in
+                TypesetFormula(math: MathContent(latex: latex, display: b.count % 2 == 0, size: content.size, color: .black,
+                                                 render: render, renderSize: Size(w: 5 + Double(b.count % 40), h: 9), engine: "f"),
+                               depth: 2)
+            }
+            let offsets = b.prefix(6).map { Int($0) % max(source.unicodeScalars.count, 1) }.sorted()
+            var unique: [Int] = []
+            for o in offsets where unique.last != o { unique.append(o) }
+            content.layout = RenderedLayout(of: MarkdownText.hash(source), breaks: unique)
+            let frame = [Rect(x: 0, y: 0, w: 0.001, h: 1), Rect(x: 10, y: 10, w: 200, h: 40), Rect(x: 0, y: 0, w: 1e5, h: 1)][Int(b.last ?? 0) % 3]
+            let laid = MarkdownLayout(content, frame: frame, measure: MarkdownLayoutTests.measure)
+            guard laid.height.isFinite, laid.texts.allSatisfy({ [$0.frame.x, $0.frame.y, $0.frame.w].allSatisfy(\.isFinite) }) else {
+                return "non-finite geometry"
+            }
+            // A writer's layout is used as it was written.
+            let relaid = MarkdownLayout.relayout(content, frame: Rect(x: 0, y: 0, w: 150, h: 1), measure: MarkdownLayoutTests.measure)
+            if !MarkdownLayout(relaid.content, frame: relaid.frame, measure: MarkdownLayoutTests.measure).usedStoredBreaks {
+                return "a writer's own layout was not usable"
+            }
+            if let it = try? PreparedItem(Item.text(content, frame: Rect(x: 1, y: 1, w: 100, h: 20), z: "a"), pageNumber: 1) {
+                _ = MarkdownItems.expand(it, shaper: TextLayoutTests.shaper)
+            }
+            return nil
+        }
+        XCTAssertGreaterThan(report.cases, 0)
+        for f in report.failures { XCTFail("\(f)") }
+    }
+
     func testFuzzTextLayout() throws {
         let pool: [UInt32] = [0x41, 0x61, 0x20, 0x09, 0x2D, 0x0A, 0x301, 0x5D0, 0x5B8, 0x627, 0x644, 0x64E, 0x651, 0x660,
                               0x4E00, 0x3042, 0xAC00, 0x928, 0x94D, 0x200D, 0x200C, 0x202B, 0x202C, 0x2067, 0x2069, 0x2066,

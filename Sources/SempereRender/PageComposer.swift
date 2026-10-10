@@ -118,17 +118,28 @@ struct PreparedPage {
         // fatal to the page (format.md §8.5.2); at most `maxItemsPerPage` are drawn.
         var placed: [PreparedItem] = []
         var notes: [String] = []
+        // A Markdown box counts as the pieces it is drawn as (format.md §8.4, §8.5.4).
+        var piecesCut = false
         for item in page.items.sorted(by: Item.drawsBefore).prefix(RenderLimits.maxItemsPerPage) {
+            guard placed.count < RenderLimits.maxItemsPerPage else { piecesCut = true; break }
             do {
                 let p = try PreparedItem(item, pageNumber: pageNumber)
-                placed.append(p)
+                if let pieces = MarkdownItems.expand(p, shaper: options.shaper, warnings: &notes) {
+                    // A Markdown box is drawn as its pieces (format.md §8.5.4).
+                    let kept = pieces.prefix(RenderLimits.maxItemsPerPage - placed.count)
+                    if kept.count < pieces.count { piecesCut = true }
+                    placed += kept
+                    for q in kept { low = max(low, q.maxY) }
+                } else {
+                    placed.append(p)
+                }
                 low = max(low, p.maxY)
             } catch {
                 notes.append("page \(pageNumber): item \(item.id.uuidString.lowercased().prefix(8)): "
                     + "outside the drawable area; not drawn")
             }
         }
-        if page.items.count > RenderLimits.maxItemsPerPage {
+        if page.items.count > RenderLimits.maxItemsPerPage || piecesCut {
             notes.append("page \(pageNumber): more than \(RenderLimits.maxItemsPerPage) items; the rest are not drawn")
         }
         items = placed

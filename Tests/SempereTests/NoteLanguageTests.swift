@@ -98,6 +98,11 @@ final class NoteLanguageTests: XCTestCase {
         XCTAssertEqual(try NoteOps.setLanguage(nil, state: state), [.setMeta(.lang(nil))])
         XCTAssertEqual(NoteOps.setMarkersBehindText(false, state: state), [])
         XCTAssertEqual(NoteOps.setMarkersBehindText(true, state: state), [.setMeta(.markersBehindText(true))])
+        XCTAssertEqual(NoteOps.setFavorite(false, state: state), [])
+        XCTAssertEqual(NoteOps.setFavorite(true, state: state), [.setMeta(.favorite(true))])
+        state.meta.favorite = true
+        XCTAssertEqual(NoteOps.setFavorite(true, state: state), [])
+        XCTAssertEqual(NoteOps.setFavorite(false, state: state), [.setMeta(.favorite(false))])
     }
 
     // MARK: Recognition language

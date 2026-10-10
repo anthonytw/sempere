@@ -257,7 +257,7 @@ extension Item {
     /// `poster` and a math item's `render` (format.md §8.1.1), each once.
     public var blobReferences: [BlobRef] {
         var refs: [BlobRef] = []
-        for r in [blob, poster, math?.render].compactMap({ $0 }) where !refs.contains(where: { $0.sha256 == r.sha256 }) {
+        for r in ([blob, poster, math?.render].compactMap({ $0 }) + (text?.math ?? []).compactMap(\.math.render)) where !refs.contains(where: { $0.sha256 == r.sha256 }) {
             refs.append(r)
         }
         return refs

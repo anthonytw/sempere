@@ -113,6 +113,12 @@ extension NoteOps {
         state.meta.markersBehindText == on ? [] : [.setMeta(.markersBehindText(on))]
     }
 
+    /// The op that marks the note a favorite (`true`) or not (format.md §5.4
+    /// `favorite`), or none when it already is that way.
+    public static func setFavorite(_ on: Bool, state: NoteState) -> [Op] {
+        state.meta.favorite == on ? [] : [.setMeta(.favorite(on))]
+    }
+
     /// The op that puts a note in `state` into the notebook path `notebook`
     /// (canonicalised, format.md §5.4; nil or blank: no notebook), or none
     /// when it is already there.

@@ -14,8 +14,12 @@
 		A1000000000000000000B007 /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D005 /* SwiftMath */; };
 		A1000000000000000000B008 /* SempereImport in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D006 /* SempereImport */; };
 		A1000000000000000000B009 /* SempereNotability in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D007 /* SempereNotability */; };
+		A1000000000000000000B00D /* SempereWebDAV in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D008 /* SempereWebDAV */; };
 		A1000000000000000000B003 /* Fixtures in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F003 /* Fixtures */; };
+		A1000000000000000000B00B /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F007 /* LICENSE */; };
+		A1000000000000000000B00C /* LICENSE-EXCEPTION in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F008 /* LICENSE-EXCEPTION */; };
 		A1000000000000000000B006 /* SempereWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F005 /* SempereWidgets.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A1000000000000000000B00A /* SempereStatusItem.bundle in Embed Mac Plug-Ins */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F006 /* SempereStatusItem.bundle */; platformFilter = maccatalyst; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -40,6 +44,13 @@
 			remoteGlobalIDString = A1000000000000000000A004;
 			remoteInfo = SempereWidgets;
 		};
+		A1000000000000000000C004 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A1000000000000000000A005;
+			remoteInfo = SempereStatusItem;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -54,6 +65,17 @@
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000009002 /* Embed Mac Plug-Ins */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A1000000000000000000B00A /* SempereStatusItem.bundle in Embed Mac Plug-Ins */,
+			);
+			name = "Embed Mac Plug-Ins";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -62,6 +84,9 @@
 		A1000000000000000000F004 /* SempereAppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SempereAppUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1000000000000000000F003 /* Fixtures */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Fixtures; path = ../../Tests/SempereTests/Fixtures; sourceTree = SOURCE_ROOT; };
 		A1000000000000000000F005 /* SempereWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SempereWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1000000000000000000F006 /* SempereStatusItem.bundle */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SempereStatusItem.bundle; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1000000000000000000F007 /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; name = LICENSE; path = ../../LICENSE; sourceTree = SOURCE_ROOT; };
+		A1000000000000000000F008 /* LICENSE-EXCEPTION */ = {isa = PBXFileReference; lastKnownFileType = text; name = "LICENSE-EXCEPTION"; path = "../../LICENSE-EXCEPTION"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -95,6 +120,16 @@
 			path = Localization;
 			sourceTree = "<group>";
 		};
+		A1000000000000000000E007 /* SempereStatusItem */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SempereStatusItem;
+			sourceTree = "<group>";
+		};
+		A1000000000000000000E008 /* StatusItemShared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = StatusItemShared;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -109,6 +144,7 @@
 				A1000000000000000000B007 /* SwiftMath in Frameworks */,
 				A1000000000000000000B008 /* SempereImport in Frameworks */,
 				A1000000000000000000B009 /* SempereNotability in Frameworks */,
+				A1000000000000000000B00D /* SempereWebDAV in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -133,6 +169,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000004005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -145,7 +188,10 @@
 				A1000000000000000000E004 /* SempereWidgets */,
 				A1000000000000000000E005 /* SempereShared */,
 				A1000000000000000000E006 /* Localization */,
+				A1000000000000000000E007 /* SempereStatusItem */,
+				A1000000000000000000E008 /* StatusItemShared */,
 				A10000000000000000001003 /* Fixtures (shared with the package tests) */,
+				A10000000000000000001004 /* Licence (the repository's, bundled in the app) */,
 				A10000000000000000001002 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -157,6 +203,7 @@
 				A1000000000000000000F002 /* SempereAppTests.xctest */,
 				A1000000000000000000F004 /* SempereAppUITests.xctest */,
 				A1000000000000000000F005 /* SempereWidgets.appex */,
+				A1000000000000000000F006 /* SempereStatusItem.bundle */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -167,6 +214,15 @@
 				A1000000000000000000F003 /* Fixtures */,
 			);
 			name = "Test Fixtures";
+			sourceTree = "<group>";
+		};
+		A10000000000000000001004 /* Licence (the repository's, bundled in the app) */ = {
+			isa = PBXGroup;
+			children = (
+				A1000000000000000000F007 /* LICENSE */,
+				A1000000000000000000F008 /* LICENSE-EXCEPTION */,
+			);
+			name = Licence;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -180,16 +236,19 @@
 				A10000000000000000004001 /* Frameworks */,
 				A10000000000000000005001 /* Resources */,
 				A10000000000000000009001 /* Embed Foundation Extensions */,
+				A10000000000000000009002 /* Embed Mac Plug-Ins */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				A10000000000000000007003 /* PBXTargetDependency */,
+				A10000000000000000007004 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				A1000000000000000000E001 /* SempereApp */,
 				A1000000000000000000E005 /* SempereShared */,
 				A1000000000000000000E006 /* Localization */,
+				A1000000000000000000E008 /* StatusItemShared */,
 			);
 			name = SempereApp;
 			packageProductDependencies = (
@@ -200,6 +259,7 @@
 				A1000000000000000000D005 /* SwiftMath */,
 				A1000000000000000000D006 /* SempereImport */,
 				A1000000000000000000D007 /* SempereNotability */,
+				A1000000000000000000D008 /* SempereWebDAV */,
 			);
 			productName = SempereApp;
 			productReference = A1000000000000000000F001 /* Sempere.app */;
@@ -269,6 +329,27 @@
 			productReference = A1000000000000000000F005 /* SempereWidgets.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		A1000000000000000000A005 /* SempereStatusItem */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000003006 /* Build configuration list for PBXNativeTarget "SempereStatusItem" */;
+			buildPhases = (
+				A10000000000000000006005 /* Sources */,
+				A10000000000000000004005 /* Frameworks */,
+				A10000000000000000005005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A1000000000000000000E007 /* SempereStatusItem */,
+				A1000000000000000000E008 /* StatusItemShared */,
+			);
+			name = SempereStatusItem;
+			productName = SempereStatusItem;
+			productReference = A1000000000000000000F006 /* SempereStatusItem.bundle */;
+			productType = "com.apple.product-type.bundle";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -291,6 +372,9 @@
 						TestTargetID = A1000000000000000000A001;
 					};
 					A1000000000000000000A004 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					A1000000000000000000A005 = {
 						CreatedOnToolsVersion = 26.0;
 					};
 				};
@@ -318,6 +402,7 @@
 				A1000000000000000000A002 /* SempereAppTests */,
 				A1000000000000000000A003 /* SempereAppUITests */,
 				A1000000000000000000A004 /* SempereWidgets */,
+				A1000000000000000000A005 /* SempereStatusItem */,
 			);
 		};
 /* End PBXProject section */
@@ -327,6 +412,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1000000000000000000B00B /* LICENSE in Resources */,
+				A1000000000000000000B00C /* LICENSE-EXCEPTION in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -346,6 +433,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A10000000000000000005004 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000005005 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -383,6 +477,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000006005 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -401,6 +502,12 @@
 			platformFilter = ios;
 			target = A1000000000000000000A004 /* SempereWidgets */;
 			targetProxy = A1000000000000000000C003 /* PBXContainerItemProxy */;
+		};
+		A10000000000000000007004 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			platformFilter = maccatalyst;
+			target = A1000000000000000000A005 /* SempereStatusItem */;
+			targetProxy = A1000000000000000000C004 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -645,6 +752,58 @@
 			};
 			name = Release;
 		};
+		A10000000000000000008101 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SempereStatusItemInfo.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.anthonytw.sempere.statusitem;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+				WRAPPER_EXTENSION = bundle;
+			};
+			name = Debug;
+		};
+		A10000000000000000008102 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SempereStatusItemInfo.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.anthonytw.sempere.statusitem;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+				WRAPPER_EXTENSION = bundle;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -689,6 +848,15 @@
 			buildConfigurations = (
 				A10000000000000000008009 /* Debug */,
 				A1000000000000000000800A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000000000000000003006 /* Build configuration list for PBXNativeTarget "SempereStatusItem" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000000000000000008101 /* Debug */,
+				A10000000000000000008102 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -742,6 +910,10 @@
 		A1000000000000000000D007 /* SempereNotability */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = SempereNotability;
+		};
+		A1000000000000000000D008 /* SempereWebDAV */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SempereWebDAV;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

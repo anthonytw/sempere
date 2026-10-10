@@ -39,6 +39,8 @@ final class ItemLayerView: UIView {
     private var zoom: CGFloat = 1
     /// Frames shown instead of the stored ones while a gesture moves or resizes an item.
     private var previews: [UUID: Rect] = [:]
+    /// Degrees a two-finger turn has turned an item by so far (`preview(_:turn:)`).
+    private var turns: [UUID: Double] = [:]
     private var sublayers: [UUID: ItemSublayer] = [:]
     /// Drawn pictures, by what they depend on (kept across small changes, such as undo of a move).
     private var pictures: [ItemRenderKey: ItemPicture] = [:]
@@ -96,6 +98,7 @@ final class ItemLayerView: UIView {
             tasks = [:]
             pictures = [:]
             previews = [:]
+            turns = [:]
             for task in previewTasks.values { task.cancel() }
             previewTasks = [:]
             pagePreviews = [:]
@@ -130,6 +133,14 @@ final class ItemLayerView: UIView {
     /// Shows `frame` for item `id` while a gesture changes it (nil: the stored one).
     func preview(_ id: UUID, frame: Rect?) {
         previews[id] = frame
+        layout()
+    }
+
+    /// Shows item `id` turned by `degrees` more than its rotation while a two-finger
+    /// turn runs (nil: as stored). The drawn picture is turned as it is, about the
+    /// frame's centre; PDF page tiles are not turned until the turn ends.
+    func preview(_ id: UUID, turn degrees: Double?) {
+        turns[id] = degrees
         layout()
     }
 
@@ -193,7 +204,11 @@ final class ItemLayerView: UIView {
                 sub.show(.placeholder(.loading), item: item)
             }
             // A picture of an older version stays up (stretched to the frame) until the new one is drawn.
+            sub.transform = CATransform3DIdentity   // `place` sets the frame, which a transform would skew
             sub.place(frame: previews[item.id] ?? item.frame, rotation: item.rotation, zoom: zoom)
+            if let degrees = turns[item.id] {
+                sub.transform = CATransform3DMakeRotation(CGFloat(degrees * .pi / 180), 0, 0, 1)
+            }
             if pictures[key] == nil, tasks[key] == nil { draw(key) }
         }
         for (key, task) in tasks where !wanted.contains(key) {

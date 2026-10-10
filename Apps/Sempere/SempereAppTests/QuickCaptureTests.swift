@@ -342,6 +342,16 @@ struct QuickCaptureTests {
         try qc.store.save(old)
         model.refreshQuickCaptureProfile()
         #expect(try qc.store.load()?.profile.key == stored.profile.key)
+        // Attributed to the key this device unlocked with (format.md §11.1, security review C2).
+        let unlockedWith = try IdentityFile.parse(keyText)
+        #expect(stored.profile.recipient == CaptureKey.fingerprint(of: unlockedWith.recipient.string))
+        // A profile made before attribution (the vault capture key) becomes an attributed one.
+        var legacy = stored
+        legacy.profile.recipient = nil
+        legacy.profile.key = try #require(model.vault).captureKey().bytes
+        try qc.store.save(legacy)
+        model.refreshQuickCaptureProfile()
+        #expect(try qc.store.load()?.profile == stored.profile)
         try model.disableQuickCapture()
         #expect(try qc.store.load() == nil)
     }
@@ -367,7 +377,8 @@ struct QuickCaptureTests {
         let after = try #require(try qc.store.load()).profile
         #expect(after.key != before)
         let vault = try #require(model.vault)
-        #expect(after.key == (try vault.captureKey()).bytes)
+        #expect(after.key == (try vault.captureProfile(device: try #require(DeviceID(after.device)))).key)
+        #expect(after.key != (try vault.captureKey()).bytes, "this device's key, not the vault capture key")
         #expect(!after.recipients.contains(other.recipient.string))
     }
 

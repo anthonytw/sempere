@@ -264,6 +264,6 @@ struct OpenedPDFsWaitingBar: View {
 
 extension View {
     func windowSheets(_ ui: WindowUI) -> some View {
-        modifier(WindowSheets(ui: ui))
+        modifier(WindowSheets(ui: ui)).modifier(ExpectationsSheets(ui: ui))
     }
 }

@@ -18,7 +18,7 @@ struct ItemsCommand: ParsableCommand {
             id or an id prefix of at least 4 characters, as `items list` prints it. Each edit writes one
             delta, as the app's gesture does; nothing when the item already is that way.
             """,
-        subcommands: [ItemsList.self, ItemsMove.self, ItemsRotate.self, ItemsCrop.self, ItemsReplace.self, ItemsPoster.self, ItemsMath.self,
+        subcommands: [ItemsList.self, ItemsText.self, ItemsMove.self, ItemsRotate.self, ItemsCrop.self, ItemsReplace.self, ItemsPoster.self, ItemsMath.self,
                       ItemsFront.self, ItemsDelete.self, ItemsDuplicate.self, ItemsCopy.self]
     )
 }
@@ -77,6 +77,8 @@ struct ItemsList: ParsableCommand {
             var math: MathContent?
             /// Audio items: the recording shown, and whether the note has it (format.md §8.2.9).
             var recording: String?; var recordingMissing: Bool?
+            /// Text boxes: the text as search sees it, and `markdown` for a Markdown box (format.md §8.2.4).
+            var text: String?; var markup: String?
         }
         var rows: [Row] = []
         for (i, p) in state.pages.enumerated() where page == nil || page == i + 1 {
@@ -85,7 +87,8 @@ struct ItemsList: ParsableCommand {
                                 layer: "\(item.layer)", frame: item.frame, rotation: item.rotation, z: item.z,
                                 blob: item.blob ?? item.math?.render, crop: item.crop, duration: item.duration, poster: item.poster,
                                 math: item.math, recording: item.recording?.uuidString.lowercased(),
-                                recordingMissing: item.kind == .audio ? state.recording(shownBy: item) == nil : nil))
+                                recordingMissing: item.kind == .audio ? state.recording(shownBy: item) == nil : nil,
+                                text: item.text.map(MarkdownText.searchText), markup: item.text?.markup?.rawValue))
             }
         }
         if output.json { try output.emitJSON(rows); return }
@@ -101,6 +104,10 @@ struct ItemsList: ParsableCommand {
             }
             if r.kind == ItemKind.video.rawValue {
                 blob += " " + AttachmentListing.number(r.duration ?? 0) + " s" + (r.poster == nil ? " (no poster)" : " +poster")
+            }
+            if let t = r.text {
+                let line = t.split(whereSeparator: \.isNewline).joined(separator: " ")
+                blob = "\"" + (line.count > 40 ? String(line.prefix(39)) + "…" : line) + "\"" + (r.markup == "markdown" ? " (Markdown)" : "")
             }
             if let m = r.math {
                 let line = m.latex.split(whereSeparator: \.isNewline).joined(separator: " ")
@@ -155,7 +162,7 @@ struct ItemsMove: ParsableCommand {
             let (page, found) = try findItem(item, in: state)
             return NoteOps.setFrame(found.id, to: rect, on: page) { text, frame in
                 // Breaks belong to the wrapping width: lay out again what was laid out.
-                guard text.breaks != nil else { return (text, frame) }
+                guard text.breaks != nil || text.layout != nil else { return (text, frame) }
                 var item = found
                 item.text = text
                 item.frame = frame

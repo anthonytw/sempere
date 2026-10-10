@@ -26,6 +26,13 @@ extension AppModel {
     ///   is dead (the entry is dropped); otherwise whatever opening throws,
     ///   with the entry kept.
     func open(recent entry: RecentVault, library: VaultLibrary) async throws {
+        if let location = entry.webdav {
+            guard webdavLocations.location(location) != nil else {
+                library.forget(entry)
+                throw VaultLibrary.LibraryError.cannotResolve(name: entry.name)
+            }
+            return try await openWebDAV(location, library: library)
+        }
         let url = try library.resolve(entry)
         try await openVault(at: url)
         remember(in: library)
@@ -150,6 +157,15 @@ extension AppModel {
         try await verifySummary(id)
         guard try summary(id).title != title else { return }
         try await commit(id) { state in state.map { NoteOps.rename(to: title, state: $0) } ?? [.setMeta(.title(title))] }
+    }
+
+    /// Marks a note as a favorite, or takes the mark off (one `setMeta` favorite
+    /// delta, `NoteOps.setFavorite`; nothing is written when it already is that way).
+    func setFavorite(_ on: Bool, for id: UUID) async throws {
+        try await downloadNote(id)
+        try await verifySummary(id)
+        guard try summary(id).favorite != on else { return }
+        try await commit(id) { state in state.map { NoteOps.setFavorite(on, state: $0) } ?? [.setMeta(.favorite(on))] }
     }
 
     /// Adds a tag (one `addTag`, format.md §5.4.1). Matching ignores case: a

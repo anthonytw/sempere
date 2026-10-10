@@ -37,11 +37,16 @@ public enum CaptureError: Error, Hashable, Sendable, CustomStringConvertible {
     /// again until `retryAfter` (unless it changes): the device-local
     /// back-off of format.md §11.3 (security review 2026-10, C5).
     case backedOff(failures: Int, retryAfter: Date, lastError: String)
+    /// A capture profile asked for with a key that is not one of the vault's
+    /// recipients: captures are attributed to a listed device (format.md §11.1).
+    case notARecipient
 
     public var description: String {
         switch self {
         case .notCapture(let why): return "not a capture file: \(why)"
-        case .badTag: return "the capture does not verify (forged, damaged, or sealed before the vault's keys changed)"
+        case .badTag:
+            return "the capture does not verify (forged, damaged, sealed before the vault's keys changed, or by a device "
+                + "no longer in the vault)"
         case .invalidContent(let why): return "invalid capture: \(why)"
         case .audioMismatch: return "the capture's audio does not match its manifest"
         case .tooLarge(let n): return "the capture is larger than \(n >> 20) MiB"
@@ -50,6 +55,7 @@ public enum CaptureError: Error, Hashable, Sendable, CustomStringConvertible {
         case .invalidKey: return "a capture key must be 32 bytes"
         case .backedOff(let n, let after, let last):
             return "failed \(n) time(s) (\(last)); not read again before \(RFC3339.string(from: after) ?? "later") unless it changes"
+        case .notARecipient: return "the key is not one of the vault's recipients, so captures could not be attributed to it"
         }
     }
 }
@@ -68,11 +74,38 @@ public struct CaptureKey: Hashable, Sendable {
     }
 
     static let info = "sempere/1 capture key"
+    static let deviceInfo = "sempere/1 device capture key"
 
-    /// The capture key of a vault secret.
+    /// The vault capture key of a vault secret (format.md §11.1): what
+    /// profiles made before attribution hold. Captures it tags are
+    /// unattributed.
     public static func derive(from secret: VaultSecret) -> CaptureKey {
-        let k = HKDF<SHA256>.deriveKey(inputKeyMaterial: secret.key, info: Data(info.utf8), outputByteCount: 32)
+        derive(secret, info: Data(info.utf8))
+    }
+
+    /// The device capture key of the recipient whose fingerprint is
+    /// `device` (format.md §11.1): HKDF-SHA256 of the secret with `info`
+    /// `sempere/1 device capture key ‖ 0x00 ‖ fingerprint`. Of the profiles,
+    /// only that device's holds it, so a capture it tags is attributed to that
+    /// recipient (security review 2026-10, C2); a holder of the vault secret
+    /// can derive it too, as it can write any revision.
+    public static func derive(from secret: VaultSecret, device fingerprint: String) -> CaptureKey {
+        var info = Data(deviceInfo.utf8)
+        info.append(0)
+        info.append(contentsOf: fingerprint.utf8)
+        return derive(secret, info: info)
+    }
+
+    private static func derive(_ secret: VaultSecret, info: Data) -> CaptureKey {
+        let k = HKDF<SHA256>.deriveKey(inputKeyMaterial: secret.key, info: info, outputByteCount: 32)
         return CaptureKey(valid: k.withUnsafeBytes { Data($0) })
+    }
+
+    /// A recipient's fingerprint (format.md §11.1): the lowercase hex SHA-256
+    /// of its key string as written in `vault.json`, as in the names of
+    /// post-quantum key files (§3.2).
+    public static func fingerprint(of recipient: String) -> String {
+        RecipientsAuth.hex(Data(SHA256.hash(data: Data(recipient.utf8))))
     }
 
     private init(valid: Data) { bytes = valid }
@@ -85,41 +118,102 @@ public struct CaptureProfile: Codable, Hashable, Sendable {
     public var vaultId: UUID
     /// The vault's recipients (`age1pq1…`), public.
     public var recipients: [String]
-    /// `CaptureKey.bytes`.
+    /// `CaptureKey.bytes`: the device capture key of `recipient`, or the
+    /// vault capture key for a profile made before attribution.
     public var key: Data
     /// The capturing device's id (format.md §5), recorded in each capture.
     public var device: String
     /// The notebook adopted captures go to.
     public var notebook: String
+    /// The fingerprint (`CaptureKey.fingerprint`) of the vault recipient this
+    /// profile was made for (format.md §11.1); nil in a profile made before
+    /// attribution, whose captures are unattributed.
+    public var recipient: String?
 
-    public init(vaultId: UUID, recipients: [String], key: Data, device: String, notebook: String) {
+    public init(vaultId: UUID, recipients: [String], key: Data, device: String, notebook: String, recipient: String? = nil) {
         self.vaultId = vaultId; self.recipients = recipients; self.key = key; self.device = device
-        self.notebook = notebook
+        self.notebook = notebook; self.recipient = recipient
     }
+
+    /// False for a profile made before attribution (no `recipient`): it
+    /// should be made again (`Vault.captureProfile`) by a device that unlocks.
+    public var isAttributed: Bool { recipient != nil }
 
     /// The default inbox notebook.
     public static let defaultNotebook = "Inbox"
 }
 
 extension Vault {
-    /// The capture key (format.md §11.1). Needs the vault secret.
+    /// The vault capture key (format.md §11.1). Needs the vault secret.
     public func captureKey() throws -> CaptureKey { CaptureKey.derive(from: try requireSecret()) }
 
-    /// A capture profile for this device: the recipients and the capture
-    /// key. Needs the vault unlocked once; afterwards captures need nothing else.
+    /// The recipient key of an identity this vault holds, if it is listed.
+    func listedRecipient(of identity: any AgeIdentity) -> String? {
+        let key: String?
+        if let n = identity as? NativeIdentity { key = n.recipient.string } else if let x = identity as? X25519Identity {
+            key = x.recipient.string
+        } else { key = nil }
+        guard let key, manifest.recipients.contains(where: { $0.key == key }) else { return nil }
+        return key
+    }
+
+    /// A capture profile for this device: the recipients and the device
+    /// capture key of `recipient` (format.md §11.1). Needs the vault unlocked
+    /// once; afterwards captures need nothing else.
     ///
+    /// - Parameter recipient: the listed key the profile is made for; nil
+    ///   takes that of the first identity the vault was opened with that is
+    ///   listed (the key this device unlocked with).
     /// - Throws: `VaultError.untrustedRecipients` when the recipients list
-    ///   does not check (format.md §2.1).
-    public func captureProfile(device: DeviceID, notebook: String = CaptureProfile.defaultNotebook) throws -> CaptureProfile {
+    ///   does not check (format.md §2.1); `CaptureError.notARecipient` when
+    ///   no listed key is known.
+    public func captureProfile(device: DeviceID, notebook: String = CaptureProfile.defaultNotebook,
+                               recipient: String? = nil) throws -> CaptureProfile {
         try requireMigrated()
         // A profile lets captures be written into inbox/ (format.md §7.3), and they are
         // sealed to these keys alone (§11.1): never to a list that does not check.
         try requireNotReadOnly()
         try requireTrustedRecipients()
+        let secret = try requireSecret()
+        guard let key = recipient ?? identities.lazy.compactMap({ self.listedRecipient(of: $0) }).first,
+              recipients.contains(where: { $0.key == key }) else { throw CaptureError.notARecipient }
+        let fingerprint = CaptureKey.fingerprint(of: key)
         let nb = NoteOps.normalizedNotebook(notebook) ?? CaptureProfile.defaultNotebook
-        return CaptureProfile(vaultId: vaultId, recipients: recipients.map(\.key), key: try captureKey().bytes,
-                              device: device.rawValue, notebook: nb)
+        return CaptureProfile(vaultId: vaultId, recipients: recipients.map(\.key),
+                              key: CaptureKey.derive(from: secret, device: fingerprint).bytes,
+                              device: device.rawValue, notebook: nb, recipient: fingerprint)
     }
+
+    /// The capture keys a reader tries (format.md §11.2), in one streamed pass:
+    /// the vault capture key and the device capture key of every listed
+    /// recipient, under the current secret; during an unfinished rewrap,
+    /// the listed recipients' device capture keys under the outgoing secret
+    /// too, and its vault capture key only when `legacyPrevious` (the run
+    /// that rotated the secret, security review 2026-10, C3). A recipient
+    /// no longer listed has no key here: its captures never verify.
+    func captureKeyRing(legacyPrevious: Bool = false) throws -> [CaptureKeyEntry] {
+        let secret = try requireSecret()
+        let devices = manifest.recipients.map { CaptureKey.fingerprint(of: $0.key) }
+        var ring = [CaptureKeyEntry(key: .derive(from: secret), recipient: nil, previous: false)]
+        ring += devices.map { CaptureKeyEntry(key: .derive(from: secret, device: $0), recipient: $0, previous: false) }
+        if let previousSecret {
+            if legacyPrevious { ring.append(CaptureKeyEntry(key: .derive(from: previousSecret), recipient: nil, previous: true)) }
+            ring += devices.map { CaptureKeyEntry(key: .derive(from: previousSecret, device: $0), recipient: $0, previous: true) }
+        }
+        return ring
+    }
+}
+
+/// One key of `Vault.captureKeyRing`.
+struct CaptureKeyEntry: Sendable {
+    var key: CaptureKey
+    /// The recipient fingerprint it attributes to; nil for a vault capture key.
+    var recipient: String?
+    /// Derived from the outgoing secret of an unfinished rewrap.
+    var previous: Bool
+}
+
+extension Vault {
 
     /// The vault's inbox folder (format.md §1).
     public var inboxURL: URL { url.appendingPathComponent(CaptureFile.folderName, isDirectory: true) }
@@ -141,6 +235,10 @@ public struct CaptureManifest: Codable, Hashable, Sendable {
     public var title: String
     /// The notebook to adopt into; absent means `Inbox`.
     public var notebook: String?
+    /// The fingerprint of the vault recipient whose device capture key
+    /// sealed it (format.md §11.2); absent when sealed with the vault capture
+    /// key (unattributed). A reader checks it against the key that verified.
+    public var recipient: String?
     /// The audio that follows the manifest: its media type, size and SHA-256.
     public var audio: BlobRef
     /// Informational, as on recordings (format.md §8.3.1).
@@ -151,9 +249,9 @@ public struct CaptureManifest: Codable, Hashable, Sendable {
     public var bitRate: Int?
 
     public init(id: UUID, device: String, vault: UUID, created: Date, started: Date, title: String, notebook: String?,
-                audio: BlobRef, info: AudioInfo? = nil) {
+                audio: BlobRef, info: AudioInfo? = nil, recipient: String? = nil) {
         self.id = id; self.device = device; self.vault = vault; self.created = created; self.started = started
-        self.title = title; self.notebook = notebook; self.audio = audio
+        self.title = title; self.notebook = notebook; self.audio = audio; self.recipient = recipient
         duration = info?.duration; codec = info?.codec; sampleRate = info?.sampleRate; channels = info?.channels
         bitRate = info?.bitRate
     }
@@ -166,7 +264,7 @@ public struct CaptureManifest: Codable, Hashable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case format, id, device, vault, created, started, title, notebook, audio, duration, codec, sampleRate, channels, bitRate
+        case format, id, device, vault, created, started, title, notebook, recipient, audio, duration, codec, sampleRate, channels, bitRate
     }
 
     public init(from decoder: Decoder) throws {
@@ -184,6 +282,10 @@ public struct CaptureManifest: Codable, Hashable, Sendable {
         started = try c.decode(Date.self, forKey: .started)
         title = try c.decode(String.self, forKey: .title)
         notebook = try c.decodeIfPresent(String.self, forKey: .notebook)
+        recipient = try c.decodeIfPresent(String.self, forKey: .recipient)
+        if let recipient, RecipientsAuth.unhex(recipient) == nil {
+            throw DecodingError.dataCorruptedError(forKey: .recipient, in: c, debugDescription: "not 64 lowercase hex digits")
+        }
         audio = try c.decode(BlobRef.self, forKey: .audio)
         guard audio.isValid, audio.type.lowercased().hasPrefix("audio/") else {
             throw DecodingError.dataCorruptedError(forKey: .audio, in: c, debugDescription: "bad audio reference")
@@ -205,6 +307,7 @@ public struct CaptureManifest: Codable, Hashable, Sendable {
         try c.encode(started, forKey: .started)
         try c.encode(title, forKey: .title)
         try c.encodeIfPresent(notebook, forKey: .notebook)
+        try c.encodeIfPresent(recipient, forKey: .recipient)
         try c.encode(audio, forKey: .audio)
         try c.encodeIfPresent(duration.map(InkJSON.round3), forKey: .duration)
         try c.encodeIfPresent(codec, forKey: .codec)
@@ -317,11 +420,10 @@ public enum CaptureFile {
     }
 
     /// The plaintext of inbox file `filename` tagged under `key` instead: the
-    /// same bytes after the tag, once the old tag verifies under one of
-    /// `keys` (format.md §11.1, a recipient change). Nil when it verifies
-    /// under none of them (forged, or sealed under a key revoked earlier).
-    static func retag(_ plaintext: Data, filename: String, verifiedBy keys: [CaptureKey], to key: CaptureKey) -> Data? {
-        guard keys.contains(where: { (try? unframe(plaintext, filename: filename, key: $0)) != nil }) else { return nil }
+    /// same bytes after the tag, once the old tag verifies under `old`
+    /// (format.md §11.1, a recipient change). Nil when it does not.
+    static func retag(_ plaintext: Data, filename: String, verifiedBy old: CaptureKey, to key: CaptureKey) -> Data? {
+        guard (try? unframe(plaintext, filename: filename, key: old)) != nil else { return nil }
         let rest = plaintext[(plaintext.startIndex + headerSize)...]
         var out = Data(magic)
         out.append(version)
@@ -335,6 +437,47 @@ public enum CaptureFile {
         var diff: UInt8 = 0
         for (x, y) in zip(a, b) { diff |= x ^ y }
         return diff == 0
+    }
+
+    /// How much of a capture's JSON line is scanned for its device claim:
+    /// the keys before `recipient` (sorted, InkJSON) are short, except
+    /// `notebook`, which writers bound (`CaptureAdoption.boundedName`: at most
+    /// 1200 scalars, under 10 KB even JSON-escaped).
+    static let claimWindow = 64 << 10
+    /// At most this many claims are taken (a writer makes one).
+    static let maxClaims = 2
+
+    /// The device fingerprints a capture's JSON line claims, before its tag
+    /// is checked (format.md §11.2): each `"recipient":"<64 lowercase hex>"`
+    /// (JSON whitespace allowed around the colon) in the first `claimWindow`
+    /// bytes, up to the first newline, at most `maxClaims`. A byte scan, not a
+    /// JSON parse: it only picks which device capture keys the reader tries,
+    /// so that the work is bounded by the vault capture keys and one device's,
+    /// not by the length of the list (review of #125). The tag and the parsed
+    /// manifest's `recipient` stay the authority; a claim that is wrong only
+    /// makes the file fail.
+    static func claimedDevices<D: DataProtocol>(in bytes: D) -> Set<String> {
+        var b = Array(bytes.prefix(claimWindow))
+        if let nl = b.firstIndex(of: 0x0A) { b = Array(b[..<nl]) }
+        let needle = Array("\"recipient\"".utf8)
+        func isSpace(_ c: UInt8) -> Bool { c == 0x20 || c == 0x09 || c == 0x0D }
+        func isHex(_ c: UInt8) -> Bool { (0x30...0x39).contains(c) || (0x61...0x66).contains(c) }
+        var out = Set<String>()
+        var i = 0
+        while i + needle.count <= b.count, out.count < maxClaims {
+            guard Array(b[i..<i + needle.count]) == needle else { i += 1; continue }
+            var j = i + needle.count
+            while j < b.count, isSpace(b[j]) { j += 1 }
+            guard j < b.count, b[j] == 0x3A else { i += 1; continue }
+            j += 1
+            while j < b.count, isSpace(b[j]) { j += 1 }
+            guard j + 66 <= b.count, b[j] == 0x22, b[j + 65] == 0x22, b[(j + 1)...(j + 64)].allSatisfy(isHex) else {
+                i += 1; continue
+            }
+            out.insert(String(decoding: b[(j + 1)...(j + 64)], as: UTF8.self))
+            i = j + 66
+        }
+        return out
     }
 }
 
@@ -378,8 +521,9 @@ public struct CaptureWriter: Sendable {
     public func seal(audio: Data, type: String = "audio/mp4", started: Date, info: AudioInfo? = nil, title: String? = nil,
                      id: UUID = UUID(), created: Date = Date()) throws -> SealedCapture {
         let manifest = CaptureManifest(id: id, device: profile.device, vault: profile.vaultId, created: created, started: started,
-                                       title: title ?? Self.defaultTitle(started), notebook: profile.notebook,
-                                       audio: BlobRef(content: audio, type: type), info: info)
+                                       title: title ?? Self.defaultTitle(started),
+                                       notebook: CaptureAdoption.boundedName(profile.notebook),
+                                       audio: BlobRef(content: audio, type: type), info: info, recipient: profile.recipient)
         let name = CaptureFile.name(id, .capture)
         let plain = try CaptureFile.frame(line: try InkJSON.encoder().encode(manifest), payload: audio, filename: name, key: key)
         return SealedCapture(name: name, data: try Vault.encrypt(plain, to: recipients))
@@ -431,6 +575,12 @@ public struct PendingCapture: Sendable {
     /// The SHA-256 (lowercase hex) of the audio the transcript is bound to
     /// (format.md §11.2); nil when there is no usable transcript.
     public var transcriptAudio: String?
+    /// The recipient fingerprint the capture is attributed to: the device
+    /// whose capture key verified it (format.md §11.2); nil when sealed with
+    /// the vault capture key, or when only the transcript was read.
+    public var recipient: String?
+    /// The same for the transcript file.
+    public var transcriptRecipient: String?
     /// The inbox files read.
     public var files: [String]
 }
@@ -453,7 +603,8 @@ public enum CaptureAdoption {
         var done = pending.files.filter { CaptureFile.parse(name: $0)?.kind == .capture }
         let rec = after.recordings.first { $0.id == ids(for: pending.id).recording }
         // A transcript that is not bound to this recording's audio is never adopted.
-        if rec == nil || rec?.transcript != nil || rec?.blob.sha256 != pending.transcriptAudio {
+        if rec == nil || rec?.transcript != nil || rec?.blob.sha256 != pending.transcriptAudio
+            || rec?.captured?.recipient != pending.transcriptRecipient {
             done += pending.files.filter { CaptureFile.parse(name: $0)?.kind == .transcript }
         }
         return done
@@ -502,17 +653,21 @@ public enum CaptureAdoption {
                            paper: Paper = .ruled, pageSize: PageSize = .letter) -> [Op] {
         let ids = ids(for: pending.id)
         if let current, !current.recordings.isEmpty || !current.pages.isEmpty || !current.meta.title.isEmpty {
+            // Only from the device the capture is attributed to (format.md §11.3).
             guard let transcript, let r = current.recordings.first(where: { $0.id == ids.recording }), r.transcript == nil,
-                  r.blob.sha256 == pending.transcriptAudio
+                  r.blob.sha256 == pending.transcriptAudio, r.captured?.recipient == pending.transcriptRecipient
             else { return [] }
             return [.setRecording(recordingId: ids.recording, change: .transcript(transcript))]
         }
         guard let m = pending.manifest, let audio else { return [] }
-        let transcript = m.audio.sha256 == pending.transcriptAudio ? transcript : nil
+        let transcript = m.audio.sha256 == pending.transcriptAudio && pending.transcriptRecipient == pending.recipient
+            ? transcript : nil
         var ops = NoteOps.newNote(title: boundedName(m.title), paper: paper, pageSize: pageSize,
                                   notebook: boundedName(m.notebook ?? CaptureProfile.defaultNotebook), pageId: ids.page)
         var recording = NoteOps.recording(blob: audio, started: m.started, info: m.info, id: ids.recording)
         recording.transcript = transcript
+        // Who captured it (format.md §8.3.1, §11.3): the adopter writes the delta.
+        recording.captured = CaptureAttribution(device: m.device, recipient: pending.recipient)
         ops.append(.addRecording(recording))
         return ops
     }
@@ -544,8 +699,9 @@ extension Vault {
     public func readCapture(_ id: UUID, backoff: InboxBackoff? = nil, now: Date = Date()) throws -> PendingCapture {
         try requireMigrated()
         guard canRead else { throw isLocked ? VaultError.locked : VaultError.noIdentities }
-        var keys = [try captureKey()]
-        if let previousSecret { keys.append(CaptureKey.derive(from: previousSecret)) }
+        // Captures are attributed against the authenticated device list (format.md §2.1, §11.2).
+        try requireTrustedRecipients()
+        let ring = try captureKeyRing()
         var pending = PendingCapture(id: id, files: [])
         for kind in CaptureFile.Kind.allCases {
             let name = CaptureFile.name(id, kind)
@@ -555,10 +711,12 @@ extension Vault {
             if let backoff, let mark, let e = backoff.pending(vault: vaultId, name: name, mark: mark, now: now) {
                 throw CaptureError.backedOff(failures: e.failures, retryAfter: e.retryAfter, lastError: e.lastError)
             }
+            let entry: CaptureKeyEntry
             do {
                 // The tag first, streamed in constant memory: only a file that
                 // verifies is then read whole (security review 2026-10, C5).
-                _ = try verifyInboxFile(url, name: name, kind: kind, keys: keys)
+                // The key that verifies says which device sealed it (C2).
+                entry = try verifyInboxFile(url, name: name, kind: kind, ring: ring)
             } catch let e as CaptureError {
                 if let backoff, let mark { backoff.recordFailure(vault: vaultId, name: name, mark: mark, error: e.description, now: now) }
                 throw e
@@ -569,12 +727,7 @@ extension Vault {
             do { plain = try AgeFile.decrypt(sealed, with: identities) } catch {
                 throw CaptureError.notCapture("cannot decrypt: \(error)")
             }
-            var opened: (line: Data, payload: Data)?
-            var lastError: Error = CaptureError.badTag
-            for key in keys {
-                do { opened = try CaptureFile.unframe(plain, filename: name, key: key); break } catch { lastError = error }
-            }
-            guard let (line, payload) = opened else { throw lastError }
+            let (line, payload) = try CaptureFile.unframe(plain, filename: name, key: entry.key)
             switch kind {
             case .capture:
                 let m: CaptureManifest
@@ -584,7 +737,12 @@ extension Vault {
                 guard m.id == id else { throw CaptureError.invalidContent("the manifest names another capture") }
                 guard m.vault == vaultId else { throw CaptureError.wrongVault }
                 guard BlobRef(content: payload, type: m.audio.type) == m.audio else { throw CaptureError.audioMismatch }
+                // The device it names is the one whose key sealed it, or none (C2).
+                guard m.recipient == entry.recipient else {
+                    throw CaptureError.invalidContent("the manifest names another device than the key that sealed it")
+                }
                 pending.manifest = m
+                pending.recipient = entry.recipient
                 pending.audio = payload
             case .transcript:
                 let t: Transcript
@@ -596,11 +754,14 @@ extension Vault {
                 // not (an empty payload, written before the binding, or another
                 // audio's hash) is never adopted, and is deleted with the
                 // capture: the app transcribes the recording itself then.
+                // It must also come from the device the capture is attributed to (C2).
                 let bound = String(decoding: payload, as: UTF8.self)
-                if SHA256Hex.bytes(bound) != nil, pending.manifest.map({ $0.audio.sha256 == bound }) ?? true {
+                if SHA256Hex.bytes(bound) != nil, pending.manifest.map({ $0.audio.sha256 == bound }) ?? true,
+                   pending.manifest == nil || pending.recipient == entry.recipient {
                     pending.transcript = t
                     pending.transcriptContent = line
                     pending.transcriptAudio = bound
+                    pending.transcriptRecipient = entry.recipient
                 }
             }
             pending.files.append(name)
@@ -616,7 +777,7 @@ extension Vault {
     ///
     /// - Throws: `CaptureError` (`tooLarge`, `notCapture`, `badTag`) for the
     ///   file's own faults; `VaultError.io` when it cannot be read.
-    func verifyInboxFile(_ url: URL, name: String, kind: CaptureFile.Kind, keys: [CaptureKey]) throws -> Int {
+    func verifyInboxFile(_ url: URL, name: String, kind: CaptureFile.Kind, ring: [CaptureKeyEntry]) throws -> CaptureKeyEntry {
         let sealedCap = CaptureFile.maxSealedBytes(kind), plainCap = CaptureFile.maxPlaintextBytes(kind)
         if let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber,
            size.intValue > sealedCap {
@@ -630,7 +791,20 @@ extension Vault {
         }
         defer { try? handle.close() }
         var head = Data()
-        var hmacs = keys.map { CaptureFile.tagHMAC($0, filename: name) }
+        // A capture's keys are chosen once the start of its JSON line is in
+        // (`CaptureFile.claimedDevices`); until then the bytes wait here. A
+        // transcript (small, and it names no device) gets the whole ring.
+        var waiting: Data? = kind == .capture ? Data() : nil
+        var chosen: [CaptureKeyEntry] = kind == .capture ? [] : ring
+        var hmacs = chosen.map { CaptureFile.tagHMAC($0.key, filename: name) }
+        func choose() {
+            guard let bytes = waiting else { return }
+            let claims = CaptureFile.claimedDevices(in: bytes)
+            chosen = ring.filter { $0.recipient.map(claims.contains) ?? true }
+            hmacs = chosen.map { CaptureFile.tagHMAC($0.key, filename: name) }
+            if !bytes.isEmpty { for i in hmacs.indices { hmacs[i].update(data: bytes) } }
+            waiting = nil
+        }
         var total = 0
         while true {
             let chunk: Data?
@@ -650,13 +824,20 @@ extension Vault {
                     guard head[4] == CaptureFile.version else { throw CaptureError.notCapture("unknown version \(head[4])") }
                 }
             }
-            if !rest.isEmpty { for i in hmacs.indices { hmacs[i].update(data: rest) } }
+            guard !rest.isEmpty else { continue }
+            if waiting != nil {
+                waiting?.append(contentsOf: rest)
+                if let w = waiting, w.count >= CaptureFile.claimWindow || w.contains(0x0A) { choose() }
+                continue
+            }
+            for i in hmacs.indices { hmacs[i].update(data: rest) }
         }
+        choose()
         guard head.count == CaptureFile.headerSize, total > CaptureFile.headerSize else {
             throw CaptureError.notCapture("too short")
         }
         let stored = Data(head.suffix(32))
-        for (i, h) in hmacs.enumerated() where CaptureFile.constantTimeEqual(Data(h.finalize()), stored) { return i }
+        for (i, h) in hmacs.enumerated() where CaptureFile.constantTimeEqual(Data(h.finalize()), stored) { return chosen[i] }
         throw CaptureError.badTag
     }
 
@@ -696,6 +877,11 @@ extension Vault {
         /// The inbox files deleted.
         public var removed: [String]
         public var error: String?
+        /// Who captured it (format.md §11.3): the manifest's device and the
+        /// recipient the capture is attributed to (nil: unattributed).
+        public var captured: CaptureAttribution?
+        /// That recipient's label in vault.json.
+        public var capturedBy: String?
     }
 
     /// Adopts capture `id` as this device (the CLI's `inbox import`): reads
@@ -711,6 +897,11 @@ extension Vault {
         do {
             let pending = try readCapture(id, backoff: backoff, now: now)
             result.title = pending.manifest?.title
+            if let m = pending.manifest {
+                let who = CaptureAttribution(device: m.device, recipient: pending.recipient)
+                result.captured = who
+                result.capturedBy = who.label(in: recipients)
+            }
             // A note exists once it has a revision: a folder holding only the
             // blobs of an adoption interrupted before its delta is still new.
             let exists = try !revisionNames(of: ids.note).isEmpty
@@ -760,11 +951,19 @@ extension Vault {
     /// decrypt, are left untouched and listed in `inboxSkipped`: they are
     /// never adopted anyway, and must not keep the journal (and the
     /// outgoing secret) alive. Only a file that cannot be read keeps it.
-    func rewrapInbox(recipients: [NativeRecipient], report: inout RewrapReport, stopAfter: Int?) throws {
+    ///
+    /// Each file keeps its attribution: one sealed with a device's key is
+    /// re-tagged under that device's current key, and one of a device no
+    /// longer listed verifies under no key here and is skipped (security
+    /// review 2026-10, C3). Unattributed files under the outgoing secret are
+    /// re-tagged only by the run that rotated it (`legacyPrevious`), never
+    /// by a resumed one: a removed device holds that secret's vault capture
+    /// key and could have sealed them since.
+    func rewrapInbox(recipients: [NativeRecipient], report: inout RewrapReport, stopAfter: Int?,
+                     legacyPrevious: Bool = false) throws {
         let dir = inboxURL
         guard FileIO.isDirectory(dir) else { return }
-        let current = CaptureKey.derive(from: try requireSecret())
-        let keys = [current] + (previousSecret.map { [CaptureKey.derive(from: $0)] } ?? [])
+        let ring = try captureKeyRing(legacyPrevious: legacyPrevious)
         let expected = Self.expectedStanzas(recipients)
         for name in try FileIO.entries(dir) where CaptureFile.parse(name: name) != nil {
             let path = "\(CaptureFile.folderName)/\(name)"
@@ -772,7 +971,8 @@ extension Vault {
             guard !FileIO.isDirectory(file), let kind = CaptureFile.parse(name: name)?.kind else { continue }
             // The tag is checked streamed first: a file that verifies under
             // neither key is skipped without being read whole (C5).
-            do { _ = try verifyInboxFile(file, name: name, kind: kind, keys: keys) } catch is CaptureError {
+            let entry: CaptureKeyEntry
+            do { entry = try verifyInboxFile(file, name: name, kind: kind, ring: ring) } catch is CaptureError {
                 report.inboxSkipped.append(path); continue
             } catch {
                 report.failures[path] = .unreadable("\(error)"); continue
@@ -789,10 +989,11 @@ extension Vault {
             } catch {
                 report.inboxSkipped.append(path); continue
             }
-            if stanzas == expected, (try? CaptureFile.unframe(plain, filename: name, key: current)) != nil {
+            if stanzas == expected, !entry.previous {
                 report.alreadyCurrent.append(path); continue
             }
-            guard let retagged = CaptureFile.retag(plain, filename: name, verifiedBy: keys, to: current) else {
+            guard let target = ring.first(where: { !$0.previous && $0.recipient == entry.recipient }),
+                  let retagged = CaptureFile.retag(plain, filename: name, verifiedBy: entry.key, to: target.key) else {
                 report.inboxSkipped.append(path); continue
             }
             if let stopAfter, report.rewrapped.count >= stopAfter { throw VaultError.interrupted }

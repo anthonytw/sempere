@@ -43,7 +43,7 @@ the privacy policy or `ci.yml`, and always on `main`. It takes seconds and needs
 | An entitlements file has a key outside the allow-list, a referenced entitlements file is missing, or the Mac build has no sandbox | Section 6. |
 | `DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = YES`, a Mac-only bundle id, the app's bundle id changed, or an extension id not prefixed by the app's | Universal purchase needs one bundle id (section 6). |
 | `ITSAppUsesNonExemptEncryption` is missing or not a boolean | [export-compliance.md](export-compliance.md). A `YES` without `ITSEncryptionExportComplianceCode` is a warning. |
-| Networking (`URLSession`, `URLRequest`, Network.framework, sockets, CFNetwork streams, WebKit, Safari views, CloudKit, Multipeer, `FoundationNetworking`) in any non-test folder of `Apps/Sempere` or a `Sources/` target the app links, outside `NETWORK_ALLOWED` (only `SempereApp/MathModels.swift`) | The privacy policy says the app makes no connections of its own (section 3, "Network code, exactly"). An allow-listed file with no networking left is a warning. Not caught: `Data(contentsOf:)` or `AVPlayer` on a remote URL (code review). |
+| Networking (`URLSession`, `URLRequest`, Network.framework, sockets, CFNetwork streams, WebKit, Safari views, CloudKit, Multipeer, `FoundationNetworking`) in any non-test folder of `Apps/Sempere` or a `Sources/` target the app links, outside `NETWORK_ALLOWED` (the WebDAV client and `SempereApp/MathModels.swift`) | The privacy policy names the only connections the app makes (section 3, "Network code, exactly"). An allow-listed file with no networking left is a warning. Not caught: `Data(contentsOf:)` or `AVPlayer` on a remote URL (code review). |
 | `MathModelCatalog.entries` is not `[]` | That makes the allowed model downloader reachable; the privacy documents call it inert. |
 | A package pinned with an exact version in `project.pbxproj` resolves to another version in the project's `Package.resolved` (or that file is missing) | The version the privacy review looked at is the one that ships (SwiftMath, section 2). |
 | With `--checkouts DIR` (CI's `app` job, after the packages resolve): SwiftMath uses networking, a required-reason API that neither its manifest nor the app's declares, or its checkout is not the pinned revision | Section 2, "Dependencies". The step prints its findings on one line. |
@@ -139,26 +139,32 @@ then shows **Data Not Collected**.
 Apple's definition: data is "collected" when it is transmitted off the device in a way that lets
 the developer or its third-party partners access it for longer than needed to service the
 request in real time. Sempere has no server and no account, contains no analytics, advertising
-or crash-reporting SDK, and the app opens no connections of its own (WebDAV sync is CLI-only).
-What leaves the device goes only where the user puts it, encrypted with the user's key, which the
-developer never has.
+or crash-reporting SDK. What leaves the device goes only where the user puts it, encrypted with the
+user's key, which the developer never has.
 
 **Network code, exactly.** The shipping app (every non-test folder of `Apps/Sempere` and the
-`Sources/` targets it links) has one file with networking: `SempereApp/MathModels.swift`,
-the handwritten-math model downloader (`URLSessionModelFetcher`, an HTTPS `GET` of a model's
-manifest and files, each checked against the SHA-256 the catalogue pins). It is inert: it runs
-only from a Download button in Settings → Handwritten Math, one per `MathModelCatalog.entries`
-entry, and that catalogue is empty (`Sources/SempereRender/MathModel.swift`), so the button
-never appears and there is no URL to fetch; the Mac build also lacks `network.client`, so the
-sandbox would refuse it. "Add Model from Files" in the same section copies a model folder or zip the
-user picks (`MathModelImport`, #127): a local file, no connection. `scripts/release-check.sh` fails on networking anywhere else in those
-folders (`NETWORK_ALLOWED`) and on a non-empty catalogue. Offering a model is a release
-decision that changes these answers: add `network.client` (Mac) to the entitlements and their
-allow-list, name the download host in the privacy policy (both copies) and here, and update
-DESIGN.md "Network"; the answer to the question above stays No (the request carries no user
-data and nothing is kept by the developer), but the review notes must mention the download.
+`Sources/` targets it links) has networking in two places:
 
-| Apple data type | Why it is not collected |
+- WebDAV vaults (`SempereApp/WebDAVRemote.swift` and the `SempereWebDAV` target it links,
+  `docs/io.md` "WebDAV vaults in the app"): it connects only to the server URL the user enters,
+  over HTTPS (plain HTTP to the device itself only; a self-signed certificate only after the user
+  pins it), with the user's own credentials, and uploads the user's already encrypted vault files
+  there (push-only). The developer runs no server and receives nothing. This is why the Mac build
+  has `network.client`.
+- `SempereApp/MathModels.swift`, the handwritten-math model downloader (`URLSessionModelFetcher`,
+  an HTTPS `GET` of a model's manifest and files, each checked against the SHA-256 the catalogue
+  pins). It is inert: it runs only from a Download button in Settings → Handwritten Math, one per
+  `MathModelCatalog.entries` entry, and that catalogue is empty
+  (`Sources/SempereRender/MathModel.swift`), so the button never appears and there is no URL to
+  fetch. "Add Model from Files" in the same section copies a model folder or zip the user picks
+  (`MathModelImport`, #127): a local file, no connection.
+
+`scripts/release-check.sh` fails on networking anywhere else in those folders (`NETWORK_ALLOWED`)
+and on a non-empty catalogue. Offering a model is a release decision that changes these answers:
+name the download host in the privacy policy (both copies) and here, and update DESIGN.md
+"Network"; the answer to the question above stays No (the request carries no user data and
+nothing is kept by the developer), but the review notes must mention the download.
+
 
 | Apple data type | Why it is not collected |
 | --- | --- |
@@ -216,7 +222,7 @@ Information → Age Rating (the questionnaire as updated in 2025; check the word
 | Secondary category | TODO(maintainer): Education, Utilities or none. |
 | Copyright | `2026 Anthony Wertz` (App Store Connect adds ©). TODO(maintainer): confirm. |
 | Price | Free, no in-app purchases, no ads (TODO(maintainer): confirm). |
-| License agreement | Apple's standard EULA. The source license (GPL-3.0-or-later with the App Store exception, `LICENSE-EXCEPTION`) is what allows distribution under Apple's terms; the description mentions it. |
+| License agreement | Apple's standard EULA until the maintainer applies the custom one drafted in [`docs/appstore/eula.md`](../appstore/eula.md) (the GPL's no-warranty and liability terms in plain form, plus Apple's minimum terms; it needs a lawyer's review and its `TODO(user)` fields). The source license (GPL-3.0-or-later with the App Store exception, `LICENSE-EXCEPTION`) is what allows distribution under Apple's terms; the description mentions it. A revised exception is drafted, not applied, in [`docs/appstore/app-store-exception-draft.md`](../appstore/app-store-exception-draft.md). |
 
 `docs/privacy/` is plain HTML because `docs/.nojekyll` turns Jekyll off for the whole folder.
 Some docs (e.g. `docs/import-notability.md`) contain `{{`, which Liquid would choke on, failing
@@ -249,8 +255,8 @@ and a recording's start time; no key, no vault, no note; `docs/quick-capture.md`
 ID and the widget's App ID need the App Groups capability with that group in the developer
 portal (automatic signing registers it). Nothing else: the Keychain uses the app's default
 access group, folders come through the document picker, and there is no iCloud container
-(vaults are user-picked folders, `docs/HANDOFF.md`). The Mac build has the first five below
-and no App Group (the Catalyst build has no widgets); the six are exactly
+(vaults are user-picked folders, `docs/HANDOFF.md`). The Mac build has the first six below
+and no App Group (the Catalyst build has no widgets); the seven are exactly
 `release-check.sh`'s allow-list, and the App Group may only name that one group:
 
 | Entitlement | Why it is needed | What breaks without it |
@@ -260,13 +266,11 @@ and no App Group (the Catalyst build has no widgets); the six are exactly
 | `com.apple.security.files.bookmarks.app-scope` | Recent vaults are reopened from security-scoped bookmarks across launches (`VaultLibrary`). | Reopening the last vault after a relaunch without picking it again. |
 | `com.apple.security.print` | Printing the recovery kit (the key's paper copy). | The print panel; the sandbox refuses to print. |
 | `com.apple.security.device.audio-input` | Recording audio into notes and quick voice notes. | The microphone is silent under the sandbox. |
+| `com.apple.security.network.client` (Mac build only; iOS needs no entitlement) | WebDAV vaults: the app connects to the WebDAV server the user configures (`docs/io.md`, "WebDAV vaults in the app"). | Open from WebDAV and every push on a Mac: the sandbox refuses outgoing connections. |
 | `com.apple.security.application-groups` (iOS app and widget extension only) | The widgets and the control read the quick voice note status the app writes (`VoiceNoteStatusStore`). | The widgets show the plain record button whatever the state (no Stop, no "Set Up"). |
 
 Deliberately absent:
 
-- `network.client`: the app opens no connections. Speech model downloads are made by the system.
-  The dormant model downloader (section 3, "Network code, exactly") would need it on the Mac; it
-  is added only together with the first catalogue entry.
 - `device.camera`: the camera is offered on iPad and iPhone only (`InsertOptions.camera`).
 - iCloud containers.
 - `keychain-access-groups`: the default access group is enough.
@@ -276,6 +280,18 @@ Deliberately absent:
 
 Adding any entitlement means editing the allow-list in `scripts/release-check.sh` and this
 table, in the same PR.
+
+### The menu-bar bundle
+
+The Mac build embeds `Contents/PlugIns/SempereStatusItem.bundle`, a small AppKit bundle that draws
+the menu-bar icon (`docs/mac.md` "Menu-bar item"). It is signed with the app by Xcode (the embed
+phase has `CodeSignOnCopy`), has no entitlements of its own (it runs in the app's sandbox), no
+network code and no required-reason API, so it carries no privacy manifest and
+`release-check.sh` lists no entry for it. Its bundle id `io.github.anthonytw.sempere.statusitem`
+sits under the app's, as the script requires. Check on the first archive that it validates: a
+macOS-SDK bundle inside a Catalyst app is the documented way to reach AppKit
+(Apple's "Mac Catalyst" guidance), but it has not been through App Review yet. If App Review
+objects, turn the item off by removing the embed phase: the app does not depend on it.
 
 ### Building and uploading the Mac version
 
@@ -313,8 +329,9 @@ for iPad and Mac.
 
 Permissions are asked only when a feature needs them: camera (photo/video into a note,
 iPad and iPhone), microphone (recording), speech recognition (on-device transcription),
-Face ID (remembered keys). Nothing is sent anywhere; the app makes no network connections. (It
-contains a downloader for an optional on-device handwriting-to-math model, but this version
+Face ID (remembered keys). Nothing is sent to the developer; the only connections the app makes
+are to a WebDAV server the user configures (Open from WebDAV), to upload the encrypted vault. (It
+also contains a downloader for an optional on-device handwriting-to-math model, but this version
 offers no model, so it never connects.)
 
 Encryption: the open "age" format (ML-KEM-768 + X25519, ChaCha20-Poly1305, HKDF, scrypt)
@@ -420,7 +437,7 @@ Every change is kept in a history you can browse and restore from. Save versions
 keep; older ones thin out on a schedule you choose.
 
 READABLE WITHOUT THE APP
-Your notes are standard age files. With your key and free tools you can always decrypt them, and
+Your notes are standard age files. With your key and free tools you can decrypt them, and
 the open-source command-line tool exports PDF, SVG, PNG, Markdown and HTML on Mac and Linux.
 
 ON THE MAC
@@ -430,8 +447,10 @@ PRIVATE BY DESIGN
 No ads, no analytics, no tracking, no subscription. Sempere collects no data.
 
 OPEN SOURCE
-Sempere is free software (GPL-3.0-or-later with an App Store exception). Read the code at
-github.com/anthonytw/sempere.
+Sempere is free software (GPL-3.0-or-later with an App Store exception) and comes with no
+warranty. Read the code at github.com/anthonytw/sempere. Your key is the only way into your
+notes: keep the recovery kit and a backup, because if every copy of the key is lost, nobody can
+recover them.
 ```
 
 TODO(maintainer): trim to the submitted build. These features are on `main`, but
@@ -485,24 +504,27 @@ In order; none of this can be done from the repository.
    Apple Silicon Macs" there; no build setting does it (`LSRequiresIPhoneOS` does not), and the
    app copes with either build restoring the other's windows (docs/mac.md "Windows restored
    from another build").
-5. [ ] Export compliance: nothing to upload while France is excluded
+5. [ ] License Agreement (needs the maintainer): have `docs/appstore/eula.md` reviewed, fill its
+   `TODO(user)` fields, and paste it under App Information ▸ License Agreement (custom); decide on
+   `docs/appstore/app-store-exception-draft.md` at the same time (`LICENSE-EXCEPTION` stays until then).
+6. [ ] Export compliance: nothing to upload while France is excluded
    ([export-compliance.md](export-compliance.md)). Read the EAR sources once (its TODO).
 
 **Per version (iOS, then macOS):**
 
-6. [ ] Run `scripts/release-check.sh` on the commit to be archived (CI runs it on `main`).
-7. [ ] Archive and upload iOS and Mac builds (`sempere-testflight.sh both`); TestFlight-test
+7. [ ] Run `scripts/release-check.sh` on the commit to be archived (CI runs it on `main`).
+8. [ ] Archive and upload iOS and Mac builds (`sempere-testflight.sh both`); TestFlight-test
    both on hardware (iPad on 26.7.1; a Mac).
-8. [ ] In Xcode's Organizer, Generate Privacy Report for each archive; check it lists only
+9. [ ] In Xcode's Organizer, Generate Privacy Report for each archive; check it lists only
    UserDefaults (CA92.1) and FileTimestamp (C617.1, 3B52.1), plus empty manifests for
    swift-crypto (SwiftMath 1.7.3 ships none and needs none: section 2).
-9. [ ] iOS version page: screenshots (iPad 13", iPhone 6.9"), promotional text, description,
+10. [ ] iOS version page: screenshots (iPad 13", iPhone 6.9"), promotional text, description,
    keywords, support and marketing URLs, What's New, build, copyright, App Review
    Information (contact, notes from section 7, no sign-in), version release (manual or
    automatic).
-10. [ ] macOS version page: the same text fields (they are per platform), Mac screenshots,
+11. [ ] macOS version page: the same text fields (they are per platform), Mac screenshots,
     the Mac build, the same review notes.
-11. [ ] Submit both for review. They are reviewed separately and can be released separately.
+12. [ ] Submit both for review. They are reviewed separately and can be released separately.
 
 **Later:** France (export-compliance.md, "When France is added"); the Spanish localization of
 the listing (after #92).

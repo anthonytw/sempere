@@ -29,6 +29,7 @@ final class CLIRecipientsAuthTests: CLITestCase {
             let keys = try m.recipients.map { try NativeRecipient(string: $0.key) }
             m.vaultSecret = String(decoding: try AgeFile.encrypt(forged.bytes, to: keys, armor: true), as: UTF8.self)
             m.recipientsTag = RecipientsAuth.tag(vaultId: m.vaultId, keys: m.recipients.map(\.key), secret: forged)
+            m.tagMarkers(secret: forged)
         }
         try m.encoded().write(to: url)
     }
@@ -156,6 +157,7 @@ final class CLIRecipientsAuthTests: CLITestCase {
         XCTAssertNotNil(old.recipientsTag)
         old.recipientsTag = nil
         old.features.removeAll { $0 == VaultManifest.recipientsTagFeature }
+        old.markersTag = nil; old.features.removeAll { $0 == VaultManifest.markersTagFeature }
         try old.encoded().write(to: manifest)
         let locked = try status(vault, nil)
         XCTAssertEqual(locked["status"] as? String, "not-checked")
@@ -183,6 +185,7 @@ final class CLIRecipientsAuthTests: CLITestCase {
         var m = try VaultManifest.decode(Data(contentsOf: manifest))
         m.recipientsTag = nil
         m.features.removeAll { $0 == VaultManifest.recipientsTagFeature }
+        m.markersTag = nil; m.features.removeAll { $0 == VaultManifest.markersTagFeature }   // older than version markers
         try m.encoded().write(to: manifest)
         let down = try cli(["notes", "new", "X", "--vault", vault, "--identity", Self.fixtureKey])
         XCTAssertEqual(down.status, 6, down.err)

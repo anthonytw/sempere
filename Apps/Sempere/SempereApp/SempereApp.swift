@@ -56,6 +56,8 @@ struct SempereApp: App {
         // a voice note a crash interrupted is sealed (or deleted) now.
         QuickCapture.register()
         Task { await QuickCapture.shared.sweep() }
+        // The Mac menu-bar item (an AppKit bundle in PlugIns; inert where it does not exist).
+        StatusItemHost.shared.start(model: model)
         // Settings shows what the on-device speech engines can do (task E5).
         TranscriptionPreference.installSettingsHooks()
         // Per-session attachment caches of earlier builds (the app's is in Caches now, `BlobCache.folder`).

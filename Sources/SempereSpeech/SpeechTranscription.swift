@@ -123,6 +123,27 @@ public enum SpeechTranscription {
         #endif
     }
 
+    /// Downloads and installs SpeechTranscriber's on-device model for the options'
+    /// language, when it is not installed (Apple's asset service does the download;
+    /// the audio is not involved). Returns at once when it is installed. Only
+    /// SpeechTranscriber has a downloadable model: the SFSpeechRecognizer fallback
+    /// uses the languages the device has.
+    ///
+    /// - Throws: `SpeechTranscriptionError.engineUnavailable` before iOS / macOS 26 or
+    ///   where the engine is not available, `.unsupportedLanguage`, `.failed` when
+    ///   the download fails, `.unavailable` without the Speech framework.
+    public static func downloadModel(options: Options = Options()) async throws {
+        #if canImport(Speech)
+        if #available(macOS 26.0, iOS 26.0, *) {
+            try await Analyzer.downloadModel(options)
+        } else {
+            throw SpeechTranscriptionError.engineUnavailable("SpeechTranscriber needs iOS or macOS 26")
+        }
+        #else
+        throw SpeechTranscriptionError.unavailable
+        #endif
+    }
+
     /// Which engines can transcribe `options`' language here (nothing is downloaded).
     public static func availability(options: Options = Options()) async -> [EngineStatus] {
         #if canImport(Speech)
@@ -170,6 +191,27 @@ enum Analyzer {
         let tag = locale.identifier(.bcp47)
         return .init(engine: name, available: true, language: tag,
                      detail: installed.contains(tag) ? "model installed" : "model not installed (downloaded on first use)")
+    }
+
+    /// Installs the model for the options' language (nothing when it is installed).
+    static func downloadModel(_ options: SpeechTranscription.Options) async throws {
+        guard SpeechTranscriber.isAvailable else {
+            throw SpeechTranscriptionError.engineUnavailable("SpeechTranscriber is not available on this device")
+        }
+        guard let locale = await locale(options) else {
+            let wanted = TranscriptionLanguage.choose(requested: options.language, note: options.noteLanguage,
+                                                      device: SpeechTranscription.deviceLanguage) ?? "?"
+            throw SpeechTranscriptionError.unsupportedLanguage(wanted)
+        }
+        let transcriber = SpeechTranscriber(locale: locale, transcriptionOptions: [], reportingOptions: [],
+                                            attributeOptions: [])
+        do {
+            if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+                try await request.downloadAndInstall()
+            }
+        } catch {
+            throw SpeechTranscriptionError.failed("could not install the on-device model: \(error.localizedDescription)")
+        }
     }
 
     static func transcribe(file: URL, recording: UUID, options: SpeechTranscription.Options) async throws -> Transcript {

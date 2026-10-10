@@ -111,6 +111,30 @@ final class CLINoteEditTests: CLITestCase {
         XCTAssertTrue(device.contains(file.split(separator: "-")[1]), device)
     }
 
+    func testFavoriteSetsAndClearsTheMarkAndListFilters() throws {
+        let before = try revisions(Self.lecture)
+        let on = try json(["notes", "favorite", "fixture LECTURE"])
+        XCTAssertEqual(on["changed"] as? Bool, true)
+        XCTAssertEqual(try note(on)["favorite"] as? Bool, true)
+        XCTAssertEqual(try revisions(Self.lecture).count, before.count + 1)
+
+        let again = try json(["notes", "favorite", "1111"])
+        XCTAssertEqual(again["changed"] as? Bool, false)
+        XCTAssertEqual(try revisions(Self.lecture).count, before.count + 1)
+
+        let listed = try cli(["notes", "list", "--favorites", "--json"] + access)
+        XCTAssertEqual(listed.status, 0, listed.err)
+        let favorites = try XCTUnwrap(listed.json as? [[String: Any]])
+        XCTAssertEqual(favorites.compactMap { $0["id"] as? String }, [Self.lecture])
+
+        let off = try json(["notes", "favorite", Self.lecture, "--off"])
+        XCTAssertEqual(off["changed"] as? Bool, true)
+        XCTAssertEqual(try note(off)["favorite"] as? Bool, false)
+        let none = try cli(["notes", "list", "--favorites", "--json"] + access)
+        XCTAssertEqual((none.json as? [[String: Any]])?.count, 0)
+        XCTAssertEqual(try json(["notes", "favorite", Self.lecture, "--off"])["changed"] as? Bool, false)
+    }
+
     func testUnknownNoteIsAnError() throws {
         let r = try cli(["notes", "rename", "no such note", "x"] + access)
         XCTAssertEqual(r.status, 1)

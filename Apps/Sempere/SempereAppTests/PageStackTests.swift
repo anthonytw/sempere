@@ -107,6 +107,31 @@ struct PageStackTests {
         #expect(editor.readyDrawing(for: editor.pages[60].id) == nil)
     }
 
+    /// GA-13: the Mac's item commands in a paged note act on the current page's selected
+    /// item. Each page's canvas keeps its own selection, and the command went to whichever
+    /// canvas a dictionary listed first, so Delete Item (⌥⌘⌫) could remove an item on a page
+    /// the user was not looking at.
+    @Test func itemCommandsActOnTheCurrentPagesSelection() async throws {
+        let editor = try await StackTS.editor(pages: 3)
+        let a = try editor.addItems([CanvasSelectionTests.image()], on: editor.pages[0].id)[0]
+        let b = try editor.addItems([CanvasSelectionTests.image()], on: editor.pages[1].id)[0]
+        let (window, stack) = StackTS.stack(editor)
+        defer { window.isHidden = true }
+        stack.update(StackTS.configuration(editor, selectingItems: true))
+        stack.layoutIfNeeded()
+        #expect(!stack.perform(itemCommand: .deleteItem), "nothing selected")
+        try StackTS.slot(stack, editor, page: 0).host.itemSelection.select(a.id)
+        try StackTS.slot(stack, editor, page: 1).host.itemSelection.select(b.id)
+        editor.selectPage(1)
+        #expect(stack.perform(itemCommand: .deleteItem))
+        #expect(!editor.items(on: editor.pages[1].id).map(\.id).contains(b.id), "the current page's item")
+        #expect(editor.items(on: editor.pages[0].id).map(\.id).contains(a.id), "the other page's item stays")
+        // With none on the current page, the first page in order that has one.
+        #expect(stack.perform(itemCommand: .deleteItem))
+        #expect(!editor.items(on: editor.pages[0].id).map(\.id).contains(a.id))
+        await editor.flush()
+    }
+
     @Test func pagesSitInOneScrollWithAGapBetweenThem() async throws {
         let editor = try await StackTS.editor(pages: 5)
         let (window, stack) = StackTS.stack(editor)

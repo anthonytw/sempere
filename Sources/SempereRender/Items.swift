@@ -267,6 +267,9 @@ struct PreparedItem {
     var corners: [Point]
     var minY: Double
     var maxY: Double
+    /// Drawn under the item, after its background fill: a Markdown box's
+    /// markers, bars, rules and code fills (format.md §8.5.4), in page coordinates.
+    var underlay: [DrawCommand] = []
 
     /// Background items first fill their frame with the paper colour (format.md §8.2.3).
     var fillsBackground: Bool { item.layer.rawValue < ItemLayer.content.rawValue }

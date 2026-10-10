@@ -321,6 +321,102 @@
         }
       }
     },
+    "%lld changes not uploaded yet" : {
+      "comment" : "WebDAV status; the number is a count of files",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld change not uploaded yet"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld changes not uploaded yet"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld cambios sin subir todavía"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld cambio sin subir todavía"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld cambios sin subir todavía"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld changes on this device have not reached the server and will be lost. Open the vault and sync first to keep them." : {
+      "comment" : "The number is a count of files",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld change on this device has not reached the server and will be lost. Open the vault and sync first to keep it."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld changes on this device have not reached the server and will be lost. Open the vault and sync first to keep them."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld cambios de este dispositivo no han llegado al servidor y se perderán. Abre la bóveda y sincroniza antes para conservarlos."
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld cambio de este dispositivo no ha llegado al servidor y se perderá. Abre la bóveda y sincroniza antes para conservarlo."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld cambios de este dispositivo no han llegado al servidor y se perderán. Abre la bóveda y sincroniza antes para conservarlos."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld could not be read" : {
       "comment" : "A number of notes whose handwriting could not be read",
       "extractionState" : "manual",
@@ -2037,6 +2133,29 @@
         }
       }
     },
+    "A WebDAV folder (https://…) that holds a vault, or the folder above your vaults. The password is kept only in this device's Keychain. Sempere keeps a copy of the vault on this device and only uploads to the server: it never takes changes from it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una carpeta WebDAV (https://…) que contiene una bóveda, o la carpeta que está encima de tus bóvedas. La contraseña se guarda solo en el Llavero de este dispositivo. Sempere guarda una copia de la bóveda en este dispositivo y solo sube al servidor: nunca toma cambios de él."
+          }
+        }
+      }
+    },
+    "A backup copies the encrypted vault to another place. It helps when a folder is lost or damaged; it does not replace the key." : {
+      "comment" : "About Your Key",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una copia de seguridad copia la bóveda cifrada a otro lugar. Sirve si una carpeta se pierde o se daña; no sustituye a la clave."
+          }
+        }
+      }
+    },
     "A backup is a copy of the vault's encrypted files, kept up to date: each run copies only what is new. Choose a folder on another drive or another cloud service. Nothing is decrypted: a backup is useless without your key, so save it with Device Keys ▸ Save Key… (with its paper recovery kit) and keep it somewhere safe as well." : {
       "comment" : "Settings ▸ Backups footer",
       "extractionState" : "manual",
@@ -2190,14 +2309,14 @@
         }
       }
     },
-    "A new note whose title you leave empty is named %@. Quick voice notes go to the notebook “%@”; use / for levels." : {
-      "comment" : "Settings ▸ New Notes footer; the first value is a quoted sample title, the second a notebook name",
+    "A new note whose title you leave empty is named %@." : {
+      "comment" : "Settings ▸ New Notes footer; the value is a quoted sample title",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Una nota nueva cuyo título dejes vacío se llama %1$@. Las notas de voz rápidas van al cuaderno «%2$@»; usa / para los niveles."
+            "value" : "Una nota nueva cuyo título dejes vacío se llama %@."
           }
         }
       }
@@ -2305,6 +2424,18 @@
         }
       }
     },
+    "A vault is a folder of encrypted files in iCloud Drive or any Files location; the command-line tool can mirror it to WebDAV." : {
+      "comment" : "Quick tour page 5",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una bóveda es una carpeta de archivos cifrados en iCloud Drive o en cualquier ubicación de Archivos; la herramienta de línea de comandos puede reflejarla en WebDAV."
+          }
+        }
+      }
+    },
     "A vault is one .sempere item in Files: on this device, in iCloud Drive, or anywhere else. Choose the .sempere item itself (a plain folder works too)." : {
       "comment" : "Welcome screen footer",
       "extractionState" : "manual",
@@ -2399,6 +2530,18 @@
       "extractionState" : "manual",
       "shouldTranslate" : false
     },
+    "About" : {
+      "comment" : "Settings section header",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acerca de"
+          }
+        }
+      }
+    },
     "About %@ per hour" : {
       "comment" : "Settings ▸ Recording ▸ Size: estimated file size of one hour of audio, e.g. 28.8 MB",
       "extractionState" : "manual",
@@ -2407,6 +2550,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Unos %@ por hora"
+          }
+        }
+      }
+    },
+    "About Sempere" : {
+      "comment" : "App menu and Settings row: the About screen",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acerca de Sempere"
+          }
+        }
+      }
+    },
+    "About Your Key" : {
+      "comment" : "Title of the key notice; Help menu and About buttons",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sobre tu clave"
+          }
+        }
+      }
+    },
+    "Acknowledgments" : {
+      "comment" : "About: section listing third-party software",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agradecimientos"
           }
         }
       }
@@ -2588,6 +2767,17 @@
         }
       }
     },
+    "Add a device by pasting its public key (age1pq1…) or by generating one for it. Replace swaps a device's key for a new one in a single re-encryption (for a lost or exposed key). A key that opened the vault here cannot be removed or replaced here." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añade un dispositivo pegando su clave pública (age1pq1…) o generando una para él. «Sustituir» cambia la clave de un dispositivo por una nueva en un solo recifrado (para una clave perdida o expuesta). Una clave que abrió la bóveda aquí no se puede eliminar ni sustituir aquí."
+          }
+        }
+      }
+    },
     "Add a device key to “%@”" : {
       "comment" : "Face ID prompt reason; %@ is the vault's name",
       "extractionState" : "manual",
@@ -2620,6 +2810,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Añadir una página al final de la nota"
+          }
+        }
+      }
+    },
+    "Add images, PDF pages, videos, equations and text boxes." : {
+      "comment" : "Quick tour page 3",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añade imágenes, páginas de PDF, vídeos, ecuaciones y cuadros de texto."
           }
         }
       }
@@ -2668,6 +2870,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Añadir fotos, vídeos, una imagen del portapapeles, páginas de un PDF o una ecuación"
+          }
+        }
+      }
+    },
+    "Add this note to Favorites" : {
+      "comment" : "Tooltip of the favorite button",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir esta nota a Favoritas"
+          }
+        }
+      }
+    },
+    "Add to Favorites" : {
+      "comment" : "Note menu and toolbar: mark the note as a favorite",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir a Favoritas"
           }
         }
       }
@@ -2863,6 +3089,54 @@
         }
       }
     },
+    "Another vault is now at this address, and this device has %lld changes of the vault that was there which were never uploaded. Nothing was changed. To start over, remove that WebDAV vault on the welcome screen first." : {
+      "comment" : "Connect to WebDAV: the folder holds another vault; the count is files not uploaded",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Another vault is now at this address, and this device has %lld change of the vault that was there which was never uploaded. Nothing was changed. To start over, remove that WebDAV vault on the welcome screen first."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Another vault is now at this address, and this device has %lld changes of the vault that was there which were never uploaded. Nothing was changed. To start over, remove that WebDAV vault on the welcome screen first."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ahora hay otra bóveda en esta dirección, y este dispositivo tiene %lld cambios de la bóveda que estaba allí que nunca se subieron. No se ha cambiado nada. Para empezar de nuevo, elimina primero esa bóveda WebDAV en la pantalla de bienvenida."
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ahora hay otra bóveda en esta dirección, y este dispositivo tiene %lld cambio de la bóveda que estaba allí que nunca se subió. No se ha cambiado nada. Para empezar de nuevo, elimina primero esa bóveda WebDAV en la pantalla de bienvenida."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ahora hay otra bóveda en esta dirección, y este dispositivo tiene %lld cambios de la bóveda que estaba allí que nunca se subieron. No se ha cambiado nada. Para empezar de nuevo, elimina primero esa bóveda WebDAV en la pantalla de bienvenida."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Another vault was opened meanwhile. Nothing was changed." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3051,6 +3325,78 @@
         }
       }
     },
+    "Available" : {
+      "comment" : "Settings ▸ Transcription: engine status",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disponible"
+          }
+        }
+      }
+    },
+    "Available, asks for permission on first use" : {
+      "comment" : "Settings ▸ Transcription: engine status",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disponible, pide permiso la primera vez"
+          }
+        }
+      }
+    },
+    "Available, but speech recognition is not allowed" : {
+      "comment" : "Settings ▸ Transcription: engine status",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disponible, pero el reconocimiento de voz no está permitido"
+          }
+        }
+      }
+    },
+    "Available, language model downloads on first use" : {
+      "comment" : "Settings ▸ Transcription: engine status",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disponible, el modelo de idioma se descarga al usarlo por primera vez"
+          }
+        }
+      }
+    },
+    "Available, language model installed" : {
+      "comment" : "Settings ▸ Transcription: engine status",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disponible, modelo de idioma instalado"
+          }
+        }
+      }
+    },
+    "Available, permission granted" : {
+      "comment" : "Settings ▸ Transcription: engine status",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disponible, permiso concedido"
+          }
+        }
+      }
+    },
     "Back Up Now" : {
       "comment" : "Settings ▸ Backups: button",
       "extractionState" : "manual",
@@ -3206,6 +3552,18 @@
         }
       }
     },
+    "Backup Settings…" : {
+      "comment" : "About Your Key: button to Settings ▸ Backups",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustes de copia…"
+          }
+        }
+      }
+    },
     "Backups" : {
       "comment" : "Settings section header",
       "extractionState" : "manual",
@@ -3289,6 +3647,18 @@
         }
       }
     },
+    "Bring Item to Front" : {
+      "comment" : "Note menu: draw the selected item above the others",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Traer elemento al frente"
+          }
+        }
+      }
+    },
     "Bring back the page deleted last" : {
       "comment" : "Help tag in the page strip",
       "extractionState" : "manual",
@@ -3321,6 +3691,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ver versiones anteriores de la nota y restaurar una"
+          }
+        }
+      }
+    },
+    "Bulleted List" : {
+      "comment" : "Markdown bar: start bulleted list items",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lista con viñetas"
           }
         }
       }
@@ -3404,6 +3786,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Centro"
+          }
+        }
+      }
+    },
+    "Certificate You Trusted" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Certificado de confianza"
           }
         }
       }
@@ -3619,6 +4012,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Elegir carpeta de copia…"
+          }
+        }
+      }
+    },
+    "Choose Devices to Keep" : {
+      "comment" : "Recipients repair sheet title",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elegir dispositivos que conservar"
+          }
+        }
+      }
+    },
+    "Choose Devices to Keep lets you pick the devices yourself; the others are removed and every note is re-encrypted with a new vault key." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Con «Elegir dispositivos que conservar» eliges tú los dispositivos; los demás se eliminan y todas las notas se vuelven a cifrar con una clave de bóveda nueva."
+          }
+        }
+      }
+    },
+    "Choose Devices to Keep…" : {
+      "comment" : "Recipients alert button: pick the keys a repair keeps",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elegir dispositivos que conservar…"
           }
         }
       }
@@ -3878,6 +4306,18 @@
         }
       }
     },
+    "Code" : {
+      "comment" : "Markdown bar: mark the selection as `code`",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Código"
+          }
+        }
+      }
+    },
     "Colour" : {
       "comment" : "Text style bar: text colour menu",
       "extractionState" : "manual",
@@ -3910,6 +4350,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Paleta compacta"
+          }
+        }
+      }
+    },
+    "Connected, but there is no vault at this address or in the folders directly below it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conectado, pero no hay ninguna bóveda en esta dirección ni en las carpetas que hay justo debajo."
           }
         }
       }
@@ -4657,6 +5108,18 @@
         }
       }
     },
+    "Delete Item" : {
+      "comment" : "Note menu: delete the selected image, text box or other item",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminar elemento"
+          }
+        }
+      }
+    },
     "Delete Page" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4728,6 +5191,17 @@
         }
       }
     },
+    "Device keys of a WebDAV vault cannot be changed in the app: the server would keep files a removed key can read. Change them with the sempere command-line tool on a folder copy and upload that to a new server folder." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las claves de dispositivo de una bóveda WebDAV no se pueden cambiar en la app: el servidor conservaría archivos que una clave quitada puede leer. Cámbialas con la herramienta de línea de comandos sempere en una copia en carpeta y sube esa copia a una carpeta nueva del servidor."
+          }
+        }
+      }
+    },
     "Devices here are the keys this vault is encrypted to (this iPad, that Mac, the paper backup), not people: to share a note, export it. “Rewrite headers only” is fast but leaves old copies of an attachment openable with a key that was removed. “Re-encrypt everything” takes longer in a vault with many attachments." : {
       "comment" : "The quoted names are the picker choices “Rewrite headers only” and “Re-encrypt everything”: use the same translations",
       "extractionState" : "manual",
@@ -4748,6 +5222,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dispositivos que este dispositivo nunca ha confirmado: %@."
+          }
+        }
+      }
+    },
+    "Devices to keep" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivos que conservar"
           }
         }
       }
@@ -4808,6 +5293,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "En bloque"
+          }
+        }
+      }
+    },
+    "Display Math" : {
+      "comment" : "Markdown bar: insert a $$…$$ block (LaTeX math on its own lines)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ecuación en bloque"
           }
         }
       }
@@ -4884,6 +5381,28 @@
         }
       }
     },
+    "Download Again" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a descargar"
+          }
+        }
+      }
+    },
+    "Download Again…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a descargar…"
+          }
+        }
+      }
+    },
     "Download Language Model" : {
       "comment" : "Button",
       "extractionState" : "manual",
@@ -4892,6 +5411,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Descargar modelo de idioma"
+          }
+        }
+      }
+    },
+    "Download and Open" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descargar y abrir"
+          }
+        }
+      }
+    },
+    "Download the vault again?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Volver a descargar la bóveda?"
           }
         }
       }
@@ -5015,6 +5556,18 @@
         }
       }
     },
+    "Downloading “%@” from the server…" : {
+      "comment" : "The value is the vault's name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descargando «%@» del servidor…"
+          }
+        }
+      }
+    },
     "Downloading…" : {
       "comment" : "Status or disabled button while the language model downloads",
       "extractionState" : "manual",
@@ -5083,6 +5636,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Duplicar"
+          }
+        }
+      }
+    },
+    "Duplicate Item" : {
+      "comment" : "Note menu: duplicate the selected image, text box or other item",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duplicar elemento"
           }
         }
       }
@@ -5205,6 +5770,18 @@
         }
       }
     },
+    "Editor" : {
+      "comment" : "Settings section: tools of the note editor",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Editor"
+          }
+        }
+      }
+    },
     "Encrypted. It becomes a note the next time you unlock the vault." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5247,6 +5824,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Final"
+          }
+        }
+      }
+    },
+    "Engine in Use" : {
+      "comment" : "Settings ▸ Transcription: the speech engine transcription would use",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Motor en uso"
           }
         }
       }
@@ -5322,6 +5911,39 @@
         }
       }
     },
+    "Every note is re-encrypted to the new key instead of the old one. Keep this vault open until it finishes." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todas las notas se vuelven a cifrar para la clave nueva en lugar de la antigua. Mantén esta bóveda abierta hasta que termine."
+          }
+        }
+      }
+    },
+    "Every note is re-encrypted with a new vault key, to the new key instead of this one. The old key can no longer open new or changed notes; it keeps what it already copied." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todas las notas se vuelven a cifrar con una clave de bóveda nueva, para la clave nueva en lugar de esta. La clave antigua ya no podrá abrir notas nuevas o modificadas; conserva lo que ya copió."
+          }
+        }
+      }
+    },
+    "Every note is re-encrypted with a new vault key. Devices you do not keep can no longer open new or changed notes; they keep what they already copied." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todas las notas se vuelven a cifrar con una clave de bóveda nueva. Los dispositivos que no conserves ya no podrán abrir notas nuevas o modificadas; conservan lo que ya copiaron."
+          }
+        }
+      }
+    },
     "Every note is re-encrypted without it. That device can no longer open new or changed files; it keeps what it already copied." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5363,6 +5985,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Todo va en un solo archivo zip."
+          }
+        }
+      }
+    },
+    "Everything on the Page" : {
+      "comment" : "Quick tour page 3 title",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todo en la página"
           }
         }
       }
@@ -5496,6 +6130,18 @@
         }
       }
     },
+    "Export notes as PDF, images or Markdown, one at a time or all at once." : {
+      "comment" : "Quick tour page 6",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exporta notas como PDF, imágenes o Markdown, de una en una o todas a la vez."
+          }
+        }
+      }
+    },
     "Exporting again into the same folder skips notes already there unchanged (same name, size and version)." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5553,6 +6199,18 @@
         }
       }
     },
+    "Favorites" : {
+      "comment" : "Sidebar row and note list title: notes marked as favorites",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Favoritas"
+          }
+        }
+      }
+    },
     "File" : {
       "comment" : "Attachment kind in the unused attachments list: anything else",
       "extractionState" : "manual",
@@ -5572,6 +6230,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Archivos en una carpeta"
+          }
+        }
+      }
+    },
+    "Find It Again" : {
+      "comment" : "Quick tour page 4 title",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encuéntralo"
           }
         }
       }
@@ -6015,6 +6685,18 @@
         }
       }
     },
+    "Handwriting is recognized on this device; it is not sent anywhere." : {
+      "comment" : "Quick tour page 4",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La escritura a mano se reconoce en este dispositivo; no se envía a ningún sitio."
+          }
+        }
+      }
+    },
     "Handwriting read on %lld pages." : {
       "comment" : "Notability import result: pages the app read after the import",
       "extractionState" : "manual",
@@ -6083,6 +6765,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fórmulas a mano (experimental)"
+          }
+        }
+      }
+    },
+    "Heading" : {
+      "comment" : "Markdown bar: make the line a heading (# Title); again for a smaller one",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encabezado"
           }
         }
       }
@@ -6243,6 +6937,18 @@
         }
       }
     },
+    "I Understand" : {
+      "comment" : "About Your Key: the only way to close it the first time",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entendido"
+          }
+        }
+      }
+    },
     "I saved this key" : {
       "comment" : "Toggle: confirms the user saved the new key",
       "extractionState" : "manual",
@@ -6251,6 +6957,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "He guardado esta clave"
+          }
+        }
+      }
+    },
+    "If every copy of the key is lost, so are the notes" : {
+      "comment" : "About Your Key: heading",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si se pierden todas las copias de la clave, se pierden las notas"
           }
         }
       }
@@ -6275,6 +6993,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Si has cambiado las claves de la bóveda en otro dispositivo, abre la bóveda allí o comprueba la lista con `sempere vault recipients confirm`. Si no, restaura vault.json desde una copia de seguridad."
+          }
+        }
+      }
+    },
+    "If your server uses a certificate you made yourself, compare this fingerprint with the one the server shows before trusting it. If you did not expect this, do not continue: someone may be intercepting the connection." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si tu servidor usa un certificado que creaste tú, compara esta huella con la que muestra el servidor antes de confiar en él. Si no esperabas esto, no continúes: alguien podría estar interceptando la conexión."
           }
         }
       }
@@ -6423,6 +7152,30 @@
         }
       }
     },
+    "Import a PDF to write on it, and add pages as you go." : {
+      "comment" : "Quick tour page 2, iPad",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importa un PDF para escribir encima y añade páginas sobre la marcha."
+          }
+        }
+      }
+    },
+    "Import a PDF to write on it. Settings can smooth strokes drawn with a mouse or trackpad." : {
+      "comment" : "Quick tour page 2, Mac",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importa un PDF para escribir encima. Ajustes puede suavizar los trazos hechos con ratón o trackpad."
+          }
+        }
+      }
+    },
     "Import from %@" : {
       "comment" : "Title of the import options sheet (the app's name)",
       "extractionState" : "manual",
@@ -6515,6 +7268,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "En #%@"
+          }
+        }
+      }
+    },
+    "In Favorites" : {
+      "comment" : "Search scope",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En Favoritas"
           }
         }
       }
@@ -6623,6 +7388,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "En línea"
+          }
+        }
+      }
+    },
+    "Inline Math" : {
+      "comment" : "Markdown bar: insert $…$ (LaTeX math in the line)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ecuación en línea"
           }
         }
       }
@@ -6829,6 +7606,53 @@
         }
       }
     },
+    "Keep an unconfirmed device key in “%@”" : {
+      "comment" : "Face ID prompt before a repair keeps an unconfirmed key; the value is the vault name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conservar una clave de dispositivo no confirmada en «%@»"
+          }
+        }
+      }
+    },
+    "Keep backups" : {
+      "comment" : "About Your Key: heading",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haz copias de seguridad"
+          }
+        }
+      }
+    },
+    "Keep the key this device unlocked the vault with: without it, this device could not open the vault after the repair." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conserva la clave con la que este dispositivo desbloqueó la bóveda: sin ella, este dispositivo no podría abrirla después de la reparación."
+          }
+        }
+      }
+    },
+    "Keep the recovery kit and a backup somewhere safe: if every copy of the key is lost, nobody can open the notes." : {
+      "comment" : "Quick tour page 1",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guarda el kit de recuperación y una copia de seguridad en un lugar seguro: si se pierden todas las copias de la clave, nadie podrá abrir las notas."
+          }
+        }
+      }
+    },
     "Keep the screen awake while this note is open" : {
       "comment" : "Help tag of Keep Screen On",
       "extractionState" : "manual",
@@ -6837,6 +7661,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mantener la pantalla encendida mientras esta nota esté abierta"
+          }
+        }
+      }
+    },
+    "Keep: %@." : {
+      "comment" : "Repair confirmation; the value is a list of device names and abbreviated keys",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conservar: %@."
+          }
+        }
+      }
+    },
+    "Kept for this kind of device only" : {
+      "comment" : "Tooltip of a setting's badge",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo en este tipo de dispositivo"
+          }
+        }
+      }
+    },
+    "Kept on this device only" : {
+      "comment" : "Tooltip of a setting's badge",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo en este dispositivo"
           }
         }
       }
@@ -6861,6 +7721,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Archivo de clave"
+          }
+        }
+      }
+    },
+    "Key to replace" : {
+      "comment" : "Replace Device Key: section header",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clave que se sustituye"
           }
         }
       }
@@ -6930,6 +7802,17 @@
       "extractionState" : "manual",
       "shouldTranslate" : false
     },
+    "Label (empty: keep the current one)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Etiqueta (vacía: conservar la actual)"
+          }
+        }
+      }
+    },
     "Label (for example, Anna's iPad)" : {
       "comment" : "Text field: label of a device key",
       "extractionState" : "manual",
@@ -6962,6 +7845,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Modelo de idioma"
+          }
+        }
+      }
+    },
+    "Language not supported" : {
+      "comment" : "Settings ▸ Transcription: engine status",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Idioma no admitido"
           }
         }
       }
@@ -7022,6 +7917,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Última verificación"
+          }
+        }
+      }
+    },
+    "Last upload %@" : {
+      "comment" : "The value is a relative date (“5 minutes ago”)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Última subida %@"
           }
         }
       }
@@ -7122,6 +8029,18 @@
         }
       }
     },
+    "License" : {
+      "comment" : "About: the licence text and its section",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Licencia"
+          }
+        }
+      }
+    },
     "Light" : {
       "comment" : "Smooth Mouse Strokes setting: a little smoothing",
       "extractionState" : "manual",
@@ -7158,6 +8077,18 @@
         }
       }
     },
+    "Link" : {
+      "comment" : "Markdown bar: insert a [link](https://…)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enlace"
+          }
+        }
+      }
+    },
     "Links from strokes to recordings" : {
       "comment" : "Notability import report: not imported",
       "extractionState" : "manual",
@@ -7166,6 +8097,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vínculos de trazos a grabaciones"
+          }
+        }
+      }
+    },
+    "List" : {
+      "comment" : "Markdown bar: menu of list and quote helpers",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lista"
           }
         }
       }
@@ -7218,6 +8161,18 @@
         }
       }
     },
+    "Macs" : {
+      "comment" : "Settings badge: the setting has its own value on Macs",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac"
+          }
+        }
+      }
+    },
     "Make a note from a PDF: one page per PDF page, to write on" : {
       "comment" : "Help tag of Import PDF…",
       "extractionState" : "manual",
@@ -7250,6 +8205,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rotulador"
+          }
+        }
+      }
+    },
+    "Math" : {
+      "comment" : "Markdown bar: menu of LaTeX math helpers",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Matemáticas"
           }
         }
       }
@@ -7530,6 +8497,17 @@
         }
       }
     },
+    "Never confirmed by this device" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nunca confirmado por este dispositivo"
+          }
+        }
+      }
+    },
     "New Equation" : {
       "comment" : "Title of the equation sheet when adding one",
       "extractionState" : "manual",
@@ -7602,6 +8580,17 @@
         }
       }
     },
+    "New Password (leave empty to keep it)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contraseña nueva (vacía para mantenerla)"
+          }
+        }
+      }
+    },
     "New Vault" : {
       "comment" : "Title of the new-vault form",
       "extractionState" : "manual",
@@ -7670,6 +8659,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Último cambio"
+          }
+        }
+      }
+    },
+    "Next" : {
+      "comment" : "Quick tour: next page",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Siguiente"
           }
         }
       }
@@ -7932,6 +8933,18 @@
         }
       }
     },
+    "No on-device model for this language" : {
+      "comment" : "Settings ▸ Transcription: engine status",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin modelo en el dispositivo para este idioma"
+          }
+        }
+      }
+    },
     "No pages" : {
       "comment" : "Page counter in the Pages menu when the note has none",
       "extractionState" : "manual",
@@ -7940,6 +8953,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sin páginas"
+          }
+        }
+      }
+    },
+    "No password is saved for this server. Enter it again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay ninguna contraseña guardada para este servidor. Vuelve a escribirla."
           }
         }
       }
@@ -8000,6 +9024,18 @@
         }
       }
     },
+    "Nobody can recover them then, including the developer. There is no reset and no recovery service." : {
+      "comment" : "About Your Key",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entonces nadie puede recuperarlas, tampoco el desarrollador. No hay restablecimiento ni servicio de recuperación."
+          }
+        }
+      }
+    },
     "None" : {
       "comment" : "Restore preview: no revision at all",
       "extractionState" : "manual",
@@ -8008,6 +9044,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ninguno"
+          }
+        }
+      }
+    },
+    "None available" : {
+      "comment" : "Settings ▸ Transcription: no speech engine can transcribe the chosen language",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ninguno disponible"
           }
         }
       }
@@ -8285,6 +9333,18 @@
         }
       }
     },
+    "Notes are encrypted on your devices. There is no Sempere server: your storage sees encrypted files, their sizes and times." : {
+      "comment" : "Quick tour page 5",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las notas se cifran en tus dispositivos. No hay servidor de Sempere: tu almacenamiento ve archivos cifrados, su tamaño y sus fechas."
+          }
+        }
+      }
+    },
     "Notes were not decrypted (the vault is locked)." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8363,6 +9423,18 @@
         }
       }
     },
+    "Numbered List" : {
+      "comment" : "Markdown bar: start numbered list items",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lista numerada"
+          }
+        }
+      }
+    },
     "OK" : {
       "comment" : "Button",
       "extractionState" : "manual",
@@ -8371,6 +9443,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aceptar"
+          }
+        }
+      }
+    },
+    "Object Eraser" : {
+      "comment" : "Settings ▸ Editor ▸ Eraser: erases whole strokes",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Borrador de objetos"
           }
         }
       }
@@ -8406,6 +9490,77 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Desactivado por omisión. Las transcripciones se hacen en este dispositivo y se guardan cifradas en la nota; no se envía audio ni texto a ningún sitio."
+          }
+        }
+      }
+    },
+    "Offline. %lld changes are kept on this device and uploaded when the server can be reached." : {
+      "comment" : "WebDAV status; the number is a count of files",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Offline. %lld change is kept on this device and uploaded when the server can be reached."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Offline. %lld changes are kept on this device and uploaded when the server can be reached."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Sin conexión. %lld cambios se guardan en este dispositivo y se suben cuando se pueda llegar al servidor."
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Sin conexión. %lld cambio se guarda en este dispositivo y se sube cuando se pueda llegar al servidor."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Sin conexión. %lld cambios se guardan en este dispositivo y se suben cuando se pueda llegar al servidor."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Offline. Changes are kept on this device and uploaded when the server can be reached." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin conexión. Los cambios se guardan en este dispositivo y se suben cuando se pueda llegar al servidor."
+          }
+        }
+      }
+    },
+    "On" : {
+      "comment" : "A switch setting's value",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sí"
           }
         }
       }
@@ -8446,14 +9601,13 @@
         }
       }
     },
-    "Once a day, autosaves older than %@ are removed from this vault on every device. Saved versions and the last autosave of each editing session are always kept, and stay restorable. This setting is for this device only." : {
-      "comment" : "Settings ▸ Version History footer; the value is “30 days”, “1 year”…",
+    "Once a day, autosaves older than %@ are removed from this vault on every device. Saved versions and the last autosave of each editing session are always kept, and stay restorable. With Sync Settings on, every device that syncs with this vault uses the same setting." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Una vez al día se eliminan de esta bóveda, en todos los dispositivos, los guardados automáticos de más de %@. Las versiones guardadas y el último guardado automático de cada sesión de edición se conservan siempre y se pueden restaurar. Este ajuste es solo para este dispositivo."
+            "value" : "Una vez al día se eliminan de esta bóveda, en todos los dispositivos, los guardados automáticos de más de %@. Las versiones guardadas y el último guardado automático de cada sesión de edición se conservan siempre y se pueden restaurar. Con la sincronización de ajustes activada, todos los dispositivos que se sincronizan con esta bóveda usan el mismo ajuste."
           }
         }
       }
@@ -8552,6 +9706,65 @@
         }
       }
     },
+    "Only on Macs" : {
+      "comment" : "Settings row menu: keep this value on every Mac, not on other devices",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo en los Mac"
+          }
+        }
+      }
+    },
+    "Only on This Device" : {
+      "comment" : "Settings row menu: keep this setting's value on this device only",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo en este dispositivo"
+          }
+        }
+      }
+    },
+    "Only on iPads" : {
+      "comment" : "Settings row menu: keep this value on every iPad, not on other devices",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo en los iPad"
+          }
+        }
+      }
+    },
+    "Only on iPhones" : {
+      "comment" : "Settings row menu: keep this value on every iPhone, not on other devices",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo en los iPhone"
+          }
+        }
+      }
+    },
+    "Only the devices you keep can open the vault after the repair. Keep a device marked as never confirmed only if you know it is yours." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo los dispositivos que conserves podrán abrir la bóveda después de la reparación. Conserva un dispositivo marcado como nunca confirmado solo si sabes que es tuyo."
+          }
+        }
+      }
+    },
     "Only the matching secret key can open the vault; you will be asked for it." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8559,6 +9772,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Solo la clave secreta correspondiente puede abrir la bóveda; se te pedirá."
+          }
+        }
+      }
+    },
+    "Only your key opens these notes" : {
+      "comment" : "About Your Key: heading",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo tu clave abre estas notas"
           }
         }
       }
@@ -8595,6 +9820,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abrir recientes"
+          }
+        }
+      }
+    },
+    "Open Sempere" : {
+      "comment" : "Menu-bar item: bring the app forward",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir Sempere"
           }
         }
       }
@@ -8735,6 +9972,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abre y desbloquea la bóveda a la que deben ir las notas de voz y luego activa esta opción."
+          }
+        }
+      }
+    },
+    "Open from WebDAV" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir desde WebDAV"
+          }
+        }
+      }
+    },
+    "Open from WebDAV…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir desde WebDAV…"
           }
         }
       }
@@ -9563,6 +10822,18 @@
         }
       }
     },
+    "Pixel Eraser" : {
+      "comment" : "Settings ▸ Editor ▸ Eraser: erases parts of strokes",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Borrador de píxeles"
+          }
+        }
+      }
+    },
     "Place" : {
       "comment" : "Convert to Math sheet: picker label (verb), where the equation goes",
       "extractionState" : "manual",
@@ -9790,6 +11061,18 @@
         }
       }
     },
+    "Print the paper recovery kit, or keep the key in a password manager, somewhere apart from this device." : {
+      "comment" : "About Your Key",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imprime el kit de recuperación en papel o guarda la clave en un gestor de contraseñas, en un lugar distinto de este dispositivo."
+          }
+        }
+      }
+    },
     "Print the recovery kit of “%@”" : {
       "comment" : "Face ID prompt reason; %@ is the vault's name",
       "extractionState" : "manual",
@@ -9886,6 +11169,30 @@
         }
       }
     },
+    "Quick Tour" : {
+      "comment" : "Title of the quick tour; Help menu item",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recorrido rápido"
+          }
+        }
+      }
+    },
+    "Quick Voice Note" : {
+      "comment" : "Menu-bar item: record a voice note into the inbox",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nota de voz rápida"
+          }
+        }
+      }
+    },
     "Quick Voice Notes" : {
       "comment" : "Settings toggle and section header (the feature's name)",
       "extractionState" : "manual",
@@ -9905,6 +11212,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Las notas de voz rápidas no están configuradas: abre Sempere, desbloquea la bóveda y actívalas en Ajustes."
+          }
+        }
+      }
+    },
+    "Quote" : {
+      "comment" : "Markdown bar: make the lines a block quote",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cita"
           }
         }
       }
@@ -10353,6 +11672,17 @@
         }
       }
     },
+    "Record from the menu-bar item, File > Start Voice Note, Siri or Shortcuts, without unlocking the vault. Each voice note is encrypted on this Mac to your vault's keys as soon as it stops, and becomes a note in the notebook above, titled with the date and time, the next time the vault is unlocked. Transcription runs on this Mac only. This Mac keeps the vault's public keys and a capture key that can add voice notes but cannot read any note." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Graba desde el icono de la barra de menús, Archivo > Iniciar nota de voz, Siri o Atajos, sin desbloquear la bóveda. Cada nota de voz se cifra en este Mac con las claves de tu bóveda en cuanto termina y se convierte en una nota del cuaderno de arriba, con la fecha y la hora como título, la próxima vez que se desbloquee la bóveda. La transcripción se hace solo en este Mac. Este Mac guarda las claves públicas de la bóveda y una clave de captura que puede añadir notas de voz pero no puede leer ninguna nota."
+          }
+        }
+      }
+    },
     "Record or Stop a Voice Note" : {
       "comment" : "App Intent title (the Control Center control's action)",
       "extractionState" : "manual",
@@ -10361,6 +11691,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Grabar o detener una nota de voz"
+          }
+        }
+      }
+    },
+    "Record while you write: the ink is linked to the recording, and transcripts are made on this device." : {
+      "comment" : "Quick tour page 3",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Graba mientras escribes: la tinta queda enlazada a la grabación, y las transcripciones se hacen en este dispositivo."
           }
         }
       }
@@ -10645,6 +11987,29 @@
         }
       }
     },
+    "Remove from Favorites" : {
+      "comment" : "Note menu and toolbar: take the favorite mark off",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quitar de Favoritas"
+          }
+        }
+      }
+    },
+    "Remove from This Device…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quitar de este dispositivo…"
+          }
+        }
+      }
+    },
     "Remove restores the last checked list and re-encrypts every note with a new vault key, so no other device can read them." : {
       "comment" : "Device list alert: what its Remove button does",
       "extractionState" : "manual",
@@ -10669,6 +12034,18 @@
         }
       }
     },
+    "Remove this note from Favorites" : {
+      "comment" : "Tooltip of the favorite button",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quitar esta nota de Favoritas"
+          }
+        }
+      }
+    },
     "Remove this tag from the note" : {
       "comment" : "Help tag in the tag editor",
       "extractionState" : "manual",
@@ -10681,6 +12058,17 @@
         }
       }
     },
+    "Remove this vault from this device?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Quitar esta bóveda de este dispositivo?"
+          }
+        }
+      }
+    },
     "Remove “%@”" : {
       "comment" : "Button: remove a device key; the value is its label",
       "extractionState" : "manual",
@@ -10689,6 +12077,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Quitar «%@»"
+          }
+        }
+      }
+    },
+    "Remove: %@." : {
+      "comment" : "Repair confirmation; the value is a list of device names and abbreviated keys",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminar: %@."
           }
         }
       }
@@ -10908,14 +12308,59 @@
         }
       }
     },
-    "Repair it from a device that has opened this vault before, or with `sempere vault recipients repair --keep`." : {
-      "comment" : "Device list alert (it = the list); keep the command as it is",
+    "Repair" : {
+      "comment" : "Recipients repair: destructive confirmation button",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Repárala desde un dispositivo que ya haya abierto esta bóveda o con `sempere vault recipients repair --keep`."
+            "value" : "Reparar"
+          }
+        }
+      }
+    },
+    "Repair it with `sempere vault markers repair` on a computer that has opened this vault before, or restore vault.json from a backup." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repáralo con `sempere vault markers repair` en un ordenador que ya haya abierto esta bóveda, o restaura vault.json de una copia de seguridad."
+          }
+        }
+      }
+    },
+    "Repair the device list?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Reparar la lista de dispositivos?"
+          }
+        }
+      }
+    },
+    "Repairing the device list and re-encrypting every note…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reparando la lista de dispositivos y volviendo a cifrar todas las notas…"
+          }
+        }
+      }
+    },
+    "Repair…" : {
+      "comment" : "Recipients repair sheet: confirm button",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reparar…"
           }
         }
       }
@@ -10928,6 +12373,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Repetir frase de contraseña"
+          }
+        }
+      }
+    },
+    "Replace Device Key" : {
+      "comment" : "Key window: title of the sheet that replaces a device's key",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sustituir clave de dispositivo"
           }
         }
       }
@@ -10956,6 +12413,41 @@
         }
       }
     },
+    "Replace Key…" : {
+      "comment" : "Key window: context menu, replace a device's key",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sustituir clave…"
+          }
+        }
+      }
+    },
+    "Replace a device key of “%@”" : {
+      "comment" : "Face ID prompt before replacing a device key; the value is the vault name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sustituir una clave de dispositivo de «%@»"
+          }
+        }
+      }
+    },
+    "Replace the Vault's Settings with This Device's" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sustituir los ajustes de la bóveda por los de este dispositivo"
+          }
+        }
+      }
+    },
     "Replace the saved key for “%@”" : {
       "comment" : "Face ID prompt; the value is the vault name",
       "extractionState" : "manual",
@@ -10964,6 +12456,75 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sustituir la clave guardada de «%@»"
+          }
+        }
+      }
+    },
+    "Replace this key?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Sustituir esta clave?"
+          }
+        }
+      }
+    },
+    "Replace “%@”" : {
+      "comment" : "Key window: confirm replacing the named device's key",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sustituir «%@»"
+          }
+        }
+      }
+    },
+    "Replace…" : {
+      "comment" : "Key window: replace a device's key",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sustituir…"
+          }
+        }
+      }
+    },
+    "Replacing changes these settings on every device that syncs with this vault." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Al sustituirlos, estos ajustes cambian en todos los dispositivos que se sincronizan con esta bóveda."
+          }
+        }
+      }
+    },
+    "Replacing the key and re-encrypting every note…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sustituyendo la clave y volviendo a cifrar todas las notas…"
+          }
+        }
+      }
+    },
+    "Report a Vulnerability" : {
+      "comment" : "About: link to GitHub private vulnerability reporting",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Informar de una vulnerabilidad"
           }
         }
       }
@@ -11255,6 +12816,42 @@
         }
       }
     },
+    "Rotate" : {
+      "comment" : "Undo action name (Edit menu: Undo …)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Girar"
+          }
+        }
+      }
+    },
+    "Rotate 90° Left" : {
+      "comment" : "Item menu on the canvas",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Girar 90° a la izquierda"
+          }
+        }
+      }
+    },
+    "Rotate 90° Right" : {
+      "comment" : "Item menu on the canvas",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Girar 90° a la derecha"
+          }
+        }
+      }
+    },
     "Ruled" : {
       "comment" : "Paper kind",
       "extractionState" : "manual",
@@ -11309,6 +12906,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Elige Hacer copia ahora para reponer los archivos que faltan o están dañados y vuelve a verificar."
+          }
+        }
+      }
+    },
+    "SFSpeechRecognizer (on device)" : {
+      "comment" : "Settings ▸ Transcription: the older speech engine (a product name)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SFSpeechRecognizer (en el dispositivo)"
           }
         }
       }
@@ -11381,6 +12990,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Guardar clave"
+          }
+        }
+      }
+    },
+    "Save Key and Recovery Kit…" : {
+      "comment" : "About Your Key: button to the Save Key sheet (key file and paper recovery kit)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar clave y kit…"
           }
         }
       }
@@ -11465,6 +13086,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Guardar la clave de «%@»"
+          }
+        }
+      }
+    },
+    "Save the recovery kit now" : {
+      "comment" : "About Your Key: heading",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guarda ahora el kit de recuperación"
           }
         }
       }
@@ -11636,6 +13269,18 @@
         }
       }
     },
+    "Search looks through titles, handwriting, typed text, the text of PDFs and recording transcripts." : {
+      "comment" : "Quick tour page 4",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La búsqueda mira en títulos, escritura a mano, texto escrito, el texto de los PDF y las transcripciones de las grabaciones."
+          }
+        }
+      }
+    },
     "Search notes and handwriting" : {
       "comment" : "Placeholder of the note list's search field",
       "extractionState" : "manual",
@@ -11656,6 +13301,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Clave secreta para «%@»"
+          }
+        }
+      }
+    },
+    "Security Design and Limits" : {
+      "comment" : "About: link to docs/security.md",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diseño de seguridad y límites"
+          }
+        }
+      }
+    },
+    "Security and Source" : {
+      "comment" : "About: section header",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seguridad y código"
           }
         }
       }
@@ -11760,6 +13429,40 @@
         }
       }
     },
+    "Sempere is free software and comes with no warranty." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sempere es software libre y no tiene ninguna garantía."
+          }
+        }
+      }
+    },
+    "Sempere is free software and comes with no warranty. Your key is the only way into your notes." : {
+      "comment" : "Quick tour page 1",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sempere es software libre y no tiene ninguna garantía. Tu clave es la única forma de abrir tus notas."
+          }
+        }
+      }
+    },
+    "Sempere is free software under the GNU GPL v3. It comes with no warranty." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sempere es software libre con licencia GNU GPL v3. No tiene ninguna garantía."
+          }
+        }
+      }
+    },
     "Sempere is not allowed to use the microphone. Allow it in Settings ▸ Privacy & Security ▸ Microphone." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11819,6 +13522,39 @@
         }
       }
     },
+    "Server Folder URL" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL de la carpeta del servidor"
+          }
+        }
+      }
+    },
+    "Server Settings" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustes del servidor"
+          }
+        }
+      }
+    },
+    "Server Settings…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustes del servidor…"
+          }
+        }
+      }
+    },
     "Set Up Voice Notes" : {
       "comment" : "Widget and control title when quick voice notes are not set up",
       "extractionState" : "manual",
@@ -11865,6 +13601,83 @@
         }
       }
     },
+    "Settings are stored encrypted in this vault and follow it to every device that syncs with it. Changing a setting here changes it there. To keep a different value on this device, touch and hold the setting and choose Only on This Device." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "device" : {
+              "ipad" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Settings are stored encrypted in this vault and follow it to every device that syncs with it. Changing a setting here changes it there. To keep a different value on this device, touch and hold the setting and choose Only on This Device."
+                }
+              },
+              "iphone" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Settings are stored encrypted in this vault and follow it to every device that syncs with it. Changing a setting here changes it there. To keep a different value on this device, touch and hold the setting and choose Only on This Device."
+                }
+              },
+              "mac" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Settings are stored encrypted in this vault and follow it to every device that syncs with it. Changing a setting here changes it there. To keep a different value on this Mac, Control-click the setting and choose Only on This Device."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Settings are stored encrypted in this vault and follow it to every device that syncs with it. Changing a setting here changes it there. To keep a different value on this device, touch and hold the setting and choose Only on This Device."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "device" : {
+              "ipad" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Los ajustes se guardan cifrados en esta bóveda y la acompañan a todos los dispositivos que se sincronizan con ella. Cambiar un ajuste aquí lo cambia allí. Para conservar otro valor en este dispositivo, mantén pulsado el ajuste y elige «Solo en este dispositivo»."
+                }
+              },
+              "iphone" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Los ajustes se guardan cifrados en esta bóveda y la acompañan a todos los dispositivos que se sincronizan con ella. Cambiar un ajuste aquí lo cambia allí. Para conservar otro valor en este dispositivo, mantén pulsado el ajuste y elige «Solo en este dispositivo»."
+                }
+              },
+              "mac" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Los ajustes se guardan cifrados en esta bóveda y la acompañan a todos los dispositivos que se sincronizan con ella. Cambiar un ajuste aquí lo cambia allí. Para conservar otro valor en este Mac, haz clic en el ajuste con la tecla Control pulsada y elige «Solo en este dispositivo»."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Los ajustes se guardan cifrados en esta bóveda y la acompañan a todos los dispositivos que se sincronizan con ella. Cambiar un ajuste aquí lo cambia allí. Para conservar otro valor en este dispositivo, mantén pulsado el ajuste y elige «Solo en este dispositivo»."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Settings could not be synced: %@" : {
+      "comment" : "Settings ▸ Sync Settings; the error text follows (English)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron sincronizar los ajustes: %@"
+          }
+        }
+      }
+    },
     "Settings for this device" : {
       "comment" : "Help tag of the sidebar's gear",
       "extractionState" : "manual",
@@ -11873,6 +13686,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ajustes de este dispositivo"
+          }
+        }
+      }
+    },
+    "Settings sync is paused until the vault's device list is checked." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La sincronización de ajustes está en pausa hasta que se compruebe la lista de dispositivos de la bóveda."
+          }
+        }
+      }
+    },
+    "Settings sync is paused: this vault is read-only on this device." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La sincronización de ajustes está en pausa: esta bóveda es de solo lectura en este dispositivo."
+          }
+        }
+      }
+    },
+    "Settings sync is paused: this vault's settings need a newer Sempere. Update the app to resume." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La sincronización de ajustes está en pausa: los ajustes de esta bóveda necesitan una versión más reciente de Sempere. Actualiza la app para reanudarla."
           }
         }
       }
@@ -11985,6 +13831,18 @@
         }
       }
     },
+    "Show Quick Tour" : {
+      "comment" : "About: button",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ver recorrido rápido"
+          }
+        }
+      }
+    },
     "Show Report" : {
       "comment" : "Button of the Notability import result alert",
       "extractionState" : "manual",
@@ -12029,6 +13887,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mostrar transcripción"
+          }
+        }
+      }
+    },
+    "Show in Menu Bar" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar en la barra de menús"
+          }
+        }
+      }
+    },
+    "Show in Menu Bar puts a Sempere icon in the menu bar with Quick Voice Note and New Note, while Sempere is running." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar en la barra de menús pone un icono de Sempere en la barra de menús con Nota de voz rápida y Nueva nota, mientras Sempere está abierto."
           }
         }
       }
@@ -12164,6 +14044,18 @@
         }
       }
     },
+    "Skip" : {
+      "comment" : "Quick tour: close it before the last page",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Omitir"
+          }
+        }
+      }
+    },
     "Small" : {
       "comment" : "Object eraser size",
       "extractionState" : "manual",
@@ -12224,6 +14116,29 @@
         }
       }
     },
+    "Some files could not be uploaded: %@" : {
+      "comment" : "The value lists file paths and errors (English)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Algunos archivos no se pudieron subir: %@"
+          }
+        }
+      }
+    },
+    "Some folders could not be read or were not looked into." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Algunas carpetas no se pudieron leer o no se revisaron."
+          }
+        }
+      }
+    },
     "Some notes are still loading or downloading from iCloud Drive. Try again once the list has finished loading." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12255,6 +14170,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Alguien que puede cambiar la carpeta de la bóveda (un servicio de sincronización, una carpeta compartida) ha editado su lista de dispositivos sin la clave de la bóveda."
+          }
+        }
+      }
+    },
+    "Someone who can change the vault's folder changed which version of Sempere may write to it, without the vault's key. This version would otherwise write to a vault it must only read." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alguien que puede cambiar la carpeta de la bóveda cambió qué versión de Sempere puede escribir en ella, sin la clave de la bóveda. De lo contrario, esta versión escribiría en una bóveda que solo debe leer."
           }
         }
       }
@@ -12295,6 +14221,18 @@
         }
       }
     },
+    "Source Code" : {
+      "comment" : "About: link to the repository",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Código fuente"
+          }
+        }
+      }
+    },
     "Space between staves" : {
       "comment" : "Paper parameter",
       "extractionState" : "manual",
@@ -12319,6 +14257,18 @@
         }
       }
     },
+    "SpeechTranscriber (on device)" : {
+      "comment" : "Settings ▸ Transcription: the speech engine of iPadOS 26 (a product name)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SpeechTranscriber (en el dispositivo)"
+          }
+        }
+      }
+    },
     "Staff line spacing" : {
       "comment" : "Paper parameter",
       "extractionState" : "manual",
@@ -12339,6 +14289,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Inicio"
+          }
+        }
+      }
+    },
+    "Start Recording" : {
+      "comment" : "Note menu: start recording audio in the note",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empezar a grabar"
           }
         }
       }
@@ -12433,6 +14395,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Detener grabación"
+          }
+        }
+      }
+    },
+    "Stop Trusting This Certificate" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dejar de confiar en este certificado"
           }
         }
       }
@@ -12563,6 +14536,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Almacenamiento"
+          }
+        }
+      }
+    },
+    "Store settings encrypted in this vault, so every device that opens it can use the same ones. Device keys and Face ID stay on each device." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guarda los ajustes cifrados en esta bóveda, para que todos los dispositivos que la abren puedan usar los mismos. Las claves de los dispositivos y Face ID se quedan en cada dispositivo."
           }
         }
       }
@@ -12723,6 +14707,52 @@
         }
       }
     },
+    "Sync" : {
+      "comment" : "Settings section header: settings sync through the vault",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronización"
+          }
+        }
+      }
+    },
+    "Sync Now" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronizar ahora"
+          }
+        }
+      }
+    },
+    "Sync Settings" : {
+      "comment" : "Title of the sheet asking which settings to keep",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronizar ajustes"
+          }
+        }
+      }
+    },
+    "Sync Settings with This Vault" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronizar ajustes con esta bóveda"
+          }
+        }
+      }
+    },
     "Tag" : {
       "comment" : "Text field placeholder: a tag name",
       "extractionState" : "manual",
@@ -12783,6 +14813,18 @@
         }
       }
     },
+    "Take It With You" : {
+      "comment" : "Quick tour page 6 title",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Llévatelo"
+          }
+        }
+      }
+    },
     "Take Photo…" : {
       "comment" : "Insert menu item: use the camera",
       "extractionState" : "manual",
@@ -12791,6 +14833,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hacer foto…"
+          }
+        }
+      }
+    },
+    "Taken off the list without the vault's key" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quitado de la lista sin la clave de la bóveda"
           }
         }
       }
@@ -13005,6 +15058,18 @@
         }
       }
     },
+    "Task List" : {
+      "comment" : "Markdown bar: start task list items (check boxes)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lista de tareas"
+          }
+        }
+      }
+    },
     "Template PDF paper" : {
       "comment" : "Notability import report: not imported",
       "extractionState" : "manual",
@@ -13013,6 +15078,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Papel de plantilla PDF"
+          }
+        }
+      }
+    },
+    "Test Connection" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Probar conexión"
           }
         }
       }
@@ -13073,6 +15149,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cuadros de texto"
+          }
+        }
+      }
+    },
+    "That WebDAV vault is no longer set up on this device. Connect to it again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esa bóveda WebDAV ya no está configurada en este dispositivo. Vuelve a conectarte a ella."
           }
         }
       }
@@ -13153,6 +15240,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No es una clave poscuántica. Debe empezar por age1pq1…; crea una clave nueva en el otro dispositivo."
+          }
+        }
+      }
+    },
+    "That is the key this vault was unlocked with. To replace it, add a new key for this device, unlock with it, then remove this one." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es la clave con la que se desbloqueó esta bóveda. Para sustituirla, añade una clave nueva para este dispositivo, desbloquea con ella y luego elimina esta."
           }
         }
       }
@@ -13242,6 +15340,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ese texto no es un destinatario age1pq1…"
+          }
+        }
+      }
+    },
+    "The GNU GPL v3 on gnu.org" : {
+      "comment" : "About: link to the licence on the web",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La GNU GPL v3 en gnu.org"
           }
         }
       }
@@ -13387,6 +15497,28 @@
         }
       }
     },
+    "The copy on this device and the saved password are deleted. The vault on the server is not changed." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se borran la copia de este dispositivo y la contraseña guardada. La bóveda del servidor no cambia."
+          }
+        }
+      }
+    },
+    "The editor's own menus change these too. Searching recording transcripts reads and decrypts every transcript of the notes searched, on this device." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los menús del editor también los cambian. Buscar en las transcripciones de grabaciones lee y descifra, en este dispositivo, todas las transcripciones de las notas buscadas."
+          }
+        }
+      }
+    },
     "The files are deleted from the app when you close this sheet." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13429,6 +15561,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "El formato es demasiado largo: como máximo %@ caracteres."
+          }
+        }
+      }
+    },
+    "The free sempere command-line tool for macOS and Linux reads, exports and recovers vaults, without the app." : {
+      "comment" : "Quick tour page 6",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La herramienta libre de línea de comandos sempere, para macOS y Linux, lee, exporta y recupera bóvedas sin la app."
           }
         }
       }
@@ -13499,6 +15643,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La clave está guardada en el Llavero de %@."
+          }
+        }
+      }
+    },
+    "The key this device unlocked with is not in the list, so a repair from here could lock this device out. Repair it from another device, or with `sempere vault recipients repair --keep`." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La clave con la que se desbloqueó este dispositivo no está en la lista, así que una reparación desde aquí podría dejarlo sin acceso. Repárala desde otro dispositivo o con `sempere vault recipients repair --keep`."
           }
         }
       }
@@ -13713,6 +15868,117 @@
         }
       }
     },
+    "The server folder is gone. Nothing was uploaded." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La carpeta del servidor ya no existe. No se subió nada."
+          }
+        }
+      }
+    },
+    "The server folder now holds another vault. Nothing was uploaded." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La carpeta del servidor contiene ahora otra bóveda. No se subió nada."
+          }
+        }
+      }
+    },
+    "The server has notes from another device. Download the vault again to see them." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor tiene notas de otro dispositivo. Vuelve a descargar la bóveda para verlas."
+          }
+        }
+      }
+    },
+    "The server redirects to %@. Connect to that address instead." : {
+      "comment" : "The value is a URL",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor redirige a %@. Conéctate a esa dirección."
+          }
+        }
+      }
+    },
+    "The server refused the user name or password. Update the password." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor rechazó el usuario o la contraseña. Actualiza la contraseña."
+          }
+        }
+      }
+    },
+    "The server sent no certificate." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor no envió ningún certificado."
+          }
+        }
+      }
+    },
+    "The server's certificate changed since you trusted it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El certificado del servidor cambió desde que confiaste en él."
+          }
+        }
+      }
+    },
+    "The server's certificate is not trusted or changed. Check the server, then trust its certificate again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El certificado del servidor no es de confianza o ha cambiado. Comprueba el servidor y vuelve a confiar en su certificado."
+          }
+        }
+      }
+    },
+    "The system does not trust it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El sistema no confía en él."
+          }
+        }
+      }
+    },
+    "The system does not trust this server's certificate" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El sistema no confía en el certificado de este servidor"
+          }
+        }
+      }
+    },
     "The transcript could not be read." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13720,6 +15986,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No se ha podido leer la transcripción."
+          }
+        }
+      }
+    },
+    "The vault could not be downloaded again; this device's copy is unchanged: %@" : {
+      "comment" : "The value is the problem (English)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo volver a descargar la bóveda; la copia de este dispositivo no ha cambiado: %@"
           }
         }
       }
@@ -13792,6 +16070,18 @@
         }
       }
     },
+    "The vault was not completely downloaded: %@\n\nOpen it again to continue the download." : {
+      "comment" : "The value is the first problems (English)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La bóveda no se descargó por completo: %@\n\nÁbrela de nuevo para continuar la descarga."
+          }
+        }
+      }
+    },
     "The vault will be encrypted to your post-quantum key %@…%@." : {
       "comment" : "The values are the start and the end of a public key",
       "extractionState" : "manual",
@@ -13800,6 +16090,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La bóveda se cifrará con tu clave poscuántica %1$@…%2$@."
+          }
+        }
+      }
+    },
+    "The vault's device list checks, or it cannot be repaired from this device. Nothing was changed." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La lista de dispositivos de la bóveda es correcta o no se puede reparar desde este dispositivo. No se ha cambiado nada."
+          }
+        }
+      }
+    },
+    "The vault's device list on the server was changed elsewhere. It was kept; notes still upload. Download the vault again to get the change." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La lista de dispositivos de la bóveda en el servidor se cambió en otro sitio. Se ha conservado; las notas se siguen subiendo. Vuelve a descargar la bóveda para obtener el cambio."
           }
         }
       }
@@ -13981,6 +16293,18 @@
         }
       }
     },
+    "Third-Party Licenses" : {
+      "comment" : "About: the bundled third-party notices",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Licencias de terceros"
+          }
+        }
+      }
+    },
     "This Backup Holds" : {
       "comment" : "Restore from Backup: section header",
       "extractionState" : "manual",
@@ -13989,6 +16313,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Esta copia contiene"
+          }
+        }
+      }
+    },
+    "This Device" : {
+      "comment" : "Settings badge: the setting is kept on this device only",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo"
           }
         }
       }
@@ -14083,6 +16419,17 @@
         }
       }
     },
+    "This can take a while the first time. If it stops, opening the vault again continues it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La primera vez puede tardar un rato. Si se detiene, al abrir de nuevo la bóveda continúa."
+          }
+        }
+      }
+    },
     "This device" : {
       "comment" : "History: a version saved on this device",
       "extractionState" : "manual",
@@ -14106,6 +16453,40 @@
         }
       }
     },
+    "This device's changes are uploaded first. Then the vault is downloaded from the server, with the notes other devices uploaded, and replaces this device's copy. Open notes close meanwhile." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Primero se suben los cambios de este dispositivo. Después la bóveda se descarga del servidor, con las notas que subieron otros dispositivos, y sustituye a la copia de este dispositivo. Mientras tanto se cierran las notas abiertas."
+          }
+        }
+      }
+    },
+    "This device's changes could not all be uploaded first, so the vault was not downloaded again (nothing would be lost, but nothing changed): %@" : {
+      "comment" : "The value is the problem (English)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron subir antes todos los cambios de este dispositivo, así que la bóveda no se volvió a descargar (no se habría perdido nada, pero nada cambió): %@"
+          }
+        }
+      }
+    },
+    "This device's key: always kept" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clave de este dispositivo: siempre se conserva"
+          }
+        }
+      }
+    },
     "This device's record of the vault's devices cannot be read, so the list cannot be checked against it." : {
       "comment" : "Recipients alert: this device's trust record file is damaged or unreadable",
       "extractionState" : "manual",
@@ -14114,6 +16495,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No se puede leer el registro que este dispositivo guarda de los dispositivos de la bóveda, así que la lista no se puede comprobar con él."
+          }
+        }
+      }
+    },
+    "This device: %@" : {
+      "comment" : "Sync Settings prompt: this device's value of a setting",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo: %@"
           }
         }
       }
@@ -14310,6 +16703,41 @@
         }
       }
     },
+    "This server is trusted only with the certificate you chose: %@" : {
+      "comment" : "The value is a certificate fingerprint",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo se confía en este servidor con el certificado que elegiste: %@"
+          }
+        }
+      }
+    },
+    "This text is not in this build. Read it at %@." : {
+      "comment" : "About: a bundled licence text is missing; %@ is a web address",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este texto no está en esta versión. Léelo en %@."
+          }
+        }
+      }
+    },
+    "This vault already has settings, and some differ from this device's." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta bóveda ya tiene ajustes, y algunos son distintos de los de este dispositivo."
+          }
+        }
+      }
+    },
     "This vault has no notes yet. Create one with the New Note button." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14363,6 +16791,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La lista de dispositivos de esta bóveda se ha cambiado sin su clave"
+          }
+        }
+      }
+    },
+    "This vault's format was changed without its key" : {
+      "comment" : "Alert title: vault.json's format or features were edited without the vault key",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El formato de esta bóveda se cambió sin su clave"
           }
         }
       }
@@ -14423,6 +16863,18 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "This vault: %@" : {
+      "comment" : "Sync Settings prompt: the vault's value of a setting",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta bóveda: %@"
           }
         }
       }
@@ -14802,6 +17254,39 @@
         }
       }
     },
+    "Trust It" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confiar"
+          }
+        }
+      }
+    },
+    "Trust This Certificate?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Confiar en este certificado?"
+          }
+        }
+      }
+    },
+    "Trust This Certificate…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confiar en este certificado…"
+          }
+        }
+      }
+    },
     "Trust This List" : {
       "comment" : "Recipients alert button: record the vault's current device list as trusted on this device",
       "extractionState" : "manual",
@@ -14810,6 +17295,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Confiar en esta lista"
+          }
+        }
+      }
+    },
+    "Trust it only if this fingerprint is exactly the one your server shows. Anyone who can intercept the connection could present a certificate like this one, and would then see your password and encrypted files.\n\n%@\n%@" : {
+      "comment" : "The values are the certificate's subject and fingerprint",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confía en él solo si esta huella es exactamente la que muestra tu servidor. Cualquiera que pueda interceptar la conexión podría presentar un certificado como este y vería entonces tu contraseña y tus archivos cifrados.\n\n%@\n%@"
           }
         }
       }
@@ -15035,6 +17532,29 @@
         }
       }
     },
+    "Unlock a vault to sync settings with it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desbloquea una bóveda para sincronizar los ajustes con ella."
+          }
+        }
+      }
+    },
+    "Unlock a vault with its key on this device to save the key." : {
+      "comment" : "About Your Key: why Save Key is unavailable",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desbloquea una bóveda con su clave en este dispositivo para guardar la clave."
+          }
+        }
+      }
+    },
     "Unlock the vault first." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -15142,6 +17662,18 @@
         }
       }
     },
+    "Unnamed device" : {
+      "comment" : "Repair: a key without a label",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivo sin nombre"
+          }
+        }
+      }
+    },
     "Untitled" : {
       "comment" : "Shown for a note without a title",
       "extractionState" : "manual",
@@ -15214,6 +17746,17 @@
         }
       }
     },
+    "Up to date on the server" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Al día en el servidor"
+          }
+        }
+      }
+    },
     "Updated from another device" : {
       "comment" : "Notice over the canvas after another device's changes were merged into the open note",
       "extractionState" : "manual",
@@ -15274,6 +17817,29 @@
         }
       }
     },
+    "Upload failed: %@" : {
+      "comment" : "The value is an error message (English)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falló la subida: %@"
+          }
+        }
+      }
+    },
+    "Uploading to the server…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subiendo al servidor…"
+          }
+        }
+      }
+    },
     "Use Compact Palette" : {
       "comment" : "Tools menu: the short tool palette",
       "extractionState" : "manual",
@@ -15294,6 +17860,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Usar paleta completa"
+          }
+        }
+      }
+    },
+    "Use Synced Value" : {
+      "comment" : "Settings row menu: follow the vault's value again",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usar el valor sincronizado"
           }
         }
       }
@@ -15346,6 +17924,17 @@
         }
       }
     },
+    "Use an https:// address (plain http only for this device itself), without a user name or password in it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usa una dirección https:// (http simple solo para este mismo dispositivo), sin usuario ni contraseña dentro."
+          }
+        }
+      }
+    },
     "Use as Default for New Notes" : {
       "comment" : "Button: save the paper as the default for new notes",
       "extractionState" : "manual",
@@ -15354,6 +17943,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Usar por omisión en notas nuevas"
+          }
+        }
+      }
+    },
+    "Use on All Devices" : {
+      "comment" : "Settings row menu: drop this kind of device's own value",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usar en todos los dispositivos"
+          }
+        }
+      }
+    },
+    "Use the Vault's Settings" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usar los ajustes de la bóveda"
+          }
+        }
+      }
+    },
+    "User Name" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usuario"
           }
         }
       }
@@ -15406,6 +18029,17 @@
         }
       }
     },
+    "Vaults" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bóvedas"
+          }
+        }
+      }
+    },
     "Verify Backup" : {
       "comment" : "Settings ▸ Backups: button",
       "extractionState" : "manual",
@@ -15425,6 +18059,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Verificando la copia…"
+          }
+        }
+      }
+    },
+    "Version" : {
+      "comment" : "About: app version and build",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versión"
           }
         }
       }
@@ -15513,18 +18159,6 @@
         }
       }
     },
-    "Voice Notes" : {
-      "comment" : "Settings ▸ New Notes: notebook that quick voice notes go to",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Notas de voz"
-          }
-        }
-      }
-    },
     "Voice note" : {
       "comment" : "Live Activity label while a voice note records",
       "extractionState" : "manual",
@@ -15533,6 +18167,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nota de voz"
+          }
+        }
+      }
+    },
+    "Voice note from %@" : {
+      "comment" : "The value is the capturing device's name, e.g. iPad",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nota de voz de %@"
+          }
+        }
+      }
+    },
+    "Voice note from a device no longer in this vault" : {
+      "comment" : "The capturing device's key was removed from the vault",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nota de voz de un dispositivo que ya no está en esta bóveda"
+          }
+        }
+      }
+    },
+    "Voice note from a device without a name" : {
+      "comment" : "The capturing device's key has no label",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nota de voz de un dispositivo sin nombre"
+          }
+        }
+      }
+    },
+    "Voice note from an unverified device" : {
+      "comment" : "A voice note captured before captures were attributed to devices",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nota de voz de un dispositivo no verificado"
           }
         }
       }
@@ -15561,6 +18243,17 @@
         }
       }
     },
+    "Vulnerabilities are reported privately on GitHub, as the security policy (SECURITY.md) describes." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las vulnerabilidades se comunican de forma privada en GitHub, como describe la política de seguridad (SECURITY.md)."
+          }
+        }
+      }
+    },
     "Waiting for the Vault" : {
       "comment" : "Note window: the vault is not open or unlocked yet",
       "extractionState" : "manual",
@@ -15581,6 +18274,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Avisos"
+          }
+        }
+      }
+    },
+    "WebDAV" : {
+      "comment" : "Section title: a protocol name",
+      "extractionState" : "manual",
+      "shouldTranslate" : false
+    },
+    "WebDAV sync" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronización WebDAV"
           }
         }
       }
@@ -15657,6 +18366,30 @@
         }
       }
     },
+    "Write" : {
+      "comment" : "Quick tour page 2 title",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escribe"
+          }
+        }
+      }
+    },
+    "Write with Apple Pencil and pick pens, markers and erasers from the palette, on pages or on one long page." : {
+      "comment" : "Quick tour page 2",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escribe con el Apple Pencil y elige plumas, rotuladores y gomas en la paleta, en páginas o en una sola página larga."
+          }
+        }
+      }
+    },
     "Written on the wind." : {
       "comment" : "App icon caption (Shadow S)",
       "extractionState" : "manual",
@@ -15717,6 +18450,52 @@
         }
       }
     },
+    "You are keeping a device this device never confirmed. Keep it only if you know it is yours." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vas a conservar un dispositivo que este dispositivo nunca confirmó. Consérvalo solo si sabes que es tuyo."
+          }
+        }
+      }
+    },
+    "You may use, study, share and change Sempere under the GPL v3 or any later version. An App Store exception lets the app be distributed under the App Store's terms." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puedes usar, estudiar, compartir y modificar Sempere según la GPL v3 o cualquier versión posterior. Una excepción para la App Store permite distribuir la app según las condiciones de la App Store."
+          }
+        }
+      }
+    },
+    "Your Notes, Your Key" : {
+      "comment" : "Quick tour page 1 title",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tus notas, tu clave"
+          }
+        }
+      }
+    },
+    "Your Storage" : {
+      "comment" : "Quick tour page 5 title",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu almacenamiento"
+          }
+        }
+      }
+    },
     "Your new post-quantum secret key. Save it now: after the upgrade only this key (or a passphrase-protected copy) opens the vault. Losing it means losing the vault." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -15724,6 +18503,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tu nueva clave secreta poscuántica. Guárdala ahora: tras la actualización solo esta clave (o una copia protegida con frase de contraseña) abre la bóveda. Perderla es perder la bóveda."
+          }
+        }
+      }
+    },
+    "Your notes are encrypted with a key that stays with you: on your devices, on paper, or wherever you saved it. Sempere has no server and never receives it. If you chose a passphrase, the copy of the key it protects opens the notes too." : {
+      "comment" : "About Your Key",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tus notas se cifran con una clave que se queda contigo: en tus dispositivos, en papel o donde la hayas guardado. Sempere no tiene servidor y nunca la recibe. Si elegiste una frase de contraseña, la copia de la clave que protege también abre las notas."
           }
         }
       }
@@ -15736,6 +18527,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tus notas se pueden seguir leyendo. No se escribe nada en esta bóveda hasta que se corrija la lista."
+          }
+        }
+      }
+    },
+    "Your notes can still be read. Nothing is written to this vault until this is fixed." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tus notas se pueden seguir leyendo. No se escribe nada en esta bóveda hasta que se arregle."
           }
         }
       }
@@ -15782,6 +18584,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reducir"
+          }
+        }
+      }
+    },
+    "[equation]" : {
+      "comment" : "Search result: the match is inside an equation (its source is not quoted)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "[ecuación]"
           }
         }
       }
@@ -15923,6 +18737,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "iCloud Drive aún no ha listado los archivos de esta nota (sin listar: %lld). Vuelve a intentarlo en un momento."
+          }
+        }
+      }
+    },
+    "iPads" : {
+      "comment" : "Settings badge: the setting has its own value on iPads",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPad"
+          }
+        }
+      }
+    },
+    "iPhones" : {
+      "comment" : "Settings badge: the setting has its own value on iPhones",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhone"
           }
         }
       }

@@ -1590,9 +1590,13 @@ synthetic `.note` fixture so CI covers the mapping.
   `ItemLayerView` (between `PaperView` and the ink; images and PDF pages via
   `ItemRaster`, text natively until E2's CoreText shaper); `ItemSelection`
   (selection mode from the toolbar: tap selects, drag moves, corners resize,
-  menu: Copy, Duplicate, Bring to Front, Delete, Paste). Rotation has the
-  API (`setItemRotation`) but no gesture yet; no Mac keyboard shortcuts for
-  items yet (they would be `MenuCommand` cases).
+  menu: Copy, Duplicate, Rotate 90° Left / Right, Bring to Front, Delete, Paste).
+  Rotation (gap audit GA-02): the menu's quarter turns and a two-finger turn of
+  the selected item (the picture follows the fingers; the end snaps to a multiple
+  of 15° within 3°), one delta and one undo step each (`ItemActions.rotate`,
+  `NoteOps.rotation(_:turnedBy:)`); a rotate handle was not built. Mac shortcuts
+  (GA-13): Note > Duplicate Item ⌘D, Bring Item to Front ⌥⇧⌘F, Delete Item ⌃⌘⌫
+  (`MenuCommand`, enabled while an item is selected; `docs/mac.md`).
 - **E1 — images:** Photos picker, camera, paste/drop, the privacy setting
   (HEIC → JPEG and metadata stripping, on by default), orientation, crop UI.
   *Done when:* with the setting on, a HEIC with GPS becomes a JPEG blob
@@ -1729,7 +1733,10 @@ synthetic `.note` fixture so CI covers the mapping.
   opens the note and moves its player to the segment, paused. `NoteSummary.transcribed`
   lists the transcript blobs (summary cache schema 10). Not done: the availability
   matrix on the user's iPad (run Settings or `sempere transcribe --check` there
-  and record it here).
+  and record it here). The Settings ▸ Transcription download button (GA-05) runs
+  `SpeechTranscription.downloadModel` (`AssetInventory`, Apple's asset service) when
+  SpeechTranscriber's model is missing; `sempere transcribe --download-model` does the
+  same. Mac menu: Note > Start / Stop Recording ⌃⌘M (GA-13).
 - **E6 — Settings panel:** one Settings screen (sheet from the library) with
   the sections of §15: recording (codec, quality, sample rate, channels,
   size per hour), photos (privacy and HEIC), transcription (opt-in, locale),
@@ -1910,10 +1917,10 @@ Settings added since (same panel, same rules):
 | Section | Setting | Default | Notes |
 | --- | --- | --- | --- |
 | Recording | Quality choices | 24, 32, 48, 64, 96, 128 kbit/s | HE-AAC offers up to 64; Apple Lossless has no rate (size is an estimate for speech); sample rates 16, 22.05, 32, 44.1, 48 kHz |
-| Transcription | Language | same as the device | model download status and a download button come from the transcription feature (`TranscriptionSettings.statusProvider`, `.downloader`); until then "Not available" |
+| Transcription | Language | same as the device | model status (`TranscriptionSettings.statusProvider`) and, when SpeechTranscriber's model is missing, a "Download Language Model" button (`.downloader` → `SpeechTranscription.downloadModel`, Apple's asset service; also `sempere transcribe --download-model`); "Not available" where no engine supports the language; below it "Engine in Use" and one line per engine (SpeechTranscriber, SFSpeechRecognizer; DictationTranscriber is not offered, GA-11) with what it reports for the chosen language (`TranscriptionPreference.engineLines`: the first available one is in use, as `SpeechTranscription.transcribe` tries them) |
 | New notes | Title when left empty | date and time | also "Date" and "Untitled" |
 | | Default paper | ruled | `PaperPreference` |
-| | Notebook for quick voice notes | Inbox | read by the voice-note feature via `NewNoteSettings.voiceNotebook()` |
+| | (Quick voice notes' notebook) | Inbox | not a New Notes setting any more (GA-04): it is Settings ▸ Quick Voice Notes ▸ Notebook, the capture profile's `notebook`, the only place capture reads. A value an older build stored in New Notes (`LegacyVoiceNotebook`) is carried into the profile once (when it is still "Inbox", or when quick voice notes are turned on) and forgotten |
 | General | Keep Screen On | off | |
 | | Recognize Handwriting | on | |
 | | Smooth Mouse Strokes (Mac only) | Light | Off, Light, Strong (`MouseSmoothing`, `docs/mac.md` "Mouse and trackpad"); pointer input only, nothing in the vault or the CLI |

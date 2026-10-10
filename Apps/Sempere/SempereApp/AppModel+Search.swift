@@ -21,6 +21,7 @@ enum SearchScope: String, CaseIterable, Identifiable, Sendable {
             return String(localized: "In “\(name)”", comment: "Search scope: the notes of one notebook (its name)")
         case .tag(let t): return String(localized: "In #\(t)", comment: "Search scope: the notes with one tag")
         case .deleted: return String(localized: "In Recently Deleted", comment: "Search scope")
+        case .favorites: return String(localized: "In Favorites", comment: "Search scope")
         case .recentlyRecognized: return String(localized: "In Recently Recognized", comment: "Search scope")
         }
     }

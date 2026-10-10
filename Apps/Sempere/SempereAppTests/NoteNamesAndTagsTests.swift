@@ -20,6 +20,40 @@ struct NoteNamesAndTagsTests {
         try await model.renameNote(id, to: "Renamed lecture")   // unchanged: no delta needed
     }
 
+    /// Favorites (GA-01): one `setMeta` favorite delta, nothing when unchanged, a sidebar list,
+    /// and the mark survives a re-read.
+    @Test func favoritesAreWrittenListedAndRestored() async throws {
+        let model = try await BrowserTests.unlockedFixtureModel()
+        let id = AppModelTests.lecture
+        #expect(model.notes.first { $0.id == id }?.favorite == false)
+        model.sidebarSelection = .favorites
+        #expect(model.visibleNotes.isEmpty)
+
+        try await model.setFavorite(true, for: id)
+        #expect(try newestOps(model, id) == [.setMeta(.favorite(true))])
+        #expect(model.notes.first { $0.id == id }?.favorite == true)
+        #expect(model.visibleNotes.map(\.id) == [id])
+
+        let count = try newestRevisionCount(model, id)
+        try await model.setFavorite(true, for: id)           // already: no delta
+        #expect(try newestRevisionCount(model, id) == count)
+
+        try await model.reload()
+        #expect(model.notes.first { $0.id == id }?.favorite == true)
+        try await model.deleteNote(id)                        // a deleted note is not listed
+        #expect(model.visibleNotes.isEmpty)
+        try await model.restoreNote(id)
+
+        try await model.setFavorite(false, for: id)
+        #expect(try newestOps(model, id) == [.setMeta(.favorite(false))])
+        #expect(model.visibleNotes.isEmpty)
+    }
+
+    @Test func theFavoritesSelectionIsRestoredByName() {
+        #expect(RestorableSelection.name(of: .favorites) == "favorites")
+        #expect(RestorableSelection(sidebar: .favorites, note: nil, vault: nil).sidebarItem == .favorites)
+    }
+
     @Test func sameTitlesWorkInOneNotebookAndAcrossNotebooks() async throws {
         let model = try await BrowserTests.unlockedFixtureModel()
         let a = try await model.createNote(title: "Notes", paper: Paper(kind: .ruled), notebook: "School")
@@ -88,6 +122,10 @@ struct NoteNamesAndTagsTests {
         let name = try #require(try vault.revisionNames(of: id).max())
         guard case .delta(let ops) = try vault.readRevision(noteId: id, name: name).body else { return [] }
         return ops
+    }
+
+    private func newestRevisionCount(_ model: AppModel, _ id: UUID) throws -> Int {
+        try #require(model.vault).revisionNames(of: id).count
     }
 
     /// The tag editor's add and remove write one per-tag op each, never the

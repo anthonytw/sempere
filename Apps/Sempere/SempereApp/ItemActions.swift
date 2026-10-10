@@ -116,6 +116,23 @@ final class ItemActions {
         return back
     }
 
+    /// Turns an item by `degrees` clockwise (anticlockwise when negative) from the
+    /// rotation it has; `snapping` rounds the result as a two-finger turn does
+    /// (`NoteOps.snappedRotation`). One delta, one undo step.
+    func rotate(_ id: UUID, by degrees: Double, on page: UUID, snapping: Bool = false) {
+        guard let item = editor.item(id, on: page) else { return }
+        let turned = NoteOps.rotation(item.rotation, turnedBy: degrees)
+        setRotation(id, to: snapping ? NoteOps.snappedRotation(turned) : turned, on: page)
+    }
+
+    /// Sets an item's rotation (degrees clockwise; also undo and redo of `rotate`).
+    func setRotation(_ id: UUID, to degrees: Double, on page: UUID) {
+        guard let old = editor.setItemRotation(id, to: degrees, on: page) else { return }
+        register(String(localized: "Rotate", comment: "Undo action name (Edit menu: Undo …)")) {
+            $0.setRotation(id, to: old ?? 0, on: page)
+        }
+    }
+
     /// Draws an item above the others of its layer.
     func bringToFront(_ id: UUID, on page: UUID) {
         guard let old = editor.bringItemToFront(id, on: page) else { return }

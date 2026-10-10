@@ -206,6 +206,7 @@ public enum PDFWriter {
                         if it.fillsBackground, options.paper {
                             cs.emit(it.backgroundFill(prepared.drawnPaper).translated(dy: -chunk.yOffset))
                         }
+                        for c in it.underlay { cs.emit(c.translated(dy: -chunk.yOffset)) }
                         switch draws[it.item.id] ?? .placeholder(.unsupportedKind(it.item.kind.rawValue)) {
                         case .form(let num, let m), .image(let num, let m):
                             cs.drawXObject(num, matrix: Affine.translate(0, -chunk.yOffset).after(m),

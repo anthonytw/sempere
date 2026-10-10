@@ -214,8 +214,26 @@ enum TranscriptionSettings {
     /// The transcription feature installs the real lookup at launch; until
     /// then the Settings panel shows `unavailable`.
     @MainActor static var statusProvider: @Sendable (String?) async -> ModelStatus = { _ in .unavailable }
-    /// Starts downloading the model; nil when no engine is installed.
+    /// One speech engine as the panel lists it: its name, what it says for the chosen language, and
+    /// whether transcription would use it (the first available one, as `SpeechTranscription.transcribe` tries them).
+    struct EngineLine: Equatable, Sendable {
+        var title: String
+        var state: String
+        var available: Bool
+        var isUsed: Bool
+    }
+
+    /// Asks the engines for their status for a locale (nil: the device's), for the panel's engine list.
+    @MainActor static var enginesProvider: @Sendable (String?) async -> [EngineLine] = { _ in [] }
+
+    /// Starts downloading the model; nil when no engine is installed
+    /// (`TranscriptionPreference.installSettingsHooks` sets it at launch).
     @MainActor static var downloader: (@Sendable (String?) async throws -> Void)?
+
+    /// Whether Settings offers the download button: the model is missing and an engine can fetch it.
+    static func offersDownload(_ status: ModelStatus, hasDownloader: Bool) -> Bool {
+        status == .notDownloaded && hasDownloader
+    }
 }
 
 // MARK: - Device keys
@@ -247,6 +265,15 @@ enum RewrapSettings {
     /// copies of every attachment: choosing it needs a warning and a confirmation.
     static func needsConfirmation(forRemoval method: RewrapMethod) -> Bool { method == .headerOnly }
 
+    /// What choosing `chosen` in the "When Removing a Device or Upgrading" picker does
+    /// while `current` is set: header-only (when not already set) waits for the
+    /// confirmation dialog, anything else is applied and stored at once.
+    enum RemovalStep: Equatable { case confirm, apply }
+
+    static func removalStep(choosing chosen: RewrapMethod, current: RewrapMethod) -> RemovalStep {
+        needsConfirmation(forRemoval: chosen) && chosen != current ? .confirm : .apply
+    }
+
     static func title(_ m: RewrapMethod) -> String {
         m == .headerOnly
             ? String(localized: "Rewrite headers only", comment: "Settings ▸ Device Keys: how attachments are rewrapped (picker choice)")
@@ -256,8 +283,10 @@ enum RewrapSettings {
 
 // MARK: - New notes
 
-/// *New notes*: the title a note gets when the user gives none, the default
-/// notebook of quick voice notes, and (with `PaperPreference`) the paper.
+/// *New notes*: the title a note gets when the user gives none and (with
+/// `PaperPreference`) the paper. The notebook of quick voice notes is a
+/// Quick Voice Notes setting (the capture profile); `LegacyVoiceNotebook`
+/// carries over what older builds stored here.
 enum NewNoteSettings {
     /// The title presets, and `custom` (the user's own pattern, `titlePattern`).
     enum TitleFormat: String, CaseIterable, Sendable, Identifiable {
@@ -298,9 +327,7 @@ enum NewNoteSettings {
     /// --title-format` is) before it is stored.
     static let titlePatternKey = "Sempere.newNote.titlePattern"
     static let defaultTitlePattern = "yyyy-MM-dd HH:mm"
-    static let voiceNotebookKey = "Sempere.newNote.voiceNotebook"
     static let defaultTitleFormat = TitleFormat.dateAndTime
-    static let defaultVoiceNotebook = "Inbox"
 
     static func titleFormat(_ defaults: UserDefaults = .standard) -> TitleFormat {
         defaults.string(forKey: titleFormatKey).flatMap(TitleFormat.init(rawValue:)) ?? defaultTitleFormat
@@ -362,23 +389,22 @@ enum NewNoteSettings {
         let t = typed.trimmingCharacters(in: .whitespacesAndNewlines)
         return t.isEmpty ? defaultTitle(defaults, now: now) : t
     }
+}
 
-    /// The notebook quick voice notes go to: "Inbox" until changed. A name
-    /// that is blank after canonicalising ("", " / ") reads as the default.
-    static func voiceNotebook(_ defaults: UserDefaults = .standard) -> String {
-        NotebookPath.canonical(defaults.string(forKey: voiceNotebookKey)) ?? defaultVoiceNotebook
+/// The notebook of quick voice notes used to be a second field, in Settings ▸
+/// New Notes, that nothing read: capture uses the notebook of its profile
+/// (Settings ▸ Quick Voice Notes). The profile is the one setting now; a value
+/// an older build stored under this key is applied to the profile once
+/// (`AppModel.migrateLegacyVoiceNotebook`, `enableQuickCapture`) and removed.
+enum LegacyVoiceNotebook {
+    static let key = "Sempere.newNote.voiceNotebook"
+
+    /// The stored notebook, canonical; nil when none was stored (or it is blank).
+    static func value(_ defaults: UserDefaults = .standard) -> String? {
+        NotebookPath.canonical(defaults.string(forKey: key))
     }
 
-    /// `name` as `voiceNotebook` would read it back.
-    static func canonicalNotebook(_ name: String) -> String { NotebookPath.canonical(name) ?? defaultVoiceNotebook }
-
-    static func setVoiceNotebook(_ name: String, in defaults: UserDefaults = .standard) {
-        if let canonical = NotebookPath.canonical(name) {
-            defaults.set(canonical, forKey: voiceNotebookKey)
-        } else {
-            defaults.removeObject(forKey: voiceNotebookKey)
-        }
-    }
+    static func remove(from defaults: UserDefaults = .standard) { defaults.removeObject(forKey: key) }
 }
 
 // MARK: - Storage

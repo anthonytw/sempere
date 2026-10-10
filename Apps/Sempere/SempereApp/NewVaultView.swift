@@ -46,6 +46,7 @@ struct NewVaultView: View {
             }
         }
         .interactiveDismissDisabled(created != nil || working)
+        .holdsOnboarding()
         .fileImporter(isPresented: $pickingFolder, allowedContentTypes: [.folder]) { result in
             switch result {
             case .success(let url): folder = url

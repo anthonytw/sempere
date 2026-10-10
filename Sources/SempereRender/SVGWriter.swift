@@ -84,6 +84,7 @@ public enum SVGWriter {
         for (i, it) in prepared.items.enumerated() {
             if i == underAt, !under.isEmpty { body += underGroup(under) }
             if it.fillsBackground, options.paper { body += element(it.backgroundFill(prepared.drawnPaper)) + "\n" }
+            for c in it.underlay { body += element(c) + "\n" }
             if case .image(let placed)? = draws[it.item.id] {
                 let id: Result<(String, PlacedImage), PlaceholderReason> = Result.success(placed).flatMap { p in
                     if let known = ids[p.ref.sha256] { return .success((known, p)) }

@@ -1024,4 +1024,10 @@ extension PageCanvasHost: CanvasCommandTarget {
         canvas.isRulerActive.toggle()
         updateEraser()
     }
+
+    @discardableResult
+    func perform(itemCommand: MenuCommand) -> Bool {
+        guard !isReadOnly else { return false }
+        return itemSelection.perform(itemCommand)
+    }
 }

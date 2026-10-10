@@ -128,7 +128,7 @@ enum NewerFixture {
         var m = vault.manifest
         m.format = format
         m.features = [feature]
-        _ = try Vault.writeManifest(m, to: vault.manifestURL, replacing: true)
+        _ = try Vault.writeManifest(m, to: vault.manifestURL, replacing: true, secret: try vault.requireSecret())
     }
 }
 
@@ -297,6 +297,7 @@ final class NewerFormatTests: VaultTestCase {
         m.recipientsTag = nil
         m.secretLink = nil
         m.features.removeAll { $0 == VaultManifest.recipientsTagFeature }
+        m.markersTag = nil; m.features.removeAll { $0 == VaultManifest.markersTagFeature }   // older than version markers
         try m.encoded().write(to: manifestURL)
         let untagged = try Data(contentsOf: manifestURL)
 

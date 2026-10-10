@@ -18,6 +18,9 @@ extension AppModel {
     /// otherwise it pauses at once, as before. Either way a refresh is
     /// scheduled while an iCloud vault is open.
     func enterBackground() {
+        // A WebDAV copy tries to push the last edits in the seconds iPadOS leaves the app;
+        // a push cut off by the suspension is retried when the app comes back.
+        webdav?.demand()
         guard isCloudVault, cloudSyncTask != nil, syncInFlight, backgroundSyncToken == nil else {
             pauseCloudSync()
             scheduleBackgroundRefresh()
@@ -40,6 +43,7 @@ extension AppModel {
     func enterForeground() {
         syncingInBackground = false
         endBackgroundTime()
+        webdav?.demand()   // a WebDAV copy pushes when the app comes back
     }
 
     /// The loop found nothing pending while finishing in the background: it

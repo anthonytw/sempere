@@ -64,7 +64,8 @@ struct ItemRenderKey: Hashable, Sendable {
 /// Draws items off the main actor for the item layer (`ItemLayerView`):
 /// images and PDF pages through SempereRender's composition (`ItemRaster`,
 /// as exports draw them) from the vault's `BlobCache`; text boxes from their
-/// CoreText layout (`TextItemImage`), as the app's exports draw them.
+/// CoreText layout (`TextItemImage`), as the app's exports draw them;
+/// Markdown text boxes through `ItemRaster` too (their pieces and formula renders).
 enum ItemRendering {
     /// Largest picture of one item, in pixels.
     static let maxPixels = 6_000_000
@@ -78,7 +79,9 @@ enum ItemRendering {
     @MainActor
     static func render(_ key: ItemRenderKey, note: UUID, cache: BlobCache?, renders: RenderCache? = nil) async -> ItemPicture {
         let item = key.item
-        if item.kind == .text, let text = item.text {
+        // A Markdown box is drawn through the shared composition below (format.md §8.5.4: its pieces,
+        // formulas from their renders), with the CoreText shaper, as the app's exports draw it.
+        if item.kind == .text, let text = item.text, !text.isMarkdown {
             return TextItemImage.picture(text, frame: item.frame, rotation: item.rotation, scale: key.scale)
                 .map { ItemPicture.image($0.0, bounds: $0.1) }
                 ?? .placeholder(.unavailable("text cannot be drawn"))
@@ -103,10 +106,15 @@ enum ItemRendering {
         var files: [String: URL] = [:]
         // A video is drawn as its poster: the clip itself is read only when it plays (format.md §8.2.7);
         // anything else from its own blobs (an equation from its render, §8.2.8).
-        let blobs = item.kind == .video ? (item.poster.map { [$0] } ?? []) : item.blobReferences
+        // A Markdown box only from the renders of the formulas its source draws (§8.5.4); one that
+        // cannot be read is that formula's placeholder, not the whole box's.
+        let markdown = item.text.map { $0.isMarkdown } ?? false
+        let blobs = item.kind == .video ? (item.poster.map { [$0] } ?? [])
+            : markdown ? (item.text.map { MarkdownText.usedFormulas($0).compactMap(\.math.render) } ?? []) : item.blobReferences
         if let cache {
             for ref in blobs {
                 do { files[ref.sha256] = try await cache.acquire(note: note, ref: ref) } catch {
+                    if markdown, !isTransient(error) { continue }
                     for held in blobs where files[held.sha256] != nil { await cache.release(note: note, ref: held) }
                     // Not here yet (iCloud), or the cache went away: still loading, tried again later.
                     return .placeholder(isTransient(error) ? .loading : .unavailable("\(error)"))
@@ -116,11 +124,12 @@ enum ItemRendering {
         let source: CachedBlobSource? = cache == nil ? nil : CachedBlobSource(files: files)
         let outcome = await Task.detached(priority: .userInitiated) { () -> Outcome in
             let options = RenderOptions(paper: false, blobs: source, pdfRasterizer: PDFKitRasterizer(),
-                                        imageDecoder: ImageIODecoder())
+                                        imageDecoder: ImageIODecoder(), shaper: CoreTextShaper())
             do {
                 let r = try ItemRaster.render(item, scale: key.scale, maxPixels: ItemRendering.maxPixels, paper: key.paper, options: options)
-                // A video without a poster is its placeholder under the play mark, as exports draw it.
-                if let reason = r.placeholder, reason != .noPoster { return .failed(reason.description) }
+                // A video without a poster is its placeholder under the play mark, as exports draw it; a
+                // Markdown box with a formula that cannot be drawn shows that formula's placeholder.
+                if let reason = r.placeholder, reason != .noPoster, !markdown { return .failed(reason.description) }
                 return .pixels(r.image, r.bounds)
             } catch {
                 return .failed("\(error)")

@@ -2,7 +2,8 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  type SearchableNote, canonicalNotebook, isWithinNotebook, maxWords, notebookComponents, notebookTree, search,
+  type PageTextEntry, type SearchableNote, canonicalNotebook, equationMarker, isWithinNotebook, maxWords,
+  notebookComponents, notebookTree, pageSnippet, search,
 } from "../src/format/search.ts";
 
 let counter = 0;
@@ -135,5 +136,56 @@ describe("notebooks", () => {
     expect(notebookTree([])).toEqual([]);
     const twins = notebookTree(["A/Notes", "B/Notes"]);
     expect(twins.flatMap((n) => [n.path, ...n.children.map((c) => c.path)])).toEqual(["A", "A/Notes", "B", "B/Notes"]);
+  });
+});
+
+// Ports of NoteSearchTests "Snippets leave equations out" (#147): the parts of a page are spans, a snippet stays
+// inside one prose part and an equation's LaTeX is searched but never quoted.
+describe("snippets leave equations out", () => {
+  const prose = "For small angles a pendulum is a harmonic oscillator";
+  const latex = String.raw`T = 2\pi\sqrt{\frac{L}{g}}`;
+  const box = "Period depends on the length";
+  const page: PageTextEntry = {
+    number: 1, text: [prose, latex, box].join("\n"),
+    spans: [
+      { start: 0, end: prose.length, isMath: false },
+      { start: prose.length + 1, end: prose.length + 1 + latex.length, isMath: true },
+      { start: prose.length + latex.length + 2, end: prose.length + latex.length + 2 + box.length, isMath: false },
+    ],
+  };
+  const pendulum: SearchableNote = { id: "p", title: "Pendulum", tags: [], modified: 0, pageTexts: [page] };
+
+  it("quotes the prose part and nothing of its neighbours", () => {
+    for (const q of ["oscillator", "pendulum", "small"]) {
+      const s = search(q, [pendulum])[0]?.snippet;
+      expect(s?.isEquation ?? false).toBe(false);
+      expect(s?.text).toBe(prose);
+    }
+    expect(search("length", [pendulum])[0]?.snippet?.text).toBe(box);
+  });
+
+  it("shows the marker for a match only inside an equation, which stays searchable", () => {
+    for (const q of ["frac", "sqrt", String.raw`\pi`]) {
+      const hits = search(q, [pendulum]);
+      expect(hits.length).toBe(1);
+      expect(hits[0]?.snippet).toEqual({ text: equationMarker, matches: [], isEquation: true });
+      expect(hits[0]?.page?.number).toBe(1);
+    }
+    expect(search("pendulum frac", [pendulum])[0]?.snippet?.isEquation ?? false).toBe(false);
+  });
+
+  it("starts and ends at word boundaries", () => {
+    const words = Array.from({ length: 120 }, (_, i) => `word${i}`);
+    const s = search("word60", [note("Long", { pages: [words.join(" ")] })])[0]?.snippet;
+    expect(s?.text.startsWith("…") && s.text.endsWith("…")).toBe(true);
+    const shown = (s?.text ?? "").replace(/…/g, "").split(" ");
+    expect(shown.every((w) => words.includes(w))).toBe(true);
+    expect(shown).toContain("word60");
+    expect(matched({ snippet: s ?? { text: "", matches: [] } })).toEqual(["word60"]);
+  });
+
+  it("treats text without spans (published summaries) as one prose part", () => {
+    expect(pageSnippet({ number: 1, text: "plain words only" }, ["words"])?.text).toBe("plain words only");
+    expect(pageSnippet({ number: 1, text: "plain words only" }, ["absent"])).toBeUndefined();
   });
 });

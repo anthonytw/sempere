@@ -19,6 +19,8 @@ public enum HTMLExport {
     svg.page-svg{display:block;width:100%;height:auto}
     svg .ocr text{user-select:text;cursor:text}
     details{margin:.5rem 0 1.5rem}
+    .md{background:var(--card);border:1px solid var(--line);padding:.2rem .8rem;border-radius:4px;margin:.4rem 0}
+    .md blockquote{border-left:3px solid var(--line);margin:0;padding-left:.8rem}
     details pre{white-space:pre-wrap;background:var(--card);border:1px solid var(--line);padding:.6rem;border-radius:4px}
     [hidden]{display:none !important}
     input[type=search]{width:100%;box-sizing:border-box;font:inherit;padding:.5rem .7rem;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:6px}
@@ -119,6 +121,12 @@ public enum HTMLExport {
             if !typed.isEmpty {
                 h += "<details><summary>Typed text</summary>\n"
                 h += typed.map { "<pre>\(esc($0))</pre>\n" }.joined()
+                h += "</details>\n"
+            }
+            let marked = MarkdownExport.markdownBoxes(page)
+            if !marked.isEmpty {
+                h += "<details open=\"open\"><summary>Text boxes</summary>\n"
+                h += marked.map { "<div class=\"md\">\n" + MarkdownHTML.render($0) + "</div>\n" }.joined()
                 h += "</details>\n"
             }
             let equations = MarkdownExport.equations(page)

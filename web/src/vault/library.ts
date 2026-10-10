@@ -6,6 +6,7 @@ import { type NoteState, type Revision } from "../format/model.ts";
 import { type NewerContent, emptyNewer, mergeNewer } from "../format/newer.ts";
 import { type JSONObject } from "../format/json.ts";
 import { itemLatex, itemText } from "../format/registers.ts";
+import { type PageTextEntry, type TextSpan } from "../format/search.ts";
 import { NoteLogError, reconstruct } from "../format/reducer.ts";
 import { type UnlockedVault, RevisionReadError, limits } from "./vault.ts";
 import { SourceError, type VaultSource } from "./source.ts";
@@ -42,7 +43,7 @@ export interface NoteSummary {
   modified?: number;
   pageCount: number;
   /** Recognised text per page (1-based page numbers), for search. */
-  pageTexts: { number: number; text: string }[];
+  pageTexts: PageTextEntry[];
   failures: number;
   error?: string;
   hasAttachments: boolean;
@@ -139,11 +140,18 @@ export function summarize(n: LoadedNote): NoteSummary {
     pageTexts: (s?.pages ?? []).flatMap((p, i) => {
       // Recognised handwriting, then each text box, PDF page text and equation source in drawing order
       // (Swift `PageText.texts`).
-      const parts = [p.recognition?.text ?? "",
-        ...p.items.map((it) => it.kind === "text" ? itemText(it) : it.kind === "pdfPage" ? pdfPageText(it)
-          : it.kind === "math" ? itemLatex(it) : "")]
-        .filter((t) => t.length > 0);
-      return parts.length > 0 ? [{ number: i + 1, text: parts.join("\n") }] : [];
+      // `spans` say which part is which (UTF-16 offsets, as Swift's), so a snippet leaves equations out.
+      const parts = [{ text: p.recognition?.text ?? "", isMath: false },
+        ...p.items.map((it) => it.kind === "math" ? { text: itemLatex(it), isMath: true }
+          : { text: it.kind === "text" ? itemText(it) : it.kind === "pdfPage" ? pdfPageText(it) : "", isMath: false })]
+        .filter((t) => t.text.length > 0);
+      const spans: TextSpan[] = [];
+      let offset = 0;
+      for (const part of parts) {
+        spans.push({ start: offset, end: offset + part.text.length, isMath: part.isMath });
+        offset += part.text.length + 1;   // the joining newline
+      }
+      return parts.length > 0 ? [{ number: i + 1, text: parts.map((t) => t.text).join("\n"), spans }] : [];
     }),
     failures: n.failures.length, hasAttachments: n.hasAttachments, newer: n.newer !== undefined,
   };

@@ -140,7 +140,13 @@ public enum RecipientsAuth {
         }
         guard let tag = manifest.recipientsTag else {
             let featured = manifest.features.contains(VaultManifest.recipientsTagFeature)
-            guard featured || record != nil else { return .untagged }
+            guard featured || record != nil else {
+                // An untagged list whose markers were tagged (or say they were) is still checked.
+                if let reason = markersProblem(manifest, secret: secret, record: nil) {
+                    return .tampered(.init(reason: reason, unexpected: [], missing: [], restore: nil))
+                }
+                return .untagged
+            }
             return .tampered(.init(reason: .tagRemoved, current: keys, restore: record?.recipients, record: record))
         }
         guard verifyTag(tag, vaultId: id, keys: keys, secret: secret) else {
@@ -148,6 +154,9 @@ public enum RecipientsAuth {
                 return .tampered(.init(reason: .tagMismatch, current: keys, restore: found.kept, record: record))
             }
             return .tampered(.init(reason: .tagMismatch, current: keys, restore: record?.recipients, record: record))
+        }
+        if let reason = markersProblem(manifest, secret: secret, record: record) {
+            return .tampered(.init(reason: reason, unexpected: [], missing: [], restore: nil))
         }
         guard record != nil else { return .verified(.firstUse) }
         return .verified(rotated ? .rotated : .unchanged)
@@ -254,6 +263,16 @@ public struct RecipientsProblem: Hashable, Sendable {
         /// can be compared, so the list is not trusted for writing until the
         /// user confirms it (security review 2026-10, R5).
         case recordUnreadable
+        /// `markersTag` does not verify (or is malformed): `format` or
+        /// `features` were changed without the vault's key (format.md §2.1
+        /// "Version markers"; security review 2026-10, N3).
+        case markersMismatch
+        /// The markers tag was removed from a vault that had one (its feature
+        /// is listed, or this device's record holds its markers): a downgrade.
+        case markersRemoved
+        /// The markers verify but name a lower major or fewer features than
+        /// this device last verified: an older `vault.json` put back.
+        case markersRolledBack
     }
 
     public var reason: Reason
@@ -312,6 +331,10 @@ public struct RecipientsTrustRecord: Codable, Hashable, Sendable {
     public var anchor: Anchor
     /// The keys of the last verified list, in order.
     public var recipients: [String]
+    /// The version markers last verified (format.md §2.1 "Version markers");
+    /// nil when the vault's markers were not tagged then (or the record is
+    /// older than them).
+    public var markers: VaultMarkers?
 
     /// `sempere-trust/2`, or `sempere-trust/1` for a legacy record.
     public var format: String {
@@ -322,18 +345,19 @@ public struct RecipientsTrustRecord: Codable, Hashable, Sendable {
     /// True for a `sempere-trust/1` record, which the next write replaces.
     public var isLegacy: Bool { if case .legacy = anchor { return true }; return false }
 
-    public init(vaultId: UUID, anchor: Anchor, recipients: [String]) {
-        self.vaultId = vaultId; self.anchor = anchor; self.recipients = recipients
+    public init(vaultId: UUID, anchor: Anchor, recipients: [String], markers: VaultMarkers? = nil) {
+        self.vaultId = vaultId; self.anchor = anchor; self.recipients = recipients; self.markers = markers
     }
 
     /// The record for a list verified under `secret`.
     ///
     /// - Throws: `AgeError.postQuantumUnavailable` where the platform has no ML-DSA.
-    public init(vaultId: UUID, secret: VaultSecret, recipients: [String]) throws {
-        self.init(vaultId: vaultId, anchor: .signed(try LinkPublicKeys(secret: secret)), recipients: recipients)
+    public init(vaultId: UUID, secret: VaultSecret, recipients: [String], markers: VaultMarkers? = nil) throws {
+        self.init(vaultId: vaultId, anchor: .signed(try LinkPublicKeys(secret: secret)), recipients: recipients,
+                  markers: markers)
     }
 
-    enum CodingKeys: String, CodingKey { case format, vaultId, linkKey, linkPublicKeys, recipients }
+    enum CodingKeys: String, CodingKey { case format, vaultId, linkKey, linkPublicKeys, recipients, markers }
     enum KeyCodingKeys: String, CodingKey { case ed25519, mldsa65 }
 
     public init(from decoder: Decoder) throws {
@@ -359,6 +383,7 @@ public struct RecipientsTrustRecord: Codable, Hashable, Sendable {
             throw DecodingError.dataCorruptedError(forKey: .format, in: c, debugDescription: "not \(Self.formatName)")
         }
         recipients = try c.decode([String].self, forKey: .recipients)
+        markers = try c.decodeIfPresent(VaultMarkers.self, forKey: .markers).map { VaultMarkers(format: $0.format, features: $0.features) }
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -374,6 +399,7 @@ public struct RecipientsTrustRecord: Codable, Hashable, Sendable {
             try c.encode(RecipientsAuth.hex(key), forKey: .linkKey)
         }
         try c.encode(recipients, forKey: .recipients)
+        try c.encodeIfPresent(markers, forKey: .markers)
     }
 }
 
@@ -508,7 +534,11 @@ extension Vault {
         guard let mine = try? readManifest(local) else { return nil }   // a damaged local copy: take the remote one
         guard incoming.vaultId == mine.vaultId else { return "the incoming vault.json belongs to another vault" }
         let sameKeys = incoming.recipients.map(\.key) == mine.recipients.map(\.key)
-        if sameKeys, incoming.recipientsTag == mine.recipientsTag, incoming.vaultSecret == mine.vaultSecret { return nil }
+        let sameMarkers = incoming.format == mine.format && incoming.features == mine.features
+            && incoming.markersTag == mine.markersTag
+        if sameKeys, sameMarkers, incoming.recipientsTag == mine.recipientsTag, incoming.vaultSecret == mine.vaultSecret {
+            return nil
+        }
         guard let vault, vault.canRead, vault.vaultId == mine.vaultId else {
             // Without the key only public fields can be compared: the same
             // keys and the same sealed secret let nobody new read, and a tag
@@ -527,7 +557,20 @@ extension Vault {
                     ? "the incoming vault.json drops the device list's tag (format.md §2.1); unlock (--identity) to check it"
                     : "the incoming vault.json changes the device list's tag; unlock (--identity) to check it (format.md §2.1)"
             }
+            // Version markers (format.md §2.1, security review 2026-10, N3): once tagged
+            // here they change only under a check; untagged ones may only grow (a
+            // tag added, a higher major, more features), never be lowered.
+            if mine.markersTag != nil || mine.features.contains(VaultManifest.markersTagFeature) {
+                guard sameMarkers else {
+                    return "the incoming vault.json changes the vault's format or features; unlock (--identity) to check it (format.md §2.1)"
+                }
+            } else if !VaultMarkers(mine).isCovered(by: incoming) {
+                return "the incoming vault.json names an older format or fewer features than the local one (format.md §2.1)"
+            }
             return nil
+        }
+        if !VaultMarkers(mine).isCovered(by: incoming) {
+            return "the incoming vault.json names an older format or fewer features than the local one (format.md §2.1)"
         }
         let secret: VaultSecret
         do { secret = try decryptSecret(incoming.vaultSecret, with: vault.identities) } catch {
@@ -538,7 +581,8 @@ extension Vault {
             return "this device's trust record for the vault cannot be read, so the incoming vault.json cannot be checked: \(error)"
         }
         if anchor == nil, vault.recipientsStatus.allowsWriting, let own = vault.secret {
-            anchor = try? RecipientsTrustRecord(vaultId: vault.vaultId, secret: own, recipients: vault.recipients.map(\.key))
+            anchor = try? RecipientsTrustRecord(vaultId: vault.vaultId, secret: own, recipients: vault.recipients.map(\.key),
+                                                markers: mine.markersTag != nil ? VaultMarkers(mine) : nil)
         }
         switch RecipientsAuth.evaluate(incoming, secret: secret, record: anchor) {
         case .verified, .notChecked: return nil

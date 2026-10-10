@@ -34,6 +34,7 @@ enum RecipientsTamper: String, CaseIterable {
             m.vaultSecret = String(decoding: try AgeFile.encrypt(forged.bytes, to: keys, armor: true), as: UTF8.self)
             m.recipientsTag = RecipientsAuth.tag(vaultId: m.vaultId, keys: m.recipients.map(\.key), secret: forged)
             m.secretLink = .legacy(String(repeating: "0", count: 64))
+            m.tagMarkers(secret: forged)   // the markers re-tagged under it too
         }
         try m.encoded().write(to: url)
     }
@@ -106,7 +107,7 @@ final class RecipientsAuthTests: VaultTestCase {
     func testEveryRecipientChangeWritesTagFeatureAndLink() throws {
         let store = MemoryRecipientsTrustStore()
         var vault = try Vault.create(at: vaultURL(), recipients: [a.recipient], identities: [a], trust: store)
-        XCTAssertEqual(vault.manifest.features, ["recipients-tag", "signed-secret-link"])
+        XCTAssertEqual(vault.manifest.features, ["recipients-tag", "signed-secret-link", "markers-tag"])
         XCTAssertNil(vault.manifest.secretLink)
         XCTAssertEqual(try open(vault.url, store).recipientsStatus, .verified(.unchanged))
         XCTAssertEqual(try open(vault.url, nil).recipientsStatus, .verified(.firstUse))
@@ -470,6 +471,7 @@ final class RecipientsAuthTests: VaultTestCase {
         var m = try VaultManifest.decode(Data(contentsOf: fixture.appendingPathComponent("vault.json")))
         m.recipientsTag = nil
         m.features.removeAll { $0 == "recipients-tag" }
+        m.markersTag = nil; m.features.removeAll { $0 == VaultManifest.markersTagFeature }   // older than version markers
         try m.encoded().write(to: fixture.appendingPathComponent("vault.json"))
         var down = try Vault.open(at: fixture, identities: [id], trust: store)
         XCTAssertEqual(down.recipientsStatus.problem?.reason, .tagRemoved)
@@ -729,7 +731,9 @@ enum FixtureVault {
         let url = dest.appendingPathComponent("vault.json")
         var m = try VaultManifest.decode(Data(contentsOf: url))
         m.recipientsTag = nil
-        m.features.removeAll { $0 == VaultManifest.recipientsTagFeature || $0 == VaultManifest.signedLinkFeature }
+        m.markersTag = nil   // older than version markers too (format.md §2.1)
+        m.features.removeAll { [VaultManifest.recipientsTagFeature, VaultManifest.signedLinkFeature,
+                                VaultManifest.markersTagFeature].contains($0) }
         try m.encoded().write(to: url)
         return dest
     }

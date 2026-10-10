@@ -133,6 +133,9 @@ struct RecordingsMenu: View {
                 Divider()
                 ForEach(editor.recordings) { r in
                     Menu(Self.title(r)) {
+                        if let by = Self.capturedBy(r, recipients: model.vault?.recipients ?? []) {
+                            Text(by)   // who recorded a voice note adopted from the inbox (format.md §8.3.1)
+                        }
                         Button("Play", systemImage: "play") { Task { await model.play(r, in: editor) } }
                         if r.transcript != nil {
                             Button("Show Transcript", systemImage: "text.quote") { showingTranscript = r }
@@ -166,6 +169,21 @@ struct RecordingsMenu: View {
         .help("Tap: record or stop. Press and hold: the note's recordings")
     }
 
+    /// Who captured a voice note adopted from the inbox (format.md §8.3.1,
+    /// §11.3): the device's name while it is in the vault; nil for other
+    /// recordings. A capture sealed before attribution names no device.
+    static func capturedBy(_ r: Recording, recipients: [VaultManifest.Recipient]) -> String? {
+        guard let c = r.captured else { return nil }
+        guard c.recipient != nil else {
+            return String(localized: "Voice note from an unverified device", comment: "A voice note captured before captures were attributed to devices")
+        }
+        guard let label = c.label(in: recipients) else {
+            return String(localized: "Voice note from a device no longer in this vault", comment: "The capturing device's key was removed from the vault")
+        }
+        if label.isEmpty { return String(localized: "Voice note from a device without a name", comment: "The capturing device's key has no label") }
+        return String(localized: "Voice note from \(label)", comment: "The value is the capturing device's name, e.g. iPad")
+    }
+
     /// "Lecture 3 – 52:10", "Recording 4 Oct 16:20 – 3:02".
     static func title(_ r: Recording) -> String {
         let name = r.title.flatMap { $0.isEmpty ? nil : $0 }
@@ -176,14 +194,28 @@ struct RecordingsMenu: View {
         return name + length + transcribed
     }
 
-    private func startRecording() async {
+    private func startRecording() async { await editor.askAndStartRecording() }
+}
+
+extension NoteEditor {
+    /// Asks for the microphone if needed, then starts a recording; what fails is shown in `recordingError`.
+    func askAndStartRecording() async {
         guard await AVAudioCaptureBackend.requestMicrophone() else {
-            editor.recordingError = RecordingError.microphoneDenied.description
+            recordingError = RecordingError.microphoneDenied.description
             return
         }
-        do { try editor.startRecording() } catch {
+        do { try startRecording() } catch {
             let detail = "\(error)"
-            editor.recordingError = (error as? RecordingError)?.description ?? String(localized: "Could not record: \(detail)")
+            recordingError = (error as? RecordingError)?.description ?? String(localized: "Could not record: \(detail)")
+        }
+    }
+
+    /// Record / Stop Recording of the Mac menu and its shortcut, as the toolbar button's tap does.
+    func toggleRecording() async {
+        if recordingSession?.isActive == true {
+            await stopRecording()
+        } else if !isReadOnly {
+            await askAndStartRecording()
         }
     }
 }

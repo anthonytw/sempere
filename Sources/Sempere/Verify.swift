@@ -267,9 +267,11 @@ extension Vault {
         do { m = try Self.readManifest(data) } catch { return ["vault.json: \(error)"] }
         var problems: [String] = []
         // `features` may legitimately grow after open (a blob writer adds
-        // `attachments`, format.md §2); anything else is a change.
+        // `attachments`, format.md §2), and with them `markersTag` (§2.1);
+        // anything else is a change.
         var opened = manifest
         opened.features = m.features
+        opened.markersTag = m.markersTag
         if m != opened { problems.append("vault.json changed on disk since the vault was opened") }
 
         // The secret must be armored age encrypted to exactly the recipients.

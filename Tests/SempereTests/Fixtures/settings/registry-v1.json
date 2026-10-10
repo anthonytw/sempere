@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "keys": [
+    "appearance.icon",
+    "backup.reminderDays",
+    "editor.compactPalette",
+    "editor.defaultLayout",
+    "editor.defaultPaper",
+    "editor.keepScreenOn",
+    "eraser.mode",
+    "eraser.objectRadius",
+    "handwriting.recognize",
+    "history.thinAfterDays",
+    "math.recognize",
+    "mouse.smoothing",
+    "newNote.titleFormat",
+    "newNote.titlePattern",
+    "photos.removeMetadata",
+    "quickCapture.notebook",
+    "quickCapture.transcribe",
+    "recording.bitRate",
+    "recording.channels",
+    "recording.codec",
+    "recording.sampleRate",
+    "rewrap.onAdd",
+    "rewrap.onRemove",
+    "search.transcripts",
+    "transcription.enabled",
+    "transcription.language"
+  ]
+}

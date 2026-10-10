@@ -25,6 +25,8 @@ enum SidebarItem: Hashable, Sendable {
     case notebook(String)
     case tag(String)
     case deleted
+    /// Notes marked as favorites (`meta.favorite`, format.md §5.4).
+    case favorites
     /// The notes the last "Recognize All Notes" run changed (`AppModel.recognitionResults`).
     case recentlyRecognized
 }
@@ -265,8 +267,9 @@ final class AppModel {
     var thinningConcurrency = min(ProcessInfo.processInfo.activeProcessorCount, 4)
     /// Set while vault files are being fetched from iCloud Drive (`AppModel+Cloud`).
     var cloudProgress: CloudProgress?
-    /// True when the open vault is in iCloud Drive: reads and writes are
-    /// coordinated and reloads fetch new files first.
+    /// True when the open vault is in iCloud Drive or another provider's
+    /// storage (`StorageLocation`): reads and writes are coordinated and
+    /// reloads fetch new files first (when the provider reports download states).
     var isCloudVault = false
     var cloudTask: Task<Bool, any Error>?
     /// Notes of an iCloud vault whose files are still downloading.
@@ -315,6 +318,23 @@ final class AppModel {
     var syncingInBackground = false
     /// The iCloud calls; tests replace them (`CloudVault.Hooks`).
     var cloudHooks = CloudVault.Hooks.live
+    /// The WebDAV locations of this device (`AppModel+WebDAV`, docs/io.md
+    /// "WebDAV vaults in the app"). The app passes the default store; without
+    /// one (tests) a store in a folder of this model alone.
+    let webdavLocations: WebDAVLocationStore
+    /// The push-only sync of the open vault when it is a WebDAV location's
+    /// local copy; nil for any other vault.
+    var webdav: WebDAVSession?
+    /// The name of the WebDAV vault being downloaded, for the overlay; nil when none is.
+    var webdavDownloading: String?
+    /// The server calls (`LiveWebDAVRemote`); tests pass a fake.
+    @ObservationIgnored var webdavRemote: any WebDAVRemote = LiveWebDAVRemote()
+    /// WebDAV passwords (the Keychain); tests pass `MemoryWebDAVPasswordStore`.
+    @ObservationIgnored var webdavPasswords: any WebDAVPasswordStore = KeychainWebDAVPasswordStore()
+    /// How often a WebDAV session looks at its schedule, and how long after a
+    /// write it pushes (`WebDAVPushSchedule.writeDelay`); tests shorten both.
+    @ObservationIgnored var webdavTick = Duration.seconds(1)
+    @ObservationIgnored var webdavWriteDelay: TimeInterval = 10
     /// The running Back Up Now, Verify Backup or restore (`AppModel+Backup`),
     /// nil when none runs.
     var backupProgress: BackupProgress?
@@ -324,6 +344,25 @@ final class AppModel {
     @ObservationIgnored var backupStore = BackupStore()
     /// Delivers backup reminders; the app installs `UserNotificationBackupNotifier`.
     @ObservationIgnored var backupNotifier: any BackupNotifying = NoBackupNotifier()
+    /// Settings sync with the open vault (`AppModel+SettingsSync`, docs/settings-sync.md):
+    /// this device's state for it, kept per vault in `settingsDefaults`.
+    var settingsSync = SettingsSyncState()
+    /// Why settings sync is paused or failed; nil while it works (or is off).
+    var settingsSyncProblem: SettingsSyncProblem?
+    /// Turning sync on found settings that differ: the choice to ask for.
+    var settingsSyncPrompt: SettingsSyncPrompt?
+    /// Bumped whenever values from the vault were applied, so the Settings
+    /// sections that hold copies of their values reload them.
+    var settingsAppliedRevision = 0
+    /// Where settings are read and written (tests use a scratch suite).
+    @ObservationIgnored var settingsDefaults: UserDefaults = .standard
+    /// Tests: the device type to sync as (nil: this device's).
+    @ObservationIgnored var settingsDeviceTypeOverride: SettingsDeviceType?
+    /// How long after the last local change a pass runs.
+    @ObservationIgnored var settingsSyncDebounce: Duration = .seconds(1)
+    @ObservationIgnored var settingsSyncObserver: (any NSObjectProtocol)?
+    @ObservationIgnored var settingsSyncScheduled: Task<Void, Never>?
+    @ObservationIgnored var settingsSyncRunning = false
     /// Pause between progressive passes, passes with an unchanged note set
     /// before the loop slows to `cloudIdleInterval` (doubling while nothing
     /// changes, up to `cloudMaxIdleInterval`), and how long without progress
@@ -440,6 +479,9 @@ final class AppModel {
     let exportEpoch = ExportEpoch()
     /// Library windows on screen (a note window restored alone opens one).
     var libraryWindowCount = 0
+    /// "New Note" was chosen in the Mac menu-bar item at this time and has not been carried out yet
+    /// (`AppModel+MenuBar`).
+    var menuBarNewNoteRequest: Date?
     /// The migration of a legacy vault while `phase == .migrating`.
     var migration: VaultMigration?
     /// This device's trust records of vault recipients lists (format.md
@@ -478,8 +520,14 @@ final class AppModel {
          automaticThinning: Bool = false,
          recipientsTrust: (any RecipientsTrustStore)? = nil,
          backupNotifier: (any BackupNotifying)? = nil,
+         webdavLocations: WebDAVLocationStore? = nil,
          afterIO: (@Sendable () async -> Void)? = nil) {
         self.recipientsTrust = recipientsTrust ?? MemoryRecipientsTrustStore()
+        let webdavScratch = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SempereWebDAV-\(UUID().uuidString)", isDirectory: true)
+        self.webdavLocations = webdavLocations
+            ?? WebDAVLocationStore(storeURL: webdavScratch.appendingPathComponent("webdav.json"),
+                                   root: webdavScratch.appendingPathComponent("WebDAV", isDirectory: true))
         self.deviceStateURL = deviceStateURL
         activityRoot = deviceStateURL.deletingLastPathComponent().appendingPathComponent("Activity", isDirectory: true)
         inboxBackoff = InboxBackoff(fileURL: deviceStateURL.deletingLastPathComponent().appendingPathComponent("InboxBackoff.json"))
@@ -554,6 +602,7 @@ final class AppModel {
         case .notebook(let n): return notes.filter { !$0.deleted && NotebookPath.name($0.notebook, isWithin: n) }
         case .tag(let t): return notes.filter { !$0.deleted && $0.tags.contains { NoteOps.tagKey($0) == NoteOps.tagKey(t) } }
         case .deleted: return notes.filter(\.deleted)
+        case .favorites: return notes.filter { !$0.deleted && $0.favorite }
         case .recentlyRecognized:
             return RecentlyRecognized.notes(notes, now: activityNow())
         }
@@ -605,8 +654,11 @@ final class AppModel {
                   (try? FileManager.default.contentsOfDirectory(atPath: url.path)) != nil ? 1 : 0)
             #endif
             try FolderAccess.check(url, scoped: scoped)
-            let cloud = try await fetchFromICloud(url, scope: .essentials)
+            let ubiquitous = try await fetchFromICloud(url, scope: .essentials)
             try ensureCurrent(gen)
+            // Another app's provider that does not report its files as ubiquitous still
+            // fetches and uploads only what is read and written coordinated (`StorageLocation`).
+            let cloud = ubiquitous || StorageLocation.classify(url).needsCoordination
             let opened = try await offMain { try CloudVault.coordinatedRead(cloud ? url : nil) { try Vault.open(at: url) } }
             try ensureCurrent(gen)
             Perf.end(interval, "cloud=\(cloud)")
@@ -680,6 +732,22 @@ final class AppModel {
                 opened = upgraded
             }
         }
+        if !opened.isLegacy, !opened.isReadOnly, !opened.pendingRewrap, opened.recipientsStatus.problem == nil,
+           !opened.markersTagged {
+            // Authenticated version markers (format.md §2.1, security review N3): an older
+            // vault's format and features are tagged once, as its first write would.
+            let start = opened
+            if let tagged = try? await Task.detached(priority: .userInitiated, operation: { () throws -> Vault in
+                try CloudVault.coordinatedWrite(coordinate) { () throws -> Vault in
+                    var v = start
+                    try v.upgradeMarkers()
+                    return v
+                }
+            }).value {
+                try ensureCurrent(gen)
+                opened = tagged
+            }
+        }
         vault = opened
         unlockIdentities = identities
         recipientsAlert = opened.recipientsStatus.problem.map { RecipientsAlert(problem: $0, entries: opened.recipients) }
@@ -689,12 +757,14 @@ final class AppModel {
             return
         }
         phase = .unlocked
+        webdav?.vaultUnlocked()
         loadActivity()
         startLoadingNotes(reportErrors: !awaitNotes)
         if awaitNotes { try await notesLoaded() }
         refreshQuickCaptureProfile()
         startInboxAdoption()
         Task { await rescheduleBackupReminder() }
+        startSettingsSync()
     }
 
     /// Enters the migration screen for the vault just unlocked with
@@ -737,6 +807,7 @@ final class AppModel {
         // old one from now on would never be adopted (format.md §11.1).
         refreshQuickCaptureProfile()
         keyEpoch += 1
+        scheduleSettingsSync()   // re-encrypted with the vault; a pass checks it under the new keys
     }
 
     /// Makes `opened` the open vault and shows the notes (after a migration).
@@ -745,8 +816,10 @@ final class AppModel {
         unlockIdentities = identities
         migration = nil
         phase = .unlocked
+        webdav?.vaultUnlocked()
         loadActivity()
         refreshQuickCaptureProfile()   // the migration rotated the secret, and with it the capture key
+        startSettingsSync()
         try await reload()
     }
 
@@ -975,7 +1048,10 @@ final class AppModel {
         if let deviceClock { return deviceClock }
         // Every delta any `NoteWriter` writes with this clock updates that note's attachment index.
         let clock = try DeviceClock(url: deviceStateURL) { [weak self] id in
-            Task { @MainActor in self?.noteWritten(id) }
+            Task { @MainActor in
+                self?.noteWritten(id)
+                self?.webdav?.noteWrite()   // a WebDAV copy pushes shortly after a write
+            }
         }
         deviceClock = clock
         return clock
@@ -987,8 +1063,10 @@ final class AppModel {
     /// note's pending changes and any edit already being written are saved.
     func close() {
         generation += 1
+        stopSettingsSync()
         cancelCloudDownload()
         stopCloudSync()
+        stopWebDAV()
         syncingInBackground = false
         endBackgroundTime()
         cancelRemoteMerges()

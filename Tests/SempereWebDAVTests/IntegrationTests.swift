@@ -28,6 +28,52 @@ final class WebDAVIntegrationTests: SyncTestCase {
                               options: WebDAVSyncOptions(dryRun: dryRun, deviceLabel: name)).run()
     }
 
+    /// The app's WebDAV vault over real HTTP: found by the check, downloaded,
+    /// edited, pushed (push-only, keeping another writer's manifest), downloaded again.
+    func testLocalCopyLifecycle() throws {
+        let parent = try realClient(path: "it-\(UUID().uuidString.lowercased())")
+        let c = try parent.descendant(["Notes.sempere"])
+        let a = try makeVault("A")
+        _ = try delta(a, device: devA, t: 0, title: "from the CLI")
+        var o = WebDAVSyncOptions(deviceLabel: "A")
+        o.pushOnly = true
+        XCTAssertTrue(try WebDAVSync(directory: dir("A"), vault: a, client: c,
+                                     stateURL: tmp.appendingPathComponent("state-A.json"), options: o).run().errors.isEmpty)
+
+        let found = try WebDAVConnection.check(parent)
+        XCTAssertEqual(found.outcome, .vaultsBelow)
+        XCTAssertEqual(found.vaults.map(\.name), ["Notes"])
+        let vaultClient = try parent.descendant(found.vaults[0].path)
+
+        let ipad = WebDAVLocalCopy(directory: tmp.appendingPathComponent("loc-ipad"), folderName: "Notes.sempere")
+        let down = try ipad.download(client: vaultClient)
+        XCTAssertTrue(down.errors.isEmpty && down.uploaded.isEmpty, "\(down)")
+        let v = try Vault.open(at: ipad.folder, identities: [identity])
+        let mine = try delta(v, device: devB, t: 5, title: "from the iPad", note: UUID())
+        let up = try ipad.push(client: vaultClient, vault: v)
+        XCTAssertEqual(up.uploaded.filter { $0.hasPrefix("notes/") }.count, 1, "\(up)")
+        XCTAssertEqual(ipad.unconfirmedChanges(), 0)
+
+        // The CLI device writes a note and changes the server's manifest: kept, reported.
+        let theirs = try delta(a, device: devA, t: 9, title: "later from the CLI", note: UUID())
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: try vaultJSON("A")) as? [String: Any])
+        json["x-test"] = "changed on the CLI device"   // an unknown key, ignored by readers
+        try JSONSerialization.data(withJSONObject: json).write(to: dir("A").appendingPathComponent("vault.json"))
+        _ = try WebDAVSync(directory: dir("A"), vault: try openVault("A"), client: c,
+                           stateURL: tmp.appendingPathComponent("state-A.json"), options: o).run()
+        let kept = try ipad.push(client: vaultClient, vault: v)
+        XCTAssertEqual(kept.conflicts.map(\.path), ["vault.json"], "\(kept)")
+        XCTAssertTrue(kept.extraneous.contains { $0.hasSuffix(theirs.name.filename) }, "\(kept)")
+
+        let again = try ipad.redownload(client: vaultClient, identities: [identity])
+        XCTAssertTrue(again.replaced, "\(again.report)")
+        let w = try Vault.open(at: ipad.folder, identities: [identity])
+        XCTAssertEqual(try w.reconstruct(noteId: theirs.noteId).meta.title, "later from the CLI")
+        XCTAssertEqual(try w.reconstruct(noteId: mine.noteId).meta.title, "from the iPad")
+        XCTAssertEqual(try Data(contentsOf: ipad.folder.appendingPathComponent("vault.json")), try vaultJSON("A"))
+        XCTAssertTrue(try ipad.push(client: vaultClient, vault: w).isEmpty)
+    }
+
     func testURLSessionStopsReadingAtTheLimit() throws {
         let c = try realClient(path: "it-\(UUID().uuidString.lowercased())")
         try c.createBase()

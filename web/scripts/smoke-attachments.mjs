@@ -92,6 +92,7 @@ const foreign = requests.filter((u) => !u.startsWith(base) && !u.startsWith("blo
 console.log(JSON.stringify({ images, texts, placeholders, segments, missing, foreign, problems }, null, 1));
 await browser.close();
 server.close();
-const ok = images.length >= 6 && images.every((h) => h === "blob:") && placeholders.length === 6 && segments.length === 2
+// Five placeholders: sticker (unknown kind), missing, HEIC, tampered blob, PDF page 8 of a 7-page PDF (make-fixture.ts).
+const ok = images.length >= 6 && images.every((h) => h === "blob:") && placeholders.length === 5 && segments.length === 2
   && texts.some((t) => t?.includes("these lines")) && foreign.length === 0 && problems.length === 0;
 process.exit(ok ? 0 : 1);

@@ -224,7 +224,7 @@ enum ReplaceSource: Equatable {
 enum ItemMenu {
     enum Entry: Equatable {
         case play, playRecording, pauseRecording, showTranscript, editText, copy, duplicate, editMath, crop, replaceImage,
-             bringToFront, delete, paste
+             rotateLeft, rotateRight, bringToFront, delete, paste
     }
 
     /// An audio item's recording (format.md §8.2.9), when the note has it: whether the
@@ -253,6 +253,8 @@ enum ItemMenu {
                 if canEditMath, item.kind == .math, item.math != nil { out.append(.editMath) }
                 if canCrop, item.cropBounds != nil { out.append(.crop) }
                 if canReplace, item.kind == .image { out.append(.replaceImage) }
+                out.append(.rotateLeft)
+                out.append(.rotateRight)
                 out.append(.bringToFront)
                 out.append(.delete)
             }
@@ -288,6 +290,10 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
     let overlay = ItemSelectionView()
     private let tap = UITapGestureRecognizer()
     private let pan = UIPanGestureRecognizer()
+    /// Two fingers on the selected item turn it (`rotated`), alongside the canvas's own pinch.
+    private let rotate = UIRotationGestureRecognizer()
+    /// The item a two-finger turn is turning, and the turn so far (degrees clockwise).
+    private var turning: (item: Item, degrees: Double)?
     /// Outside selection mode: a finger tap on a video item plays it, when fingers do not draw.
     private let videoTap = UITapGestureRecognizer()
     /// The play/pause buttons of the page's audio cards (format.md §8.2.9).
@@ -306,7 +312,11 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
     private var drag: (ItemSelectionModel.Drag, Item)?
 
     var editor: NoteEditor?
-    var pageID: UUID?
+    var pageID: UUID? {
+        didSet { if oldValue != pageID { reportSelection() } }
+    }
+    /// The page last reported to the editor as having a selected item.
+    private var reportedPage: UUID?
     var commands = ItemCommands()
     /// Opens a text box in its editor ("Edit Text", a tap on the selected box).
     var onEditText: ((Item) -> Void)?
@@ -339,7 +349,8 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         tap.addTarget(self, action: #selector(tapped(_:)))
         pan.addTarget(self, action: #selector(panned(_:)))
         pan.maximumNumberOfTouches = 1
-        for g in [tap, pan] as [UIGestureRecognizer] {
+        rotate.addTarget(self, action: #selector(rotated(_:)))
+        for g in [tap, pan, rotate] as [UIGestureRecognizer] {
             g.delegate = self
             g.isEnabled = false
             canvas.addGestureRecognizer(g)
@@ -367,6 +378,7 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
     func setActive(_ active: Bool, scope: ItemSelectionModel.Scope = .all) {
         tap.isEnabled = active
         pan.isEnabled = active
+        rotate.isEnabled = active
         if model.scope != scope {
             model.scope = scope
             if let id = model.selected, !items.contains(where: { $0.id == id && scope.includes($0) }) { select(nil) }
@@ -425,6 +437,7 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
 
     /// Redraws the outline (the zoom, the item or the selection changed).
     func refresh() {
+        defer { reportSelection() }
         overlay.frame = CGRect(origin: .zero, size: canvas?.contentSize ?? .zero)
         canvas?.bringSubviewToFront(overlay)
         let shown = items.map { item -> Item in
@@ -444,7 +457,8 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
             return
         }
         let frame = itemLayer?.shownFrame(of: id) ?? item.frame
-        overlay.show(frame: frame, rotation: item.rotation, zoom: zoom,
+        overlay.show(frame: frame, rotation: turning?.item.id == id ? (item.rotation ?? 0) + (turning?.degrees ?? 0) : item.rotation,
+                     zoom: zoom,
                      handles: editor?.canEditItems == true ? ItemSelectionModel.handles(for: item) : [])
     }
 
@@ -455,6 +469,7 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         if g === lassoTap { return !isActive && lassoSelected() && canPick() && itemHit(g) != nil }
         if g === hold { return !isActive && canPick() && !fingersDraw && itemHit(g) != nil }
         if g === secondaryClick { return editor != nil && (isActive || canPick()) }
+        if g === rotate { return turnTarget(g) != nil }
         guard g === pan else { return true }
         // Only a drag on an item (or a handle) is ours; any other scrolls.
         guard editor?.canEditItems == true else { return false }
@@ -463,7 +478,7 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
 
     func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
         // Picking while drawing never stops PencilKit's own gestures (the lasso still lassoes ink).
-        g === videoTap || g === lassoTap || g === hold || g === secondaryClick
+        g === videoTap || g === lassoTap || g === hold || g === secondaryClick || g === rotate
     }
 
     /// Whether a finger draws on this canvas (then a held finger is ink, not a pick).
@@ -584,6 +599,52 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         }
     }
 
+    /// The selected item when both fingers of `g` are on it (and it can be edited).
+    private func turnTarget(_ g: UIGestureRecognizer) -> Item? {
+        guard editor?.canEditItems == true, let id = model.selected, let pageID,
+              let item = editor?.item(id, on: pageID), let canvas, g.numberOfTouches == 2 else { return nil }
+        let z = Double(zoom)
+        let b = ItemFrames.bounds(itemLayer?.shownFrame(of: id) ?? item.frame, rotation: item.rotation)
+        let rect = CGRect(x: b.x * z, y: b.y * z, width: b.w * z, height: b.h * z)
+        return (0..<2).allSatisfy { rect.contains(g.location(ofTouch: $0, in: canvas)) } ? item : nil
+    }
+
+    /// A two-finger turn of the selected item: the item and its outline follow the
+    /// fingers, and the end writes one delta (`ItemActions.rotate`, one undo step).
+    @objc private func rotated(_ g: UIRotationGestureRecognizer) {
+        switch g.state {
+        case .began:
+            guard let item = turnTarget(g) else {
+                g.state = .cancelled
+                return
+            }
+            turning = (item, 0)
+            dismissMenu()
+            fallthrough
+        case .changed:
+            guard let current = turning else { return }
+            let degrees = Double(g.rotation) * 180 / .pi
+            turning = (current.item, degrees)
+            itemLayer?.preview(current.item.id, turn: degrees)
+            refresh()
+        case .ended:
+            guard let current = turning else { return }
+            endTurn()
+            if let pageID {
+                actions?.rotate(current.item.id, by: Double(g.rotation) * 180 / .pi, on: pageID, snapping: true)
+            }
+            refresh()
+        default:
+            endTurn()
+            refresh()
+        }
+    }
+
+    private func endTurn() {
+        if let current = turning { itemLayer?.preview(current.item.id, turn: nil) }
+        turning = nil
+    }
+
     private func cancelDrag() {
         if let current = drag { itemLayer?.preview(current.1.id, frame: nil) }
         drag = nil
@@ -686,6 +747,13 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
                     replace(item, pageID, actions, .files) { self?.pick($0.id) }
                 },
             ])
+        case .rotateLeft, .rotateRight:
+            let left = entry == .rotateLeft
+            return UIAction(title: left ? String(localized: "Rotate 90° Left") : String(localized: "Rotate 90° Right"),
+                            image: UIImage(systemName: left ? "rotate.left" : "rotate.right")) { [weak self] _ in
+                self?.actions?.rotate(id, by: left ? -90 : 90, on: pageID)
+                self?.refresh()
+            }
         case .bringToFront:
             return UIAction(title: String(localized: "Bring to Front"), image: UIImage(systemName: "square.3.layers.3d.top.filled")) { [weak self] _ in
                 self?.actions?.bringToFront(id, on: pageID)
@@ -698,6 +766,34 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         case .paste:
             return nil
         }
+    }
+
+    /// Runs a menu command on the selected item (Duplicate, Bring to Front, Delete: the Mac's
+    /// Note menu and shortcuts); false when nothing is selected, the note cannot be edited or
+    /// it is another command.
+    @discardableResult
+    func perform(_ command: MenuCommand) -> Bool {
+        guard let id = model.selected, let pageID, editor?.canEditItems == true else { return false }
+        switch command {
+        case .duplicateItem:
+            guard let new = actions?.duplicate([id], on: pageID).first else { return false }
+            select(new.id)
+        case .bringItemToFront:
+            actions?.bringToFront(id, on: pageID)
+            refresh()
+        case .deleteItem:
+            deleteSelection()
+        default:
+            return false
+        }
+        return true
+    }
+
+    /// Tells the editor whether this canvas's page has a selected item (it enables the menu commands).
+    private func reportSelection() {
+        if let old = reportedPage, old != pageID { editor?.itemSelection(on: old, isSelected: false) }
+        reportedPage = pageID
+        if let pageID { editor?.itemSelection(on: pageID, isSelected: model.selected != nil) }
     }
 
     /// Deletes the selected item (one delta, undoable).

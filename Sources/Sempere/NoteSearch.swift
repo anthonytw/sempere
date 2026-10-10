@@ -2,34 +2,57 @@ import Foundation
 
 /// The recognised text of one page, as search sees it.
 public struct PageText: Hashable, Sendable, Codable {
+    /// A part of `text` that came from one source: the recognised handwriting, one text box, one PDF page or
+    /// one equation (offsets in UTF-16 units, `start ..< end`, the newline between parts excluded).
+    public struct Span: Hashable, Sendable, Codable {
+        public var start: Int
+        public var end: Int
+        /// The part is an equation's LaTeX source: searchable, but never quoted in a snippet.
+        public var isMath: Bool
+
+        public init(start: Int, end: Int, isMath: Bool = false) {
+            self.start = start; self.end = end; self.isMath = isMath
+        }
+    }
+
     public var pageId: UUID
     /// 1-based position of the page in the note.
     public var number: Int
     public var text: String
+    /// The parts `text` is made of, in order. Empty: one prose part (text built by hand).
+    public var spans: [Span]
 
-    public init(pageId: UUID, number: Int, text: String) {
-        self.pageId = pageId; self.number = number; self.text = text
+    public init(pageId: UUID, number: Int, text: String, spans: [Span] = []) {
+        self.pageId = pageId; self.number = number; self.text = text; self.spans = spans
     }
 
     /// The pages of a note (in display order) that have searchable text: the
     /// recognised handwriting, then the text of each text box and the page
     /// text of each PDF page and the LaTeX source of each equation in drawing
     /// order (format.md §8.2.4, §8.2.6, §8.2.8),
-    /// joined by newlines.
+    /// joined by newlines. `spans` says which part is which, so a snippet
+    /// can stay inside one part and leave equations out.
     public static func texts(of pages: [Page]) -> [PageText] {
         pages.enumerated().compactMap { i, p in
-            var parts: [String] = []
-            if let text = p.recognition?.text, !text.isEmpty { parts.append(text) }
+            var parts: [(text: String, math: Bool)] = []
+            if let text = p.recognition?.text, !text.isEmpty { parts.append((text, false)) }
             for item in p.items.sorted(by: Item.drawsBefore) {
                 switch item.kind {
-                case .text: if let text = item.text?.string, !text.isEmpty { parts.append(text) }
-                case .pdfPage: if let text = item.pageText?.text, !text.isEmpty { parts.append(text) }
-                case .math: if let latex = item.math?.latex, !latex.isEmpty { parts.append(latex) }
+                case .text: if let text = item.text.map(MarkdownText.searchText), !text.isEmpty { parts.append((text, false)) }
+                case .pdfPage: if let text = item.pageText?.text, !text.isEmpty { parts.append((text, false)) }
+                case .math: if let latex = item.math?.latex, !latex.isEmpty { parts.append((latex, true)) }
                 default: break
                 }
             }
             guard !parts.isEmpty else { return nil }
-            return PageText(pageId: p.id, number: i + 1, text: parts.joined(separator: "\n"))
+            var spans: [Span] = []
+            var offset = 0
+            for part in parts {
+                let length = part.text.utf16.count
+                spans.append(Span(start: offset, end: offset + length, isMath: part.math))
+                offset += length + 1   // the joining newline
+            }
+            return PageText(pageId: p.id, number: i + 1, text: parts.map(\.text).joined(separator: "\n"), spans: spans)
         }
     }
 }
@@ -47,6 +70,13 @@ public struct NoteSearchHit: Hashable, Sendable, Identifiable {
         public var text: String
         /// Where the query words are in `text`.
         public var matches: [Range<String.Index>]
+        /// The match is inside an equation: `text` is the marker `NoteSearch.equationMarker` (an app shows
+        /// its own localized one), never the LaTeX source.
+        public var isEquation = false
+
+        public init(text: String, matches: [Range<String.Index>], isEquation: Bool = false) {
+            self.text = text; self.matches = matches; self.isEquation = isEquation
+        }
     }
 
     public var id: UUID { note }
@@ -158,26 +188,77 @@ public enum NoteSearch {
         if let bestIndex = pageWords.max(by: { ($0.value.count, -$0.key) < ($1.value.count, -$1.key) })?.key {
             let best = note.pageTexts[bestIndex]
             page = best
-            snippet = Self.snippet(best.text, words: words.map(\.text))
+            snippet = Self.snippet(best, words: words.map(\.text))
             score += 5 * (pageWords[bestIndex]?.count ?? 0) + min(pageWords.count, 5)
         }
         return NoteSearchHit(note: note.id, fields: fields.sorted(), page: page, snippet: snippet,
                              matchedPages: pageWords.count, score: score)
     }
 
-    /// A line-flattened excerpt of `text` around its first match of any of `words`.
+    /// What a snippet says when the match is inside an equation.
+    public static let equationMarker = "[equation]"
+
+    /// An excerpt of `page` around the first match of any of `words` in its prose (handwriting, a text box, a PDF
+    /// page), never crossing into the neighbouring part and starting and ending at word boundaries. When the
+    /// words are only in equations the snippet is `equationMarker`: LaTeX source is searched but not quoted.
+    /// Nil when no part matches.
+    static func snippet(_ page: PageText, words: [String]) -> NoteSearchHit.Snippet? {
+        let text = page.text
+        let spans = page.spans.isEmpty ? [PageText.Span(start: 0, end: text.utf16.count)] : page.spans
+        var inEquation = false
+        for span in spans {
+            guard let part = substring(of: text, span), !part.isEmpty else { continue }
+            let hit = firstMatch(of: words, in: part)
+            if span.isMath { if hit != nil { inEquation = true }; continue }
+            if hit != nil { return excerpt(part, words: words) }
+        }
+        return inEquation ? NoteSearchHit.Snippet(text: equationMarker, matches: [], isEquation: true) : nil
+    }
+
+    /// `snippet(_:words:)` for plain text (one prose part).
     static func snippet(_ text: String, words: [String]) -> NoteSearchHit.Snippet? {
-        let flat = String(text.map { $0.isNewline ? " " : $0 })
+        snippet(PageText(pageId: UUID(), number: 1, text: text), words: words)
+    }
+
+    /// The part of `text` a span names. Through Unicode scalars, not characters: a part ending in
+    /// `\r` forms one character (`\r\n`) with the joining newline, so its end is no character boundary.
+    private static func substring(of text: String, _ span: PageText.Span) -> String? {
+        let u = text.utf16, scalars = text.unicodeScalars
+        guard span.start >= 0, span.end >= span.start, span.end <= u.count,
+              let lo = u.index(u.startIndex, offsetBy: span.start, limitedBy: u.endIndex),
+              let hi = u.index(u.startIndex, offsetBy: span.end, limitedBy: u.endIndex),
+              let a = lo.samePosition(in: scalars), let b = hi.samePosition(in: scalars) else { return nil }
+        return String(scalars[a..<b])
+    }
+
+    private static func firstMatch(of words: [String], in flat: String) -> Range<String.Index>? {
         var first: Range<String.Index>?
         for w in words {
             if let r = flat.range(of: w, options: options), first.map({ r.lowerBound < $0.lowerBound }) ?? true { first = r }
         }
-        guard let first else { return nil }
-        let lower = flat.index(first.lowerBound, offsetBy: -snippetBefore, limitedBy: flat.startIndex) ?? flat.startIndex
-        let upper = flat.index(first.upperBound, offsetBy: snippetAfter, limitedBy: flat.endIndex) ?? flat.endIndex
-        let prefix = lower > flat.startIndex ? "…" : "", suffix = upper < flat.endIndex ? "…" : ""
-        let body = String(flat[lower..<upper])
-        let shown = prefix + body + suffix
+        return first
+    }
+
+    /// A line-flattened excerpt of `part` around its first match of any of `words`, cut at word boundaries.
+    private static func excerpt(_ part: String, words: [String]) -> NoteSearchHit.Snippet? {
+        let flat = String(part.map { $0.isNewline ? " " : $0 })
+        guard let first = firstMatch(of: words, in: flat) else { return nil }
+        var lower = flat.index(first.lowerBound, offsetBy: -snippetBefore, limitedBy: flat.startIndex) ?? flat.startIndex
+        var upper = flat.index(first.upperBound, offsetBy: snippetAfter, limitedBy: flat.endIndex) ?? flat.endIndex
+        // A cut inside a word moves to the word's edge nearer the match (never past the match).
+        if lower > flat.startIndex {
+            while lower < first.lowerBound, !flat[lower].isWhitespace, !flat[flat.index(before: lower)].isWhitespace {
+                lower = flat.index(after: lower)
+            }
+        }
+        if upper < flat.endIndex {
+            while upper > first.upperBound, !flat[flat.index(before: upper)].isWhitespace, !flat[upper].isWhitespace {
+                upper = flat.index(before: upper)
+            }
+        }
+        let cutBefore = lower > flat.startIndex, cutAfter = upper < flat.endIndex
+        let body = String(flat[lower..<upper]).trimmingCharacters(in: .whitespaces)
+        let shown = (cutBefore ? "…" : "") + body + (cutAfter ? "…" : "")
         var matches: [Range<String.Index>] = []
         for w in words {
             var from = shown.startIndex
@@ -254,7 +335,7 @@ public enum SearchMatches {
             guard let textBoxes else { continue }
             for item in page.items.sorted(by: Item.drawsBefore) where item.kind == .text {
                 // Laying a text out is the costly part: only boxes that contain a word.
-                guard let string = item.text?.string,
+                guard let string = item.text.map(MarkdownText.searchText),
                       words.contains(where: { string.range(of: $0, options: NoteSearch.options) != nil }) else { continue }
                 for found in textBoxes(words, item) where isDrawable(found.box) {
                     out.append(SearchMatch(pageId: page.id, page: index + 1, text: found.text, box: found.box, item: item.id))

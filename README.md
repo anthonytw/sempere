@@ -19,7 +19,7 @@ that matter and nothing else:
 - **Real ink.** Strokes are vectors (PencilKit B-splines), so erasing, export
   and search stay clean.
 
-Free software under the GPL-3.0-or-later with an App Store exception (`LICENSE-EXCEPTION`), no telemetry. The `sempere` CLI is a
+Free software under the GPL-3.0-or-later with an App Store exception (`LICENSE-EXCEPTION`), no telemetry, and no warranty. What the encryption protects, and what it does not, is in [`docs/security.md`](docs/security.md). The `sempere` CLI is a
 first-class Linux citizen: keys, unlock, verify, recovery and PDF/SVG export
 all run natively on Linux, and CI publishes a static Linux binary. The CLI ships the Noto fonts (SIL Open Font License 1.1, `Sources/SempereFonts/Fonts/OFL.txt`) for text in exports.
 

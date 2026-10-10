@@ -60,6 +60,7 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
 /// Settings → App Icon: a grid of the icons with the current one checked.
 /// Hidden where iOS offers no alternate icons (Mac Catalyst, some contexts).
 struct AppIconSettingsSection: View {
+    @AppModelEnvironment private var model
     @State private var current = AppIconChoice(alternateName: UIApplication.shared.alternateIconName)
     @State private var failed = false
 
@@ -85,6 +86,7 @@ struct AppIconSettingsSection: View {
                     }
                 }
                 .padding(.vertical, 6)
+                .syncedSetting("appearance.icon")
             } header: {
                 Text("App Icon")
             }
@@ -125,7 +127,7 @@ struct AppIconSettingsSection: View {
         guard choice != current else { return }
         UIApplication.shared.setAlternateIconName(choice.alternateName) { error in
             Task { @MainActor in
-                if error == nil { current = choice } else { failed = true }
+                if error == nil { current = choice; model.settingsChanged() } else { failed = true }
             }
         }
     }

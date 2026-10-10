@@ -107,17 +107,21 @@ rotation but never forge one (`format.md` §2.1).
 
 A vault is a folder. The app reads and writes files; sync is whatever moves
 the folder: on-device, a Files-app provider (iCloud Drive, SMB, Nextcloud,
-Dropbox, ...), a built-in WebDAV client (phase 3), or a zip through the
+Dropbox, ...), the built-in WebDAV client (the app edits a local copy and
+pushes it, push-only, to a server the user runs; `docs/io.md`), or a zip through the
 share sheet. Providers see UUID file names, keyed-hash blob names with their
 kind (image, pdf, audio, …), sizes (blobs padded to a size class) and times,
 nothing else.
 
 ## Network
 
-The app opens no connections of its own: files move through the system's
-Files and iCloud services, and on-device speech models are the system's
-downloads. Network code lives in `Sources/SempereWebDAV` (the CLI's WebDAV
-sync; the app does not link it) and in exactly one app file, the
+The app's only connections go to a WebDAV server the user sets up and opens
+a vault from (`docs/io.md`, "WebDAV vaults in the app"): it uploads the
+already encrypted vault there, push-only. Otherwise files move through the
+system's Files and iCloud services, and on-device speech models are the
+system's downloads. Network code lives in `Sources/SempereWebDAV` (the CLI's
+`sync webdav` and the app's WebDAV vaults, through
+`Apps/Sempere/SempereApp/WebDAVRemote.swift`) and in one other app file, the
 handwritten-math model downloader (`Apps/Sempere/SempereApp/MathModels.swift`),
 which is inert: it runs only from a Download button per catalogue entry, and
 the catalogue (`MathModelCatalog.entries`) is empty until the maintainer
@@ -161,8 +165,11 @@ removes such leftovers.
 
 ## Recovery
 
-The promise is that a dead device or a lost key never costs notes. Three
-things keep it, none of which need us, a server or the app:
+The aim is that a dead device or a lost copy of the key need not cost notes,
+as long as another copy of the key and a backup exist. If every copy of the key
+is lost, nobody can open the notes; the app says so when a vault is created or
+first unlocked on a device ("About Your Key"). Three things support the aim,
+none of which need us, a server or the app:
 
 - **The key on paper.** `sempere keys paper` prints a recovery kit: the age
   identity as a QR code and as text, the public key, the vault id, and

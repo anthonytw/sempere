@@ -20,8 +20,20 @@ public enum TextMatchBoxes {
     /// `item`'s text, in reading order. Nothing for an item without text, or one the shaper cannot lay out.
     /// Cost: shaping the text once, then linear in the text for each word.
     public static func boxes(of words: [String], in item: Item, shaper: any TextShaper) -> [(text: String, box: Recognition.Box)] {
-        guard let content = item.text, !words.isEmpty,
-              let shaped = try? shaper.shape(content, frame: item.frame) else { return [] }
+        guard let content = item.text, !words.isEmpty else { return [] }
+        if content.isMarkdown {
+            // A Markdown box is searched as it is drawn (format.md §8.5.4): in its text pieces, never in
+            // the markup of its source; the pieces carry the box's rotation, so their boxes are the page's.
+            guard let prepared = try? PreparedItem(item, pageNumber: 1),
+                  let pieces = MarkdownItems.expand(prepared, shaper: shaper) else { return [] }
+            var out: [(text: String, box: Recognition.Box)] = []
+            for piece in pieces where piece.item.kind == .text {
+                out += boxes(of: words, in: piece.item, shaper: shaper)
+                if out.count >= maxPerItem { return Array(out.prefix(maxPerItem)) }
+            }
+            return out
+        }
+        guard let shaped = try? shaper.shape(content, frame: item.frame) else { return [] }
         var out: [(text: String, box: Recognition.Box)] = []
         for line in shaped.lines {
             let ranges = merged(ranges(of: words, in: line.text))

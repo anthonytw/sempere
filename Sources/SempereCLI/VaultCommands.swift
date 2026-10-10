@@ -7,7 +7,7 @@ struct VaultCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "vault",
         abstract: "Create, inspect, verify and re-key a vault.",
-        subcommands: [VaultInit.self, VaultInfo.self, VaultRecipients.self, VaultLink.self, VaultRewrapResume.self,
+        subcommands: [VaultInit.self, VaultInfo.self, VaultRecipients.self, VaultLink.self, VaultMarkersCommand.self, VaultRewrapResume.self,
                       VaultVerify.self, VaultIndex.self, VaultSummaries.self]
     )
 }
@@ -190,10 +190,13 @@ struct RecipientsStatusOutput: Encodable {
     var status: String
     /// For `verified`: `unchanged`, `firstUse` or `rotated`.
     var verification: String?
-    /// For `tampered`: `tagMismatch`, `tagRemoved`, `secretUnconfirmed` or `recordUnreadable`.
+    /// For `tampered`: `tagMismatch`, `tagRemoved`, `secretUnconfirmed`, `recordUnreadable`, or, for the
+    /// version markers (format.md §2.1), `markersMismatch`, `markersRemoved` or `markersRolledBack`.
     var reason: String?
     /// True when `recipientsTag` is present in vault.json.
     var tagged: Bool
+    /// True when `markersTag` (format.md §2.1 "Version markers") is present in vault.json.
+    var markersTagged: Bool
     /// For `tampered`: keys not in the last verified list.
     var unexpected: [String]?
     /// For `tampered`: keys of the last verified list no longer listed.
@@ -205,6 +208,7 @@ struct RecipientsStatusOutput: Encodable {
         let s = vault.recipientsStatus
         status = s.name
         tagged = vault.manifest.recipientsTag != nil
+        markersTagged = vault.manifest.markersTag != nil
         if case .verified(let how) = s { verification = how.rawValue }
         if let p = s.problem {
             reason = p.reason.rawValue
@@ -220,6 +224,10 @@ struct RecipientsStatusOutput: Encodable {
         case "untagged": return "not authenticated yet (an older vault; unlocking with a key tags it)"
         case "not-checked": return tagged ? "authenticated; not checked (locked; pass --identity)" : "not checked (locked)"
         default:
+            if let reason, reason.hasPrefix("markers") {
+                return "TAMPERED (\(reason)): vault.json's format or features were changed without the vault's key; "
+                    + "writing is refused until `sempere vault markers repair`"
+            }
             let keys = (unexpected ?? []).map(abbreviateKey).joined(separator: ", ")
             return "TAMPERED (\(reason ?? "?")): unexpected \(keys.isEmpty ? "none" : keys); writing is refused until "
                 + "`sempere vault recipients repair`"

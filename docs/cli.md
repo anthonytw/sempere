@@ -17,7 +17,7 @@ talks to the terminal and sets exit codes; everything else lives in
 | `--passphrase-env VAR` | Name of the environment variable holding the passphrase of the vault's stored key file. |
 | `--json` | Machine-readable output where it makes sense (everything except `recover`, `keys generate` without `--out`, and `keys export` without `--out`). |
 | `-q`, `-v` | Quieter (data only, or only problems) / more detail. |
-| `--version`, `--help` | On every command. |
+| `--version`, `--help` | On every command. `--version` prints `sempere VERSION`, then the copyright and the GPL notice (no warranty; free to redistribute under the GPL v3 or later) and links to the licence and `SECURITY.md`; `sempere about` adds the rest. |
 
 `--vault`, `--identity` and `--passphrase-env` apply to the commands that open
 an existing vault. Times are printed in your local time zone with an offset;
@@ -37,7 +37,7 @@ printed only by `keys generate`, `keys export` and `keys paper` (into its PDF).
 | 0 | Success. |
 | 1 | Generic failure (I/O, bad input, corrupt file, refusing to overwrite). |
 | 2 | Usage error (unknown option, missing vault, bad recipient string). |
-| 3 | `vault verify` or `backup verify` found problems, a restored vault is not healthy, or a recipient change is incomplete. |
+| 3 | `vault verify` or `backup verify` found problems, a restored vault is not healthy, a recipient change is incomplete, or `backup status --max-age` found no complete backup in that many days. |
 | 4 | Cannot decrypt: wrong key or passphrase, or no key available (no identity, no passphrase and no terminal to ask, or a `--passphrase-env` variable that is not set). |
 | 5 | Legacy vault: it still lists a classic X25519 key, so it may only be migrated. The message names the command: `migrate first: sempere vault recipients replace OLD NEW`. |
 | 6 | Untrusted device list: `vault.json`'s recipients do not check (`format.md` §2.1: changed without the vault's key, its tag removed, or the vault secret replaced in a way this machine cannot confirm). Every command that would encrypt to the list refuses (nothing is written), `vault verify` reports it, and `sync webdav` exits 6 when it rejected a remote `vault.json`. The message names the unexpected keys and `sempere vault recipients repair`. Reading notes still works. |
@@ -167,9 +167,10 @@ sempere keys paper --out KIT.pdf [--identity FILE] [--vault V] [--passphrase [--
   whatever the file name, so the hash-named key files of post-quantum recipients
   (`age1pq-<64 hex>.key.age`) are included.
 
-**The app's key actions and the CLI.** Settings → Device Keys in the app
-does the same with the same code (`IdentityFile.render`, `RecoveryKit`,
-`Vault.addRecipient`):
+**The app's key actions and the CLI.** Settings → Device Keys, the Vault
+Keys window and the recipients alert in the app do the same with the same
+code (`IdentityFile.render`, `RecoveryKit`, `Vault.addRecipient`,
+`replaceRecipient`, `repairRecipients`, `confirmRecipients`):
 
 | App | CLI |
 | --- | --- |
@@ -177,6 +178,19 @@ does the same with the same code (`IdentityFile.render`, `RecoveryKit`,
 | Save Key… → Print Recovery Kit / Save as PDF | `sempere keys paper --identity key.txt --vault V --out kit.pdf` |
 | New Key… (label) | `sempere keys generate --out new.txt`, then `sempere vault recipients add --vault V "$(sempere keys show new.txt)" --label LABEL` |
 | New Key… → Save to Files / Share / Recovery Kit | `new.txt` itself; `sempere keys paper --identity new.txt --vault V --out kit.pdf` |
+| Vault Keys → Replace… (paste a public key, or generate one) | `sempere vault recipients replace --vault V OLD NEW [--label LABEL]` (`sempere keys generate --out new.txt` first to generate) |
+| Recipients alert → Remove | `sempere vault recipients repair --vault V` |
+| Recipients alert → Choose Devices to Keep… | `sempere vault recipients repair --vault V --keep KEY ...` |
+| Recipients alert → Trust This List | `sempere vault recipients confirm --vault V` |
+
+The app adds two rules to the CLI's `repair --keep`, since a wrong pick
+cannot be undone from the device that made it: the key the app unlocked with
+is always kept (and a repair is refused when that key is in neither the list
+nor this device's record), and keeping a key this device never confirmed asks
+for the owner check first (Face ID, Touch ID or the passcode), as adding a key does. Replace… refuses the key
+the app unlocked with (add a key for this device, unlock with it, then remove
+the old one): replacing it would lock the app out, and an interrupted replace
+of it can only be finished with both keys.
 
 The app's key file is the CLI's (`age-keygen` style: `# created`, `# public
 key`, the `AGE-SECRET-KEY-PQ-1…` line), named `Sempere key - <label>.txt`.
@@ -196,6 +210,8 @@ sempere vault recipients remove age1... [--rewrap header|reencrypt]
 sempere vault recipients replace age1old... age1pq1new... [--label TEXT] [--rewrap header|reencrypt] [--store-key FILE ...]
 sempere vault recipients repair [--keep age1pq1... ...] [--dry-run] [--rewrap header|reencrypt]
 sempere vault recipients confirm
+sempere vault link [status|upgrade]
+sempere vault markers [status|tag|repair]
 sempere vault rewrap-resume
 sempere vault verify
 sempere vault index [--out PATH|-]
@@ -294,7 +310,10 @@ sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
   offline for two or more key changes), an
   untagged copy older than the tag (a restored backup), which it tags again,
   or a trust record of this machine that no longer reads (it is written again).
-  Never for a tag that does not verify. Confirming a list an attacker wrote
+  Never for a tag that does not verify, and never for changed version markers
+  (`markersMismatch`, `markersRemoved`, `markersRolledBack`: exit 1, use
+  `markers repair`); markers that do not check behind a list problem are
+  written back as `markers repair` would. Confirming a list an attacker wrote
   lets them read what this machine writes.
 - `link` (or `link status`) shows the form of `vault.json`'s `secretLink`
   (`none`, `signed`, `legacy` HMAC, `malformed`), whether the vault is marked
@@ -311,6 +330,21 @@ sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
   (exit 6). Any write also upgrades this machine's record; a legacy record
   never confirms a changed secret, so a machine that missed a key change
   before upgrading runs `recipients confirm`.
+- `markers` (or `markers status`) shows whether `vault.json`'s `format` and
+  `features` are authenticated (`format.md` §2.1 "Version markers", security
+  review 2026-10, N3) and check: `--json` gives `format`, `features`,
+  `tagged`, `status` (`verified`, `untagged`, `tampered`, `not-checked`
+  without a key), `reason` and `recorded` (the markers this machine last
+  verified). A vault whose markers were changed without the key
+  (`markersMismatch`), lost their tag (`markersRemoved`) or went back to an
+  older `vault.json` (`markersRolledBack`, which only a machine that wrote to
+  it can tell) is refused for every write (exit 6) and reported by `info`,
+  `verify` and the device-list lines; reading works. `markers tag` (needs the
+  key) authenticates the markers of an older vault once, as its first write
+  would anyway (`--json`: `tagged`, `status`). `markers repair` (needs the key)
+  writes the larger of the markers on disk and those this machine last verified
+  (the higher format, every feature of either), tagged; it refuses a result
+  naming a format or feature this version does not implement.
 - `rewrap-resume` finishes an interrupted change; it refuses (exit 6) a list
   that does not check, so a planted journal cannot re-encrypt the vault to a
   planted key.
@@ -444,6 +478,7 @@ sempere attach pdf NOTE FILE [--pages 1-3,5,7-] [--after N] [--pdf-text auto|bui
 sempere attach text NOTE (TEXT | --file FILE|-) [--page N] [--frame ... | --at ... --width ...]
                              [--font sans|serif|mono] [--size PT] [--color #RRGGBB[AA]]
                              [--align start|center|end|left|right] [--bold] [--italic] [--lang TAG]
+                             [--markdown] [--no-breaks]
                              [--layer content|background] [--rec RECORDING [--rec-at SECONDS]] [--dry-run]
 sempere attach math NOTE (--latex SOURCE | --latex-file FILE|-) [--page N] [--frame ... | --at ... --width ...]
                              [--inline] [--size PT] [--color #RRGGBB[AA]] [--render FILE.pdf [--engine NAME]]
@@ -623,7 +658,7 @@ however many cards show it.
 sempere backup [V] --to DIR [--prune] [--checksum]
 sempere backup [V] --archive FILE.tar
 sempere backup verify DIR [--identity FILE]
-sempere backup status DIR
+sempere backup status DIR [--max-age DAYS]
 sempere restore DIR --to NEWPATH.sempere [--identity FILE] [--dry-run]
 ```
 
@@ -679,11 +714,25 @@ for `--prune` and for a full `verify`.
   statuses `ok`, `missing`, `modified`, `unindexed`, plus the vault check's
   problem statuses).
 - `backup status DIR` reads `DIR/backup.json` only (no key, no other file)
-  and prints the vault id, the first (`created`) and last (`updated`) run, and
-  the `notes`, `files` and `bytes` it records, previous copies under
-  `versions/` apart (`versionFiles`, `versionBytes`; `totalBytes` is both).
-  It checks nothing: `backup verify` does. Exit 0, or 1 when `DIR` is not a
-  backup or its `backup.json` cannot be read. `--json` emits those fields.
+  and prints the vault id, the first (`created`) and last (`updated`) run, the
+  last run that finished without a file error (`completed`; absent, or
+  `never` in text, until one does, and in folders written before this field
+  existed), and the `notes`, `files` and `bytes` it records, previous copies
+  under `versions/` apart (`versionFiles`, `versionBytes`; `totalBytes` is
+  both). `updated` moves with every run, failed or cut short ones too, so
+  only `completed` says a backup worked. It checks nothing: `backup verify`
+  does. Exit 0, or 1 when `DIR` is not a backup or its `backup.json` cannot
+  be read. `--json` emits those fields.
+- `backup status DIR --max-age DAYS` (1 to 3650) is the app's "Remind Me"
+  for scripts: the backup is overdue when no run completed in the last DAYS
+  days, counted from `completed`, else from `created` (a folder whose runs
+  all failed, or one written before `completed` existed, is overdue DAYS
+  days after its first run: one complete run clears it). A `completed` more
+  than a day in the future (a clock that ran ahead, an edited file) counts as
+  overdue rather than postponing the check. Overdue exits 3 and prints
+  `OVERDUE` on the `due` line; `--json` adds `maxAgeDays`, `due` and
+  `overdue`. The rule is the app's (`BackupSchedule`), with "last complete
+  run" for the app's "last backup".
 - `restore DIR --to NEWPATH` copies `vault.json`, `keys/` and `notes/` (not
   `versions/` or `backup.json`) into a new or empty folder ending in
   `.sempere`, checking every file against `backup.json`; a file that does not
@@ -708,11 +757,14 @@ A backup run is cheap when nothing changed (it lists and compares sizes), so
 run it often. Use absolute paths; no key is needed (do not put one in a
 scheduled job unless you use `--prune`).
 
-cron (Linux, macOS), every hour, plus a weekly check:
+cron (Linux, macOS), every hour, plus a weekly check and a daily reminder
+when no run has completed for a week (cron mails what a job prints, so only
+an overdue backup produces mail):
 
 ```cron
 0 * * * *  /usr/local/bin/sempere backup /home/me/Sync/notes.sempere --to /mnt/backup/notes -q
 30 3 * * 0 /usr/local/bin/sempere backup verify /mnt/backup/notes -q
+0 9 * * *  /usr/local/bin/sempere backup status /mnt/backup/notes --max-age 7 >/dev/null || echo "notes: no complete backup for 7 days"
 ```
 
 launchd (macOS), `~/Library/LaunchAgents/io.github.anthonytw.sempere-backup.plist`,
@@ -782,10 +834,21 @@ CLI can each continue the other's folder, and everything above applies.
 | Last Backup, Contents | `backup status DIR` |
 | Restore from Backup: preview | `restore DIR --to NEW --dry-run` |
 | Restore from Backup | `restore DIR --to NEW` (never into the open vault) |
-| Remind Me | a scheduled job (above) |
+| Remind Me | `backup status DIR --max-age DAYS` (exit 3 when overdue) in a scheduled job (below) |
 
 The app never prunes (`--prune`) and does not write tar archives
-(`--archive`): do those with the CLI.
+(`--archive`): do those with the CLI. On purpose (gap audit GA-18):
+
+- **`--prune`** deletes revisions from the backup once the vault has
+  compacted them away. Keeping them is what a backup is for: it is the only
+  copy of history that thinning (the app's, or `compact --thin-older-than`)
+  or a mistaken compaction removed, and nothing in the app can bring that back.
+  The cost is space in the backup folder only. Whoever wants the backup to
+  shrink with the vault decides it once, with the key, in the CLI.
+- **`--archive`** writes one tar next to the backup; on an iPad that is a
+  second full copy of the vault in local storage before it can be moved
+  anywhere, and the backup folder is already a complete vault that Files can
+  copy or compress (Files → Compress) as it is.
 
 ### Notes
 
@@ -903,7 +966,9 @@ the best page and a snippet. `--notebook` (that notebook and below) and `--tag`
 narrow the search as selecting a notebook or tag in the sidebar does;
 `--deleted` searches Recently Deleted instead. `--json` gives `note`, `title`,
 `notebook`, `tags`, `fields` (`title`, `tag`, `notebook`, `text`), `page`
-(`number`, `id`), `snippet`, `matchedPages` and `score` per note. For every
+(`number`, `id`), `snippet`, `matchedPages` and `score` per note. The snippet quotes prose only, cut at word boundaries
+within one text segment (an equation's LaTeX source is searched but never
+quoted: a match inside an equation prints `[equation]`). For every
 occurrence of a phrase, with word boxes, use `sempere search`.
 
 #### Editing notes
@@ -964,6 +1029,10 @@ absent).
   below its text boxes and images and below other ink (`behind`), or with the
   rest of the ink above every item (`above`, the default) (`format.md` §5.4
   `markersBehindText`, §8.2.3). Imported Notability notes are `behind`.
+- `favorite NOTE [--off]` marks the note as a favorite (`format.md` §5.4
+  `favorite`), or with `--off` takes the mark off; one delta, nothing written
+  when the note already is that way. `list --favorites` lists the marked
+  notes. The app's Favorites list and the web viewer's show them.
 - `delete` moves the note to Recently Deleted; `undelete` brings it back.
   (`restore` is a different thing: it rolls a note back to an earlier
   revision.)
@@ -990,10 +1059,12 @@ sempere notes paper "Week 3" cornell --page 2
 sempere notes tag "Week 3" --add exam --remove draft
 sempere notes language "Week 3" es-ES
 sempere notes markers "Week 3" behind
+sempere notes favorite "Week 3"
+sempere notes list --favorites --json
 ```
 
 `notes list --json` (and the `note` of every edit's `--json`) includes `lang`
-(when set) and `markersBehindText`.
+(when set), `markersBehindText` and `favorite`.
 
 #### Strokes left over by concurrent edits
 
@@ -1102,6 +1173,7 @@ sempere items move ID|TITLE ITEM --frame x,y,w,h
 sempere items rotate ID|TITLE ITEM --degrees D
 sempere items crop ID|TITLE ITEM (--crop x,y,w,h | --clear) [--keep-frame]
 sempere items replace ID|TITLE ITEM FILE [--keep-metadata]
+sempere items text ID|TITLE ITEM (TEXT | --file FILE|-) [--markdown | --no-markdown] [--no-breaks]
 sempere items math ID|TITLE ITEM [--latex SOURCE | --latex-file FILE|-] [--display | --no-display]
                                  [--size PT] [--color #RRGGBB[AA]] [--render FILE.pdf [--engine NAME]]
 sempere items front ID|TITLE ITEM
@@ -1110,6 +1182,31 @@ sempere items duplicate ID|TITLE ITEM... [--dx PT] [--dy PT]
 sempere items copy ID|TITLE ITEM... --to ID|TITLE [--page N]
 sempere items poster ID|TITLE ITEM (IMAGE | --from-clip [--poster-time S] | --remove) [--dry-run]
 ```
+
+**Markdown text boxes** (`format.md` §8.2.4 "Markdown text", §8.5.4).
+`attach text --markdown` stores the text as Markdown source with LaTeX math:
+headings, `**bold**`, `*italic*`, `~~strikethrough~~`, `` `code` ``, bullet,
+ordered and task lists (`- [ ]`, `- [x]`), links, block quotes, fenced code
+blocks, thematic breaks, inline `$…$` and display `$$…$$` math; every line
+break shows as a line break. The source is the box's text (one run), so older
+readers show it as plain text; the line breaks stored are those of the
+rendered text, laid out with the CLI's fonts (`layout`, with the hash of the
+text they belong to), and the frame is as tall as the rendered lines.
+`--bold` and `--italic` are refused with `--markdown` (Markdown says it). The
+CLI cannot typeset: formulas are drawn as their LaTeX source (in a monospace
+font, reported by `export`) until the app typesets the box. `items text`
+replaces a box's text in one delta (the `text` register and, when the height
+of its lines changes, the frame): a Markdown box gets the new source and
+keeps its style and the typeset formulas the new source still uses; a plain
+box gets the text as one run in its style (run styles are dropped);
+`--markdown` turns a plain box into a Markdown box in the same font, size,
+colour, alignment, direction and language, `--no-markdown` the other way; the
+text is laid out again unless `--no-breaks`. `items list` shows a text box's
+text as search sees it (Markdown without markup) and `(Markdown)`; `--json`
+adds `text` and `markup`. `items move` lays a Markdown box out again at a new
+width like any laid-out box. `search` matches a Markdown box's text without
+its markup, `export` draws it rendered (PDF, SVG, PNG), the Markdown export
+writes the source as it is and the HTML export renders it.
 
 Recordings on the page (audio items, `format.md` §8.2.9) are placed with
 `recordings place` or `attach recording --place`; `list` shows them with the
@@ -1440,6 +1537,7 @@ and changes nothing. `--json` gives `{note, page, pageId, strokes, engine, secon
 sempere transcribe (ID|TITLE [RECORDING...] | --all) [--language TAG] [--engine auto|speechtranscriber|sfspeech]
                    [--force] [--dry-run] [--no-download]
 sempere transcribe --check [--language TAG]
+sempere transcribe --download-model [--language TAG]
 ```
 
 Transcribes a note's recordings on this machine with Apple's Speech framework
@@ -1468,7 +1566,14 @@ whatever they have, and `--force` replaces every transcript. `--dry-run` lists
 what would be read and works on every platform. `--check` prints which engines
 can transcribe here, for which language, and needs no vault (it is the
 availability matrix of task E5; `--json` gives `{supported, engines: [{engine,
-available, language, detail}]}`).
+available, language, detail}]}`). `--download-model` installs
+SpeechTranscriber's on-device model for the language (`--language`, else this
+machine's) through Apple's asset service, without a vault, and returns when it
+is installed (at once if it already is); it is what the app's Settings ▸
+Transcription ▸ Download Language Model button runs. It stands alone (`--check`,
+`--dry-run`, `--all` and a note are usage errors) and exits 1 where there is no
+Speech framework or no such model. The SFSpeechRecognizer fallback has no
+downloadable model.
 
 **macOS only.** The Linux build exits 1 with a message and changes nothing
 (`--dry-run` and `--check` still work). `--json` gives `{dryRun, notes: [{note,
@@ -1489,9 +1594,13 @@ sempere inbox import [CAPTURE...] [--dry-run] [--retry]          (needs the key)
 Voice notes without the key (`format.md` §11, `docs/quick-capture.md`), the
 same path as the app's widgets, Control Center control and Siri. `enable`
 writes this machine's **capture profile** (the vault's public recipients and
-its capture key, which can only add captures and never reads anything) to
-`$XDG_STATE_HOME/sempere/capture/<vault id>.json`, mode 0600. Run it again after
-a key is removed from the vault: that rotates the capture key. It refuses (exit
+the device capture key of the key it was unlocked with, which can only add
+captures and never reads anything) to
+`$XDG_STATE_HOME/sempere/capture/<vault id>.json`, mode 0600. Captures are
+**attributed** to that key's device (`format.md` §11.1): another machine's
+profile cannot seal one that passes as this one's. Run it again after a key is
+removed from the vault (that rotates the capture key), and once to replace a
+profile made before attribution (its captures are adopted as unattributed). It refuses (exit
 6) a device list that does not check (`format.md` §2.1): captures are sealed to
 the profile's list and nothing else, so a profile is only ever made from a
 checked one. `capture` reads
@@ -1502,11 +1611,17 @@ with the capture key) and prints the capture id. `--transcript` seals a
 way its recording id is replaced by the capture's, and it is bound to the
 capture's audio (`format.md` §11.2): `transcript` needs that audio file
 (`--audio`, the bytes that were captured), and a transcript bound to other
-audio is never adopted. Both refuse (exit 7) a vault of a newer format. `list` shows the inbox:
-ids and file kinds without a key, titles and whether each verifies with one.
+audio is never adopted, nor is one sealed by another device than its
+capture's. Both refuse (exit 7) a vault of a newer format. `list` shows the inbox:
+ids and file kinds without a key, with one the titles, whether each verifies
+and who captured it (`from iPad (device 0b0b0b0b)`, or `(unattributed)`).
+A capture sealed by a device that is no longer in the vault never verifies,
+also while the rewrap of its removal is unfinished (security review 2026-10,
+C3): it is reported and kept.
 `import` adopts each capture as a note in the capture's notebook ("Inbox"),
 titled from its date: the audio and transcript as blobs, then one delta as this
-machine, then the inbox files are deleted. The note, page and recording ids
+machine (the recording records who captured it, `captured`, `format.md`
+§8.3.1), then the inbox files are deleted. The note, page and recording ids
 derive from the capture id, so importing on two machines gives one note. A
 capture that does not verify is reported (exit 1) and kept. Each file's tag
 is checked as it is decrypted, before the file is read whole, and a
@@ -1516,8 +1631,70 @@ read again for an hour, then twice as long after each failure (up to a
 week), while it does not change: `import` reports it as `failed N time(s)
 …; not read again before TIME`. Naming the capture, or `--retry`, reads it
 now. `--json`:
-`capture` gives `{capture, note, files}`; `import` gives `{dryRun, captures:
-[{capture, note, title, created, transcript, file, removed, error}]}`.
+`enable` gives `{profile, device, notebook, recipient}`; `capture` gives
+`{capture, note, files}`; `list` gives `[{capture, kinds, title, started,
+duration, device, recipient, capturedBy, error}]` (`recipient` is the
+fingerprint of the key the capture is attributed to, `capturedBy` its label);
+`import` gives `{dryRun, captures: [{capture, note, title, created,
+transcript, file, removed, error, captured, capturedBy}]}`.
+
+### Shared settings
+
+```
+sempere settings list     [--type mac|ipad|iphone] [--all]
+sempere settings get      KEY [--type T]
+sempere settings set      KEY VALUE [--type T]
+sempere settings reset    KEY [--type T]
+sempere settings edit
+sempere settings validate
+sempere settings schema
+```
+
+The vault's shared settings, `settings.age` (`format.md` §13,
+`docs/settings-sync.md`): what devices with Settings ▸ Sync Settings with This
+Vault on follow. Keys are flat and dotted (`editor.defaultPaper`,
+`mouse.smoothing`); each is listed once with the device types that use it
+(`docs/settings-sync.md` §5). A key may also hold a value for one kind of device
+in a type block, `[mac]`, `[ipad]` or `[iphone]`; `--type` targets that block. A
+device resolves a setting from its type block, then the top level, then the
+built-in default. **The CLI has no device overrides**: "Only on This Device"
+lives on each device and wins there over anything set here.
+
+- `list` shows every known key with its value and where it comes from (`top`,
+  `block` or `default`); with `--type`, what a device of that type uses (only the
+  keys it uses); `--all` adds unknown keys and every type block's entries.
+- `get` prints one value as JSON (resolved for `--type`); a key this version does
+  not know prints its raw value.
+- `set` validates the value against the registry: `true`/`false`/`on`/`off` for
+  switches, numbers and names from the key's list, a title pattern as `notes new
+  --title-format` checks it, a notebook path (stored canonical), a paper kind
+  (`ruled`, `grid`, …) or a paper JSON object (clamped), `null` (or `device`) for
+  the device's transcription language. Unknown keys are refused (exit 2).
+- `reset` writes a reset (the default applies; with `--type`, the top level
+  applies again on that kind of device). Resets merge like values, so a device
+  still holding the old value does not bring it back.
+- `edit` opens `$VISUAL`, `$EDITOR` or `vi` on the decrypted JSON without `$meta`
+  (mode 0600 in a private 0700 temporary folder, deleted afterwards). The result
+  must be a settings object with both versions and valid values for every known
+  key, without `$meta`; otherwise nothing is written (exit 1). Each changed key
+  is recorded in `$meta` and merged with what other devices wrote.
+- `validate` checks the file against the schema: invalid values of known keys,
+  malformed `$meta` entries or versions, and a `$minReaderVersion` newer than
+  this version are errors (exit 3); unknown keys, blocks and `$` members are
+  information. A vault without the file is valid.
+- `schema` prints the JSON Schema (`docs/settings.schema.json`) made from this
+  version's registry.
+
+Writes merge per key with the file on disk (last writer wins, `format.md`
+§13.3), keep everything this version does not know, record no device type, and
+are refused like every write: exit 5 for a legacy vault, 6 for an untrusted device
+list, 7 for a read-only vault. A file whose `$minReaderVersion` is newer than this
+version is refused by every command but `validate` (exit 7) and never rewritten.
+`--json`: `list` gives `{schemaVersion, minReaderVersion, type, settings: [{key,
+value, source, defaultValue, usedBy, summary}], others: [{key, block, value,
+known}]}`; `get` gives `{key, value, source}`; `set` and `reset` give `{key, value,
+block}`; `edit` gives `{changed}`; `validate` gives `{valid, issues: [{severity,
+path, message}]}`.
 
 ### Export
 
@@ -1980,7 +2157,7 @@ device id and clock from `$XDG_STATE_HOME/sempere/device.json` (default
 ```
 sempere sync webdav URL --vault V [--user U --password-env VAR] [--device NAME]
                          [--max-blob-mib N] [--web-viewer] [--dry-run] [--json] [--identity FILE | --passphrase-env VAR]
-                         [--push-only [--delete-extraneous]] [--retry-quarantined]
+                         [--push-only [--delete-extraneous] [--keep-server-changes]] [--retry-quarantined]
                          [--max-notes N] [--max-entries N] [--max-download-mib N] [--max-minutes N]
 ```
 
@@ -2073,6 +2250,35 @@ local copy may merely be evicted from iCloud. On the first sync to a server
 run; use `--dry-run` first when the local vault may not be fully downloaded.
 `--delete-extraneous` needs `--push-only`, and `--push-only` an existing vault.
 
+**`--keep-server-changes`** (with `--push-only`) keeps a server `vault.json` or
+`rewrap-journal.json` that changed since this machine's last sync instead of
+replacing it: someone else wrote it (another device's key change, say), and a
+mirror that replaced it would undo that on the server. It is reported as a
+conflict (`conflicts`, `remoteCopy` null: nothing is written locally) and the
+exit code is 3; revisions and blobs still upload. Without a sync state for the
+server, any differing copy is kept. A copy only this machine changed (the
+server still holds what it last synced) is replaced as usual. This is how the
+app pushes a WebDAV vault (`docs/io.md`, "WebDAV vaults in the app").
+
+```
+sempere webdav check URL [--user U --password-env VAR] [--json]
+```
+
+Tests a WebDAV URL and lists the vaults there, as the app's "Test Connection"
+and vault list do: a vault when `URL` holds a `vault.json`, otherwise the
+vaults in the folders directly below it (at most 64 folders are looked into).
+Same URL and password rules as `sync webdav`; the server's certificate must be
+trusted by the system (the CLI has no certificate pinning: add a self-signed
+CA to the system's trust store). Nothing is written. Text output: a line
+saying what is there, then `<vault id>  <name>  <url>` per vault. `--json`:
+`{url, reachable: true, outcome: "vault" | "vaults-below" | "no-vault", vaults:
+[{path, name, vaultId, format, url}], foldersChecked, foldersSkipped,
+unreadable}`, or on failure `{url, reachable: false, problem, message}` with
+`problem` one of `offline`, `unauthorized`, `certificate`, `not-found`,
+`redirect`, `failed`. Names from the server are escaped and shortened. Exit 0
+when at least one vault was found, 1 otherwise (no vault, or the server could
+not be used), 2 usage.
+
 Output: one line per action, then
 `N uploaded, N downloaded, N deleted, N conflicts, N errors` (`-q` hides the
 lines, `-v` adds skipped and ignored entries). `--json` prints the report:
@@ -2083,9 +2289,31 @@ lines, `-v` adds skipped and ignored entries). `--json` prints the report:
 run. Exit 0 ok, 1 errors or quarantined files, 2 usage (including a refused URL), 3 conflicts, 6 a
 rejected `vault.json`.
 
+### About
+
+```
+sempere about [--json] [-q | -v]
+sempere --version
+```
+
+Prints what `--version` prints (the version line, `Copyright (C) 2026 Anthony
+Wertz.`, the GPL notice "This program comes with ABSOLUTELY NO WARRANTY. This is
+free software, and you are welcome to redistribute it under the terms of the
+GNU GPL v3 or later." and links to the licence and `SECURITY.md`), then the
+source, where to report a vulnerability (GitHub private vulnerability reporting),
+the security design and its limits (`docs/security.md`), and the third-party
+software in this build with its licence (`-v` adds a line on each, `-q` stops
+after the notice). The first line of `--version` is always `sempere VERSION`
+(release checks compare it with the tag). `--json` prints `program`, `version`,
+`copyright`, `notice`, `license` (SPDX), `licenseURL`, `repositoryLicenseURL`,
+`sourceURL`, `securityPolicyURL`, `reportVulnerabilityURL`, `securityDesignURL`
+and `thirdParty` (`{name, license, url, note, products}`). The list and the
+wording are `SempereAbout` (`Sources/Sempere/About.swift`), which the app's About
+screen shows too. Exit 0.
+
 ## Worked examples
 
-### Make sure a lost device or key costs nothing
+### Prepare for a lost device or key
 
 ```bash
 sempere keys paper --identity ~/.config/sempere/key.txt --vault ~/Sync/notes.sempere --out kit.pdf

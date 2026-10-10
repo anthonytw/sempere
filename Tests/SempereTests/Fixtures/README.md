@@ -25,16 +25,25 @@ Vault id `5a3b1e00-1000-4000-8000-000000000001`, created
 | `11111111-1111-4111-8111-111111111111` | A1, B1, B2 deltas; A2 snapshot; A3 delta after it | title "Fixture lecture", tags `["fixture"]`, ruled paper, 2 pages with 2 strokes each |
 | `22222222-2222-4222-8222-222222222222` | A1 delta, B1 `deleteNote` | title "Fixture deleted", `deleted: true`, 1 page with 1 stroke |
 
+`items.sempere` (same key as the sample, vault id `5a3b1e00-1000-4000-8000-000000000002`) is the
+fixture with items: one note, "Fixture items" (`33333333-3333-4333-8333-333333333333`), with a text
+box, an image (a 1 x 1 PNG blob, referenced) and an equation (LaTeX source, no render) next to one
+stroke. It is separate from the sample so the sample's note and revision counts, and the web goldens,
+stay as they are. Rewrite it with
+`SEMPERE_REGENERATE_ITEMS_FIXTURE=1 swift test --filter FixtureTests/testRegenerateItemsFixture`
+(`FixtureTests.testItemsFixtureHoldsTextImageAndEquation` and `CLIFlagTests.testItemsFixtureThroughTheCLI` read it).
+
 `sample.sempere` (not `legacy.sempere`) also holds one attachment blob
 (`format.md` §8.1) in the lecture's `att/`: the 50 bytes
 `Sempere fixture attachment: synthetic, test-only.\n`, type `text/plain`
-(kind `bin`, sha256 `ae0a2902…6436`). No revision references it yet (a
-note with items is a follow-up of the attachments merge, task A1), so `verify`
+(kind `bin`, sha256 `ae0a2902…6436`). No revision references it yet (`items.sempere`
+is the vault with a note that has items), so `verify`
 lists it as `unreferenced`, and `vault.json` has `features: ["attachments",
-"recipients-tag", "signed-secret-link"]` and a `recipientsTag` (`format.md` §2.1; they were added to the
-committed file, so copies of the fixture share a vault id without looking
-like a downgrade). Tests that need a vault written before §2.1 take the tag
-and the feature out of a copy (`FixtureVault.copySample`). `legacy.sempere`
+"recipients-tag", "signed-secret-link", "markers-tag"]`, a `recipientsTag` and a `markersTag`
+(`format.md` §2.1; they were added to the committed file, so copies of the fixture share a vault id
+without looking like a downgrade). Tests that need a vault written before §2.1 take the tags and the
+features out of a copy (`FixtureVault.copySample`). `newer.sempere`'s `vault.json` carries a
+`markersTag` too, as a newer writer's would (§7.6). `legacy.sempere`
 has no tag: its migration writes one.
 
 Stroke ids are `f1c70000-0000-4000-8000-0000000001NN`; page ids end in `…001`,

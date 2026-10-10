@@ -23,7 +23,7 @@ import Foundation
 public final class SummaryCache: @unchecked Sendable {
     /// Bumped whenever `NoteSummary` or how it is computed changes, so older
     /// files are ignored instead of serving stale fields.
-    public static let schemaVersion = 10   // 10: `transcribed` (transcript search); 9: stroke counts without superseded strokes (format.md §5.6.1); 8: `recognized` (format.md §5.4); 7: favorite and created (published summaries, format.md §12); 6: page texts include LaTeX (§8.2.8); 5: `newer` (§7.4); 4: PDF page text (§8.2.6)
+    public static let schemaVersion = 11   // 11: page text `spans` (snippets leave equations out); 10: `transcribed` (transcript search); 9: stroke counts without superseded strokes (format.md §5.6.1); 8: `recognized` (format.md §5.4); 7: favorite and created (published summaries, format.md §12); 6: page texts include LaTeX (§8.2.8); 5: `newer` (§7.4); 4: PDF page text (§8.2.6)
     /// The largest cache file read (about 50 000 notes' summaries).
     public static let maxFileBytes = 64 << 20
     /// HKDF `info` for the encryption key (format.md §10).

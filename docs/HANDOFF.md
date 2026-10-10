@@ -272,6 +272,20 @@ queued for up to 30 minutes.
   accessibility queries for a minute or more ("Timed out while evaluating UI
   query") in some runs; a recurrence is a real failure to diagnose from that
   log, not a re-run.
+- **Tools that tests need are required, not optional, in CI** (gap audit GA-61):
+  `SEMPERE_REQUIRE_TOOLS` (a comma list of `zbar`, `zip`, `pdftotext`, `bidi`, or `all`;
+  `Tests/FuzzSupport/RequiredTools.swift`) turns a missing zbarimg, zip, pdftotext or
+  UCD 15.1 `BidiTest.txt` into a test failure; `SEMPERE_REQUIRE_POPPLER` does the same for
+  pdftoppm and, on a Mac, pdftotext. The Linux job installs them with apt, the macOS job with
+  brew (`poppler`, `zbar`). Locally the tests still skip.
+- **Extra jobs** (PRs that change the package run `webdav`; the Swift and web changes the web
+  viewer reads run `web-smoke`): `webdav` runs `scripts/test-webdav.sh` (wsgidav, fails on a
+  skip) and `web-smoke` builds the CLI, builds the viewer and runs `web/scripts/smoke-all.sh`
+  (all six browser smoke scripts in Chromium; `smoke-cache` gets a copy of the sample vault
+  with summaries and an index). The `app` job also runs `scripts/app.sh pseudo`
+  (double-length, right-to-left and Spanish layouts on an iPad simulator). New required
+  checks for the ruleset: `WebDAV integration tests (wsgidav)` and `Web viewer browser smoke
+  tests (Chromium)`.
 - **Every scene injects the app environment:** `AppSceneEnvironmentTests`
   (Linux, plain `swift test`) reads `Apps/Sempere/SempereApp/` and fails when
   a `WindowGroup` (or any other scene) does not put `AppModel`,

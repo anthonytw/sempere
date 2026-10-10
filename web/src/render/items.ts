@@ -204,6 +204,8 @@ export interface PreparedItem {
   maxY: number;
   /** Background layers (below 100) first fill their frame with the paper colour (§8.2.3). */
   fillsBackground: boolean;
+  /** Drawn under the item: a Markdown box's markers, bars, rules and code fills (§8.5.4), page coordinates. */
+  underlay?: DrawCommand[];
 }
 
 /**

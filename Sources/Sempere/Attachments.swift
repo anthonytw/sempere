@@ -232,13 +232,23 @@ public struct TextRun: Hashable, Sendable, Codable {
     public var color: Color?
     public var size: Double?
     public var lang: String?
+    /// Override of the box's generic family (format.md §8.2.4); an unknown
+    /// value is the box's.
+    public var font: TextContent.Font?
     /// Unknown fields, re-emitted unchanged.
     public var extra: [String: JSONValue]
 
     public init(_ t: String, b: Bool = false, i: Bool = false, u: Bool = false, s: Bool = false,
-                color: Color? = nil, size: Double? = nil, lang: String? = nil, extra: [String: JSONValue] = [:]) {
+                color: Color? = nil, size: Double? = nil, lang: String? = nil, font: TextContent.Font? = nil,
+                extra: [String: JSONValue] = [:]) {
         self.t = t; self.b = b; self.i = i; self.u = u; self.s = s
-        self.color = color; self.size = size; self.lang = lang; self.extra = extra
+        self.color = color; self.size = size; self.lang = lang; self.font = font; self.extra = extra
+    }
+
+    /// The family this run is drawn in: its own known one, else the box's.
+    public func effectiveFont(in box: TextContent.Font) -> TextContent.Font {
+        if let font, [.sans, .serif, .mono].contains(font) { return font }
+        return box.effective
     }
 
     /// True when `other` has the same attributes (everything but `t`), so a
@@ -249,7 +259,7 @@ public struct TextRun: Hashable, Sendable, Codable {
         return o == self
     }
 
-    static let knownKeys: Set<String> = ["t", "b", "i", "u", "s", "color", "size", "lang"]
+    static let knownKeys: Set<String> = ["t", "b", "i", "u", "s", "color", "size", "lang", "font"]
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: AnyKey.self)
@@ -261,6 +271,7 @@ public struct TextRun: Hashable, Sendable, Codable {
         color = try c.decodeIfPresent(Color.self, "color")
         size = try c.decodeIfPresent(Double.self, "size")
         lang = try c.decodeIfPresent(String.self, "lang")
+        font = try c.decodeIfPresent(TextContent.Font.self, "font")
         extra = try c.extra(excluding: Self.knownKeys)
         if let size, !TextContent.isValidSize(size) {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "run size out of range"))
@@ -292,6 +303,7 @@ public struct TextRun: Hashable, Sendable, Codable {
         try c.encodeIfPresent(color, "color")
         try c.encodeIfPresent(size.map(InkJSON.round3), "size")
         try c.encodeIfPresent(lang, "lang")
+        try c.encodeIfPresent(font, "font")
         try c.encodeExtra(extra, excluding: Self.knownKeys)
     }
 }
@@ -352,6 +364,14 @@ public struct TextContent: Hashable, Sendable, Codable {
     /// the start of `string` (format.md §8.2.4, §8.5.3). Kept as written;
     /// a renderer checks them (`validBreaks`) before using them.
     public var breaks: [Int]?
+    /// How the text is marked up (format.md §8.2.4 "Markdown text"): nil
+    /// for styled runs, `.markdown` for Markdown source.
+    public var markup: TextMarkup?
+    /// A Markdown box's line breaks of its rendered text, for the text whose
+    /// hash it names (format.md §8.2.4).
+    public var layout: RenderedLayout?
+    /// A Markdown box's typeset formulas (format.md §8.2.4).
+    public var math: [TypesetFormula]?
     /// Unknown fields, re-emitted unchanged.
     public var extra: [String: JSONValue]
 
@@ -361,15 +381,22 @@ public struct TextContent: Hashable, Sendable, Codable {
         public static let runs = 1_000
         public static let breaks = 10_000
         public static let size = 1_000.0
+        /// Typeset formulas of one Markdown box.
+        public static let formulas = 1_000
     }
 
     public init(font: Font = .sans, family: String? = nil, size: Double, color: Color, align: Alignment? = nil,
                 dir: Direction? = nil, lang: String? = nil, runs: [TextRun], breaks: [Int]? = nil,
+                markup: TextMarkup? = nil, layout: RenderedLayout? = nil, math: [TypesetFormula]? = nil,
                 extra: [String: JSONValue] = [:]) {
         self.font = font; self.family = family; self.size = size; self.color = color
         self.align = align; self.dir = dir; self.lang = lang; self.runs = runs; self.breaks = breaks
+        self.markup = markup; self.layout = layout; self.math = math
         self.extra = extra
     }
+
+    /// True for a Markdown box this reader renders (`markup` `markdown`).
+    public var isMarkdown: Bool { markup == .markdown }
 
     /// The item's text: every run's `t`, concatenated.
     public var string: String { runs.map(\.t).joined() }
@@ -399,6 +426,14 @@ public struct TextContent: Hashable, Sendable, Codable {
         if runs.count > Limits.runs { return "more than \(Limits.runs) runs" }
         if let breaks, breaks.count > Limits.breaks { return "more than \(Limits.breaks) breaks" }
         if runs.reduce(0, { $0 + $1.t.utf8.count }) > Limits.utf8Bytes { return "text longer than \(Limits.utf8Bytes) bytes" }
+        if let layout {
+            if layout.breaks.count > Limits.breaks { return "more than \(Limits.breaks) layout breaks" }
+            if let why = layout.violation { return why }
+        }
+        if let math {
+            if math.count > Limits.formulas { return "more than \(Limits.formulas) typeset formulas" }
+            for f in math { if let why = f.violation { return why } }
+        }
         return nil
     }
 
@@ -407,7 +442,8 @@ public struct TextContent: Hashable, Sendable, Codable {
         return r > 0 && r <= Limits.size
     }
 
-    static let knownKeys: Set<String> = ["font", "family", "size", "color", "align", "dir", "lang", "runs", "breaks"]
+    static let knownKeys: Set<String> = ["font", "family", "size", "color", "align", "dir", "lang", "runs", "breaks",
+                                         "markup", "layout", "math"]
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: AnyKey.self)
@@ -424,6 +460,13 @@ public struct TextContent: Hashable, Sendable, Codable {
             breaks = try Self.decodeBounded(c, "breaks", max: Limits.breaks)
         } else {
             breaks = nil
+        }
+        markup = try c.decodeIfPresent(TextMarkup.self, "markup")
+        layout = try c.decodeIfPresent(RenderedLayout.self, "layout")
+        if c.contains(AnyKey("math")) {
+            math = try Self.decodeBounded(c, "math", max: Limits.formulas)
+        } else {
+            math = nil
         }
         extra = try c.extra(excluding: Self.knownKeys)
         if let why = limitViolation {
@@ -456,6 +499,9 @@ public struct TextContent: Hashable, Sendable, Codable {
         try c.encodeIfPresent(lang, "lang")
         try c.encode(runs, "runs")
         try c.encodeIfPresent(breaks, "breaks")
+        try c.encodeIfPresent(markup, "markup")
+        try c.encodeIfPresent(layout, "layout")
+        try c.encodeIfPresent(math, "math")
         try c.encodeExtra(extra, excluding: Self.knownKeys)
     }
 }
@@ -916,6 +962,9 @@ public struct Recording: Hashable, Sendable, Codable, Identifiable {
     public var transcript: BlobRef?
     /// The recording this one replaces (restored from history).
     public var parent: UUID?
+    /// Immutable: who captured it, for a voice note adopted from the inbox
+    /// (format.md §8.3.1, §11.3). Nil otherwise, or when the value is malformed.
+    public var captured: CaptureAttribution?
     /// Snapshot only, as on items.
     public var origin: String?
     /// Snapshot only: register name → `"<hlc>-<device>"` stamp.
@@ -925,12 +974,12 @@ public struct Recording: Hashable, Sendable, Codable, Identifiable {
 
     public init(id: UUID = UUID(), blob: BlobRef, started: Date, duration: Double? = nil, codec: String? = nil,
                 sampleRate: Int? = nil, channels: Int? = nil, bitRate: Int? = nil, title: String? = nil,
-                transcript: BlobRef? = nil, parent: UUID? = nil, origin: String? = nil,
+                transcript: BlobRef? = nil, parent: UUID? = nil, captured: CaptureAttribution? = nil, origin: String? = nil,
                 clocks: [String: String]? = nil, extra: [String: JSONValue] = [:]) {
         self.id = id; self.blob = blob; self.started = started; self.duration = duration; self.codec = codec
         self.sampleRate = sampleRate; self.channels = channels; self.bitRate = bitRate; self.title = title
-        self.transcript = transcript; self.parent = parent; self.origin = origin; self.clocks = clocks
-        self.extra = extra
+        self.transcript = transcript; self.parent = parent; self.captured = captured; self.origin = origin
+        self.clocks = clocks; self.extra = extra
     }
 
     /// Snapshot order (format.md §5.4): by `started`, then lowercase `id`.
@@ -940,7 +989,7 @@ public struct Recording: Hashable, Sendable, Codable, Identifiable {
     }
 
     static let knownFields: Set<String> = ["id", "blob", "started", "duration", "codec", "sampleRate", "channels",
-                                           "bitRate", "title", "transcript", "parent", "origin", "clocks"]
+                                           "bitRate", "title", "transcript", "parent", "captured", "origin", "clocks"]
 
     /// Fields `setRecording` may not name: all but the registers `title` and
     /// `transcript` and unknown fields.
@@ -959,6 +1008,8 @@ public struct Recording: Hashable, Sendable, Codable, Identifiable {
         title = try c.decodeIfPresent(String.self, "title")
         transcript = try c.decodeIfPresent(BlobRef.self, "transcript")
         parent = try c.decodeIfPresent(LowercaseUUID.self, "parent")?.uuid
+        // Informational: a malformed value reads as absent, never rejects the revision.
+        captured = (try? c.decodeIfPresent(CaptureAttribution.self, "captured")) ?? nil
         origin = try c.decodeIfPresent(String.self, "origin")
         clocks = try c.decodeIfPresent([String: String].self, "clocks")
         extra = try c.extra(excluding: Self.knownFields)
@@ -977,9 +1028,45 @@ public struct Recording: Hashable, Sendable, Codable, Identifiable {
         try c.encodeIfPresent(title, "title")
         try c.encodeIfPresent(transcript, "transcript")
         try c.encodeIfPresent(parent.map(LowercaseUUID.init), "parent")
+        try c.encodeIfPresent(captured, "captured")
         try c.encodeIfPresent(origin, "origin")
         if let clocks, !clocks.isEmpty { try c.encode(clocks, "clocks") }
         try c.encodeExtra(extra, excluding: Self.knownFields)
+    }
+}
+
+/// Who captured a voice note adopted from the inbox (format.md §8.3.1,
+/// §11.3): the capturing device's id, as its capture named it, and the
+/// fingerprint of the vault recipient whose device capture key sealed it
+/// (authenticated against profile holders: only that device's profile, and
+/// holders of the vault secret itself, hold the key). No
+/// `recipient` means the capture was sealed with the vault capture key, by a
+/// profile made before attribution: then `device` is only a claim.
+public struct CaptureAttribution: Hashable, Sendable, Codable {
+    /// 8 lowercase hex digits (format.md §5).
+    public var device: String
+    /// `CaptureKey.fingerprint` of the recipient (64 lowercase hex digits).
+    public var recipient: String?
+
+    public init(device: String, recipient: String?) {
+        self.device = device; self.recipient = recipient
+    }
+
+    enum CodingKeys: String, CodingKey { case device, recipient }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        device = try c.decode(String.self, forKey: .device)
+        recipient = try c.decodeIfPresent(String.self, forKey: .recipient)
+        guard DeviceID(device) != nil, recipient.map({ RecipientsAuth.unhex($0) != nil }) ?? true else {
+            throw DecodingError.dataCorruptedError(forKey: .device, in: c, debugDescription: "malformed attribution")
+        }
+    }
+
+    /// The recipient's label in `recipients` (vault.json), when it is still listed.
+    public func label(in recipients: [VaultManifest.Recipient]) -> String? {
+        guard let recipient else { return nil }
+        return recipients.first { CaptureKey.fingerprint(of: $0.key) == recipient }?.label
     }
 }
 

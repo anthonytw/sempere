@@ -446,6 +446,12 @@ struct AttachText: ParsableCommand {
             same lines; the box is as tall as those lines at 1.2 × the size (a --frame keeps its height). \
             --no-breaks stores no breaks and leaves wrapping to each renderer. Typed text is searchable \
             (`sempere search`). Prints the new item's id.
+
+            --markdown stores the text as Markdown source (format.md §8.2.4 "Markdown text"): headings, \
+            **bold**, *italic*, ~~strikethrough~~, `code`, lists, task lists, links, block quotes, code blocks, \
+            inline $…$ and display $$…$$ math. Exports draw it rendered (formulas as their LaTeX source until the \
+            app typesets them), search sees the text without markup, and the stored line breaks are those of the \
+            rendered text. --bold and --italic do not apply (Markdown says it).
             """
     )
 
@@ -487,6 +493,9 @@ struct AttachText: ParsableCommand {
     @Flag(name: .customLong("no-breaks"), help: "Store no line breaks: each renderer wraps the text itself.")
     var noBreaks = false
 
+    @Flag(name: .long, help: "The text is Markdown with LaTeX math, drawn rendered.")
+    var markdown = false
+
     @Flag(name: .customLong("dry-run"), help: "Say what would be added; write nothing.")
     var dryRun = false
 
@@ -495,6 +504,7 @@ struct AttachText: ParsableCommand {
 
     func validate() throws {
         try placement.validate()
+        if markdown && (bold || italic) { throw ValidationError("--bold and --italic do not apply to --markdown (Markdown says it)") }
         if (text == nil) == (file == nil) { throw ValidationError("give the text as an argument, or --file PATH (not both)") }
         guard size.isFinite, size > 0, size <= TextContent.Limits.size else { throw ValidationError("--size must be greater than 0 and at most \(Int(TextContent.Limits.size))") }
     }
@@ -515,6 +525,7 @@ struct AttachText: ParsableCommand {
                                       at: placement.at.map { ($0.x, $0.y) }, width: placement.width, layer: layer.layer,
                                       rec: try link(placement, in: state))
             }
+            if markdown { placed.item.text = try translating { try MarkdownText.content(string, style: style) } }
             if laysOut { placed.item = laidOutText(placed.item, keepHeight: keepHeight) }
             return placed
         }
@@ -536,29 +547,47 @@ struct AttachText: ParsableCommand {
         try report(out, output: output, summary: "text box (\(string.unicodeScalars.count) characters) to page \(number)")
     }
 
-    private func readText() throws -> String {
-        let limit = TextContent.Limits.utf8Bytes + 1
-        let data: Data
-        if file == "-" {
-            data = (try? FileHandle.standardInput.read(upToCount: limit)) ?? Data()
-        } else {
-            data = try readInput(file ?? "", limit: limit, what: "text (a text box takes at most \(TextContent.Limits.utf8Bytes) bytes)")
-        }
-        guard let s = String(data: data, encoding: .utf8) else { throw CLIError.failure("the text is not valid UTF-8") }
-        // One trailing newline is the file's, not the text's.
-        return s.hasSuffix("\n") ? String(s.dropLast()) : s
+    private func readText() throws -> String { try readBoxText(file ?? "") }
+}
+
+/// A text box's text from `file` (- is standard input): UTF-8, within the
+/// limit of one item's text, one trailing newline dropped (it is the file's).
+func readBoxText(_ file: String) throws -> String {
+    let limit = TextContent.Limits.utf8Bytes + 1
+    let data: Data
+    if file == "-" {
+        data = (try? FileHandle.standardInput.read(upToCount: limit)) ?? Data()
+    } else {
+        data = try readInput(file, limit: limit, what: "text (a text box takes at most \(TextContent.Limits.utf8Bytes) bytes)")
     }
+    guard let s = String(data: data, encoding: .utf8) else { throw CLIError.failure("the text is not valid UTF-8") }
+    return s.hasSuffix("\n") ? String(s.dropLast()) : s
 }
 
 /// The shaper the CLI lays text out with: the fonts `export` draws with.
 let cliTextShaper: DefaultTextShaper = DefaultTextShaper(
     library: FontLibrary(bundled: SempereFonts.directory, packs: FontLibrary.defaultPackDirectories()))
 
+/// Widths for laying Markdown text boxes out, from `cliTextShaper`.
+let cliMarkdownMeasure: MarkdownMeasure = MarkdownLayout.measure(with: cliTextShaper)
+
 /// A text item with `breaks` from the CLI's own layout (format.md §8.2.4)
 /// and, unless `keepHeight`, the height its lines take. Without usable fonts
 /// it is returned as it was (no breaks: renderers wrap it), with a warning.
 func laidOutText(_ item: Item, keepHeight: Bool) -> Item {
     guard item.kind == .text, let text = item.text else { return item }
+    if text.isMarkdown {
+        // A Markdown box stores the breaks of its rendered text (format.md §8.2.4 `layout`).
+        guard cliMarkdownMeasure([TextRun("A")], text) > 0 else {
+            printStderr("sempere: warning: no fonts to lay the text out with; no line breaks stored")
+            return item
+        }
+        let laid = MarkdownLayout.relayout(text, frame: item.frame, measure: cliMarkdownMeasure)
+        var out = item
+        out.text = laid.content
+        if !keepHeight { out.frame = laid.frame }
+        return out
+    }
     do {
         let laid = try TextLineBreaks.relayout(text, frame: item.frame, shaper: cliTextShaper)
         var out = item

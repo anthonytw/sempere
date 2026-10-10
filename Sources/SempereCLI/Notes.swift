@@ -7,7 +7,7 @@ struct NotesCommand: ParsableCommand {
         commandName: "notes",
         abstract: "List, find, create and edit notes, switch page layout, show their history and restore earlier revisions.",
         subcommands: [NotesList.self, NotesShow.self, NotesNew.self, NotesRename.self, NotesTag.self, NotesMove.self,
-                      NotesPaper.self, NotesLanguage.self, NotesMarkers.self, NotesLayout.self, NotesSearch.self, NotesDelete.self, NotesUndelete.self, NotesHistory.self,
+                      NotesPaper.self, NotesLanguage.self, NotesMarkers.self, NotesFavorite.self, NotesLayout.self, NotesSearch.self, NotesDelete.self, NotesUndelete.self, NotesHistory.self,
                       NotesRestore.self, NotesCheckpoint.self, NotesDedupe.self]
     )
 }
@@ -28,6 +28,8 @@ struct NoteJSON: Encodable {
     /// The handwriting language (format.md §5.4), when set.
     var lang: String?
     var markersBehindText: Bool
+    /// The note is a favorite (format.md §5.4).
+    var favorite: Bool
     /// The last recognition run that read the note (format.md §5.4 `recognized`), when one did.
     var recognized: RecognitionRecord?
     /// True when the note cannot be changed by this version: the vault is
@@ -43,7 +45,7 @@ struct NoteJSON: Encodable {
         deleted = s.deleted; pages = s.pages; strokes = s.strokes
         recognizedPages = s.recognizedPages; items = s.items; recordings = s.recordings
         modified = s.modified; problem = s.problem
-        lang = s.lang; markersBehindText = s.markersBehindText; recognized = s.recognized
+        lang = s.lang; markersBehindText = s.markersBehindText; favorite = s.favorite; recognized = s.recognized
     }
 }
 
@@ -66,6 +68,9 @@ struct NotesList: ParsableCommand {
     @Flag(name: .long, help: "Include deleted notes.")
     var deleted = false
 
+    @Flag(name: .long, help: "Only favorite notes (see `notes favorite`).")
+    var favorites = false
+
     @OptionGroup var access: AccessOptions
     @OptionGroup var output: OutputOptions
     @OptionGroup var cache: CacheOptions
@@ -73,14 +78,14 @@ struct NotesList: ParsableCommand {
     func run() throws {
         let vault = try access.openVault(.required)
         let notes = try vault.summaries(of: nil, cache: cache.cache(for: vault)).filter { n in
-            (deleted || !n.deleted) && (tag.map { t in n.tags.contains { NoteOps.tagKey($0) == NoteOps.tagKey(t) } } ?? true) && (notebook.map { NotebookPath.name(n.notebook, isWithin: $0) } ?? true)
+            (deleted || !n.deleted) && (!favorites || n.favorite) && (tag.map { t in n.tags.contains { NoteOps.tagKey($0) == NoteOps.tagKey(t) } } ?? true) && (notebook.map { NotebookPath.name(n.notebook, isWithin: $0) } ?? true)
         }
         let readOnly = vault.isReadOnly
         if output.json { try output.emitJSON(notes.map { NoteJSON($0, vaultReadOnly: readOnly) }); return }
         if notes.isEmpty { output.info("No notes."); return }
         var rows = output.quiet ? [] : [["ID", "TITLE", "PAGES", "STROKES", "MODIFIED"]]
         for n in notes {
-            let title = (n.title.isEmpty ? "(untitled)" : n.title) + (n.deleted ? " [deleted]" : "")
+            let title = (n.title.isEmpty ? "(untitled)" : n.title) + (n.deleted ? " [deleted]" : "") + (n.favorite ? " [favorite]" : "")
                 + (n.problem != nil ? " [!]" : "") + (n.newer != nil ? " [newer]" : "")
             rows.append([n.id.uuidString.lowercased(), title, String(n.pages), String(n.strokes), Format.local(n.modified)])
         }
@@ -210,7 +215,7 @@ enum AttachmentListing {
         var what: String
         switch i.kind {
         case .text:
-            let t = (i.text?.string ?? "").split(whereSeparator: \.isNewline).joined(separator: " ")
+            let t = (i.text.map(MarkdownText.searchText) ?? "").split(whereSeparator: \.isNewline).joined(separator: " ")
             what = "\"" + (t.count > 40 ? t.prefix(39) + "…" : t) + "\""
         case .pdfPage: what = (i.blob.map(blob) ?? "") + " page \((i.pageIndex ?? 0) + 1)"
         case .video:

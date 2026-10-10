@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import FuzzSupport
 import XCTest
 
 @testable import SempereRender
@@ -56,8 +57,15 @@ final class UnicodeConformanceTests: XCTestCase {
     /// system's UCD when installed.
     func testBidiTest() throws {
         let url = URL(fileURLWithPath: "/usr/share/unicode/BidiTest.txt")
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else { throw XCTSkip("no /usr/share/unicode/BidiTest.txt") }
-        guard text.contains("BidiTest-15.1") else { throw XCTSkip("system UCD is another version") }
+        let required = RequiredTools.isRequired("bidi")
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else {
+            if required { XCTFail("no /usr/share/unicode/BidiTest.txt and SEMPERE_REQUIRE_TOOLS names bidi") }
+            throw XCTSkip("no /usr/share/unicode/BidiTest.txt")
+        }
+        guard text.contains("BidiTest-15.1") else {
+            if required { XCTFail("system UCD is not 15.1 (BidiTest-15.1) and SEMPERE_REQUIRE_TOOLS names bidi") }
+            throw XCTSkip("system UCD is another version")
+        }
         var levels: [Int?] = [], order: [Int] = []
         var checked = 0, failures = 0
         for line in text.split(separator: "\n") where !line.hasPrefix("#") && !line.isEmpty {

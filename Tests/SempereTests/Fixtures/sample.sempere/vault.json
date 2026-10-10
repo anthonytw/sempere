@@ -3,9 +3,11 @@
   "features" : [
     "attachments",
     "recipients-tag",
-    "signed-secret-link"
+    "signed-secret-link",
+    "markers-tag"
   ],
   "format" : "sempere/1",
+  "markersTag" : "3e9f6b09f896d243d7cf05a681532621bf0dea18f49714cf488fdb632946b385",
   "recipients" : [
     {
       "added" : "2026-10-04T16:20:00.000Z",

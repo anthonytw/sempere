@@ -13,7 +13,9 @@ import Sempere
 //   replaced or deleted (`requireLocalWrite` backs this up in every local
 //   write path; only the sync-state file outside the vault changes);
 // - `vault.json` and `rewrap-journal.json` on the server are overwritten
-//   from the local copy when they differ (reported in `overwritten`);
+//   from the local copy when they differ (reported in `overwritten`), unless
+//   `keepServerChanges` is set and the server copy changed since this device's
+//   last sync: then it is kept and reported as a conflict;
 // - a file the server lacks is uploaded, even one the last sync had (the
 //   server lost it);
 // - a file only the server has is deleted there if and only if a local
@@ -50,9 +52,21 @@ extension WebDAVSync {
             return
         }
         // A server file that cannot be read (too large, malformed) is just different.
-        if let current = try? client.get([name]).data, sha256Hex(current) == localHash {
+        let current = try? client.get([name]).data
+        if let current, sha256Hex(current) == localHash {
             state.mutable[name] = .init(hash: localHash, stamp: remote.stamp)
             return
+        }
+        if options.keepServerChanges {
+            // Replace only what this device put there: a copy changed since its last
+            // sync was written by someone else (another device's key change, say).
+            let record = state.mutable[name]
+            guard let record, let current, sha256Hex(current) == record.hash else {
+                report.conflicts.append(.init(path: name, remoteCopy: nil, detail: record == nil
+                    ? "the server copy differs and this device never synced it; kept on the server"
+                    : "the server copy changed since this device's last sync; kept on the server"))
+                return
+            }
         }
         if try push(name, local, condition: .unconditional) {
             report.overwritten.append(name)

@@ -131,7 +131,15 @@ final class CLIImportGapsTests: CLITestCase {
         XCTAssertNotEqual(missing.status, 0)
         XCTAssertTrue(missing.err.contains("pdftotext"), missing.err)
         guard let p = ["/usr/bin/pdftotext", "/opt/homebrew/bin/pdftotext", "/usr/local/bin/pdftotext"]
-            .first(where: FileManager.default.isExecutableFile) else { throw XCTSkip("pdftotext is not installed") }
+            .first(where: FileManager.default.isExecutableFile) else {
+            // CI names pdftotext in SEMPERE_REQUIRE_TOOLS (or sets SEMPERE_REQUIRE_POPPLER on a Mac): a missing install fails.
+            let env = ProcessInfo.processInfo.environment
+            let names = (env["SEMPERE_REQUIRE_TOOLS"] ?? "").split(separator: ",").map(String.init)
+            if names.contains("pdftotext") || names.contains("all") || env["SEMPERE_REQUIRE_POPPLER"] != nil {
+                XCTFail("pdftotext is not installed but CI requires it")
+            }
+            throw XCTSkip("pdftotext is not installed")
+        }
         let r = try cli(["import", "pdf", pdf, "--pdf-text", "poppler", "--json"] + vaultArgs(vault), env: ["SEMPERE_PDFTOTEXT": p])
         XCTAssertEqual(r.status, 0, r.err)
         let result = try XCTUnwrap(((r.json as? [String: Any])?["notes"] as? [[String: Any]])?.first)

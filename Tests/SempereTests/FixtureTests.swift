@@ -79,6 +79,39 @@ enum SampleFixture {
     }
 }
 
+/// `Fixtures/items.sempere` (gap audit GA-63): one note with a text box, an image (with its blob) and
+/// an equation, written with the same post-quantum key as `sample.sempere` but its own vault id, so the
+/// sample's note and revision counts, and the web goldens, stay as they are.
+enum ItemsFixture {
+    static let vaultId = UUID(uuidString: "5a3b1e00-1000-4000-8000-000000000002")!
+    static let note = UUID(uuidString: "33333333-3333-4333-8333-333333333333")!
+    static let page = SampleFixture.id(201)
+    static let textItem = SampleFixture.id(301)
+    static let imageItem = SampleFixture.id(302)
+    static let mathItem = SampleFixture.id(303)
+    /// A 1 x 1 PNG, synthetic.
+    static let picture = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")!
+
+    static func generate(at url: URL, identity: NativeIdentity) throws {
+        let vault = try Vault.createUnchecked(at: url, recipients: [identity.recipient],
+                                              labels: ["Sempere test fixture (throwaway, test-only key)"],
+                                              identities: [identity], vaultId: vaultId, created: SampleFixture.at(0))
+            .allowingLegacyContent()
+        let blob = try vault.writeBlob(note: note, picture, type: "image/png")
+        let text = try NoteOps.text("Fixture text box")
+        let math = try NoteOps.math("e^{i\\pi}+1=0")
+        try vault.write(SampleFixture.delta(note, SampleFixture.devA, 1, 1000, [
+            .addPage(Page(id: page, order: "a0")), .setMeta(.title("Fixture items")),
+            .addItem(page: page, item: .text(id: textItem, text, frame: Rect(x: 36, y: 36, w: 300, h: 24), z: "a0")),
+            .addItem(page: page, item: .image(id: imageItem, blob: blob, pixelSize: Size(w: 1, h: 1),
+                                              frame: Rect(x: 36, y: 100, w: 120, h: 120), z: "a1")),
+            .addItem(page: page, item: .math(id: mathItem, math, frame: Rect(x: 36, y: 260, w: 160, h: 32), z: "a2")),
+            .addStroke(page: page, stroke: SampleFixture.stroke(7)),
+        ]))
+        try vault.writeIdentityFile(identity, passphrase: SampleFixture.passphrase, workFactor: 15, created: SampleFixture.at(0))
+    }
+}
+
 final class FixtureTests: XCTestCase {
     static var sourceFixtures: URL {
         URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures")
@@ -120,7 +153,7 @@ final class FixtureTests: XCTestCase {
         XCTAssertTrue(report.isHealthy, "\(report)")
         XCTAssertEqual(report.counts[.ok], 8)   // 7 revisions + 1 identity file
         XCTAssertEqual(report.counts[.unreferenced], 1)   // the attachment blob
-        XCTAssertEqual(Set(vault.manifest.features), ["attachments", "recipients-tag", "signed-secret-link"])
+        XCTAssertEqual(Set(vault.manifest.features), ["attachments", "recipients-tag", "signed-secret-link", "markers-tag"])
         XCTAssertEqual(vault.recipientsStatus, .verified(.firstUse), "the committed list is tagged (format.md §2.1)")
         let blob = BlobRef(content: SampleFixture.attachment, type: SampleFixture.attachmentType)
         XCTAssertEqual(try vault.readBlob(note: SampleFixture.lecture, blob), SampleFixture.attachment)
@@ -184,6 +217,37 @@ final class FixtureTests: XCTestCase {
         XCTAssertEqual(try vault.summary(of: lecture).tags, ["exam"])
     }
 
+    /// GA-63: a committed vault whose note has items. It reads back as generated, its blob verifies and
+    /// is referenced, and a fresh generation has the same content.
+    func testItemsFixtureHoldsTextImageAndEquation() throws {
+        let identity = try IdentityFile.parse(String(contentsOf: Self.bundled("sample.key"), encoding: .utf8))
+        let vault = try Vault.open(at: Self.bundled("items.sempere"), identities: [identity])
+        XCTAssertEqual(vault.vaultId, ItemsFixture.vaultId)
+        XCTAssertEqual(try vault.noteIDs(), [ItemsFixture.note])
+        let state = try vault.reconstruct(noteId: ItemsFixture.note)
+        XCTAssertEqual(state.meta.title, "Fixture items")
+        let items = try XCTUnwrap(state.pages.first).items
+        XCTAssertEqual(items.map(\.id), [ItemsFixture.textItem, ItemsFixture.imageItem, ItemsFixture.mathItem])
+        XCTAssertEqual(items.map(\.kind), [.text, .image, .math])
+        XCTAssertEqual(items[0].text?.runs.map(\.t), ["Fixture text box"])
+        XCTAssertEqual(items[2].math?.latex, "e^{i\\pi}+1=0")
+        let blob = try XCTUnwrap(items[1].blob)
+        XCTAssertEqual(try vault.readBlob(note: ItemsFixture.note, blob), ItemsFixture.picture)
+        XCTAssertEqual(try XCTUnwrap(state.pages.first).strokes.count, 1, "ink and items share the page")
+        let report = vault.verify()
+        XCTAssertTrue(report.isHealthy, "\(report)")
+        XCTAssertNil(report.counts[.unreferenced], "the image blob is referenced")
+        XCTAssertEqual(try vault.blobInventory(note: ItemsFixture.note).unreferenced.count, 0)
+
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("fixture-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let fresh = tmp.appendingPathComponent("items.sempere")
+        try ItemsFixture.generate(at: fresh, identity: identity)
+        let regenerated = try Vault.open(at: fresh, identities: [identity])
+        XCTAssertEqual(try regenerated.revisionNames(of: ItemsFixture.note), try vault.revisionNames(of: ItemsFixture.note))
+        XCTAssertEqual(try regenerated.reconstruct(noteId: ItemsFixture.note).pages, state.pages)
+    }
+
     func testFixtureIdentityFileOpensWithPassphrase() throws {
         let identity = try IdentityFile.parse(String(contentsOf: Self.bundled("sample.key"), encoding: .utf8))
         let locked = try Vault.open(at: Self.bundled("sample.sempere"))
@@ -217,6 +281,18 @@ final class FixtureTests: XCTestCase {
             try SampleFixture.generate(at: vaultURL, identity: identity)
             try Self.rewriteSnapshotsBeforeTagSets(vaultURL, identity: identity)
         }
+    }
+
+    /// Rewrites Fixtures/items.sempere only (the sample and legacy vaults keep their tagged manifests).
+    func testRegenerateItemsFixture() throws {
+        guard ProcessInfo.processInfo.environment["SEMPERE_REGENERATE_ITEMS_FIXTURE"] == "1" else {
+            throw XCTSkip("set SEMPERE_REGENERATE_ITEMS_FIXTURE=1 to rewrite Fixtures/items.sempere")
+        }
+        let dir = Self.sourceFixtures
+        let identity = try IdentityFile.parse(String(contentsOf: dir.appendingPathComponent("sample.key"), encoding: .utf8))
+        let url = dir.appendingPathComponent("items.sempere")
+        try? FileManager.default.removeItem(at: url)
+        try ItemsFixture.generate(at: url, identity: identity)
     }
 
     /// The committed fixtures keep the lecture snapshot in its pre-tag-set

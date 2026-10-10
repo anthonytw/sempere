@@ -31,7 +31,9 @@ What it does:
   key, §5.4.1), favorites and deleted notes; **search** titles, tags,
   notebooks and recognised handwriting (the same rules as the app's
   `NoteSearch`: case, accents and width ignored, every word must match,
-  `#word` matches tags only), with a snippet and a jump to the matching page;
+  `#word` matches tags only), with a snippet and a jump to the matching page
+  (the snippet quotes one part of the page, never an equation's LaTeX: a match
+  only inside an equation shows "[equation]");
   and, when asked, the recordings' transcripts (the CLI's `search
   --transcripts` rules), with a jump to the recording and time ("Searching
   transcripts").
@@ -308,8 +310,15 @@ seconds. Three things make a visit fast:
    `docs/cli.md`). When a note is opened, the summary computed from its
    revisions replaces its entry.
 2. **A cache of ciphertext.** Revisions and blobs fetched over HTTP are kept
-   in IndexedDB (`web/src/vault/cache.ts`), keyed by the vault's URL and id
-   and the file's path, exactly as the server sent them. They are write-once,
+   in IndexedDB (`web/src/vault/cache.ts`), keyed by the vault's URL and id,
+   its **key state** (a hash of `vaultSecret` as sealed in `vault.json` and of
+   `rewrap-journal.json` when there is one) and the file's path, exactly as
+   the server sent them. A recipient change re-seals the secret and a rewrap
+   rewrites files in place under their names, so the key state changes with
+   either (and again when the rewrap finishes), and opening the vault deletes
+   every copy cached under an earlier one: a key removed from the vault never
+   opens a copy the browser kept from before (security review 2026-10, P4).
+   Within one key state they are write-once,
    so a cached file is never fetched again: a later visit requests only names
    it has not seen (plus `config.json`, `vault.json`, the summaries file and
    the listing, which change). After each listing, cached revisions the
@@ -370,6 +379,25 @@ colour), then the ink. Each item is one of:
   `breaks` the viewer breaks greedily with widths measured by the browser
   (after white space, after `-`, between wide CJK characters, and inside a
   word wider than the frame), which can differ from another renderer's lines.
+- **Markdown text box** (§8.2.4 "Markdown text", §8.5.4): parsed and laid
+  out by a port of the Swift code (`src/format/markdown.ts`: the dialect's
+  parser, plain text, rendered paragraphs; `src/render/markdown.ts`: lines,
+  metrics, markers, quote bars, rules, code fills), then drawn as the items it
+  stands for: text items with fixed lines (run `font` `mono` for code), its
+  formulas as math items (their stored render through pdf.js, else their
+  source) and its shapes under them. With the box's stored `layout` (when its
+  hash matches the text) the lines and baselines are the CLI's and the app's
+  whatever the fonts (`test/markdown.test.ts` reads the shared fixtures
+  `Tests/SempereTests/Fixtures/text/markdown.json`; the cross-check compares
+  the fixture vault's Markdown note with the CLI's SVG, shapes included).
+  **Math is drawn from the stored renders, not KaTeX:** a KaTeX typesetting
+  would size formulas differently from SwiftMath and so move the lines away
+  from the app's and the CLI's, needs its own fonts and stylesheet (the CSP
+  allows neither), and parses LaTeX in the page; the renders are the same PDF
+  path as equation items, already verified and sandboxed in pdf.js. A formula
+  the app has not typeset yet (a box written by the CLI) shows its LaTeX
+  source in a monospace font, as in the CLI's exports, and is reported. Search
+  sees the plain text (no markup).
 - **Image** (JPEG or PNG, by signature): the header is checked first (8-bit
   baseline or progressive JPEG with 1 or 3 components, any valid PNG, at most
   100 MP and plausible for the file's size), metadata is stripped as the
@@ -534,8 +562,8 @@ a browser profile without such extensions for sensitive vaults.
 
 **What the browser keeps:** the ciphertext cache of "Opening fast", in
 IndexedDB under the viewer's origin: vault files exactly as downloaded, keyed
-by the vault's URL and id and the file's path, with a size and a last-use
-time. **Nothing decrypted is persisted**: no note content, title, summary,
+by the vault's URL and id, its key state and the file's path, with a size and a last-use
+time; copies of an earlier key state are deleted when the vault is opened. **Nothing decrypted is persisted**: no note content, title, summary,
 vault secret or key, and no derived key (the summaries are decrypted into
 memory on each visit). Someone with access to the browser profile learns
 what the server shows anyone who can list it (note ids, revision and blob
@@ -798,6 +826,8 @@ node scripts/smoke-language.mjs test/fixtures/render.sempere ../Tests/SempereTes
 # config.json modes, the cache (second visit fetches no unchanged file) and the summaries, with timings
 # (run `sempere vault summaries` and `sempere vault index` on a copy of the vault first; LATENCY_MS=40 adds latency):
 node scripts/smoke-cache.mjs COPY_OF_VAULT KEY_FILE
+# all of them, as CI's `web-smoke` job runs them (needs the built CLI: it gives a copy of the sample vault summaries and an index):
+scripts/smoke-all.sh
 ```
 
 Tests (`web/test/`, vitest, Node 22):

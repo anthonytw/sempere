@@ -42,10 +42,10 @@ public enum PutCondition: Sendable, Equatable {
 /// MKCOL, MOVE and DELETE, over Basic auth on HTTPS (or plain HTTP to localhost).
 /// Paths are component lists below `baseURL`, so no caller builds a URL string.
 public struct WebDAVClient: Sendable {
-    public let baseURL: URL
+    public private(set) var baseURL: URL
     private let transport: any WebDAVTransport
     private let authorization: String?
-    private let baseComponents: [String]
+    private var baseComponents: [String]
     private let origin: String
 
     /// Largest response body read for listings, manifests and status replies (16 MiB).
@@ -87,6 +87,20 @@ public struct WebDAVClient: Sendable {
         var o = "\(scheme)://\(host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host)"
         if let port = baseURL.port { o += ":\(port)" }
         origin = o
+    }
+
+    /// A client for the collection `path` below this one, with the same
+    /// credentials and transport (a vault found one level down).
+    public func descendant(_ path: [String]) throws -> WebDAVClient {
+        guard !path.isEmpty else { return self }
+        guard path.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." && !$0.contains("/") && !$0.contains("\0") }),
+              let url = url(for: path, collection: true) else {
+            throw WebDAVError.malformedResponse("not a usable folder name: \(SyncReport.printable(path.joined(separator: "/")))")
+        }
+        var c = self
+        c.baseURL = url
+        c.baseComponents = baseComponents + path
+        return c
     }
 
     // MARK: - Verbs

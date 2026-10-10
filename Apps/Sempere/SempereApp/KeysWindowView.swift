@@ -10,6 +10,7 @@ struct KeysWindowView: View {
     @AppModelEnvironment private var model
     @State private var adding = false
     @State private var removing: DeviceKey?
+    @State private var replacing: DeviceKey?
     @State private var working: String?
     @State private var failure: String?
     @State private var confirmingKit = false
@@ -44,6 +45,9 @@ struct KeysWindowView: View {
         .sheet(isPresented: $adding) {
             AddDeviceKeyView()
         }
+        .sheet(item: $replacing) { key in
+            AddDeviceKeyView(replacing: key)
+        }
         .confirmationDialog("Remove this key?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
                             titleVisibility: .visible, presenting: removing) { key in
             Button("Remove “\(key.label)”", role: .destructive) {
@@ -77,6 +81,8 @@ struct KeysWindowView: View {
                             if key.isInUse { Text("This key unlocked the vault").font(.caption).foregroundStyle(.green) }
                             if !key.isPostQuantum { Text("Classic").font(.caption).foregroundStyle(.orange) }
                             Spacer()
+                            Button("Replace…") { replacing = key }
+                                .disabled(key.isInUse)
                             Button("Remove…", role: .destructive) { removing = key }
                                 .disabled(key.isInUse || model.deviceKeys.count < 2)
                         }
@@ -85,6 +91,8 @@ struct KeysWindowView: View {
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                     .contextMenu {
+                        Button("Replace Key…", systemImage: "arrow.triangle.2.circlepath") { replacing = key }
+                            .disabled(key.isInUse)
                         Button("Remove Key…", systemImage: "trash", role: .destructive) { removing = key }
                             .disabled(key.isInUse || model.deviceKeys.count < 2)
                         Button("Copy Public Key", systemImage: "doc.on.doc") { UIPasteboard.general.string = key.recipient }
@@ -93,7 +101,7 @@ struct KeysWindowView: View {
             } header: {
                 Text("Keys this vault is encrypted to")
             } footer: {
-                Text("Add a device by pasting its public key (age1pq1…) or by generating one for it. A key that opened the vault here cannot be removed here.")
+                Text("Add a device by pasting its public key (age1pq1…) or by generating one for it. Replace swaps a device's key for a new one in a single re-encryption (for a lost or exposed key). A key that opened the vault here cannot be removed or replaced here.")
             }
             Section {
                 Button("Add Device Key…", systemImage: "plus") { adding = true }
@@ -157,9 +165,12 @@ struct PDFFile: FileDocument {
 }
 
 /// Add a device key: paste another device's public key, or generate one.
+/// With `replacing`, the new key replaces that one (`recipients replace`):
+/// one re-encryption, after a confirmation.
 private struct AddDeviceKeyView: View {
     @AppModelEnvironment private var model
     @Environment(\.dismiss) private var dismiss
+    var replacing: DeviceKey?
     private enum Mode: String, CaseIterable, Identifiable {
         case paste = "Paste a Public Key"
         case generate = "Generate a Key"
@@ -180,6 +191,7 @@ private struct AddDeviceKeyView: View {
     @State private var failure: String?
     /// The vault this sheet was opened for: switching vaults meanwhile must not add a key to another.
     @State private var vaultID: UUID?
+    @State private var confirmingReplace = false
 
     var body: some View {
         NavigationStack {
@@ -201,7 +213,19 @@ private struct AddDeviceKeyView: View {
                         ForEach(Mode.allCases) { Text($0.title).tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    TextField("Label (for example, Anna's iPad)", text: $label)
+                    if let replacing {
+                        Section {
+                            Text(replacing.label).font(.headline)
+                            Text(replacing.summary).font(.caption.monospaced()).foregroundStyle(.secondary)
+                        } header: {
+                            Text("Key to replace")
+                        } footer: {
+                            Text("Every note is re-encrypted with a new vault key, to the new key instead of this one. The old key can no longer open new or changed notes; it keeps what it already copied.")
+                        }
+                        TextField("Label (empty: keep the current one)", text: $label)
+                    } else {
+                        TextField("Label (for example, Anna's iPad)", text: $label)
+                    }
                     if mode == .paste {
                         TextField("age1pq1…", text: $recipient, axis: .vertical)
                             .font(.caption.monospaced())
@@ -210,20 +234,23 @@ private struct AddDeviceKeyView: View {
                     }
                 }
             }
-            .navigationTitle("Add Device Key")
+            .navigationTitle(replacing == nil ? String(localized: "Add Device Key")
+                             : String(localized: "Replace Device Key", comment: "Key window: title of the sheet that replaces a device's key"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(LocalizedStringKey(generated == nil ? "Cancel" : "Done")) { dismiss() }
                 }
                 if generated == nil {
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Add") { Task { await add() } }
-                            .disabled(mode == .paste && recipient.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Button(replacing == nil ? String(localized: "Add") : String(localized: "Replace…", comment: "Key window: confirm replacing a device's key")) {
+                            if replacing == nil { Task { await add() } } else { confirmingReplace = true }
+                        }
+                        .disabled(mode == .paste && recipient.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
             }
         }
-        .frame(minWidth: 460, minHeight: 320)
+        .frame(minWidth: SheetSizing.minWidth(460, isPhone: Platform.isPhone), minHeight: 320)
         .onAppear { if vaultID == nil { vaultID = model.vault?.vaultId } }
         .interactiveDismissDisabled(generated != nil || working != nil)
         .disabled(working != nil)
@@ -237,6 +264,11 @@ private struct AddDeviceKeyView: View {
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
         }
+        .confirmationDialog("Replace this key?", isPresented: $confirmingReplace, titleVisibility: .visible, presenting: replacing) { key in
+            Button("Replace “\(key.label)”", role: .destructive) { Task { await add() } }
+        } message: { _ in
+            Text("Every note is re-encrypted to the new key instead of the old one. Keep this vault open until it finishes.")
+        }
         .alert("Sempere", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -248,6 +280,22 @@ private struct AddDeviceKeyView: View {
         let name = label
         let text = recipient
         do {
+            if let replacing {
+                switch mode {
+                case .paste:
+                    working = String(localized: "Replacing the key and re-encrypting every note…")
+                    defer { working = nil }
+                    try await model.replaceDeviceKey(replacing.recipient, with: text, label: name, expectedVault: replacing.vault)
+                    dismiss()
+                case .generate:
+                    working = String(localized: "Generating the key and re-encrypting every note…")
+                    defer { working = nil }
+                    let key = try await model.generateReplacementKey(for: replacing.recipient, label: name, expectedVault: replacing.vault)
+                    generated = key.file
+                    failure = key.problem
+                }
+                return
+            }
             switch mode {
             case .paste:
                 working = String(localized: "Adding the key and re-encrypting every note…")

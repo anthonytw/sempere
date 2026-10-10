@@ -29,8 +29,26 @@ UI over it (done: `PageRecognizer.swift`, `NoteEditor` recognition,
 `AppModel+Search.swift`, `Sources/Sempere/NoteSearch.swift`). Status: ✅ on `main`, handwriting search
 not yet tried on the iPad.
 
+Settings sync through the vault (`docs/settings-sync.md`, `format.md` §13): the shared
+`settings.age` with per-key merge, device-type blocks, local overrides and versioned
+compatibility rules; CLI `sempere settings`; the app's Settings ▸ Sync Settings with This
+Vault. Status: 🚧 #144 (accepted by the maintainer 2026-10-09; device names later).
+
+| # | Task | Owner target | Done when |
+| --- | --- | --- | --- |
+| 1.S 🚧 | Settings sync through the vault: core (`SharedSettings`, `SharedSettingsCatalog`, `SharedSettingsMigrations`, `SettingsSyncState`), CLI `settings`, WebDAV merge, backups, app (`SettingsSyncBridge`, `AppModel+SettingsSync`, Settings section, row overrides), Spanish | `Sources/Sempere`, `Sources/SempereCLI`, `Sources/SempereWebDAV`, `Apps/` | core, CLI and WebDAV tests green on Linux; the `app` job green; tried on two devices (needs the maintainer) |
+
 The iPhone reader is the same target (`docs/iphone.md`, PR #65): compact stack, read-first note view,
 finger annotation behind a button, tests at iPhone sizes, 6.9" screenshots. Status: ✅ #65, not yet tried on a physical iPhone.
+
+Setting expectations (maintainer, 2026-10-09; #142): `sempere --version` and `sempere about` print the
+GPL-3 notice and links (`SempereAbout`, shared with the app); the app's "About Your Key" notice (first
+unlock of a vault with a key on a device, new vaults included), the quick tour (once per device),
+Settings ▸ About (bundled licence and third-party notices) and the Mac's About and Help menus
+(`Expectations.swift`, `ExpectationsViews.swift`); `docs/security.md` (what the encryption protects and
+its limits) and the SECURITY.md advisory process; App Store licence agreement and §7 exception drafts
+in `docs/appstore/` for the maintainer and a lawyer (not applied). Status: ✅ on the branch; the
+notices are not yet tried on the iPad or a Mac.
 
 ## Phase 2 — Mac companion
 
@@ -40,8 +58,8 @@ need a hand test on a real Mac (`docs/mac.md` "To try by hand"); build 7 polish 
 
 ## Phase 3 — nice to have
 
-Built-in WebDAV client (`sempere sync webdav`, `docs/io.md`; the iPad app UI
-is still open 📋, planned for the first release); compaction UI (✅ #74 thinning setting and "Thin Now");
+Built-in WebDAV client (`sempere sync webdav`, `docs/io.md`; the app's WebDAV
+vaults, a local copy pushed push-only, 🔀 #137); compaction UI (✅ #74 thinning setting and "Thin Now");
 ~~PNG export~~ (done: `sempere export --format png [--dpi N]`, pure-Swift rasterizer in
 `Sources/SempereRender`, `docs/cli.md`); page backgrounds (PDF and image attachments: in the reference
 Notability backup 26 of 130 notes are annotated PDFs and 4 hold images, all
@@ -119,6 +137,15 @@ sidebar drops and shared Recently Recognized (#102), Mac polish (#101), quick vo
 | G1 ✅ | `math` items (LaTeX source, typeset on device with SwiftMath/MIT, rendered PDF blob). ✅ **Done (#96)**: `format.md` §8.2.8; core `MathItems.swift` (`MathContent`, `MathSource` limits, `NoteOps.placeMath`/`setMath`); render `MathRendering.swift`; CLI `attach math`, `items math`; app `MathTypesetter`, `MathEditor`; web viewer. Handwriting→LaTeX (part 2) ✅ #118: researched in `docs/research/handwriting-to-latex.md`; the pipeline is built behind a setting (CLI `recognize-math`, app Convert to Math), no model offered until the training-data question is settled | `Apps/`, `Sources/` | C3, E2 | format §8.2.8 defined; exports embed the rendering |
 | G2 ✅ | `video` items (blob kind `video`, 1 GiB cap, poster, AVPlayer, attached in "PDF + attachments"); ✅ **done (#93)**: format §8.2.7, CLI, exports, sync, app, web viewer | `Apps/`, `Sources/`, `web/` | E4 | format §8.2.7 defined |
 | L ✅ | ✅ **Done (#92)**: app UI localization with String Catalogs (`Apps/Sempere/Localization/`: `Localizable`, `InfoPlist`, `AppShortcuts`); Spanish complete (plurals, device variants, glossary in `docs/localization.md`); `LocalizationCatalogTests` (Linux), `scripts/app.sh pseudo` layout check (double-length, right-to-left, Spanish); CONTRIBUTING "Adding a language". CLI stays English | `Apps/` | — | Spanish catalog complete; contributor guide |
+| E8 🚧 | 🚧 **#129**: **Markdown text boxes with LaTeX math** (maintainer request 2026-10-09: Markdown over the font-styling bar). Format `format.md` §8.2.4 "Markdown text", §8.5.4 (source as the box's text, `markup`, hash-tied `layout`, typeset `math` entries); core `Markdown.swift`, `MarkdownPlan.swift`, `MarkdownText.swift`, `MarkdownEditing.swift`; render `MarkdownLayout.swift`, `MarkdownItems.swift`, `MarkdownHTML.swift`; CLI `attach text --markdown`, `items text`; app Markdown bar, `NoteEditor+Markdown`; web `format/markdown.ts`, `render/markdown.ts` | `Sources/`, CLI, `Apps/`, `web/` | E2, G1 | same lines in the CLI, the app and the web viewer (`Tests/SempereTests/Fixtures/text/markdown.json`, web goldens) |
+
+## Gap audit follow-ups
+
+From `docs/research/gap-audit-2026-10.md` (rows `GA-nn`; `docs/ROADMAP.md` "Gap audit" has the full list).
+Done in 🚧 #131: GA-01 favorites (`notes favorite`, the app's menu, toolbar and Favorites list), GA-02 rotate items in the
+app (quarter-turn menu entries, two-finger turn), GA-04 one voice-notebook setting (Quick Voice Notes; the New Notes field
+is gone and its stored value migrated), GA-05 the transcription download button (`SpeechTranscription.downloadModel`,
+`transcribe --download-model`), GA-13 Mac shortcuts for item actions and recording. Open: the rest of the audit.
 
 The gap audit (`docs/research/gap-audit-2026-10.md`) rows are not tasks here: they sit in their
 component sections of `docs/ROADMAP.md` with their `GA-nn` ids, all planned for the first release

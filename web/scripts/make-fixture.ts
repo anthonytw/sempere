@@ -486,6 +486,41 @@ function makePDF(pages: { media: number[]; crop?: number[]; rotate?: number; con
   ]));
 }
 
+// --- Note 9: Markdown text boxes (format.md §8.2.4 "Markdown text", §8.5.4): a rotated box with every
+// block kind and an unrendered formula, and a box whose formulas have typeset renderings (an inline one at
+// the start of a line, a display one), each with the stored layout of its rendered text (computed by
+// src/render/markdown.ts; any valid layout makes the CLI and the viewer cut the same lines).
+{
+  const note = "7d7d7d7d-7d7d-47d7-87d7-7d7d7d7d7d7d";
+  const pid = id(0xb00);
+  const fnv = (text: string) => {
+    let h = 0x811c9dc5;
+    for (const b of enc.encode(text)) h = Math.imul(h ^ b, 0x01000193) >>> 0;
+    return h.toString(16).padStart(8, "0");
+  };
+  const a = "# Markdown box\nSome **bold**, *italic*, ~~struck~~ and `code` text, with a [link](https://example.org) and an "
+    + "unrendered $x_1$ formula.\n\n- first item that is long enough to wrap\n  1. nested ordered\n- [x] done task\n- [ ] open task"
+    + "\n\n> A quoted remark\n---\n```\nlet y = 2\n```";
+  const b = "$e^{x}$ starts this line and the text after it wraps on.\n\n$$\\int_0^1 f$$";
+  const inline = await blob(note, makePDF([{ media: [0, 0, 56, 18], content: "0.051 0.278 0.631 rg 2 4 52 10 re f" }]), "application/pdf");
+  const display = await blob(note, makePDF([{ media: [0, 0, 110, 30], content: "0.051 0.278 0.631 rg 4 4 102 22 re f" }]), "application/pdf");
+  await write(note, delta(note, devA, 1, 70, [
+    { op: "setMeta", field: "title", value: "Markdown boxes" },
+    { op: "setMeta", field: "paper", value: { kind: "blank", background: "#FFFFFFFF" } },
+    { op: "setMeta", field: "pageSize", value: letter },
+    { op: "addPage", page: { id: pid, order: "a0", strokes: [] } },
+    { op: "addItem", page: pid, item: { id: id(0xb01), kind: "text", layer: 100, frame: [72, 72, 260, 170.64], z: "a0", rotation: 10,
+      text: { font: "sans", size: 12, color: "#1A1A1AFF", markup: "markdown", runs: [{ t: a }], layout: { of: fnv(a), breaks: [68] } } } },
+    { op: "addItem", page: pid, item: { id: id(0xb02), kind: "text", layer: 100, frame: [340, 120, 200, 88.6], z: "a1",
+      text: { font: "serif", size: 14, color: "#0D47A1FF", markup: "markdown", runs: [{ t: b }], layout: { of: fnv(b), breaks: [25, 53] },
+        math: [
+          { latex: "e^{x}", display: false, size: 14, color: "#0D47A1FF", render: inline, renderSize: [56, 18], depth: 4, engine: "synthetic-1" },
+          { latex: "\\int_0^1 f", display: true, size: 14, color: "#0D47A1FF", render: display, renderSize: [110, 30], depth: 11, engine: "synthetic-1" },
+        ] } } },
+    { op: "addStroke", page: pid, stroke: stroke(0xb03, "pen", "#1A1A1AFF", 2, wave(72, 600, 400)) },
+  ]));
+}
+
 const manifest = {
   format: "sempere/1",
   vaultId: "5a3b1e00-1000-4000-8000-000000000002",

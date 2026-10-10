@@ -1,0 +1,310 @@
+{
+  "$defs" : {
+    "meta" : {
+      "properties" : {
+        "modified" : {
+          "description" : "Unix milliseconds of the last write",
+          "maximum" : 9007199254740991,
+          "minimum" : 0,
+          "type" : "integer"
+        },
+        "type" : {
+          "description" : "the kind of device that wrote it; absent for the CLI",
+          "pattern" : "^[a-z][a-z0-9]{0,15}$",
+          "type" : "string"
+        }
+      },
+      "required" : [
+        "modified"
+      ],
+      "type" : "object"
+    },
+    "settings" : {
+      "properties" : {
+        "appearance.icon" : {
+          "default" : "keyholeNib",
+          "description" : "Home-screen icon. Used by: ipad, iphone.",
+          "enum" : [
+            "keyholeNib",
+            "cemeteryDoor",
+            "shadowS",
+            "inkWind"
+          ]
+        },
+        "backup.reminderDays" : {
+          "default" : 0,
+          "description" : "Backup reminder after this many days (0: off).",
+          "enum" : [
+            0,
+            1,
+            3,
+            7,
+            14,
+            30
+          ]
+        },
+        "editor.compactPalette" : {
+          "default" : false,
+          "description" : "Compact tool palette.",
+          "type" : "boolean"
+        },
+        "editor.defaultLayout" : {
+          "default" : "letter",
+          "description" : "Page layout of new notes.",
+          "enum" : [
+            "letter",
+            "a4",
+            "pagelessLetter",
+            "pagelessA4"
+          ]
+        },
+        "editor.defaultPaper" : {
+          "default" : {
+            "background" : "#FFFFFFFF",
+            "kind" : "ruled",
+            "lineColor" : "#D0D8E8FF",
+            "spacing" : 24
+          },
+          "description" : "Paper of new notes.",
+          "properties" : {
+            "kind" : {
+              "type" : "string"
+            }
+          },
+          "required" : [
+            "kind"
+          ],
+          "type" : "object"
+        },
+        "editor.keepScreenOn" : {
+          "default" : false,
+          "description" : "Keep the screen on while a note is open. Used by: ipad, iphone.",
+          "type" : "boolean"
+        },
+        "eraser.mode" : {
+          "default" : "object",
+          "description" : "Eraser mode.",
+          "enum" : [
+            "object",
+            "pixel"
+          ]
+        },
+        "eraser.objectRadius" : {
+          "default" : 8,
+          "description" : "Object eraser size, points.",
+          "enum" : [
+            4,
+            8,
+            16,
+            32
+          ]
+        },
+        "handwriting.recognize" : {
+          "default" : true,
+          "description" : "Recognize handwriting on the device.",
+          "type" : "boolean"
+        },
+        "history.thinAfterDays" : {
+          "default" : 30,
+          "description" : "Thin autosaves older than this many days (0: never).",
+          "enum" : [
+            7,
+            14,
+            30,
+            90,
+            365,
+            0
+          ]
+        },
+        "math.recognize" : {
+          "default" : false,
+          "description" : "Convert handwriting to math.",
+          "type" : "boolean"
+        },
+        "mouse.smoothing" : {
+          "default" : "light",
+          "description" : "Smooth mouse and trackpad strokes. Used by: mac.",
+          "enum" : [
+            "off",
+            "light",
+            "strong"
+          ]
+        },
+        "newNote.titleFormat" : {
+          "default" : "dateAndTime",
+          "description" : "Title of a new note left untitled.",
+          "enum" : [
+            "dateAndTime",
+            "dateOnly",
+            "isoDateTime",
+            "weekday",
+            "custom",
+            "blank"
+          ]
+        },
+        "newNote.titlePattern" : {
+          "default" : "yyyy-MM-dd HH:mm",
+          "description" : "Custom title pattern (newNote.titleFormat custom).",
+          "maxLength" : 200,
+          "minLength" : 1,
+          "type" : "string"
+        },
+        "photos.removeMetadata" : {
+          "default" : true,
+          "description" : "Remove location and camera data from photos.",
+          "type" : "boolean"
+        },
+        "quickCapture.notebook" : {
+          "default" : "Inbox",
+          "description" : "Notebook of quick voice notes. Used by: ipad, iphone.",
+          "maxLength" : 1024,
+          "minLength" : 1,
+          "type" : "string"
+        },
+        "quickCapture.transcribe" : {
+          "default" : true,
+          "description" : "Transcribe quick voice notes. Used by: ipad, iphone.",
+          "type" : "boolean"
+        },
+        "recording.bitRate" : {
+          "default" : 64000,
+          "description" : "Recording quality, bits per second.",
+          "enum" : [
+            24000,
+            32000,
+            48000,
+            64000,
+            96000,
+            128000
+          ]
+        },
+        "recording.channels" : {
+          "default" : 1,
+          "description" : "Recording channels.",
+          "enum" : [
+            1,
+            2
+          ]
+        },
+        "recording.codec" : {
+          "default" : "aac",
+          "description" : "Recording format.",
+          "enum" : [
+            "aac",
+            "he-aac",
+            "alac"
+          ]
+        },
+        "recording.sampleRate" : {
+          "default" : 48000,
+          "description" : "Recording sample rate, Hz.",
+          "enum" : [
+            16000,
+            22050,
+            32000,
+            44100,
+            48000
+          ]
+        },
+        "rewrap.onAdd" : {
+          "default" : "header",
+          "description" : "Rewrap attachments when adding a device.",
+          "enum" : [
+            "header",
+            "reencrypt"
+          ]
+        },
+        "rewrap.onRemove" : {
+          "default" : "reencrypt",
+          "description" : "Rewrap attachments when removing a device or upgrading keys.",
+          "enum" : [
+            "header",
+            "reencrypt"
+          ]
+        },
+        "search.transcripts" : {
+          "default" : false,
+          "description" : "Search recording transcripts.",
+          "type" : "boolean"
+        },
+        "transcription.enabled" : {
+          "default" : false,
+          "description" : "Transcribe recordings on the device.",
+          "type" : "boolean"
+        },
+        "transcription.language" : {
+          "default" : null,
+          "description" : "Transcription language (null: the device's).",
+          "oneOf" : [
+            {
+              "type" : "null"
+            },
+            {
+              "pattern" : "^[A-Za-z][A-Za-z0-9_-]{0,34}$",
+              "type" : "string"
+            }
+          ]
+        }
+      },
+      "type" : "object"
+    }
+  },
+  "$id" : "https://github.com/anthonytw/sempere/blob/main/docs/settings.schema.json",
+  "$schema" : "https://json-schema.org/draft/2020-12/schema",
+  "allOf" : [
+    {
+      "$ref" : "#/$defs/settings"
+    }
+  ],
+  "description" : "The plaintext of a vault's settings.age (format.md §13). Generated from SharedSettingsCatalog; do not edit by hand.",
+  "patternProperties" : {
+    "^\\[[a-z][a-z0-9]{0,15}\\]$" : {
+      "type" : "object"
+    }
+  },
+  "properties" : {
+    "$meta" : {
+      "additionalProperties" : {
+        "$ref" : "#/$defs/meta"
+      },
+      "description" : "per key (and per key of each type block, under the block's name): its last write",
+      "patternProperties" : {
+        "^\\[[a-z][a-z0-9]{0,15}\\]$" : {
+          "additionalProperties" : {
+            "$ref" : "#/$defs/meta"
+          },
+          "type" : "object"
+        }
+      },
+      "type" : "object"
+    },
+    "$minReaderVersion" : {
+      "description" : "the oldest reader that may read and write the file; 1 for this one",
+      "minimum" : 1,
+      "type" : "integer"
+    },
+    "$schemaVersion" : {
+      "description" : "version of the keys' names and meanings; 1 for this one",
+      "minimum" : 1,
+      "type" : "integer"
+    },
+    "[ipad]" : {
+      "$ref" : "#/$defs/settings",
+      "description" : "values for ipad devices only; they win over the top level there"
+    },
+    "[iphone]" : {
+      "$ref" : "#/$defs/settings",
+      "description" : "values for iphone devices only; they win over the top level there"
+    },
+    "[mac]" : {
+      "$ref" : "#/$defs/settings",
+      "description" : "values for mac devices only; they win over the top level there"
+    }
+  },
+  "required" : [
+    "$schemaVersion",
+    "$minReaderVersion"
+  ],
+  "title" : "Sempere shared settings",
+  "type" : "object"
+}

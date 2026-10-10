@@ -41,6 +41,22 @@ final class CLIMathTests: CLITestCase {
 
     func equations(_ note: String) throws -> [Item] { try state(note).pages.flatMap(\.items).filter { $0.kind == .math } }
 
+    // MARK: notes search snippets
+
+    /// `notes search` finds LaTeX source but quotes only prose: the text box next to an equation, or the marker.
+    func testNotesSearchSnippetsLeaveTheEquationOut() throws {
+        let args = try setUpVault()
+        _ = try ok(["attach", "math", groceries, "--latex", "\\frac{a}{b} + e^{i\\pi}", "--json"] + args)
+        _ = try ok(["attach", "text", groceries, "Buy apples and oranges today", "--json"] + args)
+        let prose = try XCTUnwrap(try cli(["notes", "search", "oranges", "--json"] + args).json as? [[String: Any]])
+        XCTAssertEqual(prose.first?["snippet"] as? String, "Buy apples and oranges today", "no LaTeX from the equation")
+        let formula = try XCTUnwrap(try cli(["notes", "search", "frac", "--json"] + args).json as? [[String: Any]])
+        XCTAssertEqual(formula.count, 1, "the source stays searchable")
+        XCTAssertEqual(formula.first?["snippet"] as? String, "[equation]")
+        let table = try cli(["notes", "search", "frac"] + args)
+        XCTAssertTrue(table.out.contains("[equation]") && !table.out.contains("\\frac"), table.out)
+    }
+
     // MARK: attach math
 
     func testAttachMathWithoutARender() throws {

@@ -79,6 +79,9 @@ enum CLIError: Error {
             return .untrustedRecipients(text)
         case VaultError.readOnly:
             return .readOnly(text)
+        case SharedSettingsError.needsNewerReader(let min):
+            return .readOnly("the vault's settings need a newer sempere (settings reader \(min) or later; this is "
+                + "\(SharedSettingsMigrations.current)): they are neither read nor written")
         case VaultError.rewrapIncomplete:
             return .unhealthy(text + "; run `sempere vault rewrap-resume`")
         case let e as NoteSummary.LookupError:

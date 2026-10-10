@@ -162,6 +162,52 @@ final class CLIBackupTests: CLITestCase {
         XCTAssertEqual(again.status, 1, again.err)
     }
 
+    /// `backup status --max-age`: the app's Remind Me for scripts (exit 3 when overdue).
+    func testBackupStatusMaxAge() throws {
+        let vault = try copyFixtureVault()
+        let dir = path("backup")
+        XCTAssertEqual(try cli(["backup", "status", dir, "--max-age", "7"]).status, 1, "not a backup")
+        XCTAssertEqual(try cli(["backup", vault, "--to", dir, "-q"]).status, 0)
+
+        let fresh = try cli(["backup", "status", dir, "--max-age", "7", "--json"])
+        XCTAssertEqual(fresh.status, 0, fresh.err)
+        let json = try XCTUnwrap(fresh.json as? [String: Any])
+        XCTAssertEqual(json["overdue"] as? Bool, false)
+        XCTAssertEqual(json["maxAgeDays"] as? Int, 7)
+        XCTAssertNotNil(json["due"] as? String)
+        XCTAssertEqual(json["vaultId"] as? String, "5a3b1e00-1000-4000-8000-000000000001", "the status fields stay at the top level")
+
+        // Ten days without a complete run: overdue, exit 3, in text and JSON.
+        let index = URL(fileURLWithPath: dir).appendingPathComponent("backup.json")
+        var m = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: index)) as? [String: Any])
+        let old = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-10 * 86_400))
+        m["created"] = old
+        m["completed"] = old
+        try JSONSerialization.data(withJSONObject: m).write(to: index)
+        let late = try cli(["backup", "status", dir, "--max-age", "7"])
+        XCTAssertEqual(late.status, 3, late.out + late.err)
+        XCTAssertTrue(late.out.contains("OVERDUE"), late.out)
+        let lateJSON = try cli(["backup", "status", dir, "--max-age", "7", "--json"])
+        XCTAssertEqual(lateJSON.status, 3)
+        XCTAssertEqual((lateJSON.json as? [String: Any])?["overdue"] as? Bool, true)
+        XCTAssertEqual(try cli(["backup", "status", dir, "--max-age", "30"]).status, 0)
+        XCTAssertEqual(try cli(["backup", "status", dir]).status, 0, "without --max-age nothing is judged")
+
+        // A run that only failed does not count: `updated` moves, `completed` stays.
+        m["completed"] = nil
+        try JSONSerialization.data(withJSONObject: m).write(to: index)
+        XCTAssertEqual(try cli(["backup", "status", dir, "--max-age", "7"]).status, 3, "never completed: from created")
+        XCTAssertTrue(try cli(["backup", "status", dir]).out.contains("never"))
+
+        // A complete run clears it.
+        XCTAssertEqual(try cli(["backup", vault, "--to", dir, "-q"]).status, 0)
+        XCTAssertEqual(try cli(["backup", "status", dir, "--max-age", "7"]).status, 0)
+
+        for bad in ["0", "3651", "-1", "x"] {
+            XCTAssertEqual(try cli(["backup", "status", dir, "--max-age", bad]).status, 2, bad)
+        }
+    }
+
     func testBackupStatusAndRestoreDryRun() throws {
         let vault = try copyFixtureVault()
         let dir = path("backup")
@@ -178,6 +224,10 @@ final class CLIBackupTests: CLITestCase {
         XCTAssertEqual(json["totalBytes"] as? Int, json["bytes"] as? Int)
         XCTAssertNotNil(json["updated"] as? String)
         XCTAssertTrue(try cli(["backup", "status", dir]).out.contains("updated"))
+
+        XCTAssertNotNil(json["completed"] as? String, "a run without errors completes")
+        XCTAssertNil(json["overdue"], "no --max-age, no verdict")
+        XCTAssertTrue(try cli(["backup", "status", dir]).out.contains("completed"))
 
         let target = path("restored.sempere")
         let dry = try cli(["restore", dir, "--to", target, "--dry-run", "--json"])
@@ -263,5 +313,55 @@ final class CLIBackupTests: CLITestCase {
         XCTAssertEqual(try cli(["backup", vault, "--archive", tar]).status, 1, "refuses to overwrite")
         let bytes = try Data(contentsOf: URL(fileURLWithPath: tar))
         XCTAssertNil(String(decoding: bytes, as: UTF8.self).range(of: "Fixture lecture"), "no plaintext in the archive")
+    }
+
+    /// GA-60: the `.sempere-restore.json` marker through the command. An interrupted restore (marker,
+    /// some files, no `vault.json`) is finished by running the same command again; the marker goes
+    /// when the restore is complete; a marker of another vault, or a folder with other content,
+    /// is refused (exit 1) and left as it was.
+    func testRestoreResumesAnInterruptedRestoreThroughTheCommand() throws {
+        let vault = try copyFixtureVault()
+        let args = ["--vault", vault, "--identity", Self.fixtureKey]
+        let backup = path("backup")
+        XCTAssertEqual(try cli(["backup", "--to", backup, "-q"] + args).status, 0)
+        let vaultId = try XCTUnwrap((try cli(["vault", "info", "--json"] + args).json as? [String: Any])?["vaultId"] as? String
+                                    ?? (try cli(["vault", "info", "--json"] + args).json as? [String: Any])?["id"] as? String)
+        let note = "22222222-2222-4222-8222-222222222222"
+        let revision = try XCTUnwrap(try FileManager.default.contentsOfDirectory(atPath: "\(backup)/notes/\(note)").sorted().first)
+        let marker = ".sempere-restore.json"
+
+        // Another vault's marker: refused, nothing written.
+        let foreign = path("foreign.sempere")
+        try FileManager.default.createDirectory(atPath: foreign, withIntermediateDirectories: true)
+        try Data("{\"vaultId\": \"00000000-0000-4000-8000-000000000000\"}".utf8).write(to: URL(fileURLWithPath: "\(foreign)/\(marker)"))
+        let refused = try cli(["restore", backup, "--to", foreign, "--identity", Self.fixtureKey])
+        XCTAssertEqual(refused.status, 1, refused.err)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: foreign), [marker])
+        // A folder with other content and no marker: refused too.
+        let occupied = path("occupied.sempere")
+        try FileManager.default.createDirectory(atPath: occupied, withIntermediateDirectories: true)
+        try Data("keep".utf8).write(to: URL(fileURLWithPath: "\(occupied)/mine.txt"))
+        XCTAssertEqual(try cli(["restore", backup, "--to", occupied, "--identity", Self.fixtureKey]).status, 1)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: occupied), ["mine.txt"])
+
+        // The interrupted one: marker plus one revision, no vault.json.
+        let target = path("resumed.sempere")
+        try FileManager.default.createDirectory(atPath: "\(target)/notes/\(note)", withIntermediateDirectories: true)
+        try Data("{\"vaultId\": \"\(vaultId)\"}".utf8).write(to: URL(fileURLWithPath: "\(target)/\(marker)"))
+        try FileManager.default.copyItem(atPath: "\(backup)/notes/\(note)/\(revision)", toPath: "\(target)/notes/\(note)/\(revision)")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: "\(target)/vault.json"), "an unfinished restore is no vault")
+        let dry = try cli(["restore", backup, "--to", target, "--dry-run", "--json", "--identity", Self.fixtureKey])
+        XCTAssertEqual(dry.status, 0, dry.err)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: "\(target)/\(marker)"), "a dry run leaves the marker")
+
+        let r = try cli(["restore", backup, "--to", target, "--json", "--identity", Self.fixtureKey])
+        XCTAssertEqual(r.status, 0, r.err)
+        let report = try XCTUnwrap(r.json as? [String: Any])
+        XCTAssertEqual(report["alreadyPresent"] as? Int, 1, "the revision already there is not copied again")
+        XCTAssertGreaterThan(report["restored"] as? Int ?? 0, 1)
+        XCTAssertEqual(report["healthy"] as? Bool, true)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: "\(target)/\(marker)"), "the marker goes when the restore is complete")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: "\(target)/vault.json"))
+        XCTAssertEqual(try cli(["vault", "verify", "--vault", target, "--identity", Self.fixtureKey]).status, 0)
     }
 }

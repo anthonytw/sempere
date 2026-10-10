@@ -127,6 +127,7 @@ struct NoteListView: View {
                     RecognitionBar(progress: progress) { model.cancelRecognizingNotes() }
                 }
                 VaultStatusBar(loading: model.loading, sync: model.cloudSync) { model.startCloudSync() }
+                if let session = model.webdav { WebDAVStatusBar(session: session) }
             }
         }
         .refreshable {
@@ -236,6 +237,7 @@ struct NoteListView: View {
         case .notebook(let n): return NotebookPath.components(n).last ?? n
         case .tag(let t): return "#\(t)"
         case .deleted: return String(localized: "Recently Deleted", comment: "Sidebar row: deleted notes")
+        case .favorites: return String(localized: "Favorites", comment: "Sidebar row: notes marked as favorites")
         case .recentlyRecognized: return String(localized: "Recently Recognized", comment: "Sidebar row: notes whose handwriting was recognized in the last 7 days")
         }
     }
@@ -273,6 +275,10 @@ struct NoteListView: View {
             }
             Button("Rename…", systemImage: "pencil") {
                 promptText = note.title; prompt = Prompt(kind: .rename, note: note.id)
+            }
+            Button(LocalizedStringKey(note.favorite ? "Remove from Favorites" : "Add to Favorites"),
+                   systemImage: note.favorite ? "star.slash" : "star") {
+                run { try await model.setFavorite(!note.favorite, for: note.id) }
             }
             Button("Add Tag…", systemImage: "tag") { promptText = ""; prompt = Prompt(kind: .tag, note: note.id) }
             if !note.tags.isEmpty {
@@ -377,9 +383,6 @@ private struct NoteRow: View {
                 if let recognized {
                     Label(RecognitionResultsText.pagesRead(recognized.pagesRecognized, of: note.pages), systemImage: "text.viewfinder")
                 }
-                if let notebook = NotebookPath.canonical(note.notebook) {
-                    Label(NotebookPath.components(notebook).joined(separator: " › "), systemImage: "book.closed").labelStyle(.titleAndIcon)
-                }
                 if note.problem != nil {
                     Image(systemName: "exclamationmark.triangle")
                         .foregroundStyle(.orange)
@@ -388,6 +391,15 @@ private struct NoteRow: View {
             }
             .font(.caption)
             .foregroundStyle(.secondary)
+            // Its own line: beside the date and page count it was squeezed to a few points in
+            // right-to-left and double-length layouts (PseudoLanguageUITests); here it wraps instead.
+            if let notebook = NotebookPath.canonical(note.notebook) {
+                Label(NotebookPath.components(notebook).joined(separator: " › "), systemImage: "book.closed")
+                    .labelStyle(.titleAndIcon)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
             if !note.tags.isEmpty {
                 HStack(spacing: 4) {
                     // One chip per tag key: older notes may store two spellings.
@@ -597,6 +609,18 @@ private struct TranscriptHitRow: View {
     }
 }
 
+/// What a search result's snippet says when the match is inside an equation (tested).
+enum SearchSnippetText {
+    static var equationMarker: String {
+        String(localized: "[equation]", comment: "Search result: the match is inside an equation (its source is not quoted)")
+    }
+
+    /// The snippet as a plain string: the localized marker for an equation, else its text.
+    static func display(_ snippet: NoteSearchHit.Snippet) -> String {
+        snippet.isEquation ? equationMarker : snippet.text
+    }
+}
+
 private struct SearchRow: View {
     let hit: NoteSearchHit
     let note: NoteSummary
@@ -615,7 +639,12 @@ private struct SearchRow: View {
                 }
             }
             if let snippet = hit.snippet {
-                Text(Self.highlighted(snippet)).font(.callout).foregroundStyle(.secondary).lineLimit(3)
+                if snippet.isEquation {
+                    // The match is in an equation's LaTeX source: the marker, not the source (core: `NoteSearch.equationMarker`).
+                    Text(SearchSnippetText.equationMarker).font(.callout.italic()).foregroundStyle(.secondary)
+                } else {
+                    Text(Self.highlighted(snippet)).font(.callout).foregroundStyle(.secondary).lineLimit(3)
+                }
             }
             HStack(spacing: 6) {
                 if let notebook = NotebookPath.canonical(note.notebook) {

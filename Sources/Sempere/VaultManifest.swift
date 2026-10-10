@@ -44,10 +44,15 @@ public struct VaultManifest: Hashable, Sendable, Codable {
     /// secret. A value of another shape reads as `.malformed` (a link that
     /// never verifies, which writers drop); a string is a legacy HMAC link.
     public var secretLink: SecretLink?
+    /// `markersTag` (format.md §2.1 "Version markers"): lowercase hex HMAC
+    /// over `vaultId`, `format` and `features` under a key derived from the
+    /// vault secret. Read leniently, like `recipientsTag`.
+    public var markersTag: String?
 
     /// The extensions this implementation knows. A writer must not write to
     /// a vault that uses any other (format.md §2).
-    public static let knownFeatures: Set<String> = [attachmentsFeature, recipientsTagFeature, signedLinkFeature]
+    public static let knownFeatures: Set<String> = [attachmentsFeature, recipientsTagFeature, signedLinkFeature,
+                                                           markersTagFeature]
     /// Added before the first blob or attachment op is written (format.md §2, §8).
     public static let attachmentsFeature = "attachments"
     /// The vault carries `recipientsTag` (format.md §2.1). Older writers do
@@ -58,6 +63,10 @@ public struct VaultManifest: Hashable, Sendable, Codable {
     /// writers do not know it, so they stop writing instead of rotating the
     /// secret with a link that devices holding signed trust records refuse.
     public static let signedLinkFeature = "signed-secret-link"
+    /// The vault carries `markersTag` (format.md §2.1 "Version markers").
+    /// Older writers do not know it, so they stop writing instead of
+    /// rewriting `vault.json` without the tag.
+    public static let markersTagFeature = "markers-tag"
 
     /// Builds a manifest value. No validation happens here; `Vault.create`
     /// and `Vault.open` enforce format.md §2.
@@ -66,13 +75,14 @@ public struct VaultManifest: Hashable, Sendable, Codable {
     ///   - format: `sempere/1` unless testing other versions.
     ///   - vaultSecret: the armored age file holding the 32-byte secret.
     public init(format: String = SempereFormat.identifier, vaultId: UUID, created: Date, recipients: [Recipient],
-                vaultSecret: String, features: [String] = [], recipientsTag: String? = nil, secretLink: SecretLink? = nil) {
+                vaultSecret: String, features: [String] = [], recipientsTag: String? = nil, secretLink: SecretLink? = nil,
+                markersTag: String? = nil) {
         self.format = format; self.vaultId = vaultId; self.created = created
         self.recipients = recipients; self.vaultSecret = vaultSecret; self.features = features
-        self.recipientsTag = recipientsTag; self.secretLink = secretLink
+        self.recipientsTag = recipientsTag; self.secretLink = secretLink; self.markersTag = markersTag
     }
 
-    enum CodingKeys: String, CodingKey { case format, vaultId, created, recipients, vaultSecret, features, recipientsTag, secretLink }
+    enum CodingKeys: String, CodingKey { case format, vaultId, created, recipients, vaultSecret, features, recipientsTag, secretLink, markersTag }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -83,6 +93,7 @@ public struct VaultManifest: Hashable, Sendable, Codable {
         vaultSecret = try c.decode(String.self, forKey: .vaultSecret)
         features = try c.decodeIfPresent([String].self, forKey: .features) ?? []
         recipientsTag = Self.lenientString(c, .recipientsTag)
+        markersTag = Self.lenientString(c, .markersTag)
         // SecretLink's decoder never throws: any shape but null reads as one.
         secretLink = (try? c.decodeNil(forKey: .secretLink)) == false ? try? c.decode(SecretLink.self, forKey: .secretLink) : nil
     }
@@ -103,6 +114,7 @@ public struct VaultManifest: Hashable, Sendable, Codable {
         if !features.isEmpty { try c.encode(features, forKey: .features) }
         try c.encodeIfPresent(recipientsTag, forKey: .recipientsTag)
         if let secretLink, secretLink != .malformed { try c.encode(secretLink, forKey: .secretLink) }
+        try c.encodeIfPresent(markersTag, forKey: .markersTag)
     }
 
     /// The features this implementation does not know, sorted.

@@ -13,7 +13,9 @@ import XCTest
 /// does. Then, in each column layout, the library window must show what that
 /// layout shows (sidebar, note list, the note), and on the Mac the other
 /// windows and sheets must open: Settings (⌘,), Vault Keys (⌥⌘K), a note
-/// window (⌥⌘N), Export… (⇧⌘E), Export Notes… and Restore from Backup….
+/// window (⌥⌘N), Export… (⇧⌘E), Export Notes…, Restore from Backup… and, after
+/// Close Vault, Open from WebDAV….
+/// With the notices on, the first unlock shows About Your Key and the quick tour.
 ///
 /// Run by `scripts/app.sh test-ui` (iPad simulator: the two sidebar and list layouts) and `test-mac-smoke`
 /// (Mac Catalyst), on every CI run of the app job (docs/HANDOFF.md "CI").
@@ -132,6 +134,70 @@ final class LaunchSmokeUITests: XCTestCase {
         requireSheet("bulkExportSheet", titled: "Export", "bulk export sheet", in: app)
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
         requireRunning(app, "bulk export sheet")
+
+        // Close Vault (⇧⌘W), then Open from WebDAV… on the welcome screen.
+        focusLibrary(app)
+        app.typeKey("w", modifierFlags: [.command, .shift])
+        let webdav = app.buttons["openWebDAV"].firstMatch
+        require(webdav, "Open from WebDAV… button", in: app)
+        webdav.click()
+        requireSheet("webdavConnectSheet", titled: "Open from WebDAV", "Open from WebDAV sheet", in: app)
+        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+        requireRunning(app, "webdav sheet")
+        #endif
+    }
+
+    // MARK: - Notices on a first unlock
+
+    /// With the notices on (`SEMPERE_DEBUG_ONBOARDING`; every other scripted
+    /// launch skips them): the first unlock shows About Your Key, which only
+    /// "I Understand" closes, then the quick tour, which Skip closes. On the
+    /// Mac, Sempere > About Sempere and Help > Quick Tour open them again.
+    @MainActor
+    func testFirstUnlockShowsKeyNoticeThenTour() throws {
+        let app = launchUnlocked(columns: "all", extra: ["SEMPERE_DEBUG_ONBOARDING": "1"])
+        defer { app.terminate() }
+        require(app.descendants(matching: .any)["keyNotice"].firstMatch, "About Your Key after the first unlock", in: app, timeout: 60)
+        let understand = app.buttons["keyNoticeUnderstand"].firstMatch
+        require(understand, "I Understand", in: app)
+        press(understand)
+        require(app.descendants(matching: .any)["quickTour"].firstMatch, "the quick tour after the key notice", in: app)
+        press(app.buttons["quickTourNext"].firstMatch)
+        require(app.descendants(matching: .any)["quickTourPage-writing"].firstMatch, "the tour's second page", in: app)
+        press(app.buttons["quickTourSkip"].firstMatch)
+        requireRunning(app, "tour skipped")
+        requireNoteList(app)
+        #if targetEnvironment(macCatalyst)
+        focusLibrary(app)
+        app.menuBars.menuBarItems["Sempere"].click()
+        let about = app.menuItems["About Sempere"].firstMatch
+        require(about, "Sempere > About Sempere", in: app)
+        about.click()
+        requireSheet("aboutView", titled: "About Sempere", "About Sempere", in: app)
+        press(app.buttons["aboutDone"].firstMatch)
+        requireRunning(app, "about")
+
+        focusLibrary(app)
+        app.menuBars.menuBarItems["Help"].click()
+        let tour = app.menuItems["Quick Tour"].firstMatch
+        require(tour, "Help > Quick Tour", in: app)
+        tour.click()
+        requireSheet("quickTour", titled: "Quick Tour", "the quick tour from Help", in: app)
+        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+        requireRunning(app, "help tour")
+        #endif
+    }
+
+    @MainActor
+    private func press(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        guard element.waitForExistence(timeout: 30) else {
+            XCTFail("\(element) not found", file: file, line: line)
+            return
+        }
+        #if targetEnvironment(macCatalyst)
+        element.click()
+        #else
+        element.tap()
         #endif
     }
 
@@ -140,7 +206,7 @@ final class LaunchSmokeUITests: XCTestCase {
     /// Launches with fresh state and the demo vault locked, and unlocks it
     /// through the unlock sheet with the passphrase.
     @MainActor
-    private func launchUnlocked(columns: String) -> XCUIApplication {
+    private func launchUnlocked(columns: String, extra: [String: String] = [:]) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                // No windows from an earlier run.
@@ -154,17 +220,23 @@ final class LaunchSmokeUITests: XCTestCase {
         // Landscape: in portrait an iPad mini (CI's newest simulator) collapses the sidebar.
         XCUIDevice.shared.orientation = .landscapeLeft
         #endif
-        app.launchEnvironment = env
         Self.warmUp(env: env)
+        env.merge(extra) { $1 }
+        app.launchEnvironment = env
         app.launch()
 
         let field = app.secureTextFields["Passphrase"].firstMatch
         require(field, "unlock sheet's passphrase field", in: app, timeout: 90)
-        #if targetEnvironment(macCatalyst)
-        field.click()
-        #else
-        field.tap()
-        #endif
+        // A slow runner can drop the first tap while the sheet settles: tap until the field has the keyboard.
+        let focused = NSPredicate(format: "hasKeyboardFocus == true")
+        for _ in 0..<5 where !focused.evaluate(with: field) {
+            #if targetEnvironment(macCatalyst)
+            field.click()
+            #else
+            field.tap()
+            #endif
+            _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: focused, object: field)], timeout: 2)
+        }
         field.typeText(Self.passphrase + "\n")   // onSubmit unlocks
         // After a manual unlock the sheet offers to remember the key.
         let notNow = app.buttons["Not Now"].firstMatch
@@ -248,7 +320,8 @@ final class LaunchSmokeUITests: XCTestCase {
     private func focusLibrary(_ app: XCUIApplication) {
         #if targetEnvironment(macCatalyst)
         let row = noteRow(app)
-        if row.waitForExistence(timeout: 10) { row.click() }
+        // The row's content fills the cell, so XCTest finds no free point on the cell itself.
+        if row.waitForExistence(timeout: 10) { row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click() }
         #endif
     }
 

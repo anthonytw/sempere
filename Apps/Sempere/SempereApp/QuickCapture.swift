@@ -114,9 +114,11 @@ enum QuickCaptureError: Error, Equatable, CustomStringConvertible, CustomLocaliz
 /// nor the device needs unlocking and no Face ID is asked. The sealed file goes
 /// into the vault's `inbox/` (a coordinated write in iCloud Drive), or into a
 /// local queue when the vault folder cannot be reached, moved into the vault
-/// later. The plaintext audio exists only in a protected temporary file
-/// (`completeUnlessOpen`, the one class that can be written with the screen
-/// locked) and in memory, and is deleted as soon as the capture (and its
+/// later. The plaintext audio exists only in protected temporary files
+/// (`QuickCapture.protection`: `completeUntilFirstUserAuthentication`, since a
+/// voice note started from the Lock Screen is read back from closed files and
+/// sealed before any unlock, which `completeUnlessOpen` forbids) and in
+/// memory, and is deleted as soon as the capture (and its
 /// transcript, made on device from it) is sealed; leftovers from a crash are
 /// sealed or deleted at the next launch (`sweep`). The app adopts inbox
 /// captures as notes once the vault is unlocked (`AppModel+Inbox`).
@@ -281,7 +283,7 @@ final class QuickCapture {
         // Nothing records here yet, so any Live Activity still shown is an orphan.
         await Self.endActivities(startedBefore: .distantFuture)
         // Read back and sealed on stop, often with the device still locked: `completeUnlessOpen`
-        // files cannot be reopened then once closed, so this class (readable after the first unlock).
+        // files cannot be reopened then once closed, so `Self.protection` (readable after the first unlock).
         let s = RecordingSession(noteID: UUID(), format: RecordingPreference.format(), root: root,
                                  protection: Self.protection, backend: backend?(), center: center)
         // Ended by the system (media services reset, no new segment file): sealed as after Stop.

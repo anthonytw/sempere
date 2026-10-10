@@ -3,8 +3,9 @@ import SwiftUI
 
 /// The Settings panel (docs/attachments.md §15): one screen, a sheet from the
 /// sidebar's gear button on iPad and iPhone and a window (Settings…, ⌘,) on
-/// the Mac. Every setting is per device (`UserDefaults`, see `DeviceSettings`)
-/// and none is stored in the vault. Settings of a feature that is not in this
+/// the Mac. Every setting is kept on the device (`UserDefaults`, see
+/// `DeviceSettings`); with Sync Settings with This Vault on, the open vault's
+/// shared settings are applied to them (docs/settings-sync.md, `SettingsSyncSection`). Settings of a feature that is not in this
 /// build yet (recording, transcription) are stored all the same and read by
 /// that feature when it lands.
 struct SettingsView: View {
@@ -19,18 +20,22 @@ struct SettingsView: View {
         NavigationStack {
             ScrollViewReader { proxy in
                 Form {
+                    SettingsSyncSection()
                     GeneralSettings()
-                    AppIconSettingsSection()
-                    NewNoteSettingsSection()
-                    RecordingSettingsSection()
-                    TranscriptionSettingsSection()
+                    AppIconSettingsSection().id(model.settingsAppliedRevision)
+                    // Sections that hold copies of their values reload them when values arrive from the vault.
+                    NewNoteSettingsSection().id(model.settingsAppliedRevision)
+                    RecordingSettingsSection().id(model.settingsAppliedRevision)
+                    TranscriptionSettingsSection().id(model.settingsAppliedRevision)
+                    EditorSettingsSection()
                     MathRecognitionSettingsSection()
                     QuickCaptureSettingsSection()
                     PhotoSettingsSection()
                     HistorySettingsSection()
-                    BackupSettingsSection()
-                    DeviceKeySettingsSection()
+                    BackupSettingsSection().id(model.settingsAppliedRevision)
+                    DeviceKeySettingsSection().id(model.settingsAppliedRevision)
                     StorageSettingsSection()
+                    AboutSettingsSection()
                 }
                 .task {
                     guard let scrollTo else { return }
@@ -59,13 +64,16 @@ private struct GeneralSettings: View {
     @AppStorage(KeepScreenOn.key) private var keepScreenOn = KeepScreenOn.defaultValue
     @AppStorage(RecognitionPreference.key) private var recognize = RecognitionPreference.defaultValue
     @AppStorage(MouseSmoothing.key) private var mouseSmoothing = MouseSmoothing.defaultLevel
+    @AppStorage(StatusItemPreference.key) private var showMenuBarItem = StatusItemPreference.defaultValue
 
     var body: some View {
         Section {
             Toggle("Keep Screen On", isOn: $keepScreenOn)
+                .syncedSetting("editor.keepScreenOn")
             Toggle("Recognize Handwriting", isOn: Binding(
                 get: { recognize },
                 set: { recognize = $0; model.setHandwritingRecognition($0) }))
+                .syncedSetting("handwriting.recognize")
             if Platform.isMac {
                 Picker("Smooth Mouse Strokes", selection: $mouseSmoothing) {
                     Text("Off").tag(StrokeSmoothing.Level.off)
@@ -73,6 +81,9 @@ private struct GeneralSettings: View {
                     Text("Strong", comment: "Smooth Mouse Strokes setting").tag(StrokeSmoothing.Level.strong)
                 }
                 .accessibilityIdentifier("mouseSmoothing")
+                .syncedSetting("mouse.smoothing")
+                Toggle("Show in Menu Bar", isOn: $showMenuBarItem)
+                    .accessibilityIdentifier("showMenuBarItem")
             }
         } header: {
             Text("General")
@@ -81,8 +92,45 @@ private struct GeneralSettings: View {
                 Text("Keep Screen On stops the screen from locking while a note is open. Handwriting recognition makes handwriting searchable; it runs on this device and nothing leaves it.")
                 if Platform.isMac {
                     Text("Smooth Mouse Strokes evens out lines drawn with a mouse or trackpad; Strong rounds them more. Strokes drawn with the ruler are not smoothed.")
+                    Text("Show in Menu Bar puts a Sempere icon in the menu bar with Quick Voice Note and New Note, while Sempere is running.")
                 }
             }
+        }
+    }
+}
+
+// MARK: - Editor
+
+/// Tool choices the editor also changes (its eraser and palette menus), here so
+/// that each can be kept on this device when settings sync (docs/settings-sync.md §5).
+private struct EditorSettingsSection: View {
+    @AppModelEnvironment private var model
+    @AppStorage(EraserPreference.defaultsKey) private var eraserName = "object"
+    @AppStorage(ObjectEraserSize.defaultsKey) private var eraserRadius = ObjectEraserSize.defaultRadius
+    @AppStorage(ToolPalette.compactKey) private var paletteCompact = false
+
+    var body: some View {
+        Section {
+            Picker("Eraser", selection: Binding(
+                get: { eraserName == "pixel" || eraserName == "pixelFixedWidth" ? "pixel" : "object" },
+                set: { eraserName = $0 == "pixel" ? "pixelFixedWidth" : "object" })) {
+                Text("Object Eraser").tag("object")
+                Text("Pixel Eraser").tag("pixel")
+            }
+            .syncedSetting("eraser.mode")
+            Picker("Object Eraser Size", selection: $eraserRadius) {
+                ForEach(ObjectEraserSize.radii, id: \.self) { Text(ObjectEraserSize.name(of: $0)).tag($0) }
+            }
+            .syncedSetting("eraser.objectRadius")
+            Toggle("Compact Palette", isOn: $paletteCompact)
+                .syncedSetting("editor.compactPalette")
+            Toggle("Search Recording Transcripts", isOn: Binding(get: { model.searchTranscripts },
+                                                                 set: { model.setSearchTranscripts($0) }))
+                .syncedSetting("search.transcripts")
+        } header: {
+            Text("Editor", comment: "Settings section: tools of the note editor")
+        } footer: {
+            Text("The editor's own menus change these too. Searching recording transcripts reads and decrypts every transcript of the notes searched, on this device.")
         }
     }
 }
@@ -93,8 +141,8 @@ private struct NewNoteSettingsSection: View {
     @State private var format = NewNoteSettings.titleFormat()
     /// The custom pattern as typed (stored only while it checks).
     @State private var pattern = NewNoteSettings.titlePattern()
-    @State private var notebook = NewNoteSettings.voiceNotebook()
     @State private var paper = PaperPreference.load()
+    @State private var layout = NewNoteLayout.load()
     @State private var choosingPaper = false
 
     var body: some View {
@@ -114,8 +162,10 @@ private struct NewNoteSettingsSection: View {
                 }
             }
             .onChange(of: format) { NewNoteSettings.setTitleFormat(format) }
+            .syncedSetting("newNote.titleFormat")
             if format == .custom {
                 TitlePatternField(pattern: $pattern)
+                    .syncedSetting("newNote.titlePattern")
             }
             Button { choosingPaper = true } label: {
                 HStack {
@@ -125,34 +175,28 @@ private struct NewNoteSettingsSection: View {
                     Image(systemName: "chevron.right").foregroundStyle(.tertiary)
                 }
             }
+            .syncedSetting("editor.defaultPaper")
             .sheet(isPresented: $choosingPaper) {
                 PaperPickerView(paper: paper, purpose: .newNote) { chosen, _ in
                     paper = chosen
                     PaperPreference.save(chosen)
                 }
             }
-            LabeledContent("Voice Notes") {
-                TextField(NewNoteSettings.defaultVoiceNotebook, text: $notebook)
-                    .multilineTextAlignment(.trailing)
-                    .autocorrectionDisabled()
-                    .onSubmit(commitNotebook)
-                    .onChange(of: notebook) { NewNoteSettings.setVoiceNotebook(notebook) }
+            Picker("Layout", selection: $layout) {
+                ForEach(NewNoteLayout.allCases) { Text($0.title).tag($0) }
             }
+            .onChange(of: layout) { NewNoteLayout.save(layout) }
+            .syncedSetting("editor.defaultLayout")
         } header: {
             Text("New Notes")
         } footer: {
-            Text("A new note whose title you leave empty is named \(sample). Quick voice notes go to the notebook “\(NewNoteSettings.canonicalNotebook(notebook))”; use / for levels.")
+            Text("A new note whose title you leave empty is named \(sample).")
         }
     }
 
     private var sample: String {
         let t = NewNoteSettings.title(format, pattern: NewNoteSettings.titlePattern())
         return t.isEmpty ? String(localized: "“Untitled”", comment: "Settings ▸ New Notes footer: how a note with no title is shown, in quotes") : "“\(t)”"
-    }
-
-    private func commitNotebook() {
-        NewNoteSettings.setVoiceNotebook(notebook)
-        notebook = NewNoteSettings.voiceNotebook()
     }
 }
 
@@ -265,19 +309,23 @@ private struct RecordingSettingsSection: View {
             Picker("Format", selection: $settings.codec) {
                 ForEach(RecordingSettings.Codec.allCases) { Text($0.title).tag($0) }
             }
+            .syncedSetting("recording.codec")
             if settings.codec.hasBitRate {
                 Picker("Quality", selection: $settings.bitRate) {
                     ForEach(RecordingSettings.bitRates(for: settings.codec), id: \.self) {
                         Text(RecordingSettings.label(bitRate: $0)).tag($0)
                     }
                 }
+                .syncedSetting("recording.bitRate")
             }
             Picker("Sample Rate", selection: $settings.sampleRate) {
                 ForEach(RecordingSettings.sampleRates, id: \.self) { Text(RecordingSettings.label(sampleRate: $0)).tag($0) }
             }
+            .syncedSetting("recording.sampleRate")
             Picker("Channels", selection: $settings.channels) {
                 ForEach(RecordingSettings.Channels.allCases) { Text($0.title).tag($0) }
             }
+            .syncedSetting("recording.channels")
             LabeledContent("Size", value: settings.sizePerHourText())
         } header: {
             Text("Recording")
@@ -299,6 +347,7 @@ private struct TranscriptionSettingsSection: View {
     @State private var enabled = TranscriptionSettings.isEnabled()
     @State private var locale = TranscriptionSettings.localeIdentifier()
     @State private var status = TranscriptionSettings.ModelStatus.unavailable
+    @State private var engines: [TranscriptionSettings.EngineLine] = []
     @State private var downloading = false
     @State private var failure: String?
 
@@ -306,6 +355,7 @@ private struct TranscriptionSettingsSection: View {
         Section {
             Toggle("Transcribe Recordings on This Device", isOn: $enabled)
                 .onChange(of: enabled) { TranscriptionSettings.setEnabled(enabled) }
+                .syncedSetting("transcription.enabled")
             if enabled {
                 Picker("Language", selection: $locale) {
                     Text("Same as Device").tag(String?.none)
@@ -314,8 +364,16 @@ private struct TranscriptionSettingsSection: View {
                     }
                 }
                 .onChange(of: locale) { TranscriptionSettings.setLocaleIdentifier(locale) }
+                .syncedSetting("transcription.language")
                 LabeledContent("Language Model", value: status.text)
-                if status == .notDownloaded, TranscriptionSettings.downloader != nil {
+                LabeledContent("Engine in Use", value: engines.first(where: \.isUsed)?.title
+                               ?? String(localized: "None available", comment: "Settings ▸ Transcription: no speech engine can transcribe the chosen language"))
+                ForEach(engines, id: \.title) { engine in
+                    LabeledContent(engine.title, value: engine.state)
+                        .font(.footnote)
+                        .foregroundStyle(engine.available ? Color.primary : Color.secondary)
+                }
+                if TranscriptionSettings.offersDownload(status, hasDownloader: TranscriptionSettings.downloader != nil) {
                     Button(LocalizedStringKey(downloading ? "Downloading…" : "Download Language Model")) { Task { await download() } }
                         .disabled(downloading)
                 }
@@ -335,12 +393,14 @@ private struct TranscriptionSettingsSection: View {
     private func refresh() async {
         guard enabled else { return }
         status = await TranscriptionSettings.statusProvider(locale)
+        engines = await TranscriptionSettings.enginesProvider(locale)
     }
 
     private func download() async {
         guard let download = TranscriptionSettings.downloader else { return }
         downloading = true
         failure = nil
+        status = .downloading(fraction: nil)
         defer { downloading = false }
         do { try await download(locale) } catch {
             failure = String(localized: "The language model could not be downloaded: \(String(describing: error))",
@@ -358,6 +418,7 @@ private struct PhotoSettingsSection: View {
     var body: some View {
         Section {
             Toggle("Remove Location and Camera Data", isOn: $photoPrivacy)
+                .syncedSetting("photos.removeMetadata")
         } header: {
             Text("Photos")
         } footer: {
@@ -385,11 +446,12 @@ private struct HistorySettingsSection: View {
                 Picker("Thin Autosaves Older Than", selection: $days) {
                     ForEach(ThinningPreference.choices, id: \.self) { Text(ThinningPreference.label($0)).tag($0) }
                 }
+                .syncedSetting("history.thinAfterDays")
             } header: {
                 Text("Version History")
             } footer: {
                 if days > 0 {
-                    Text("Once a day, autosaves older than \(ThinningPreference.label(days)) are removed from this vault on every device. Saved versions and the last autosave of each editing session are always kept, and stay restorable. This setting is for this device only.")
+                    Text("Once a day, autosaves older than \(ThinningPreference.label(days)) are removed from this vault on every device. Saved versions and the last autosave of each editing session are always kept, and stay restorable. With Sync Settings on, every device that syncs with this vault uses the same setting.")
                 } else {
                     Text("Autosaves are never removed by this device. Another device with thinning on still thins the vault.")
                 }
@@ -491,18 +553,21 @@ private struct DeviceKeySettingsSection: View {
                 ForEach(RewrapMethod.allCases, id: \.self) { Text(RewrapSettings.title($0)).tag($0) }
             }
             .onChange(of: onAdd) { RewrapSettings.setOnAdd(onAdd) }
+            .syncedSetting("rewrap.onAdd")
             Picker("When Removing a Device or Upgrading to Post-Quantum Keys", selection: Binding(
                 get: { onRemove },
                 set: { chosen in
-                    if RewrapSettings.needsConfirmation(forRemoval: chosen), chosen != onRemove {
+                    switch RewrapSettings.removalStep(choosing: chosen, current: onRemove) {
+                    case .confirm:
                         confirming = true
-                    } else {
+                    case .apply:
                         onRemove = chosen
                         RewrapSettings.setOnRemoveOrUpgrade(chosen)
                     }
                 })) {
                 ForEach(RewrapMethod.allCases, id: \.self) { Text(RewrapSettings.title($0)).tag($0) }
             }
+            .syncedSetting("rewrap.onRemove")
         } header: {
             Text("Device Keys")
         } footer: {

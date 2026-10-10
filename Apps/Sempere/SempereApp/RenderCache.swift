@@ -32,7 +32,7 @@ final class RenderCache: @unchecked Sendable {
     /// `SMPI` then format version 1.
     static let magic: [UInt8] = [0x53, 0x4D, 0x50, 0x49, 0x01]
     /// Bumped whenever how a picture or preview is drawn changes: older entries are then never found.
-    static let schemaVersion = 2   // 2: video items drawn as poster + play mark (format.md §8.2.7)
+    static let schemaVersion = 3   // 2: video items drawn as poster + play mark (format.md §8.2.7); 3: Markdown text boxes (§8.5.4)
     static let defaultCapBytes = 256 << 20
     /// The `UserDefaults` key of the disk size limit in megabytes (unset: 256).
     static let capDefaultsKey = "Sempere.renderCacheMegabytes"

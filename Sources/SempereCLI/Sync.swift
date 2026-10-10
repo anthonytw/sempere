@@ -43,6 +43,10 @@ struct SyncWebDAVCommand: ParsableCommand {
             blob collection removed; it never downloads and never writes or deletes anything in the
             vault, so nothing the server holds can change it. Files only the server has, which
             no compaction explains, are listed as extraneous, and removed with --delete-extraneous.
+            With --keep-server-changes, a server vault.json or rewrap-journal.json that changed since this
+            device's last sync (another writer, such as another device's key change) is kept and reported
+            as a conflict (exit 3) instead of being replaced; revisions and blobs still upload. This is how
+            the app pushes a WebDAV vault.
 
             Every downloaded revision and blob is checked before it is placed (format.md §9.1): with the
             vault unlocked it must decrypt, verify its tag or keyed name and name this note and file; locked
@@ -63,12 +67,7 @@ struct SyncWebDAVCommand: ParsableCommand {
     @Argument(help: ArgumentHelp("The WebDAV collection holding the vault (https://host/path/).", valueName: "url"))
     var url: String
 
-    @Option(name: .long, help: ArgumentHelp("User name for HTTP Basic auth.", valueName: "name"))
-    var user: String?
-
-    @Option(name: .customLong("password-env"),
-            help: ArgumentHelp("Name of the environment variable holding the password.", valueName: "var"))
-    var passwordEnv: String?
+    @OptionGroup var login: WebDAVLoginOptions
 
     @Option(name: .long, help: ArgumentHelp("Name for this device in conflict file names.", valueName: "name"))
     var device: String?
@@ -109,6 +108,10 @@ struct SyncWebDAVCommand: ParsableCommand {
           help: "With --push-only: remove from the server the files the vault does not have and compaction does not explain.")
     var deleteExtraneous = false
 
+    @Flag(name: .customLong("keep-server-changes"),
+          help: "With --push-only: keep a server vault.json or rewrap-journal.json changed since this device's last sync (exit 3) instead of replacing it.")
+    var keepServerChanges = false
+
     @Flag(name: .customLong("web-viewer"),
           help: "Create the server's sempere-index.json and sempere-summaries.sealed for the web viewer (needs the vault unlocked).")
     var webViewer = false
@@ -120,7 +123,9 @@ struct SyncWebDAVCommand: ParsableCommand {
         guard let remote = URL(string: url) else { throw CLIError.usage("not a URL: \(url)") }
         var options = WebDAVSyncOptions(dryRun: dryRun)
         if deleteExtraneous && !pushOnly { throw CLIError.usage("--delete-extraneous needs --push-only") }
+        if keepServerChanges && !pushOnly { throw CLIError.usage("--keep-server-changes needs --push-only") }
         options.pushOnly = pushOnly
+        options.keepServerChanges = keepServerChanges
         options.deleteExtraneous = deleteExtraneous
         options.publishForWebViewer = webViewer
         options.summaryCacheDirectory = SummaryCache.cliDirectory(environment: Env.vars)
@@ -138,20 +143,7 @@ struct SyncWebDAVCommand: ParsableCommand {
         if let n = try bounded(maxDownloadMiB, "max-download-mib", max: 1 << 30) { options.limits.maxDownloadBytes = Int64(n) << 20 }
         if let n = try bounded(maxMinutes, "max-minutes", max: 525_600) { options.limits.maxDuration = TimeInterval(n) * 60 }
         options.retryQuarantined = retryQuarantined
-        var credentials: WebDAVCredentials?
-        if let user {
-            let varName = passwordEnv ?? "SEMPERE_WEBDAV_PASSWORD"
-            guard let password = Env.vars[varName] else {
-                throw CLIError.usage("environment variable \(varName) is not set (it must hold the WebDAV password)")
-            }
-            credentials = WebDAVCredentials(user: user, password: password)
-        } else if passwordEnv != nil {
-            throw CLIError.usage("--password-env needs --user")
-        }
-        let client: WebDAVClient
-        do { client = try WebDAVClient(baseURL: remote, credentials: credentials) } catch {
-            throw CLIError.usage(CLIError.from(error).message)
-        }
+        let client = try login.client(remote)
 
         let dir = try access.vaultURL()
         let hasManifest = FileManager.default.fileExists(atPath: dir.appendingPathComponent("vault.json").path)
@@ -190,6 +182,7 @@ struct SyncWebDAVCommand: ParsableCommand {
             for d in r.deleted { print("\(verb)delete    \(d.path) (\(d.side))") }
             for s in r.skipped where output.verbose { print("skipped    \(s.path): \(s.message)") }
             for p in r.overwritten { print("\(verb)overwrite \(p) (server copy replaced)") }
+            for p in r.merged { print("\(verb)merge     \(p) (changed on both sides)") }
             for p in r.extraneous { print("extraneous \(p)") }
             for p in r.ignored where output.verbose { print("ignored    \(p)") }
         }
@@ -204,5 +197,36 @@ struct SyncWebDAVCommand: ParsableCommand {
                     + (r.extraneous.isEmpty ? "" : ", \(r.extraneous.count) extraneous")
                     + (r.quarantined.isEmpty ? "" : ", \(r.quarantined.count) quarantined")
                     + (r.skipped.isEmpty ? "" : ", \(r.skipped.count) skipped (-v)"))
+    }
+}
+
+/// `--user` and `--password-env`, shared by the WebDAV commands.
+struct WebDAVLoginOptions: ParsableArguments {
+    @Option(name: .long, help: ArgumentHelp("User name for HTTP Basic auth.", valueName: "name"))
+    var user: String?
+
+    @Option(name: .customLong("password-env"),
+            help: ArgumentHelp("Name of the environment variable holding the password.", valueName: "var"))
+    var passwordEnv: String?
+
+    /// The credentials: the password comes from the environment, never the command line.
+    func credentials() throws -> WebDAVCredentials? {
+        guard let user else {
+            if passwordEnv != nil { throw CLIError.usage("--password-env needs --user") }
+            return nil
+        }
+        let varName = passwordEnv ?? "SEMPERE_WEBDAV_PASSWORD"
+        guard let password = Env.vars[varName] else {
+            throw CLIError.usage("environment variable \(varName) is not set (it must hold the WebDAV password)")
+        }
+        return WebDAVCredentials(user: user, password: password)
+    }
+
+    /// A client for `url` (https, or http to localhost; no credentials in the URL).
+    func client(_ url: URL) throws -> WebDAVClient {
+        let credentials = try credentials()
+        do { return try WebDAVClient(baseURL: url, credentials: credentials) } catch {
+            throw CLIError.usage(CLIError.from(error).message)
+        }
     }
 }

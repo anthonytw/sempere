@@ -114,7 +114,7 @@ describe("recipients tag (format.md §2.1)", () => {
     const secret = await secretOf(committed);
     const tag = await recipientsTag(committed.vaultId, committed.recipients.map((r) => r.key), secret);
     expect(committed.recipientsTag).toBe(tag);
-    const untagged = withManifest((o) => { delete o.recipientsTag; o.features = ["attachments"]; });
+    const untagged = withManifest((o) => { delete o.recipientsTag; delete o.markersTag; o.features = ["attachments"]; });
     expect((await UnlockedVault.unlock(untagged, sampleIdentity())).recipientsStatus).toEqual({ status: "untagged" });
     expect(ok.recipientsStatus).toEqual({ status: "verified" });
     expect(recipientsWarningText(ok.recipientsStatus)).toBeUndefined();

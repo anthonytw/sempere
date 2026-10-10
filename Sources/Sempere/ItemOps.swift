@@ -87,6 +87,27 @@ extension NoteOps {
         }
     }
 
+    /// The rotation (degrees clockwise, in 0..<360) of an item that has `current`
+    /// (nil is upright) after it is turned by `delta` degrees (negative: anticlockwise).
+    /// Non-finite input gives 0.
+    public static func rotation(_ current: Double?, turnedBy delta: Double) -> Double {
+        let sum = (current ?? 0) + delta
+        guard sum.isFinite else { return 0 }
+        var d = sum.truncatingRemainder(dividingBy: 360)
+        if d < 0 { d += 360 }
+        return d >= 360 ? 0 : d
+    }
+
+    /// `degrees` (0..<360) snapped to the nearest multiple of `step` when within
+    /// `tolerance` of it, else rounded to a tenth of a degree: what a two-finger
+    /// turn ends at, so an item turned "about 90°" ends upright-ish exactly.
+    public static func snappedRotation(_ degrees: Double, step: Double = 15, tolerance: Double = 3) -> Double {
+        guard degrees.isFinite, step > 0 else { return 0 }
+        let nearest = (degrees / step).rounded() * step
+        let value = abs(degrees - nearest) <= tolerance ? nearest : (degrees * 10).rounded() / 10
+        return rotation(nil, turnedBy: value)
+    }
+
     /// Draws the item `id` above every other item of its layer; nil when it
     /// already is the top one.
     public static func bringToFront(_ id: UUID, on page: Page) -> ItemEdit? {

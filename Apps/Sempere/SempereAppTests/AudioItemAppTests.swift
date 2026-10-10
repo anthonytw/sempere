@@ -134,10 +134,10 @@ struct AudioItemAppTests {
                              audio: audio)
         }
         #expect(entries(.init(canToggle: true, isPlaying: false, hasTranscript: true))
-                == [.playRecording, .showTranscript, .copy, .duplicate, .bringToFront, .delete])
+                == [.playRecording, .showTranscript, .copy, .duplicate, .rotateLeft, .rotateRight, .bringToFront, .delete])
         #expect(entries(.init(canToggle: true, isPlaying: true, hasTranscript: false), editable: false)
                 == [.pauseRecording, .copy])
-        #expect(entries(nil) == [.copy, .duplicate, .bringToFront, .delete], "a missing recording: nothing to play")
+        #expect(entries(nil) == [.copy, .duplicate, .rotateLeft, .rotateRight, .bringToFront, .delete], "a missing recording: nothing to play")
         let video = Item(kind: .video, frame: Rect(x: 0, y: 0, w: 10, h: 10), z: "a")
         #expect(!ItemMenu.entries(for: video, editable: false, canPlay: true, canCrop: false, canReplace: false, canPaste: false,
                                   audio: .init(canToggle: true, isPlaying: false, hasTranscript: true))

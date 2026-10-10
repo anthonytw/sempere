@@ -1,3 +1,21 @@
 [
+  {
+    "box" : [
+      72,
+      72,
+      260,
+      170.64
+    ],
+    "itemId" : "f1c70000-0000-4000-8000-000000000b01",
+    "matches" : 1,
+    "noteId" : "7d7d7d7d-7d7d-47d7-87d7-7d7d7d7d7d7d",
+    "page" : 1,
+    "pageId" : "f1c70000-0000-4000-8000-000000000b00",
+    "snippet" : "…nd an unrendered x_1 formula. first item that is long enough t…",
+    "source" : "text",
+    "title" : "Markdown boxes",
+    "words" : [
 
+    ]
+  }
 ]

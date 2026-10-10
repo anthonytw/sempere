@@ -41,6 +41,8 @@ export type ItemDraw =
 export interface ResolvedItem {
   /** A background item's paper fill (§8.2.3), drawn first. */
   fill?: SVGElementSpec;
+  /** A Markdown box's shapes (§8.5.4), drawn after the fill, under the item. */
+  underlay?: SVGElementSpec[];
   draw: ItemDraw;
 }
 
@@ -55,6 +57,7 @@ export function resolveItems(prepared: PreparedPage, measure: Measure = approxim
   return prepared.items.map((it) => {
     const out: ResolvedItem = { draw: resolveItem(it, measure, recordings) };
     if (it.fillsBackground && prepared.options.paper) out.fill = elementSpec(backgroundFill(it, prepared.drawnPaper));
+    if (it.underlay && it.underlay.length > 0) out.underlay = it.underlay.map(elementSpec);
     return out;
   });
 }
@@ -188,6 +191,7 @@ export function textNode(it: PreparedItem, content: TextContent, layout: TextLay
         const deco = [p.style.underline ? "underline" : "", p.style.strike ? "line-through" : ""].filter((d) => d).join(" ");
         if (deco) a.push(["text-decoration", deco]);
         if (p.style.lang !== undefined && p.style.lang !== content.lang) a.push(["lang", p.style.lang]);
+        if (p.style.font !== undefined && p.style.font !== content.font) a.push(["font-family", fontStacks[p.style.font]]);
         return { tag: "tspan", attrs: a, text: p.text };
       }),
     });

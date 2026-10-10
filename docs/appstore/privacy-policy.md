@@ -8,8 +8,9 @@ GitHub Pages from [`docs/privacy/index.html`](../privacy/index.html), at
 `scripts/release-check.sh` compares their "Last updated" dates.
 
 **Short version: Sempere does not collect, transmit or share any data about you. It has no
-servers, no accounts, no analytics and no advertising, and it makes no network connections of
-its own (see "Network connections" for the one dormant exception).**
+servers, no accounts, no analytics and no advertising. The only network connections it makes
+are to a WebDAV server that you set up yourself, if you choose to keep a vault there (see
+"Network connections").**
 
 ## What Sempere is
 
@@ -29,7 +30,11 @@ Your notes, and everything you add to them (photos, video, PDFs, text, equations
 recordings and their transcripts), are saved only where you choose:
 
 - on your device, in the app's storage;
-- in a folder you pick in the Files app, such as iCloud Drive or another provider.
+- in a folder you pick in the Files app, such as iCloud Drive or another provider;
+- on a WebDAV server you run or rent and connect to in the app (Open from WebDAV). The app then
+  connects to that server's address, over HTTPS, with the user name and password you enter, to
+  upload your encrypted notes. The password is kept only in your device's Keychain. Nothing is
+  sent to us or to anyone else.
 
 Those storage services are run by you or by their providers (for example Apple, for iCloud
 Drive), under their own terms and privacy policies; we have no access to them. Notes are
@@ -56,14 +61,17 @@ your key, nobody can decrypt your notes.**
 
 ## Network connections
 
-This version of Sempere makes no network connections of its own. Your notes reach iCloud Drive or
+Sempere connects only to a WebDAV server you set up yourself, and only if you open a vault there
+(Open from WebDAV): it then downloads the vault from that server's address, and uploads your
+already encrypted vault files to it, over HTTPS, with the user name and password you entered (the password stays in your device's
+Keychain). Nothing is sent to us or to anyone else. Otherwise your notes reach iCloud Drive or
 another storage provider only through the system's Files and iCloud services, which copy the
 encrypted files you saved there; the speech model download above is the system's too.
 
-The app contains one piece of networking code: a downloader for an optional handwriting-to-math
+Besides the WebDAV client, the app contains one other piece of networking code: a downloader for an optional handwriting-to-math
 recognition model (Settings → Handwritten Math). It runs only when you tap a model's Download
-button, and this version offers no model, so it never runs and has no address to connect to; on a
-Mac the app is not even permitted to make outgoing connections. If a future version offers a
+button, and this version offers no model, so it never runs and has no address to connect to. If a
+future version offers a
 model, it will be downloaded only when you ask, over HTTPS, from an address this policy will name,
 and it will be checked against a fingerprint built into the app. The download request carries
 nothing from your vault, and the model then runs on your device: your ink never leaves it. This

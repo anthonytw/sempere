@@ -17,6 +17,8 @@ export interface RunStyle {
   underline: boolean;
   strike: boolean;
   lang?: string;
+  /** A run's own generic family (§8.2.4), overriding the box's. */
+  font?: "sans" | "serif" | "mono";
 }
 
 export interface TextContent {
@@ -50,6 +52,7 @@ export function textContent(item: JSONObject): TextContent | undefined {
     };
     const lang = typeof r.lang === "string" ? r.lang : typeof t.lang === "string" ? t.lang : undefined;
     if (lang !== undefined) style.lang = lang;
+    if (r.font === "sans" || r.font === "serif" || r.font === "mono") style.font = r.font;
     return { t: typeof r.t === "string" ? r.t : "", style };
   });
   const out: TextContent = { font, size, color, align, dir, runs };
@@ -204,10 +207,10 @@ export function layoutText(content: TextContent, frame: Rect, measure: Measure =
     const run = content.runs[ch.run] as { style: RunStyle };
     const s = ch.c === 0x09 ? "    " : String.fromCodePoint(ch.c);
     const st = run.style;
-    const key = `${st.size}|${st.bold}|${st.italic}|${s}`;
+    const key = `${st.size}|${st.bold}|${st.italic}|${st.font ?? ""}|${s}`;
     let w = cache.get(key);
     if (w === undefined) {
-      w = measure(s, st, content.font);
+      w = measure(s, st, st.font ?? content.font);
       cache.set(key, w);
     }
     return w;

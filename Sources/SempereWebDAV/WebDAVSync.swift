@@ -28,6 +28,12 @@ public struct WebDAVSyncOptions: Sendable {
     /// Push-only: also remove from the server what the local vault does not
     /// have and nothing explains (reported in `SyncReport.extraneous` either way).
     public var deleteExtraneous = false
+    /// Push-only: a `vault.json` or `rewrap-journal.json` whose server copy
+    /// changed since this device's last sync (another writer, e.g. another
+    /// device's key change) is kept there and reported in `conflicts` instead
+    /// of being replaced by the local copy. Without a record of a last sync,
+    /// any differing server copy is kept. Revisions and blobs still upload.
+    public var keepServerChanges = false
     /// Create the server's `sempere-index.json` and `sempere-summaries.sealed`
     /// (format.md §12), what the web viewer lists a vault from, when it has
     /// none; existing ones are kept current either way (the summaries need the
@@ -166,6 +172,12 @@ public final class WebDAVSync {
             }
         }
 
+        // Shared settings (format.md §13): merged per key when both sides changed.
+        let remoteSettings = remoteRoot[SharedSettings.fileName].flatMap { $0.isCollection ? nil : $0 }
+        do { try syncSharedSettings(remote: remoteSettings) } catch {
+            report.errors.append(.init(path: SharedSettings.fileName, message: Self.describe(error)))
+        }
+
         do {
             let remoteNotes = try listRemoteNotes(rootEntries)
             let localNotes = try localNoteIDs()
@@ -238,7 +250,7 @@ public final class WebDAVSync {
 
     // MARK: - Mutable files
 
-    private func syncMutable(_ name: String, remote: RemoteEntry?) throws {
+    func syncMutable(_ name: String, remote: RemoteEntry?) throws {
         let localURL = root.appendingPathComponent(name)
         // Absent is nil; present but unreadable or oversized is an error, not "absent".
         let local = FileManager.default.fileExists(atPath: localURL.path)
@@ -341,7 +353,8 @@ public final class WebDAVSync {
             if let identical {
                 copy = identical
             } else {
-                let fname = "\(base).conflict-\(Self.sanitize(options.deviceLabel))-\(Self.compactUTC(options.now)).json"
+                let ext = (name as NSString).pathExtension
+                let fname = "\(base).conflict-\(Self.sanitize(options.deviceLabel))-\(Self.compactUTC(options.now)).\(ext)"
                 try LocalFS.write(remote, to: root.appendingPathComponent(fname), replacing: false)
                 copy = fname
             }

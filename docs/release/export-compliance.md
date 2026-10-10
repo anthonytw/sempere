@@ -83,9 +83,9 @@ them, so the middle row of Apple's table applies.
 Every algorithm is published by a recognised standards body (IETF, NIST) or is the C2SP age
 specification built from them, used at full standard strength. There is no proprietary or
 non-standard cryptography, no key escrow and no user-configurable key length. Encryption
-protects the user's own data at rest, on storage the user chooses. The app has no network code
-of its own: iCloud Drive and Files providers are the system's, so any TLS is the OS's. WebDAV
-sync exists only in the CLI.
+protects the user's own data at rest, on storage the user chooses. Its only network
+code is a WebDAV client (vaults on a server the user sets up) built on `URLSession`, so its TLS
+is the OS's; iCloud Drive and Files providers are the system's too.
 
 Other OS-provided protection the app relies on: the Keychain and Face ID / Touch ID (vault keys
 the user chooses to remember), and data protection classes on files in the app container. These

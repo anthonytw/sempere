@@ -48,6 +48,14 @@ extension AppModel {
         case noIdentity
         /// Another vault was opened while the key window's sheet or dialog was up.
         case vaultChanged
+        /// Replace: the key this window unlocked with (it would lose the vault).
+        case replaceInUse
+        /// Repair: the key this device unlocked with must be kept.
+        case keepHeldKey
+        /// Repair: this device's key is in neither the list nor its record.
+        case heldKeyMissing
+        /// Repair: the list checks, or no repair is possible from here.
+        case nothingToRepair
 
         var description: String {
             switch self {
@@ -61,6 +69,13 @@ extension AppModel {
                 return String(localized: "\(n) files could not be re-encrypted. The change is saved and finishes the next time you try again.")
             case .noIdentity: return String(localized: "This window does not hold a key of the vault, so it cannot print a recovery kit.")
             case .vaultChanged: return String(localized: "Another vault was opened meanwhile. Nothing was changed.")
+            case .replaceInUse:
+                return String(localized: "That is the key this vault was unlocked with. To replace it, add a new key for this device, unlock with it, then remove this one.")
+            case .keepHeldKey:
+                return String(localized: "Keep the key this device unlocked the vault with: without it, this device could not open the vault after the repair.")
+            case .heldKeyMissing:
+                return String(localized: "The key this device unlocked with is not in the list, so a repair from here could lock this device out. Repair it from another device, or with `sempere vault recipients repair --keep`.")
+            case .nothingToRepair: return String(localized: "The vault's device list checks, or it cannot be repaired from this device. Nothing was changed.")
             }
         }
     }
@@ -114,6 +129,7 @@ extension AppModel {
                       authenticator: any OwnerAuthenticator = SystemOwnerAuthenticator()) async throws {
         let recipient = try Self.parseRecipient(text)
         guard let vault, phase == .unlocked else { throw KeyError.notUnlocked }
+        try requireLocalKeyChanges()   // before any prompt
         if let expectedVault, expectedVault != vault.vaultId { throw KeyError.vaultChanged }
         guard !vault.recipients.contains(where: { $0.key == recipient.string }) else { throw KeyError.alreadyListed }
         try await requireOwner(authenticator, reason: String(localized: "Add a device key to “\(promptVaultName)”"),
@@ -133,6 +149,7 @@ extension AppModel {
                            authenticator: any OwnerAuthenticator = SystemOwnerAuthenticator()) async throws -> GeneratedKey {
         guard let start = vault, phase == .unlocked else { throw KeyError.notUnlocked }
         if let expectedVault, expectedVault != start.vaultId { throw KeyError.vaultChanged }
+        try requireLocalKeyChanges()   // before any prompt
         try await requireOwner(authenticator, reason: String(localized: "Create a device key for “\(promptVaultName)”"),
                                vault: start.vaultId)
         guard let vault else { throw KeyError.notUnlocked }
@@ -140,12 +157,25 @@ extension AppModel {
         guard !vault.recipients.contains(where: { $0.key == identity.recipient.string }) else { throw KeyError.alreadyListed }
         let name = Self.cleanLabel(label)
         let recipient = identity.recipient
+        let policy = RewrapSettings.policy()
+        return try await changeShowingSecret(identity, label: name) {
+            try $0.addRecipient(recipient, label: name, policy: policy)
+        }
+    }
+
+    /// Runs a change that makes the vault readable by the new `identity` and
+    /// returns its secret. Once the manifest lists the key the secret is
+    /// returned whatever failed after (`problem`): otherwise the vault would
+    /// be encrypted to a key nobody has.
+    private func changeShowingSecret(_ identity: NativeIdentity, label name: String,
+                                     _ change: @escaping @Sendable (inout Vault) throws -> Vault.RewrapReport) async throws -> GeneratedKey {
+        guard let vault else { throw KeyError.notUnlocked }
+        let recipient = identity.recipient
         var applied = false
         let url = vault.url
         let identities = unlockIdentities
-        let policy = RewrapSettings.policy()
         do {
-            try await changeRecipients({ try $0.addRecipient(recipient, label: name, policy: policy) }, applied: { applied = true })
+            try await changeRecipients(change, applied: { applied = true })
         } catch {
             // The rewrap can also throw after it wrote the manifest: look at it.
             let listed = applied || ((try? Vault.open(at: url, identities: identities))?.recipients
@@ -164,6 +194,7 @@ extension AppModel {
     /// already copied. `expectedVault`: the vault the request was made for.
     func removeDeviceKey(_ recipient: String, expectedVault: UUID? = nil) async throws {
         guard let vault, phase == .unlocked else { throw KeyError.notUnlocked }
+        try requireLocalKeyChanges()   // before any prompt
         if let expectedVault, expectedVault != vault.vaultId { throw KeyError.vaultChanged }
         guard vault.recipients.contains(where: { $0.key == recipient }) else { throw KeyError.notListed }
         guard vault.recipients.count > 1 else { throw KeyError.lastKey }
@@ -171,6 +202,61 @@ extension AppModel {
         let parsed = try NativeRecipient(string: recipient)
         let policy = RewrapSettings.policy()
         try await changeRecipients { try $0.removeRecipient(parsed, policy: policy) }
+    }
+
+    /// Replaces another device's key by a pasted public key in one change
+    /// (`Vault.replaceRecipient`, the CLI's `vault recipients replace`): the
+    /// vault secret rotates and every file is re-encrypted once, so the old
+    /// key opens nothing new and the new one opens everything. An empty
+    /// `label` keeps the old one. The owner authenticates first (a new key
+    /// can read the vault, P1). The key this window unlocked with cannot be
+    /// replaced here (`replaceInUse`): this device would lose the vault, and
+    /// an interrupted replace of it could only be finished with both keys.
+    func replaceDeviceKey(_ old: String, with text: String, label: String, expectedVault: UUID? = nil,
+                          authenticator: any OwnerAuthenticator = SystemOwnerAuthenticator()) async throws {
+        let new = try Self.parseRecipient(text)
+        let oldKey = try checkReplaceable(old, expectedVault: expectedVault)
+        guard let vault else { throw KeyError.notUnlocked }
+        guard !vault.recipients.contains(where: { $0.key == new.string }) else { throw KeyError.alreadyListed }
+        try await requireOwner(authenticator, reason: String(localized: "Replace a device key of “\(promptVaultName)”"),
+                               vault: vault.vaultId)
+        let name = Self.replacementLabel(label)
+        let policy = RewrapSettings.policy()
+        try await changeRecipients { try $0.replaceRecipient(oldKey, with: new, label: name, policy: policy) }
+    }
+
+    /// Replaces another device's key by a newly generated one and returns
+    /// its secret, shown once, as `generateDeviceKey` does (also when the
+    /// change failed after the manifest named the new key).
+    func generateReplacementKey(for old: String, label: String, expectedVault: UUID? = nil,
+                                authenticator: any OwnerAuthenticator = SystemOwnerAuthenticator()) async throws -> GeneratedKey {
+        _ = try checkReplaceable(old, expectedVault: expectedVault)
+        guard let start = vault else { throw KeyError.notUnlocked }
+        try await requireOwner(authenticator, reason: String(localized: "Replace a device key of “\(promptVaultName)”"),
+                               vault: start.vaultId)
+        let oldKey = try checkReplaceable(old, expectedVault: start.vaultId)
+        let identity = try NativeIdentity.generate(.postQuantum)
+        let name = Self.replacementLabel(label)
+        let shown = name ?? start.recipients.first { $0.key == old }?.label ?? "Device"
+        let recipient = identity.recipient
+        let policy = RewrapSettings.policy()
+        return try await changeShowingSecret(identity, label: shown) {
+            try $0.replaceRecipient(oldKey, with: recipient, label: name, policy: policy)
+        }
+    }
+
+    /// The listed, replaceable key `old` of the open (expected) vault.
+    private func checkReplaceable(_ old: String, expectedVault: UUID?) throws -> NativeRecipient {
+        guard let vault, phase == .unlocked else { throw KeyError.notUnlocked }
+        if let expectedVault, expectedVault != vault.vaultId { throw KeyError.vaultChanged }
+        guard vault.recipients.contains(where: { $0.key == old }) else { throw KeyError.notListed }
+        guard !heldRecipients.contains(old) else { throw KeyError.replaceInUse }
+        return try NativeRecipient(string: old)
+    }
+
+    /// A replacement's label: nil (keep the old one) when blank.
+    static func replacementLabel(_ label: String) -> String? {
+        label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : cleanLabel(label)
     }
 
     /// The recovery kit (docs/cli.md "Keys"): the key this vault was unlocked
@@ -228,6 +314,7 @@ extension AppModel {
     func changeRecipients(_ change: @escaping @Sendable (inout Vault) throws -> Vault.RewrapReport,
                                   applied: () -> Void = {}) async throws {
         guard phase == .unlocked, let start = vault else { throw KeyError.notUnlocked }
+        try requireLocalKeyChanges()   // a WebDAV copy: the server would keep the old files
         isChangingKeys = true
         defer { isChangingKeys = false }
         await editGate.acquire()

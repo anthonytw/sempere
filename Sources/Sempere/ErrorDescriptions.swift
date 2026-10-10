@@ -147,13 +147,20 @@ extension RecipientsProblem: CustomStringConvertible {
         case .secretUnconfirmed: why = "the vault's secret changed in a way this device cannot confirm"
         case .recordUnreadable: why = "this device's trust record for the vault cannot be read, so the list cannot be checked "
             + "(check the list, then: sempere vault recipients confirm)"
+        case .markersMismatch: why = "vault.json's format or features were changed without the vault's key (its markers tag "
+            + "does not verify)"
+        case .markersRemoved: why = "vault.json's format and features lost their authentication tag (downgrade)"
+        case .markersRolledBack: why = "vault.json names an older format or fewer features than this device last verified "
+            + "(an older vault.json put back)"
         }
         var parts = [why]
         if !unexpected.isEmpty {
             parts.append("unexpected recipient(s): " + unexpected.map(Self.abbreviate).joined(separator: ", "))
         }
         if !missing.isEmpty { parts.append("missing: " + missing.map(Self.abbreviate).joined(separator: ", ")) }
-        parts.append("nothing is encrypted to this list until it is repaired (sempere vault recipients repair)")
+        parts.append(reason.isMarkers
+            ? "nothing is written to the vault until its markers are repaired (sempere vault markers repair)"
+            : "nothing is encrypted to this list until it is repaired (sempere vault recipients repair)")
         return parts.joined(separator: "; ")
     }
 

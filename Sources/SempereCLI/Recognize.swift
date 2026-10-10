@@ -160,6 +160,7 @@ struct RecognizeCommand: ParsableCommand {
         if recent { return try listRecent() }
         if !dryRun && !RecognitionRun.available { throw RecognitionRun.unavailable }
         let vault = try access.openVault(.required)
+        if !dryRun { try vault.requireWritable() }   // format.md §7.3: exit 7, not a failure per note
         let ids: [UUID]
         if all {
             ids = try vault.summaries(of: nil).filter { !$0.deleted }.map(\.id)

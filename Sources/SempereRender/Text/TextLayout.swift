@@ -370,8 +370,9 @@ public struct DefaultTextShaper: TextShaper {
             let run = content.runs[ch.run]
             let lang = run.lang ?? content.lang
             let bold = run.b, italic = run.i
-            guard let primary = library.bundledFace(content.font, bold: bold, italic: italic) ?? library.fallback(
-                for: 0x41, lang: lang, generic: content.font, bold: bold, italic: italic) else {
+            let generic = run.effectiveFont(in: content.font)
+            guard let primary = library.bundledFace(generic, bold: bold, italic: italic) ?? library.fallback(
+                for: 0x41, lang: lang, generic: generic, bold: bold, italic: italic) else {
                 throw FontError.unsupported("no fonts available (bundled fonts missing and no font packs)")
             }
             var face = primary
@@ -380,7 +381,7 @@ public struct DefaultTextShaper: TextShaper {
             if neutral, let p = prevFace, p.font.covers(c) || !UnicodeProperties.isMark(c) {
                 face = p
             } else if !primary.font.covers(c) && !Self.isIgnorable(c) && c != 0x09 {
-                if let f = library.fallback(for: c, lang: lang, generic: content.font, bold: bold, italic: italic) {
+                if let f = library.fallback(for: c, lang: lang, generic: generic, bold: bold, italic: italic) {
                     face = f
                 } else if !Self.isWhiteSpace(c) {
                     let script = UnicodeProperties.script[c]

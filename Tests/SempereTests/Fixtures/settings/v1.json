@@ -1,0 +1,33 @@
+{
+  "$schemaVersion" : 1,
+  "$minReaderVersion" : 1,
+  "[ipad]" : {
+    "editor.keepScreenOn" : true,
+    "pen.style" : "bitmap"
+  },
+  "[mac]" : {
+    "pen.width" : 3
+  },
+  "$meta" : {
+    "[ipad]" : {
+      "editor.keepScreenOn" : { "modified" : 1760025600000, "type" : "ipad" },
+      "pen.style" : { "modified" : 1760025600000, "type" : "ipad" }
+    },
+    "[mac]" : {
+      "pen.width" : { "modified" : 1760027400000, "type" : "mac" }
+    },
+    "editor.defaultPaper" : { "modified" : 1760025600000, "type" : "ipad" },
+    "eraser.mode" : { "modified" : 1760025600000, "type" : "ipad" },
+    "history.thinAfterDays" : { "modified" : 1760029200000, "type" : "mac" },
+    "mouse.smoothing" : { "modified" : 1760027400000, "type" : "mac" },
+    "newNote.titleFormat" : { "modified" : 1760025600000, "type" : "ipad" },
+    "pen.width" : { "modified" : 1760025600000, "type" : "ipad" },
+    "photos.removeMetadata" : { "modified" : 1760025600000 }
+  },
+  "editor.defaultPaper" : { "kind" : "grid", "spacing" : 20 },
+  "eraser.mode" : "object",
+  "mouse.smoothing" : "strong",
+  "newNote.titleFormat" : "isoDateTime",
+  "pen.width" : 2,
+  "photos.removeMetadata" : true
+}

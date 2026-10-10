@@ -192,6 +192,7 @@ final class SecretLinkTests: VaultTestCase {
             m.recipientsTag = RecipientsAuth.tag(vaultId: m.vaultId, keys: m.recipients.map(\.key), secret: new)
             m.secretLink = RecipientsAuth.legacyLink(from: old, to: new, vaultId: m.vaultId)
             m.features.removeAll { $0 == VaultManifest.signedLinkFeature }
+            m.markersTag = nil; m.features.removeAll { $0 == VaultManifest.markersTagFeature }   // older than version markers
         }
         let v = try Vault.open(at: vault.url, identities: [a], trust: store)
         XCTAssertEqual(v.recipientsStatus.problem?.reason, .secretUnconfirmed)
@@ -219,6 +220,7 @@ final class SecretLinkTests: VaultTestCase {
         try rewrite(vault.url) { m in
             m.secretLink = RecipientsAuth.legacyLink(from: old, to: new, vaultId: m.vaultId)
             m.features.removeAll { $0 == VaultManifest.signedLinkFeature }
+            m.markersTag = nil; m.features.removeAll { $0 == VaultManifest.markersTagFeature }   // older than version markers
         }
         let stale = MemoryRecipientsTrustStore()
         try stale.save(RecipientsTrustRecord(vaultId: vault.vaultId, anchor: .legacy(RecipientsAuth.legacyLinkKey(old)),
@@ -311,6 +313,7 @@ final class SecretLinkTests: VaultTestCase {
         try rewrite(vault.url) { m in
             m.recipientsTag = nil
             m.features = []
+            m.markersTag = nil
         }
         let store = MemoryRecipientsTrustStore()
         var opened = try Vault.open(at: vault.url, identities: [a], trust: store)
@@ -368,6 +371,7 @@ final class SecretLinkTests: VaultTestCase {
     func makeLegacy(_ vault: Vault, _ store: MemoryRecipientsTrustStore, link: SecretLink? = nil) throws {
         try rewrite(vault.url) { m in
             m.features.removeAll { $0 == VaultManifest.signedLinkFeature }
+            m.markersTag = nil; m.features.removeAll { $0 == VaultManifest.markersTagFeature }   // older than version markers
             m.secretLink = link
         }
         try store.save(RecipientsTrustRecord(vaultId: vault.vaultId,

@@ -39,7 +39,7 @@ final class CLIReadOnlyTests: CLITestCase {
         let i = try XCTUnwrap(info.json as? [String: Any])
         XCTAssertEqual(i["readOnly"] as? Bool, true)
         XCTAssertEqual(i["format"] as? String, "sempere/2")
-        XCTAssertEqual(i["features"] as? [String], ["tables"])
+        XCTAssertEqual(i["features"] as? [String], ["tables", "markers-tag"])
         XCTAssertEqual((i["readOnlyReasons"] as? [String])?.count, 2)
         XCTAssertTrue(info.err.contains("read-only"), info.err)
         let human = try cli(["vault", "info", "--vault", vault])
@@ -88,6 +88,7 @@ final class CLIReadOnlyTests: CLITestCase {
             ["notes", "new", "Fresh"],
             ["notes", "rename", Self.mixed, "Renamed"],
             ["notes", "tag", Self.mixed, "--add", "x"],
+            ["notes", "favorite", Self.mixed],
             ["notes", "delete", Self.mixed],
             ["notes", "checkpoint", Self.mixed],
             ["pages", "add", Self.mixed],
@@ -135,6 +136,7 @@ final class CLIReadOnlyTests: CLITestCase {
         var manifest = try VaultManifest.decode(Data(contentsOf: manifestURL))
         manifest.format = "sempere/1"
         manifest.features = []
+        manifest.markersTag = nil   // a version-1 vault from before version markers
         try manifest.encoded().write(to: manifestURL)
         let key = ["--vault", vault, "--identity", Self.fixtureKey]
         let info = try cli(["vault", "info", "--json"] + key)

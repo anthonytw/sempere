@@ -14,6 +14,7 @@ struct MathRecognitionSettingsSection: View {
     var body: some View {
         Section {
             Toggle("Convert Handwriting to Math", isOn: $enabled)
+                .syncedSetting("math.recognize")
             if enabled {
                 if models.catalog.isEmpty && models.added.isEmpty {
                     Text("No handwriting model is offered for this version of Sempere yet.")

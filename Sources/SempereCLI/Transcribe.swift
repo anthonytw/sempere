@@ -25,7 +25,9 @@ struct TranscribeCommand: ParsableCommand {
 
             By default only recordings without a transcript are read; --force replaces existing transcripts. \
             --dry-run lists them without reading (this works on Linux too). --check prints which engines can \
-            transcribe here and needs no vault. macOS only: elsewhere the command exits 1 and changes nothing.
+            transcribe here and needs no vault. --download-model installs SpeechTranscriber's model for the \
+            language through Apple's asset service (what the app's Settings button does; also no vault), and \
+            a transcription downloads a missing model itself unless --no-download. macOS only: elsewhere the command exits 1 and changes nothing.
             """
     )
 
@@ -57,11 +59,19 @@ struct TranscribeCommand: ParsableCommand {
     @Flag(name: .customLong("no-download"), help: "Never download an on-device speech model.")
     var noDownload = false
 
+    @Flag(name: .customLong("download-model"),
+          help: "Download SpeechTranscriber's on-device model for --language (or this machine's), as the app's Settings button does; no vault needed.")
+    var downloadModel = false
+
     @OptionGroup var access: AccessOptions
     @OptionGroup var output: OutputOptions
 
     func validate() throws {
-        if check { return }
+        if downloadModel && (check || dryRun || noDownload || all || note != nil) {
+            throw ValidationError("--download-model stands alone (it takes only --language)")
+        }
+        if let language, TranscriptionLanguage.tag(language) == nil { throw ValidationError("--language is not a language tag: \(language)") }
+        if downloadModel || check { return }
         if all == (note != nil) { throw ValidationError("give a note id or title, or --all") }
         if all && !recordings.isEmpty { throw ValidationError("recordings can be named only with one note") }
         if engineChoice == nil && engine != "auto" { throw ValidationError("--engine must be auto, speechtranscriber or sfspeech") }
@@ -78,6 +88,13 @@ struct TranscribeCommand: ParsableCommand {
         "\(SpeechTranscriptionError.unavailable); nothing was changed")
 
     func run() throws {
+        if downloadModel {
+            if !SpeechTranscription.isSupported { throw Self.unavailable }
+            let options = self.options
+            try blockingThrowing { try await SpeechTranscription.downloadModel(options: options) }
+            output.info("The on-device speech model is installed.")
+            return
+        }
         if check {
             let options = self.options
             let statuses = blocking { await SpeechTranscription.availability(options: options) } ?? []
@@ -93,6 +110,7 @@ struct TranscribeCommand: ParsableCommand {
         }
         if !dryRun && !SpeechTranscription.isSupported { throw Self.unavailable }
         let vault = try access.openVault(.required)
+        if !dryRun { try vault.requireWritable() }   // format.md §7.3: exit 7, not a failure per recording
         let ids: [UUID]
         if all {
             ids = try vault.summaries(of: nil).filter { !$0.deleted && $0.recordings > 0 }.map(\.id)

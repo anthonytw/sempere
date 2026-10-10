@@ -17,6 +17,7 @@ import type { JSONObject } from "../format/json.ts";
 import { asBlobRef } from "../vault/blobs.ts";
 import { cmpItems } from "../format/registers.ts";
 import { PreparedPage, chunkHeight, defaultRenderOptions, elementSpec } from "../render/page.ts";
+import { expandMarkdown } from "../render/markdown.ts";
 import { RenderLimits } from "../render/primitives.ts";
 import { applyTransform, meanScale, transformOf } from "../render/stroke.ts";
 import { type Measure, fontStacks } from "../render/text.ts";
@@ -48,7 +49,11 @@ export function pageExtent(page: Page, state: NoteState): number {
   }
   for (const item of [...page.items].sort(cmpItems).slice(0, maxItemsPerPage)) {
     const p = prepareItem(item);
-    if (typeof p !== "string") spans.push({ maxY: p.maxY, centreY: p.minY / 2 + p.maxY / 2 });
+    if (typeof p === "string") continue;
+    // A Markdown box takes part as its pieces (§8.5.4), as in PreparedPage.
+    const pieces = expandMarkdown(p)?.pieces;
+    if (pieces) spans.push({ maxY: p.maxY, centreY: -Infinity });
+    for (const q of pieces ?? [p]) spans.push({ maxY: q.maxY, centreY: q.minY / 2 + q.maxY / 2 });
   }
   let low = 0, below = 0;
   for (const x of spans) {
@@ -224,7 +229,7 @@ export class NoteView {
   private draw(slot: Slot): void {
     slot.drawn = true;
     try {
-      const prepared = new PreparedPage(slot.page, this.state.meta);
+      const prepared = new PreparedPage(slot.page, this.state.meta, { ...defaultRenderOptions, measure: canvasMeasure });
       const width = this.state.meta.pageSize.width, height = prepared.extent;
       const svg = s("svg", [["viewBox", `0 0 ${width} ${height}`], ["width", String(width)], ["height", String(height)]]);
       const paper = s("g"), items = s("g"), ink = s("g");
@@ -241,6 +246,7 @@ export class NoteView {
       for (const r of resolveItems(prepared, canvasMeasure, this.state.recordings)) {
         if (n++ === under) drawUnder();
         if (r.fill) items.append(s(r.fill.tag, r.fill.attrs));
+        for (const u of r.underlay ?? []) items.append(s(u.tag, u.attrs));
         const d = r.draw;
         switch (d.kind) {
           case "placeholder":

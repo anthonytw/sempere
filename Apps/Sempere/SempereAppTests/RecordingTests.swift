@@ -479,6 +479,34 @@ struct RecordingTests {
         #expect(TranscriptionPreference.modelStatus([missing, ready]) == .installed)
     }
 
+    /// The panel names the engine transcription would use and says what each engine reports.
+    @Test func settingsListTheEnginesAndWhichOneIsUsed() {
+        typealias E = SpeechTranscription.EngineStatus
+        let st = E(engine: "apple-speechtranscriber-26.7", available: true, language: "es-ES",
+                   detail: "model not installed (downloaded on first use)")
+        let sf = E(engine: "apple-sfspeech-26.7", available: true, language: "es-ES", detail: "on device; permission not asked yet")
+        let lines = TranscriptionPreference.engineLines([st, sf])
+        #expect(lines.map(\.title) == ["SpeechTranscriber (on device)", "SFSpeechRecognizer (on device)"])
+        #expect(lines.map(\.isUsed) == [true, false], "the first available engine is used")
+        #expect(lines[0].state == "Available, language model downloads on first use")
+        #expect(lines[1].state == "Available, asks for permission on first use")
+
+        let missing = E(engine: "apple-speechtranscriber-26.7", available: false, language: nil, detail: "language not supported")
+        let noModel = E(engine: "apple-sfspeech-26.7", available: false, language: "xx",
+                        detail: "no on-device model (server recognition is never used)")
+        let none = TranscriptionPreference.engineLines([missing, noModel])
+        #expect(none.allSatisfy { !$0.isUsed && !$0.available })
+        #expect(none.map(\.state) == ["Language not supported", "No on-device model for this language"])
+
+        let fallback = TranscriptionPreference.engineLines([missing, E(engine: "apple-sfspeech-26.7", available: true, language: "en-US",
+                                                                          detail: "on device; allowed")])
+        #expect(fallback.map(\.isUsed) == [false, true], "when SpeechTranscriber cannot, SFSpeechRecognizer is used")
+        #expect(fallback[1].state == "Available, permission granted")
+        #expect(TranscriptionPreference.engineState(E(engine: "apple-speechtranscriber-26.7", available: true, language: "en-US",
+                                                      detail: "model installed")) == "Available, language model installed")
+        #expect(TranscriptionPreference.engineLines([]).isEmpty)
+    }
+
     @Test func recorderSettingsFollowTheFormat() {
         let aac = AVAudioCaptureBackend.settings(.default, inputChannels: 1)
         #expect(aac[AVFormatIDKey] as? AudioFormatID == kAudioFormatMPEG4AAC)

@@ -195,14 +195,16 @@ enum BackupReminder {
 
     /// When the reminder is due: `days` after the last backup, or after it
     /// was switched on when there was none; nil when off.
+    /// The rule is `BackupSchedule`'s, shared with `sempere backup status --max-age`.
     static func dueDate(_ r: BackupRecord) -> Date? {
         guard r.reminderDays > 0, let base = r.lastBackup ?? r.reminderSince else { return nil }
-        return base.addingTimeInterval(TimeInterval(min(r.reminderDays, 3650)) * 86_400)
+        return BackupSchedule.dueDate(since: base, days: r.reminderDays)
     }
 
     /// Whether the reminder's time has passed (Settings shows "overdue").
     static func isOverdue(_ r: BackupRecord, now: Date) -> Bool {
-        dueDate(r).map { $0 <= now } ?? false
+        guard r.reminderDays > 0, let base = r.lastBackup ?? r.reminderSince else { return false }
+        return BackupSchedule.isOverdue(since: base, days: r.reminderDays, now: now)
     }
 
     /// When to deliver the notification: the due date, but not before

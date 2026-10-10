@@ -8,6 +8,8 @@ public struct SyncReport: Codable, Hashable, Sendable {
         public var side: String
         /// Path relative to the vault root.
         public var path: String
+
+        public init(side: String, path: String) { self.side = side; self.path = path }
     }
 
     /// A mutable file that changed on both sides.
@@ -17,12 +19,18 @@ public struct SyncReport: Codable, Hashable, Sendable {
         /// vault root; nil in a dry run or when an identical copy already existed.
         public var remoteCopy: String?
         public var detail: String
+
+        public init(path: String, remoteCopy: String?, detail: String) {
+            self.path = path; self.remoteCopy = remoteCopy; self.detail = detail
+        }
     }
 
     /// A path and a one-line message.
     public struct Issue: Codable, Hashable, Sendable {
         public var path: String
         public var message: String
+
+        public init(path: String, message: String) { self.path = path; self.message = message }
     }
 
     public var dryRun = false
@@ -45,6 +53,9 @@ public struct SyncReport: Codable, Hashable, Sendable {
     /// Push-only runs: mutable files (`vault.json`, `rewrap-journal.json`)
     /// whose different server copy was replaced by the local one. Also in `uploaded`.
     public var overwritten: [String] = []
+    /// Files changed on both sides whose copies were merged rather than kept
+    /// apart: `settings.age` (format.md §13). The result is written to both sides.
+    public var merged: [String] = []
     /// Remote files that were not taken because they failed a check: a
     /// `vault.json` whose device list changed without a valid tag (format.md
     /// §2.1). The local copy stays; nothing is uploaded over the remote one.
@@ -62,7 +73,7 @@ public struct SyncReport: Codable, Hashable, Sendable {
 
     /// `text` with control characters escaped as `\u{XX}`, so a name or
     /// header chosen by the server cannot drive the terminal it is printed on.
-    static func printable(_ text: String) -> String {
+    public static func printable(_ text: String) -> String {
         var out = ""
         for u in text.unicodeScalars {
             if u.properties.generalCategory == .control {
@@ -77,6 +88,6 @@ public struct SyncReport: Codable, Hashable, Sendable {
     /// True when nothing was transferred, deleted or reported.
     public var isEmpty: Bool {
         uploaded.isEmpty && downloaded.isEmpty && deleted.isEmpty && conflicts.isEmpty && errors.isEmpty && rejected.isEmpty
-            && extraneous.isEmpty && overwritten.isEmpty && quarantined.isEmpty
+            && extraneous.isEmpty && overwritten.isEmpty && quarantined.isEmpty && merged.isEmpty
     }
 }

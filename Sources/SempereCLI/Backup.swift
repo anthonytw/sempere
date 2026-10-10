@@ -182,31 +182,68 @@ struct BackupStatusCommand: ParsableCommand {
         commandName: "status",
         abstract: "Show when a backup folder was last brought up to date and how much it holds.",
         discussion: """
-            Reads DIR/backup.json only (no key, no other file): the vault id, the first and the last
-            run, and the notes, files and bytes it records (previous copies under versions/ apart).
-            It does not check the files: `sempere backup verify DIR` does. Exit 0, or 1 when DIR is
-            not a backup folder or its backup.json cannot be read.
+            Reads DIR/backup.json only (no key, no other file): the vault id, the first run, the last
+            run, the last complete run (no file errors), and the notes, files and bytes it records
+            (previous copies under versions/ apart). It does not check the files: `sempere backup
+            verify DIR` does.
+
+            --max-age DAYS is the app's "Remind Me" for scripts: the backup is overdue when no run
+            completed in the last DAYS days (counted from the folder's first run when none ever did).
+            Exit 0, 1 when DIR is not a backup folder or its backup.json cannot be read, 3 overdue.
             """
     )
 
     @Argument(help: ArgumentHelp("The backup folder.", valueName: "dir"))
     var dir: String
 
+    @Option(name: .customLong("max-age"),
+            help: ArgumentHelp("Exit 3 when no backup completed in the last DAYS days (1...3650).", valueName: "days"))
+    var maxAge: Int?
+
     @OptionGroup var output: OutputOptions
+
+    func validate() throws {
+        if let maxAge, !(1...BackupSchedule.maxDays).contains(maxAge) {
+            throw ValidationError("--max-age must be between 1 and \(BackupSchedule.maxDays) days")
+        }
+    }
 
     func run() throws {
         let status = try Backup.status(at: URL(fileURLWithPath: dir))
+        let now = Date()
+        let overdue = maxAge.map { status.isOverdue(maxAgeDays: $0, now: now) }
         if output.json {
-            try output.emitJSON(status)
+            struct Out: Encodable {
+                var status: BackupStatus
+                var maxAgeDays: Int?
+                var due: Date?
+                var overdue: Bool?
+                func encode(to encoder: any Encoder) throws {
+                    try status.encode(to: encoder)
+                    enum K: String, CodingKey { case maxAgeDays, due, overdue }
+                    var c = encoder.container(keyedBy: K.self)
+                    try c.encodeIfPresent(maxAgeDays, forKey: .maxAgeDays)
+                    try c.encodeIfPresent(due, forKey: .due)
+                    try c.encodeIfPresent(overdue, forKey: .overdue)
+                }
+            }
+            try output.emitJSON(Out(status: status, maxAgeDays: maxAge, due: maxAge.map { status.dueDate(maxAgeDays: $0) },
+                                    overdue: overdue))
         } else {
             let date = ISO8601DateFormatter()
             print("vault     \(status.vaultId)")
             print("created   \(date.string(from: status.created))")
             print("updated   \(date.string(from: status.updated))")
+            print("completed \(status.completed.map { date.string(from: $0) } ?? "never")")
             print("notes     \(status.notes)")
             print("files     \(status.files) (\(status.bytes) bytes)")
             print("versions  \(status.versionFiles) (\(status.versionBytes) bytes)")
+            if let maxAge, let overdue {
+                print("due       \(date.string(from: status.dueDate(maxAgeDays: maxAge)))"
+                      + (overdue ? "  OVERDUE (no complete backup in \(maxAge) days)" : ""))
+            }
         }
+        if overdue == true { throw ExitCode(ExitStatus.unhealthy) }
     }
 }
 

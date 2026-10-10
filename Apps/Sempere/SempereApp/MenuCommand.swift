@@ -19,6 +19,8 @@ enum MenuCommand: String, CaseIterable, Sendable {
     // Note
     case renameNote, editTags, changePaper, saveVersion, versionHistory, showRecordings, deleteNote, restoreNote
     case previousPage, nextPage, addPage, addPageAtEnd, duplicatePage, deletePage, undoDeletePage, toggleLayout
+    // Note > the selected item on the canvas, and recording
+    case duplicateItem, bringItemToFront, deleteItem, toggleRecording
     // Edit
     case find, undo, redo
     // Tools
@@ -28,6 +30,8 @@ enum MenuCommand: String, CaseIterable, Sendable {
     case zoomIn, zoomOut, fitWidth, actualSize, toggleNoteList, togglePageStrip
     // Window
     case showLibrary, showKeys, showSettings
+    // Sempere (app menu) and Help
+    case showAbout, showTour, showKeyNotice
 
     /// A key and its modifiers. `key` is the character the key types.
     struct Shortcut: Hashable, Sendable {
@@ -60,6 +64,10 @@ enum MenuCommand: String, CaseIterable, Sendable {
     /// generated preferences pane (touch alternatives only), not the app's
     /// settings (TestFlight build 7).
     static let nativeOnMac: [MenuCommand] = [.openVault, .find, .showSettings]
+    /// Commands that replace UIKit's own items without a shortcut: Sempere >
+    /// About Sempere (UIKit's opens the standard about panel) and the Help menu
+    /// (UIKit's "Sempere Help" has no help book to open). `MacMenus` builds them.
+    static let nativeWithoutShortcut: [MenuCommand] = [.showAbout, .showTour, .showKeyNotice]
 
     /// Who handles the command.
     enum Provider: Sendable {
@@ -92,6 +100,8 @@ enum MenuCommand: String, CaseIterable, Sendable {
             return context?.notePageless == true ? String(localized: "Switch to Paged Layout") : title
         case .toggleVoiceNote:
             return context?.voiceNote == .recording ? String(localized: "Stop Voice Note") : title
+        case .toggleRecording:
+            return context?.isRecording == true ? String(localized: "Stop Recording") : title
         default:
             return title
         }
@@ -132,6 +142,10 @@ enum MenuCommand: String, CaseIterable, Sendable {
         case .deletePage: return String(localized: "Delete Page")
         case .undoDeletePage: return String(localized: "Undo Delete Page")
         case .toggleLayout: return String(localized: "Switch to Pageless Layout", comment: "Note menu: make the note one infinite page")
+        case .duplicateItem: return String(localized: "Duplicate Item", comment: "Note menu: duplicate the selected image, text box or other item")
+        case .bringItemToFront: return String(localized: "Bring Item to Front", comment: "Note menu: draw the selected item above the others")
+        case .deleteItem: return String(localized: "Delete Item", comment: "Note menu: delete the selected image, text box or other item")
+        case .toggleRecording: return String(localized: "Start Recording", comment: "Note menu: start recording audio in the note")
         case .find: return String(localized: "Find Notes", comment: "Edit menu: search the notes")
         case .undo: return String(localized: "Undo", comment: "Edit menu: undo")
         case .redo: return String(localized: "Redo", comment: "Edit menu: redo")
@@ -156,6 +170,9 @@ enum MenuCommand: String, CaseIterable, Sendable {
         case .showLibrary: return String(localized: "Library", comment: "View menu: show the library window")
         case .showKeys: return String(localized: "Vault Keys", comment: "View menu: open the vault keys window")
         case .showSettings: return String(localized: "Settings…", comment: "View menu: open Settings")
+        case .showAbout: return String(localized: "About Sempere", comment: "App menu: the About screen")
+        case .showTour: return String(localized: "Quick Tour", comment: "Help menu: show the quick tour again")
+        case .showKeyNotice: return String(localized: "About Your Key", comment: "Help menu: what the vault key means")
         }
     }
 
@@ -200,6 +217,14 @@ enum MenuCommand: String, CaseIterable, Sendable {
         case .deletePage: return Shortcut(Shortcut.backspace, option)
         case .undoDeletePage: return Shortcut("z", control)
         case .toggleLayout: return Shortcut("l", control)
+        // Item commands follow the Mac apps that have them (Pages and Keynote: ⌘D duplicates, ⌥⇧⌘F brings to front).
+        // ⌘⌫ is Move to Recently Deleted and ⌥⌘⌫ Delete Page, so Delete Item is ⌃⌘⌫. Not UIKit's: checked against
+        // its menus (`MacWindowUITests`).
+        case .duplicateItem: return Shortcut("d", cmd)
+        case .bringItemToFront: return Shortcut("f", shiftOption)
+        case .deleteItem: return Shortcut(Shortcut.backspace, control)
+        // ⇧⌘M is File > Start Voice Note; ⌃⌘M sits next to the note's Recordings (⌃⌘R).
+        case .toggleRecording: return Shortcut("m", control)
         case .find: return Shortcut("f", cmd)
         case .undo: return Shortcut("z", cmd)
         case .redo: return Shortcut("z", shift)
@@ -224,6 +249,7 @@ enum MenuCommand: String, CaseIterable, Sendable {
         case .showLibrary: return Shortcut("0", option)
         case .showKeys: return Shortcut("k", option)
         case .showSettings: return Shortcut(",", cmd)
+        case .showAbout, .showTour, .showKeyNotice: return nil
         }
     }
 
@@ -259,6 +285,10 @@ enum MenuCommand: String, CaseIterable, Sendable {
         var voiceNote = VoiceNote.idle
         /// The canvas has a page to show.
         var hasPage = false
+        /// An item (image, text box, PDF page…) is selected on the canvas.
+        var hasItemSelection = false
+        /// A recording is running in the open note (the menu then says Stop Recording).
+        var isRecording = false
         var pageIndex = 0
         var pageCount = 0
         /// A vault was opened before and can be reopened.
@@ -313,6 +343,10 @@ enum MenuCommand: String, CaseIterable, Sendable {
         // Either way round, as long as the note can be written.
         case .toggleLayout: return context.canEditNote
         case .togglePageStrip: return context.hasPage && !context.notePageless
+        case .duplicateItem, .bringItemToFront: return context.canEditNote && context.hasItemSelection
+        // As ⌘⌫: off while a text field may have focus.
+        case .deleteItem: return context.canEditNote && context.hasItemSelection && !context.editingText
+        case .toggleRecording: return context.isRecording || (context.canEditNote && context.hasPage)
         case .previousPage: return context.hasPage && context.pageIndex > 0
         case .nextPage: return context.hasPage && context.pageIndex + 1 < context.pageCount
         case .find, .toggleNoteList: return unlocked && context.hasNoteList
@@ -326,6 +360,8 @@ enum MenuCommand: String, CaseIterable, Sendable {
         case .showKeys: return unlocked
         // Device settings need no vault.
         case .showSettings: return true
+        // Facts about the app and its key: no vault needed.
+        case .showAbout, .showTour, .showKeyNotice: return true
         }
     }
 }
@@ -345,10 +381,11 @@ enum MenuLayout {
     ]
     static let note: [[MenuCommand]] = [
         [.renameNote, .editTags, .changePaper],
-        [.saveVersion, .versionHistory, .showRecordings],
+        [.saveVersion, .versionHistory, .showRecordings, .toggleRecording],
         [.previousPage, .nextPage],
         [.addPage, .addPageAtEnd, .duplicatePage, .deletePage, .undoDeletePage],
         [.toggleLayout],
+        [.duplicateItem, .bringItemToFront, .deleteItem],
         [.deleteNote, .restoreNote],
     ]
     static let tools: [[MenuCommand]] = [
@@ -363,11 +400,15 @@ enum MenuLayout {
         [.toggleNoteList],
     ]
     static let window: [[MenuCommand]] = [[.showLibrary, .showKeys, .showSettings]]
+    /// The app menu's About Sempere (`MacMenus`).
+    static let app: [[MenuCommand]] = [[.showAbout]]
+    /// Help (`MacMenus`).
+    static let help: [[MenuCommand]] = [[.showTour, .showKeyNotice]]
     /// Edit > Find (the system's Undo and Redo stay where UIKit puts them).
     static let edit: [[MenuCommand]] = [[.find]]
 
     /// Every command a menu shows, in order.
     static var all: [MenuCommand] {
-        (file + edit + note + tools + view + window).flatMap { $0 }
+        (app + file + edit + note + tools + view + window + help).flatMap { $0 }
     }
 }

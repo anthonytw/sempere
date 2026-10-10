@@ -234,6 +234,61 @@ What iOS does not allow, so the app cannot promise it:
 The Mac (Catalyst) keeps apps running when their windows are in the
 background, so it schedules nothing.
 
+## Other Files providers (Proton Drive) (app only)
+
+Privacy first: the only cloud providers the project targets are iCloud Drive
+(the system's) and Proton Drive; others may work through the same code but
+are not tested on purpose. A vault in a provider's storage is opened like any
+picked folder (`VaultLocator`, a security-scoped bookmark), and what happens
+next depends on how the provider presents its files.
+
+**Code paths that assume local files** (audited 2026-10-09):
+
+| Path | Assumes | With a provider |
+| --- | --- | --- |
+| `VaultLocator.resolve`, `FolderAccess.check` | the picked folder lists its files | a provider that has not listed the folder yet makes a vault look like a plain folder ("not a vault"); try again once Files shows the contents |
+| `VaultBookmark` (recents, backups, quick capture) | bookmarks of the folder resolve later | a provider that renames or re-creates its root gives a stale bookmark (refreshed) or a dead one ("choose it again") |
+| `CloudVault.download` / `ProgressiveLoad` / `requireLocal` | files report a downloading status (`ubiquitousItemDownloadingStatus`), placeholders are `.<name>.icloud` or dataless files | used only when the folder is ubiquitous (`isUbiquitousItem`): iCloud Drive and replicated File Provider extensions (every `~/Library/CloudStorage` provider on a Mac) report it; then `startDownloadingUbiquitousItem` and the dataless check apply unchanged |
+| `CloudVault.coordinatedRead` / `coordinatedWrite`, `NoteWriter(coordinated:)` | — | a provider fetches a file it holds only remotely for a coordinated read, and sees a new file through a coordinated write |
+| `NotesFolderPresenter` | a file presenter hears of other devices' revisions | the same for any provider that coordinates; otherwise the list changes only on reload (pull to refresh) |
+| `Vault` writes (`rename(2)`, `link(2)` for blobs, `fsync`) | a POSIX file system | File Provider storage is a local file system (APFS); `link(2)` falls back to rename where refused (above) |
+| Error texts in `CloudVault.CloudError` | iCloud | they name iCloud Drive even for another provider (only shown when a ubiquitous provider stalls or fails a download) |
+
+**Guard added** (`StorageLocation`): a vault whose path is another app's
+provider storage (`~/Library/CloudStorage/<Provider>-…` on a Mac; a shared
+app-group container or `File Provider Storage` on iPadOS) is treated like an
+iCloud vault for coordination even when it does not report its files as
+ubiquitous: every read and write is coordinated, so a non-replicated provider
+fetches and uploads what the vault needs. Download requests and the
+downloading status stay off for such a folder (there is nothing to wait
+for); a ubiquitous provider takes the whole iCloud path as before. Vaults in
+the app's own container (on this device, WebDAV copies) and on external
+drives are not coordinated, as before. `StorageLocationTests` pin the
+classification.
+
+**Verified** (without a device): the classification of iCloud Drive, Mac
+`CloudStorage` provider, iPadOS app-group and app-container paths; that the
+iCloud path keys on `isUbiquitousItem` and so already covers replicated
+providers; that coordination is a no-op cost for local files.
+
+**Not verified; needs the maintainer's device test** (with
+`SEMPERE_DEBUG_PROBE=1`, which logs how the files present, never names):
+
+1. Proton Drive on iPadOS: whether its Files location lets the folder picker
+   choose a folder at all (user reports say the location is unavailable while
+   Proton's app lock (PIN or Face ID) is on, and that some folders fail to list),
+   whether it opens in place with write access, and whether its files report
+   `isUbiquitousItem`.
+2. Creating a vault there, writing notes, quitting, reopening from Recents
+   (bookmark), and a second device seeing the notes after Proton syncs.
+3. Proton Drive for Mac (`~/Library/CloudStorage/ProtonDrive-…`) with the
+   sandboxed Catalyst build: open, write, evict a note in Finder ("Remove
+   Download") and reopen it (dataless path).
+4. A blob write (`link(2)`) in Proton's storage on both platforms.
+
+If 1 fails, Proton Drive on iPadOS cannot hold a vault through Files, and the
+alternatives are iCloud Drive or a WebDAV server (above).
+
 ## Opening a vault fast (app)
 
 The note list is shown from a persistent local **index**: the encrypted
@@ -671,11 +726,12 @@ would make readers drop the new delta).
 ## Backups
 
 `Backup` (`Sources/Sempere/Backup.swift`) copies a vault's format files
-(`vault.json`, `rewrap-journal.json`, `keys/*.key.age`, `notes/<id>/<revision>`,
+(`vault.json`, `rewrap-journal.json`, `settings.age`, `keys/*.key.age`, `notes/<id>/<revision>`,
 `notes/<id>/att/<blob>`;
 nothing else) with the same atomic-write helper, then reads each copy back
 and compares SHA-256. The backup folder is a vault plus `backup.json`
-(`format: sempere-backup/1`, `vaultId`, and `files`: path → `sha256`, `size`)
+(`format: sempere-backup/1`, `vaultId`, `created`, `updated`, `completed`,
+and `files`: path → `sha256`, `size`)
 and `versions/<UTC time>/` (previous copies of files a run replaced or, for
 the journal, removed). Revisions are copied first and `vault.json` last, so a
 run cut short never leaves a manifest newer than its notes; `restore` writes
@@ -689,7 +745,12 @@ does for deletions. The tar writer is POSIX ustar (names up to 255 bytes via
 the prefix field); the archive is verified with a small reader before it is
 renamed into place.
 
-`Backup.status` reads `backup.json` alone (last run, notes, files, bytes,
+`updated` is written by every run (also one with file errors, and the
+periodic saves of one cut short); `completed`, optional, only at the end of a
+run without a file error, so it is what an overdue check counts from (readers
+of folders written before it existed see none, and a run of an older version,
+which rewrites `backup.json` without it, drops it until the next complete run). `Backup.status` reads
+`backup.json` alone (last run, last complete run, notes, files, bytes,
 sizes summed with saturation since the index may be hostile);
 `Backup.preview` lists a backup or vault folder without a key (notes,
 revisions, attachments, bytes, newest revision from the file names' clocks);
@@ -733,7 +794,11 @@ maps each control to its command.
   after the reminder was switched on when there is none, but never sooner than
   an hour from now. It is rescheduled after every backup, every change of the
   setting and every unlock; Settings shows an overdue backup in red even when
-  notifications are not allowed. The text names the vault, never a note.
+  notifications are not allowed. The text names the vault, never a note. The
+  due rule is `BackupSchedule` (core), shared with `sempere backup status
+  --max-age`, which counts from `backup.json`'s `completed` instead of this
+  device's record; a last backup dated more than a day ahead of the clock
+  counts as overdue.
 - **Restore from Backup** (Settings, and the welcome screen when no vault is
   open): pick a backup folder, a folder holding one, or any vault folder
   (`BackupLocation.restoreSource`); the sheet shows `Backup.preview` (notes,
@@ -866,8 +931,8 @@ server is already age-encrypted, except `vault.json` (public by design).
 A remote `vault.json` with another `vaultId` aborts the run before any
 change.
 
-**What is synced.** `vault.json`, `rewrap-journal.json`,
-`notes/<uuid>/<name>.age` and each note's attachment blobs
+**What is synced.** `vault.json`, `rewrap-journal.json`, `settings.age` (shared
+settings, merged per key: below), `notes/<uuid>/<name>.age` and each note's attachment blobs
 `notes/<uuid>/att/<64 hex>.<kind>.age` (below). Remote entries that are not a lowercase-UUID note
 directory, a canonical revision file name (format.md §5), an `att`
 collection or a canonical blob name (format.md §8.1.2) are ignored and
@@ -974,11 +1039,21 @@ content hash (SHA-256) against the last-synced hash; the server ETag (or
 Last-Modified) is only recorded to send `If-Match` on upload. Local only
 changed: PUT with `If-Match`. Remote only changed: atomic replace. Both
 changed (or no common ancestor and different content): the remote copy is
-saved as `<name>.conflict-<device>-<yyyymmddThhmmssZ>.json` in the vault root
+saved as `<name>.conflict-<device>-<yyyymmddThhmmssZ>.<ext>` in the vault root
 (not again if an identical one exists), nothing else changes, and the
 conflict is reported on every run until the files agree. A PUT rejected with
 412 is a conflict too. `rewrap-journal.json` deleted locally is not deleted
 remotely (deletions come only from compaction) and not restored locally.
+`settings.age` (format.md §13) is merged instead when both sides changed and
+the vault is unlocked: both copies are opened (tag verified), merged per key,
+and the result written locally and uploaded with `If-Match` (`merged` in the
+report; a 412 is merged on the next run). A copy that does not verify never
+replaces one that does, and is replaced by it. A copy that needs a newer reader
+(`$minReaderVersion`) is never opened: it is mirrored byte for byte over a copy
+this version can read; two such copies that differ follow the conflict rule
+above, as does the file while the vault is locked. A run that pulled a new `vault.json`
+(a key change elsewhere) leaves `settings.age` to the next run, which opens the
+vault with the new secret.
 Before a remote `vault.json` replaces the local one, its device list is
 checked (`Vault.incomingManifestProblem`, format.md §2.1): the same keys
 (still tagged) pass without a key; a changed list passes only when the vault
@@ -1038,4 +1113,133 @@ the next run a first sync: nothing is deleted, nothing overwritten.
 
 **Testing.** `scripts/test-webdav.sh` starts a local wsgidav
 (`pip install wsgidav cheroot`) and runs the integration tests, which are
-skipped unless `SEMPERE_WEBDAV_TEST_URL` is set.
+skipped unless `SEMPERE_WEBDAV_TEST_URL` is set; the script sets it and fails
+if any of them skipped. CI's `webdav` job runs the script on every change to
+the package (the large-blob test at 64 MB: `SEMPERE_WEBDAV_LARGE_MB`).
+
+## WebDAV vaults in the app
+
+For people with no Mac and no iCloud, the app keeps a vault on a WebDAV
+server it talks to itself (`Open Vault ▸ WebDAV…`). It wraps the same
+`SempereWebDAV` library as `sempere sync webdav`; nothing about the server
+side changes, and any server the CLI works with works here.
+
+**Model: a local copy that is pushed.** The vault the app opens is a local
+copy in the app's container (`Application Support/Sempere/WebDAV/<location
+id>/<name>.sempere`, sync state and quarantine beside it). Every read and
+write goes to that copy through the usual plain-folder paths (no iCloud
+code runs for it), so the app works offline exactly as with a vault on the
+device. The server is updated by a **push-only** run (`WebDAVSyncOptions.pushOnly`,
+"Push-only mirror" above): it uploads what the server lacks, removes there
+what local compaction or blob collection explains, and never downloads,
+writes or deletes anything in the local copy. A server can therefore never
+feed a revision, a blob or a changed device list into the vault the app is
+editing.
+
+**Connecting** (`WebDAVConnectSheet`, logic in `WebDAVLocation`,
+`WebDAVConnection`): URL, user name, password, "Test Connection".
+- `https` only; plain `http` is accepted for `localhost` alone (as the CLI).
+  Credentials in the URL are refused.
+- The password is stored only in the Keychain (generic password, service
+  `io.github.anthonytw.sempere.webdav`, account the location id,
+  `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, never synchronizable), is
+  never logged and never written to a file or `UserDefaults`. The rest of the
+  location (URL, user, certificate pin, folder name) is in
+  `Application Support/Sempere/webdav.json`, holding no secret.
+- The test lists the URL (PROPFIND, Depth 1) and says what it found:
+  reachable and a vault; reachable with vaults one level below; reachable
+  with no vault; or why not (offline, wrong user or password, not found, not
+  a WebDAV server, a redirect, an untrusted certificate). The **vault list**
+  is the URL itself when it holds a `vault.json`, otherwise each collection
+  directly below it that holds one (at most 64 collections are looked into).
+  Names and ids from the server are untrusted: control characters are
+  escaped and lengths bounded before display.
+- **Self-signed certificates** need an explicit, loud opt-in. When the
+  system does not trust the server's certificate, the test shows its SHA-256
+  fingerprint and subject in a red warning box ("Anyone who can intercept
+  this connection could present such a certificate. Trust it only if this
+  fingerprint is the one your server shows.") with a "Trust This
+  Certificate" button and a confirmation. What is stored is a pin of that
+  exact leaf certificate (its SHA-256) for that one location: no other
+  certificate, self-signed or not, is accepted for it in place of system
+  trust, and a changed certificate fails with "the server's certificate
+  changed" until the user trusts the new one. Evaluation happens in the app
+  (`PinnedServerTrust`, Security framework) behind the library's
+  `WebDAVServerTrust` hook; the CLI has no pin and relies on the system's
+  trust store.
+
+**Download.** Choosing a vault from the list downloads it into a new local
+copy with the library's two-way engine (a first pull into an empty folder,
+so nothing is uploaded), checking each file's age structure as a locked
+first pull does (format.md §9.1), then opens the copy locked and shows the
+usual unlock sheet; every read after unlock verifies tags and names as for
+any vault. A download that stops (offline, the app quit) continues where it
+stopped when the vault is opened again; the copy is opened only after a
+download run that finished without errors (`WebDAVLocation.downloaded`).
+
+**When it pushes** (`WebDAVPushScheduler`, pure logic): once after the vault
+is unlocked, 10 s after the last write (every `NoteWriter` delta and blob
+counts), when the app becomes active and when it goes to the background (in
+the seconds iPadOS leaves it; a push cut off there is retried when the app
+comes back), every 5 minutes while the vault is open and on "Sync Now".
+Never while locked (deletions need the vault unlocked), no background task
+or scheduled refresh, at most one run at a time; a write during a run
+schedules another. After a failure the next automatic try waits 30 s,
+doubling up to 15 minutes; "Sync Now" and a write retry at once.
+
+**Status** (`WebDAVSession`, `WebDAVSyncProblem`): the note list shows a bar
+for a WebDAV vault (`WebDAVStatusBar`): uploading, up to date, the number of
+changes the server has not confirmed (`WebDAVLocalCopy.unconfirmedChanges`),
+or the problem and what to do, with the last successful push time and a menu
+(Sync Now, Download Again…, Server Settings… to change the password or the
+certificate pin). Offline is not an error: "Offline. Changes are kept on this iPad
+and uploaded when the server can be reached." Wrong password, a changed
+certificate and the problems below are shown with what to do.
+
+**Conflicts and other writers.** A push-only run never takes anything from
+the server, so the cases are:
+
+| On the server | What the app does |
+| --- | --- |
+| another vault (`vaultId` differs) | stops before any change (`vaultMismatch`) and says so; nothing is uploaded |
+| `vault.json` or `rewrap-journal.json` changed since this device's last sync (another device or the CLI wrote it) | kept, not overwritten (`WebDAVSyncOptions.keepServerChanges`, CLI `--keep-server-changes`), reported as a conflict: "The vault's device list on the server was changed elsewhere." Notes still upload |
+| `vault.json` differs but was not changed since the last sync (only this device changed it) | replaced by the local copy, as any push-only run |
+| revisions or blobs this device never had (another writer) | kept and listed (`extraneous`); never deleted by the app (`deleteExtraneous` is off) |
+
+The intended use is one writing device per server folder, plus readers (the
+web viewer). A second device may download the same vault and write to it:
+both devices' files then coexist on the server and nothing is lost, but
+neither sees the other's notes until it downloads the vault again. "Download
+Again" does that: it first pushes (and refuses if that push did not finish
+cleanly, so no change of this device is lost), then downloads the server's
+vault into a new copy, which replaces the old one only once complete and
+only when its `vault.json` passes `Vault.incomingManifestProblem` against the
+old copy's under the vault's key (the same vault, a list and secret written
+with the vault's key: another device's key change passes, another vault or a
+secret the server chose does not). The device list of the new copy is also
+checked against this device's trust record when it is unlocked (format.md
+§2.1), so a server cannot slip in a key this way either.
+
+Connecting again to an address whose folder now holds another vault starts a
+new copy. The old copy (and its Keychain password) is deleted only when it
+holds nothing the server never confirmed; otherwise nothing changes and the
+app says how many changes would be lost (remove the location from the welcome
+screen first, whose confirmation says the same).
+
+**Not offered for a WebDAV vault in the app**: changing the vault's keys
+(adding, removing or replacing a device, a migration). A recipient change
+rewraps files in place (format.md §3.3), which sync never propagates, so the
+server would keep files a removed key can read. The app says to do it with
+the CLI on a folder copy and upload that to a new server folder.
+
+**Removing** ("Remove from This Device", on the welcome screen) deletes the
+local copy, its sync state, the Keychain password and the recent entry. When
+the copy holds changes the server has not confirmed, the confirmation says how
+many will be lost and to open the vault and sync first.
+
+**Recents.** A WebDAV vault is a recent entry with its location id and no
+bookmark (`RecentVault.webdav`), so "reopen the last vault" at launch opens
+the local copy, offline too.
+
+**Mac.** The sandboxed Mac build has `com.apple.security.network.client`
+for this (`docs/release/app-store.md`, "Entitlements").

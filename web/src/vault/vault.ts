@@ -5,10 +5,11 @@
 import { t } from "../i18n/index.ts";
 import { Decrypter, armor, identityToRecipient } from "age-encryption";
 import { DecodeError, arr, isObject, obj, opt, reqWith, str, uuid } from "../format/json.ts";
-import { parseRevisionName, revisionFilename } from "../format/ids.ts";
+import { cmpUTF8, parseRevisionName, revisionFilename } from "../format/ids.ts";
 import { type Revision, decodeRevision } from "../format/model.ts";
 import { formatMajor, majorOf, manifestReadOnlyReasons, revisionMarkersNewer } from "../format/newer.ts";
 import { parseRFC3339 } from "../format/rfc3339.ts";
+import { concat } from "./bytes.ts";
 import { gunzip } from "./gzip.ts";
 import { type SecretLink, linkConnects, parseSecretLink } from "./link.ts";
 
@@ -59,6 +60,8 @@ export interface VaultManifest {
   recipientsTag?: string;
   /** `secretLink` (format.md §2.1): undefined when absent or null. */
   secretLink?: SecretLink;
+  /** `markersTag` (format.md §2.1 "Version markers"): read like `recipientsTag`. */
+  markersTag?: string;
 }
 
 const bech32 = /^[02-9ac-hj-np-z]+$/;
@@ -94,6 +97,7 @@ export function parseManifest(bytes: Uint8Array): VaultManifest {
     if (parseRFC3339(created) === undefined) throw new DecodeError("$.created: bad date");
     const features = opt(o, "features");
     const tag = opt(o, "recipientsTag");
+    const markersTag = opt(o, "markersTag");
     m = {
       format: reqWith(o, "format", "$", str),
       vaultId: reqWith(o, "vaultId", "$", uuid),
@@ -102,6 +106,7 @@ export function parseManifest(bytes: Uint8Array): VaultManifest {
       features: Array.isArray(features) ? features.filter((f): f is string => typeof f === "string") : [],
     };
     if (tag !== undefined && tag !== null) m.recipientsTag = typeof tag === "string" ? tag : "";
+    if (markersTag !== undefined && markersTag !== null) m.markersTag = typeof markersTag === "string" ? markersTag : "";
     const link = parseSecretLink(opt(o, "secretLink"));
     if (link) m.secretLink = link;
   } catch (e) {
@@ -157,15 +162,6 @@ export function parseIdentity(text: string): string {
 
 const encoder = new TextEncoder();
 
-function concat(parts: Uint8Array[]): Uint8Array {
-  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-  let at = 0;
-  for (const p of parts) {
-    out.set(p, at);
-    at += p.length;
-  }
-  return out;
-}
 
 const magic = [0x53, 0x4d, 0x50, 0x52];
 const headerSize = 37;
@@ -187,14 +183,18 @@ async function hkdfKey(secret: Uint8Array): Promise<CryptoKey> {
  * writes nothing and keeps no trust record, so it reports only what the tag
  * says: `verified` (the tag verifies under the vault secret), `untagged` (an
  * older vault), or `tampered` (`tagMismatch`: the tag does not verify;
- * `tagRemoved`: the `recipients-tag` feature is listed but the tag is gone).
+ * `tagRemoved`: the `recipients-tag` feature is listed but the tag is gone;
+ * `markersMismatch` / `markersRemoved`: the same for `format` and `features`,
+ * "Version markers"). Without a trust record it cannot see a rolled-back
+ * `vault.json`.
  */
 export type RecipientsStatus =
   | { status: "verified" }
   | { status: "untagged" }
-  | { status: "tampered"; reason: "tagMismatch" | "tagRemoved" };
+  | { status: "tampered"; reason: "tagMismatch" | "tagRemoved" | "markersMismatch" | "markersRemoved" };
 
 export const recipientsTagFeature = "recipients-tag";
+export const markersTagFeature = "markers-tag";
 
 async function hkdf(secret: Uint8Array, info: string): Promise<Uint8Array> {
   const key = await crypto.subtle.importKey("raw", buf(secret), "HKDF", false, ["deriveBits"]);
@@ -227,16 +227,43 @@ export async function verifySecretLink(link: SecretLink | undefined, previous: U
   return linkConnects(link, previous, current, vaultId);
 }
 
-/** Classifies the manifest's recipients under the vault secret (format.md §2.1, without a trust record). */
-export async function checkRecipients(m: VaultManifest, secret: Uint8Array): Promise<RecipientsStatus> {
-  if (m.recipientsTag === undefined) {
-    return m.features.includes(recipientsTagFeature) ? { status: "tampered", reason: "tagRemoved" } : { status: "untagged" };
-  }
-  const expected = await recipientsTag(m.vaultId, m.recipients.map((r) => r.key), secret);
-  const given = m.recipientsTag;
+function equalStrings(given: string, expected: string): boolean {
   let diff = given.length ^ expected.length;
   for (let i = 0; i < expected.length; i++) diff |= (given.charCodeAt(i) || 0) ^ expected.charCodeAt(i);
-  return diff === 0 ? { status: "verified" } : { status: "tampered", reason: "tagMismatch" };
+  return diff === 0;
+}
+
+/**
+ * `markersTag` (lowercase hex) of `format` and `features` (format.md §2.1
+ * "Version markers": the distinct features sorted by UTF-8 bytes); undefined
+ * when a marker holds a NUL (never tagged).
+ */
+export async function markersTag(vaultId: string, format: string, features: string[], secret: Uint8Array): Promise<string | undefined> {
+  if (format.includes("\0") || features.some((f) => f.includes("\0"))) return undefined;
+  // Code point order is UTF-8 byte order (as Swift sorts them).
+  const sorted = [...new Set(features)].sort(cmpUTF8).map((f) => encoder.encode(f));
+  const parts: Uint8Array[] = [encoder.encode("sempere/1"), Uint8Array.of(0), encoder.encode("markers"), Uint8Array.of(0),
+    encoder.encode(vaultId.toLowerCase()), Uint8Array.of(0), encoder.encode(format)];
+  for (const f of sorted) parts.push(Uint8Array.of(0), f);
+  const key = await hmacKey(await hkdf(secret, "sempere/1 markers key"));
+  return hex(new Uint8Array(await crypto.subtle.sign("HMAC", key, buf(concat(parts)))));
+}
+
+/** Classifies the manifest's recipients and version markers under the vault secret (format.md §2.1, without a trust record). */
+export async function checkRecipients(m: VaultManifest, secret: Uint8Array): Promise<RecipientsStatus> {
+  let status: RecipientsStatus;
+  if (m.recipientsTag === undefined) {
+    status = m.features.includes(recipientsTagFeature) ? { status: "tampered", reason: "tagRemoved" } : { status: "untagged" };
+  } else {
+    const expected = await recipientsTag(m.vaultId, m.recipients.map((r) => r.key), secret);
+    status = equalStrings(m.recipientsTag, expected) ? { status: "verified" } : { status: "tampered", reason: "tagMismatch" };
+  }
+  if (status.status === "tampered") return status;
+  if (m.markersTag === undefined) {
+    return m.features.includes(markersTagFeature) ? { status: "tampered", reason: "markersRemoved" } : status;
+  }
+  const expected = await markersTag(m.vaultId, m.format, m.features, secret);
+  return expected !== undefined && equalStrings(m.markersTag, expected) ? status : { status: "tampered", reason: "markersMismatch" };
 }
 
 /**
@@ -246,6 +273,11 @@ export async function checkRecipients(m: VaultManifest, secret: Uint8Array): Pro
  */
 export function recipientsWarningText(status: RecipientsStatus | undefined): string | undefined {
   if (status?.status !== "tampered") return undefined;
+  if (status.reason === "markersMismatch" || status.reason === "markersRemoved") {
+    return status.reason === "markersRemoved"
+      ? t("This vault's format and features lost their authentication tag. Notes still read correctly here, but the Sempere app and CLI will not write to it until they are repaired (sempere vault markers repair).")
+      : t("This vault's format and features were changed without the vault's key. Notes still read correctly here, but the Sempere app and CLI will not write to it until they are repaired (sempere vault markers repair).");
+  }
   const reason = status.reason === "tagRemoved" ? "tagRemoved" : "changed";
   return reason === "tagRemoved"
     ? t("This vault's device list lost its authentication tag. Notes still read correctly here, but the Sempere app and CLI will not write to it until it is repaired (sempere vault recipients repair).")

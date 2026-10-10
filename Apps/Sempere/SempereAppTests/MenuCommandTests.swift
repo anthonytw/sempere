@@ -109,6 +109,56 @@ struct MenuCommandTests {
         #expect(!MenuCommand.nextPage.isEnabled(in: c))
     }
 
+    /// GA-13: item commands act on a selected item of an editable note, and never while a text field may
+    /// have focus (⌥⌘⌫ would otherwise delete the item instead of a word).
+    @Test func itemCommandsNeedASelectedItemOnAnEditableNote() {
+        var c = MenuCommand.Context(window: .note, vault: .unlocked, hasNote: true)
+        let items: [MenuCommand] = [.duplicateItem, .bringItemToFront, .deleteItem]
+        for command in items { #expect(!command.isEnabled(in: c), "\(command): nothing selected") }
+        c.hasItemSelection = true
+        for command in items { #expect(!command.isEnabled(in: c), "\(command): read-only") }
+        c.canEditNote = true
+        for command in items { #expect(command.isEnabled(in: c), "\(command)") }
+        c.editingText = true
+        #expect(MenuCommand.duplicateItem.isEnabled(in: c))
+        #expect(!MenuCommand.deleteItem.isEnabled(in: c))
+    }
+
+    /// GA-13: Start/Stop Recording needs an editable page, and stays on while a recording runs.
+    @Test func recordingCommandStartsOnAnEditablePageAndStopsWhileRecording() {
+        var c = MenuCommand.Context(window: .note, vault: .unlocked, hasNote: true)
+        #expect(!MenuCommand.toggleRecording.isEnabled(in: c))
+        c.hasPage = true
+        #expect(!MenuCommand.toggleRecording.isEnabled(in: c), "read-only")
+        c.canEditNote = true
+        #expect(MenuCommand.toggleRecording.isEnabled(in: c))
+        c.isRecording = true
+        c.canEditNote = false
+        #expect(MenuCommand.toggleRecording.isEnabled(in: c), "a running recording can always be stopped")
+    }
+
+    @Test func itemAndRecordingShortcuts() throws {
+        #expect(MenuCommand.duplicateItem.shortcut == MenuCommand.Shortcut("d", [.command]))
+        #expect(MenuCommand.bringItemToFront.shortcut == MenuCommand.Shortcut("f", [.command, .option, .shift]))
+        #expect(MenuCommand.deleteItem.shortcut == MenuCommand.Shortcut(MenuCommand.Shortcut.backspace, [.command, .control]))
+        #expect(MenuCommand.toggleRecording.shortcut == MenuCommand.Shortcut("m", [.command, .control]))
+        #expect(MenuCommand.deleteNote.shortcut != MenuCommand.deleteItem.shortcut, "⌘⌫ stays the note's")
+        #expect(MenuCommand.deletePage.shortcut != MenuCommand.deleteItem.shortcut, "⌥⌘⌫ stays the page's")
+        #expect(MenuCommand.toggleVoiceNote.shortcut != MenuCommand.toggleRecording.shortcut, "⇧⌘M stays the voice note's")
+        // The title follows the state, like Start / Stop Voice Note.
+        var c = MenuCommand.Context(window: .note, vault: .unlocked, hasNote: true)
+        #expect(MenuCommand.toggleRecording.title(in: c) == MenuCommand.toggleRecording.title)
+        c.isRecording = true
+        #expect(MenuCommand.toggleRecording.title(in: c) == String(localized: "Stop Recording"))
+        // UIKit's own menus use these: the Mac menu bar starts from them (CLAUDE.md "The Mac menu bar").
+        let uikit: Set<MenuCommand.Shortcut> = [.init("m"), .init("w"), .init("h"), .init("q"), .init("p"), .init("a"),
+                                                .init("c"), .init("x"), .init("v"), .init("b"), .init("i"), .init("u"),
+                                                .init("g"), .init("e"), .init("j"), .init("t")]
+        for command in [MenuCommand.duplicateItem, .bringItemToFront, .deleteItem, .toggleRecording] {
+            #expect(!uikit.contains(try #require(command.shortcut)), "\(command)")
+        }
+    }
+
     @Test func libraryOnlyCommandsAreOffInANoteWindow() {
         let note = MenuCommand.Context(window: .note, vault: .unlocked, hasNote: true)
         for command in [MenuCommand.newNote, .find, .toggleNoteList, .openVault, .newVault, .reloadVault, .openNoteInWindow] {

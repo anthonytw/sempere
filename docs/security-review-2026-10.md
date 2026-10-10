@@ -45,16 +45,18 @@ File:line references are to this branch.
 | W2 | Medium | sync | Downloaded revisions and blobs are placed unverified; one junk snapshot blocks every edit to a note | Fixed (#114) |
 | V2 | Low | video | Location kept with a second `moov`, a top-level `udta` or a truncated trailing `meta` (reproduced) | Fixed |
 | N2 | Low | newer format | `inbox capture` and `inbox transcript` write into a read-only vault's `inbox/` (reproduced, CLI) | Fixed (CLI; app in #114) |
-| C2 | Low | capture | Forged captures choose any notebook and title, and are written as the adopting device | Title and notebook bounded (#114); attribution open |
-| C3 | Low | capture | A removed device's captures are adopted while its rewrap is unfinished | Docs fixed; open |
+| C2 | Low | capture | Forged captures choose any notebook and title, and are written as the adopting device | Title and notebook bounded (#114); attributed to their device (#125) |
+| C3 | Low | capture | A removed device's captures are adopted while its rewrap is unfinished | Fixed (#125) |
 | C4 | Low | capture | Anyone holding the locked iPad (after first unlock) can add voice notes | Docs fixed |
 | C5 | Low | capture | Inbox files are decrypted fully before the tag check, and failing ones are re-read forever | Fixed (#114) |
 | R5 | Low | recipients | The trust store fails open: an unreadable record reads as "first use" | Fixed (#114) |
 | W5 | Low | sync | No overall bound on notes, entries, bytes or time per sync run | Fixed (#114) |
-| N3 | Low (design) | newer format | `format` and `features` in `vault.json` are not authenticated | Open |
+| N3 | Low (design) | newer format | `format` and `features` in `vault.json` are not authenticated | Fixed (#125: `markersTag`) |
 | P3 | Low | web passkey (#99) | The remembered record is chosen by the vault id of an unauthenticated `vault.json` | Fixed (#130: bound to the vault's location) |
 | P5 | Low | CLI (#100) | `vault summaries --plaintext --out` writes the file world-readable | Fixed (#130) |
-| R6, C6–C9, N4, N5, V3, W6 | Info | various | See below | — |
+| P4 | Low | web (#100) | Cached ciphertext from before a rewrap stays openable by a removed key | Fixed (#125) |
+| C8 | Info | capture | A comment in `QuickCapture.swift` names the wrong protection class | Fixed (#125) |
+| R6, C6, C7, C9, N4, N5, V3, W6 | Info | various | See below | — |
 
 ## Fixed in this PR
 
@@ -336,11 +338,11 @@ and is retried by the next one. Tests: `RecipientsAuthTests.testUnreadableTrustR
 ### C2 (part): bounded title and notebook
 
 Adoption writes a capture's title and notebook as at most 300 characters (and 1200 Unicode scalars), control characters replaced by
-spaces (`CaptureAdoption.boundedName`). Still open: the capturing device is not stored, and the notebook
-is still the manifest's (a format change and a policy choice). Test:
+spaces (`CaptureAdoption.boundedName`). Still open then: the capturing device was not stored (fixed in
+#125), and the notebook is still the manifest's (a policy choice). Test:
 `CaptureInboxTests.testCaptureTitleAndNotebookAreBounded`.
 
-### C3: left open
+### C3: left open (fixed in #125, below)
 
 Restricting old-key captures to the names present at the rotation needs that list authenticated: the
 journal is plaintext that a removed device (which holds the old capture key) could also edit, so the list
@@ -379,6 +381,108 @@ file others can open, and an existing file (of any mode, or a symlink) is replac
 The sealed file keeps the umask's mode: the web server publishes it. Test:
 `CLISummariesTests.testPlaintextFileIsOwnerOnly` (fails on the old code with mode 0644).
 
+## Fixed in the second follow-up (#125)
+
+Each fix has a regression test that encodes the attack and expects it refused.
+
+### C2: captures are attributed to the device that sealed them
+
+- **Device capture keys** (`format.md` §11.1): `deviceCaptureKey(r) = HKDF(vaultSecret, "sempere/1 device
+  capture key" ‖ 0x00 ‖ fingerprint(r))`, with `fingerprint(r)` the SHA-256 hex of the recipient key, as in
+  key file names (§3.2). A profile holds only the key of the recipient its device unlocked with
+  (`Vault.captureProfile`, `CaptureProfile.recipient`), so one device's profile cannot seal a capture that
+  verifies as another's. The manifest names the fingerprint (`recipient`), which must be that of the key
+  that verified the file.
+- **The reader's key ring** (`Vault.captureKeyRing`, `format.md` §11.2): the tag is streamed once under the
+  vault capture key and the device capture key of every recipient of a list that checks (`readCapture` now
+  refuses a tampered list, `untrustedRecipients`); the key that verifies attributes the file. The work is
+  at most four streamed HMACs per capture: the reader tries the vault capture keys and the keys of the device
+  the manifest claims (a bounded byte scan of its first line before the tag, `CaptureFile.claimedDevices`); the
+  claim only picks keys, the tag and the parsed `recipient` decide. Transcripts (bounded, no claim) take the
+  whole ring.
+- **Stored on adoption:** `captured: {device, recipient}` on the recording (`format.md` §8.3.1), immutable,
+  read leniently (a malformed value is absent). Older readers keep it as an unknown field (§7.5).
+  The delta is still the adopter's: revision names carry a per-device `seq` that concurrent adopters, or the
+  capturing device itself, would also use, and the capturing device holds no secret to tag a revision with
+  (`format.md` §11.3 says why). This is the one point where the task as written ("instead of writing the
+  capture as the adopting device") is met through `captured` rather than the revision's `device`.
+- **Transcripts** are adopted only from the device the capture (or the adopted recording's `captured`) is
+  attributed to, on top of C1's audio binding.
+- **Shown:** `sempere inbox list` and `import` (`from iPad (device 0b0b0b0b)`, `--json`: `device`,
+  `recipient`, `capturedBy`), the app's recording menu ("Voice note from iPad", "… from a device no longer in
+  this vault", "… from an unverified device").
+- **Compatibility:** files sealed with the vault capture key (profiles made before) are still adopted, as
+  **unattributed** (`captured.recipient` absent); the app replaces such a profile at the next unlock
+  (`refreshQuickCaptureProfile`), the CLI with `inbox enable`.
+- Tests: `CaptureAttributionTests` (`testCapturesAreAttributedToTheDeviceThatSealedThem`,
+  `testAProfileCannotImpersonateAnotherDevice`, `testATranscriptFromAnotherDeviceIsNeverAdopted`,
+  `testCapturesOfProfilesMadeBeforeAttributionAreUnattributed`, `testMalformedAttributionReadsAsAbsent`),
+  `CLIInboxTests.testCapturesAreAttributedAndARemovedDevicesAreRefused`, the app's
+  `QuickCaptureTests.enablingStoresAProfileWithoutTheIdentityAndRefreshFollowsKeyChanges` and
+  `RecipientsAlertTests.capturedByNamesTheDevice`.
+- The notebook is still the manifest's (bounded, #114): confining it is a policy choice left to the
+  maintainer. `device` inside a recipient is the profile's own claim (a recipient may be several devices).
+
+### C3: a removed device's captures are refused, also during its rewrap
+
+- A recipient no longer listed has no key in the ring, under the current secret or the outgoing one, so its
+  captures never verify: those sealed after its removal (with its old profile) and those it sealed before
+  and that still wait (the rotation re-tags only files of listed devices, `rewrapInbox`). They are reported
+  (`badTag`, whose text now names this case) and kept, and back off like other failing files.
+- Unattributed files under the outgoing secret's vault capture key, which a removed device also holds, are
+  re-tagged only by the run that rotated the secret (`rewrapInbox(legacyPrevious:)`, `finishRewrap(rotating:)`),
+  never by a resumed one, and never adopted under it.
+- Remaining (documented in `format.md` §11.1 and `docs/quick-capture.md`): a removed device that held the
+  vault secret itself, not only a profile, knows the outgoing secret and can seal captures attributed to a
+  listed device until the rewrap finishes, as it can tag revisions during that window (§3.3.1). The
+  review's journal-list proposal would close that for captures only; it was not needed for the case the
+  finding describes (a lost or removed capturing device, which holds a profile).
+- Tests: `CaptureAttributionTests.testARemovedDevicesCapturesAreRefusedWhileItsRewrapIsUnfinished` (fails
+  with the old key ring), `testTheRotationKeepsOnlyCapturesOfListedDevicesAndWaitingUnattributedOnes`,
+  `testProfilesAndReadsNeedTheAuthenticatedList`, `CLIInboxTests.testCapturesAreAttributedAndARemovedDevicesAreRefused`.
+
+### N3: `format` and `features` are authenticated
+
+- **`markersTag`** (`format.md` §2.1 "Version markers"): HMAC under `HKDF(vaultSecret, "sempere/1 markers
+  key")` over `vaultId`, `format` and the distinct `features` sorted by UTF-8 bytes (a NUL never verifies).
+  Every write of `vault.json` tags what it writes (`Vault.writeManifest(…, secret:)`), with the new
+  `markers-tag` feature so older writers stop. Writers refuse to re-tag markers that changed on disk since
+  they opened the vault (`markersIntact`).
+- **Checked with the list** (`RecipientsAuth.markersProblem`), once it checks: `markersMismatch` (does not
+  verify), `markersRemoved` (gone while the feature or the trust record says it was there),
+  `markersRolledBack` (verifies, but names a lower major or fewer features than the trust record:
+  an older `vault.json` put back). Each is a `tampered` status, so every write path refuses it (exit 6)
+  and every report shows it. Reading works; newer markers still make the vault read-only.
+- **Trust records** keep the last verified markers (`markers`, optional in `sempere-trust/2`), never fewer.
+- **Old vaults** are tagged by their first write, by the app right after unlock (`upgradeMarkers`), or by
+  `sempere vault markers tag`; readers never tag. `vault markers repair` writes the larger of the markers on
+  disk and in the record, and refuses a result this version could not write.
+- **Sync** (`incomingManifestProblem`): unlocked, the incoming file is checked like an open (plus the
+  markers may not go down); locked, tagged markers may not change at all, untagged ones only grow.
+- **The committed fixtures** `sample.sempere` and `newer.sempere` carry a markers tag (vault.json only).
+- **Web viewer:** checks and reports the tag (`checkRecipients`), knows the feature.
+- Limit: readers older than this change ignore the tag and can still be downgraded; a device with no
+  trust record cannot tell a vault stripped of both tag and feature from one written before them.
+- `recipients confirm` refuses each markers reason, and when it confirms a list problem it restores
+  markers that do not check (as a repair) instead of accepting them (found by the external review of #125;
+  `MarkersAuthTests.testConfirmNeverClearsTamperedMarkers`, `CLIMarkersTests.testRecipientsConfirmRefusesEveryMarkersProblem`).
+- Tests: `MarkersAuthTests` (known-answer vector computed independently from the spec, also in
+  `web/test/markers.test.ts`; downgraded format, stripped tag, replayed manifest, repair, first-write
+  tagging, sync), `CLIMarkersTests`, `RecipientsAlertTests.markersAlertPointsToTheMarkersRepair`.
+
+### P4: the web cache follows the vault's key state
+
+`cacheNamespace` (`web/src/vault/cache.ts`) adds a hash of the sealed `vaultSecret` and of the rewrap journal
+to the vault's URL and id; every recipient change re-seals the secret, and the journal comes and goes with a
+rewrap. Opening the vault drops every copy cached under an earlier key state of the same vault
+(`dropOtherNamespaces`), including caches written before this change. Test: `web/test/cache.test.ts`
+("drops copies cached under an earlier key state").
+
+### C8: comment fixed
+
+The code was right (`completeUntilFirstUserAuthentication`, which a Lock Screen voice note needs to be read
+back from closed files and sealed before any unlock); the class comment of `QuickCapture` now says so.
+
 ## Open findings (reported, not fixed in the review PR)
 
 The original text of each finding follows; those fixed since say so in their heading.
@@ -403,7 +507,7 @@ Two attacks follow:
 Changing `nextSeq` to skip unreadable snapshots would trade this DoS for a risk of reusing a seq, so it is a
 decision for the maintainer.
 
-### C2 (Low): forged captures are indistinguishable from real ones (part fixed in #114, above)
+### C2 (Low): forged captures are indistinguishable from real ones (fixed in #114 and #125, above)
 
 The manifest supplies `title` and `notebook` (`CaptureInbox.swift`, `CaptureAdoption.ops`). The title is
 bounded only by the 64 MiB line limit. `manifest.device` is checked but not stored, and the delta is written
@@ -415,7 +519,7 @@ a device id"; it now describes what happens.
 - Store the capturing device id on the recording.
 - Optionally confine adopted captures to the notebook the adopting device configured.
 
-### C3 (Low): a removed device's captures during an unfinished rewrap
+### C3 (Low): a removed device's captures during an unfinished rewrap (fixed in #125, above)
 
 `readCapture` and `rewrapInbox` accept the previous secret's capture key for as long as the journal exists.
 The journal stays while any file fails, for example evicted iCloud files.
@@ -459,7 +563,7 @@ Each request is bounded by size and time, but a run is not:
 
 **Proposed fix:** caps per run, and an overall deadline.
 
-### N3 (Low, design): `format` and `features` are not authenticated
+### N3 (Low, design): `format` and `features` are not authenticated (fixed in #125, above)
 
 `recipientsTag` covers the vault id and the keys only. A folder attacker can set `format` back to
 `sempere/1` and remove unknown features, so an old client opens the vault writable until it reads a marked
@@ -478,7 +582,7 @@ Each request is bounded by size and time, but a run is not:
   attack surface only; no bug is known.
 - **C7:** `sempere inbox list` and `inbox import` print manifest titles unsanitised, so a capture-key holder
   can send terminal escape sequences. Other commands print note titles the same way.
-- **C8:** a comment in `QuickCapture.swift` near line 116 says the plaintext uses `completeUnlessOpen`; the
+- **C8 (fixed in #125):** a comment in `QuickCapture.swift` near line 116 says the plaintext uses `completeUnlessOpen`; the
   code uses `completeUntilFirstUserAuthentication`, as documented.
 - **C9:** the capture-profile Keychain query does not set `kSecUseDataProtectionKeychain`, unlike
   `VaultKeyStore`. On Mac Catalyst it may land in the file-based keychain, where `kSecAttrAccessible` is
@@ -586,8 +690,8 @@ Each request is bounded by size and time, but a run is not:
 - The PRF, HKDF, AES-GCM and AAD handling is sound, and nothing is stored in plaintext.
 
 **#100 (cache and summaries), merged during the review:**
-- P4, Low: cached ciphertext from before a rewrap stays openable by a removed key (`web/src/vault/cache.ts`,
-  namespace without a recipients fingerprint).
+- P4, Low (fixed in #125): cached ciphertext from before a rewrap stays openable by a removed key
+  (`web/src/vault/cache.ts`, namespace without a recipients fingerprint).
 - P5, Low: `vault summaries --plaintext --out` writes the file world-readable
   (`Sources/SempereCLI/Summaries.swift`). Fixed in #130 (above).
 - Info: summary rows hide damaged revisions until the note is opened.

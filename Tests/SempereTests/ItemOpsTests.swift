@@ -66,6 +66,28 @@ final class ItemOpsTests: XCTestCase {
         XCTAssertNil(NoteOps.bringToFront(a.id, on: page), "already on top")
     }
 
+    /// The app's Rotate 90° Left/Right and its two-finger turn (GA-02).
+    func testRotationTurnsAndSnaps() {
+        XCTAssertEqual(NoteOps.rotation(nil, turnedBy: 90), 90)
+        XCTAssertEqual(NoteOps.rotation(nil, turnedBy: -90), 270)
+        XCTAssertEqual(NoteOps.rotation(270, turnedBy: 90), 0, "four right turns are upright")
+        XCTAssertEqual(NoteOps.rotation(10, turnedBy: -370), 0)
+        XCTAssertEqual(NoteOps.rotation(350, turnedBy: 720.5), 350.5)
+        XCTAssertEqual(NoteOps.rotation(nil, turnedBy: .infinity), 0)
+        XCTAssertEqual(NoteOps.snappedRotation(88.4), 90, "within 3° of a multiple of 15")
+        XCTAssertEqual(NoteOps.snappedRotation(358), 0, "wraps to upright")
+        XCTAssertEqual(NoteOps.snappedRotation(52.26), 52.3, "otherwise a tenth of a degree")
+        XCTAssertEqual(NoteOps.snappedRotation(.nan), 0)
+        // A turn is one setItem rotation op and a full turn back is none.
+        let a = image()
+        let page = Page(id: pageID, order: "a", items: [a])
+        let turned = NoteOps.rotation(a.rotation, turnedBy: -90)
+        let edit = NoteOps.setRotation(a.id, to: turned, on: page)
+        XCTAssertEqual(edit?.ops.count, 1)
+        XCTAssertEqual(edit?.page.items.first?.rotation, 270)
+        XCTAssertNil(NoteOps.setRotation(a.id, to: NoteOps.rotation(a.rotation, turnedBy: 360), on: page))
+    }
+
     func testBringToFrontDrawsAboveTheOthersOfItsLayer() throws {
         let a = image(z: "a"), b = image(z: "b"), bg = Item.pdfPage(blob: blob, pageIndex: 0, pageSize: Size(w: 10, h: 10),
                                                                      frame: Rect(x: 0, y: 0, w: 10, h: 10), z: "z")

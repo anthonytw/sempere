@@ -228,4 +228,64 @@ enum TextBoxEditing {
                                    return r
                                }))
     }
+
+    // MARK: Markdown boxes (format.md §8.2.4 "Markdown text")
+
+    /// How a Markdown box's source is shown while it is edited: plain text in
+    /// the box's body family (sans or serif), size and colour.
+    static func markdownAttributes(_ style: BoxStyle) -> [NSAttributedString.Key: Any] {
+        let f = TextBoxFonts.font(style.font == .serif ? .serif : .sans, size: style.size, bold: false, italic: false)
+        return [.font: f.font, .foregroundColor: style.color.uiColor,
+                .paragraphStyle: paragraphStyle(align: style.align, dir: style.dir, lineHeight: style.size)]
+    }
+
+    /// The text view's text for a Markdown source.
+    static func markdownSource(_ source: String, style: BoxStyle) -> NSAttributedString {
+        NSAttributedString(string: source, attributes: markdownAttributes(style))
+    }
+
+    /// The Markdown box written after editing `source` (before its formulas
+    /// are typeset and it is laid out): the source as one run, the box
+    /// style, the keyboard's language if the box had none; fields the editor
+    /// does not show (`extra`, typeset formulas still used) kept from
+    /// `original`. Nil when the source breaks the format's limits.
+    static func markdownContent(_ source: String, style: BoxStyle, original: TextContent?,
+                                keyboardLanguage: String?) -> TextContent? {
+        var content: TextContent
+        do {
+            if let original, original.isMarkdown {
+                content = try MarkdownText.replacingSource(original, with: source)
+            } else {
+                content = try MarkdownText.content(source)
+                if let original { content.lang = original.lang; content.extra = original.extra }
+            }
+        } catch {
+            return nil
+        }
+        content.font = style.font == .serif ? .serif : .sans
+        content.family = TextBoxFonts.family(content.font)
+        content.size = style.size
+        content.color = style.color
+        content.align = style.align
+        content.dir = style.dir
+        if content.lang == nil, let lang = keyboardLanguage, !lang.isEmpty, lang != "emoji", lang != "dictation" { content.lang = lang }
+        let used = MarkdownText.usedFormulas(content)
+        content.math = used.isEmpty ? nil : used
+        return content
+    }
+
+    /// The smallest change (UTF-16) that turns `old` into `new`: the range of
+    /// `old` to replace and its replacement (common prefix and suffix kept).
+    static func changedRange(from old: String, to new: String) -> (range: NSRange, replacement: String) {
+        let a = Array(old.utf16), b = Array(new.utf16)
+        var p = 0
+        while p < a.count, p < b.count, a[p] == b[p] { p += 1 }
+        var s = 0
+        while s < a.count - p, s < b.count - p, a[a.count - 1 - s] == b[b.count - 1 - s] { s += 1 }
+        // Never split a surrogate pair: keep a lead surrogate with its trail.
+        if p > 0, UTF16.isLeadSurrogate(a[p - 1]) { p -= 1 }
+        if s > 0, a.count - s - 1 >= p, UTF16.isLeadSurrogate(a[a.count - s - 1]) { s -= 1 }
+        let replacement = String(decoding: b[p..<(b.count - s)], as: UTF16.self)
+        return (NSRange(location: p, length: a.count - s - p), replacement)
+    }
 }

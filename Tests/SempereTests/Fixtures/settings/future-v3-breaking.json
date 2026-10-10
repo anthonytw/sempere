@@ -1,0 +1,14 @@
+{
+  "$comment": "synthetic: a later breaking version",
+  "$meta": {
+    "newNote.titleFormat": {
+      "modified": 1780000000000,
+      "type": "mac"
+    }
+  },
+  "$minReaderVersion": 3,
+  "$schemaVersion": 3,
+  "newNote.titleFormat": {
+    "preset": "weekday"
+  }
+}

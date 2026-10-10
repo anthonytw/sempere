@@ -55,6 +55,7 @@ struct BackupSettingsSection: View {
                 Picker("Remind Me", selection: Binding(get: { record.reminderDays }, set: { setReminder($0) })) {
                     ForEach(BackupReminder.choices, id: \.self) { Text(BackupReminder.label($0)).tag($0) }
                 }
+                .syncedSetting("backup.reminderDays")
                 Button("Forget Backup Folder", role: .destructive) {
                     model.forgetBackupFolder()
                     problems = []

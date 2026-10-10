@@ -5,7 +5,7 @@
 import { IDBFactory } from "fake-indexeddb";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CachingSource, FileCache, IndexedDBFileStore, MemoryFileStore, isCacheablePath } from "../src/vault/cache.ts";
+import { CachingSource, FileCache, IndexedDBFileStore, MemoryFileStore, cacheNamespace, isCacheablePath } from "../src/vault/cache.ts";
 import { loadNote } from "../src/vault/library.ts";
 import { type VaultSource } from "../src/vault/source.ts";
 import { NodeDirSource, fixtures, unlockFixture } from "./support.ts";
@@ -96,6 +96,36 @@ describe("ciphertext cache", () => {
     expect(await src.retain(new Map([[lecture, ["17911308010000000-a1b2c3d4-1.delta.age"]]]))).toBe(3);
     expect(await cache.keys("")).toEqual([`ns\nnotes/${lecture}/17911308010000000-a1b2c3d4-1.delta.age`,
       `another vault\nnotes/${other}/17911308060000000-a1b2c3d4-1.delta.age`]);
+  });
+
+  // Security review 2026-10, P4: a copy cached before a recipient change (or
+  // while its rewrap ran) is encrypted to the old recipients, a removed key
+  // among them; the new key state's namespace drops it.
+  it("drops copies cached under an earlier key state of the same vault", async () => {
+    const cache = new FileCache(new MemoryFileStore());
+    const path = `notes/${lecture}/17911308010000000-a1b2c3d4-1.delta.age`;
+    const before = await cacheNamespace("https://x/v", "vault-1", "sealed secret 1");
+    const journal = new TextEncoder().encode("{}");
+    const during = await cacheNamespace("https://x/v", "vault-1", "sealed secret 2", journal);
+    const after = await cacheNamespace("https://x/v", "vault-1", "sealed secret 2");
+    expect(new Set([before, during, after]).size).toBe(3);
+    expect(await cacheNamespace("https://x/v", "vault-1", "sealed secret 1")).toBe(before);
+    expect(before.startsWith("https://x/v\nvault-1\n")).toBe(true);
+    await cache.put(`${before}\n${path}`, new Uint8Array([1]));
+    await cache.put(`https://x/v\nvault-1\n${path}`, new Uint8Array([2]));   // written before key states
+    await cache.put(`https://x/v\nvault-2\n${path}`, new Uint8Array([3]));   // another vault: kept
+    await cache.put(`https://x/v2\nvault-1\n${path}`, new Uint8Array([4]));  // another URL: kept
+    const inner: VaultSource = {
+      label: "x", listNotes: () => Promise.resolve([]), listRevisions: () => Promise.resolve([]),
+      read: () => Promise.resolve(new Uint8Array([9])),
+    };
+    const src = new CachingSource(inner, cache, during);
+    await src.read(path, 10);
+    expect(await src.dropOtherNamespaces()).toBe(2);
+    expect((await cache.keys("")).sort()).toEqual([`${during}\n${path}`, `https://x/v\nvault-2\n${path}`,
+      `https://x/v2\nvault-1\n${path}`].sort());
+    // The rewrap finishes: what was cached during it goes too.
+    expect(await new CachingSource(inner, cache, after).dropOtherNamespaces()).toBe(1);
   });
 
   it("keeps a streamed file only once it was read to the end", async () => {

@@ -47,9 +47,11 @@ struct InboxEnable: ParsableCommand {
         commandName: "enable",
         abstract: "Store this machine's capture profile for the vault (needs the key once).",
         discussion: """
-            The profile holds the vault's public recipients and its capture key (derived from the vault secret; \
-            it can only put captures in the inbox, never read or change notes). It is written with mode 0600. \
-            Run it again after the vault's keys change (a removed key rotates the capture key).
+            The profile holds the vault's public recipients and the device capture key of the key you unlock \
+            with (derived from the vault secret; it can only put captures in the inbox, never read or change \
+            notes), so captures are attributed to that key's device. It is written with mode 0600. Run it again \
+            after the vault's keys change (a removed key rotates the capture key), and to replace a profile made \
+            before attribution (its captures are adopted as unattributed).
             """
     )
 
@@ -74,10 +76,12 @@ struct InboxEnable: ParsableCommand {
         _ = try? FileManager.default.removeItem(at: url)
         try FileManager.default.moveItem(at: tmp, to: url)
         if output.json {
-            struct Out: Encodable { var profile: String; var device: String; var notebook: String }
-            try output.emitJSON(Out(profile: url.path, device: p.device, notebook: p.notebook))
+            struct Out: Encodable { var profile: String; var device: String; var notebook: String; var recipient: String? }
+            try output.emitJSON(Out(profile: url.path, device: p.device, notebook: p.notebook, recipient: p.recipient))
         } else {
-            output.info("Capture profile written to \(url.path) (notebook \(p.notebook))")
+            let label = vault.recipients.first { CaptureKey.fingerprint(of: $0.key) == p.recipient }?.label ?? ""
+            output.info("Capture profile written to \(url.path) (notebook \(p.notebook); captures attributed to "
+                + "\(label.isEmpty ? "this key" : label))")
         }
     }
 }
@@ -233,6 +237,12 @@ struct InboxList: ParsableCommand {
         var title: String?
         var started: Date?
         var duration: Double?
+        /// The capturing device's id, as its capture names it.
+        var device: String?
+        /// The fingerprint of the recipient the capture is attributed to (nil: unattributed, format.md §11.1).
+        var recipient: String?
+        /// That recipient's label in vault.json.
+        var capturedBy: String?
         var error: String?
     }
 
@@ -246,6 +256,12 @@ struct InboxList: ParsableCommand {
                     out.title = p.manifest?.title
                     out.started = p.manifest?.started
                     out.duration = p.manifest?.duration
+                    out.device = p.manifest?.device
+                    out.recipient = p.recipient
+                    if p.manifest != nil {
+                        out.capturedBy = CaptureAttribution(device: p.manifest?.device ?? "", recipient: p.recipient)
+                            .label(in: vault.recipients)
+                    }
                 } catch {
                     out.error = (error as? CaptureError)?.description ?? CLIError.from(error).message
                 }
@@ -257,10 +273,18 @@ struct InboxList: ParsableCommand {
             var line = "\(e.capture)  \(e.kinds.joined(separator: "+"))"
             if let t = e.title { line += "  \(t)" }
             if let d = e.duration { line += "  \(Transcript.clock(d))" }
+            if let device = e.device { line += "  " + Self.attribution(device: device, recipient: e.recipient, label: e.capturedBy) }
             if let err = e.error { line += "  (\(err))" }
             print(line)
         }
         output.info("\(entries.count) capture(s) in the inbox.")
+    }
+
+    /// `from iPad (device 0b0b0b0b)`, or `from device 0b0b0b0b (unattributed)`.
+    static func attribution(device: String, recipient: String?, label: String?) -> String {
+        guard recipient != nil else { return "from device \(device) (unattributed)" }
+        let name = (label ?? "").isEmpty ? "an unlabelled key" : label ?? ""
+        return "from \(name) (device \(device))"
     }
 }
 
@@ -322,8 +346,9 @@ struct InboxImport: ParsableCommand {
                 } else if dryRun {
                     output.info("\(r.capture.prefix(8)) \(title): would \(r.created ? "create" : "update") note \(r.note.prefix(8))")
                 } else {
+                    let from = r.captured.map { ", " + InboxList.attribution(device: $0.device, recipient: $0.recipient, label: r.capturedBy) } ?? ""
                     output.info("\(r.capture.prefix(8)) \(title): note \(r.note.prefix(8))\(r.created ? " created" : "")"
-                                + "\(r.transcript ? ", transcript" : "")")
+                                + "\(r.transcript ? ", transcript" : "")\(from)")
                 }
             }
             output.info("\(dryRun ? "Dry run: " : "")\(results.filter { $0.error == nil }.count) of \(results.count) capture(s) \(dryRun ? "verified" : "adopted").")

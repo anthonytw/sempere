@@ -73,6 +73,72 @@ struct KeyManagementTests {
         }
     }
 
+    /// GA-17: Replace (the CLI's `vault recipients replace`) swaps another
+    /// device's key in one re-encryption; a blank label keeps the old one.
+    @Test func replacingAKeyLocksTheOldOneOutAndOpensWithTheNew() async throws {
+        let (model, url) = try await Self.unlockedModel()
+        let old = try NativeIdentity.generate(.postQuantum)
+        try await model.addDeviceKey(recipient: old.recipient.string, label: "Old iPad", authenticator: PassingOwnerAuthenticator())
+        let new = try NativeIdentity.generate(.postQuantum)
+        let auth = KeyExportTests.FakeAuthenticator()
+        try await model.replaceDeviceKey(old.recipient.string, with: " \(new.recipient.string)\n", label: "  ",
+                                         authenticator: auth)
+        #expect(auth.reasons.count == 1, "a new key reads the vault: the owner is asked")
+        #expect(model.deviceKeys.count == 2)
+        #expect(model.deviceKeys.first { $0.recipient == new.recipient.string }?.label == "Old iPad")
+        #expect(!model.deviceKeys.contains { $0.recipient == old.recipient.string })
+        #expect(model.keyEpoch == 2)
+        #expect(try Vault.open(at: url, identities: [new]).summaries().count == 2)
+        #expect(throws: (any Error).self) { _ = try Vault.open(at: url, identities: [old]).summaries() }
+        #expect(try Vault.open(at: url, identities: model.unlockIdentities).summaries().count == 2)
+    }
+
+    @Test func aGeneratedReplacementReturnsItsSecret() async throws {
+        let (model, url) = try await Self.unlockedModel()
+        let old = try NativeIdentity.generate(.postQuantum)
+        try await model.addDeviceKey(recipient: old.recipient.string, label: "Old iPad", authenticator: PassingOwnerAuthenticator())
+        let generated = try await model.generateReplacementKey(for: old.recipient.string, label: "New iPad",
+                                                               authenticator: PassingOwnerAuthenticator())
+        #expect(generated.problem == nil)
+        let identity = try IdentityFile.parse(generated.secret)
+        #expect(model.deviceKeys.first { $0.recipient == identity.recipient.string }?.label == "New iPad")
+        #expect(!model.deviceKeys.contains { $0.recipient == old.recipient.string })
+        #expect(try Vault.open(at: url, identities: [identity]).summaries().count == 2)
+    }
+
+    @Test func replaceRefusesTheKeyInUseAndBadKeysBeforeAnythingChanges() async throws {
+        let (model, _) = try await Self.unlockedModel()
+        let mine = model.deviceKeys[0].recipient
+        let other = try NativeIdentity.generate(.postQuantum)
+        try await model.addDeviceKey(recipient: other.recipient.string, label: "B", authenticator: PassingOwnerAuthenticator())
+        let fresh = try NativeIdentity.generate(.postQuantum).recipient.string
+        let pass = PassingOwnerAuthenticator()
+        await #expect(throws: AppModel.KeyError.replaceInUse) {
+            try await model.replaceDeviceKey(mine, with: fresh, label: "", authenticator: pass)
+        }
+        await #expect(throws: AppModel.KeyError.replaceInUse) {
+            _ = try await model.generateReplacementKey(for: mine, label: "", authenticator: pass)
+        }
+        await #expect(throws: AppModel.KeyError.notListed) {
+            try await model.replaceDeviceKey(fresh, with: fresh, label: "", authenticator: pass)
+        }
+        await #expect(throws: AppModel.KeyError.alreadyListed) {
+            try await model.replaceDeviceKey(other.recipient.string, with: mine, label: "", authenticator: pass)
+        }
+        await #expect(throws: AppModel.KeyError.notPostQuantum) {
+            try await model.replaceDeviceKey(other.recipient.string, with: "age1hello", label: "", authenticator: pass)
+        }
+        await #expect(throws: AppModel.KeyError.vaultChanged) {
+            try await model.replaceDeviceKey(other.recipient.string, with: fresh, label: "", expectedVault: UUID(), authenticator: pass)
+        }
+        let refused = KeyExportTests.FakeAuthenticator(outcome: AppModel.KeyExportError.notAuthenticated)
+        await #expect(throws: (any Error).self) {
+            try await model.replaceDeviceKey(other.recipient.string, with: fresh, label: "", authenticator: refused)
+        }
+        #expect(model.deviceKeys.map(\.recipient) == [mine, other.recipient.string], "nothing changed")
+        #expect(model.keyEpoch == 1)
+    }
+
     @Test func badKeysAreRefusedBeforeAnythingChanges() async throws {
         let (model, _) = try await Self.unlockedModel()
         for text in ["", "hello", "age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq", "AGE-SECRET-KEY-PQ-1ABC"] {

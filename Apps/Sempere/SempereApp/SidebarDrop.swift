@@ -77,7 +77,7 @@ enum DropTarget: Hashable, Sendable {
         switch item {
         case .allNotes: self = .topLevel
         case .notebook(let path): self = NotebookPath.canonical(path).map(DropTarget.notebook) ?? .topLevel
-        case .tag, .deleted, .recentlyRecognized: return nil
+        case .tag, .deleted, .favorites, .recentlyRecognized: return nil
         }
     }
 

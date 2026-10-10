@@ -109,6 +109,7 @@ struct ReadOnlyVaultTests {
         var manifest = try VaultManifest.decode(Data(contentsOf: manifestURL))
         manifest.format = "sempere/1"
         manifest.features = []
+        manifest.markersTag = nil   // a version-1 vault from before version markers
         try manifest.encoded().write(to: manifestURL)
         for other in ["44444444-4444-4444-8444-444444444444", "55555555-5555-4555-8555-555555555555"] {
             try FileManager.default.removeItem(at: url.appendingPathComponent("notes/\(other)"))

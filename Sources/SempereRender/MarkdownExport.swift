@@ -169,9 +169,10 @@ public enum MarkdownExport {
             let images = i < pageImages.count ? pageImages[i] : []
             let text = page.recognition.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
             let typed = typedText(page)
+            let marked = markdownBoxes(page)
             let equations = self.equations(page)
             let clips = videos.filter { $0.clip.page == i }
-            if images.isEmpty && text.isEmpty && typed.isEmpty && clips.isEmpty && equations.isEmpty { continue }
+            if images.isEmpty && text.isEmpty && typed.isEmpty && marked.isEmpty && clips.isEmpty && equations.isEmpty { continue }
             md += "\n## Page \(i + 1)\n\n"
             for img in images { md += "![Page \(i + 1)](\(linkPath(img)))\n" }
             if !clips.isEmpty {
@@ -191,8 +192,13 @@ public enum MarkdownExport {
                 md += "Typed text:\n\n"
                 md += typed.map(fenced).joined(separator: "\n")
             }
-            if !equations.isEmpty {
+            if !marked.isEmpty {
+                // Markdown text boxes: their source, as it is (format.md §8.2.4).
                 if !images.isEmpty || !clips.isEmpty || !text.isEmpty || !typed.isEmpty { md += "\n" }
+                md += marked.joined(separator: "\n\n") + "\n"
+            }
+            if !equations.isEmpty {
+                if !images.isEmpty || !clips.isEmpty || !text.isEmpty || !typed.isEmpty || !marked.isEmpty { md += "\n" }
                 md += "Equations:\n\n"
                 md += equations.joined(separator: "\n\n") + "\n"
             }
@@ -212,9 +218,16 @@ public enum MarkdownExport {
         }
     }
 
-    /// The text of the page's text boxes (format.md §8.2.4) in drawing order, trimmed, empty ones left out.
+    /// The text of the page's styled text boxes (format.md §8.2.4) in drawing order, trimmed, empty ones left out.
     static func typedText(_ page: Page) -> [String] {
-        page.items.filter { $0.kind == .text }.sorted(by: Item.drawsBefore)
+        page.items.filter { $0.kind == .text && $0.text?.isMarkdown != true }.sorted(by: Item.drawsBefore)
+            .compactMap { $0.text?.string.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+    }
+
+    /// The Markdown source of the page's Markdown text boxes (format.md
+    /// §8.2.4 "Markdown text") in drawing order, trimmed, empty ones left out.
+    public static func markdownBoxes(_ page: Page) -> [String] {
+        page.items.filter { $0.kind == .text && $0.text?.isMarkdown == true }.sorted(by: Item.drawsBefore)
             .compactMap { $0.text?.string.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
     }
 

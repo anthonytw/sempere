@@ -7,7 +7,8 @@
 // direction (and its x where it does not depend on glyph widths), plus the
 // rotation of each text box. PDF pages are placeholders in the CLI export
 // without Poppler; the viewer draws them with pdf.js, so only their rotated
-// frames are compared here. Video items (§8.2.7) are their poster, placed
+// frames are compared here. Markdown text boxes (§8.5.4) are their pieces: text items with fixed lines,
+// equations, and shapes found in the export within rounding. Video items (§8.2.7) are their poster, placed
 // like an image (or a placeholder without one), under the play mark, which
 // is compared element for element. Audio items (§8.2.9) are their card and
 // icon, element for element, and their label's lines (title, duration and
@@ -98,6 +99,20 @@ function parseGolden(svg: string, paper: string): Structure {
   return out;
 }
 
+/** True when `svg` holds a `<tag>` with these attributes, its coordinates equal within 0.002 (sin and cos may differ in the last digit). */
+function findShape(svg: string, tag: string, attrs: [string, string][]): boolean {
+  const geometry = tag === "polyline" ? "points" : "d";
+  const nums = (v: string) => (v.match(/-?\d+(\.\d+)?/g) ?? []).map(Number);
+  const want = nums(attrs.find(([k]) => k === geometry)?.[1] ?? "");
+  const others = attrs.filter(([k]) => k !== geometry);
+  return svg.split("\n").some((line) => {
+    if (!line.startsWith(`<${tag} `)) return false;
+    if (others.some(([k, v]) => attr(line, k) !== v)) return false;
+    const have = nums(attr(line, geometry) ?? "");
+    return have.length === want.length && have.every((v, k) => Math.abs(v - (want[k] ?? NaN)) <= 0.002);
+  });
+}
+
 function matrixOf(m: Affine): number[] {
   return [m.a, m.b, m.c, m.d, m.tx, m.ty];
 }
@@ -126,8 +141,15 @@ describe.runIf(existsSync(dir))("items cross-check", async () => {
         const prepared = new PreparedPage(page, state.meta);
         const want = parseGolden(readFileSync(join(golden, "render", id, files[i] ?? ""), "utf8"), paintHex(paint(prepared.drawnPaper.background)));
         const got: Structure = { fills: [], placeholders: [], images: [], lines: [], transforms: [], marks: [], cards: [] };
+        const svgText = readFileSync(join(golden, "render", id, files[i] ?? ""), "utf8");
+        let shapes = 0;
         for (const r of resolveItems(prepared, undefined, state.recordings)) {
           if (r.fill) got.fills.push(r.fill.attrs.find(([k]) => k === "d")?.[1] ?? "");
+          // A Markdown box's shapes (§8.5.4): each is in the export, its points within rounding.
+          for (const u of r.underlay ?? []) {
+            expect(findShape(svgText, u.tag, u.attrs), `${id}: ${u.tag}`).toBe(true);
+            shapes++;
+          }
           const d = r.draw;
           const corners = pointsAttr(d.it.corners);
           switch (d.kind) {
@@ -207,6 +229,8 @@ describe.runIf(existsSync(dir))("items cross-check", async () => {
         expect(got.marks).toEqual(want.marks);
         expect(got.cards).toEqual(want.cards);
         if (id === audioNote) expect(got.cards.length).toBe(4 * 6);
+        // The Markdown note: code fill, bullet, task boxes and tick, rule, quote bar.
+        if (id.startsWith("7d7d")) expect(shapes).toBe(7);
         expect(got.images.map((x) => x.clip)).toEqual(want.images.map((x) => x.clip));
         got.images.forEach((img, k) => {
           const w = want.images[k]?.matrix ?? [];

@@ -113,6 +113,7 @@ public enum PNGWriter {
             if it.fillsBackground, let paper {
                 paint(it.backgroundFill(paper).translated(dy: -yOffset), into: &raster, sx: sx, sy: sy)
             }
+            for c in it.underlay { paint(c.translated(dy: -yOffset), into: &raster, sx: sx, sy: sy) }
             switch draws[it.item.id] {
             case .text(let shaped, let rotation)?:
                 drawText(shaped, rotation: rotation, yOffset: yOffset, sx: sx, sy: sy, glyphs: &glyphs, into: &raster)

@@ -79,6 +79,29 @@ struct SearchTests {
         model.close()
     }
 
+    /// A snippet never quotes an equation's LaTeX: prose next to it is shown as written, a match inside it
+    /// shows the (localized) marker, and the source stays searchable.
+    @Test func snippetsLeaveEquationsOut() async throws {
+        let (model, vault, _) = try await Self.model()
+        let page = try #require(try vault.reconstruct(noteId: Self.lecture).pages.first)
+        let formula = Item.math(MathContent(latex: #"\lambda^2 - \operatorname{tr}(A)\lambda"#), frame: Rect(x: 10, y: 80, w: 120, h: 30), z: "a")
+        try vault.apply(try NoteOps.addItems([formula], to: page).ops, to: Self.lecture, deviceState: TS.deviceStateURL(), app: "test")
+        try await model.refresh([Self.lecture])
+
+        model.searchText = "eigenvalues"
+        #expect(await TS.waitUntil { model.searchResults.first?.snippet != nil })
+        let prose = try #require(model.searchResults.first?.snippet)
+        #expect(!prose.isEquation && !prose.text.contains("lambda") && !prose.text.contains("\\"))
+        #expect(SearchSnippetText.display(prose) == prose.text)
+
+        model.searchText = "operatorname"
+        #expect(await TS.waitUntil { model.searchResults.first?.snippet?.isEquation == true })
+        let marker = try #require(model.searchResults.first?.snippet)
+        #expect(marker.text == NoteSearch.equationMarker && marker.matches.isEmpty)
+        #expect(SearchSnippetText.display(marker) == SearchSnippetText.equationMarker)
+        model.close()
+    }
+
     @Test func findsByTitleTagAndNotebookAndHonoursTheScope() async throws {
         let (model, _, _) = try await Self.model()
         for query in ["fixture lecture", "#fixture", "FIXTURE"] {

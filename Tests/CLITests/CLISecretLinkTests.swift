@@ -17,6 +17,7 @@ final class CLISecretLinkTests: CLITestCase {
         let url = vault.url.appendingPathComponent("vault.json")
         var m = try VaultManifest.decode(Data(contentsOf: url))
         m.features.removeAll { $0 == VaultManifest.signedLinkFeature }
+        m.markersTag = nil; m.features.removeAll { $0 == VaultManifest.markersTagFeature }   // older than version markers
         m.secretLink = .legacy(String(repeating: "ab", count: 32))
         try m.encoded().write(to: url)
     }

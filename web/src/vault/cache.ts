@@ -8,6 +8,7 @@
 // Nothing decrypted, and never the key, is stored (docs/web-viewer.md).
 
 import { isLowercaseUUID } from "../format/json.ts";
+import { concat } from "./bytes.ts";
 import { boundedStream, SourceError, type VaultSource, isRevisionFile } from "./source.ts";
 
 /** Where the cached bytes live: IndexedDB in the browser, memory in tests. */
@@ -137,8 +138,30 @@ export class FileCache {
 }
 
 /**
+ * The cache namespace of a vault: its URL (`label`), its id, and a
+ * fingerprint of its key state, the SHA-256 of `vaultSecret` as sealed in
+ * `vault.json` and of the rewrap journal if one is there (format.md §3.3.1).
+ * Every recipient change re-encrypts the secret, and a rewrap rewrites the
+ * write-once files in place under the same names, so after an addition, a
+ * removal or the end of a rewrap the namespace changes, and the copies of
+ * files encrypted to the old recipients (openable by a removed key) are
+ * dropped by `dropOtherNamespaces` (security review 2026-10, P4).
+ */
+export async function cacheNamespace(label: string, vaultId: string, sealedSecret: string,
+  journal?: Uint8Array): Promise<string> {
+  const enc = new TextEncoder();
+  const secret = new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(sealedSecret)));
+  const parts = [secret];
+  if (journal) parts.push(new Uint8Array(await crypto.subtle.digest("SHA-256", journal as Uint8Array<ArrayBuffer>)));
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", concat(parts) as Uint8Array<ArrayBuffer>));
+  const fingerprint = [...digest].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return `${label}\n${vaultId}\n${fingerprint}`;
+}
+
+/**
  * A source that answers write-once paths from a `FileCache` and stores what
- * it downloads. `namespace` separates vaults (URL and vault id).
+ * it downloads. `namespace` separates vaults (`cacheNamespace`: URL, vault
+ * id and key state).
  */
 export class CachingSource implements VaultSource {
   readonly label: string;
@@ -197,6 +220,19 @@ export class CachingSource implements VaultSource {
         await cache.put(key, out);
       },
     }));
+  }
+
+  /**
+   * Drops every cached file of the same vault (URL and id) cached under
+   * another namespace: an earlier key state, or a cache written before key
+   * states were part of the namespace. Returns how many were dropped.
+   */
+  async dropOtherNamespaces(): Promise<number> {
+    const vault = this.namespace.slice(0, this.namespace.lastIndexOf("\n") + 1);
+    const mine = `${this.namespace}\n`;
+    const victims = (await this.cache.keys(vault)).filter((k) => !k.startsWith(mine));
+    await this.cache.delete(victims);
+    return victims.length;
   }
 
   /** Drops a cached file (it failed to verify); true when it was cached. */

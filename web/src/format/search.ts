@@ -73,13 +73,28 @@ function equal(a: string, b: string): boolean {
   return fold(a).text === fold(b).text;
 }
 
+/** A part of a page's text from one source (Swift `PageText.Span`): `[start, end)` in UTF-16 code units. */
+export interface TextSpan {
+  start: number;
+  end: number;
+  /** An equation's LaTeX source: searchable, never quoted in a snippet. */
+  isMath: boolean;
+}
+
+export interface PageTextEntry {
+  number: number;
+  text: string;
+  /** The parts `text` is made of; absent or empty: one prose part (published summaries carry none). */
+  spans?: TextSpan[];
+}
+
 export interface SearchableNote {
   id: string;
   title: string;
   notebook?: string;
   tags: string[];
   modified?: number;
-  pageTexts: { number: number; text: string }[];
+  pageTexts: PageTextEntry[];
 }
 
 export type SearchField = "title" | "tag" | "notebook" | "text";
@@ -88,7 +103,12 @@ export interface Snippet {
   text: string;
   /** `[start, end)` code-unit ranges of matches in `text`. */
   matches: [number, number][];
+  /** The match is only inside an equation: `text` is `equationMarker` (the interface shows its own). */
+  isEquation?: boolean;
 }
+
+/** What a snippet says when the match is inside an equation (Swift `NoteSearch.equationMarker`). */
+export const equationMarker = "[equation]";
 
 export interface SearchHit {
   id: string;
@@ -171,7 +191,7 @@ function hit(ws: Word[], note: SearchableNote): SearchHit | undefined {
     const page = note.pageTexts[bestIndex];
     if (page) {
       out.page = page;
-      const sn = snippet(page.text, ws.map((w) => w.text));
+      const sn = pageSnippet(page, ws.map((w) => w.text));
       if (sn) out.snippet = sn;
       out.score += 5 * (pageWords.get(bestIndex)?.size ?? 0) + Math.min(pageWords.size, 5);
     }
@@ -194,24 +214,62 @@ function findAll(hay: string, needle: string): [number, number][] {
   return out;
 }
 
-/** A line-flattened excerpt of `text` around its first match of any of `ws`. */
-export function snippet(text: string, ws: string[]): Snippet | undefined {
-  // Swift's Character.isNewline: LF, VT, FF, CR, NEL, LS, PS.
-  const flat = text.replace(/[\n\r\u2028\u2029\u0085]|\v|\f/g, " ");
+function firstMatch(text: string, ws: string[]): [number, number] | undefined {
   let first: [number, number] | undefined;
   for (const w of ws) {
-    const r = findAll(flat, w)[0];
+    const r = findAll(text, w)[0];
     if (r && (!first || r[0] < first[0])) first = r;
   }
+  return first;
+}
+
+// Swift's Character.isWhitespace, as far as a line-flattened text needs it.
+const isSpace = (c: string | undefined) => c !== undefined && /^[\s\u0085]$/u.test(c);
+
+/** A line-flattened excerpt of `text` (one part) around its first match of any of `ws`, cut at word
+ * boundaries (Swift `NoteSearch.excerpt`). */
+function excerpt(text: string, ws: string[]): Snippet | undefined {
+  // Swift's Character.isNewline: LF, VT, FF, CR, NEL, LS, PS.
+  const flat = text.replace(/[\n\r\u2028\u2029\u0085]|\v|\f/g, " ");
+  const first = firstMatch(flat, ws);
   if (!first) return undefined;
   const chars = Array.from(flat);
   // Offsets in code points, as Swift's String indices count characters.
   const cpIndex = (unit: number) => Array.from(flat.slice(0, unit)).length;
-  const lo = Math.max(cpIndex(first[0]) - snippetBefore, 0);
-  const hi = Math.min(cpIndex(first[1]) + snippetAfter, chars.length);
-  const shown = (lo > 0 ? "…" : "") + chars.slice(lo, hi).join("") + (hi < chars.length ? "…" : "");
+  const start = cpIndex(first[0]), end = cpIndex(first[1]);
+  let lo = Math.max(start - snippetBefore, 0);
+  let hi = Math.min(end + snippetAfter, chars.length);
+  // A cut inside a word moves to the word's edge nearer the match (never past the match).
+  if (lo > 0) while (lo < start && !isSpace(chars[lo]) && !isSpace(chars[lo - 1])) lo++;
+  if (hi < chars.length) while (hi > end && !isSpace(chars[hi - 1]) && !isSpace(chars[hi])) hi--;
+  const body = chars.slice(lo, hi).join("").replace(/^[\t\p{Zs}]+|[\t\p{Zs}]+$/gu, "");
+  const shown = (lo > 0 ? "…" : "") + body + (hi < chars.length ? "…" : "");
   const matches = ws.flatMap((w) => findAll(shown, w)).sort((a, b) => a[0] - b[0]);
   return { text: shown, matches };
+}
+
+/** An excerpt of `page` around the first match of any of `ws` in its prose, never crossing into a
+ * neighbouring part; `equationMarker` when the words are only in equations (Swift `NoteSearch.snippet`). */
+export function pageSnippet(page: PageTextEntry, ws: string[]): Snippet | undefined {
+  const spans = page.spans && page.spans.length > 0 ? page.spans : [{ start: 0, end: page.text.length, isMath: false }];
+  let inEquation = false;
+  for (const span of spans) {
+    if (span.start < 0 || span.end < span.start || span.end > page.text.length) continue;
+    const part = page.text.slice(span.start, span.end);
+    if (part.length === 0) continue;
+    const hit = firstMatch(part, ws);
+    if (span.isMath) {
+      if (hit) inEquation = true;
+      continue;
+    }
+    if (hit) return excerpt(part, ws);
+  }
+  return inEquation ? { text: equationMarker, matches: [], isEquation: true } : undefined;
+}
+
+/** `pageSnippet` for plain text (one prose part). */
+export function snippet(text: string, ws: string[]): Snippet | undefined {
+  return pageSnippet({ number: 1, text }, ws);
 }
 
 /** Notes matching every word of `query`, best first (score, newest, title). */

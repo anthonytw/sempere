@@ -139,6 +139,10 @@ enum EditorCommands {
             ui.choosingPaper = true
         case .showRecordings:
             if editor != nil { ui.showingRecordings = true }
+        case .toggleRecording:
+            if let editor { Task { await editor.toggleRecording() } }
+        case .duplicateItem, .bringItemToFront, .deleteItem:
+            editor?.canvasTarget?.perform(itemCommand: command)
         case .previousPage:
             if let editor { editor.selectPage(editor.pageIndex - 1) }
         case .nextPage:
@@ -195,6 +199,8 @@ enum EditorCommands {
         context.canEditNote = editor.map { !$0.isReadOnly } ?? false
         context.notePageless = editor?.isPageless ?? false
         context.hasPage = editor?.currentPage != nil
+        context.hasItemSelection = editor?.hasItemSelection ?? false
+        context.isRecording = editor?.recordingSession?.isActive == true
         context.pageIndex = editor?.pageIndex ?? 0
         context.pageCount = editor?.pages.count ?? 0
         context.canDeletePage = editor?.canDeletePage ?? false
@@ -216,6 +222,9 @@ enum WindowCommands {
         case .importPDF: ui.importingPDF = true
         case .importFromApp: ui.importingFromApp = true
         case .exportNotes: model.requestExport(.pdf, ids: exportIDs, window: ui.id)
+        case .showAbout: ui.expectations = .about
+        case .showTour: ui.expectations = .tour(firstRun: false)
+        case .showKeyNotice: ui.expectations = .keyNotice(firstRun: false)
         case .toggleVoiceNote: Task { await model.toggleVoiceNote() }
         default: return false
         }
@@ -261,6 +270,8 @@ final class WindowUI {
     var importReport: ImportDetails?
     /// A menu command for the editor's Insert menu (`InsertRequest`), taken by the window's editor.
     var insertRequest: InsertRequest?
+    /// About Sempere, the quick tour or the key notice (`ExpectationsSheets`).
+    var expectations: ExpectationsSheet?
     /// A menu command for the editor's toolbar toggles (`ToolRequest`), taken by the window's editor.
     var toolRequest: ToolRequest?
     /// The note whose Version History sheet is open (`WindowSheets`).

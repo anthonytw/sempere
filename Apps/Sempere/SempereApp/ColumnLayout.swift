@@ -28,4 +28,17 @@ enum ColumnLayout {
     static func toggled(_ stored: String) -> String {
         visibility(from: stored) == .detailOnly ? "doubleColumn" : "detailOnly"
     }
+
+    /// The columns the split view gets. An iPhone leaves them to the system (a
+    /// stack when compact, columns in a wide landscape) whatever is stored, so
+    /// a layout stored on an iPad never hides the list of a phone in landscape.
+    static func visibility(from stored: String, isPhone: Bool) -> NavigationSplitViewVisibility {
+        isPhone ? .automatic : visibility(from: stored)
+    }
+
+    /// The stored layout after the split view changed its columns: an iPhone
+    /// never stores one (its columns are the system's).
+    static func storing(_ visibility: NavigationSplitViewVisibility, over stored: String, isPhone: Bool) -> String {
+        isPhone ? stored : Self.stored(visibility)
+    }
 }

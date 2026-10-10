@@ -87,8 +87,9 @@ enum CloudScan {
         var placeholder: Bool
     }
 
-    /// Root files a reader needs (format.md §2, §3.3.1).
-    static let rootFiles: Set<String> = ["vault.json", "rewrap-journal.json"]
+    /// Root files a reader needs (format.md §2, §3.3.1), and the shared
+    /// settings applied at unlock (format.md §13).
+    static let rootFiles: Set<String> = ["vault.json", "rewrap-journal.json", "settings.age"]
 
     /// `vault.json`, `rewrap-journal.json`, `keys/*.age` and
     /// `notes/<id>/*.age`, with placeholders mapped to the real names.

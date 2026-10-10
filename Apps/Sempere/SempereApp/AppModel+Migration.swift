@@ -83,6 +83,7 @@ extension AppModel {
         guard phase == .migrating, let start = vault, var plan = migration, !plan.isRunning else {
             throw MigrationError.notMigrating
         }
+        try requireLocalKeyChanges()   // a WebDAV copy: the rewrap would never reach the server
         // Never remove the classic key without a post-quantum one to replace it.
         guard plan.finishingOnly || plan.key?.isPostQuantum == true else { throw MigrationError.notPostQuantum }
         let gen = generation

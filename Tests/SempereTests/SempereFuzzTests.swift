@@ -32,6 +32,7 @@ final class SempereFuzzTests: VaultTestCase {
         } catch is BodyFramingError {
         } catch is GzipError {
         } catch is AgeError {
+        } catch is SharedSettingsError {
         } catch { return "untyped error \(type(of: error)): \(error)" }
         return nil
     }
@@ -282,6 +283,40 @@ final class SempereFuzzTests: VaultTestCase {
         })
     }
 
+    /// Markdown text boxes (format.md §8.5.4): any source parses, its plain
+    /// text and rendered paragraphs are built, every offset points inside the
+    /// source, and the editing helpers keep their selection inside the text.
+    func testFuzzMarkdown() throws {
+        let seeds = ["# H\n\n- [x] **a** _b_ ~~c~~ `d` [e](f) <g:h>\n> q\n```\ncode\n```\n$$\nx\n$$",
+                     "1. a\n   - b\n     > c *d* $e$ $$f$$", "***x** y*", "[a](<b> \"t\") ![i](j)", "\\* \\$ $5 $6",
+                     String(repeating: "> - ", count: 30) + "deep"].map { Data($0.utf8) }
+        assertClean(Fuzz.run("markdown", seeds: seeds, quick: 2000, text: true, maxSize: 4096, generate: { rng in
+            let pieces = ["*", "_", "~~", "`", "$", "$$", "[", "]", "(", ")", "<", ">", "#", "- ", "1. ", "\n", " ", "\\", "x",
+                          "[ ] ", "```", "!", "é", "😀"]
+            return Data((0..<rng.below(3000)).map { _ in rng.pick(pieces) }.joined().utf8)
+        }) { input in
+            let source = String(decoding: input, as: UTF8.self)
+            let count = source.unicodeScalars.count
+            let doc = MarkdownDocument(source)
+            _ = doc.plainText
+            let content = TextContent(size: 12, color: .black, runs: [TextRun(source)], markup: .markdown)
+            for p in MarkdownPlan(content).paragraphs {
+                var last = -1
+                for a in p.atoms {
+                    if a.offset < 0 || a.offset > count { return "offset \(a.offset) outside the source" }
+                    if a.offset <= last { return "offsets not increasing" }
+                    last = a.offset
+                }
+            }
+            let n = (source as NSString).length
+            for action in MarkdownEditing.Action.allCases {
+                let r = MarkdownEditing.apply(action, to: source, selection: NSRange(location: n / 3, length: n / 3))
+                if r.selection.location + r.selection.length > (r.text as NSString).length { return "\(action): selection outside" }
+            }
+            return nil
+        })
+    }
+
     func testFuzzTranscript() throws {
         let t = Transcript(recording: UUID(), engine: "apple-speechtranscriber-26.4", language: "en-US", created: Self.wall,
                            segments: [.init(start: 0.52, end: 3.1, text: "Today we look at linear maps.", confidence: 0.94,
@@ -368,6 +403,35 @@ final class SempereFuzzTests: VaultTestCase {
                     _ = clock.tick(wall: Self.wall)
                     _ = clock.observe(HLC(millis: HLC.maxMillis, counter: HLC.maxCounter)!, wall: .distantFuture)
                 }
+            }
+        })
+    }
+
+    /// A broken invariant: untyped, so the fuzzer reports it.
+    struct SettingsInvariant: Error { var what: String }
+
+    /// settings.age's JSON (format.md §13): decoding, migration, validation,
+    /// resolution, merge, a device pass and re-encoding. A file that decodes
+    /// round-trips to the same settings.
+    func testFuzzSharedSettings() throws {
+        let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/settings")
+        let seeds = try ["v1.json", "future-v2.json", "future-v3-breaking.json"].map { try Data(contentsOf: fixtures.appendingPathComponent($0)) }
+        let base = try SharedSettings.decode(seeds[0]).settings
+        assertClean(Fuzz.run("settings", seeds: seeds, quick: 1500, text: true) { input in
+            Self.typed {
+                let decoded = try SharedSettings.decode(input)
+                let s = SharedSettingsMigrations.migrated(decoded.settings)
+                _ = SharedSettingsCatalog.issues(in: decoded)
+                for spec in SharedSettingsCatalog.specs {
+                    for type in SettingsDeviceType.allCases { _ = s.resolve(spec, for: type) }
+                }
+                if s.merging(base).slots != base.merging(s).slots { throw SettingsInvariant(what: "merge not commutative") }
+                var state = SettingsSyncState()
+                var local: [String: JSONValue] = [:]
+                for spec in SharedSettingsCatalog.specs(for: .ipad) { local[spec.name] = spec.defaultValue }
+                _ = try state.enable(.useVault, local: local, file: s, type: .ipad, now: Self.wall)
+                let again = try SharedSettings.decode(try decoded.settings.encoded()).settings
+                if again != decoded.settings { throw SettingsInvariant(what: "round trip changed the settings") }
             }
         })
     }

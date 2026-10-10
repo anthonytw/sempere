@@ -97,4 +97,17 @@ final class TextMatchBoxesTests: XCTestCase {
         let found = SearchMatches.matches("beta", in: [page], textBoxes: matcher)
         XCTAssertEqual(found.map { $0.item == nil }, [true, false])
     }
+
+    /// A Markdown box is searched as drawn (format.md §8.5.4): the rendered words, not the markup.
+    func testMarkdownBoxesAreSearchedAsRendered() throws {
+        var it = Self.item("")
+        it.text = try MarkdownText.content("# Heading\n\n- a **bold** word", style: TextStyle(size: 20))
+        let found = TextMatchBoxes.boxes(of: ["bold"], in: it, shaper: Self.shaper)
+        XCTAssertEqual(found.map(\.text), ["bold"])
+        let box = try XCTUnwrap(found.first?.box)
+        XCTAssertGreaterThan(box.x, it.frame.x + 32, "inside the list item's column, after its marker")
+        XCTAssertGreaterThan(box.y, it.frame.y + 20, "below the heading")
+        XCTAssertEqual(TextMatchBoxes.boxes(of: ["**"], in: it, shaper: Self.shaper).count, 0, "markup is not searched")
+        XCTAssertEqual(TextMatchBoxes.boxes(of: ["heading"], in: it, shaper: Self.shaper).map(\.text), ["Heading"])
+    }
 }

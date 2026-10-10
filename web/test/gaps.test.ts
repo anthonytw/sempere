@@ -109,7 +109,7 @@ describe("pdf page text", () => {
     const ops: Op[] = [op.addPage(p1, "V"), decodeOp({ op: "addItem", page: p1, item }, "op", new Budget())];
     const s = reconstruct([log.delta(devA, 0, ops)]);
     const summary = summarize({ id: "n", state: s, failures: [], hasAttachments: true } as unknown as Parameters<typeof summarize>[0]);
-    expect(summary.pageTexts).toEqual([{ number: 1, text: "Eigenvalues" }]);
+    expect(summary.pageTexts).toEqual([{ number: 1, text: "Eigenvalues", spans: [{ start: 0, end: 11, isMath: false }] }]);
   });
 });
 
@@ -123,7 +123,7 @@ describe("equations (§8.2.8)", () => {
     const set = log.delta(devB, 10, [decodeOp({ op: "setItem", page: p1, itemId: id, field: "math", value: math("\\mu") }, "op", new Budget())]);
     const s = reconstruct([set, add]);
     const summary = summarize({ id: "n", state: s, failures: [], hasAttachments: true } as unknown as Parameters<typeof summarize>[0]);
-    expect(summary.pageTexts).toEqual([{ number: 1, text: "\\mu" }]);
+    expect(summary.pageTexts).toEqual([{ number: 1, text: "\\mu", spans: [{ start: 0, end: 3, isMath: true }] }]);
     expect(() => decodeOp({ op: "setItem", page: p1, itemId: id, field: "math", value: null }, "op", new Budget())).toThrow();
   });
 });

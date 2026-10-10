@@ -57,6 +57,13 @@ built menu bar on Catalyst (the app's File and Edit commands are there,
 UIKit's duplicates are not, no shortcut twice), and `MacWindowUITests` checks
 it in the running app.
 
+**About and Help (#142).** UIKit's Sempere ▸ About Sempere (the standard panel) and Help ▸
+Sempere Help (no help book) are replaced by the app's own items (`MenuCommand.showAbout`,
+`showTour`, `showKeyNotice`; `MacMenus.nativeCommand`, menu items with no key equivalent): About
+Sempere, Quick Tour and About Your Key open as sheets in the focused window
+(`WindowUI.expectations`, `ExpectationsSheets`). `LaunchSmokeUITests.testFirstUnlockShowsKeyNoticeThenTour`
+opens them from the menu bar.
+
 File > Export… (⇧⌘E) acts on the focused window's notes (`CommandRouter.exportIDs`:
 the list's selection in a library window, its note in a note window), and its
 sheet opens in that window (`ExportRequest.window`) with PDF chosen; the sheet
@@ -99,6 +106,7 @@ the Insert menu's entry does (#104). Imports file new notes under the sidebar's 
 | Note | Save Version… | ⌥⌘S |
 | Note | Version History… | ⇧⌘Y |
 | Note | Recordings… | ⌃⌘R |
+| Note | Start Recording / Stop Recording (starts in the open note, asking for the microphone the first time; "Stop" while one runs) | ⌃⌘M |
 | Note | Previous Page, Next Page | ⌘[, ⌘] |
 | Note | Add Page After This One (the toolbar's Add Page) | ⇧⌘A |
 | Note | Add Page at End | ⌥⇧⌘A |
@@ -106,6 +114,7 @@ the Insert menu's entry does (#104). Imports file new notes under the sidebar's 
 | Note | Delete Page (never the last) | ⌥⌘⌫ |
 | Note | Undo Delete Page | ⌃⌘Z |
 | Note | Switch to Pageless / Paged Layout | ⌃⌘L |
+| Note | Duplicate Item, Bring Item to Front, Delete Item (the item selected on the canvas; off while nothing is selected, the note is read-only, and Delete Item also while a text field may have focus) | ⌘D, ⌥⇧⌘F, ⌃⌘⌫ |
 | Note | Move to Recently Deleted | ⌘⌫ |
 | Note | Restore Note | (none) |
 | Tools | Pen, Marker, Pencil, Eraser, Lasso | ⌥⌘1 … ⌥⌘5 |
@@ -378,6 +387,13 @@ mark on the key that unlocked the vault. From it:
 * **Remove…** drops a key. The key that unlocked the vault, and the last key,
   cannot be removed. Removal rotates the vault secret and re-encrypts every
   note (`Vault.removeRecipient`, `docs/io.md` "Recipient changes").
+* **Replace…** swaps another device's key for a pasted public key or a
+  generated one (shown once, as for Add) in one change: the vault secret
+  rotates and every note is re-encrypted once (`Vault.replaceRecipient`, the
+  CLI's `vault recipients replace`); an empty label keeps the old one. It
+  asks for confirmation and then the owner check, as Add does. The key that
+  unlocked the vault cannot be replaced here (`KeyError.replaceInUse`): add a
+  key for this device, unlock with it, then remove the old one.
 * **Recovery Kit…** is the paper kit (`sempere keys paper`): the unlocked key as
   a QR code and checked text, to print (system print panel) or save as PDF. The
   PDF holds the secret key, and the dialog says so.
@@ -551,6 +567,37 @@ and a group with a clashing shortcut is dropped whole, so the commands sit in No
 `QuickCapture` as Siri, Shortcuts and the widgets and seals into the vault's inbox without the
 vault being unlocked; the item then reads Stop Voice Note, and the library and note windows show the usual banner
 (`VoiceNoteBannerRule`, the same on every platform). Without a setup it opens the Settings window,
-where Quick Voice Notes is. A status-bar extra (an icon in the system
-menu bar) is not possible: SwiftUI's `MenuBarExtra` is macOS-only and Catalyst has no
-`NSStatusItem`, so this is the app's own menu bar, which works while the app runs.
+where Quick Voice Notes is. The system
+menu-bar icon is the next section.
+
+## Menu-bar item (GA-23)
+
+A Sempere icon in the system menu bar (an `NSStatusItem`), on by default while the app runs
+(Settings → General → Show in Menu Bar turns it off). Entries:
+
+- **Quick Voice Note** starts a voice note; the entry then reads **Stop Voice Note** and the icon
+  turns red. The same encrypted-inbox path as the iPad and iPhone (`QuickCapture`,
+  docs/quick-capture.md): it works while the vault is locked, needs no window and no Face ID or
+  Touch ID, and the note appears in the inbox notebook when the vault is next unlocked. Not set
+  up yet: the app comes forward on Settings → Quick Voice Notes.
+- **New Note** brings the app forward and creates a note in the notebook the sidebar shows (the
+  New Note sheet's defaults for paper and layout), unlocking first if the vault is locked: the
+  unlock sheet appears and the note is created when it closes. A request older than two minutes,
+  or with no vault open, is dropped (`AppModel+MenuBar`).
+- **Open Sempere** brings the app forward on a library window, opening one if all are closed.
+
+How it works. Mac Catalyst has no `NSStatusItem` (SwiftUI's `MenuBarExtra` is macOS-only too), so
+the item is a small AppKit bundle, `SempereStatusItem.bundle`, built for macOS (target
+`SempereStatusItem`, `Apps/Sempere/SempereStatusItem/`) and embedded in the app's `PlugIns`
+folder for the Catalyst build only (the dependency and the embed carry `platformFilter =
+maccatalyst`). `StatusItemHost` loads it at launch and instantiates its principal class. The two
+share a process but no types, so they only post notifications on the default center
+(`StatusItemProtocol`, compiled into both): the app sends the state and the localized titles
+(the bundle has no strings), the bundle sends back which entry was chosen. Missing bundle, or the
+setting off: no item, nothing else changes. The item exists only while the app runs; it is not a
+login item. The bundle holds no logic, no keys and no network code.
+
+To try by hand: the icon appears at launch; Quick Voice Note with the vault locked (quit and
+reopen the app, do not unlock) and then unlock: the note appears; New Note with the app in the
+background and with the vault locked; the setting off and on; Open Sempere with every window
+closed; the entries when the app was started from Spotlight or the Dock. Not yet tried on a Mac.

@@ -230,6 +230,35 @@ struct NotesMarkers: ParsableCommand {
     }
 }
 
+struct NotesFavorite: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "favorite",
+        abstract: "Mark a note as a favorite, or take the mark off (one setMeta favorite delta).",
+        discussion: """
+            The favorite flag (format.md §5.4) is what the app's Favorites list and the web viewer's \
+            Favorites list show. `notes list --favorites` lists the marked notes. Nothing is written when \
+            the note already is that way.
+            """
+    )
+
+    @Argument(help: ArgumentHelp("Note id, id prefix or title.", valueName: "id|title"))
+    var note: String
+
+    @Flag(name: .long, help: "Take the favorite mark off instead.")
+    var off = false
+
+    @OptionGroup var access: AccessOptions
+    @OptionGroup var output: OutputOptions
+
+    func run() throws {
+        let vault = try access.openVault(.required)
+        let id = try vault.resolveNote(note)
+        let r = try editNote(vault, id) { NoteOps.setFavorite(!off, state: $0) }
+        try reportEdit(vault, id, r, output: output, done: off ? "Removed from favorites" : "Marked as a favorite",
+                       unchanged: off ? "The note is not a favorite." : "The note already is a favorite.")
+    }
+}
+
 struct NotesMove: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "move",

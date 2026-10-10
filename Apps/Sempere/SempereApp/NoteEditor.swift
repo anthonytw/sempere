@@ -71,6 +71,20 @@ final class NoteEditor {
     /// (`highlightSearch(query:page:)` while it is still opening).
     @ObservationIgnored var pendingSearch: (query: String, page: UUID?)?
 
+    /// The pages (of a paged note's stack, each canvas has its own selection) with an item
+    /// selected; the Mac menu's item commands are enabled while it is not empty.
+    private(set) var pagesWithSelectedItem: Set<UUID> = []
+    var hasItemSelection: Bool { !pagesWithSelectedItem.isEmpty }
+
+    /// A canvas reports whether `page` has a selected item (`ItemSelectionController`).
+    func itemSelection(on page: UUID, isSelected: Bool) {
+        if isSelected {
+            if !pagesWithSelectedItem.contains(page) { pagesWithSelectedItem.insert(page) }
+        } else if pagesWithSelectedItem.contains(page) {
+            pagesWithSelectedItem.remove(page)
+        }
+    }
+
     /// The canvas showing this note, for menu commands (`CanvasCommandTarget`).
     @ObservationIgnored weak var canvasTarget: (any CanvasCommandTarget)?
     @ObservationIgnored private var ledgers: [UUID: StrokeLedger] = [:]

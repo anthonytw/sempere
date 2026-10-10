@@ -17,9 +17,11 @@
 #   - networking (URLSession, Network.framework, sockets, web views, CloudKit, …)
 #     appears in a shipping app folder (every folder of Apps/Sempere but the test
 #     targets) or a Sources/ target the app links, outside NETWORK_ALLOWED below
-#     (the privacy policy says the app makes no connections of its own);
+#     (the privacy policy names the only connections: a WebDAV server the user sets up);
 #   - MathModelCatalog.entries is not empty: that turns the allowed model
 #     downloader on, which the privacy documents say is inert;
+#   - an object id is defined twice in project.pbxproj (two branches that each
+#     picked the next free id merge cleanly into a project Xcode reads wrongly);
 #   - a package pinned with an exact version in project.pbxproj resolves to
 #     another version in the project's Package.resolved;
 #   - with --checkouts: a third-party package (SwiftMath) uses networking, or a
@@ -71,6 +73,7 @@ ENTITLEMENTS_ALLOWED = {
     "com.apple.security.print",                          # printing the recovery kit
     "com.apple.security.device.audio-input",             # recording audio into notes
     "com.apple.security.application-groups",             # quick voice status for the widgets (iOS app + widget)
+    "com.apple.security.network.client",                 # WebDAV vaults: connections to the user's own server (Mac)
 }
 
 # The only value an entitlement on the allow-list may take, where it has one.
@@ -120,6 +123,8 @@ PRODUCT_SOURCES = {
     # importer (optional: docs/import-notability.md "Structure").
     "SempereImport": ["SempereImport", "Sempere", "SemperePDF", "SempereRender", "Age", "CZlib"],
     "SempereNotability": ["SempereNotability", "SempereImport", "Sempere", "SemperePDF", "SempereRender", "Age", "CZlib"],
+    # WebDAV vaults (`AppModel+WebDAV`, docs/io.md "WebDAV vaults in the app").
+    "SempereWebDAV": ["SempereWebDAV", "Sempere", "Age", "CZlib"],
     # Third-party (app only, never in Sources/): ships its own manifest if it needs one;
     # check the archive's privacy report (docs/release/app-store.md).
     "SwiftMath": [],
@@ -128,9 +133,9 @@ PRODUCT_SOURCES = {
 # Third-party packages: product -> checkout folder name under Xcode's SourcePackages/checkouts.
 THIRD_PARTY = {"SwiftMath": "SwiftMath"}
 
-# Networking in code (Swift and C spellings). The app makes no connections of its own
-# (docs/appstore/privacy-policy.md, docs/release/app-store.md section 3); WebDAV sync is
-# CLI-only (Sources/SempereWebDAV, which the app does not link). Handing a URL to the
+# Networking in code (Swift and C spellings). The app connects only to a WebDAV server the
+# user sets up (docs/appstore/privacy-policy.md, docs/release/app-store.md section 3); the
+# files that may do so are NETWORK_ALLOWED below. Handing a URL to the
 # system (openURL, Link) is not the app connecting, and is not matched.
 NETWORK_PATTERN = re.compile(
     r"\bURLSession\w*\b|\bNSURLSession\w*\b|\bNSURLConnection\b|\bURLRequest\b|\bNSURLRequest\b"
@@ -145,6 +150,11 @@ NETWORK_PATTERN = re.compile(
 # privacy policy (both copies), docs/release/app-store.md and DESIGN.md "Network"; adding one
 # means updating them in the same PR.
 NETWORK_ALLOWED = {
+    # WebDAV vaults (docs/io.md "WebDAV vaults in the app"): connections only to the server the user
+    # enters, uploading the already encrypted vault (push-only); the privacy policy says so.
+    "Apps/Sempere/SempereApp/WebDAVRemote.swift",
+    "Sources/SempereWebDAV/Transport.swift",
+    "Sources/SempereWebDAV/WebDAVClient.swift",
     # The handwritten-math model downloader (URLSessionModelFetcher): runs only when the user
     # taps Download on a MathModelCatalog entry, and the catalogue is empty (checked below).
     "Apps/Sempere/SempereApp/MathModels.swift",
@@ -174,6 +184,12 @@ def setting_values(name):
     # `NAME = value;` and `"NAME[sdk=...]" = value;`
     pat = re.compile(r'^\s*"?' + re.escape(name) + r'(\[[^\]]*\])?"?\s*=\s*(.*?);\s*$', re.M)
     return [m.group(2).strip().strip('"') for m in pat.finditer(pbx)]
+
+# Objects are the entries two tabs deep (`\t\tID /* name */ = {`); a duplicate is a silent clash (one
+# definition wins, the other's references now point at it), which plutil does not report.
+object_ids = re.findall(r'^\t\t([0-9A-F]{24})\b[^\n]*= \{', pbx, re.M)
+for dup in sorted({i for i in object_ids if object_ids.count(i) > 1}):
+    errors.append(f"object id {dup} is defined more than once in project.pbxproj; give one of them a new id")
 
 for name in ("MARKETING_VERSION", "CURRENT_PROJECT_VERSION"):
     vals = setting_values(name)
@@ -393,8 +409,8 @@ for prod in sorted(products):
 net = network_uses(sorted(set(shipping_dirs)))
 for p, i in net:
     if rel(p) not in NETWORK_ALLOWED:
-        errors.append(f"{rel(p)}:{i}: networking in the shipping app; the privacy policy says the app makes no "
-                      "connections of its own (NETWORK_ALLOWED in scripts/release-check.sh, docs/release/app-store.md "
+        errors.append(f"{rel(p)}:{i}: networking in the shipping app; the privacy policy names the only "
+                      "connections the app makes (NETWORK_ALLOWED in scripts/release-check.sh, docs/release/app-store.md "
                       "section 3)")
 for allowed in sorted(NETWORK_ALLOWED - {rel(p) for p, _ in net}):
     warnings.append(f"{allowed} is in NETWORK_ALLOWED but has no networking (left over? update the privacy documents)")

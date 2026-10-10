@@ -5,6 +5,7 @@
 // registers (§7).
 
 import { cmpStr, cmpUTF8 } from "./ids.ts";
+import { textOf } from "./markdown.ts";
 import type { JSONObject } from "./json.ts";
 import { commonItemFields, immutableItemFields, kindFields, recordingFields } from "./attachments.ts";
 import { parseRFC3339 } from "./rfc3339.ts";
@@ -89,8 +90,8 @@ export function itemLatex(item: JSONObject): string {
   return item.kind === "math" && typeof m?.latex === "string" ? m.latex : "";
 }
 
-/** A text box's text: every run's `t`, concatenated (§8.2.4). */
+/** A text box's text as search sees it: every run's `t`, concatenated (§8.2.4); a Markdown box's plain text (§8.5.4). */
 export function itemText(item: JSONObject): string {
-  const text = item.text as { runs?: { t?: unknown }[] } | undefined;
-  return (text?.runs ?? []).map((run) => (typeof run.t === "string" ? run.t : "")).join("");
+  const text = item.text as JSONObject | undefined;
+  return text && typeof text === "object" ? textOf(text) : "";
 }

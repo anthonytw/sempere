@@ -48,6 +48,9 @@ enum TextBoxFonts {
                         syntheticItalic: italic && !has.contains(.traitItalic))
     }
 
+    /// Widths for laying Markdown boxes out (format.md §8.5.4): CoreText, as the canvas and exports draw.
+    static let markdownMeasure: MarkdownMeasure = MarkdownLayout.measure(with: CoreTextShaper())
+
     /// The concrete family written to `family` (informational, format.md §8.2.4).
     static func family(_ generic: TextContent.Font) -> String {
         switch generic.effective {
@@ -74,7 +77,7 @@ enum TextBoxText {
             defer { start += count }
             guard count > 0 else { continue }
             let u = layout.utf16Range(start..<(start + count))
-            let f = TextBoxFonts.font(content.font, size: run.size ?? content.size, bold: run.b, italic: run.i)
+            let f = TextBoxFonts.font(run.effectiveFont(in: content.font), size: run.size ?? content.size, bold: run.b, italic: run.i)
             out.addAttributes([.font: f.font, .foregroundColor: (run.color ?? content.color).uiColor, runKey: r],
                               range: NSRange(location: u.lowerBound, length: u.count))
         }
@@ -122,6 +125,8 @@ enum TextKitBreaks {
     /// height its lines take (at least one line of the box's size): what
     /// the app writes after an edit or a resize.
     static func relayout(_ content: TextContent, frame: Rect) -> (content: TextContent, frame: Rect) {
+        // A Markdown box stores the breaks of its rendered text (format.md §8.2.4 `layout`).
+        if content.isMarkdown { return MarkdownLayout.relayout(content, frame: frame, measure: TextBoxFonts.markdownMeasure) }
         let layout = LayoutText(content)
         var out = content
         out.breaks = breaks(layout, width: frame.w)
@@ -247,7 +252,7 @@ struct TextBoxLayout {
               r >= 0, r < layout.content.runs.count else { return nil }
         let source = layout.content.runs[r]
         let size = source.size ?? layout.content.size
-        let style = TextBoxFonts.font(layout.content.font, size: size, bold: source.b, italic: source.i)
+        let style = TextBoxFonts.font(source.effectiveFont(in: layout.content.font), size: size, bold: source.b, italic: source.i)
         // The characters of each cluster go on its first glyph (for search and copying in exports).
         let range = CTRunGetStringRange(ctRun)
         let runEnd = range.location + range.length

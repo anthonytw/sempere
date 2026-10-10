@@ -19,16 +19,39 @@ extension AppModel {
     /// Turns quick voice notes on for the open vault: voice notes then go to
     /// its inbox, adopted into `notebook`. Needs the vault unlocked (the
     /// capture key comes from its secret); afterwards capture needs nothing.
-    func enableQuickCapture(notebook: String = CaptureProfile.defaultNotebook, transcribe: Bool = true) throws {
+    /// Without a `notebook`, a value an older build kept in Settings ▸ New Notes
+    /// (`LegacyVoiceNotebook`) is carried over, else "Inbox".
+    func enableQuickCapture(notebook: String? = nil, transcribe: Bool = true,
+                            defaults: UserDefaults = .standard) throws {
         guard let vault, vault.canRead, let url = vaultURL, phase == .unlocked else { throw ModelError.noVaultOpen }
         try requireWritableVault()
         let clock = try deviceClockForWriting()
-        let profile = try vault.captureProfile(device: clock.device, notebook: notebook)
+        let profile = try vault.captureProfile(device: clock.device,
+                                               notebook: notebook ?? LegacyVoiceNotebook.value(defaults) ?? CaptureProfile.defaultNotebook)
         let bookmark = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
         try quickCapture.store.save(StoredCaptureProfile(profile: profile, vaultName: vaultName ?? "Vault", bookmark: bookmark,
                                                          transcribe: transcribe))
+        LegacyVoiceNotebook.remove(from: defaults)
         // The widgets and the control stop showing "Set Up".
         quickCapture.publishStatus()
+    }
+
+    /// Carries the notebook an older build kept in Settings ▸ New Notes over to the
+    /// capture profile, the one place capture reads it from, and forgets the old
+    /// value. A profile whose notebook was changed since (not "Inbox") wins; with
+    /// no profile yet the old value waits for `enableQuickCapture`.
+    func migrateLegacyVoiceNotebook(defaults: UserDefaults = .standard) {
+        guard let legacy = LegacyVoiceNotebook.value(defaults) else {
+            LegacyVoiceNotebook.remove(from: defaults)   // a blank value is the default
+            return
+        }
+        guard var stored = quickCaptureProfile else { return }
+        if stored.profile.notebook == CaptureProfile.defaultNotebook, stored.profile.notebook != legacy {
+            stored.profile.notebook = legacy
+            guard (try? quickCapture.store.save(stored)) != nil else { return }
+            quickCapture.publishStatus()
+        }
+        LegacyVoiceNotebook.remove(from: defaults)
     }
 
     /// Turns quick voice notes off on this device (what is in the inbox stays
@@ -39,15 +62,21 @@ extension AppModel {
     }
 
     /// After an unlock or a key change: the stored profile of this vault gets
-    /// the current recipients and capture key (a removed key rotates both).
+    /// the current recipients and this device's capture key (a removed key
+    /// rotates both), and a profile made before attribution (the vault
+    /// capture key) becomes an attributed one (format.md §11.1, security
+    /// review 2026-10, C2).
     func refreshQuickCaptureProfile() {
+        migrateLegacyVoiceNotebook()
         // Never a list that does not check (format.md §2.1, §11.1): captures are sealed to it.
         guard let vault, vault.canRead, vault.recipientsStatus.allowsWriting, var stored = quickCaptureProfile,
-              stored.profile.vaultId == vault.vaultId, let key = try? vault.captureKey() else { return }
-        let recipients = vault.recipients.map(\.key)
-        guard stored.profile.recipients != recipients || stored.profile.key != key.bytes else { return }
-        stored.profile.recipients = recipients
-        stored.profile.key = key.bytes
+              stored.profile.vaultId == vault.vaultId, let device = DeviceID(stored.profile.device),
+              let fresh = try? vault.captureProfile(device: device, notebook: stored.profile.notebook) else { return }
+        guard stored.profile.recipients != fresh.recipients || stored.profile.key != fresh.key
+              || stored.profile.recipient != fresh.recipient else { return }
+        stored.profile.recipients = fresh.recipients
+        stored.profile.key = fresh.key
+        stored.profile.recipient = fresh.recipient
         if let url = vaultURL, let bookmark = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) {
             stored.bookmark = bookmark
         }

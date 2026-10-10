@@ -1,9 +1,11 @@
 {
   "created" : "2026-10-04T16:20:00.000Z",
   "features" : [
-    "tables"
+    "tables",
+    "markers-tag"
   ],
   "format" : "sempere/2",
+  "markersTag" : "36dedc1aaa57629d7c72285248a050d60aac88ecb563098740fd4b194a471167",
   "recipients" : [
     {
       "added" : "2026-10-04T16:20:00.000Z",

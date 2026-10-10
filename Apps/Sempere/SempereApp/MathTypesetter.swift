@@ -83,6 +83,30 @@ enum MathTypesetter {
         return (data, Size(w: InkJSON.round3(Double(bounds.width)), h: InkJSON.round3(Double(bounds.height))))
     }
 
+    /// A formula of a Markdown text box typeset (format.md §8.2.4 `math`):
+    /// the render to store first, and the entry that references it, with the
+    /// depth of its baseline above the render's bottom (the margin plus
+    /// SwiftMath's descent).
+    @MainActor
+    static func formula(_ content: MathContent) throws -> (data: Data, formula: TypesetFormula) {
+        let label = try label(content)
+        let bounds = label.bounds
+        let descent = Double(label.displayList?.descent ?? 0)
+        let format = UIGraphicsPDFRendererFormat()
+        format.documentInfo = [kCGPDFContextCreator as String: "Sempere"]
+        let data = UIGraphicsPDFRenderer(bounds: bounds, format: format).pdfData { ctx in
+            ctx.beginPage()
+            draw(label, in: ctx.cgContext)
+        }
+        var value = content
+        value.render = BlobRef(content: data, type: MathContent.renderType)
+        value.renderSize = Size(w: InkJSON.round3(Double(bounds.width)), h: InkJSON.round3(Double(bounds.height)))
+        value.engine = engine
+        let h = value.renderSize?.h ?? 0
+        let depth = InkJSON.round3(min(max(Double(margin(content.size)) + descent, 0), h))
+        return (data, TypesetFormula(math: value, depth: depth))
+    }
+
     /// `content` with a fresh render: the PDF to store first, and the value
     /// that references it.
     @MainActor

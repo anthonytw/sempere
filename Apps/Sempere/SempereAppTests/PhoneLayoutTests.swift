@@ -263,3 +263,12 @@ struct ICloudDriveHelpTests {
         #expect(ICloudDriveHelp.isShown == !Platform.isMac)
     }
 }
+
+/// Review of #135: the device-key and Choose Devices to Keep sheets asked for 460 points of
+/// width, more than an iPhone has (390), so their forms ran off the screen there.
+struct SheetSizingTests {
+    @Test func aPhoneSheetHasNoMinimumWidth() {
+        #expect(SheetSizing.minWidth(460, isPhone: true) == nil)
+        #expect(SheetSizing.minWidth(460, isPhone: false) == 460)
+    }
+}

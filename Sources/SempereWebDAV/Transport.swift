@@ -65,6 +65,25 @@ public struct WebDAVResponse: Sendable {
     }
 }
 
+/// What a `WebDAVServerTrust` decided about a server's TLS certificate.
+public enum WebDAVTrustDecision: Sendable {
+    /// Let the system evaluate it (its trust store, host name, dates).
+    case systemDefault
+    /// Accept it with this credential (`URLCredential(trust:)`).
+    case accept(URLCredential)
+    /// Refuse it; the request fails with `WebDAVError.untrustedCertificate(reason)`.
+    case reject(String)
+}
+
+/// Decides TLS server trust instead of the system (a certificate the user
+/// pinned explicitly). Only Apple platforms deliver server-trust challenges;
+/// on Linux the system (libcurl's trust store) always decides. Evaluating a
+/// `SecTrust` needs the Security framework, so implementations live in the
+/// app (`Apps/`), never in `Sources/`.
+public protocol WebDAVServerTrust: Sendable {
+    func evaluate(_ challenge: URLAuthenticationChallenge) -> WebDAVTrustDecision
+}
+
 /// Sends one request and returns the response, whatever its status. Throws
 /// only when no response arrived (DNS, TLS, timeout, ...). Tests substitute
 /// an in-memory server for this.
@@ -95,15 +114,23 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
     }
 
     private let session: URLSession
-    private let delegate = Delegate()
+    private let delegate: Delegate
 
-    public init(timeout: TimeInterval = 60) {
+    /// - Parameter serverTrust: decides TLS server trust in place of the
+    ///   system (nil: the system decides, as for any HTTPS request).
+    public init(timeout: TimeInterval = 60, serverTrust: (any WebDAVServerTrust)? = nil) {
+        delegate = Delegate(serverTrust: serverTrust)
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = timeout
         config.timeoutIntervalForResource = 600
         config.httpCookieStorage = nil
         config.urlCredentialStorage = nil
         session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
+    }
+
+    deinit {
+        // A session keeps its delegate (and itself) alive until invalidated.
+        session.finishTasksAndInvalidate()
     }
 
     public func send(_ request: WebDAVRequest) throws -> WebDAVResponse {
@@ -120,11 +147,12 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
         pending.done.wait()
         var (data, response, error, tooLarge, challenged) = pending.result()
         if let failure = pending.fileFailure { throw failure }
+        if let refused = pending.trustRefusal { throw WebDAVError.untrustedCertificate(refused) }
         if tooLarge, let limit = request.maxResponseBytes {
             throw WebDAVError.responseTooLarge(path: request.url.path, limit: limit)
         }
         if error != nil, let challenged { response = challenged; error = nil }
-        if let error { throw WebDAVError.transport(Self.describe(error)) }
+        if let error { throw Self.classify(error) }
         guard let http = (response ?? task.response) as? HTTPURLResponse else {
             throw WebDAVError.transport("not an HTTP response")
         }
@@ -135,6 +163,36 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
 
     private static func describe(_ error: Error) -> String {
         (error as NSError).localizedDescription
+    }
+
+    /// `URLError` codes that mean the server cannot be reached from here now.
+    static let offlineCodes: Set<Int> = [
+        -1009,  // notConnectedToInternet
+        -1005,  // networkConnectionLost
+        -1003,  // cannotFindHost
+        -1004,  // cannotConnectToHost
+        -1001,  // timedOut
+        -1006,  // dnsLookupFailed
+        -1018,  // internationalRoamingOff
+        -1020,  // dataNotAllowed
+    ]
+
+    /// `URLError` codes for a certificate the system does not trust.
+    static let certificateCodes: Set<Int> = [
+        -1202,  // serverCertificateUntrusted
+        -1203,  // serverCertificateHasUnknownRoot
+        -1201,  // serverCertificateHasBadDate
+        -1204,  // serverCertificateNotYetValid
+    ]
+
+    /// The `WebDAVError` for a request that got no response.
+    static func classify(_ error: Error) -> WebDAVError {
+        let ns = error as NSError
+        let message = describe(error)
+        guard ns.domain == NSURLErrorDomain else { return .transport(message) }
+        if offlineCodes.contains(ns.code) { return .offline(message) }
+        if certificateCodes.contains(ns.code) { return .untrustedCertificate(message) }
+        return .transport(message)
     }
 
     /// One request in flight: its body so far and how it ended.
@@ -154,8 +212,13 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
         private var discarding = false
         private var received = 0
         private var fileError: WebDAVError?
+        private var refusedTrust: String?
 
         init(limit: Int?, file: URL?) { self.limit = limit; self.file = file }
+
+        /// Why a `WebDAVServerTrust` refused the server's certificate, if it did.
+        var trustRefusal: String? { lock.lock(); defer { lock.unlock() }; return refusedTrust }
+        func refuseTrust(_ reason: String) { lock.lock(); refusedTrust = reason; lock.unlock() }
 
         var fileFailure: WebDAVError? { lock.lock(); defer { lock.unlock() }; return fileError }
 
@@ -233,6 +296,9 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
     private final class Delegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
         private let lock = NSLock()
         private var pending: [Int: Pending] = [:]
+        let serverTrust: (any WebDAVServerTrust)?
+
+        init(serverTrust: (any WebDAVServerTrust)?) { self.serverTrust = serverTrust }
 
         func register(_ id: Int, _ p: Pending) { lock.lock(); pending[id] = p; lock.unlock() }
         func unregister(_ id: Int) { lock.lock(); pending[id] = nil; lock.unlock() }
@@ -250,6 +316,16 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
         /// here, and cancelling it fails every HTTPS request.
         func urlSession(_ session: URLSession, task: URLSessionTask, didReceive challenge: URLAuthenticationChallenge,
                         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+            if let serverTrust, challenge.protectionSpace.authenticationMethod == URLSessionTransport.serverTrustMethod {
+                switch serverTrust.evaluate(challenge) {
+                case .systemDefault: completionHandler(.performDefaultHandling, nil)
+                case .accept(let credential): completionHandler(.useCredential, credential)
+                case .reject(let reason):
+                    lookup(task.taskIdentifier)?.refuseTrust(reason)
+                    completionHandler(.cancelAuthenticationChallenge, nil)
+                }
+                return
+            }
             let disposition = URLSessionTransport.disposition(forAuthenticationMethod: challenge.protectionSpace.authenticationMethod)
             if disposition == .cancelAuthenticationChallenge, let r = challenge.failureResponse as? HTTPURLResponse {
                 lookup(task.taskIdentifier)?.set(challenged: r)

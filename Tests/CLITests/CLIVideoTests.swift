@@ -180,6 +180,23 @@ final class CLIVideoTests: CLITestCase {
         XCTAssertEqual(try cli(["items", "poster", physics, id] + args).status, 2)
     }
 
+    #if !canImport(AVFoundation)
+    /// Gap audit GA-53: without AVFoundation `--from-clip` is refused (exit 1) and nothing is written.
+    func testItemsPosterFromClipIsRefusedWithoutAVFoundation() throws {
+        let args = try setUpVault()
+        let out = try ok(["attach", "video", physics, clip("clip-h264.mp4"), "--no-poster", "--json"] + args)
+        let id = try XCTUnwrap(((out["items"] as? [[String: Any]])?.first?["item"] as? [String: Any])?["id"] as? String)
+        let before = try revisionCount(physics)
+        let blobs = blobFiles(physics)
+        let r = try cli(["items", "poster", physics, id, "--from-clip"] + args)
+        XCTAssertEqual(r.status, 1, r.err)
+        XCTAssertTrue(r.err.contains("--from-clip needs macOS"), r.err)
+        XCTAssertEqual(try revisionCount(physics), before)
+        XCTAssertEqual(blobFiles(physics), blobs)
+        XCTAssertNil(try state(physics).pages[0].items.first?.poster)
+    }
+    #endif
+
     func testCopyingAVideoCopiesItsClipAndPoster() throws {
         let args = try setUpVault()
         let out = try ok(["attach", "video", physics, clip("clip-h264.mp4"), "--poster", clip("poster.jpg"), "--json"] + args)

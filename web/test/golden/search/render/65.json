@@ -125,6 +125,44 @@
     ]
   },
   {
+    "box" : [
+      72,
+      72,
+      260,
+      170.64
+    ],
+    "itemId" : "f1c70000-0000-4000-8000-000000000b01",
+    "matches" : 17,
+    "noteId" : "7d7d7d7d-7d7d-47d7-87d7-7d7d7d7d7d7d",
+    "page" : 1,
+    "pageId" : "f1c70000-0000-4000-8000-000000000b00",
+    "snippet" : "Markdown box Some bold, italic, struck and code…",
+    "source" : "text",
+    "title" : "Markdown boxes",
+    "words" : [
+
+    ]
+  },
+  {
+    "box" : [
+      340,
+      120,
+      200,
+      88.6
+    ],
+    "itemId" : "f1c70000-0000-4000-8000-000000000b02",
+    "matches" : 5,
+    "noteId" : "7d7d7d7d-7d7d-47d7-87d7-7d7d7d7d7d7d",
+    "page" : 1,
+    "pageId" : "f1c70000-0000-4000-8000-000000000b00",
+    "snippet" : "e^{x} starts this line and the…",
+    "source" : "text",
+    "title" : "Markdown boxes",
+    "words" : [
+
+    ]
+  },
+  {
     "engine" : "vision-26.7",
     "matches" : 3,
     "noteId" : "55555555-5555-4555-8555-555555555555",

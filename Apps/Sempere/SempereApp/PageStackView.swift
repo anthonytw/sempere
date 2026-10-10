@@ -605,4 +605,15 @@ extension PageStackHost: CanvasCommandTarget {
         guard let editor, !editor.isReadOnly, let slot = focusedSlot else { return }
         slot.host.toggleRuler()
     }
+
+    /// The command goes to the selected item of the current page, else of the canvas with
+    /// the focus, else of the first page (in page order) that has one. Each page's canvas
+    /// keeps its own selection, so several pages can have one: never an arbitrary page's.
+    @discardableResult
+    func perform(itemCommand: MenuCommand) -> Bool {
+        guard let editor, !editor.isReadOnly else { return false }
+        let current = editor.currentPage.flatMap { slots[$0.id] }
+        let ordered = [current, focusedSlot].compactMap { $0 } + editor.pages.compactMap { slots[$0.id] }
+        return ordered.first { $0.host.itemSelection.selectedID != nil }?.host.itemSelection.perform(itemCommand) ?? false
+    }
 }
