@@ -119,12 +119,19 @@ extension InkPathBenchmarkTests {
         #expect(change.added.allSatisfy { $0.parent != nil })
     }
 
-    @Test func thumbnailOfADensePage() {
+    @Test func thumbnailOfADensePage() async {
         let size = CGSize(width: 120, height: 155)
         let pageSize = PageSize(width: 612, height: 792)
-        _ = Self.time("page thumbnail from stored strokes") {
+        _ = Self.time("page thumbnail from stored strokes (main actor, before)") {
             _ = PageThumbnail.image(strokes: Self.stored, paper: .blank, pageSize: pageSize, size: size, scale: 2)
         }
+        let drawing = PKDrawing(strokes: Self.stored.map(StrokeConversion.pkStroke))
+        _ = drawing.bounds   // as on a canvas that has drawn it
+        let start = DispatchTime.now().uptimeNanoseconds
+        let image = await PageThumbnail.render(.drawing(drawing), paper: .blank, pageSize: pageSize, size: size, scale: 2)
+        let ms = Double(DispatchTime.now().uptimeNanoseconds - start) / 1e6
+        print("InkBench page thumbnail from the shown drawing, off the main actor (wall time) strokes=\(Self.strokeCount): \(String(format: "%.2f", ms)) ms")
+        #expect(image.size == size)
     }
 
     @Test func playbackFirstTickComponents() {

@@ -603,6 +603,13 @@ final class NoteEditor {
         ledgers[page.id]?.live ?? page.strokes
     }
 
+    /// What a page thumbnail draws: the drawing the page's canvas shows when
+    /// there is one (no conversion), else `thumbnailStrokes`.
+    func thumbnailSource(of page: Page) -> PageThumbnail.Source {
+        if !isPreparing, !loadFailed, ledgers[page.id] != nil, let drawing = canvasDrawings[page.id] { return .drawing(drawing) }
+        return .strokes(thumbnailStrokes(of: page))
+    }
+
     /// Shows the page `id` (a search hit); no-op when the note has no such page.
     func showPage(id: UUID) {
         if let i = pages.firstIndex(where: { $0.id == id }) { selectPage(i) }
