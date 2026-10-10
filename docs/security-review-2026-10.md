@@ -742,3 +742,13 @@ web viewer". Each fix has a test that encodes the attack and fails on the code b
   Tests: `KeyExportTests.secretShareSheetsLeaveCopyOut`, `SecretKeySharingTests` (sources, Linux: no
   `ShareLink` or selectable text in the key views, the general pasteboard written only by
   `SecretPasteboard` and the public key's Copy).
+- **S10 (Low): the web viewer did not show capture attribution**, so a capture-profile holder's voice note
+  (its title and notebook chosen by that profile) looked like the owner's there, which C2 meant to prevent.
+  Fix: `web/src/format/captured.ts` reads `captured` leniently as Swift's `CaptureAttribution` does (8-hex
+  `device`, optional 64-hex `recipient`, anything else absent) and resolves `recipient` against the
+  vault's recipients by fingerprint; the recordings list says "Voice note from <label>", "… from a device
+  no longer in this vault" or "… from an unverified device" (catalog entries with Spanish). `captured`
+  is now a known, immutable recording field in the viewer too (`recordingFields`), as in Swift: a
+  `setRecording` naming it is invalid instead of an unknown register that could rewrite it. Tests:
+  `web/test/captured.test.ts` (mirrors `RecipientsAlertTests.capturedByNamesTheDevice` and
+  `CaptureAttributionTests.testMalformedAttributionReadsAsAbsent`).

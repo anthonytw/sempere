@@ -5,6 +5,7 @@
 // verification. Tapping a segment plays the recording from its start.
 
 import { t, tn } from "../i18n/index.ts";
+import { type CapturedBy, capturedBy } from "../format/captured.ts";
 import type { JSONObject } from "../format/json.ts";
 import { parseRFC3339 } from "../format/rfc3339.ts";
 import { type Transcript, decodeTranscript, maxTranscriptBytes } from "../format/transcript.ts";
@@ -39,7 +40,12 @@ export class RecordingsPanel {
   /** Plays each recording from its start (by id), for audio items on the page (§8.2.9). */
   private readonly players = new Map<string, { row: HTMLElement; play: () => void; jump: (seconds: number) => void }>();
 
-  constructor(recordings: JSONObject[], private readonly blobs?: NoteBlobs) {
+  /**
+   * - Parameter recipients: the vault's recipients, to say which device captured a voice note
+   *   (format.md §8.3.1 `captured`); without them a capture's line stays empty.
+   */
+  constructor(recordings: JSONObject[], private readonly blobs?: NoteBlobs,
+              private readonly recipients?: readonly { key: string; label: string }[]) {
     this.root = h("details", { class: "recordings" },
       h("summary", { text: tn("{count} recordings", recordings.length) }),
       h("ul", {}, ...recordings.map((r) => this.row(r))));
@@ -180,16 +186,37 @@ export class RecordingsPanel {
       });
     };
 
+    // A voice note adopted from the inbox says which device captured it, as the app does: its title and
+    // notebook are the capturing device's choice (security review 2026-10, C2 and S10).
+    const captured = h("span", { class: "sub captured", attrs: { role: "note" } });
+    captured.hidden = true;
+    if (this.recipients) {
+      void capturedBy(rec, this.recipients).then((by) => {
+        if (!by || this.destroyed) return;
+        captured.textContent = capturedText(by);
+        captured.hidden = false;
+      });
+    }
     const row = h("li", { class: "recording" },
       h("div", { class: "rec-head" },
         h("span", { class: "title", text: title }),
-        h("span", { class: "sub", text: [formatDate(started), duration].filter(Boolean).join(" · ") })),
+        h("span", { class: "sub", text: [formatDate(started), duration].filter(Boolean).join(" · ") }),
+        captured),
       h("div", { class: "rec-actions" }, player, showTranscript),
       status, transcriptEl);
     this.players.set(String(rec.id).toLowerCase(), {
       row, play: () => void loadAudio().then((a) => a?.play().catch(() => undefined)), jump,
     });
     return row;
+  }
+}
+
+/** The line under a captured recording's title (the app's `capturedBy`). */
+export function capturedText(by: CapturedBy): string {
+  switch (by.kind) {
+    case "unverified": return t("Voice note from an unverified device");
+    case "removed": return t("Voice note from a device no longer in this vault");
+    case "device": return t("Voice note from {name}", { name: by.label === "" ? t("Device") : by.label });
   }
 }
 
