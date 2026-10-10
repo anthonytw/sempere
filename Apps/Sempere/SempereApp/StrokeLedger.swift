@@ -46,9 +46,9 @@ struct CanvasStrokeInfo: Hashable, Sendable {
 
 /// The stable-id side table for one page.
 ///
-/// PencilKit strokes are value types with no identity before iPadOS 27, so
-/// the ledger keeps, in canvas order, which stored strokes (our ids) each
-/// canvas stroke stands for, keyed by `CanvasStrokeInfo.Key`. On every
+/// The ledger predates `PKStroke.id` (iOS 27) and does not use it: it
+/// keeps, in canvas order, which stored strokes (our ids) each canvas stroke
+/// stands for, keyed by `CanvasStrokeInfo.Key`. On every
 /// drawing change it matches the new canvas strokes against that table as a
 /// multiset, in order: a matched stroke keeps its ids; an unmatched old one
 /// was removed; an unmatched new one was added and gets fresh ids.

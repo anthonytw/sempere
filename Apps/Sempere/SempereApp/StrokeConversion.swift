@@ -4,8 +4,11 @@ import Sempere
 import PencilKit
 import UIKit
 
-// PencilKit ⇄ format conversion (format.md §5.6). Everything here works on
-// iPadOS 26; nothing uses the iPadOS 27 additions (stroke ids, substroke).
+// PencilKit ⇄ format conversion (format.md §5.6). The iOS 27 PKStroke
+// additions the format cannot store (`substroke`, `renderGroupID`,
+// `renderState`) are not used, nor are stroke ids: the format carries its own
+// stroke identity (§5.2). Cut strokes are trimmed with `BSpline.substroke`,
+// which is pure Swift and shared with the Linux CLI.
 //
 // Carried exactly: every control point's location, time offset, opacity,
 // force, azimuth and altitude; the ink type (except `reed`, below); the
@@ -21,7 +24,7 @@ import UIKit
 // - `mask` (the pixel eraser): each visible `maskedPathRange` becomes its own
 //   stroke trimmed with `BSpline.substroke`, so cut ends are round caps rather
 //   than the eraser's outline.
-// - `reed` (iPadOS 26) has no format tool; it is stored as `fountainPen`.
+// - `reed` has no format tool; it is stored as `fountainPen`.
 
 extension InkTool {
     /// The PencilKit ink for this tool.
