@@ -139,23 +139,33 @@ final class UIKitBackgroundTasks: BackgroundTaskRunning {
 final class BGTaskSyncScheduler: BackgroundSyncScheduling {
     func schedule(_ request: BackgroundSyncRequest) {
         guard !Platform.isMac else { return }
-        let task: BGTaskRequest
+        // `submitTaskRequest(_:)` must not be called on the main thread. Submits
+        // are not ordered against each other; a resubmission of the same
+        // identifier replaces the pending request, so that does not matter.
+        Task.detached(priority: .utility) {
+            do {
+                try await BGTaskScheduler.shared.submitTaskRequest(Self.makeRequest(request))
+            } catch {
+                // Unavailable (simulator, Background App Refresh off), not permitted or
+                // too many pending: the next launch syncs.
+                let code = (error as? BGTaskScheduler.Error)?.code.rawValue ?? -1
+                Perf.event(.backgroundSync, "schedule failed \(code)")
+            }
+        }
+    }
+
+    /// The `BGTaskRequest` for `request` (built where it is submitted: it is not `Sendable`).
+    nonisolated static func makeRequest(_ request: BackgroundSyncRequest) -> BGTaskRequest {
         switch request {
         case .refresh:
             let r = BGAppRefreshTaskRequest(identifier: BackgroundSync.refreshIdentifier)
             r.earliestBeginDate = Date(timeIntervalSinceNow: BackgroundSync.refreshDelay)
-            task = r
+            return r
         case .processing:
             let r = BGProcessingTaskRequest(identifier: BackgroundSync.processingIdentifier)
             r.requiresNetworkConnectivity = true
             r.requiresExternalPower = false
-            task = r
-        }
-        do {
-            try BGTaskScheduler.shared.submit(task)
-        } catch {
-            // Unavailable (simulator, Background App Refresh off) or too many pending: the next launch syncs.
-            Perf.event(.backgroundSync, "schedule failed")
+            return r
         }
     }
 }
