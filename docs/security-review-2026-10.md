@@ -698,3 +698,56 @@ Each request is bounded by size and time, but a run is not:
 - Fixed by R4: summaries sealed under the journal's previous secret were accepted during a rewrap. The web
   viewer now derives the previous summaries key only from a journal secret that `secretLink` links.
 - Summaries are encrypted. `vault.json` and the journal are never cached. Nothing decrypted is persisted.
+
+## Audit 2026-10 stage 4 (2026-10-10)
+
+Fixes of verified findings from the pre-release audit's stage 4. Each test fails on the base
+(96abc5aa) and passes after.
+
+### S0, S1, S4 (High): a removed device could bring its old secret back with a rewrap journal
+
+`readJournal` accepted any journal whose previous secret `secretLink` linked to the current one, and the
+signed link stays in `vault.json` until the next rotation. A removed device, which holds the outgoing
+secret, could therefore plant a journal (or replay the genuine one) after its removal finished: every
+previous-secret fallback (revisions, blobs, `settings.age`, captures, the web viewer's blob names and
+summaries) accepted its forgeries, and a resume re-tagged them under the current secret.
+
+**Fix** (`format.md` §3.3.1 "Accepting the journal", `Sources/Sempere/RewrapBinding.swift`):
+- Format (additive): the rotation's `vault.json` write carries `rewrapPending`, an HMAC under the new
+  secret over the journal's SHA-256, and the `rewrap-pending` feature (older writers stop); step 4 removes
+  the field in a tagged write before deleting the journal. While the vault binds journals (field, feature,
+  recorded feature, or markers that do not check), a journal counts only when the field verifies over its
+  bytes. Older readers ignore the field; older vaults still open (the link check alone, plus the marker).
+- Device-local, no format change: the trust record's `rewrapFinished`, set when the device saves its
+  record (or opens with a record of the same secret) while nothing is pending, and when it finishes the
+  rewrap itself; it never goes back for the same secret. Then no journal with another previous secret is
+  accepted (no fallback, no resume). A lost record falls back to the link and binding checks.
+- Sync: `incomingManifestProblem` refuses a `vault.json` that, under the same secret, brings back or
+  changes `rewrapPending` (a put-back copy), locked or not.
+- Web viewer: `journalSecretAccepted` in `web/src/vault/vault.ts` (link + binding; it keeps no record).
+- Tests: `RewrapJournalBindingTests` (`testARemovedDeviceCannotReopenItsSecretWithAPlantedJournal`,
+  `testAReplayedJournalOfAFinishedRotationIsRefused`, `testAStrippedFeatureStillRequiresABinding`,
+  `testUnboundVaultsAreProtectedByTheFinishedMarker`, `testTheFinishedMarkerIsMonotonic`, the shared vector
+  in `testRewrapPendingIsHMACOverVaultIdAndJournalDigest`), `JournalSyncTests.testAJournalThisDeviceRefusesIsNotTaken`,
+  `web/test/journal.test.ts`.
+- Remaining (`format.md` §3.3.1 "Limits"): a device with no trust record that is given both the
+  `vault.json` of step 2 and the genuine journal accepts the outgoing secret, as during the rotation; the
+  web viewer keeps no record, so the same holds there.
+
+### S9 (Low): a two-way sync replaced an unfinished local journal
+
+`WebDAVSync.accept` wrote any server journal over the local one, which may be the only copy of the
+outgoing secret. **Fix:** `Vault.incomingJournalProblem`: a local journal is replaced only when this device
+refuses it and accepts the server's; locked, the server's copy becomes a conflict copy; unlocked, a journal
+this device refuses is `rejected`, not written. Test: `JournalSyncTests.testTheServerCannotReplaceAnUnfinishedLocalJournal`.
+
+### S19 (Low): a planted journal blocked every recipient change
+
+Any `rewrap-journal.json` blocked recipient changes, repairs and blob collection, and held the app in its
+migration screen; nothing removed it. **Fix:** `Vault.discardRefusedJournal` (CLI `vault rewrap-discard`,
+`--json`) deletes a journal this device refuses (never one it accepts or cannot read now, never with a list
+that does not check); the app does it quietly at unlock and in the migration screen, and opens the vault
+normally when a refused journal is left; `vault info` says "REFUSED journal"; the CLI's errors and blob
+collection name `rewrap-discard`; a server journal this device refuses no longer holds blob pruning back.
+Tests: `RewrapJournalBindingTests.testARefusedJournalCanBeDiscardedAndAnAcceptedOneCannot`,
+`testAnUnreadableJournalIsKept`, `CLIRewrapDiscardTests`.

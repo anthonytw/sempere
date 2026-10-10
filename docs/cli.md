@@ -226,6 +226,7 @@ sempere vault recipients confirm
 sempere vault link [status|upgrade]
 sempere vault markers [status|tag|repair]
 sempere vault rewrap-resume
+sempere vault rewrap-discard
 sempere vault verify
 sempere vault index [--out PATH|-]
 sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
@@ -365,7 +366,19 @@ sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
   naming a format or feature this version does not implement.
 - `rewrap-resume` finishes an interrupted change; it refuses (exit 6) a list
   that does not check, so a planted journal cannot re-encrypt the vault to a
-  planted key.
+  planted key. It also refuses a journal this machine does not accept
+  (`format.md` §3.3.1 "Accepting the journal": its secret is not linked, or
+  `vault.json` no longer binds it, or this machine saw the change to the
+  current secret finish): such a journal was planted, or put back after its
+  change finished, and gives no secret. `info` then says "REFUSED journal"
+  (`--json`: `journalRefused`).
+- `rewrap-discard` (needs the key, and a device list that checks: exit 6
+  otherwise) deletes a journal this machine refuses, so recipient changes,
+  `recipients repair` and blob collection run again; when this machine saw the
+  change to the current secret finish, it also removes a `rewrapPending` left in
+  `vault.json` (a put-back copy). It never deletes a journal it accepts (finish
+  that with `rewrap-resume`) or cannot read now (exit 1, the journal kept).
+  `--json`: `discarded`, `reason`.
 - `verify` decrypts, tag-checks and decodes every file and prints
   `status  path` per file plus counts, and a `RECIPIENTS` line (the device
   list, as in `info`). Exit 0 only if the vault is healthy, 6 when the device

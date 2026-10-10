@@ -46,6 +46,7 @@ extension VaultError: CustomStringConvertible {
         case .identityFileMalformed: return "the stored key file holds no AGE-SECRET-KEY identity"
         case .identityMismatch(let r): return "the stored key file does not belong to recipient \(r)"
         case .rewrapJournalUnreadable(let why): return "the rewrap journal cannot be read: \(why)"
+        case .rewrapJournalKept(let why): return "the rewrap journal is kept: \(why)"
         case .interrupted: return "interrupted (test hook)"
         case .fileTooLarge(let path, let limit): return "\(path) is larger than the \(limit)-byte limit"
         case .io(let why): return why

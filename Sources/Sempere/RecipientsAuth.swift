@@ -305,6 +305,11 @@ public struct RecipientsTrustRecord: Codable, Hashable, Sendable {
     /// nil when the vault's markers were not tagged then (or the record is
     /// older than them).
     public var markers: VaultMarkers?
+    /// True once this device saw the record's secret with no rotation into it
+    /// pending (format.md §3.3.1 "Finished rotations"): no rewrap journal is
+    /// accepted from then on whose previous secret is not this one. Only ever
+    /// set while the record names the same secret; never on a legacy record.
+    public var rewrapFinished: Bool
 
     /// `sempere-trust/2`, or `sempere-trust/1` for a legacy record.
     public var format: String {
@@ -315,19 +320,31 @@ public struct RecipientsTrustRecord: Codable, Hashable, Sendable {
     /// True for a `sempere-trust/1` record, which the next write replaces.
     public var isLegacy: Bool { if case .legacy = anchor { return true }; return false }
 
-    public init(vaultId: UUID, anchor: Anchor, recipients: [String], markers: VaultMarkers? = nil) {
+    public init(vaultId: UUID, anchor: Anchor, recipients: [String], markers: VaultMarkers? = nil,
+                rewrapFinished: Bool = false) {
         self.vaultId = vaultId; self.anchor = anchor; self.recipients = recipients; self.markers = markers
+        self.rewrapFinished = rewrapFinished
     }
 
     /// The record for a list verified under `secret`.
     ///
     /// - Throws: `AgeError.postQuantumUnavailable` where the platform has no ML-DSA.
-    public init(vaultId: UUID, secret: VaultSecret, recipients: [String], markers: VaultMarkers? = nil) throws {
+    public init(vaultId: UUID, secret: VaultSecret, recipients: [String], markers: VaultMarkers? = nil,
+                rewrapFinished: Bool = false) throws {
         self.init(vaultId: vaultId, anchor: .signed(try LinkPublicKeys(secret: secret)), recipients: recipients,
-                  markers: markers)
+                  markers: markers, rewrapFinished: rewrapFinished)
     }
 
-    enum CodingKeys: String, CodingKey { case format, vaultId, linkKey, linkPublicKeys, recipients, markers }
+    /// True when the record names `secret` (its link public keys) and says the
+    /// rotation into it finished (format.md §3.3.1 rule 3).
+    func saysRewrapFinished(for secret: VaultSecret) -> Bool {
+        guard rewrapFinished, case .signed(let keys) = anchor, let mine = try? LinkPublicKeys(secret: secret) else {
+            return false
+        }
+        return mine == keys
+    }
+
+    enum CodingKeys: String, CodingKey { case format, vaultId, linkKey, linkPublicKeys, recipients, markers, rewrapFinished }
     enum KeyCodingKeys: String, CodingKey { case ed25519, mldsa65 }
 
     public init(from decoder: Decoder) throws {
@@ -354,6 +371,8 @@ public struct RecipientsTrustRecord: Codable, Hashable, Sendable {
         }
         recipients = try c.decode([String].self, forKey: .recipients)
         markers = try c.decodeIfPresent(VaultMarkers.self, forKey: .markers).map { VaultMarkers(format: $0.format, features: $0.features) }
+        // Only a signed record carries it (a legacy one is replaced at the next write).
+        rewrapFinished = format == Self.formatName ? (try c.decodeIfPresent(Bool.self, forKey: .rewrapFinished) ?? false) : false
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -370,6 +389,7 @@ public struct RecipientsTrustRecord: Codable, Hashable, Sendable {
         }
         try c.encode(recipients, forKey: .recipients)
         try c.encodeIfPresent(markers, forKey: .markers)
+        if rewrapFinished, !isLegacy { try c.encode(true, forKey: .rewrapFinished) }
     }
 }
 
@@ -503,6 +523,13 @@ extension Vault {
         guard let local else { return nil }
         guard let mine = try? readManifest(local) else { return nil }   // a damaged local copy: take the remote one
         guard incoming.vaultId == mine.vaultId else { return "the incoming vault.json belongs to another vault" }
+        // Under one secret, `rewrapPending` only ever goes away (format.md §3.3.1
+        // step 4): one that comes back, or changes, is a vault.json put back
+        // to replay a finished change's journal (security review 2026-10, S4).
+        let pendingBack = incoming.rewrapPending != nil && incoming.rewrapPending != mine.rewrapPending
+        let pendingProblem = "the incoming vault.json brings back a finished recipient change (rewrapPending under the "
+            + "same secret, format.md §3.3.1): an older copy put back"
+        if pendingBack, incoming.vaultSecret == mine.vaultSecret { return pendingProblem }
         let sameKeys = incoming.recipients.map(\.key) == mine.recipients.map(\.key)
         let sameMarkers = incoming.format == mine.format && incoming.features == mine.features
             && incoming.markersTag == mine.markersTag
@@ -545,6 +572,10 @@ extension Vault {
         let secret: VaultSecret
         do { secret = try decryptSecret(incoming.vaultSecret, with: vault.identities) } catch {
             return "the incoming vault.json's secret does not open with this key: \(error)"
+        }
+        if pendingBack, let own = try? decryptSecret(mine.vaultSecret, with: vault.identities),
+           RecipientsAuth.constantTimeEqual(own.bytes, secret.bytes) {
+            return pendingProblem
         }
         var anchor: RecipientsTrustRecord?
         do { anchor = try vault.trustStore?.record(for: vault.vaultId) } catch {

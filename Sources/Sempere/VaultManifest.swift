@@ -70,11 +70,17 @@ public struct VaultManifest: Hashable, Sendable, Codable {
     /// over `vaultId`, `format` and `features` under a key derived from the
     /// vault secret. Read leniently, like `recipientsTag`.
     public var markersTag: String?
+    /// `rewrapPending` (format.md §3.3.1 "Binding the journal"): lowercase hex
+    /// HMAC over `vaultId` and the SHA-256 of `rewrap-journal.json`'s bytes,
+    /// under a key derived from the (new) vault secret; present only while a
+    /// secret-rotating recipient change is unfinished. Read leniently, like
+    /// `recipientsTag`.
+    public var rewrapPending: String?
 
     /// The extensions this implementation knows. A writer must not write to
     /// a vault that uses any other (format.md §2).
     public static let knownFeatures: Set<String> = [attachmentsFeature, recipientsTagFeature, signedLinkFeature,
-                                                           markersTagFeature]
+                                                           markersTagFeature, rewrapPendingFeature]
     /// Added before the first blob or attachment op is written (format.md §2, §8).
     public static let attachmentsFeature = "attachments"
     /// The vault carries `recipientsTag` (format.md §2.1). Older writers do
@@ -89,6 +95,11 @@ public struct VaultManifest: Hashable, Sendable, Codable {
     /// Older writers do not know it, so they stop writing instead of
     /// rewriting `vault.json` without the tag.
     public static let markersTagFeature = "markers-tag"
+    /// Secret rotations bind their journal with `rewrapPending` (format.md
+    /// §3.3.1). Older writers do not know it, so they stop writing instead of
+    /// rotating without a binding, or rewriting `vault.json` without the field
+    /// while a rotation is pending.
+    public static let rewrapPendingFeature = "rewrap-pending"
 
     /// Builds a manifest value. No validation happens here; `Vault.create`
     /// and `Vault.open` enforce format.md §2.
@@ -98,13 +109,16 @@ public struct VaultManifest: Hashable, Sendable, Codable {
     ///   - vaultSecret: the armored age file holding the 32-byte secret.
     public init(format: String = SempereFormat.identifier, vaultId: UUID, created: Date, recipients: [Recipient],
                 vaultSecret: String, features: [String] = [], recipientsTag: String? = nil, secretLink: SecretLink? = nil,
-                markersTag: String? = nil) {
+                markersTag: String? = nil, rewrapPending: String? = nil) {
         self.format = format; self.vaultId = vaultId; self.created = created
         self.recipients = recipients; self.vaultSecret = vaultSecret; self.features = features
         self.recipientsTag = recipientsTag; self.secretLink = secretLink; self.markersTag = markersTag
+        self.rewrapPending = rewrapPending
     }
 
-    enum CodingKeys: String, CodingKey { case format, vaultId, created, recipients, vaultSecret, features, recipientsTag, secretLink, markersTag }
+    enum CodingKeys: String, CodingKey {
+        case format, vaultId, created, recipients, vaultSecret, features, recipientsTag, secretLink, markersTag, rewrapPending
+    }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -116,6 +130,7 @@ public struct VaultManifest: Hashable, Sendable, Codable {
         features = try c.decodeIfPresent([String].self, forKey: .features) ?? []
         recipientsTag = Self.lenientString(c, .recipientsTag)
         markersTag = Self.lenientString(c, .markersTag)
+        rewrapPending = Self.lenientString(c, .rewrapPending)
         // SecretLink's decoder never throws: any shape but null reads as one.
         secretLink = (try? c.decodeNil(forKey: .secretLink)) == false ? try? c.decode(SecretLink.self, forKey: .secretLink) : nil
     }
@@ -137,6 +152,7 @@ public struct VaultManifest: Hashable, Sendable, Codable {
         try c.encodeIfPresent(recipientsTag, forKey: .recipientsTag)
         if let secretLink, secretLink != .malformed { try c.encode(secretLink, forKey: .secretLink) }
         try c.encodeIfPresent(markersTag, forKey: .markersTag)
+        try c.encodeIfPresent(rewrapPending, forKey: .rewrapPending)
     }
 
     /// The features this implementation does not know, sorted.

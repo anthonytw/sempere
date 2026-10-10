@@ -40,6 +40,16 @@ your use (no telemetry).
   that key from opening what is written afterwards. Old copies of the files
   (backups, a provider's version history) still open with the old key
   ([`cli.md`](cli.md), `vault recipients remove`).
+- **A removed device can still pass things off as authentic for a while.**
+  Removing a key changes the vault's secret, which tags notes as yours. Until
+  the change has re-encrypted every file, files still tagged with the old
+  secret are accepted, so a removed device that kept the old secret and can
+  still write to the storage could add notes, attachments, voice notes or
+  settings that pass as authentic. Once a device has seen the change finish,
+  it accepts nothing made with the old secret again, even if the old change's
+  records are put back on the storage ([`format.md`](format.md) §3.3.1). A
+  device that opens the vault for the first time, or lost its record of the
+  vault, trusts what the vault says about an unfinished change.
 
 ## Backups
 

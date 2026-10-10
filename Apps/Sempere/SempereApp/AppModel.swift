@@ -709,6 +709,24 @@ final class AppModel {
             try CloudVault.coordinatedRead(coordinate) { try Vault.open(at: url, identities: identities, trust: trust) }
         }
         try ensureCurrent(gen)
+        if opened.journalRefused {
+            // A rewrap journal this device refuses (format.md §3.3.1 "Refused
+            // journals": planted, or put back after its change finished) gives
+            // no secret; it only blocks key changes and would hold the vault in
+            // the migration screen. Deleted quietly when the list checks; kept
+            // otherwise (the vault then opens normally, without it).
+            let start = opened
+            if let discarded = try? await Task.detached(priority: .userInitiated, operation: { () throws -> Vault in
+                try CloudVault.coordinatedWrite(coordinate) { () throws -> Vault in
+                    var v = start
+                    try v.discardRefusedJournal()
+                    return v
+                }
+            }).value {
+                try ensureCurrent(gen)
+                opened = discarded
+            }
+        }
         if !opened.isLegacy, !opened.pendingRewrap, case .untagged = opened.recipientsStatus {
             // The one-time upgrade (format.md §2.1). Not through `offMain`: a
             // vault that cannot be written now is tagged by its first write.
@@ -761,7 +779,7 @@ final class AppModel {
         vault = opened
         unlockIdentities = identities
         recipientsAlert = opened.recipientsStatus.problem.map { RecipientsAlert(problem: $0, entries: opened.recipients) }
-        if opened.isLegacy || opened.pendingRewrap {
+        if opened.isLegacy || (opened.pendingRewrap && !opened.journalRefused) {
             // Migrate-only (format.md §3.3.2): no note is listed or read.
             beginMigration(identities: identities)
             return
