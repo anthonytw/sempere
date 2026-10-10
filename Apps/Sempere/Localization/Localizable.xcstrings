@@ -2332,17 +2332,6 @@
         }
       }
     },
-    "A notebook cannot go into itself or a notebook inside it." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Un cuaderno no puede ir dentro de sí mismo ni de un cuaderno que contiene."
-          }
-        }
-      }
-    },
     "A passphrase can only wrap a key generated on this device." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4532,6 +4521,18 @@
         }
       }
     },
+    "Could not change the icon." : {
+      "comment" : "Alert when switching the app icon fails",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo cambiar el icono."
+          }
+        }
+      }
+    },
     "Could not check the vault: %@" : {
       "comment" : "Alert message; the error text follows (English)",
       "extractionState" : "manual",
@@ -4828,18 +4829,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No se ha podido transcribir la grabación: %@"
-          }
-        }
-      }
-    },
-    "Couldn’t change the icon." : {
-      "comment" : "Alert when switching the app icon fails",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudo cambiar el icono."
           }
         }
       }
