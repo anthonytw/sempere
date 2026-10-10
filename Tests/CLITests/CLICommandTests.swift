@@ -153,10 +153,17 @@ final class CLICommandTests: CLITestCase {
         let copy = try copyFixtureVault()
         let newKey = path("new.key")
         let pub = try cli(["keys", "generate", "--out", newKey, "-q"]).out.trimmingCharacters(in: .whitespacesAndNewlines)
-        let add = try cli(["vault", "recipients", "add", pub, "--label", "phone", "--vault", copy,
+        let add = try cli(["vault", "recipients", "add", pub, "--label", "  my\nphone ", "--vault", copy,
                            "--identity", Self.fixtureKey])
         XCTAssertEqual(add.status, 0, add.err)
         XCTAssertTrue(add.out.contains("Rewrapped"), add.out)
+        // Labels are stored as the app stores them: one line, trimmed.
+        let labels = (try cli(["vault", "info", "--vault", copy, "--json"]).json as? [String: Any])?["recipients"]
+        XCTAssertEqual((labels as? [[String: Any]])?.last?["label"] as? String, "my phone")
+        let unnamed = path("unnamed.sempere")
+        XCTAssertEqual(try cli(["vault", "init", unnamed, "--recipient", pub]).status, 0)
+        let shown = try cli(["vault", "info", "--vault", unnamed])
+        XCTAssertTrue(shown.out.contains("  Device  "), "an empty label shows as the app shows it: \(shown.out)")
         // The new identity alone can now export.
         let out = path("export")
         let ex = try cli(["export", "--all", "--format", "json", "--out", out, "--vault", copy, "--identity", newKey])

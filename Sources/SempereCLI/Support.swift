@@ -451,7 +451,7 @@ final class UntaggedVaults: @unchecked Sendable {
             guard (try? Vault.open(at: url))?.manifest.recipientsTag != nil else { continue }
             printStderr("sempere: vault.json's device list is now authenticated (format.md §2.1); it trusts these "
                 + "\(recipients.count) recipient(s), check them with `sempere vault info`: "
-                + recipients.map { RecipientsProblem.abbreviate($0.key) + ($0.label.isEmpty ? "" : " (\($0.label))") }.joined(separator: ", "))
+                + recipients.map { RecipientsProblem.abbreviate($0.key) + " (\($0.displayLabel))" }.joined(separator: ", "))
         }
     }
 }

@@ -228,7 +228,9 @@ sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
 ```
 
 - `init` creates the vault. `PATH` must end in `.sempere`. Give no `--label`
-  or one per `--recipient`. `--store-key` also writes that identity,
+  or one per `--recipient`. Labels (here and in `recipients add`/`replace`)
+  are stored as the app stores them: one line, trimmed, at most 80
+  characters; an empty one is shown as "Device". `--store-key` also writes that identity,
   passphrase-wrapped, into `keys/` (the passphrase is confirmed when typed,
   and an empty one is refused with exit 2, as in the app).
 - `info` prints vault id, creation time, recipients with labels, number of

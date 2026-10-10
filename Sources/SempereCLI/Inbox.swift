@@ -79,9 +79,9 @@ struct InboxEnable: ParsableCommand {
             struct Out: Encodable { var profile: String; var device: String; var notebook: String; var recipient: String? }
             try output.emitJSON(Out(profile: url.path, device: p.device, notebook: p.notebook, recipient: p.recipient))
         } else {
-            let label = vault.recipients.first { CaptureKey.fingerprint(of: $0.key) == p.recipient }?.label ?? ""
+            let label = vault.recipients.first { CaptureKey.fingerprint(of: $0.key) == p.recipient }?.displayLabel
             output.info("Capture profile written to \(url.path) (notebook \(p.notebook); captures attributed to "
-                + "\(label.isEmpty ? "this key" : label))")
+                + "\(label ?? "this key"))")
         }
     }
 }

@@ -308,7 +308,9 @@ public struct Vault: Sendable {
     ///     must not hold a `vault.json`.
     ///   - recipients: post-quantum (`age1pq1...`) only; an X25519 one throws
     ///     `classicRecipient` (format.md §3.1).
-    ///   - labels: empty, or one label per recipient.
+    ///   - labels: empty, or one label per recipient (stored as
+    ///     `VaultManifest.Recipient.cleanLabel` makes them, as are the labels
+    ///     of `addRecipient` and `replaceRecipient`).
     ///   - identities: kept for reading; may be empty (write-only use).
     ///   - vaultId, created: fixed values for reproducible fixtures.
     ///   - trust: this device's trust records (format.md §2.1); the new
@@ -340,7 +342,8 @@ public struct Vault: Sendable {
 
         let secret = VaultSecret.random()
         let entries = keys.enumerated().map { i, k in
-            VaultManifest.Recipient(key: k, label: labels.isEmpty ? "" : labels[i], added: created)
+            VaultManifest.Recipient(key: k, label: labels.isEmpty ? "" : VaultManifest.Recipient.cleanLabel(labels[i]),
+                                    added: created)
         }
         let manifest = VaultManifest(vaultId: vaultId, created: created, recipients: entries,
                                      vaultSecret: try encryptSecret(secret, to: recipients),
@@ -621,7 +624,7 @@ public struct Vault: Sendable {
             return report
         }
         var next = manifest.recipients
-        next.append(.init(key: key, label: label, added: added))
+        next.append(.init(key: key, label: VaultManifest.Recipient.cleanLabel(label), added: added))
         report.merge(try changeRecipients(next, rotate: false, policy: policy, stopAfter: stopAfter))
         return report
     }
@@ -647,7 +650,8 @@ public struct Vault: Sendable {
         }
         guard !has(newKey) else { throw VaultError.duplicateRecipient(newKey) }
         var next = manifest.recipients
-        next[index] = .init(key: newKey, label: label ?? next[index].label, added: added)
+        next[index] = .init(key: newKey, label: label.map(VaultManifest.Recipient.cleanLabel) ?? next[index].label,
+                            added: added)
         report.merge(try changeRecipients(next, rotate: true, policy: policy, stopAfter: stopAfter))
         return report
     }

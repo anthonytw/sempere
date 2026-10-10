@@ -133,7 +133,7 @@ struct VaultInfo: ParsableCommand {
         print("Notes:          \(info.notes)")
         print("Recipients:     \(info.recipients.count)")
         for r in info.recipients {
-            print("  \(RecipientsProblem.abbreviate(r.key))  \(r.type)  \(r.label.isEmpty ? "(no label)" : r.label)  "
+            print("  \(RecipientsProblem.abbreviate(r.key))  \(r.type)  \(VaultManifest.Recipient.displayLabel(r.label))  "
                 + "added \(Format.local(r.added))")
         }
         let classic = info.recipients.filter { $0.type != Info.Recipient.pqType }.count
