@@ -239,7 +239,7 @@ public struct TreeExporter: Sendable {
                                                     pageImages: pageImages, videos: videoLinks)
                     outputs.append((prefix + ".md", Data(md.utf8)))
                 case .html:
-                    let svgs = try SVGWriter.export(note: state, options: options, report: &report).pages
+                    let svgs = try SVGWriter.export(note: state, options: options, pagePrefixedIDs: true, report: &report).pages
                     let back = String(repeating: "../", count: folder.count) + "index.html"
                     let html = HTMLExport.notePage(info: info, state: state, svgs: svgs, indexHref: back, videos: videoLinks)
                     outputs.append((prefix + ".html", Data(html.utf8)))

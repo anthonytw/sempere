@@ -171,7 +171,8 @@ public enum ShareExport {
                 try Task.checkCancellation()
                 do {
                     let info = Self.info(s, state, source: vaultSource)
-                    let svgs = try SVGWriter.render(note: state, options: renderOptions(for: s.id), report: &report)
+                    let svgs = try SVGWriter.export(note: state, options: renderOptions(for: s.id), pagePrefixedIDs: true,
+                                                    report: &report).pages
                     let html = HTMLExport.notePage(info: info, state: state, svgs: svgs, indexHref: nil)
                     let url = scratch.appendingPathComponent(name(s, state) + ".html")
                     try write(Data(html.utf8), url)

@@ -216,6 +216,46 @@ final class ImageExportTests: XCTestCase {
         XCTAssertEqual(try PNG.decode(XCTUnwrap(Data(base64Encoded: String(b64)))), Self.quadrants())
     }
 
+    /// The HTML export inlines every page into one document, so each page's
+    /// ids must be its own: a different image and clip on each page, every id
+    /// unique, and every `#id` reference resolving within its own page.
+    func testHTMLExportPageIDsAreUnique() throws {
+        let q = Self.quadrants()
+        let other = try RGBAImage(width: q.width, height: q.height, pixels: q.pixels.map { 255 - $0 | 1 })
+        let pngs = try [Self.pngData(Self.quadrants()), Self.pngData(other)]
+        let frames = [Rect(x: 20, y: 30, w: 120, h: 90), Rect(x: 100, y: 60, w: 80, h: 160)]
+        let pages = (0..<2).map { i in
+            Page(order: "a\(i)", items: [Item(kind: .image, frame: frames[i], rotation: 30 * Double(i), z: "a",
+                                              blob: BlobRef(content: pngs[i], type: "image/png"),
+                                              pixelSize: Size(w: 40, h: 30))])
+        }
+        let state = NoteState(meta: Self.meta(), pages: pages)
+        var report = RenderReport()
+        let options = RenderOptions(blobs: MemoryBlobSource(pngs))
+        let svgs = try SVGWriter.export(note: state, options: options, pagePrefixedIDs: true, report: &report).pages
+        XCTAssertEqual(report, RenderReport())
+        let info = ExportNoteInfo(id: UUID(), title: "Two", tags: [], notebook: nil, created: Date(timeIntervalSince1970: 0),
+                                  modified: nil, pages: 2, source: "sempere:v")
+        let html = HTMLExport.notePage(info: info, state: state, svgs: svgs, indexHref: nil)
+
+        func matches(_ pattern: String, in s: String) throws -> [String] {
+            let re = try NSRegularExpression(pattern: pattern)
+            return re.matches(in: s, range: NSRange(s.startIndex..., in: s)).map { String(s[Range($0.range(at: 1), in: s)!]) }
+        }
+        let ids = try matches(#"\sid="([^"]+)""#, in: html)
+        XCTAssertEqual(ids.count, Set(ids).count, "duplicate ids: \(ids)")
+        XCTAssertTrue(ids.contains("p1-img-0") && ids.contains("p2-img-0"), "\(ids)")
+        for (i, svg) in svgs.enumerated() {
+            let own = Set(try matches(#"\sid="([^"]+)""#, in: svg))
+            let refs = try matches(#"url\(#([^)]+)\)"#, in: svg) + matches(##"href="#([^"]+)""##, in: svg)
+            XCTAssertFalse(refs.isEmpty)
+            for r in refs { XCTAssertTrue(r.hasPrefix("p\(i + 1)-") && own.contains(r), "page \(i + 1): #\(r)") }
+        }
+        // Standalone SVGs keep their unprefixed ids.
+        let plain = try SVGWriter.export(note: state, options: options, report: &report).pages
+        XCTAssertTrue(plain[1].contains("<use xlink:href=\"#img-0\"") && plain[1].contains("url(#clip-0)"))
+    }
+
     /// `(a b c d e f)` of the first `<use>`'s matrix.
     static func matrix(in svg: String) -> Affine? {
         guard let r = svg.range(of: "<use xlink:href=\"#img-0\" transform=\"matrix(") else { return nil }

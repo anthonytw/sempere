@@ -57,8 +57,10 @@ public enum HTMLExport {
     private static func num(_ v: Double) -> String { String(format: "%.2f", v) }
 
     /// Turns a standalone page SVG (from `SVGWriter`) into an inline element:
-    /// no XML prolog or namespace URL, no duplicate ids, and an invisible
-    /// selectable layer with the recognised words on top of the ink.
+    /// no XML prolog or namespace URL, `paper` and `strokes` as classes, and
+    /// an invisible selectable layer with the recognised words on top of the
+    /// ink. The other ids are unique across pages only when the SVG was
+    /// rendered with `pagePrefixedIDs`.
     static func inlineSVG(_ svg: String, page: Page, number: Int) -> String {
         var s = svg
         // The title may span lines (it holds the note title), so cut it by its tags.
@@ -87,7 +89,7 @@ public enum HTMLExport {
     /// One note as a complete HTML document.
     ///
     /// - Parameters:
-    ///   - svgs: `SVGWriter.render(note:)` output, one per page of `state`.
+    ///   - svgs: `SVGWriter.export(note:pagePrefixedIDs: true)` pages, one per page of `state`.
     ///   - indexHref: relative link to the index page, nil for none.
     ///   - videos: the note's clips written next to it (`ExportVideos`), with their paths relative to the page.
     public static func notePage(info: ExportNoteInfo, state: NoteState, svgs: [String], indexHref: String?,

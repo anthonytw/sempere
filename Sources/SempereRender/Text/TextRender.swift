@@ -151,6 +151,8 @@ extension ContentStream {
 /// invisible `<text>` per line over them carries the real characters for
 /// selection, search and copying.
 struct SVGFontSet {
+    /// Goes in front of the font family names (`SVGWriter` id prefix).
+    var prefix = ""
     private(set) var subsets: [FontSubset] = []
     private var byKey: [String: Int] = [:]
 
@@ -175,7 +177,7 @@ struct SVGFontSet {
             var cmap: [UInt32: Int] = [:]
             for id in s.glyphs.indices.dropFirst() { cmap[Self.codePoint(id)] = id }
             let file = s.font.isCFF ? try s.openTypeCFFFile(cmap: cmap) : try s.trueTypeFile(cmap: cmap)
-            css += "@font-face{font-family:\"sempere-f\(i)\";src:url(data:font/\(s.font.isCFF ? "otf" : "ttf");base64,"
+            css += "@font-face{font-family:\"\(prefix)sempere-f\(i)\";src:url(data:font/\(s.font.isCFF ? "otf" : "ttf");base64,"
                 + Data(file).base64EncodedString() + ")}\n"
         }
         return css
@@ -195,7 +197,7 @@ struct SVGFontSet {
                 for g in run.glyphs { chars += String(format: "&#x%X;", glyph(f, g.glyph)) }
                 let xs = run.glyphs.map { fmt($0.x) }.joined(separator: " ")
                 let ys = run.glyphs.map { fmt($0.y) }.joined(separator: " ")
-                var attrs = "font-family=\"sempere-f\(f)\" font-size=\"\(fmt(run.size))\" fill=\"\(paint.hex)\""
+                var attrs = "font-family=\"\(prefix)sempere-f\(f)\" font-size=\"\(fmt(run.size))\" fill=\"\(paint.hex)\""
                 if paint.alpha < 0.9995 { attrs += " fill-opacity=\"\(fmt(paint.alpha))\"" }
                 if run.syntheticBold { attrs += " stroke=\"\(paint.hex)\" stroke-width=\"\(fmt(run.size / 30))\"" }
                 if run.syntheticItalic {
