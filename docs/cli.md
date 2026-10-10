@@ -1627,7 +1627,9 @@ capture's audio (`format.md` §11.2): `transcript` needs that audio file
 audio is never adopted, nor is one sealed by another device than its
 capture's. Both refuse (exit 7) a vault of a newer format. `list` shows the inbox:
 ids and file kinds without a key, with one the titles, whether each verifies
-and who captured it (`from iPad (device 0b0b0b0b)`, or `(unattributed)`).
+and who captured it (`from iPad (device 0b0b0b0b)`, `from Device (…)` for a
+key with no label, `from a device no longer in this vault (…)`, or
+`(unattributed)`).
 A capture sealed by a device that is no longer in the vault never verifies,
 also while the rewrap of its removal is unfinished (security review 2026-10,
 C3): it is reported and kept.
