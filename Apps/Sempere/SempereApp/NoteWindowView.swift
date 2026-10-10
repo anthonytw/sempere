@@ -17,6 +17,8 @@ struct NoteWindowView: View {
     @AppStorage(PageStrip.visibleKey) private var pageStripVisible = false
     @State private var ui = WindowUI()
     @State private var failure: String?
+    /// A vault opened from outside that would replace the open one (S16).
+    @State private var openedVaultToConfirm: AppModel.OpenedVaultConfirmation?
 
     /// The model's editor for this note, never a copy kept here: a delete,
     /// restore or key change replaces or closes it, and the window must
@@ -80,9 +82,11 @@ struct NoteWindowView: View {
             switch VoiceNoteLink.route(url) {
             case .link(let link): model.quickCapture.pendingLink = link
             case .ignore: break
-            case .file: Task { await model.handleOpened(url, library: library) }
+            case .file:
+                Task { if let confirm = await model.handleOpened(url, library: library) { openedVaultToConfirm = confirm } }
             }
         }
+        .openedVaultAlert($openedVaultToConfirm)
         .task(id: LoadKey(ready: ready, epoch: model.keyEpoch)) { await load() }
         .task {
             // Restored without the library window: bring it up to open and unlock the vault.

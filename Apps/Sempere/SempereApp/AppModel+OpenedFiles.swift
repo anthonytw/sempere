@@ -78,14 +78,37 @@ extension AppModel {
         OpenedFile.stage(waiting: openedPDFs.count, phase: phase, busy: isBusy, readOnly: isVaultReadOnly)
     }
 
+    /// A vault handed to the app from outside while another one is open: it
+    /// would close that one, so the window asks first (security review
+    /// 2026-10 stage 4, S16).
+    struct OpenedVaultConfirmation: Identifiable, Equatable {
+        let url: URL
+        /// The folder's name, as the user sees it.
+        let name: String
+        /// The vault open now.
+        let current: String
+        var id: URL { url }
+    }
+
     /// A URL the system opened the app with: a PDF is queued for import
-    /// (`receiveOpenedPDF`), anything else opened as a vault.
-    func handleOpened(_ url: URL, library: VaultLibrary) async {
+    /// (`receiveOpenedPDF`), anything else opened as a vault. A vault that
+    /// would replace the open one is not opened unless `confirmed`: the
+    /// confirmation to ask for comes back instead.
+    @discardableResult
+    func handleOpened(_ url: URL, library: VaultLibrary, confirmed: Bool = false) async -> OpenedVaultConfirmation? {
         let type = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType
         switch OpenedFile.kind(of: url, contentType: type) {
-        case .pdf: await receiveOpenedPDF(url)
-        case .vault: await report { try await open(picked: url, library: library) }
+        case .pdf:
+            await receiveOpenedPDF(url)
+        case .vault:
+            if !confirmed, phase != .noVault {
+                let name = url.deletingPathExtension().lastPathComponent
+                return OpenedVaultConfirmation(url: url, name: name.isEmpty ? url.lastPathComponent : name,
+                                               current: vaultName ?? String(localized: "Vault", comment: "Name shown for a vault that has none"))
+            }
+            await report { try await open(picked: url, library: library, external: true) }
         }
+        return nil
     }
 
     /// Takes a PDF the system opened the app with: copies it into the work

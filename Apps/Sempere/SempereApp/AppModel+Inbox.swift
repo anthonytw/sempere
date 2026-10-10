@@ -71,16 +71,27 @@ extension AppModel {
         // Never a list that does not check (format.md §2.1, §11.1): captures are sealed to it.
         guard let vault, vault.canRead, vault.recipientsStatus.allowsWriting, var stored = quickCaptureProfile,
               stored.profile.vaultId == vault.vaultId, let device = DeviceID(stored.profile.device),
+              let here = vaultURL, Self.isProfileFolder(stored.bookmark, here),
               let fresh = try? vault.captureProfile(device: device, notebook: stored.profile.notebook) else { return }
         guard stored.profile.recipients != fresh.recipients || stored.profile.key != fresh.key
               || stored.profile.recipient != fresh.recipient else { return }
         stored.profile.recipients = fresh.recipients
         stored.profile.key = fresh.key
         stored.profile.recipient = fresh.recipient
-        if let url = vaultURL, let bookmark = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) {
-            stored.bookmark = bookmark
-        }
+        // The bookmark is never pointed elsewhere: only the folder the profile was made for is refreshed.
         try? quickCapture.store.save(stored)
+    }
+
+    /// Whether the profile's `bookmark` resolves to the open vault's folder
+    /// `here` (security review 2026-10 stage 4, S16): a lookalike folder with
+    /// the same vault id, opened from outside, must not take over the profile
+    /// (its recipients, its key and where voice notes go).
+    nonisolated static func isProfileFolder(_ bookmark: Data, _ here: URL) -> Bool {
+        var stale = false
+        guard let target = try? URL(resolvingBookmarkData: bookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &stale)
+        else { return false }
+        func path(_ u: URL) -> String { u.standardizedFileURL.resolvingSymlinksInPath().path }
+        return path(target) == path(here)
     }
 
     /// Starts adopting the inbox (a task the model owns; one at a time).

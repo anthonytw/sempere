@@ -10,6 +10,8 @@ struct RootView: View {
     @AppEnvironmentObject private var library: VaultLibrary
     @AppEnvironmentObject private var keys: RememberedKeys
     @State private var pickingVault = false
+    /// A vault opened from outside that would replace the open one (S16).
+    @State private var openedVaultToConfirm: AppModel.OpenedVaultConfirmation?
     @State private var creatingVault = false
     @AppStorage(ColumnLayout.key) private var storedColumns = "all"
     /// Set when a failed reopen should end in the folder picker.
@@ -108,6 +110,7 @@ struct RootView: View {
                 }
             }
         }
+        .openedVaultAlert($openedVaultToConfirm)
         .onOpenURL { url in
             switch VoiceNoteLink.route(url) {
             case .link(let link):
@@ -361,7 +364,7 @@ struct RootView: View {
     }
 
     private func open(_ url: URL) async {
-        await model.handleOpened(url, library: library)
+        if let confirm = await model.handleOpened(url, library: library) { openedVaultToConfirm = confirm }
     }
 
     /// Reopens a recent vault; on failure explains and falls back to the picker.

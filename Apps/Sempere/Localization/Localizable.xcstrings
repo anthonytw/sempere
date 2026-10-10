@@ -2309,6 +2309,18 @@
         }
       }
     },
+    "A key for a vault with this id is saved on %@, but it is offered only where it opened this vault before: any folder can claim a vault's id. Unlock this one with the passphrase or the key." : {
+      "comment" : "Unlock sheet; the value is “this iPad”, “this iPhone” or “this Mac”",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hay una clave de una bóveda con este identificador guardada en %@, pero solo se ofrece donde ya abrió esta bóveda: cualquier carpeta puede reclamar el identificador de una bóveda. Desbloquea esta con la frase de contraseña o con la clave."
+          }
+        }
+      }
+    },
     "A new note whose title you leave empty is named %@." : {
       "comment" : "Settings ▸ New Notes footer; the value is a quoted sample title",
       "extractionState" : "manual",
@@ -10012,6 +10024,18 @@
         }
       }
     },
+    "Open “%@”?" : {
+      "comment" : "Alert title before a vault opened from another app replaces the open one; the value is the new vault's name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Abrir «%@»?"
+          }
+        }
+      }
+    },
     "Opening the vault…" : {
       "comment" : "Progress",
       "extractionState" : "manual",
@@ -16358,6 +16382,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La primera vez puede tardar un rato. Si se detiene, al abrir de nuevo la bóveda continúa."
+          }
+        }
+      }
+    },
+    "This closes “%@”. Open a vault you received only if you know where it came from." : {
+      "comment" : "Alert message; the value is the name of the vault open now",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se cerrará «%@». Abre una bóveda recibida solo si sabes de dónde viene."
           }
         }
       }
