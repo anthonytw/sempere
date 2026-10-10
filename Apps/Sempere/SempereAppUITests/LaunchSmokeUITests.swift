@@ -90,30 +90,16 @@ final class LaunchSmokeUITests: XCTestCase {
         app.typeKey(",", modifierFlags: .command)
         let settings = app.descendants(matching: .any)["settingsForm"].firstMatch
         require(settings, "Settings window", in: app)
-        let restore = app.buttons["Restore from Backup…"].firstMatch
-        // The form is a lazy list: rows below the window are not built (and not in the
-        // accessibility tree) until scrolled to. Scroll-wheel steps, trying either sign, until
-        // the button is wholly inside the form: a row half below the window's edge exists too,
-        // and a click at its middle misses it (no action ran; the sheet never came, #152).
-        func shown() -> Bool { restore.exists && settings.frame.contains(restore.frame) }
-        for deltaY in Array(repeating: -400.0, count: 10) + Array(repeating: 400.0, count: 10) where !shown() {
-            settings.scroll(byDeltaX: 0, deltaY: deltaY)
-        }
-        require(restore, "Restore from Backup… button", in: app)
-        // Scrolling may still be settling: click where the button is once it stays put.
-        var frame = restore.frame
-        for _ in 0..<10 {
-            Thread.sleep(forTimeInterval: 0.3)
-            let now = restore.frame
-            if now == frame { break }
-            frame = now
-        }
-        XCTAssertTrue(settings.frame.contains(restore.frame),
-                      "Restore from Backup… is inside the form (\(restore.frame) in \(settings.frame))")
-        restore.click()
+        clickInSettings("Restore from Backup…", settings, in: app)
         requireSheet("restoreBackupSheet", titled: "Restore from Backup", "Restore from Backup sheet", in: app)
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
         requireRunning(app, "restore sheet")
+        // Save Key… (Device Keys), a sheet of a section further down (on the section, it
+        // came and went at once on Catalyst 27, as Restore from Backup… did).
+        clickInSettings("Save Key…", settings, in: app)
+        requireSheet("saveKeySheet", titled: "Save Key", "Save Key sheet", in: app)
+        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+        requireRunning(app, "save key sheet")
         app.typeKey("w", modifierFlags: .command)   // closes the Settings window
         requireRunning(app, "settings")
 
@@ -344,6 +330,33 @@ final class LaunchSmokeUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground, "the app is still running after: \(step)", file: file, line: line)
     }
 
+    /// Scrolls the Settings form to the button titled `title` and clicks it.
+    /// The form is a lazy list: rows below the window are not built (and not in
+    /// the accessibility tree) until scrolled to. Scroll-wheel steps, trying either
+    /// sign, until the button is wholly inside the form: a row half below the
+    /// window's edge exists too, and a click at its middle misses it (#152).
+    @MainActor
+    private func clickInSettings(_ title: String, _ settings: XCUIElement, in app: XCUIApplication,
+                                 file: StaticString = #filePath, line: UInt = #line) {
+        let button = app.buttons[title].firstMatch
+        func shown() -> Bool { button.exists && settings.frame.contains(button.frame) }
+        for deltaY in Array(repeating: -400.0, count: 10) + Array(repeating: 400.0, count: 10) where !shown() {
+            settings.scroll(byDeltaX: 0, deltaY: deltaY)
+        }
+        require(button, "\(title) button", in: app, file: file, line: line)
+        // Scrolling may still be settling: click where the button is once it stays put.
+        var frame = button.frame
+        for _ in 0..<10 {
+            Thread.sleep(forTimeInterval: 0.3)
+            let now = button.frame
+            if now == frame { break }
+            frame = now
+        }
+        XCTAssertTrue(settings.frame.contains(button.frame),
+                      "\(title) is inside the form (\(button.frame) in \(settings.frame))", file: file, line: line)
+        button.click()
+    }
+
     /// Waits for `element`; on a miss prints the window tree (`SMOKEDEBUG`).
     @MainActor
     private func require(_ element: XCUIElement, _ what: String, in app: XCUIApplication, timeout: TimeInterval = 30,
@@ -363,7 +376,15 @@ final class LaunchSmokeUITests: XCTestCase {
         let byID = app.descendants(matching: .any)[id].firstMatch
         let byTitle = app.windows.matching(NSPredicate(format: "title BEGINSWITH %@", prefix)).firstMatch
         for _ in 0..<15 {
-            if byID.waitForExistence(timeout: 2) || byTitle.exists { return }
+            if byID.waitForExistence(timeout: 2) || byTitle.exists {
+                // And it stays: a sheet presented by several rows at once came and went within
+                // a second on Catalyst 27 (a modifier on a Section is on each of its rows).
+                Thread.sleep(forTimeInterval: 2)
+                if byID.exists || byTitle.exists { return }
+                dump(app, what)
+                XCTFail("\(what) closed again by itself (app state \(app.state.rawValue))", file: file, line: line)
+                return
+            }
         }
         dump(app, what)
         XCTFail("\(what) not found (app state \(app.state.rawValue))", file: file, line: line)
