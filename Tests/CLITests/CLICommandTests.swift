@@ -57,6 +57,12 @@ final class CLICommandTests: CLITestCase {
             return r.out.trimmingCharacters(in: .whitespacesAndNewlines)
         }()
         let vault = path("fresh.sempere")
+        // A key is never stored under an empty passphrase (as in the app and `keys paper`).
+        let empty = try cli(["vault", "init", vault, "--recipient", pub, "--store-key", key, "--work-factor", "15"],
+                            env: ["SEMPERE_PASSPHRASE": ""])
+        XCTAssertEqual(empty.status, 2, empty.err)
+        XCTAssertTrue(empty.err.contains("the passphrase is empty"), empty.err)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: vault), "nothing created")
         let r = try cli(["vault", "init", vault, "--recipient", pub, "--label", "laptop", "--store-key", key,
                          "--passphrase-env", "MY_PASS", "--work-factor", "15"], env: ["MY_PASS": "s3cret"])
         XCTAssertEqual(r.status, 0, r.err)

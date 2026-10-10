@@ -72,7 +72,7 @@ enum CLIError: Error {
              VaultError.vaultSecretUndecryptable, VaultError.wrongPassphrase,
              VaultError.locked, VaultError.noIdentities, VaultError.classicIdentity:
             return .cannotDecrypt(text)
-        case VaultError.classicRecipient:
+        case VaultError.classicRecipient, VaultError.emptyPassphrase:
             return .usage(text)
         case VaultError.legacyVault:
             return .legacyVault(text)
@@ -292,8 +292,18 @@ func promptSecret(_ prompt: String) -> String? {
 
 /// `--passphrase-env VAR`, else `$SEMPERE_PASSPHRASE`, else the terminal.
 /// Failing to get one is exit 4 (no key available) unless `asError` says otherwise.
+///
+/// - Parameter confirm: a new passphrase (one that will wrap a key): the
+///   terminal asks twice, and an empty one is refused (exit 2), as in the app.
 func obtainPassphrase(envName: String?, prompt: String = "Vault passphrase: ", confirm: Bool = false,
                       asError: (String) -> CLIError = CLIError.cannotDecrypt) throws -> String {
+    let pass = try readPassphrase(envName: envName, prompt: prompt, confirm: confirm, asError: asError)
+    if confirm && pass.isEmpty { throw CLIError.usage("the passphrase is empty") }
+    return pass
+}
+
+private func readPassphrase(envName: String?, prompt: String, confirm: Bool,
+                            asError: (String) -> CLIError) throws -> String {
     if let envName {
         guard let v = Env.vars[envName] else { throw asError("environment variable \(envName) is not set") }
         return v

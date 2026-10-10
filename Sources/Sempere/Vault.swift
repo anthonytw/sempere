@@ -69,6 +69,8 @@ public enum VaultError: Error, Hashable, Sendable {
     case identityFileMissing(String)
     /// The passphrase does not decrypt the identity file.
     case wrongPassphrase
+    /// A key file is never written under an empty passphrase.
+    case emptyPassphrase
     /// The identity file decrypts but holds no `AGE-SECRET-KEY-1...` line, or
     /// is not a single-scrypt-recipient age file.
     case identityFileMalformed

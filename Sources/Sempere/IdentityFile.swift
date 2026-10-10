@@ -115,12 +115,13 @@ extension Vault {
     /// encrypted to a single scrypt recipient (`age -d` with the passphrase
     /// reads it).
     ///
-    /// - Throws: `workFactorOutOfRange` outside 15...18; `alreadyExists`
-    ///   unless `replace`.
+    /// - Throws: `emptyPassphrase`; `workFactorOutOfRange` outside 15...18;
+    ///   `alreadyExists` unless `replace`.
     @discardableResult
     public func writeIdentityFile(_ identity: NativeIdentity, passphrase: String, workFactor: Int = 18,
                                   created: Date = Date(), replace: Bool = false) throws -> URL {
         try requireWritable()
+        guard !passphrase.isEmpty else { throw VaultError.emptyPassphrase }
         guard IdentityFile.writerWorkFactors.contains(workFactor) else {
             throw VaultError.workFactorOutOfRange(workFactor)
         }

@@ -229,7 +229,8 @@ sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
 
 - `init` creates the vault. `PATH` must end in `.sempere`. Give no `--label`
   or one per `--recipient`. `--store-key` also writes that identity,
-  passphrase-wrapped, into `keys/` (the passphrase is confirmed when typed).
+  passphrase-wrapped, into `keys/` (the passphrase is confirmed when typed,
+  and an empty one is refused with exit 2, as in the app).
 - `info` prints vault id, creation time, recipients with labels, number of
   notes, stored key files, whether a recipient change is pending and whether
   its journal is readable. It works without a key (the journal check then says
@@ -264,7 +265,7 @@ sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
 - `recipients add` / `replace --store-key FILE` also store the new
   recipient's identity (FILE, which must be that key) passphrase-wrapped in
   `keys/`, with the passphrase from `--store-passphrase-env VAR`, else
-  `$SEMPERE_PASSPHRASE`, else the terminal (confirmed). Use it when the
+  `$SEMPERE_PASSPHRASE`, else the terminal (confirmed; not empty). Use it when the
   vault is unlocked by passphrase: only key files of current recipients are
   offered for passphrase unlocking, so after a `replace` the old key file
   (left in `keys/`) no longer is.
