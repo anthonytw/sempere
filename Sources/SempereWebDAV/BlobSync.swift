@@ -71,8 +71,7 @@ extension WebDAVSync {
     /// Listing failures are reported; the note's revisions still sync.
     func syncBlobTransfers(_ id: String, remoteAtt: RemoteEntry?) throws -> BlobSet {
         var set = BlobSet()
-        let prefix = "\(id)/\(Vault.attachmentsName)/"
-        set.recorded = Set(state.files.keys.filter { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)) })
+        set.recorded = recordedBlobs(id)
 
         if remoteAtt != nil {
             do {

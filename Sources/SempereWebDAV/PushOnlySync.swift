@@ -94,8 +94,7 @@ extension WebDAVSync {
         for f in try LocalFS.entries(dir) {
             if let n = RevisionName(f), n.filename == f { L.insert(n) }
         }
-        let prefix = "\(id)/"
-        let S = Set(state.files.keys.filter { $0.hasPrefix(prefix) }.compactMap { RevisionName(String($0.dropFirst(prefix.count))) })
+        let S = recordedRevisions(id)
 
         func attempt(_ n: RevisionName, _ body: () throws -> Void) {
             do { try body() } catch {

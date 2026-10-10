@@ -117,6 +117,11 @@ public final class WebDAVSync {
     /// SHA-256 of the local `vault.json` when the run started (what `vault` was opened from).
     var checkerBaseManifest: String?
     var checkerCache: (manifest: String?, vault: Vault?)?
+    /// `state.fileNamesByNote()` as the note loop started. Each note reads
+    /// only its own entry, before it writes any record of its own, and is
+    /// synced once per run, so this stays exact without being updated; it
+    /// must be rebuilt if a note is ever synced twice in one run.
+    var recordedFiles: [String: [String]] = [:]
 
     /// - Parameters:
     ///   - directory: the local vault; it may be missing or empty for a first pull.
@@ -180,6 +185,7 @@ public final class WebDAVSync {
         do {
             let remoteNotes = try listRemoteNotes(rootEntries)
             let localNotes = try localNoteIDs()
+            recordedFiles = state.fileNamesByNote()
             for (id, entries) in remoteNotes {
                 remoteRevisions[id] = entries.compactMap { e in
                     RevisionName(e.name).flatMap { !e.isCollection && $0.filename == e.name ? e.name : nil }
@@ -402,6 +408,17 @@ public final class WebDAVSync {
 
     func key(_ id: String, _ n: RevisionName) -> String { "\(id)/\(n.filename)" }
 
+    /// The revisions the last sync recorded for a note (keys `<id>/<file name>`).
+    func recordedRevisions(_ id: String) -> Set<RevisionName> {
+        Set((recordedFiles[id] ?? []).compactMap(RevisionName.init))
+    }
+
+    /// The blobs the last sync recorded for a note (keys `<id>/att/<file name>`).
+    func recordedBlobs(_ id: String) -> Set<String> {
+        let prefix = "\(Vault.attachmentsName)/"
+        return Set((recordedFiles[id] ?? []).filter { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)) })
+    }
+
     private func syncNote(_ id: String, remoteEntries: [RemoteEntry]?) throws {
         if options.pushOnly { return try syncNotePushOnly(id, remoteEntries: remoteEntries) }
         let dir = root.appendingPathComponent(Vault.notesName).appendingPathComponent(id)
@@ -428,8 +445,7 @@ public final class WebDAVSync {
         for f in try LocalFS.entries(dir) {
             if let n = RevisionName(f), n.filename == f { L.insert(n) }
         }
-        let prefix = "\(id)/"
-        let S = Set(state.files.keys.filter { $0.hasPrefix(prefix) }.compactMap { RevisionName(String($0.dropFirst(prefix.count))) })
+        let S = recordedRevisions(id)
 
         let newLocal = L.subtracting(R).subtracting(S)
         let newRemote = R.subtracting(L).subtracting(S)

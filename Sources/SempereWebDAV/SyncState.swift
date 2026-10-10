@@ -59,6 +59,19 @@ struct SyncState: Codable, Equatable {
         var unlocked: Bool
     }
 
+    /// The keys of `files` grouped by note: for each note id (the key up to
+    /// its first `/`), the rest of each of its keys (`<file name>` for a
+    /// revision, `att/<file name>` for a blob). One pass over `files`, so a
+    /// run looks a note's records up without scanning every other note's.
+    func fileNamesByNote() -> [String: [String]] {
+        var out: [String: [String]] = [:]
+        for key in files.keys {
+            guard let slash = key.firstIndex(of: "/") else { continue }
+            out[String(key[..<slash]), default: []].append(String(key[key.index(after: slash)...]))
+        }
+        return out
+    }
+
     /// The default state file for one (remote, local vault) pair.
     static func defaultURL(remote: URL, vault: URL,
                                   environment: [String: String] = ProcessInfo.processInfo.environment,
