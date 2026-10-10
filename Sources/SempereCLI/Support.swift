@@ -339,6 +339,27 @@ func parseRecipient(_ s: String) throws -> NativeRecipient {
     throw CLIError.usage("not an age recipient (age1... or age1pq1...): \(RecipientsProblem.abbreviate(s))")
 }
 
+/// The element of `all` that `query` names: its whole id, or a unique
+/// prefix of 4 or more characters, case-insensitive. Items, recordings and
+/// strokes all resolve here, with the same messages. When no id matches,
+/// `fallback` (if any) gives the matches by other means (a recording's title).
+func resolveIDPrefix<T>(_ query: String, kind: String, among all: [T], place: String = "in this note",
+                        id: (T) -> UUID, fallback: (() -> [T])? = nil) throws -> T {
+    let q = query.lowercased()
+    if let exact = all.first(where: { id($0).uuidString.lowercased() == q }) { return exact }
+    var matches = q.count >= 4 ? all.filter { id($0).uuidString.lowercased().hasPrefix(q) } : []
+    if matches.isEmpty, let fallback { matches = fallback() }
+    guard let first = matches.first else {
+        guard q.count >= 4 else { throw CLIError.failure("\(kind) \(query): give a whole id or at least 4 characters") }
+        throw CLIError.failure("no \(kind) \(query) \(place)")
+    }
+    guard matches.count == 1 else {
+        let ids = matches.map { id($0).uuidString.lowercased() }.joined(separator: ", ")
+        throw CLIError.failure("'\(query)' matches \(matches.count) \(kind)s: \(ids)")
+    }
+    return first
+}
+
 /// How much unlocking a command needs.
 enum Unlock {
     /// The vault must be readable.
