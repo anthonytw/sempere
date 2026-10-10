@@ -464,6 +464,17 @@ final class CLICommandTests: CLITestCase {
         for word in ["keys", "vault", "notes", "export", "recover", "compact", "snapshot"] {
             XCTAssertTrue(root.out.contains(word), word)
         }
+        // Every exit code and environment variable docs/cli.md lists is in the help too.
+        let help = root.out.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        for code in ["0 ok", "1 failure", "2 usage error", "3 unhealthy", "4 cannot decrypt", "5 legacy vault",
+                     "6 untrusted device list", "7 read-only vault"] {
+            XCTAssertTrue(help.contains(code), code)
+        }
+        for variable in ["SEMPERE_VAULT", "SEMPERE_IDENTITY", "SEMPERE_PASSPHRASE", "SEMPERE_TITLE_FORMAT",
+                         "SEMPERE_PDFTOPPM", "SEMPERE_PDFTOTEXT", "SEMPERE_WEBDAV_PASSWORD", "SEMPERE_BUNDLED_FONTS",
+                         "SEMPERE_FONT_DIR", "XDG_STATE_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME"] {
+            XCTAssertTrue(help.contains(variable), variable)
+        }
     }
 
     func testSameTitledNotesExportToDistinctFilesAndTitleLookupIsAmbiguous() throws {

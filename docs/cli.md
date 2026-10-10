@@ -99,8 +99,15 @@ Errors go to stderr, one line each, prefixed `sempere:`.
 | `SEMPERE_VAULT` | Default for `--vault`. |
 | `SEMPERE_IDENTITY` | Default identity file. |
 | `SEMPERE_PASSPHRASE` | Passphrase for the vault's stored key file, for scripts and tests. |
-| `SEMPERE_PDFTOPPM` | Poppler's `pdftoppm` for PDF page backgrounds in SVG/PNG exports (default: `pdftoppm` on `PATH`). |
-| `XDG_STATE_HOME` | Where `device.json` lives (default `~/.local/state`). |
+| `SEMPERE_TITLE_FORMAT` | Default for `notes new --title-format` ([Editing notes](#editing-notes)). |
+| `SEMPERE_PDFTOPPM` | Poppler's `pdftoppm` for PDF page backgrounds in SVG/PNG exports (default: `pdftoppm` on `PATH`; [PDF page backgrounds](#pdf-page-backgrounds)). |
+| `SEMPERE_PDFTOTEXT` | Poppler's `pdftotext` for the text of imported PDF pages (default: `pdftotext` on `PATH`; [`import pdf`](#import-pdf)). |
+| `SEMPERE_WEBDAV_PASSWORD` | The WebDAV password, unless `--password-env` names another variable ([Sync](#sync)). |
+| `SEMPERE_BUNDLED_FONTS` | The directory of the fonts shipped with the CLI ([Text in exports](#text-in-exports)). |
+| `SEMPERE_FONT_DIR` | An extra directory of font packs, searched first ([Text in exports](#text-in-exports)). |
+| `XDG_STATE_HOME` | Where this machine's state lives under `sempere/` (`device.json`, recipient trust, sync and capture state; default `~/.local/state`). |
+| `XDG_CACHE_HOME` | Where the summary cache lives (default `~/.cache`; [Notes](#notes)). |
+| `XDG_DATA_HOME` | Font packs under `sempere/fonts` (default `~/.local/share`; [Text in exports](#text-in-exports)). |
 
 ## Commands
 
