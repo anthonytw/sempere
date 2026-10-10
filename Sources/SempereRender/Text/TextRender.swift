@@ -156,6 +156,9 @@ struct SVGFontSet {
     private(set) var subsets: [FontSubset] = []
     private var byKey: [String: Int] = [:]
 
+    // Explicit: the private properties make the memberwise initializer private before Swift 6.4.
+    init(prefix: String = "") { self.prefix = prefix }
+
     mutating func index(_ face: FontFace) -> Int {
         if let i = byKey[face.key] { return i }
         subsets.append(FontSubset(face.font))
