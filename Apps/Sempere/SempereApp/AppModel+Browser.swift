@@ -447,15 +447,12 @@ extension AppModel {
 
 extension AppModel {
     /// Starts a drag of `payload` (nil: a drag that moves nothing, a note in
-    /// Recently Deleted) and returns `provider`, held by the model until the
-    /// drop: iPadOS 26 releases the provider `onDrag` returns as soon as the
-    /// closure ends unless someone keeps it, and a drop then loads nothing.
+    /// Recently Deleted) and returns `provider`.
     func beginDrag(_ payload: DragPayload?, provider: NSItemProvider) -> NSItemProvider {
         #if DEBUG
         DropTrace.note("begin \(payload.map { "\($0)" } ?? "nil")")
         #endif
         draggedPayload = payload
-        dragProvider = provider
         return provider
     }
 
@@ -479,8 +476,8 @@ extension AppModel {
 
     /// The drop on `target` of the drag this model started: its payload when
     /// the drop is accepted, nil otherwise. Ends the drag either way. A drop
-    /// inside the app never depends on the item provider's data (see
-    /// `beginDrag`); only a drag the model did not start is decoded from it.
+    /// inside the app never depends on the item provider's data; only a drag
+    /// the model did not start is decoded from it.
     func takeDrop(on target: DropTarget, carriesAppTypes: Bool = true) -> DragPayload? {
         let payload = draggedPayload
         endDrag()
@@ -491,7 +488,6 @@ extension AppModel {
     /// Forgets the drag in progress (dropped, or the vault closed).
     func endDrag() {
         draggedPayload = nil
-        dragProvider = nil
         setDropTarget(nil)
     }
 }

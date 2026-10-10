@@ -312,8 +312,8 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   per-model blob folder and a memory-only render cache unless they pass
   `blobCacheRoot` / `renderCacheRoot`.
 - Sidebar drops: a drag the app started is dropped from `AppModel.draggedPayload`
-  (`beginDrag` / `takeDrop`), never by loading the item provider, which iPadOS 26
-  releases as soon as `onDrag` returns (the model holds it anyway). `onDrag`
+  (`beginDrag` / `takeDrop`), never by loading the item provider (iPadOS 26
+  released it as soon as `onDrag` returned; the model no longer holds it). `onDrag`
   reports no end, so the payload of a cancelled drag lingers: only a drop that
   carries the app's own types (`carriesAppTypes`) may use it, never a photo or
   text dragged in from another app. Rows propose `.copy`, never `.move`

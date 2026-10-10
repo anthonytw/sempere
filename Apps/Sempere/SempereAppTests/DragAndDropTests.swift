@@ -224,21 +224,20 @@ struct DragAndDropTests {
     // MARK: the drag session (TestFlight build 6: releasing over a notebook did nothing)
 
     /// A drop inside the app is made from the payload the model recorded when
-    /// the drag started, not from the item provider, which iPadOS 26 may have
-    /// released by then; the provider is held until the drop anyway.
+    /// the drag started, not from the item provider (iPadOS 26 could release
+    /// it before the drop).
     @Test func aDropUsesTheDragTheModelStartedNotTheProvider() async throws {
         let (model, ids) = try await NotebookTreeTests.model()
         let lab = try #require(ids["Lab"])
         // A provider with no data at all: the drop must not need it.
         let empty = NSItemProvider()
         #expect(model.beginDrag(.notes([lab]), provider: empty) === empty)
-        #expect(model.dragProvider === empty, "held until the drop")
         #expect(model.acceptsDrop(on: .notebook("School")))
         #expect(!model.acceptsDrop(on: .notebook("Research/Lab")), "already there")
 
         let payload = try #require(model.takeDrop(on: .notebook("School")))
         #expect(payload == .notes([lab]))
-        #expect(model.draggedPayload == nil && model.dragProvider == nil && model.dropTarget == nil, "the drag ended")
+        #expect(model.draggedPayload == nil && model.dropTarget == nil, "the drag ended")
         await model.move(payload, to: .notebook("School"), undoManager: nil)
         #expect(model.notes.first { $0.id == lab }?.notebook == "School")
     }
@@ -249,7 +248,7 @@ struct DragAndDropTests {
         _ = model.beginDrag(.notebook("Research"), provider: NSItemProvider())
         #expect(!model.acceptsDrop(on: .notebook("Research/Lab")), "into its own descendant")
         #expect(model.takeDrop(on: .notebook("Research/Lab")) == nil)
-        #expect(model.draggedPayload == nil && model.dragProvider == nil)
+        #expect(model.draggedPayload == nil)
         #expect(model.notes.first { $0.id == lab }?.notebook == "Research/Lab")
         // Nothing dragged by the model: the drop decides from the provider's data.
         #expect(model.acceptsDrop(on: .topLevel))
@@ -290,7 +289,7 @@ struct DragAndDropTests {
         let (model, ids) = try await NotebookTreeTests.model()
         _ = model.beginDrag(.notes([try #require(ids["Lab"])]), provider: NSItemProvider())
         model.close()
-        #expect(model.draggedPayload == nil && model.dragProvider == nil)
+        #expect(model.draggedPayload == nil)
     }
 
     @Test func theMoveNotebookSheetOnlyOffersLegalMoves() {
@@ -313,7 +312,7 @@ struct DragAndDropTests {
         // The drag was cancelled; something else is dragged over School.
         #expect(!model.acceptsDrop(on: .notebook("School"), carriesAppTypes: false))
         #expect(model.takeDrop(on: .notebook("School"), carriesAppTypes: false) == nil)
-        #expect(model.draggedPayload == nil && model.dragProvider == nil)
+        #expect(model.draggedPayload == nil)
         #expect(model.notes.first { $0.id == lab }?.notebook == "Research/Lab")
     }
 }

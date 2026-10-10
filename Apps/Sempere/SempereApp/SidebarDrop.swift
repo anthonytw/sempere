@@ -143,10 +143,10 @@ struct NotebookMoveRecord: Equatable, Sendable {
 ///
 /// A drag started in the app (every drag of these types: their providers are
 /// `.ownProcess`) is moved from the model's `draggedPayload`, never from the
-/// item provider: on iPadOS 26 the provider `onDrag` returns can be released
-/// before the drop (TestFlight build 6: releasing over a notebook did nothing).
-/// The model holds the provider too (`beginDrag`); decoding it is only the
-/// fallback for a drag the model does not know.
+/// item provider, which is simpler and needs no load. (On iPadOS 26 the
+/// provider `onDrag` returns could be released before the drop, TestFlight
+/// build 6; the model no longer holds it on iOS 27.) Decoding the provider
+/// is only the fallback for a drag the model does not know.
 @MainActor
 struct SidebarDropDelegate: DropDelegate {
     let model: AppModel
