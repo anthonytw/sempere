@@ -449,4 +449,29 @@ final class PNGWriterTests: XCTestCase {
         d.fill([[Point(x: 0, y: 0), Point(x: 1, y: 1)], square(-1e9, -1e9, 1), square(1e9, 1e9, 5), square(-5, -5, 1e12)], paint: ink)
         XCTAssertEqual(Int(d.pixels[3]), 128)   // the 1e12 square covers the canvas
     }
+
+    /// `fill` reuses its working rows across calls: the pixels equal those
+    /// of fills that each start from new rows (a copy shares the rows, so
+    /// filling it makes new ones), and filling a copy leaves the original alone.
+    func testRasterScratchReuse() {
+        func tri(_ i: Int) -> [Point] {
+            let x = Double(i % 6) * 6.1, y = Double(i / 6) * 7.3
+            return [Point(x: x, y: y), Point(x: x + 7.3, y: y + 1.6), Point(x: x + 2.2, y: y + 6.9)]
+        }
+        let ink = Paint(r: 10, g: 20, b: 30, alpha: 0.6)
+        var reused = Raster(width: 40, height: 40)
+        var fresh = Raster(width: 40, height: 40)
+        for i in 0..<30 {
+            reused.fill([tri(i), tri(i + 7)], paint: ink)
+            var next = fresh
+            next.fill([tri(i), tri(i + 7)], paint: ink)
+            fresh = next
+        }
+        XCTAssertEqual(reused.pixels, fresh.pixels)
+        let before = reused.pixels
+        var copy = reused
+        copy.fill([tri(3), tri(20)], paint: Paint(r: 255, g: 0, b: 0, alpha: 1))
+        XCTAssertEqual(reused.pixels, before)
+        XCTAssertNotEqual(copy.pixels, before)
+    }
 }

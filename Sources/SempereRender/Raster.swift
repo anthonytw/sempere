@@ -15,6 +15,10 @@ struct Raster {
     let height: Int
     /// `width * height * 4` bytes; starts fully transparent.
     private(set) var pixels: [UInt8]
+    /// `fill`'s working arrays, kept between calls (a page fills once per
+    /// stroke, and allocating and zeroing two rows each time cost more than
+    /// small strokes' scanlines).
+    private var scratch = Scratch()
 
     init(width: Int, height: Int) {
         self.width = width
@@ -26,6 +30,17 @@ struct Raster {
         var x0: Double, y0: Double, slope: Double
         var jStart: Int, jEnd: Int
         var dir: Int
+    }
+
+    /// A class so that copying a `Raster` does not copy the rows; `fill`
+    /// replaces it when a copy shares it. `acc` and `delta` are all zero
+    /// between calls (`fill` clears every entry it touches).
+    private final class Scratch {
+        var edges: [Edge] = []
+        var acc: [Double] = []
+        var delta: [Double] = []
+        var active: [Int] = []
+        var crossings: [(x: Double, dir: Int)] = []
     }
 
     /// Fills the union of `polygons` (device pixel coordinates, implicitly
@@ -40,7 +55,9 @@ struct Raster {
         guard width > 0, height > 0 else { return }
         let ss = Self.subRows
         let limit = Double(height * ss)
-        var edges: [Edge] = []
+        if !isKnownUniquelyReferenced(&scratch) { scratch = Scratch() }
+        let scratch = self.scratch
+        scratch.edges.removeAll(keepingCapacity: true)
         for poly in polygons where poly.count >= 3 {
             for i in poly.indices {
                 var a = poly[i], b = poly[(i + 1) % poly.count]
@@ -51,20 +68,29 @@ struct Raster {
                 let lo = max((a.y * Double(ss) - 0.5).rounded(.up), 0)
                 let hi = min((b.y * Double(ss) - 0.5).rounded(.up), limit)
                 guard lo < hi else { continue }
-                edges.append(Edge(x0: a.x, y0: a.y, slope: (b.x - a.x) / (b.y - a.y),
+                scratch.edges.append(Edge(x0: a.x, y0: a.y, slope: (b.x - a.x) / (b.y - a.y),
                                   jStart: Int(lo), jEnd: Int(hi), dir: dir))
             }
         }
-        guard !edges.isEmpty else { return }
-        edges.sort { $0.jStart < $1.jStart }
+        guard !scratch.edges.isEmpty else { return }
+        scratch.edges.sort { $0.jStart < $1.jStart }
+        if scratch.acc.count != width + 1 {
+            scratch.acc = [Double](repeating: 0, count: width + 1)
+            scratch.delta = [Double](repeating: 0, count: width + 1)
+        }
+        // Moved out for the loop (no class access per pixel) and moved back at the end.
+        let edges = scratch.edges
+        var acc = scratch.acc, delta = scratch.delta
+        var active = scratch.active, crossings = scratch.crossings
+        scratch.acc = []; scratch.delta = []; scratch.active = []; scratch.crossings = []
+        defer {
+            active.removeAll(keepingCapacity: true)
+            scratch.acc = acc; scratch.delta = delta; scratch.active = active; scratch.crossings = crossings
+        }
 
         let inv = 1.0 / Double(ss)
         let w = Double(width)
-        var acc = [Double](repeating: 0, count: width + 1)
-        var delta = [Double](repeating: 0, count: width + 1)
         var rowMin = Int.max, rowMax = -1
-        var active: [Int] = []
-        var crossings: [(x: Double, dir: Int)] = []
         var next = 0
         var j = edges[0].jStart
         var row = j / ss

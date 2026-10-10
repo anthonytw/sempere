@@ -54,4 +54,18 @@ final class RenderBenchmarkTests: XCTestCase {
         let png = try PNGWriter.render(note: note)
         print("bench: PNG, \(strokes) strokes x \(points) points: \(secs(t)), \(png.reduce(0) { $0 + $1.count }) bytes")
     }
+
+    /// Many small fills on a letter page at 300 dpi (one per stroke, as PNG
+    /// export and recognition images do).
+    func testRasterFillTimings() {
+        let fills = Int(ProcessInfo.processInfo.environment["SEMPERE_BENCH_FILLS"] ?? "") ?? 5_000
+        var raster = Raster(width: 2_550, height: 3_300)
+        let t = Date()
+        for i in 0..<fills {
+            let x = Double(i % 97) * 26 + 3, y = Double(i % 113) * 29 + 3
+            raster.fill([[Point(x: x, y: y), Point(x: x + 9, y: y + 2), Point(x: x + 4, y: y + 8)]],
+                        paint: Paint(r: 0, g: 0, b: 0, alpha: 0.5))
+        }
+        print("bench: \(fills) small fills at 2550 px: \(secs(t)), crc \(Zlib.crc32(0, raster.pixels))")
+    }
 }
