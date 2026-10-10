@@ -893,7 +893,9 @@ A new Linux-portable target `SemperePDF` (Foundation + CZlib), used by SempereRe
   stream, nesting depth 64, each enforced with an error, never a crash
   (fuzzed in tests). Also (implementation, `PDFLimits`): 1 GiB decoded per
   file in all, reference chains of 32 hops, 4 096 cross-reference sections,
-  16 filters per stream; `/Length` resolution and object streams are guarded
+  16 filters per stream, and a parse budget of 4 bytes looked at per byte of
+  the file and of its decoded streams, plus 64 MiB (overlapping objects or a
+  rebuild over `trailer(` repeated cannot cost quadratic time); `/Length` resolution and object streams are guarded
   against cycles; a cross-reference table that claims more than the file can
   hold is rebuilt by scanning instead of trusted; references from copied
   resources to pages, page-tree nodes or the catalog become `null`, so a

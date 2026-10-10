@@ -3074,7 +3074,7 @@ where the table says how they degrade.
 | notebook levels shown | 64 | `NotebookNode.maxDepth` |
 | notebook name (a capture's title and notebook, §11.3; the `quickCapture.notebook` setting) | 300 characters and 1 200 Unicode scalars; a capture cuts a longer name, the setting refuses it | `CaptureAdoption.maxNameLength`, `.maxNameScalars` |
 | LaTeX source (`math`, §8.2.8) | 8 192 UTF-8 bytes (else the revision is rejected); typeset only within 4 096 tokens, balanced groups and 64 levels of nesting (else drawn as source text) | `MathSource.check` |
-| PDF attachment (export, `SemperePDF`) | 1 GiB file; 10⁶ objects; 256 MiB per decoded stream, 1 GiB decoded per file; nesting and page-tree depth 64; 32 reference hops; 4 096 cross-reference sections; 16 filters per stream; encrypted files refused | `PDFLimits` |
+| PDF attachment (export, `SemperePDF`) | 1 GiB file; 10⁶ objects; 256 MiB per decoded stream, 1 GiB decoded per file; the object parser reads at most 4 bytes per byte of the file and of its decoded streams, plus 64 MiB; nesting and page-tree depth 64; 32 reference hops; 4 096 cross-reference sections; 16 filters per stream; encrypted files refused | `PDFLimits` |
 | PDF page drawn as pixels (SVG, PNG) | 16 M pixels per page (drawn at a lower resolution beyond), 256 M per export (placeholders beyond) | `RenderLimits.maxBackgroundPixels…` |
 | summary cache file (§10) | 64 MiB on disk, 256 MiB after gunzip; any failure discards it | `SummaryCache.maxFileBytes` |
 | published summaries (§12) | 64 MiB on disk, 256 MiB after gunzip; unknown fields skipped, not kept; any failure ignores the file, a bad entry only that entry | `PublishedSummaries.maxFileBytes` |

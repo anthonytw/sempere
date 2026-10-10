@@ -232,4 +232,46 @@ final class UntrustedPDFClaimTests: XCTestCase {
         let os = PDFFile.ObjectStream(data: [], first: 0, entries: [(7, 0), (9, 4), (7, 8)])
         XCTAssertEqual(os.byNumber, [7: 0, 9: 4])
     }
+
+    // MARK: - Work bounded by the input (security review S6)
+
+    /// No `startxref`, so the reader rebuilds the table by scanning; the body
+    /// is `trailer(` over and over. Each `(` opens a string that never
+    /// closes, so every `trailer` used to lex to the end of the file and the
+    /// scan resumed 7 bytes later: n²/16 steps (minutes for 512 KiB).
+    func testRepeatedTrailerBeforeAnUnterminatedStringIsLinear() {
+        let b = Array("%PDF-1.4\n".utf8) + Array(repeating: Array("trailer(".utf8), count: 64 << 10).joined()
+        let t0 = Date()
+        assertPDFError(try PDFFile(bytes: b))
+        XCTAssertLessThan(Date().timeIntervalSince(t0), 5, "512 KiB of `trailer(` must not take quadratic time")
+    }
+
+    /// Object headers nested inside balanced strings: object k is the string
+    /// that holds objects k+1…N, so resolving every one (the rebuild does,
+    /// and so does a page tree listing them) lexes O(N²) bytes. The parse
+    /// budget (`PDFLimits.parseBytesPerByte`) ends it with `limitExceeded`.
+    func testOverlappingObjectsHitTheParseBudget() {
+        let n = 20_000
+        var body = "%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+        body += "2 0 obj\n<< /Type /Pages /Kids [" + (3..<(n + 3)).map { "\($0) 0 R" }.joined(separator: " ")
+        body += "] >>\nendobj\n"
+        for k in 3..<(n + 3) { body += "\(k) 0 obj (" }
+        body += String(repeating: ")", count: n) + "\nendobj\n"
+        let b = Array(body.utf8)
+        let t0 = Date()
+        assertPDFError(try PDFFile(bytes: b)) { if case .limitExceeded = $0 { return true } else { return false } }
+        XCTAssertLessThan(Date().timeIntervalSince(t0), 10)
+    }
+
+    /// Ordinary files stay far inside the budget.
+    func testParseBudgetLeavesOrdinaryFilesAlone() throws {
+        var tight = PDFLimits()
+        tight.parseBytesBase = 0
+        tight.parseBytesPerByte = 4
+        let b = PDFBuild.onePage()
+        XCTAssertEqual(try PDFFile(bytes: b, limits: tight).pageCount, 1)
+        var broken = b
+        broken.removeLast(30)   // no startxref: rebuilt by scanning
+        XCTAssertEqual(try PDFFile(bytes: broken, limits: tight).pageCount, 1)
+    }
 }
