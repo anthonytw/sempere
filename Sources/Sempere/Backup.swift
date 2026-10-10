@@ -419,6 +419,17 @@ public enum Backup {
         }
     }
 
+    /// Whether a run that wrote `sinceSave` files since `backup.json` was
+    /// last saved should save it again, the index holding `indexed` entries.
+    /// Each save rewrites the whole index, so the interval grows with it (a
+    /// twentieth of the index, at least 100 files): a first run over F files
+    /// costs O(F) in saves, not O(F²). An interruption loses at most that
+    /// many index entries; the next run hashes those files against the
+    /// source before trusting them (the size shortcut needs an entry).
+    static func isSaveDue(sinceSave: Int, indexed: Int) -> Bool {
+        sinceSave >= max(100, indexed / 20)
+    }
+
     static func stamp(_ d: Date) -> String {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withYear, .withMonth, .withDay, .withTime, .withTimeZone]
@@ -472,7 +483,7 @@ public enum Backup {
         func wrote(_ path: String, _ data: Data, _ hash: String) throws {
             manifest.files[path] = .init(sha256: hash, size: data.count)
             sinceSave += 1
-            if sinceSave >= 100 { try save() }
+            if isSaveDue(sinceSave: sinceSave, indexed: manifest.files.count) { try save() }
             try options.afterEachFile?(path)
         }
         /// Keeps the backup's current copy of `path` under versions/<time>/.
