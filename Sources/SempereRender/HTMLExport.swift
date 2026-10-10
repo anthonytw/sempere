@@ -163,8 +163,8 @@ public enum HTMLExport {
                 h += "<section class=\"nb\">\n<h2>\(esc(nb ?? "No notebook"))</h2>\n<ul class=\"notes\">\n"
                 current = .some(nb)
             }
-            let hay = ([e.title, nb ?? "", e.tags.joined(separator: " "), e.searchText].joined(separator: " "))
-                .lowercased().split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+            let hay = searchFold([e.title, nb ?? "", e.tags.joined(separator: " "), e.searchText].joined(separator: " "))
+                .split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
             h += "<li data-text=\"\(esc(hay))\"><a href=\"\(href(e.href))\">\(esc(e.title.isEmpty ? "Untitled" : e.title))</a> "
             h += "<span class=\"meta\">\(e.pages) page\(e.pages == 1 ? "" : "s")"
             if !e.tags.isEmpty { h += " · " + e.tags.map(esc).joined(separator: ", ") }
@@ -175,6 +175,18 @@ public enum HTMLExport {
         return h + footer
     }
 
+    /// The index's search text, folded as the script folds the query (like the
+    /// app's search, ignoring case, accents and width): compatibility
+    /// decomposition, combining diacritics U+0300–U+036F dropped, NFC,
+    /// lower case.
+    static func searchFold(_ s: String) -> String {
+        var kept = String.UnicodeScalarView()
+        for u in s.decomposedStringWithCompatibilityMapping.unicodeScalars where !(0x300...0x36F).contains(u.value) {
+            kept.append(u)
+        }
+        return String(kept).precomposedStringWithCanonicalMapping.lowercased()
+    }
+
     // No '<' or '&' characters: the page must stay well-formed XML.
     private static let script = """
     (function () {
@@ -183,7 +195,8 @@ public enum HTMLExport {
       var items = document.querySelectorAll('li[data-text]');
       var sections = document.querySelectorAll('section.nb');
       function run() {
-        var words = q.value.toLowerCase().split(/\\s+/).filter(Boolean);
+        var folded = q.value.normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '').normalize('NFC').toLowerCase();
+        var words = folded.split(/\\s+/).filter(Boolean);
         var shown = 0;
         items.forEach(function (li) {
           var hay = li.getAttribute('data-text');

@@ -2038,7 +2038,7 @@ shared folder cannot make an export write or `--clean` delete elsewhere.
 pages from the SVG writer; light and dark CSS; title, notebook, dates and
 tags; a link back to the index) and `index.html`: notes grouped by notebook
 and a search box filtering as you type over title, notebook, tags and
-recognised text (a few lines of inline script; the page works without it,
+recognised text, ignoring case, accents and width as the app's search does (a few lines of inline script; the page works without it,
 unfiltered). Recognised words are also laid over the ink as an invisible
 selectable SVG text layer, and each page's text is listed below it in a
 collapsed "Machine-recognized text" block, and the text of its text boxes in a
