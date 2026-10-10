@@ -14258,7 +14258,7 @@
       }
     },
     "SpeechTranscriber (on device)" : {
-      "comment" : "Settings ▸ Transcription: the speech engine of iPadOS 26 (a product name)",
+      "comment" : "Settings ▸ Transcription: the newer on-device speech engine (a product name)",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
