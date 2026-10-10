@@ -140,6 +140,10 @@ export class NoteView {
   private readonly problems = new Map<string, ItemProblem>();
   /** The list of placeholders and why; the caller puts it with the note's other warnings. */
   readonly problemsEl = h("details", { class: "warning item-problems" });
+  private readonly problemsSummary = h("summary");
+  private readonly problemsList = h("ul");
+  /** Each problem's line in `problemsList`, by the same key as `problems`. */
+  private readonly problemItems = new Map<string, HTMLElement>();
   private destroyed = false;
   private rerender?: ReturnType<typeof setTimeout>;
   /**
@@ -193,12 +197,20 @@ export class NoteView {
   /** Records an item that is a placeholder or not drawn, and why (`it` undefined: a page-level note). */
   private report(slot: Slot, it: PreparedItem | undefined, reason: string): void {
     const id = it ? String(it.item.id) : `-${this.problems.size}`;
-    this.problems.set(`${slot.index}/${id}`, { page: slot.index + 1, item: it ? id : "", kind: it?.kind ?? "", reason });
-    const list = [...this.problems.values()];
-    this.problemsEl.hidden = false;
-    this.problemsEl.replaceChildren(
-      h("summary", { text: tn("{count} attachments cannot be shown (crossed boxes on the page)", list.length) }),
-      h("ul", {}, ...list.map((p) => h("li", { text: t("Page {page}: {detail}", { page: p.page, detail: `${p.item ? `${p.kind} ${p.item.slice(0, 8)}: ` : ""}${p.reason}` }) }))));
+    const key = `${slot.index}/${id}`;
+    const p: ItemProblem = { page: slot.index + 1, item: it ? id : "", kind: it?.kind ?? "", reason };
+    this.problems.set(key, p);
+    // One line added or replaced in place (the list keeps the order problems were first reported in).
+    const li = h("li", { text: t("Page {page}: {detail}", { page: p.page, detail: `${p.item ? `${p.kind} ${p.item.slice(0, 8)}: ` : ""}${p.reason}` }) });
+    const old = this.problemItems.get(key);
+    if (old) old.replaceWith(li);
+    else this.problemsList.append(li);
+    this.problemItems.set(key, li);
+    this.problemsSummary.textContent = tn("{count} attachments cannot be shown (crossed boxes on the page)", this.problems.size);
+    if (this.problemsEl.hidden) {
+      this.problemsEl.hidden = false;
+      this.problemsEl.replaceChildren(this.problemsSummary, this.problemsList);
+    }
   }
 
   private layout(): void {
