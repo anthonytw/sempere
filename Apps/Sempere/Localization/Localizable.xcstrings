@@ -6084,17 +6084,6 @@
         }
       }
     },
-    "Export Notes…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Exportar notas…"
-          }
-        }
-      }
-    },
     "Export as PDF, PNG pages or text" : {
       "comment" : "Help tag of the Export menu",
       "extractionState" : "manual",
@@ -6127,6 +6116,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Exporta notas como PDF, imágenes o Markdown, de una en una o todas a la vez."
+          }
+        }
+      }
+    },
+    "Export to Folder or Zip…" : {
+      "comment" : "File menu: bulk export to a folder or zip",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exportar a carpeta o zip…"
           }
         }
       }

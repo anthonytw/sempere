@@ -126,7 +126,7 @@ enum MenuCommand: String, CaseIterable, Sendable {
         case .insertPDFPages: return String(localized: "Insert PDF Pages…")
         case .insertPhoto: return String(localized: "Insert Photo…")
         case .exportNotes: return String(localized: "Export…", comment: "File menu: open the export sheet")
-        case .bulkExport: return String(localized: "Export Notes…")
+        case .bulkExport: return String(localized: "Export to Folder or Zip…", comment: "File menu: bulk export to a folder or zip")
         case .toggleVoiceNote: return String(localized: "Start Voice Note", comment: "File menu: record a quick voice note into the inbox")
         case .renameNote: return String(localized: "Rename Note…")
         case .editTags: return String(localized: "Edit Tags…")

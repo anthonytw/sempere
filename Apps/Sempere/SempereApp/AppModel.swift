@@ -249,7 +249,7 @@ final class AppModel {
     var isImporting = false
     /// What the last import did, until the alert is dismissed.
     var importSummary: ImportSummary?
-    /// The "Export Notes…" sheet's request (`AppModel+BulkExport`).
+    /// The "Export to Folder or Zip…" sheet's request (`AppModel+BulkExport`).
     var bulkExportRequest: BulkExportRequest?
     var sortOrder = NoteSort.modified
     /// True while an edit is being written.

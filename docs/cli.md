@@ -1812,7 +1812,7 @@ summary names no audio, video, image or PDF are skipped without being read.
 #### Bulk export
 
 `--all` with `--format pdf`, `png` or `media` (not `--merge` or `--at`) runs the bulk
-export the app's "Export Notes…" uses (`BulkExportSession`, docs/io.md "Bulk
+export the app's "Export to Folder or Zip…" uses (`BulkExportSession`, docs/io.md "Bulk
 export"): notes are planned from the summaries (the summary cache unless
 `--no-cache`), then read, rendered and written **one at a time**, so memory is
 that of the largest note, not of the vault.
@@ -1842,7 +1842,7 @@ that of the largest note, not of the vault.
 
 The app's sheet shows the matching command for a notebook or the whole vault:
 
-| App ("Export Notes…") | `sempere export` |
+| App ("Export to Folder or Zip…") | `sempere export` |
 | --- | --- |
 | All notes, PDF, folders like notebooks, into a folder | `--all --format pdf --layout notebooks --out FOLDER` |
 | Notebook "School/Math", PDF + attachments, zip | `--all --notebook School/Math --format pdf --attachments --layout notebooks --zip --out Math.zip` |

@@ -11,7 +11,7 @@ struct SidebarView: View {
 
     @AppModelEnvironment private var model
     @AppEnvironmentObject private var keys: RememberedKeys
-    /// The window's UI state: "Export Notes…" opens its sheet in this window.
+    /// The window's UI state: "Export to Folder or Zip…" opens its sheet in this window.
     @Environment(WindowUI.self) private var ui: WindowUI?
     @State private var forgettingKey = false
     @State private var showingSettings = false

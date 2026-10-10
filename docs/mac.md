@@ -19,7 +19,7 @@ tests (`scripts/app.sh test-mac-smoke`, `LaunchSmokeUITests`) run on every CI
 run, pull requests included: a first launch (no preferences, caches or saved
 windows) unlocks the demo vault through the unlock sheet, shows the library
 in each column layout (`all`, `doubleColumn`, `detailOnly`), and opens
-Settings, Vault Keys, a note window, Export…, Export Notes… and Restore from
+Settings, Vault Keys, a note window, Export…, Export to Folder or Zip… and Restore from
 Backup…. A Linux test (`AppSceneEnvironmentTests`) checks that every scene
 injects `AppModel`, `VaultLibrary` and `RememberedKeys`. What still needs
 a hand test on a real Mac is listed at the end.
@@ -97,7 +97,7 @@ the Insert menu's entry does (#104). Imports file new notes under the sidebar's 
 | File | Insert Photo… | ⌥⌘I |
 | File | Export… | ⇧⌘E |
 | File | Reload Vault | ⌘R |
-| File | Export Notes… (the ticked notes, else the sidebar's notebook, else the vault, into a chosen folder or a zip; docs/io.md "Bulk export") | (none) |
+| File | Export to Folder or Zip… (the ticked notes, else the sidebar's notebook, else the vault, into a chosen folder or a zip; docs/io.md "Bulk export") | (none) |
 | Edit | Undo, Redo | ⌘Z, ⇧⌘Z (the system's: the canvas's undo manager, or the text field being edited) |
 | Edit | Find Notes (focuses the title search) | ⌘F |
 | Note | Rename Note… | ⇧⌘R |

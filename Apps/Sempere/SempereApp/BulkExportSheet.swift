@@ -2,7 +2,7 @@ import SempereRender
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// "Export Notes…": several notes, a notebook or the whole vault, as PDF,
+/// "Export to Folder or Zip…": several notes, a notebook or the whole vault, as PDF,
 /// PDF + attachments or PNG pages, into a folder (resumable) or a zip
 /// archive; progress with Stop, and per-note failures at the end
 /// (docs/io.md "Bulk export").

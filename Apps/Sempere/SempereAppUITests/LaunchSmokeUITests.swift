@@ -13,7 +13,7 @@ import XCTest
 /// does. Then, in each column layout, the library window must show what that
 /// layout shows (sidebar, note list, the note), and on the Mac the other
 /// windows and sheets must open: Settings (⌘,), Vault Keys (⌥⌘K), a note
-/// window (⌥⌘N), Export… (⇧⌘E), Export Notes…, Restore from Backup… and, after
+/// window (⌥⌘N), Export… (⇧⌘E), Export to Folder or Zip…, Restore from Backup… and, after
 /// Close Vault, Open from WebDAV….
 /// With the notices on, the first unlock shows About Your Key and the quick tour.
 ///
@@ -125,11 +125,11 @@ final class LaunchSmokeUITests: XCTestCase {
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
         requireRunning(app, "export sheet")
 
-        // File > Export Notes… (the bulk export; no shortcut).
+        // File > Export to Folder or Zip… (the bulk export; no shortcut).
         focusLibrary(app)
         app.menuBars.menuBarItems["File"].click()
-        let bulk = app.menuItems["Export Notes…"].firstMatch
-        require(bulk, "File > Export Notes…", in: app)
+        let bulk = app.menuItems["Export to Folder or Zip…"].firstMatch
+        require(bulk, "File > Export to Folder or Zip…", in: app)
         bulk.click()
         requireSheet("bulkExportSheet", titled: "Export", "bulk export sheet", in: app)
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
