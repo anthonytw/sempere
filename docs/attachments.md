@@ -358,7 +358,7 @@ show the same numbers:
   model-owned task works through the queue at utility priority after a 2 s
   pause, so an editor's burst of autosaves is indexed once. Notes whose
   summary came from the summary cache (an existing install) are indexed when
-  Settings → Storage asks ("Check N More Notes").
+  Settings ▸ Storage asks ("Check N More Notes").
 - The CLI computes the entries afresh each run with its own
   `BlobCollectorState` (`Vault.attachmentIndexEntry`), and takes the
   current state from the notes' summaries.

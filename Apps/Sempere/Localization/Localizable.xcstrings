@@ -7320,14 +7320,14 @@
         }
       }
     },
-    "In the picker, tap Browse, then iCloud Drive under Locations. If it is not listed, tap ⋯ (More) › Edit at the top of Browse and turn iCloud Drive on." : {
+    "In the picker, tap Browse, then iCloud Drive under Locations. If it is not listed, tap ⋯ (More) ▸ Edit at the top of Browse and turn iCloud Drive on." : {
       "comment" : "iCloud Drive help step (iPhone and iPad only). Use the Files app's own names of Browse, Locations, More, Edit.",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "En el selector, toca Explorar y después iCloud Drive en Ubicaciones. Si no aparece, toca ⋯ (Más) › Editar en la parte superior de Explorar y activa iCloud Drive."
+            "value" : "En el selector, toca Explorar y después iCloud Drive en Ubicaciones. Si no aparece, toca ⋯ (Más) ▸ Editar en la parte superior de Explorar y activa iCloud Drive."
           }
         }
       }
@@ -8125,14 +8125,14 @@
         }
       }
     },
-    "Live Activities are off for Sempere, and iOS needs one to record a voice note: turn them on in Settings → Sempere → Live Activities." : {
+    "Live Activities are off for Sempere, and iOS needs one to record a voice note: turn them on in the Settings app ▸ Sempere ▸ Live Activities." : {
       "comment" : "Error from the quick voice note intents, also shown in Settings: Live Activities are turned off for the app",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Las Actividades en directo están desactivadas para Sempere, e iOS necesita una para grabar una nota de voz: actívalas en Ajustes › Sempere › Actividades en directo."
+            "value" : "Las Actividades en directo están desactivadas para Sempere, e iOS necesita una para grabar una nota de voz: actívalas en la app Ajustes ▸ Sempere ▸ Actividades en directo."
           }
         }
       }
@@ -8521,7 +8521,7 @@
       }
     },
     "New Key…" : {
-      "comment" : "Settings → Device Keys: make a key for another device",
+      "comment" : "Settings ▸ Device Keys: make a key for another device",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -9683,13 +9683,13 @@
         }
       }
     },
-    "Only older versions of these notes show these attachments. They are freed when those versions are thinned (Settings → Version History)." : {
+    "Only older versions of these notes show these attachments. They are freed when those versions are thinned (Sempere Settings ▸ Version History)." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Solo las versiones anteriores de estas notas muestran estos adjuntos. Se liberan al reducir esas versiones (Ajustes › Historial de versiones)."
+            "value" : "Solo las versiones anteriores de estas notas muestran estos adjuntos. Se liberan al reducir esas versiones (Ajustes de Sempere ▸ Historial de versiones)."
           }
         }
       }
@@ -9847,18 +9847,6 @@
         }
       }
     },
-    "Open Settings › your name › iCloud › iCloud Drive and turn on “Sync this %@”. (On older versions the switch is called iCloud Drive.)" : {
-      "comment" : "iCloud Drive help step; %@ is iPhone or iPad. Use the system's own names of these settings.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abre Ajustes › tu nombre › iCloud › iCloud Drive y activa «Sincronizar este %@». (En versiones anteriores, el interruptor se llama iCloud Drive.)"
-          }
-        }
-      }
-    },
     "Open Vault…" : {
       "comment" : "Button: open a vault",
       "extractionState" : "manual",
@@ -10006,6 +9994,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abre la app Archivos una vez: iCloud Drive puede tardar un minuto en aparecer en un dispositivo que acaba de empezar a sincronizarlo."
+          }
+        }
+      }
+    },
+    "Open the Settings app ▸ your name ▸ iCloud ▸ iCloud Drive and turn on “Sync this %@”. (On older versions the switch is called iCloud Drive.)" : {
+      "comment" : "iCloud Drive help step; %@ is iPhone or iPad. Use the system's own names of these settings.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre la app Ajustes ▸ tu nombre ▸ iCloud ▸ iCloud Drive y activa «Sincronizar este %@». (En versiones anteriores, el interruptor se llama iCloud Drive.)"
           }
         }
       }
@@ -11649,13 +11649,13 @@
         }
       }
     },
-    "Record from the menu-bar item, File > Start Voice Note, Siri or Shortcuts, without unlocking the vault. Each voice note is encrypted on this Mac to your vault's keys as soon as it stops, and becomes a note in the notebook above, titled with the date and time, the next time the vault is unlocked. Transcription runs on this Mac only. This Mac keeps the vault's public keys and a capture key that can add voice notes but cannot read any note." : {
+    "Record from the menu-bar item, File ▸ Start Voice Note, Siri or Shortcuts, without unlocking the vault. Each voice note is encrypted on this Mac to your vault's keys as soon as it stops, and becomes a note in the notebook above, titled with the date and time, the next time the vault is unlocked. Transcription runs on this Mac only. This Mac keeps the vault's public keys and a capture key that can add voice notes but cannot read any note." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Graba desde el icono de la barra de menús, Archivo > Iniciar nota de voz, Siri o Atajos, sin desbloquear la bóveda. Cada nota de voz se cifra en este Mac con las claves de tu bóveda en cuanto termina y se convierte en una nota del cuaderno de arriba, con la fecha y la hora como título, la próxima vez que se desbloquee la bóveda. La transcripción se hace solo en este Mac. Este Mac guarda las claves públicas de la bóveda y una clave de captura que puede añadir notas de voz pero no puede leer ninguna nota."
+            "value" : "Graba desde el icono de la barra de menús, Archivo ▸ Iniciar nota de voz, Siri o Atajos, sin desbloquear la bóveda. Cada nota de voz se cifra en este Mac con las claves de tu bóveda en cuanto termina y se convierte en una nota del cuaderno de arriba, con la fecha y la hora como título, la próxima vez que se desbloquee la bóveda. La transcripción se hace solo en este Mac. Este Mac guarda las claves públicas de la bóveda y una clave de captura que puede añadir notas de voz pero no puede leer ninguna nota."
           }
         }
       }
@@ -12984,7 +12984,7 @@
       }
     },
     "Save Key…" : {
-      "comment" : "Settings → Device Keys: export this device's key",
+      "comment" : "Settings ▸ Device Keys: export this device's key",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -18900,19 +18900,19 @@
         }
       }
     },
-    "“%@” has never been backed up. Open Sempere and choose Settings → Back Up Now." : {
+    "“%@” has never been backed up. Open Sempere and choose Back Up Now in Settings ▸ Backups." : {
       "comment" : "Backup reminder notification; %@ is the vault's name",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "«%@» nunca se ha copiado. Abre Sempere y elige Ajustes → Hacer copia ahora."
+            "value" : "«%@» nunca se ha copiado. Abre Sempere y elige Hacer copia ahora en Ajustes ▸ Copias de seguridad."
           }
         }
       }
     },
-    "“%@” has not been backed up for %lld days. Open Sempere and choose Settings → Back Up Now." : {
+    "“%@” has not been backed up for %lld days. Open Sempere and choose Back Up Now in Settings ▸ Backups." : {
       "comment" : "Backup reminder notification; %1$@ is the vault's name, %2$lld the days without a backup",
       "extractionState" : "manual",
       "localizations" : {
@@ -18940,19 +18940,19 @@
               "many" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "«%1$@» lleva %2$lld de días sin copia. Abre Sempere y elige Ajustes → Hacer copia ahora."
+                  "value" : "«%1$@» lleva %2$lld de días sin copia. Abre Sempere y elige Hacer copia ahora en Ajustes ▸ Copias de seguridad."
                 }
               },
               "one" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "«%1$@» lleva %2$lld día sin copia. Abre Sempere y elige Ajustes → Hacer copia ahora."
+                  "value" : "«%1$@» lleva %2$lld día sin copia. Abre Sempere y elige Hacer copia ahora en Ajustes ▸ Copias de seguridad."
                 }
               },
               "other" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "«%1$@» lleva %2$lld días sin copia. Abre Sempere y elige Ajustes → Hacer copia ahora."
+                  "value" : "«%1$@» lleva %2$lld días sin copia. Abre Sempere y elige Hacer copia ahora en Ajustes ▸ Copias de seguridad."
                 }
               }
             }

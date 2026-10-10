@@ -723,7 +723,7 @@ struct UnusedAttachmentsView: View {
                 } header: {
                     Text("Held by History (\(StorageText.items(report.held.count, bytes: report.heldBytes)))")
                 } footer: {
-                    Text("Only older versions of these notes show these attachments. They are freed when those versions are thinned (Settings → Version History).")
+                    Text("Only older versions of these notes show these attachments. They are freed when those versions are thinned (Sempere Settings ▸ Version History).")
                 }
             }
             if !report.unchecked.isEmpty {

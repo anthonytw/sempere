@@ -220,7 +220,7 @@ What iOS does not allow, so the app cannot promise it:
 - Scheduled tasks run when iOS decides: it weighs battery, charging, network,
   thermal state and how often the app is used. A refresh gets about 30
   seconds; a processing task a few minutes, usually while charging and idle.
-  Background App Refresh switched off (Settings → General, or for the app),
+  Background App Refresh switched off (Settings ▸ General, or for the app),
   Low Power Mode, or force-quitting the app from the app switcher stop both
   until the app is opened again. The simulator runs neither unless debugged.
 - They sync only a vault that is still open in the suspended app. A task that
@@ -760,7 +760,7 @@ vault). The CLI's `backup status` and `restore --dry-run` and the app use them.
 
 ### Backups in the app
 
-Settings → Backups (`AppModel+Backup.swift`, `BackupSettings.swift`,
+Settings ▸ Backups (`AppModel+Backup.swift`, `BackupSettings.swift`,
 `BackupViews.swift`) runs the CLI's core; `docs/cli.md` "The app's Backups"
 maps each control to its command.
 

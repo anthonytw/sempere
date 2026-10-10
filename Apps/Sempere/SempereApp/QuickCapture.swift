@@ -97,7 +97,7 @@ enum QuickCaptureError: Error, Equatable, CustomStringConvertible, CustomLocaliz
         switch self {
         case .notSetUp: return String(localized: "Quick Voice Notes is not set up: open Sempere, unlock the vault and turn it on in Settings.")
         case .microphoneDenied: return RecordingError.microphoneDenied.description
-        case .liveActivitiesOff: return String(localized: "Live Activities are off for Sempere, and iOS needs one to record a voice note: turn them on in Settings → Sempere → Live Activities.")
+        case .liveActivitiesOff: return String(localized: "Live Activities are off for Sempere, and iOS needs one to record a voice note: turn them on in the Settings app ▸ Sempere ▸ Live Activities.")
         case .alreadyRecording: return String(localized: "A voice note is already being recorded.")
         case .notRecording: return String(localized: "No voice note is being recorded.")
         }
