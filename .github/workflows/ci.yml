@@ -456,10 +456,21 @@ jobs:
         run: |
           npm ci
           npm run build
+      # The browser download is cached by Playwright's version (pinned in package-lock.json); the
+      # install below then finds it and only adds the system packages Chromium needs.
+      - id: playwright
+        name: Playwright version
+        working-directory: web
+        run: echo "version=$(node -p "require('./package-lock.json').packages['node_modules/playwright-core'].version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright's Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-swift-6.4-noble-${{ steps.playwright.outputs.version }}
       - name: Install Chromium for Playwright
         working-directory: web
         run: npx playwright install --with-deps chromium
-      - name: Browser smoke scripts (cache and config.json, sideways pan, listing, attachments, video, passkey, interface language, passphrase keys and transcript search)
+      - name: Browser smoke scripts (cache and config.json, sideways pan, listing, attachments, video, page release, passkey, interface language, passphrase keys and transcript search)
         working-directory: web
         run: scripts/smoke-all.sh
 
