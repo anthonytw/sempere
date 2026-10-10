@@ -37,7 +37,7 @@ final class NoteSearchIndexTests: XCTestCase {
                     if let f = fast(hay, n) {
                         XCTAssertEqual(f, foundation(hay, n), "\(Array(hay.utf8)) / \(Array(n.utf8))")
                     } else {
-                        XCTAssertTrue(n == "\n" || n == "\r", "\(Array(n.utf8))")
+                        XCTAssertTrue(n == "\n" || n == "\r" || n == "\u{0}", "\(Array(n.utf8))")
                     }
                 }
             }

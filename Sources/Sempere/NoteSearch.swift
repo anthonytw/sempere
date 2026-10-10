@@ -331,10 +331,11 @@ enum ASCIIFold {
     }
 
     /// A query word folded, or nil when it is not all ASCII or holds a line
-    /// break: CR LF is one character, which Foundation never matches in part
-    /// (`NoteSearch` words never hold white space anyway).
+    /// break or a NUL: CR LF is one character, which Foundation never matches
+    /// in part (`NoteSearch` words never hold white space anyway), and
+    /// swift-corelibs-foundation ends a search string at a NUL.
     static func needle(_ word: String) -> [UInt8]? {
-        guard let bytes = folded(word), !bytes.contains(0x0A), !bytes.contains(0x0D) else { return nil }
+        guard let bytes = folded(word), !bytes.contains(0x0A), !bytes.contains(0x0D), !bytes.contains(0) else { return nil }
         return bytes
     }
 
