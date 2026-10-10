@@ -252,3 +252,24 @@ struct PlaybackIndexTests {
         }
     }
 }
+
+/// `NoteEditor.strokeDigest`: reused while a page's ids stay, recomputed when they change.
+@MainActor
+struct StrokeDigestCacheTests {
+    @Test func digestFollowsTheStrokes() async throws {
+        let (vault, _) = try TS.unlockedFixture()
+        let (editor, _) = try await NoteEditorTests.open(vault, debounce: .seconds(60))
+        let page = try #require(editor.currentPage).id
+        let before = editor.liveStrokes(of: page)
+        let d1 = editor.strokeDigest(of: page, before)
+        #expect(d1 == RecognitionBasis.digest(of: before.map(\.id)))
+        var drawing = editor.drawing(for: page)
+        drawing.strokes.append(TS.canvasStroke(TS.stroke(x: 300, y: 500)))
+        editor.drawingDidChange(pageID: page, drawing: drawing, tool: nil)
+        let after = editor.liveStrokes(of: page)
+        let d2 = editor.strokeDigest(of: page, after)
+        #expect(d2 != d1)
+        #expect(d2 == RecognitionBasis.digest(of: after.map(\.id)))
+        #expect(editor.strokeDigest(of: page, before) == d1, "the ids decide, not the page")
+    }
+}

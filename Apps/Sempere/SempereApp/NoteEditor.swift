@@ -92,6 +92,8 @@ final class NoteEditor {
     /// ledger's entries: shown again as it is (no conversion) while the
     /// ledger exists.
     @ObservationIgnored private var canvasDrawings: [UUID: PKDrawing] = [:]
+    /// The last stroke ids digested per page, and their digest (`strokeDigest`).
+    @ObservationIgnored private var strokeDigests: [UUID: (ids: [UUID], digest: String)] = [:]
     /// Pages whose drawing is being prepared off the main actor.
     @ObservationIgnored private var preparing: [UUID: Task<PreparedDrawing?, Never>] = [:]
     /// Pages whose strokes changed since the note was read.
@@ -1288,6 +1290,21 @@ extension NoteEditor {
         ledgers[page.id]?.live ?? page.strokes
     }
 
+    /// `RecognitionBasis.digest` of `strokes`' ids, the strokes of page
+    /// `pageID`: reused while the page's ids are the ones last digested
+    /// (compared one by one, which costs far less than the digest), so a
+    /// pass after a pen-up digests only the page that changed.
+    func strokeDigest(of pageID: UUID, _ strokes: [Stroke]) -> String {
+        if let cached = strokeDigests[pageID], cached.ids.count == strokes.count,
+           zip(cached.ids, strokes).allSatisfy({ $0 == $1.id }) {
+            return cached.digest
+        }
+        let ids = strokes.map(\.id)
+        let digest = RecognitionBasis.digest(of: ids)
+        strokeDigests[pageID] = (ids, digest)
+        return digest
+    }
+
     /// Recognises the pages that need it after `recognitionDelay` without
     /// further stroke changes (and once when the note opens).
     func scheduleRecognition() {
@@ -1330,8 +1347,8 @@ extension NoteEditor {
         for page in pages {
             guard recognitionWanted else { return }
             let strokes = currentStrokes(of: page)
-            let digest = RecognitionBasis.digest(of: strokes.map(\.id))
-            guard RecognitionPolicy.needsRecognition(page.recognition, strokeIDs: strokes.map(\.id),
+            let digest = strokeDigest(of: page.id, strokes)
+            guard RecognitionPolicy.needsRecognition(page.recognition, hasStrokes: !strokes.isEmpty, digest: digest,
                                                      touched: touchedPages.contains(page.id)) else { continue }
             var result: Recognition?
             if !strokes.isEmpty {
@@ -1352,7 +1369,7 @@ extension NoteEditor {
         // Only pages whose strokes are still the ones that were read.
         let current = read.filter { r in
             guard let page = pages.first(where: { $0.id == r.pageID }) else { return false }
-            return RecognitionBasis.digest(of: currentStrokes(of: page).map(\.id)) == r.digest
+            return strokeDigest(of: page.id, currentStrokes(of: page)) == r.digest
         }
         guard !current.isEmpty else { return }
         let ops = current.map { Op.setPageRecognition(pageId: $0.pageID, recognition: $0.recognition) }

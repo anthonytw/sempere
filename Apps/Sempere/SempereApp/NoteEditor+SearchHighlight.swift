@@ -20,7 +20,9 @@ extension NoteEditor {
     private var pagesForHighlight: [Page] {
         pages.map { page in
             var page = page
-            let stale = dirtyPages.contains(page.id) || (!isPreparing && RecognitionPolicy.needsRecognition(page))
+            let stale = dirtyPages.contains(page.id)
+                || (!isPreparing && RecognitionPolicy.needsRecognition(page.recognition, hasStrokes: !page.strokes.isEmpty,
+                                                                      digest: strokeDigest(of: page.id, page.strokes)))
             if stale { page.recognition = nil }
             return page
         }

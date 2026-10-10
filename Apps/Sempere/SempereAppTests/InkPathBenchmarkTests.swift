@@ -149,4 +149,23 @@ extension InkPathBenchmarkTests {
         _ = Self.time("playback tick (indexed)") { ticked = index?.highlighted(at: 10) ?? [:] }
         #expect(ticked[basis.pages[0]] ?? [] == scanned)
     }
+
+    /// A recognition pass over a note: every page's digest, as after a pen-up
+    /// on one of them (the others unchanged since the last pass).
+    @Test func recognitionPassDigests() async throws {
+        let (vault, _) = try TS.unlockedFixture()
+        let (editor, _) = try await NoteEditorTests.open(vault, debounce: .seconds(60))
+        let pages = 20
+        let perPage = max(Self.strokeCount / pages, 1)
+        let notePages = (0..<pages).map { p in (UUID(), Self.stored[(p * perPage) % Self.stored.count..<min((p + 1) * perPage, Self.stored.count)].map { $0 }) }
+        _ = Self.time("recognition pass digests, every page, uncached") {
+            for (_, strokes) in notePages { _ = RecognitionBasis.digest(of: strokes.map(\.id)) }
+        }
+        for (id, strokes) in notePages { _ = editor.strokeDigest(of: id, strokes) }
+        var digests: [String] = []
+        _ = Self.time("recognition pass digests, cached") {
+            digests = notePages.map { editor.strokeDigest(of: $0.0, $0.1) }
+        }
+        #expect(digests == notePages.map { RecognitionBasis.digest(of: $0.1.map(\.id)) })
+    }
 }
