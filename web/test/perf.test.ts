@@ -3,6 +3,7 @@
 // test/perf.test.ts`); correctness of the same code is covered by the ordinary tests.
 
 import { describe, expect, it } from "vitest";
+import { FileCache, MemoryFileStore } from "../src/vault/cache.ts";
 import { type SearchableNote, isWithinNotebook, notebookCounts, notebookTree, refinesQuery, search } from "../src/format/search.ts";
 
 const enabled = process.env.SEMPERE_WEB_PERF === "1";
@@ -83,5 +84,16 @@ describe.skipIf(!enabled)("perf", () => {
       after = paths.map((p) => c.get(p) ?? 0);
     });
     expect(after).toEqual(before);
+  }, 600_000);
+
+  it("cache puts with a full index of 100,000 files", async () => {
+    let clock = 0;
+    const cache = new FileCache(new MemoryFileStore(), { maxBytes: 100_000 * 10, maxEntryBytes: 100 }, () => ++clock);
+    const bytes = new Uint8Array(10);
+    for (let i = 0; i < 100_000; i++) await cache.put(`k${i}`, bytes);
+    const t0 = performance.now();
+    for (let i = 0; i < 1000; i++) await cache.put(`n${i}`, bytes);
+    console.log(`PERF 1,000 puts over a full cache: ${(performance.now() - t0).toFixed(1)} ms`);
+    expect((await cache.size()).files).toBe(100_000);
   }, 600_000);
 });
