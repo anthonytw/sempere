@@ -8414,7 +8414,7 @@
       }
     },
     "Move to Recently Deleted" : {
-      "comment" : "Note menu: delete the note (it can be restored)",
+      "comment" : "Note menu and a note's context menu: delete the note (it can be restored)",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
