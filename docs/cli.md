@@ -1421,7 +1421,9 @@ it runs as `pdftoppm` does for exports: no shell, resource limits, a timeout,
 a private temporary directory), else the built-in pure-Swift reader
 (`semperepdf-1`: the strings each page shows, decoded through the fonts'
 `/ToUnicode` maps or standard encodings, in content order; no layout
-analysis, so multi-column text comes out in drawing order). `builtin` and
+analysis, so multi-column text comes out in drawing order; form XObjects
+drawn by a page may add at most 16 MiB of lexed content to it and 128 MiB
+to the file, past which the page keeps the text found so far). `builtin` and
 `poppler` force one (`poppler` without `pdftotext` is an error); `none`
 stores no text. A page with no extractable text (a scan) stores nothing.
 `attach pdf --json` adds `pagesWithText` and `textEngine`.

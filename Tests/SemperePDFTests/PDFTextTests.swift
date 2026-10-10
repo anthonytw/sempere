@@ -62,6 +62,41 @@ final class PDFTextTests: XCTestCase {
         XCTAssertEqual(try text(pdfData), "in the form\nafter")
     }
 
+    /// A form of 256 KiB of operands only, drawn by 20 000 `Do`s: each
+    /// used to lex the whole form again (5 GiB here; 2·10⁶ `Do`s fit the
+    /// operator cap). Lexing is now bounded per page and per file, and the
+    /// page keeps the text it found (security review S8).
+    static func formBomb(dos: Int = 20_000) -> Data {
+        let form = String(repeating: "123456789.5 ", count: 256 << 10 / 12)
+        let contents = "BT /F1 8 Tf (before) Tj ET " + String(repeating: "/Fm0 Do\n", count: dos)
+        return Data(PDFBuild.onePage(
+            contents: contents,
+            extra: [(5, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"),
+                    (6, "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] /Length \(form.utf8.count) >>\nstream\n\(form)\nendstream")],
+            pageExtra: "/Resources << /Font << /F1 5 0 R >> /XObject << /Fm0 6 0 R >> >>"))
+    }
+
+    func testFormDrawnManyTimesIsBoundedByBytesLexed() throws {
+        let t0 = Date()
+        XCTAssertEqual(try PDFText.pageTexts(Self.formBomb()), [0: "before"])
+        XCTAssertLessThan(Date().timeIntervalSince(t0), 15, "5 GiB of form content must not be lexed")
+    }
+
+    func testFormLexBudgetPerPageAndPerFile() throws {
+        let file = try PDFFile(data: Self.formBomb())
+        let cache = ExtractionCache(formLexPerPage: 1 << 20, formLexPerFile: 3 << 20)
+        for _ in 0..<5 { XCTAssertEqual(try PDFText.pageText(file, page: 0, cache: cache), "before") }
+        XCTAssertEqual(cache.formLexLeft, 0, "the file's allowance is spent, never overdrawn")
+        // One page alone: its content plus at most the per-page allowance (and one token).
+        var state = Extraction(file: file, cache: ExtractionCache(formLexPerPage: 1 << 20))
+        let contents = try file.pageContents(0)
+        state.lexBudget = contents.count + (1 << 20)
+        let resources = try file.pageNode(0).resources.flatMap { try file.resolve($0).dictValue }
+        try state.run(contents, resources: resources, depth: 0)
+        XCTAssertLessThanOrEqual(state.lexed, contents.count + (1 << 20) + 64)
+        XCTAssertGreaterThan(state.lexed, 1 << 20)
+    }
+
     func testFormCycleIsBounded() throws {
         // A form that draws itself: followed `maxFormDepth` levels, then stopped.
         let form = "BT /F1 8 Tf (x) Tj ET /Fm0 Do"
