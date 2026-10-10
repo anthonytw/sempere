@@ -79,8 +79,10 @@ extension InkPathBenchmarkTests {
         // A horizontal sweep along the first row, 200 samples 1 pt apart.
         let samples = 200
         _ = Self.time("object eraser sweep, \(samples) samples") {
-            eraser.begin(at: EraserPoint(x: 0, y: 2))
-            for i in 1..<samples { eraser.move(to: EraserPoint(x: Double(i), y: 2)) }
+            _ = Self.time("object eraser touch-down") { eraser.begin(at: EraserPoint(x: 0, y: 2)) }
+            _ = Self.time("object eraser moves") {
+                for i in 1..<samples { eraser.move(to: EraserPoint(x: Double(i), y: 2)) }
+            }
             eraser.end(at: EraserPoint(x: Double(samples), y: 2))
         }
         // TS.stroke rows: strokes 0, 1, … start every 15 pt and run 3 pt per point.
