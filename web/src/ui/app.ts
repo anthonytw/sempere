@@ -72,6 +72,9 @@ export class App {
 
   private readonly sidebar = h("nav", { class: "sidebar", attrs: { "aria-label": t("Notebooks and tags") } });
   private readonly list = h("section", { class: "note-list", attrs: { "aria-label": t("Notes") } });
+  /** The list's rows, and what each was drawn from: a row is drawn again only when one of those changed. */
+  private rows = new Map<string, ListRow>();
+  private readonly rowList = h("ul");
   private readonly detail = h("main", { class: "detail" });
   private readonly status = h("span", { class: "status", attrs: { role: "status" } });
 
@@ -379,6 +382,7 @@ export class App {
    */
   private changedLanguage(): void {
     const open = this.selected;
+    this.rows.clear();   // their words are in the old language
     this.showMain();
     if (open !== undefined && this.notes.has(open)) void this.open(open);
   }
@@ -548,29 +552,53 @@ export class App {
     } else {
       notes.sort((a, b) => (b.modified ?? 0) - (a.modified ?? 0) || a.title.localeCompare(b.title));
     }
-    clear(this.list);
     if (notes.length === 0) {
-      this.list.append(h("p", { class: "empty", text: !this.loading.listed ? t("Loading…") : hits ? t("No matches.") : t("No notes here.") }));
+      this.rows.clear();
+      this.list.replaceChildren(h("p", { class: "empty", text: !this.loading.listed ? t("Loading…") : hits ? t("No matches.") : t("No notes here.") }));
       return;
     }
-    this.list.append(h("ul", {}, ...notes.map((n) => {
-      const hit = hits?.get(n.id);
-      const meta = [canonicalNotebook(n.notebook), ...n.tags.map((t) => `#${t}`)].filter(Boolean).join("  ");
-      const badges: string[] = [];
-      if (n.error !== undefined) badges.push(t("unreadable"));
-      else if (n.failures > 0) badges.push(tn("{count} unreadable revisions", n.failures));
-      if (n.newer) badges.push(t("newer version"));
-      return h("li", {}, h("button", {
-        class: n.id === this.selected ? "note active" : "note", attrs: { type: "button" },
-        on: { click: () => void this.open(n.id, hit?.page?.number) },
-      },
-      h("span", { class: "title", text: n.title || t("Untitled") }),
-      h("span", { class: "sub", text: [formatDate(n.modified), tn("{count} pages", n.pageCount)].filter(Boolean).join(" · ") }),
-      meta ? h("span", { class: "sub", text: meta }) : null,
-      hit?.snippet ? this.snippet(hit) : null,
-      badges.length ? h("span", { class: "badge", text: badges.join(" · ") }) : null),
-      this.spokenHits(n.id, spoken.get(n.id)));
-    })));
+    const rows = new Map<string, ListRow>();
+    const lis = notes.map((n) => {
+      const hit = hits?.get(n.id), said = spoken.get(n.id);
+      const kept = this.rows.get(n.id);
+      const row = kept && kept.note === n && kept.hit === hit && kept.spoken === said ? kept : this.row(n, hit, said);
+      row.button.className = n.id === this.selected ? "note active" : "note";
+      rows.set(n.id, row);
+      return row.li;
+    });
+    this.rows = rows;
+    const shown = this.rowList.children;
+    if (lis.length !== shown.length || lis.some((li, i) => shown[i] !== li)) {
+      // Moving rows drops the focus of a button among them: it is given back.
+      const focused = document.activeElement;
+      this.rowList.replaceChildren(...lis);
+      if (focused instanceof HTMLElement && focused !== document.activeElement && this.rowList.contains(focused)) focused.focus({ preventScroll: true });
+    }
+    if (this.list.firstChild !== this.rowList || this.list.childNodes.length !== 1) this.list.replaceChildren(this.rowList);
+  }
+
+  /** One note's row in the list. */
+  private row(n: NoteSummary, hit: SearchHit | undefined, spoken: PhraseHit[] | undefined): ListRow {
+    const meta = [canonicalNotebook(n.notebook), ...n.tags.map((t) => `#${t}`)].filter(Boolean).join("  ");
+    const badges: string[] = [];
+    if (n.error !== undefined) badges.push(t("unreadable"));
+    else if (n.failures > 0) badges.push(tn("{count} unreadable revisions", n.failures));
+    if (n.newer) badges.push(t("newer version"));
+    const button = h("button", {
+      class: "note", attrs: { type: "button" },
+      on: { click: () => void this.open(n.id, hit?.page?.number) },
+    },
+    h("span", { class: "title", text: n.title || t("Untitled") }),
+    h("span", { class: "sub", text: [formatDate(n.modified), tn("{count} pages", n.pageCount)].filter(Boolean).join(" · ") }),
+    meta ? h("span", { class: "sub", text: meta }) : null,
+    hit?.snippet ? this.snippet(hit) : null,
+    badges.length ? h("span", { class: "badge", text: badges.join(" · ") }) : null);
+    return { note: n, hit, spoken, button, li: h("li", {}, button, this.spokenHits(n.id, spoken)) };
+  }
+
+  /** The selected note's row is marked, without drawing the list again. */
+  private markSelected(): void {
+    for (const [id, row] of this.rows) row.button.className = id === this.selected ? "note active" : "note";
   }
 
   private snippet(hit: SearchHit): HTMLElement {
@@ -622,7 +650,7 @@ export class App {
     const src = this.source, vault = this.vault;
     if (!src || !vault) return;
     this.selected = id;
-    this.renderList();
+    this.markSelected();
     const gen = this.generation;
     this.view?.destroy();
     this.view = undefined;
@@ -687,6 +715,15 @@ export class App {
     if (page !== undefined) requestAnimationFrame(() => requestAnimationFrame(() => this.view?.showPage(page)));
     if (at) recordings.jump(at.recording, at.start);
   }
+}
+
+/** A row of the note list and what it was drawn from. */
+interface ListRow {
+  note: NoteSummary;
+  hit: SearchHit | undefined;
+  spoken: PhraseHit[] | undefined;
+  li: HTMLElement;
+  button: HTMLElement;
 }
 
 /** A banner when vault.json's device list does not check (format.md §2.1). */
