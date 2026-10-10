@@ -7,7 +7,7 @@ import { paperCommands, rulingCount, sheetHeight } from "./paper.ts";
 import {
   type DrawCommand, RenderError, RenderLimits, fmt, paint, paintHex, pointCount,
 } from "./primitives.ts";
-import { applyTransform, meanScale, strokeCommands, transformOf } from "./stroke.ts";
+import { meanScale, strokeCommands, transformOf } from "./stroke.ts";
 import { type PreparedItem, maxItemsPerPage, prepareItem } from "./items.ts";
 import { expandMarkdown } from "./markdown.ts";
 import type { Measure } from "./text.ts";
@@ -67,17 +67,23 @@ export class PreparedPage {
       if (![...xf, stroke.ink.width].every(Number.isFinite)) throw new RenderError("a stroke has a non-finite transform or width");
       let radius = Math.abs(stroke.ink.width);
       let lo = Infinity, hi = -Infinity;
+      // Scalar reads and the transform inlined (applyTransform's arithmetic, in its order): no
+      // allocation per point. A read past the end is undefined, so a short last point fails as before.
+      const pts = stroke.points;
+      const [a, b, c, d, tx, ty] = xf;
       for (let i = 0; i < n; i++) {
         const base = i * pointStride;
-        const [x, y, , w, h, o, f] = stroke.points.subarray(base, base + 7) as unknown as number[];
-        if (![x, y, w, h, o, f].every((v) => Number.isFinite(v))) throw new RenderError("a stroke has non-finite points");
-        const q = applyTransform(xf, x as number, y as number);
-        if (!Number.isFinite(q.x) || !Number.isFinite(q.y)) throw new RenderError("a stroke has non-finite points");
-        if (Math.abs(q.x) > maxE || Math.abs(q.y) > maxE) {
+        const x = pts[base], y = pts[base + 1], w = pts[base + 3], h = pts[base + 4], o = pts[base + 5], f = pts[base + 6];
+        if (!(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(w) && Number.isFinite(h) && Number.isFinite(o) && Number.isFinite(f))) {
+          throw new RenderError("a stroke has non-finite points");
+        }
+        const qx = a * (x as number) + c * (y as number) + tx, qy = b * (x as number) + d * (y as number) + ty;
+        if (!Number.isFinite(qx) || !Number.isFinite(qy)) throw new RenderError("a stroke has non-finite points");
+        if (Math.abs(qx) > maxE || Math.abs(qy) > maxE) {
           throw new RenderError("a stroke reaches beyond the supported extent");
         }
-        lo = Math.min(lo, q.y);
-        hi = Math.max(hi, q.y);
+        lo = Math.min(lo, qy);
+        hi = Math.max(hi, qy);
         radius = Math.max(radius, Math.abs(w as number), Math.abs(h as number));
       }
       const pad = Math.min(radius * meanScale(xf), RenderLimits.maxNibWidth) / 2 + 1;

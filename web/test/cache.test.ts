@@ -5,13 +5,14 @@
 import { IDBFactory } from "fake-indexeddb";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CachingSource, FileCache, IndexedDBFileStore, MemoryFileStore, cacheNamespace, isCacheablePath } from "../src/vault/cache.ts";
+import { CachingSource, FileCache, IndexedDBFileStore, MemoryFileStore, cacheNamespace, isCacheablePath, touchInterval } from "../src/vault/cache.ts";
 import { loadNote } from "../src/vault/library.ts";
 import { type VaultSource } from "../src/vault/source.ts";
 import { NodeDirSource, fixtures, unlockFixture } from "./support.ts";
 
 const lecture = "11111111-1111-4111-8111-111111111111";
 const blobName = "a".repeat(64);
+const defaultLimits = { maxBytes: 1 << 20, maxEntryBytes: 1 << 20 };
 
 /** Counts what reaches the network. */
 export class CountingSource implements VaultSource {
@@ -51,12 +52,43 @@ describe("ciphertext cache", () => {
     await cache.put("c", new Uint8Array(100));
     expect(await cache.get("a")).toBeDefined();   // a is now the most recent
     await cache.put("d", new Uint8Array(100));     // over 300: b goes
-    expect(await cache.keys("")).toEqual(["a", "c", "d"]);
+    expect((await cache.keys("")).sort()).toEqual(["a", "c", "d"]);
     await cache.put("big", new Uint8Array(151));
     expect(await cache.get("big")).toBeUndefined();
     expect(await cache.size()).toEqual({ files: 3, bytes: 300 });
     await cache.clear();
     expect(await cache.size()).toEqual({ files: 0, bytes: 0 });
+  });
+
+  it("evicts in recency order across reads, rewrites and a reload", async () => {
+    let clock = 1000;
+    const store = new MemoryFileStore();
+    const cache = new FileCache(store, { maxBytes: 400, maxEntryBytes: 150 }, () => ++clock);
+    for (const k of ["a", "b", "c", "d"]) await cache.put(k, new Uint8Array(100));
+    await cache.get("b");
+    await cache.put("a", new Uint8Array(100));   // rewritten: now the most recent
+    await cache.put("e", new Uint8Array(100));   // c is the least recently used
+    expect((await cache.keys("")).sort()).toEqual(["a", "b", "d", "e"]);
+    // A new tab starts from the stored times: d, then b (its read was not written, being recent), a, e.
+    const again = new FileCache(store, { maxBytes: 300, maxEntryBytes: 150 }, () => ++clock);
+    await again.put("f", new Uint8Array(100));
+    expect((await again.keys("")).sort()).toEqual(["a", "e", "f"]);
+  });
+
+  it("writes a read's time to the store only when the stored one is stale", async () => {
+    let clock = 0;
+    const store = new MemoryFileStore();
+    const cache = new FileCache(store, defaultLimits, () => clock);
+    await cache.put("a", new Uint8Array(1));
+    clock = touchInterval;
+    await cache.get("a");
+    expect(store.files.get("a")?.used).toBe(0);
+    clock = touchInterval + 1;
+    await cache.get("a");
+    expect(store.files.get("a")?.used).toBe(touchInterval + 1);
+    clock = touchInterval + 2;
+    await cache.get("a");
+    expect(store.files.get("a")?.used).toBe(touchInterval + 1);
   });
 
   it("serves a second read from the cache and drops a file that fails to verify", async () => {

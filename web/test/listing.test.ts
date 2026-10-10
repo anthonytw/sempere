@@ -90,10 +90,14 @@ describe("listing", () => {
     const server = new FakeServer(new Map([[summariesFileName, await summariesFile(vault)]]),
       new Set(["17911308050000000-a1b2c3d4-3.delta.age"]));
     const c = collect();
+    const loaded: string[] = [];
+    c.cb.loaded = (n) => loaded.push(n.id);
     const r = await listVault(server, vault, c.cb);
     expect(r).toMatchObject({ fromSummaries: 1, read: 1 });
     expect(server.noteReads.every((p) => p.startsWith(`notes/${lecture}/`))).toBe(true);
     expect(server.noteReads.length).toBe(4);
+    // The decrypted note is handed over (the viewer keeps it for opening).
+    expect(loaded).toEqual([lecture]);
   });
 
   it("ignores a damaged summaries file", async () => {

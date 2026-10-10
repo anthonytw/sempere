@@ -42,7 +42,9 @@ What it does:
   arrow keys, `+` `-` `0` `1`). Panning sideways is possible only while the page at the
   current zoom is wider than the viewport; a note that fits stays centred, so
   scrolling it with a trackpad or a finger (also in an iframe) only moves it
-  vertically (`web/scripts/smoke-pan.mjs`). Paper (every kind of §5.4.2, page-level paper,
+  vertically (`web/scripts/smoke-pan.mjs`). Pages are drawn as they come near the viewport and
+  go back to a placeholder once a few screens away, so a long note keeps only the pages around
+  the viewport in memory (`web/scripts/smoke-release.mjs`). Paper (every kind of §5.4.2, page-level paper,
   unknown kinds drawn blank) and ink are drawn by a port of `SempereRender`, so
   a page in the viewer is the SVG that `sempere export --format svg` writes.
 - **Speak your language**: the interface is in English or Spanish, chosen from the browser's
@@ -822,6 +824,8 @@ node scripts/make-search-fixture.ts   # rewrite test/fixtures/search.sempere (th
 # passkey: Chromium's virtual authenticator (CTAP2, UV, PRF), and one without PRF
 node scripts/smoke-passkey.mjs ../Tests/SempereTests/Fixtures/sample.sempere ../Tests/SempereTests/Fixtures/sample.key
 node scripts/smoke-video.mjs test/fixtures/render.sempere ../Tests/SempereTests/Fixtures/sample.key
+# pages far from the viewport go back to placeholders and are drawn again on return
+node scripts/smoke-release.mjs test/fixtures/render.sempere ../Tests/SempereTests/Fixtures/sample.key
 # languages: the browser's language list, the override, a Spanish vault session, the switch with a vault open (CI's web job)
 node scripts/smoke-language.mjs test/fixtures/render.sempere ../Tests/SempereTests/Fixtures/sample.key
 # config.json modes, the cache (second visit fetches no unchanged file) and the summaries, with timings

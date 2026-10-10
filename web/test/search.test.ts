@@ -2,8 +2,8 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  type PageTextEntry, type SearchableNote, canonicalNotebook, equationMarker, isWithinNotebook, maxWords,
-  notebookComponents, notebookTree, pageSnippet, search,
+  type PageTextEntry, type SearchableNote, canonicalNotebook, equationMarker, fold, foldText, isWithinNotebook, maxWords,
+  notebookComponents, notebookCounts, notebookTree, pageSnippet, refinesQuery, search,
 } from "../src/format/search.ts";
 
 let counter = 0;
@@ -105,6 +105,70 @@ describe("search", () => {
   });
 });
 
+describe("folding cache", () => {
+  it("foldText is fold without the map", () => {
+    const samples = ["", "ASCII Only 123", "Café", "STRASSE straße", "ΣΑΣ σας", "İstanbul", "ﬁne ＦＵＬＬ", "e\u0301", "🎉 x", "\u212a", "Ǆ ǅ"];
+    let seed = 7;
+    for (let i = 0; i < 200; i++) {
+      let t = "";
+      for (let k = 0; k < 12; k++) {
+        seed = (seed * 1103515245 + 12345) % 2147483648;
+        const c = seed % 0x2fff;
+        t += c >= 0xd800 && c < 0xe000 ? "x" : String.fromCodePoint(c);
+      }
+      samples.push(t);
+    }
+    for (const s of samples) expect(foldText(s)).toBe(fold(s).text);
+  });
+
+  it("knows when a query only narrows the previous one", () => {
+    expect(refinesQuery("mom", "momentum")).toBe(true);
+    expect(refinesQuery("momentum", "momentum energy")).toBe(true);
+    expect(refinesQuery("cafe", "CAFÉS")).toBe(true);
+    expect(refinesQuery("#work", "#workshop")).toBe(true);
+    expect(refinesQuery("work", "#workshop")).toBe(true);
+    expect(refinesQuery("#work", "workshop")).toBe(false);
+    expect(refinesQuery("momentum", "mom")).toBe(false);
+    expect(refinesQuery("energy momentum", "momentum")).toBe(false);
+    expect(refinesQuery("", "a")).toBe(false);
+    expect(refinesQuery("a", " ")).toBe(false);
+    // Narrowing by refinement gives exactly the full search's hits, in the same order.
+    const notes = [
+      note("Momentum notes", { tags: ["workshop"], modified: 3 }), note("Moment", { pages: ["momentum here"], modified: 2 }),
+      note("Other", { notebook: "Mom/Work", modified: 1 }), note("Workshop", { tags: ["work"], modified: 4 }),
+      note("Momentous", { tags: ["workshop", "mom"], modified: 5 }),
+    ];
+    const queries = ["m", "mo", "mom", "mom #w", "mom #work", "mom #works", "momentum"];
+    let previous = queries[0] ?? "", hits = search(previous, notes);
+    for (const q of queries.slice(1)) {
+      const full = search(q, notes);
+      if (refinesQuery(previous, q)) {
+        const ids = new Set(hits.map((h) => h.id));
+        expect(search(q, notes.filter((n) => ids.has(n.id)))).toEqual(full);
+      }
+      previous = q;
+      hits = full;
+    }
+  });
+
+  it("folds a changed field again", () => {
+    const a = note("Physics", { tags: ["one"], notebook: "School", pages: ["momentum"] });
+    expect(search("physics", [a]).length).toBe(1);
+    a.title = "Chemistry";
+    a.tags = ["two"];
+    a.notebook = "Work";
+    const page = a.pageTexts[0];
+    if (page) page.text = "energy";
+    expect(search("physics", [a])).toEqual([]);
+    expect(search("#one", [a])).toEqual([]);
+    expect(search("school", [a])).toEqual([]);
+    expect(search("momentum", [a])).toEqual([]);
+    expect(search("chemistry #two work energy", [a]).length).toBe(1);
+    a.tags.push("three");
+    expect(search("#three", [a]).length).toBe(1);
+  });
+});
+
 describe("notebooks", () => {
   it("trims components and drops empty segments", () => {
     expect(notebookComponents(" A//B / ")).toEqual(["A", "B"]);
@@ -136,6 +200,43 @@ describe("notebooks", () => {
     expect(notebookTree([])).toEqual([]);
     const twins = notebookTree(["A/Notes", "B/Notes"]);
     expect(twins.flatMap((n) => [n.path, ...n.children.map((c) => c.path)])).toEqual(["A", "A/Notes", "B", "B/Notes"]);
+  });
+
+  it("counts notes within each notebook as isWithinNotebook does", () => {
+    const segs = ["A", "B", " a ", "Math 9", "Math 10", "é", "e\u0301", ""];
+    let seed = 3;
+    const pick = () => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return segs[seed % segs.length] ?? "";
+    };
+    const names: (string | undefined)[] = [undefined, "  ", "/"];
+    for (let i = 0; i < 300; i++) names.push(Array.from({ length: 1 + (i % 4) }, pick).join("/"));
+    names.push(Array.from({ length: 70 }, (_, i) => `d${i}`).join("/"));
+    const counts = notebookCounts(names);
+    const walk = (nodes: ReturnType<typeof notebookTree>): string[] => nodes.flatMap((n) => [n.path, ...walk(n.children)]);
+    const paths = walk(notebookTree(names));
+    expect([...counts.keys()].sort()).toEqual([...paths].sort());
+    for (const p of paths) expect(counts.get(p)).toBe(names.filter((n) => isWithinNotebook(n, p)).length);
+  });
+
+  it("builds the same tree as filtering level by level", () => {
+    // The tree before it was built as a trie (kept here as the reference).
+    const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+    const reference = (names: (string | undefined)[]) => {
+      const paths = names.map((n) => notebookComponents(n).slice(0, 64)).filter((p) => p.length > 0);
+      const build = (below: string[][], depth: number, prefix: string[]): ReturnType<typeof notebookTree> => {
+        const here = below.filter((p) => p.length > depth);
+        const segs = [...new Set(here.map((p) => p[depth] ?? ""))].sort((a, b) => collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0));
+        return segs.map((name) => {
+          const path = [...prefix, name];
+          return { name, path: path.join("/"), children: build(here.filter((p) => p[depth] === name), depth + 1, path) };
+        });
+      };
+      return build(paths, 0, []);
+    };
+    const names = ["School/Math 10", "School/Math 9", "school/math 9", "Research/Daily log/2026", "School", undefined, "Archive",
+      "é/x", "e\u0301/y", "E/z", "A/B/C/D", "A/b", "a/B", Array.from({ length: 70 }, (_, i) => `d${i}`).join("/")];
+    expect(notebookTree(names)).toEqual(reference(names));
   });
 });
 
