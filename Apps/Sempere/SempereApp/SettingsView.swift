@@ -319,7 +319,9 @@ private struct RecordingSettingsSection: View {
                 .syncedSetting("recording.bitRate")
             }
             Picker("Sample Rate", selection: $settings.sampleRate) {
-                ForEach(RecordingSettings.sampleRates, id: \.self) { Text(RecordingSettings.label(sampleRate: $0)).tag($0) }
+                ForEach(RecordingSettings.sampleRates(for: settings.codec), id: \.self) {
+                    Text(RecordingSettings.label(sampleRate: $0)).tag($0)
+                }
             }
             .syncedSetting("recording.sampleRate")
             Picker("Channels", selection: $settings.channels) {
@@ -333,7 +335,7 @@ private struct RecordingSettingsSection: View {
             Text("Stereo is used only when the microphone has two channels. Apple Lossless is a size estimate for speech. Changes apply to new recordings; recordings already made keep their format.")
         }
         .onChange(of: settings) {
-            // A codec change can make the bit rate invalid: show the corrected value.
+            // A codec change can make the bit rate or sample rate invalid: show the corrected value.
             let fixed = settings.normalized()
             if fixed != settings { settings = fixed }
             settings.save()
