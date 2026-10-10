@@ -2,8 +2,8 @@ import Foundation
 import XCTest
 @testable import Sempere
 
-/// Collection and repair skip the revisions of notes whose `att/` holds no
-/// blob file: there is nothing they could delete or rewrite.
+/// Collection skips the revisions of notes whose `att/` holds no
+/// blob file: there is nothing it could delete.
 final class BlobCollectionShortcutTests: VaultTestCase {
     func testNotesWithoutBlobFilesAreNotRead() throws {
         let vault = try makeVault(pqIdentity())
@@ -22,7 +22,6 @@ final class BlobCollectionShortcutTests: VaultTestCase {
         XCTAssertNil(report.blocked, "no revision was read")
         XCTAssertEqual(report.unused, [])
         XCTAssertEqual(records, [:])
-        XCTAssertEqual(try vault.repairBlobs(note: testNote), BlobRepairReport(note: testNote))
 
         // Unknown and temporary entries are not blob files; a blob file is.
         let att = vault.noteURL(testNote).appendingPathComponent("att")

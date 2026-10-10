@@ -308,9 +308,11 @@ extension Vault {
     }
 
     /// True when the note's `att/` was listed and holds no blob file (what
-    /// `blobInventory` counts as one): collection and repair act only on
-    /// such files, so they need not read the note's revisions. False when
-    /// the folder cannot be listed (the full path reports why).
+    /// `blobInventory` counts as one): collection acts only on such files,
+    /// so it need not read the note's revisions. False when the folder
+    /// cannot be listed (the full path reports why). Repair still reads
+    /// them: finding newer revisions there must make it exit read-only
+    /// (security review 2026-10, N1).
     func hasNoBlobFiles(_ note: UUID) -> Bool {
         let att = attURL(note)
         guard let entries = try? FileIO.entries(att) else { return false }
@@ -431,7 +433,6 @@ extension Vault {
             report.blocked = "a recipient change is unfinished: run `sempere vault rewrap-resume` first"
             return report
         }
-        if hasNoBlobFiles(note) { return report }
         let inv = try blobInventory(note: note)
         // The inventory may have found newer revisions (format.md §7.3): it
         // set the read-only latch, so nothing is renamed or deleted.
