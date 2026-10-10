@@ -776,7 +776,7 @@ final class NoteEditor {
     /// Whether anything is waiting to be written (page ops, ink, page size).
     var hasPendingChanges: Bool {
         !pendingPageOps.isEmpty || pageSize != committedPageSize
-            || pages.contains { page in ledgers[page.id].map { !$0.pendingOps(page: page.id, live: $0.live).isEmpty } ?? false }
+            || pages.contains { page in ledgers[page.id]?.hasPending ?? false }
     }
 
     /// `pages` with each page's live strokes (saved or not).
@@ -967,7 +967,7 @@ final class NoteEditor {
     func storeForNextOpen() {
         guard let cache = drawingCache, let base = cacheKey, !isPreparing, readOnlyReason == nil, saveError == nil,
               pendingPageOps.isEmpty, pageSize == committedPageSize,
-              !pages.contains(where: { page in ledgers[page.id].map { !$0.pendingOps(page: page.id, live: $0.live).isEmpty } ?? false })
+              !pages.contains(where: { page in ledgers[page.id]?.hasPending ?? false })
         else { return }
         let key = DrawingCache.Key(note: noteID, revisions: base.revisions + writtenNames)
         guard key != base else { return }   // nothing written: the cache already has this version
@@ -1022,8 +1022,7 @@ final class NoteEditor {
         // roll back if it fails.
         var saves: [(UUID, StrokeLedger.Save)] = []
         for page in pages {
-            guard var l = ledgers[page.id], let save = l.beginSave(page: page.id) else { continue }
-            ledgers[page.id] = l
+            guard let save = ledgers[page.id]?.beginSave(page: page.id) else { continue }
             ops += save.ops
             saves.append((page.id, save))
         }

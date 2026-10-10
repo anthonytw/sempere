@@ -130,6 +130,11 @@ struct StrokeLedger {
     private var written: Set<UUID>
     /// Removed canvas strokes by key, most recent last.
     private var retired: [CanvasStrokeInfo.Key: [[Stroke]]] = [:]
+    /// False only when `live` is known to be what is committed (no ops are
+    /// pending), so a save of an unchanged page scans nothing. Set by every
+    /// change that can make ops pending (`update`, `mergeStored`,
+    /// `saveFailed`); cleared by `beginSave`.
+    private var mayHavePending = false
 
     /// A ledger for a page loaded from disk; `info` fingerprints the canvas
     /// stroke each stored stroke will be shown as.
@@ -270,6 +275,7 @@ struct StrokeLedger {
             next.append(Entry(info: item.info, strokes: strokes))
         }
         entries.replaceSubrange(old, with: next)
+        if !change.isEmpty { mayHavePending = true }
         return change
     }
 
@@ -297,12 +303,20 @@ struct StrokeLedger {
     /// removed id again (format.md §5.2), so the stroke would vanish on disk.
     /// Nil when nothing is pending. Call `saveFailed(_:)` if the write fails.
     mutating func beginSave(page: UUID) -> Save? {
+        guard mayHavePending else { return nil }
         let live = self.live
         let ops = pendingOps(page: page, live: live)
+        mayHavePending = false
         guard !ops.isEmpty else { return nil }
         let save = Save(ops: ops, previous: committed)
         commit(live)
         return save
+    }
+
+    /// Whether any op is pending (`pendingOps` of `live` is not empty);
+    /// scans only a ledger that changed since its last save.
+    var hasPending: Bool {
+        mayHavePending && !pendingOps(page: UUID(), live: live).isEmpty
     }
 
     /// The write started by `save` failed: its ops stay pending. Ids it added
@@ -310,6 +324,7 @@ struct StrokeLedger {
     /// revived after a removal; at worst a later stroke names one as `parent`.
     mutating func saveFailed(_ save: Save) {
         committed = save.previous
+        mayHavePending = true
     }
 
     /// Records that `live` (as passed to `pendingOps`) is now on disk.
@@ -364,6 +379,7 @@ struct StrokeLedger {
     /// `info` fingerprints the canvas stroke a stored stroke is shown as
     /// (`CanvasStrokeInfo.init(stored:)`).
     mutating func mergeStored(_ stored: [Stroke], info: (Stroke) -> CanvasStrokeInfo) -> RemoteMerge {
+        mayHavePending = true   // what is committed changes under what is live
         let committedIDs = Set(committed.map(\.id))
         let liveIDs = Set(live.map(\.id))
         var storedByID: [UUID: Stroke] = [:]

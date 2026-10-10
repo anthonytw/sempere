@@ -152,6 +152,39 @@ struct StrokeLedgerIncrementalTests {
         #expect(again.isEmpty)
     }
 
+    // MARK: - Pending changes (`hasPending`, `beginSave` of an unchanged page)
+
+    /// Random drawing, saving, failed saves and merges: `hasPending` and
+    /// `beginSave` always agree with a full scan of the pending ops.
+    @Test func pendingFlagAgreesWithTheFullScan() {
+        var rng = SystemRandomNumberGenerator()
+        for _ in 0..<100 {
+            var canvas = (0..<Int.random(in: 0...6, using: &rng)).map { _ in Self.stroke(Int.random(in: 0..<50, using: &rng)) }
+            var l = StrokeLedger(stored: canvas, info: Self.info)
+            var inFlight: StrokeLedger.Save?
+            for _ in 0..<12 {
+                switch Int.random(in: 0..<5, using: &rng) {
+                case 0: canvas.append(Self.stroke(Int.random(in: 0..<50, using: &rng)))
+                case 1 where !canvas.isEmpty: canvas.remove(at: Int.random(in: 0..<canvas.count, using: &rng))
+                case 2:
+                    let scanned = !l.pendingOps(page: Self.page, live: l.live).isEmpty
+                    #expect(l.hasPending == scanned)
+                    let save = l.beginSave(page: Self.page)
+                    #expect((save != nil) == scanned)
+                    if save != nil { inFlight = save }
+                case 3:
+                    if let save = inFlight { l.saveFailed(save); inFlight = nil }
+                default:
+                    _ = l.mergeStored(l.live.filter { _ in Bool.random(using: &rng) }, info: Self.info)
+                    canvas = l.live
+                }
+                l.update(canvas.map(Self.item))
+                canvas = l.live
+                #expect(l.hasPending == !l.pendingOps(page: Self.page, live: l.live).isEmpty)
+            }
+        }
+    }
+
     // MARK: - Parents (indexed lookups keep the first match)
 
     /// Two strokes removed in one change that both qualify as the parent of a
