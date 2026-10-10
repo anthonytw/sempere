@@ -11,6 +11,7 @@ import Testing
 /// commits (pass them as `TEST_RUNNER_SEMPERE_BENCH_INK_STROKES` to
 /// xcodebuild). Each test also checks the result, so it is a test at any size.
 @MainActor
+@Suite(.serialized)   // one at a time, so the footprint each leaves is its own
 struct InkPathBenchmarkTests {
     static let env = ProcessInfo.processInfo.environment
     static let strokeCount = Int(env["SEMPERE_BENCH_INK_STROKES"] ?? "") ?? 300
