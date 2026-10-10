@@ -29,7 +29,7 @@ public enum HTMLExport {
     footer{margin-top:2rem;border-top:1px solid var(--line);padding-top:.6rem}
     """
 
-    private static func esc(_ s: String) -> String { SVGWriter.escape(s) }
+    private static func esc(_ s: String) -> String { MarkdownHTML.esc(s) }
 
     private static func head(_ title: String) -> String {
         """
