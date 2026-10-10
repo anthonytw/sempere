@@ -2640,7 +2640,9 @@ A recording belongs to the note, not to a page (`recordings`, §5.4):
   allowed and may be unplayable.
 - `started`: RFC 3339 wall time of the first sample (sorting, display).
 - `duration` (seconds, 3 decimals), `codec`, `sampleRate`, `channels`,
-  `bitRate` (bits per second, average): informational.
+  `bitRate` (bits per second, average): informational. `duration` is the
+  sound track's `mdhd` duration (what plays), the movie's `mvhd` duration
+  when that is absent or 0.
 - `captured` (*new: capture attribution*, optional, immutable): for a voice
   note adopted from the inbox (§11.3), who captured it:
   `{ "device": "a1b2c3d4", "recipient": "…(64 hex digits)…" }`. `device` is
