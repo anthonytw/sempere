@@ -117,9 +117,9 @@ describe("t and tn", () => {
   });
 
   it("format sizes and numbers in the language", () => {
-    expect(formatBytes(1536 * 1024)).toBe("1.5 MB");
+    expect(formatBytes(1536 * 1024)).toBe("1.5 MiB");
     setLocale("es");
-    expect(formatBytes(1536 * 1024)).toBe("1,5 MB");
+    expect(formatBytes(1536 * 1024)).toBe("1,5 MiB");
   });
 });
 

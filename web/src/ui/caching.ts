@@ -15,8 +15,8 @@ export function fileCache(): Promise<FileCache> {
 }
 
 export function formatBytes(n: number): string {
-  if (n < 1024 * 1024) return `${Math.ceil(n / 1024).toLocaleString(locale())} KB`;
-  return `${(n / (1024 * 1024)).toLocaleString(locale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MB`;
+  if (n < 1024 * 1024) return `${Math.ceil(n / 1024).toLocaleString(locale())} KiB`;
+  return `${(n / (1024 * 1024)).toLocaleString(locale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MiB`;
 }
 
 /** A button that empties the cache (every vault's), saying how much it held. */
