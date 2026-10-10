@@ -9824,18 +9824,6 @@
         }
       }
     },
-    "Open Sempere and turn on Quick Voice Notes in Settings first." : {
-      "comment" : "Shown by Siri/Shortcuts when quick voice notes are not set up",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abre Sempere y activa antes las notas de voz rápidas en Ajustes."
-          }
-        }
-      }
-    },
     "Open Sempere for details." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11194,6 +11182,7 @@
       }
     },
     "Quick Voice Notes is not set up: open Sempere, unlock the vault and turn it on in Settings." : {
+      "comment" : "Shown by the app, Siri and Shortcuts when quick voice notes are not set up",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -11731,7 +11720,7 @@
       }
     },
     "Recording voice note" : {
-      "comment" : "In-app banner while a voice note records",
+      "comment" : "In-app banner and Live Activity while a voice note records",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -13222,7 +13211,7 @@
       }
     },
     "Saving voice note…" : {
-      "comment" : "In-app banner while a stopped voice note is encrypted",
+      "comment" : "In-app banner and Live Activity while a stopped voice note is encrypted",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -14375,7 +14364,7 @@
       }
     },
     "Stop Voice Note" : {
-      "comment" : "Shortcut short title",
+      "comment" : "File menu, menu-bar item, shortcut short title, widget and control: stop the quick voice note",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
