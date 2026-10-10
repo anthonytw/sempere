@@ -228,7 +228,7 @@ public struct TreeExporter: Sendable {
                             }
                             var names: [String] = []
                             for (k, d) in data.enumerated() {
-                                let name = String(format: "p%03d", i + 1) + (k == 0 ? "" : "-\(k + 1)") + ".png"
+                                let name = PNGWriter.imageName(page: i + 1, chunk: k) + ".png"
                                 outputs.append((prefix + "-assets/" + name, d))
                                 names.append(stem + "-assets/" + name)
                             }

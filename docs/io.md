@@ -506,7 +506,7 @@ CLI into `SempereRender`) writes the Markdown and HTML trees.
 | Format | One note | Several notes |
 | --- | --- | --- |
 | PDF | `<stem>.pdf` | one per note, or one merged `Sempere-Notes.pdf` |
-| PNG pages | `<stem>-p001.png`, ... | a folder per note |
+| PNG pages | `<stem>-p001.png`, ... (`-p001-2.png`, ... for the further images of a pageless page) | a folder per note |
 | Text (Markdown) | `<stem>.md` leading with the recognised text; with the PDF (optional, off) or page PNGs, a folder with them and `README.md` | `Sempere Export/`, mirroring the notebook tree |
 | Media | a folder `<stem>/` with the note's recordings, transcripts, clips, images and PDFs and `media.json` ("Media export" below) | a folder per note; notes without media are counted, not written |
 

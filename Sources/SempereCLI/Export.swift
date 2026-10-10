@@ -433,11 +433,11 @@ struct ExportCommand: ParsableCommand {
                         }
                         report(s, r.files.map { URL(fileURLWithPath: folder).appendingPathComponent($0).path }, items)
                     case .svg, .png:
-                        let pages: [Data]
+                        let pages: [(name: String, data: Data)]
                         var assetFiles: [String] = []
                         if format == .png {
-                            pages = try PNGWriter.render(note: state, options: noteOptions, png: PNGOptions(dpi: dpi),
-                                                         report: &items)
+                            pages = try PNGWriter.renderNamed(note: state, options: noteOptions, png: PNGOptions(dpi: dpi),
+                                                              report: &items).map { ($0.name, $0.png) }
                         } else {
                             // Linked images: hrefs relative to the folder the SVGs land in.
                             let svgDir = all ? path(stem) : out
@@ -447,7 +447,7 @@ struct ExportCommand: ParsableCommand {
                                 return ExportCommand.relativePath(from: svgDir, to: dir) + "/"
                             }
                             let svg = try SVGWriter.export(note: state, options: noteOptions, assetPrefix: prefix, report: &items)
-                            pages = svg.pages.map { Data($0.utf8) }
+                            pages = svg.pages.enumerated().map { (String(format: "p%03d", $0 + 1), Data($1.utf8)) }
                             for asset in svg.assets {
                                 let file = URL(fileURLWithPath: assets ?? out).appendingPathComponent(asset.name).path
                                 if (try? BoundedRead.contents(of: URL(fileURLWithPath: file), maxBytes: asset.data.count)) != asset.data {
@@ -459,9 +459,8 @@ struct ExportCommand: ParsableCommand {
                         let ext = format.rawValue
                         var files: [String] = assetFiles
                         if all { try mkdir(path(stem)) }
-                        for (i, data) in pages.enumerated() {
-                            let file = all ? path(stem + String(format: "/p%03d.", i + 1) + ext)
-                                : path(stem + String(format: "-p%03d.", i + 1) + ext)
+                        for (name, data) in pages {
+                            let file = path(stem + (all ? "/" : "-") + name + "." + ext)
                             try write(data, to: file)
                             files.append(file)
                         }

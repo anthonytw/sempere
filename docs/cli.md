@@ -1727,8 +1727,9 @@ sempere export (ID|TITLE | --all) --format pdf|svg|png|json|markdown|html|media 
   or `<name>/p001.png` with `--all`). Pure Swift, no system imaging library.
   Paper, strokes and tool opacity match the PDF; edges are anti-aliased. An
   infinite page is split into images exactly as it is split into PDF pages
-  (`--breaks` applies), so
-  numbering counts output pages. `--dpi N` sets the resolution (default 144,
+  (`--breaks` applies); the number is the note page's, and the further images
+  of a split page add `-2`, `-3`, ... (`p001.png`, `p001-2.png`, `p002.png`),
+  as everywhere PNG pages are written. `--dpi N` sets the resolution (default 144,
   i.e. 2x the 72 pt/inch page; `0 < N <= 2400`, else exit 2). An image over
   40 million pixels (a letter page above about 620 dpi) is an error naming the
   limit, not an allocation; lower `--dpi`. With `--no-paper` the background is

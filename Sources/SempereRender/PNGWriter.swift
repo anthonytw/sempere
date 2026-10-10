@@ -44,19 +44,34 @@ public enum PNGWriter {
     /// are drawn from `options.pdfRasterizer` at the output resolution.
     public static func render(note: NoteState, options: RenderOptions = RenderOptions(),
                               png: PNGOptions = PNGOptions(), report: inout RenderReport) throws -> [Data] {
+        try renderNamed(note: note, options: options, png: png, report: &report).map(\.png)
+    }
+
+    /// Like `render(note:options:png:report:)`, each image with its
+    /// `imageName`.
+    public static func renderNamed(note: NoteState, options: RenderOptions = RenderOptions(), png: PNGOptions = PNGOptions(),
+                                   report: inout RenderReport) throws -> [(name: String, png: Data)] {
         guard png.scale.isFinite, png.scale > 0 else { throw RenderError.invalidScale }
         let backgrounds = PDFBackgrounds(blobs: options.blobs, rasterizer: options.pdfRasterizer)
         let store = ImageStore(options: options, blobs: options.blobs, recordings: note.recordings)
-        var images: [Data] = []
+        var images: [(name: String, png: Data)] = []
         for (i, page) in note.pages.enumerated() {
-            images += try render(page: page, meta: note.meta, options: options, png: png, pageNumber: i + 1,
-                                 backgrounds: backgrounds, images: store, report: &report)
+            let chunks = try render(page: page, meta: note.meta, options: options, png: png, pageNumber: i + 1,
+                                    backgrounds: backgrounds, images: store, report: &report)
+            images += chunks.enumerated().map { (imageName(page: i + 1, chunk: $0), $1) }
         }
         if images.isEmpty {
-            images = try render(page: Page(order: "a"), meta: note.meta, options: options, png: png)
-            images = Array(images.prefix(1))
+            let blank = try render(page: Page(order: "a"), meta: note.meta, options: options, png: png)
+            images = blank.prefix(1).map { (imageName(page: 1, chunk: 0), $0) }
         }
         return images
+    }
+
+    /// The file name (without `.png`) of image `chunk` (from 0) of note page
+    /// `page` (from 1): `p001`, then `p001-2`, `p001-3`, ... for the further
+    /// images of an infinite page. Every PNG export names its files this way.
+    public static func imageName(page: Int, chunk: Int) -> String {
+        String(format: "p%03d", page) + (chunk == 0 ? "" : "-\(chunk + 1)")
     }
 
     /// One PNG per output page of a single note page (several for an infinite page).

@@ -273,11 +273,10 @@ public enum ShareExport {
                         try writePDF(url) { try PDFWriter.write(note: state, options: renderOptions(for: s.id), report: &report, to: $0) }
                         items.append(url)
                     } else {
-                        let pages = try PNGWriter.render(note: state, options: renderOptions(for: s.id), png: PNGOptions(dpi: options.dpi),
-                                                         report: &report)
-                        for (i, data) in pages.enumerated() {
-                            let rel = notes.count > 1 ? stem + String(format: "/p%03d.png", i + 1)
-                                                      : stem + String(format: "-p%03d.png", i + 1)
+                        let pages = try PNGWriter.renderNamed(note: state, options: renderOptions(for: s.id),
+                                                              png: PNGOptions(dpi: options.dpi), report: &report)
+                        for (name, data) in pages {
+                            let rel = stem + (notes.count > 1 ? "/" : "-") + name + ".png"
                             files.append((scratch.appendingPathComponent(rel), data))
                         }
                     }
