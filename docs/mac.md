@@ -191,6 +191,8 @@ calls the callbacks off the main thread.
   and one note on the canvas, as on the iPad.
 * **Note windows** (`WindowGroup(for: NoteWindowValue.self)`): one note each,
   opened from the note's context menu or File > Open Note in New Window (⌥⌘N).
+  Its toolbar has the library canvas's note actions (Rename…, Export, Save
+  Version…, Version History…, Tags).
   In build 6, File had none of the app's commands (see "UIKit's own items")
   and File > New Window (⌘N) was UIKit's, which opens another library window,
   never a note; UIKit's New Window is gone now. `MacWindowUITests` opens a note

@@ -45,6 +45,9 @@ struct NoteWindowView: View {
                                 .help("Rename the note")
                         }
                         ToolbarItem(placement: .secondaryAction) {
+                            ExportMenu(ids: [note.id])
+                        }
+                        ToolbarItem(placement: .secondaryAction) {
                             Button("Save Version…", systemImage: "bookmark") { ui.saveVersionNoteID = note.id }
                                 .disabled(note.deleted)
                                 .help("Save this version of the note under a name; saved versions are never thinned")
