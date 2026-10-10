@@ -252,9 +252,9 @@ jobs:
     runs-on: xcode-27
     steps:
       - uses: actions/checkout@v4
-      - name: Select newest Xcode
+      - name: Select Xcode 27.0 (the image's newest is a beta)
         run: |
-          sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)/Contents/Developer"
+          sudo xcode-select -s /Applications/Xcode_27.0.app/Contents/Developer
           xcodebuild -version
           xcrun simctl list runtimes
           # The app's minimum is iPadOS/iOS 27: fail here, not in the middle of a build.
@@ -481,9 +481,9 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - name: Select newest Xcode
+      - name: Select Xcode 27.0 (the image's newest is a beta)
         run: |
-          sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)/Contents/Developer"
+          sudo xcode-select -s /Applications/Xcode_27.0.app/Contents/Developer
           xcodebuild -version
           xcrun simctl list runtimes
           # The app's minimum is iPadOS/iOS 27: fail here, not in the middle of a build.
