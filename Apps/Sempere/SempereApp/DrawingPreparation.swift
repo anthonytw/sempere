@@ -56,8 +56,8 @@ enum DrawingPreparation {
     }
 
     /// True when `drawing` is, stroke by stroke, what `StrokeConversion`
-    /// makes of `strokes`: as many strokes, and each with the texture seed
-    /// derived from the stored stroke's id, its ink, its number of control
+    /// makes of `strokes`: as many strokes, and each with the stored stroke's
+    /// id as its `PKStroke.id`, the texture seed derived from that id, its ink, its number of control
     /// points, and its first and last point and transform (within
     /// PencilKit's Float32 precision). Catches a cached drawing that does not
     /// belong to the note as read, cheaply (O(strokes)).
@@ -66,7 +66,7 @@ enum DrawingPreparation {
         guard pks.count == strokes.count else { return false }
         func close(_ a: CGFloat, _ b: Double) -> Bool { abs(Double(a) - b) <= 1e-3 * max(1, abs(b)) }
         for (pk, s) in zip(pks, strokes) {
-            guard pk.randomSeed == StrokeConversion.seed(for: s.id), pk.ink.inkType == s.ink.tool.pkInkType,
+            guard pk.id == s.id, pk.randomSeed == StrokeConversion.seed(for: s.id), pk.ink.inkType == s.ink.tool.pkInkType,
                   pk.path.count == s.points.count else { return false }
             if let first = s.points.first, let last = s.points.last {
                 let a = pk.path[0].location, b = pk.path[pk.path.count - 1].location
