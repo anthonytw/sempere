@@ -11,6 +11,17 @@ public protocol PDFPageRasterizer: Sendable {
     /// turned by `/Rotate`, format.md §8.2.6), scaled to exactly
     /// `pixelWidth × pixelHeight`.
     func rasterize(pdf: URL, pageIndex: Int, pixelWidth: Int, pixelHeight: Int) throws -> RGBAImage
+    /// `rasterize` when the caller already parsed the same file and knows the
+    /// page's `/Rotate` (`rotation`; nil when it does not), so a rasterizer
+    /// that needs it need not parse the PDF again for every page.
+    func rasterize(pdf: URL, pageIndex: Int, pixelWidth: Int, pixelHeight: Int, rotation: Int?) throws -> RGBAImage
+}
+
+extension PDFPageRasterizer {
+    /// Rasterizers that do not need the rotation ignore it.
+    public func rasterize(pdf: URL, pageIndex: Int, pixelWidth: Int, pixelHeight: Int, rotation: Int?) throws -> RGBAImage {
+        try rasterize(pdf: pdf, pageIndex: pageIndex, pixelWidth: pixelWidth, pixelHeight: pixelHeight)
+    }
 }
 
 /// An RGBA8 image: straight alpha, rows top first.
