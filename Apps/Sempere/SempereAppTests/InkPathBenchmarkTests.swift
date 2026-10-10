@@ -168,4 +168,20 @@ extension InkPathBenchmarkTests {
         }
         #expect(digests == notePages.map { RecognitionBasis.digest(of: $0.1.map(\.id)) })
     }
+
+    /// A tap in "Tap Ink to Play" mode on a page where 1% of the ink is linked.
+    @Test func tapToPlayHitTest() {
+        let link = RecordingLink(id: UUID(), at: 5)
+        let strokes = Self.stored.enumerated().map { i, s in
+            var s = s
+            if i % 100 == 0 { s.rec = link }
+            return s
+        }
+        var all: [Stroke] = [], linked: [Stroke] = []
+        _ = Self.time("tap hit test, every stroke (before)") { all = RecordingSync.hit(x: 10, y: 5, in: strokes) }
+        _ = Self.time("tap hit test, linked strokes only") {
+            linked = RecordingSync.hit(x: 10, y: 5, in: strokes.filter { $0.rec != nil })
+        }
+        #expect(all.filter { $0.rec != nil }.map(\.id) == linked.map(\.id))
+    }
 }

@@ -232,7 +232,8 @@ extension NoteEditor {
     /// Where a tap at page point (`x`, `y`) should play from: the recording
     /// and time of the earliest linked stroke under it, minus the lead-in.
     func seekTarget(pageID: UUID, x: Double, y: Double, tolerance: Double = 12) -> (recording: Recording, time: Double)? {
-        let hits = RecordingSync.hit(x: x, y: y, in: liveStrokes(of: pageID), tolerance: tolerance)
+        // Only linked strokes can be a target: the others are not measured.
+        let hits = RecordingSync.hit(x: x, y: y, in: liveStrokes(of: pageID).filter { $0.rec != nil }, tolerance: tolerance)
         return RecordingSync.seekTarget(for: hits, in: recordingState)
     }
 
