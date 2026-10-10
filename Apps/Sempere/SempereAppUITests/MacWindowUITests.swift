@@ -201,8 +201,10 @@ final class MacWindowUITests: XCTestCase {
             return origin.withOffset(CGVector(dx: dx, dy: dy))
         }
         let before = window.screenshot().pngRepresentation
-        at(0.2, 0.55).press(forDuration: 0.1, thenDragTo: at(0.8, 0.6), withVelocity: 300, thenHoldForDuration: 0.1)
-        at(0.8, 0.65).press(forDuration: 0.1, thenDragTo: at(0.2, 0.7), withVelocity: 300, thenHoldForDuration: 0.1)
+        // A mouse drag is click-and-drag: on macOS 27 XCTest's press-and-drag (a touch) never
+        // reaches the app at all (no touch on any window), though a click on the canvas does.
+        at(0.2, 0.55).click(forDuration: 0.1, thenDragTo: at(0.8, 0.6), withVelocity: 300, thenHoldForDuration: 0.1)
+        at(0.8, 0.65).click(forDuration: 0.1, thenDragTo: at(0.2, 0.7), withVelocity: 300, thenHoldForDuration: 0.1)
         var changed = 0
         for _ in 0..<5 {
             Thread.sleep(forTimeInterval: 1)
