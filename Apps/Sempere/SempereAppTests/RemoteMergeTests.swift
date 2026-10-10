@@ -81,6 +81,31 @@ struct RemoteMergeTests {
         #expect(try f.mine().isEmpty, "the merge wrote nothing")
     }
 
+    /// Merges read only the new files (`NoteEditor.read(reuse:)`): after
+    /// several, including a revision older than everything the editor read
+    /// (a late arrival), the editor shows what a fresh read of the note shows.
+    @Test func repeatedMergesMatchAFreshRead() async throws {
+        let f = try await Self.open()
+        let page = try #require(f.editor.currentPage)
+        for i in 0..<3 {
+            try f.elsewhere([.addStroke(page: page.id, stroke: TS.stroke(x: 100 + Double(i) * 50, y: 400))])
+            #expect(try await f.merge() == .merged(fromOtherDevice: true))
+        }
+        let late = TS.stroke(x: 50, y: 50)
+        let identity = try IdentityFile.parse(try String(contentsOf: f.key, encoding: .utf8))
+        let other = try Vault.open(at: f.url, identities: [identity])
+        try other.write(Revision(noteId: Self.lecture, device: DeviceID("cccccccc")!, seq: 1,
+                                 hlc: HLC(millis: 1_000, counter: 0)!, wall: Date(timeIntervalSince1970: 1),
+                                 app: "late-device/1", body: .delta(ops: [.addStroke(page: page.id, stroke: late)])))
+        #expect(try await f.merge() == .merged(fromOtherDevice: true))
+        let disk = try f.onDisk()
+        #expect(f.editor.pages.map(\.id) == disk.pages.map(\.id))
+        for p in disk.pages { #expect(f.editor.liveStrokes(of: p.id).map(\.id) == p.strokes.map(\.id)) }
+        #expect(f.editor.liveStrokes(of: page.id).contains { $0.id == late.id })
+        await f.editor.close()
+        #expect(try f.mine().isEmpty)
+    }
+
     @Test func aPageAddedElsewhereAppears() async throws {
         let f = try await Self.open()
         let before = f.editor.pages

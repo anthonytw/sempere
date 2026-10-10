@@ -111,6 +111,10 @@ final class NoteEditor {
     /// the note's folder that is not here is a revision written elsewhere
     /// (`hasUnmergedRevisions`).
     @ObservationIgnored private(set) var knownRevisionNames: Set<String> = []
+    /// The revisions the last read decoded, by file name: a merge reads only
+    /// the files that are new since (`read(reuse:)`). They share most of
+    /// their storage (stroke points) with the note's state.
+    @ObservationIgnored private var decodedRevisions: [String: Revision] = [:]
     /// The read that completes an editor opened from the cache.
     @ObservationIgnored private var fullLoad: Task<Void, Never>?
     /// Called when that read fails (`failLoading`), with the reason: the
@@ -255,6 +259,8 @@ final class NoteEditor {
         var newer: NewerContent?
         /// Why the vault is read-only, as of this read (format.md §7.3).
         var vaultReadOnly: ReadOnlyReasons
+        /// The revisions read, by file name, for the next read to reuse.
+        var decoded: [String: Revision]
     }
 
     /// Loads and reconstructs a note off the main actor. A note with
@@ -327,6 +333,7 @@ final class NoteEditor {
                                 debounce: debounce, recognizer: recognizer, recognitionDelay: recognitionDelay)
         editor.editingSession = session
         editor.knownRevisionNames = Set(loaded.names)
+        editor.decodedRevisions = loaded.decoded
         if let cache, loaded.failures == 0 {
             let key = DrawingCache.Key(note: noteID, revisions: loaded.names)
             editor.drawingCache = cache
@@ -338,13 +345,17 @@ final class NoteEditor {
         return editor
     }
 
+    /// Reads and reconstructs the note. Revisions in `reuse` (an earlier
+    /// read's `decoded`) are not read again: revision files are write-once,
+    /// so a merge reads only the files that are new since (`Vault.loadNote(_:reusing:)`).
     private static func read(vault: Vault, noteID: UUID, device: DeviceID, coordinated: Bool,
-                             verify: (@Sendable () throws -> Void)?) async throws -> Loaded {
+                             verify: (@Sendable () throws -> Void)?,
+                             reuse: [String: Revision] = [:]) async throws -> Loaded {
         try await Task.detached(priority: .userInitiated) {
-            let loaded = try Perf.measure(.noteRead, "\(Perf.short(noteID))") {
+            let loaded = try Perf.measure(.noteRead, "\(Perf.short(noteID)) reused=\(reuse.count)") {
                 try CloudVault.coordinatedRead(coordinated ? vault.url : nil) {
                     try verify?()
-                    let loaded = try vault.loadNote(noteID)
+                    let loaded = try vault.loadNote(noteID, reusing: reuse)
                     try verify?()
                     return loaded
                 }
@@ -356,7 +367,8 @@ final class NoteEditor {
             return Loaded(state: state, failures: loaded.failures.count,
                           nextSeq: Vault.nextSeq(from: loaded.revisions, device: device),
                           readings: loaded.revisions.map(\.hlc), names: names, newer: loaded.newer,
-                          vaultReadOnly: vault.readOnlyReasons)
+                          vaultReadOnly: vault.readOnlyReasons,
+                          decoded: Dictionary(loaded.revisions.map { ($0.name.filename, $0) }) { a, _ in a })
         }.value
     }
 
@@ -421,6 +433,7 @@ final class NoteEditor {
                                                     coordinated: coordinated, session: editingSession) : nil
         cacheKey = loaded.failures == 0 ? DrawingCache.Key(note: noteID, revisions: loaded.names) : nil
         knownRevisionNames = Set(loaded.names)
+        decodedRevisions = loaded.decoded
         canvasDrawings = [:]
         ledgers = [:]
         for page in pages {
@@ -942,6 +955,7 @@ final class NoteEditor {
         _ = await recognitionWrite?.result
         await flush()
         isShutDown = true
+        decodedRevisions = [:]
         storeForNextOpen()
     }
 
@@ -1105,7 +1119,8 @@ extension NoteEditor {
             // would look removed elsewhere. Then it is read again.
             let epoch = writeEpoch
             let loaded = try await Self.read(vault: vault, noteID: noteID, device: clock.device,
-                                             coordinated: coordinated, verify: verify)
+                                             coordinated: coordinated, verify: verify, reuse: decodedRevisions)
+            decodedRevisions = loaded.decoded
             await clock.observe(loaded.readings)
             guard !isShutDown else { return .skipped }
             if let reason = Self.newerReason(loaded) {
