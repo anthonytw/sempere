@@ -13,7 +13,7 @@ public enum FileDigest {
         var size: Int64 = 0
         while true {
             let piece: Data
-            do { piece = try handle.read(upToCount: 1 << 20) ?? Data() } catch {
+            do { piece = try autoreleasing { try handle.read(upToCount: 1 << 20) ?? Data() } } catch {
                 throw VaultError.io("read \(url.path): \(error)")
             }
             if piece.isEmpty { break }
