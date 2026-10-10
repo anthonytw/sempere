@@ -1,10 +1,10 @@
 #if canImport(Darwin)
-import FuzzSupport
 import Darwin
 #else
 import Glibc
 #endif
 import Foundation
+import FuzzSupport
 import XCTest
 @testable import Sempere
 @testable import SempereWebDAV
