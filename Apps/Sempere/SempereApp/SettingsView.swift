@@ -573,7 +573,7 @@ private struct DeviceKeySettingsSection: View {
         } header: {
             Text("Device Keys")
         } footer: {
-            Text("Save Key exports this device's key, after Face ID, to Files or a password manager, with its paper recovery kit. New Key makes a key for another device and encrypts the vault to it. Devices here are the keys this vault is encrypted to (this iPad, that Mac, the paper backup), not people: to share a note, export it. “Rewrite headers only” is fast but leaves old copies of an attachment openable with a key that was removed. “Re-encrypt everything” takes longer in a vault with many attachments.")
+            Text("Save Key exports this device's key, after \(RememberedKeys.biometryPhrase), to Files or a password manager, with its paper recovery kit. New Key makes a key for another device and encrypts the vault to it. Devices here are the keys this vault is encrypted to (this iPad, that Mac, the paper backup), not people: to share a note, export it. “Rewrite headers only” is fast but leaves old copies of an attachment openable with a key that was removed. “Re-encrypt everything” takes longer in a vault with many attachments.")
         }
         .sheet(isPresented: $savingKey) { SaveKeyView() }
         .sheet(isPresented: $creatingKey) { NewKeyView() }

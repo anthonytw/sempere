@@ -6188,6 +6188,18 @@
         }
       }
     },
+    "Face ID or Touch ID" : {
+      "comment" : "The biometry, inside sentences, when the device has none enrolled",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Face ID o Touch ID"
+          }
+        }
+      }
+    },
     "Face ID or Touch ID is locked after too many attempts. Lock the device and unlock it with its passcode, then try again." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11636,14 +11648,14 @@
         }
       }
     },
-    "Record from the Lock Screen, Control Center, the Action button, a widget or Siri (“Record a Sempere voice note”), without unlocking the vault or using Face ID. Each voice note is encrypted on this device to your vault's keys as soon as it stops, and becomes a note in the notebook above, titled with the date and time, the next time the vault is unlocked. Transcription runs on this device only. This device keeps the vault's public keys and a capture key that can add voice notes but cannot read any note." : {
+    "Record from the Lock Screen, Control Center, the Action button, a widget or Siri (“Record a Sempere voice note”), without unlocking the vault or using Face ID or Touch ID. Each voice note is encrypted on this device to your vault's keys as soon as it stops, and becomes a note in the notebook above, titled with the date and time, the next time the vault is unlocked. Transcription runs on this device only. This device keeps the vault's public keys and a capture key that can add voice notes but cannot read any note." : {
       "comment" : "The quoted Siri phrase must match the Spanish Siri phrase in AppShortcuts.xcstrings",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Graba desde la pantalla bloqueada, el centro de control, el botón de acción, un widget o Siri («Graba una nota de voz en Sempere»), sin desbloquear la bóveda ni usar Face ID. Cada nota de voz se cifra en este dispositivo con las claves de tu bóveda en cuanto se detiene, y la próxima vez que se desbloquee la bóveda pasa a ser una nota en el cuaderno de arriba, titulada con la fecha y la hora. La transcripción se hace solo en este dispositivo. Este dispositivo guarda las claves públicas de la bóveda y una clave de captura que puede añadir notas de voz pero no puede leer ninguna nota."
+            "value" : "Graba desde la pantalla bloqueada, el centro de control, el botón de acción, un widget o Siri («Graba una nota de voz en Sempere»), sin desbloquear la bóveda ni usar Face ID o Touch ID. Cada nota de voz se cifra en este dispositivo con las claves de tu bóveda en cuanto se detiene, y la próxima vez que se desbloquee la bóveda pasa a ser una nota en el cuaderno de arriba, titulada con la fecha y la hora. La transcripción se hace solo en este dispositivo. Este dispositivo guarda las claves públicas de la bóveda y una clave de captura que puede añadir notas de voz pero no puede leer ninguna nota."
           }
         }
       }
@@ -12970,14 +12982,14 @@
         }
       }
     },
-    "Save Key exports this device's key, after Face ID, to Files or a password manager, with its paper recovery kit. New Key makes a key for another device and encrypts the vault to it. Devices here are the keys this vault is encrypted to (this iPad, that Mac, the paper backup), not people: to share a note, export it. “Rewrite headers only” is fast but leaves old copies of an attachment openable with a key that was removed. “Re-encrypt everything” takes longer in a vault with many attachments." : {
-      "comment" : "Footer of Settings → Device Keys; button and option names as translated",
+    "Save Key exports this device's key, after %@, to Files or a password manager, with its paper recovery kit. New Key makes a key for another device and encrypts the vault to it. Devices here are the keys this vault is encrypted to (this iPad, that Mac, the paper backup), not people: to share a note, export it. “Rewrite headers only” is fast but leaves old copies of an attachment openable with a key that was removed. “Re-encrypt everything” takes longer in a vault with many attachments." : {
+      "comment" : "Footer of Settings ▸ Device Keys; button and option names as translated; %@ is the biometry (Face ID, Touch ID, or “Face ID or Touch ID”)",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Guardar clave exporta la clave de este dispositivo, tras Face ID, a Archivos o a un gestor de contraseñas, con su kit de recuperación en papel. Clave nueva crea una clave para otro dispositivo y cifra la bóveda para ella. Los dispositivos de esta lista son las claves para las que está cifrada esta bóveda (este iPad, ese Mac, la copia en papel), no personas: para compartir una nota, expórtala. «Reescribir solo las cabeceras» es rápido, pero deja copias antiguas de un adjunto que se pueden abrir con una clave que se ha quitado. «Volver a cifrar todo» tarda más en una bóveda con muchos adjuntos."
+            "value" : "Guardar clave exporta la clave de este dispositivo, tras %@, a Archivos o a un gestor de contraseñas, con su kit de recuperación en papel. Clave nueva crea una clave para otro dispositivo y cifra la bóveda para ella. Los dispositivos de esta lista son las claves para las que está cifrada esta bóveda (este iPad, ese Mac, la copia en papel), no personas: para compartir una nota, expórtala. «Reescribir solo las cabeceras» es rápido, pero deja copias antiguas de un adjunto que se pueden abrir con una clave que se ha quitado. «Volver a cifrar todo» tarda más en una bóveda con muchos adjuntos."
           }
         }
       }
@@ -14492,13 +14504,13 @@
         }
       }
     },
-    "Store settings encrypted in this vault, so every device that opens it can use the same ones. Device keys and Face ID stay on each device." : {
+    "Store settings encrypted in this vault, so every device that opens it can use the same ones. Device keys and Face ID or Touch ID stay on each device." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Guarda los ajustes cifrados en esta bóveda, para que todos los dispositivos que la abren puedan usar los mismos. Las claves de los dispositivos y Face ID se quedan en cada dispositivo."
+            "value" : "Guarda los ajustes cifrados en esta bóveda, para que todos los dispositivos que la abren puedan usar los mismos. Las claves de los dispositivos y Face ID o Touch ID se quedan en cada dispositivo."
           }
         }
       }
@@ -18494,13 +18506,14 @@
         }
       }
     },
-    "Your other devices signed in to the same Apple Account get the key too. The Keychain cannot require Face ID for synced items, so Sempere asks for Face ID or your passcode itself before using it; the key is otherwise protected by iCloud Keychain's end-to-end encryption and your device passcode. Synced keys may not be listed in the Passwords app." : {
+    "Your other devices signed in to the same Apple Account get the key too. The Keychain cannot require %@ for synced items, so Sempere asks for %@ or your passcode itself before using it; the key is otherwise protected by iCloud Keychain's end-to-end encryption and your device passcode. Synced keys may not be listed in the Passwords app." : {
+      "comment" : "Unlock sheet footer of the iCloud Keychain switch; both values are the biometry (Face ID, Touch ID, or “Face ID or Touch ID”)",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tus otros dispositivos con sesión iniciada en la misma cuenta de Apple también reciben la clave. El Llavero no puede exigir Face ID para los elementos sincronizados, así que Sempere pide Face ID o tu código antes de usarla; por lo demás, la clave está protegida por el cifrado de extremo a extremo del Llavero de iCloud y por el código de tu dispositivo. Puede que las claves sincronizadas no aparezcan en la app Contraseñas."
+            "value" : "Tus otros dispositivos con sesión iniciada en la misma cuenta de Apple también reciben la clave. El Llavero no puede exigir %1$@ para los elementos sincronizados, así que Sempere pide %2$@ o tu código antes de usarla; por lo demás, la clave está protegida por el cifrado de extremo a extremo del Llavero de iCloud y por el código de tu dispositivo. Puede que las claves sincronizadas no aparezcan en la app Contraseñas."
           }
         }
       }
