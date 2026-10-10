@@ -745,7 +745,7 @@ this device refuses is `rejected`, not written. Test: `JournalSyncTests.testTheS
 
 Any `rewrap-journal.json` blocked recipient changes, repairs and blob collection, and held the app in its
 migration screen; nothing removed it. **Fix:** `Vault.discardRefusedJournal` (CLI `vault rewrap-discard`,
-`--json`) deletes a journal this device refuses (never one it accepts or cannot read now, never with a list
+`--json`) moves a journal this device refuses to `rewrap-journal.refused.json` (read by nothing) (never one it accepts or cannot read now, never with a list
 that does not check); the app does it quietly at unlock and in the migration screen, and opens the vault
 normally when a refused journal is left; `vault info` says "REFUSED journal"; the CLI's errors and blob
 collection name `rewrap-discard`; a server journal this device refuses no longer holds blob pruning back.

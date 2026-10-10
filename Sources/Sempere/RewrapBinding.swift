@@ -176,13 +176,21 @@ extension Vault {
         manifest = try Self.writeManifest(m, to: manifestURL, replacing: true, secret: secret)
     }
 
-    /// Deletes a rewrap journal this device refuses (format.md §3.3.1
+    /// Where `discardRefusedJournal` puts the journal it takes away: one
+    /// file, replaced each time, that nothing reads (an unknown file, format.md
+    /// §1). It keeps the bytes for a person to look at, or to put back by hand
+    /// (a backup restored from before its change finished, on a device that
+    /// saw it finish, refuses its journal too).
+    package static let refusedJournalName = "rewrap-journal.refused.json"
+
+    /// Takes away a rewrap journal this device refuses (format.md §3.3.1
     /// "Refused journals"): one planted, put back after its change finished,
     /// or not a journal at all. It gave no secret, so nothing that verified
-    /// stops verifying; deleting it lets recipient changes, repairs and blob
-    /// collection run again. When this device's trust record says the change
-    /// to the current secret finished, a `rewrapPending` left in `vault.json`
-    /// (a put-back copy) is removed too.
+    /// stops verifying; without it recipient changes, repairs and blob
+    /// collection run again. It is moved to `refusedJournalName`, not deleted.
+    /// When this device's trust record says the change to the current secret
+    /// finished, a `rewrapPending` left in `vault.json` (a put-back copy) is
+    /// removed too.
     ///
     /// - Returns: why the journal was refused; nil when there was none.
     /// - Throws: `rewrapJournalKept` for a journal this device accepts (finish
@@ -203,7 +211,12 @@ extension Vault {
         case .refused(let why):
             let record = (try? trustStore?.record(for: vaultId)) ?? nil
             if record?.saysRewrapFinished(for: secret) == true { try clearRewrapPending() }
-            try FileIO.remove(journalURL)
+            let aside = url.appendingPathComponent(Self.refusedJournalName)
+            if FileIO.exists(aside) { try FileIO.remove(aside) }
+            do { try FileManager.default.moveItem(at: journalURL, to: aside) } catch {
+                throw VaultError.io("move \(journalURL.path) aside: \(error)")
+            }
+            try FileIO.syncDirectory(url)
             previousSecret = nil
             journalProblem = nil
             journalRefused = false

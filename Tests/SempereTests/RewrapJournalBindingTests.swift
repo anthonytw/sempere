@@ -87,8 +87,11 @@ final class RewrapJournalBindingTests: VaultTestCase {
         let before = try Data(contentsOf: forgedURL)
         // The way out (S19): the refused journal is discarded, never resumed.
         var v = try Vault.open(at: vaultURL(), identities: [a], trust: store)
+        let planted = try Data(contentsOf: journalURL)
         XCTAssertNotNil(try v.discardRefusedJournal())
         XCTAssertFalse(v.pendingRewrap)
+        XCTAssertEqual(try Data(contentsOf: vaultURL().appendingPathComponent("rewrap-journal.refused.json")), planted,
+                       "kept aside, never read")
         XCTAssertEqual(try Data(contentsOf: forgedURL), before, "never re-tagged")
         XCTAssertThrowsError(try Vault.open(at: vaultURL(), identities: [a], trust: store).readRevision(noteId: testNote, name: forged))
     }

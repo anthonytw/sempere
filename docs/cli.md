@@ -378,11 +378,16 @@ sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
   change finished, and gives no secret. `info` then says "REFUSED journal"
   (`--json`: `journalRefused`).
 - `rewrap-discard` (needs the key, and a device list that checks: exit 6
-  otherwise) deletes a journal this machine refuses, so recipient changes,
+  otherwise) moves a journal this machine refuses to
+  `rewrap-journal.refused.json` (nothing reads it; the next discard replaces
+  it), so recipient changes,
   `recipients repair` and blob collection run again; when this machine saw the
   change to the current secret finish, it also removes a `rewrapPending` left in
   `vault.json` (a put-back copy). It never deletes a journal it accepts (finish
   that with `rewrap-resume`) or cannot read now (exit 1, the journal kept).
+  A backup restored from before a key change finished has a journal this
+  machine refuses if it saw that change finish: finish it from a machine
+  without that trust record (or put the moved journal back there).
   `--json`: `discarded`, `reason`.
 - `verify` decrypts, tag-checks and decodes every file and prints
   `status  path` per file plus counts, and a `RECIPIENTS` line (the device

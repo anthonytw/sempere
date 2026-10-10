@@ -588,9 +588,11 @@ applies rules 1 and 2 only; it never accepts more than that.
 
 **Refused journals.** A refused journal gives no secret, but while it is
 there no other recipient change starts. A writer whose list checks (§2.1)
-may delete it, explicitly (`sempere vault rewrap-discard`; the app does it
-when it unlocks the vault): only a journal it refuses, never one it accepts
-or cannot read (an I/O error, a file not yet downloaded). When its trust
+may take it away, explicitly (`sempere vault rewrap-discard`; the app does
+it when it unlocks the vault): only a journal it refuses, never one it
+accepts or cannot read (an I/O error, a file not yet downloaded). The
+reference implementation moves it to `rewrap-journal.refused.json`, an
+unknown file (§1) that nothing reads, replacing an earlier one. When its trust
 record says the rotation finished, it also removes a `rewrapPending` that
 `vault.json` still carries (a put-back copy), as in step 4. Sync never
 replaces a local journal with another copy unless the local one is refused
@@ -602,7 +604,11 @@ under one secret).
 **Limits.** A device with no trust record that is given both a `vault.json`
 put back from step 2 and the genuine journal accepts the outgoing secret, as
 it would have during the rotation. Rotations written before bound journals
-(no `"rewrap-pending"`) are protected by rule 3 alone.
+(no `"rewrap-pending"`) are protected by rule 3 alone. A backup taken while a
+rotation was unfinished, restored after the rotation finished, looks like a
+put-back copy to a device that saw it finish: that device refuses its
+journal (and moves it aside), and the rotation is finished from a device
+without that record.
 
 A change may also **replace** one recipient by another in a single pass
 (steps 1–4 as for a removal: the secret rotates). Until it finishes, files
