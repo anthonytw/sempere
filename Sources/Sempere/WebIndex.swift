@@ -48,12 +48,14 @@ extension Vault {
     /// vault's listing; never creates it (`sempere vault index` does). A
     /// legacy vault is left alone: the viewer cannot read one.
     ///
+    /// - Parameter listing: `webIndexListing()` when the caller just made
+    ///   it (it is not listed again); nil lists the vault.
     /// - Returns: true when the file was rewritten.
     @discardableResult
-    public func refreshWebIndex() throws -> Bool {
+    public func refreshWebIndex(listing: [String: [String]]? = nil) throws -> Bool {
         // A read-only vault is never written, not even its index (format.md §7.3).
         guard FileIO.exists(webIndexURL), (try? requireMigrated()) != nil, !isReadOnly else { return false }
-        let data = try WebIndex.encode(try webIndexListing())
+        let data = try WebIndex.encode(try listing ?? webIndexListing())
         if let current = try? FileIO.read(webIndexURL, maxBytes: WebIndex.maxBytes), current == data { return false }
         try FileIO.writeAtomically(data, to: webIndexURL, replacing: true)
         return true

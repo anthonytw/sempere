@@ -107,6 +107,7 @@ struct SearchCommand: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
+        OpenedVaults.shared.markUnchanged(vault.url)
         let needle = term.trimmingCharacters(in: .whitespacesAndNewlines)
         let tokens = needle.split(whereSeparator: \.isWhitespace).map(String.init)
         var hits: [SearchHit] = []
@@ -283,6 +284,7 @@ struct NotesSearch: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
+        OpenedVaults.shared.markUnchanged(vault.url)
         let notes = try vault.summaries(of: nil, cache: cache.cache(for: vault)).filter { n in
             n.deleted == deleted
                 && (notebook.map { NotebookPath.name(n.notebook, isWithin: $0) } ?? true)

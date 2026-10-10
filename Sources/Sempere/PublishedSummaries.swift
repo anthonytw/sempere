@@ -232,17 +232,26 @@ extension Vault {
     /// made from the same names is kept without reading the note; the others
     /// are summarised through `cache` (format.md §10).
     ///
+    /// - Parameter ownListing: the vault's own listing in the form of
+    ///   `webIndexListing()`, when the caller just made it (the vault is not
+    ///   listed again); nil lists the vault.
     /// - Returns: the entries and how many notes had to be summarised.
     public func publishedSummaryEntries(for listing: [String: [String]]? = nil,
                                         reuse: [UUID: PublishedSummaries.Entry] = [:],
-                                        cache: SummaryCache? = nil) throws
+                                        cache: SummaryCache? = nil,
+                                        ownListing: [String: [String]]? = nil) throws
         -> (entries: [UUID: PublishedSummaries.Entry], summarised: Int) {
         try requireMigrated()
         _ = try requireReadable()
         var out: [UUID: PublishedSummaries.Entry] = [:]
         var toRead: [UUID] = []
-        for id in try noteIDs() {
-            let names = try revisionNames(of: id).map(\.filename).sorted()
+        let own: [(UUID, [String])]
+        if let ownListing {
+            own = ownListing.sorted { $0.key < $1.key }.compactMap { k, v in UUID(uuidString: k).map { ($0, v.sorted()) } }
+        } else {
+            own = try noteIDs().map { ($0, try revisionNames(of: $0).map(\.filename).sorted()) }
+        }
+        for (id, names) in own {
             guard !names.isEmpty else { continue }
             if let listing, listing[id.uuidString.lowercased()]?.sorted() != names { continue }
             if let e = reuse[id], e.revisions == names { out[id] = e } else { toRead.append(id) }
@@ -266,20 +275,20 @@ extension Vault {
     /// manifest); with `cacheDirectory`, notes are summarised through the
     /// summary cache there (format.md §10).
     @discardableResult
-    public func refreshPublishedSummaries(cacheDirectory: URL? = nil) throws -> Bool {
+    public func refreshPublishedSummaries(cacheDirectory: URL? = nil, ownListing: [String: [String]]? = nil) throws -> Bool {
         // A read-only vault is never written, not even its summaries (format.md §7.3).
         guard FileIO.exists(publishedSummariesURL), canRead, !isReadOnly,
               let vault = try? Vault.open(at: url, identities: identities) else { return false }
         return try vault.refreshOpenedPublishedSummaries(
-            cache: cacheDirectory.flatMap { try? SummaryCache(directory: $0, vault: vault) })
+            cache: cacheDirectory.flatMap { try? SummaryCache(directory: $0, vault: vault) }, ownListing: ownListing)
     }
 
-    private func refreshOpenedPublishedSummaries(cache: SummaryCache?) throws -> Bool {
+    private func refreshOpenedPublishedSummaries(cache: SummaryCache?, ownListing: [String: [String]]?) throws -> Bool {
         guard canRead, (try? requireMigrated()) != nil else { return false }
         let data = try? FileIO.read(publishedSummariesURL, maxBytes: PublishedSummaries.maxFileBytes)
         let current = data.flatMap { try? openPublishedSummaries($0) }
         guard !isReadOnly else { return false }
-        let (entries, _) = try publishedSummaryEntries(reuse: current ?? [:], cache: cache)
+        let (entries, _) = try publishedSummaryEntries(reuse: current ?? [:], cache: cache, ownListing: ownListing)
         // Summarising may have just read newer content (format.md §7.3).
         guard !isReadOnly else { return false }
         if let current, current == entries { return false }
