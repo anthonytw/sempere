@@ -76,7 +76,7 @@ struct VoiceNoteStatus: Codable, Equatable, Sendable {
     var title: String {
         switch phase {
         case .ready: return String(localized: "Voice Note")
-        case .recording: return String(localized: "Stop Recording")
+        case .recording: return String(localized: "Stop Voice Note")
         case .saving: return String(localized: "Saving Voice Note")
         case .notSetUp: return String(localized: "Set Up Voice Notes")
         case .liveActivitiesOff: return String(localized: "Live Activities Off")

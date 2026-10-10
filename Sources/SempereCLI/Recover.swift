@@ -48,7 +48,7 @@ struct RecoverCommand: ParsableCommand {
             ?? Env.vars["SEMPERE_VAULT"].map { URL(fileURLWithPath: $0) }
         if ids.isEmpty {
             guard let vaultURL else { throw CLIError.cannotDecrypt("no key: pass --identity FILE") }
-            ids = [try access.identityFromKeyFiles(of: try Vault.open(at: vaultURL))]
+            ids = try access.identitiesFromKeyFiles(of: try Vault.open(at: vaultURL))
         }
 
         var vault: Vault?

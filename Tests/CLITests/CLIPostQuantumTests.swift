@@ -2,7 +2,7 @@ import Age
 import CLITestSupport
 import Foundation
 import FuzzSupport
-import Sempere
+@testable import Sempere
 import XCTest
 
 /// Post-quantum keys through the CLI: key generation, the refusal of
@@ -221,6 +221,29 @@ final class CLIPostQuantumTests: CLITestCase {
         XCTAssertEqual(try stanzaTypes(other), [["X25519"]])
     }
 
+    /// A passphrase that opens several stored keys unlocks with all of them,
+    /// as the app does (`Vault.identitiesFromKeyFiles`): an interrupted
+    /// `add` of a post-quantum key to a legacy vault needs the classic key for
+    /// the files not yet rewrapped, whichever key file sorts first.
+    func testPassphraseUnlocksWithEveryStoredKeyItOpens() throws {
+        let path = try copyLegacyVault()
+        let pq = try NativeIdentity.generate(.postQuantum)
+        var vault = try Vault.open(at: URL(fileURLWithPath: path), identities: [try legacyIdentity()])
+        try vault.writeIdentityFile(pq, passphrase: Self.passphrase, workFactor: 15)
+        XCTAssertThrowsError(try vault.addRecipient(pq.recipient, label: "pq", added: Date(), stopAfter: 1)) {
+            XCTAssertEqual($0 as? VaultError, .interrupted)
+        }
+        let opened = try vault.identitiesFromKeyFiles(passphrase: Self.passphrase)
+        XCTAssertEqual(opened.map(\.recipient), [pq.recipient, try legacyIdentity().recipient], "post-quantum first")
+        XCTAssertThrowsError(try vault.identitiesFromKeyFiles(passphrase: "wrong")) {
+            XCTAssertEqual($0 as? VaultError, .wrongPassphrase)
+        }
+
+        let r = try cli(["vault", "rewrap-resume", "--vault", path], env: ["SEMPERE_PASSPHRASE": Self.passphrase])
+        XCTAssertEqual(r.status, 0, r.out + r.err)
+        XCTAssertEqual(try stanzaTypes(path), [["X25519", "mlkem768x25519"]])
+    }
+
     /// Legacy vaults are migrate-only (format.md §3.3.2): every command that
     /// touches one exits 5 with "migrate first: sempere vault recipients
     /// replace OLD NEW", before any passphrase is asked for (none is set
@@ -288,7 +311,12 @@ final class CLIPostQuantumTests: CLITestCase {
         XCTAssertEqual(try cli(["vault", "recipients", "add", pq, "--vault", vault, "--identity", key]).status, 0)
         XCTAssertEqual(try cli(["notes", "list", "--vault", vault, "--identity", path("pq.key")]).status, 5,
                        "still legacy while a classic key is listed")
-        let removed = try cli(["vault", "recipients", "remove", old, "--vault", vault, "--identity", key])
+        // Not with the key being removed (as in the app), unless forced.
+        let own = try cli(["vault", "recipients", "remove", old, "--vault", vault, "--identity", key])
+        XCTAssertEqual(own.status, 2, own.err)
+        XCTAssertEqual(own.err, "sempere: that is the key this vault was unlocked with: unlock with another key to "
+                       + "remove it (or pass --force)\n")
+        let removed = try cli(["vault", "recipients", "remove", old, "--force", "--vault", vault, "--identity", key])
         XCTAssertEqual(removed.status, 0, removed.err)
         let list = try cli(["notes", "list", "--vault", vault, "--identity", path("pq.key")])
         XCTAssertEqual(list.status, 0, list.err)

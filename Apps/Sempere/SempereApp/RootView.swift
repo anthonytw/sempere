@@ -323,6 +323,7 @@ struct RootView: View {
         WindowCommands.fill(&context, model: model, exportIDs: exportIDs)
         context.paletteCompact = paletteCompact
         context.pageStripVisible = pageStripVisible
+        context.noteListHidden = ColumnLayout.visibility(from: storedColumns) == .detailOnly
         return CommandRouter(context: context, recents: library.recents.map { RecentItem(id: $0.id, name: $0.name) },
                              paletteVisible: paletteVisible, exportIDs: exportIDs, windowID: ui.id,
                              perform: { command in perform(command, editor: shown, exportIDs: exportIDs) },

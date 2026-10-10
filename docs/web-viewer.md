@@ -439,7 +439,8 @@ the file to its keyed name), zero padding, and the SHA-256 of the content.
 Content is never handed out before that. Limits: images 64 MiB, PDFs 256 MiB,
 transcripts 64 MiB, audio 256 MiB (the format allows 1 GiB, §8.4, but a
 browser holds the whole verified file in memory; 256 MiB is over 8 hours at
-the app's default 64 kbit/s), video clips 512 MiB (a longer clip shows its
+the app's default 64 kbit/s; a longer recording says to export it with the
+CLI), video clips 512 MiB (a longer clip shows its
 poster and says to extract it with the CLI), and at most 1 MiB of padding beyond
 what a writer adds. Each blob is read once per open note however many items
 use it.

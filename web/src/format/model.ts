@@ -539,7 +539,9 @@ export function decodeState(v: unknown, path: string, budget: Budget, lenient?: 
   const s: NoteState = {
     deleted: reqWith(o, "deleted", path, bool),
     meta: reqWith(o, "meta", path, decodeMeta),
-    pages: reqWith(o, "pages", path, (a, p) => elements(a, p, lenient, (e, q) => decodePage(e, q, budget, lenient))),
+    // The key is required, but null reads as no pages (Swift: contains, then decodeIfPresent).
+    pages: req(o, "pages", path) === null ? []
+      : reqWith(o, "pages", path, (a, p) => elements(a, p, lenient, (e, q) => decodePage(e, q, budget, lenient))),
     recordings: optWith(o, "recordings", path,
       (a, p) => elements(a, p, lenient, (e, q) => decodeRecording(e, q, budget))) ?? [],
   };

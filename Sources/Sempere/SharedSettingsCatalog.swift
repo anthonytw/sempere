@@ -70,13 +70,17 @@ public struct SharedSettingSpec: Sendable {
                 return .number(d)
             }
         case .titlePattern:
-            if case .string(let s) = value, s.utf8.count <= DefaultTitle.maxFormatLength,
+            if case .string(let s) = value, s.count <= DefaultTitle.maxFormatLength,
                !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                DefaultTitle.check(s, locale: Locale(identifier: "en_US_POSIX"), timeZone: TimeZone(identifier: "UTC") ?? .current) == nil {
                 return value
             }
         case .notebook:
-            if case .string(let s) = value, s.utf8.count <= 1024, let c = NotebookPath.canonical(s) { return .string(c) }
+            // The capture bound, so a capture from this default is never cut.
+            if case .string(let s) = value, s.unicodeScalars.count <= CaptureAdoption.maxNameScalars,
+               s.count <= CaptureAdoption.maxNameLength, let c = NotebookPath.canonical(s) {
+                return .string(c)
+            }
         case .paper:
             if case .object = value, let paper = try? value.decode(Paper.self),
                let v = try? JSONValue(encoding: paper.validated()) {
@@ -306,7 +310,7 @@ public enum SharedSettingsSchema {
         case .choice(let names): o = ["enum": .array(names.map { .string($0) })]
         case .integer(let values): o = ["enum": .array(values.map { .number(Double($0)) })]
         case .titlePattern: o = ["type": .string("string"), "minLength": .number(1), "maxLength": .number(Double(DefaultTitle.maxFormatLength))]
-        case .notebook: o = ["type": .string("string"), "minLength": .number(1), "maxLength": .number(1024)]
+        case .notebook: o = ["type": .string("string"), "minLength": .number(1), "maxLength": .number(Double(CaptureAdoption.maxNameLength))]
         case .paper:
             o = ["type": .string("object"), "required": .array([.string("kind")]),
                  "properties": .object(["kind": .object(["type": .string("string")])])]

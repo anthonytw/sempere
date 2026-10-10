@@ -28,7 +28,7 @@ enum ImportOptionText {
     static func needsAttachments(_ id: String) -> Bool { id == "keepImageMetadata" }
 
     static let attachmentsFooter = String(
-        localized: "Attachments are PDF pages, images, typed text and recordings; off imports the ink, any recognised handwriting and the note's details only. Camera and location data in photos is removed unless you keep it. PDF page text makes the pages searchable.",
+        localized: "Attachments are PDF pages, images, typed text and recordings; off imports the ink, any recognized handwriting and the note's details only. Camera and location data in photos is removed unless you keep it. PDF page text makes the pages searchable.",
         comment: "Footer of the import options")
 }
 
@@ -65,7 +65,7 @@ struct ImportOptionsSheet: View {
                         Section {
                             Toggle("Read Handwriting That \(importer.displayName) Did Not Index", isOn: $options.recognizeMissing)
                         } footer: {
-                            Text("Reads the handwriting of pages the source app never recognised, on this device, right after the import.")
+                            Text("Reads the handwriting of pages the source app never recognized, on this device, right after the import.")
                         }
                     }
                 }

@@ -30,9 +30,12 @@ public enum SVGWriter {
                           images: ImageStore(options: options), assets: &assets, report: &report)
     }
 
+    /// `idPrefix` goes in front of every id the page defines that is not
+    /// `paper` or `strokes`, and of every reference to one, including font
+    /// family names; empty for a standalone SVG.
     static func render(page: Page, meta: NoteMeta, options: RenderOptions, pageNumber: Int,
                        backgrounds: PDFBackgrounds, images: ImageStore, assets: inout SVGAssets,
-                       report: inout RenderReport) throws -> String {
+                       report: inout RenderReport, idPrefix: String = "") throws -> String {
         let prepared = try PreparedPage(page: page, meta: meta, options: options, pageNumber: pageNumber)
         for w in prepared.warnings { report.warn(w) }
         let draws = RasterItems.resolve(prepared.items, backgrounds: backgrounds, images: images, shaper: options.shaper,
@@ -46,8 +49,8 @@ public enum SVGWriter {
 
         var s = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
         var items = try itemsGroup(prepared, draws: draws, options: options, images: images, assets: &assets,
-                                   report: &report, under: underCommands)
-        if prepared.items.isEmpty, !underCommands.isEmpty { items = underGroup(underCommands) }
+                                   report: &report, under: underCommands, idPrefix: idPrefix)
+        if prepared.items.isEmpty, !underCommands.isEmpty { items = underGroup(underCommands, idPrefix: idPrefix) }
         s += "<svg xmlns=\"http://www.w3.org/2000/svg\" "
         if items.contains("<use xlink:href") { s += "xmlns:xlink=\"http://www.w3.org/1999/xlink\" " }
         s += "width=\"\(fmt(width))pt\" height=\"\(fmt(height))pt\" "
@@ -64,8 +67,8 @@ public enum SVGWriter {
     }
 
     /// Strokes drawn below the content items (format.md §8.2.3).
-    static func underGroup(_ commands: [DrawCommand]) -> String {
-        "<g id=\"strokes-behind\">\n" + commands.map { element($0) + "\n" }.joined() + "</g>\n"
+    static func underGroup(_ commands: [DrawCommand], idPrefix: String = "") -> String {
+        "<g id=\"\(idPrefix)strokes-behind\">\n" + commands.map { element($0) + "\n" }.joined() + "</g>\n"
     }
 
     /// `<g id="items">`, between paper and strokes: a PDF page as a PNG from
@@ -74,22 +77,22 @@ public enum SVGWriter {
     /// anything else as a placeholder. Empty when the page has no items.
     static func itemsGroup(_ prepared: PreparedPage, draws: [UUID: RasterItems.Draw], options: RenderOptions,
                            images: ImageStore, assets: inout SVGAssets, report: inout RenderReport,
-                           under: [DrawCommand] = []) throws -> String {
+                           under: [DrawCommand] = [], idPrefix: String = "") throws -> String {
         guard !prepared.items.isEmpty else { return "" }
         let underAt = PreparedPage.underIndex(prepared.items)
         var defs = ""
         var body = ""
         var ids: [String: String] = [:]   // image content hash → `<image>` id on this page
-        var fonts = SVGFontSet()
+        var fonts = SVGFontSet(prefix: idPrefix)
         for (i, it) in prepared.items.enumerated() {
-            if i == underAt, !under.isEmpty { body += underGroup(under) }
+            if i == underAt, !under.isEmpty { body += underGroup(under, idPrefix: idPrefix) }
             if it.fillsBackground, options.paper { body += element(it.backgroundFill(prepared.drawnPaper)) + "\n" }
             for c in it.underlay { body += element(c) + "\n" }
             if case .image(let placed)? = draws[it.item.id] {
                 let id: Result<(String, PlacedImage), PlaceholderReason> = Result.success(placed).flatMap { p in
                     if let known = ids[p.ref.sha256] { return .success((known, p)) }
                     return assets.href(p.ref, p.image, store: images, keepMetadata: options.keepImageMetadata).map { href in
-                        let newID = "img-\(ids.count)"
+                        let newID = "\(idPrefix)img-\(ids.count)"
                         ids[p.ref.sha256] = newID
                         defs += "<image id=\"\(newID)\" width=\"\(p.image.width)\" height=\"\(p.image.height)\" "
                         defs += "preserveAspectRatio=\"none\" "
@@ -102,8 +105,8 @@ public enum SVGWriter {
                 case .success(let (imageID, p)):
                     let m = p.transform
                     let points = it.corners.map { "\(fmt($0.x)),\(fmt($0.y))" }.joined(separator: " ")
-                    defs += "<clipPath id=\"clip-\(i)\"><polygon points=\"\(points)\"/></clipPath>\n"
-                    body += "<g clip-path=\"url(#clip-\(i))\"><use xlink:href=\"#\(imageID)\" "
+                    defs += "<clipPath id=\"\(idPrefix)clip-\(i)\"><polygon points=\"\(points)\"/></clipPath>\n"
+                    body += "<g clip-path=\"url(#\(idPrefix)clip-\(i))\"><use xlink:href=\"#\(imageID)\" "
                     body += "transform=\"matrix(\([m.a, m.b, m.c, m.d, m.tx, m.ty].map(coef).joined(separator: " ")))\"/></g>\n"
                 case .failure(let r):
                     report.placeholder(it, r)
@@ -122,8 +125,8 @@ public enum SVGWriter {
                 let png = try PNGEncoder.encode(width: r.image.width, height: r.image.height, rgba: r.image.pixels)
                 let m = r.placement.after(Affine(a: r.width, d: r.height))   // unit square (y down) → page
                 let clip = it.corners.map { "\(fmt($0.x)),\(fmt($0.y))" }.joined(separator: " ")
-                body += "<clipPath id=\"item\(i)\"><polygon points=\"\(clip)\"/></clipPath>\n"
-                body += "<g clip-path=\"url(#item\(i))\"><image width=\"1\" height=\"1\" preserveAspectRatio=\"none\" "
+                body += "<clipPath id=\"\(idPrefix)item\(i)\"><polygon points=\"\(clip)\"/></clipPath>\n"
+                body += "<g clip-path=\"url(#\(idPrefix)item\(i))\"><image width=\"1\" height=\"1\" preserveAspectRatio=\"none\" "
                 body += "transform=\"matrix(\([m.a, m.b, m.c, m.d, m.tx, m.ty].map(fmt6).joined(separator: " ")))\" "
                 body += "xmlns:xlink=\"http://www.w3.org/1999/xlink\" xlink:href=\"data:image/png;base64,\(png.base64EncodedString())\"/></g>\n"
             default:
@@ -132,9 +135,9 @@ public enum SVGWriter {
             for c in it.overlay { body += element(c) + "\n" }
         }
         if !fonts.subsets.isEmpty { defs += "<style>\n" + (try fonts.style()) + "</style>\n" }
-        var g = "<g id=\"items\">\n"
+        var g = "<g id=\"\(idPrefix)items\">\n"
         if !defs.isEmpty { g += "<defs>\n" + defs + "</defs>\n" }
-        if underAt == prepared.items.count, !under.isEmpty { body += underGroup(under) }
+        if underAt == prepared.items.count, !under.isEmpty { body += underGroup(under, idPrefix: idPrefix) }
         return g + body + "</g>\n"
     }
 
@@ -158,14 +161,20 @@ public enum SVGWriter {
     /// `assetPrefix`, link to `assetPrefix + name` and return the files in
     /// `assets` (named by a hash of their bytes, so one file per image
     /// however many pages use it).
+    ///
+    /// With `pagePrefixedIDs`, each page's ids (images, clips, item groups,
+    /// font families) start with `p<page number>-`, so the pages can share
+    /// one document (`HTMLExport.notePage`); `paper` and `strokes` stay as
+    /// they are.
     public static func export(note: NoteState, options: RenderOptions = RenderOptions(), assetPrefix: String? = nil,
+                              pagePrefixedIDs: Bool = false,
                               report: inout RenderReport) throws -> (pages: [String], assets: [SVGAsset]) {
         let backgrounds = PDFBackgrounds(blobs: options.blobs, rasterizer: options.pdfRasterizer)
         let images = ImageStore(options: options, recordings: note.recordings)
         var assets = SVGAssets(prefix: assetPrefix)
         let pages = try note.pages.enumerated().map { i, page in
             try render(page: page, meta: note.meta, options: options, pageNumber: i + 1, backgrounds: backgrounds,
-                       images: images, assets: &assets, report: &report)
+                       images: images, assets: &assets, report: &report, idPrefix: pagePrefixedIDs ? "p\(i + 1)-" : "")
         }
         return (pages, assets.files)
     }

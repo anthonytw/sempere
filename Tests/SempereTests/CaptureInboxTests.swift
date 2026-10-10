@@ -423,6 +423,17 @@ final class CaptureInboxTests: VaultTestCase {
         XCTAssertEqual(vault.adoptCapture(id, deviceState: deviceState(), app: "t").error, CaptureError.badTag.description)
     }
 
+    /// Inbox files follow FileIO's write contract: written once, under a
+    /// temporary name every listing ignores, never over an existing file.
+    func testStoreWritesOnceThroughFileIO() throws {
+        let inbox = tmp.appendingPathComponent("inbox")
+        let name = CaptureFile.name(UUID(), .capture)
+        try CaptureWriter.store(SealedCapture(name: name, data: Data("one".utf8)), in: inbox)
+        try CaptureWriter.store(SealedCapture(name: name, data: Data("two".utf8)), in: inbox)
+        XCTAssertEqual(try Data(contentsOf: inbox.appendingPathComponent(name)), Data("one".utf8))
+        XCTAssertEqual(try FileIO.entries(inbox), [name], "no temporary file is left")
+    }
+
     func testFileNamesAndFraming() throws {
         let id = UUID()
         XCTAssertEqual(CaptureFile.parse(name: CaptureFile.name(id, .capture))?.id, id)

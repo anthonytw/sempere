@@ -11,7 +11,7 @@
 | 0.5 ✅ | CI: Linux (swift:6.4-noble) + macOS; static Linux CLI artifact; cloud setup script | `.github`, `scripts` | green on PR, binary downloadable |
 | 0.6 ✅ | Notability importer: `.note` packages (and Notability's Google Drive backup zip) to notes, including Notability's recognised handwriting as page recognition (`docs/import-notability.md`); CLI `import notability` (done, `docs/cli.md`) | `Sources/SempereNotability`, `Sources/SempereCLI` | synthetic `.note` fixture tested in CI; whole personal backup imports; rendered output checked against Notability thumbnails |
 | 0.7 ✅ | CLI `search` over page recognition text (done, `docs/cli.md`; matching note title, notebook and tags is not implemented) | `Sources/SempereCLI` | end-to-end test: import fixture → search finds a recognised word |
-| 0.8 ✅ | Interop fixture vault committed under `Tests/Fixtures` with a throwaway key | tests | every target can load it |
+| 0.8 ✅ | Interop fixture vault committed under `Tests/SempereTests/Fixtures` with a throwaway key | tests | every target can load it |
 | 0.9 ✅ | CLI parity with the app (CLI-first rule, `CLAUDE.md`): `notes new/rename/tag/move/paper/delete/undelete`, `notebooks`, `tags`, `pages list/add` (done, `docs/cli.md`); page add/move/delete/duplicate and `notes layout` (done in #52); `recognize`, `import notability --recognize missing`, `notes search` (#78) | `Sources/SempereCLI`, `Sources/Sempere` | each app edit has a command with `--json` and CLI tests |
 | 0.10 ✅ | CLI for attachments (done, `docs/cli.md`): `attach image\|pdf\|text\|recording\|transcript`, `import pdf`, `search` over typed text and transcripts | `Sources/SempereCLI`, `Sources/Sempere` | end-to-end CLI tests in `Tests/CLITests/CLIAttachTests.swift` |
 | 0.11 🚧 | Gap audit, search and import (#134, `docs/research/gap-audit-2026-10.md`): GA-06 transcripts in the app's search (`TranscriptSearch`), GA-07 highlights inside text boxes (`TextMatchBoxes`, `search --show-boxes`), GA-08 the app's Notability import options and report, GA-09 Notability transcripts as blobs, GA-10 GIF and TIFF converted to PNG, GA-27 feasibility (`docs/research/ntb-undecoded-kinds.md`) | `Sources/Sempere`, `Sources/SempereRender`, `Sources/SempereImport`, `Apps/` | CLI and core tests green; the app job on CI |
@@ -85,10 +85,10 @@ Done from this list:
   `DESIGN.md` "Recovery"): `sempere keys paper` prints the key (or the
   passphrase-wrapped key file) as a QR code and checked text with stock-tool
   recovery steps; `sempere backup` (incremental folder or tar), `backup
-  verify`, `restore`. The app's Backups (✅ #110, not yet tried on a device; Settings → Backups): Back
+  verify`, `restore`. The app's Backups (✅ #110, not yet tried on a device; Settings ▸ Backups): Back
   Up Now, Verify Backup, reminder, Restore from Backup into a new vault, on
   the same core (`backup status` and `restore --dry-run` added for it); its
-  footer points to Settings → Device Keys → Save Key… (the kit, ✅ #99).
+  footer points to Settings ▸ Device Keys ▸ Save Key… (the kit, ✅ #99).
 
 - **History and restore, core + CLI** (`Sources/Sempere/History.swift`,
   `format.md` §5.7, `docs/cli.md`): restore points per revision, the note as of

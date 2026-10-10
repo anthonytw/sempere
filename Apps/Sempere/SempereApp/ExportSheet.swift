@@ -184,13 +184,13 @@ struct ExportSheet: View {
         case .markdown:
             if many {
                 return options.markdownPDF
-                    ? String(localized: "A folder tree like your notebooks, one Markdown file and PDF per note, with the recognised text.")
-                    : String(localized: "A folder tree like your notebooks, one Markdown file per note, with the recognised text.")
+                    ? String(localized: "A folder tree like your notebooks, one Markdown file and PDF per note, with the recognized text.")
+                    : String(localized: "A folder tree like your notebooks, one Markdown file per note, with the recognized text.")
             }
-            if options.markdownPDF { return String(localized: "A folder with a Markdown file of the recognised text and PDF.") }
+            if options.markdownPDF { return String(localized: "A folder with a Markdown file of the recognized text and PDF.") }
             return options.markdownImages != .none
-                ? String(localized: "A folder with a Markdown file of the recognised text.")
-                : String(localized: "A Markdown file with the recognised handwriting, page by page.")
+                ? String(localized: "A folder with a Markdown file of the recognized text.")
+                : String(localized: "A Markdown file with the recognized handwriting, page by page.")
         case .html:
             return many ? String(localized: "A folder with one self-contained HTML file per note and an index.")
                 : String(localized: "One self-contained HTML file.")
@@ -297,6 +297,7 @@ struct ExportHandOffButtons: View {
     @Binding var state: ExportHandOffState
     let items: [URL]
 
+    // help-lint: titled (placed in a Form section, where the titles show)
     var body: some View {
         Button("Share…", systemImage: "square.and.arrow.up") { deliver(save: false) }
             .background(PresentationAnchor(box: state.anchor))

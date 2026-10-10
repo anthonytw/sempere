@@ -267,6 +267,9 @@ struct MenuParityTests {
         #expect(MenuCommand.togglePageStrip.title(in: c) == MenuCommand.togglePageStrip.title)
         c.pageStripVisible = true
         #expect(MenuCommand.togglePageStrip.title(in: c) != MenuCommand.togglePageStrip.title)
+        #expect(MenuCommand.toggleNoteList.title(in: c) == String(localized: "Hide Note List"))
+        c.noteListHidden = true
+        #expect(MenuCommand.toggleNoteList.title(in: c) == String(localized: "Show Note List"))
         #expect(MenuCommand.toggleCompactPalette.title(in: c) == MenuCommand.toggleCompactPalette.title)
         c.paletteCompact = true
         #expect(MenuCommand.toggleCompactPalette.title(in: c) != MenuCommand.toggleCompactPalette.title)

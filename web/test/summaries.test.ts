@@ -84,6 +84,10 @@ describe("published summaries", () => {
       unknown: { kept: "ignored" },
     };
     expect(decodeEntry(good)?.pageTexts).toEqual([{ number: 1, text: "x" }]);
+    // null reads as absent (Swift's `notebook: String?`).
+    const nullNotebook = decodeEntry({ ...good, notebook: null });
+    expect(nullNotebook).toBeDefined();
+    expect(nullNotebook && "notebook" in nullNotebook).toBe(false);
     for (const bad of [
       { ...good, revisions: [] }, { ...good, revisions: ["../x"] },
       { ...good, revisions: ["17596320000000001-a1b2c3d4-1.delta.age", "17596320000000000-a1b2c3d4-1.delta.age"] },

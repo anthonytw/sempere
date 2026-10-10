@@ -290,13 +290,13 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
         let sizes = UIMenu(title: String(localized: "Size", comment: "Text style bar: font size menu"), children: TextBoxPlacement.sizes.map { s in
             UIAction(title: "\(Int(s)) pt") { [weak self] _ in self?.apply(.size(s)) } // l10n:ignore (number and unit)
         })
-        let colour = UIBarButtonItem(title: String(localized: "Colour", comment: "Text style bar: text colour menu"), image: TextColourPalette.swatchImage(currentColour, size: 22),
+        let colour = UIBarButtonItem(title: String(localized: "Color", comment: "Text style bar: text color menu"), image: TextColourPalette.swatchImage(currentColour, size: 22),
                                      primaryAction: nil, menu: nil)
-        colour.primaryAction = UIAction(title: String(localized: "Colour", comment: "Text style bar: text colour menu")) { [weak self, weak colour] _ in
+        colour.primaryAction = UIAction(title: String(localized: "Color", comment: "Text style bar: text color menu")) { [weak self, weak colour] _ in
             guard let self, let colour else { return }
             self.showColours(from: colour)
         }
-        colour.accessibilityLabel = String(localized: "Colour", comment: "Text style bar: text colour menu")
+        colour.accessibilityLabel = String(localized: "Color", comment: "Text style bar: text color menu")
         colourItem = colour
         let fontChoices: [(String, TextContent.Font)] = [
             (String(localized: "Sans Serif", comment: "Typeface"), .sans),
@@ -506,13 +506,13 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
         let sizes = UIMenu(title: String(localized: "Size", comment: "Text style bar: font size menu"), children: TextBoxPlacement.sizes.map { s in
             UIAction(title: "\(Int(s)) pt") { [weak self] _ in self?.restyleMarkdown { $0.size = s } } // l10n:ignore (number and unit)
         })
-        let colour = UIBarButtonItem(title: String(localized: "Colour", comment: "Text style bar: text colour menu"),
+        let colour = UIBarButtonItem(title: String(localized: "Color", comment: "Text style bar: text color menu"),
                                      image: TextColourPalette.swatchImage(currentColour, size: 22), primaryAction: nil, menu: nil)
-        colour.primaryAction = UIAction(title: String(localized: "Colour", comment: "Text style bar: text colour menu")) { [weak self, weak colour] _ in
+        colour.primaryAction = UIAction(title: String(localized: "Color", comment: "Text style bar: text color menu")) { [weak self, weak colour] _ in
             guard let self, let colour else { return }
             self.showColours(from: colour)
         }
-        colour.accessibilityLabel = String(localized: "Colour", comment: "Text style bar: text colour menu")
+        colour.accessibilityLabel = String(localized: "Color", comment: "Text style bar: text color menu")
         colourItem = colour
         let fontChoices: [(String, TextContent.Font)] = [
             (String(localized: "Sans Serif", comment: "Typeface"), .sans),
@@ -589,11 +589,11 @@ enum TextColourPalette {
     /// The pen palette's colours, as drawn on (light) paper, with their names (for VoiceOver).
     @MainActor static var standard: [(name: String, color: Sempere.Color)] {
         let light = UITraitCollection(userInterfaceStyle: .light)
-        return [(String(localized: "Black", comment: "Text colour"), UIColor.black),
-                (String(localized: "Blue", comment: "Text colour"), .systemBlue),
-                (String(localized: "Green", comment: "Text colour"), .systemGreen),
-                (String(localized: "Yellow", comment: "Text colour"), .systemYellow),
-                (String(localized: "Red", comment: "Text colour"), .systemRed)].map { ($0.0, opaque(Sempere.Color($0.1.resolvedColor(with: light)))) }
+        return [(String(localized: "Black", comment: "Text color"), UIColor.black),
+                (String(localized: "Blue", comment: "Text color"), .systemBlue),
+                (String(localized: "Green", comment: "Text color"), .systemGreen),
+                (String(localized: "Yellow", comment: "Text color"), .systemYellow),
+                (String(localized: "Red", comment: "Text color"), .systemRed)].map { ($0.0, opaque(Sempere.Color($0.1.resolvedColor(with: light)))) }
     }
 
     /// The swatches: the pen's colour (opaque) first unless the palette has
@@ -611,11 +611,11 @@ enum TextColourPalette {
         swatches(pen: pen, standard: standard.map(\.color))
     }
 
-    /// The name VoiceOver reads for a swatch: the palette's, else "Pen Colour"
+    /// The name VoiceOver reads for a swatch: the palette's, else "Pen Color"
     /// for the pen's, else the hex value.
     static func name(of colour: Sempere.Color, standard: [(name: String, color: Sempere.Color)], pen: Sempere.Color?) -> String {
         if let named = standard.first(where: { $0.color == opaque(colour) }) { return named.name }
-        if let pen, opaque(pen) == opaque(colour) { return String(localized: "Pen Colour", comment: "VoiceOver: the swatch of the pen's current colour") }
+        if let pen, opaque(pen) == opaque(colour) { return String(localized: "Pen Color", comment: "VoiceOver: the swatch of the pen's current color") }
         return String(format: "#%02X%02X%02X", colour.r, colour.g, colour.b)
     }
 
@@ -683,7 +683,7 @@ final class ColourSwatchesController: UIViewController, UIPopoverPresentationCon
         }
         let more = UIButton(type: .system)
         more.setImage(UIImage(systemName: "paintpalette"), for: .normal)
-        more.accessibilityLabel = String(localized: "More Colours", comment: "VoiceOver: opens the system colour picker")
+        more.accessibilityLabel = String(localized: "More Colors", comment: "VoiceOver: opens the system color picker")
         more.addAction(UIAction { [weak self] _ in self?.showPicker() }, for: .primaryActionTriggered)
         more.widthAnchor.constraint(equalToConstant: Self.swatchSize).isActive = true
         more.heightAnchor.constraint(equalToConstant: Self.swatchSize).isActive = true

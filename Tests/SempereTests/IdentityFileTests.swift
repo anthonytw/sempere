@@ -41,6 +41,22 @@ final class IdentityFileTests: VaultTestCase {
         }
     }
 
+    /// No key file is written under an empty passphrase (as the app
+    /// refuses one); one written earlier by another writer still opens.
+    func testEmptyPassphraseIsNotWrittenButStillRead() throws {
+        let id = X25519Identity()
+        let vault = try makeLegacyVault(id)
+        XCTAssertThrowsError(try vault.writeIdentityFile(id, passphrase: "", workFactor: 15)) {
+            XCTAssertEqual($0 as? VaultError, .emptyPassphrase)
+        }
+        XCTAssertEqual(try vault.identityFiles(), [], "nothing written")
+        let wrapped = try AgeFile.encrypt(Data(IdentityFile.render(id, created: Date()).utf8),
+                                          to: [ScryptRecipient(passphrase: "", workFactor: 15)])
+        try FileManager.default.createDirectory(at: vault.keysURL, withIntermediateDirectories: true)
+        try wrapped.write(to: vault.keysURL.appendingPathComponent(IdentityFile.fileName(for: .x25519(id.recipient))))
+        XCTAssertEqual(try vault.readIdentityFile(recipient: id.recipient, passphrase: "").string, id.string)
+    }
+
     func testWriterWorkFactorRange() throws {
         let id = X25519Identity()
         let vault = try makeLegacyVault(id)

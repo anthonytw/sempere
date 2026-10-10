@@ -181,6 +181,37 @@ struct BackupAppTests {
         #expect(record.lastBackup == (try Backup.status(at: dest)).updated)
     }
 
+    /// An existing backup's last run counts only when it completed: a run
+    /// cut short or with file errors is no backup (`BackupStatus.completed`,
+    /// the base of `sempere backup status --max-age`).
+    @Test func choosingABackupPicksUpItsLastCompleteRun() async throws {
+        let scratch = try Scratch()
+        defer { scratch.cleanUp() }
+        let (model, _, url, key) = try await model(scratch)
+        let vault = try #require(model.vault)
+        let dest = try scratch.folder("Backup")
+        struct Stop: Error {}
+        let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+        #expect(throws: Stop.self) {
+            try Backup.run(source: vault, to: dest, options: BackupOptions(now: t0, afterEachFile: { _ in throw Stop() }))
+        }
+        try model.chooseBackupFolder(dest)
+        #expect(model.backupRecord()?.lastBackup == nil, "an interrupted first run is no backup")
+
+        _ = try Backup.run(source: vault, to: dest, options: BackupOptions(now: t0.addingTimeInterval(60)))
+        // A new revision to copy, and a run cut short while copying it.
+        let note = try #require(model.notes.first?.id)
+        try TS.writeAsAnotherDevice([.setMeta(.title("Backed up later"))], to: note, vault: url, key: key)
+        #expect(throws: Stop.self) {
+            try Backup.run(source: vault, to: dest, options: BackupOptions(now: t0.addingTimeInterval(120),
+                                                                           afterEachFile: { _ in throw Stop() }))
+        }
+        #expect(try Backup.status(at: dest).updated == t0.addingTimeInterval(120))
+        model.forgetBackupFolder()
+        try model.chooseBackupFolder(dest)
+        #expect(model.backupRecord()?.lastBackup == t0.addingTimeInterval(60))
+    }
+
     @Test func aFolderThatIsGoneIsReportedByName() async throws {
         let scratch = try Scratch()
         defer { scratch.cleanUp() }

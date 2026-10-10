@@ -45,6 +45,8 @@ struct SettingsSyncAppTests {
             for spec in specs { wanted[spec.name] = try #require(spec.validated(Self.otherValue(spec))) }
             // Quality: HE-AAC offers no 24 kbit/s step above 64, so pick a rate both codecs offer.
             wanted["recording.bitRate"] = .number(32_000)
+            // Sample rate: HE-AAC offers 32 kHz and up, so pick a rate both codecs offer.
+            wanted["recording.sampleRate"] = .number(44_100)
             let leftover = SettingsSyncBridge.apply(wanted, defaults: scratch.defaults)
             #expect(leftover.isEmpty)
             let after = SettingsSyncBridge.values(for: type, defaults: scratch.defaults, extras: .init())

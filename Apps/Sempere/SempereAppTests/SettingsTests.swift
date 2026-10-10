@@ -55,6 +55,11 @@ struct SettingsTests {
         #expect(RecordingSettings(bitRate: Int.max).normalized().bitRate == 128_000)
         // HE-AAC does not offer the top rates.
         #expect(RecordingSettings(codec: .heAAC, bitRate: 128_000).normalized().bitRate == 64_000)
+        // HE-AAC does not offer sample rates below 32 kHz: 48 kHz, as it is recorded.
+        #expect(RecordingSettings.sampleRates(for: .heAAC) == [32_000, 44_100, 48_000])
+        #expect(RecordingSettings(codec: .heAAC, sampleRate: 16_000).normalized().sampleRate == 48_000)
+        #expect(RecordingSettings(codec: .heAAC, sampleRate: 22_050).normalized().sampleRate == 48_000)
+        #expect(RecordingSettings(codec: .aacLC, sampleRate: 16_000).normalized().sampleRate == 16_000)
         // Lossless has no rate: the default is kept for when the codec changes back.
         #expect(RecordingSettings(codec: .appleLossless, bitRate: 24_000).normalized().bitRate == 64_000)
     }

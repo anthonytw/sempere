@@ -97,7 +97,8 @@ export function newerSummary(n: NewerContent): string {
  * when not; throws a message for a malformed marker (§7.2).
  */
 export function revisionMarkersNewer(o: Record<string, unknown>): boolean {
-  const format = o.format, features = o.features;
+  // null reads as absent, as Swift's decodeIfPresent.
+  const format = o.format ?? undefined, features = o.features ?? undefined;
   if (format !== undefined && (typeof format !== "string" || majorOf(format) === undefined)) {
     throw new Error("bad format marker");
   }

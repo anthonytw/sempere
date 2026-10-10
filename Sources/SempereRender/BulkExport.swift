@@ -520,13 +520,14 @@ public final class BulkExportSession: @unchecked Sendable {
                                               keepMetadata: options.keepImageMetadata, report: &report)
                 written = r.files.map { folder + "/" + $0 }
             case .png:
-                let pages = try PNGWriter.render(note: state, options: render, png: PNGOptions(dpi: options.dpi), report: &report)
+                let pages = try PNGWriter.renderNamed(note: state, options: render, png: PNGOptions(dpi: options.dpi),
+                                                      report: &report)
                 let folder = job.path(.png)
                 try fm.createDirectory(at: url(folder), withIntermediateDirectories: true)
                 removeEarlier(folder)
-                for (i, data) in pages.enumerated() {
+                for (name, data) in pages {
                     try Task.checkCancellation()
-                    let rel = folder + String(format: "/p%03d.png", i + 1)
+                    let rel = folder + "/" + name + ".png"
                     try data.write(to: url(rel), options: .atomic)
                     written.append(rel)
                 }

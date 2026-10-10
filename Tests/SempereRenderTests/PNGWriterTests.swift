@@ -313,7 +313,7 @@ final class PNGWriterTests: XCTestCase {
         }
         XCTAssertThrowsError(try PNGWriter.render(note: note, png: PNGOptions(maxPixels: -5)))
         let msg = (RenderError.imageTooLarge(pixels: 2e9, limit: 4e7 > 0 ? 40_000_000 : 0) as LocalizedError).errorDescription
-        XCTAssertTrue(msg?.contains("limit") == true)
+        XCTAssertEqual(msg, "image of 2000000000 pixels exceeds the limit of 40000000", "no CLI option in the library")
     }
 
     func testCapAppliesToEveryChunkBeforeRendering() throws {
@@ -322,6 +322,19 @@ final class PNGWriterTests: XCTestCase {
                           meta: T.meta(size: PageSize(width: 200, height: 300, infinite: true)))
         XCTAssertThrowsError(try PNGWriter.render(note: note, options: RenderOptions(infiniteChunkHeight: 100),
                                                   png: PNGOptions(maxPixels: 100 * 2 * 200 * 2 - 1)))
+    }
+
+    /// Images are named by note page and chunk, as the Markdown tree names them.
+    func testImageNamesCountNotePagesAndChunks() throws {
+        let note = T.note(pages: [[T.stroke([T.pt(20, 20), T.pt(60, 250)])], [T.stroke([T.pt(20, 20), T.pt(60, 50)])]],
+                          meta: T.meta(size: PageSize(width: 200, height: 100, infinite: true, breakHeight: 100)))
+        var report = RenderReport()
+        let named = try PNGWriter.renderNamed(note: note, options: RenderOptions(infiniteChunkHeight: 100),
+                                              png: PNGOptions(scale: 0.5), report: &report)
+        XCTAssertEqual(named.map(\.name), ["p001", "p001-2", "p001-3", "p002"])
+        XCTAssertEqual(named.map(\.png), try PNGWriter.render(note: note, options: RenderOptions(infiniteChunkHeight: 100),
+                                                               png: PNGOptions(scale: 0.5)))
+        XCTAssertEqual(try PNGWriter.renderNamed(note: T.note(pages: []), report: &report).map(\.name), ["p001"])
     }
 
     func testInvalidScale() {

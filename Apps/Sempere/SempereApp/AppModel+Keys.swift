@@ -290,11 +290,10 @@ extension AppModel {
         return recipient
     }
 
-    /// A label: trimmed, one line, at most 80 characters, "Device" when empty.
+    /// A label: trimmed, one line, at most 80 characters, "Device" when empty
+    /// (`VaultManifest.Recipient.displayLabel`).
     static func cleanLabel(_ label: String) -> String {
-        let oneLine = label.split(whereSeparator: \.isNewline).joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return oneLine.isEmpty ? "Device" : String(oneLine.prefix(80))
+        VaultManifest.Recipient.displayLabel(label)
     }
 
     /// Runs one recipient change on a copy of the vault with every editor

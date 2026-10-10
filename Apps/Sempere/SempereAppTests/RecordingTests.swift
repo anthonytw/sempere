@@ -454,12 +454,12 @@ struct RecordingTests {
         #expect(RecordingPreference.format(d) == RecordingFormat(codec: .alac, bitRate: nil, sampleRate: 16_000, channels: 1))
         for codec in RecordingSettings.Codec.allCases {
             for rate in RecordingSettings.bitRates(for: codec) {
-                for sampleRate in RecordingSettings.sampleRates {
+                for sampleRate in RecordingSettings.sampleRates(for: codec) {
                     RecordingSettings(codec: codec, bitRate: rate, sampleRate: sampleRate).save(to: d)
                     let f = RecordingPreference.format(d)
                     #expect(f.codec.rawValue == codec.rawValue)
                     #expect(f.bitRate == rate, "\(codec) \(rate)")
-                    #expect(f.sampleRate == sampleRate || (codec == .heAAC && sampleRate < 32_000))
+                    #expect(f.sampleRate == sampleRate, "\(codec) \(sampleRate)")
                 }
             }
         }

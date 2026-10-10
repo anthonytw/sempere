@@ -5,9 +5,9 @@
 
 import { describe, expect, it } from "vitest";
 import { Budget } from "../src/format/attachments.ts";
-import { type NoteState, type Op, decodeOp, validLanguage } from "../src/format/model.ts";
+import { type NoteMeta, type NoteState, type Op, decodeOp, validLanguage } from "../src/format/model.ts";
 import { reconstruct } from "../src/format/reducer.ts";
-import { PreparedPage, elementSpec, pageSVG } from "../src/render/page.ts";
+import { PreparedPage, chunkHeight, defaultRenderOptions, elementSpec, pageSVG } from "../src/render/page.ts";
 import { pdfPageText, summarize } from "../src/vault/library.ts";
 import { LogBuilder, devA, devB, devC, op, p1, snapshotParts, stroke } from "./builders.ts";
 
@@ -125,5 +125,17 @@ describe("equations (§8.2.8)", () => {
     const summary = summarize({ id: "n", state: s, failures: [], hasAttachments: true } as unknown as Parameters<typeof summarize>[0]);
     expect(summary.pageTexts).toEqual([{ number: 1, text: "\\mu", spans: [{ start: 0, end: 3, isMath: true }] }]);
     expect(() => decodeOp({ op: "setItem", page: p1, itemId: id, field: "math", value: null }, "op", new Budget())).toThrow();
+  });
+});
+
+describe("pageless chunk height (format.md §5.4.3)", () => {
+  it("uses 792 for a breakHeight that is not positive, as PageComposer.chunkHeight", () => {
+    const meta = (breakHeight: number) =>
+      ({ pageSize: { width: 612, height: 100, infinite: true, breakHeight } }) as unknown as NoteMeta;
+    expect(chunkHeight(defaultRenderOptions, meta(0))).toBe(792);
+    expect(chunkHeight(defaultRenderOptions, meta(-5))).toBe(792);
+    expect(chunkHeight(defaultRenderOptions, meta(10))).toBe(72);
+    expect(chunkHeight(defaultRenderOptions, meta(500))).toBe(500);
+    expect(chunkHeight({ ...defaultRenderOptions, infiniteChunkHeight: 10 }, meta(0))).toBe(72);
   });
 });

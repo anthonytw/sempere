@@ -99,7 +99,7 @@ struct NoteCanvasView: View {
             if !Platform.isPhone {   // the stack's back button is the way to the list
                 ToolbarItem(placement: .topBarLeading) {
                     let full = ColumnLayout.visibility(from: storedColumns) == .detailOnly
-                    Button(LocalizedStringKey(full ? "Show Notes" : "Hide Notes"),
+                    Button(LocalizedStringKey(full ? "Show Note List" : "Hide Note List"),
                            systemImage: full ? "list.bullet" : "arrow.up.left.and.arrow.down.right") {
                         withAnimation { storedColumns = ColumnLayout.toggled(storedColumns) }
                     }
@@ -332,7 +332,7 @@ struct EditorView: View {
             ToolbarItem(placement: .secondaryAction) {
                 Button("Paper…", systemImage: "square.grid.3x3") { ui.choosingPaper = true }
                     .disabled(editor.currentPage == nil)
-                    .help("Choose the paper (ruling, colour) of this page or all pages")
+                    .help("Choose the paper (ruling, color) of this page or all pages")
             }
             ToolbarItem(placement: .secondaryAction) { favoriteButton }
             ToolbarItem(placement: .secondaryAction) { insertMenu }
@@ -534,7 +534,7 @@ struct EditorView: View {
                 ToolbarItem(placement: .secondaryAction) {
                     Button("Paper…", systemImage: "square.grid.3x3") { ui.choosingPaper = true }
                         .disabled(editor.currentPage == nil)
-                        .help("Choose the paper (ruling, colour) of this page or all pages")
+                        .help("Choose the paper (ruling, color) of this page or all pages")
                 }
                 ToolbarItem(placement: .secondaryAction) {
                     // Switching never deletes ink (format.md §5.4.3); it is one delta.
@@ -553,7 +553,7 @@ struct EditorView: View {
                     Menu {
                         Toggle("Compact Palette", systemImage: "rectangle.compress.vertical", isOn: $paletteCompact)
                     } label: {
-                        Label(LocalizedStringKey(paletteVisible ? "Hide Tools" : "Show Tools"),
+                        Label(LocalizedStringKey(paletteVisible ? "Hide Tool Palette" : "Show Tool Palette"),
                               systemImage: paletteVisible ? "pencil.tip.crop.circle.fill" : "pencil.tip.crop.circle")
                     } primaryAction: {
                         paletteVisible.toggle()

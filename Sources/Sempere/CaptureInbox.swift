@@ -540,19 +540,15 @@ public struct CaptureWriter: Sendable {
     }
 
     /// Writes `sealed` into the folder `inbox` (created if missing) under its
-    /// name, atomically, never over an existing file (inbox files are
-    /// written once).
+    /// name, atomically and durably (`FileIO`'s temporary name, `fsync`,
+    /// `placeNew`), never over an existing file (inbox files are written once).
     public static func store(_ sealed: SealedCapture, in inbox: URL) throws {
-        let fm = FileManager.default
-        try fm.createDirectory(at: inbox, withIntermediateDirectories: true)
+        try FileIO.createDirectory(inbox)
         let final = inbox.appendingPathComponent(sealed.name)
-        guard !fm.fileExists(atPath: final.path) else { return }
-        let tmp = inbox.appendingPathComponent(".\(sealed.name).\(UUID().uuidString.lowercased()).tmp")
-        try sealed.data.write(to: tmp)
-        do { try fm.moveItem(at: tmp, to: final) } catch {
-            try? fm.removeItem(at: tmp)
-            if !fm.fileExists(atPath: final.path) { throw error }
-        }
+        guard !FileIO.exists(final) else { return }
+        let tmp = FileIO.tempURL(in: inbox)
+        try FileIO.writeNewFile(tmp) { try $0(sealed.data) }
+        do { try FileIO.placeNew(tmp, at: final) } catch VaultError.alreadyExists {}
     }
 }
 

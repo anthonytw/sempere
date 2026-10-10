@@ -98,6 +98,15 @@ final class ShareExportTests: XCTestCase {
 
     // MARK: PNG
 
+    func testInfinitePagePNGsAreNamedByPageAndChunk() throws {
+        var n = note(1, title: "Long", pages: 2)
+        n.1.meta.pageSize = PageSize(width: 200, height: 100, infinite: true, breakHeight: 100)
+        n.1.pages[0].strokes = [T.stroke([T.pt(10, 10), T.pt(80, 250)])]
+        let r = try ShareExport.run([n], options: ShareOptions(format: .png, dpi: 36), into: try scratch(), vaultSource: "s")
+        XCTAssertEqual(names(r.items), ["Long-0d1c6a1e-p001-2.png", "Long-0d1c6a1e-p001-3.png", "Long-0d1c6a1e-p001.png",
+                                        "Long-0d1c6a1e-p002.png"])
+    }
+
     func testSingleNotePNGPagesAreFlatFiles() throws {
         let r = try ShareExport.run([note(1, title: "Two pages", pages: 2)], options: ShareOptions(format: .png, dpi: 36),
                                     into: try scratch(), vaultSource: "s")

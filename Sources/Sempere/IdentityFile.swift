@@ -115,12 +115,13 @@ extension Vault {
     /// encrypted to a single scrypt recipient (`age -d` with the passphrase
     /// reads it).
     ///
-    /// - Throws: `workFactorOutOfRange` outside 15...18; `alreadyExists`
-    ///   unless `replace`.
+    /// - Throws: `emptyPassphrase`; `workFactorOutOfRange` outside 15...18;
+    ///   `alreadyExists` unless `replace`.
     @discardableResult
     public func writeIdentityFile(_ identity: NativeIdentity, passphrase: String, workFactor: Int = 18,
                                   created: Date = Date(), replace: Bool = false) throws -> URL {
         try requireWritable()
+        guard !passphrase.isEmpty else { throw VaultError.emptyPassphrase }
         guard IdentityFile.writerWorkFactors.contains(workFactor) else {
             throw VaultError.workFactorOutOfRange(workFactor)
         }
@@ -164,6 +165,31 @@ extension Vault {
         let id = try IdentityFile.parse(String(decoding: plain, as: UTF8.self))
         guard id.recipient == recipient else { throw VaultError.identityMismatch(recipient.string) }
         return id
+    }
+
+    /// Every stored key that `passphrase` opens, post-quantum first: during a
+    /// migration the vault lists the classic and the post-quantum key, and
+    /// finishing it (`rewrapResume`) may need both (docs/post-quantum.md).
+    /// A key file the passphrase does not open is skipped; any other error
+    /// (a damaged file, a work factor above the cap) is thrown at once.
+    ///
+    /// - Parameter recipients: the key files to try; default `identityFiles()`.
+    /// - Throws: `wrongPassphrase` when no key file opens (or there is none),
+    ///   or what `readIdentityFile` throws besides it.
+    public func identitiesFromKeyFiles(passphrase: String, recipients: [NativeRecipient]? = nil,
+                                       maxWorkFactor: Int = IdentityFile.defaultMaxWorkFactor) throws -> [NativeIdentity] {
+        var opened: [NativeIdentity] = []
+        for recipient in try recipients ?? identityFiles() {
+            do {
+                opened.append(try readIdentityFile(recipient: recipient, passphrase: passphrase,
+                                                   maxWorkFactor: maxWorkFactor))
+            } catch VaultError.wrongPassphrase {
+                continue
+            }
+        }
+        guard !opened.isEmpty else { throw VaultError.wrongPassphrase }
+        // Post-quantum keys first: they are the ones the vault keeps.
+        return opened.filter(\.isPostQuantum) + opened.filter { !$0.isPostQuantum }
     }
 
     /// `readIdentityFile` for an X25519 recipient.

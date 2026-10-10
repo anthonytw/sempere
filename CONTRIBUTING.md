@@ -29,7 +29,7 @@ the XCTest `Executed N tests` line is the one that matters.
 4. Add tests with the change; format changes go through `docs/format.md` first.
 5. Update `CHANGELOG.md` under `[Unreleased]` for anything a user would notice.
 6. CI must be green (Linux, macOS, app). Maintainers squash-merge.
-7. Fill in the PR template, including the contributor agreement checkbox.
+7. Fill in the PR template, including the licence and sign-off checkbox.
 
 Style: Swift 6 strict concurrency, `Sendable` value types for the model, typed error enums per
 module, no force-unwraps outside tests, `///` on public API, XCTest for tests.

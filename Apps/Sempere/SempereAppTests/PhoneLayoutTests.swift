@@ -255,7 +255,7 @@ struct PhoneRootTests {
 struct ICloudDriveHelpTests {
     @Test func theStepsNameTheDeviceSettingAndTheFilesLocation() {
         let phone = ICloudDriveHelp.steps(device: "iPhone")
-        #expect(phone.first?.contains("Settings › your name › iCloud › iCloud Drive") == true)
+        #expect(phone.first?.contains("Settings app ▸ your name ▸ iCloud ▸ iCloud Drive") == true)
         #expect(phone.first?.contains("Sync this iPhone") == true)
         #expect(phone.contains { $0.contains("Browse") && $0.contains("Edit") })
         #expect(ICloudDriveHelp.steps(device: "iPad").first?.contains("Sync this iPad") == true)

@@ -367,7 +367,7 @@ struct ExportCommand: ParsableCommand {
         if let treeFormat = format.tree {
             var tree = TreeExporter(root: URL(fileURLWithPath: out), format: treeFormat, images: images, options: options,
                                     png: PNGOptions(dpi: dpi), source: "sempere", clean: clean, notebookFilter: notebook,
-                                    errorText: { CLIError.from($0).message })
+                                    errorText: Self.errorText)
             let blobVault = vault
             tree.blobs = { blobVault.blobSource(note: $0) }
             let warnFormat = format
@@ -433,11 +433,11 @@ struct ExportCommand: ParsableCommand {
                         }
                         report(s, r.files.map { URL(fileURLWithPath: folder).appendingPathComponent($0).path }, items)
                     case .svg, .png:
-                        let pages: [Data]
+                        let pages: [(name: String, data: Data)]
                         var assetFiles: [String] = []
                         if format == .png {
-                            pages = try PNGWriter.render(note: state, options: noteOptions, png: PNGOptions(dpi: dpi),
-                                                         report: &items)
+                            pages = try PNGWriter.renderNamed(note: state, options: noteOptions, png: PNGOptions(dpi: dpi),
+                                                              report: &items).map { ($0.name, $0.png) }
                         } else {
                             // Linked images: hrefs relative to the folder the SVGs land in.
                             let svgDir = all ? path(stem) : out
@@ -447,7 +447,7 @@ struct ExportCommand: ParsableCommand {
                                 return ExportCommand.relativePath(from: svgDir, to: dir) + "/"
                             }
                             let svg = try SVGWriter.export(note: state, options: noteOptions, assetPrefix: prefix, report: &items)
-                            pages = svg.pages.map { Data($0.utf8) }
+                            pages = svg.pages.enumerated().map { (String(format: "p%03d", $0 + 1), Data($1.utf8)) }
                             for asset in svg.assets {
                                 let file = URL(fileURLWithPath: assets ?? out).appendingPathComponent(asset.name).path
                                 if (try? BoundedRead.contents(of: URL(fileURLWithPath: file), maxBytes: asset.data.count)) != asset.data {
@@ -459,9 +459,8 @@ struct ExportCommand: ParsableCommand {
                         let ext = format.rawValue
                         var files: [String] = assetFiles
                         if all { try mkdir(path(stem)) }
-                        for (i, data) in pages.enumerated() {
-                            let file = all ? path(stem + String(format: "/p%03d.", i + 1) + ext)
-                                : path(stem + String(format: "-p%03d.", i + 1) + ext)
+                        for (name, data) in pages {
+                            let file = path(stem + (all ? "/" : "-") + name + "." + ext)
                             try write(data, to: file)
                             files.append(file)
                         }
@@ -471,12 +470,20 @@ struct ExportCommand: ParsableCommand {
                     throw e
                 } catch {
                     failures += 1
-                    printError("\(s.id.uuidString.lowercased()): \(CLIError.from(error).message)")
+                    printError("\(s.id.uuidString.lowercased()): \(Self.errorText(error))")
                 }
             }
         }
         if output.json { try output.emitJSON(written) }
         if failures > 0 { throw CLIError.failure("\(failures) note(s) could not be exported") }
+    }
+
+    /// A failed note's error; an image over the pixel cap adds the `--dpi` hint
+    /// (the library's message names no option: recognition has none).
+    @Sendable static func errorText(_ error: Error) -> String {
+        let message = CLIError.from(error).message
+        if case RenderError.imageTooLarge = error { return message + "; lower --dpi" }
+        return message
     }
 
     /// `to` relative to the directory `from` (both relative to the current

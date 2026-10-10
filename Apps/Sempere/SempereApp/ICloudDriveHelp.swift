@@ -13,9 +13,9 @@ enum ICloudDriveHelp {
     /// The steps, worded for an iPhone or an iPad.
     static func steps(device: String) -> [String] {
         [
-            String(localized: "Open Settings › your name › iCloud › iCloud Drive and turn on “Sync this \(device)”. (On older versions the switch is called iCloud Drive.)",
+            String(localized: "Open the Settings app ▸ your name ▸ iCloud ▸ iCloud Drive and turn on “Sync this \(device)”. (On older versions the switch is called iCloud Drive.)",
                    comment: "iCloud Drive help step; %@ is iPhone or iPad. Use the system's own names of these settings."),
-            String(localized: "In the picker, tap Browse, then iCloud Drive under Locations. If it is not listed, tap ⋯ (More) › Edit at the top of Browse and turn iCloud Drive on.",
+            String(localized: "In the picker, tap Browse, then iCloud Drive under Locations. If it is not listed, tap ⋯ (More) ▸ Edit at the top of Browse and turn iCloud Drive on.",
                    comment: "iCloud Drive help step (iPhone and iPad only). Use the Files app's own names of Browse, Locations, More, Edit."),
             String(localized: "Open the Files app once: iCloud Drive may take a minute to appear on a device that has just started syncing it.",
                    comment: "iCloud Drive help step (iPhone and iPad only)"),

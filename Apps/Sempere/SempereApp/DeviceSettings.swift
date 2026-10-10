@@ -75,6 +75,12 @@ struct RecordingSettings: Hashable, Sendable {
         }
     }
 
+    /// The sample rates the settings offer for `codec`. HE-AAC needs at least
+    /// 32 kHz (`RecordingFormat.normalized` records lower rates at 48 kHz).
+    static func sampleRates(for codec: Codec) -> [Int] {
+        codec == .heAAC ? sampleRates.filter { $0 >= 32_000 } : sampleRates
+    }
+
     /// The stored settings, each field replaced by its default or nearest
     /// offered value when missing or not one of the choices.
     static func load(from defaults: UserDefaults = .standard) -> RecordingSettings {
@@ -96,10 +102,11 @@ struct RecordingSettings: Hashable, Sendable {
 
     /// Fields forced onto the choices: a bit rate the codec does not offer
     /// becomes the nearest one it does (the default when the codec has none),
-    /// a sample rate outside the list becomes the default.
+    /// a sample rate the codec does not offer becomes the default (48 kHz, as
+    /// `RecordingFormat.normalized` records HE-AAC below 32 kHz).
     func normalized() -> RecordingSettings {
         var s = self
-        if !Self.sampleRates.contains(s.sampleRate) { s.sampleRate = Self.defaultSampleRate }
+        if !Self.sampleRates(for: s.codec).contains(s.sampleRate) { s.sampleRate = Self.defaultSampleRate }
         let offered = Self.bitRates(for: s.codec)
         // Clamped first: the difference below must not overflow for a stored Int.min or Int.max.
         let wanted = min(max(s.bitRate, 0), 1 << 30)

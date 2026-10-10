@@ -57,6 +57,12 @@ final class CLICommandTests: CLITestCase {
             return r.out.trimmingCharacters(in: .whitespacesAndNewlines)
         }()
         let vault = path("fresh.sempere")
+        // A key is never stored under an empty passphrase (as in the app and `keys paper`).
+        let empty = try cli(["vault", "init", vault, "--recipient", pub, "--store-key", key, "--work-factor", "15"],
+                            env: ["SEMPERE_PASSPHRASE": ""])
+        XCTAssertEqual(empty.status, 2, empty.err)
+        XCTAssertTrue(empty.err.contains("the passphrase is empty"), empty.err)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: vault), "nothing created")
         let r = try cli(["vault", "init", vault, "--recipient", pub, "--label", "laptop", "--store-key", key,
                          "--passphrase-env", "MY_PASS", "--work-factor", "15"], env: ["MY_PASS": "s3cret"])
         XCTAssertEqual(r.status, 0, r.err)
@@ -147,10 +153,17 @@ final class CLICommandTests: CLITestCase {
         let copy = try copyFixtureVault()
         let newKey = path("new.key")
         let pub = try cli(["keys", "generate", "--out", newKey, "-q"]).out.trimmingCharacters(in: .whitespacesAndNewlines)
-        let add = try cli(["vault", "recipients", "add", pub, "--label", "phone", "--vault", copy,
+        let add = try cli(["vault", "recipients", "add", pub, "--label", "  my\nphone ", "--vault", copy,
                            "--identity", Self.fixtureKey])
         XCTAssertEqual(add.status, 0, add.err)
         XCTAssertTrue(add.out.contains("Rewrapped"), add.out)
+        // Labels are stored as the app stores them: one line, trimmed.
+        let labels = (try cli(["vault", "info", "--vault", copy, "--json"]).json as? [String: Any])?["recipients"]
+        XCTAssertEqual((labels as? [[String: Any]])?.last?["label"] as? String, "my phone")
+        let unnamed = path("unnamed.sempere")
+        XCTAssertEqual(try cli(["vault", "init", unnamed, "--recipient", pub]).status, 0)
+        let shown = try cli(["vault", "info", "--vault", unnamed])
+        XCTAssertTrue(shown.out.contains("  Device  "), "an empty label shows as the app shows it: \(shown.out)")
         // The new identity alone can now export.
         let out = path("export")
         let ex = try cli(["export", "--all", "--format", "json", "--out", out, "--vault", copy, "--identity", newKey])
@@ -162,7 +175,12 @@ final class CLICommandTests: CLITestCase {
         XCTAssertEqual((info.json as? [String: Any])?["recipients"].flatMap { ($0 as? [Any])?.count }, 2)
         // Removing the original key locks it out.
         let fixturePub = try fixtureIdentity().recipient.string
-        let rm = try cli(["vault", "recipients", "remove", fixturePub, "--vault", copy, "--identity", newKey])
+        // Both keys unlock: either may go, since the other stays listed.
+        let held = try cli(["vault", "recipients", "remove", fixturePub, "--vault", copy, "--identity", Self.fixtureKey])
+        XCTAssertEqual(held.status, 2, held.err)
+        XCTAssertTrue(held.err.contains("the key this vault was unlocked with"), held.err)
+        let rm = try cli(["vault", "recipients", "remove", fixturePub, "--vault", copy, "--identity", newKey,
+                          "--identity", Self.fixtureKey])
         XCTAssertEqual(rm.status, 0, rm.err)
         XCTAssertEqual(try cli(["vault", "verify", "--vault", copy, "--identity", Self.fixtureKey]).status, 4)
         XCTAssertEqual(try cli(["vault", "verify", "--vault", copy, "--identity", newKey]).status, 0)
@@ -257,7 +275,7 @@ final class CLICommandTests: CLITestCase {
         let huge = try cli(["export", "Groceries", "--format", "png", "--dpi", "2400", "--out", path("huge"),
                             "--vault", v, "--identity", keyPath])
         XCTAssertEqual(huge.status, 1)
-        XCTAssertTrue(huge.err.contains("exceeds the limit"), huge.err)
+        XCTAssertTrue(huge.err.contains("exceeds the limit of 40000000; lower --dpi"), huge.err)
 
         // JSON: the reconstructed NoteState.
         let jsonDir = path("json")
@@ -454,6 +472,13 @@ final class CLICommandTests: CLITestCase {
         XCTAssertEqual(try cli(["--version"]).out.split(separator: "\n").first.map(String.init), "sempere 0.5.0")
         XCTAssertEqual(try cli(["bogus"]).status, 2)
         XCTAssertEqual(try cli(["notes", "list"]).status, 2)   // no vault given
+        // Every usage error is one `sempere:` line (docs/cli.md), whether the
+        // command or ArgumentParser found it.
+        XCTAssertEqual(try cli(["notes", "list"]).err, "sempere: no vault: pass --vault PATH or set SEMPERE_VAULT\n")
+        XCTAssertEqual(try cli(["blobs", "copy", "abc", "--from", "a", "--to", "b"]).err,
+                       "sempere: give the content's SHA-256: 8 to 64 lowercase hex digits (see 'sempere blobs copy --help')\n")
+        XCTAssertEqual(try cli(["notes", "list", "--bogus"]).err,
+                       "sempere: Unknown option '--bogus' (see 'sempere notes list --help')\n")
         for sub in [["keys", "generate"], ["vault", "init"], ["vault", "recipients", "add"], ["export"], ["recover"],
                     ["compact"], ["snapshot"], ["notes", "show"], ["vault", "verify"]] {
             let h = try cli(sub + ["--help"])
@@ -463,6 +488,17 @@ final class CLICommandTests: CLITestCase {
         let root = try cli(["--help"])
         for word in ["keys", "vault", "notes", "export", "recover", "compact", "snapshot"] {
             XCTAssertTrue(root.out.contains(word), word)
+        }
+        // Every exit code and environment variable docs/cli.md lists is in the help too.
+        let help = root.out.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        for code in ["0 ok", "1 failure", "2 usage error", "3 unhealthy", "4 cannot decrypt", "5 legacy vault",
+                     "6 untrusted device list", "7 read-only vault"] {
+            XCTAssertTrue(help.contains(code), code)
+        }
+        for variable in ["SEMPERE_VAULT", "SEMPERE_IDENTITY", "SEMPERE_PASSPHRASE", "SEMPERE_TITLE_FORMAT",
+                         "SEMPERE_PDFTOPPM", "SEMPERE_PDFTOTEXT", "SEMPERE_WEBDAV_PASSWORD", "SEMPERE_BUNDLED_FONTS",
+                         "SEMPERE_FONT_DIR", "XDG_STATE_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME"] {
+            XCTAssertTrue(help.contains(variable), variable)
         }
     }
 

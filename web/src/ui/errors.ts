@@ -4,6 +4,7 @@
 // the localized sentence is followed by that detail as the library wrote it, as the app does with
 // the CLI's errors. Errors without a known code are shown as they are.
 
+import { BlobError } from "../vault/blobs.ts";
 import { KeyFileError } from "../vault/keyfile.ts";
 import { PasskeyError } from "../vault/passkey.ts";
 import { VaultError } from "../vault/vault.ts";
@@ -45,6 +46,36 @@ function passkeyError(e: PasskeyError): string {
     case "unsupported": return withDetail(t("The key cannot be remembered with a passkey here."), e);
     case "storage": return withDetail(t("This browser's storage cannot be used."), e);
   }
+}
+
+/** What an attachment is, for `blobProblem`. */
+export type BlobKind = "audio" | "video" | "image" | "pdf";
+
+/**
+ * A missing or over-limit attachment (BlobError `missing`, `tooLarge`) in the interface language,
+ * the same for every kind; `limit` is this viewer's cap for the kind in bytes. Undefined for other
+ * errors. Image and PDF texts are lower-case: they follow "Page N: kind id:" in a note's problem list.
+ */
+export function blobProblem(e: unknown, kind: BlobKind, limit: number): string | undefined {
+  if (!(e instanceof BlobError)) return undefined;
+  const size = Math.floor(limit / 2 ** 20);
+  if (e.code === "missing") {
+    switch (kind) {
+      case "audio": return t("The audio file is missing from the vault (or not synced yet).");
+      case "video": return t("The video file is missing from the vault (or not synced yet).");
+      case "image": return t("the image file is missing from the vault (or not synced yet)");
+      case "pdf": return t("the PDF file is missing from the vault (or not synced yet)");
+    }
+  }
+  if (e.code === "tooLarge") {
+    switch (kind) {
+      case "audio": return t("The recording is larger than this viewer plays ({size} MiB); export it with the CLI.", { size });
+      case "video": return t("The clip is larger than this viewer plays ({size} MiB); export it with the CLI.", { size });
+      case "image": return t("the image is larger than this viewer shows ({size} MiB); export it with the CLI", { size });
+      case "pdf": return t("the PDF is larger than this viewer shows ({size} MiB); export it with the CLI", { size });
+    }
+  }
+  return undefined;
 }
 
 /** The text for an error: a sentence in the interface language for the errors with codes, else its own message. */

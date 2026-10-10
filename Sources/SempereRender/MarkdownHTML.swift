@@ -14,21 +14,9 @@ public enum MarkdownHTML {
         return out
     }
 
-    static func esc(_ s: String) -> String {
-        var o = ""
-        o.reserveCapacity(s.count)
-        for c in s.unicodeScalars {
-            switch c {
-            case "&": o += "&amp;"
-            case "<": o += "&lt;"
-            case ">": o += "&gt;"
-            case "\"": o += "&quot;"
-            case "'": o += "&#39;"
-            default: o.unicodeScalars.append(c)
-            }
-        }
-        return o
-    }
+    /// Text and attribute escaping for the HTML export: `SVGWriter.escape`
+    /// (which also drops the characters XML 1.0 forbids) plus `'`.
+    static func esc(_ s: String) -> String { SVGWriter.escape(s).replacingOccurrences(of: "'", with: "&#39;") }
 
     /// True for a destination the export links to.
     static func safe(_ url: String) -> Bool {

@@ -30,7 +30,7 @@ enum KeyStoreError: Error, Equatable, CustomStringConvertible {
     var description: String {
         switch self {
         case .notFound: return String(localized: "No key is saved for this vault.")
-        case .cancelled: return String(localized: "Authentication was cancelled.")
+        case .cancelled: return String(localized: "Authentication was canceled.")
         case .authenticationFailed: return String(localized: "Authentication failed.")
         case .noPasscode: return String(localized: "Set a device passcode to let Sempere remember keys.")
         case .missingEntitlement: return String(localized: "This build of Sempere cannot use the Keychain (missing entitlement).")

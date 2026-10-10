@@ -19,7 +19,7 @@ tests (`scripts/app.sh test-mac-smoke`, `LaunchSmokeUITests`) run on every CI
 run, pull requests included: a first launch (no preferences, caches or saved
 windows) unlocks the demo vault through the unlock sheet, shows the library
 in each column layout (`all`, `doubleColumn`, `detailOnly`), and opens
-Settings, Vault Keys, a note window, Export…, Export Notes… and Restore from
+Settings, Vault Keys, a note window, Export…, Export to Folder or Zip… and Restore from
 Backup…. A Linux test (`AppSceneEnvironmentTests`) checks that every scene
 injects `AppModel`, `VaultLibrary` and `RememberedKeys`. What still needs
 a hand test on a real Mac is listed at the end.
@@ -97,7 +97,7 @@ the Insert menu's entry does (#104). Imports file new notes under the sidebar's 
 | File | Insert Photo… | ⌥⌘I |
 | File | Export… | ⇧⌘E |
 | File | Reload Vault | ⌘R |
-| File | Export Notes… (the ticked notes, else the sidebar's notebook, else the vault, into a chosen folder or a zip; docs/io.md "Bulk export") | (none) |
+| File | Export to Folder or Zip… (the ticked notes, else the sidebar's notebook, else the vault, into a chosen folder or a zip; docs/io.md "Bulk export") | (none) |
 | Edit | Undo, Redo | ⌘Z, ⇧⌘Z (the system's: the canvas's undo manager, or the text field being edited) |
 | Edit | Find Notes (focuses the title search) | ⌘F |
 | Note | Rename Note… | ⇧⌘R |
@@ -127,7 +127,7 @@ the Insert menu's entry does (#104). Imports file new notes under the sidebar's 
 | File | Start / Stop Voice Note | ⇧⌘M |
 | View | Zoom In, Zoom Out | ⌘=, ⌘- |
 | View | Fit Page Width, Actual Size | ⌘0, ⌘1 |
-| View | Hide or Show Note List | ⌥⌘L |
+| View | Hide or Show Note List (says which it does next) | ⌥⌘L |
 | View | Library (opens a library window when none is open) | ⌥⌘0 |
 | View | Vault Keys (the key window) | ⌥⌘K |
 | Sempere (app menu) | Settings… (the app's settings window; UIKit's own item, which opened Catalyst's generated pane, is replaced) | ⌘, |
@@ -191,6 +191,8 @@ calls the callbacks off the main thread.
   and one note on the canvas, as on the iPad.
 * **Note windows** (`WindowGroup(for: NoteWindowValue.self)`): one note each,
   opened from the note's context menu or File > Open Note in New Window (⌥⌘N).
+  Its toolbar has the library canvas's note actions (Rename…, Export, Save
+  Version…, Version History…, Tags).
   In build 6, File had none of the app's commands (see "UIKit's own items")
   and File > New Window (⌘N) was UIKit's, which opens another library window,
   never a note; UIKit's New Window is gone now. `MacWindowUITests` opens a note
@@ -380,14 +382,14 @@ mark on the key that unlocked the vault. From it:
   (`docs/post-quantum.md`). The sheet and the Remove dialog act only on the
   vault they were opened for (`KeyError.vaultChanged`). A generated key can
   also be saved to a file, shared or printed as a kit there (`KeyFileActions`,
-  as in Settings → Device Keys → New Key…). Adding or generating a key first
+  as in Settings ▸ Device Keys ▸ New Key…). Adding or generating a key first
   asks the owner (Touch ID, or the password on a Mac without it), as Save
   Key… does (`AppModel.requireOwner`, security review 2026-10, P1); so does
   Recovery Kit…, which prints the secret key.
-* **Remove…** drops a key. The key that unlocked the vault, and the last key,
+* **Remove Key…** drops a key. The key that unlocked the vault, and the last key,
   cannot be removed. Removal rotates the vault secret and re-encrypts every
   note (`Vault.removeRecipient`, `docs/io.md` "Recipient changes").
-* **Replace…** swaps another device's key for a pasted public key or a
+* **Replace Key…** swaps another device's key for a pasted public key or a
   generated one (shown once, as for Add) in one change: the vault secret
   rotates and every note is re-encrypted once (`Vault.replaceRecipient`, the
   CLI's `vault recipients replace`); an empty label keeps the old one. It
@@ -427,7 +429,7 @@ There is no Pencil, so on a Mac:
   the current zoom (`PointerCursor.diameter`, 6 to 64 pt); the object eraser
   keeps its own cursor, the lasso and the pixel eraser the system arrow.
 * **Ruler** (⌥⌘R) toggles PencilKit's ruler for straight lines.
-* **Smoothed strokes** (below): Settings → General → Smooth Mouse Strokes,
+* **Smoothed strokes** (below): Settings ▸ General ▸ Smooth Mouse Strokes,
   Off, Light (the default) or Strong.
 * Two-finger scroll and pinch scroll and zoom the canvas, as PencilKit's
   scroll view does; click-drag draws. In a paged note the pages scroll as one
@@ -534,7 +536,7 @@ files read/write, app-scope bookmarks), applied to Catalyst builds only
 6. New Note: type part of a notebook name; open the list with the chevron.
 7. Add a key (paste and generate), remove it, print the recovery kit.
 8. Draw with the mouse and trackpad, with each tool; erase with the object eraser.
-   Settings → General → Smooth Mouse Strokes at Off, Light and Strong: write a
+   Settings ▸ General ▸ Smooth Mouse Strokes at Off, Light and Strong: write a
    word and a circle with each (Light should feel direct, Strong round but
    laggier); undo and redo a stroke; with the ruler shown, lines stay straight.
 9. Double-click a note in the list: its window opens. Hover over every toolbar
@@ -573,13 +575,13 @@ menu-bar icon is the next section.
 ## Menu-bar item (GA-23)
 
 A Sempere icon in the system menu bar (an `NSStatusItem`), on by default while the app runs
-(Settings → General → Show in Menu Bar turns it off). Entries:
+(Settings ▸ General ▸ Show in Menu Bar turns it off). Entries:
 
 - **Quick Voice Note** starts a voice note; the entry then reads **Stop Voice Note** and the icon
   turns red. The same encrypted-inbox path as the iPad and iPhone (`QuickCapture`,
   docs/quick-capture.md): it works while the vault is locked, needs no window and no Face ID or
   Touch ID, and the note appears in the inbox notebook when the vault is next unlocked. Not set
-  up yet: the app comes forward on Settings → Quick Voice Notes.
+  up yet: the app comes forward on Settings ▸ Quick Voice Notes.
 - **New Note** brings the app forward and creates a note in the notebook the sidebar shows (the
   New Note sheet's defaults for paper and layout), unlocking first if the vault is locked: the
   unlock sheet appears and the note is created when it closes. A request older than two minutes,

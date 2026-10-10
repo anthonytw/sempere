@@ -72,7 +72,7 @@ enum CLIError: Error {
              VaultError.vaultSecretUndecryptable, VaultError.wrongPassphrase,
              VaultError.locked, VaultError.noIdentities, VaultError.classicIdentity:
             return .cannotDecrypt(text)
-        case VaultError.classicRecipient:
+        case VaultError.classicRecipient, VaultError.emptyPassphrase:
             return .usage(text)
         case VaultError.legacyVault:
             return .legacyVault(text)
@@ -292,8 +292,18 @@ func promptSecret(_ prompt: String) -> String? {
 
 /// `--passphrase-env VAR`, else `$SEMPERE_PASSPHRASE`, else the terminal.
 /// Failing to get one is exit 4 (no key available) unless `asError` says otherwise.
+///
+/// - Parameter confirm: a new passphrase (one that will wrap a key): the
+///   terminal asks twice, and an empty one is refused (exit 2), as in the app.
 func obtainPassphrase(envName: String?, prompt: String = "Vault passphrase: ", confirm: Bool = false,
                       asError: (String) -> CLIError = CLIError.cannotDecrypt) throws -> String {
+    let pass = try readPassphrase(envName: envName, prompt: prompt, confirm: confirm, asError: asError)
+    if confirm && pass.isEmpty { throw CLIError.usage("the passphrase is empty") }
+    return pass
+}
+
+private func readPassphrase(envName: String?, prompt: String, confirm: Bool,
+                            asError: (String) -> CLIError) throws -> String {
     if let envName {
         guard let v = Env.vars[envName] else { throw asError("environment variable \(envName) is not set") }
         return v
@@ -329,6 +339,27 @@ func parseRecipient(_ s: String) throws -> NativeRecipient {
     throw CLIError.usage("not an age recipient (age1... or age1pq1...): \(RecipientsProblem.abbreviate(s))")
 }
 
+/// The element of `all` that `query` names: its whole id, or a unique
+/// prefix of 4 or more characters, case-insensitive. Items, recordings and
+/// strokes all resolve here, with the same messages. When no id matches,
+/// `fallback` (if any) gives the matches by other means (a recording's title).
+func resolveIDPrefix<T>(_ query: String, kind: String, among all: [T], place: String = "in this note",
+                        id: (T) -> UUID, fallback: (() -> [T])? = nil) throws -> T {
+    let q = query.lowercased()
+    if let exact = all.first(where: { id($0).uuidString.lowercased() == q }) { return exact }
+    var matches = q.count >= 4 ? all.filter { id($0).uuidString.lowercased().hasPrefix(q) } : []
+    if matches.isEmpty, let fallback { matches = fallback() }
+    guard let first = matches.first else {
+        guard q.count >= 4 else { throw CLIError.failure("\(kind) \(query): give a whole id or at least 4 characters") }
+        throw CLIError.failure("no \(kind) \(query) \(place)")
+    }
+    guard matches.count == 1 else {
+        let ids = matches.map { id($0).uuidString.lowercased() }.joined(separator: ", ")
+        throw CLIError.failure("'\(query)' matches \(matches.count) \(kind)s: \(ids)")
+    }
+    return first
+}
+
 /// How much unlocking a command needs.
 enum Unlock {
     /// The vault must be readable.
@@ -353,18 +384,16 @@ extension AccessOptions {
         return try paths.map(readIdentityFile)
     }
 
-    /// The identity stored passphrase-wrapped in the vault's `keys/`.
-    func identityFromKeyFiles(of locked: Vault, recipient: NativeRecipient? = nil) throws -> NativeIdentity {
+    /// The identities stored passphrase-wrapped in the vault's `keys/`: every
+    /// one the passphrase opens, post-quantum first
+    /// (`Vault.identitiesFromKeyFiles`). Never empty.
+    func identitiesFromKeyFiles(of locked: Vault, recipient: NativeRecipient? = nil) throws -> [NativeIdentity] {
         let candidates = try recipient.map { [$0] } ?? locked.identityFiles()
         guard !candidates.isEmpty else {
             throw CLIError.cannotDecrypt("no key: pass --identity FILE (the vault stores no passphrase-wrapped key)")
         }
         let pass = try obtainPassphrase(envName: passphraseEnv)
-        var lastError: Error = VaultError.wrongPassphrase
-        for r in candidates {
-            do { return try locked.readIdentityFile(recipient: r, passphrase: pass) } catch { lastError = error }
-        }
-        throw lastError
+        return try locked.identitiesFromKeyFiles(passphrase: pass, recipients: candidates)
     }
 
     /// Opens the vault with the identities this invocation provides.
@@ -391,9 +420,9 @@ extension AccessOptions {
             case .ifPossible:
                 let scripted = passphraseEnv != nil || Env.vars["SEMPERE_PASSPHRASE"] != nil
                 guard scripted, !((try? locked.identityFiles()) ?? []).isEmpty else { return locked }
-                ids = [try identityFromKeyFiles(of: locked)]
+                ids = try identitiesFromKeyFiles(of: locked)
             case .required:
-                ids = [try identityFromKeyFiles(of: locked)]
+                ids = try identitiesFromKeyFiles(of: locked)
             }
         }
         let vault = try Vault.open(at: url, identities: ids, trust: trust ?? trustStore())
@@ -443,7 +472,7 @@ final class UntaggedVaults: @unchecked Sendable {
             guard (try? Vault.open(at: url))?.manifest.recipientsTag != nil else { continue }
             printStderr("sempere: vault.json's device list is now authenticated (format.md §2.1); it trusts these "
                 + "\(recipients.count) recipient(s), check them with `sempere vault info`: "
-                + recipients.map { RecipientsProblem.abbreviate($0.key) + ($0.label.isEmpty ? "" : " (\($0.label))") }.joined(separator: ", "))
+                + recipients.map { RecipientsProblem.abbreviate($0.key) + " (\($0.displayLabel))" }.joined(separator: ", "))
         }
     }
 }

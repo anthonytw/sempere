@@ -183,7 +183,8 @@ struct MoveNotebookView: View {
                         if let result = Self.result(of: path, into: parent) {
                             Text("Becomes \(NotebookChoices.display(result)), with every notebook and note inside it.")
                         } else if NotebookPath.moved(path, into: parent) == nil {
-                            Text("A notebook cannot go into itself or a notebook inside it.")
+                            // The model's own refusal of this move, word for word.
+                            Text(AppModel.ModelError.invalidNotebookMove.description)
                         } else {
                             Text("It is there already.")
                         }

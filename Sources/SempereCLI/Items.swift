@@ -25,18 +25,8 @@ struct ItemsCommand: ParsableCommand {
 
 /// The page and item named `name` (a full id or a prefix of 4+ characters) in `state`.
 func findItem(_ name: String, in state: NoteState) throws -> (page: Page, item: Item) {
-    let key = name.lowercased()
-    var found: [(Page, Item)] = []
-    for page in state.pages {
-        for item in page.items {
-            let id = item.id.uuidString.lowercased()
-            if id == key { return (page, item) }
-            if key.count >= 4, id.hasPrefix(key) { found.append((page, item)) }
-        }
-    }
-    guard let only = found.first else { throw CLIError.failure("no item \(name) in this note") }
-    guard found.count == 1 else { throw CLIError.failure("\(name) names \(found.count) items: give more of the id") }
-    return only
+    let all = state.pages.flatMap { page in page.items.map { (page: page, item: $0) } }
+    return try resolveIDPrefix(name, kind: "item", among: all, id: \.item.id)
 }
 
 /// The items named `names`, all on one page.

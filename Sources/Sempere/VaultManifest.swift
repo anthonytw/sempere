@@ -19,6 +19,28 @@ public struct VaultManifest: Hashable, Sendable, Codable {
         public init(key: String, label: String, added: Date) {
             self.key = key; self.label = label; self.added = added
         }
+
+        /// The longest label writers store, in characters.
+        public static let maxLabelLength = 80
+
+        /// A label as `Vault` stores it: one line (line breaks become
+        /// spaces), trimmed, at most `maxLabelLength` characters. It may be
+        /// empty (format.md §2.1's repair writes empty labels).
+        public static func cleanLabel(_ label: String) -> String {
+            let oneLine = label.split(whereSeparator: \.isNewline).joined(separator: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return String(oneLine.prefix(maxLabelLength))
+        }
+
+        /// A label as readers show it: `cleanLabel` (another writer may
+        /// have stored any text), "Device" when empty.
+        public static func displayLabel(_ label: String) -> String {
+            let clean = cleanLabel(label)
+            return clean.isEmpty ? "Device" : clean
+        }
+
+        /// `displayLabel(label)`.
+        public var displayLabel: String { Self.displayLabel(label) }
     }
 
     /// `sempere/1`.
