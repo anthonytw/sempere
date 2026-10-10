@@ -1,4 +1,5 @@
 import CoreGraphics
+import CryptoKit
 import Foundation
 import ImageIO
 import Sempere
@@ -95,10 +96,14 @@ final class RenderCache: @unchecked Sendable {
 
     // MARK: - Labels
 
-    /// What a picture of `key` depends on, or nil for items drawn without a
-    /// blob (text boxes are drawn natively, quickly, and never cached).
+    /// What a picture of `key` depends on, or nil for items that are not
+    /// cached (PDF pages: previews; Markdown boxes). Text boxes and equations
+    /// not yet typeset are drawn by CoreText here, so their label also names
+    /// the system and its fonts (`nativeSalt`).
     static func pictureLabel(_ key: ItemRenderKey) -> String? {
-        guard key.item.blob != nil, key.item.kind != .pdfPage else { return nil }
+        let native = (key.item.kind == .text && key.item.text.map { !$0.isMarkdown } == true)
+            || (key.item.kind == .math && key.item.math.map { $0.render == nil } == true)
+        guard key.item.blob != nil || native, key.item.kind != .pdfPage else { return nil }
         var item = key.item
         item.id = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
         item.z = ""
@@ -108,8 +113,17 @@ final class RenderCache: @unchecked Sendable {
         encoder.outputFormatting = [.sortedKeys]
         guard let itemJSON = try? encoder.encode(item) else { return nil }
         let paperJSON = key.paper.flatMap { try? encoder.encode($0) } ?? Data()
-        return "pic|\(schemaVersion)|\(String(decoding: itemJSON, as: UTF8.self))|\(key.scale)|\(String(decoding: paperJSON, as: UTF8.self))"
+        let kind = native ? "txt|\(nativeSalt)" : "pic"
+        return "\(kind)|\(schemaVersion)|\(String(decoding: itemJSON, as: UTF8.self))|\(key.scale)|\(String(decoding: paperJSON, as: UTF8.self))"
     }
+
+    /// What CoreText drawing depends on beyond the item: the system version and the installed font
+    /// families (read once per launch).
+    static let nativeSalt: String = {
+        let families = Data(UIFont.familyNames.sorted().joined(separator: "\n").utf8)
+        let digest = SHA256.hash(data: families).prefix(8).map { String(format: "%02x", $0) }.joined()
+        return ProcessInfo.processInfo.operatingSystemVersionString + "|" + digest
+    }()
 
     /// What the preview of PDF page item `item` at `scale` depends on.
     static func previewLabel(_ item: Item, scale: Double) -> String? {

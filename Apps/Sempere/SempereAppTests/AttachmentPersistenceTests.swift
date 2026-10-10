@@ -231,7 +231,11 @@ struct AttachmentPersistenceTests {
         #expect(RenderCache.previewLabel(cropped, scale: 2) != label)
         #expect(RenderCache.previewLabel(page, scale: 3) != label)
         #expect(RenderCache.pictureLabel(ItemRenderKey(page, scale: 2, paper: .blank)) == nil, "PDF pages are previews")
-        #expect(RenderCache.pictureLabel(ItemRenderKey(AttachmentEditorTests.textItem(), scale: 2, paper: .blank)) == nil)
+        // Text boxes are drawn by CoreText: labelled with the system and its fonts, and by their text.
+        let textLabel = try #require(RenderCache.pictureLabel(ItemRenderKey(AttachmentEditorTests.textItem(), scale: 2, paper: .blank)))
+        #expect(textLabel.hasPrefix("txt|\(RenderCache.nativeSalt)|"))
+        #expect(RenderCache.pictureLabel(ItemRenderKey(AttachmentEditorTests.textItem("Other"), scale: 2, paper: .blank)) != textLabel)
+        #expect(RenderCache.pictureLabel(ItemRenderKey(AttachmentEditorTests.textItem(), scale: 4, paper: .blank)) != textLabel)
         let image = AttachmentEditorTests.imageItem(BlobRef(content: Data("i".utf8), type: "image/png"))
         let imageLabel = try #require(RenderCache.pictureLabel(ItemRenderKey(image, scale: 2, paper: .blank)))
         var other = image
@@ -336,6 +340,39 @@ struct AttachmentPersistenceTests {
         #expect(await TS.waitUntil { second.isSettled })
         guard case .image? = second.picture(of: image.id) else { Issue.record("not from the cache"); return }
         #expect(store.fetchLog.isEmpty, "the blob was not read")
+    }
+
+    /// Text boxes drawn by CoreText are stored too: the next open (a new cache on the same folder)
+    /// shows them from it without drawing. Prints the first open against the reopen.
+    @Test func textBoxPicturesComeFromTheCacheOnReopen() async throws {
+        let (vault, _) = try TS.unlockedFixture()
+        let items = (0..<60).map { i -> Item in
+            var t = AttachmentEditorTests.textItem("Text box number \(i), with a few words to lay out")
+            t.frame = Rect(x: Double(i % 6) * 95, y: Double(i / 6) * 70, w: 90, h: 60)
+            return t
+        }
+        let renders = Self.root()
+        let clock = ContinuousClock()
+        let firstCache = RenderCache(root: renders, vault: vault)
+        let first = ItemLayerView(frame: CGRect(x: 0, y: 0, width: 600, height: 800))
+        let firstTime = await clock.measure {
+            first.show(items, note: Self.lecture, paper: .blank, source: ItemLayerSource(cache: nil, renders: firstCache))
+            _ = await TS.waitUntil(timeout: .seconds(20)) { first.isSettled }
+        }
+        #expect(items.allSatisfy { if case .image? = first.picture(of: $0.id) { true } else { false } })
+        #expect(await TS.waitUntil(timeout: .seconds(10)) {
+            (FileManager.default.enumerator(at: renders, includingPropertiesForKeys: nil)?
+                .compactMap { $0 as? URL }.filter { $0.pathExtension == "render" }.count ?? 0) == items.count
+        })
+        let nextCache = RenderCache(root: renders, vault: vault)
+        let second = ItemLayerView(frame: CGRect(x: 0, y: 0, width: 600, height: 800))
+        let reopenTime = await clock.measure {
+            second.show(items, note: Self.lecture, paper: .blank, source: ItemLayerSource(cache: nil, renders: nextCache))
+            _ = await TS.waitUntil(timeout: .seconds(20)) { second.isSettled }
+        }
+        #expect(nextCache.diskHits == items.count)
+        #expect(items.allSatisfy { if case .image? = second.picture(of: $0.id) { true } else { false } })
+        print("PERF-REPORT text boxes: \(items.count) drawn \(firstTime), reopened from the cache \(reopenTime)")
     }
 
     // MARK: timings
