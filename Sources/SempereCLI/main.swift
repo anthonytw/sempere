@@ -27,13 +27,24 @@ func runCLI(_ arguments: [String]) -> Int32 {
             return 0
         }
         if code == .validationFailure {
-            printStderr(SempereCLI.fullMessage(for: error))
-            return 2
+            printError(usageLine(for: error))
+            return ExitStatus.usage
         }
         let mapped = CLIError.from(error)
         printError(mapped.message)
         return mapped.code
     }
+}
+
+/// A usage error from ArgumentParser (a `ValidationError`, an unknown
+/// option, a missing argument) as one line, like every other error, with
+/// its pointer to the command's help: `--page counts from 1 (see 'sempere
+/// attach image --help')`.
+func usageLine(for error: Error) -> String {
+    let message = SempereCLI.message(for: error).split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+    let full = SempereCLI.fullMessage(for: error)
+    guard let see = full.range(of: "See '"), let end = full[see.upperBound...].firstIndex(of: "'") else { return message }
+    return "\(message) (see '\(full[see.upperBound..<end])')"
 }
 
 let arguments = Array(CommandLine.arguments.dropFirst())

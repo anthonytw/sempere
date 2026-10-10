@@ -467,6 +467,13 @@ final class CLICommandTests: CLITestCase {
         XCTAssertEqual(try cli(["--version"]).out.split(separator: "\n").first.map(String.init), "sempere 0.5.0")
         XCTAssertEqual(try cli(["bogus"]).status, 2)
         XCTAssertEqual(try cli(["notes", "list"]).status, 2)   // no vault given
+        // Every usage error is one `sempere:` line (docs/cli.md), whether the
+        // command or ArgumentParser found it.
+        XCTAssertEqual(try cli(["notes", "list"]).err, "sempere: no vault: pass --vault PATH or set SEMPERE_VAULT\n")
+        XCTAssertEqual(try cli(["blobs", "copy", "abc", "--from", "a", "--to", "b"]).err,
+                       "sempere: give the content's SHA-256: 8 to 64 lowercase hex digits (see 'sempere blobs copy --help')\n")
+        XCTAssertEqual(try cli(["notes", "list", "--bogus"]).err,
+                       "sempere: Unknown option '--bogus' (see 'sempere notes list --help')\n")
         for sub in [["keys", "generate"], ["vault", "init"], ["vault", "recipients", "add"], ["export"], ["recover"],
                     ["compact"], ["snapshot"], ["notes", "show"], ["vault", "verify"]] {
             let h = try cli(sub + ["--help"])

@@ -92,7 +92,9 @@ such a note, and any write after it in the same run, exits 7.
   at most 32 distinct, the rest under `…`); `notes show --json` also has
   top-level `readOnly` and `readOnlyReasons`.
 
-Errors go to stderr, one line each, prefixed `sempere:`.
+Errors go to stderr, one line each, prefixed `sempere:`. A usage error (exit
+2) ends with the command's help to read, e.g. `sempere: --page counts from 1
+(see 'sempere attach image --help')`.
 
 **Environment**
 
