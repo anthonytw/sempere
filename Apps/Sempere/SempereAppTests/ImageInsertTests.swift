@@ -88,6 +88,16 @@ struct ImageInsertTests {
         #expect(throws: ImagePreparation.Failure.unreadable) { try ImagePreparation.readInput(dir) }
     }
 
+    /// The "too large" messages state limits from their constants, in binary
+    /// units as the format does: the 1 GiB blob cap is "1 GB" for a PDF and
+    /// a video alike.
+    @Test func sizeLimitsReadTheSameEverywhere() {
+        #expect(BlobSizeText.string(1 << 30) == "1 GB")
+        #expect(PDFPreparation.Failure.tooLarge(2 << 30).description.contains("at most 1 GB"))
+        #expect(VideoPreparation.Failure.tooLarge(2 << 30).description.contains("at most 1 GB"))
+        #expect(ImagePreparation.Failure.fileTooLarge.description.contains("at most 512 MB"))
+    }
+
     @Test func privacyIsOnByDefault() {
         let defaults = UserDefaults(suiteName: "privacy-\(UUID().uuidString)")!
         #expect(PhotoPrivacy.isOn(defaults))

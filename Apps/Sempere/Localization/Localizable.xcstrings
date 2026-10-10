@@ -16317,17 +16317,6 @@
         }
       }
     },
-    "This PDF is larger than 1 GB." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Este PDF ocupa más de 1 GB."
-          }
-        }
-      }
-    },
     "This PDF is protected with a password." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -16346,6 +16335,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este PDF está protegido. Introduce su contraseña para añadirlo; se guarda sin contraseña, cifrado con la clave de la bóveda."
+          }
+        }
+      }
+    },
+    "This PDF is too large to add (%@; at most %@)." : {
+      "comment" : "The values are file sizes",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este PDF es demasiado grande para añadirlo (%@; como máximo %@)."
           }
         }
       }
@@ -16497,14 +16498,14 @@
         }
       }
     },
-    "This file is too large to add (at most %lld MB)." : {
-      "comment" : "The limit is a fixed large number (512)",
+    "This file is too large to add (at most %@)." : {
+      "comment" : "The value is a file size",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Este archivo es demasiado grande para añadirlo (%lld MB como máximo)."
+            "value" : "Este archivo es demasiado grande para añadirlo (%@ como máximo)."
           }
         }
       }
