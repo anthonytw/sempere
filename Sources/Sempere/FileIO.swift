@@ -190,6 +190,44 @@ package enum FileIO {
         }
     }
 
+    /// `entries(dir)` that pass `include`, kept only if they are directories
+    /// (`directories`) or only if they are not, following symbolic links as
+    /// `isDirectory` does. Entry types come from `readdir(3)`; only symbolic
+    /// links and entries of unknown type (some network or synced file
+    /// systems report no type) cost a `stat`. Sorted; a missing `dir` is
+    /// empty and any other failure to list it throws `VaultError.io`, as
+    /// for `entries`.
+    static func entries(_ dir: URL, directories: Bool, where include: (String) -> Bool) throws -> [String] {
+        guard let d = dir.withUnsafeFileSystemRepresentation({ $0.flatMap { opendir($0) } }) else {
+            let code = errno
+            if code == ENOENT { return [] }
+            throw VaultError.io("list \(dir.path): \(errnoText(code))")
+        }
+        defer { closedir(d) }
+        var out: [String] = []
+        while true {
+            errno = 0
+            guard let e = readdir(d) else {
+                if errno != 0 { throw VaultError.io("list \(dir.path): \(errnoText(errno))") }
+                break
+            }
+            let name = withUnsafePointer(to: &e.pointee.d_name) {
+                $0.withMemoryRebound(to: CChar.self, capacity: MemoryLayout.size(ofValue: e.pointee.d_name)) {
+                    String(cString: $0)
+                }
+            }
+            guard name != ".", name != "..", include(name) else { continue }
+            let isDir: Bool
+            switch Int32(e.pointee.d_type) {
+            case Int32(DT_DIR): isDir = true
+            case Int32(DT_LNK), Int32(DT_UNKNOWN): isDir = isDirectory(dir.appendingPathComponent(name))
+            default: isDir = false
+            }
+            if isDir == directories { out.append(name) }
+        }
+        return out.sorted()
+    }
+
     package static func createDirectory(_ url: URL) throws {
         do { try fm.createDirectory(at: url, withIntermediateDirectories: true) } catch {
             throw VaultError.io("mkdir \(url.path): \(error)")

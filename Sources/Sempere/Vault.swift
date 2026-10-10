@@ -1115,7 +1115,7 @@ public struct Vault: Sendable {
 
     /// Lowercase-UUID directory names under `notes/`, sorted.
     func noteDirectoryNames() throws -> [String] {
-        try FileIO.entries(notesURL).filter { Self.isNoteDirectoryName($0) && FileIO.isDirectory(notesURL.appendingPathComponent($0)) }
+        try FileIO.entries(notesURL, directories: true, where: Self.isNoteDirectoryName)
     }
 
     package static func isNoteDirectoryName(_ s: String) -> Bool {
@@ -1125,10 +1125,7 @@ public struct Vault: Sendable {
 
     /// Canonical revision file names in a note directory (regular files only).
     func revisionFileNames(in dir: URL) throws -> [String] {
-        try FileIO.entries(dir).filter { n in
-            guard let r = RevisionName(n), r.filename == n else { return false }
-            return !FileIO.isDirectory(dir.appendingPathComponent(n))
-        }
+        try FileIO.entries(dir, directories: false) { n in RevisionName(n)?.filename == n }
     }
 }
 
