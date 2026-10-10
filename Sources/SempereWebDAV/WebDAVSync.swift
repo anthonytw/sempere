@@ -231,19 +231,14 @@ public final class WebDAVSync {
     private func checkSameVault(_ remoteRoot: [String: RemoteEntry]) throws {
         guard remoteRoot[Vault.manifestName] != nil,
               let local = try? localMutable(Vault.manifestName),
-              let localId = Self.vaultId(local) else { return }
-        let remote = try client.get([Vault.manifestName]).data
-        guard let remoteId = Self.vaultId(remote) else {
+              let localId = WebDAVConnection.manifestFields(local)?.vaultId else { return }
+        let remote = try client.get([Vault.manifestName], maxBytes: BoundedRead.maxManifestBytes).data
+        guard let remoteId = WebDAVConnection.manifestFields(remote)?.vaultId else {
             // A mirror is repaired from the local manifest; a two-way sync has nothing to compare.
             if options.pushOnly { return }
             throw WebDAVError.malformedResponse("remote vault.json is not a vault manifest")
         }
         if localId != remoteId { throw WebDAVError.vaultMismatch(local: localId, remote: remoteId) }
-    }
-
-    private static func vaultId(_ manifest: Data) -> String? {
-        guard let obj = try? JSONSerialization.jsonObject(with: manifest) as? [String: Any] else { return nil }
-        return (obj["vaultId"] as? String)?.lowercased()
     }
 
     // MARK: - Mutable files

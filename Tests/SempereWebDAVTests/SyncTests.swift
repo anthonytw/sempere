@@ -160,6 +160,16 @@ final class SyncTests: SyncTestCase {
         }
     }
 
+    func testServerManifestWithANonUUIDIdIsNotAnotherVault() throws {
+        let server = MockDAV()
+        _ = try makeVault("A")
+        try sync("A", server)
+        server.putDirect("vault.json", Data(#"{"vaultId":"0123abcd"}"#.utf8))
+        XCTAssertThrowsError(try sync("A", server)) {
+            guard case WebDAVError.malformedResponse = $0 else { return XCTFail("\($0)") }
+        }
+    }
+
     func testRefusesDifferentVault() throws {
         let server = MockDAV()
         _ = try makeVault("A")
