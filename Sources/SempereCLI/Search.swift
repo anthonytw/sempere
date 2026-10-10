@@ -98,6 +98,9 @@ struct SearchCommand: ParsableCommand {
     @OptionGroup var access: AccessOptions
     @OptionGroup var output: OutputOptions
 
+    /// Notes reconstructed at a time.
+    static let chunkSize = 128
+
     func validate() throws {
         if term.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { throw ValidationError("the search term is empty") }
     }
@@ -110,7 +113,13 @@ struct SearchCommand: ParsableCommand {
         var unreadable = 0
         var transcriptProblems = 0
         let ids = try vault.noteIDs()
-        for (id, result) in zip(ids, vault.states(of: ids, detail: .withoutStrokePoints)) {
+        // Reconstructed in chunks (in parallel within each), so only one
+        // chunk's states are held at a time, not the whole vault's text.
+        let states = stride(from: 0, to: ids.count, by: Self.chunkSize).lazy.flatMap { start in
+            let chunk = Array(ids[start..<min(start + Self.chunkSize, ids.count)])
+            return Array(zip(chunk, vault.states(of: chunk, detail: .withoutStrokePoints)))
+        }
+        for (id, result) in states {
             let state: NoteState
             let title: String
             switch result {
