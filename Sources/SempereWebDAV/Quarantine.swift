@@ -46,7 +46,7 @@ struct RunBudget {
 
     func checkTime() throws {
         if Date() > deadline {
-            throw WebDAVError.limitExceeded("it ran for more than \(Int(limits.maxDuration)) seconds (--max-minutes)")
+            throw WebDAVError.limitExceeded("it ran for more than \(Int(limits.maxDuration / 60)) minutes (--max-minutes)")
         }
     }
 
@@ -61,14 +61,14 @@ struct RunBudget {
     func willDownload(_ size: Int?) throws {
         try checkTime()
         if downloadedBytes + Int64(max(size ?? 0, 0)) > limits.maxDownloadBytes {
-            throw WebDAVError.limitExceeded("more than \(limits.maxDownloadBytes) bytes would be downloaded (--max-download-mib)")
+            throw WebDAVError.limitExceeded("more than \(limits.maxDownloadBytes >> 20) MiB would be downloaded (--max-download-mib)")
         }
     }
 
     mutating func downloaded(_ size: Int) throws {
         downloadedBytes += Int64(max(size, 0))
         if downloadedBytes > limits.maxDownloadBytes {
-            throw WebDAVError.limitExceeded("more than \(limits.maxDownloadBytes) bytes were downloaded (--max-download-mib)")
+            throw WebDAVError.limitExceeded("more than \(limits.maxDownloadBytes >> 20) MiB were downloaded (--max-download-mib)")
         }
     }
 }

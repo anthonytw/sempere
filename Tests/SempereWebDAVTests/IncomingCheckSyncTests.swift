@@ -171,9 +171,12 @@ final class IncomingCheckSyncTests: SyncTestCase {
         try sync("A", server)
         let one = try XCTUnwrap(server.size("notes/\(id)/\(try fileNames(a)[0])"))
         let manifest = try XCTUnwrap(server.size("vault.json"))
-        let first = try run("B", server, vault: nil) { $0.limits.maxDownloadBytes = Int64(manifest + one * 2 + one / 2) }
+        let budget = Int64(manifest + one * 2 + one / 2)
+        let first = try run("B", server, vault: nil) { $0.limits.maxDownloadBytes = budget }
         XCTAssertNotNil(first.stoppedEarly, "\(first)")
-        XCTAssertTrue(first.errors.contains { $0.message.contains("--max-download-mib") }, "\(first)")
+        // The number is in the flag's unit.
+        XCTAssertTrue(first.errors.contains { $0.message.contains("\(budget >> 20) MiB") && $0.message.contains("--max-download-mib") },
+                      "\(first)")
         let got = first.downloaded.filter { $0.hasPrefix("notes/") }.count
         XCTAssertLessThan(got, 4)
         let second = try run("B", server, vault: nil)
@@ -189,7 +192,7 @@ final class IncomingCheckSyncTests: SyncTestCase {
         let entries = try run("B", server, vault: nil) { $0.limits.maxEntries = 4 }
         XCTAssertTrue(entries.errors.contains { $0.message.contains("--max-entries") }, "\(entries)")
         let time = try run("C", server, vault: nil) { $0.limits.maxDuration = -1 }
-        XCTAssertTrue(time.errors.contains { $0.message.contains("--max-minutes") }, "\(time)")
+        XCTAssertTrue(time.errors.contains { $0.message.contains("0 minutes (--max-minutes)") }, "\(time)")
         XCTAssertFalse(time.downloaded.contains { $0.hasPrefix("notes/") })
     }
 }
