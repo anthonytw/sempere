@@ -105,9 +105,12 @@ extension WebDAVSync {
         let serverOnly = R.subtracting(L)
         for n in L.subtracting(R).sorted() { attempt(n) { try upload(id, n); R.insert(n) } }
 
-        var loaded: LoadedNote?
-        if let vault, let uuid = UUID(uuidString: id) { loaded = try? vault.loadNote(uuid) }
-        let cover = (loaded?.revisions ?? []).filter { R.contains($0.name) }.compactMap(SnapshotCoverage.init)
+        // Read only when a deletion is judged or a shared snapshot's coverage
+        // is not recorded yet (see syncNote); the cover is of what the server
+        // holds after the uploads, as before.
+        lazy var loaded: LoadedNote? = loadForSync(id)
+        let coverNames = R
+        lazy var cover = (loaded?.revisions ?? []).filter { coverNames.contains($0.name) }.compactMap(SnapshotCoverage.init)
         let epoch = Date(timeIntervalSince1970: 0)
 
         for n in serverOnly.sorted() {
@@ -143,11 +146,14 @@ extension WebDAVSync {
         try syncBlobDeletions(id, &blobs, remoteRevisions: R)
 
         guard !options.dryRun else { return }
+        let shared = L.intersection(R)
         var coverage: [RevisionName: Included] = [:]
-        for r in loaded?.revisions ?? [] {
-            if case .snapshot(let inc, _) = r.body { coverage[r.name] = inc }
+        if needsCoverage(id, shared) {
+            for r in loaded?.revisions ?? [] {
+                if case .snapshot(let inc, _) = r.body { coverage[r.name] = inc }
+            }
         }
-        for n in L.intersection(R) {
+        for n in shared {
             let k = key(id, n)
             state.files[k] = SyncState.FileRecord(included: coverage[n] ?? state.files[k]?.included)
         }

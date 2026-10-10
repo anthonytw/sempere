@@ -122,6 +122,9 @@ public final class WebDAVSync {
     /// synced once per run, so this stays exact without being updated; it
     /// must be rebuilt if a note is ever synced twice in one run.
     var recordedFiles: [String: [String]] = [:]
+    /// How many notes this run read through `vault` (decrypted every
+    /// revision of) to judge deletions or record snapshot coverage.
+    var notesRead = 0
 
     /// - Parameters:
     ///   - directory: the local vault; it may be missing or empty for a first pull.
@@ -462,10 +465,10 @@ public final class WebDAVSync {
         for n in newRemote.sorted() { try attempt(n) { if try download(id, n, entry: entries[n]) { L.insert(n) } } }
         for n in newLocal.sorted() { try attempt(n) { try upload(id, n); R.insert(n) } }
 
-        var loaded: LoadedNote?
-        if let vault, let uuid = UUID(uuidString: id) {
-            loaded = try? vault.loadNote(uuid)
-        }
+        // Read (decrypted, decoded) only when a deletion is judged or a shared
+        // snapshot's coverage is not recorded yet; once, after the transfers
+        // above, as before. An unchanged note is never read.
+        lazy var loaded: LoadedNote? = loadForSync(id)
         let epoch = Date(timeIntervalSince1970: 0)
 
         // The other side deleted these: delete here only if compaction allows it, else put them back.
@@ -540,15 +543,35 @@ public final class WebDAVSync {
 
         guard !options.dryRun else { return }
         // Remember what both sides now share; drop what neither has.
+        let shared = L.intersection(R)
         var coverage: [RevisionName: Included] = [:]
-        for r in loaded?.revisions ?? [] {
-            if case .snapshot(let inc, _) = r.body { coverage[r.name] = inc }
+        if needsCoverage(id, shared) {
+            for r in loaded?.revisions ?? [] {
+                if case .snapshot(let inc, _) = r.body { coverage[r.name] = inc }
+            }
         }
-        for n in L.intersection(R) {
+        for n in shared {
             let k = key(id, n)
             state.files[k] = SyncState.FileRecord(included: coverage[n] ?? state.files[k]?.included)
         }
         for n in S where !L.contains(n) && !R.contains(n) { state.files[key(id, n)] = nil }
+    }
+
+    /// The note as `vault` reads it, nil when the vault is not unlocked or
+    /// the note cannot be listed.
+    func loadForSync(_ id: String) -> LoadedNote? {
+        guard let vault, let uuid = UUID(uuidString: id) else { return nil }
+        notesRead += 1
+        return try? vault.loadNote(uuid)
+    }
+
+    /// Whether recording what both sides share needs the note read: a shared
+    /// snapshot whose coverage is not recorded yet. A recorded one keeps its
+    /// record (snapshots are write-once, so reading it again gives the same
+    /// value), and only a file named as a snapshot holds one (a revision
+    /// whose content names another kind does not read).
+    func needsCoverage(_ id: String, _ shared: Set<RevisionName>) -> Bool {
+        shared.contains { $0.kind == .snapshot && state.files[key(id, $0)]?.included == nil }
     }
 
     /// Rewrites the server's `sempere-index.json` (kept only where one
