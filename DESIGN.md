@@ -28,6 +28,8 @@ are items too (`format.md` §8.2.7–§8.2.9).
 
 ## Architecture
 
+The core stack (the other library targets, such as the importers below, build on it):
+
 ```
 ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
 │  iPad app    │  │   Mac app    │  │  sempere    │
@@ -44,8 +46,9 @@ are items too (`format.md` §8.2.7–§8.2.9).
              └─────────────┘
 ```
 
-The three library targets build on Linux with only Foundation, swift-crypto
-and zlib. That rule exists for two reasons: it keeps the format independent
+Everything under `Sources/` builds on Linux without Apple frameworks
+(Foundation, swift-crypto and zlib, plus swift-argument-parser for the CLI).
+That rule exists for two reasons: it keeps the format independent
 of Apple frameworks, and it lets cloud agents (Linux-only VMs) build and test
 most of the project. Anything that imports UIKit, AppKit, PencilKit or
 CoreGraphics lives under `Apps/`.

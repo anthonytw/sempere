@@ -63,6 +63,22 @@ final class RecipientTests: VaultTestCase {
         }
     }
 
+    /// Labels are stored one line, trimmed and at most 80 characters, by
+    /// every writer; an empty one stays empty and is shown as "Device".
+    func testLabelsAreCleanedWhenWritten() throws {
+        let a = pqIdentity(), b = pqIdentity(), c = pqIdentity()
+        var vault = try Vault.create(at: vaultURL(), recipients: [a.recipient], labels: ["  Anna's\niPad  "],
+                                     identities: [a])
+        try vault.addRecipient(b.recipient, label: String(repeating: "x", count: 300))
+        try vault.replaceRecipient(b.recipient, with: c.recipient, label: "\n \n")
+        XCTAssertEqual(vault.recipients.map(\.label), ["Anna's iPad", ""])
+        let reopened = try Vault.open(at: vault.url)
+        XCTAssertEqual(reopened.recipients.map(\.label), ["Anna's iPad", ""])
+        XCTAssertEqual(reopened.recipients.map(\.displayLabel), ["Anna's iPad", "Device"])
+        XCTAssertEqual(VaultManifest.Recipient.cleanLabel(String(repeating: "y", count: 300)).count, 80)
+        XCTAssertEqual(VaultManifest.Recipient.displayLabel(" a\r\nb "), "a b")
+    }
+
     func testInterruptedAddIsFinishedBySecondRun() throws {
         let a = pqIdentity(), b = pqIdentity()
         var vault = try makeVault(a)

@@ -555,7 +555,7 @@ final class CLIAttachTests: CLITestCase {
         try Data("{\"format\": \"other\"}".utf8).write(to: junk)
         try fails(rid, junk.path, "invalid transcript")
         try fails("00000000-0000-4000-8000-000000000000", try transcriptFile(for: rid), "no recording")
-        try fails(String(rid.prefix(2)), try transcriptFile(for: rid), "no recording")   // too short to be a prefix
+        try fails(String(rid.prefix(2)), try transcriptFile(for: rid), "give a whole id or at least 4 characters")
         try fails(rid, path("missing.json"), "cannot read")
         XCTAssertEqual(try revisionCount(physics), before)
         XCTAssertEqual(blobFiles(physics).count, 1, "only the audio is stored")

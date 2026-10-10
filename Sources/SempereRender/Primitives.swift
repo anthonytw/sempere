@@ -238,7 +238,7 @@ extension RenderError: LocalizedError {
         case .invalidPageSize: return "the page size is invalid"
         case .invalidScale: return "the raster scale or dpi must be a finite positive number"
         case .imageTooLarge(let pixels, let limit):
-            return "image of \(fmt(pixels)) pixels exceeds the limit of \(limit); lower --dpi"
+            return "image of \(fmt(pixels)) pixels exceeds the limit of \(limit)"
         case .tooComplex: return "the page has more ink geometry than the renderer accepts"
         case .invalidImage: return "an image's pixel data does not match its size"
         case .cannotWrite(let path): return "cannot write \(path)"

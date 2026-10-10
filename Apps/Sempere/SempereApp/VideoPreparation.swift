@@ -36,8 +36,8 @@ enum VideoPreparation {
             switch self {
             case .unreadable: return String(localized: "This file is not a video Sempere can read.")
             case .tooLarge(let n):
-                let size = ByteCountFormatter.string(fromByteCount: n, countStyle: .file)
-                let limit = ByteCountFormatter.string(fromByteCount: VideoIngestRules.maxBytes, countStyle: .file)
+                let size = BlobSizeText.string(n)
+                let limit = BlobSizeText.string(VideoIngestRules.maxBytes)
                 return String(localized: "This video is too large to add (\(size); at most \(limit)). Trim it first.",
                               comment: "The values are file sizes")
             case .cannotConvert(let why):

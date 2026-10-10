@@ -96,6 +96,8 @@ enum MenuCommand: String, CaseIterable, Sendable {
             return context?.paletteCompact == true ? String(localized: "Use Full Palette") : title
         case .togglePageStrip:
             return context?.pageStripVisible == true ? String(localized: "Hide Pages") : title
+        case .toggleNoteList:
+            return context?.noteListHidden == true ? String(localized: "Show Note List", comment: "View menu: bring the note list back") : title
         case .toggleLayout:
             return context?.notePageless == true ? String(localized: "Switch to Paged Layout") : title
         case .toggleVoiceNote:
@@ -124,7 +126,7 @@ enum MenuCommand: String, CaseIterable, Sendable {
         case .insertPDFPages: return String(localized: "Insert PDF Pages…")
         case .insertPhoto: return String(localized: "Insert Photo…")
         case .exportNotes: return String(localized: "Export…", comment: "File menu: open the export sheet")
-        case .bulkExport: return String(localized: "Export Notes…")
+        case .bulkExport: return String(localized: "Export to Folder or Zip…", comment: "File menu: bulk export to a folder or zip")
         case .toggleVoiceNote: return String(localized: "Start Voice Note", comment: "File menu: record a quick voice note into the inbox")
         case .renameNote: return String(localized: "Rename Note…")
         case .editTags: return String(localized: "Edit Tags…")
@@ -165,7 +167,7 @@ enum MenuCommand: String, CaseIterable, Sendable {
         case .zoomOut: return String(localized: "Zoom Out", comment: "View menu")
         case .fitWidth: return String(localized: "Fit Page Width")
         case .actualSize: return String(localized: "Actual Size", comment: "View menu: zoom to 100%")
-        case .toggleNoteList: return String(localized: "Hide or Show Note List")
+        case .toggleNoteList: return String(localized: "Hide Note List", comment: "View menu: a full-width canvas")
         case .togglePageStrip: return String(localized: "Show Pages", comment: "View menu: the page thumbnails beside the canvas")
         case .showLibrary: return String(localized: "Library", comment: "View menu: show the library window")
         case .showKeys: return String(localized: "Vault Keys", comment: "View menu: open the vault keys window")
@@ -281,6 +283,8 @@ enum MenuCommand: String, CaseIterable, Sendable {
         var paletteCompact = false
         /// The page thumbnails are shown beside the canvas (`PageStrip.visibleKey`).
         var pageStripVisible = false
+        /// The library window shows the canvas alone (`ColumnLayout` `detailOnly`).
+        var noteListHidden = false
         /// The quick voice note recorder (`QuickCapture.state`).
         var voiceNote = VoiceNote.idle
         /// The canvas has a page to show.

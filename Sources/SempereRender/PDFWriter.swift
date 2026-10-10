@@ -477,7 +477,6 @@ public enum PDFWriter {
         }
     }
 
-    /// PDF text string: literal for printable ASCII, else UTF-16BE hex with BOM.
     /// An indirect stream object's body: `dict` (without `<< >>`) then the stream.
     static func streamObject(dict: String, _ stream: Data) -> Data {
         var body = Data("<< \(dict) >>\nstream\n".utf8)
@@ -486,6 +485,8 @@ public enum PDFWriter {
         return body
     }
 
+    /// PDF text string: literal for printable ASCII (`(`, `)` and `\` escaped),
+    /// else UTF-16BE hex with BOM.
     static func textString(_ s: String) -> String {
         if s.unicodeScalars.allSatisfy({ $0.value >= 0x20 && $0.value < 0x7F }) {
             var o = "("

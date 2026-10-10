@@ -1347,7 +1347,7 @@ extension NoteEditor {
             knownRevisionNames.insert(name)
         } catch {
             let detail = "\(error)"
-            recognitionError = String(localized: "Could not save recognised text: \(detail)")
+            recognitionError = String(localized: "Could not save recognized text: \(detail)")
             return
         }
         for r in current {

@@ -50,6 +50,16 @@ describe("manifest", () => {
     expect(() => parseManifest(enc.encode("{"))).toThrow(/not JSON/);
     expect(() => parseManifest(Uint8Array.of(0xff, 0xfe))).toThrow(VaultError);
   });
+
+  it("refuses features that are not an array of strings, as Swift does; null is absent", () => {
+    const m = JSON.parse(readFileSync(join(fixtures, "sample.sempere", "vault.json"), "utf8")) as Record<string, unknown>;
+    const parse = (features: unknown) => parseManifest(enc.encode(JSON.stringify({ ...m, features })));
+    for (const features of ["attachments", [1], ["attachments", 2], {}, 3]) {
+      expect(() => parse(features)).toThrow(expect.objectContaining({ code: "manifestCorrupt" }));
+    }
+    expect(parse(null).features).toEqual([]);
+    expect(parse(["attachments"]).features).toEqual(["attachments"]);
+  });
 });
 
 describe("identity", () => {

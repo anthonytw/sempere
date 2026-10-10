@@ -126,6 +126,25 @@ final class CLIInboxTests: CLITestCase {
         XCTAssertEqual(result["created"] as? Bool, true)
     }
 
+    /// A capture from a device whose key has no label names it as the app
+    /// and `vault info` show such a device: "Device".
+    func testCaptureFromAnUnlabelledDeviceSaysDevice() throws {
+        try XCTSkipUnless(postQuantumAvailable)
+        let (vault, _, keyPath) = try makeVault()
+        let other = try NativeIdentity.generate(.postQuantum)
+        let otherKey = path("other.key")
+        try IdentityFile.render(other, created: Date()).write(toFile: otherKey, atomically: true, encoding: .utf8)
+        let mine = ["--vault", vault.url.path, "--identity", keyPath]
+        XCTAssertEqual(try cli(["vault", "recipients", "add", other.recipient.string] + mine).status, 0)
+        let profile = path("other-profile.json")
+        let enabled = try cli(["inbox", "enable", "--profile", profile, "--vault", vault.url.path, "--identity", otherKey])
+        XCTAssertEqual(enabled.status, 0, enabled.err)
+        XCTAssertTrue(enabled.out.contains("captures attributed to Device)"), enabled.out)
+        XCTAssertEqual(try cli(["inbox", "capture", Self.tone, "--vault", vault.url.path, "--profile", profile]).status, 0)
+        let listed = try cli(["inbox", "list"] + mine)
+        XCTAssertTrue(listed.out.contains("from Device (device "), listed.out)
+    }
+
     /// Captures name the device whose key made the profile (format.md §11.1,
     /// security review 2026-10, C2); a device removed since cannot add any
     /// (C3): its profile's key is revoked and it has no key under the new one.

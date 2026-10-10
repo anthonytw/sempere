@@ -268,4 +268,28 @@ final class MarkdownLayoutTests: XCTestCase {
         // Still well-formed XML.
         _ = TextExportTests.parse(html)
     }
+
+    /// Typed and Markdown text boxes go through one escaper: both drop the
+    /// characters XML 1.0 forbids and escape the same five characters.
+    func testTypedAndMarkdownBoxesEscapeAlike() throws {
+        // Writers strip control characters, so put one in as another writer might.
+        func withControl(_ c: TextContent) -> TextContent {
+            var c = c
+            c.runs = c.runs.map { var r = $0; r.t = r.t.replacingOccurrences(of: "X", with: "\u{8}"); return r }
+            return c
+        }
+        let text = "aXb 'q' & <c>"
+        var state = Self.note(withControl(try MarkdownText.content(text)))
+        var typed = Item.text(withControl(try NoteOps.text(text)), frame: Rect(x: 0, y: 200, w: 100, h: 20), z: "a1")
+        typed.id = UUID()
+        state.pages[0].items.append(typed)
+        let info = ExportNoteInfo(id: UUID(), title: "M", tags: [], notebook: nil, created: Date(timeIntervalSince1970: 0),
+                                  modified: nil, pages: 1, source: "sempere")
+        let html = HTMLExport.notePage(info: info, state: state, svgs: ["<svg></svg>"], indexHref: nil)
+        let escaped = "ab &#39;q&#39; &amp; &lt;c&gt;"
+        XCTAssertTrue(html.contains("<pre>\(escaped)</pre>"), html)
+        XCTAssertTrue(html.contains("<p>\(escaped)</p>"), html)
+        XCTAssertFalse(html.unicodeScalars.contains("\u{8}"), html)
+        _ = TextExportTests.parse(html)
+    }
 }

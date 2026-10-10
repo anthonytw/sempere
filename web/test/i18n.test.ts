@@ -10,6 +10,8 @@ import {
   type Plural, type TextKey, choosePreference, detectLocale, entries, isPreference, locale, matchLocale, resolve, setLocale, storedPreference, storePreference, t, tn,
 } from "../src/i18n/index.ts";
 import { formatBytes } from "../src/ui/caching.ts";
+import { blobProblem } from "../src/ui/errors.ts";
+import { BlobError } from "../src/vault/blobs.ts";
 
 afterEach(() => {
   setLocale("en");
@@ -116,10 +118,23 @@ describe("t and tn", () => {
     expect(tn("{count} ops skipped", 5)).toBe("5 ops skipped");
   });
 
-  it("format sizes and numbers in the language", () => {
-    expect(formatBytes(1536 * 1024)).toBe("1.5 MB");
+  it("word a missing or over-limit attachment alike for every kind, with the limit and the CLI hint", () => {
+    const tooLarge = new BlobError("tooLarge", "attachment of 9 bytes is over this viewer's 256 MiB limit");
+    const missing = new BlobError("missing", "no file");
+    for (const kind of ["audio", "video", "image", "pdf"] as const) {
+      expect(blobProblem(tooLarge, kind, 256 * 2 ** 20), kind).toMatch(/\(256 MiB\); export it with the CLI/);
+      expect(blobProblem(missing, kind, 1), kind).toMatch(/missing from the vault \(or not synced yet\)/);
+    }
+    expect(blobProblem(new BlobError("corrupt", "x"), "audio", 1)).toBeUndefined();
+    expect(blobProblem(new Error("x"), "audio", 1)).toBeUndefined();
     setLocale("es");
-    expect(formatBytes(1536 * 1024)).toBe("1,5 MB");
+    expect(blobProblem(tooLarge, "audio", 256 * 2 ** 20)).toBe("La grabación es mayor de lo que reproduce este visor (256 MiB); expórtala con la CLI.");
+  });
+
+  it("format sizes and numbers in the language", () => {
+    expect(formatBytes(1536 * 1024)).toBe("1.5 MiB");
+    setLocale("es");
+    expect(formatBytes(1536 * 1024)).toBe("1,5 MiB");
   });
 });
 

@@ -258,7 +258,7 @@ queued for up to 30 minutes.
   preferences, caches or saved windows (`SEMPERE_DEBUG_FRESH`), unlocks the
   demo vault through the unlock sheet (`SEMPERE_DEMO_PASSPHRASE`), checks the
   library in each column layout and opens Settings, Vault Keys, a note window,
-  Export…, Export Notes… and Restore from Backup…. On the Mac it is its own
+  Export…, Export to Folder or Zip… and Restore from Backup…. On the Mac it is its own
   step, "Launch smoke tests on Mac Catalyst" (`scripts/app.sh
   test-mac-smoke`: a Catalyst build of the app and its UI tests from the
   cache, then four launches; about 5 minutes, the only Catalyst step a PR

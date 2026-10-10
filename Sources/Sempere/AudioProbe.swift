@@ -3,7 +3,8 @@ import Foundation
 /// What a recording's audio file says about itself (format.md §8.3.1): the
 /// informational fields of a `Recording`.
 public struct AudioInfo: Hashable, Sendable {
-    /// Seconds.
+    /// Seconds: the sound track's `mdhd` duration, the movie's `mvhd` when
+    /// that is absent or 0.
     public var duration: Double?
     /// `aac`, `he-aac` or `alac`; nil for a sample format this reader does not name.
     public var codec: String?
@@ -147,7 +148,7 @@ public enum AudioProbe {
         var info: AudioInfo?
         var mediaDuration: Double?
         for box in top {
-            if box.type == "mvhd" { movieDuration = try header(d, box.body) }
+            if box.type == "mvhd" { movieDuration = header(d, box.body) }
             guard box.type == "trak", info == nil else { continue }
             let mdia = try children(d, box.body, budget: &budget).first { $0.type == "mdia" }
             guard let mdia else { continue }
@@ -155,14 +156,16 @@ public enum AudioProbe {
             guard let hdlr = parts.first(where: { $0.type == "hdlr" }), hdlr.body.count >= 12,
                   String(decoding: d[hdlr.body.lowerBound + 8..<hdlr.body.lowerBound + 12], as: UTF8.self) == "soun"
             else { continue }
-            if let mdhd = parts.first(where: { $0.type == "mdhd" }) { mediaDuration = try header(d, mdhd.body) }
+            if let mdhd = parts.first(where: { $0.type == "mdhd" }) { mediaDuration = header(d, mdhd.body) }
             let minf = try parts.first { $0.type == "minf" }.map { try children(d, $0.body, budget: &budget) } ?? []
             let stbl = try minf.first { $0.type == "stbl" }.map { try children(d, $0.body, budget: &budget) } ?? []
             let stsd = stbl.first { $0.type == "stsd" }
             info = try stsd.map { try sampleEntry(d, $0.body, budget: &budget) } ?? AudioInfo()
         }
         guard var found = info else { throw AudioProbeError.noAudioTrack }
-        found.duration = (mediaDuration ?? movieDuration).map { InkJSON.round3($0) }
+        // The sound track's `mdhd` (what plays), the movie's `mvhd` when it is absent or 0.
+        found.duration = ([mediaDuration, movieDuration].compactMap { $0 }.first { $0 > 0 } ?? mediaDuration ?? movieDuration)
+            .map { InkJSON.round3($0) }
         if let seconds = found.duration, seconds > 0 {
             // Average over the whole file: the container's own overhead is a fraction of a percent.
             let bits = Double(fileSize) * 8 / seconds
@@ -171,22 +174,10 @@ public enum AudioProbe {
         return found
     }
 
-    /// `mvhd` / `mdhd`: the duration in seconds, nil when the box is short or its timescale is 0.
-    private static func header(_ d: [UInt8], _ body: Range<Int>) throws -> Double? {
-        let b = body.lowerBound
-        guard body.count >= 4 else { return nil }
-        let version = d[b]
-        let scale: UInt32, ticks: UInt64
-        if version == 1 {
-            guard body.count >= 32 else { return nil }
-            scale = be32(d, b + 20); ticks = be64(d, b + 24)
-        } else {
-            guard body.count >= 20 else { return nil }
-            scale = be32(d, b + 12); ticks = UInt64(be32(d, b + 16))
-        }
-        guard scale > 0, ticks != UInt64.max, ticks != UInt64(UInt32.max) else { return nil }
-        let seconds = Double(ticks) / Double(scale)
-        return seconds.isFinite ? seconds : nil
+    /// `mvhd` / `mdhd`: the duration in seconds (`VideoProbe.duration`: nil
+    /// when the box is short, the timescale is 0 or the duration is "unknown").
+    private static func header(_ d: [UInt8], _ body: Range<Int>) -> Double? {
+        VideoProbe.duration(Array(d[body.lowerBound..<min(body.upperBound, body.lowerBound + 32)]))
     }
 
     /// `stsd`: the first sample entry (`mp4a`, `alac`, ...).

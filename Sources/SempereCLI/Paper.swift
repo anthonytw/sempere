@@ -104,7 +104,7 @@ struct KeysPaper: ParsableCommand {
             }
             secret = .passphraseWrapped(String(decoding: armored, as: UTF8.self))
         } else {
-            if identity == nil, let locked { identity = try access.identityFromKeyFiles(of: locked) }
+            if identity == nil, let locked { identity = try access.identitiesFromKeyFiles(of: locked)[0] }
             guard let identity else {
                 throw CLIError.cannotDecrypt("no key: pass --identity FILE (or --vault V holding a stored key file)")
             }

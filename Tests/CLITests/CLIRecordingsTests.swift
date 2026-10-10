@@ -118,7 +118,11 @@ final class CLIRecordingsTests: CLITestCase {
         let after = try state(physics)
         XCTAssertTrue(after.recordings.isEmpty)
         XCTAssertFalse(after.pages.flatMap(\.items).contains { $0.kind == .audio })
-        XCTAssertEqual(try cli(["recordings", "place", physics, rid] + args).status, 1, "no such recording any more")
+        let gone = try cli(["recordings", "place", physics, rid] + args)
+        XCTAssertEqual(gone.status, 1, "no such recording any more")
+        XCTAssertTrue(gone.err.contains("no recording \(rid) in this note"), gone.err)
+        let short = try cli(["recordings", "place", physics, String(rid.prefix(3))] + args)
+        XCTAssertTrue(short.err.contains("give a whole id or at least 4 characters"), short.err)
     }
 
     func testCopyToAnotherNoteLeavesAudioItemsBehind() throws {

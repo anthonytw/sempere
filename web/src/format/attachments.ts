@@ -136,7 +136,7 @@ function recordingLink(v: unknown, path: string): void {
 // MARK: - Blobs (§8.1.1)
 
 /** Largest blob content (§8.4): 1 GiB. */
-const maxBlobSize = 2 ** 30;
+export const maxBlobSize = 2 ** 30;
 const blobKeys: ReadonlySet<string> = new Set(["sha256", "size", "type"]);
 
 function blobRef(v: unknown, path: string, c: Ctx): JSONObject {

@@ -1,53 +1,32 @@
 import Foundation
 import Sempere
 
-#if canImport(Glibc)
-import Glibc
-#elseif canImport(Musl)
-import Musl
-#elseif canImport(Darwin)
-import Darwin
-#endif
-
 /// Atomic local writes: a half-written file never appears under its final name.
-/// Temporary files are `FileIO.tempURL(in:)` names, so every listing ignores leftovers.
+/// They follow the vault's own write contract (`FileIO`): temporary names
+/// every listing ignores, `fsync` of the file and of its directory, and the
+/// rename fallback where the file system has no hard links.
 enum LocalFS {
     /// Writes `data` to a temporary file next to `url`, flushes it, and moves it
     /// into place. With `replacing` false an existing file is never touched
-    /// (`link(2)` fails with `EEXIST`) and the result is false.
+    /// (`FileIO.placeNew`) and the result is false.
     @discardableResult
     static func write(_ data: Data, to url: URL, replacing: Bool) throws -> Bool {
         let dir = url.deletingLastPathComponent()
-        let fm = FileManager.default
-        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        let tmp = FileIO.tempURL(in: dir)
-        do {
-            try data.write(to: tmp, options: [.withoutOverwriting])
-            let h = try FileHandle(forWritingTo: tmp)
-            try h.synchronize()
-            try h.close()
-        } catch {
-            try? fm.removeItem(at: tmp)
-            throw WebDAVError.io("write \(tmp.path): \(error.localizedDescription)")
-        }
-        defer { try? fm.removeItem(at: tmp) }
-        let rc: Int32 = tmp.withUnsafeFileSystemRepresentation { src in
-            url.withUnsafeFileSystemRepresentation { dst -> Int32 in
-                guard let src, let dst else { return -1 }
-                return replacing ? rename(src, dst) : link(src, dst)
+        return try vault {
+            try FileIO.createDirectory(dir)
+            let tmp = FileIO.tempURL(in: dir)
+            try FileIO.writeNewFile(tmp) { try $0(data) }
+            if replacing {
+                try FileIO.place(tmp, at: url)
+                return true
             }
+            return try placeNew(flushed: tmp, at: url)
         }
-        if rc != 0 {
-            if !replacing && errno == EEXIST { return false }
-            throw WebDAVError.io("cannot place \(url.path): \(String(cString: strerror(errno)))")
-        }
-        syncDirectory(dir)
-        return true
     }
 
-    /// Flushes `tmp` and links it to `url` (`link(2)`: never over an
-    /// existing file; false then), then removes `tmp`. A file is never seen
-    /// half-written under its final name.
+    /// Flushes `tmp` and moves it to `url` without ever replacing an
+    /// existing file (`FileIO.placeNew`: false then), then removes `tmp`. A
+    /// file is never seen half-written under its final name.
     static func placeNew(_ tmp: URL, at url: URL) throws -> Bool {
         do {
             let h = try FileHandle(forWritingTo: tmp)
@@ -56,19 +35,18 @@ enum LocalFS {
         } catch {
             throw WebDAVError.io("flush \(tmp.path): \(error.localizedDescription)")
         }
-        let rc: Int32 = tmp.withUnsafeFileSystemRepresentation { src in
-            url.withUnsafeFileSystemRepresentation { dst -> Int32 in
-                guard let src, let dst else { return -1 }
-                return link(src, dst)
-            }
-        }
-        if rc != 0 {
-            if errno == EEXIST { try? FileManager.default.removeItem(at: tmp); return false }
-            throw WebDAVError.io("cannot place \(url.path): \(String(cString: strerror(errno)))")
-        }
-        try? FileManager.default.removeItem(at: tmp)
-        syncDirectory(url.deletingLastPathComponent())
+        return try vault { try placeNew(flushed: tmp, at: url) }
+    }
+
+    private static func placeNew(flushed tmp: URL, at url: URL) throws -> Bool {
+        do { try FileIO.placeNew(tmp, at: url) } catch VaultError.alreadyExists { return false }
         return true
+    }
+
+    /// Runs a `FileIO` step, reporting its `VaultError` as `WebDAVError.io`
+    /// with the same sentence.
+    private static func vault<T>(_ body: () throws -> T) throws -> T {
+        do { return try body() } catch let e as VaultError { throw WebDAVError.io("\(e)") }
     }
 
     /// Size of a regular file; nil when missing or not a regular file.
@@ -89,18 +67,9 @@ enum LocalFS {
         }
     }
 
+    /// Removes a file and flushes its directory (`FileIO.remove`).
     static func remove(_ url: URL) throws {
-        do { try FileManager.default.removeItem(at: url) } catch {
-            throw WebDAVError.io("remove \(url.path): \(error.localizedDescription)")
-        }
-        syncDirectory(url.deletingLastPathComponent())
-    }
-
-    private static func syncDirectory(_ dir: URL) {
-        let fd = dir.withUnsafeFileSystemRepresentation { p -> Int32 in p.map { open($0, O_RDONLY) } ?? -1 }
-        guard fd >= 0 else { return }
-        _ = fsync(fd)
-        _ = close(fd)
+        try vault { try FileIO.remove(url) }
     }
 
     static func entries(_ dir: URL) throws -> [String] {

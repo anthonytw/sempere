@@ -215,15 +215,9 @@ func storeBlob(_ vault: Vault, _ id: UUID, _ data: Data, type: String, expect re
 
 /// The recording `query` names in `state`: an id, a unique id prefix of 4 or more characters, or an exact title.
 func resolveRecording(_ query: String, in state: NoteState) throws -> Recording {
-    let q = query.lowercased()
-    if let exact = state.recordings.first(where: { $0.id.uuidString.lowercased() == q }) { return exact }
-    var matches = q.count >= 4 ? state.recordings.filter { $0.id.uuidString.lowercased().hasPrefix(q) } : []
-    if matches.isEmpty { matches = state.recordings.filter { ($0.title ?? "") == query } }
-    guard let first = matches.first else { throw CLIError.failure("no recording \(query) in this note (see `notes show`)") }
-    guard matches.count == 1 else {
-        throw CLIError.failure("'\(query)' matches \(matches.count) recordings: \(matches.map { $0.id.uuidString.lowercased() }.joined(separator: ", "))")
+    try resolveIDPrefix(query, kind: "recording", among: state.recordings, id: \.id) {
+        state.recordings.filter { ($0.title ?? "") == query }
     }
-    return first
 }
 
 func link(_ options: PlacementOptions, in state: NoteState) throws -> RecordingLink? {

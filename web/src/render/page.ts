@@ -32,9 +32,9 @@ export interface PreparedStroke {
   behindItems?: boolean;
 }
 
+/** The option, else the sheet height of the pageless page (PageComposer.chunkHeight). */
 export function chunkHeight(options: RenderOptions, meta: NoteMeta): number {
-  const size = meta.pageSize;
-  const base = options.infiniteChunkHeight ?? size.breakHeight ?? size.width * 11 / 8.5;
+  const base = options.infiniteChunkHeight ?? sheetHeight({ ...meta.pageSize, infinite: true });
   return Math.min(Math.max(Number.isFinite(base) ? base : 792, 72), RenderLimits.maxExtent);
 }
 

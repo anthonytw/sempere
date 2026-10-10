@@ -358,7 +358,7 @@ show the same numbers:
   model-owned task works through the queue at utility priority after a 2 s
   pause, so an editor's burst of autosaves is indexed once. Notes whose
   summary came from the summary cache (an existing install) are indexed when
-  Settings → Storage asks ("Check N More Notes").
+  Settings ▸ Storage asks ("Check N More Notes").
 - The CLI computes the entries afresh each run with its own
   `BlobCollectorState` (`Vault.attachmentIndexEntry`), and takes the
   current state from the notes' summaries.
@@ -688,7 +688,7 @@ every reader can play, i.e. inside `audio/mp4` (`format.md` §8.3.1):
 | --- | --- | --- |
 | Codec | AAC-LC; HE-AAC (better at 24–48 kbit/s); Apple Lossless (ALAC, ~4–6× larger) | AAC-LC |
 | Quality (AAC bit rate) | 24, 32, 48, 64, 96, 128 kbit/s (HE-AAC: 24 to 64) | 64 kbit/s |
-| Sample rate | 48 kHz, 44.1 kHz, 32 kHz, 22.05 kHz, 16 kHz (HE-AAC records at 48 kHz below 32 kHz) | 48 kHz |
+| Sample rate | 48 kHz, 44.1 kHz, 32 kHz, 22.05 kHz, 16 kHz (HE-AAC offers 32 kHz and up; a lower rate becomes 48 kHz) | 48 kHz |
 | Channels | mono, stereo (only with a stereo input) | mono |
 
 The panel shows the resulting size per hour. Each recording stores what was
@@ -1916,7 +1916,7 @@ Settings added since (same panel, same rules):
 
 | Section | Setting | Default | Notes |
 | --- | --- | --- | --- |
-| Recording | Quality choices | 24, 32, 48, 64, 96, 128 kbit/s | HE-AAC offers up to 64; Apple Lossless has no rate (size is an estimate for speech); sample rates 16, 22.05, 32, 44.1, 48 kHz |
+| Recording | Quality choices | 24, 32, 48, 64, 96, 128 kbit/s | HE-AAC offers up to 64; Apple Lossless has no rate (size is an estimate for speech); sample rates 16, 22.05, 32, 44.1, 48 kHz (HE-AAC from 32 kHz) |
 | Transcription | Language | same as the device | model status (`TranscriptionSettings.statusProvider`) and, when SpeechTranscriber's model is missing, a "Download Language Model" button (`.downloader` → `SpeechTranscription.downloadModel`, Apple's asset service; also `sempere transcribe --download-model`); "Not available" where no engine supports the language; below it "Engine in Use" and one line per engine (SpeechTranscriber, SFSpeechRecognizer; DictationTranscriber is not offered, GA-11) with what it reports for the chosen language (`TranscriptionPreference.engineLines`: the first available one is in use, as `SpeechTranscription.transcribe` tries them) |
 | New notes | Title when left empty | date and time | also "Date" and "Untitled" |
 | | Default paper | ruled | `PaperPreference` |

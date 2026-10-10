@@ -173,11 +173,11 @@ struct PaperPickerView: View {
                 parameterRow(parameter)
             }
             if draft.hasLineColor {
-                colorRow(draft.kind == .dot || draft.kind == .isoDot ? String(localized: "Dot colour") : String(localized: "Line colour"),
+                colorRow(draft.kind == .dot || draft.kind == .isoDot ? String(localized: "Dot color") : String(localized: "Line color"),
                          get: { draft.paper.lineColor }, set: { draft.setLineColor($0) })
             }
             if draft.hasMarginColor {
-                colorRow(String(localized: "Margin colour"), get: { draft.paper.marginColor }, set: { draft.setMarginColor($0) })
+                colorRow(String(localized: "Margin color"), get: { draft.paper.marginColor }, set: { draft.setMarginColor($0) })
             }
             backgroundRow
             Button("Reset to Defaults", systemImage: "arrow.counterclockwise") { draft.reset() }
@@ -213,7 +213,7 @@ struct PaperPickerView: View {
 
     private var backgroundRow: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Page colour")
+            Text("Page color")
             HStack(spacing: 12) {
                 ForEach(PaperBackground.allCases) { preset in
                     Button { draft.select(preset) } label: {
@@ -231,7 +231,7 @@ struct PaperPickerView: View {
                     .accessibilityAddTraits(draft.background == preset ? .isSelected : [])
                 }
                 Spacer()
-                ColorPicker("Custom page colour", selection: Binding(
+                ColorPicker("Custom page color", selection: Binding(
                     get: { SwiftUI.Color(uiColor: draft.paper.background.uiColor) },
                     set: { draft.setBackgroundColor(Sempere.Color(UIColor($0))) }), supportsOpacity: false)
                     .labelsHidden()

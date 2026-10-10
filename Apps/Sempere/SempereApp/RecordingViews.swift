@@ -180,8 +180,9 @@ struct RecordingsMenu: View {
         guard let label = c.label(in: recipients) else {
             return String(localized: "Voice note from a device no longer in this vault", comment: "The capturing device's key was removed from the vault")
         }
-        if label.isEmpty { return String(localized: "Voice note from a device without a name", comment: "The capturing device's key has no label") }
-        return String(localized: "Voice note from \(label)", comment: "The value is the capturing device's name, e.g. iPad")
+        // A key without a label shows as "Device", as the CLI lists it.
+        let name = label.isEmpty ? String(localized: "Device", comment: "A device key's name when it has none; label of a key's device name in Save Key") : label
+        return String(localized: "Voice note from \(name)", comment: "The value is the capturing device's name, e.g. iPad")
     }
 
     /// "Lecture 3 – 52:10", "Recording 4 Oct 16:20 – 3:02".

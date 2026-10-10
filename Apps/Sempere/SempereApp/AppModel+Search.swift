@@ -36,7 +36,7 @@ struct PageJump: Equatable, Sendable {
     var query: String? = nil
 }
 
-/// "Recognise All Notes" while it runs.
+/// "Recognize All Notes" while it runs.
 struct RecognitionProgress: Equatable, Sendable {
     var done = 0
     var total: Int
@@ -154,7 +154,7 @@ extension AppModel {
         if !on { cancelRecognizingNotes() }
     }
 
-    /// Notes with pages never read (or changed since), that "Recognise All"
+    /// Notes with pages never read (or changed since), that "Recognize All"
     /// would read. Open notes (the library's and note windows') and notes still downloading are
     /// left to their editors and the sync.
     var notesNeedingRecognition: [NoteSummary] {

@@ -4,7 +4,7 @@
 
 import { t } from "../i18n/index.ts";
 import { Decrypter, armor, identityToRecipient } from "age-encryption";
-import { DecodeError, arr, isObject, obj, opt, reqWith, str, uuid } from "../format/json.ts";
+import { DecodeError, arr, arrayOf, isObject, obj, opt, optWith, reqWith, str, uuid } from "../format/json.ts";
 import { cmpUTF8, parseRevisionName, revisionFilename } from "../format/ids.ts";
 import { type Revision, decodeRevision } from "../format/model.ts";
 import { formatMajor, majorOf, manifestReadOnlyReasons, revisionMarkersNewer } from "../format/newer.ts";
@@ -95,7 +95,6 @@ export function parseManifest(bytes: Uint8Array): VaultManifest {
     }));
     const created = reqWith(o, "created", "$", str);
     if (parseRFC3339(created) === undefined) throw new DecodeError("$.created: bad date");
-    const features = opt(o, "features");
     const tag = opt(o, "recipientsTag");
     const markersTag = opt(o, "markersTag");
     m = {
@@ -103,7 +102,8 @@ export function parseManifest(bytes: Uint8Array): VaultManifest {
       vaultId: reqWith(o, "vaultId", "$", uuid),
       recipients,
       vaultSecret: reqWith(o, "vaultSecret", "$", str),
-      features: Array.isArray(features) ? features.filter((f): f is string => typeof f === "string") : [],
+      // An array of strings (§2) or absent, as Swift's decodeIfPresent([String]).
+      features: optWith(o, "features", "$", (v, p) => arrayOf(v, p, str)) ?? [],
     };
     if (tag !== undefined && tag !== null) m.recipientsTag = typeof tag === "string" ? tag : "";
     if (markersTag !== undefined && markersTag !== null) m.markersTag = typeof markersTag === "string" ? markersTag : "";

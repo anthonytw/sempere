@@ -3,7 +3,7 @@ import Observation
 import Sempere
 import SempereRender
 
-/// What "Export Notes…" was asked to export (docs/io.md "Bulk export").
+/// What "Export to Folder or Zip…" was asked to export (docs/io.md "Bulk export").
 struct BulkExportRequest: Identifiable, Equatable, WindowTargeted {
     let id = UUID()
     var scope: BulkExportScope
@@ -89,7 +89,7 @@ struct BulkExportProgress: Equatable, Sendable {
 /// Bulk export: many notes, one at a time (`BulkExportSession`, shared with
 /// `sempere export --all`).
 extension AppModel {
-    /// Opens the "Export Notes…" sheet for `scope`.
+    /// Opens the "Export to Folder or Zip…" sheet for `scope`.
     func requestBulkExport(_ scope: BulkExportScope, window: UUID? = nil) {
         // One export at a time, either kind.
         guard phase == .unlocked, bulkExportRequest == nil, exportRequest == nil else { return }
@@ -97,7 +97,7 @@ extension AppModel {
         bulkExportRequest = BulkExportRequest(scope: scope, window: window)
     }
 
-    /// The scope File ▸ Export Notes… takes in a library window: the ticked
+    /// The scope File ▸ Export to Folder or Zip… takes in a library window: the ticked
     /// notes while selecting, else the sidebar's notebook, else the vault.
     var bulkExportScope: BulkExportScope {
         if isSelectingNotes, !exportTargetIDs.isEmpty { return .notes(exportTargetIDs) }
@@ -188,7 +188,7 @@ extension AppModel {
     }
 }
 
-/// One "Export Notes…" run for its sheet: owns the session, the picked
+/// One "Export to Folder or Zip…" run for its sheet: owns the session, the picked
 /// folder's security scope while it runs, and for a zip the staging folder
 /// (deleted by `discard`, and by `purgeStale` at launch).
 @MainActor

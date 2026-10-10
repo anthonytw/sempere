@@ -97,7 +97,7 @@ enum QuickCaptureError: Error, Equatable, CustomStringConvertible, CustomLocaliz
         switch self {
         case .notSetUp: return String(localized: "Quick Voice Notes is not set up: open Sempere, unlock the vault and turn it on in Settings.")
         case .microphoneDenied: return RecordingError.microphoneDenied.description
-        case .liveActivitiesOff: return String(localized: "Live Activities are off for Sempere, and iOS needs one to record a voice note: turn them on in Settings → Sempere → Live Activities.")
+        case .liveActivitiesOff: return String(localized: "Live Activities are off for Sempere, and iOS needs one to record a voice note: turn them on in the Settings app ▸ Sempere ▸ Live Activities.")
         case .alreadyRecording: return String(localized: "A voice note is already being recorded.")
         case .notRecording: return String(localized: "No voice note is being recorded.")
         }
@@ -356,9 +356,11 @@ final class QuickCapture {
     /// Hides the banner's notice (tapped away).
     func dismissNotice() { notice = nil }
 
-    /// "Voice note 7 Oct 2026 at 14:32" in this device's language.
+    /// "Voice note 7 Oct 2026 at 14:32" in this device's language (the CLI
+    /// writes `CaptureWriter.defaultTitle`'s fixed form instead).
     nonisolated static func title(_ started: Date) -> String {
-        "Voice note " + started.formatted(date: .abbreviated, time: .shortened)
+        String(localized: "Voice note \(started.formatted(date: .abbreviated, time: .shortened))",
+               comment: "Default title of a quick-capture voice note: its start date and time")
     }
 
     /// Seals the audio in `segments` as capture `id`, delivers it, transcribes

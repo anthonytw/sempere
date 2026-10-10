@@ -55,10 +55,10 @@ final class ScreenshotTests: XCTestCase {
 
     /// The iPad's and the Mac's shots.
     static var deviceShots: [Shot] {
-        // "Hide Tools" / "Show Tools" is in the toolbar whenever an editable note is open; the
+        // "Hide Tool Palette" / "Show Tool Palette" is in the toolbar whenever an editable note is open; the
         // note's own title is not (a crowded toolbar drops it).
-        let respiration = "Tools"
-        let atlas = "Tools"
+        let respiration = "Tool Palette"
+        let atlas = "Tool Palette"
         let all = isMac ? "all" : "detailOnly"
         func env(_ columns: String, _ extra: [String: String]) -> [String: String] {
             var e = ["SEMPERE_DEMO": "1", "SEMPERE_DEBUG_COLUMNS": columns]

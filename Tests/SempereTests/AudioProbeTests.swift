@@ -34,6 +34,23 @@ final class AudioProbeTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(info.duration), 1.0, accuracy: 0.05)
     }
 
+    /// A zero `mdhd` duration falls back to `mvhd` (as for video), and a
+    /// version-1 duration of 0xFFFFFFFF ticks is a real one: only all ones
+    /// of the box version's own width means "unknown".
+    func testDurationFallbackAndUnknownSentinel() throws {
+        var bytes = [UInt8](try Self.fixture("tone-aac-faststart.m4a"))
+        let at = try XCTUnwrap((0..<bytes.count - 4).first { Array(bytes[$0..<$0 + 4]) == Array("mdhd".utf8) }) + 4
+        XCTAssertEqual(bytes[at], 0, "a version-0 mdhd in the fixture")
+        bytes.replaceSubrange(at + 16..<at + 20, with: [0, 0, 0, 0])
+        XCTAssertEqual(try XCTUnwrap(try AudioProbe.probe(Data(bytes)).duration), 2.5, accuracy: 0.05)
+
+        let v1: [UInt8] = [1, 0, 0, 0] + [UInt8](repeating: 0, count: 16) + [0, 0, 0x03, 0xE8] + [0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF]
+        XCTAssertEqual(VideoProbe.duration(v1), 4_294_967.295)
+        XCTAssertNil(VideoProbe.duration(Array(v1.prefix(24)) + [UInt8](repeating: 0xFF, count: 8)))
+        let v0: [UInt8] = [0, 0, 0, 0] + [UInt8](repeating: 0, count: 8) + [0, 0, 0x03, 0xE8] + [0xFF, 0xFF, 0xFF, 0xFF]
+        XCTAssertNil(VideoProbe.duration(v0))
+    }
+
     func testNotMPEG4() {
         XCTAssertThrowsError(try AudioProbe.probe(Data("RIFF....WAVEfmt ".utf8))) { XCTAssertEqual($0 as? AudioProbeError, .notMP4) }
         XCTAssertThrowsError(try AudioProbe.probe(Data())) { XCTAssertEqual($0 as? AudioProbeError, .notMP4) }

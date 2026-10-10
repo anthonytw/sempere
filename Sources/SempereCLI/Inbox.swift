@@ -79,9 +79,9 @@ struct InboxEnable: ParsableCommand {
             struct Out: Encodable { var profile: String; var device: String; var notebook: String; var recipient: String? }
             try output.emitJSON(Out(profile: url.path, device: p.device, notebook: p.notebook, recipient: p.recipient))
         } else {
-            let label = vault.recipients.first { CaptureKey.fingerprint(of: $0.key) == p.recipient }?.label ?? ""
+            let label = vault.recipients.first { CaptureKey.fingerprint(of: $0.key) == p.recipient }?.displayLabel
             output.info("Capture profile written to \(url.path) (notebook \(p.notebook); captures attributed to "
-                + "\(label.isEmpty ? "this key" : label))")
+                + "\(label ?? "this key"))")
         }
     }
 }
@@ -280,11 +280,13 @@ struct InboxList: ParsableCommand {
         output.info("\(entries.count) capture(s) in the inbox.")
     }
 
-    /// `from iPad (device 0b0b0b0b)`, or `from device 0b0b0b0b (unattributed)`.
+    /// `from iPad (device 0b0b0b0b)`, `from a device no longer in this vault
+    /// (device 0b0b0b0b)` (format.md §8.3.1), or `from device 0b0b0b0b
+    /// (unattributed)`. `label` is nil when the recipient is not listed.
     static func attribution(device: String, recipient: String?, label: String?) -> String {
         guard recipient != nil else { return "from device \(device) (unattributed)" }
-        let name = (label ?? "").isEmpty ? "an unlabelled key" : label ?? ""
-        return "from \(name) (device \(device))"
+        guard let label else { return "from a device no longer in this vault (device \(device))" }
+        return "from \(VaultManifest.Recipient.displayLabel(label)) (device \(device))"
     }
 }
 

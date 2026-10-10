@@ -80,6 +80,18 @@ final class PushOnlyTests: BlobSyncTestCase {
         XCTAssertEqual(server.file("vault.json"), try vaultJSON("A"))
     }
 
+    /// A `vaultId` that is not a UUID makes it no manifest (as for the
+    /// connection check), not another vault: a mirror repairs it.
+    func testServerManifestWithANonUUIDIdIsRepaired() throws {
+        let server = MockDAV()
+        _ = try makeVault("A")
+        try push(server)
+        server.putDirect("vault.json", Data(#"{"vaultId":"","format":"sempere/1"}"#.utf8))
+        let r = try push(server)
+        XCTAssertEqual(r.overwritten, ["vault.json"], "\(r)")
+        XCTAssertEqual(server.file("vault.json"), try vaultJSON("A"))
+    }
+
     func testOtherVaultOnTheServerStillAbortsBeforeAnyChange() throws {
         let server = MockDAV()
         _ = try makeVault("A")

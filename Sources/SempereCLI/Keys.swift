@@ -103,7 +103,7 @@ struct KeysExport: ParsableCommand {
         } else if try locked.identityFiles().count > 1 {
             throw CLIError.usage("the vault holds several key files; choose one with --recipient")
         }
-        let identity = try access.identityFromKeyFiles(of: locked, recipient: wanted)
+        let identity = try access.identitiesFromKeyFiles(of: locked, recipient: wanted)[0]
         let text = IdentityFile.render(identity, created: Date())
         guard let out else {
             print(text, terminator: "")
