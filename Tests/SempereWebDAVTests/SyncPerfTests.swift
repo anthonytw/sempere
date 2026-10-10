@@ -74,6 +74,7 @@ final class SyncPerfTests: BlobSyncTestCase {
         let server = MockDAV()
         let a = try makeVault("A")
         try populate(a)
+        server.putDirect(WebIndex.fileName, Data("{}".utf8))   // kept current by every run
         let (first, t1) = try run(server, vault: a, pushOnly: false)
         XCTAssertTrue(first.errors.isEmpty, "\(first)")
         try padState()

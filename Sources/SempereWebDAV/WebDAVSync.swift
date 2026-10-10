@@ -125,6 +125,11 @@ public final class WebDAVSync {
     /// How many notes this run read through `vault` (decrypted every
     /// revision of) to judge deletions or record snapshot coverage.
     var notesRead = 0
+    /// `encodedWebIndex()`, once the notes loop is done.
+    private var encodedIndex: Data?
+    /// The remote `vault.json` as `checkSameVault` fetched it this run, for
+    /// the mutable-file sync to compare instead of fetching it again.
+    var fetchedManifest: (data: Data, etag: String?)?
 
     /// - Parameters:
     ///   - directory: the local vault; it may be missing or empty for a first pull.
@@ -217,7 +222,7 @@ public final class WebDAVSync {
         }
         if options.pushOnly { deleteRemoteJunk() }
         if !options.dryRun, options.publishForWebViewer || remoteRoot[WebIndex.fileName].map({ !$0.isCollection }) ?? false {
-            do { try refreshRemoteWebIndex() } catch {
+            do { try refreshRemoteWebIndex(remote: remoteRoot[WebIndex.fileName].flatMap { $0.isCollection ? nil : $0 }) } catch {
                 report.errors.append(.init(path: WebIndex.fileName, message: Self.describe(error)))
             }
         }
@@ -252,7 +257,9 @@ public final class WebDAVSync {
         guard remoteRoot[Vault.manifestName] != nil,
               let local = try? localMutable(Vault.manifestName),
               let localId = WebDAVConnection.manifestFields(local)?.vaultId else { return }
-        let remote = try client.get([Vault.manifestName], maxBytes: BoundedRead.maxManifestBytes).data
+        let fetched = try client.get([Vault.manifestName], maxBytes: BoundedRead.maxManifestBytes)
+        fetchedManifest = fetched
+        let remote = fetched.data
         guard let remoteId = WebDAVConnection.manifestFields(remote)?.vaultId else {
             // A mirror is repaired from the local manifest; a two-way sync has nothing to compare.
             if options.pushOnly { return }
@@ -293,7 +300,7 @@ public final class WebDAVSync {
             return
         }
 
-        let (remoteData, getETag) = try client.get([name])
+        let (remoteData, getETag) = try fetchMutable(name)
         try budget.downloaded(remoteData.count)
         let remoteHash = FileDigest.sha256(remoteData)
         let stamp = remote.etag ?? getETag ?? remote.lastModified
@@ -320,8 +327,18 @@ public final class WebDAVSync {
         }
     }
 
+    /// GETs a mutable file, or takes the copy `checkSameVault` fetched
+    /// moments ago in this run (once).
+    func fetchMutable(_ name: String) throws -> (data: Data, etag: String?) {
+        if name == Vault.manifestName, let fetched = fetchedManifest {
+            fetchedManifest = nil
+            return fetched
+        }
+        return try client.get([name])
+    }
+
     private func pullMutable(_ name: String, remote: RemoteEntry) throws {
-        let (data, etag) = try client.get([name])
+        let (data, etag) = try fetchMutable(name)
         try budget.downloaded(data.count)
         try accept(name, data, stamp: remote.etag ?? etag ?? remote.lastModified)
     }
@@ -589,12 +606,42 @@ public final class WebDAVSync {
     /// exists; `sempere vault index` creates it) to list what the server
     /// holds now, so a viewer reading the share as static files is never
     /// silently stale. Unchanged contents are not rewritten.
-    private func refreshRemoteWebIndex() throws {
-        let data = try WebIndex.encode(remoteRevisions)
+    ///
+    /// When the root listing shows the file with the strong ETag this device
+    /// recorded for it and the new contents hash to what it held then,
+    /// nothing is fetched or written. Otherwise it is fetched and compared.
+    private func refreshRemoteWebIndex(remote: RemoteEntry?) throws {
+        let data = try encodedWebIndex()
+        let hash = FileDigest.sha256(data)
+        if let record = state.webIndex, let etag = remote?.etag, Self.isStrong(etag), etag == record.etag,
+           record.hash == hash, remote?.size.map({ $0 == data.count }) ?? true {
+            return
+        }
         let current = try? client.get([WebIndex.fileName], maxBytes: WebIndex.maxBytes).data
-        guard current != data else { return }
+        if current == data {
+            state.webIndex = remote?.etag.flatMap { Self.isStrong($0) ? .init(hash: hash, etag: $0) : nil }
+            return
+        }
+        state.webIndex = nil
         guard try client.put([WebIndex.fileName], data, condition: .unconditional) else { return }
         report.uploaded.append(WebIndex.fileName)
+        // The ETag of what was just written (a PUT need not return one); the next run compares it.
+        if let etag = (try? client.stat([WebIndex.fileName]))??.etag, Self.isStrong(etag) {
+            state.webIndex = .init(hash: hash, etag: etag)
+        }
+    }
+
+    /// An ETag that changes whenever the bytes do (RFC 9110 §8.8.1); a weak
+    /// one (`W/"…"`) need not.
+    static func isStrong(_ etag: String) -> Bool { !etag.hasPrefix("W/") && !etag.isEmpty }
+
+    /// `WebIndex.encode(remoteRevisions)`, encoded once per run: the web
+    /// index and the published summaries both use it after the notes loop.
+    func encodedWebIndex() throws -> Data {
+        if let encodedIndex { return encodedIndex }
+        let data = try WebIndex.encode(remoteRevisions)
+        encodedIndex = data
+        return data
     }
 
     func upload(_ id: String, _ n: RevisionName) throws {

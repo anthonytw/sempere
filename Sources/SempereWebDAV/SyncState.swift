@@ -48,6 +48,18 @@ struct SyncState: Codable, Equatable {
     /// §9.1), keyed like `files`: not downloaded again while the server's
     /// copy and the local `vault.json` are unchanged.
     var quarantined: [String: QuarantineRecord]?
+    /// The server's `sempere-index.json` as this device last wrote or
+    /// matched it; nil in state files from before it existed.
+    var webIndex: WebIndexRecord?
+
+    /// What the server's `sempere-index.json` held when this device last
+    /// wrote it or found it current.
+    struct WebIndexRecord: Codable, Equatable {
+        /// SHA-256 (hex) of its bytes.
+        var hash: String
+        /// Its strong ETag then (a weak or missing one is never recorded).
+        var etag: String
+    }
 
     /// A quarantined remote file.
     struct QuarantineRecord: Codable, Equatable {

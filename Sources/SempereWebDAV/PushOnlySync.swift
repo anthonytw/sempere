@@ -50,7 +50,7 @@ extension WebDAVSync {
             return
         }
         // A server file that cannot be read (too large, malformed) is just different.
-        let current = try? client.get([name]).data
+        let current = try? fetchMutable(name).data
         if let current, FileDigest.sha256(current) == localHash {
             state.mutable[name] = .init(hash: localHash, stamp: remote.stamp)
             return
