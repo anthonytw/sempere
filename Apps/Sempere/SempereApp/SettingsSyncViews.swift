@@ -14,6 +14,11 @@ struct SettingsSyncSection: View {
                 set: { on in Task { await model.setSettingsSync(on) } }))
                 .disabled(model.phase != .unlocked)
                 .accessibilityIdentifier("settingsSyncToggle")
+                // On the row, not the section: a section's modifier is on each of its rows, and
+                // several rows presenting at once can close it again on Mac Catalyst 27.
+                .sheet(item: Binding(get: { model.settingsSyncPrompt }, set: { if $0 == nil { model.settingsSyncPrompt = nil } })) { prompt in
+                    SettingsSyncPromptView(prompt: prompt)
+                }
             if let problem = model.settingsSyncProblem {
                 Label(problem.text, systemImage: "exclamationmark.triangle.fill")
                     .font(.footnote)
@@ -29,9 +34,6 @@ struct SettingsSyncSection: View {
             } else {
                 Text("Store settings encrypted in this vault, so every device that opens it can use the same ones. Device keys and Face ID or Touch ID stay on each device.")
             }
-        }
-        .sheet(item: Binding(get: { model.settingsSyncPrompt }, set: { if $0 == nil { model.settingsSyncPrompt = nil } })) { prompt in
-            SettingsSyncPromptView(prompt: prompt)
         }
         .task(id: model.phase == .unlocked) {
             // Opening Settings reads the vault's settings again.

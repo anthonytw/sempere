@@ -27,6 +27,18 @@ struct BackupSettingsSection: View {
                 picking = true
             }
                 .disabled(busy || model.vault == nil)
+                // On the button, not the section: a section's modifier is on each of its rows,
+                // and several rows presenting at once can close it again on Mac Catalyst 27.
+                .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { result in
+                    do {
+                        try model.chooseBackupFolder(try result.get())
+                        problems = []
+                        message = nil
+                    } catch {
+                        message = "\(error)"
+                    }
+                    reload()
+                }
             if let path = record.displayPath {
                 LabeledContent("Folder", value: path)
                 if let progress = model.backupProgress {
@@ -78,16 +90,6 @@ struct BackupSettingsSection: View {
         }
         .onAppear(perform: reload)
         .onChange(of: model.vaultURL) { reload() }
-        .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { result in
-            do {
-                try model.chooseBackupFolder(try result.get())
-                problems = []
-                message = nil
-            } catch {
-                message = "\(error)"
-            }
-            reload()
-        }
     }
 
     private var busy: Bool { model.backupProgress != nil }

@@ -472,12 +472,28 @@ private struct HistorySettingsSection: View {
                     }
                 }
                 .disabled(days <= 0 || working || model.phase != .unlocked)
+                // The preview and the outcome each on a row, not on the sections: a section's
+                // modifier is on each of its rows, and several rows presenting at once can close it
+                // again on Mac Catalyst 27.
+                .sheet(item: $preview) { box in
+                    ThinningPreviewView(report: box.report) {
+                        preview = nil
+                        Task { await thin(box.report.rule, now: box.report.now) }
+                    } cancel: {
+                        preview = nil
+                    }
+                }
                 Button(role: .destructive) {
                     Task { await makePreview(.allButCheckpoints) }
                 } label: {
                     Text(ThinningRule.allButCheckpoints.localizedButtonTitle)
                 }
                 .disabled(working || model.phase != .unlocked)
+                .alert("Thinning", isPresented: Binding(get: { outcome != nil }, set: { if !$0 { outcome = nil } })) {
+                    Button("OK") {}
+                } message: {
+                    Text(outcome ?? "")
+                }
                 if let progress = model.thinningProgress {
                     VStack(alignment: .leading, spacing: 6) {
                         ProgressView(value: progress.fractionCompleted)
@@ -490,19 +506,6 @@ private struct HistorySettingsSection: View {
             } footer: {
                 Text("The first applies the setting above; the second ignores it and removes every autosave except the newest save of each editing session. Both keep every saved and imported version, and show what they would remove before anything is.")
             }
-        }
-        .sheet(item: $preview) { box in
-            ThinningPreviewView(report: box.report) {
-                preview = nil
-                Task { await thin(box.report.rule, now: box.report.now) }
-            } cancel: {
-                preview = nil
-            }
-        }
-        .alert("Thinning", isPresented: Binding(get: { outcome != nil }, set: { if !$0 { outcome = nil } })) {
-            Button("OK") {}
-        } message: {
-            Text(outcome ?? "")
         }
     }
 
@@ -550,10 +553,15 @@ private struct DeviceKeySettingsSection: View {
 
     var body: some View {
         Section {
+            // Each presentation on the control that owns it, not the section: a section's modifier
+            // is on each of its rows, and several rows presenting at once can close it again on Mac
+            // Catalyst 27.
             Button("Save Key…", systemImage: "key") { savingKey = true }
                 .disabled(model.phase != .unlocked || model.heldIdentity == nil)
+                .sheet(isPresented: $savingKey) { SaveKeyView() }
             Button("New Key…", systemImage: "key.badge.plus") { creatingKey = true }
                 .disabled(model.phase != .unlocked)
+                .sheet(isPresented: $creatingKey) { NewKeyView() }
             Picker("When Adding a Device", selection: $onAdd) {
                 ForEach(RewrapMethod.allCases, id: \.self) { Text(RewrapSettings.title($0)).tag($0) }
             }
@@ -573,21 +581,19 @@ private struct DeviceKeySettingsSection: View {
                 ForEach(RewrapMethod.allCases, id: \.self) { Text(RewrapSettings.title($0)).tag($0) }
             }
             .syncedSetting("rewrap.onRemove")
+            .confirmationDialog("Rewrite headers only after a removal?", isPresented: $confirming, titleVisibility: .visible) {
+                Button("Rewrite Headers Only", role: .destructive) {
+                    onRemove = .headerOnly
+                    RewrapSettings.setOnRemoveOrUpgrade(.headerOnly)
+                }
+                Button("Keep Re-encrypting Everything", role: .cancel) {}
+            } message: {
+                Text("A removed device key, or a copy of the vault from before an upgrade, could still open attachments it could open before. Only choose this if you accept that.")
+            }
         } header: {
             Text("Device Keys")
         } footer: {
             Text("Save Key exports this device's key, after \(RememberedKeys.biometryPhrase), to Files or a password manager, with its paper recovery kit. New Key makes a key for another device and encrypts the vault to it. Devices here are the keys this vault is encrypted to (this iPad, that Mac, the paper backup), not people: to share a note, export it. “Rewrite headers only” is fast but leaves old copies of an attachment openable with a key that was removed. “Re-encrypt everything” takes longer in a vault with many attachments.")
-        }
-        .sheet(isPresented: $savingKey) { SaveKeyView() }
-        .sheet(isPresented: $creatingKey) { NewKeyView() }
-        .confirmationDialog("Rewrite headers only after a removal?", isPresented: $confirming, titleVisibility: .visible) {
-            Button("Rewrite Headers Only", role: .destructive) {
-                onRemove = .headerOnly
-                RewrapSettings.setOnRemoveOrUpgrade(.headerOnly)
-            }
-            Button("Keep Re-encrypting Everything", role: .cancel) {}
-        } message: {
-            Text("A removed device key, or a copy of the vault from before an upgrade, could still open attachments it could open before. Only choose this if you accept that.")
         }
     }
 }
