@@ -724,3 +724,11 @@ web viewer". Each fix has a test that encodes the attack and fails on the code b
   adopting them; `ItemRendering.audioPicture` also passes `discard: true`. Test:
   `AttachmentPersistenceTests.transcriptsAndRecordingsNeverStayInTheCache` (on the old code the transcript
   file survives its release and the next launch adopts the recording).
+- **S15 (Low): Settings ▸ Storage thumbnails decoded image blobs with unrestricted ImageIO** (`UIImage(data:)`),
+  so a GIF, TIFF or other codec, or a pixel bomb, stored by another recipient reached ImageIO on the
+  victim's device, around X9's HEIC-only `ImageIODecoder`. Fix: `ImagePreview.image` (SempereRender) reads
+  the blob exactly as image items are drawn (`ImageStore.loaded`: JPEG and PNG by the pure-Swift decoders,
+  anything else only through the given decoder, `maxPixels` from the header, DCT scaling and box
+  reduction), and `AttachmentThumbnail` passes the restricted `ImageIODecoder`. Tests:
+  `ImageInsertTests.storageThumbnailsDecodeOnlyTheCanvasFormats` (GIF and TIFF give no thumbnail; on the
+  old code both did), `ImageCodecTests.testImagePreviewDecodesOnlyWhatItemsDecode`.

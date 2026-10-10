@@ -1,10 +1,12 @@
 import PDFKit
 import Sempere
+import SempereRender
 import SwiftUI
 
 /// A small preview of a blob in Settings → Storage: images and the first
 /// page of a PDF are decrypted (verified, in memory only,
 /// `AppModel.attachmentPreviewData`) and drawn small; other kinds show an icon.
+/// Images are decoded only as the canvas decodes them (`ImagePreview`).
 struct AttachmentThumbnail: View {
     let note: UUID
     let fileName: String
@@ -54,9 +56,11 @@ struct AttachmentThumbnail: View {
         if kind == .pdf {
             return PDFDocument(data: data)?.page(at: 0)?.thumbnail(of: size, for: .cropBox)
         }
-        guard let picture = UIImage(data: data), picture.size.width > 0, picture.size.height > 0 else { return nil }
-        let scale = min(side / picture.size.width, side / picture.size.height, 1)
-        return picture.preparingThumbnail(of: CGSize(width: max(1, picture.size.width * scale),
-                                                     height: max(1, picture.size.height * scale)))
+        // Decoded as the canvas decodes image items: JPEG and PNG by SempereRender, HEIC/HEIF alone through
+        // ImageIO (`ImageIODecoder`), within `ImageLimits.maxPixels`. The blob may come from another person
+        // (a shared vault): no other ImageIO codec ever sees it.
+        guard let pixels = ImagePreview.image(data, type: "", side: Int(side.rounded(.up)), decoder: ImageIODecoder()),
+              let cg = ItemRendering.cgImage(pixels) else { return nil }
+        return UIImage(cgImage: cg)
     }
 }
