@@ -1,4 +1,5 @@
 #if canImport(Darwin)
+import FuzzSupport
 import Darwin
 #else
 import Glibc
@@ -23,16 +24,10 @@ final class SyncPerfTests: BlobSyncTestCase {
         try XCTSkipUnless(env["SEMPERE_PERF"] == "1", "set SEMPERE_PERF=1 to run the sync timings")
     }
 
-    /// The process's peak resident size so far, in MiB (ru_maxrss: bytes on
-    /// Darwin, KiB on Linux). Run one test per process to read a run's peak.
+    /// The process's peak resident size so far, in MiB. Run one test per
+    /// process to read a run's peak.
     static func peakMiB() -> Double {
-        var u = rusage()
-        getrusage(RUSAGE_SELF, &u)
-        #if canImport(Darwin)
-        return Double(u.ru_maxrss) / 1_048_576
-        #else
-        return Double(u.ru_maxrss) / 1024
-        #endif
+        Double(peakResidentBytes()) / 1_048_576
     }
 
     func options(pushOnly: Bool, skip: Bool) -> WebDAVSyncOptions {

@@ -1,3 +1,4 @@
+import FuzzSupport
 import Foundation
 import SemperePDF
 import XCTest
@@ -67,11 +68,5 @@ import Glibc
 
 /// The process's peak resident size in MB (benchmarks run one per process).
 func peakRSS() -> Double {
-    var usage = rusage()
-    getrusage(RUSAGE_SELF, &usage)
-    #if os(Linux)
-    return Double(usage.ru_maxrss) / 1024
-    #else
-    return Double(usage.ru_maxrss) / 1_048_576
-    #endif
+    Double(peakResidentBytes()) / 1_048_576
 }

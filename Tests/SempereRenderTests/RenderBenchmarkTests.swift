@@ -1,3 +1,4 @@
+import FuzzSupport
 import Foundation
 import XCTest
 import Sempere
@@ -10,13 +11,7 @@ import Glibc
 /// The process's peak resident size in MB (run one benchmark per process to
 /// attribute it).
 func peakRSSMegabytes() -> Double {
-    var usage = rusage()
-    getrusage(RUSAGE_SELF, &usage)
-    #if os(Linux)
-    return Double(usage.ru_maxrss) / 1024   // kilobytes
-    #else
-    return Double(usage.ru_maxrss) / 1_048_576   // bytes
-    #endif
+    Double(peakResidentBytes()) / 1_048_576
 }
 
 /// Prints how long exporting a dense ink page takes. Quick mode draws a small

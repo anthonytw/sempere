@@ -1,3 +1,4 @@
+import FuzzSupport
 import Foundation
 import XCTest
 @testable import Sempere
@@ -9,13 +10,7 @@ import Darwin
 
 /// The process's peak resident size so far, in bytes.
 private func peakRSS() -> Int {
-    var usage = rusage()
-    getrusage(RUSAGE_SELF, &usage)
-    #if os(Linux)
-    return Int(usage.ru_maxrss) * 1024
-    #else
-    return Int(usage.ru_maxrss)
-    #endif
+    peakResidentBytes()
 }
 
 /// Cost bounds of a backup run that do not show at the small sizes the other
