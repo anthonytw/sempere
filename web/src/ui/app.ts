@@ -15,6 +15,7 @@ import { type RecipientsStatus, UnlockedVault, VaultError, limits, parseIdentity
 import { newerSummary } from "../format/newer.ts";
 import { clear, formatDate, h } from "./dom.ts";
 import { NoteView, hasUnknownPaper } from "./noteview.ts";
+import { NoteCache } from "./notecache.ts";
 import { RecordingsPanel } from "./recordings.ts";
 import { VideosPanel } from "./videos.ts";
 import { NoteBlobs } from "../vault/blobs.ts";
@@ -66,7 +67,7 @@ export class App {
   private recordings?: RecordingsPanel;
   private videos?: VideosPanel;
   /** Recently opened notes; the list itself keeps summaries only. */
-  private readonly cache = new Map<string, LoadedNote>();
+  private readonly cache = new NoteCache();
   private generation = 0;
 
   private readonly sidebar = h("nav", { class: "sidebar", attrs: { "aria-label": t("Notebooks and tags") } });
@@ -419,6 +420,9 @@ export class App {
           this.notes.set(r.id, r);
           render();
         },
+        // A note decrypted because it changed is the likeliest to be opened next: kept (bounded) so
+        // that opening it does not decrypt it again.
+        loaded: (note) => this.cache.offer(note),
         gone: (id) => this.notes.delete(id),
         progress: (p) => {
           this.loading = { ...p, listed: false };
@@ -635,7 +639,6 @@ export class App {
         note = { id, error: message(e), failures: [], revisionCount: 0, hasAttachments: false };
       }
       this.cache.set(id, note);
-      while (this.cache.size > 8) this.cache.delete(this.cache.keys().next().value ?? "");
       // What the revisions say wins over a published summary (format.md §12.3).
       if (gen === this.generation && this.notes.has(id)) {
         this.notes.set(id, summarize(note));
