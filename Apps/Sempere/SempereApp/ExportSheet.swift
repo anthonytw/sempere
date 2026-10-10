@@ -297,6 +297,7 @@ struct ExportHandOffButtons: View {
     @Binding var state: ExportHandOffState
     let items: [URL]
 
+    // help-lint: titled (placed in a Form section, where the titles show)
     var body: some View {
         Button("Share…", systemImage: "square.and.arrow.up") { deliver(save: false) }
             .background(PresentationAnchor(box: state.anchor))
