@@ -85,30 +85,25 @@ struct RecordingTests {
         RecordingSession(noteID: lecture, format: .default, root: root(), backend: backend, center: center, now: { clock.now })
     }
 
-    static func interruption(_ type: AVAudioSession.InterruptionType, resume: Bool = false) -> [AnyHashable: Any] {
-        var info: [AnyHashable: Any] = [AVAudioSessionInterruptionTypeKey: type.rawValue]
-        if resume { info[AVAudioSessionInterruptionOptionKey] = AVAudioSession.InterruptionOptions.shouldResume.rawValue }
-        return info
-    }
-
     // MARK: - Session
 
     /// "Recording survives a simulated interruption" (task E4): a call
     /// pauses the recorder, the end of the call resumes it in the same file,
     /// and the audio timeline leaves the interruption out.
     @Test func interruptionPausesAndResumesTheSameRecording() async throws {
-        let clock = TestClock(), backend = FakeCapture(), center = NotificationCenter()
-        let s = Self.session(clock, backend: backend, center: center)
+        let clock = TestClock(), backend = FakeCapture()
+        let s = Self.session(clock, backend: backend)
         try s.start()
         defer { s.stop(); s.discardFiles() }
         #expect(s.state == .recording)
         clock.advance(5)
-        center.post(name: AVAudioSession.interruptionNotification, object: nil, userInfo: Self.interruption(.began))
-        #expect(await TS.waitUntil { s.state == .interrupted })
+        // The iOS 27 deactivation and resumption messages cannot be built in a
+        // test (their contexts are made by the system): drive the session directly.
+        s.interruption(began: true, shouldResume: false)
+        #expect(s.state == .interrupted)
         clock.advance(30)   // the call
-        center.post(name: AVAudioSession.interruptionNotification, object: nil,
-                    userInfo: Self.interruption(.ended, resume: true))
-        #expect(await TS.waitUntil { s.state == .recording })
+        s.interruption(began: false, shouldResume: true)
+        #expect(s.state == .recording)
         clock.advance(2)
         #expect(backend.log == ["begin", "pause", "resume"])
         #expect(backend.files.count == 1, "the same file goes on")
@@ -117,6 +112,12 @@ struct RecordingTests {
         #expect(s.state == .stopped)
         #expect(backend.log.suffix(2) == ["finish", "deactivate"])
         #expect(RecordingSession.active == nil)
+    }
+
+    /// Only a deactivation the system made interrupts; the app's own
+    /// (`setActive(false)` after a stop) does not.
+    @Test func ownDeactivationIsNotAnInterruption() {
+        #expect(!RecordingSession.interrupts(.appDeactivated))
     }
 
     @Test func interruptionWithoutShouldResumeWaitsForTheUser() async throws {

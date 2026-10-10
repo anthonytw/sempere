@@ -176,6 +176,7 @@ final class RecordingSession {
     @ObservationIgnored private let backend: AudioCaptureBackend
     @ObservationIgnored private let now: () -> Date
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    @ObservationIgnored private var messageObservers: [NotificationCenter.ObservationToken] = []
     @ObservationIgnored private var ticker: Task<Void, Never>?
     @ObservationIgnored private let center: NotificationCenter
     /// A new segment starts after this many seconds of audio.
@@ -316,6 +317,8 @@ final class RecordingSession {
         ticker = nil
         for o in observers { center.removeObserver(o) }
         observers = []
+        for o in messageObservers { center.removeObserver(o) }
+        messageObservers = []
         if Self.active === self { Self.active = nil }
     }
 
@@ -352,14 +355,27 @@ final class RecordingSession {
         }
     }
 
+    /// Whether a deactivation of the audio session interrupts the recording:
+    /// only one the system made; the app's own (`setActive(false)` after a
+    /// stop) does not.
+    nonisolated static func interrupts(_ result: AVAudioSession.DeactivationResult) -> Bool {
+        if case .systemInterruption = result { return true }
+        return false
+    }
+
     private func observe() {
-        let i = center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] n in
-            let type = (n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt).flatMap { AVAudioSession.InterruptionType(rawValue: $0) }
-            let options = (n.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt).map { AVAudioSession.InterruptionOptions(rawValue: $0) }
-            guard let type else { return }
-            let began = type == .began, resume = options?.contains(.shouldResume) ?? false
-            MainActor.assumeIsolated { self?.interruption(began: began, shouldResume: resume) }
+        // An interruption begins when the system deactivates the session and
+        // ends with a resumption recommendation (iOS 27; these replace
+        // `interruptionNotification`). Only `.shouldResume` resumes, as the
+        // `.shouldResume` option did before.
+        let i = center.addObserver(of: AVAudioSession.self, for: .didBecomeInactive) { [weak self] message in
+            guard Self.interrupts(message.deactivationResult) else { return }
+            self?.interruption(began: true, shouldResume: false)
         }
+        let e = center.addObserver(of: AVAudioSession.self, for: .resumptionRecommendation) { [weak self] message in
+            self?.interruption(began: false, shouldResume: message.recommendation == .shouldResume)
+        }
+        messageObservers = [i, e]
         let r = center.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] n in
             let reason = (n.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt).flatMap { AVAudioSession.RouteChangeReason(rawValue: $0) }
             let gone = reason == .oldDeviceUnavailable
@@ -369,7 +385,7 @@ final class RecordingSession {
             // The recorder is gone with the media server: what was written up to now is kept and saved.
             MainActor.assumeIsolated { self?.stopBySystem() }
         }
-        observers = [i, r, m]
+        observers = [r, m]
     }
 
     var manifest: RecordingManifest {
