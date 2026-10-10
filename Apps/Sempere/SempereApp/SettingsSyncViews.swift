@@ -27,7 +27,7 @@ struct SettingsSyncSection: View {
             } else if model.settingsSync.enabled {
                 Text("Settings are stored encrypted in this vault and follow it to every device that syncs with it. Changing a setting here changes it there. To keep a different value on this device, touch and hold the setting and choose Only on This Device.")
             } else {
-                Text("Store settings encrypted in this vault, so every device that opens it can use the same ones. Device keys and Face ID stay on each device.")
+                Text("Store settings encrypted in this vault, so every device that opens it can use the same ones. Device keys and Face ID or Touch ID stay on each device.")
             }
         }
         .sheet(item: Binding(get: { model.settingsSyncPrompt }, set: { if $0 == nil { model.settingsSyncPrompt = nil } })) { prompt in

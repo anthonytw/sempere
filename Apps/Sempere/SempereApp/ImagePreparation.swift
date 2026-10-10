@@ -44,8 +44,8 @@ enum ImagePreparation {
             case .tooLarge: let limit = ImageLimits.maxPixels / 1_000_000
                 return String(localized: "This image is too large to add (at most \(limit) megapixels).")
             case .cannotConvert: return String(localized: "This image could not be converted to JPEG or PNG.")
-            case .fileTooLarge: let limit = ImagePreparation.maxInputBytes >> 20
-                return String(localized: "This file is too large to add (at most \(limit) MB).")
+            case .fileTooLarge: let limit = BlobSizeText.string(Int64(ImagePreparation.maxInputBytes))
+                return String(localized: "This file is too large to add (at most \(limit)).", comment: "The value is a file size")
             }
         }
     }

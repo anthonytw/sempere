@@ -220,7 +220,7 @@ What iOS does not allow, so the app cannot promise it:
 - Scheduled tasks run when iOS decides: it weighs battery, charging, network,
   thermal state and how often the app is used. A refresh gets about 30
   seconds; a processing task a few minutes, usually while charging and idle.
-  Background App Refresh switched off (Settings → General, or for the app),
+  Background App Refresh switched off (Settings ▸ General, or for the app),
   Low Power Mode, or force-quitting the app from the app switcher stop both
   until the app is opened again. The simulator runs neither unless debugged.
 - They sync only a vault that is still open in the suspended app. A task that
@@ -539,14 +539,14 @@ manifest.
   finishes, and no file is written once the run is cancelled). Share and Save to Files copy from there.
 - **Plaintext.** Exports strip nothing and encrypt nothing, exactly like the
   CLI's; the sheet says so. The share sheet holds the selected notes' states at
-  once while rendering; "Export Notes…" (below) streams one note at a time.
+  once while rendering; "Export to Folder or Zip…" (below) streams one note at a time.
 
 ## Bulk export (app and CLI)
 
-"Export Notes…" exports many notes at once: the ticked notes of the list
+"Export to Folder or Zip…" exports many notes at once: the ticked notes of the list
 (Export ▸ To Folder or Zip…), a notebook with its sub-notebooks (the
 notebook's context menu), or the whole vault (All Notes' context menu, and
-File ▸ Export Notes… on a Mac, which takes the ticked notes, else the
+File ▸ Export to Folder or Zip… on a Mac, which takes the ticked notes, else the
 sidebar's notebook, else the vault). iPad, iPhone and Mac share the sheet
 (`BulkExportSheet`).
 
@@ -607,7 +607,7 @@ sidebar's notebook, else the vault). iPad, iPhone and Mac share the sheet
 
 ## The attachment list page (app and CLI)
 
-"PDF + attachments" (the share sheet's and "Export Notes…"'s, the CLI's
+"PDF + attachments" (the share sheet's and "Export to Folder or Zip…"'s, the CLI's
 `--attachments`, `--recordings attach`, `--videos attach`) ends with a list of
 what the PDF carries: one row per recording, its transcript (when embedded) and
 video clip, with the kind, the title, the pages of the PDF it appears on (a
@@ -633,7 +633,7 @@ is cut at the end of its first line).
 
 ## Media export (app and CLI)
 
-"Media" (the share sheet, "Export Notes…", `sempere export --format media`)
+"Media" (the share sheet, "Export to Folder or Zip…", `sempere export --format media`)
 writes a note's attachments as files: one folder per note, named like its
 other exports (`ExportName.stem`), holding
 
@@ -760,7 +760,7 @@ vault). The CLI's `backup status` and `restore --dry-run` and the app use them.
 
 ### Backups in the app
 
-Settings → Backups (`AppModel+Backup.swift`, `BackupSettings.swift`,
+Settings ▸ Backups (`AppModel+Backup.swift`, `BackupSettings.swift`,
 `BackupViews.swift`) runs the CLI's core; `docs/cli.md` "The app's Backups"
 maps each control to its command.
 
@@ -773,7 +773,9 @@ maps each control to its command.
   folder (`VaultBookmark`, plain options as for vaults, see "Saved folder
   access") plus the subfolder name, per vault and per device
   (`BackupRecord` in `UserDefaults` under `Sempere.backup.<vault id>`); access
-  granted to the picked folder covers the subfolder. A bookmark that no longer
+  granted to the picked folder covers the subfolder. Picking an existing
+  backup takes its last backup from `backup.json`'s `completed` (a run with
+  file errors or cut short is none). A bookmark that no longer
   resolves, or a folder that is gone, is reported by name ("choose it again").
 - **Back Up Now** is `Backup.run` off the main actor, with the picked folder's
   security scope held for the run. An iCloud Drive vault is made local first,

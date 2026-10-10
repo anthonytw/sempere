@@ -90,7 +90,7 @@ struct AppIconSettingsSection: View {
             } header: {
                 Text("App Icon")
             }
-            .alert("Couldn’t change the icon.", isPresented: $failed) {}
+            .alert("Could not change the icon.", isPresented: $failed) {}
         }
     }
 

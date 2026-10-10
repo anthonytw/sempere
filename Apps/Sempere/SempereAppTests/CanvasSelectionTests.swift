@@ -286,7 +286,7 @@ struct CanvasSelectionTests {
         #expect(withPen.first == Sempere.Color(r: 0, g: 128, b: 128), "first, opaque")
         #expect(withPen.count == colours.count + 1)
         #expect(TextColourPalette.name(of: colours[4], standard: standard, pen: teal) == "Red")
-        #expect(TextColourPalette.name(of: teal, standard: standard, pen: teal) == "Pen Colour")
+        #expect(TextColourPalette.name(of: teal, standard: standard, pen: teal) == "Pen Color")
         #expect(TextColourPalette.name(of: Sempere.Color(r: 1, g: 2, b: 255), standard: standard, pen: nil) == "#0102FF")
     }
 

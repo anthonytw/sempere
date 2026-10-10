@@ -25,7 +25,7 @@ enum ExportCommand: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .pdf: return String(localized: "PDF…", comment: "Export menu item: export as PDF")
         case .png: return String(localized: "PNG Pages…", comment: "Export menu item: one PNG per page")
-        case .markdown: return String(localized: "Text (Markdown)…", comment: "Export menu item: recognised text as Markdown")
+        case .markdown: return String(localized: "Text (Markdown)…", comment: "Export menu item: recognized text as Markdown")
         case .media: return String(localized: "Media…", comment: "Export menu item: the notes' recordings, videos, images and PDFs as files")
         }
     }

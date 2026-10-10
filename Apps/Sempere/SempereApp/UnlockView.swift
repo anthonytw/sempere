@@ -106,7 +106,8 @@ private struct RememberKeyView: View {
                 Toggle("Also sync via iCloud Keychain", isOn: $sync)
                     .disabled(!remember)
             } footer: {
-                Text("Your other devices signed in to the same Apple Account get the key too. The Keychain cannot require Face ID for synced items, so Sempere asks for Face ID or your passcode itself before using it; the key is otherwise protected by iCloud Keychain's end-to-end encryption and your device passcode. Synced keys may not be listed in the Passwords app.")
+                let biometry = RememberedKeys.biometryPhrase
+                Text("Your other devices signed in to the same Apple Account get the key too. The Keychain cannot require \(biometry) for synced items, so Sempere asks for \(biometry) or your passcode itself before using it; the key is otherwise protected by iCloud Keychain's end-to-end encryption and your device passcode. Synced keys may not be listed in the Passwords app.")
             }
             if let failure {
                 Text(failure).foregroundStyle(.red)

@@ -319,7 +319,9 @@ private struct RecordingSettingsSection: View {
                 .syncedSetting("recording.bitRate")
             }
             Picker("Sample Rate", selection: $settings.sampleRate) {
-                ForEach(RecordingSettings.sampleRates, id: \.self) { Text(RecordingSettings.label(sampleRate: $0)).tag($0) }
+                ForEach(RecordingSettings.sampleRates(for: settings.codec), id: \.self) {
+                    Text(RecordingSettings.label(sampleRate: $0)).tag($0)
+                }
             }
             .syncedSetting("recording.sampleRate")
             Picker("Channels", selection: $settings.channels) {
@@ -333,7 +335,7 @@ private struct RecordingSettingsSection: View {
             Text("Stereo is used only when the microphone has two channels. Apple Lossless is a size estimate for speech. Changes apply to new recordings; recordings already made keep their format.")
         }
         .onChange(of: settings) {
-            // A codec change can make the bit rate invalid: show the corrected value.
+            // A codec change can make the bit rate or sample rate invalid: show the corrected value.
             let fixed = settings.normalized()
             if fixed != settings { settings = fixed }
             settings.save()
@@ -571,7 +573,7 @@ private struct DeviceKeySettingsSection: View {
         } header: {
             Text("Device Keys")
         } footer: {
-            Text("Save Key exports this device's key, after Face ID, to Files or a password manager, with its paper recovery kit. New Key makes a key for another device and encrypts the vault to it. Devices here are the keys this vault is encrypted to (this iPad, that Mac, the paper backup), not people: to share a note, export it. “Rewrite headers only” is fast but leaves old copies of an attachment openable with a key that was removed. “Re-encrypt everything” takes longer in a vault with many attachments.")
+            Text("Save Key exports this device's key, after \(RememberedKeys.biometryPhrase), to Files or a password manager, with its paper recovery kit. New Key makes a key for another device and encrypts the vault to it. Devices here are the keys this vault is encrypted to (this iPad, that Mac, the paper backup), not people: to share a note, export it. “Rewrite headers only” is fast but leaves old copies of an attachment openable with a key that was removed. “Re-encrypt everything” takes longer in a vault with many attachments.")
         }
         .sheet(isPresented: $savingKey) { SaveKeyView() }
         .sheet(isPresented: $creatingKey) { NewKeyView() }
@@ -721,7 +723,7 @@ struct UnusedAttachmentsView: View {
                 } header: {
                     Text("Held by History (\(StorageText.items(report.held.count, bytes: report.heldBytes)))")
                 } footer: {
-                    Text("Only older versions of these notes show these attachments. They are freed when those versions are thinned (Settings → Version History).")
+                    Text("Only older versions of these notes show these attachments. They are freed when those versions are thinned (Sempere Settings ▸ Version History).")
                 }
             }
             if !report.unchecked.isEmpty {

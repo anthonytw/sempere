@@ -490,7 +490,7 @@ struct BundledTextView: View {
         .task {
             let docs = documents
             let missing = String(localized: "This text is not in this build. Read it at \(SempereAbout.repositoryLicenseURL.absoluteString).",
-                                 comment: "About: a bundled licence text is missing; %@ is a web address")
+                                 comment: "About: a bundled license text is missing; %@ is a web address")
             paragraphs = await Task.detached {
                 docs.flatMap { doc in AboutInfo.text(of: doc).map(AboutInfo.paragraphs) ?? [missing] }
             }.value

@@ -184,7 +184,7 @@ final class AppModel {
     /// the device state.
     let inboxBackoff: InboxBackoff
     @ObservationIgnored var inboxAdoption: Task<Void, Never>?
-    /// Progress of "Recognise All Notes" (`AppModel+Search`).
+    /// Progress of "Recognize All Notes" (`AppModel+Search`).
     var recognitionProgress: RecognitionProgress?
     /// What the last "Recognize All Notes" run changed, kept (also after it
     /// ends) until the next run starts; the "Recently Recognized" filter lists it.
@@ -249,7 +249,7 @@ final class AppModel {
     var isImporting = false
     /// What the last import did, until the alert is dismissed.
     var importSummary: ImportSummary?
-    /// The "Export Notes…" sheet's request (`AppModel+BulkExport`).
+    /// The "Export to Folder or Zip…" sheet's request (`AppModel+BulkExport`).
     var bulkExportRequest: BulkExportRequest?
     var sortOrder = NoteSort.modified
     /// True while an edit is being written.

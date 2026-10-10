@@ -175,7 +175,7 @@ extension AppModel {
         record.lastErrors = report.errors.count
         if report.errors.isEmpty {
             record.apply(status: status)
-            record.lastBackup = status?.updated ?? Date()
+            record.lastBackup = status?.completed ?? Date()
             // Damage a check found is repaired now; the next check says so.
             if checksum { record.lastVerifyHealthy = nil }
         }
@@ -316,10 +316,12 @@ extension AppModel {
 }
 
 extension BackupRecord {
-    /// Takes notes, files and bytes (and the last run) from a backup's status.
+    /// Takes notes, files and bytes (and the last complete run) from a
+    /// backup's status. A run with file errors or cut short is no backup
+    /// (`BackupStatus.completed`, as `sempere backup status --max-age` counts).
     mutating func apply(status: BackupStatus?) {
         guard let status else { return }
-        lastBackup = status.updated
+        lastBackup = status.completed
         lastNotes = status.notes
         lastFiles = status.files
         lastBytes = status.totalBytes

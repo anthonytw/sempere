@@ -81,9 +81,9 @@ struct KeysWindowView: View {
                             if key.isInUse { Text("This key unlocked the vault").font(.caption).foregroundStyle(.green) }
                             if !key.isPostQuantum { Text("Classic").font(.caption).foregroundStyle(.orange) }
                             Spacer()
-                            Button("Replace…") { replacing = key }
+                            Button("Replace Key…") { replacing = key }
                                 .disabled(key.isInUse)
-                            Button("Remove…", role: .destructive) { removing = key }
+                            Button("Remove Key…", role: .destructive) { removing = key }
                                 .disabled(key.isInUse || model.deviceKeys.count < 2)
                         }
                         Text(key.summary).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)

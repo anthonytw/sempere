@@ -340,6 +340,8 @@ struct RecipientsAlertTests {
         r.captured = CaptureAttribution(device: "0b0b0b0b", recipient: CaptureKey.fingerprint(of: key))
         #expect(RecordingsMenu.capturedBy(r, recipients: entries) == "Voice note from iPad")
         #expect(RecordingsMenu.capturedBy(r, recipients: []) == "Voice note from a device no longer in this vault")
+        let unnamed: [VaultManifest.Recipient] = [.init(key: key, label: "", added: Date())]
+        #expect(RecordingsMenu.capturedBy(r, recipients: unnamed) == "Voice note from Device")
         r.captured?.recipient = nil
         #expect(RecordingsMenu.capturedBy(r, recipients: entries) == "Voice note from an unverified device")
     }

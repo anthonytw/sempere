@@ -78,6 +78,12 @@ final class RememberedKeys {
         }
     }
 
+    /// `biometryName`, or "Face ID or Touch ID" when none is enrolled: for
+    /// sentences that name the check (the passcode stands in for it then).
+    static var biometryPhrase: String {
+        biometryName ?? String(localized: "Face ID or Touch ID", comment: "The biometry, inside sentences, when the device has none enrolled")
+    }
+
     /// The footer under "Remember on this device". A device-only key is
     /// `.biometryCurrentSet` (`KeychainVaultKeyStore`): only that biometry
     /// reads it, never the passcode, so after a lockout the user unlocks with

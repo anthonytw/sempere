@@ -178,7 +178,7 @@ sempere keys paper --out KIT.pdf [--identity FILE] [--vault V] [--passphrase [--
   whatever the file name, so the hash-named key files of post-quantum recipients
   (`age1pq-<64 hex>.key.age`) are included.
 
-**The app's key actions and the CLI.** Settings → Device Keys, the Vault
+**The app's key actions and the CLI.** Settings ▸ Device Keys, the Vault
 Keys window and the recipients alert in the app do the same with the same
 code (`IdentityFile.render`, `RecoveryKit`, `Vault.addRecipient`,
 `replaceRecipient`, `repairRecipients`, `confirmRecipients`):
@@ -189,7 +189,7 @@ code (`IdentityFile.render`, `RecoveryKit`, `Vault.addRecipient`,
 | Save Key… → Print Recovery Kit / Save as PDF | `sempere keys paper --identity key.txt --vault V --out kit.pdf` |
 | New Key… (label) | `sempere keys generate --out new.txt`, then `sempere vault recipients add --vault V "$(sempere keys show new.txt)" --label LABEL` |
 | New Key… → Save to Files / Share / Recovery Kit | `new.txt` itself; `sempere keys paper --identity new.txt --vault V --out kit.pdf` |
-| Vault Keys → Replace… (paste a public key, or generate one) | `sempere vault recipients replace --vault V OLD NEW [--label LABEL]` (`sempere keys generate --out new.txt` first to generate) |
+| Vault Keys ▸ Replace Key… (paste a public key, or generate one) | `sempere vault recipients replace --vault V OLD NEW [--label LABEL]` (`sempere keys generate --out new.txt` first to generate) |
 | Recipients alert → Remove | `sempere vault recipients repair --vault V` |
 | Recipients alert → Choose Devices to Keep… | `sempere vault recipients repair --vault V --keep KEY ...` |
 | Recipients alert → Trust This List | `sempere vault recipients confirm --vault V` |
@@ -198,7 +198,7 @@ The app adds two rules to the CLI's `repair --keep`, since a wrong pick
 cannot be undone from the device that made it: the key the app unlocked with
 is always kept (and a repair is refused when that key is in neither the list
 nor this device's record), and keeping a key this device never confirmed asks
-for the owner check first (Face ID, Touch ID or the passcode), as adding a key does. Replace… refuses the key
+for the owner check first (Face ID, Touch ID or the passcode), as adding a key does. Replace Key… refuses the key
 the app unlocked with (add a key for this device, unlock with it, then remove
 the old one): replacing it would lock the app out, and an interrupted replace
 of it can only be finished with both keys. Remove refuses that key too, and
@@ -444,7 +444,7 @@ another note's blobs. NOTE is an id or a title; without one, every note.
 - `copy` copies a blob that NOTE `--from` references (SHA256, or a unique
   prefix of at least 8 digits) into NOTE `--to` (a byte copy, verified as it
   is read), before a revision there uses it.
-- `unused` shows what the app's Settings → Storage shows, from the same code
+- `unused` shows what the app's Settings ▸ Storage shows, from the same code
   (`AttachmentStorageReport`, `docs/attachments.md` §4): blobs no revision of
   their note references, each with the date this device first found it
   unused, the date it may be deleted (that plus `--retention` days) and
@@ -842,7 +842,7 @@ encrypted files.
 
 #### The app's Backups (parity)
 
-The iPad and Mac app (Settings → Backups, `docs/io.md` "Backups in the app")
+The iPad and Mac app (Settings ▸ Backups, `docs/io.md` "Backups in the app")
 runs the same core code, so its backups are these backups: the app and the
 CLI can each continue the other's folder, and everything above applies.
 
@@ -1009,7 +1009,7 @@ absent).
   Prints the new id (the `Created …` line goes to stderr). Without a TITLE
   the note is named after the date and time, as the app names a new note
   (`DefaultTitle`): `--title-format` (default: the `SEMPERE_TITLE_FORMAT`
-  environment variable, this machine's setting, as the app's Settings → New
+  environment variable, this machine's setting, as the app's Settings ▸ New
   Notes → Title is the device's) takes a Unicode date pattern
   (`"yyyy-MM-dd HH:mm"`, literal text in single quotes: `"'Lecture' EEE d MMM"`,
   `''` for a quote) or a strftime format (`"%Y-%m-%d %H:%M"`, `"Lecture %a %e %b"`:
@@ -1834,7 +1834,7 @@ summary names no audio, video, image or PDF are skipped without being read.
 #### Bulk export
 
 `--all` with `--format pdf`, `png` or `media` (not `--merge` or `--at`) runs the bulk
-export the app's "Export Notes…" uses (`BulkExportSession`, docs/io.md "Bulk
+export the app's "Export to Folder or Zip…" uses (`BulkExportSession`, docs/io.md "Bulk
 export"): notes are planned from the summaries (the summary cache unless
 `--no-cache`), then read, rendered and written **one at a time**, so memory is
 that of the largest note, not of the vault.
@@ -1864,7 +1864,7 @@ that of the largest note, not of the vault.
 
 The app's sheet shows the matching command for a notebook or the whole vault:
 
-| App ("Export Notes…") | `sempere export` |
+| App ("Export to Folder or Zip…") | `sempere export` |
 | --- | --- |
 | All notes, PDF, folders like notebooks, into a folder | `--all --format pdf --layout notebooks --out FOLDER` |
 | Notebook "School/Math", PDF + attachments, zip | `--all --notebook School/Math --format pdf --attachments --layout notebooks --zip --out Math.zip` |

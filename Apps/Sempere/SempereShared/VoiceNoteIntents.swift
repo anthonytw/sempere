@@ -20,7 +20,8 @@ enum VoiceNoteIntentError: Error, CustomLocalizedStringResourceConvertible {
     case unavailable
 
     var localizedStringResource: LocalizedStringResource {
-        "Open Sempere and turn on Quick Voice Notes in Settings first."
+        // The same words as `QuickCaptureError.notSetUp` (the app's own error for this state).
+        "Quick Voice Notes is not set up: open Sempere, unlock the vault and turn it on in Settings."
     }
 }
 

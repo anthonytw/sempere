@@ -215,7 +215,7 @@ struct VoiceNoteActivityView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         RecordDot(active: state.isRecording)
-                        Text(state.isRecording ? "Recording Voice Note" : "Saving Voice Note…")
+                        Text(state.isRecording ? "Recording voice note" : "Saving voice note…")
                             .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
                     }
                     ElapsedTime(state: state).font(.system(size: 34, weight: .semibold)).foregroundStyle(.white)

@@ -50,7 +50,7 @@
       }
     },
     "%@ page" : {
-      "comment" : "Accessibility label of a page colour preset; %@ is White, Cream or Dark",
+      "comment" : "Accessibility label of a page color preset; %@ is White, Cream or Dark",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -2109,7 +2109,7 @@
         }
       }
     },
-    "A Markdown file with the recognised handwriting, page by page." : {
+    "A Markdown file with the recognized handwriting, page by page." : {
       "comment" : "Export sheet footer",
       "extractionState" : "manual",
       "localizations" : {
@@ -2237,7 +2237,7 @@
         }
       }
     },
-    "A folder tree like your notebooks, one Markdown file and PDF per note, with the recognised text." : {
+    "A folder tree like your notebooks, one Markdown file and PDF per note, with the recognized text." : {
       "comment" : "Export sheet footer",
       "extractionState" : "manual",
       "localizations" : {
@@ -2249,7 +2249,7 @@
         }
       }
     },
-    "A folder tree like your notebooks, one Markdown file per note, with the recognised text." : {
+    "A folder tree like your notebooks, one Markdown file per note, with the recognized text." : {
       "comment" : "Export sheet footer",
       "extractionState" : "manual",
       "localizations" : {
@@ -2261,7 +2261,7 @@
         }
       }
     },
-    "A folder with a Markdown file of the recognised text and PDF." : {
+    "A folder with a Markdown file of the recognized text and PDF." : {
       "comment" : "Export sheet footer",
       "extractionState" : "manual",
       "localizations" : {
@@ -2273,7 +2273,7 @@
         }
       }
     },
-    "A folder with a Markdown file of the recognised text." : {
+    "A folder with a Markdown file of the recognized text." : {
       "comment" : "Export sheet footer",
       "extractionState" : "manual",
       "localizations" : {
@@ -2328,17 +2328,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Un cuaderno no se puede mover dentro de sí mismo ni de un cuaderno que contenga."
-          }
-        }
-      }
-    },
-    "A notebook cannot go into itself or a notebook inside it." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Un cuaderno no puede ir dentro de sí mismo ni de un cuaderno que contiene."
           }
         }
       }
@@ -3244,7 +3233,7 @@
         }
       }
     },
-    "Attachments are PDF pages, images, typed text and recordings; off imports the ink, any recognised handwriting and the note's details only. Camera and location data in photos is removed unless you keep it. PDF page text makes the pages searchable." : {
+    "Attachments are PDF pages, images, typed text and recordings; off imports the ink, any recognized handwriting and the note's details only. Camera and location data in photos is removed unless you keep it. PDF page text makes the pages searchable." : {
       "comment" : "Footer of the import options",
       "extractionState" : "manual",
       "localizations" : {
@@ -3291,7 +3280,7 @@
         }
       }
     },
-    "Authentication was cancelled." : {
+    "Authentication was canceled." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -3600,7 +3589,7 @@
       }
     },
     "Black" : {
-      "comment" : "Text colour",
+      "comment" : "Text color",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -3624,7 +3613,7 @@
       }
     },
     "Blue" : {
-      "comment" : "Text colour",
+      "comment" : "Text color",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -4162,7 +4151,7 @@
         }
       }
     },
-    "Choose the paper (ruling, colour) of this page or all pages" : {
+    "Choose the paper (ruling, color) of this page or all pages" : {
       "comment" : "Help tag of Paper…",
       "extractionState" : "manual",
       "localizations" : {
@@ -4318,8 +4307,8 @@
         }
       }
     },
-    "Colour" : {
-      "comment" : "Text style bar: text colour menu",
+    "Color" : {
+      "comment" : "Text style bar: text color menu",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -4528,6 +4517,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No se ha podido añadir el vídeo. %@"
+          }
+        }
+      }
+    },
+    "Could not change the icon." : {
+      "comment" : "Alert when switching the app icon fails",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo cambiar el icono."
           }
         }
       }
@@ -4760,7 +4761,7 @@
         }
       }
     },
-    "Could not save recognised text: %@" : {
+    "Could not save recognized text: %@" : {
       "comment" : "%@ is the error (English)",
       "extractionState" : "manual",
       "localizations" : {
@@ -4832,18 +4833,6 @@
         }
       }
     },
-    "Couldn’t change the icon." : {
-      "comment" : "Alert when switching the app icon fails",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudo cambiar el icono."
-          }
-        }
-      }
-    },
     "Counts of what Notability stores that Sempere does not convert (yet). Everything else of those notes was imported." : {
       "comment" : "Footer of the Not Imported section of the Notability import report",
       "extractionState" : "manual",
@@ -4869,7 +4858,7 @@
       }
     },
     "Cream" : {
-      "comment" : "Paper colour preset",
+      "comment" : "Paper color preset",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -4988,8 +4977,8 @@
         }
       }
     },
-    "Custom page colour" : {
-      "comment" : "Colour picker",
+    "Custom page color" : {
+      "comment" : "Color picker",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -5001,7 +4990,7 @@
       }
     },
     "Dark" : {
-      "comment" : "Paper colour preset",
+      "comment" : "Paper color preset",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -5144,7 +5133,7 @@
       }
     },
     "Device" : {
-      "comment" : "Label of a key's device name in Save Key",
+      "comment" : "A device key's name when it has none; label of a key's device name in Save Key",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -5333,8 +5322,8 @@
         }
       }
     },
-    "Dot colour" : {
-      "comment" : "Paper picker: colour of the dots",
+    "Dot color" : {
+      "comment" : "Paper picker: color of the dots",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -6095,17 +6084,6 @@
         }
       }
     },
-    "Export Notes…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Exportar notas…"
-          }
-        }
-      }
-    },
     "Export as PDF, PNG pages or text" : {
       "comment" : "Help tag of the Export menu",
       "extractionState" : "manual",
@@ -6138,6 +6116,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Exporta notas como PDF, imágenes o Markdown, de una en una o todas a la vez."
+          }
+        }
+      }
+    },
+    "Export to Folder or Zip…" : {
+      "comment" : "File menu: bulk export to a folder or zip",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exportar a carpeta o zip…"
           }
         }
       }
@@ -6184,6 +6174,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Exportar…"
+          }
+        }
+      }
+    },
+    "Face ID or Touch ID" : {
+      "comment" : "The biometry, inside sentences, when the device has none enrolled",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Face ID o Touch ID"
           }
         }
       }
@@ -6566,26 +6568,26 @@
         }
       }
     },
-    "Green" : {
-      "comment" : "Text colour",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verde"
-          }
-        }
-      }
-    },
-    "Grey" : {
-      "comment" : "Text colour",
+    "Gray" : {
+      "comment" : "Text color",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Gris"
+          }
+        }
+      }
+    },
+    "Green" : {
+      "comment" : "Text color",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verde"
           }
         }
       }
@@ -6817,6 +6819,18 @@
         }
       }
     },
+    "Hide Note List" : {
+      "comment" : "View menu and toolbar button: hide the note list for a full-width canvas",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ocultar lista de notas"
+          }
+        }
+      }
+    },
     "Hide Notebooks" : {
       "comment" : "Accessibility label: close the notebook suggestions",
       "extractionState" : "manual",
@@ -6825,18 +6839,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ocultar cuadernos"
-          }
-        }
-      }
-    },
-    "Hide Notes" : {
-      "comment" : "Toolbar button: hide the note list",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ocultar notas"
           }
         }
       }
@@ -6854,37 +6856,13 @@
       }
     },
     "Hide Tool Palette" : {
-      "comment" : "Tools menu",
+      "comment" : "Tools menu and toolbar button: hide the tool palette",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ocultar paleta de herramientas"
-          }
-        }
-      }
-    },
-    "Hide Tools" : {
-      "comment" : "Toolbar button: hide the tool palette",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ocultar herramientas"
-          }
-        }
-      }
-    },
-    "Hide or Show Note List" : {
-      "comment" : "View menu",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ocultar o mostrar lista de notas"
           }
         }
       }
@@ -7332,14 +7310,14 @@
         }
       }
     },
-    "In the picker, tap Browse, then iCloud Drive under Locations. If it is not listed, tap ⋯ (More) › Edit at the top of Browse and turn iCloud Drive on." : {
+    "In the picker, tap Browse, then iCloud Drive under Locations. If it is not listed, tap ⋯ (More) ▸ Edit at the top of Browse and turn iCloud Drive on." : {
       "comment" : "iCloud Drive help step (iPhone and iPad only). Use the Files app's own names of Browse, Locations, More, Edit.",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "En el selector, toca Explorar y después iCloud Drive en Ubicaciones. Si no aparece, toca ⋯ (Más) › Editar en la parte superior de Explorar y activa iCloud Drive."
+            "value" : "En el selector, toca Explorar y después iCloud Drive en Ubicaciones. Si no aparece, toca ⋯ (Más) ▸ Editar en la parte superior de Explorar y activa iCloud Drive."
           }
         }
       }
@@ -8030,7 +8008,7 @@
       }
     },
     "License" : {
-      "comment" : "About: the licence text and its section",
+      "comment" : "About: the license text and its section",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -8053,8 +8031,8 @@
         }
       }
     },
-    "Line colour" : {
-      "comment" : "Paper picker: colour of the ruling",
+    "Line color" : {
+      "comment" : "Paper picker: color of the ruling",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -8137,14 +8115,14 @@
         }
       }
     },
-    "Live Activities are off for Sempere, and iOS needs one to record a voice note: turn them on in Settings → Sempere → Live Activities." : {
+    "Live Activities are off for Sempere, and iOS needs one to record a voice note: turn them on in the Settings app ▸ Sempere ▸ Live Activities." : {
       "comment" : "Error from the quick voice note intents, also shown in Settings: Live Activities are turned off for the app",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Las Actividades en directo están desactivadas para Sempere, e iOS necesita una para grabar una nota de voz: actívalas en Ajustes › Sempere › Actividades en directo."
+            "value" : "Las Actividades en directo están desactivadas para Sempere, e iOS necesita una para grabar una nota de voz: actívalas en la app Ajustes ▸ Sempere ▸ Actividades en directo."
           }
         }
       }
@@ -8185,7 +8163,7 @@
         }
       }
     },
-    "Margin colour" : {
+    "Margin color" : {
       "comment" : "Paper picker",
       "extractionState" : "manual",
       "localizations" : {
@@ -8317,8 +8295,8 @@
         }
       }
     },
-    "More Colours" : {
-      "comment" : "VoiceOver: opens the system colour picker",
+    "More Colors" : {
+      "comment" : "VoiceOver: opens the system color picker",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -8414,7 +8392,7 @@
       }
     },
     "Move to Recently Deleted" : {
-      "comment" : "Note menu: delete the note (it can be restored)",
+      "comment" : "Note menu and a note's context menu: delete the note (it can be restored)",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -8533,7 +8511,7 @@
       }
     },
     "New Key…" : {
-      "comment" : "Settings → Device Keys: make a key for another device",
+      "comment" : "Settings ▸ Device Keys: make a key for another device",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -9695,13 +9673,13 @@
         }
       }
     },
-    "Only older versions of these notes show these attachments. They are freed when those versions are thinned (Settings → Version History)." : {
+    "Only older versions of these notes show these attachments. They are freed when those versions are thinned (Sempere Settings ▸ Version History)." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Solo las versiones anteriores de estas notas muestran estos adjuntos. Se liberan al reducir esas versiones (Ajustes › Historial de versiones)."
+            "value" : "Solo las versiones anteriores de estas notas muestran estos adjuntos. Se liberan al reducir esas versiones (Ajustes de Sempere ▸ Historial de versiones)."
           }
         }
       }
@@ -9836,18 +9814,6 @@
         }
       }
     },
-    "Open Sempere and turn on Quick Voice Notes in Settings first." : {
-      "comment" : "Shown by Siri/Shortcuts when quick voice notes are not set up",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abre Sempere y activa antes las notas de voz rápidas en Ajustes."
-          }
-        }
-      }
-    },
     "Open Sempere for details." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9867,18 +9833,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abrir los ajustes de Sempere"
-          }
-        }
-      }
-    },
-    "Open Settings › your name › iCloud › iCloud Drive and turn on “Sync this %@”. (On older versions the switch is called iCloud Drive.)" : {
-      "comment" : "iCloud Drive help step; %@ is iPhone or iPad. Use the system's own names of these settings.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abre Ajustes › tu nombre › iCloud › iCloud Drive y activa «Sincronizar este %@». (En versiones anteriores, el interruptor se llama iCloud Drive.)"
           }
         }
       }
@@ -10034,6 +9988,18 @@
         }
       }
     },
+    "Open the Settings app ▸ your name ▸ iCloud ▸ iCloud Drive and turn on “Sync this %@”. (On older versions the switch is called iCloud Drive.)" : {
+      "comment" : "iCloud Drive help step; %@ is iPhone or iPad. Use the system's own names of these settings.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre la app Ajustes ▸ tu nombre ▸ iCloud ▸ iCloud Drive y activa «Sincronizar este %@». (En versiones anteriores, el interruptor se llama iCloud Drive.)"
+          }
+        }
+      }
+    },
     "Open “%@”" : {
       "comment" : "Restore from Backup: open the restored vault; %@ is its name",
       "extractionState" : "manual",
@@ -10131,7 +10097,7 @@
       }
     },
     "Orange" : {
-      "comment" : "Text colour",
+      "comment" : "Text color",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -10338,8 +10304,8 @@
         }
       }
     },
-    "Page colour" : {
-      "comment" : "Paper picker: background colour",
+    "Page color" : {
+      "comment" : "Paper picker: background color",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -10716,8 +10682,8 @@
         }
       }
     },
-    "Pen Colour" : {
-      "comment" : "VoiceOver: the swatch of the pen's current colour",
+    "Pen Color" : {
+      "comment" : "VoiceOver: the swatch of the pen's current color",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -11146,7 +11112,7 @@
       }
     },
     "Purple" : {
-      "comment" : "Text colour",
+      "comment" : "Text color",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -11206,6 +11172,7 @@
       }
     },
     "Quick Voice Notes is not set up: open Sempere, unlock the vault and turn it on in Settings." : {
+      "comment" : "Shown by the app, Siri and Shortcuts when quick voice notes are not set up",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -11408,7 +11375,7 @@
         }
       }
     },
-    "Reads the handwriting of pages Notability never recognised, on this device, right after the import." : {
+    "Reads the handwriting of pages Notability never recognized, on this device, right after the import." : {
       "comment" : "Footer of the Notability import options",
       "extractionState" : "manual",
       "localizations" : {
@@ -11420,7 +11387,7 @@
         }
       }
     },
-    "Reads the handwriting of pages the source app never recognised, on this device, right after the import." : {
+    "Reads the handwriting of pages the source app never recognized, on this device, right after the import." : {
       "comment" : "Footer of the import options",
       "extractionState" : "manual",
       "localizations" : {
@@ -11660,25 +11627,25 @@
         }
       }
     },
-    "Record from the Lock Screen, Control Center, the Action button, a widget or Siri (“Record a Sempere voice note”), without unlocking the vault or using Face ID. Each voice note is encrypted on this device to your vault's keys as soon as it stops, and becomes a note in the notebook above, titled with the date and time, the next time the vault is unlocked. Transcription runs on this device only. This device keeps the vault's public keys and a capture key that can add voice notes but cannot read any note." : {
+    "Record from the Lock Screen, Control Center, the Action button, a widget or Siri (“Record a Sempere voice note”), without unlocking the vault or using Face ID or Touch ID. Each voice note is encrypted on this device to your vault's keys as soon as it stops, and becomes a note in the notebook above, titled with the date and time, the next time the vault is unlocked. Transcription runs on this device only. This device keeps the vault's public keys and a capture key that can add voice notes but cannot read any note." : {
       "comment" : "The quoted Siri phrase must match the Spanish Siri phrase in AppShortcuts.xcstrings",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Graba desde la pantalla bloqueada, el centro de control, el botón de acción, un widget o Siri («Graba una nota de voz en Sempere»), sin desbloquear la bóveda ni usar Face ID. Cada nota de voz se cifra en este dispositivo con las claves de tu bóveda en cuanto se detiene, y la próxima vez que se desbloquee la bóveda pasa a ser una nota en el cuaderno de arriba, titulada con la fecha y la hora. La transcripción se hace solo en este dispositivo. Este dispositivo guarda las claves públicas de la bóveda y una clave de captura que puede añadir notas de voz pero no puede leer ninguna nota."
+            "value" : "Graba desde la pantalla bloqueada, el centro de control, el botón de acción, un widget o Siri («Graba una nota de voz en Sempere»), sin desbloquear la bóveda ni usar Face ID o Touch ID. Cada nota de voz se cifra en este dispositivo con las claves de tu bóveda en cuanto se detiene, y la próxima vez que se desbloquee la bóveda pasa a ser una nota en el cuaderno de arriba, titulada con la fecha y la hora. La transcripción se hace solo en este dispositivo. Este dispositivo guarda las claves públicas de la bóveda y una clave de captura que puede añadir notas de voz pero no puede leer ninguna nota."
           }
         }
       }
     },
-    "Record from the menu-bar item, File > Start Voice Note, Siri or Shortcuts, without unlocking the vault. Each voice note is encrypted on this Mac to your vault's keys as soon as it stops, and becomes a note in the notebook above, titled with the date and time, the next time the vault is unlocked. Transcription runs on this Mac only. This Mac keeps the vault's public keys and a capture key that can add voice notes but cannot read any note." : {
+    "Record from the menu-bar item, File ▸ Start Voice Note, Siri or Shortcuts, without unlocking the vault. Each voice note is encrypted on this Mac to your vault's keys as soon as it stops, and becomes a note in the notebook above, titled with the date and time, the next time the vault is unlocked. Transcription runs on this Mac only. This Mac keeps the vault's public keys and a capture key that can add voice notes but cannot read any note." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Graba desde el icono de la barra de menús, Archivo > Iniciar nota de voz, Siri o Atajos, sin desbloquear la bóveda. Cada nota de voz se cifra en este Mac con las claves de tu bóveda en cuanto termina y se convierte en una nota del cuaderno de arriba, con la fecha y la hora como título, la próxima vez que se desbloquee la bóveda. La transcripción se hace solo en este Mac. Este Mac guarda las claves públicas de la bóveda y una clave de captura que puede añadir notas de voz pero no puede leer ninguna nota."
+            "value" : "Graba desde el icono de la barra de menús, Archivo ▸ Iniciar nota de voz, Siri o Atajos, sin desbloquear la bóveda. Cada nota de voz se cifra en este Mac con las claves de tu bóveda en cuanto termina y se convierte en una nota del cuaderno de arriba, con la fecha y la hora como título, la próxima vez que se desbloquee la bóveda. La transcripción se hace solo en este Mac. Este Mac guarda las claves públicas de la bóveda y una clave de captura que puede añadir notas de voz pero no puede leer ninguna nota."
           }
         }
       }
@@ -11743,7 +11710,7 @@
       }
     },
     "Recording voice note" : {
-      "comment" : "In-app banner while a voice note records",
+      "comment" : "In-app banner and Live Activity while a voice note records",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -11844,7 +11811,7 @@
       }
     },
     "Red" : {
-      "comment" : "Text colour",
+      "comment" : "Text color",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -11940,7 +11907,7 @@
       }
     },
     "Remove Key…" : {
-      "comment" : "Context menu item",
+      "comment" : "Key window: a key row's button and context menu, remove a device key",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -12136,18 +12103,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Elimina todos los guardados automáticos, por recientes que sean, salvo el más reciente de cada sesión de edición. Conserva todos los puntos de control (versiones guardadas e importadas) y la versión más reciente de la nota."
-          }
-        }
-      }
-    },
-    "Remove…" : {
-      "comment" : "Button: remove a device key",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quitar…"
           }
         }
       }
@@ -12414,7 +12369,7 @@
       }
     },
     "Replace Key…" : {
-      "comment" : "Key window: context menu, replace a device's key",
+      "comment" : "Key window: a key row's button and context menu, replace a device's key",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -12484,7 +12439,7 @@
       }
     },
     "Replace…" : {
-      "comment" : "Key window: replace a device's key",
+      "comment" : "Key window: confirm replacing a device's key",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -12757,7 +12712,7 @@
         }
       }
     },
-    "Revisions removed by compaction are not restore points and are not listed. Versions that depend on them are greyed out and cannot be shown or restored." : {
+    "Revisions removed by compaction are not restore points and are not listed. Versions that depend on them are grayed out and cannot be shown or restored." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -13006,20 +12961,20 @@
         }
       }
     },
-    "Save Key exports this device's key, after Face ID, to Files or a password manager, with its paper recovery kit. New Key makes a key for another device and encrypts the vault to it. Devices here are the keys this vault is encrypted to (this iPad, that Mac, the paper backup), not people: to share a note, export it. “Rewrite headers only” is fast but leaves old copies of an attachment openable with a key that was removed. “Re-encrypt everything” takes longer in a vault with many attachments." : {
-      "comment" : "Footer of Settings → Device Keys; button and option names as translated",
+    "Save Key exports this device's key, after %@, to Files or a password manager, with its paper recovery kit. New Key makes a key for another device and encrypts the vault to it. Devices here are the keys this vault is encrypted to (this iPad, that Mac, the paper backup), not people: to share a note, export it. “Rewrite headers only” is fast but leaves old copies of an attachment openable with a key that was removed. “Re-encrypt everything” takes longer in a vault with many attachments." : {
+      "comment" : "Footer of Settings ▸ Device Keys; button and option names as translated; %@ is the biometry (Face ID, Touch ID, or “Face ID or Touch ID”)",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Guardar clave exporta la clave de este dispositivo, tras Face ID, a Archivos o a un gestor de contraseñas, con su kit de recuperación en papel. Clave nueva crea una clave para otro dispositivo y cifra la bóveda para ella. Los dispositivos de esta lista son las claves para las que está cifrada esta bóveda (este iPad, ese Mac, la copia en papel), no personas: para compartir una nota, expórtala. «Reescribir solo las cabeceras» es rápido, pero deja copias antiguas de un adjunto que se pueden abrir con una clave que se ha quitado. «Volver a cifrar todo» tarda más en una bóveda con muchos adjuntos."
+            "value" : "Guardar clave exporta la clave de este dispositivo, tras %@, a Archivos o a un gestor de contraseñas, con su kit de recuperación en papel. Clave nueva crea una clave para otro dispositivo y cifra la bóveda para ella. Los dispositivos de esta lista son las claves para las que está cifrada esta bóveda (este iPad, ese Mac, la copia en papel), no personas: para compartir una nota, expórtala. «Reescribir solo las cabeceras» es rápido, pero deja copias antiguas de un adjunto que se pueden abrir con una clave que se ha quitado. «Volver a cifrar todo» tarda más en una bóveda con muchos adjuntos."
           }
         }
       }
     },
     "Save Key…" : {
-      "comment" : "Settings → Device Keys: export this device's key",
+      "comment" : "Settings ▸ Device Keys: export this device's key",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -13246,7 +13201,7 @@
       }
     },
     "Saving voice note…" : {
-      "comment" : "In-app banner while a stopped voice note is encrypted",
+      "comment" : "In-app banner and Live Activity while a stopped voice note is encrypted",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -13795,6 +13750,18 @@
         }
       }
     },
+    "Show Note List" : {
+      "comment" : "View menu and toolbar button: bring the note list back",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar lista de notas"
+          }
+        }
+      }
+    },
     "Show Notebooks" : {
       "comment" : "Accessibility label: open the notebook suggestions",
       "extractionState" : "manual",
@@ -13803,18 +13770,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mostrar cuadernos"
-          }
-        }
-      }
-    },
-    "Show Notes" : {
-      "comment" : "Toolbar button: show the note list",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar notas"
           }
         }
       }
@@ -13856,25 +13811,13 @@
       }
     },
     "Show Tool Palette" : {
-      "comment" : "Tools menu",
+      "comment" : "Tools menu and toolbar button: show the tool palette",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mostrar paleta de herramientas"
-          }
-        }
-      }
-    },
-    "Show Tools" : {
-      "comment" : "Toolbar button: show the tool palette",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar herramientas"
           }
         }
       }
@@ -14411,7 +14354,7 @@
       }
     },
     "Stop Voice Note" : {
-      "comment" : "Shortcut short title",
+      "comment" : "File menu, menu-bar item, shortcut short title, widget and control: stop the quick voice note",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -14540,13 +14483,13 @@
         }
       }
     },
-    "Store settings encrypted in this vault, so every device that opens it can use the same ones. Device keys and Face ID stay on each device." : {
+    "Store settings encrypted in this vault, so every device that opens it can use the same ones. Device keys and Face ID or Touch ID stay on each device." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Guarda los ajustes cifrados en esta bóveda, para que todos los dispositivos que la abren puedan usar los mismos. Las claves de los dispositivos y Face ID se quedan en cada dispositivo."
+            "value" : "Guarda los ajustes cifrados en esta bóveda, para que todos los dispositivos que la abren puedan usar los mismos. Las claves de los dispositivos y Face ID o Touch ID se quedan en cada dispositivo."
           }
         }
       }
@@ -14623,7 +14566,7 @@
         }
       }
     },
-    "Strokes with a missing style, colour or width" : {
+    "Strokes with a missing style, color or width" : {
       "comment" : "Notability import report: not imported",
       "extractionState" : "manual",
       "localizations" : {
@@ -15118,7 +15061,7 @@
       }
     },
     "Text (Markdown)…" : {
-      "comment" : "Export menu item: recognised text as Markdown",
+      "comment" : "Export menu item: recognized text as Markdown",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -15345,7 +15288,7 @@
       }
     },
     "The GNU GPL v3 on gnu.org" : {
-      "comment" : "About: link to the licence on the web",
+      "comment" : "About: link to the license on the web",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -16353,17 +16296,6 @@
         }
       }
     },
-    "This PDF is larger than 1 GB." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Este PDF ocupa más de 1 GB."
-          }
-        }
-      }
-    },
     "This PDF is protected with a password." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -16382,6 +16314,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este PDF está protegido. Introduce su contraseña para añadirlo; se guarda sin contraseña, cifrado con la clave de la bóveda."
+          }
+        }
+      }
+    },
+    "This PDF is too large to add (%@; at most %@)." : {
+      "comment" : "The values are file sizes",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este PDF es demasiado grande para añadirlo (%@; como máximo %@)."
           }
         }
       }
@@ -16533,14 +16477,14 @@
         }
       }
     },
-    "This file is too large to add (at most %lld MB)." : {
-      "comment" : "The limit is a fixed large number (512)",
+    "This file is too large to add (at most %@)." : {
+      "comment" : "The value is a file size",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Este archivo es demasiado grande para añadirlo (%lld MB como máximo)."
+            "value" : "Este archivo es demasiado grande para añadirlo (%@ como máximo)."
           }
         }
       }
@@ -16716,7 +16660,7 @@
       }
     },
     "This text is not in this build. Read it at %@." : {
-      "comment" : "About: a bundled licence text is missing; %@ is a web address",
+      "comment" : "About: a bundled license text is missing; %@ is a web address",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -18207,18 +18151,6 @@
         }
       }
     },
-    "Voice note from a device without a name" : {
-      "comment" : "The capturing device's key has no label",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nota de voz de un dispositivo sin nombre"
-          }
-        }
-      }
-    },
     "Voice note from an unverified device" : {
       "comment" : "A voice note captured before captures were attributed to devices",
       "extractionState" : "manual",
@@ -18367,7 +18299,7 @@
       }
     },
     "White" : {
-      "comment" : "Paper colour preset",
+      "comment" : "Paper color preset",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -18451,7 +18383,7 @@
       }
     },
     "Yellow" : {
-      "comment" : "Text colour",
+      "comment" : "Text color",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -18554,13 +18486,14 @@
         }
       }
     },
-    "Your other devices signed in to the same Apple Account get the key too. The Keychain cannot require Face ID for synced items, so Sempere asks for Face ID or your passcode itself before using it; the key is otherwise protected by iCloud Keychain's end-to-end encryption and your device passcode. Synced keys may not be listed in the Passwords app." : {
+    "Your other devices signed in to the same Apple Account get the key too. The Keychain cannot require %@ for synced items, so Sempere asks for %@ or your passcode itself before using it; the key is otherwise protected by iCloud Keychain's end-to-end encryption and your device passcode. Synced keys may not be listed in the Passwords app." : {
+      "comment" : "Unlock sheet footer of the iCloud Keychain switch; both values are the biometry (Face ID, Touch ID, or “Face ID or Touch ID”)",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tus otros dispositivos con sesión iniciada en la misma cuenta de Apple también reciben la clave. El Llavero no puede exigir Face ID para los elementos sincronizados, así que Sempere pide Face ID o tu código antes de usarla; por lo demás, la clave está protegida por el cifrado de extremo a extremo del Llavero de iCloud y por el código de tu dispositivo. Puede que las claves sincronizadas no aparezcan en la app Contraseñas."
+            "value" : "Tus otros dispositivos con sesión iniciada en la misma cuenta de Apple también reciben la clave. El Llavero no puede exigir %1$@ para los elementos sincronizados, así que Sempere pide %2$@ o tu código antes de usarla; por lo demás, la clave está protegida por el cifrado de extremo a extremo del Llavero de iCloud y por el código de tu dispositivo. Puede que las claves sincronizadas no aparezcan en la app Contraseñas."
           }
         }
       }
@@ -18957,19 +18890,19 @@
         }
       }
     },
-    "“%@” has never been backed up. Open Sempere and choose Settings → Back Up Now." : {
+    "“%@” has never been backed up. Open Sempere and choose Back Up Now in Settings ▸ Backups." : {
       "comment" : "Backup reminder notification; %@ is the vault's name",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "«%@» nunca se ha copiado. Abre Sempere y elige Ajustes → Hacer copia ahora."
+            "value" : "«%@» nunca se ha copiado. Abre Sempere y elige Hacer copia ahora en Ajustes ▸ Copias de seguridad."
           }
         }
       }
     },
-    "“%@” has not been backed up for %lld days. Open Sempere and choose Settings → Back Up Now." : {
+    "“%@” has not been backed up for %lld days. Open Sempere and choose Back Up Now in Settings ▸ Backups." : {
       "comment" : "Backup reminder notification; %1$@ is the vault's name, %2$lld the days without a backup",
       "extractionState" : "manual",
       "localizations" : {
@@ -18997,19 +18930,19 @@
               "many" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "«%1$@» lleva %2$lld de días sin copia. Abre Sempere y elige Ajustes → Hacer copia ahora."
+                  "value" : "«%1$@» lleva %2$lld de días sin copia. Abre Sempere y elige Hacer copia ahora en Ajustes ▸ Copias de seguridad."
                 }
               },
               "one" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "«%1$@» lleva %2$lld día sin copia. Abre Sempere y elige Ajustes → Hacer copia ahora."
+                  "value" : "«%1$@» lleva %2$lld día sin copia. Abre Sempere y elige Hacer copia ahora en Ajustes ▸ Copias de seguridad."
                 }
               },
               "other" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "«%1$@» lleva %2$lld días sin copia. Abre Sempere y elige Ajustes → Hacer copia ahora."
+                  "value" : "«%1$@» lleva %2$lld días sin copia. Abre Sempere y elige Hacer copia ahora en Ajustes ▸ Copias de seguridad."
                 }
               }
             }

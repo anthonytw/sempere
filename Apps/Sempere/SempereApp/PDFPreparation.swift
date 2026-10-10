@@ -16,6 +16,15 @@ struct PreparedPDF: Sendable {
     var name: String
 }
 
+/// File sizes in the "too large to add" messages (PDF, video, image), in
+/// binary units as the format states its limits: the 1 GiB blob cap
+/// (format.md §8.4) prints as "1 GB", from the constant.
+enum BlobSizeText {
+    static func string(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .binary)
+    }
+}
+
 /// Picked PDFs into what is stored (docs/attachments.md §8, §13 "PDF import
 /// and display"): page sizes come from `PDFIngest.inspect`, the same reader
 /// the CLI's `import pdf` and `attach pdf` use, so the app and the CLI write
@@ -34,8 +43,8 @@ enum PDFPreparation {
         case wrongPassword
         /// Not a PDF Sempere can read.
         case unreadable(String)
-        /// Over `maxBytes`.
-        case tooLarge
+        /// Over `maxBytes`; the file's size.
+        case tooLarge(Int64)
         /// No pages, or more than `NoteOps.Limits.pdfPages`, or a page without a usable size.
         case pages(String)
 
@@ -44,7 +53,10 @@ enum PDFPreparation {
             case .needsPassword: return String(localized: "This PDF is protected with a password.")
             case .wrongPassword: return String(localized: "That password does not open this PDF.")
             case .unreadable(let why): return String(localized: "This PDF cannot be read: \(why).", comment: "The value is the reason, in lower case")
-            case .tooLarge: return String(localized: "This PDF is larger than 1 GB.")
+            case .tooLarge(let n):
+                let size = BlobSizeText.string(n)
+                let limit = BlobSizeText.string(Int64(PDFPreparation.maxBytes))
+                return String(localized: "This PDF is too large to add (\(size); at most \(limit)).", comment: "The values are file sizes")
             case .pages(let why): return why.prefix(1).uppercased() + why.dropFirst() + "."
             }
         }
@@ -69,7 +81,7 @@ enum PDFPreparation {
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         if let limit {
             let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-            guard size <= limit else { throw Failure.tooLarge }
+            guard size <= limit else { throw Failure.tooLarge(Int64(size)) }
         }
         let copy = try workFolder().appendingPathComponent(url.lastPathComponent.isEmpty ? fallbackName : url.lastPathComponent)
         try FileManager.default.copyItem(at: url, to: copy)
@@ -99,7 +111,8 @@ enum PDFPreparation {
         let name = url.deletingPathExtension().lastPathComponent
         let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
         guard values?.isRegularFile == true else { throw Failure.unreadable(String(localized: "not a file", comment: "Why a PDF cannot be added: lower case, no final period (shown inside a sentence)")) }
-        guard (values?.fileSize ?? 0) <= maxBytes else { throw Failure.tooLarge }
+        let size = values?.fileSize ?? 0
+        guard size <= maxBytes else { throw Failure.tooLarge(Int64(size)) }
         guard let document = CGPDFDocument(url as CFURL) else {
             // Core Graphics cannot open it; the format's reader may still say why.
             _ = try inspect(url)

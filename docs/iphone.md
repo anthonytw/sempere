@@ -85,7 +85,7 @@ the iPad's did and iCloud was on. Findings (code and configuration, no device to
   folder ("On My iPhone › Sempere") in Files, and has no effect on iCloud Drive.
 
 So the app cannot hide iCloud Drive; the device does: since iOS 18 iCloud Drive syncs per device
-(Settings › your name › iCloud › iCloud Drive › "Sync this iPhone", off on some devices even with
+(Settings ▸ your name ▸ iCloud ▸ iCloud Drive ▸ "Sync this iPhone", off on some devices even with
 iCloud on), and Files can hide a location (Browse › ⋯ › Edit). The welcome screen and New Vault show
 "Don't see iCloud Drive?" (`ICloudDriveHelp`, iPhone and iPad) with those steps. Detecting it in the
 app (`FileManager.ubiquityIdentityToken`) is not used: without an iCloud container entitlement its

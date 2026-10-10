@@ -212,9 +212,9 @@ enum BackupReminder {
         let days = r.reminderDays
         let title = String(localized: "Back up “\(vaultName)”", comment: "Backup reminder notification title; %@ is the vault's name")
         let body = r.lastBackup == nil
-            ? String(localized: "“\(vaultName)” has never been backed up. Open Sempere and choose Settings → Back Up Now.",
+            ? String(localized: "“\(vaultName)” has never been backed up. Open Sempere and choose Back Up Now in Settings ▸ Backups.",
                      comment: "Backup reminder notification; %@ is the vault's name")
-            : String(localized: "“\(vaultName)” has not been backed up for \(days) days. Open Sempere and choose Settings → Back Up Now.",
+            : String(localized: "“\(vaultName)” has not been backed up for \(days) days. Open Sempere and choose Back Up Now in Settings ▸ Backups.",
                      comment: "Backup reminder notification; %1$@ is the vault's name, %2$lld the days without a backup")
         return (title, body)
     }

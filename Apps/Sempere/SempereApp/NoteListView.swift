@@ -176,6 +176,8 @@ struct NoteListView: View {
                         Button("Restore", systemImage: "arrow.uturn.backward") { run { try await model.restoreNote(note.id) } }
                             .tint(.green)
                     } else {
+                        // "Delete" on a swipe is the platform's word (Notes says it too); the
+                        // context menu and the Note menu say where the note goes.
                         Button("Delete", systemImage: "trash", role: .destructive) { run { try await model.deleteNote(note.id) } }
                     }
                 }
@@ -290,7 +292,9 @@ struct NoteListView: View {
             }
             Button("Move to Notebook…", systemImage: "book.closed") { movingNote = MovingNote(note: note) }
             ExportMenu(ids: exportIDs(for: note))
-            Button("Delete", systemImage: "trash", role: .destructive) { run { try await model.deleteNote(note.id) } }
+            Button("Move to Recently Deleted", systemImage: "trash", role: .destructive) {
+                run { try await model.deleteNote(note.id) }
+            }
         }
     }
 }

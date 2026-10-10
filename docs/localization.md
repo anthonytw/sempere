@@ -62,9 +62,12 @@ Rules:
    (`%2$@ … %1$lld`).
 8. Dates, numbers and sizes use `Date.FormatStyle`, `Measurement`, `ByteCountFormatter` and
    `FormatStyle`s so the locale formats them; never a fixed `dateFormat`.
+9. **The English source is American English** (color, recognize, canceled, gray, center), so one
+   word has one spelling and one catalog entry.
 
 `LocalizationCatalogTests` (runs in `swift test`, on Linux too) lists every literal in `Apps/` that the
-catalog does not know and every entry without a Spanish value or plural variations, and fails the build.
+catalog does not know, every entry without a Spanish value or plural variations, and every British
+spelling in the English source, and fails the build.
 It sees literals in localizing positions (`Text(…)`, `String(localized:)`, …) and the known bypasses
 (`errorMessage = "…"`, `message:`, `Text(verbatim:)`); a `String` built elsewhere and shown later still
 needs `String(localized:)` by hand. A plural is only needed where the *translation* changes with the

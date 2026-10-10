@@ -5,7 +5,7 @@ import Testing
 import UIKit
 @testable import SempereApp
 
-/// "Export Notes…" (`AppModel+BulkExport`, `BulkExportRun`): selection →
+/// "Export to Folder or Zip…" (`AppModel+BulkExport`, `BulkExportRun`): selection →
 /// jobs, folder export and resume, failures, cancel, zip archives, and the
 /// command-line equivalent. The core (`BulkExportPlan`, `BulkExportSession`,
 /// `ZipWriter`) is tested on Linux in SempereRenderTests and SempereImportTests.
@@ -189,7 +189,7 @@ struct BulkExportAppTests {
     }
 
     @Test func fileMenuCommand() {
-        #expect(MenuCommand.bulkExport.title == "Export Notes…")
+        #expect(MenuCommand.bulkExport.title == "Export to Folder or Zip…")
         #expect(MenuLayout.all.contains(.bulkExport))
         #expect(!MenuCommand.bulkExport.isEnabled(in: MenuCommand.Context(window: .library, vault: .locked)))
         #expect(MenuCommand.bulkExport.isEnabled(in: MenuCommand.Context(window: .library, vault: .unlocked)))
