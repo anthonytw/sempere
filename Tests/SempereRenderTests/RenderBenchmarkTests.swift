@@ -1,7 +1,23 @@
 import Foundation
 import XCTest
 import Sempere
+import SempereFonts
 @testable import SempereRender
+#if canImport(Glibc)
+import Glibc
+#endif
+
+/// The process's peak resident size in MB (run one benchmark per process to
+/// attribute it).
+func peakRSSMegabytes() -> Double {
+    var usage = rusage()
+    getrusage(RUSAGE_SELF, &usage)
+    #if os(Linux)
+    return Double(usage.ru_maxrss) / 1024   // kilobytes
+    #else
+    return Double(usage.ru_maxrss) / 1_048_576   // bytes
+    #endif
+}
 
 /// Prints how long exporting a dense ink page takes. Quick mode draws a small
 /// page; `SEMPERE_BENCH_STROKES` and `SEMPERE_BENCH_POINTS` scale it up
@@ -67,5 +83,56 @@ final class RenderBenchmarkTests: XCTestCase {
                         paint: Paint(r: 0, g: 0, b: 0, alpha: 0.5))
         }
         print("bench: \(fills) small fills at 2550 px: \(secs(t)), crc \(Zlib.crc32(0, raster.pixels))")
+    }
+
+    /// A long text box: `SEMPERE_BENCH_LINES` paragraphs of 40 characters,
+    /// with and without stored breaks (two per paragraph).
+    func testTextShapeTimings() throws {
+        let lines = Int(ProcessInfo.processInfo.environment["SEMPERE_BENCH_LINES"] ?? "") ?? 500
+        let shaper = DefaultTextShaper(library: FontLibrary(bundled: SempereFonts.directory, packs: []))
+        let paragraph = "The quick brown fox jumps over the dog."
+        let text = Array(repeating: paragraph, count: lines).joined(separator: "\n")
+        var breaks: [Int] = []
+        for k in 0..<lines { breaks += [k * 40 + 10, k * 40 + 20] }
+        let black = Color(r: 0, g: 0, b: 0, a: 255)
+        for stored in [nil, breaks] {
+            let content = TextContent(size: 10, color: black, runs: [TextRun(text)], breaks: stored)
+            let t = Date()
+            let shaped = try shaper.shape(content, frame: Rect(x: 0, y: 0, w: 150, h: 10))
+            var digest = ""
+            for l in shaped.lines {
+                digest += "\(l.text)|\(l.baseline)|\(l.x)|\(l.width)|"
+                for r in l.runs { for g in r.glyphs { digest += "\(g.glyph),\(g.x)," } }
+            }
+            print("bench: shape \(lines) lines, stored breaks \(stored != nil): \(secs(t)), \(shaped.lines.count) lines, "
+                  + "crc \(Zlib.crc32(0, Data(digest.utf8))), peak \(Int(peakRSSMegabytes())) MB")
+        }
+    }
+
+    /// A Japanese text box of `SEMPERE_BENCH_CJK` characters with the
+    /// system's font packs (scanned before timing).
+    func testCJKShapeTimings() throws {
+        let count = Int(ProcessInfo.processInfo.environment["SEMPERE_BENCH_CJK"] ?? "") ?? 1_000
+        let library = FontLibrary(bundled: SempereFonts.directory, packs: FontLibrary.defaultPackDirectories())
+        let shaper = DefaultTextShaper(library: library)
+        let black = Color(r: 0, g: 0, b: 0, a: 255)
+        _ = try shaper.shape(TextContent(size: 10, color: black, lang: "ja", runs: [TextRun("日")]),
+                             frame: Rect(x: 0, y: 0, w: 300, h: 10))
+        var scalars = String.UnicodeScalarView()
+        for i in 0..<count {
+            // Kanji (3,000 distinct), kana and punctuation.
+            let v: UInt32 = i % 5 == 4 ? 0x3042 + UInt32(i % 80) : 0x4E00 + UInt32((i * 7) % 3_000)
+            scalars.append(Unicode.Scalar(v)!)
+            if i % 40 == 39 { scalars.append("\n") }
+        }
+        let content = TextContent(size: 10, color: black, lang: "ja", runs: [TextRun(String(scalars))])
+        let t = Date()
+        let shaped = try shaper.shape(content, frame: Rect(x: 0, y: 0, w: 300, h: 10))
+        var digest = ""
+        for l in shaped.lines {
+            for r in l.runs { digest += r.face.key + "|"; for g in r.glyphs { digest += "\(g.glyph),\(g.x)," } }
+        }
+        print("bench: shape \(count) CJK characters: \(secs(t)), \(shaped.lines.count) lines, "
+              + "crc \(Zlib.crc32(0, Data(digest.utf8))), peak \(Int(peakRSSMegabytes())) MB")
     }
 }

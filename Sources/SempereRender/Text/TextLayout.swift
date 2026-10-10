@@ -153,15 +153,17 @@ public struct DefaultTextShaper: TextShaper {
         }
         var out = ShapedText()
         // format.md §8.5.3: stored breaks are used only if valid, including grapheme boundaries.
-        let breaks = TextLineBreaks.usable(content, scalars: chars.map(\.scalar)).map(Set.init)
+        // Sorted once: each paragraph takes its slice.
+        let breaks = TextLineBreaks.usable(content, scalars: chars.map(\.scalar)).map { Set($0).sorted() }
         let sizes = content.runs.map { $0.size ?? content.size }
+        var scratch = ParagraphScratch(count: chars.count)
         var y = frame.y
         var start = 0
         while start <= chars.count {
             var end = start
             while end < chars.count, chars[end].scalar != 0x0A { end += 1 }
             try layoutParagraph(chars, start..<end, content: content, frame: frame, breaks: breaks, sizes: sizes,
-                                y: &y, into: &out)
+                                scratch: &scratch, y: &y, into: &out)
             start = end + 1
         }
         out.bottom = y
@@ -193,8 +195,32 @@ public struct DefaultTextShaper: TextShaper {
         var glyphs: [ShapedGlyph] = []
     }
 
+    /// Per-character arrays over the whole text, allocated once per `shape`;
+    /// each paragraph resets and uses only its own range (absolute indices).
+    struct ParagraphScratch {
+        var advance: [Double]
+        var segmentOf: [Int]
+        var prefix: [Double]
+        var lastInk: [Int]
+
+        init(count: Int) {
+            advance = [Double](repeating: 0, count: count)
+            segmentOf = [Int](repeating: 0, count: count)
+            prefix = [Double](repeating: 0, count: count + 1)
+            lastInk = [Int](repeating: 0, count: count + 1)
+        }
+
+        init(advance: [Double], segmentOf: [Int], prefix: [Double], lastInk: [Int]) {
+            self.advance = advance
+            self.segmentOf = segmentOf
+            self.prefix = prefix
+            self.lastInk = lastInk
+        }
+    }
+
     private func layoutParagraph(_ chars: [Char], _ para: Range<Int>, content: TextContent, frame: Rect,
-                                 breaks: Set<Int>?, sizes: [Double], y: inout Double, into out: inout ShapedText) throws {
+                                 breaks: [Int]?, sizes: [Double], scratch: inout ParagraphScratch, y: inout Double,
+                                 into out: inout ShapedText) throws {
         guard !para.isEmpty else {
             // An empty line: the box size, or the size of the run holding its line feed.
             let s = para.lowerBound < chars.count ? sizes[chars[para.lowerBound].run] : content.size
@@ -209,8 +235,15 @@ public struct DefaultTextShaper: TextShaper {
         for i in segments.indices { try shapeSegment(&segments[i], chars, content: content, sizes: sizes) }
         // Width attributed to each character (its glyphs' advances), as prefix sums,
         // and the end of each prefix without trailing white space: widths in O(1).
-        var advance = [Double](repeating: 0, count: chars.count)
-        var segmentOf = [Int](repeating: 0, count: chars.count)
+        // The paragraph's range of the scratch arrays, as freshly zeroed arrays would be.
+        var advance = scratch.advance, segmentOf = scratch.segmentOf, prefix = scratch.prefix, lastInk = scratch.lastInk
+        scratch = ParagraphScratch(count: 0)   // so that the locals are unique (no copy on write)
+        defer { scratch = ParagraphScratch(advance: advance, segmentOf: segmentOf, prefix: prefix, lastInk: lastInk) }
+        for i in para {
+            advance[i] = 0; segmentOf[i] = 0
+        }
+        prefix[para.lowerBound] = 0
+        lastInk[para.lowerBound] = 0
         var glyphsOf: [Int: [(segment: Int, glyph: Int)]] = [:]
         for (si, seg) in segments.enumerated() {
             for i in seg.range { segmentOf[i] = si }
@@ -219,8 +252,7 @@ public struct DefaultTextShaper: TextShaper {
                 glyphsOf[g.cluster, default: []].append((si, gi))
             }
         }
-        var prefix = [Double](repeating: 0, count: chars.count + 1)
-        var lastInk = [Int](repeating: 0, count: chars.count + 1)   // lastInk[e]: end of [.., e) without trailing white space
+        // prefix: widths as prefix sums; lastInk[e]: end of [.., e) without trailing white space.
         for i in para {
             prefix[i + 1] = prefix[i] + advance[i]
             lastInk[i + 1] = Self.isWhiteSpace(chars[i].scalar) ? lastInk[i] : i + 1
@@ -234,8 +266,12 @@ public struct DefaultTextShaper: TextShaper {
         var lines: [Range<Int>] = []
         if let breaks {
             var s = para.lowerBound
-            for b in breaks.sorted() where b > para.lowerBound && b < para.upperBound {
-                lines.append(s..<b); s = b
+            // The first stored break after the paragraph's start (binary search), then up to its end.
+            var lo = 0, hi = breaks.count
+            while lo < hi { let mid = (lo + hi) / 2; if breaks[mid] <= para.lowerBound { lo = mid + 1 } else { hi = mid } }
+            while lo < breaks.count, breaks[lo] < para.upperBound {
+                lines.append(s..<breaks[lo]); s = breaks[lo]
+                lo += 1
             }
             lines.append(s..<para.upperBound)
         } else {
@@ -365,14 +401,21 @@ public struct DefaultTextShaper: TextShaper {
         }
         var segments: [Segment] = []
         var prevFace: FontFace?
+        // The run's face, looked up when the run changes (it depends only on the run).
+        var primaryRun = -1
+        var primaryFace: FontFace?
         for (k, i) in para.enumerated() {
             let ch = chars[i]
             let run = content.runs[ch.run]
             let lang = run.lang ?? content.lang
             let bold = run.b, italic = run.i
             let generic = run.effectiveFont(in: content.font)
-            guard let primary = library.bundledFace(generic, bold: bold, italic: italic) ?? library.fallback(
-                for: 0x41, lang: lang, generic: generic, bold: bold, italic: italic) else {
+            if ch.run != primaryRun {
+                primaryRun = ch.run
+                primaryFace = library.bundledFace(generic, bold: bold, italic: italic) ?? library.fallback(
+                    for: 0x41, lang: lang, generic: generic, bold: bold, italic: italic)
+            }
+            guard let primary = primaryFace else {
                 throw FontError.unsupported("no fonts available (bundled fonts missing and no font packs)")
             }
             var face = primary
