@@ -8,7 +8,8 @@ import { t, tn } from "../i18n/index.ts";
 import type { JSONObject } from "../format/json.ts";
 import { parseRFC3339 } from "../format/rfc3339.ts";
 import { type Transcript, decodeTranscript, maxTranscriptBytes } from "../format/transcript.ts";
-import { BlobError, type NoteBlobs, asBlobRef, essence } from "../vault/blobs.ts";
+import { type NoteBlobs, asBlobRef, essence } from "../vault/blobs.ts";
+import { blobProblem } from "./errors.ts";
 import { formatDate, h } from "./dom.ts";
 
 /**
@@ -28,8 +29,7 @@ export function formatDuration(seconds: number): string {
 }
 
 function problem(e: unknown): string {
-  if (e instanceof BlobError && e.code === "missing") return t("The audio file is missing from the vault.");
-  return e instanceof Error ? e.message : String(e);
+  return blobProblem(e, "audio", maxAudioBytes) ?? (e instanceof Error ? e.message : String(e));
 }
 
 export class RecordingsPanel {

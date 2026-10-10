@@ -22,6 +22,7 @@ import { RenderLimits } from "../render/primitives.ts";
 import { applyTransform, meanScale, transformOf } from "../render/stroke.ts";
 import { type Measure, fontStacks } from "../render/text.ts";
 import { BlobError, type NoteBlobs } from "../vault/blobs.ts";
+import { type BlobKind, blobProblem } from "./errors.ts";
 import { h, s, svgTree } from "./dom.ts";
 import { NotePDFs, maxPDFBytes } from "./pdf.ts";
 
@@ -98,7 +99,10 @@ export interface ItemProblem {
 
 let viewCount = 0;
 
-function why(e: unknown): string {
+/** Why an attachment cannot be shown; with its kind and limit as `blobProblem` words it. */
+function why(e: unknown, kind?: BlobKind, limit = 0): string {
+  const known = kind && blobProblem(e, kind, limit);
+  if (known) return known;
   if (e instanceof BlobError) return e.code === "missing" ? t("attachment file is missing") : t("attachment unreadable: {detail}", { detail: e.message });
   return e instanceof Error ? e.message : String(e);
 }
@@ -434,7 +438,7 @@ export class NoteView {
         return;
       }
       p.g.replaceChildren(...placeholderNodes(d.it).map(svgTree));
-      this.report(slot, d.it, why(e));
+      this.report(slot, d.it, d.kind === "pdf" ? why(e, "pdf", maxPDFBytes) : why(e, "image", imageLimits.maxBlobBytes));
     }
   }
 
