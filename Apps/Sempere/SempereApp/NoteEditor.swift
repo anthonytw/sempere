@@ -186,6 +186,8 @@ final class NoteEditor {
     var listeningToInk = false
     /// Strokes highlighted because playback is at the moment they were written, per page.
     var playbackHighlight: [UUID: Set<UUID>] = [:]
+    /// The strokes playback highlights, indexed (`updatePlaybackHighlight`).
+    @ObservationIgnored var playbackIndex: PlaybackIndex?
     /// Recordings being transcribed now.
     var transcribing: Set<UUID> = []
     /// The last recording, playback or transcription failure.
@@ -462,15 +464,7 @@ final class NoteEditor {
 
     // MARK: - Pages
 
-    /// The ledger of a page, created from its stored strokes on first use.
-    private func ledger(_ pageID: UUID) -> StrokeLedger {
-        if let l = ledgers[pageID] { return l }
-        let l = newLedger(pageID)
-        ledgers[pageID] = l
-        return l
-    }
-
-    /// A ledger for the page's stored strokes (not kept).
+    /// A ledger for the page's stored strokes (not kept), for its first change.
     private func newLedger(_ pageID: UUID) -> StrokeLedger {
         StrokeLedger(stored: pages.first { $0.id == pageID }?.strokes ?? [], info: CanvasStrokeInfo.init(stored:))
     }
@@ -481,12 +475,13 @@ final class NoteEditor {
     func drawing(for pageID: UUID) -> PKDrawing {
         // No ledger before the strokes are read (or when they could not be).
         if isPreparing || loadFailed { return canvasDrawings[pageID] ?? PKDrawing() }
-        var l = ledger(pageID)
-        l.rebase(info: CanvasStrokeInfo.init(stored:))
-        ledgers[pageID] = l
-        let drawing = l.drawing
-        canvasDrawings[pageID] = drawing
-        return drawing
+        // Converted once; the ledger is fingerprinted from exactly the strokes shown.
+        let prepared = DrawingPreparation.convert(liveStrokes(of: pageID))
+        if ledgers[pageID]?.rebase(infos: prepared.infos) == nil {
+            ledgers[pageID] = StrokeLedger(stored: liveStrokes(of: pageID), infos: prepared.infos)
+        }
+        canvasDrawings[pageID] = prepared.drawing
+        return prepared.drawing
     }
 
     /// The drawing the page's canvas can show right away, without converting
@@ -587,7 +582,12 @@ final class NoteEditor {
 
     /// Live strokes of a page (saved or not). Empty while the note is being
     /// read (`isPreparing`).
-    func liveStrokes(of pageID: UUID) -> [Stroke] { isPreparing || loadFailed ? [] : ledger(pageID).live }
+    /// No ledger is made for it: a page without one has its stored strokes
+    /// live, which is all a new ledger would hold.
+    func liveStrokes(of pageID: UUID) -> [Stroke] {
+        guard !isPreparing, !loadFailed else { return [] }
+        return ledgers[pageID]?.live ?? pages.first { $0.id == pageID }?.strokes ?? []
+    }
 
     /// Ink changes per page, so page thumbnails can follow them.
     private(set) var inkRevisions: [UUID: Int] = [:]
@@ -1190,13 +1190,20 @@ extension NoteEditor {
             let old = oldPages[page.id]
             if var l = ledgers[page.id] {
                 let previous = canvasDrawings[page.id]
-                let merge = l.mergeStored(page.strokes, info: CanvasStrokeInfo.init(stored:))
+                // Strokes converted to fingerprint them are the ones shown (converted once).
+                var converted: [UUID: PKStroke] = [:]
+                let merge = l.mergeStored(page.strokes, info: { s in
+                    let pk = StrokeConversion.pkStroke(s)
+                    converted[s.id] = pk
+                    return CanvasStrokeInfo(pk)
+                })
                 if merge.changesCanvas {
                     if let previous, previous.strokes.count == merge.previousCount {
+                        let shown = previous.strokes
                         canvasDrawings[page.id] = PKDrawing(strokes: merge.sources.map { source -> PKStroke in
                             switch source {
-                            case .kept(let i): return previous.strokes[i]
-                            case .converted(let s): return StrokeConversion.pkStroke(s)
+                            case .kept(let i): return shown[i]
+                            case .converted(let s): return converted[s.id] ?? StrokeConversion.pkStroke(s)
                             }
                         })
                     } else {

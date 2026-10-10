@@ -214,3 +214,41 @@ struct StrokeLedgerIncrementalTests {
         return ops
     }
 }
+
+/// `PlaybackIndex`: the indexed playback highlight equals
+/// `RecordingSync.highlighted` of every page.
+@MainActor
+struct PlaybackIndexTests {
+    @Test func indexedHighlightEqualsTheScan() {
+        var rng = SystemRandomNumberGenerator()
+        let original = Recording(blob: BlobRef(content: Data([1]), type: "audio/mp4"), started: Date())
+        var restored = Recording(blob: BlobRef(content: Data([2]), type: "audio/mp4"), started: Date())
+        restored.parent = UUID()   // stands for a recording that is gone
+        let other = Recording(blob: BlobRef(content: Data([3]), type: "audio/mp4"), started: Date())
+        let state = NoteState(meta: NoteMeta(created: Date()), recordings: [original, restored, other])
+        let linkIDs = [original.id, restored.parent!, other.id, UUID()]
+        let moments: [Double] = [0, 1, 2.5, 3, 3.0005, 7, 12, .nan, .infinity, -.infinity]
+        let pages: [(id: UUID, strokes: [Stroke])] = (0..<3).map { _ in
+            (UUID(), (0..<40).map { _ in
+                var s = TS.stroke()
+                if Bool.random(using: &rng) {
+                    s.rec = RecordingLink(id: linkIDs.randomElement(using: &rng)!, at: moments.randomElement(using: &rng)!)
+                }
+                return s
+            })
+        }
+        for recording in [original, restored, other] {
+            let basis = PlaybackIndex.Basis(recording: recording.id, recordings: state.recordings, pages: pages.map(\.id),
+                                            revisions: [0, 0, 0], ready: true)
+            let index = PlaybackIndex(basis: basis, pages: pages, state: state)
+            for position in [0, 1, 2.9995, 3, 4, 6, 10, 12, 15, .nan, .infinity] {
+                var scan: [UUID: Set<UUID>] = [:]
+                for page in pages {
+                    let ids = RecordingSync.highlighted(page.strokes, recording: recording.id, at: position, in: state)
+                    if !ids.isEmpty { scan[page.id] = ids }
+                }
+                #expect(index.highlighted(at: position) == scan, "at \(position)")
+            }
+        }
+    }
+}

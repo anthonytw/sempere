@@ -129,9 +129,24 @@ extension InkPathBenchmarkTests {
         _ = Self.time("ledger for an unshown page (fingerprint via conversion)") {
             _ = StrokeLedger(stored: Self.stored, info: CanvasStrokeInfo.init(stored:))
         }
-        let state = NoteState(meta: NoteMeta(created: Date()))
-        _ = Self.time("highlight scan of one page") {
-            _ = RecordingSync.highlighted(Self.stored, recording: UUID(), at: 10, in: state)
+        let recording = Recording(blob: BlobRef(content: Data([1]), type: "audio/mp4"), started: Date())
+        let state = NoteState(meta: NoteMeta(created: Date()), recordings: [recording])
+        let linked = Self.stored.enumerated().map { i, s in
+            var s = s
+            s.rec = RecordingLink(id: recording.id, at: Double(i) / 10)
+            return s
         }
+        var scanned = Set<UUID>()
+        _ = Self.time("highlight scan of one page") {
+            scanned = RecordingSync.highlighted(linked, recording: recording.id, at: 10, in: state)
+        }
+        let basis = PlaybackIndex.Basis(recording: recording.id, recordings: [recording], pages: [UUID()], revisions: [0], ready: true)
+        var index: PlaybackIndex?
+        _ = Self.time("playback index of one page") {
+            index = PlaybackIndex(basis: basis, pages: [(basis.pages[0], linked)], state: state)
+        }
+        var ticked: [UUID: Set<UUID>] = [:]
+        _ = Self.time("playback tick (indexed)") { ticked = index?.highlighted(at: 10) ?? [:] }
+        #expect(ticked[basis.pages[0]] ?? [] == scanned)
     }
 }
