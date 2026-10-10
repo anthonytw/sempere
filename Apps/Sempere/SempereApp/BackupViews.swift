@@ -7,9 +7,10 @@ import UniformTypeIdentifiers
 /// The work is `AppModel+Backup`, on the same core as `sempere backup`.
 ///
 /// Restore from Backup… sets `restoring`; the owner of the `Form` presents
-/// `RestoreBackupView` from the form, not from this section. Attached to the
-/// section (rows of a lazy list), the sheet never appeared from the Mac
-/// Catalyst 27 Settings window: the window went modal with no sheet in it.
+/// `RestoreBackupView` from the form, not from this section. A modifier on a
+/// `Section` applies to each of its rows: attached here, every row presented
+/// the sheet at once, and on Mac Catalyst 27 they dismissed it again within a
+/// second (`restoring` back to false), so it never showed.
 struct BackupSettingsSection: View {
     @AppModelEnvironment private var model
     @Binding var restoring: Bool
