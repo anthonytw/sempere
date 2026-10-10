@@ -30,6 +30,7 @@ run smoke-cache.mjs "$work/sample.sempere" "$key"
 run smoke-pan.mjs "$fixtures/sample.sempere" "$key"
 run smoke-attachments.mjs test/fixtures/render.sempere "$key" "$shots"
 run smoke-video.mjs test/fixtures/render.sempere "$key" "$shots"
+run smoke-release.mjs test/fixtures/render.sempere "$key"
 run smoke-passkey.mjs "$fixtures/sample.sempere" "$key"
 run smoke-language.mjs test/fixtures/render.sempere "$key"
 run smoke-search-keys.mjs
