@@ -127,7 +127,7 @@ struct BackupVerify: ParsableCommand {
             // A scripted passphrase may unlock the key file stored in the backup.
             let scripted = access.passphraseEnv != nil || Env.vars["SEMPERE_PASSPHRASE"] != nil
             if scripted, let locked = try? Vault.open(at: url), !((try? locked.identityFiles()) ?? []).isEmpty {
-                identities = [try access.identityFromKeyFiles(of: locked)]
+                identities = try access.identitiesFromKeyFiles(of: locked)
             }
         }
         // Fail early, with exit 4, when the key does not open this vault.

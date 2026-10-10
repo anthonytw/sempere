@@ -25,9 +25,11 @@ an existing vault. Times are printed in your local time zone with an offset;
 
 **Getting a key.** Commands that read notes need an identity. In order:
 `--identity` files (or `$SEMPERE_IDENTITY`); otherwise the passphrase-wrapped
-key stored in the vault's `keys/` directory, unlocked with the passphrase from
+keys stored in the vault's `keys/` directory, unlocked with the passphrase from
 `--passphrase-env VAR`, else `$SEMPERE_PASSPHRASE`, else a no-echo prompt on
-the terminal. A passphrase never goes on the command line. Secret keys are
+the terminal. Every stored key the passphrase opens is used, as in the app (a
+migration may need both the classic and the post-quantum key); a key file it
+does not open is skipped, and any other problem with one is an error. A passphrase never goes on the command line. Secret keys are
 printed only by `keys generate`, `keys export` and `keys paper` (into its PDF).
 
 **Exit codes**

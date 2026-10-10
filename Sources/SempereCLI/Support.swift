@@ -353,18 +353,16 @@ extension AccessOptions {
         return try paths.map(readIdentityFile)
     }
 
-    /// The identity stored passphrase-wrapped in the vault's `keys/`.
-    func identityFromKeyFiles(of locked: Vault, recipient: NativeRecipient? = nil) throws -> NativeIdentity {
+    /// The identities stored passphrase-wrapped in the vault's `keys/`: every
+    /// one the passphrase opens, post-quantum first
+    /// (`Vault.identitiesFromKeyFiles`). Never empty.
+    func identitiesFromKeyFiles(of locked: Vault, recipient: NativeRecipient? = nil) throws -> [NativeIdentity] {
         let candidates = try recipient.map { [$0] } ?? locked.identityFiles()
         guard !candidates.isEmpty else {
             throw CLIError.cannotDecrypt("no key: pass --identity FILE (the vault stores no passphrase-wrapped key)")
         }
         let pass = try obtainPassphrase(envName: passphraseEnv)
-        var lastError: Error = VaultError.wrongPassphrase
-        for r in candidates {
-            do { return try locked.readIdentityFile(recipient: r, passphrase: pass) } catch { lastError = error }
-        }
-        throw lastError
+        return try locked.identitiesFromKeyFiles(passphrase: pass, recipients: candidates)
     }
 
     /// Opens the vault with the identities this invocation provides.
@@ -391,9 +389,9 @@ extension AccessOptions {
             case .ifPossible:
                 let scripted = passphraseEnv != nil || Env.vars["SEMPERE_PASSPHRASE"] != nil
                 guard scripted, !((try? locked.identityFiles()) ?? []).isEmpty else { return locked }
-                ids = [try identityFromKeyFiles(of: locked)]
+                ids = try identitiesFromKeyFiles(of: locked)
             case .required:
-                ids = [try identityFromKeyFiles(of: locked)]
+                ids = try identitiesFromKeyFiles(of: locked)
             }
         }
         let vault = try Vault.open(at: url, identities: ids, trust: trust ?? trustStore())
