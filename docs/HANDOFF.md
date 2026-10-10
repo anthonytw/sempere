@@ -244,7 +244,9 @@ queued for up to 30 minutes.
   `main`: regenerate with `web/scripts/golden.sh` (docs/web-viewer.md).
 - **On demand:** `gh workflow run CI --ref <branch>` checks any branch.
 - **PRs skip what only matters for shipping.** The static Linux release build
-  and the Mac Catalyst build run on `main` only. Tests run with `--parallel`.
+  runs on `main` only (with its own build cache, `linux-release`), and so do the
+  Mac Catalyst test suites below; every app run builds for Catalyst in
+  "Launch smoke tests on Mac Catalyst". Tests run with `--parallel`.
 - **Mac Catalyst tests** (`scripts/app.sh test-mac`, `test-mac-ui`) run the app
   suites and `MacWindowUITests` on the runner's macOS, ad-hoc signed and
   sandboxed, on `main` and on dispatch only. A cloud session without a Mac

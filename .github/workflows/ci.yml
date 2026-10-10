@@ -320,10 +320,6 @@ jobs:
         timeout-minutes: 20
         shell: bash
         run: mkdir -p build && scripts/app.sh test-mac-smoke 2>&1 | tee build/app-test-mac-smoke.log
-      # Same target and sources as the simulator build; checked on main only.
-      - name: Build for Mac Catalyst (unsigned)
-        if: github.event_name != 'pull_request'
-        run: scripts/app.sh catalyst
       # The Mac suites and UI tests on Mac Catalyst (ad-hoc signed, sandboxed like the
       # shipped app): main and dispatch runs (`gh workflow run CI --ref <branch>`).
       - name: Test on Mac Catalyst
