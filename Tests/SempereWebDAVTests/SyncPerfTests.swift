@@ -1,3 +1,8 @@
+#if canImport(Darwin)
+import Darwin
+#else
+import Glibc
+#endif
 import Foundation
 import XCTest
 @testable import Sempere
@@ -18,6 +23,18 @@ final class SyncPerfTests: BlobSyncTestCase {
         try XCTSkipUnless(env["SEMPERE_PERF"] == "1", "set SEMPERE_PERF=1 to run the sync timings")
     }
 
+    /// The process's peak resident size so far, in MiB (ru_maxrss: bytes on
+    /// Darwin, KiB on Linux). Run one test per process to read a run's peak.
+    static func peakMiB() -> Double {
+        var u = rusage()
+        getrusage(RUSAGE_SELF, &u)
+        #if canImport(Darwin)
+        return Double(u.ru_maxrss) / 1_048_576
+        #else
+        return Double(u.ru_maxrss) / 1024
+        #endif
+    }
+
     func options(pushOnly: Bool) -> WebDAVSyncOptions {
         var o = WebDAVSyncOptions(deviceLabel: "A")
         o.pushOnly = pushOnly
@@ -29,7 +46,9 @@ final class SyncPerfTests: BlobSyncTestCase {
                            stateURL: tmp.appendingPathComponent("state-A.json"), options: options(pushOnly: pushOnly))
         let t0 = Date()
         let r = try s.run()
-        return (r, Date().timeIntervalSince(t0))
+        let t = Date().timeIntervalSince(t0)
+        print("perf: notes read \(s.notesRead), peak RSS \(String(format: "%.0f", Self.peakMiB())) MiB")
+        return (r, t)
     }
 
     /// Pads the state with records of notes that are not in the vault, the

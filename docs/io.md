@@ -1112,7 +1112,12 @@ continues from there.
 
 **State.** `$XDG_STATE_HOME/sempere/sync/<hash of URL and vault path>.json`:
 file names, hashes, ETags and snapshot coverage, no secrets. Deleting it makes
-the next run a first sync: nothing is deleted, nothing overwritten.
+the next run a first sync: nothing is deleted, nothing overwritten. It is
+saved at the end of a run. Before each blob transfer only the transfers in
+flight (temporary upload names, partial downloads) are saved, to
+`<state>.json.transfers` beside it; the next run takes them in, and the
+end-of-run save removes that file. A killed run's other progress is found on
+both sides by the next run.
 
 **Testing.** `scripts/test-webdav.sh` starts a local wsgidav
 (`pip install wsgidav cheroot`) and runs the integration tests, which are

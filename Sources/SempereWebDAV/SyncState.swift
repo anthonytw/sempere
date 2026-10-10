@@ -96,10 +96,67 @@ struct SyncState: Codable, Equatable {
         return state
     }
 
+    /// Saves the whole state (atomically). Not pretty-printed: it holds a
+    /// record per revision and blob of the vault.
     func save(_ url: URL) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let enc = JSONEncoder()
-        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+        enc.outputFormatting = [.sortedKeys]
         try LocalFS.write(try enc.encode(self), to: url, replacing: true)
+    }
+
+    // MARK: Transfers in flight
+
+    /// What a run must find again if it is killed mid-transfer: the
+    /// interrupted downloads and the temporary upload names. A run saves
+    /// this, not the whole state, before each blob transfer, so a
+    /// checkpoint costs the few entries in flight rather than a record per
+    /// revision and blob; the end-of-run save carries them in the state
+    /// itself and removes this file.
+    struct Transfers: Codable, Equatable {
+        var partials: [String: PartialRecord]?
+        var remoteTemps: [String]?
+    }
+
+    /// `<state file>.transfers`, next to the state file.
+    static func transfersURL(_ url: URL) -> URL {
+        url.deletingLastPathComponent().appendingPathComponent(url.lastPathComponent + ".transfers")
+    }
+
+    /// The transfers file of `url`; nil when there is none. Throws when it
+    /// exists but is unreadable.
+    static func loadTransfers(_ url: URL) throws -> Transfers? {
+        let t = transfersURL(url)
+        guard FileManager.default.fileExists(atPath: t.path) else { return nil }
+        let data = try BoundedRead.contents(of: t, maxBytes: BoundedRead.maxManifestBytes)
+        return try JSONDecoder().decode(Transfers.self, from: data)
+    }
+
+    /// Saves `partials` and `remoteTemps` (atomically) to the transfers file of `url`.
+    func saveTransfers(_ url: URL) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.sortedKeys]
+        try LocalFS.write(try enc.encode(Transfers(partials: partials, remoteTemps: remoteTemps)),
+                          to: Self.transfersURL(url), replacing: true)
+    }
+
+    /// Removes the transfers file of `url`, if any.
+    static func removeTransfers(_ url: URL) {
+        try? FileManager.default.removeItem(at: transfersURL(url))
+    }
+
+    /// Takes in what a killed run saved: its temporary upload names are
+    /// added to ours (deleting one that is gone is harmless), its partial
+    /// downloads win over ours (they are newer).
+    mutating func merge(_ t: Transfers) {
+        if let temps = t.remoteTemps, !temps.isEmpty {
+            var all = remoteTemps ?? []
+            for x in temps where !all.contains(x) { all.append(x) }
+            remoteTemps = all
+        }
+        if let p = t.partials, !p.isEmpty {
+            partials = (partials ?? [:]).merging(p) { _, new in new }
+        }
     }
 }

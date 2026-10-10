@@ -133,9 +133,11 @@ public struct WebDAVLocalCopy: Sendable {
         let fm = FileManager.default
         try? fm.removeItem(at: stagingFolder)
         try? fm.removeItem(at: stagingStateURL)
+        SyncState.removeTransfers(stagingStateURL)
         defer {
             try? fm.removeItem(at: stagingFolder)
             try? fm.removeItem(at: stagingStateURL)
+            SyncState.removeTransfers(stagingStateURL)
             try? fm.removeItem(at: stagingStateURL.deletingPathExtension().appendingPathExtension("quarantine"))
         }
         try seed(stagingFolder)
@@ -217,6 +219,7 @@ public struct WebDAVLocalCopy: Sendable {
             throw WebDAVError.io("cannot put the downloaded copy in place: \(error.localizedDescription)")
         }
         try? fm.removeItem(at: stateURL)
+        SyncState.removeTransfers(stateURL)
         try fm.moveItem(at: stagingStateURL, to: stateURL)
         try? fm.removeItem(at: old)
     }

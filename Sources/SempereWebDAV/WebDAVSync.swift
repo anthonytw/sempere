@@ -159,6 +159,13 @@ public final class WebDAVSync {
         } catch {
             report.skipped.append(.init(path: stateURL.path, message: "sync state unreadable (\(error.localizedDescription)); treated as a first sync"))
         }
+        do {
+            // What a killed run left in flight (its state file is that of the run before).
+            if let t = try SyncState.loadTransfers(stateURL) { state.merge(t) }
+        } catch {
+            let path = SyncState.transfersURL(stateURL).path
+            report.skipped.append(.init(path: path, message: "unreadable (\(error.localizedDescription)); ignored"))
+        }
         if options.pushOnly && !FileManager.default.fileExists(atPath: root.appendingPathComponent(Vault.manifestName).path) {
             // A mirror of nothing would list (and could delete) the whole server.
             throw WebDAVError.io("push-only sync needs a local vault (no \(Vault.manifestName) in \(root.path))")
@@ -218,7 +225,11 @@ public final class WebDAVSync {
             refreshRemoteSummaries(exists: remoteRoot[PublishedSummaries.fileName].map { !$0.isCollection } ?? false)
         }
         if !options.dryRun {
-            do { try state.save(stateURL) } catch {
+            do {
+                try state.save(stateURL)
+                // Only now: until the state holds them, the transfers file is what remembers them.
+                SyncState.removeTransfers(stateURL)
+            } catch {
                 report.errors.append(.init(path: stateURL.path, message: "cannot save sync state: \(Self.describe(error))"))
             }
         }
