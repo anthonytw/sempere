@@ -150,6 +150,11 @@ export class FileCache {
     await this.store.delete(keys).catch(() => undefined);
   }
 
+  /** True when `key` is cached. */
+  async has(key: string): Promise<boolean> {
+    return (await this.load()).has(key);
+  }
+
   /** Keys under `prefix`. */
   async keys(prefix: string): Promise<string[]> {
     return [...(await this.load()).keys()].filter((k) => k.startsWith(prefix));
@@ -264,7 +269,7 @@ export class CachingSource implements VaultSource {
   /** Drops a cached file (it failed to verify); true when it was cached. */
   async evict(path: string): Promise<boolean> {
     const key = this.key(path);
-    const had = (await this.cache.keys(key)).includes(key);
+    const had = await this.cache.has(key);
     if (had) await this.cache.delete([key]);
     return had;
   }
@@ -285,11 +290,22 @@ export class CachingSource implements VaultSource {
   async retain(listing: Map<string, string[]>): Promise<number> {
     const prefix = `${this.namespace}\n`;
     const victims: string[] = [];
+    const listed = new Map<string, Set<string>>();
     for (const key of await this.cache.keys(prefix)) {
       const p = key.slice(prefix.length).split("/");
-      const files = listing.get(p[1] ?? "");
-      if (!files) victims.push(key);
-      else if (p.length === 3 && !files.includes(p[2] ?? "")) victims.push(key);
+      const id = p[1] ?? "";
+      const files = listing.get(id);
+      if (!files) {
+        victims.push(key);
+        continue;
+      }
+      if (p.length !== 3) continue;
+      let names = listed.get(id);
+      if (!names) {
+        names = new Set(files);
+        listed.set(id, names);
+      }
+      if (!names.has(p[2] ?? "")) victims.push(key);
     }
     await this.cache.delete(victims);
     return victims.length;

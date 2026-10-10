@@ -3,7 +3,8 @@
 // test/perf.test.ts`); correctness of the same code is covered by the ordinary tests.
 
 import { describe, expect, it } from "vitest";
-import { FileCache, MemoryFileStore } from "../src/vault/cache.ts";
+import { CachingSource, FileCache, MemoryFileStore } from "../src/vault/cache.ts";
+import { type VaultSource } from "../src/vault/source.ts";
 import { type SearchableNote, isWithinNotebook, notebookCounts, notebookTree, refinesQuery, search } from "../src/format/search.ts";
 
 const enabled = process.env.SEMPERE_WEB_PERF === "1";
@@ -95,5 +96,23 @@ describe.skipIf(!enabled)("perf", () => {
     for (let i = 0; i < 1000; i++) await cache.put(`n${i}`, bytes);
     console.log(`PERF 1,000 puts over a full cache: ${(performance.now() - t0).toFixed(1)} ms`);
     expect((await cache.size()).files).toBe(100_000);
+  }, 600_000);
+
+  it("retain over 300 notes × 300 cached revisions", async () => {
+    const cache = new FileCache(new MemoryFileStore(), { maxBytes: 1 << 30, maxEntryBytes: 100 });
+    const ns = "https://example\nvault\nkey";
+    const listing = new Map<string, string[]>();
+    const bytes = new Uint8Array(1);
+    for (let n = 0; n < 300; n++) {
+      const id = `${n}`.padStart(8, "0") + "-0000-4000-8000-000000000000";
+      const files = Array.from({ length: 300 }, (_, r) => `${17911308010000000 + r}-a1b2c3d4-${r}.delta.age`);
+      listing.set(id, files);
+      for (const f of files) await cache.put(`${ns}\nnotes/${id}/${f}`, bytes);
+    }
+    const src = new CachingSource({} as VaultSource, cache, ns);
+    const t0 = performance.now();
+    const dropped = await src.retain(listing);
+    console.log(`PERF retain of 90,000 cached revisions: ${(performance.now() - t0).toFixed(1)} ms`);
+    expect(dropped).toBe(0);
   }, 600_000);
 });
