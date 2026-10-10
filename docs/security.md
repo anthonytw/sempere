@@ -30,6 +30,13 @@ your use (no telemetry).
   can hold it on several devices, on paper (the recovery kit), in a password
   manager, and, if you chose one, as a copy in the vault protected by a
   passphrase. Each of those is a way in: protect them accordingly.
+- **A key copy in the vault is only as strong as its passphrase.** That copy
+  sits with the vault on its storage, so your storage provider, or anyone with
+  a copy of the files, can try passphrases on it offline, as many as they
+  like. Sempere refuses a passphrase it estimates as easy to guess; use five
+  or more random words, or a long random password, and never one you use
+  elsewhere. A copy with a weak passphrase gives away the key, which reads
+  and writes everything.
 - **If every copy of the key is lost, the notes cannot be opened.** Not by you,
   not by the developer, not by anyone. There is no reset, no recovery service and
   no back door. Print the recovery kit when you create a vault and keep it

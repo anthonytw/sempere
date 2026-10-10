@@ -766,3 +766,17 @@ checkpoint, as that thinning would. Tests: `RemoteDeletionTests.testTheServerCan
 `testTheServerCannotDeleteTheHistoryACheckpointNeeds` (fail on the base), and
 `testAnExplainedDeletionStillPropagates`, `testAThinningByAnotherDeviceReachesThisOne` (legitimate
 deletions still propagate).
+
+### S5 (Low): key copies in `keys/` accepted any non-empty passphrase
+
+The passphrase-wrapped key copy is on the sync storage, so whoever can read the storage can guess its
+passphrase offline (scrypt, work factor 18); the app and CLI accepted any non-empty one. **Evaluation:** the
+verifier's fix is sound; a strength floor is the part that matters (raising the work factor is capped by the
+readers' memory limit, §3.2, and does not replace it). **Fix:** `PassphraseStrength` (Sources, no word list:
+letter runs priced as Diceware words, l33t substitutions folded into words, repeats and sequences one bit)
+with a 60-bit floor for a stored copy. The app's New Vault and Upgrade Vault sheets refuse a weaker one and
+say why (footnote: the copy is on the storage and can be guessed offline); the CLI's `vault init` and
+`recipients add`/`replace --store-key` refuse it with exit 2 unless `--allow-weak-passphrase`.
+`format.md` §3.2 and `security.md` say so. The library call (`Vault.writeIdentityFile`) still accepts any
+non-empty passphrase (tests, the demo vault). Tests: `PassphraseStrengthTests`,
+`CLICommandTests` (weak refused, exit 2).

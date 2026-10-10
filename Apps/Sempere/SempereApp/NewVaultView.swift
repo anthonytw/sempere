@@ -96,6 +96,10 @@ struct NewVaultView: View {
                     if wrap {
                         SecureField("Passphrase", text: $passphrase)
                         SecureField("Repeat passphrase", text: $confirmation)
+                        if let weak = StoredKeyPassphrase.warning(passphrase) {
+                            Text(weak).font(.footnote).foregroundStyle(.red)
+                        }
+                        Text(StoredKeyPassphrase.footnote).font(.footnote).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -112,7 +116,8 @@ struct NewVaultView: View {
         if location == .folder && folder == nil { return false }
         switch source {
         case .recipient: return !recipient.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        case .generate: return !wrap || (!passphrase.isEmpty && passphrase == confirmation)
+        case .generate:
+            return !wrap || (!passphrase.isEmpty && passphrase == confirmation && StoredKeyPassphrase.accepts(passphrase))
         }
     }
 

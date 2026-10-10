@@ -437,7 +437,11 @@ The reader cap exists because scrypt at work factor w needs 2^w × 1 KiB of
 memory (20 → 1 GiB, 22 → 4 GiB), beyond what the iPad target can allocate.
 
 The file is optional. A vault may be used with an identity that is only
-in a device Keychain or supplied externally.
+in a device Keychain or supplied externally. It sits with the vault, so
+whoever can read the vault's storage can try passphrases on it offline:
+writers SHOULD refuse a passphrase that is easy to guess (the reference
+implementation refuses one estimated below 60 bits, `PassphraseStrength`,
+unless the user insists; security review 2026-10, stage 4, S5).
 
 ### 3.3 Changing recipients
 
