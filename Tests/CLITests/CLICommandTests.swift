@@ -175,7 +175,12 @@ final class CLICommandTests: CLITestCase {
         XCTAssertEqual((info.json as? [String: Any])?["recipients"].flatMap { ($0 as? [Any])?.count }, 2)
         // Removing the original key locks it out.
         let fixturePub = try fixtureIdentity().recipient.string
-        let rm = try cli(["vault", "recipients", "remove", fixturePub, "--vault", copy, "--identity", newKey])
+        // Both keys unlock: either may go, since the other stays listed.
+        let held = try cli(["vault", "recipients", "remove", fixturePub, "--vault", copy, "--identity", Self.fixtureKey])
+        XCTAssertEqual(held.status, 2, held.err)
+        XCTAssertTrue(held.err.contains("the key this vault was unlocked with"), held.err)
+        let rm = try cli(["vault", "recipients", "remove", fixturePub, "--vault", copy, "--identity", newKey,
+                          "--identity", Self.fixtureKey])
         XCTAssertEqual(rm.status, 0, rm.err)
         XCTAssertEqual(try cli(["vault", "verify", "--vault", copy, "--identity", Self.fixtureKey]).status, 4)
         XCTAssertEqual(try cli(["vault", "verify", "--vault", copy, "--identity", newKey]).status, 0)

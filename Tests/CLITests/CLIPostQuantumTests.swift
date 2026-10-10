@@ -311,7 +311,12 @@ final class CLIPostQuantumTests: CLITestCase {
         XCTAssertEqual(try cli(["vault", "recipients", "add", pq, "--vault", vault, "--identity", key]).status, 0)
         XCTAssertEqual(try cli(["notes", "list", "--vault", vault, "--identity", path("pq.key")]).status, 5,
                        "still legacy while a classic key is listed")
-        let removed = try cli(["vault", "recipients", "remove", old, "--vault", vault, "--identity", key])
+        // Not with the key being removed (as in the app), unless forced.
+        let own = try cli(["vault", "recipients", "remove", old, "--vault", vault, "--identity", key])
+        XCTAssertEqual(own.status, 2, own.err)
+        XCTAssertEqual(own.err, "sempere: that is the key this vault was unlocked with: unlock with another key to "
+                       + "remove it (or pass --force)\n")
+        let removed = try cli(["vault", "recipients", "remove", old, "--force", "--vault", vault, "--identity", key])
         XCTAssertEqual(removed.status, 0, removed.err)
         let list = try cli(["notes", "list", "--vault", vault, "--identity", path("pq.key")])
         XCTAssertEqual(list.status, 0, list.err)

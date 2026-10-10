@@ -182,6 +182,14 @@ public struct Vault: Sendable {
     /// is known and at least one identity is held. A vault created with
     /// `identities: []` is unlocked (it can write) but cannot read.
     public var canRead: Bool { secret != nil && !identities.isEmpty }
+    /// The recipients (`age1...`) of the identities the vault was opened
+    /// with, for a caller that must not remove the key it unlocked with.
+    public var identityRecipients: Set<String> {
+        Set(identities.compactMap { id in
+            if let n = id as? NativeIdentity { return n.recipient.string }
+            return (id as? X25519Identity)?.recipient.string
+        })
+    }
     /// The classic X25519 recipients (`age1...`) the manifest still lists.
     public var classicRecipients: [String] {
         // A key that does not parse is not classic: only a newer manifest

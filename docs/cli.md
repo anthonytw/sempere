@@ -201,7 +201,9 @@ nor this device's record), and keeping a key this device never confirmed asks
 for the owner check first (Face ID, Touch ID or the passcode), as adding a key does. Replace… refuses the key
 the app unlocked with (add a key for this device, unlock with it, then remove
 the old one): replacing it would lock the app out, and an interrupted replace
-of it can only be finished with both keys.
+of it can only be finished with both keys. Remove refuses that key too, and
+so does the CLI's `recipients remove` unless another key the command unlocked
+with stays listed (`--force` overrides).
 
 The app's key file is the CLI's (`age-keygen` style: `# created`, `# public
 key`, the `AGE-SECRET-KEY-PQ-1…` line), named `Sempere key - <label>.txt`.
@@ -217,7 +219,7 @@ sempere vault init PATH --recipient age1... [--recipient ...] [--label TEXT ...]
                          [--store-key FILE [--passphrase-env VAR] [--work-factor 15...18]]
 sempere vault info
 sempere vault recipients add age1pq1... [--label TEXT] [--rewrap header|reencrypt] [--store-key FILE [--store-passphrase-env VAR] [--work-factor 15...18]]
-sempere vault recipients remove age1... [--rewrap header|reencrypt]
+sempere vault recipients remove age1... [--force] [--rewrap header|reencrypt]
 sempere vault recipients replace age1old... age1pq1new... [--label TEXT] [--rewrap header|reencrypt] [--store-key FILE ...]
 sempere vault recipients repair [--keep age1pq1... ...] [--dry-run] [--rewrap header|reencrypt]
 sempere vault recipients confirm
@@ -243,6 +245,8 @@ sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
   (`remove` also rotates the vault secret) and print a report. If any file
   cannot be rewrapped the exit code is 3 and the message says to run
   `rewrap-resume`. Removing a key does not revoke what it already decrypted.
+  `remove` refuses (exit 2) the key the command unlocked with, unless another
+  key it unlocked with stays listed: unlock with another key, or pass `--force`.
 - Attachment blobs (`notes/<id>/att/`, `format.md` §8.1.5) are rewrapped
   too. By default an `add` rewrites each blob's age header only (same file
   key, payload copied), and a `remove` or `replace` (or an `add` that changes
