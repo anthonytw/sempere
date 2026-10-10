@@ -208,16 +208,6 @@ func findReference(_ query: String, note: UUID, in vault: Vault) throws -> BlobR
     return first.value
 }
 
-/// `autoreleasepool` on Apple platforms (streamed `FileHandle` I/O
-/// autoreleases its buffers), nothing elsewhere.
-func autoreleasing<T>(_ body: () throws -> T) rethrows -> T {
-    #if canImport(ObjectiveC)
-    return try autoreleasepool { try body() }
-    #else
-    return try body()
-    #endif
-}
-
 /// Creates `url` with the bytes `body` writes: a private temporary file next
 /// to it, put in place with `link(2)` only once `body` succeeded (never over
 /// an existing file).

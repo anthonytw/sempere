@@ -20,13 +20,11 @@ import Sempere
 //   applied rule 4); otherwise it is copied back.
 
 extension WebDAVSync {
-    /// A note's attachment folder name.
-    static let attName = "att"
     /// Prefix of an interrupted download's partial file in `att/`. Starts
     /// with the vault's temporary-file prefix, so every listing ignores it,
     /// and is never a vault writer's own temporary name (those continue
     /// with a UUID).
-    static let partialPrefix = LocalFS.tempPrefix + "part-"
+    static let partialPrefix = FileIO.tempPrefix + "part-"
 
     /// One note's blobs on both sides, by file name.
     struct BlobSet {
@@ -43,10 +41,10 @@ extension WebDAVSync {
         var localListed = false
     }
 
-    func blobKey(_ id: String, _ name: String) -> String { "\(id)/\(Self.attName)/\(name)" }
+    func blobKey(_ id: String, _ name: String) -> String { "\(id)/\(Vault.attachmentsName)/\(name)" }
     func blobPath(_ id: String, _ name: String) -> String { "notes/\(blobKey(id, name))" }
     func attURL(_ id: String) -> URL {
-        root.appendingPathComponent("notes").appendingPathComponent(id).appendingPathComponent(Self.attName)
+        root.appendingPathComponent(Vault.notesName).appendingPathComponent(id).appendingPathComponent(Vault.attachmentsName)
     }
 
     /// A canonical blob file name (`<64 hex>.<kind>.age`, format.md §8.1.2).
@@ -73,19 +71,19 @@ extension WebDAVSync {
     /// Listing failures are reported; the note's revisions still sync.
     func syncBlobTransfers(_ id: String, remoteAtt: RemoteEntry?) throws -> BlobSet {
         var set = BlobSet()
-        let prefix = "\(id)/\(Self.attName)/"
+        let prefix = "\(id)/\(Vault.attachmentsName)/"
         set.recorded = Set(state.files.keys.filter { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)) })
 
         if remoteAtt != nil {
             do {
-                if let entries = try client.list(["notes", id, Self.attName]) {
+                if let entries = try client.list([Vault.notesName, id, Vault.attachmentsName]) {
                     try budget.list(entries.count)
                     set.remoteListed = true
                     for e in entries {
-                        if e.name.hasPrefix(LocalFS.tempPrefix) { continue }   // another device's upload in flight
+                        if e.name.hasPrefix(FileIO.tempPrefix) { continue }   // another device's upload in flight
                         guard !e.isCollection, Self.isBlobName(e.name) else {
-                            report.ignored.append(SyncReport.printable("notes/\(id)/\(Self.attName)/\(e.name)"))
-                            remoteJunk.append(["notes", id, Self.attName, e.name])
+                            report.ignored.append(SyncReport.printable("notes/\(id)/\(Vault.attachmentsName)/\(e.name)"))
+                            remoteJunk.append([Vault.notesName, id, Vault.attachmentsName, e.name])
                             continue
                         }
                         set.remote[e.name] = e
@@ -93,7 +91,7 @@ extension WebDAVSync {
                 }
             } catch {
                 try rethrowRunLimit(error)
-                report.errors.append(.init(path: "notes/\(id)/\(Self.attName)", message: Self.describe(error)))
+                report.errors.append(.init(path: "notes/\(id)/\(Vault.attachmentsName)", message: Self.describe(error)))
                 // Unknown remote state: transfer nothing, delete nothing.
                 set.recorded = []
                 set.local = [:]
@@ -102,7 +100,7 @@ extension WebDAVSync {
         }
 
         let att = attURL(id)
-        set.localListed = LocalFS.isDirectory(att)
+        set.localListed = FileIO.isDirectory(att)
         var partials: [String] = []
         for f in try LocalFS.entries(att) {
             if f.hasPrefix(Self.partialPrefix) { partials.append(f); continue }
@@ -161,7 +159,7 @@ extension WebDAVSync {
         if options.pushOnly {
             // Never synced and not local: not ours.
             for name in remote.subtracting(local).subtracting(set.recorded).sorted() {
-                if reportExtraneous(blobPath(id, name), remove: ["notes", id, Self.attName, name]) { set.remote[name] = nil }
+                if reportExtraneous(blobPath(id, name), remove: [Vault.notesName, id, Vault.attachmentsName, name]) { set.remote[name] = nil }
             }
         }
 
@@ -198,7 +196,7 @@ extension WebDAVSync {
                     }
                     if set.localListed && allowed(name) {
                         report.deleted.append(.init(side: "remote", path: blobPath(id, name)))
-                        if !options.dryRun { try client.delete(["notes", id, Self.attName, name]) }
+                        if !options.dryRun { try client.delete([Vault.notesName, id, Vault.attachmentsName, name]) }
                         set.remote[name] = nil
                     } else if options.pushOnly {
                         report.skipped.append(.init(path: blobPath(id, name),
@@ -250,7 +248,7 @@ extension WebDAVSync {
         guard inventory.isComplete, remoteRevisions.isSubset(of: readable) else { return .judged { _ in false } }
         var referenced = Set<String>()
         for hash in inventory.referencedHashes {
-            guard let digest = Self.hexBytes(hash), let name = try? vault.blobName(sha256: digest) else {
+            guard let digest = Hex.decode(hash), let name = try? vault.blobName(sha256: digest) else {
                 // A malformed hash cannot be mapped to a name: keep everything.
                 return .judged { _ in false }
             }
@@ -260,25 +258,6 @@ extension WebDAVSync {
             guard let parsed = BlobName.parse(file) else { return false }
             return !referenced.contains(parsed.name)
         }
-    }
-
-    /// The 32 bytes of a 64-digit lowercase hex string.
-    static func hexBytes(_ hex: String) -> Data? {
-        let u = Array(hex.utf8)
-        guard u.count == 64 else { return nil }
-        func v(_ c: UInt8) -> UInt8? {
-            switch c {
-            case 0x30...0x39: return c - 0x30
-            case 0x61...0x66: return c - 0x61 + 10
-            default: return nil
-            }
-        }
-        var out = Data(capacity: 32)
-        for i in stride(from: 0, to: 64, by: 2) {
-            guard let hi = v(u[i]), let lo = v(u[i + 1]) else { return nil }
-            out.append(hi << 4 | lo)
-        }
-        return out
     }
 
     // MARK: Transfers
@@ -303,9 +282,9 @@ extension WebDAVSync {
         if size > options.maxBlobBytes { throw WebDAVError.io("\(path) is \(size) bytes, over the blob limit; not uploaded") }
         report.uploaded.append(path)
         guard !options.dryRun else { return }
-        try ensureCollection(["notes", id, Self.attName])
-        let tempName = LocalFS.tempPrefix + UUID().uuidString.lowercased()
-        let temp = ["notes", id, Self.attName, tempName]
+        try ensureCollection([Vault.notesName, id, Vault.attachmentsName])
+        let tempName = FileIO.tempPrefix + UUID().uuidString.lowercased()
+        let temp = [Vault.notesName, id, Vault.attachmentsName, tempName]
         let tempRel = temp.joined(separator: "/")
         state.remoteTemps = (state.remoteTemps ?? []) + [tempRel]
         checkpoint()
@@ -317,7 +296,7 @@ extension WebDAVSync {
         guard try client.put(temp, fromFile: file, condition: .create) else {
             throw WebDAVError.io("\(path): the temporary upload name already exists on the server")
         }
-        moved = try client.move(temp, to: ["notes", id, Self.attName, name], overwrite: false)
+        moved = try client.move(temp, to: [Vault.notesName, id, Vault.attachmentsName, name], overwrite: false)
     }
 
     /// Downloads one blob into place (never over an existing file); returns
@@ -338,7 +317,7 @@ extension WebDAVSync {
         }
         let key = blobKey(id, name)
         let part = att.appendingPathComponent(Self.partialPrefix + name)
-        let remote = ["notes", id, Self.attName, name]
+        let remote = [Vault.notesName, id, Vault.attachmentsName, name]
         let etag = entry?.etag
         var offset = 0
         var fetched = 0
@@ -416,7 +395,7 @@ extension WebDAVSync {
         guard !options.dryRun, let temps = state.remoteTemps, !temps.isEmpty else { return }
         state.remoteTemps = temps.filter { rel in
             let comps = rel.split(separator: "/").map(String.init)
-            guard comps.last?.hasPrefix(LocalFS.tempPrefix) == true else { return false }
+            guard comps.last?.hasPrefix(FileIO.tempPrefix) == true else { return false }
             return (try? client.delete(comps)) == nil
         }
     }

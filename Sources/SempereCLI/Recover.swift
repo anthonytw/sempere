@@ -112,7 +112,7 @@ struct RecoverCommand: ParsableCommand {
     private func findVault(above file: URL) -> URL? {
         var dir = file.standardizedFileURL.deletingLastPathComponent()
         for _ in 0..<8 {
-            if FileManager.default.fileExists(atPath: dir.appendingPathComponent("vault.json").path) { return dir }
+            if FileManager.default.fileExists(atPath: dir.appendingPathComponent(Vault.manifestName).path) { return dir }
             let parent = dir.deletingLastPathComponent()
             if parent.path == dir.path { break }
             dir = parent

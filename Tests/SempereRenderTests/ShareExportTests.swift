@@ -1,3 +1,5 @@
+import FuzzSupport
+import TempDirSupport
 import XCTest
 import Foundation
 import Sempere
@@ -17,24 +19,11 @@ final class ShareExportTests: XCTestCase {
         return (summary, state)
     }
 
-    func scratch() throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("share-\(UUID().uuidString)")
-        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
-        return url
-    }
+    func scratch() throws -> URL { makeScratch("share") }
 
     func names(_ urls: [URL]) -> [String] { urls.map(\.lastPathComponent).sorted() }
 
-    func listing(_ dir: URL) throws -> [String] {
-        let base = dir.standardizedFileURL.path
-        let e = FileManager.default.enumerator(atPath: dir.path)
-        var out: [String] = []
-        while let f = e?.nextObject() as? String {
-            var isDir: ObjCBool = false
-            if FileManager.default.fileExists(atPath: base + "/" + f, isDirectory: &isDir), !isDir.boolValue { out.append(f) }
-        }
-        return out.sorted()
-    }
+    func listing(_ dir: URL) throws -> [String] { FileTree.regularFiles(under: dir) }
 
     func data(_ url: URL) throws -> Data { try Data(contentsOf: url) }
 

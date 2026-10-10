@@ -1,6 +1,7 @@
 import Age
 import CLITestSupport
 import Foundation
+import FuzzSupport
 import XCTest
 @testable import Sempere
 
@@ -42,10 +43,7 @@ final class CLIPDFBackgroundTests: CLITestCase {
         return url.path
     }
 
-    var hasPoppler: Bool {
-        ["/usr/bin/pdftoppm", "/usr/local/bin/pdftoppm", "/opt/homebrew/bin/pdftoppm"]
-            .contains { FileManager.default.isExecutableFile(atPath: $0) }
-    }
+    var hasPoppler: Bool { ExternalTool.find("pdftoppm") != nil }
 
     func testPDFExportKeepsThePageWithoutARenderer() throws {
         let (vault, note) = try vaultWithPDFNote()

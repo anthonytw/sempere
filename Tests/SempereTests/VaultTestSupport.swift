@@ -1,24 +1,14 @@
 import Age
 import Foundation
+import TempDirSupport
 import XCTest
 @testable import Sempere
 
 /// A fresh post-quantum identity (vaults take no other kind).
 func pqIdentity() -> NativeIdentity { try! NativeIdentity.generate(.postQuantum) }
 
-/// A temporary directory removed in tearDown, plus helpers for vault tests.
-class VaultTestCase: XCTestCase {
-    var tmp: URL!
-
-    override func setUpWithError() throws {
-        tmp = FileManager.default.temporaryDirectory.appendingPathComponent("sempere-test-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-    }
-
-    override func tearDownWithError() throws {
-        try? FileManager.default.removeItem(at: tmp)
-    }
-
+/// A temporary directory removed in tearDown (`TempDirTestCase`), plus helpers for vault tests.
+class VaultTestCase: TempDirTestCase {
     func vaultURL(_ name: String = "Test") -> URL { tmp.appendingPathComponent("\(name).sempere") }
 
     func makeVault(_ identity: NativeIdentity, name: String = "Test") throws -> Vault {

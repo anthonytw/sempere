@@ -8,6 +8,7 @@ import {
   IndexedDBKeyStorage, MemoryKeyStorage, PasskeyError, PasskeyVault, type StoredKey, type WebAuthn, describeLocation, maxLocationLength, open,
   recordPlace, seal, userVerified, validRecord, vaultLocation,
 } from "../src/vault/passkey.ts";
+import { concat } from "../src/vault/bytes.ts";
 import { FileListSource, HTTPSource } from "../src/vault/source.ts";
 import { IDBFactory } from "fake-indexeddb";
 import { UnlockedVault, parseIdentity, parseManifest } from "../src/vault/vault.ts";
@@ -284,12 +285,7 @@ describe("remembered keys are bound to the vault's location", () => {
     const prf = new Uint8Array((assertion as unknown as { getClientExtensionResults: () => { prf: { results: { first: ArrayBuffer } } } })
       .getClientExtensionResults().prf.results.first);
     const enc = new TextEncoder();
-    const join = (...parts: Uint8Array[]) => {
-      const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-      let at = 0;
-      for (const p of parts) { out.set(p, at); at += p.length; }
-      return out;
-    };
+    const join = (...parts: Uint8Array[]) => concat(parts) as Uint8Array<ArrayBuffer>;
     const zero = Uint8Array.of(0);
     const info = join(enc.encode("sempere-viewer/1 passkey key-wrap"), zero, enc.encode(vaultId), zero, credentialId);
     const aad = join(enc.encode("sempere-viewer/1"), zero, enc.encode(vaultId), zero, credentialId);

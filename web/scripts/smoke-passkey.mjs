@@ -5,42 +5,16 @@
 // ciphertext in IndexedDB, unlock with the passkey after Lock, Forget, and
 // that an authenticator without PRF stores nothing.
 // Usage: npm run build && node scripts/smoke-passkey.mjs VAULT_DIR KEY_FILE
-import { createServer } from "node:http";
-import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
-import { join, extname } from "node:path";
-// PLAYWRIGHT: path to playwright/index.mjs when it is not installed here.
-const { chromium } = await import(process.env.PLAYWRIGHT ?? "playwright");
+import { readFileSync } from "node:fs";
+import { enterVault, launchChromium, serveVault, unlocked } from "./smoke-lib.mjs";
 
 const [vaultDir, keyFile] = process.argv.slice(2);
-const dist = join(import.meta.dirname, "..", "dist");
-const types = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json" };
-
-const server = createServer((req, res) => {
-  const path = decodeURIComponent(new URL(req.url, "http://x").pathname);
-  const send = (status, body, type = "application/octet-stream") => { res.writeHead(status, { "content-type": type }); res.end(body); };
-  if (path.startsWith("/dav/")) {
-    const rel = path.slice(5);
-    if (rel.includes("..")) return send(400, "");
-    const file = join(vaultDir, rel);
-    if (req.method === "PROPFIND") {
-      if (!existsSync(file) || !statSync(file).isDirectory()) return send(404, "");
-      const items = readdirSync(file).map((n) => `<d:response><d:href>/dav/${rel}${encodeURIComponent(n)}${statSync(join(file, n)).isDirectory() ? "/" : ""}</d:href></d:response>`);
-      return send(207, `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:response><d:href>/dav/${rel}</d:href></d:response>${items.join("")}</d:multistatus>`, "application/xml");
-    }
-    if (rel === "sempere-index.json" || !existsSync(file) || statSync(file).isDirectory()) return send(404, "");
-    return send(200, readFileSync(file));
-  }
-  const f = join(dist, path === "/" ? "index.html" : path);
-  if (!existsSync(f)) return send(404, "");
-  send(200, readFileSync(f), types[extname(f)] ?? "application/octet-stream");
-});
-await new Promise((r) => server.listen(0, "127.0.0.1", r));
 // localhost, not 127.0.0.1: an IP address is not a valid WebAuthn RP ID.
-const base = `http://localhost:${server.address().port}`;
+const { base, close } = await serveVault({ mounts: [{ prefix: "/dav/", vaultDir, hide: (rel) => rel === "sempere-index.json" }], host: "localhost" });
 const key = readFileSync(keyFile, "utf8");
 const secretLine = key.split("\n").find((l) => l.startsWith("AGE-SECRET-KEY-PQ-1"));
 
-const browser = await chromium.launch();
+const browser = await launchChromium();
 let failures = 0;
 const check = (ok, what) => {
   console.log(ok ? "ok  " : "FAIL", what);
@@ -66,13 +40,9 @@ async function withAuthenticator(options) {
 
 async function openVault(page) {
   await page.goto(`${base}/`);
-  await page.fill("input[type=url]", `${base}/dav/`);
-  await page.selectOption("select", "webdav");
-  await page.click("form button[type=submit]");
+  await enterVault(page, `${base}/dav/`, { webdav: true });
   await page.waitForSelector("textarea");
 }
-
-const unlocked = (page) => page.waitForFunction(() => /\d+ notes?( ·|$)/.test(document.querySelector(".status")?.textContent ?? ""), null, { timeout: 30000 });
 
 const records = (page) => page.evaluate(() => new Promise((resolve, reject) => {
   const r = indexedDB.open("sempere-viewer", 1);
@@ -147,5 +117,5 @@ const records = (page) => page.evaluate(() => new Promise((resolve, reject) => {
 }
 
 await browser.close();
-server.close();
+close();
 process.exit(failures ? 1 : 0);

@@ -40,13 +40,13 @@ extension RecipientsAuth {
     /// nil when a marker holds a NUL.
     public static func markersTag(vaultId: UUID, format: String, features: [String], secret: VaultSecret) -> String? {
         guard let m = markersMessage(vaultId: vaultId, format: format, features: features) else { return nil }
-        return hex(Data(HMAC<SHA256>.authenticationCode(for: m, using: derive(secret, markersInfo))))
+        return Hex.encode(HMAC<SHA256>.authenticationCode(for: m, using: derive(secret, markersInfo)))
     }
 
     /// True when `tag` is 64 lowercase hex digits and verifies over the markers.
     public static func verifyMarkers(_ tag: String, vaultId: UUID, format: String, features: [String],
                                      secret: VaultSecret) -> Bool {
-        guard let given = unhex(tag), let m = markersMessage(vaultId: vaultId, format: format, features: features) else {
+        guard let given = Hex.decode(tag), let m = markersMessage(vaultId: vaultId, format: format, features: features) else {
             return false
         }
         return HMAC<SHA256>.isValidAuthenticationCode(given, authenticating: m, using: derive(secret, markersInfo))

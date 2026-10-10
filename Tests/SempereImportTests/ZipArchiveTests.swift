@@ -1,19 +1,11 @@
 import Foundation
 import FuzzSupport
 import ImportTestSupport
+import TempDirSupport
 import XCTest
 @testable import SempereImport
 
-final class ZipArchiveTests: XCTestCase {
-    var tmp: URL!
-
-    override func setUpWithError() throws {
-        tmp = FileManager.default.temporaryDirectory.appendingPathComponent("inkimport-zip-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-    }
-
-    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: tmp) }
-
+final class ZipArchiveTests: TempDirTestCase {
     let files: [(String, Data)] = [
         ("a.txt", Data("hello, zip".utf8)),
         ("dir/b.bin", Data((0..<70_000).map { UInt8(truncatingIfNeeded: $0 &* 31) })),
@@ -29,7 +21,7 @@ final class ZipArchiveTests: XCTestCase {
     }
 
     func testSystemZipTool() throws {
-        let zipTool = ["/usr/bin/zip", "/bin/zip"].first { FileManager.default.isExecutableFile(atPath: $0) }
+        let zipTool = ExternalTool.find("zip")?.path
         if zipTool == nil, RequiredTools.isRequired("zip") { XCTFail("no zip tool installed and SEMPERE_REQUIRE_TOOLS names zip") }
         guard let zipTool else { throw XCTSkip("no zip tool installed") }
         for (path, data) in files {

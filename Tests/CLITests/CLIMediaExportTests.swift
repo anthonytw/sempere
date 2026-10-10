@@ -1,5 +1,6 @@
 import CLITestSupport
 import Foundation
+import FuzzSupport
 import Sempere
 import XCTest
 
@@ -180,17 +181,8 @@ final class CLIMediaExportTests: CLITestCase {
     // MARK: The attachment list page
 
     func pdfText(_ file: String) throws -> String? {
-        guard let tool = ["/usr/bin/pdftotext", "/opt/homebrew/bin/pdftotext", "/usr/local/bin/pdftotext"]
-            .first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else { return nil }
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: tool)
-        p.arguments = ["-layout", file, "-"]
-        let pipe = Pipe()
-        p.standardOutput = pipe
-        try p.run()
-        let out = pipe.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        return String(decoding: out, as: UTF8.self)
+        guard let tool = ExternalTool.find("pdftotext") else { return nil }
+        return String(decoding: try ExternalTool.run(tool, ["-layout", file, "-"]).out, as: UTF8.self)
     }
 
     func count(_ needle: String, in data: Data) -> Int {

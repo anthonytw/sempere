@@ -9,28 +9,18 @@ import XCTest
 /// blobs in bounded memory (§8.1.4).
 final class BlobRecoveryTests: VaultTestCase {
     func bash(_ script: String) throws -> Data {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/bash")
-        p.arguments = ["-c", script]
-        let out = Pipe(), err = Pipe()
-        p.standardInput = FileHandle.nullDevice
-        p.standardOutput = out
-        p.standardError = err
-        try p.run()
-        let stdout = out.fileHandleForReading.readDataToEndOfFile()
-        let stderr = err.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        XCTAssertEqual(p.terminationStatus, 0, String(decoding: stderr, as: UTF8.self))
-        return stdout
+        let r = try ExternalTool.run(URL(fileURLWithPath: "/bin/bash"), ["-c", script])
+        XCTAssertEqual(r.status, 0, r.errText)
+        return r.out
     }
 
-    func quote(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+    func quote(_ s: String) -> String { ExternalTool.shellQuote(s) }
 
     /// `age` from PATH, at least `minor` (1.x). Post-quantum keys need 1.3;
     /// SEMPERE_REQUIRE_AGE_PQ (CI) turns a missing one into a failure.
     func age(atLeast minor: Int) throws -> URL {
         let required = minor >= 3 && ProcessInfo.processInfo.environment["SEMPERE_REQUIRE_AGE_PQ"] != nil
-        guard let age = RecoveryInteropTests.which("age") else {
+        guard let age = ExternalTool.find("age") else {
             if required { XCTFail("SEMPERE_REQUIRE_AGE_PQ set but age is not on PATH") }
             throw XCTSkip("age not on PATH")
         }
@@ -63,7 +53,7 @@ final class BlobRecoveryTests: VaultTestCase {
         let padded = try bash("\(dec) | tail -c +46")
         XCTAssertEqual(padded.prefix(content.count), content, file: file, line: line)
         XCTAssertTrue(padded.dropFirst(content.count).allSatisfy { $0 == 0 }, file: file, line: line)
-        if RecoveryInteropTests.which("xxd") != nil {
+        if ExternalTool.find("xxd") != nil {
             let x = String(decoding: try bash("\(dec) | head -c 37 | tail -c 32 | xxd -p -c 32"), as: UTF8.self)
             XCTAssertEqual(x.trimmingCharacters(in: .whitespacesAndNewlines), ref.sha256, file: file, line: line)
         }

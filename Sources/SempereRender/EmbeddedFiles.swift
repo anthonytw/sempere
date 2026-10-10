@@ -45,7 +45,7 @@ struct EmbeddedFiles {
     init(limit: Int) { self.limit = limit }
 
     static func videoExtension(_ type: String) -> String {
-        let base = type.split(separator: ";").first.map { $0.trimmingCharacters(in: .whitespaces).lowercased() } ?? ""
+        let base = BlobKind.essence(of: type)
         return base == "video/quicktime" ? "mov" : "mp4"
     }
 
@@ -112,7 +112,7 @@ struct EmbeddedFiles {
     }
 
     static func fileExtension(_ type: String) -> String {
-        let base = type.split(separator: ";").first.map { $0.trimmingCharacters(in: .whitespaces).lowercased() } ?? ""
+        let base = BlobKind.essence(of: type)
         switch base {
         case "audio/mp4", "audio/m4a", "audio/x-m4a", "audio/aac": return "m4a"
         case "audio/mpeg": return "mp3"

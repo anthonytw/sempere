@@ -365,14 +365,14 @@ extension Vault: AttachmentIndexSource {
         for e in try FileIO.entries(att) {
             let url = att.appendingPathComponent(e)
             guard let parsed = BlobName.parse(e), !FileIO.isDirectory(url) else { continue }
-            let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0
+            let bytes = FileIO.size(url) ?? 0
             out.append(.init(fileName: e, kind: parsed.kind, bytes: bytes, name: parsed.name))
         }
         return out
     }
 
     public func blobNames(sha256: String) -> [String] {
-        guard let digest = SHA256Hex.bytes(sha256) else { return [] }
+        guard let digest = Hex.decode(sha256) else { return [] }
         return blobSecrets.map { BlobName.name(digest: digest, secret: $0) }
     }
 
@@ -403,46 +403,5 @@ extension Vault: AttachmentIndexSource {
         var seed = AttachmentIndexEntry(note: note)
         seed.unusedSince = records
         return AttachmentIndexer.update(note: note, previous: seed, source: self, current: current, now: now)
-    }
-}
-
-extension BlobReferenceScan {
-    /// `references(in:)` with each reference's holder hints (`duration`,
-    /// `title` of the object holding the reference object) and the
-    /// revision's top-level `wall`.
-    static func facts(in json: Data) throws -> AttachmentIndexEntry.RevisionFacts {
-        let root = try JSONSerialization.jsonObject(with: json, options: [.fragmentsAllowed])
-        var refs: [AttachmentIndexEntry.Reference] = []
-        var stack: [(value: Any, holder: [String: Any]?)] = [(root, nil)]
-        while let top = stack.popLast() {
-            let (value, holder) = top
-            if let object = value as? [String: Any] {
-                if let sha = object["sha256"] as? String {
-                    var r = AttachmentIndexEntry.Reference(sha256: sha)
-                    r.type = object["type"] as? String
-                    r.size = integer(object["size"])
-                    if let holder {
-                        if let n = holder["duration"] as? NSNumber, String(cString: n.objCType) != "c",
-                           n.doubleValue.isFinite, n.doubleValue >= 0 { r.duration = n.doubleValue }
-                        if let t = holder["title"] as? String { r.title = String(t.prefix(AttachmentIndexer.maxTitle)) }
-                    }
-                    refs.append(r)
-                }
-                for v in object.values { stack.append((v, object)) }
-            } else if let array = value as? [Any] {
-                // An array's elements are held by whatever holds the array.
-                for v in array { stack.append((v, holder)) }
-            }
-        }
-        let wall = ((root as? [String: Any])?["wall"] as? String).flatMap(RFC3339.parse)
-        return .init(refs: refs, wall: wall)
-    }
-
-    /// A JSON integer in `0...BlobRef.maxSize` (booleans and fractions refused).
-    static func integer(_ value: Any?) -> Int64? {
-        guard let n = value as? NSNumber, String(cString: n.objCType) != "c" else { return nil }
-        let d = n.doubleValue
-        guard d.isFinite, d >= 0, d <= Double(BlobRef.maxSize), d == d.rounded() else { return nil }
-        return Int64(d)
     }
 }

@@ -4,7 +4,7 @@ import Sempere
 import SempereRender
 
 /// What "Export Notes…" was asked to export (docs/io.md "Bulk export").
-struct BulkExportRequest: Identifiable, Equatable {
+struct BulkExportRequest: Identifiable, Equatable, WindowTargeted {
     let id = UUID()
     var scope: BulkExportScope
     /// The window that asked (`WindowUI.id`): its sheet shows there. Nil: the
@@ -60,13 +60,6 @@ extension BulkExportRequest {
         let plain = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_./"))
         if !s.isEmpty, s.unicodeScalars.allSatisfy({ $0.isASCII && plain.contains($0) }) { return s }
         return "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
-
-    /// `request` when window `window` shows it (`ExportRequest.shown`).
-    static func shown(_ request: BulkExportRequest?, in window: UUID, canvasWindow: UUID?) -> BulkExportRequest? {
-        guard let request else { return nil }
-        if let asker = request.window { return asker == window ? request : nil }
-        return canvasWindow == nil || canvasWindow == window ? request : nil
     }
 }
 
@@ -156,11 +149,7 @@ extension AppModel {
                 if attachments {
                     // iCloud fetches recordings and clips only when they are embedded; one that
                     // cannot be fetched is left out of the PDF and reported there.
-                    for r in item.state.recordings {
-                        try? await ensureBlobLocal(r.blob, of: id)
-                        if let t = r.transcript { try? await ensureBlobLocal(t, of: id) }
-                    }
-                    for clip in ExportVideos.clips(of: item.state) { try? await ensureBlobLocal(clip.ref, of: id) }
+                    await ensurePDFAttachmentsLocal(item.state, of: id)
                     try ensureCurrent(gen)
                 } else if session.options.format == .media {
                     await ensureMediaLocal(item.state, of: id)
@@ -191,9 +180,7 @@ extension AppModel {
     /// True when `url` is the vault folder or inside it.
     func isInsideVault(_ url: URL) -> Bool {
         guard let root = vault?.url ?? vaultURL else { return false }
-        let a = root.standardizedFileURL.resolvingSymlinksInPath().path
-        let b = url.standardizedFileURL.resolvingSymlinksInPath().path
-        return b == a || b.hasPrefix(a.hasSuffix("/") ? a : a + "/")
+        return url.isSameOrInside(root)
     }
 
     private func finishBulk(_ session: BulkExportSession, cancelled: Bool) async throws -> BulkExportResult {

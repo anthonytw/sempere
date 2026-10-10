@@ -79,9 +79,14 @@ struct AttachVideo: ParsableCommand {
         let ref = try translating { try Vault.blobRef(contentsOf: url, type: info.mediaType, edits: edits) }
         let posterImage = try preparePoster(url, info: info)
         let posterRef = posterImage.map { BlobRef(content: $0.data, type: $0.mediaType) }
-        let before = try liveState(vault, id)
-        let target = try targetPage(before, placement.page)
-        func place(_ state: NoteState, _ page: Page) throws -> ItemPlacement {
+        // Blobs first (poster, then clip), then the one delta that references them.
+        let r = try placeOnPage(vault, id, page: placement.page, dryRun: dryRun, writeBlobs: {
+            if let posterImage, let posterRef {
+                try storeBlob(vault, id, posterImage.data, type: posterImage.mediaType, expect: posterRef, what: "poster")
+            }
+            let stored = try translating { try vault.writeBlob(note: id, contentsOf: url, type: info.mediaType, edits: edits) }
+            guard stored == ref else { throw CLIError.failure("\(file) changed while it was read; nothing was added") }
+        }) { state, page in
             try translating {
                 try NoteOps.placeVideo(blob: ref, info: info, poster: posterRef, on: page, pageSize: state.meta.pageSize,
                                        frame: placement.frame?.rect, at: placement.at.map { ($0.x, $0.y) },
@@ -89,32 +94,12 @@ struct AttachVideo: ParsableCommand {
                                        rec: try link(placement, in: state))
             }
         }
-        var placed = try place(before, target.page)
-        var number = target.number
-        var out = AttachJSON(note: id.uuidString.lowercased(), dryRun: dryRun, blob: ref)
-        if !dryRun {
-            // Blobs first (poster, then clip), then the one delta that references them.
-            if let posterImage, let posterRef {
-                let stored = try translating { try vault.writeBlob(note: id, posterImage.data, type: posterImage.mediaType) }
-                guard stored == posterRef else { throw CLIError.failure("internal error: the stored poster differs from its reference") }
-            }
-            let stored = try translating { try vault.writeBlob(note: id, contentsOf: url, type: info.mediaType, edits: edits) }
-            guard stored == ref else { throw CLIError.failure("\(file) changed while it was read; nothing was added") }
-            let pageID = target.page.id
-            let revision = try editNote(vault, id) { state in
-                try requireLive(state)
-                let current = try pageWithID(pageID, in: state)
-                number = current.number
-                placed = try place(state, current.page)
-                return placed.ops
-            }
-            out.file = revision?.name.filename
-        }
-        out.items = [.init(page: number, pageId: target.page.id, item: placed.item)]
+        var out = AttachJSON(note: id.uuidString.lowercased(), file: r.file, dryRun: dryRun, blob: ref)
+        out.items = [.init(page: r.number, pageId: r.pageID, item: r.placed.item)]
         out.poster = posterRef
         out.metadataRemoved = keepMetadata ? nil : info.metadataBoxes.count
         try report(out, output: output, summary: "video (\(Int(info.pixelSize.w)) × \(Int(info.pixelSize.h)), "
-                   + "\(AttachmentListing.number(info.duration)) s, \(info.codec)\(posterRef == nil ? ", no poster" : "")) to page \(number)")
+                   + "\(AttachmentListing.number(info.duration)) s, \(info.codec)\(posterRef == nil ? ", no poster" : "")) to page \(r.number)")
     }
 
     /// The poster: the given image, else (macOS) a frame of the clip, else none.
@@ -218,8 +203,7 @@ struct ItemsPoster: ParsableCommand {
                       changed: found.poster != ref, dryRun: dryRun)
         if !dryRun && out.changed {
             if let prepared, let ref {
-                let stored = try translating { try vault.writeBlob(note: id, prepared.data, type: prepared.mediaType) }
-                guard stored == ref else { throw CLIError.failure("internal error: the stored poster differs from its reference") }
+                try storeBlob(vault, id, prepared.data, type: prepared.mediaType, expect: ref, what: "poster")
             }
             let revision = try editNote(vault, id) { state in
                 try requireLive(state)

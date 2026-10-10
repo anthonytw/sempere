@@ -150,8 +150,7 @@ extension AppModel {
         _ = try NoteOps.newPDFNote(title: name, blob: BlobRef(sha256: String(repeating: "0", count: 64), size: 1, type: "application/pdf"),
                                    pages, notebook: notebook)
         try await commit(ids: [id], creating: [id]) { vault, clock, cloud, verifier in
-            let folder = cloud ? vault.url.appendingPathComponent("notes", isDirectory: true)
-                .appendingPathComponent(id.uuidString.lowercased(), isDirectory: true) : nil
+            let folder = cloud ? CloudScan.noteFolder(inVault: vault.url, id: id) : nil
             let ref = try await Task.detached(priority: .userInitiated) {
                 try CloudVault.coordinatedWrite(folder) { try vault.writeBlob(note: id, contentsOf: file, type: "application/pdf") }
             }.value

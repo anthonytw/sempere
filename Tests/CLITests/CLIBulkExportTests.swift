@@ -1,3 +1,4 @@
+import FuzzSupport
 import XCTest
 import CLITestSupport
 import Foundation
@@ -7,16 +8,7 @@ import Foundation
 /// unchanged notes, `--overwrite`, and failures that do not stop the batch.
 /// The app's "Export Notes…" writes the same files (docs/cli.md "Bulk export").
 final class CLIBulkExportTests: CLITestCase {
-    func files(_ dir: String) -> [String] {
-        let e = FileManager.default.enumerator(atPath: dir)
-        var out: [String] = []
-        while let f = e?.nextObject() as? String {
-            var isDir: ObjCBool = false
-            if FileManager.default.fileExists(atPath: dir + "/" + f, isDirectory: &isDir), !isDir.boolValue,
-               !f.hasPrefix(".") { out.append(f) }
-        }
-        return out.sorted()
-    }
+    func files(_ dir: String) -> [String] { FileTree.regularFiles(under: URL(fileURLWithPath: dir), skipHidden: true) }
 
     func testNotebookLayoutAndResume() throws {
         let (_, _, key) = try makeVault()
@@ -73,13 +65,8 @@ final class CLIBulkExportTests: CLITestCase {
         XCTAssertEqual(Set(written.flatMap { $0["files"] as? [String] ?? [] }),
                        ["Groceries-bbbbbbbb/p001.png", "Physics-Week-3-aaaaaaaa/p001.png", "Physics-Week-3-aaaaaaaa/p002.png"])
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: path("out")), ["Notes.zip"])
-        if FileManager.default.isExecutableFile(atPath: "/usr/bin/unzip") {
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
-            p.arguments = ["-tq", archive]
-            p.standardOutput = FileHandle.nullDevice
-            try p.run(); p.waitUntilExit()
-            XCTAssertEqual(p.terminationStatus, 0)
+        if let unzip = ExternalTool.find("unzip") {
+            XCTAssertEqual(try ExternalTool.run(unzip, ["-tq", archive]).status, 0)
         }
     }
 

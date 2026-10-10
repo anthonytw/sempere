@@ -138,20 +138,8 @@ struct WindowSheets: ViewModifier {
                 if let id = ui.historyNoteID { HistoryView(noteID: id) }
             }
             // The export sheet opens in the window that asked for it (a Mac may have several).
-            .sheet(item: Binding(get: { ExportRequest.shown(model.exportRequest, in: ui.id, canvasWindow: model.canvasWindow) },
-                                 set: { if $0 == nil, ExportRequest.shown(model.exportRequest, in: ui.id,
-                                                                            canvasWindow: model.canvasWindow) != nil {
-                                     model.exportRequest = nil
-                                 } })) { request in
-                ExportSheet(request: request)
-            }
-            .sheet(item: Binding(get: { BulkExportRequest.shown(model.bulkExportRequest, in: ui.id, canvasWindow: model.canvasWindow) },
-                                 set: { if $0 == nil, BulkExportRequest.shown(model.bulkExportRequest, in: ui.id,
-                                                                                canvasWindow: model.canvasWindow) != nil {
-                                     model.bulkExportRequest = nil
-                                 } })) { request in
-                BulkExportSheet(request: request)
-            }
+            .sheet(item: shown(\.exportRequest)) { ExportSheet(request: $0) }
+            .sheet(item: shown(\.bulkExportRequest)) { BulkExportSheet(request: $0) }
     }
 }
 
@@ -159,6 +147,17 @@ extension WindowSheets {
     /// The window that shows app-wide prompts (the opened-PDF sheet, the
     /// import result): the library window with the canvas, else any.
     private var isFront: Bool { OpenedFile.shows(in: ui.id, canvasWindow: model.canvasWindow) }
+
+    /// The model's request at `request` while this window shows it
+    /// (`WindowTargeted.shown`); dismissing the sheet clears it.
+    private func shown<R: WindowTargeted>(_ request: ReferenceWritableKeyPath<AppModel, R?>) -> Binding<R?> {
+        Binding(get: { R.shown(model[keyPath: request], in: ui.id, canvasWindow: model.canvasWindow) },
+                set: {
+                    if $0 == nil, R.shown(model[keyPath: request], in: ui.id, canvasWindow: model.canvasWindow) != nil {
+                        model[keyPath: request] = nil
+                    }
+                })
+    }
 }
 
 /// The PDFs opened from outside the app: "Import as new notes into <vault>",

@@ -35,11 +35,7 @@ struct AttachmentDeletion: Equatable, Sendable {
 /// (`CloudVault.requireLocal`).
 extension AppModel {
     /// `Application Support/Sempere/AttachmentIndex`.
-    nonisolated static var defaultAttachmentIndexRoot: URL {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
-        return support.appendingPathComponent("Sempere/AttachmentIndex", isDirectory: true)
-    }
+    nonisolated static var defaultAttachmentIndexRoot: URL { AppSupport.folder("AttachmentIndex") }
 
     /// The open vault's index files; nil while it cannot read (locked).
     func attachmentIndexStore() -> AttachmentIndexStore? {
@@ -232,7 +228,7 @@ extension AppModel {
             }
             let records = attachmentIndex[note]?.unusedSince ?? [:]
             let now = attachmentNow()
-            let folder = cloud ? url.appendingPathComponent("notes/\(note.uuidString.lowercased())", isDirectory: true) : nil
+            let folder = cloud ? CloudScan.noteFolder(inVault: url, id: note) : nil
             let outcome: (BlobCollectionReport, [String: Date])
             do {
                 outcome = try await offMain(priority: .userInitiated) { () throws -> (BlobCollectionReport, [String: Date]) in

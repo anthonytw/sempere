@@ -11,36 +11,9 @@ import XCTest
 /// The import gaps closed after the reference-backup survey: `.ntb`
 /// attachments, PDF page text, handwriting language, highlighter behind text
 /// and paper colour (docs/import-notability.md). Synthetic packages only.
-final class NotabilityGapsTests: XCTestCase {
+final class NotabilityGapsTests: NotabilityTestCase {
     static let letter = (612.0, 792.0)
     static let k = 612 / 716.8
-    var tmp: URL!
-
-    override func setUpWithError() throws {
-        tmp = FileManager.default.temporaryDirectory.appendingPathComponent("sempere-gaps-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-    }
-
-    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: tmp) }
-
-    func makeVault() throws -> Vault {
-        let identity = try NativeIdentity.generate(.postQuantum)
-        return try Vault.create(at: tmp.appendingPathComponent("V-\(UUID().uuidString).sempere"),
-                                recipients: [identity.recipient], identities: [identity])
-    }
-
-    func importFile(_ data: Data, ext: String, into vault: Vault, options: NotabilityImporter.Options = .init())
-        throws -> (NotabilityImporter.NoteResult, NoteState) {
-        let path = tmp.appendingPathComponent("N-\(UUID().uuidString).\(ext)")
-        try data.write(to: path)
-        var clock = HybridClock()
-        let report = try NotabilityImporter.import(paths: [path], into: vault, device: DeviceID("0a0b0c0d")!,
-                                                   clock: &clock, options: options)
-        let r = try XCTUnwrap(report.notes.first)
-        XCTAssertEqual(r.status, .ok, "\(r.status)")
-        return (r, try vault.reconstruct(noteId: try XCTUnwrap(r.noteId)))
-    }
-
     static func hashName(_ data: Data, _ ext: String) -> String { BlobRef(content: data, type: "x").sha256 + "." + ext }
 
     /// A PDF record whose payload names `name` (field 2, a string) on page 0.

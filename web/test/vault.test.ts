@@ -10,7 +10,7 @@ import { RevisionReadError, UnlockedVault, VaultError, checkRecipients, parseIde
   recipientsTag, recipientsWarningText, type VaultManifest } from "../src/vault/vault.ts";
 import { gunzip } from "../src/vault/gzip.ts";
 import { isRevisionFile } from "../src/vault/source.ts";
-import { NodeDirSource, fixtures, sampleIdentity } from "./support.ts";
+import { NodeDirSource, fixtures, gzip, sampleIdentity } from "./support.ts";
 
 const lecture = "11111111-1111-4111-8111-111111111111";
 const enc = new TextEncoder();
@@ -197,19 +197,14 @@ describe("reading revisions", () => {
 });
 
 describe("gunzip", () => {
-  async function gz(data: Uint8Array): Promise<Uint8Array> {
-    const s = new Blob([data as Uint8Array<ArrayBuffer>]).stream().pipeThrough(new CompressionStream("gzip"));
-    return new Uint8Array(await new Response(s).arrayBuffer());
-  }
-
   it("round-trips and bounds the output", async () => {
     const data = new Uint8Array(100_000).fill(7);
-    expect(await gunzip(await gz(data))).toEqual(data);
-    await expect(gunzip(await gz(data), 99_999)).rejects.toThrow(/larger than/);
+    expect(await gunzip(await gzip(data))).toEqual(data);
+    await expect(gunzip(await gzip(data), 99_999)).rejects.toThrow(/larger than/);
   });
 
   it("fails on empty, truncated and corrupt input", async () => {
-    const z = await gz(enc.encode("hello hello hello"));
+    const z = await gzip(enc.encode("hello hello hello"));
     await expect(gunzip(new Uint8Array())).rejects.toThrow();
     await expect(gunzip(z.subarray(0, z.length - 6))).rejects.toThrow();
     const bad = z.slice();

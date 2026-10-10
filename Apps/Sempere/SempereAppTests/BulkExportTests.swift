@@ -20,17 +20,7 @@ struct BulkExportAppTests {
     }
 
     /// Files below `dir` (not the hidden manifest), relative to it.
-    func files(_ dir: URL) -> [String] {
-        let base = dir.standardizedFileURL.path
-        let walker = FileManager.default.enumerator(atPath: base)
-        var out: [String] = []
-        while let rel = walker?.nextObject() as? String {
-            var isDir: ObjCBool = false
-            if FileManager.default.fileExists(atPath: base + "/" + rel, isDirectory: &isDir), !isDir.boolValue,
-               !(rel as NSString).lastPathComponent.hasPrefix(".") { out.append(rel) }
-        }
-        return out.sorted()
-    }
+    func files(_ dir: URL) -> [String] { TS.regularFiles(under: dir, skipHidden: true) }
 
     func run(_ model: AppModel, _ scope: BulkExportScope, _ options: BulkExportOptions, into dir: URL,
              progress: @escaping @MainActor (BulkExportProgress) -> Void = { _ in }) async throws -> BulkExportResult {

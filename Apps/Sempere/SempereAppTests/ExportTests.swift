@@ -36,16 +36,7 @@ struct ExportTests {
     }
 
     /// Paths of every file below `dir`, relative to it.
-    func files(_ dir: URL) -> [String] {
-        let base = dir.standardizedFileURL.path
-        let walker = FileManager.default.enumerator(atPath: base)
-        var out: [String] = []
-        while let rel = walker?.nextObject() as? String {
-            var isDir: ObjCBool = false
-            if FileManager.default.fileExists(atPath: base + "/" + rel, isDirectory: &isDir), !isDir.boolValue { out.append(rel) }
-        }
-        return out.sorted()
-    }
+    func files(_ dir: URL) -> [String] { TS.regularFiles(under: dir) }
 
     func export(_ model: AppModel, _ ids: [UUID], _ options: ShareOptions, into dir: URL) async throws -> ShareResult {
         try await model.exportNotes(ids, options: options, into: dir) { _ in }

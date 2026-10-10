@@ -54,21 +54,21 @@ jobs:
           # Swift package: Linux + macOS build and test.
           # scripts/screenshots.sh only drives the manual screenshots job.
           pkgfiles="$(printf '%s\n' "$files" | grep -v '^scripts/screenshots\.sh$' || true)"
-          package=$(printf '%s\n' "$pkgfiles" | grep -Eq '^(Sources/|Tests/|Package\.(swift|resolved)$|scripts/|\.github/workflows/ci\.yml$)' && echo true || echo false)
+          package=$(printf '%s\n' "$pkgfiles" | grep -Eq '^(Sources/|Tests/|Package\.(swift|resolved)$|scripts/|\.github/(workflows/ci\.yml$|actions/))' && echo true || echo false)
           # The app links Age, Sempere, SempereRender, SempereSpeech and the importer
           # (SempereImport, SemperePDF; CZlib under them), and its tests open the
           # package's fixture vault; CLI and WebDAV changes cannot affect it.
-          app=$(has '^(Apps/|Sources/(Age|Sempere|SempereRender|SempereSpeech|SempereImport|SemperePDF|CZlib)/|Tests/SempereTests/Fixtures/|Package\.(swift|resolved)$|scripts/(app\.sh|check-help\.py)$|\.github/workflows/ci\.yml$)')
+          app=$(has '^(Apps/|Sources/(Age|Sempere|SempereRender|SempereSpeech|SempereImport|SemperePDF|CZlib)/|Tests/SempereTests/Fixtures/|Package\.(swift|resolved)$|scripts/(app\.sh|check-help\.py)$|\.github/(workflows/ci\.yml$|actions/))')
           # The string catalogs and the scenes' environment against the app sources
           # (LocalizationCatalogTests and AppSceneEnvironmentTests read Apps/ and run on Linux): an
           # app-only change runs just those tests, not the macOS package job.
           localization=$(has '^(Apps/Sempere/(Localization|SempereApp|SempereShared|SempereWidgets|Sempere\.xcodeproj)/|Apps/Sempere/SempereInfo\.plist$|Tests/SempereTests/(LocalizationCatalogTests|AppSceneEnvironmentTests)\.swift$)')
           # Web viewer (web/): its own job; app changes do not run it.
-          web=$(has '^(web/|\.github/workflows/ci\.yml$)')
+          web=$(has '^(web/|\.github/(workflows/ci\.yml$|actions/))')
           # The goldens are the CLI's JSON and SVG export of the fixture vaults: a
           # change to the reducer, the renderer, the CLI or the fixtures can move them,
           # and the PR that moves them must update web/ too (not find out on main).
-          webgolden=$(has '^(web/|Sources/(Age|Sempere|SempereRender|SempereCLI|CZlib)/|Tests/SempereTests/Fixtures/|Package\.(swift|resolved)$|\.github/workflows/ci\.yml$)')
+          webgolden=$(has '^(web/|Sources/(Age|Sempere|SempereRender|SempereCLI|CZlib)/|Tests/SempereTests/Fixtures/|Package\.(swift|resolved)$|\.github/(workflows/ci\.yml$|actions/))')
           echo "package=$package" >> "$GITHUB_OUTPUT"
           echo "app=$app" >> "$GITHUB_OUTPUT"
           echo "localization=$localization" >> "$GITHUB_OUTPUT"
@@ -76,7 +76,7 @@ jobs:
           # App Store release checks (scripts/release-check.sh, docs/release/app-store.md): the
           # project, plists and privacy manifests under Apps/, the Sources/ the app links (the
           # required-reason API scan) and the privacy policy pages. Linux, seconds.
-          release=$(has '^(Apps/|Sources/(Age|Sempere|SempereRender|SemperePDF|SempereSpeech|CZlib)/|scripts/(test-)?release-check\.sh$|scripts/(test-)?changelog-section\.sh$|docs/privacy/|docs/appstore/privacy-policy\.md$|\.github/workflows/ci\.yml$)')
+          release=$(has '^(Apps/|Sources/(Age|Sempere|SempereRender|SemperePDF|SempereSpeech|CZlib)/|scripts/(test-)?release-check\.sh$|scripts/(test-)?changelog-section\.sh$|docs/privacy/|docs/appstore/privacy-policy\.md$|\.github/(workflows/ci\.yml$|actions/))')
           echo "webgolden=$webgolden" >> "$GITHUB_OUTPUT"
           echo "release=$release" >> "$GITHUB_OUTPUT"
           echo "package=$package app=$app web=$web webgolden=$webgolden release=$release"
@@ -100,14 +100,12 @@ jobs:
           tar xzf /tmp/age.tgz -C /usr/local/bin --strip-components=1 age/age age/age-keygen
           age --version
       # Build cache: main saves it, PRs only restore (docs/HANDOFF.md "CI").
-      - id: cachekey
-        name: Cache key (toolchain + resolved packages)
-        run: echo "key=linux-$(echo "$GITHUB_WORKSPACE" | cksum | cut -d" " -f1)-$(swift --version 2>&1 | head -1 | cksum | cut -d' ' -f1)-${{ hashFiles('Package.resolved') }}" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@v4
+      - id: cache
+        name: Restore the build cache (toolchain + resolved packages)
+        uses: ./.github/actions/build-cache
         with:
-          path: .build
-          key: ${{ steps.cachekey.outputs.key }}-${{ github.sha }}
-          restore-keys: ${{ steps.cachekey.outputs.key }}-
+          prefix: linux
+          version-cmd: swift --version
       - name: Build
         run: swift build --build-tests
       - name: Test
@@ -123,7 +121,7 @@ jobs:
         if: success() && github.ref == 'refs/heads/main'
         with:
           path: .build
-          key: ${{ steps.cachekey.outputs.key }}-${{ github.sha }}
+          key: ${{ steps.cache.outputs.key }}-${{ github.sha }}
       - name: Portability guard
         run: scripts/check-portability.sh
       # Deleting the Notability importer's directory must leave a package that builds and passes its tests
@@ -165,14 +163,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install zlib headers
         run: apt-get update -q && apt-get install -y -q zlib1g-dev
-      - id: cachekey
-        name: Cache key (toolchain + resolved packages)
-        run: echo "key=linux-$(echo "$GITHUB_WORKSPACE" | cksum | cut -d" " -f1)-$(swift --version 2>&1 | head -1 | cksum | cut -d' ' -f1)-${{ hashFiles('Package.resolved') }}" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@v4
+      - id: cache
+        name: Restore the build cache (toolchain + resolved packages)
+        uses: ./.github/actions/build-cache
         with:
-          path: .build
-          key: ${{ steps.cachekey.outputs.key }}-${{ github.sha }}
-          restore-keys: ${{ steps.cachekey.outputs.key }}-
+          prefix: linux
+          version-cmd: swift --version
       - name: Test the catalogs and the scenes' environment against the app sources
         run: swift test --filter 'LocalizationCatalogTests|AppSceneEnvironmentTests'
 
@@ -197,14 +193,12 @@ jobs:
           sudo tar xzf /tmp/age.tgz -C /usr/local/bin --strip-components=1 age/age age/age-keygen
           age --version
       # Build cache: main saves it, PRs only restore (docs/HANDOFF.md "CI").
-      - id: cachekey
-        name: Cache key (toolchain + resolved packages)
-        run: echo "key=macos-$(echo "$GITHUB_WORKSPACE" | cksum | cut -d" " -f1)-$(swift --version 2>&1 | head -1 | cksum | cut -d' ' -f1)-${{ hashFiles('Package.resolved') }}" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@v4
+      - id: cache
+        name: Restore the build cache (toolchain + resolved packages)
+        uses: ./.github/actions/build-cache
         with:
-          path: .build
-          key: ${{ steps.cachekey.outputs.key }}-${{ github.sha }}
-          restore-keys: ${{ steps.cachekey.outputs.key }}-
+          prefix: macos
+          version-cmd: swift --version
       - name: Build
         run: swift build --build-tests
       - name: Test
@@ -219,7 +213,7 @@ jobs:
         if: success() && github.ref == 'refs/heads/main'
         with:
           path: .build
-          key: ${{ steps.cachekey.outputs.key }}-${{ github.sha }}
+          key: ${{ steps.cache.outputs.key }}-${{ github.sha }}
 
   # The WebDAV integration tests (IntegrationTests, BlobIntegrationTests, CLIWebDAVTests) need a
   # real server and skip without one. scripts/test-webdav.sh starts wsgidav (Basic auth) and
@@ -239,14 +233,12 @@ jobs:
           python3 -m venv /opt/dav
           /opt/dav/bin/pip install --quiet wsgidav==4.3.3 cheroot==10.0.1
       # Restores the Linux job's cache from main (same key); never saves.
-      - id: cachekey
-        name: Cache key (toolchain + resolved packages)
-        run: echo "key=linux-$(echo "$GITHUB_WORKSPACE" | cksum | cut -d" " -f1)-$(swift --version 2>&1 | head -1 | cksum | cut -d' ' -f1)-${{ hashFiles('Package.resolved') }}" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@v4
+      - id: cache
+        name: Restore the build cache (toolchain + resolved packages)
+        uses: ./.github/actions/build-cache
         with:
-          path: .build
-          key: ${{ steps.cachekey.outputs.key }}-${{ github.sha }}
-          restore-keys: ${{ steps.cachekey.outputs.key }}-
+          prefix: linux
+          version-cmd: swift --version
       - name: Integration tests against the server
         env:
           SEMPERE_WEBDAV_LARGE_MB: "64"
@@ -265,14 +257,13 @@ jobs:
           xcodebuild -version
           xcrun simctl list runtimes
       # Build cache: main saves it, PRs only restore (docs/HANDOFF.md "CI").
-      - id: cachekey
-        name: Cache key (toolchain + resolved packages)
-        run: echo "key=app-$(echo "$GITHUB_WORKSPACE" | cksum | cut -d" " -f1)-$(xcodebuild -version 2>&1 | head -1 | cksum | cut -d' ' -f1)-${{ hashFiles('Package.resolved') }}" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@v4
+      - id: cache
+        name: Restore the build cache (toolchain + resolved packages)
+        uses: ./.github/actions/build-cache
         with:
+          prefix: app
+          version-cmd: xcodebuild -version
           path: .build/xcode
-          key: ${{ steps.cachekey.outputs.key }}-${{ github.sha }}
-          restore-keys: ${{ steps.cachekey.outputs.key }}-
       # Every icon-only control has a tooltip on the Mac (TestFlight build 7).
       - name: Tooltips on icon-only controls
         run: scripts/check-help.py --self-test && scripts/check-help.py
@@ -368,7 +359,7 @@ jobs:
         if: success() && github.ref == 'refs/heads/main'
         with:
           path: .build/xcode
-          key: ${{ steps.cachekey.outputs.key }}-${{ github.sha }}
+          key: ${{ steps.cache.outputs.key }}-${{ github.sha }}
 
   release:
     name: App Store release checks
@@ -433,14 +424,12 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       # Restores the Linux job's cache from main (same key); never saves.
-      - id: cachekey
-        name: Cache key (toolchain + resolved packages)
-        run: echo "key=linux-$(echo "$GITHUB_WORKSPACE" | cksum | cut -d" " -f1)-$(swift --version 2>&1 | head -1 | cksum | cut -d' ' -f1)-${{ hashFiles('Package.resolved') }}" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@v4
+      - id: cache
+        name: Restore the build cache (toolchain + resolved packages)
+        uses: ./.github/actions/build-cache
         with:
-          path: .build
-          key: ${{ steps.cachekey.outputs.key }}-${{ github.sha }}
-          restore-keys: ${{ steps.cachekey.outputs.key }}-
+          prefix: linux
+          version-cmd: swift --version
       - name: Build the CLI
         run: swift build --product sempere
       - name: Install and build the viewer
@@ -466,14 +455,12 @@ jobs:
       - name: Install zlib headers
         run: apt-get update -q && apt-get install -y -q zlib1g-dev
       # Restores the Linux job's cache from main (same key); never saves.
-      - id: cachekey
-        name: Cache key (toolchain + resolved packages)
-        run: echo "key=linux-$(echo "$GITHUB_WORKSPACE" | cksum | cut -d" " -f1)-$(swift --version 2>&1 | head -1 | cksum | cut -d' ' -f1)-${{ hashFiles('Package.resolved') }}" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@v4
+      - id: cache
+        name: Restore the build cache (toolchain + resolved packages)
+        uses: ./.github/actions/build-cache
         with:
-          path: .build
-          key: ${{ steps.cachekey.outputs.key }}-${{ github.sha }}
-          restore-keys: ${{ steps.cachekey.outputs.key }}-
+          prefix: linux
+          version-cmd: swift --version
       - name: Build the CLI
         run: swift build --product sempere
       - name: Export the fixture vaults with the CLI and compare with web/test/golden

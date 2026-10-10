@@ -720,13 +720,3 @@ final class PDFObjects {
         try emit(Array(xref.utf8))
     }
 }
-
-/// Like `fmt`, with 6 decimals (matrices: 3 decimals of a scale factor are
-/// visible on a large page).
-func fmt6(_ v: Double) -> String {
-    guard v.isFinite else { return "0" }
-    var s = String(format: "%.6f", v)
-    while s.hasSuffix("0") { s.removeLast() }
-    if s.hasSuffix(".") { s.removeLast() }
-    return (s == "-0" || s.isEmpty) ? "0" : s
-}

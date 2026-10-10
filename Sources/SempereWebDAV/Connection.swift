@@ -72,7 +72,7 @@ public enum WebDAVConnection {
             throw WebDAVError.http(method: "PROPFIND", path: "", status: 404)
         }
         var unreadable: [String] = []
-        if root.contains(where: { $0.name == "vault.json" && !$0.isCollection }) {
+        if root.contains(where: { $0.name == Vault.manifestName && !$0.isCollection }) {
             let base = WebDAVClient.components(of: client.baseURL.path).last ?? ""
             if let listing = listing(client, path: [], name: base) {
                 return WebDAVCheckResult(outcome: .vault, vaults: [listing], foldersChecked: 0, foldersSkipped: 0,
@@ -80,7 +80,7 @@ public enum WebDAVConnection {
             }
             unreadable.append(display(base))
         }
-        let folders = root.filter { $0.isCollection && !$0.name.hasPrefix(".") && $0.name != "notes" && $0.name != "keys" }
+        let folders = root.filter { $0.isCollection && !$0.name.hasPrefix(".") && $0.name != Vault.notesName && $0.name != Vault.keysName }
             .map(\.name).sorted()
         var vaults: [WebDAVVaultListing] = []
         var checked = 0, skipped = max(0, folders.count - maxFoldersChecked)
@@ -90,7 +90,7 @@ public enum WebDAVConnection {
                 continue
             }
             checked += 1
-            guard entries.contains(where: { $0.name == "vault.json" && !$0.isCollection }) else { continue }
+            guard entries.contains(where: { $0.name == Vault.manifestName && !$0.isCollection }) else { continue }
             if let listing = listing(client, path: [name], name: name) {
                 vaults.append(listing)
             } else {
@@ -105,7 +105,7 @@ public enum WebDAVConnection {
     /// cannot be read or is not a manifest.
     private static func listing(_ client: WebDAVClient, path: [String], name: String) -> WebDAVVaultListing? {
         guard let sub = try? client.descendant(path),
-              let data = try? sub.get(["vault.json"], maxBytes: BoundedRead.maxManifestBytes).data,
+              let data = try? sub.get([Vault.manifestName], maxBytes: BoundedRead.maxManifestBytes).data,
               let manifest = manifestFields(data) else { return nil }
         return WebDAVVaultListing(path: path, name: display(name), vaultId: manifest.vaultId,
                                   format: manifest.format, url: sub.baseURL.absoluteString)

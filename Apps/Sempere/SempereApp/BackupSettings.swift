@@ -126,7 +126,7 @@ enum BackupLocation {
     ///   fine), `.otherVaultsBackup` for another vault's backup.
     static func subfolder(in picked: URL, vaultId: UUID, vaultName: String, openVault: URL?,
                           fileManager fm: FileManager = .default) throws -> String? {
-        if let openVault, overlaps(picked, openVault) { throw Problem.insideOpenVault }
+        if let openVault, picked.overlaps(openVault) { throw Problem.insideOpenVault }
         let id = vaultId.uuidString.lowercased()
         if isBackup(picked, fm) {
             guard backupVaultId(picked) == id else { throw Problem.otherVaultsBackup(picked.lastPathComponent) }
@@ -167,12 +167,6 @@ enum BackupLocation {
         name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if name.isEmpty { name = String(localized: "Notes", comment: "Restore from Backup: default name of a restored vault") }
         return String(localized: "\(name) (Restored)", comment: "Restore from Backup: suggested name of the new vault; %@ is the backed-up vault's name")
-    }
-
-    static func overlaps(_ a: URL, _ b: URL) -> Bool {
-        let pa = a.standardizedFileURL.resolvingSymlinksInPath().path
-        let pb = b.standardizedFileURL.resolvingSymlinksInPath().path
-        return pa == pb || pa.hasPrefix(pb + "/") || pb.hasPrefix(pa + "/")
     }
 }
 

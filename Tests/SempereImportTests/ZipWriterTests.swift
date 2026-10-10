@@ -1,3 +1,5 @@
+import FuzzSupport
+import TempDirSupport
 import XCTest
 import Foundation
 import ImportTestSupport
@@ -11,12 +13,7 @@ private typealias StreamZip = SempereRender.ZipWriter
 /// `SempereRender.ZipWriter` (bulk export archives), read back with the importer's
 /// `ZipArchive` and, when installed, Info-ZIP `unzip -t`.
 final class ZipWriterTests: XCTestCase {
-    func scratch() throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("zipw-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
-        return url
-    }
+    func scratch() throws -> URL { try makeScratchDirectory("zipw") }
 
     func file(_ dir: URL, _ name: String, _ data: Data) throws -> URL {
         let url = dir.appendingPathComponent(name)
@@ -26,18 +23,9 @@ final class ZipWriterTests: XCTestCase {
 
     /// `unzip -t` on the archive, when Info-ZIP is installed (nil otherwise).
     func unzipTest(_ archive: URL) throws -> (Int32, String)? {
-        let tool = ["/usr/bin/unzip", "/bin/unzip", "/opt/homebrew/bin/unzip"].first { FileManager.default.isExecutableFile(atPath: $0) }
-        guard let tool else { return nil }
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: tool)
-        p.arguments = ["-t", archive.path]
-        let pipe = Pipe()
-        p.standardOutput = pipe
-        p.standardError = pipe
-        try p.run()
-        let out = pipe.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        return (p.terminationStatus, String(decoding: out, as: UTF8.self))
+        guard let tool = ExternalTool.find("unzip") else { return nil }
+        let r = try ExternalTool.run(tool, ["-t", archive.path])
+        return (r.status, String(decoding: r.out + r.err, as: UTF8.self))
     }
 
     func testRoundTripWithUnicodeNamesAndFolders() throws {

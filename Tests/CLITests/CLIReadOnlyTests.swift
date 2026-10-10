@@ -1,6 +1,7 @@
 import Age
 import CLITestSupport
 import Foundation
+import FuzzSupport
 import Sempere
 import XCTest
 
@@ -19,16 +20,7 @@ final class CLIReadOnlyTests: CLITestCase {
     }
 
     /// Every regular file under `path` with its bytes.
-    func files(_ path: String) throws -> [String: Data] {
-        var out: [String: Data] = [:]
-        let root = URL(fileURLWithPath: path)
-        let e = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey])
-        while let f = e?.nextObject() as? URL {
-            guard (try f.resourceValues(forKeys: [.isRegularFileKey])).isRegularFile == true else { continue }
-            out[f.lastPathComponent + "@" + f.deletingLastPathComponent().lastPathComponent] = try Data(contentsOf: f)
-        }
-        return out
-    }
+    func files(_ path: String) throws -> [String: Data] { try FileTree.snapshot(of: URL(fileURLWithPath: path)) }
 
     func testReadCommandsReportReadOnly() throws {
         let vault = try copyNewerVault()

@@ -206,7 +206,7 @@ extension Vault {
                 report.files.append(.init(path: attPath, status: .unlistable, detail: "\(error)"))
             }
         }
-        let kinds = Dictionary(grouping: references.filter { SHA256Hex.bytes($0.sha256) != nil }, by: \.sha256)
+        let kinds = Dictionary(grouping: references.filter { Hex.decode($0.sha256) != nil }, by: \.sha256)
             .mapValues { Set($0.map(\.kind)) }
         var resolved = Set<String>()   // "<sha256>/<kind>" of files that verified
         for entry in entries {

@@ -133,7 +133,7 @@ struct VaultInfo: ParsableCommand {
         print("Notes:          \(info.notes)")
         print("Recipients:     \(info.recipients.count)")
         for r in info.recipients {
-            print("  \(abbreviateKey(r.key))  \(r.type)  \(r.label.isEmpty ? "(no label)" : r.label)  "
+            print("  \(RecipientsProblem.abbreviate(r.key))  \(r.type)  \(r.label.isEmpty ? "(no label)" : r.label)  "
                 + "added \(Format.local(r.added))")
         }
         let classic = info.recipients.filter { $0.type != Info.Recipient.pqType }.count
@@ -228,7 +228,7 @@ struct RecipientsStatusOutput: Encodable {
                 return "TAMPERED (\(reason)): vault.json's format or features were changed without the vault's key; "
                     + "writing is refused until `sempere vault markers repair`"
             }
-            let keys = (unexpected ?? []).map(abbreviateKey).joined(separator: ", ")
+            let keys = (unexpected ?? []).map(RecipientsProblem.abbreviate).joined(separator: ", ")
             return "TAMPERED (\(reason ?? "?")): unexpected \(keys.isEmpty ? "none" : keys); writing is refused until "
                 + "`sempere vault recipients repair`"
         }
@@ -399,8 +399,8 @@ struct RecipientsRepair: ParsableCommand {
             throw CLIError.failure("this machine does not know the last verified list: name the keys to keep with --keep")
         }
         if dryRun || !output.json {
-            output.info("Unexpected: \(problem.unexpected.isEmpty ? "none" : problem.unexpected.map(abbreviateKey).joined(separator: ", "))")
-            output.info("Keeping:    \(target.map(abbreviateKey).joined(separator: ", "))")
+            output.info("Unexpected: \(problem.unexpected.isEmpty ? "none" : problem.unexpected.map(RecipientsProblem.abbreviate).joined(separator: ", "))")
+            output.info("Keeping:    \(target.map(RecipientsProblem.abbreviate).joined(separator: ", "))")
         }
         if dryRun {
             if output.json {
@@ -609,7 +609,7 @@ struct StoreKeyOptions: ParsableArguments {
         guard let storeKey else { return nil }
         let id = try readIdentityFile(storeKey)
         guard id.recipient == recipient else {
-            throw CLIError.usage("\(storeKey) is not the key of the new recipient \(abbreviateKey(recipient.string))")
+            throw CLIError.usage("\(storeKey) is not the key of the new recipient \(RecipientsProblem.abbreviate(recipient.string))")
         }
         let pass = try obtainPassphrase(envName: passphraseEnv, prompt: "New key passphrase: ", confirm: true,
                                         asError: CLIError.failure)

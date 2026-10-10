@@ -1,6 +1,7 @@
 import Age
 import CLITestSupport
 import Foundation
+import FuzzSupport
 import Sempere
 import XCTest
 
@@ -130,8 +131,7 @@ final class CLIImportGapsTests: CLITestCase {
                               env: ["SEMPERE_PDFTOTEXT": path("no-such-pdftotext")])
         XCTAssertNotEqual(missing.status, 0)
         XCTAssertTrue(missing.err.contains("pdftotext"), missing.err)
-        guard let p = ["/usr/bin/pdftotext", "/opt/homebrew/bin/pdftotext", "/usr/local/bin/pdftotext"]
-            .first(where: FileManager.default.isExecutableFile) else {
+        guard let p = ExternalTool.find("pdftotext")?.path else {
             // CI names pdftotext in SEMPERE_REQUIRE_TOOLS (or sets SEMPERE_REQUIRE_POPPLER on a Mac): a missing install fails.
             let env = ProcessInfo.processInfo.environment
             let names = (env["SEMPERE_REQUIRE_TOOLS"] ?? "").split(separator: ",").map(String.init)

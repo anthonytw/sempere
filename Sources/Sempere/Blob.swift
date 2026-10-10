@@ -59,7 +59,7 @@ public struct BlobHeader: Hashable, Sendable {
     public var length: Int64
 
     /// The digest as 64 lowercase hex digits (a reference's `sha256`).
-    public var sha256: String { digest.map { String(format: "%02x", $0) }.joined() }
+    public var sha256: String { Hex.encode(digest) }
 }
 
 /// The blob plaintext layout (format.md §8.1.3):
@@ -137,7 +137,7 @@ public enum BlobName {
         m += Data("blob".utf8)
         m.append(0)
         m += digest
-        return Data(HMAC<SHA256>.authenticationCode(for: m, using: secret.key)).map { String(format: "%02x", $0) }.joined()
+        return Hex.encode(HMAC<SHA256>.authenticationCode(for: m, using: secret.key))
     }
 
     /// `<name>.<kind>.age`.
@@ -159,7 +159,7 @@ public enum BlobName {
     /// True when the name verifies (in constant time) against `digest` under
     /// one of `secrets`; returns the index of the secret that matched.
     static func verify(_ name: String, digest: Data, secrets: [VaultSecret]) -> Int? {
-        guard let given = SHA256Hex.bytes(name) else { return nil }
+        guard let given = Hex.decode(name) else { return nil }
         var m = Data(SempereFormat.tagLabel.utf8)
         m.append(0)
         m += Data("blob".utf8)

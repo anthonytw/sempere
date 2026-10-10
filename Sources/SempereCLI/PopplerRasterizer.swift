@@ -30,21 +30,12 @@ struct PopplerRasterizer: PDFPageRasterizer {
     /// Address-space limit for Poppler.
     var memoryLimit = 3 << 30
 
-    struct Failure: Error, LocalizedError {
-        var message: String
-        var errorDescription: String? { message }
-    }
+    typealias Failure = PopplerTool.Failure
 
-    /// `SEMPERE_PDFTOPPM`, else `pdftoppm` on `PATH`.
+    /// `SEMPERE_PDFTOPPM` (unless empty), else `pdftoppm` on `PATH`.
     static func locate(environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
-        if let p = environment["SEMPERE_PDFTOPPM"], !p.isEmpty {
-            return FileManager.default.isExecutableFile(atPath: p) ? p : nil
-        }
-        for dir in (environment["PATH"] ?? "/usr/bin:/usr/local/bin").split(separator: ":") {
-            let p = "\(dir)/pdftoppm"
-            if FileManager.default.isExecutableFile(atPath: p) { return p }
-        }
-        return nil
+        PopplerTool.locate("pdftoppm", override: environment["SEMPERE_PDFTOPPM"].flatMap { $0.isEmpty ? nil : $0 },
+                           environment: environment)
     }
 
     func rasterize(pdf: URL, pageIndex: Int, pixelWidth: Int, pixelHeight: Int) throws -> RGBAImage {
@@ -71,52 +62,25 @@ struct PopplerRasterizer: PDFPageRasterizer {
     }
 
     private func run(pdf: URL, pageIndex: Int, width: Int, height: Int) throws -> RGBAImage {
-        let fm = FileManager.default
-        let dir = fm.temporaryDirectory.appendingPathComponent("sempere-pdftoppm-\(UUID().uuidString.lowercased())")
-        do {
-            try fm.createDirectory(at: dir, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
-        } catch { throw Failure(message: "cannot create a temporary directory") }
-        defer { try? fm.removeItem(at: dir) }
-        let prefix = dir.appendingPathComponent("page")
-        let expected = width * height * 3   // ≤ 2^40 + …: fits
-        let page = String(pageIndex + 1)
-        let popplerArgs = ["-f", page, "-l", page, "-singlefile", "-cropbox", "-aa", "yes", "-aaVector", "yes",
-                           "-scale-to-x", String(width), "-scale-to-y", String(height), "--", pdf.path, prefix.path]
-
-        let p = Process()
-        if let me = Bundle.main.executablePath {
-            p.executableURL = URL(fileURLWithPath: me)
-            p.arguments = [ExecLimited.command, "--cpu", String(Int(timeout.rounded(.up)) + 1),
-                           "--memory", String(memoryLimit), "--file-size", String(expected + (1 << 16)),
-                           "--", executable] + popplerArgs
-        } else {
-            p.executableURL = URL(fileURLWithPath: executable)   // no trampoline: the timeout still applies
-            p.arguments = popplerArgs
-        }
-        p.standardInput = FileHandle.nullDevice
-        p.standardOutput = FileHandle.nullDevice
-        p.standardError = FileHandle.nullDevice
-        let done = DispatchSemaphore(value: 0)
-        p.terminationHandler = { _ in done.signal() }
-        do { try p.run() } catch { throw Failure(message: "cannot run \(executable): \(error.localizedDescription)") }
-        if done.wait(timeout: .now() + timeout) == .timedOut {
-            p.terminate()
-            if done.wait(timeout: .now() + 1) == .timedOut {
-                kill(p.processIdentifier, SIGKILL)
-                _ = done.wait(timeout: .now() + 5)
+        try PopplerTool.withTemporaryDirectory(prefix: "sempere-pdftoppm") { dir in
+            let prefix = dir.appendingPathComponent("page")
+            let expected = width * height * 3   // ≤ 2^40 + …: fits
+            let page = String(pageIndex + 1)
+            let popplerArgs = ["-f", page, "-l", page, "-singlefile", "-cropbox", "-aa", "yes", "-aaVector", "yes",
+                               "-scale-to-x", String(width), "-scale-to-y", String(height), "--", pdf.path, prefix.path]
+            let p = try PopplerTool.run(executable, popplerArgs, name: "pdftoppm", timeout: timeout,
+                                        memoryLimit: memoryLimit, fileSizeLimit: expected + (1 << 16))
+            if p.terminationReason == .uncaughtSignal {
+                throw Failure(message: "pdftoppm was killed by signal \(p.terminationStatus)")
             }
-            throw Failure(message: "pdftoppm timed out after \(Int(timeout)) s")
+            guard p.terminationStatus == 0 else { throw Failure(message: "pdftoppm exited with status \(p.terminationStatus)") }
+            let out = dir.appendingPathComponent("page.ppm")
+            let data: Data
+            do { data = try BoundedRead.contents(of: out, maxBytes: expected + 4096) } catch {
+                throw Failure(message: "pdftoppm wrote no usable image")
+            }
+            return try Self.decodePPM(data)
         }
-        if p.terminationReason == .uncaughtSignal {
-            throw Failure(message: "pdftoppm was killed by signal \(p.terminationStatus)")
-        }
-        guard p.terminationStatus == 0 else { throw Failure(message: "pdftoppm exited with status \(p.terminationStatus)") }
-        let out = dir.appendingPathComponent("page.ppm")
-        let data: Data
-        do { data = try BoundedRead.contents(of: out, maxBytes: expected + 4096) } catch {
-            throw Failure(message: "pdftoppm wrote no usable image")
-        }
-        return try Self.decodePPM(data)
     }
 
     /// A binary PPM (P6, maxval 255) as RGBA.

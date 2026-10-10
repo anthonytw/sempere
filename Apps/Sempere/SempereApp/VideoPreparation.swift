@@ -47,14 +47,10 @@ enum VideoPreparation {
     }
 
     /// Copies a picked or dropped clip (security-scoped) into a work folder:
-    /// a provider's or picker's file is only there for a moment.
+    /// a provider's or picker's file is only there for a moment. No size
+    /// check here: the limit applies after any conversion.
     static func copyPicked(_ url: URL) throws -> URL {
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        let name = url.lastPathComponent.isEmpty ? "clip.mov" : url.lastPathComponent
-        let copy = try PDFPreparation.workFolder().appendingPathComponent(name)
-        try FileManager.default.copyItem(at: url, to: copy)
-        return copy
+        try PDFPreparation.copyPicked(url, fallbackName: "clip.mov", limit: nil)
     }
 
     /// Removes a work file and its folder (plaintext).

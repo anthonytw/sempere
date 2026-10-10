@@ -23,6 +23,12 @@ public struct RecoveryKit: Sendable {
         public init(name: String, id: String, created: Date, recipientCount: Int) {
             self.name = name; self.id = id; self.created = created; self.recipientCount = recipientCount
         }
+
+        /// `vault`'s id, creation date and recipient count, under `name`.
+        public init(vault: Vault, name: String) {
+            self.init(name: name, id: vault.vaultId.uuidString.lowercased(), created: vault.manifest.created,
+                      recipientCount: vault.recipients.count)
+        }
     }
 
     public var secret: Secret
@@ -35,6 +41,12 @@ public struct RecoveryKit: Sendable {
 
     public init(secret: Secret, recipient: String, vault: VaultInfo?, printed: Date) {
         self.secret = secret; self.recipient = recipient; self.vault = vault; self.printed = printed
+    }
+
+    /// A4 pages (595.28 x 841.89 pt) instead of US Letter.
+    public mutating func useA4() {
+        pageWidth = 595.28
+        pageHeight = 841.89
     }
 
     /// Error correction for the QR code: Q (25 %) for the short key, M for

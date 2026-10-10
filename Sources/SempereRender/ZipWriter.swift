@@ -110,10 +110,10 @@ public final class ZipWriter {
         }
         defer { try? input.close() }
         // Pass 1: size and CRC-32.
-        var crc = UInt32(truncatingIfNeeded: crc32(0, nil, 0))
+        var crc: UInt32 = 0
         var size: UInt64 = 0
         try readChunks(input, path: source.path) { chunk in
-            crc = Self.crc(crc, chunk)
+            crc = Zlib.crc32(crc, chunk)
             size += UInt64(chunk.count)
         }
         let start = offset
@@ -139,9 +139,9 @@ public final class ZipWriter {
         // Pass 2: the bytes. A file that changed size since pass 1 would leave a corrupt entry.
         try input.seek(toOffset: 0)
         var copied: UInt64 = 0
-        var check = UInt32(truncatingIfNeeded: crc32(0, nil, 0))
+        var check: UInt32 = 0
         try readChunks(input, path: source.path) { chunk in
-            check = Self.crc(check, chunk)
+            check = Zlib.crc32(check, chunk)
             copied += UInt64(chunk.count)
             try write(chunk)
         }
@@ -229,20 +229,6 @@ public final class ZipWriter {
             }
             if chunk.isEmpty { return }
             try body(chunk)
-        }
-    }
-
-    static func crc(_ crc: UInt32, _ data: Data) -> UInt32 {
-        data.withUnsafeBytes { raw -> UInt32 in
-            guard let base = raw.bindMemory(to: Bytef.self).baseAddress else { return crc }
-            var c = uLong(crc)
-            var p = base, left = raw.count
-            while left > 0 {
-                let n = min(left, Int(Int32.max))
-                c = crc32(c, p, uInt(n))
-                p += n; left -= n
-            }
-            return UInt32(truncatingIfNeeded: c)
         }
     }
 

@@ -40,9 +40,7 @@ extension NoteEditor {
             value = old
         } else {
             let (data, rendered) = try MathTypesetter.rendered(content)
-            guard let writer = attachmentWriter else { throw ItemError.notEditable }
-            try await prepareBlobWrite?(BlobRef(content: data, type: MathContent.renderType))
-            let ref = try await writer.addBlob(data, type: MathContent.renderType)
+            let ref = try await storeBlob(data, type: MathContent.renderType)
             value = rendered
             value.render = ref
         }

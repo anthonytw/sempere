@@ -37,8 +37,8 @@ extension WebDAVSync {
         }
         let stamp = remote?.etag ?? etag ?? remote?.lastModified
         if local == nil && remoteData == nil { return }
-        if let local, let remoteData, sha256Hex(local) == sha256Hex(remoteData) {
-            state.mutable[name] = .init(hash: sha256Hex(local), stamp: stamp)
+        if let local, let remoteData, FileDigest.sha256(local) == FileDigest.sha256(remoteData) {
+            state.mutable[name] = .init(hash: FileDigest.sha256(local), stamp: stamp)
             return
         }
 
@@ -91,7 +91,7 @@ extension WebDAVSync {
     private func upload(_ name: String, local: Data, over remote: RemoteEntry?, etag: String?) throws {
         let condition: PutCondition = remote == nil ? .create : (etag.map { .replace(etag: $0) } ?? .unconditional)
         if try push(name, local, condition: condition) {
-            try recordMutable(name, hash: sha256Hex(local))
+            try recordMutable(name, hash: FileDigest.sha256(local))
         } else {
             report.skipped.append(.init(path: name, message: "the server copy changed while uploading; merged on the next run"))
         }
@@ -102,6 +102,6 @@ extension WebDAVSync {
         report.downloaded.append(name)
         guard !options.dryRun else { return }
         try LocalFS.write(data, to: root.appendingPathComponent(name), replacing: true)
-        state.mutable[name] = .init(hash: sha256Hex(data), stamp: stamp)
+        state.mutable[name] = .init(hash: FileDigest.sha256(data), stamp: stamp)
     }
 }

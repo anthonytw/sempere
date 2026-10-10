@@ -15,7 +15,6 @@ extension NoteEditor {
     func insertVideo(_ video: PreparedVideo, on pageID: UUID, visible: CGRect?, at point: CGPoint? = nil) async throws -> Item {
         guard canEditItems else { throw ItemError.notEditable }
         guard let page = pages.first(where: { $0.id == pageID }) else { throw ItemError.noPage }
-        guard let writer = attachmentWriter else { throw ItemError.notEditable }
         let size = pageSize
         let frame = NoteOps.viewFrame(for: video.info.pixelSize, pageSize: size, visible: visible.map { Rect($0) },
                                       centre: point.map { ItemFrames.Point(x: Double($0.x), y: Double($0.y)) })
@@ -24,18 +23,9 @@ extension NoteEditor {
         _ = try NoteOps.placeVideo(blob: placeholder, info: video.info, on: page, pageSize: size, frame: frame)
         var posterRef: BlobRef?
         if let poster = video.poster {
-            let ref = BlobRef(content: poster.data, type: poster.mediaType)
-            if let prepare = prepareBlobWrite { try await prepare(ref) }
-            posterRef = try await writer.addBlob(poster.data, type: poster.mediaType)
+            posterRef = try await storeBlob(poster.data, type: poster.mediaType)
         }
-        let file = video.file, type = video.info.mediaType, edits = video.edits
-        if let prepare = prepareBlobWrite {
-            let planned = try await Task.detached(priority: .userInitiated) {
-                try Vault.blobRef(contentsOf: file, type: type, edits: edits)
-            }.value
-            try await prepare(planned)
-        }
-        let clip = try await writer.addBlob(from: file, type: type, edits: edits)
+        let clip = try await storeBlob(file: video.file, type: video.info.mediaType, edits: video.edits)
         // The note may have changed (or closed) while the blobs were written.
         guard let current = pages.first(where: { $0.id == pageID }) else { throw ItemError.noPage }
         let item = try NoteOps.placeVideo(blob: clip, info: video.info, poster: posterRef, on: current, pageSize: size,
@@ -49,10 +39,8 @@ extension NoteEditor {
     /// plays here. Returns false when nothing changed.
     @discardableResult
     func setVideoPoster(_ id: UUID, to poster: PreparedImage, on pageID: UUID) async throws -> Bool {
-        guard canEditItems, let writer = attachmentWriter else { throw ItemError.notEditable }
-        let ref = BlobRef(content: poster.data, type: poster.mediaType)
-        if let prepare = prepareBlobWrite { try await prepare(ref) }
-        let stored = try await writer.addBlob(poster.data, type: poster.mediaType)
+        guard canEditItems else { throw ItemError.notEditable }
+        let stored = try await storeBlob(poster.data, type: poster.mediaType)
         guard canEditItems, let page = pages.first(where: { $0.id == pageID }),
               let edit = try NoteOps.setPoster(id, to: stored, on: page) else { return false }
         return applyItemEdit(edit)
