@@ -63,7 +63,7 @@ final class LaunchSmokeUITests: XCTestCase {
         defer { app.terminate() }
         requireNote(app)
         #if targetEnvironment(macCatalyst)
-        app.typeKey("l", modifierFlags: [.command, .option])   // View > Hide or Show Note List
+        app.typeKey("l", modifierFlags: [.command, .option])   // View > Show Note List
         requireNoteList(app)
         showSidebar(app)
         requireSidebar(app)

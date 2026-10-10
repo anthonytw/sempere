@@ -127,7 +127,7 @@ the Insert menu's entry does (#104). Imports file new notes under the sidebar's 
 | File | Start / Stop Voice Note | ⇧⌘M |
 | View | Zoom In, Zoom Out | ⌘=, ⌘- |
 | View | Fit Page Width, Actual Size | ⌘0, ⌘1 |
-| View | Hide or Show Note List | ⌥⌘L |
+| View | Hide or Show Note List (says which it does next) | ⌥⌘L |
 | View | Library (opens a library window when none is open) | ⌥⌘0 |
 | View | Vault Keys (the key window) | ⌥⌘K |
 | Sempere (app menu) | Settings… (the app's settings window; UIKit's own item, which opened Catalyst's generated pane, is replaced) | ⌘, |

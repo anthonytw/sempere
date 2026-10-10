@@ -6817,6 +6817,18 @@
         }
       }
     },
+    "Hide Note List" : {
+      "comment" : "View menu and toolbar button: hide the note list for a full-width canvas",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ocultar lista de notas"
+          }
+        }
+      }
+    },
     "Hide Notebooks" : {
       "comment" : "Accessibility label: close the notebook suggestions",
       "extractionState" : "manual",
@@ -6825,18 +6837,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ocultar cuadernos"
-          }
-        }
-      }
-    },
-    "Hide Notes" : {
-      "comment" : "Toolbar button: hide the note list",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ocultar notas"
           }
         }
       }
@@ -6854,37 +6854,13 @@
       }
     },
     "Hide Tool Palette" : {
-      "comment" : "Tools menu",
+      "comment" : "Tools menu and toolbar button: hide the tool palette",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ocultar paleta de herramientas"
-          }
-        }
-      }
-    },
-    "Hide Tools" : {
-      "comment" : "Toolbar button: hide the tool palette",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ocultar herramientas"
-          }
-        }
-      }
-    },
-    "Hide or Show Note List" : {
-      "comment" : "View menu",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ocultar o mostrar lista de notas"
           }
         }
       }
@@ -13795,6 +13771,18 @@
         }
       }
     },
+    "Show Note List" : {
+      "comment" : "View menu and toolbar button: bring the note list back",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar lista de notas"
+          }
+        }
+      }
+    },
     "Show Notebooks" : {
       "comment" : "Accessibility label: open the notebook suggestions",
       "extractionState" : "manual",
@@ -13803,18 +13791,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mostrar cuadernos"
-          }
-        }
-      }
-    },
-    "Show Notes" : {
-      "comment" : "Toolbar button: show the note list",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar notas"
           }
         }
       }
@@ -13856,25 +13832,13 @@
       }
     },
     "Show Tool Palette" : {
-      "comment" : "Tools menu",
+      "comment" : "Tools menu and toolbar button: show the tool palette",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mostrar paleta de herramientas"
-          }
-        }
-      }
-    },
-    "Show Tools" : {
-      "comment" : "Toolbar button: show the tool palette",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar herramientas"
           }
         }
       }

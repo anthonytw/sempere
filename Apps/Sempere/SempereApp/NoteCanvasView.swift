@@ -99,7 +99,7 @@ struct NoteCanvasView: View {
             if !Platform.isPhone {   // the stack's back button is the way to the list
                 ToolbarItem(placement: .topBarLeading) {
                     let full = ColumnLayout.visibility(from: storedColumns) == .detailOnly
-                    Button(LocalizedStringKey(full ? "Show Notes" : "Hide Notes"),
+                    Button(LocalizedStringKey(full ? "Show Note List" : "Hide Note List"),
                            systemImage: full ? "list.bullet" : "arrow.up.left.and.arrow.down.right") {
                         withAnimation { storedColumns = ColumnLayout.toggled(storedColumns) }
                     }
@@ -553,7 +553,7 @@ struct EditorView: View {
                     Menu {
                         Toggle("Compact Palette", systemImage: "rectangle.compress.vertical", isOn: $paletteCompact)
                     } label: {
-                        Label(LocalizedStringKey(paletteVisible ? "Hide Tools" : "Show Tools"),
+                        Label(LocalizedStringKey(paletteVisible ? "Hide Tool Palette" : "Show Tool Palette"),
                               systemImage: paletteVisible ? "pencil.tip.crop.circle.fill" : "pencil.tip.crop.circle")
                     } primaryAction: {
                         paletteVisible.toggle()
