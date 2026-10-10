@@ -773,7 +773,9 @@ maps each control to its command.
   folder (`VaultBookmark`, plain options as for vaults, see "Saved folder
   access") plus the subfolder name, per vault and per device
   (`BackupRecord` in `UserDefaults` under `Sempere.backup.<vault id>`); access
-  granted to the picked folder covers the subfolder. A bookmark that no longer
+  granted to the picked folder covers the subfolder. Picking an existing
+  backup takes its last backup from `backup.json`'s `completed` (a run with
+  file errors or cut short is none). A bookmark that no longer
   resolves, or a folder that is gone, is reported by name ("choose it again").
 - **Back Up Now** is `Backup.run` off the main actor, with the picked folder's
   security scope held for the run. An iCloud Drive vault is made local first,
