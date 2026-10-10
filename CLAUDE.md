@@ -720,7 +720,8 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   app removes converted ink through the ledger (`NoteEditor.takeInk` / `putInkBack`, like an erase),
   never by editing `pages` directly; undo and redo of a conversion pass `keepUndo` so `reloadInk`
   does not clear the undo manager in the middle of an undo. Our own lasso (`MathLassoController`):
-  PencilKit's selection has no API on iPadOS 26.
+  `InkLasso` picks the strokes, as in the CLI; `PKCanvasView.selection` (iOS 27) gives only ids
+  picked by PencilKit's own rule, so it is not used.
 - Localization (`docs/localization.md`, task L): every interface string is in
   `Apps/Sempere/Localization/Localizable.xcstrings` (plus `InfoPlist`, `AppShortcuts`), a
   synchronized group of the app and widget targets. SwiftUI literals localize themselves;

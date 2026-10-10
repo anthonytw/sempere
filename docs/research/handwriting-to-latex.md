@@ -279,8 +279,11 @@ shared, pure Swift and tested on Linux, and the app and the CLI do the same thin
 
 Decisions taken in the build:
 
-- **Our own lasso**, not PencilKit's: PencilKit's selection has no public API on iPadOS 26. The
-  math lasso is a mode (like "Tap Ink to Play"), with a hint and Cancel.
+- **Our own lasso**, not PencilKit's: PencilKit's selection had no public API on iPadOS 26.
+  iOS 27 adds `PKCanvasView.selection`, but it gives only stroke ids picked by PencilKit's own
+  rule; our loop is picked with `InkLasso`, the rule the CLI uses, the same way with Pencil,
+  finger and pointer on the iPad and the Mac. The math lasso is a mode (like "Tap Ink to Play"),
+  with a hint and Cancel.
 - **The image is drawn in pure Swift in the app too**, not with PencilKit: the model sees the
   same pixels in the app and the CLI, and uniform stroke widths match how training images are made.
 - **Stroke removal goes through the ledger** (`NoteEditor.takeInk` / `putInkBack`), exactly like an

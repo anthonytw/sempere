@@ -6,8 +6,11 @@ import UIKit
 /// turns PencilKit's drawing gesture off and this controller's pan takes the
 /// Pencil, one finger and the pointer: the loop is drawn dashed over the ink
 /// and handed over in page points when it ends. Two fingers still scroll and
-/// zoom. PencilKit's own lasso cannot be used: its selection has no public
-/// API on iPadOS 26.
+/// zoom. PencilKit's lasso is not used: its selection (`PKCanvasView.selection`,
+/// iOS 27) gives only the ids of the strokes PencilKit's own rule picked,
+/// while this loop goes to `InkLasso`, the rule `sempere recognize-math`
+/// uses, and works the same with the Pencil, a finger and the pointer on the
+/// iPad and the Mac.
 @MainActor
 final class MathLassoController: NSObject, UIGestureRecognizerDelegate {
     private weak var canvas: PKCanvasView?
