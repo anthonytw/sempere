@@ -465,10 +465,14 @@ final class NoteEditor {
     /// The ledger of a page, created from its stored strokes on first use.
     private func ledger(_ pageID: UUID) -> StrokeLedger {
         if let l = ledgers[pageID] { return l }
-        let stored = pages.first { $0.id == pageID }?.strokes ?? []
-        let l = StrokeLedger(stored: stored, info: CanvasStrokeInfo.init(stored:))
+        let l = newLedger(pageID)
         ledgers[pageID] = l
         return l
+    }
+
+    /// A ledger for the page's stored strokes (not kept).
+    private func newLedger(_ pageID: UUID) -> StrokeLedger {
+        StrokeLedger(stored: pages.first { $0.id == pageID }?.strokes ?? [], info: CanvasStrokeInfo.init(stored:))
     }
 
     /// The drawing to show for a page: its live strokes, one canvas stroke
@@ -867,10 +871,16 @@ final class NoteEditor {
     /// moved, undone, redone). Updates ids now; saves after the pause.
     @discardableResult
     func drawingDidChange(pageID: UUID, items: [StrokeLedger.Item], inkMaxY: Double?) -> StrokeLedger.Change {
+        drawingDidChange(pageID: pageID, inkMaxY: inkMaxY) { $0.update(items) }
+    }
+
+    /// The canvas's drawing changed: `update` brings the page's ledger (made
+    /// when missing) up to it, in place.
+    private func drawingDidChange(pageID: UUID, inkMaxY: Double?,
+                                  update: (inout StrokeLedger) -> StrokeLedger.Change) -> StrokeLedger.Change {
         guard !isReadOnly, !isShutDown else { return .init() }
-        var l = ledger(pageID)
-        let change = l.update(items)
-        ledgers[pageID] = l
+        // In place: a copy taken out of the dictionary would copy every entry on write.
+        let change = update(&ledgers[pageID, default: newLedger(pageID)])
         if !change.isEmpty {
             inkRevisions[pageID, default: 0] &+= 1
             dirtyPages.insert(pageID)
@@ -889,8 +899,11 @@ final class NoteEditor {
     func drawingDidChange(pageID: UUID, drawing: PKDrawing, tool: PKTool?) -> StrokeLedger.Change {
         guard !isReadOnly else { return .init() }
         let bounds = drawing.bounds
-        let change = drawingDidChange(pageID: pageID, items: StrokeLedger.items(for: drawing, tool: tool, stamp: recordingStamp),
-                                      inkMaxY: bounds.isNull ? nil : Double(bounds.maxY))
+        let strokes = drawing.strokes
+        let stamp = recordingStamp
+        let change = drawingDidChange(pageID: pageID, inkMaxY: bounds.isNull ? nil : Double(bounds.maxY)) {
+            $0.update(strokes, tool: tool, stamp: stamp)
+        }
         canvasDrawings[pageID] = drawing   // the ledger's entries now fingerprint exactly these strokes
         return change
     }

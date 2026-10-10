@@ -11,8 +11,26 @@ struct CanvasStrokeInfo: Hashable, Sendable {
     /// points, texture seed and mask ranges. Any edit (move, recolour,
     /// partial erase) changes it.
     struct Key: Hashable, Sendable {
-        var ink: String
-        var values: [Double]
+        let ink: String
+        let values: [Double]
+        /// Hashed once: the ledger looks keys up on every drawing change, and
+        /// hashing `values` (about 40 numbers) each time cost more than the lookups.
+        private let hash: Int
+
+        init(ink: String, values: [Double]) {
+            self.ink = ink
+            self.values = values
+            var hasher = Hasher()
+            hasher.combine(ink)
+            hasher.combine(values)
+            hash = hasher.finalize()
+        }
+
+        static func == (a: Key, b: Key) -> Bool {
+            a.hash == b.hash && a.ink == b.ink && a.values == b.values
+        }
+
+        func hash(into hasher: inout Hasher) { hasher.combine(hash) }
     }
 
     /// Strokes that share a family (ink, colour, transform, path creation
@@ -154,9 +172,57 @@ struct StrokeLedger {
     /// Matches the canvas's strokes against the table and assigns ids.
     @discardableResult
     mutating func update(_ items: [Item]) -> Change {
+        let old = entries
+        return update(count: items.count, unchanged: { i, j, _ in items[i].info.key == old[j].info.key },
+                      item: { items[$0] })
+    }
+
+    /// `update(_:)` for a canvas of `count` strokes handed over lazily, so a
+    /// change of a few strokes on a dense page fingerprints only those:
+    /// `unchanged(i, j, info)` is true only when canvas stroke `i` is the
+    /// canvas stroke entry `j` (fingerprinted as `info`) was made from,
+    /// unchanged, so its key is `info.key`; it may say false whenever it
+    /// cannot tell cheaply. `item(i)` fingerprints canvas stroke `i`.
+    ///
+    /// The canvas strokes that are unchanged at the start and the end of the
+    /// canvas keep their entries without being fingerprinted; the strokes in
+    /// between are matched as `update(_:)` matches them, with the same
+    /// result: equal keys pair up in order (the n-th canvas stroke with a key
+    /// takes the n-th entry with it), so a run at the start pairs as it would
+    /// anyway, and one at the end does too unless a key in it occurs a
+    /// different number of times among the strokes and the entries in
+    /// between. Then the end is matched in full.
+    @discardableResult
+    mutating func update(count: Int, unchanged: (_ item: Int, _ entry: Int, _ info: CanvasStrokeInfo) -> Bool,
+                         item: (Int) -> Item) -> Change {
+        let n = entries.count
+        var head = 0
+        while head < count, head < n, unchanged(head, head, entries[head].info) { head += 1 }
+        var tail = 0
+        while tail < count - head, tail < n - head, unchanged(count - 1 - tail, n - 1 - tail, entries[n - 1 - tail].info) {
+            tail += 1
+        }
+        var middle = (head..<(count - tail)).map(item)
+        if tail > 0 {
+            var balance: [CanvasStrokeInfo.Key: Int] = [:]
+            for item in middle { balance[item.info.key, default: 0] += 1 }
+            for e in entries[head..<(n - tail)] { balance[e.info.key, default: 0] -= 1 }
+            balance = balance.filter { $0.value != 0 }
+            if !balance.isEmpty, entries[(n - tail)...].contains(where: { balance[$0.info.key] != nil }) {
+                middle += ((count - tail)..<count).map(item)
+                tail = 0
+            }
+        }
+        return match(middle, replacing: head..<(n - tail))
+    }
+
+    /// Matches `items` against the entries in `old` as a multiset, in order,
+    /// and puts the result in their place.
+    private mutating func match(_ items: [Item], replacing old: Range<Int>) -> Change {
         var pool: [CanvasStrokeInfo.Key: [Int]] = [:]
-        for (i, e) in entries.enumerated() { pool[e.info.key, default: []].append(i) }
+        for i in old { pool[entries[i].info.key, default: []].append(i) }
         var keptIndex: [Int?] = []   // per item: matched old entry index
+        keptIndex.reserveCapacity(items.count)
         var used = Set<Int>()
         for item in items {
             if var queue = pool[item.info.key], !queue.isEmpty {
@@ -170,13 +236,14 @@ struct StrokeLedger {
         }
         var change = Change()
         var removedEntries: [Entry] = []
-        for (i, e) in entries.enumerated() where !used.contains(i) {
-            removedEntries.append(e)
-            change.removed += e.strokes
+        for i in old where !used.contains(i) {
+            removedEntries.append(entries[i])
+            change.removed += entries[i].strokes
         }
         for e in removedEntries { retired[e.info.key, default: []].append(e.strokes) }
 
         var next: [Entry] = []
+        next.reserveCapacity(items.count)
         for (item, kept) in zip(items, keptIndex) {
             if let kept {
                 next.append(entries[kept])
@@ -200,7 +267,7 @@ struct StrokeLedger {
             change.added += strokes
             next.append(Entry(info: item.info, strokes: strokes))
         }
-        entries = next
+        entries.replaceSubrange(old, with: next)
         return change
     }
 
