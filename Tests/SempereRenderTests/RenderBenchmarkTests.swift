@@ -52,7 +52,7 @@ final class RenderBenchmarkTests: XCTestCase {
 
     private func secs(_ t: Date) -> String { String(format: "%.3f s", Date().timeIntervalSince(t)) }
 
-    func testExportTimings() throws {
+    func testPDFTimings() throws {
         let (strokes, points) = size
         let note = Self.denseNote(strokes: strokes, points: points)
         var t = Date()
@@ -62,13 +62,26 @@ final class RenderBenchmarkTests: XCTestCase {
         raw.compress = false
         t = Date()
         let plain = try PDFWriter.render(note: note, options: raw)
-        print("bench: PDF uncompressed: \(secs(t)), \(plain.count) bytes, crc \(Zlib.crc32(0, plain))")
-        t = Date()
+        print("bench: PDF uncompressed: \(secs(t)), \(plain.count) bytes, crc \(Zlib.crc32(0, plain)), "
+              + "peak \(Int(peakRSSMegabytes())) MB")
+    }
+
+    func testSVGTimings() throws {
+        let (strokes, points) = size
+        let note = Self.denseNote(strokes: strokes, points: points)
+        let t = Date()
         let svg = try SVGWriter.render(note: note)
-        print("bench: SVG, \(strokes) strokes x \(points) points: \(secs(t)), \(svg.reduce(0) { $0 + $1.utf8.count }) bytes, crc \(Zlib.crc32(0, Data(svg.joined().utf8)))")
-        t = Date()
+        print("bench: SVG, \(strokes) strokes x \(points) points: \(secs(t)), \(svg.reduce(0) { $0 + $1.utf8.count }) bytes, "
+              + "crc \(Zlib.crc32(0, Data(svg.joined().utf8))), peak \(Int(peakRSSMegabytes())) MB")
+    }
+
+    func testPNGTimings() throws {
+        let (strokes, points) = size
+        let note = Self.denseNote(strokes: strokes, points: points)
+        let t = Date()
         let png = try PNGWriter.render(note: note)
-        print("bench: PNG, \(strokes) strokes x \(points) points: \(secs(t)), \(png.reduce(0) { $0 + $1.count }) bytes")
+        print("bench: PNG, \(strokes) strokes x \(points) points: \(secs(t)), \(png.reduce(0) { $0 + $1.count }) bytes, "
+              + "peak \(Int(peakRSSMegabytes())) MB")
     }
 
     /// Many small fills on a letter page at 300 dpi (one per stroke, as PNG
@@ -82,7 +95,8 @@ final class RenderBenchmarkTests: XCTestCase {
             raster.fill([[Point(x: x, y: y), Point(x: x + 9, y: y + 2), Point(x: x + 4, y: y + 8)]],
                         paint: Paint(r: 0, g: 0, b: 0, alpha: 0.5))
         }
-        print("bench: \(fills) small fills at 2550 px: \(secs(t)), crc \(Zlib.crc32(0, raster.pixels))")
+        print("bench: \(fills) small fills at 2550 px: \(secs(t)), crc \(Zlib.crc32(0, raster.pixels)), "
+              + "peak \(Int(peakRSSMegabytes())) MB")
     }
 
     /// A long text box: `SEMPERE_BENCH_LINES` paragraphs of 40 characters,
