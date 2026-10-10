@@ -322,13 +322,15 @@ extension Vault {
     /// The revisions `compact` would delete, without deleting them.
     public func compactionPlan(noteId: UUID, retention: TimeInterval = CompactionPlanner.defaultRetention,
                                now: Date = Date(), assumingSnapshot: Bool = false) throws -> [RevisionName] {
-        try loadNote(noteId).compactionPlan(retention: retention, now: now, assumingSnapshot: assumingSnapshot)
+        // Names, kinds, checkpoints and snapshot coverage only: no stroke geometry is decoded.
+        try loadNote(noteId, detail: .withoutStrokePoints).compactionPlan(retention: retention, now: now,
+                                                                         assumingSnapshot: assumingSnapshot)
     }
 
     /// See `LoadedNote.needsSnapshotBeforeCompaction`.
     public func needsSnapshotBeforeCompaction(noteId: UUID, retention: TimeInterval = CompactionPlanner.defaultRetention,
                                               now: Date = Date()) throws -> Bool {
-        try loadNote(noteId).needsSnapshotBeforeCompaction(retention: retention, now: now)
+        try loadNote(noteId, detail: .withoutStrokePoints).needsSnapshotBeforeCompaction(retention: retention, now: now)
     }
 }
 

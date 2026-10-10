@@ -369,12 +369,14 @@ extension Vault {
 
     /// Every revision of a note with its wall time, oldest first by
     /// `(hlc, device, seq)`. Unreadable revisions are listed with their error.
+    /// Stroke geometry is not decoded (`.withoutStrokePoints`): only `wall`
+    /// and `app` are kept.
     public func history(noteId: UUID) throws -> [HistoryEntry] {
         try requireMigrated()
         _ = try requireReadable()
         return try revisionNames(of: noteId).map { n in
             do {
-                let r = try readRevision(noteId: noteId, name: n)
+                let r = try readRevision(noteId: noteId, name: n, detail: .withoutStrokePoints)
                 return HistoryEntry(name: n, wall: r.wall, app: r.app, error: nil)
             } catch let e as RevisionReadError {
                 return HistoryEntry(name: n, wall: nil, app: nil, error: e)

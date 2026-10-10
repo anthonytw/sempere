@@ -60,7 +60,7 @@ struct NotesHistory: ParsableCommand {
     func run() throws {
         let vault = try access.openVault(.required)
         let id = try vault.resolveNote(note)
-        let loaded = try vault.loadNote(id)
+        let loaded = try vault.loadNote(id, detail: .withoutStrokePoints)   // restore points need no geometry
         let points = loaded.restorePoints
         if !loaded.failures.isEmpty {
             printError("warning: \(loaded.failures.count) unreadable revision(s) are not listed (see `notes show`)")
