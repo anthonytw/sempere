@@ -2,7 +2,7 @@
 // notebooks, tags and notes, search, and read a note. Read-only throughout.
 
 import { type NoteState } from "../format/model.ts";
-import { type NotebookNode, type SearchHit, canonicalNotebook, isWithinNotebook, notebookTree, search } from "../format/search.ts";
+import { type NotebookNode, type SearchHit, canonicalNotebook, isWithinNotebook, notebookTree, refinesQuery, search } from "../format/search.ts";
 import { tagKey } from "../format/tags.ts";
 import { type LoadedNote, type NoteSummary, loadNote, summarize } from "../vault/library.ts";
 import { CachingSource, cacheNamespace } from "../vault/cache.ts";
@@ -55,6 +55,8 @@ export class App {
   private filter: Filter = { kind: "all" };
   private query = "";
   private hits?: Map<string, SearchHit>;
+  /** The last note search: its query, the notes it ran over (in order) and the ids it found. */
+  private searched?: { query: string; notes: NoteSummary[]; ids: Set<string> };
   /** Transcript matches per note (only with "Also search recording transcripts"). */
   private transcriptHits = new Map<string, PhraseHit[]>();
   private transcripts?: TranscriptSearch;
@@ -510,8 +512,19 @@ export class App {
   }
 
   private runSearch(): void {
-    this.hits = this.query.trim() === "" ? undefined
-      : new Map(search(this.query, [...this.notes.values()]).map((hit) => [hit.id, hit]));
+    if (this.query.trim() === "") {
+      this.hits = undefined;
+      this.searched = undefined;
+    } else {
+      // While typing narrows the last search over the same notes, only its hits can still match.
+      const notes = [...this.notes.values()];
+      const last = this.searched;
+      const same = last !== undefined && last.notes.length === notes.length && last.notes.every((n, i) => n === notes[i]);
+      const candidates = same && refinesQuery(last.query, this.query) ? notes.filter((n) => last.ids.has(n.id)) : notes;
+      const found = search(this.query, candidates);
+      this.searched = { query: this.query, notes, ids: new Set(found.map((hit) => hit.id)) };
+      this.hits = new Map(found.map((hit) => [hit.id, hit]));
+    }
     this.transcriptHits = this.hits && this.transcripts ? this.transcripts.hits(this.query) : new Map<string, PhraseHit[]>();
   }
 

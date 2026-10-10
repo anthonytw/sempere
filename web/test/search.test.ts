@@ -2,8 +2,8 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  type PageTextEntry, type SearchableNote, canonicalNotebook, equationMarker, isWithinNotebook, maxWords,
-  notebookComponents, notebookTree, pageSnippet, search,
+  type PageTextEntry, type SearchableNote, canonicalNotebook, equationMarker, fold, foldText, isWithinNotebook, maxWords,
+  notebookComponents, notebookTree, pageSnippet, refinesQuery, search,
 } from "../src/format/search.ts";
 
 let counter = 0;
@@ -102,6 +102,70 @@ describe("search", () => {
     expect(search(Array.from({ length: 100 }, (_, i) => String(i)).join(" "), [n])).toHaveLength(1);
     expect(maxWords).toBe(12);
     expect(search("a a a a", [note("N", { pages: ["a b c"] })])).toHaveLength(1);
+  });
+});
+
+describe("folding cache", () => {
+  it("foldText is fold without the map", () => {
+    const samples = ["", "ASCII Only 123", "Café", "STRASSE straße", "ΣΑΣ σας", "İstanbul", "ﬁne ＦＵＬＬ", "e\u0301", "🎉 x", "\u212a", "Ǆ ǅ"];
+    let seed = 7;
+    for (let i = 0; i < 200; i++) {
+      let t = "";
+      for (let k = 0; k < 12; k++) {
+        seed = (seed * 1103515245 + 12345) % 2147483648;
+        const c = seed % 0x2fff;
+        t += c >= 0xd800 && c < 0xe000 ? "x" : String.fromCodePoint(c);
+      }
+      samples.push(t);
+    }
+    for (const s of samples) expect(foldText(s)).toBe(fold(s).text);
+  });
+
+  it("knows when a query only narrows the previous one", () => {
+    expect(refinesQuery("mom", "momentum")).toBe(true);
+    expect(refinesQuery("momentum", "momentum energy")).toBe(true);
+    expect(refinesQuery("cafe", "CAFÉS")).toBe(true);
+    expect(refinesQuery("#work", "#workshop")).toBe(true);
+    expect(refinesQuery("work", "#workshop")).toBe(true);
+    expect(refinesQuery("#work", "workshop")).toBe(false);
+    expect(refinesQuery("momentum", "mom")).toBe(false);
+    expect(refinesQuery("energy momentum", "momentum")).toBe(false);
+    expect(refinesQuery("", "a")).toBe(false);
+    expect(refinesQuery("a", " ")).toBe(false);
+    // Narrowing by refinement gives exactly the full search's hits, in the same order.
+    const notes = [
+      note("Momentum notes", { tags: ["workshop"], modified: 3 }), note("Moment", { pages: ["momentum here"], modified: 2 }),
+      note("Other", { notebook: "Mom/Work", modified: 1 }), note("Workshop", { tags: ["work"], modified: 4 }),
+      note("Momentous", { tags: ["workshop", "mom"], modified: 5 }),
+    ];
+    const queries = ["m", "mo", "mom", "mom #w", "mom #work", "mom #works", "momentum"];
+    let previous = queries[0] ?? "", hits = search(previous, notes);
+    for (const q of queries.slice(1)) {
+      const full = search(q, notes);
+      if (refinesQuery(previous, q)) {
+        const ids = new Set(hits.map((h) => h.id));
+        expect(search(q, notes.filter((n) => ids.has(n.id)))).toEqual(full);
+      }
+      previous = q;
+      hits = full;
+    }
+  });
+
+  it("folds a changed field again", () => {
+    const a = note("Physics", { tags: ["one"], notebook: "School", pages: ["momentum"] });
+    expect(search("physics", [a]).length).toBe(1);
+    a.title = "Chemistry";
+    a.tags = ["two"];
+    a.notebook = "Work";
+    const page = a.pageTexts[0];
+    if (page) page.text = "energy";
+    expect(search("physics", [a])).toEqual([]);
+    expect(search("#one", [a])).toEqual([]);
+    expect(search("school", [a])).toEqual([]);
+    expect(search("momentum", [a])).toEqual([]);
+    expect(search("chemistry #two work energy", [a]).length).toBe(1);
+    a.tags.push("three");
+    expect(search("#three", [a]).length).toBe(1);
   });
 });
 
