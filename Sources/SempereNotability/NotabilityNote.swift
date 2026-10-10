@@ -252,6 +252,10 @@ public struct NotabilityNote: Hashable, Sendable {
     /// Handwriting-index pages beyond this number are ignored (a corrupt key
     /// must not place recognised words 10¹⁸ pages down).
     public static let maxRecognizedPage = 100_000
+    /// Thumbnails read for the page aspect, and the largest read (Notability's
+    /// biggest, thumb12x.png, is 576 px wide: well under 1 MiB).
+    public static let maxThumbnails = 8
+    public static let maxThumbnailBytes: UInt64 = 16 << 20
     /// The highlighter value of `curvesstyles`.
     public static let highlighterStyle = 4
     /// The pen value of `curvesstyles`.
@@ -357,8 +361,11 @@ extension NotabilityNote {
             p.hasPrefix(prefix) && !p.dropFirst(prefix.count).contains("/")
                 && p.dropFirst(prefix.count).hasPrefix("thumb") && p.hasSuffix(".png")
         }.sorted { a, b in (a == prefix + "thumb.png" ? 0 : 1, a) < (b == prefix + "thumb.png" ? 0 : 1, b) }
-        for t in thumbs {
-            guard let data = try? pkg.read(t), let size = pngSize(data),
+        // A few small files at most: a package naming thousands of
+        // "thumbnails" (or one huge one) must not cost their inflation
+        // (security review S7).
+        for t in thumbs.prefix(Self.maxThumbnails) {
+            guard let data = try? pkg.read(t, maxSize: Self.maxThumbnailBytes), let size = pngSize(data),
                   plausibleAspect(Double(size.1) / Double(max(size.0, 1))) != nil, size.0 > (thumb?.0 ?? 0) else { continue }
             thumb = size
         }

@@ -132,6 +132,7 @@ extension NotabilityAttachments {
 
         // Images.
         var prepared: [String: Result<ImageImport.Prepared, ImageImport.Failure>] = [:]
+        var unreadable: [String: String] = [:]   // never read twice (security review S18)
         var z = 0
         for a in note.bundleAttachments where a.kind == .image {
             let label = ".ntb media record \(a.index + 1)"
@@ -145,16 +146,21 @@ extension NotabilityAttachments {
                 drop("names no file of the bundle")
                 continue
             }
+            if let why = unreadable[name] { drop(why); continue }
             let result: Result<ImageImport.Prepared, ImageImport.Failure>
             if let hit = prepared[name] { result = hit } else {
                 do {
                     let p = try ImageImport.prepare(try pkg.read(prefix + name), keepMetadata: keepMetadata)
-                    guard hold(p.data.count) else { drop("\(name): over the attachment budget for one note"); continue }
+                    guard hold(p.data.count) else {
+                        unreadable[name] = "\(name): over the attachment budget for one note"
+                        drop(unreadable[name]!); continue
+                    }
                     result = .success(p)
                 } catch let f as ImageImport.Failure {
                     result = .failure(f)
                 } catch {
-                    drop("\(name) cannot be read (\(NotabilityImporter.describe(error)))"); continue
+                    unreadable[name] = "\(name) cannot be read (\(NotabilityImporter.describe(error)))"
+                    drop(unreadable[name]!); continue
                 }
                 prepared[name] = result
             }

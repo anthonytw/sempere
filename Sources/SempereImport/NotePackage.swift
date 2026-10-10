@@ -7,16 +7,43 @@ import Sempere
 public struct NotePackage {
     /// Every file path in the package.
     public let paths: [String]
-    private let reader: (String) throws -> Data
+    private let reader: (String, UInt64) throws -> Data
+    private let failures = Failures()
+
+    /// Most bytes all reads of an unzipped package directory may return
+    /// together, repeated reads included (a zip has its own
+    /// `ZipArchive.readBudget`): twice the attachments one note may hold.
+    public static let directoryReadBudget: UInt64 = 4 << 30
+
+    /// Paths whose read failed, with the error: asked again, they fail at
+    /// once instead of reading (and inflating) the same bytes again
+    /// (security review S18). Shared by copies of the package.
+    private final class Failures: @unchecked Sendable {
+        private let lock = NSLock()
+        private var errors: [String: any Error] = [:]
+        subscript(path: String) -> (any Error)? {
+            get { lock.lock(); defer { lock.unlock() }; return errors[path] }
+            set { lock.lock(); defer { lock.unlock() }; errors[path] = newValue }
+        }
+    }
+
+    /// The running total behind `directoryReadBudget`.
+    private final class Budget: @unchecked Sendable {
+        private let lock = NSLock()
+        private var left: UInt64
+        init(_ total: UInt64) { left = total }
+        var remaining: UInt64 { lock.lock(); defer { lock.unlock() }; return left }
+        func take(_ n: UInt64) { lock.lock(); defer { lock.unlock() }; left -= min(n, left) }
+    }
 
     /// Wraps a package already opened as a zip.
     public init(zip: ZipArchive) {
         let files = zip.entries.filter { !$0.isDirectory }
         paths = files.map(\.path)
         let byPath = Dictionary(files.map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
-        reader = { path in
+        reader = { path, maxSize in
             guard let e = byPath[path] else { throw ImportError.package("no \(path) in package") }
-            return try zip.read(e)
+            return try zip.read(e, maxSize: maxSize)
         }
     }
 
@@ -44,13 +71,31 @@ public struct NotePackage {
             found.append(f.standardizedFileURL.pathComponents.dropFirst(base.count).joined(separator: "/"))
         }
         paths = found.sorted()
-        reader = { path in
-            try Self.readFile(directory.appendingPathComponent(path), maxSize: ZipArchive.defaultMaxEntrySize)
+        let budget = Budget(Self.directoryReadBudget)
+        reader = { path, maxSize in
+            let left = budget.remaining
+            let url = directory.appendingPathComponent(path)
+            let data: Data
+            do { data = try Self.readFile(url, maxSize: min(maxSize, left)) } catch {
+                if left < maxSize { throw ImportError.io("\(url.path): over the \(Self.directoryReadBudget >> 20) MiB read from this package in all") }
+                throw error
+            }
+            budget.take(UInt64(data.count))
+            return data
         }
     }
 
-    /// The bytes of `path`.
-    public func read(_ path: String) throws -> Data { try reader(path) }
+    /// The bytes of `path`, at most `maxSize` of them. A path whose read
+    /// failed before fails again without being read.
+    public func read(_ path: String, maxSize: UInt64 = ZipArchive.defaultMaxEntrySize) throws -> Data {
+        if let e = failures[path] { throw e }
+        do { return try reader(path, maxSize) } catch {
+            // A smaller `maxSize` may refuse what a larger one accepts: only
+            // failures at the default size are remembered.
+            if maxSize >= ZipArchive.defaultMaxEntrySize { failures[path] = error }
+            throw error
+        }
+    }
 
     /// Reads a whole file, refusing one larger than `maxSize` before
     /// allocating for it (a file in a shared folder can be any size).

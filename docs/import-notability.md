@@ -647,7 +647,11 @@ left out (no decoder here; converting them needs the app's ImageIO), and so is a
 100 megapixels (`format.md` §8.4). At most 2 GiB of PDFs and images is held for
 one note while it is imported, recordings included (a package entry may be
 1 GiB, and a small zip can hold many): past that an attachment is left out with
-a warning. At most 1 000 media objects are read. A media object with no
+a warning. A package's reads together are bounded too (`format.md` §9: 32 ×
+the zip's size and at least 2 GiB uncompressed, repeats and failures
+included; a zip with two entries of one name or overlapping entries is
+refused), and a file that failed to read is not read again for the next
+object naming it. At most 1 000 media objects are read. A media object with no
 file, no frame, a frame that is not a finite box of at least 1 × 1 unit or
 that, rotated and scaled, would lie beyond the renderer's extent (or be over
 a quarter of it tall, `format.md` §8.4), or
