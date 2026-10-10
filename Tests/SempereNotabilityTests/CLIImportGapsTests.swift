@@ -148,4 +148,30 @@ final class CLIImportGapsTests: CLITestCase {
         let hits = try XCTUnwrap(try cli(["search", "poppler", "--json"] + vaultArgs(vault)).json as? [[String: Any]])
         XCTAssertEqual(hits.first?["source"] as? String, "pdf")
     }
+
+    /// `pdftotext -v` (the engine name) runs once per run, not once per page.
+    func testPdftotextVersionIsAskedOnce() throws {
+        let vault = try copyFixtureVault()
+        let pdf = try textPDF((1...6).map { "Page \($0)" })
+        let log = path("pdftotext-calls.log")
+        let tool = path("fake-pdftotext")
+        // -v: log it and print a version. Else: one form-feed-terminated page per page asked (-f, -l), into the last argument.
+        let script = """
+            #!/bin/sh
+            if [ "$1" = "-v" ]; then echo v >> '\(log)'; echo 'pdftotext version 99.1.0' >&2; exit 0; fi
+            f=1; l=1
+            while [ $# -gt 2 ]; do case "$1" in -f) f=$2; shift;; -l) l=$2; shift;; esac; shift; done
+            out=$2; : > "$out"; i=$f
+            while [ $i -le $l ]; do printf 'text %s\\f' $i >> "$out"; i=$((i+1)); done
+
+            """
+        try script.write(toFile: tool, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool)
+        let r = try cli(["import", "pdf", pdf, "--pdf-text", "poppler", "--json"] + vaultArgs(vault), env: ["SEMPERE_PDFTOTEXT": tool])
+        XCTAssertEqual(r.status, 0, r.err)
+        let result = try XCTUnwrap(((r.json as? [String: Any])?["notes"] as? [[String: Any]])?.first)
+        XCTAssertEqual(result["pagesWithText"] as? Int, 6)
+        XCTAssertEqual(result["textEngine"] as? String, "pdftotext-99.1.0")
+        XCTAssertEqual(try String(contentsOfFile: log, encoding: .utf8), "v\n", "was once per page")
+    }
 }

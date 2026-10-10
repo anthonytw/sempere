@@ -110,8 +110,11 @@ final class CLIPushOnlyLeavesLocalFilesTests: CLITestCase {
         for name in ["sempere-index.json", "sempere-summaries.sealed"] {
             XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: vault).appendingPathComponent(name)), junk, name)
         }
-        // A command that does open it normally refreshes both.
+        // A read-only command (by construction) leaves them too; one that may write refreshes both.
         XCTAssertEqual(try cli(["notes", "list", "--vault", vault, "--identity", Self.fixtureKey]).status, 0)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: vault).appendingPathComponent("sempere-index.json")), junk)
+        XCTAssertEqual(try cli(["vault", "info", "--vault", vault, "--identity", Self.fixtureKey]).status, 0)
+        XCTAssertNotEqual(try Data(contentsOf: URL(fileURLWithPath: vault).appendingPathComponent("sempere-index.json")), junk)
         XCTAssertNotEqual(try Data(contentsOf: URL(fileURLWithPath: vault).appendingPathComponent("sempere-summaries.sealed")), junk)
     }
 }

@@ -74,6 +74,12 @@ final class OpenedVaults: @unchecked Sendable {
         unlocked[u] = nil
     }
 
+    /// Leaves `url` alone at exit because the command cannot have written to
+    /// it (read-only by construction: `notes list`, `notes show`, `search`,
+    /// `notes search`),
+    /// so it does not list the vault again for nothing.
+    func markUnchanged(_ url: URL) { forget(url) }
+
     func record(_ url: URL) {
         lock.lock(); defer { lock.unlock() }
         let u = url.standardizedFileURL
@@ -90,9 +96,15 @@ final class OpenedVaults: @unchecked Sendable {
         unlocked = [:]
         lock.unlock()
         for url in all {
+            // One listing serves both files (each used to list the vault itself).
+            var listing: [String: [String]]?
             do {
                 guard let vault = try? Vault.open(at: url) else { continue }
-                try vault.refreshWebIndex()
+                if FileManager.default.fileExists(atPath: vault.webIndexURL.path)
+                    || (keys[url] != nil && FileManager.default.fileExists(atPath: vault.publishedSummariesURL.path)) {
+                    listing = try? vault.webIndexListing()
+                }
+                try vault.refreshWebIndex(listing: listing)
             } catch {
                 printStderr("warning: cannot update \(url.appendingPathComponent(WebIndex.fileName).path): "
                     + CLIError.from(error).message)
@@ -100,7 +112,7 @@ final class OpenedVaults: @unchecked Sendable {
             // Only where it exists and the vault was unlocked (it needs the key); unchanged notes are reused.
             guard let unlockedVault = keys[url] else { continue }
             do {
-                try unlockedVault.refreshPublishedSummaries(cacheDirectory: SummaryCache.cliDirectory())
+                try unlockedVault.refreshPublishedSummaries(cacheDirectory: SummaryCache.cliDirectory(), ownListing: listing)
             } catch {
                 printStderr("warning: cannot update \(url.appendingPathComponent(PublishedSummaries.fileName).path): "
                     + CLIError.from(error).message)

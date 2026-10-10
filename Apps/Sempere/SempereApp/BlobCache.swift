@@ -425,4 +425,7 @@ struct CachedBlobSource: BlobSource {
         guard let url = files[ref.sha256] else { throw BlobError.missing(ref.sha256) }
         return try body(url)
     }
+
+    /// The files were decrypted into the cache before the export began.
+    var filesAreCached: Bool { true }
 }

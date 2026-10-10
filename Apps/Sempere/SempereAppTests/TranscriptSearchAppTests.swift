@@ -97,4 +97,25 @@ struct TranscriptSearchAppTests {
         #expect(hit(.nan).timeText == "?:??")
         #expect(hit(1e300).timeText == "?:??")
     }
+
+    /// The search cache drops the least recently used transcripts past its byte limit (it used
+    /// to clear itself whole at 500, so long searches never hit).
+    @Test func theSearchCacheKeepsTheMostRecentlyUsed() {
+        let cache = TranscriptSearchCache(byteLimit: 300)
+        func t(_ n: Int) -> Transcript {
+            Transcript(recording: UUID(), engine: "test", language: "en", created: Date(timeIntervalSince1970: 0),
+                       segments: [.init(start: 0, end: 1, text: "segment \(n)")])
+        }
+        cache.store(t(1), for: "a", bytes: 100)
+        cache.store(t(2), for: "b", bytes: 100)
+        cache.store(t(3), for: "c", bytes: 100)
+        #expect(cache.transcript(for: "a") != nil)   // a is now newer than b
+        cache.store(t(4), for: "d", bytes: 100)
+        #expect(cache.transcript(for: "b") == nil, "the least recently used went")
+        #expect(cache.transcript(for: "a") != nil && cache.transcript(for: "c") != nil && cache.transcript(for: "d") != nil)
+        cache.store(t(5), for: "e", bytes: 1_000)
+        #expect(cache.count == 1, "one transcript larger than the limit is still kept alone")
+        cache.removeAll()
+        #expect(cache.count == 0)
+    }
 }

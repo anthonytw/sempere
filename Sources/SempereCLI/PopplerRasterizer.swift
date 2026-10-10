@@ -39,10 +39,14 @@ struct PopplerRasterizer: PDFPageRasterizer {
     }
 
     func rasterize(pdf: URL, pageIndex: Int, pixelWidth: Int, pixelHeight: Int) throws -> RGBAImage {
+        try rasterize(pdf: pdf, pageIndex: pageIndex, pixelWidth: pixelWidth, pixelHeight: pixelHeight, rotation: nil)
+    }
+
+    func rasterize(pdf: URL, pageIndex: Int, pixelWidth: Int, pixelHeight: Int, rotation known: Int?) throws -> RGBAImage {
         guard pageIndex >= 0, pageIndex < Int(Int32.max), pixelWidth > 0, pixelHeight > 0,
               pixelWidth <= 1 << 20, pixelHeight <= 1 << 20 else { throw Failure(message: "invalid request") }
         // Poppler scales before it applies /Rotate: ask for the unrotated size.
-        let rotation = Self.rotation(pdf: pdf, pageIndex: pageIndex)
+        let rotation = known ?? Self.rotation(pdf: pdf, pageIndex: pageIndex)
         let swap = rotation.map { $0 % 180 != 0 } ?? false
         var image = try run(pdf: pdf, pageIndex: pageIndex, width: swap ? pixelHeight : pixelWidth,
                             height: swap ? pixelWidth : pixelHeight)
