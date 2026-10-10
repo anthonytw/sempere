@@ -332,7 +332,7 @@ struct EditorView: View {
             ToolbarItem(placement: .secondaryAction) {
                 Button("Paper…", systemImage: "square.grid.3x3") { ui.choosingPaper = true }
                     .disabled(editor.currentPage == nil)
-                    .help("Choose the paper (ruling, colour) of this page or all pages")
+                    .help("Choose the paper (ruling, color) of this page or all pages")
             }
             ToolbarItem(placement: .secondaryAction) { favoriteButton }
             ToolbarItem(placement: .secondaryAction) { insertMenu }
@@ -534,7 +534,7 @@ struct EditorView: View {
                 ToolbarItem(placement: .secondaryAction) {
                     Button("Paper…", systemImage: "square.grid.3x3") { ui.choosingPaper = true }
                         .disabled(editor.currentPage == nil)
-                        .help("Choose the paper (ruling, colour) of this page or all pages")
+                        .help("Choose the paper (ruling, color) of this page or all pages")
                 }
                 ToolbarItem(placement: .secondaryAction) {
                     // Switching never deletes ink (format.md §5.4.3); it is one delta.

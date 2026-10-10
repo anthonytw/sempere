@@ -107,7 +107,7 @@ struct MathEditorView: View {
                     }
                     .pickerStyle(.segmented)
                     Stepper(value: $size, in: MathDefaults.sizes, step: 2) { Text("Size: \(size.formatted(.number.precision(.fractionLength(0)))) pt") }
-                    ColorPicker("Colour", selection: $color, supportsOpacity: true)
+                    ColorPicker("Color", selection: $color, supportsOpacity: true)
                 }
                 if let failure {
                     Section { Text(failure).foregroundStyle(.red) }

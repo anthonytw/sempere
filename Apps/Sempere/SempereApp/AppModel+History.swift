@@ -90,7 +90,7 @@ struct HistoryEntry: Identifiable, Hashable, Sendable {
     /// points; said whenever a snapshot exists or a point is incomplete.
     static func compactionNotice(_ points: [RestorePoint]) -> String? {
         guard points.contains(where: { $0.kind == .snapshot || !$0.complete }) else { return nil }
-        return String(localized: "Revisions removed by compaction are not restore points and are not listed. Versions that depend on them are greyed out and cannot be shown or restored.")
+        return String(localized: "Revisions removed by compaction are not restore points and are not listed. Versions that depend on them are grayed out and cannot be shown or restored.")
     }
 }
 

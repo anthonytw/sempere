@@ -88,7 +88,7 @@ struct ImportDetails: Equatable, Sendable {
         case "unknownStyleStrokes":
             return String(localized: "Strokes of an unknown style (imported as pen)", comment: "Import report: not imported")
         case "defaultedAttributeStrokes":
-            return String(localized: "Strokes with a missing style, colour or width", comment: "Import report: not imported")
+            return String(localized: "Strokes with a missing style, color or width", comment: "Import report: not imported")
         case "unsupportedShapes": return String(localized: "Shapes not converted", comment: "Import report: not imported")
         case "unsupportedStrokes": return String(localized: "Strokes of a kind not understood", comment: "Import report: not imported")
         case "clampedStrokes": return String(localized: "Strokes whose position was not stored", comment: "Import report: not imported")

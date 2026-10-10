@@ -50,7 +50,7 @@
       }
     },
     "%@ page" : {
-      "comment" : "Accessibility label of a page colour preset; %@ is White, Cream or Dark",
+      "comment" : "Accessibility label of a page color preset; %@ is White, Cream or Dark",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -2109,7 +2109,7 @@
         }
       }
     },
-    "A Markdown file with the recognised handwriting, page by page." : {
+    "A Markdown file with the recognized handwriting, page by page." : {
       "comment" : "Export sheet footer",
       "extractionState" : "manual",
       "localizations" : {
@@ -2237,7 +2237,7 @@
         }
       }
     },
-    "A folder tree like your notebooks, one Markdown file and PDF per note, with the recognised text." : {
+    "A folder tree like your notebooks, one Markdown file and PDF per note, with the recognized text." : {
       "comment" : "Export sheet footer",
       "extractionState" : "manual",
       "localizations" : {
@@ -2249,7 +2249,7 @@
         }
       }
     },
-    "A folder tree like your notebooks, one Markdown file per note, with the recognised text." : {
+    "A folder tree like your notebooks, one Markdown file per note, with the recognized text." : {
       "comment" : "Export sheet footer",
       "extractionState" : "manual",
       "localizations" : {
@@ -2261,7 +2261,7 @@
         }
       }
     },
-    "A folder with a Markdown file of the recognised text and PDF." : {
+    "A folder with a Markdown file of the recognized text and PDF." : {
       "comment" : "Export sheet footer",
       "extractionState" : "manual",
       "localizations" : {
@@ -2273,7 +2273,7 @@
         }
       }
     },
-    "A folder with a Markdown file of the recognised text." : {
+    "A folder with a Markdown file of the recognized text." : {
       "comment" : "Export sheet footer",
       "extractionState" : "manual",
       "localizations" : {
@@ -3233,7 +3233,7 @@
         }
       }
     },
-    "Attachments are PDF pages, images, typed text and recordings; off imports the ink, any recognised handwriting and the note's details only. Camera and location data in photos is removed unless you keep it. PDF page text makes the pages searchable." : {
+    "Attachments are PDF pages, images, typed text and recordings; off imports the ink, any recognized handwriting and the note's details only. Camera and location data in photos is removed unless you keep it. PDF page text makes the pages searchable." : {
       "comment" : "Footer of the import options",
       "extractionState" : "manual",
       "localizations" : {
@@ -3280,7 +3280,7 @@
         }
       }
     },
-    "Authentication was cancelled." : {
+    "Authentication was canceled." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -3589,7 +3589,7 @@
       }
     },
     "Black" : {
-      "comment" : "Text colour",
+      "comment" : "Text color",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -3613,7 +3613,7 @@
       }
     },
     "Blue" : {
-      "comment" : "Text colour",
+      "comment" : "Text color",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -4151,7 +4151,7 @@
         }
       }
     },
-    "Choose the paper (ruling, colour) of this page or all pages" : {
+    "Choose the paper (ruling, color) of this page or all pages" : {
       "comment" : "Help tag of Paper…",
       "extractionState" : "manual",
       "localizations" : {
@@ -4307,8 +4307,8 @@
         }
       }
     },
-    "Colour" : {
-      "comment" : "Text style bar: text colour menu",
+    "Color" : {
+      "comment" : "Text style bar: text color menu",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -4761,7 +4761,7 @@
         }
       }
     },
-    "Could not save recognised text: %@" : {
+    "Could not save recognized text: %@" : {
       "comment" : "%@ is the error (English)",
       "extractionState" : "manual",
       "localizations" : {
@@ -4858,7 +4858,7 @@
       }
     },
     "Cream" : {
-      "comment" : "Paper colour preset",
+      "comment" : "Paper color preset",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -4977,8 +4977,8 @@
         }
       }
     },
-    "Custom page colour" : {
-      "comment" : "Colour picker",
+    "Custom page color" : {
+      "comment" : "Color picker",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -4990,7 +4990,7 @@
       }
     },
     "Dark" : {
-      "comment" : "Paper colour preset",
+      "comment" : "Paper color preset",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -5322,8 +5322,8 @@
         }
       }
     },
-    "Dot colour" : {
-      "comment" : "Paper picker: colour of the dots",
+    "Dot color" : {
+      "comment" : "Paper picker: color of the dots",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -6568,26 +6568,26 @@
         }
       }
     },
-    "Green" : {
-      "comment" : "Text colour",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verde"
-          }
-        }
-      }
-    },
-    "Grey" : {
-      "comment" : "Text colour",
+    "Gray" : {
+      "comment" : "Text color",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Gris"
+          }
+        }
+      }
+    },
+    "Green" : {
+      "comment" : "Text color",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verde"
           }
         }
       }
@@ -8008,7 +8008,7 @@
       }
     },
     "License" : {
-      "comment" : "About: the licence text and its section",
+      "comment" : "About: the license text and its section",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -8031,8 +8031,8 @@
         }
       }
     },
-    "Line colour" : {
-      "comment" : "Paper picker: colour of the ruling",
+    "Line color" : {
+      "comment" : "Paper picker: color of the ruling",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -8163,7 +8163,7 @@
         }
       }
     },
-    "Margin colour" : {
+    "Margin color" : {
       "comment" : "Paper picker",
       "extractionState" : "manual",
       "localizations" : {
@@ -8295,8 +8295,8 @@
         }
       }
     },
-    "More Colours" : {
-      "comment" : "VoiceOver: opens the system colour picker",
+    "More Colors" : {
+      "comment" : "VoiceOver: opens the system color picker",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -10097,7 +10097,7 @@
       }
     },
     "Orange" : {
-      "comment" : "Text colour",
+      "comment" : "Text color",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -10304,8 +10304,8 @@
         }
       }
     },
-    "Page colour" : {
-      "comment" : "Paper picker: background colour",
+    "Page color" : {
+      "comment" : "Paper picker: background color",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -10682,8 +10682,8 @@
         }
       }
     },
-    "Pen Colour" : {
-      "comment" : "VoiceOver: the swatch of the pen's current colour",
+    "Pen Color" : {
+      "comment" : "VoiceOver: the swatch of the pen's current color",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -11112,7 +11112,7 @@
       }
     },
     "Purple" : {
-      "comment" : "Text colour",
+      "comment" : "Text color",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -11375,7 +11375,7 @@
         }
       }
     },
-    "Reads the handwriting of pages Notability never recognised, on this device, right after the import." : {
+    "Reads the handwriting of pages Notability never recognized, on this device, right after the import." : {
       "comment" : "Footer of the Notability import options",
       "extractionState" : "manual",
       "localizations" : {
@@ -11387,7 +11387,7 @@
         }
       }
     },
-    "Reads the handwriting of pages the source app never recognised, on this device, right after the import." : {
+    "Reads the handwriting of pages the source app never recognized, on this device, right after the import." : {
       "comment" : "Footer of the import options",
       "extractionState" : "manual",
       "localizations" : {
@@ -11811,7 +11811,7 @@
       }
     },
     "Red" : {
-      "comment" : "Text colour",
+      "comment" : "Text color",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -12712,7 +12712,7 @@
         }
       }
     },
-    "Revisions removed by compaction are not restore points and are not listed. Versions that depend on them are greyed out and cannot be shown or restored." : {
+    "Revisions removed by compaction are not restore points and are not listed. Versions that depend on them are grayed out and cannot be shown or restored." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -14566,7 +14566,7 @@
         }
       }
     },
-    "Strokes with a missing style, colour or width" : {
+    "Strokes with a missing style, color or width" : {
       "comment" : "Notability import report: not imported",
       "extractionState" : "manual",
       "localizations" : {
@@ -15061,7 +15061,7 @@
       }
     },
     "Text (Markdown)…" : {
-      "comment" : "Export menu item: recognised text as Markdown",
+      "comment" : "Export menu item: recognized text as Markdown",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -15288,7 +15288,7 @@
       }
     },
     "The GNU GPL v3 on gnu.org" : {
-      "comment" : "About: link to the licence on the web",
+      "comment" : "About: link to the license on the web",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -16660,7 +16660,7 @@
       }
     },
     "This text is not in this build. Read it at %@." : {
-      "comment" : "About: a bundled licence text is missing; %@ is a web address",
+      "comment" : "About: a bundled license text is missing; %@ is a web address",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -18299,7 +18299,7 @@
       }
     },
     "White" : {
-      "comment" : "Paper colour preset",
+      "comment" : "Paper color preset",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -18383,7 +18383,7 @@
       }
     },
     "Yellow" : {
-      "comment" : "Text colour",
+      "comment" : "Text color",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {

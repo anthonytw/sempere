@@ -180,6 +180,29 @@ final class LocalizationCatalogTests: XCTestCase {
         }
     }
 
+    /// The English source is American English (docs/localization.md): one spelling per word, so one
+    /// catalog entry serves every place that says it. Checks the keys and any English variations.
+    func testEnglishIsAmericanSpelling() throws {
+        let british = try NSRegularExpression(
+            pattern: #"\b(colour[a-z]*|recognis[a-z]*|cancell(ed|ing)|grey(ed)?|licence|centred?|behaviour[a-z]*|favourite[a-z]*|organis[a-z]*)\b"#,
+            options: [.caseInsensitive])
+        var bad: [String] = []
+        for name in ["Localizable", "InfoPlist", "AppShortcuts"] {
+            for (key, entry) in try catalog(name).entries {
+                var texts = [key]
+                switch entry.value("en") {
+                case .plain(let text)?: texts.append(text)
+                case .plural(let forms)?, .device(let forms)?: texts += forms.values
+                case nil: break
+                }
+                for text in texts where british.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil {
+                    bad.append("\(name): “\(text)”")
+                }
+            }
+        }
+        XCTAssertTrue(bad.isEmpty, "British spellings in the English source:\n" + bad.joined(separator: "\n"))
+    }
+
     // MARK: - Source against catalog
 
     func testSourceLiteralsAreInCatalog() throws {

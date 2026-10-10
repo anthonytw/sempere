@@ -184,7 +184,7 @@ final class AppModel {
     /// the device state.
     let inboxBackoff: InboxBackoff
     @ObservationIgnored var inboxAdoption: Task<Void, Never>?
-    /// Progress of "Recognise All Notes" (`AppModel+Search`).
+    /// Progress of "Recognize All Notes" (`AppModel+Search`).
     var recognitionProgress: RecognitionProgress?
     /// What the last "Recognize All Notes" run changed, kept (also after it
     /// ends) until the next run starts; the "Recently Recognized" filter lists it.

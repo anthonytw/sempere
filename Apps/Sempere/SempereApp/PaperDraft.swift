@@ -99,9 +99,9 @@ enum PaperBackground: CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .white: return String(localized: "White", comment: "Paper colour preset")
-        case .cream: return String(localized: "Cream", comment: "Paper colour preset")
-        case .dark: return String(localized: "Dark", comment: "Paper colour preset")
+        case .white: return String(localized: "White", comment: "Paper color preset")
+        case .cream: return String(localized: "Cream", comment: "Paper color preset")
+        case .dark: return String(localized: "Dark", comment: "Paper color preset")
         }
     }
 
