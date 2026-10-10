@@ -1112,7 +1112,27 @@ continues from there.
 
 **State.** `$XDG_STATE_HOME/sempere/sync/<hash of URL and vault path>.json`:
 file names, hashes, ETags and snapshot coverage, no secrets. Deleting it makes
-the next run a first sync: nothing is deleted, nothing overwritten.
+the next run a first sync: nothing is deleted, nothing overwritten. It is
+saved at the end of a run. Before each blob transfer only the transfers in
+flight (temporary upload names, partial downloads) are saved, to
+`<state>.json.transfers` beside it; the next run takes them in, and the
+end-of-run save removes that file. A killed run's other progress is found on
+both sides by the next run.
+
+**Unchanged notes.** With `skipUnchangedNotes` (`--skip-unchanged`; the
+app's pushes) a run does not list a note folder whose ETag in the `notes/`
+listing is the one recorded when the last run left that note in step on
+both sides, when the local folder holds exactly the recorded revisions (and
+no blob when the server had no `att/`); it takes the recorded revisions as
+the server's. A note's `att/` is listed every run, since many servers change
+a folder's ETag only for its direct children. It is trusted only where it
+is seen to work: after this device writes a revision into a note folder,
+the next run checks that folder's ETag changed; one check that passes
+enables it, one that fails disables it for good (until the state is
+deleted). Weak (`W/`) and missing ETags are never recorded. Any doubt in a
+note's run (an error, a skipped, ignored or extraneous file, a file on one
+side only, a write) clears its record so the next run lists it, and a run
+lists every note at least every `fullListingInterval` (a day).
 
 **Testing.** `scripts/test-webdav.sh` starts a local wsgidav
 (`pip install wsgidav cheroot`) and runs the integration tests, which are

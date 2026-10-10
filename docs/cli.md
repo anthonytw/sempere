@@ -2180,7 +2180,7 @@ device id and clock from `$XDG_STATE_HOME/sempere/device.json` (default
 sempere sync webdav URL --vault V [--user U --password-env VAR] [--device NAME]
                          [--max-blob-mib N] [--web-viewer] [--dry-run] [--json] [--identity FILE | --passphrase-env VAR]
                          [--push-only [--delete-extraneous] [--keep-server-changes]] [--retry-quarantined]
-                         [--max-notes N] [--max-entries N] [--max-download-mib N] [--max-minutes N]
+                         [--skip-unchanged] [--max-notes N] [--max-entries N] [--max-download-mib N] [--max-minutes N]
 ```
 
 Mirrors the vault folder with a WebDAV collection (`docs/io.md`, "WebDAV
@@ -2281,6 +2281,15 @@ exit code is 3; revisions and blobs still upload. Without a sync state for the
 server, any differing copy is kept. A copy only this machine changed (the
 server still holds what it last synced) is replaced as usual. This is how the
 app pushes a WebDAV vault (`docs/io.md`, "WebDAV vaults in the app").
+
+**`--skip-unchanged`** lists on the server only the note folders whose ETag
+in the `notes/` listing changed since the last run left the note in step,
+and whose local folder still holds the revisions that run recorded; the
+others cost no request (a note's `att/` is still listed). It is used only
+where the server is seen to change a folder's ETag when this machine writes
+a revision into it, never with weak or missing ETags, and every note is
+listed at least once a day (`docs/io.md`, "Unchanged notes"). The app's
+pushes use it.
 
 ```
 sempere webdav check URL [--user U --password-env VAR] [--json]

@@ -229,8 +229,14 @@ extension AppModel {
 
     // MARK: - Background validation
 
+    /// One background validation in this many asks iCloud about every
+    /// file; the others skip notes an earlier one saw entirely local.
+    static let fullValidationEvery = 6
+
     /// The low-priority full pass: asks iCloud for the state of every file
-    /// of every note (slow on a device, one round trip per file), refreshes
+    /// of every note (slow on a device, one round trip per file; except, in
+    /// all but every `fullValidationEvery`-th pass, the notes the last pass
+    /// saw entirely local whose listing did not change), refreshes
     /// local copies iCloud reports out of date, reports download errors in
     /// the status bar, and drops index entries of notes that are gone.
     /// Evicted notes are not downloaded: their rows come from the index, and
@@ -242,13 +248,19 @@ extension AppModel {
         let gen = generation
         let url = vault.url
         let hooks = cloudHooks
+        // Every `fullValidationEvery`-th pass (and the first) asks about every
+        // file, so an eviction that keeps a note's listing the same is seen too.
+        let full = validationsSinceFull == 0 || validationsSinceFull >= Self.fullValidationEvery
+        let settled = full ? [:] : settledCloudNotes
         let pass = try await offMain(priority: .background) {
             try Perf.measure(.reconcileValidate, "") {
-                try ProgressiveLoad.pass(vault: url, requestMissing: false, hooks: hooks)
+                try ProgressiveLoad.pass(vault: url, requestMissing: false, settled: settled, hooks: hooks)
             }
         }
         try ensureCurrent(gen)
         try Task.checkCancellation()
+        settledCloudNotes = pass.settled
+        validationsSinceFull = full ? 1 : validationsSinceFull + 1
         if var status = cloudSync {
             status.files = pass.files
             status.localFiles = pass.localFiles

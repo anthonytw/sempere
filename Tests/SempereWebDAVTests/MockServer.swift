@@ -42,6 +42,44 @@ final class MockDAV: WebDAVTransport, @unchecked Sendable {
     /// Answer `Range` requests (a server may ignore them and send 200).
     var honoursRange = true
 
+    /// What a collection's `getetag` follows, as servers differ.
+    enum CollectionETags {
+        /// None (the default, like many servers).
+        case none
+        /// Its direct children's names (a directory's mtime, Apache mod_dav-like).
+        case direct
+        /// Everything below it, names and contents (Nextcloud-like).
+        case deep
+        /// Never changes.
+        case constant
+        /// Weak, following the direct children.
+        case weak
+    }
+    var collectionETags = CollectionETags.none
+
+    private func collectionETag(_ c: String) -> String? {
+        func fnv(_ s: String) -> String {
+            var h: UInt64 = 0xcbf29ce484222325
+            for b in s.utf8 { h = (h ^ UInt64(b)) &* 0x100000001b3 }
+            return String(h, radix: 16)
+        }
+        let direct = { () -> String in
+            let kids = self.collections.filter { $0 != c && self.parent($0) == c }
+                + self.files.keys.filter { self.parent($0) == c }
+            return fnv(kids.sorted().joined(separator: "\n"))
+        }
+        switch collectionETags {
+        case .none: return nil
+        case .constant: return "\"c\""
+        case .direct: return "\"d\(direct())\""
+        case .weak: return "W/\"d\(direct())\""
+        case .deep:
+            let below = collections.filter { $0.hasPrefix(c + "/") }.sorted()
+                + files.filter { $0.key.hasPrefix(c + "/") }.map { "\($0.key)=\($0.value.etag)" }.sorted()
+            return "\"r\(fnv(below.joined(separator: "\n")))\""
+        }
+    }
+
     static let base = "/dav/vault"
 
     func file(_ rel: String) -> Data? {
@@ -93,11 +131,11 @@ final class MockDAV: WebDAVTransport, @unchecked Sendable {
         case "PROPFIND":
             let depth = r.headers["Depth"] ?? "1"
             if collections.contains(key) {
-                var xml = entry(key + "/", etag: nil, collection: true, size: nil)
+                var xml = entry(key + "/", etag: collectionETag(key), collection: true, size: nil)
                 if depth == "1" {
                     var kids = Set<String>()
                     for c in collections where c != key && parent(c) == key { kids.insert(c) }
-                    for c in kids.sorted() { xml += entry(c + "/", etag: nil, collection: true, size: nil) }
+                    for c in kids.sorted() { xml += entry(c + "/", etag: collectionETag(c), collection: true, size: nil) }
                     for (f, s) in files.sorted(by: { $0.key < $1.key }) where parent(f) == key {
                         xml += entry(f, etag: s.etag, collection: false, size: s.size)
                     }

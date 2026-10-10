@@ -60,6 +60,17 @@ public struct WebDAVSyncOptions: Sendable {
     /// checked fully rather than for their structure only (format.md §9.1).
     public var firstPullIdentities: [any AgeIdentity] = []
 
+    /// Skip listing a note folder on the server when its ETag in the
+    /// `notes/` listing is the one recorded when the last run left the
+    /// note in step on both sides, and the local folder holds exactly the
+    /// recorded revisions (docs/io.md "Unchanged notes"). Only on a server
+    /// seen to change a folder's ETag when this device wrote into it, never
+    /// with a weak or missing ETag, and with a run that lists every note at
+    /// least every `fullListingInterval`. A note's `att/` is still listed.
+    public var skipUnchangedNotes = false
+    /// With `skipUnchangedNotes`: the longest time between two runs that list every note.
+    public var fullListingInterval: TimeInterval = 24 * 3600
+
     /// The largest blob file a reader opens (`BoundedRead.maxBlobFileBytes`,
     /// 1 GiB + 64 MiB).
     public static let defaultMaxBlobBytes = BoundedRead.maxBlobFileBytes
@@ -117,6 +128,26 @@ public final class WebDAVSync {
     /// SHA-256 of the local `vault.json` when the run started (what `vault` was opened from).
     var checkerBaseManifest: String?
     var checkerCache: (manifest: String?, vault: Vault?)?
+    /// `state.fileNamesByNote()` as the note loop started. Each note reads
+    /// only its own entry, before it writes any record of its own, and is
+    /// synced once per run, so this stays exact without being updated; it
+    /// must be rebuilt if a note is ever synced twice in one run.
+    var recordedFiles: [String: [String]] = [:]
+    /// How many notes this run read through `vault` (decrypted every
+    /// revision of) to judge deletions or record snapshot coverage.
+    var notesRead = 0
+    /// Strong ETags of the note folders in this run's `notes/` listing.
+    var noteETags: [String: String] = [:]
+    /// Whether this run lists only the notes whose folder ETag changed
+    /// (`WebDAVSyncOptions.skipUnchangedNotes`); decided once `notes/` is listed.
+    var skipsUnchangedNotes = false
+    /// Notes whose listing this run skipped.
+    var notesNotListed = 0
+    /// `encodedWebIndex()`, once the notes loop is done.
+    private var encodedIndex: Data?
+    /// The remote `vault.json` as `checkSameVault` fetched it this run, for
+    /// the mutable-file sync to compare instead of fetching it again.
+    var fetchedManifest: (data: Data, etag: String?)?
 
     /// - Parameters:
     ///   - directory: the local vault; it may be missing or empty for a first pull.
@@ -151,6 +182,13 @@ public final class WebDAVSync {
         } catch {
             report.skipped.append(.init(path: stateURL.path, message: "sync state unreadable (\(error.localizedDescription)); treated as a first sync"))
         }
+        do {
+            // What a killed run left in flight (its state file is that of the run before).
+            if let t = try SyncState.loadTransfers(stateURL) { state.merge(t) }
+        } catch {
+            let path = SyncState.transfersURL(stateURL).path
+            report.skipped.append(.init(path: path, message: "unreadable (\(error.localizedDescription)); ignored"))
+        }
         if options.pushOnly && !FileManager.default.fileExists(atPath: root.appendingPathComponent(Vault.manifestName).path) {
             // A mirror of nothing would list (and could delete) the whole server.
             throw WebDAVError.io("push-only sync needs a local vault (no \(Vault.manifestName) in \(root.path))")
@@ -178,6 +216,7 @@ public final class WebDAVSync {
         }
 
         do {
+            recordedFiles = state.fileNamesByNote()
             let remoteNotes = try listRemoteNotes(rootEntries)
             let localNotes = try localNoteIDs()
             for (id, entries) in remoteNotes {
@@ -185,15 +224,21 @@ public final class WebDAVSync {
                     RevisionName(e.name).flatMap { !e.isCollection && $0.filename == e.name ? e.name : nil }
                 }
             }
-            for id in Set(remoteNotes.keys).union(localNotes).sorted() {
+            let all = Set(remoteNotes.keys).union(localNotes)
+            for id in all.sorted() {
+                // Recorded again below only if the note ends unchanged and in step on both sides.
+                state.notes?[id] = nil
                 do {
                     try budget.checkTime()
+                    let mark = NoteMark(report)
                     try syncNote(id, remoteEntries: remoteNotes[id])
+                    recordNoteStamp(id, remoteEntries: remoteNotes[id], since: mark)
                 } catch {
                     try rethrowRunLimit(error)
                     report.errors.append(.init(path: "notes/\(id)", message: Self.describe(error)))
                 }
             }
+            finishNoteStamps(notes: all)
         } catch let e as WebDAVError where e.isRunLimit {
             // Stop here: what was done is recorded below, the next run continues.
             report.stoppedEarly = Self.describe(e)
@@ -201,7 +246,7 @@ public final class WebDAVSync {
         }
         if options.pushOnly { deleteRemoteJunk() }
         if !options.dryRun, options.publishForWebViewer || remoteRoot[WebIndex.fileName].map({ !$0.isCollection }) ?? false {
-            do { try refreshRemoteWebIndex() } catch {
+            do { try refreshRemoteWebIndex(remote: remoteRoot[WebIndex.fileName].flatMap { $0.isCollection ? nil : $0 }) } catch {
                 report.errors.append(.init(path: WebIndex.fileName, message: Self.describe(error)))
             }
         }
@@ -209,7 +254,11 @@ public final class WebDAVSync {
             refreshRemoteSummaries(exists: remoteRoot[PublishedSummaries.fileName].map { !$0.isCollection } ?? false)
         }
         if !options.dryRun {
-            do { try state.save(stateURL) } catch {
+            do {
+                try state.save(stateURL)
+                // Only now: until the state holds them, the transfers file is what remembers them.
+                SyncState.removeTransfers(stateURL)
+            } catch {
                 report.errors.append(.init(path: stateURL.path, message: "cannot save sync state: \(Self.describe(error))"))
             }
         }
@@ -232,7 +281,9 @@ public final class WebDAVSync {
         guard remoteRoot[Vault.manifestName] != nil,
               let local = try? localMutable(Vault.manifestName),
               let localId = WebDAVConnection.manifestFields(local)?.vaultId else { return }
-        let remote = try client.get([Vault.manifestName], maxBytes: BoundedRead.maxManifestBytes).data
+        let fetched = try client.get([Vault.manifestName], maxBytes: BoundedRead.maxManifestBytes)
+        fetchedManifest = fetched
+        let remote = fetched.data
         guard let remoteId = WebDAVConnection.manifestFields(remote)?.vaultId else {
             // A mirror is repaired from the local manifest; a two-way sync has nothing to compare.
             if options.pushOnly { return }
@@ -273,7 +324,7 @@ public final class WebDAVSync {
             return
         }
 
-        let (remoteData, getETag) = try client.get([name])
+        let (remoteData, getETag) = try fetchMutable(name)
         try budget.downloaded(remoteData.count)
         let remoteHash = FileDigest.sha256(remoteData)
         let stamp = remote.etag ?? getETag ?? remote.lastModified
@@ -300,8 +351,18 @@ public final class WebDAVSync {
         }
     }
 
+    /// GETs a mutable file, or takes the copy `checkSameVault` fetched
+    /// moments ago in this run (once).
+    func fetchMutable(_ name: String) throws -> (data: Data, etag: String?) {
+        if name == Vault.manifestName, let fetched = fetchedManifest {
+            fetchedManifest = nil
+            return fetched
+        }
+        return try client.get([name])
+    }
+
     private func pullMutable(_ name: String, remote: RemoteEntry) throws {
-        let (data, etag) = try client.get([name])
+        let (data, etag) = try fetchMutable(name)
         try budget.downloaded(data.count)
         try accept(name, data, stamp: remote.etag ?? etag ?? remote.lastModified)
     }
@@ -385,6 +446,7 @@ public final class WebDAVSync {
         if noteDirs > options.limits.maxNotes {
             throw WebDAVError.limitExceeded("the server lists \(noteDirs) notes, more than \(options.limits.maxNotes) (--max-notes)")
         }
+        checkNoteStamps(dirs)
         var out: [String: [RemoteEntry]] = [:]
         for d in dirs {
             guard d.isCollection, Vault.isNoteDirectoryName(d.name) else {
@@ -393,6 +455,10 @@ public final class WebDAVSync {
                 continue
             }
             try budget.checkTime()
+            if let unchanged = unchangedNoteEntries(d) {
+                out[d.name] = unchanged
+                continue
+            }
             let entries = try client.list([Vault.notesName, d.name]) ?? []
             try budget.list(entries.count)
             out[d.name] = entries
@@ -401,6 +467,17 @@ public final class WebDAVSync {
     }
 
     func key(_ id: String, _ n: RevisionName) -> String { "\(id)/\(n.filename)" }
+
+    /// The revisions the last sync recorded for a note (keys `<id>/<file name>`).
+    func recordedRevisions(_ id: String) -> Set<RevisionName> {
+        Set((recordedFiles[id] ?? []).compactMap(RevisionName.init))
+    }
+
+    /// The blobs the last sync recorded for a note (keys `<id>/att/<file name>`).
+    func recordedBlobs(_ id: String) -> Set<String> {
+        let prefix = "\(Vault.attachmentsName)/"
+        return Set((recordedFiles[id] ?? []).filter { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)) })
+    }
 
     private func syncNote(_ id: String, remoteEntries: [RemoteEntry]?) throws {
         if options.pushOnly { return try syncNotePushOnly(id, remoteEntries: remoteEntries) }
@@ -428,8 +505,7 @@ public final class WebDAVSync {
         for f in try LocalFS.entries(dir) {
             if let n = RevisionName(f), n.filename == f { L.insert(n) }
         }
-        let prefix = "\(id)/"
-        let S = Set(state.files.keys.filter { $0.hasPrefix(prefix) }.compactMap { RevisionName(String($0.dropFirst(prefix.count))) })
+        let S = recordedRevisions(id)
 
         let newLocal = L.subtracting(R).subtracting(S)
         let newRemote = R.subtracting(L).subtracting(S)
@@ -446,10 +522,10 @@ public final class WebDAVSync {
         for n in newRemote.sorted() { try attempt(n) { if try download(id, n, entry: entries[n]) { L.insert(n) } } }
         for n in newLocal.sorted() { try attempt(n) { try upload(id, n); R.insert(n) } }
 
-        var loaded: LoadedNote?
-        if let vault, let uuid = UUID(uuidString: id) {
-            loaded = try? vault.loadNote(uuid)
-        }
+        // Read (decrypted, decoded) only when a deletion is judged or a shared
+        // snapshot's coverage is not recorded yet; once, after the transfers
+        // above, as before. An unchanged note is never read.
+        lazy var loaded: LoadedNote? = loadForSync(id)
         let epoch = Date(timeIntervalSince1970: 0)
 
         // The other side deleted these: delete here only if compaction allows it, else put them back.
@@ -524,27 +600,77 @@ public final class WebDAVSync {
 
         guard !options.dryRun else { return }
         // Remember what both sides now share; drop what neither has.
+        let shared = L.intersection(R)
         var coverage: [RevisionName: Included] = [:]
-        for r in loaded?.revisions ?? [] {
-            if case .snapshot(let inc, _) = r.body { coverage[r.name] = inc }
+        if needsCoverage(id, shared) {
+            for r in loaded?.revisions ?? [] {
+                if case .snapshot(let inc, _) = r.body { coverage[r.name] = inc }
+            }
         }
-        for n in L.intersection(R) {
+        for n in shared {
             let k = key(id, n)
             state.files[k] = SyncState.FileRecord(included: coverage[n] ?? state.files[k]?.included)
         }
         for n in S where !L.contains(n) && !R.contains(n) { state.files[key(id, n)] = nil }
     }
 
+    /// The note as `vault` reads it, nil when the vault is not unlocked or
+    /// the note cannot be listed.
+    func loadForSync(_ id: String) -> LoadedNote? {
+        guard let vault, let uuid = UUID(uuidString: id) else { return nil }
+        notesRead += 1
+        return try? vault.loadNote(uuid)
+    }
+
+    /// Whether recording what both sides share needs the note read: a shared
+    /// snapshot whose coverage is not recorded yet. A recorded one keeps its
+    /// record (snapshots are write-once, so reading it again gives the same
+    /// value), and only a file named as a snapshot holds one (a revision
+    /// whose content names another kind does not read).
+    func needsCoverage(_ id: String, _ shared: Set<RevisionName>) -> Bool {
+        shared.contains { $0.kind == .snapshot && state.files[key(id, $0)]?.included == nil }
+    }
+
     /// Rewrites the server's `sempere-index.json` (kept only where one
     /// exists; `sempere vault index` creates it) to list what the server
     /// holds now, so a viewer reading the share as static files is never
     /// silently stale. Unchanged contents are not rewritten.
-    private func refreshRemoteWebIndex() throws {
-        let data = try WebIndex.encode(remoteRevisions)
+    ///
+    /// When the root listing shows the file with the strong ETag this device
+    /// recorded for it and the new contents hash to what it held then,
+    /// nothing is fetched or written. Otherwise it is fetched and compared.
+    private func refreshRemoteWebIndex(remote: RemoteEntry?) throws {
+        let data = try encodedWebIndex()
+        let hash = FileDigest.sha256(data)
+        if let record = state.webIndex, let etag = remote?.etag, Self.isStrong(etag), etag == record.etag,
+           record.hash == hash, remote?.size.map({ $0 == data.count }) ?? true {
+            return
+        }
         let current = try? client.get([WebIndex.fileName], maxBytes: WebIndex.maxBytes).data
-        guard current != data else { return }
+        if current == data {
+            state.webIndex = remote?.etag.flatMap { Self.isStrong($0) ? .init(hash: hash, etag: $0) : nil }
+            return
+        }
+        state.webIndex = nil
         guard try client.put([WebIndex.fileName], data, condition: .unconditional) else { return }
         report.uploaded.append(WebIndex.fileName)
+        // The ETag of what was just written (a PUT need not return one); the next run compares it.
+        if let etag = (try? client.stat([WebIndex.fileName]))??.etag, Self.isStrong(etag) {
+            state.webIndex = .init(hash: hash, etag: etag)
+        }
+    }
+
+    /// An ETag that changes whenever the bytes do (RFC 9110 §8.8.1); a weak
+    /// one (`W/"…"`) need not.
+    static func isStrong(_ etag: String) -> Bool { !etag.hasPrefix("W/") && !etag.isEmpty }
+
+    /// `WebIndex.encode(remoteRevisions)`, encoded once per run: the web
+    /// index and the published summaries both use it after the notes loop.
+    func encodedWebIndex() throws -> Data {
+        if let encodedIndex { return encodedIndex }
+        let data = try WebIndex.encode(remoteRevisions)
+        encodedIndex = data
+        return data
     }
 
     func upload(_ id: String, _ n: RevisionName) throws {

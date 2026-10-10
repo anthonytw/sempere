@@ -42,6 +42,13 @@ final class CLIWebDAVTests: CLITestCase {
         }
     }
 
+    func testSkipUnchangedFlagIsAccepted() throws {
+        let vault = try copyFixtureVault()
+        let r = try cli(["sync", "webdav", "http://127.0.0.1:9/vault/", "--vault", vault, "--skip-unchanged", "--push-only"])
+        XCTAssertNotEqual(r.status, 2, "not a usage error: \(r.err)")
+        XCTAssertFalse(r.err.contains("skip-unchanged"), r.err)
+    }
+
     func testPushOnlyFlagRules() throws {
         let vault = try copyFixtureVault()
         let lone = try cli(["sync", "webdav", "https://dav.example.com/v/", "--vault", vault, "--delete-extraneous"])
