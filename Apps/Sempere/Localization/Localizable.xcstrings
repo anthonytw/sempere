@@ -18171,6 +18171,18 @@
         }
       }
     },
+    "Voice note %@" : {
+      "comment" : "Default title of a quick-capture voice note: its start date and time",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nota de voz %@"
+          }
+        }
+      }
+    },
     "Voice note from %@" : {
       "comment" : "The value is the capturing device's name, e.g. iPad",
       "extractionState" : "manual",
