@@ -182,6 +182,52 @@ final class BulkExportTests: XCTestCase {
         XCTAssertFalse(session.skip(job, version: "v1"))
     }
 
+    /// A path the manifest gave one note, written for another, moves to the
+    /// other (the per-note index follows the manifest).
+    func testManifestPathTakenOverByAnotherNote() throws {
+        let root = try scratch()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let a = summary(1, "One"), b = summary(2, "Two")
+        let jobs = BulkExportPlan.jobs(for: .vault, from: [a, b], format: .pdf, layout: .flat)
+        let options = BulkExportOptions(format: .pdf)
+        let pathB = jobs[1].path(.pdf)
+        // An earlier manifest says note One wrote Two's file name.
+        let entry = #"{"note":"\#(a.id.uuidString.lowercased())","version":"v1","options":"\#(options.fingerprint)","size":3}"#
+        try Data(#"{"version":1,"files":{"\#(pathB)":\#(entry)}}"#.utf8)
+            .write(to: root.appendingPathComponent(".sempere-export-bulk.json"))
+        var session = try BulkExportSession(destination: .folder(root), options: options, jobs: jobs)
+        XCTAssertFalse(session.skip(jobs[1], version: "v1"))
+        try session.export(jobs[1], state: state("Two"), version: "v1", blobs: nil)
+        XCTAssertTrue(session.skip(jobs[1], version: "v1"))
+        _ = try session.finish(cancelled: false)
+        session = try BulkExportSession(destination: .folder(root), options: options, jobs: jobs)
+        XCTAssertTrue(session.skip(jobs[1], version: "v1"))
+        XCTAssertFalse(session.skip(jobs[0], version: "v1"))
+    }
+
+    /// Prints how long resume checks take against a large manifest
+    /// (`SEMPERE_BENCH_MANIFEST` files, default 20,000; 2,000 notes checked).
+    func testSkipTimingsWithALargeManifest() throws {
+        let files = Int(ProcessInfo.processInfo.environment["SEMPERE_BENCH_MANIFEST"] ?? "") ?? 20_000
+        let root = try scratch()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let options = BulkExportOptions(format: .png)
+        var json = #"{"version":1,"files":{"#
+        for i in 0..<files {
+            if i > 0 { json += "," }
+            let note = id(100_000 + i / 20, prefix: "0e1c6a1e").uuidString.lowercased()
+            json += #""Other-\#(i / 20)/p\#(i % 20).png":{"note":"\#(note)","version":"v1","options":"\#(options.fingerprint)","size":3}"#
+        }
+        json += "}}"
+        try Data(json.utf8).write(to: root.appendingPathComponent(".sempere-export-bulk.json"))
+        let jobs = BulkExportPlan.jobs(for: .vault, from: (0..<2_000).map { summary($0, "N\($0)") }, format: .png, layout: .flat)
+        let session = try BulkExportSession(destination: .folder(root), options: options, jobs: jobs)
+        let t = Date()
+        for job in jobs { XCTAssertFalse(session.skip(job, version: "v1")) }
+        print("bench: 2000 skip checks against \(files) manifest files: "
+              + String(format: "%.3f s", Date().timeIntervalSince(t)))
+    }
+
     func testPNGPagesAndStalePagesRemoved() throws {
         let root = try scratch()
         let s = summary(1, "Pages")
