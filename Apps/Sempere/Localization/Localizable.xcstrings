@@ -5133,7 +5133,7 @@
       }
     },
     "Device" : {
-      "comment" : "Label of a key's device name in Save Key",
+      "comment" : "A device key's name when it has none; label of a key's device name in Save Key",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -18135,18 +18135,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nota de voz de un dispositivo que ya no está en esta bóveda"
-          }
-        }
-      }
-    },
-    "Voice note from a device without a name" : {
-      "comment" : "The capturing device's key has no label",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nota de voz de un dispositivo sin nombre"
           }
         }
       }
