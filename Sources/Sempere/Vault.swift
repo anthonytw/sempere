@@ -789,12 +789,9 @@ public struct Vault: Sendable {
         Self.addAuthFeatures(&m)
         m.secretLink = link
         // The journal is bound to this vault.json under the new secret, which a
-        // removed device does not hold (format.md §3.3.1 "Binding the journal").
-        // A change that keeps the secret binds nothing (and drops a stale binding).
-        m.rewrapPending = rotate ? RecipientsAuth.rewrapPending(vaultId: m.vaultId, journal: journalData, secret: newSecret) : nil
-        if rotate, !m.features.contains(VaultManifest.rewrapPendingFeature) {
-            m.features.append(VaultManifest.rewrapPendingFeature)
-        }
+        // removed device does not hold (format.md §3.3.1 "Binding the journal"):
+        // no journal counts without it.
+        m.rewrapPending = RecipientsAuth.rewrapPending(vaultId: m.vaultId, journal: journalData, secret: newSecret)
         manifest = try Self.writeManifest(m, to: manifestURL, replacing: true, secret: newSecret)
         secret = newSecret
         recipientsStatus = .verified(.unchanged)

@@ -12,7 +12,8 @@ import XCTest
 /// it tagged under it verified, and a resumed rewrap re-tagged them under the
 /// current secret for good. A journal now counts only while `vault.json`
 /// binds it under the current secret (`rewrapPending`), and never on a device
-/// that saw the rotation finish (`rewrapFinished`; format.md §3.3.1).
+/// that saw the rotation finish (`rewrapFinished`, which catches a `vault.json`
+/// put back under the same secret; format.md §3.3.1).
 final class RewrapJournalBindingTests: VaultTestCase {
     let a = pqIdentity(), b = pqIdentity()
     var journalURL: URL { vaultURL().appendingPathComponent("rewrap-journal.json") }
@@ -71,7 +72,6 @@ final class RewrapJournalBindingTests: VaultTestCase {
         XCTAssertTrue(RecipientsAuth.linkConnects(writer.manifest.secretLink, from: outgoing, to: try writer.requireSecret(),
                                                   vaultId: made.vaultId), "the link stays: it is what B relied on")
         XCTAssertNil(writer.manifest.rewrapPending, "cleared by the finishing write")
-        XCTAssertTrue(writer.manifest.features.contains(VaultManifest.rewrapPendingFeature))
         XCTAssertEqual(try store.record(for: made.vaultId)?.rewrapFinished, true)
 
         let forged = try forge(by: removed, title: "Forged")
@@ -140,52 +140,6 @@ final class RewrapJournalBindingTests: VaultTestCase {
         XCTAssertNotNil(try v.discardRefusedJournal())
         XCTAssertNil(try VaultManifest.decode(Data(contentsOf: manifestURL)).rewrapPending)
         XCTAssertEqual(try Vault.open(at: vaultURL(), identities: [a], trust: store).recipientsStatus, .verified(.unchanged))
-    }
-
-    /// Taking the feature out of `features` (to make the vault look as if it
-    /// predated bound journals) breaks the markers tag, so the journal must
-    /// still be bound, even on a device with no record.
-    func testAStrippedFeatureStillRequiresABinding() throws {
-        let store = MemoryRecipientsTrustStore()
-        let (_, _, removed) = try makeVaults(store: store)
-        let outgoing = try removed.requireSecret()
-        var writer = try Vault.open(at: vaultURL(), identities: [a], trust: store)
-        try writer.removeRecipient(b.recipient)
-        var m = try VaultManifest.decode(Data(contentsOf: manifestURL))
-        m.features.removeAll { $0 == VaultManifest.rewrapPendingFeature }
-        try m.encoded().write(to: manifestURL)
-        let forged = try forge(by: removed, title: "Stripped")
-        try plantJournal(outgoing)
-        assertRefused(try Vault.open(at: vaultURL(), identities: [a], trust: MemoryRecipientsTrustStore()), forged: forged,
-                      "no record")
-    }
-
-    /// A rotation written before bound journals (no feature, no field: here a
-    /// vault.json rewritten as an older writer would, markers re-tagged) is
-    /// protected by the device's `rewrapFinished` alone.
-    func testUnboundVaultsAreProtectedByTheFinishedMarker() throws {
-        let store = MemoryRecipientsTrustStore()
-        let (made, _, removed) = try makeVaults(store: store)
-        let outgoing = try removed.requireSecret()
-        var writer = try Vault.open(at: vaultURL(), identities: [a], trust: store)
-        try writer.removeRecipient(b.recipient)
-        var m = try VaultManifest.decode(Data(contentsOf: manifestURL))
-        m.features.removeAll { $0 == VaultManifest.rewrapPendingFeature }
-        _ = try Vault.writeManifest(m, to: manifestURL, replacing: true, secret: try writer.requireSecret())
-        // A device whose record holds the feature is not fooled by the downgrade.
-        let forged = try forge(by: removed, title: "Old style")
-        try plantJournal(outgoing)
-        assertRefused(try Vault.open(at: vaultURL(), identities: [a], trust: store), forged: forged, "record")
-
-        // A record that never named the feature (written before it) still refuses by its marker.
-        var record = try XCTUnwrap(try store.record(for: made.vaultId))
-        record.markers = record.markers.map { VaultMarkers(format: $0.format,
-                                                           features: $0.features.filter { $0 != VaultManifest.rewrapPendingFeature }) }
-        try store.save(record)
-        XCTAssertTrue(record.rewrapFinished)
-        assertRefused(try Vault.open(at: vaultURL(), identities: [a], trust: store), forged: forged, "marker only")
-        // Without that marker, an unbound vault falls back to the link check (format.md §3.3.1 "Limits").
-        XCTAssertEqual(try Vault.open(at: vaultURL(), identities: [a], trust: MemoryRecipientsTrustStore()).previousSecret, outgoing)
     }
 
     /// The marker is set when a device that keeps a record opens the vault

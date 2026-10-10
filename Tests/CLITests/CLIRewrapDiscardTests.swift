@@ -38,10 +38,16 @@ final class CLIRewrapDiscardTests: CLITestCase {
     }
 
     func testAnAcceptedJournalIsKept() throws {
-        let (vault, _, key) = try makeVault()
-        // An addition's journal (no previous secret) belongs to an unfinished change.
+        let (vault, id, key) = try makeVault()
+        // A journal vault.json binds belongs to an unfinished change (as an interrupted addition leaves it).
         let journal = vault.url.appendingPathComponent("rewrap-journal.json")
-        try Data(#"{"format":"sempere/1"}"#.utf8).write(to: journal)
+        let bytes = Data(#"{"format":"sempere/1"}"#.utf8)
+        try bytes.write(to: journal)
+        let manifestURL = vault.url.appendingPathComponent("vault.json")
+        var m = try VaultManifest.decode(Data(contentsOf: manifestURL))
+        let secret = try VaultSecret(bytes: AgeFile.decrypt(Data(m.vaultSecret.utf8), with: [id]))
+        m.rewrapPending = RecipientsAuth.rewrapPending(vaultId: m.vaultId, journal: bytes, secret: secret)
+        try m.encoded().write(to: manifestURL)
         let r = try cli(["vault", "rewrap-discard", "--vault", vault.url.path, "--identity", key])
         XCTAssertEqual(r.status, 1, r.err)
         XCTAssertTrue(r.err.contains("rewrap-resume"), r.err)

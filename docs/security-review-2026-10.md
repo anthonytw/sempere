@@ -713,23 +713,21 @@ previous-secret fallback (revisions, blobs, `settings.age`, captures, the web vi
 summaries) accepted its forgeries, and a resume re-tagged them under the current secret.
 
 **Fix** (`format.md` §3.3.1 "Accepting the journal", `Sources/Sempere/RewrapBinding.swift`):
-- Format (additive): the rotation's `vault.json` write carries `rewrapPending`, an HMAC under the new
-  secret over the journal's SHA-256, and the `rewrap-pending` feature (older writers stop); step 4 removes
-  the field in a tagged write before deleting the journal. While the vault binds journals (field, feature,
-  recorded feature, or markers that do not check), a journal counts only when the field verifies over its
-  bytes. Older readers ignore the field; older vaults still open (the link check alone, plus the marker).
-- Device-local, no format change: the trust record's `rewrapFinished`, set when the device saves its
-  record (or opens with a record of the same secret) while nothing is pending, and when it finishes the
-  rewrap itself; it never goes back for the same secret. Then no journal with another previous secret is
-  accepted (no fallback, no resume). A lost record falls back to the link and binding checks.
-- Sync: `incomingManifestProblem` refuses a `vault.json` that, under the same secret, brings back or
-  changes `rewrapPending` (a put-back copy), locked or not.
-- Web viewer: `journalSecretAccepted` in `web/src/vault/vault.ts` (link + binding; it keeps no record).
+- Binding: every recipient change's `vault.json` write carries `rewrapPending`, an HMAC under the new
+  secret over the journal's SHA-256; step 4 removes it in a tagged write before deleting the journal. A
+  journal counts only when the field binds its bytes (and, for an outgoing secret, `secretLink` links it).
+- Device-local: the trust record's `rewrapFinished`, set when the device saves its record (or opens with a
+  record of the same secret) while nothing is pending, and when it finishes the rewrap itself; it never
+  goes back for the same secret. It is what catches a `vault.json` from step 2 put back with the genuine
+  journal after the rotation finished (same secret, so the binding still verifies): then no journal with
+  another previous secret is accepted (no fallback, no resume).
+- Sync: `incomingManifestProblem` refuses a `vault.json` that, under the same secret and list, brings
+  back or changes `rewrapPending` (a put-back copy), locked or not.
+- Web viewer: `journalSecretAccepted` in `web/src/vault/vault.ts` (binding + link; it keeps no record).
 - Tests: `RewrapJournalBindingTests` (`testARemovedDeviceCannotReopenItsSecretWithAPlantedJournal`,
-  `testAReplayedJournalOfAFinishedRotationIsRefused`, `testAStrippedFeatureStillRequiresABinding`,
-  `testUnboundVaultsAreProtectedByTheFinishedMarker`, `testTheFinishedMarkerIsMonotonic`, the shared vector
-  in `testRewrapPendingIsHMACOverVaultIdAndJournalDigest`), `JournalSyncTests.testAJournalThisDeviceRefusesIsNotTaken`,
-  `web/test/journal.test.ts`.
+  `testAReplayedJournalOfAFinishedRotationIsRefused`, `testTheFinishedMarkerIsMonotonic`, the shared vector
+  in `testRewrapPendingIsHMACOverVaultIdAndJournalDigest`), `RecipientsAuthTests.testAPlantedJournalSecretIsNotAccepted`,
+  `JournalSyncTests.testAJournalThisDeviceRefusesIsNotTaken`, `web/test/journal.test.ts`.
 - Remaining (`format.md` §3.3.1 "Limits"): a device with no trust record that is given both the
   `vault.json` of step 2 and the genuine journal accepts the outgoing secret, as during the rotation; the
   web viewer keeps no record, so the same holds there.

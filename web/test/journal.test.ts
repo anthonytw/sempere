@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type SecretLink, linkMessage, linkSeeds } from "../src/vault/link.ts";
 import {
-  UnlockedVault, type VaultManifest, markersTag, parseManifest, rewrapPendingFeature, rewrapPendingTag,
+  UnlockedVault, type VaultManifest, parseManifest, rewrapPendingTag,
 } from "../src/vault/vault.ts";
 import { fixtures } from "./support.ts";
 
@@ -44,10 +44,7 @@ describe("rewrap journal binding", () => {
     const e = new Encrypter();
     e.addRecipient(await identityToRecipient(identity));
     const journal = enc.encode(JSON.stringify({ format: "sempere/1", previousVaultSecret: armor.encode(await e.encrypt(previous)) }));
-    // A vault whose rotations bind their journal: the feature, markers tagged under the current secret.
-    const features = [...sample.features, rewrapPendingFeature];
-    const bound: VaultManifest = { ...sample, features, secretLink: link,
-      markersTag: await markersTag(sample.vaultId, sample.format, features, current) };
+    const bound: VaultManifest = { ...sample, secretLink: link };
     const keys = async (m: VaultManifest, j: Uint8Array = journal) =>
       (await (await UnlockedVault.unlock(m, identity, j)).derivedKeys("sempere/1 test", gcm, ["decrypt"])).length;
 
@@ -59,10 +56,8 @@ describe("rewrap journal binding", () => {
     // A binding of other bytes, or one that is not hex, does not count.
     expect(await keys({ ...bound, rewrapPending: await rewrapPendingTag(sample.vaultId, enc.encode("{}"), current) })).toBe(1);
     expect(await keys({ ...bound, rewrapPending: "" })).toBe(1);
-    // Taking the feature out without the key breaks the markers tag: still refused.
-    expect(await keys({ ...bound, features: sample.features })).toBe(1);
-    // A vault from before bound journals (markers check, no feature): the link alone, as before.
-    expect(await keys({ ...sample, secretLink: link })).toBe(2);
+    // Bound but not linked: refused too.
+    expect(await keys({ ...sample, rewrapPending: pending })).toBe(1);
     // The blob names follow: only the current secret's once refused.
     const sha = new Uint8Array(32);
     expect(await (await UnlockedVault.unlock(bound, identity, journal)).blobNames(sha)).toHaveLength(1);

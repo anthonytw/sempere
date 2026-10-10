@@ -73,14 +73,14 @@ public struct VaultManifest: Hashable, Sendable, Codable {
     /// `rewrapPending` (format.md §3.3.1 "Binding the journal"): lowercase hex
     /// HMAC over `vaultId` and the SHA-256 of `rewrap-journal.json`'s bytes,
     /// under a key derived from the (new) vault secret; present only while a
-    /// secret-rotating recipient change is unfinished. Read leniently, like
+    /// recipient change is unfinished. Read leniently, like
     /// `recipientsTag`.
     public var rewrapPending: String?
 
     /// The extensions this implementation knows. A writer must not write to
     /// a vault that uses any other (format.md §2).
     public static let knownFeatures: Set<String> = [attachmentsFeature, recipientsTagFeature, signedLinkFeature,
-                                                           markersTagFeature, rewrapPendingFeature]
+                                                           markersTagFeature]
     /// Added before the first blob or attachment op is written (format.md §2, §8).
     public static let attachmentsFeature = "attachments"
     /// The vault carries `recipientsTag` (format.md §2.1). Older writers do
@@ -95,11 +95,6 @@ public struct VaultManifest: Hashable, Sendable, Codable {
     /// Older writers do not know it, so they stop writing instead of
     /// rewriting `vault.json` without the tag.
     public static let markersTagFeature = "markers-tag"
-    /// Secret rotations bind their journal with `rewrapPending` (format.md
-    /// §3.3.1). Older writers do not know it, so they stop writing instead of
-    /// rotating without a binding, or rewriting `vault.json` without the field
-    /// while a rotation is pending.
-    public static let rewrapPendingFeature = "rewrap-pending"
 
     /// Builds a manifest value. No validation happens here; `Vault.create`
     /// and `Vault.open` enforce format.md §2.

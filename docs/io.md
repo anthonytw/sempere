@@ -1081,7 +1081,7 @@ Before a remote `vault.json` replaces the local one, its device list is
 checked (`Vault.incomingManifestProblem`, format.md §2.1): the same keys
 (still tagged) pass without a key; a changed list passes only when the vault
 is unlocked and the list verifies (tag under the secret it carries, that
-secret the local one or confirmed by `secretLink`), and, under the same secret,
+secret the local one or confirmed by `secretLink`), and, under the same secret and list,
 it never brings back or changes `rewrapPending` (a `vault.json` put back to
 replay a finished change's journal). Otherwise it is listed in
 `rejected`, the local file stays and the sync state is not updated, so the

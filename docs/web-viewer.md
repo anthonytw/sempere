@@ -531,7 +531,7 @@ note id, file name and body, §4), and cannot make the viewer run code:
   with one valid signature is refused. The link stays in `vault.json` after
   the rewrap, and a removed device holds the outgoing secret, so the journal
   must also still be bound by `vault.json` (`rewrapPending`, `format.md`
-  §3.3.1) whenever the vault binds journals; with no trust record, the viewer
+  §3.3.1); with no trust record, the viewer
   cannot tell a `vault.json` put back from the rotation, which then still
   binds the genuine journal (`journal.test.ts`). Shared test vectors with the Swift
   code: `Tests/SempereTests/Fixtures/secret-link-vectors.json`.

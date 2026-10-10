@@ -272,7 +272,11 @@ final class BlobSyncTests: BlobSyncTestCase {
         let unused = try a.writeBlob(note: noteID, syntheticBlob(100), type: "image/png")
         let name = try blobFile(a, unused)
         try sync("A", server); try sync("B", server)
-        server.putDirect("rewrap-journal.json", Data("{\"format\":\"sempere/1\"}".utf8))
+        // An addition interrupted on A: its journal is bound by vault.json (format.md §3.3.1).
+        var changing = try openVault("A")
+        XCTAssertThrowsError(try changing.addRecipient(pqIdentity().recipient, label: "x", added: Date(), stopAfter: 0))
+        try sync("A", server)
+        XCTAssertNotNil(server.file("rewrap-journal.json"))
         server.removeDirect("notes/\(id)/att/\(name)")
         let report = try sync("B", server)
         XCTAssertTrue(report.deleted.isEmpty, "\(report)")

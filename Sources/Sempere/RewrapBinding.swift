@@ -7,16 +7,14 @@ import Foundation
 //
 // `rewrap-journal.json` is plaintext, and `secretLink` stays in `vault.json`
 // until the next rotation. A removed device holds the outgoing secret, so the
-// link alone cannot tell an unfinished rotation from a finished one: such a
-// device could plant (or replay) a journal at any time and have its old secret
-// accepted again. Two layers close that:
+// link alone cannot tell an unfinished rotation from a finished one. So:
 //
 // 1. `rewrapPending` in `vault.json`, an HMAC under the *new* secret over the
-//    journal's bytes, written with the rotation and removed when it finishes:
-//    a journal counts only while `vault.json` binds it.
-// 2. `rewrapFinished` in this device's trust record: once the device saw the
-//    current secret with nothing pending, no journal counts again, whatever a
-//    `vault.json` put back says.
+//    journal's bytes, written with every recipient change and removed when it
+//    finishes: a journal counts only while `vault.json` binds it.
+// 2. `rewrapFinished` in this device's trust record: a `vault.json` put back
+//    under the same secret still binds the genuine journal; once the device saw
+//    the current secret with nothing pending, no outgoing secret counts again.
 
 extension RecipientsAuth {
     static let rewrapPendingInfo = "sempere/1 rewrap pending key"
@@ -76,55 +74,38 @@ extension Vault {
     }
 
     /// The journal's verdict for a reader holding `secret` under `manifest`,
-    /// with this device's trust record (format.md §3.3.1 rules 1–3).
+    /// with this device's trust record (format.md §3.3.1 "Accepting the journal").
     static func judgeJournal(bytes data: Data, manifest: VaultManifest, secret: VaultSecret, identities: [any AgeIdentity],
                              record: RecipientsTrustRecord?) -> JournalVerdict {
         let j: RewrapJournal
         do { j = try InkJSON.decoder().decode(RewrapJournal.self, from: data) } catch {
             return .refused("not a rewrap journal: \(error)")
         }
+        // Bound: only the journal vault.json binds under the current secret counts (S0).
+        guard let tag = manifest.rewrapPending,
+              RecipientsAuth.verifyRewrapPending(tag, vaultId: manifest.vaultId, journal: data, secret: secret) else {
+            return .refused("vault.json does not bind it (format.md §3.3.1 rewrapPending): "
+                + "not this vault's unfinished recipient change")
+        }
         guard let armored = j.previousVaultSecret else { return .accepted(j, previous: nil) }
         let previous: VaultSecret
         do { previous = try decryptSecret(armored, with: identities) } catch {
             return .refused("previous secret: \(error)")
         }
-        // The current secret: a change interrupted before vault.json was written.
         if RecipientsAuth.constantTimeEqual(previous.bytes, secret.bytes) { return .accepted(j, previous: previous) }
-        let record = record?.vaultId == manifest.vaultId ? record : nil
-        // Rule 1 (security review 2026-10, R4): anyone can encrypt a secret of
-        // their own to the public keys; only a linked one is the vault's.
+        // Linked (R4): the outgoing secret is the one the rotation started from.
         guard RecipientsAuth.linkConnects(manifest.secretLink, from: previous, to: secret, vaultId: manifest.vaultId) else {
             return .refused("its previous secret is not linked to the vault's (format.md §2.1 secretLink): "
                 + "not written by this vault's recipient change")
         }
-        // Rule 3 (S0): this device saw the rotation into the current secret
-        // finish; a journal now is one planted or put back by whoever kept the
-        // outgoing secret (a removed device).
+        // Not finished: a vault.json put back under the same secret still binds the
+        // genuine journal; this device saw that rotation finish.
+        let record = record?.vaultId == manifest.vaultId ? record : nil
         if record?.saysRewrapFinished(for: secret) == true {
             return .refused("this device saw the change to the vault's current secret finish (format.md §3.3.1): "
-                + "a journal put back or planted since")
-        }
-        // Rule 2 (S0): while the vault binds journals, only the one vault.json
-        // binds under the current secret counts.
-        if bindsJournals(manifest, secret: secret, record: record) {
-            guard let tag = manifest.rewrapPending,
-                  RecipientsAuth.verifyRewrapPending(tag, vaultId: manifest.vaultId, journal: data, secret: secret) else {
-                return .refused("vault.json does not bind it (format.md §3.3.1 rewrapPending): "
-                    + "not this vault's unfinished recipient change")
-            }
+                + "a journal put back since")
         }
         return .accepted(j, previous: previous)
-    }
-
-    /// True when the vault binds its journals (format.md §3.3.1 rule 2):
-    /// `rewrapPending` present, the feature named by `vault.json` or this
-    /// device's recorded markers, or markers that do not check (a feature
-    /// taken out without the key).
-    static func bindsJournals(_ m: VaultManifest, secret: VaultSecret, record: RecipientsTrustRecord?) -> Bool {
-        let feature = VaultManifest.rewrapPendingFeature
-        return m.rewrapPending != nil || m.features.contains(feature)
-            || record?.markers?.features.contains(feature) == true
-            || RecipientsAuth.markersProblem(m, secret: secret, record: record) != nil
     }
 
     /// This vault's journal as judged now (`judgeJournal` on the file).

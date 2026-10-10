@@ -523,9 +523,11 @@ extension Vault {
         guard let local else { return nil }
         guard let mine = try? readManifest(local) else { return nil }   // a damaged local copy: take the remote one
         guard incoming.vaultId == mine.vaultId else { return "the incoming vault.json belongs to another vault" }
-        // Under one secret, `rewrapPending` only ever goes away (format.md §3.3.1
-        // step 4): one that comes back, or changes, is a vault.json put back
-        // to replay a finished change's journal (security review 2026-10, S4).
+        // Under one secret and list, `rewrapPending` only ever goes away (format.md
+        // §3.3.1 step 4; a change of the list may bind a new journal): one that
+        // comes back, or changes, is a vault.json put back to replay a finished
+        // change's journal (security review 2026-10, S4). The same sealed secret
+        // means the same list.
         let pendingBack = incoming.rewrapPending != nil && incoming.rewrapPending != mine.rewrapPending
         let pendingProblem = "the incoming vault.json brings back a finished recipient change (rewrapPending under the "
             + "same secret, format.md §3.3.1): an older copy put back"
@@ -573,7 +575,7 @@ extension Vault {
         do { secret = try decryptSecret(incoming.vaultSecret, with: vault.identities) } catch {
             return "the incoming vault.json's secret does not open with this key: \(error)"
         }
-        if pendingBack, let own = try? decryptSecret(mine.vaultSecret, with: vault.identities),
+        if pendingBack, sameKeys, let own = try? decryptSecret(mine.vaultSecret, with: vault.identities),
            RecipientsAuth.constantTimeEqual(own.bytes, secret.bytes) {
             return pendingProblem
         }

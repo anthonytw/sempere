@@ -36,7 +36,15 @@ struct RefusedJournalTests {
     @Test func anAcceptedJournalStillLeadsToTheMigration() async throws {
         let (url, key) = try AppModelTests.fixtureVault()
         let keyText = try String(contentsOf: key, encoding: .utf8)
-        try Data(#"{"format":"sempere/1"}"#.utf8).write(to: url.appendingPathComponent("rewrap-journal.json"))
+        let identity = try IdentityFile.parse(keyText)
+        // As an interrupted addition leaves it: the journal, bound by vault.json (format.md §3.3.1).
+        let bytes = Data(#"{"format":"sempere/1"}"#.utf8)
+        try bytes.write(to: url.appendingPathComponent("rewrap-journal.json"))
+        let manifestURL = url.appendingPathComponent("vault.json")
+        var m = try VaultManifest.decode(Data(contentsOf: manifestURL))
+        let secret = try VaultSecret(bytes: AgeFile.decrypt(Data(m.vaultSecret.utf8), with: [identity]))
+        m.rewrapPending = RecipientsAuth.rewrapPending(vaultId: m.vaultId, journal: bytes, secret: secret)
+        try m.encoded().write(to: manifestURL)
         let model = AppModel(deviceStateURL: TS.deviceStateURL(), recipientsTrust: MemoryRecipientsTrustStore())
         try await model.openVault(at: url)
         try await model.unlock(identityText: keyText)

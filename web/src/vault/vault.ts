@@ -201,7 +201,6 @@ export type RecipientsStatus =
 
 export const recipientsTagFeature = "recipients-tag";
 export const markersTagFeature = "markers-tag";
-export const rewrapPendingFeature = "rewrap-pending";
 
 async function hkdf(secret: Uint8Array, info: string): Promise<Uint8Array> {
   const key = await crypto.subtle.importKey("raw", buf(secret), "HKDF", false, ["deriveBits"]);
@@ -294,19 +293,14 @@ export async function rewrapPendingTag(vaultId: string, journal: Uint8Array, sec
 
 /**
  * Whether the journal's previous secret counts (format.md §3.3.1 "Accepting the journal"), for a
- * reader that keeps no trust record (rule 3 needs one): it is the current secret, or `secretLink`
- * links it to the current one and, whenever the vault binds journals (`rewrapPending` present, the
- * `rewrap-pending` feature, or markers that do not check), `rewrapPending` binds these bytes.
+ * reader that keeps no trust record (rule 3 needs one): vault.json's `rewrapPending` binds these
+ * exact bytes under the current secret, and the secret is the current one or `secretLink` links it.
  */
 export async function journalSecretAccepted(manifest: VaultManifest, journal: Uint8Array, previous: Uint8Array,
   current: Uint8Array): Promise<boolean> {
-  if (equalBytes(previous, current)) return true;
-  if (!await verifySecretLink(manifest.secretLink, previous, current, manifest.vaultId)) return false;
-  const binds = manifest.rewrapPending !== undefined || manifest.features.includes(rewrapPendingFeature)
-    || await markersProblem(manifest, current) !== undefined;
-  if (!binds) return true;
-  return manifest.rewrapPending !== undefined
-    && equalStrings(manifest.rewrapPending, await rewrapPendingTag(manifest.vaultId, journal, current));
+  if (manifest.rewrapPending === undefined
+    || !equalStrings(manifest.rewrapPending, await rewrapPendingTag(manifest.vaultId, journal, current))) return false;
+  return equalBytes(previous, current) || verifySecretLink(manifest.secretLink, previous, current, manifest.vaultId);
 }
 
 /**
