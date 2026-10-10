@@ -384,10 +384,10 @@ mark on the key that unlocked the vault. From it:
   asks the owner (Touch ID, or the password on a Mac without it), as Save
   Key… does (`AppModel.requireOwner`, security review 2026-10, P1); so does
   Recovery Kit…, which prints the secret key.
-* **Remove…** drops a key. The key that unlocked the vault, and the last key,
+* **Remove Key…** drops a key. The key that unlocked the vault, and the last key,
   cannot be removed. Removal rotates the vault secret and re-encrypts every
   note (`Vault.removeRecipient`, `docs/io.md` "Recipient changes").
-* **Replace…** swaps another device's key for a pasted public key or a
+* **Replace Key…** swaps another device's key for a pasted public key or a
   generated one (shown once, as for Add) in one change: the vault secret
   rotates and every note is re-encrypted once (`Vault.replaceRecipient`, the
   CLI's `vault recipients replace`); an empty label keeps the old one. It

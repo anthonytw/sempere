@@ -178,7 +178,7 @@ code (`IdentityFile.render`, `RecoveryKit`, `Vault.addRecipient`,
 | Save Key… → Print Recovery Kit / Save as PDF | `sempere keys paper --identity key.txt --vault V --out kit.pdf` |
 | New Key… (label) | `sempere keys generate --out new.txt`, then `sempere vault recipients add --vault V "$(sempere keys show new.txt)" --label LABEL` |
 | New Key… → Save to Files / Share / Recovery Kit | `new.txt` itself; `sempere keys paper --identity new.txt --vault V --out kit.pdf` |
-| Vault Keys → Replace… (paste a public key, or generate one) | `sempere vault recipients replace --vault V OLD NEW [--label LABEL]` (`sempere keys generate --out new.txt` first to generate) |
+| Vault Keys → Replace Key… (paste a public key, or generate one) | `sempere vault recipients replace --vault V OLD NEW [--label LABEL]` (`sempere keys generate --out new.txt` first to generate) |
 | Recipients alert → Remove | `sempere vault recipients repair --vault V` |
 | Recipients alert → Choose Devices to Keep… | `sempere vault recipients repair --vault V --keep KEY ...` |
 | Recipients alert → Trust This List | `sempere vault recipients confirm --vault V` |
@@ -187,7 +187,7 @@ The app adds two rules to the CLI's `repair --keep`, since a wrong pick
 cannot be undone from the device that made it: the key the app unlocked with
 is always kept (and a repair is refused when that key is in neither the list
 nor this device's record), and keeping a key this device never confirmed asks
-for the owner check first (Face ID, Touch ID or the passcode), as adding a key does. Replace… refuses the key
+for the owner check first (Face ID, Touch ID or the passcode), as adding a key does. Replace Key… refuses the key
 the app unlocked with (add a key for this device, unlock with it, then remove
 the old one): replacing it would lock the app out, and an interrupted replace
 of it can only be finished with both keys.

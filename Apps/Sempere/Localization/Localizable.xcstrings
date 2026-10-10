@@ -11916,7 +11916,7 @@
       }
     },
     "Remove Key…" : {
-      "comment" : "Context menu item",
+      "comment" : "Key window: a key row's button and context menu, remove a device key",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -12112,18 +12112,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Elimina todos los guardados automáticos, por recientes que sean, salvo el más reciente de cada sesión de edición. Conserva todos los puntos de control (versiones guardadas e importadas) y la versión más reciente de la nota."
-          }
-        }
-      }
-    },
-    "Remove…" : {
-      "comment" : "Button: remove a device key",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quitar…"
           }
         }
       }
@@ -12390,7 +12378,7 @@
       }
     },
     "Replace Key…" : {
-      "comment" : "Key window: context menu, replace a device's key",
+      "comment" : "Key window: a key row's button and context menu, replace a device's key",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -12460,7 +12448,7 @@
       }
     },
     "Replace…" : {
-      "comment" : "Key window: replace a device's key",
+      "comment" : "Key window: confirm replacing a device's key",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
