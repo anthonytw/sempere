@@ -980,7 +980,14 @@ window) over the revisions held locally: a delta needs a snapshot that covers it
 a snapshot needs one that subsumes it. The covering snapshot must be one the
 remote side holds: on the server (as listed at the start of the run) for a file
 the server dropped, since a compaction there keeps its covering snapshot there,
-and also on the server for a remote delete. An emptied or recreated remote
+and also on the server for a remote delete. A file the server dropped is also
+held to what any compactor or thinner of this format guarantees (format.md §5.3,
+§5.8.4; security review stage 4, S2), since the server needs no key to drop
+files: never a checkpoint or the created anchor
+(`CompactionPlanner.neverDeleted`), never a set that would leave a complete
+checkpoint incomplete (`deletionKeepsCheckpoints`: its positioned snapshots and
+witnesses stay), and nothing in a note with an unreadable revision. Its age is
+not judged: thinning everything except checkpoints is a legitimate action. An emptied or recreated remote
 folder therefore deletes nothing locally; its files are uploaded again. A snapshot removed locally can only be judged from
 the `included` coverage recorded when it was last synced. Without an unlocked
 vault nothing can be checked, so nothing is deleted. A removal that fails the

@@ -751,3 +751,18 @@ normally when a refused journal is left; `vault info` says "REFUSED journal"; th
 collection name `rewrap-discard`; a server journal this device refuses no longer holds blob pruning back.
 Tests: `RewrapJournalBindingTests.testARefusedJournalCanBeDiscardedAndAnAcceptedOneCannot`,
 `testAnUnreadableJournalIsKept`, `CLIRewrapDiscardTests`.
+
+### S2 (Medium): a WebDAV server could make two-way-sync clients delete saved versions
+
+`syncNote` judged a revision the server no longer listed only by snapshot coverage (with its age forced
+away), so a server without any key could make every syncing device delete checkpoints, the created anchor
+and the history a checkpoint needs. **Fix:** such a deletion is followed only when a compactor or thinner
+of this format could have made it: never a checkpoint or the created anchor
+(`CompactionPlanner.neverDeleted`), never a set that leaves a complete checkpoint incomplete
+(`CompactionPlanner.deletionKeepsCheckpoints`, the check `plan` uses), and nothing in a note with an
+unreadable revision; anything else is uploaded again. Age is not judged (thinning everything except
+checkpoints is legitimate), so a server can still drop covered non-checkpoint history after the newest
+checkpoint, as that thinning would. Tests: `RemoteDeletionTests.testTheServerCannotDeleteACheckpoint`,
+`testTheServerCannotDeleteTheHistoryACheckpointNeeds` (fail on the base), and
+`testAnExplainedDeletionStillPropagates`, `testAThinningByAnotherDeviceReachesThisOne` (legitimate
+deletions still propagate).

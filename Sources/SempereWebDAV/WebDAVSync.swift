@@ -569,15 +569,29 @@ public final class WebDAVSync {
             var coverage: [RevisionName: SnapshotCoverage] = [:]
             for r in loaded?.revisions ?? [] { if let c = SnapshotCoverage(r) { coverage[c.name] = c } }
             let readable = Set(loaded?.revisions.map(\.name) ?? [])
+            // Only what a compactor or thinner of this format could have deleted (format.md §5.3,
+            // §5.8.4; security review 2026-10, stage 4, S2): never a checkpoint or the created
+            // anchor, every complete checkpoint still complete afterwards (its positioned snapshots
+            // and witnesses kept), and nothing judged from a note with an unreadable revision.
+            // Anything else is the server losing (or deleting) files: they are put back.
+            var explained = Set<RevisionName>()
+            if let loaded, loaded.failures.isEmpty {
+                let protected = CompactionPlanner.neverDeleted(loaded.revisions)
+                for n in remoteDeleted where readable.contains(n) && !protected.contains(n) {
+                    var snaps = onServer
+                    if var own = coverage[n] { own.wall = epoch; snaps.append(own) }
+                    if CompactionPlanner.deletable(names: [n], wall: [n: epoch], snapshots: snaps,
+                                                   retention: 0, now: options.now).contains(n) {
+                        explained.insert(n)
+                    }
+                }
+                if !CompactionPlanner.deletionKeepsCheckpoints(explained, from: loaded.revisions, now: options.now) {
+                    explained = []
+                }
+            }
             for n in remoteDeleted.sorted() {
                 try attempt(n) {
-                    var allowed = false
-                    if loaded != nil, readable.contains(n) {
-                        var snaps = onServer
-                        if var own = coverage[n] { own.wall = epoch; snaps.append(own) }
-                        allowed = CompactionPlanner.deletable(names: [n], wall: [n: epoch], snapshots: snaps,
-                                                              retention: 0, now: options.now).contains(n)
-                    }
+                    let allowed = explained.contains(n)
                     if allowed {
                         report.deleted.append(.init(side: "local", path: "notes/\(key(id, n))"))
                         try requireLocalWrite("delete notes/\(key(id, n))")
