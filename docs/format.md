@@ -3363,7 +3363,7 @@ iCloud) are not recorded.
   ```json
   { "format": "sempere-capture/1", "id": "<captureId>", "device": "a1b2c3d4",
     "vault": "<vaultId>", "created": "2026-10-07T14:33:05.120Z",
-    "started": "2026-10-07T14:32:41.000Z", "title": "Voice note 7 Oct 2026, 14:32",
+    "started": "2026-10-07T14:32:41.000Z", "title": "Voice note 2026-10-07 14:32",
     "notebook": "Inbox",
     "audio": { "sha256": "…", "size": 196608, "type": "audio/mp4" },
     "duration": 24.1, "codec": "aac", "sampleRate": 48000, "channels": 1, "bitRate": 64000 }

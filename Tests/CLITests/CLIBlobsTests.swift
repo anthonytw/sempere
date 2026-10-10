@@ -84,6 +84,11 @@ final class CLIBlobsTests: CLITestCase {
         // verify, copy
         r = try cli(["blobs", "verify"] + access(vault, key))
         XCTAssertEqual(r.status, 0, r.out + r.err)
+        for short in [String(used.sha256.prefix(7)), used.sha256.uppercased()] {
+            r = try cli(["blobs", "copy", short, "--from", n1, "--to", n2] + access(vault, key))
+            XCTAssertEqual(r.status, 2, "copy takes the same hash argument as extract: \(short)")
+            XCTAssertTrue(r.err.contains("8 to 64 lowercase hex digits"), r.err)
+        }
         r = try cli(["blobs", "copy", used.sha256, "--from", n1, "--to", n2] + access(vault, key))
         XCTAssertEqual(r.status, 0, r.err)
         let copied = vault.url.appendingPathComponent("notes/\(n2)/att/\(try vault.blobFileName(for: used))")

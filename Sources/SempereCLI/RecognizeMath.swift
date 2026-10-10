@@ -112,14 +112,8 @@ struct RecognizeMathCommand: ParsableCommand {
     static func resolveStrokes(_ names: [String], on page: Page) throws -> [UUID] {
         let all = page.strokes.map(\.id)
         return try names.flatMap { $0.split(separator: ",") }.map { raw in
-            let q = raw.trimmingCharacters(in: .whitespaces).lowercased()
-            if let id = UUID(uuidString: q), all.contains(id) { return id }
-            guard q.count >= 4 else { throw CLIError.failure("stroke \(q): give a whole id or at least 4 characters") }
-            let matches = all.filter { $0.uuidString.lowercased().hasPrefix(q) }
-            guard matches.count == 1 else {
-                throw CLIError.failure(matches.isEmpty ? "no stroke \(q) on this page" : "stroke \(q) is ambiguous")
-            }
-            return matches[0]
+            try resolveIDPrefix(raw.trimmingCharacters(in: .whitespaces), kind: "stroke", among: all,
+                                place: "on this page", id: { $0 })
         }
     }
 

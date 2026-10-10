@@ -162,9 +162,7 @@ struct BlobsExtract: ParsableCommand {
     @OptionGroup var output: OutputOptions
 
     func validate() throws {
-        guard sha256.count >= 8, sha256.count <= 64,
-              sha256.utf8.allSatisfy({ (0x30...0x39).contains($0) || (0x61...0x66).contains($0) })
-        else { throw ValidationError("give the content's SHA-256: 8 to 64 lowercase hex digits") }
+        try validateSHAPrefix(sha256)
         if output.json && out == nil { throw ValidationError("--json needs --out (the content goes to standard output)") }
     }
 
@@ -189,6 +187,14 @@ struct BlobsExtract: ParsableCommand {
             }
         }
     }
+}
+
+/// Checks a `sha256` argument of `extract` and `copy`: a whole SHA-256 or a
+/// prefix of it, 8 to 64 lowercase hex digits.
+func validateSHAPrefix(_ sha256: String) throws {
+    guard sha256.count >= 8, sha256.count <= 64,
+          sha256.utf8.allSatisfy({ (0x30...0x39).contains($0) || (0x61...0x66).contains($0) })
+    else { throw ValidationError("give the content's SHA-256: 8 to 64 lowercase hex digits") }
 }
 
 /// The reference with this hash (or unique prefix) in a note's revisions.
@@ -270,7 +276,12 @@ struct BlobsAdd: ParsableCommand {
 struct BlobsCopy: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "copy",
-        abstract: "Copy a blob one note references into another note (before writing a revision there that uses it).")
+        abstract: "Copy a blob one note references into another note (before writing a revision there that uses it).",
+        discussion: """
+            SHA256 is the content hash a revision of the --from note references (or a unique prefix of at \
+            least 8 digits).
+            """
+    )
 
     @Argument(help: ArgumentHelp("The content's SHA-256 (or a unique prefix).", valueName: "sha256"))
     var sha256: String
@@ -283,6 +294,8 @@ struct BlobsCopy: ParsableCommand {
 
     @OptionGroup var access: AccessOptions
     @OptionGroup var output: OutputOptions
+
+    func validate() throws { try validateSHAPrefix(sha256) }
 
     func run() throws {
         let vault = try access.openVault(.required)

@@ -25,9 +25,11 @@ an existing vault. Times are printed in your local time zone with an offset;
 
 **Getting a key.** Commands that read notes need an identity. In order:
 `--identity` files (or `$SEMPERE_IDENTITY`); otherwise the passphrase-wrapped
-key stored in the vault's `keys/` directory, unlocked with the passphrase from
+keys stored in the vault's `keys/` directory, unlocked with the passphrase from
 `--passphrase-env VAR`, else `$SEMPERE_PASSPHRASE`, else a no-echo prompt on
-the terminal. A passphrase never goes on the command line. Secret keys are
+the terminal. Every stored key the passphrase opens is used, as in the app (a
+migration may need both the classic and the post-quantum key); a key file it
+does not open is skipped, and any other problem with one is an error. A passphrase never goes on the command line. Secret keys are
 printed only by `keys generate`, `keys export` and `keys paper` (into its PDF).
 
 **Exit codes**
@@ -90,7 +92,9 @@ such a note, and any write after it in the same run, exits 7.
   at most 32 distinct, the rest under `…`); `notes show --json` also has
   top-level `readOnly` and `readOnlyReasons`.
 
-Errors go to stderr, one line each, prefixed `sempere:`.
+Errors go to stderr, one line each, prefixed `sempere:`. A usage error (exit
+2) ends with the command's help to read, e.g. `sempere: --page counts from 1
+(see 'sempere attach image --help')`.
 
 **Environment**
 
@@ -99,8 +103,15 @@ Errors go to stderr, one line each, prefixed `sempere:`.
 | `SEMPERE_VAULT` | Default for `--vault`. |
 | `SEMPERE_IDENTITY` | Default identity file. |
 | `SEMPERE_PASSPHRASE` | Passphrase for the vault's stored key file, for scripts and tests. |
-| `SEMPERE_PDFTOPPM` | Poppler's `pdftoppm` for PDF page backgrounds in SVG/PNG exports (default: `pdftoppm` on `PATH`). |
-| `XDG_STATE_HOME` | Where `device.json` lives (default `~/.local/state`). |
+| `SEMPERE_TITLE_FORMAT` | Default for `notes new --title-format` ([Editing notes](#editing-notes)). |
+| `SEMPERE_PDFTOPPM` | Poppler's `pdftoppm` for PDF page backgrounds in SVG/PNG exports (default: `pdftoppm` on `PATH`; [PDF page backgrounds](#pdf-page-backgrounds)). |
+| `SEMPERE_PDFTOTEXT` | Poppler's `pdftotext` for the text of imported PDF pages (default: `pdftotext` on `PATH`; [`import pdf`](#import-pdf)). |
+| `SEMPERE_WEBDAV_PASSWORD` | The WebDAV password, unless `--password-env` names another variable ([Sync](#sync)). |
+| `SEMPERE_BUNDLED_FONTS` | The directory of the fonts shipped with the CLI ([Text in exports](#text-in-exports)). |
+| `SEMPERE_FONT_DIR` | An extra directory of font packs, searched first ([Text in exports](#text-in-exports)). |
+| `XDG_STATE_HOME` | Where this machine's state lives under `sempere/` (`device.json`, recipient trust, sync and capture state; default `~/.local/state`). |
+| `XDG_CACHE_HOME` | Where the summary cache lives (default `~/.cache`; [Notes](#notes)). |
+| `XDG_DATA_HOME` | Font packs under `sempere/fonts` (default `~/.local/share`; [Text in exports](#text-in-exports)). |
 
 ## Commands
 
@@ -190,7 +201,9 @@ nor this device's record), and keeping a key this device never confirmed asks
 for the owner check first (Face ID, Touch ID or the passcode), as adding a key does. Replace… refuses the key
 the app unlocked with (add a key for this device, unlock with it, then remove
 the old one): replacing it would lock the app out, and an interrupted replace
-of it can only be finished with both keys.
+of it can only be finished with both keys. Remove refuses that key too, and
+so does the CLI's `recipients remove` unless another key the command unlocked
+with stays listed (`--force` overrides).
 
 The app's key file is the CLI's (`age-keygen` style: `# created`, `# public
 key`, the `AGE-SECRET-KEY-PQ-1…` line), named `Sempere key - <label>.txt`.
@@ -206,7 +219,7 @@ sempere vault init PATH --recipient age1... [--recipient ...] [--label TEXT ...]
                          [--store-key FILE [--passphrase-env VAR] [--work-factor 15...18]]
 sempere vault info
 sempere vault recipients add age1pq1... [--label TEXT] [--rewrap header|reencrypt] [--store-key FILE [--store-passphrase-env VAR] [--work-factor 15...18]]
-sempere vault recipients remove age1... [--rewrap header|reencrypt]
+sempere vault recipients remove age1... [--force] [--rewrap header|reencrypt]
 sempere vault recipients replace age1old... age1pq1new... [--label TEXT] [--rewrap header|reencrypt] [--store-key FILE ...]
 sempere vault recipients repair [--keep age1pq1... ...] [--dry-run] [--rewrap header|reencrypt]
 sempere vault recipients confirm
@@ -219,8 +232,11 @@ sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
 ```
 
 - `init` creates the vault. `PATH` must end in `.sempere`. Give no `--label`
-  or one per `--recipient`. `--store-key` also writes that identity,
-  passphrase-wrapped, into `keys/` (the passphrase is confirmed when typed).
+  or one per `--recipient`. Labels (here and in `recipients add`/`replace`)
+  are stored as the app stores them: one line, trimmed, at most 80
+  characters; an empty one is shown as "Device". `--store-key` also writes that identity,
+  passphrase-wrapped, into `keys/` (the passphrase is confirmed when typed,
+  and an empty one is refused with exit 2, as in the app).
 - `info` prints vault id, creation time, recipients with labels, number of
   notes, stored key files, whether a recipient change is pending and whether
   its journal is readable. It works without a key (the journal check then says
@@ -229,6 +245,8 @@ sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
   (`remove` also rotates the vault secret) and print a report. If any file
   cannot be rewrapped the exit code is 3 and the message says to run
   `rewrap-resume`. Removing a key does not revoke what it already decrypted.
+  `remove` refuses (exit 2) the key the command unlocked with, unless another
+  key it unlocked with stays listed: unlock with another key, or pass `--force`.
 - Attachment blobs (`notes/<id>/att/`, `format.md` §8.1.5) are rewrapped
   too. By default an `add` rewrites each blob's age header only (same file
   key, payload copied), and a `remove` or `replace` (or an `add` that changes
@@ -255,7 +273,7 @@ sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
 - `recipients add` / `replace --store-key FILE` also store the new
   recipient's identity (FILE, which must be that key) passphrase-wrapped in
   `keys/`, with the passphrase from `--store-passphrase-env VAR`, else
-  `$SEMPERE_PASSPHRASE`, else the terminal (confirmed). Use it when the
+  `$SEMPERE_PASSPHRASE`, else the terminal (confirmed; not empty). Use it when the
   vault is unlocked by passphrase: only key files of current recipients are
   offered for passphrase unlocking, so after a `replace` the old key file
   (left in `keys/`) no longer is.
@@ -423,8 +441,9 @@ another note's blobs. NOTE is an id or a title; without one, every note.
   `-q` prints only the hash). It adds no item; until a revision references
   the blob it is unreferenced. The first blob adds `features: ["attachments"]`
   to `vault.json`.
-- `copy` copies a blob that NOTE `--from` references into NOTE `--to` (a byte
-  copy, verified as it is read), before a revision there uses it.
+- `copy` copies a blob that NOTE `--from` references (SHA256, or a unique
+  prefix of at least 8 digits) into NOTE `--to` (a byte copy, verified as it
+  is read), before a revision there uses it.
 - `unused` shows what the app's Settings → Storage shows, from the same code
   (`AttachmentStorageReport`, `docs/attachments.md` §4): blobs no revision of
   their note references, each with the date this device first found it
@@ -1614,7 +1633,9 @@ capture's audio (`format.md` §11.2): `transcript` needs that audio file
 audio is never adopted, nor is one sealed by another device than its
 capture's. Both refuse (exit 7) a vault of a newer format. `list` shows the inbox:
 ids and file kinds without a key, with one the titles, whether each verifies
-and who captured it (`from iPad (device 0b0b0b0b)`, or `(unattributed)`).
+and who captured it (`from iPad (device 0b0b0b0b)`, `from Device (…)` for a
+key with no label, `from a device no longer in this vault (…)`, or
+`(unattributed)`).
 A capture sealed by a device that is no longer in the vault never verifies,
 also while the rewrap of its removal is unfinished (security review 2026-10,
 C3): it is reported and kept.

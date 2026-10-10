@@ -42,6 +42,7 @@ extension VaultError: CustomStringConvertible {
         case .workFactorTooHigh: return "the key file needs more scrypt work than this reader allows"
         case .identityFileMissing(let n): return "no stored key file \(n)"
         case .wrongPassphrase: return "wrong passphrase for the stored key file"
+        case .emptyPassphrase: return "the passphrase is empty"
         case .identityFileMalformed: return "the stored key file holds no AGE-SECRET-KEY identity"
         case .identityMismatch(let r): return "the stored key file does not belong to recipient \(r)"
         case .rewrapJournalUnreadable(let why): return "the rewrap journal cannot be read: \(why)"

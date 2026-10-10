@@ -133,7 +133,7 @@ struct VaultInfo: ParsableCommand {
         print("Notes:          \(info.notes)")
         print("Recipients:     \(info.recipients.count)")
         for r in info.recipients {
-            print("  \(RecipientsProblem.abbreviate(r.key))  \(r.type)  \(r.label.isEmpty ? "(no label)" : r.label)  "
+            print("  \(RecipientsProblem.abbreviate(r.key))  \(r.type)  \(VaultManifest.Recipient.displayLabel(r.label))  "
                 + "added \(Format.local(r.added))")
         }
         let classic = info.recipients.filter { $0.type != Info.Recipient.pqType }.count
@@ -307,11 +307,18 @@ struct RecipientsRemove: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "remove",
         abstract: "Remove a recipient, rotate the vault secret and rewrap the vault.",
-        discussion: "Removing a key does not un-leak what it already decrypted: copies of old files stay readable to it."
+        discussion: """
+            Removing a key does not un-leak what it already decrypted: copies of old files stay readable to it. \
+            As in the app, the key this command unlocked with is not removed unless another key it unlocked \
+            with stays listed (unlock with another key, or pass --force).
+            """
     )
 
     @Argument(help: ArgumentHelp("The recipient to remove, or a file holding it.", valueName: "age1..."))
     var recipient: String
+
+    @Flag(name: .long, help: "Remove it even if it is the key this command unlocked with.")
+    var force = false
 
     @OptionGroup var rewrap: RewrapOptions
     @OptionGroup var access: AccessOptions
@@ -320,6 +327,12 @@ struct RecipientsRemove: ParsableCommand {
     func run() throws {
         let key = try parseRecipient(recipient)
         var vault = try access.openVault(.required, migration: true)
+        let held = vault.identityRecipients
+        let listed = Set(vault.recipients.map(\.key))
+        if !force, held.contains(key.string), held.intersection(listed).subtracting([key.string]).isEmpty {
+            throw CLIError.usage("that is the key this vault was unlocked with: unlock with another key to remove it "
+                + "(or pass --force)")
+        }
         try reportRewrap(try vault.removeRecipient(key, policy: rewrap.policy), output: output)
     }
 }

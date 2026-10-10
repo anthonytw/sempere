@@ -69,6 +69,8 @@ public enum VaultError: Error, Hashable, Sendable {
     case identityFileMissing(String)
     /// The passphrase does not decrypt the identity file.
     case wrongPassphrase
+    /// A key file is never written under an empty passphrase.
+    case emptyPassphrase
     /// The identity file decrypts but holds no `AGE-SECRET-KEY-1...` line, or
     /// is not a single-scrypt-recipient age file.
     case identityFileMalformed
@@ -180,6 +182,14 @@ public struct Vault: Sendable {
     /// is known and at least one identity is held. A vault created with
     /// `identities: []` is unlocked (it can write) but cannot read.
     public var canRead: Bool { secret != nil && !identities.isEmpty }
+    /// The recipients (`age1...`) of the identities the vault was opened
+    /// with, for a caller that must not remove the key it unlocked with.
+    public var identityRecipients: Set<String> {
+        Set(identities.compactMap { id in
+            if let n = id as? NativeIdentity { return n.recipient.string }
+            return (id as? X25519Identity)?.recipient.string
+        })
+    }
     /// The classic X25519 recipients (`age1...`) the manifest still lists.
     public var classicRecipients: [String] {
         // A key that does not parse is not classic: only a newer manifest
@@ -306,7 +316,9 @@ public struct Vault: Sendable {
     ///     must not hold a `vault.json`.
     ///   - recipients: post-quantum (`age1pq1...`) only; an X25519 one throws
     ///     `classicRecipient` (format.md §3.1).
-    ///   - labels: empty, or one label per recipient.
+    ///   - labels: empty, or one label per recipient (stored as
+    ///     `VaultManifest.Recipient.cleanLabel` makes them, as are the labels
+    ///     of `addRecipient` and `replaceRecipient`).
     ///   - identities: kept for reading; may be empty (write-only use).
     ///   - vaultId, created: fixed values for reproducible fixtures.
     ///   - trust: this device's trust records (format.md §2.1); the new
@@ -338,7 +350,8 @@ public struct Vault: Sendable {
 
         let secret = VaultSecret.random()
         let entries = keys.enumerated().map { i, k in
-            VaultManifest.Recipient(key: k, label: labels.isEmpty ? "" : labels[i], added: created)
+            VaultManifest.Recipient(key: k, label: labels.isEmpty ? "" : VaultManifest.Recipient.cleanLabel(labels[i]),
+                                    added: created)
         }
         let manifest = VaultManifest(vaultId: vaultId, created: created, recipients: entries,
                                      vaultSecret: try encryptSecret(secret, to: recipients),
@@ -619,7 +632,7 @@ public struct Vault: Sendable {
             return report
         }
         var next = manifest.recipients
-        next.append(.init(key: key, label: label, added: added))
+        next.append(.init(key: key, label: VaultManifest.Recipient.cleanLabel(label), added: added))
         report.merge(try changeRecipients(next, rotate: false, policy: policy, stopAfter: stopAfter))
         return report
     }
@@ -645,7 +658,8 @@ public struct Vault: Sendable {
         }
         guard !has(newKey) else { throw VaultError.duplicateRecipient(newKey) }
         var next = manifest.recipients
-        next[index] = .init(key: newKey, label: label ?? next[index].label, added: added)
+        next[index] = .init(key: newKey, label: label.map(VaultManifest.Recipient.cleanLabel) ?? next[index].label,
+                            added: added)
         report.merge(try changeRecipients(next, rotate: true, policy: policy, stopAfter: stopAfter))
         return report
     }

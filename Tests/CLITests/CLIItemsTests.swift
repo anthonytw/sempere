@@ -43,7 +43,13 @@ final class CLIItemsTests: CLITestCase {
 
         let ambiguous = try cli(["items", "front", "Board", "eeeeeeee"] + args)
         XCTAssertEqual(ambiguous.status, 1)
-        XCTAssertTrue(ambiguous.err.contains("names 2 items"), ambiguous.err)
+        XCTAssertTrue(ambiguous.err.contains("'eeeeeeee' matches 2 items: "), ambiguous.err)
+        XCTAssertTrue(ambiguous.err.contains(imageId.uuidString.lowercased()), "lists the candidates: \(ambiguous.err)")
+        // The messages items, recordings and strokes share.
+        let short = try cli(["items", "front", "Board", "eee"] + args)
+        XCTAssertTrue(short.err.contains("item eee: give a whole id or at least 4 characters"), short.err)
+        let none = try cli(["items", "front", "Board", "0000"] + args)
+        XCTAssertTrue(none.err.contains("no item 0000 in this note"), none.err)
         var before = try revisions(vault, note)
         let move = try cli(["items", "move", "Board", image, "--frame", "20,30,200,150", "--json"] + args)
         XCTAssertEqual(move.status, 0, move.err)
