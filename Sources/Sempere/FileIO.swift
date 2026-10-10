@@ -226,8 +226,10 @@ public enum BoundedRead {
     /// The largest identity file (`keys/*.key.age`) or device-state file a reader opens.
     public static let maxSmallFileBytes = 1 << 20
     /// The largest attachment blob file a reader opens: 1 GiB of content
-    /// (format.md §8.4) plus room for its framing and age overhead.
-    public static let maxBlobFileBytes = (1 << 30) + (16 << 20)
+    /// (format.md §8.4) plus 64 MiB for its framing and age overhead (padme of
+    /// a 1 GiB blob adds up to 32 MiB, age's chunk tags 264 KiB, its header at
+    /// most 2 MiB).
+    public static let maxBlobFileBytes = (1 << 30) + (64 << 20)
     /// The largest `backup.json` a reader opens (one entry per backed-up file).
     public static let maxBackupManifestBytes = 256 << 20
 

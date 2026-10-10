@@ -60,8 +60,9 @@ public struct WebDAVSyncOptions: Sendable {
     /// checked fully rather than for their structure only (format.md §9.1).
     public var firstPullIdentities: [any AgeIdentity] = []
 
-    /// 1 GiB + 64 MiB.
-    public static let defaultMaxBlobBytes = (1 << 30) + (64 << 20)
+    /// The largest blob file a reader opens (`BoundedRead.maxBlobFileBytes`,
+    /// 1 GiB + 64 MiB).
+    public static let defaultMaxBlobBytes = BoundedRead.maxBlobFileBytes
 
     public init(dryRun: Bool = false, deviceLabel: String = "device", now: Date = Date(), maxFileBytes: Int = 256 << 20,
                 maxBlobBytes: Int = WebDAVSyncOptions.defaultMaxBlobBytes,
