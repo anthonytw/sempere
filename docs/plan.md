@@ -185,6 +185,28 @@ Earlier stages (merged in #150 and #151):
 9. The Mac menu reads "Export to Folder or Zip…". The note window's toolbar has the Export menu.
 10. An HTML export of a multi-page note with a different image on each page: every page shows its own image.
 
+Inefficiency (stage 3). Use a dense page of about 20,000 strokes (the demo vault), on an older iPad where possible:
+
+11. Pen-up: no hitch after each stroke. Then undo and redo, lasso-move, recolor and pixel-erase a stroke in the
+    middle of the page. After the autosave, reopen the note: every edit is kept, with no duplicate strokes.
+12. Object eraser: a sweep across dense ink stays smooth, every touched stroke goes, and one Undo restores all of
+    them. Note how long the touch-down takes. Switch page, or let a remote merge arrive, during a sweep: nothing
+    is written onto the other page.
+13. Page strip: a thumbnail updates about 0.4 s after the pen rests, and masked or pixel-erased strokes look
+    right in it.
+14. Recording playback in a long note: the highlights follow the playback, including strokes drawn while
+    recording. Tap Ink to Play on linked ink.
+15. Search: step through the matches on a large note. Type in search while a sync or Recognize All runs: the
+    results stay current. Search transcripts on a vault with more than 500 of them.
+16. Items: drag, resize and turn images and text boxes on a page with many items. The selection outline and
+    audio controls follow them. Reopen a note with many text boxes and equations, also after an OS update or a
+    font install: no stale text.
+17. Two devices editing one large note: merges feel instant. On an iCloud vault, the status counts stay right
+    across the 30-minute validations.
+18. Timing: record draw and erase on the dense page in Instruments (the `Perf` signposts), on the older iPad.
+19. Web viewer in iPad Safari: scroll a long, dense note end to end (memory stays flat, pages redraw on the way
+    back), search a large vault, and tap videos and audio after scrolling away and back.
+
 ## Working agreements
 
 - One task → one branch → one PR → squash merge. CI must be green.
