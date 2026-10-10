@@ -566,14 +566,16 @@ public final class WebDAVSync {
         try requireLocalWrite("download notes/\(key(id, n))")
         let path = "notes/\(key(id, n))"
         let size = entry?.size
-        if let size, size > options.maxFileBytes { throw WebDAVError.io("\(path) is \(size) bytes, over the limit; skipped") }
+        if let size, size > options.maxFileBytes { throw WebDAVError.responseTooLarge(path: path, limit: options.maxFileBytes) }
         if skipQuarantined(key(id, n), path: path, entry: entry) { return false }
         try budget.willDownload(size)
         report.downloaded.append(path)
         guard !options.dryRun else { return true }
         let (data, _) = try client.get([Vault.notesName, id, n.filename], maxBytes: options.maxFileBytes)
         try budget.downloaded(data.count)
-        guard data.count <= options.maxFileBytes else { throw WebDAVError.io("\(path) is over the size limit; skipped") }
+        guard data.count <= options.maxFileBytes else {
+            throw WebDAVError.responseTooLarge(path: path, limit: options.maxFileBytes)
+        }
         var problem: String?
         if !data.starts(with: Self.ageMagic) {
             problem = "not an age file"

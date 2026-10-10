@@ -408,6 +408,13 @@ final class SyncTests: SyncTestCase {
         XCTAssertEqual(report.errors.map(\.path), ["notes/\(id)/\(d.name.filename)"], "\(report)")
         XCTAssertFalse(FileManager.default.fileExists(
             atPath: dir("B").appendingPathComponent("notes/\(id)/\(d.name.filename)").path))
+        // Over the limit by the listing's size: the same error, nothing fetched.
+        server.interceptor = nil
+        let listed = try WebDAVSync(directory: dir("B"), vault: nil, client: try client(server),
+                                    stateURL: tmp.appendingPathComponent("state-B.json"),
+                                    options: WebDAVSyncOptions(maxFileBytes: 10)).run()
+        XCTAssertEqual(listed.errors.map(\.message),
+                       ["the response for notes/\(id)/\(d.name.filename) is over 10 bytes; not read"], "\(listed)")
         // Listings and manifests have a limit too.
         server.interceptor = { r in
             r.method == "PROPFIND" ? WebDAVResponse(status: 207, body: Data(count: WebDAVClient.defaultMaxResponseBytes + 1)) : nil
