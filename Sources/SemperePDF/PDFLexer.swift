@@ -8,11 +8,29 @@ struct PDFLexer {
     let b: [UInt8]
     var pos: Int
     let maxDepth: Int
+    /// Where the lexer started.
+    let start: Int
+    /// The furthest position reached before a rewind (`rewind(to:)`).
+    private var reach: Int
 
     init(_ bytes: [UInt8], at pos: Int = 0, maxDepth: Int = PDFLimits.standard.maxDepth) {
         b = bytes
         self.pos = pos
         self.maxDepth = maxDepth
+        start = pos
+        reach = pos
+    }
+
+    /// Bytes looked at since `start`, counting those read and then given
+    /// back by a rewind (a failed `keyword` or number may skip a long run of
+    /// white space first): what a caller charges against a work budget,
+    /// also after a parse that threw.
+    var scanned: Int { max(reach, pos) - start }
+
+    /// Goes back to `save`, remembering how far the lexer had read.
+    mutating func rewind(to save: Int) {
+        reach = max(reach, pos)
+        pos = save
     }
 
     static func isWhite(_ c: UInt8) -> Bool { c == 0 || c == 9 || c == 10 || c == 12 || c == 13 || c == 32 }
@@ -58,7 +76,7 @@ struct PDFLexer {
         let save = pos
         skipWhitespace()
         if token().elementsEqual(keyword.utf8) { return true }
-        pos = save
+        rewind(to: save)
         return false
     }
 
@@ -73,12 +91,12 @@ struct PDFLexer {
         while pos < b.count, Self.isDigit(b[pos]) {
             let (m, o1) = v.multipliedReportingOverflow(by: 10)
             let (s, o2) = m.addingReportingOverflow(Int(b[pos] - 0x30))
-            if o1 || o2 { pos = save; return nil }
+            if o1 || o2 { rewind(to: save); return nil }
             v = s
             digits += 1
             pos += 1
         }
-        if digits == 0 || (pos < b.count && Self.isRegular(b[pos])) { pos = save; return nil }
+        if digits == 0 || (pos < b.count && Self.isRegular(b[pos])) { rewind(to: save); return nil }
         return v
     }
 
@@ -103,7 +121,7 @@ struct PDFLexer {
             if t.elementsEqual("true".utf8) { return .bool(true) }
             if t.elementsEqual("false".utf8) { return .bool(false) }
             if t.elementsEqual("null".utf8) { return .null }
-            pos = start
+            rewind(to: start)
             throw error("unexpected keyword")
         }
     }
@@ -111,7 +129,7 @@ struct PDFLexer {
     private mutating func numberOrRef() throws -> PDFObject {
         let start = pos
         let t = token()
-        guard let n = Self.number(t) else { pos = start; throw error("malformed number") }
+        guard let n = Self.number(t) else { rewind(to: start); throw error("malformed number") }
         // `num gen R`
         if case .int(let num) = n, num >= 0, t.first != 0x2B {
             let save = pos
@@ -122,7 +140,7 @@ struct PDFLexer {
                     return .ref(PDFRef(num, gen))
                 }
             }
-            pos = save
+            rewind(to: save)
         }
         return n
     }

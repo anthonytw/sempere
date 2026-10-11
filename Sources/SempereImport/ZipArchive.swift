@@ -43,18 +43,35 @@ public final class ZipArchive {
 
     private let source: Source
     private let size: UInt64
-    /// Every entry, in central-directory order.
+    /// Every entry, in central-directory order. Paths are unique and the
+    /// entries' stored bytes do not overlap (`readDirectory`).
     public let entries: [Entry]
 
     /// Default ceiling on one entry's uncompressed size (1 GiB).
     public static let defaultMaxEntrySize: UInt64 = 1 << 30
 
+    /// Most uncompressed bytes all `read` calls on one archive may produce
+    /// together, repeated and failed reads included: a few MiB of archive
+    /// must not cost terabytes of inflation however often its entries are
+    /// asked for (security review S7, S18). `readBudget(forArchiveOf:)`.
+    public let readBudget: UInt64
+    private var spent: UInt64 = 0
+    private let lock = NSLock()
+
+    /// The default `readBudget`: 32 bytes per byte of the archive, and at
+    /// least 2 GiB (two of the largest entries).
+    public static func readBudget(forArchiveOf size: UInt64) -> UInt64 {
+        let (scaled, overflow) = size.multipliedReportingOverflow(by: 32)
+        return max(2 << 30, overflow ? .max : scaled)
+    }
+
     /// Opens an archive held in memory.
     ///
     /// - Throws: `ImportError.zip` when no valid central directory is found.
-    public init(data: Data) throws {
+    public init(data: Data, readBudget: UInt64? = nil) throws {
         source = .data(data)
         size = UInt64(data.count)
+        self.readBudget = readBudget ?? Self.readBudget(forArchiveOf: UInt64(data.count))
         entries = try Self.readDirectory(size: size) { off, count in try Self.slice(data, off, count) }
     }
 
@@ -62,7 +79,7 @@ public final class ZipArchive {
     ///
     /// - Throws: `ImportError.io` if the file cannot be opened,
     ///   `ImportError.zip` when no valid central directory is found.
-    public init(url: URL) throws {
+    public init(url: URL, readBudget: UInt64? = nil) throws {
         let handle: FileHandle
         // Not FileHandle(forReadingFrom:): opening a FIFO named `*.note` would block forever.
         do { handle = try BoundedRead.openRegularFile(url) } catch {
@@ -74,6 +91,7 @@ public final class ZipArchive {
         }
         source = .file(handle)
         size = end
+        self.readBudget = readBudget ?? Self.readBudget(forArchiveOf: end)
         entries = try Self.readDirectory(size: end) { off, count in try Self.read(handle, off, count) }
     }
 
@@ -87,13 +105,30 @@ public final class ZipArchive {
     /// The uncompressed bytes of `entry`, CRC-checked.
     ///
     /// - Throws: `ImportError.zip` for an encrypted entry, an unsupported
-    ///   method, corrupt deflate data, a size or CRC mismatch, or an entry
-    ///   larger than `maxSize`.
+    ///   method, corrupt deflate data, a size or CRC mismatch, an entry
+    ///   larger than `maxSize`, stored bytes that cannot be what the entry
+    ///   claims (a stored entry whose two sizes differ, a deflated one larger
+    ///   than deflate can make it), or once `readBudget` is spent.
     public func read(_ entry: Entry, maxSize: UInt64 = ZipArchive.defaultMaxEntrySize) throws -> Data {
         guard entry.flags & 1 == 0 else { throw ImportError.zip("\(entry.path): encrypted entries are not supported") }
         guard entry.uncompressedSize <= maxSize else {
             throw ImportError.zip("\(entry.path): \(entry.uncompressedSize) bytes exceeds the \(maxSize)-byte limit")
         }
+        switch entry.method {
+        case 0:
+            guard entry.compressedSize == entry.uncompressedSize else {
+                throw ImportError.zip("\(entry.path): stored entry of \(entry.compressedSize) bytes claims \(entry.uncompressedSize)")
+            }
+        case 8:
+            // Deflate's worst case is stored blocks: 5 bytes per 64 KiB.
+            let u = entry.uncompressedSize
+            guard entry.compressedSize <= u + u / 1000 + 64 else {
+                throw ImportError.zip("\(entry.path): \(entry.compressedSize) deflated bytes for \(u)")
+            }
+        default: break
+        }
+        // Charged before anything is read or inflated, failures included.
+        try charge(entry)
         let header = try bytes(entry.localHeaderOffset, 30)
         guard header.u32(0) == 0x0403_4B50 else { throw ImportError.zip("\(entry.path): bad local header signature") }
         let dataStart = entry.localHeaderOffset + 30 + UInt64(header.u16(26)) + UInt64(header.u16(28))
@@ -112,6 +147,17 @@ public final class ZipArchive {
         }
         guard Self.crc32(out) == entry.crc32 else { throw ImportError.zip("\(entry.path): CRC mismatch") }
         return out
+    }
+
+    /// Takes `entry`'s uncompressed size from `readBudget`.
+    private func charge(_ entry: Entry) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        let (total, overflow) = spent.addingReportingOverflow(entry.uncompressedSize)
+        guard !overflow, total <= readBudget else {
+            throw ImportError.zip("\(entry.path): over the \(readBudget >> 20) MiB read from this archive in all")
+        }
+        spent = total
     }
 
     // MARK: - Directory
@@ -183,6 +229,7 @@ public final class ZipArchive {
 
         var entries: [Entry] = []
         entries.reserveCapacity(Int(count))
+        var seen = Set<String>()
         var p = 0
         for _ in 0..<count {
             guard p + 46 <= cd.count, cd.u32(p) == 0x0201_4B50 else {
@@ -220,12 +267,30 @@ public final class ZipArchive {
                 }
                 x += 4 + len
             }
+            // Two entries of one name: which one a reader gets is ambiguous,
+            // and the copies multiply the work of reading "every" entry.
+            guard seen.insert(path).inserted else { throw ImportError.zip("duplicate entry \(path)") }
             entries.append(Entry(path: path, method: method, crc32: crc, compressedSize: csize,
                                  uncompressedSize: usize, localHeaderOffset: offset, flags: flags,
                                  modified: modified))
             p = extraEnd + commentLen
         }
+        try checkDisjoint(entries)
         return entries
+    }
+
+    /// Refuses entries whose local header and stored bytes overlap another's
+    /// (at least 30 header bytes plus `compressedSize` each, in offset order):
+    /// many records pointing at one deflate bomb would each inflate it.
+    static func checkDisjoint(_ entries: [Entry]) throws {
+        let sorted = entries.sorted { $0.localHeaderOffset < $1.localHeaderOffset }
+        for (a, b) in zip(sorted, sorted.dropFirst()) {
+            let (withHeader, o1) = a.localHeaderOffset.addingReportingOverflow(30)
+            let (end, o2) = withHeader.addingReportingOverflow(a.compressedSize)
+            guard !o1, !o2, end <= b.localHeaderOffset else {
+                throw ImportError.zip("entries \(a.path) and \(b.path) overlap")
+            }
+        }
     }
 
     /// An MS-DOS date and time (2-second resolution, no time zone) as UTC.

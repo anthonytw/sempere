@@ -310,6 +310,8 @@ public enum Backup {
 
     /// A restored file that does not match `backup.json`.
     private struct Damaged: Error {}
+    /// A file in a backup folder that `backup.json` does not list.
+    private struct Unlisted: Error {}
 
     // MARK: - Listing
 
@@ -404,12 +406,24 @@ public enum Backup {
 
     /// SHA-256 (lowercase hex) and size of the format file at `path` under
     /// `root`, streamed within its kind's limit (`maxBytes(forPath:)`).
-    static func digest(_ root: URL, _ path: String) throws -> (sha256: String, size: Int) {
-        let d = try FileDigest.sha256(of: url(root, path), maxBytes: Int64(maxBytes(forPath: path)))
+    /// Symbolic links below `root` are not followed (a backup or restore
+    /// folder may sit on storage others write to, security review S3)
+    /// unless `followLinks`, which only the source vault uses (format.md §9:
+    /// links are followed in a vault).
+    static func digest(_ root: URL, _ path: String, followLinks: Bool = false) throws -> (sha256: String, size: Int) {
+        let limit = Int64(maxBytes(forPath: path))
+        let d = followLinks ? try FileDigest.sha256(of: url(root, path), maxBytes: limit)
+            : try FileDigest.sha256(under: root, path, maxBytes: limit)
         return (d.hex, Int(d.size))
     }
 
-    /// Copies the regular file `src` to `dst` without holding it in memory
+    /// The format file at `path` under `root`, opened for reading: no
+    /// symbolic link below `root` is followed unless `followLinks` (see `digest`).
+    static func openFormatFile(_ root: URL, _ path: String, followLinks: Bool) throws -> FileHandle {
+        followLinks ? try BoundedRead.openRegularFile(url(root, path)) : try BoundedRead.openRegularFile(under: root, path)
+    }
+
+    /// Copies the regular file `path` under `root` to `dst` without holding it in memory
     /// (attachment blobs reach 1 GiB): 1 MiB pieces go to a temporary file in
     /// `dst`'s folder while being hashed, the file is flushed to disk
     /// (`fsync`), `check` sees its SHA-256 and size, and only then is it put
@@ -421,10 +435,14 @@ public enum Backup {
     /// - Throws: `VaultError.fileTooLarge` past `maxBytes`, `.alreadyExists`
     ///   when not `replacing` and `dst` exists, `.io`, or what `check` throws.
     @discardableResult
-    static func copyVerified(from src: URL, to dst: URL, replacing: Bool, maxBytes: Int,
+    /// - Parameter followLinks: whether a symbolic link below `root` is
+    ///   followed (only for the source vault; see `digest`).
+    static func copyVerified(from root: URL, _ path: String, followLinks: Bool, to dst: URL, replacing: Bool,
+                             maxBytes: Int,
                              check: (_ sha256: String, _ size: Int) throws -> Void = { _, _ in }) throws
         -> (sha256: String, size: Int)
     {
+        let src = url(root, path)
         let dir = dst.deletingLastPathComponent()
         // Folders this call creates, deepest first: removed again (when
         // still empty) if `check` refuses the copy, so a refused file leaves
@@ -436,7 +454,7 @@ public enum Backup {
             d = d.deletingLastPathComponent()
         }
         try FileIO.createDirectory(dir)
-        let input = try BoundedRead.openRegularFile(src)
+        let input = try openFormatFile(root, path, followLinks: followLinks)
         defer { try? input.close() }
         let tmp = FileIO.tempURL(in: dir)
         var hasher = SHA256()
@@ -560,10 +578,19 @@ public enum Backup {
                 versionDir = folder
             }
             let vpath = "\(folder)/\(path)"
-            let copy = try copyVerified(from: url(dest, path), to: url(dest, vpath), replacing: false,
+            try refuseLinks(vpath)
+            let copy = try copyVerified(from: dest, path, followLinks: false, to: url(dest, vpath), replacing: false,
                                         maxBytes: maxBytes(forPath: path))
             report.versioned.append(vpath)
             try wrote(vpath, copy)
+        }
+
+        /// Throws when a folder on the way to `path` in the backup is a
+        /// symbolic link: nothing is read or written through it.
+        func refuseLinks(_ path: String) throws {
+            if let link = BoundedRead.firstLink(under: dest, path), link != path {
+                throw VaultError.io("\(url(dest, link).path) is a symbolic link; not followed")
+            }
         }
 
         // Interrupted mid-run, the index may be stale: whatever is on disk
@@ -593,24 +620,38 @@ public enum Backup {
                 let src = url(source.url, path)
                 let dst = url(dest, path)
                 let isRevision = path.hasPrefix(Vault.notesName + "/")
-                if FileIO.exists(dst) {
+                try refuseLinks(path)
+                if BoundedRead.firstLink(under: dest, path) == path {
+                    // A symbolic link where the backup's copy should be: never
+                    // read, hashed or versioned (it may point at any local
+                    // file), but replaced by the vault's copy (the rename
+                    // replaces the link itself) and reported.
+                    let copy = try copyVerified(from: source.url, path, followLinks: true, to: dst, replacing: true,
+                                                maxBytes: maxBytes(forPath: path))
+                    report.replaced.append(path)
+                    report.errors.append(.init(path: path, message: "was a symbolic link in the backup folder (not "
+                                                   + "followed); replaced with the vault's copy"))
+                    try wrote(path, copy)
+                } else if FileIO.exists(dst) {
                     if isRevision, trustSizes, let entry = manifest.files[path],
                        let size = fileSize(src), entry.size == size, fileSize(dst) == size {
                         report.unchanged += 1
                         continue
                     }
-                    let theirs = try digest(source.url, path)
+                    let theirs = try digest(source.url, path, followLinks: true)
                     if try digest(dest, path) == theirs {
                         manifest.files[path] = .init(sha256: theirs.sha256, size: theirs.size)
                         report.unchanged += 1
                         continue
                     }
                     try keepPrevious(path)
-                    let copy = try copyVerified(from: src, to: dst, replacing: true, maxBytes: maxBytes(forPath: path))
+                    let copy = try copyVerified(from: source.url, path, followLinks: true, to: dst, replacing: true,
+                                                maxBytes: maxBytes(forPath: path))
                     report.replaced.append(path)
                     try wrote(path, copy)
                 } else {
-                    let copy = try copyVerified(from: src, to: dst, replacing: false, maxBytes: maxBytes(forPath: path))
+                    let copy = try copyVerified(from: source.url, path, followLinks: true, to: dst, replacing: false,
+                                                maxBytes: maxBytes(forPath: path))
                     report.copied.append(path)
                     try wrote(path, copy)
                 }
@@ -621,9 +662,10 @@ public enum Backup {
 
         // A finished recipient change removes the journal: so does the
         // backup, keeping its last copy under versions/.
-        if !sourceFiles.contains(Vault.journalName), FileIO.exists(url(dest, Vault.journalName)) {
+        if !sourceFiles.contains(Vault.journalName), FileIO.exists(url(dest, Vault.journalName))
+            || BoundedRead.firstLink(under: dest, Vault.journalName) != nil {
             do {
-                try keepPrevious(Vault.journalName)
+                if BoundedRead.firstLink(under: dest, Vault.journalName) == nil { try keepPrevious(Vault.journalName) }
                 try FileIO.remove(url(dest, Vault.journalName))
                 manifest.files[Vault.journalName] = nil
             } catch let e as VaultError {
@@ -645,6 +687,7 @@ public enum Backup {
                 for path in paths.sorted() {
                     if allowed.contains(path) {
                         do {
+                            try refuseLinks(path)
                             try FileIO.remove(url(dest, path))
                             manifest.files[path] = nil
                             report.pruned.append(path)
@@ -672,7 +715,8 @@ public enum Backup {
     /// index is not enough: a copy damaged or removed since it was written
     /// must not count as the snapshot that justifies deleting other files.
     static func backupHolds(_ path: String, source: Vault, dest: URL) -> Bool {
-        guard let mine = try? digest(dest, path), let theirs = try? digest(source.url, path) else { return false }
+        guard BoundedRead.firstLink(under: dest, path) == nil, let mine = try? digest(dest, path),
+              let theirs = try? digest(source.url, path, followLinks: true) else { return false }
         return mine == theirs
     }
 
@@ -782,7 +826,9 @@ public enum Backup {
     /// folder) to `target`, a new `*.sempere` folder, then verifies it.
     ///
     /// Every file is checked against `backup.json` when there is one; a file
-    /// that does not match is not restored and is reported. `vault.json` is
+    /// that does not match, or that it does not list, is not restored and is
+    /// reported. No symbolic link in `backup` is followed: a file reached
+    /// through one is reported and not restored (security review S3). `vault.json` is
     /// written last, so an interrupted restore is not mistaken for a vault;
     /// rerunning the same restore resumes it.
     ///
@@ -809,6 +855,7 @@ public enum Backup {
         for path in files {
             let entry = manifest?.files[path]
             func matchesIndex(_ sha256: String, _ size: Int) throws {
+                if manifest != nil, entry == nil { throw Unlisted() }
                 if let entry, entry.sha256 != sha256 || entry.size != size { throw Damaged() }
             }
             do {
@@ -825,7 +872,8 @@ public enum Backup {
                 }
                 // Hashed while copied: a file that does not match the index
                 // (or changed since it was hashed above) is never placed.
-                try copyVerified(from: src, to: dst, replacing: true, maxBytes: maxBytes(forPath: path)) { sha256, size in
+                try copyVerified(from: backup, path, followLinks: false, to: dst, replacing: true,
+                                 maxBytes: maxBytes(forPath: path)) { sha256, size in
                     try matchesIndex(sha256, size)
                     if let source, source.sha256 != sha256 || source.size != size {
                         throw VaultError.io("\(src.path) changed while it was restored")
@@ -834,6 +882,8 @@ public enum Backup {
                 report.restored.append(path)
             } catch is Damaged {
                 report.errors.append(.init(path: path, message: "does not match backup.json (damaged); not restored"))
+            } catch is Unlisted {
+                report.errors.append(.init(path: path, message: "not listed in backup.json; not restored"))
             } catch let e as VaultError {
                 report.errors.append(.init(path: path, message: "\(e)"))
             }

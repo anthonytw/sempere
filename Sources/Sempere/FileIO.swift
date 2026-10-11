@@ -289,6 +289,74 @@ public enum BoundedRead {
         return FileHandle(fileDescriptor: fd, closeOnDealloc: true)
     }
 
+    /// Opens the regular file at `path` (relative, `/`-separated) under the
+    /// folder `root` without following a symbolic link anywhere below `root`
+    /// (`root` itself may be one): each folder is opened with `openat(2)` and
+    /// `O_NOFOLLOW | O_DIRECTORY`, the file with `O_NOFOLLOW`, so a link
+    /// planted in a backup folder on shared storage can never make the
+    /// reader copy a file from outside it (security review S3). Never blocks
+    /// on a FIFO.
+    ///
+    /// - Throws: `VaultError.io` if a component is a symbolic link, cannot be
+    ///   opened, or the file is not a regular file.
+    public static func openRegularFile(under root: URL, _ path: String) throws -> FileHandle {
+        let parts = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        guard !parts.isEmpty, parts.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." && !$0.contains("\0") }) else {
+            throw VaultError.io("\(path): not a path inside \(root.path)")
+        }
+        var dir = root.withUnsafeFileSystemRepresentation { p -> Int32 in
+            guard let p else { return -1 }
+            return open(p, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        }
+        guard dir >= 0 else { throw VaultError.io("open \(root.path): \(FileIO.errnoText(errno))") }
+        defer { if dir >= 0 { _ = close(dir) } }
+        /// Why opening `name` in `at` failed: a symbolic link says so.
+        func failure(_ name: String, _ code: Int32, _ at: Int32, _ shown: String) -> VaultError {
+            var st = stat()
+            if fstatat(at, name, &st, AT_SYMLINK_NOFOLLOW) == 0, (st.st_mode & S_IFMT) == S_IFLNK {
+                return VaultError.io("\(shown) is a symbolic link; not followed")
+            }
+            return VaultError.io("open \(shown): \(FileIO.errnoText(code))")
+        }
+        for (i, name) in parts.dropLast().enumerated() {
+            let next = openat(dir, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+            guard next >= 0 else {
+                throw failure(name, errno, dir, root.appendingPathComponent(parts[...i].joined(separator: "/")).path)
+            }
+            _ = close(dir)
+            dir = next
+        }
+        let leaf = parts[parts.count - 1]
+        let fd = openat(dir, leaf, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
+        guard fd >= 0 else { throw failure(leaf, errno, dir, root.appendingPathComponent(path).path) }
+        var st = stat()
+        guard fstat(fd, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG else {
+            _ = close(fd)
+            throw VaultError.io("\(root.appendingPathComponent(path).path) is not a regular file")
+        }
+        return FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+    }
+
+    /// The first component of `path` under `root` (as a `/`-separated prefix
+    /// of `path`) that is a symbolic link, by `lstat(2)`; nil when there is
+    /// none (missing components count as none).
+    public static func firstLink(under root: URL, _ path: String) -> String? {
+        var u = root
+        var prefix: [Substring] = []
+        for part in path.split(separator: "/") {
+            u = u.appendingPathComponent(String(part))
+            prefix.append(part)
+            var st = stat()
+            let rc = u.withUnsafeFileSystemRepresentation { p -> Int32 in
+                guard let p else { return -1 }
+                return lstat(p, &st)
+            }
+            guard rc == 0 else { return nil }
+            if (st.st_mode & S_IFMT) == S_IFLNK { return prefix.joined(separator: "/") }
+        }
+        return nil
+    }
+
     /// The whole file, or `VaultError.fileTooLarge` if it holds more than
     /// `maxBytes` (decided without reading more than `maxBytes + 1`).
     public static func contents(of url: URL, maxBytes: Int) throws -> Data {

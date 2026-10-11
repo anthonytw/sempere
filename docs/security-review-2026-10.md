@@ -778,3 +778,43 @@ say why (footnote: the copy is on the storage and can be guessed offline); the C
 `format.md` §3.2 and `security.md` say so. The library call (`Vault.writeIdentityFile`) still accepts any
 non-empty passphrase (tests, the demo vault). Tests: `PassphraseStrengthTests`,
 `CLICommandTests` (weak refused, exit 2).
+
+## Audit 2026-10 stage 4 (2026-10-10): parsers and backup
+
+Fixed on `audit/sec-parse`. No format change; every existing bound kept.
+
+- **S3 (Medium): backup and restore followed symbolic links.** A link planted in a backup folder (a share
+  that presents links) made the next run hash and version its target, copying any local file the process
+  could read into `versions/` on the share; restore pulled such files into the vault. Fix: below a backup
+  folder or restore source every path is opened with `openat(O_NOFOLLOW|O_DIRECTORY)` per folder and
+  `O_NOFOLLOW` for the file (`BoundedRead.openRegularFile(under:_:)`, `FileDigest.sha256(under:_:)`). A run
+  replaces a linked file with the vault's copy without reading it and reports it, and skips (reports) a
+  path through a linked folder; restore refuses links and, with a `backup.json`, files it does not list;
+  verify reports a link as missing. The source vault still follows links (§9). Tests:
+  `BackupTests.testRunNeverCopiesTheTargetOfALinkPlantedInTheBackup`,
+  `testRestoreNeverFollowsLinksAndNeedsAnIndexEntry`, `testVerifyDoesNotFollowLinks`.
+- **S6 (Low): PDF cross-reference rebuild was quadratic.** `trailer(` repeated (no `startxref`) lexed to the
+  end of the file at every keyword; nested objects listed in `/Kids` did the same outside the rebuild.
+  Fix: the rebuild resumes where the trailer parse stopped, and every lexer over the file or an object
+  stream charges the bytes it looked at (`PDFLexer.scanned`, rewinds included) to a per-file budget,
+  `PDFLimits.parseBytesPerByte` (4) × (file + decoded streams) + `parseBytesBase` (64 MiB). Tests:
+  `UntrustedPDFClaimTests.testRepeatedTrailerBeforeAnUnterminatedStringIsLinear`,
+  `testOverlappingObjectsHitTheParseBudget` (both hang over 90 s on the base),
+  `testParseBudgetLeavesOrdinaryFilesAlone`.
+- **S8 (Low): PDFText re-lexed a form on every `Do`.** Only operators were counted, so 2·10⁶ `Do`s of a
+  256 KiB form lexed 5·10¹¹ bytes (CLI built-in text, Notability text fallback). Fix: a page may lex its
+  own content plus 16 MiB of form content, the file's pages 128 MiB together
+  (`PDFText.maxFormLexBytesPerPage`, `…PerFile`); past it the page keeps the text found so far. Tests:
+  `PDFTextTests.testFormDrawnManyTimesIsBoundedByBytesLexed` (hangs over 120 s on the base),
+  `testFormLexBudgetPerPageAndPerFile`.
+- **S7 (Low): duplicate and overlapping zip entries.** Thousands of central records naming one deflate
+  bomb each inflated it. Fix: `ZipArchive` refuses two entries of one name, and entries whose header plus
+  stored bytes overlap. Thumbnails: at most 8, 16 MiB each. Tests:
+  `ZipArchiveTests.testOverlappingEntriesAreRefused`, `testDuplicateNamesAreRefused`.
+- **S18 (Low): decompression was capped per entry, not per package, and failed reads were repeated.** Fix:
+  every `ZipArchive.read` charges the declared size, before inflating and also when it fails, to a
+  per-archive `readBudget` (32 × the archive, at least 2 GiB); a stored entry whose sizes differ, or a
+  deflated one larger than deflate can produce, is refused before it is read; `NotePackage` remembers failed
+  reads and bounds an unzipped package to 4 GiB; the Notability image loops cache unreadable files. Tests:
+  `ZipArchiveTests.testFailedReadsAreNotRepeated`, `testImpossibleSizesAreRefusedBeforeReading`,
+  `testReadsAreChargedToTheArchiveBudget`.

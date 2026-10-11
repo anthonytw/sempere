@@ -23,6 +23,15 @@ public enum PDFText {
     public static let maxOperators = 2_000_000
     /// Deepest nesting of form XObjects followed.
     public static let maxFormDepth = 4
+    /// Most content bytes lexed per page beyond the page's own content
+    /// stream: what form XObjects drawn by `Do` add. A form is decoded once
+    /// but lexed on every `Do`, so without this bound 2·10⁶ `Do`s of a
+    /// 256 KiB form would lex 5·10¹¹ bytes (security review S8). Past it the
+    /// page keeps the text found so far.
+    public static let maxFormLexBytesPerPage = 16 << 20
+    /// Most form bytes lexed (as `maxFormLexBytesPerPage`) over all the pages
+    /// of one file sharing an `ExtractionCache`.
+    public static let maxFormLexBytesPerFile = 128 << 20
 
     /// The text of page `index` (0-based).
     ///
@@ -36,7 +45,11 @@ public enum PDFText {
         let node = try file.pageNode(index)
         var state = Extraction(file: file, cache: cache)
         let resources = try node.resources.flatMap { try file.resolve($0).dictValue }
-        try state.run(try file.pageContents(index), resources: resources, depth: 0)
+        let contents = try file.pageContents(index)
+        let extra = min(cache.formLexPerPage, cache.formLexLeft)
+        state.lexBudget = contents.count + extra
+        defer { cache.formLexLeft -= min(max(state.lexed - contents.count, 0), extra) }
+        try state.run(contents, resources: resources, depth: 0)
         return state.finish()
     }
 
@@ -64,6 +77,15 @@ final class ExtractionCache {
     var fonts: [Int: FontDecoder] = [:]
     var forms: [Int: [UInt8]] = [:]
     var formBytes = 0
+    /// Form bytes a page may lex beyond its own content, and what is left
+    /// of the file's allowance (`PDFText.maxFormLexBytesPerPage`, `…PerFile`).
+    let formLexPerPage: Int
+    var formLexLeft: Int
+
+    init(formLexPerPage: Int = PDFText.maxFormLexBytesPerPage, formLexPerFile: Int = PDFText.maxFormLexBytesPerFile) {
+        self.formLexPerPage = formLexPerPage
+        formLexLeft = formLexPerFile
+    }
 }
 
 struct Extraction {
@@ -72,6 +94,9 @@ struct Extraction {
     var out = ""
     var outBytes = 0
     var operators = 0
+    /// Content bytes lexed on this page, forms included, and the most allowed.
+    var lexed = 0
+    var lexBudget = Int.max
     var fonts: [String: FontDecoder] = [:]   // direct fonts, by name in a resource dict (this page only)
     var forms: [Int: [UInt8]] = [:]          // decoded form XObjects, by object number (this page, uncapped)
     /// Line state: y of the current line in text space, and whether text was shown on it.
@@ -125,7 +150,11 @@ struct Extraction {
             return operands[operands.count - 1 - i].number.flatMap { $0.isFinite ? $0 : nil }
         }
 
+        var seen = 0
         while true {
+            lexed += lx.scanned - seen
+            seen = lx.scanned
+            guard lexed <= lexBudget else { return }
             lx.skipWhitespace()
             guard !lx.atEnd else { break }
             let c = lx.b[lx.pos]

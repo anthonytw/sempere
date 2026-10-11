@@ -3132,7 +3132,7 @@ where the table says how they degrade.
 | identity file, device state | 1 MiB | `BoundedRead` |
 | attachment blob file (§8) | 1 GiB of content plus 64 MiB of framing and age overhead (padme of a 1 GiB blob adds up to 32 MiB) | `BoundedRead` |
 | `backup.json`, export manifest (`.sempere-export-*.json`) | 256 MiB | `BoundedRead` |
-| files read at all | regular files only (no FIFOs or devices; symlinks followed in a vault, not in an imported package) | `BoundedRead` |
+| files read at all | regular files only (no FIFOs or devices; symlinks followed in a vault, not in an imported package, and never below a backup folder or a restore source: a backup run, verify or restore reports a link there and does not read through it) | `BoundedRead` |
 | JSON nesting | 512 levels (Foundation's decoder) | |
 | names of skipped ops, fields and features reported (§7.4) | 64 characters each; 32 distinct per note (or vault), the rest counted together | `NewerContent.maxNameLength`, `.maxNames` |
 | unknown fields kept verbatim (§7.5, §8) | 24 levels deep from the document root; 16 384 values per file | `JSONValue.maxDepth`, `.maxValues` |
@@ -3141,7 +3141,7 @@ where the table says how they degrade.
 | scrypt work factor (identity files) | 2^20 by default (1 GiB), at most 2^22 | `IdentityFile` |
 | WebDAV response | 256 MiB for a revision, 16 MiB otherwise; PROPFIND bodies must be UTF-8 with no DTD or processing instruction | `WebDAVClient` |
 | WebDAV sync run (§9.1) | 100 000 note folders, 10⁶ listed entries, 64 GiB downloaded, 12 hours; the run stops there with an error and the next one continues | `SyncLimits` |
-| zip entry (import) | 1 GiB uncompressed, CRC and size checked | `ZipArchive` |
+| zip entry (import) | 1 GiB uncompressed, CRC and size checked; a stored entry's two sizes equal, a deflated one at most its size + 0.1 % + 64 bytes; no two entries of one name, and no two whose header and data overlap (else the archive is refused); all reads of one archive, repeated and failed ones included, at most 32 × its size and at least 2 GiB uncompressed (an unzipped package: 4 GiB read); a read that failed is not repeated; thumbnails: 8, 16 MiB each | `ZipArchive`, `NotePackage` |
 | binary plist (import) | 64 levels; no cycles; each object parsed once; keyed archives must be binary | `BinaryPlist` |
 | XML plist (import: a recordings library, a PDF metadata index, a few small Notability plists) | 4 MiB, 64 levels; only the five predefined entities and numeric character references; a DOCTYPE with an internal subset refused | `XMLPlist` |
 | keyed-archive UID chain | 64 hops | `KeyedArchive` |
@@ -3163,7 +3163,7 @@ where the table says how they degrade.
 | notebook levels shown | 64 | `NotebookNode.maxDepth` |
 | notebook name (a capture's title and notebook, §11.3; the `quickCapture.notebook` setting) | 300 characters and 1 200 Unicode scalars; a capture cuts a longer name, the setting refuses it | `CaptureAdoption.maxNameLength`, `.maxNameScalars` |
 | LaTeX source (`math`, §8.2.8) | 8 192 UTF-8 bytes (else the revision is rejected); typeset only within 4 096 tokens, balanced groups and 64 levels of nesting (else drawn as source text) | `MathSource.check` |
-| PDF attachment (export, `SemperePDF`) | 1 GiB file; 10⁶ objects; 256 MiB per decoded stream, 1 GiB decoded per file; nesting and page-tree depth 64; 32 reference hops; 4 096 cross-reference sections; 16 filters per stream; encrypted files refused | `PDFLimits` |
+| PDF attachment (export, `SemperePDF`) | 1 GiB file; 10⁶ objects; 256 MiB per decoded stream, 1 GiB decoded per file; the object parser reads at most 4 bytes per byte of the file and of its decoded streams, plus 64 MiB; nesting and page-tree depth 64; 32 reference hops; 4 096 cross-reference sections; 16 filters per stream; encrypted files refused | `PDFLimits` |
 | PDF page drawn as pixels (SVG, PNG) | 16 M pixels per page (drawn at a lower resolution beyond), 256 M per export (placeholders beyond) | `RenderLimits.maxBackgroundPixels…` |
 | summary cache file (§10) | 64 MiB on disk, 256 MiB after gunzip; any failure discards it | `SummaryCache.maxFileBytes` |
 | published summaries (§12) | 64 MiB on disk, 256 MiB after gunzip; unknown fields skipped, not kept; any failure ignores the file, a bad entry only that entry | `PublishedSummaries.maxFileBytes` |
