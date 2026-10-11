@@ -226,6 +226,7 @@ sempere vault recipients confirm
 sempere vault link [status|upgrade]
 sempere vault markers [status|tag|repair]
 sempere vault rewrap-resume
+sempere vault rewrap-discard
 sempere vault verify
 sempere vault index [--out PATH|-]
 sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
@@ -236,7 +237,11 @@ sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
   are stored as the app stores them: one line, trimmed, at most 80
   characters; an empty one is shown as "Device". `--store-key` also writes that identity,
   passphrase-wrapped, into `keys/` (the passphrase is confirmed when typed,
-  and an empty one is refused with exit 2, as in the app).
+  and an empty one is refused with exit 2, as in the app). That file is on the
+  vault's storage, where its passphrase can be guessed offline, so one estimated
+  below 60 bits (`PassphraseStrength`: five random words, or a long random
+  password, pass) is refused with exit 2 too, unless `--allow-weak-passphrase`
+  is given; the app refuses it with no override.
 - `info` prints vault id, creation time, recipients with labels, number of
   notes, stored key files, whether a recipient change is pending and whether
   its journal is readable. It works without a key (the journal check then says
@@ -273,7 +278,8 @@ sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
 - `recipients add` / `replace --store-key FILE` also store the new
   recipient's identity (FILE, which must be that key) passphrase-wrapped in
   `keys/`, with the passphrase from `--store-passphrase-env VAR`, else
-  `$SEMPERE_PASSPHRASE`, else the terminal (confirmed; not empty). Use it when the
+  `$SEMPERE_PASSPHRASE`, else the terminal (confirmed; not empty; refused when
+  too easy to guess unless `--allow-weak-passphrase`, as for `init`). Use it when the
   vault is unlocked by passphrase: only key files of current recipients are
   offered for passphrase unlocking, so after a `replace` the old key file
   (left in `keys/`) no longer is.
@@ -365,7 +371,24 @@ sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
   naming a format or feature this version does not implement.
 - `rewrap-resume` finishes an interrupted change; it refuses (exit 6) a list
   that does not check, so a planted journal cannot re-encrypt the vault to a
-  planted key.
+  planted key. It also refuses a journal this machine does not accept
+  (`format.md` §3.3.1 "Accepting the journal": its secret is not linked, or
+  `vault.json` no longer binds it, or this machine saw the change to the
+  current secret finish): such a journal was planted, or put back after its
+  change finished, and gives no secret. `info` then says "REFUSED journal"
+  (`--json`: `journalRefused`).
+- `rewrap-discard` (needs the key, and a device list that checks: exit 6
+  otherwise) moves a journal this machine refuses to
+  `rewrap-journal.refused.json` (nothing reads it; the next discard replaces
+  it), so recipient changes,
+  `recipients repair` and blob collection run again; when this machine saw the
+  change to the current secret finish, it also removes a `rewrapPending` left in
+  `vault.json` (a put-back copy). It never deletes a journal it accepts (finish
+  that with `rewrap-resume`) or cannot read now (exit 1, the journal kept).
+  A backup restored from before a key change finished has a journal this
+  machine refuses if it saw that change finish: finish it from a machine
+  without that trust record (or put the moved journal back there).
+  `--json`: `discarded`, `reason`.
 - `verify` decrypts, tag-checks and decodes every file and prints
   `status  path` per file plus counts, and a `RECIPIENTS` line (the device
   list, as in `info`). Exit 0 only if the vault is healthy, 6 when the device

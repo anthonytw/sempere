@@ -285,9 +285,8 @@ final class RecipientsAuthTests: VaultTestCase {
     /// anyone who can write the folder (or a sync server) can plant, with a
     /// secret of their own encrypted to the public keys. Files tagged under
     /// it would verify, and a resumed rewrap would re-tag them under the
-    /// real secret. Its secret counts only when `secretLink` links it to the
-    /// current one (or it is the current one: a change interrupted before
-    /// vault.json was written).
+    /// real secret. Its secret counts only when vault.json binds the journal
+    /// (`rewrapPending`) and `secretLink` links it to the current one.
     func testAPlantedJournalSecretIsNotAccepted() throws {
         let store = MemoryRecipientsTrustStore()
         let (made, _, _) = try setUpVault(store: store)
@@ -305,11 +304,12 @@ final class RecipientsAuthTests: VaultTestCase {
         XCTAssertNotNil(vault.journalProblem)
         XCTAssertThrowsError(try vault.resumeRewrap())
 
-        // The current secret (interrupted before vault.json changed) is fine.
+        // Nor is the current one: a journal vault.json does not bind (a change
+        // interrupted before step 2 changed nothing) counts for nothing (S0).
         try plant(try made.requireSecret())
         vault = try open(made.url, store)
-        XCTAssertEqual(vault.previousSecret, try made.requireSecret())
-        XCTAssertNil(vault.journalProblem)
+        XCTAssertNil(vault.previousSecret)
+        XCTAssertTrue(vault.journalRefused)
 
         // A real rotation interrupted after vault.json: linked, accepted.
         try FileManager.default.removeItem(at: journal)

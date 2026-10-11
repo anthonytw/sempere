@@ -8,6 +8,7 @@ struct VaultCommand: ParsableCommand {
         commandName: "vault",
         abstract: "Create, inspect, verify and re-key a vault.",
         subcommands: [VaultInit.self, VaultInfo.self, VaultRecipients.self, VaultLink.self, VaultMarkersCommand.self, VaultRewrapResume.self,
+                      VaultRewrapDiscard.self,
                       VaultVerify.self, VaultIndex.self, VaultSummaries.self]
     )
 }
@@ -47,6 +48,10 @@ struct VaultInit: ParsableCommand {
                                valueName: "n"))
     var workFactor = 18
 
+    @Flag(name: .customLong("allow-weak-passphrase"),
+          help: "Store the key even under a passphrase too easy to guess offline (security.md).")
+    var allowWeakPassphrase = false
+
     @OptionGroup var output: OutputOptions
 
     func validate() throws {
@@ -69,8 +74,10 @@ struct VaultInit: ParsableCommand {
             guard recipients.contains(id.recipient) else {
                 throw CLIError.usage("\(storeKey) is not one of the --recipient keys")
             }
-            stored = (id, try obtainPassphrase(envName: passphraseEnv, prompt: "New key passphrase: ", confirm: true,
-                                                 asError: CLIError.failure))
+            let pass = try obtainPassphrase(envName: passphraseEnv, prompt: "New key passphrase: ", confirm: true,
+                                            asError: CLIError.failure)
+            try requireStoredKeyPassphrase(pass, allowWeak: allowWeakPassphrase)
+            stored = (id, pass)
         }
         let vault = try Vault.create(at: URL(fileURLWithPath: path), recipients: recipients, labels: label,
                                      trust: trustStore())
@@ -118,7 +125,7 @@ struct VaultInfo: ParsableCommand {
                     ? Info.Recipient.pqType : "x25519", label: $0.label, added: $0.added)
             },
             notes: noteCount, keyFiles: keyFiles, pendingRewrap: vault.pendingRewrap,
-            journalProblem: vault.journalProblem, unlocked: !vault.isLocked,
+            journalProblem: vault.journalProblem, journalRefused: vault.journalRefused, unlocked: !vault.isLocked,
             format: vault.manifest.format, features: vault.manifest.features, readOnly: vault.isReadOnly,
             readOnlyReasons: vault.readOnlyReasons.descriptions,
             recipientsAuth: RecipientsStatusOutput(vault))
@@ -145,7 +152,9 @@ struct VaultInfo: ParsableCommand {
         }
         print("Device list:    \(info.recipientsAuth.text)")
         print("Stored keys:    \(keyFiles.isEmpty ? "none" : "\(keyFiles.count) passphrase-wrapped")")
-        print("Pending rewrap: \(info.pendingRewrap ? "YES (run `sempere vault rewrap-resume`)" : "no")")
+        print("Pending rewrap: " + (!info.pendingRewrap ? "no"
+            : info.journalRefused ? "REFUSED journal (check it, then run `sempere vault rewrap-discard`)"
+            : "YES (run `sempere vault rewrap-resume`)"))
         if !info.unlocked {
             print("Journal:        not checked (locked; pass --identity to check)")
         } else if let p = info.journalProblem, info.pendingRewrap {
@@ -172,6 +181,8 @@ struct VaultInfo: ParsableCommand {
         var keyFiles: [String]
         var pendingRewrap: Bool
         var journalProblem: String?
+        /// True when the journal was read and refused (format.md §3.3.1): `vault rewrap-discard` deletes it.
+        var journalRefused: Bool
         var unlocked: Bool
         /// `vault.json`'s `format` and `features` (format.md §2, §7.1).
         var format: String
@@ -609,6 +620,10 @@ struct StoreKeyOptions: ParsableArguments {
             help: ArgumentHelp("scrypt work factor of the stored key, 15...18.", valueName: "n"))
     var workFactor = 18
 
+    @Flag(name: .customLong("allow-weak-passphrase"),
+          help: "Store the key even under a passphrase too easy to guess offline (security.md).")
+    var allowWeakPassphrase = false
+
     func validate() throws {
         guard IdentityFile.writerWorkFactors.contains(workFactor) else {
             throw ValidationError("--work-factor must be in \(IdentityFile.writerWorkFactors)")
@@ -626,6 +641,7 @@ struct StoreKeyOptions: ParsableArguments {
         }
         let pass = try obtainPassphrase(envName: passphraseEnv, prompt: "New key passphrase: ", confirm: true,
                                         asError: CLIError.failure)
+        try requireStoredKeyPassphrase(pass, allowWeak: allowWeakPassphrase)
         return (id, pass)
     }
 
@@ -635,6 +651,14 @@ struct StoreKeyOptions: ParsableArguments {
         let file = try vault.writeIdentityFile(id, passphrase: pass, workFactor: workFactor, replace: true)
         output.info("Stored passphrase-wrapped key: \(file.path)")
     }
+}
+
+/// A key copy in `keys/` sits on the sync storage, where its passphrase can be
+/// guessed offline (security review 2026-10, stage 4, S5): refused below
+/// `PassphraseStrength.storedKeyMinimumBits` unless the user says otherwise.
+func requireStoredKeyPassphrase(_ passphrase: String, allowWeak: Bool) throws {
+    guard !allowWeak, let why = PassphraseStrength.storedKeyProblem(passphrase) else { return }
+    throw CLIError.usage(why + " (or pass --allow-weak-passphrase)")
 }
 
 struct VaultRewrapResume: ParsableCommand {
@@ -656,6 +680,37 @@ struct VaultRewrapResume: ParsableCommand {
             return
         }
         try reportRewrap(try vault.resumeRewrap(), output: output)
+    }
+}
+
+struct VaultRewrapDiscard: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "rewrap-discard",
+        abstract: "Delete a rewrap journal this machine refuses (planted, or put back after its change finished).",
+        discussion: """
+            Only a journal that was read and refused (format.md §3.3.1) is deleted: one this machine accepts \
+            belongs to an unfinished change (finish it with rewrap-resume), and one it cannot read now is kept. \
+            Needs the key and a device list that checks (exit 6 otherwise).
+            """)
+
+    @OptionGroup var access: AccessOptions
+    @OptionGroup var output: OutputOptions
+
+    func run() throws {
+        var vault = try access.openVault(.required, migration: true)
+        let why = try vault.discardRefusedJournal()
+        if output.json {
+            try output.emitJSON(DiscardOutput(discarded: why != nil, reason: why))
+        } else if let why {
+            output.info("Discarded rewrap-journal.json: \(why)")
+        } else {
+            output.info("No rewrap journal to discard.")
+        }
+    }
+
+    private struct DiscardOutput: Encodable {
+        var discarded: Bool
+        var reason: String?
     }
 }
 

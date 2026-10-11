@@ -173,7 +173,7 @@ final class CLIFlagTests: CLITestCase {
         let newKey = path("second.key")
         let pub = try cli(["keys", "generate", "--out", newKey, "-q"]).out.trimmingCharacters(in: .whitespacesAndNewlines)
         let r = try cli(["vault", "recipients", "add", pub, "--store-key", newKey, "--store-passphrase-env", "SECOND_PASS",
-                         "--work-factor", "15"] + key, env: ["SECOND_PASS": "second secret"])
+                         "--work-factor", "15", "--allow-weak-passphrase"] + key, env: ["SECOND_PASS": "second secret"])
         XCTAssertEqual(r.status, 0, r.err)
         let info = try XCTUnwrap(try cli(["vault", "info", "--vault", path("mine.sempere"), "--json"]).json as? [String: Any])
         XCTAssertEqual(info["keyFiles"] as? [String], [pub])

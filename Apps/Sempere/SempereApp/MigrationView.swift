@@ -72,6 +72,10 @@ struct MigrationView: View {
                 if wrap {
                     SecureField("Passphrase", text: $passphrase)
                     SecureField("Repeat passphrase", text: $confirmation)
+                    if let weak = StoredKeyPassphrase.warning(passphrase) {
+                        Text(weak).font(.footnote).foregroundStyle(.red)
+                    }
+                    Text(StoredKeyPassphrase.footnote).font(.footnote).foregroundStyle(.secondary)
                 }
             }
             if migration.keyIsNew {
@@ -125,7 +129,7 @@ struct MigrationView: View {
         if migration.finishingOnly { return true }
         guard migration.key != nil else { return false }
         if migration.keyIsNew && !saved { return false }
-        return !wrap || (!passphrase.isEmpty && passphrase == confirmation)
+        return !wrap || (!passphrase.isEmpty && passphrase == confirmation && StoredKeyPassphrase.accepts(passphrase))
     }
 
     private func start() {

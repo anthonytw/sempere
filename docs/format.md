@@ -76,6 +76,9 @@ Unknown files and directories must be ignored, never deleted.
   §2.1.
 - `markersTag` (optional, *new: authenticated version markers*): §2.1
   "Version markers".
+- `rewrapPending` (optional): present only while a recipient change is
+  unfinished; it binds `rewrap-journal.json` to this `vault.json` (§3.3.1
+  "Binding the journal").
 
 ### 2.1 Authenticated recipients
 
@@ -233,13 +236,20 @@ Application Support folder, as
 { "format": "sempere-trust/2", "vaultId": "…",
   "linkPublicKeys": { "ed25519": "…(64 hex digits)…", "mldsa65": "…(3904 hex digits)…" },
   "recipients": ["age1pq1…", …],
-  "markers": { "format": "sempere/1", "features": ["attachments", "markers-tag", "recipients-tag"] } }
+  "markers": { "format": "sempere/1", "features": ["attachments", "markers-tag", "recipients-tag"] },
+  "rewrapFinished": true }
 ```
 
 `markers` (optional) is present once the device has verified a
 `markersTag`: `format` and the canonical `features` (distinct, sorted by
 UTF-8 bytes). A writer never stores fewer markers than the record held:
 it keeps the higher major and every feature of either.
+
+`rewrapFinished` (optional) is `true` once
+this device has seen the secret named by `linkPublicKeys` with no rotation
+into it pending (§3.3.1 "Finished rotations"). While the record names the
+same secret it never goes back; a record saved for another secret starts
+without it. A legacy record never carries it.
 
 It holds no secret and no key that can make a link or decrypt anything:
 whoever reads it can check a `secretLink` but not forge one. It is still
@@ -425,7 +435,11 @@ The reader cap exists because scrypt at work factor w needs 2^w × 1 KiB of
 memory (20 → 1 GiB, 22 → 4 GiB), beyond what the iPad target can allocate.
 
 The file is optional. A vault may be used with an identity that is only
-in a device Keychain or supplied externally.
+in a device Keychain or supplied externally. It sits with the vault, so
+whoever can read the vault's storage can try passphrases on it offline:
+writers SHOULD refuse a passphrase that is easy to guess (the reference
+implementation refuses one estimated below 60 bits, `PassphraseStrength`,
+unless the user insists; security review 2026-10, stage 4, S5).
 
 ### 3.3 Changing recipients
 
@@ -467,7 +481,8 @@ change can be finished by any device holding an identity of the new set:
      finishing an interrupted change uses the recorded value.
 2. Write `vault.json` with the new `recipients` and `vaultSecret`, and with
    `recipientsTag` (and, when the secret rotates, `secretLink`) for them
-   (§2.1), in one atomic write.
+   (§2.1), and `rewrapPending` for the journal of step 1 (below), in one
+   atomic write.
 3. For every file under `notes/` (revisions and `att/` blobs), skip it if it is already
    complete (below); otherwise rewrite it as described above, verifying its
    tag under the current secret or, failing that, under
@@ -484,9 +499,13 @@ change can be finished by any device holding an identity of the new set:
    unchanged whatever its `$minReaderVersion`; one that cannot be decrypted
    or verified
    is left as it is, reported, and does not keep the journal.
-4. Delete `rewrap-journal.json` once every file is complete. If any file
-   could not be read or verified, keep the journal (it is the only copy of
-   the outgoing secret), report those files, and retry step 3 later.
+4. Once every file is complete, rewrite `vault.json` without
+   `rewrapPending` (one atomic write that tags its markers as every write
+   does, §2.1, and only over a `vault.json` whose recipients, `vaultSecret`
+   and markers are still the ones this writer holds; otherwise stop and keep
+   the journal), then delete `rewrap-journal.json`. If any file could not be
+   read or verified, keep the journal (it is the only copy of the outgoing
+   secret) and `rewrapPending`, report those files, and retry step 3 later.
 
 A file is complete when its age header has, for each stanza type, exactly
 one stanza per current recipient of the matching type (`X25519` for `age1`
@@ -496,21 +515,91 @@ verifies, §8.1.5). Neither stanza type names its recipient, so these counts
 are the only header-level check; while a journal exists no other recipient
 change is started, so counts from two changes never mix.
 
-If `rewrap-journal.json` exists when a vault is opened, the change is
-unfinished: a writer whose list checks (§2.1) finishes steps 3 and 4 before
-any other recipient change, and may verify tags under `previousVaultSecret` meanwhile. Readers
+If `rewrap-journal.json` exists when a vault is opened and is accepted
+(below), the change is unfinished: a writer whose list checks (§2.1)
+finishes steps 3 and 4 before any other recipient change, and may verify
+tags under `previousVaultSecret` meanwhile. Readers
 that do not implement this procedure treat the journal as an unknown file
 (§1).
 
-The journal is plaintext that anyone who can write the folder can plant,
-and anyone can encrypt a secret of their own to the public keys. A reader
-therefore uses `previousVaultSecret` only when it equals the current secret
-(a change interrupted before step 2) or `vault.json`'s `secretLink` (§2.1)
-verifies a rotation from it to the current secret. Otherwise the journal is
-reported as unreadable: nothing verifies under its secret, and a writer does
-not resume from it. A journal written before §2.1 (no `secretLink`) is
-treated the same way; its files not yet rewrapped are reported as failing
-their tags until they are restored from a backup.
+**Accepting the journal.** The journal is plaintext that anyone who can
+write the folder can plant or put back, and anyone can encrypt a secret of
+their own to the public keys. A removed device even holds a real outgoing
+secret, and `secretLink` stays in `vault.json` until the next rotation
+(§2.1), so a link alone cannot tell an unfinished rotation from a finished
+one (security review 2026-10, S0). A reader therefore accepts the journal
+only when:
+
+1. **Bound:** `vault.json`'s `rewrapPending` verifies over the journal's
+   bytes under the current secret (below); and, when it holds a
+   `previousVaultSecret` other than the current secret,
+2. **Linked:** `vault.json`'s `secretLink` (§2.1) verifies a rotation from
+   that secret to the current one, and
+3. **Not finished:** the reader's trust record does not say that the
+   rotation into the current secret finished (`rewrapFinished`, below).
+
+Otherwise the journal is **refused**: it gives no secret, a writer does not
+resume from it, and files tagged under its secret fail their tags. A journal
+that does not parse, or whose previous secret this reader's keys do not
+decrypt, is refused too. A journal left by a change interrupted before step
+2 is not bound: it is refused, which loses nothing, since `vault.json` did
+not change.
+
+**Binding the journal.** The writer of a recipient change writes, in step 2,
+the lowercase hex (64 digits) of
+
+```
+pendingKey    = HKDF-SHA256(ikm = vaultSecret, salt = "", info = "sempere/1 rewrap pending key", L = 32)
+rewrapPending = HMAC-SHA256(key = pendingKey,
+                            message = "sempere/1" ‖ 0x00 ‖ "rewrap pending" ‖ 0x00 ‖ vaultId
+                                      ‖ 0x00 ‖ SHA-256(journal))
+```
+
+with `vaultSecret` the **new** secret (the current one when it does not
+rotate), `vaultId` lowercase UTF-8, and `journal` the exact bytes of
+`rewrap-journal.json` written in step 1 (32 raw bytes of digest). Only
+holders of the current secret can compute it, so a removed device, which
+holds the outgoing secret only, can neither bind a journal of its own nor
+bind the genuine one again once step 4 removed the field. The field is
+covered by neither `recipientsTag` nor `markersTag`; removing it only makes
+readers refuse the journal, which is no more than deleting the journal does.
+Every other write of `vault.json` (a feature added, a tag, a link upgraded)
+keeps it unchanged.
+
+**Finished rotations.** A `vault.json` from step 2, put back after step 4
+(same secret), still binds the genuine journal, which whoever saved both can
+replay; no field of `vault.json` can tell the two apart. Each device that
+keeps a trust record (§2.1) therefore remembers that the rotation into its
+current secret finished: it sets `rewrapFinished` when it saves its record
+for the current secret (at any write), or opens the vault with a list that
+checks against a record of that same secret, while `vault.json` carries no
+`rewrapPending` and no `rewrap-journal.json` exists, and when it completes
+step 4 itself. From then on it refuses every journal whose previous secret
+is not the current one (rule 3). A device without a record (first use, a
+record lost) applies rules 1 and 2 only.
+
+**Refused journals.** A refused journal gives no secret, but while it is
+there no other recipient change starts. A writer whose list checks (§2.1)
+may take it away, explicitly (`sempere vault rewrap-discard`; the app does
+it when it unlocks the vault): only a journal it refuses, never one it
+accepts or cannot read (an I/O error, a file not yet downloaded). The
+reference implementation moves it to `rewrap-journal.refused.json`, an
+unknown file (§1) that nothing reads, replacing an earlier one. When its trust
+record says the rotation finished, it also removes a `rewrapPending` that
+`vault.json` still carries (a put-back copy), as in step 4. Sync never
+replaces a local journal with another copy unless the local one is refused
+and the other accepted (without the key, the other is kept as a conflict
+copy), and never takes a `vault.json` that, under the same secret and
+recipients, brings back or changes `rewrapPending` (only step 4's removal is
+legitimate there).
+
+**Limits.** A device with no trust record that is given both a `vault.json`
+put back from step 2 and the genuine journal accepts the outgoing secret, as
+it would have during the rotation. A backup taken while a
+rotation was unfinished, restored after the rotation finished, looks like a
+put-back copy to a device that saw it finish: that device refuses its
+journal (and moves it aside), and the rotation is finished from a device
+without that record.
 
 A change may also **replace** one recipient by another in a single pass
 (steps 1–4 as for a removal: the secret rotates). Until it finishes, files

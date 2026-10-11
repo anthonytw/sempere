@@ -310,7 +310,11 @@ public final class WebDAVSync {
             guard let remote else { return }
             // A rewrap journal removed locally is finished business, not a missing file.
             if name == Vault.journalName, let record, record.stamp != nil, record.stamp == remote.stamp {
-                report.skipped.append(.init(path: name, message: "removed locally; left on the server (sync never deletes it)"))
+                // One this device refuses does not hold blob collection back (S19).
+                let refused = (try? judgeRemoteJournal()) ?? nil
+                if refused != nil { remoteJournal = false }
+                report.skipped.append(.init(path: name, message: "removed locally; left on the server (sync never deletes it)"
+                    + (refused.map { "; \($0)" } ?? "")))
                 return
             }
             try pullMutable(name, remote: remote)
@@ -369,6 +373,22 @@ public final class WebDAVSync {
 
     private func accept(_ name: String, _ data: Data, stamp: String?) throws {
         try requireLocalWrite("write \(name)")
+        if name == Vault.journalName {
+            // A local journal may hold the only copy of an unfinished change's outgoing
+            // secret, and one this device refuses is never taken (format.md §3.3.1,
+            // security review 2026-10, S9, S4).
+            let local = try localMutable(name)
+            switch Vault.incomingJournalProblem(data, local: local, manifest: try? localMutable(Vault.manifestName), vault: vault) {
+            case nil: break
+            case .refused(let why)?:
+                remoteJournal = false
+                report.rejected.append(.init(path: name, message: SyncReport.printable(IncomingJournalProblem.refused(why).message)))
+                return
+            case .keepLocal(let why)?:
+                try conflict(name, remote: data, detail: why)
+                return
+            }
+        }
         if name == Vault.manifestName {
             // Never let a list nobody with the key wrote replace ours (format.md §2.1).
             let local = try localMutable(name)
@@ -381,6 +401,18 @@ public final class WebDAVSync {
         guard !options.dryRun else { return }
         try LocalFS.write(data, to: root.appendingPathComponent(name), replacing: true)
         state.mutable[name] = .init(hash: FileDigest.sha256(data), stamp: stamp)
+    }
+
+    /// Why this device refuses the server's rewrap journal, judged under the
+    /// local `vault.json` (format.md §3.3.1); nil when it does not, or cannot
+    /// tell (the vault is locked).
+    private func judgeRemoteJournal() throws -> String? {
+        guard vault != nil else { return nil }
+        let (data, _) = try client.get([Vault.journalName], maxBytes: BoundedRead.maxManifestBytes)
+        try budget.downloaded(data.count)
+        let problem = Vault.incomingJournalProblem(data, local: nil, manifest: try? localMutable(Vault.manifestName), vault: vault)
+        if case .refused(let why)? = problem { return "refused: \(why)" }
+        return nil
     }
 
     /// Uploads a mutable file; false when the precondition failed.
@@ -537,15 +569,29 @@ public final class WebDAVSync {
             var coverage: [RevisionName: SnapshotCoverage] = [:]
             for r in loaded?.revisions ?? [] { if let c = SnapshotCoverage(r) { coverage[c.name] = c } }
             let readable = Set(loaded?.revisions.map(\.name) ?? [])
+            // Only what a compactor or thinner of this format could have deleted (format.md §5.3,
+            // §5.8.4; security review 2026-10, stage 4, S2): never a checkpoint or the created
+            // anchor, every complete checkpoint still complete afterwards (its positioned snapshots
+            // and witnesses kept), and nothing judged from a note with an unreadable revision.
+            // Anything else is the server losing (or deleting) files: they are put back.
+            var explained = Set<RevisionName>()
+            if let loaded, loaded.failures.isEmpty {
+                let protected = CompactionPlanner.neverDeleted(loaded.revisions)
+                for n in remoteDeleted where readable.contains(n) && !protected.contains(n) {
+                    var snaps = onServer
+                    if var own = coverage[n] { own.wall = epoch; snaps.append(own) }
+                    if CompactionPlanner.deletable(names: [n], wall: [n: epoch], snapshots: snaps,
+                                                   retention: 0, now: options.now).contains(n) {
+                        explained.insert(n)
+                    }
+                }
+                if !CompactionPlanner.deletionKeepsCheckpoints(explained, from: loaded.revisions, now: options.now) {
+                    explained = []
+                }
+            }
             for n in remoteDeleted.sorted() {
                 try attempt(n) {
-                    var allowed = false
-                    if loaded != nil, readable.contains(n) {
-                        var snaps = onServer
-                        if var own = coverage[n] { own.wall = epoch; snaps.append(own) }
-                        allowed = CompactionPlanner.deletable(names: [n], wall: [n: epoch], snapshots: snaps,
-                                                              retention: 0, now: options.now).contains(n)
-                    }
+                    let allowed = explained.contains(n)
                     if allowed {
                         report.deleted.append(.init(side: "local", path: "notes/\(key(id, n))"))
                         try requireLocalWrite("delete notes/\(key(id, n))")

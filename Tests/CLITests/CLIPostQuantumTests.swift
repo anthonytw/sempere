@@ -204,7 +204,7 @@ final class CLIPostQuantumTests: CLITestCase {
         var elsewhere = pass
         elsewhere["XDG_STATE_HOME"] = path("other-machine")
         let r = try cli(["vault", "recipients", "replace", old, path("pq.key"), "--vault", stored,
-                         "--store-key", path("pq.key"), "--work-factor", "15"], env: elsewhere)
+                         "--store-key", path("pq.key"), "--work-factor", "15", "--allow-weak-passphrase"], env: elsewhere)
         XCTAssertEqual(r.status, 0, r.err)
         XCTAssertEqual(try stanzaTypes(stored), [["mlkem768x25519"]])
         let list = try cli(["notes", "list", "--vault", stored], env: pass)

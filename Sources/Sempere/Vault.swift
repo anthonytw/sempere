@@ -76,8 +76,12 @@ public enum VaultError: Error, Hashable, Sendable {
     case identityFileMalformed
     /// The identity in the file does not match the recipient in its name.
     case identityMismatch(String)
-    /// The recipient-change journal exists but cannot be read.
+    /// The recipient-change journal exists but cannot be read, or this
+    /// device refuses it (format.md §3.3.1 "Accepting the journal").
     case rewrapJournalUnreadable(String)
+    /// `discardRefusedJournal` keeps the journal: this device accepts it (an
+    /// unfinished change: finish it) or cannot read it now.
+    case rewrapJournalKept(String)
     /// Test hook: a rewrap stopped after the requested number of files.
     case interrupted
     /// A file to read holds more than `limit` bytes (`BoundedRead`).
@@ -139,10 +143,15 @@ public struct Vault: Sendable {
     private(set) var secret: VaultSecret?
     /// During an unfinished secret-rotating rewrap: the secret files not yet
     /// rewrapped are still tagged with.
-    private(set) var previousSecret: VaultSecret?
+    internal(set) var previousSecret: VaultSecret?
     /// Why a pending rewrap journal could not be read when the vault was
     /// opened (nil when there is none, it read fine, or the vault is locked).
-    public private(set) var journalProblem: String?
+    public internal(set) var journalProblem: String?
+    /// True when a pending rewrap journal was read and refused (format.md
+    /// §3.3.1: planted, put back after its change finished, or not a journal):
+    /// it gives no secret, and `discardRefusedJournal` may delete it. False
+    /// when there is none, it is accepted, or it could not be read.
+    public internal(set) var journalRefused = false
     /// Test seam (internal): lets tests write and read note content in a
     /// legacy vault, to build migration inputs. Never set outside tests.
     var legacyContentAllowed = false
@@ -401,10 +410,17 @@ public struct Vault: Sendable {
         if vault.pendingRewrap {
             // Recorded, not thrown: the vault stays usable, verify() and
             // tag mismatches surface it, and resumeRewrap() throws it.
-            do { vault.previousSecret = try vault.readJournal().previous } catch {
-                vault.journalProblem = "\(error)"
+            switch vault.judgeJournal() {
+            case .accepted(_, let previous): vault.previousSecret = previous
+            case .refused(let why):
+                vault.journalProblem = "\(VaultError.rewrapJournalUnreadable(why))"
+                vault.journalRefused = true
+            case .unreadable(let why): vault.journalProblem = "\(VaultError.rewrapJournalUnreadable(why))"
             }
         }
+        // A device that keeps a record remembers that nothing is pending
+        // (format.md §3.3.1 "Finished rotations").
+        vault.noteRewrapSettled()
         return vault
     }
 
@@ -695,6 +711,7 @@ public struct Vault: Sendable {
         let (journal, previous) = try readJournal()
         previousSecret = previous
         journalProblem = nil
+        journalRefused = false
         // The method the change started with (format.md §3.3.1); a journal
         // without it (written before blobs) follows the default policy:
         // a rotated secret means a removal.
@@ -710,8 +727,14 @@ public struct Vault: Sendable {
     mutating func finishRewrap(blobs: RewrapMethod, stopAfter: Int?, rotating: Bool = false) throws -> RewrapReport {
         let report = try rewrapNotes(blobs: blobs, stopAfter: stopAfter, rotating: rotating)
         guard report.isComplete else { return report }
+        // The binding goes first (format.md §3.3.1 step 4): a journal left by
+        // a crash between the two is then refused, never accepted again.
+        try clearRewrapPending()
         try FileIO.remove(journalURL)
         previousSecret = nil
+        journalProblem = nil
+        journalRefused = false
+        try? rememberRecipients()   // rewrapFinished (§3.3.1 "Finished rotations")
         return report
     }
 
@@ -755,7 +778,8 @@ public struct Vault: Sendable {
         let journal = RewrapJournal(format: SempereFormat.identifier,
                                     previousVaultSecret: rotate ? try Self.encryptSecret(current, to: ageNext) : nil,
                                     rekeyBlobs: method == .reencrypt)
-        try FileIO.writeAtomically(try InkJSON.encoder().encode(journal), to: journalURL, replacing: true)
+        let journalData = try InkJSON.encoder().encode(journal)
+        try FileIO.writeAtomically(journalData, to: journalURL, replacing: true)
         previousSecret = rotate ? current : nil
 
         var m = onDisk
@@ -764,6 +788,10 @@ public struct Vault: Sendable {
         m.recipientsTag = RecipientsAuth.tag(vaultId: m.vaultId, keys: next.map(\.key), secret: newSecret)
         Self.addAuthFeatures(&m)
         m.secretLink = link
+        // The journal is bound to this vault.json under the new secret, which a
+        // removed device does not hold (format.md §3.3.1 "Binding the journal"):
+        // no journal counts without it.
+        m.rewrapPending = RecipientsAuth.rewrapPending(vaultId: m.vaultId, journal: journalData, secret: newSecret)
         manifest = try Self.writeManifest(m, to: manifestURL, replacing: true, secret: newSecret)
         secret = newSecret
         recipientsStatus = .verified(.unchanged)
@@ -788,13 +816,17 @@ public struct Vault: Sendable {
     func rememberRecipients(replacing: Bool = false, markers: VaultMarkers? = nil) throws {
         guard let trustStore, let secret else { return }
         var record = try RecipientsTrustRecord(vaultId: vaultId, secret: secret, recipients: manifest.recipients.map(\.key),
-                                               markers: markers ?? (manifest.markersTag != nil ? VaultMarkers(manifest) : nil))
-        if let memo = trustMemo.last, memo.vaultId == vaultId, let seen = memo.markers {
-            record.markers = record.markers.map { $0.merged(with: seen) } ?? seen
+                                               markers: markers ?? (manifest.markersTag != nil ? VaultMarkers(manifest) : nil),
+                                               rewrapFinished: rewrapSettled)
+        if let memo = trustMemo.last, memo.vaultId == vaultId {
+            if let seen = memo.markers { record.markers = record.markers.map { $0.merged(with: seen) } ?? seen }
+            // `rewrapFinished` never goes back while the secret stays (format.md §3.3.1).
+            if memo.anchor == record.anchor, memo.rewrapFinished { record.rewrapFinished = true }
         }
         guard replacing || trustMemo.last != record else { return }
         let stored = replacing ? nil : try trustStore.record(for: vaultId)
         if let seen = stored?.markers { record.markers = record.markers.map { $0.merged(with: seen) } ?? seen }
+        if let stored, stored.anchor == record.anchor, stored.rewrapFinished { record.rewrapFinished = true }
         if replacing || stored != record { try trustStore.save(record) }
         trustMemo.last = record
     }
@@ -849,7 +881,8 @@ public struct Vault: Sendable {
         let written = try Self.writeManifest(m, to: manifestURL, replacing: true, secret: secret)
         if let trustStore {
             let record = try RecipientsTrustRecord(vaultId: vaultId, secret: secret, recipients: keys,
-                                                   markers: VaultMarkers(written))
+                                                   markers: VaultMarkers(written),
+                                                   rewrapFinished: written.rewrapPending == nil && !pendingRewrap)
             try trustStore.save(record)
             trustMemo.last = record
         }
@@ -926,7 +959,8 @@ public struct Vault: Sendable {
             throw VaultError.recipientsNotRepairable("this device does not know the last verified list: name the keys to keep")
         }
         guard !pendingRewrap else {
-            throw VaultError.recipientsNotRepairable("a recipient change is unfinished; restore vault.json from a backup")
+            throw VaultError.recipientsNotRepairable(journalRefused ? pendingRewrapAdvice
+                : "a recipient change is unfinished; restore vault.json from a backup")
         }
         if let dup = Self.firstDuplicate(keys) { throw VaultError.duplicateRecipient(dup) }
         let remembered = Set((try? trustStore?.record(for: vaultId))??.recipients ?? [])
@@ -1011,29 +1045,15 @@ public struct Vault: Sendable {
         var rekeyBlobs: Bool?
     }
 
+    /// The journal and its outgoing secret, when this device accepts it
+    /// (format.md §3.3.1 "Accepting the journal", `judgeJournal`).
+    ///
+    /// - Throws: `rewrapJournalUnreadable` when it cannot be read or is refused.
     func readJournal() throws -> (journal: RewrapJournal, previous: VaultSecret?) {
-        let j: RewrapJournal
-        do { j = try InkJSON.decoder().decode(RewrapJournal.self, from: try FileIO.read(journalURL, maxBytes: BoundedRead.maxManifestBytes)) } catch {
-            throw VaultError.rewrapJournalUnreadable("\(error)")
+        switch judgeJournal() {
+        case .accepted(let journal, let previous): return (journal, previous)
+        case .refused(let why), .unreadable(let why): throw VaultError.rewrapJournalUnreadable(why)
         }
-        guard let armored = j.previousVaultSecret else { return (j, nil) }
-        let previous: VaultSecret
-        do { previous = try Self.decryptSecret(armored, with: identities) } catch {
-            throw VaultError.rewrapJournalUnreadable("previous secret: \(error)")
-        }
-        // The journal is plaintext JSON anyone who can write the folder can
-        // plant, and its secret anyone can encrypt to the public keys: it is
-        // accepted only when `secretLink` links it to the current secret (or
-        // it is the current one: a change interrupted before vault.json was
-        // written). Otherwise files tagged under it would verify, and a
-        // resumed rewrap would re-tag them under the real secret (security
-        // review 2026-10, R4).
-        if let current = secret, !RecipientsAuth.constantTimeEqual(previous.bytes, current.bytes),
-           !RecipientsAuth.linkConnects(manifest.secretLink, from: previous, to: current, vaultId: vaultId) {
-            throw VaultError.rewrapJournalUnreadable("its previous secret is not linked to the vault's (format.md §2.1 "
-                + "secretLink): not written by this vault's recipient change")
-        }
-        return (j, previous)
     }
 
     /// Re-encrypts every revision file not yet current (format.md §3.3.1).

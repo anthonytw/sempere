@@ -15440,6 +15440,18 @@
         }
       }
     },
+    "The copy is kept in the vault, on its storage: anyone who can read the storage can try passphrases on it offline. Use five or more random words, or a long random password." : {
+      "comment" : "Footnote under the toggle that stores the key in the vault under a passphrase",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La copia se guarda en la bóveda, en su almacenamiento: cualquiera que pueda leer el almacenamiento puede probar frases de contraseña sin conexión. Usa cinco o más palabras al azar, o una contraseña larga al azar."
+          }
+        }
+      }
+    },
     "The copy on this device and the saved password are deleted. The vault on the server is not changed." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -17086,6 +17098,18 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "Too easy to guess for a copy stored with the vault. Add more random words or characters." : {
+      "comment" : "Shown while the passphrase for the stored key copy is too weak",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demasiado fácil de adivinar para una copia guardada con la bóveda. Añade más palabras o caracteres al azar."
           }
         }
       }

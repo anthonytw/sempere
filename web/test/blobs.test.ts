@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import {
   BlobError, NoteBlobs, asBlobRef, blobKind, hexToBytes, maxFileBytes, padme, readBlob, verifyPlaintext,
 } from "../src/vault/blobs.ts";
-import { UnlockedVault, parseManifest } from "../src/vault/vault.ts";
+import { UnlockedVault, parseManifest, rewrapPendingTag } from "../src/vault/vault.ts";
 import { NodeDirSource, sampleIdentity, webFixtures } from "./support.ts";
 
 const enc = new TextEncoder();
@@ -212,7 +212,8 @@ describe("reading blobs from a vault", async () => {
     const secretLink = createHmac("sha256", linkKey).update(Buffer.concat([enc.encode("sempere/1"), Uint8Array.of(0),
       enc.encode("secret link"), Uint8Array.of(0), enc.encode(manifest.vaultId), Uint8Array.of(0), secretId])).digest("hex");
     // A legacy (HMAC) link, as an older writer left it: a reader holding both secrets may check it.
-    const rewrapping = await UnlockedVault.unlock({ ...manifest, secretLink: { kind: "legacy", hex: secretLink } },
+    const rewrapPending = await rewrapPendingTag(manifest.vaultId, journal, currentSecret);
+    const rewrapping = await UnlockedVault.unlock({ ...manifest, secretLink: { kind: "legacy", hex: secretLink }, rewrapPending },
       sampleIdentity(), journal);
     const [current, old] = await rewrapping.blobNames(hexToBytes(r.sha256));
     expect(await rewrapping.derivedKeys("sempere/1 test", gcm, ["decrypt"])).toHaveLength(2);

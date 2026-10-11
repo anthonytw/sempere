@@ -698,3 +698,83 @@ Each request is bounded by size and time, but a run is not:
 - Fixed by R4: summaries sealed under the journal's previous secret were accepted during a rewrap. The web
   viewer now derives the previous summaries key only from a journal secret that `secretLink` links.
 - Summaries are encrypted. `vault.json` and the journal are never cached. Nothing decrypted is persisted.
+
+## Audit 2026-10 stage 4 (2026-10-10)
+
+Fixes of verified findings from the pre-release audit's stage 4. Each test fails on the base
+(96abc5aa) and passes after.
+
+### S0, S1, S4 (High): a removed device could bring its old secret back with a rewrap journal
+
+`readJournal` accepted any journal whose previous secret `secretLink` linked to the current one, and the
+signed link stays in `vault.json` until the next rotation. A removed device, which holds the outgoing
+secret, could therefore plant a journal (or replay the genuine one) after its removal finished: every
+previous-secret fallback (revisions, blobs, `settings.age`, captures, the web viewer's blob names and
+summaries) accepted its forgeries, and a resume re-tagged them under the current secret.
+
+**Fix** (`format.md` §3.3.1 "Accepting the journal", `Sources/Sempere/RewrapBinding.swift`):
+- Binding: every recipient change's `vault.json` write carries `rewrapPending`, an HMAC under the new
+  secret over the journal's SHA-256; step 4 removes it in a tagged write before deleting the journal. A
+  journal counts only when the field binds its bytes (and, for an outgoing secret, `secretLink` links it).
+- Device-local: the trust record's `rewrapFinished`, set when the device saves its record (or opens with a
+  record of the same secret) while nothing is pending, and when it finishes the rewrap itself; it never
+  goes back for the same secret. It is what catches a `vault.json` from step 2 put back with the genuine
+  journal after the rotation finished (same secret, so the binding still verifies): then no journal with
+  another previous secret is accepted (no fallback, no resume).
+- Sync: `incomingManifestProblem` refuses a `vault.json` that, under the same secret and list, brings
+  back or changes `rewrapPending` (a put-back copy), locked or not.
+- Web viewer: `journalSecretAccepted` in `web/src/vault/vault.ts` (binding + link; it keeps no record).
+- Tests: `RewrapJournalBindingTests` (`testARemovedDeviceCannotReopenItsSecretWithAPlantedJournal`,
+  `testAReplayedJournalOfAFinishedRotationIsRefused`, `testTheFinishedMarkerIsMonotonic`, the shared vector
+  in `testRewrapPendingIsHMACOverVaultIdAndJournalDigest`), `RecipientsAuthTests.testAPlantedJournalSecretIsNotAccepted`,
+  `JournalSyncTests.testAJournalThisDeviceRefusesIsNotTaken`, `web/test/journal.test.ts`.
+- Remaining (`format.md` §3.3.1 "Limits"): a device with no trust record that is given both the
+  `vault.json` of step 2 and the genuine journal accepts the outgoing secret, as during the rotation; the
+  web viewer keeps no record, so the same holds there.
+
+### S9 (Low): a two-way sync replaced an unfinished local journal
+
+`WebDAVSync.accept` wrote any server journal over the local one, which may be the only copy of the
+outgoing secret. **Fix:** `Vault.incomingJournalProblem`: a local journal is replaced only when this device
+refuses it and accepts the server's; locked, the server's copy becomes a conflict copy; unlocked, a journal
+this device refuses is `rejected`, not written. Test: `JournalSyncTests.testTheServerCannotReplaceAnUnfinishedLocalJournal`.
+
+### S19 (Low): a planted journal blocked every recipient change
+
+Any `rewrap-journal.json` blocked recipient changes, repairs and blob collection, and held the app in its
+migration screen; nothing removed it. **Fix:** `Vault.discardRefusedJournal` (CLI `vault rewrap-discard`,
+`--json`) moves a journal this device refuses to `rewrap-journal.refused.json` (read by nothing) (never one it accepts or cannot read now, never with a list
+that does not check); the app does it quietly at unlock and in the migration screen, and opens the vault
+normally when a refused journal is left; `vault info` says "REFUSED journal"; the CLI's errors and blob
+collection name `rewrap-discard`; a server journal this device refuses no longer holds blob pruning back.
+Tests: `RewrapJournalBindingTests.testARefusedJournalCanBeDiscardedAndAnAcceptedOneCannot`,
+`testAnUnreadableJournalIsKept`, `CLIRewrapDiscardTests`.
+
+### S2 (Medium): a WebDAV server could make two-way-sync clients delete saved versions
+
+`syncNote` judged a revision the server no longer listed only by snapshot coverage (with its age forced
+away), so a server without any key could make every syncing device delete checkpoints, the created anchor
+and the history a checkpoint needs. **Fix:** such a deletion is followed only when a compactor or thinner
+of this format could have made it: never a checkpoint or the created anchor
+(`CompactionPlanner.neverDeleted`), never a set that leaves a complete checkpoint incomplete
+(`CompactionPlanner.deletionKeepsCheckpoints`, the check `plan` uses), and nothing in a note with an
+unreadable revision; anything else is uploaded again. Age is not judged (thinning everything except
+checkpoints is legitimate), so a server can still drop covered non-checkpoint history after the newest
+checkpoint, as that thinning would. Tests: `RemoteDeletionTests.testTheServerCannotDeleteACheckpoint`,
+`testTheServerCannotDeleteTheHistoryACheckpointNeeds` (fail on the base), and
+`testAnExplainedDeletionStillPropagates`, `testAThinningByAnotherDeviceReachesThisOne` (legitimate
+deletions still propagate).
+
+### S5 (Low): key copies in `keys/` accepted any non-empty passphrase
+
+The passphrase-wrapped key copy is on the sync storage, so whoever can read the storage can guess its
+passphrase offline (scrypt, work factor 18); the app and CLI accepted any non-empty one. **Evaluation:** the
+verifier's fix is sound; a strength floor is the part that matters (raising the work factor is capped by the
+readers' memory limit, §3.2, and does not replace it). **Fix:** `PassphraseStrength` (Sources, no word list:
+letter runs priced as Diceware words, l33t substitutions folded into words, repeats and sequences one bit)
+with a 60-bit floor for a stored copy. The app's New Vault and Upgrade Vault sheets refuse a weaker one and
+say why (footnote: the copy is on the storage and can be guessed offline); the CLI's `vault init` and
+`recipients add`/`replace --store-key` refuse it with exit 2 unless `--allow-weak-passphrase`.
+`format.md` §3.2 and `security.md` say so. The library call (`Vault.writeIdentityFile`) still accepts any
+non-empty passphrase (tests, the demo vault). Tests: `PassphraseStrengthTests`,
+`CLICommandTests` (weak refused, exit 2).
