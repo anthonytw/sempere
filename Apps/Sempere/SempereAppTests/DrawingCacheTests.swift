@@ -317,6 +317,13 @@ struct DrawingCacheTests {
         var other = strokes
         other[3].id = UUID()
         #expect(!DrawingPreparation.matches(prepared.drawing, other), "the texture seed comes from the stroke id")
+        // Every canvas stroke carries its stored stroke's id, also through PencilKit's data.
+        #expect(prepared.drawing.strokes.map(\.id) == strokes.map(\.id))
+        let decoded = try? PKDrawing(data: prepared.drawing.dataRepresentation())
+        #expect(decoded?.strokes.map(\.id) == strokes.map(\.id))
+        var reseeded = prepared.drawing
+        reseeded.strokes[0].id = UUID()
+        #expect(!DrawingPreparation.matches(reseeded, strokes), "a canvas stroke with another id")
         // Small pages: one go.
         var none = false
         _ = DrawingPreparation.convert(Array(strokes.prefix(10)), visible: .zero) { _ in none = true }

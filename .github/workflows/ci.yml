@@ -248,14 +248,18 @@ jobs:
     name: iPad and iPhone app (simulators + Mac Catalyst)
     needs: changes
     if: needs.changes.outputs.app == 'true'
-    runs-on: macos-26
+    # The xcode-27 image (macOS 27, Xcode 27, iOS 27 simulators); macos-26 has only Xcode 26.
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@v4
-      - name: Select newest Xcode
+      - name: Select Xcode 27.0 (the image's newest is a beta)
         run: |
-          sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)/Contents/Developer"
+          sudo xcode-select -s /Applications/Xcode_27.0.app/Contents/Developer
           xcodebuild -version
           xcrun simctl list runtimes
+          # The app's minimum is iPadOS/iOS 27: fail here, not in the middle of a build.
+          sdk=$(xcrun --sdk iphoneos --show-sdk-version)
+          if [[ ${sdk%%.*} -lt 27 ]]; then echo "::error::the app needs the iOS 27 SDK (Xcode 27); this runner has $sdk"; exit 1; fi
       # Build cache: main saves it, PRs only restore (docs/HANDOFF.md "CI").
       - id: cache
         name: Restore the build cache (toolchain + resolved packages)
@@ -473,15 +477,18 @@ jobs:
   screenshots:
     name: App Store screenshots
     if: github.event_name == 'workflow_dispatch' && inputs.screenshots
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - name: Select newest Xcode
+      - name: Select Xcode 27.0 (the image's newest is a beta)
         run: |
-          sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)/Contents/Developer"
+          sudo xcode-select -s /Applications/Xcode_27.0.app/Contents/Developer
           xcodebuild -version
           xcrun simctl list runtimes
+          # The app's minimum is iPadOS/iOS 27: fail here, not in the middle of a build.
+          sdk=$(xcrun --sdk iphoneos --show-sdk-version)
+          if [[ ${sdk%%.*} -lt 27 ]]; then echo "::error::the app needs the iOS 27 SDK (Xcode 27); this runner has $sdk"; exit 1; fi
       - name: iPad (iPad Pro 13-inch simulator, 2064x2752)
         run: scripts/screenshots.sh ipad
       - name: iPhone (iPhone Pro Max simulator, 6.9")

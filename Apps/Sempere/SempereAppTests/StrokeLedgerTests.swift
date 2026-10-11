@@ -111,6 +111,22 @@ struct StrokeLedgerTests {
         #expect(r.parent == m.id)
     }
 
+    /// An edit PencilKit made without changing the stroke's `PKStroke.id`
+    /// (iOS 27) names the stroke as its parent even when nothing else ties
+    /// them (another path, colour and creation date).
+    @Test func anEditThatKeepsThePencilKitIdNamesItsParent() throws {
+        let stored = [TS.stroke(), TS.stroke(x: 300)]
+        var l = Self.ledger(stored)
+        var edited = TS.canvasStroke(TS.stroke(x: 600, n: 7), created: Date(timeIntervalSinceReferenceDate: 4000))
+        edited.ink = PKInk(.pen, color: .green)
+        edited.id = stored[0].id
+        let change = l.update(TS.items([edited, StrokeConversion.pkStroke(stored[1])]))
+        #expect(change.removed.map(\.id) == [stored[0].id])
+        let added = try #require(change.added.first)
+        #expect(added.parent == stored[0].id)
+        #expect(added.id != stored[0].id, "an edit gets a new format id (format.md §5.2)")
+    }
+
     @Test func aStrokeDrawnWhileAnotherIsErasedIsNotItsReplacement() throws {
         let stored = [TS.stroke()]
         var l = Self.ledger(stored)

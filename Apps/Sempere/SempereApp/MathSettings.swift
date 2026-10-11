@@ -15,6 +15,11 @@ struct MathRecognitionSettingsSection: View {
         Section {
             Toggle("Convert Handwriting to Math", isOn: $enabled)
                 .syncedSetting("math.recognize")
+                // On a row that is always there, not the section: a section's modifier is on each of
+                // its rows, and several rows presenting at once can close it again on Mac Catalyst 27.
+                .fileImporter(isPresented: $addingModel, allowedContentTypes: [.folder, .zip]) { result in
+                    if case .success(let url) = result { models.importModel(from: url) }
+                }
             if enabled {
                 if models.catalog.isEmpty && models.added.isEmpty {
                     Text("No handwriting model is offered for this version of Sempere yet.")
@@ -43,9 +48,6 @@ struct MathRecognitionSettingsSection: View {
             Text("Insert ▸ Equation from Handwriting reads the ink you circle as LaTeX, with a model that runs on this device: no ink leaves it. A model is downloaded only when you ask, checked against its published fingerprint and kept on this device.")
         }
         .onAppear { models.refresh() }
-        .fileImporter(isPresented: $addingModel, allowedContentTypes: [.folder, .zip]) { result in
-            if case .success(let url) = result { models.importModel(from: url) }
-        }
     }
 
     /// A model added from Files: which one reads, and removing it.

@@ -77,7 +77,7 @@ enum TranscriptionPreference {
         return engines.enumerated().map { index, e in
             let title: String
             if e.engine.contains("speechtranscriber") {
-                title = String(localized: "SpeechTranscriber (on device)", comment: "Settings ▸ Transcription: the speech engine of iPadOS 26 (a product name)")
+                title = String(localized: "SpeechTranscriber (on device)", comment: "Settings ▸ Transcription: the newer on-device speech engine (a product name)")
             } else if e.engine.contains("sfspeech") {
                 title = String(localized: "SFSpeechRecognizer (on device)", comment: "Settings ▸ Transcription: the older speech engine (a product name)")
             } else {

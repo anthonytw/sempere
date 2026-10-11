@@ -32,7 +32,7 @@ final class DrawingCache: @unchecked Sendable {
     static let magic: [UInt8] = [0x53, 0x4D, 0x50, 0x44, 0x01]
     /// Bumped whenever what a page entry holds changes (conversion, the
     /// layout's shape): older entries are then never found.
-    static let schemaVersion = 2   // 2: concurrent replacements merged (format.md §5.6.1)
+    static let schemaVersion = 3   // 2: concurrent replacements merged (format.md §5.6.1); 3: PKStroke.id is the stored id
     /// The default size limit.
     static let defaultCapBytes = 200 << 20
     /// The `UserDefaults` key of the size limit in megabytes (unset: 200).

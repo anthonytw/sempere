@@ -95,15 +95,15 @@ struct QuickCaptureTests {
 
     /// A call during a voice note pauses it; it resumes and is sealed whole.
     @Test func interruptionDuringAVoiceNote() async throws {
-        let (url, _, _, qc, center) = try Self.setUp(transcribe: false)
+        let (url, _, _, qc, _) = try Self.setUp(transcribe: false)
         try await qc.start()
         let session = try #require(qc.session)
-        center.post(name: AVAudioSession.interruptionNotification, object: nil,
-                    userInfo: RecordingTests.interruption(.began))
-        #expect(await TS.waitUntil { session.state == .interrupted })
-        center.post(name: AVAudioSession.interruptionNotification, object: nil,
-                    userInfo: RecordingTests.interruption(.ended, resume: true))
-        #expect(await TS.waitUntil { session.state == .recording })
+        // The iOS 27 deactivation and resumption messages cannot be built in a
+        // test (their contexts are made by the system): drive the session directly.
+        session.interruption(began: true, shouldResume: false)
+        #expect(session.state == .interrupted)
+        session.interruption(began: false, shouldResume: true)
+        #expect(session.state == .recording)
         let outcome = try await qc.stop()
         #expect(outcome.delivery == .vault)
         #expect(Self.inbox(url) == [CaptureFile.name(outcome.id, .capture)])

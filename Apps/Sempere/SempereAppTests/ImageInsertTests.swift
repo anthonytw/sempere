@@ -245,4 +245,16 @@ struct ImageInsertTests {
         #expect(pdf.range(of: Data("GPS".utf8)) == nil)
         #expect(pdf.range(of: Data("ftypheic".utf8)) == nil, "the HEIC file is not embedded")
     }
+
+    /// The fallback decoder parses only HEIC/HEIF: a stored blob in another
+    /// codec (here GIF and TIFF claiming to be `image/heic`) is not decoded.
+    @Test func imageIODecoderReadsOnlyHEIC() throws {
+        let heic = try #require(Self.photo(.heic, gps: false))
+        let decoded = try #require(try ImageIODecoder().decode(heic, type: "image/heic", maxPixels: 1 << 20))
+        #expect(decoded.width == 8 && decoded.height == 6)
+        for other in [UTType.gif, .tiff] {
+            let data = try #require(Self.photo(other, gps: false))
+            #expect(try ImageIODecoder().decode(data, type: "image/heic", maxPixels: 1 << 20) == nil, "\(other)")
+        }
+    }
 }

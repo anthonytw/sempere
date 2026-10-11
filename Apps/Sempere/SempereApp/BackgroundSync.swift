@@ -31,65 +31,17 @@ enum BackgroundSync {
     /// The earliest a refresh is asked for after the app leaves the screen.
     static let refreshDelay: TimeInterval = 15 * 60
 
-    /// The app's model, which the launch handlers sync (set once at launch).
+    /// The app's model, which the scheduled tasks sync (set once at launch).
     @MainActor static weak var model: AppModel?
 
-    /// Registers the launch handlers; must run before the app finishes launching.
-    @MainActor static func register(model: AppModel) {
-        self.model = model
-        guard !Platform.isMac else { return }
-        for id in [refreshIdentifier, processingIdentifier] {
-            BGTaskScheduler.shared.register(forTaskWithIdentifier: id, using: .main) { task in
-                MainActor.assumeIsolated { handle(task) }
-            }
-        }
-    }
-
     /// Runs one scheduled task: passes of the sync until it settles or iOS
-    /// takes the time back (`expirationHandler` cancels them).
-    @MainActor static func handle(_ task: BGTask) {
-        let work = WorkBox()
-        task.expirationHandler = { work.cancel() }
-        guard let model else {
-            task.setTaskCompleted(success: true)
-            return
-        }
-        let completion = TaskCompletion(task)
-        work.task = Task { @MainActor in
-            let settled = await model.runScheduledSync()
-            model.scheduleBackgroundRefresh()
-            completion.complete(success: settled)
-        }
-    }
-
-    /// The scheduled task's `Task`, cancelled by the expiration handler.
-    private final class WorkBox: @unchecked Sendable {
-        private let lock = NSLock()
-        private var stored: Task<Void, Never>?
-        private var cancelled = false
-        var task: Task<Void, Never>? {
-            get { lock.withLock { stored } }
-            set {
-                let cancelNow = lock.withLock { stored = newValue; return cancelled }
-                if cancelNow { newValue?.cancel() }
-            }
-        }
-        func cancel() {
-            let t = lock.withLock { cancelled = true; return stored }
-            t?.cancel()
-        }
-    }
-
-    /// Completes a `BGTask` once (it is not `Sendable`; it is only touched on the main queue).
-    private final class TaskCompletion: @unchecked Sendable {
-        private let task: BGTask
-        private var done = false
-        init(_ task: BGTask) { self.task = task }
-        @MainActor func complete(success: Bool) {
-            guard !done else { return }
-            done = true
-            task.setTaskCompleted(success: success)
-        }
+    /// takes the time back. The task's launch, expiration (which cancels this)
+    /// and completion are SwiftUI's `.backgroundTask` (`SempereApp`), which
+    /// also registers both identifiers with `BGTaskScheduler`.
+    @MainActor static func run() async {
+        guard let model else { return }
+        _ = await model.runScheduledSync()
+        model.scheduleBackgroundRefresh()
     }
 }
 
@@ -139,23 +91,33 @@ final class UIKitBackgroundTasks: BackgroundTaskRunning {
 final class BGTaskSyncScheduler: BackgroundSyncScheduling {
     func schedule(_ request: BackgroundSyncRequest) {
         guard !Platform.isMac else { return }
-        let task: BGTaskRequest
+        // `submitTaskRequest(_:)` must not be called on the main thread. Submits
+        // are not ordered against each other; a resubmission of the same
+        // identifier replaces the pending request, so that does not matter.
+        Task.detached(priority: .utility) {
+            do {
+                try await BGTaskScheduler.shared.submitTaskRequest(Self.makeRequest(request))
+            } catch {
+                // Unavailable (simulator, Background App Refresh off), not permitted or
+                // too many pending: the next launch syncs.
+                let code = (error as? BGTaskScheduler.Error)?.code.rawValue ?? -1
+                Perf.event(.backgroundSync, "schedule failed \(code)")
+            }
+        }
+    }
+
+    /// The `BGTaskRequest` for `request` (built where it is submitted: it is not `Sendable`).
+    nonisolated static func makeRequest(_ request: BackgroundSyncRequest) -> BGTaskRequest {
         switch request {
         case .refresh:
             let r = BGAppRefreshTaskRequest(identifier: BackgroundSync.refreshIdentifier)
             r.earliestBeginDate = Date(timeIntervalSinceNow: BackgroundSync.refreshDelay)
-            task = r
+            return r
         case .processing:
             let r = BGProcessingTaskRequest(identifier: BackgroundSync.processingIdentifier)
             r.requiresNetworkConnectivity = true
             r.requiresExternalPower = false
-            task = r
-        }
-        do {
-            try BGTaskScheduler.shared.submit(task)
-        } catch {
-            // Unavailable (simulator, Background App Refresh off) or too many pending: the next launch syncs.
-            Perf.event(.backgroundSync, "schedule failed")
+            return r
         }
     }
 }

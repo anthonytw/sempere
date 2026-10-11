@@ -4,8 +4,12 @@ import Sempere
 import PencilKit
 import UIKit
 
-// PencilKit ⇄ format conversion (format.md §5.6). Everything here works on
-// iPadOS 26; nothing uses the iPadOS 27 additions (stroke ids, substroke).
+// PencilKit ⇄ format conversion (format.md §5.6). A loaded stroke's
+// `PKStroke.id` (iOS 27) is its stored id; the format keeps its own stroke
+// identity (§5.2), so a canvas stroke's id is never written. The iOS 27
+// additions the format cannot store (`substroke`, `renderGroupID`,
+// `renderState`) are not used. Cut strokes are trimmed with
+// `BSpline.substroke`, which is pure Swift and shared with the Linux CLI.
 //
 // Carried exactly: every control point's location, time offset, opacity,
 // force, azimuth and altitude; the ink type (except `reed`, below); the
@@ -21,7 +25,7 @@ import UIKit
 // - `mask` (the pixel eraser): each visible `maskedPathRange` becomes its own
 //   stroke trimmed with `BSpline.substroke`, so cut ends are round caps rather
 //   than the eraser's outline.
-// - `reed` (iPadOS 26) has no format tool; it is stored as `fountainPen`.
+// - `reed` has no format tool; it is stored as `fountainPen`.
 
 extension InkTool {
     /// The PencilKit ink for this tool.
@@ -106,8 +110,8 @@ extension Transform {
 ///
 /// Any change to these maps (or to how strokes become `PKStroke`s) must bump
 /// `DrawingCache.schemaVersion`: cached drawings are checked against the
-/// stored strokes only by count, seed, ink type, point count, end points and
-/// transform, not by width or colour.
+/// stored strokes only by count, id, seed, ink type, point count, end points
+/// and transform, not by width or colour.
 enum NibSize {
     /// Pen family: drawn width `2s − 4`.
     static let penOffset = 2.0
@@ -166,15 +170,18 @@ enum StrokeConversion {
     /// format does not keep one).
     static let loadedCreationDate = Date(timeIntervalSinceReferenceDate: 0)
 
-    /// The PencilKit stroke for a stored stroke. Its texture seed is derived
-    /// from the stroke id, so a textured stroke looks the same on every load.
+    /// The PencilKit stroke for a stored stroke. Its `PKStroke.id` (iOS 27)
+    /// is the stored stroke's id, and its texture seed is derived from that id,
+    /// so a textured stroke looks the same on every load. (`PKDrawing` gives a
+    /// stroke whose id it already holds a fresh id, so a page with duplicate
+    /// ids still shows every stroke.)
     static func pkStroke(_ stroke: Stroke) -> PKStroke {
         let tool = stroke.ink.tool
         let path = PKStrokePath(controlPoints: stroke.points.map { $0.pkStrokePoint(tool: tool) },
                                 creationDate: loadedCreationDate)
         let ink = PKInk(stroke.ink.tool.pkInkType, color: stroke.ink.color.uiColor)
         let transform = (stroke.transform ?? .identity).cgAffineTransform
-        return PKStroke(ink: ink, path: path, transform: transform, mask: nil, randomSeed: seed(for: stroke.id))
+        return PKStroke(ink: ink, path: path, transform: transform, mask: nil, randomSeed: seed(for: stroke.id), id: stroke.id)
     }
 
     /// A stable 32-bit seed from a stroke id.

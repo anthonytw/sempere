@@ -40,8 +40,8 @@ struct SempereApp: App {
                              backupNotifier: UserNotificationBackupNotifier())
         AppModel.current = model
         _model = State(initialValue: model)
-        // Background sync (iOS): the launch handlers of the scheduled tasks, registered before launch ends.
-        BackgroundSync.register(model: model)
+        // Background sync (iOS): the model the scheduled tasks sync (`.backgroundTask` below).
+        BackgroundSync.model = model
         // Staged exports are plaintext copies of notes: none survives a launch.
         ExportJob.purgeStale()
         BulkExportRun.purgeStale()
@@ -95,6 +95,10 @@ struct SempereApp: App {
         #else
         WindowGroup(id: SceneRestoration.Kind.library.sceneID) { libraryContent }
             .commands { ExportMenuCommands(model: model) }
+            // Background sync: iOS launches these for the requests `BGTaskSyncScheduler`
+            // submits. The Mac schedules nothing.
+            .backgroundTask(.appRefresh(BackgroundSync.refreshIdentifier)) { await BackgroundSync.run() }
+            .backgroundTask(.processingTask(BackgroundSync.processingIdentifier)) { await BackgroundSync.run() }
         #endif
     }
 

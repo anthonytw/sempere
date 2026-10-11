@@ -12,6 +12,11 @@
 #   scripts/app.sh simulator [PREFIX [SUFFIX]] # print the simulator id `test` would use (or one named PREFIX…SUFFIX)
 #
 # SEMPERE_SIM_ID overrides the simulator choice.
+#
+# The Mac UI tests (test-mac-ui, test-mac-smoke) are ad-hoc signed. Off CI they build without the
+# hardened runtime: on a Mac with a developer identity the ad-hoc UI-test runner otherwise refuses
+# its own test bundle ("mapping process and mapped file (non-platform) have different Team IDs").
+# SEMPERE_MAC_UI_SIGNING=ci keeps CI's settings locally; CI (CI=true) is unchanged.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 project=Apps/Sempere/Sempere.xcodeproj
@@ -19,6 +24,17 @@ scheme=SempereApp
 derived=${SEMPERE_DERIVED_DATA:-.build/xcode}
 # Tests assert English strings: run them in English whatever the Mac's language (es catalog, #92).
 lang=(-testLanguage en -testRegion US)
+mac_ui_signing=(CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES)
+# UI tests on CI run a failed test once more: the hosted runners are slow and a UI query
+# times out now and then. A real bug fails both tries and still fails the job. Unit tests
+# and local runs never retry.
+ui_retry=()
+if [[ "${CI:-}" == true ]]; then
+  ui_retry=(-retry-tests-on-failure -test-iterations 2)
+fi
+if [[ "${CI:-}" != true && "${SEMPERE_MAC_UI_SIGNING:-}" != ci ]]; then
+  mac_ui_signing+=(ENABLE_HARDENED_RUNTIME=NO)
+fi
 
 # The newest available simulator whose name starts with $1 (iPad or iPhone, default iPad) and, when
 # $2 is given, ends with it ("Pro Max"), on the newest iOS runtime. SEMPERE_SIM_ID overrides it.
@@ -35,7 +51,7 @@ for runtime, devs in devices.items():
     if not m:
         continue
     version = (int(m.group(1)), int(m.group(2)))
-    if version < (26, 0):  # the app targets iPadOS 26 and iOS 26
+    if version < (27, 0):  # the app targets iPadOS 27 and iOS 27
         continue
     for d in devs:
         if d.get("isAvailable") and d["name"].startswith(family) and d["name"].endswith(suffix):
@@ -43,7 +59,7 @@ for runtime, devs in devices.items():
             if best is None or key > best[0]:
                 best = (key, d["udid"], d["name"], version)
 if best is None:
-    sys.exit("no available " + family + " simulator on iOS 26 or newer (xcrun simctl list runtimes; xcodebuild -downloadPlatform iOS)")
+    sys.exit("no available " + family + " simulator on iOS 27 or newer (xcrun simctl list runtimes; xcodebuild -downloadPlatform iOS)")
 print(f"using {best[2]} (iOS {best[3][0]}.{best[3][1]})", file=sys.stderr)
 print(best[1])
 ' "$family" "${2:-}"
@@ -81,7 +97,7 @@ case "${1:-}" in
       echo "PSEUDO-TIME $mode start $(date -u +%H:%M:%S)"
       TEST_RUNNER_SEMPERE_PSEUDO=$mode xcodebuild test -project "$project" -scheme SempereScreenshots \
         -derivedDataPath "$derived" -destination "platform=iOS Simulator,id=$sim" \
-        -only-testing:SempereAppUITests/PseudoLanguageUITests -parallel-testing-enabled NO \
+        -only-testing:SempereAppUITests/PseudoLanguageUITests -parallel-testing-enabled NO ${ui_retry[@]+"${ui_retry[@]}"} \
         -resultBundlePath "build/pseudo/$mode.xcresult" CODE_SIGNING_ALLOWED=NO || status=$?
       echo "PSEUDO-TIME $mode end $(date -u +%H:%M:%S) status=$status"
     done
@@ -102,14 +118,13 @@ case "${1:-}" in
     # The UI tests live in the SempereScreenshots scheme (never built by `test`).
     xcodebuild test -project "$project" -scheme SempereScreenshots -derivedDataPath "$derived" \
       -destination 'platform=macOS,variant=Mac Catalyst' -only-testing:SempereAppUITests/MacWindowUITests \
-      -only-testing:SempereAppUITests/SidebarDropUITests \
-      CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES
+      -only-testing:SempereAppUITests/SidebarDropUITests "${mac_ui_signing[@]}" ${ui_retry[@]+"${ui_retry[@]}"}
     ;;
   test-mac-smoke)
     # Fresh-state launches, every column layout, every window and sheet (docs/HANDOFF.md "CI").
     xcodebuild test -project "$project" -scheme SempereScreenshots -derivedDataPath "$derived" \
       -destination 'platform=macOS,variant=Mac Catalyst' -only-testing:SempereAppUITests/LaunchSmokeUITests \
-      CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES
+      "${mac_ui_signing[@]}" ${ui_retry[@]+"${ui_retry[@]}"}
     ;;
   test-ui)
     # The UI tests live in the SempereScreenshots scheme (never built by `test`). The launch smoke
@@ -121,7 +136,7 @@ case "${1:-}" in
       -only-testing:SempereAppUITests/LaunchSmokeUITests/testFreshLaunchDefaultLayoutShowsSidebarListAndNote \
       -only-testing:SempereAppUITests/LaunchSmokeUITests/testFreshLaunchDoubleColumn \
       -only-testing:SempereAppUITests/LaunchSmokeUITests/testFirstUnlockShowsKeyNoticeThenTour \
-      -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO
+      -parallel-testing-enabled NO ${ui_retry[@]+"${ui_retry[@]}"} CODE_SIGNING_ALLOWED=NO
     ;;
   *)
     echo "usage: $0 test|test-phone|test-ui|pseudo|catalyst|test-mac|test-mac-ui|test-mac-smoke|simulator" >&2

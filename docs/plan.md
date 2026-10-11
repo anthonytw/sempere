@@ -153,6 +153,38 @@ except the ones the maintainer dropped (GA-11, GA-12, GA-22, GA-24, GA-25, GA-26
 "Initial commit" with the history archived privately, the project website at
 `sempere.anthonywertz.com`, a legal review of the Notability importer) is the maintainer's.
 
+## Device checks after the audit
+
+The pre-release audit (reuse, inconsistency, iOS 27, inefficiency, security, bugs) changes code
+that only a real device can confirm. These checks run once, on the TestFlight build made after
+the last audit stage: an iPad on iPadOS 27 with an Apple Pencil, and the Mac. Each stage adds its
+own items here.
+
+iOS 27 move (`audit/ios27`):
+
+1. Interrupted recording: start a voice note, then take a call or invoke Siri. Recording pauses,
+   then resumes in the same file when the call ends. Decline the resume: it waits for the user.
+2. Background sync (`.backgroundTask`): with an iCloud vault open, simulate a launch of
+   `io.github.anthonytw.sempere.sync.processing` and `.sync.refresh` from the debugger
+   (`_simulateLaunchForTaskWithIdentifier:`). A sync pass runs. `_simulateExpirationForTaskWithIdentifier:`
+   cancels it. The Perf log has no `schedule failed` lines.
+3. Drag and drop without the retained item provider, on iPad and Mac: a note from the list onto a sidebar
+   notebook, a note out to Files, a notebook onto another notebook.
+4. Edited stroke parents (PencilKit stroke ids): draw, then lasso-move, resize and recolor a stroke. After
+   the save there is one stroke, with no duplicate. Check again after syncing to another device and after
+   undo and redo. Pixel-erase across a stroke. Reopen a note drawn on an iOS 26 build.
+5. Eraser: choose the pixel eraser, open another note, and note which eraser the palette starts with,
+   on the iPad and on the Mac. The iPadOS 27.0 simulator's picker keeps no pixel eraser item.
+6. Notebook rows: long-press a notebook row for its menu, then drag it, on iPad and Mac.
+7. Convert to Math is unchanged: Insert ▸ Equation from Handwriting…, circling ink with the Pencil,
+   a finger and the trackpad.
+
+Earlier stages (merged in #150 and #151):
+
+8. Export on the Mac: Share… and Save… from the single-note and bulk export sheets.
+9. The Mac menu reads "Export to Folder or Zip…". The note window's toolbar has the Export menu.
+10. An HTML export of a multi-page note with a different image on each page: every page shows its own image.
+
 ## Working agreements
 
 - One task → one branch → one PR → squash merge. CI must be green.

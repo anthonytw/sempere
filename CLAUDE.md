@@ -11,7 +11,7 @@ swift build                 # macOS or Linux
 swift test                  # all targets
 swift test --filter AgeTests
 scripts/test-linux.sh       # on a Mac with Docker, or in a cloud VM: run tests in swift:6.4-noble
-scripts/app.sh test         # iPad app: xcodebuild test on the newest iPadOS 26+ simulator
+scripts/app.sh test         # iPad app: xcodebuild test on the newest iPadOS 27+ simulator
 scripts/app.sh catalyst     # iPad app: unsigned Mac Catalyst build
 SEMPERE_FUZZ_LONG=1 swift test --filter Fuzz   # deep fuzz run (quick mode runs in every swift test)
 (cd web && npm ci && npm run lint && npm run typecheck && npm test)   # web viewer
@@ -171,15 +171,18 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   Linux scratch package needs shims for `isUbiquitousItem`,
   `startDownloadingUbiquitousItem`, `ubiquitousItemDownloading*` resource
   values and `NSFileCoordinator` as well.
-- The app's deployment target is iPadOS 26 and the user's iPad cannot update
-  to 27: any iPadOS 27 API (`PKStroke.id`, `PKStroke.substroke`,
-  `PKDrawing.erasePath`, recognition) must sit behind `if #available` with a
-  tested 26 path. Run `SEMPERE_SIM_ID=<iOS 26.x iPad> scripts/app.sh test`
-  as well as the default (newest) simulator.
+- The app's deployment target is iPadOS/iOS 27 and Mac Catalyst 27 (the
+  user's iPad runs 27): iOS 27 APIs are used directly in `Apps/`, with no
+  `#available` gate and no iOS 26 path. The package keeps its own minimum
+  (`Package.swift`: macOS 14 / iOS 17) so the CLI builds on older macOS and
+  Linux; code in `Sources/` still gates newer Apple APIs with `#available`.
 - PencilKit stores control points in reduced precision (Float32 locations,
   quantized opacity/azimuth/altitude): compare converted strokes within a
   tolerance, never with `==`. Stroke identity across canvas edits comes from
   `StrokeLedger`'s fingerprints, which are always taken from the `PKStroke`.
+  A loaded stroke's `PKStroke.id` is its stored id; the ledger uses a canvas
+  stroke's id only to name an edit's parent (PencilKit gives erased pieces
+  new ids), and never writes it.
 - `PKStrokePoint.size` is not the drawn width: a pen or monoline of size `s`
   is drawn `2s − 4` wide (invisible below 2), markers and textured inks
   differ again. Point sizes go through `NibSize` (StrokeConversion.swift);
@@ -196,9 +199,10 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   given, and its saved eraser is the pixel eraser. `EraserPreference` drops
   that saved eraser entry before building a picker, so the object eraser is
   the default and the user's last choice (stored under `Sempere.eraserType`)
-  wins. On iPadOS 26 the picker's pixel eraser is `.fixedWidthBitmap`: a
-  `.bitmap` eraser item comes back as that; macOS 27 Catalyst does not keep a
-  `.fixedWidthBitmap` item. So the preference is two modes (object, pixel:
+  wins (still needed on iPadOS 27: measured on the 27.0 simulator). On iPadOS
+  26 the picker's pixel eraser was `.fixedWidthBitmap`: a `.bitmap` eraser item
+  came back as that; macOS 27 Catalyst does not keep a `.fixedWidthBitmap`
+  item, and the iPadOS 27.0 simulator keeps no pixel eraser item at all. So the preference is two modes (object, pixel:
   `EraserPreference.canonical`) and the picker gets the pixel type the
   platform keeps (`pixelPickerType`, probed); never compare eraser types
   with `==` across platforms, use `isPixel`.
@@ -309,8 +313,8 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   per-model blob folder and a memory-only render cache unless they pass
   `blobCacheRoot` / `renderCacheRoot`.
 - Sidebar drops: a drag the app started is dropped from `AppModel.draggedPayload`
-  (`beginDrag` / `takeDrop`), never by loading the item provider, which iPadOS 26
-  releases as soon as `onDrag` returns (the model holds it anyway). `onDrag`
+  (`beginDrag` / `takeDrop`), never by loading the item provider (iPadOS 26
+  released it as soon as `onDrag` returned; the model no longer holds it). `onDrag`
   reports no end, so the payload of a cancelled drag lingers: only a drop that
   carries the app's own types (`carriesAppTypes`) may use it, never a photo or
   text dragged in from another app. Rows propose `.copy`, never `.move`
@@ -717,7 +721,8 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   app removes converted ink through the ledger (`NoteEditor.takeInk` / `putInkBack`, like an erase),
   never by editing `pages` directly; undo and redo of a conversion pass `keepUndo` so `reloadInk`
   does not clear the undo manager in the middle of an undo. Our own lasso (`MathLassoController`):
-  PencilKit's selection has no API on iPadOS 26.
+  `InkLasso` picks the strokes, as in the CLI; `PKCanvasView.selection` (iOS 27) gives only ids
+  picked by PencilKit's own rule, so it is not used.
 - Localization (`docs/localization.md`, task L): every interface string is in
   `Apps/Sempere/Localization/Localizable.xcstrings` (plus `InfoPlist`, `AppShortcuts`), a
   synchronized group of the app and widget targets. SwiftUI literals localize themselves;

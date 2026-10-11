@@ -209,9 +209,16 @@ enum ItemRendering {
 }
 
 /// Decodes what SempereRender cannot (HEIC) with ImageIO, for drawing.
+/// Stored images may come from other devices or people, and the format
+/// allows only JPEG, PNG and HEIC (format.md §8.2.5): ImageIO is limited to
+/// HEIC/HEIF here, so a blob in any other codec is not parsed and is drawn
+/// as a placeholder.
 struct ImageIODecoder: ImageDecoding {
+    static let allowableTypes = ["public.heic", "public.heif"]
+
     func decode(_ data: Data, type: String, maxPixels: Int) throws -> RGBAImage? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+        let options = [kCGImageSourceAllowableTypes: Self.allowableTypes as CFArray] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(data as CFData, options),
               let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let w = props[kCGImagePropertyPixelWidth] as? Int, let h = props[kCGImagePropertyPixelHeight] as? Int,
               w > 0, h > 0, w <= maxPixels / h,

@@ -5,11 +5,17 @@ import UniformTypeIdentifiers
 /// Settings → Backups (docs/io.md "Backups"): the folder, Back Up Now,
 /// Verify Backup, the last backup, the reminder and Restore from Backup.
 /// The work is `AppModel+Backup`, on the same core as `sempere backup`.
+///
+/// Restore from Backup… sets `restoring`; the owner of the `Form` presents
+/// `RestoreBackupView` from the form, not from this section. A modifier on a
+/// `Section` applies to each of its rows: attached here, every row presented
+/// the sheet at once, and on Mac Catalyst 27 they dismissed it again within a
+/// second (`restoring` back to false), so it never showed.
 struct BackupSettingsSection: View {
     @AppModelEnvironment private var model
+    @Binding var restoring: Bool
     @State private var record = BackupRecord()
     @State private var picking = false
-    @State private var restoring = false
     @State private var message: String?
     @State private var problems: [String] = []
     @State private var notificationsOff = false
@@ -21,6 +27,18 @@ struct BackupSettingsSection: View {
                 picking = true
             }
                 .disabled(busy || model.vault == nil)
+                // On the button, not the section: a section's modifier is on each of its rows,
+                // and several rows presenting at once can close it again on Mac Catalyst 27.
+                .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { result in
+                    do {
+                        try model.chooseBackupFolder(try result.get())
+                        problems = []
+                        message = nil
+                    } catch {
+                        message = "\(error)"
+                    }
+                    reload()
+                }
             if let path = record.displayPath {
                 LabeledContent("Folder", value: path)
                 if let progress = model.backupProgress {
@@ -72,17 +90,6 @@ struct BackupSettingsSection: View {
         }
         .onAppear(perform: reload)
         .onChange(of: model.vaultURL) { reload() }
-        .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { result in
-            do {
-                try model.chooseBackupFolder(try result.get())
-                problems = []
-                message = nil
-            } catch {
-                message = "\(error)"
-            }
-            reload()
-        }
-        .sheet(isPresented: $restoring) { RestoreBackupView() }
     }
 
     private var busy: Bool { model.backupProgress != nil }

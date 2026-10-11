@@ -211,7 +211,8 @@ again (TestFlight build 7). Now (`AppModel+Background`, `BackgroundSync.swift`):
   the app is opened again.
 - A scheduled task runs passes over every note folder
   (`runScheduledSync`, `cloudPollInterval` apart) until nothing is pending
-  or its expiration handler cancels it, then requests the next refresh.
+  or iOS takes the time back (SwiftUI's `.backgroundTask` cancels it; it
+  also completes the task), then requests the next refresh.
 
 What iOS does not allow, so the app cannot promise it:
 

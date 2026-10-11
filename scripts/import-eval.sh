@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Notability import fidelity evaluation (docs/import-notability.md,
-# "Fidelity evaluation"). macOS with Xcode, an iPadOS 26+ simulator and uv.
+# "Fidelity evaluation"). macOS with Xcode, an iPadOS 27+ simulator and uv.
 #
 #   scripts/import-eval.sh [--out OUT_DIR] BACKUP.zip [BACKUP-2.zip ...]
 #   scripts/import-eval.sh BACKUP.zip OUT_DIR        (older form: one input)

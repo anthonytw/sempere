@@ -18,7 +18,8 @@ import UniformTypeIdentifiers
 /// SwiftUI's `contextMenu` on the row the menu took the long press on the
 /// iPad and the drag never reached a row. `SidebarDropUITests` tries every
 /// style (`SEMPERE_DEBUG_NOTEBOOK_DRAG` picks one in debug builds) and
-/// requires the shipped one to work.
+/// requires the shipped one to work. Re-tested on the iPadOS 27.0 simulator:
+/// `onDrag` and `transferable` still never reach another row, only `uikit` does.
 enum NotebookDragStyle: String, CaseIterable, Sendable {
     /// SwiftUI's `onDrag` on the row.
     case onDrag

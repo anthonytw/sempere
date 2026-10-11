@@ -8,7 +8,7 @@ Last full rewrite: 2026-10-05, by the driving Opus session.
 ## The project in one paragraph
 
 Open-source (GPL-3.0-or-later + App Store exception), end-to-end-encrypted
-handwriting notes for iPad (iPadOS 26+) and Mac (Catalyst), a stripped-down
+handwriting notes for iPad (iPadOS 27+) and Mac (Catalyst 27+), a stripped-down
 Notability. Vault = a plain folder of write-once age-encrypted revision files
 (any storage: iCloud Drive, Files providers, WebDAV, a folder); user-owned keys;
 PencilKit canvas with vector strokes; Notability importer; CLI (`sempere`,
@@ -118,7 +118,8 @@ Import of the full backup (2026-10-07, after D1–D4, #76):
 ## Test vault and the user's iPad
 
 - **iPad:** "antpad", an iPad Pro 12.9" 4th gen (A12Z, Face ID, Pencil 2, no hover).
-  **It runs iPadOS 26.7.1 and cannot update to 27**, so every feature must work on 26.
+  It runs iPadOS 27, the app's minimum since 2026-10-10 (it ran 26.7.1 before; observations
+  below tagged 26.7.1 are from then).
   UDID 00008027-001D30E02131802E. It is reachable over Wi-Fi by `devicectl` when awake.
 - **Test vault:** iCloud Drive `Sempere/Notes.sempere`, post-quantum.
   - Key: `~/.config/sempere/identity.key`.
@@ -215,7 +216,7 @@ multi-agent reviews; the user triggers it).
   same branch locally — it will push first and you'll duplicate work.
 - **Briefs** must be self-contained: reading list, scope, API shape, tests,
   process (branch, merge-not-rebase, push, PR, don't merge), privacy rules,
-  iPadOS 26 constraint, co-author line.
+  the iPadOS/iOS 27 app minimum (package and CLI stay at their own), co-author line.
 - **Waiting:** use background commands / Monitor with until-loops; never chain
   sleeps. `gh pr checks --watch` exits non-zero on failure — never chain
   `gh pr merge` after it without checking.
@@ -330,7 +331,7 @@ Phase 1 task detail (historical, for reference):
    Opus for 3a/3c, Sonnet for the rest). Split:
    - 3a **done** (branch `feat/ipad-app-scaffold`): `Apps/Sempere/Sempere.xcodeproj`,
      hand-maintained with folder-synchronized groups (no XcodeGen/Tuist),
-     scheme `SempereApp`, iPadOS 26, Catalyst on, links the package's
+     scheme `SempereApp`, iPadOS 26 then (27 since 2026-10-10), Catalyst on, links the package's
      `Sempere` + `Age` products. Shell: `AppModel` (`@Observable`,
      `@MainActor`) opens a vault folder locked, unlocks with a pasted
      identity or a stored key file's passphrase, loads `Vault.summaries()`
@@ -392,8 +393,8 @@ Phase 1 task detail (historical, for reference):
      package `HybridClock` and keep `DeviceState` in Application Support.
      AppModel has a generation token so late `unlock`/`openVault`/`reload`/
      `openEditor` results after `close()` are dropped (`CancellationError`).
-     Works on iPadOS 26 (the user's iPad cannot run 27; no 27-only API is
-     used); tests pass on iOS 26.5 and 27 simulators. Left: no UI tests and no
+     Worked on iPadOS 26 at the time (the app's minimum is 27 since
+     2026-10-10); tests passed on iOS 26.5 and 27 simulators. Left: no UI tests and no
      run on real hardware yet (pixel eraser verified with synthetic masks);
      the note list does not refresh its stroke counts after edits; remote
      changes arriving while a note is open were not merged into the canvas
@@ -521,12 +522,14 @@ PencilKit (from 3c): `PKStrokePoint` keeps locations, sizes and times as
 Float32 and quantizes opacity/azimuth/altitude (~1e-4; altitude even drifts on
 every re-wrap), so conversion round trips are equal within 2e-4, not bit for
 bit. `PKStroke.id`, `substroke(range:)` and `PKDrawing.erasePath` are
-iPadOS 27 only; the user's iPad is capped at 26, so do not depend on them.
+iOS 27 APIs; the app's minimum is 27, so the app may use them directly, but
+`Sources/` cannot (no PencilKit there).
 
 
 See `CLAUDE.md § Gotchas` (case-insensitive paths, FoundationXML, static
-link flags, test-output grepping, the app project). Also: GitHub's `macos-26` runner has an
-older compiler than local Xcode 27, so dense expressions that compile locally
-can time out there; swift-crypto types are not `Sendable` on Linux (store raw
+link flags, test-output grepping, the app project). Also: the app and screenshot jobs
+run on GitHub's `xcode-27` image (the app needs the iOS 27 SDK), while the package job and
+the CLI release build stay on `macos-26`, which has an older compiler than local Xcode 27,
+so dense expressions in `Sources/` that compile locally can time out there; swift-crypto types are not `Sendable` on Linux (store raw
 bytes); SempereImport reads binary plists with its own `BinaryPlist` reader, since
 `PropertyListSerialization` crashes on some hostile binary plists on Linux.
