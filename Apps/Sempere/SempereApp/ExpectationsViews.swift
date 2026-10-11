@@ -233,10 +233,12 @@ struct KeyNoticeView: View {
 /// Settings ▸ Backups on its own, for the key notice's pointer.
 private struct BackupSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @State private var restoring = false
 
     var body: some View {
         NavigationStack {
-            Form { BackupSettingsSection() }
+            Form { BackupSettingsSection(restoring: $restoring) }
+                .sheet(isPresented: $restoring) { RestoreBackupView() }
                 .navigationTitle("Backups")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -382,15 +384,17 @@ struct AboutSettingsSection: View {
             LabeledContent("Version", value: AboutInfo.versionText())
             NavigationLink("About Sempere") { AboutView(showsDone: false) }
                 .accessibilityIdentifier("settingsAboutSempere")
+            // Each sheet on its button, not the section: a section's modifier is on each of its
+            // rows, and several rows presenting at once can close it again on Mac Catalyst 27.
             Button("Show Quick Tour") { showingTour = true }
+                .sheet(isPresented: $showingTour) { QuickTourView(firstRun: false) }
             Button("About Your Key") { showingKeyNotice = true }
+                .sheet(isPresented: $showingKeyNotice) { KeyNoticeView(firstRun: false) }
         } header: {
             Text("About")
         } footer: {
             Text("Sempere is free software under the GNU GPL v3. It comes with no warranty.")
         }
-        .sheet(isPresented: $showingTour) { QuickTourView(firstRun: false) }
-        .sheet(isPresented: $showingKeyNotice) { KeyNoticeView(firstRun: false) }
     }
 }
 

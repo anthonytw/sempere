@@ -362,21 +362,24 @@ struct WebDAVLocationsSection: View {
                             }
                         }
                     }
-                }
-            }
-            .confirmationDialog("Remove this vault from this device?",
-                                isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
-                                titleVisibility: .visible, presenting: removing) { location in
-                Button("Remove", role: .destructive) {
-                    Task { await model.report { try await model.removeWebDAVLocation(location.id, library: library) } }
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: { _ in
-                if removingUnconfirmed > 0 {
-                    let fileCount = removingUnconfirmed
-                    Text("\(fileCount) changes on this device have not reached the server and will be lost. Open the vault and sync first to keep them.")
-                } else {
-                    Text("The copy on this device and the saved password are deleted. The vault on the server is not changed.")
+                    // On this location's row, shown for it only: on the section the dialog was on
+                    // each of its rows, and several rows presenting at once can close it again on
+                    // Mac Catalyst 27.
+                    .confirmationDialog("Remove this vault from this device?",
+                                        isPresented: Binding(get: { removing?.id == location.id }, set: { if !$0 { removing = nil } }),
+                                        titleVisibility: .visible, presenting: removing) { removed in
+                        Button("Remove", role: .destructive) {
+                            Task { await model.report { try await model.removeWebDAVLocation(removed.id, library: library) } }
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: { _ in
+                        if removingUnconfirmed > 0 {
+                            let fileCount = removingUnconfirmed
+                            Text("\(fileCount) changes on this device have not reached the server and will be lost. Open the vault and sync first to keep them.")
+                        } else {
+                            Text("The copy on this device and the saved password are deleted. The vault on the server is not changed.")
+                        }
+                    }
                 }
             }
         }

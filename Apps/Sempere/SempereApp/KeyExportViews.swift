@@ -36,40 +36,43 @@ struct KeyFileActions: View {
     @State private var failure: String?
 
     var body: some View {
+        // Each presentation on the button that owns it, not on a section: a section's modifier
+        // is on each of its rows, and several rows presenting at once can close it again on Mac
+        // Catalyst 27. One file exporter per view: SwiftUI presents only one of several on the same view.
         Section {
             Button("Save to Files…", systemImage: "folder") { savingFile = true }
+                .fileExporter(isPresented: $savingFile, document: KeyTextFile(text: key.text), contentType: .plainText,
+                              defaultFilename: (key.fileName as NSString).deletingPathExtension) { result in
+                    if case .failure(let error) = result { failure = String(localized: "The key was not saved: \(error.localizedDescription)") }
+                }
             Button("Share…", systemImage: "square.and.arrow.up") { share() }
+                .sheet(isPresented: Binding(get: { shared != nil }, set: { if !$0 { unshare() } })) {
+                    if let shared { ShareSheet(items: [shared]) { unshare() } }
+                }
         } header: {
             Text("Key file")
         } footer: {
             Text("\(KeyExportText.warning) A password manager that takes files or text (for example from the share sheet) is the best place. The same file from a terminal: sempere keys generate / sempere keys export.")
         }
-        // One file exporter per view: SwiftUI presents only one of several on the same view.
-        .fileExporter(isPresented: $savingFile, document: KeyTextFile(text: key.text), contentType: .plainText,
-                      defaultFilename: (key.fileName as NSString).deletingPathExtension) { result in
-            if case .failure(let error) = result { failure = String(localized: "The key was not saved: \(error.localizedDescription)") }
-        }
-        .sheet(isPresented: Binding(get: { shared != nil }, set: { if !$0 { unshare() } })) {
-            if let shared { ShareSheet(items: [shared]) { unshare() } }
-        }
         Section {
             Button("Print Recovery Kit…", systemImage: "printer") { printKit() }
+                // Any action's failure: on one row that is always there.
+                .alert("Sempere", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text(failure ?? "")
+                }
             Button("Save Recovery Kit as PDF…", systemImage: "doc.richtext") { saveKit() }
+                .fileExporter(isPresented: $savingKit, document: kit, contentType: .pdf,
+                              defaultFilename: "Sempere recovery kit - \(key.label)") { _ in kit = nil }
         } header: {
             Text("Paper recovery kit")
         } footer: {
             Text("A printed page with the key as a QR code and checked text, and how to open the vault with stock tools (sempere keys paper). Print it and keep it somewhere safe; do not keep the PDF.")
         }
-        .fileExporter(isPresented: $savingKit, document: kit, contentType: .pdf,
-                      defaultFilename: "Sempere recovery kit - \(key.label)") { _ in kit = nil }
         .onDisappear {
             unshare()
             kit = nil
-        }
-        .alert("Sempere", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(failure ?? "")
         }
     }
 
@@ -133,6 +136,7 @@ struct SaveKeyView: View {
                     Section { ProgressView() }
                 }
             }
+            .accessibilityIdentifier("saveKeySheet")
             .navigationTitle("Save Key")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
