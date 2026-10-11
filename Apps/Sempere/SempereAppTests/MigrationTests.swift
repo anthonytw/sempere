@@ -146,10 +146,18 @@ struct MigrationTests {
     /// no longer legacy but a rewrap is pending) is finished first.
     @Test func pendingKeyChangeIsFinishedBeforeTheNotes() async throws {
         let (url, keyURL) = try AppModelTests.fixtureVault()
-        try Data(#"{"format":"sempere/1"}"#.utf8).write(to: url.appendingPathComponent("rewrap-journal.json"))
+        let keyText = try String(contentsOf: keyURL, encoding: .utf8)
+        // The journal of an unfinished change is bound by vault.json (format.md §3.3.1).
+        let bytes = Data(#"{"format":"sempere/1"}"#.utf8)
+        try bytes.write(to: url.appendingPathComponent("rewrap-journal.json"))
+        let manifestURL = url.appendingPathComponent("vault.json")
+        var m = try VaultManifest.decode(Data(contentsOf: manifestURL))
+        let secret = try VaultSecret(bytes: AgeFile.decrypt(Data(m.vaultSecret.utf8), with: [try IdentityFile.parse(keyText)]))
+        m.rewrapPending = RecipientsAuth.rewrapPending(vaultId: m.vaultId, journal: bytes, secret: secret)
+        try m.encoded().write(to: manifestURL)
         let model = AppModel(deviceStateURL: TS.deviceStateURL())
         try await model.openVault(at: url)
-        try await model.unlock(identityText: try String(contentsOf: keyURL, encoding: .utf8))
+        try await model.unlock(identityText: keyText)
         #expect(model.phase == .migrating)
         #expect(model.migration?.finishingOnly == true)
         #expect(model.notes.isEmpty)
