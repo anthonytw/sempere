@@ -15,7 +15,9 @@ extension AppModel {
     /// are not decrypted (or downloaded) again; folders of other vaults and
     /// the per-session folders of older builds are deleted. Where files are
     /// not encrypted at rest (a Mac: `blobCacheAcrossLaunches` false), what an
-    /// earlier launch left is deleted instead: plaintext lasts one session.
+    /// earlier launch left is deleted instead: plaintext lasts one session
+    /// (the app also deletes the whole folder at quit and at launch,
+    /// `BlobCache.purgeAtQuit` / `purgeAtLaunch`).
     func attachmentCache() -> BlobCache? {
         if let blobCache { return blobCache }
         guard let vault, phase == .unlocked,

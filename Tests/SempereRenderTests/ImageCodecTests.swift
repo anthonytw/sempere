@@ -32,6 +32,25 @@ final class ImageCodecTests: XCTestCase {
         }
     }
 
+    /// Security review 2026-10 stage 4, S15: list previews decode stored images only as items are drawn —
+    /// JPEG and PNG here, nothing else without the app's decoder — within the pixel limit, reduced.
+    func testImagePreviewDecodesOnlyWhatItemsDecode() throws {
+        let jpeg = try Self.fixture("baseline-420.jpg")
+        let full = try JPEG.decode(jpeg)
+        let small = try XCTUnwrap(ImagePreview.image(jpeg, type: "image/jpeg", side: 16, decoder: nil))
+        XCTAssertLessThan(max(small.width, small.height), max(full.width, full.height))
+        XCTAssertGreaterThanOrEqual(max(small.width, small.height), 8)
+        let png = try PNGEncoder.encode(width: 4, height: 3, rgba: [UInt8](repeating: 200, count: 48))
+        let p = try XCTUnwrap(ImagePreview.image(png, type: "image/png", side: 64, decoder: nil))
+        XCTAssertEqual([p.width, p.height], [4, 3])
+        // GIF (and anything not JPEG or PNG) is never decoded without a decoder for it.
+        let gif = Data("GIF89a".utf8) + Data([1, 0, 1, 0, 0, 0, 0, 0x2C, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 0x44, 1, 0, 0x3B])
+        XCTAssertNil(ImagePreview.image(gif, type: "image/gif", side: 16, decoder: nil))
+        XCTAssertNil(ImagePreview.image(Data("not an image".utf8), type: "image/jpeg", side: 16, decoder: nil))
+        // Beyond the pixel limit: refused from the header.
+        XCTAssertNil(ImagePreview.image(jpeg, type: "image/jpeg", side: 16, decoder: nil, maxPixels: 16))
+    }
+
     func testJPEGInfo() throws {
         let i = try JPEG.info(Self.fixture("baseline-420.jpg"))
         XCTAssertEqual(i, JPEG.Info(width: 61, height: 45, components: 3, progressive: false, isRGB: false))

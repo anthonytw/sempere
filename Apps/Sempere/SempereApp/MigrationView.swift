@@ -11,6 +11,8 @@ struct MigrationView: View {
     @AppModelEnvironment private var model
     @State private var saved = false
     @State private var copied = false
+    /// The new key while the share sheet is up.
+    @State private var sharingKey: String?
     @State private var wrap = false
     @State private var passphrase = ""
     @State private var confirmation = ""
@@ -33,6 +35,9 @@ struct MigrationView: View {
             }
         }
         .interactiveDismissDisabled()
+        .sheet(isPresented: Binding(get: { sharingKey != nil }, set: { if !$0 { sharingKey = nil } })) {
+            if let sharingKey { ShareSheet(items: [sharingKey], secret: true) { self.sharingKey = nil } }
+        }
     }
 
     @ViewBuilder
@@ -48,16 +53,15 @@ struct MigrationView: View {
             if migration.keyIsNew {
                 Section {
                     Text("Your new post-quantum secret key. Save it now: after the upgrade only this key (or a passphrase-protected copy) opens the vault. Losing it means losing the vault.")
+                    // Not selectable (⌘C would bypass the expiring, local-only Copy Key).
                     Text(key.string)
                         .font(.callout.monospaced())
-                        .textSelection(.enabled)
                     Button(LocalizedStringKey(copied ? "Copied" : "Copy Key"), systemImage: "doc.on.doc") {
-                        UIPasteboard.general.setItems([[UTType.plainText.identifier: key.string]],
-                                                      options: [.localOnly: true,
-                                                                .expirationDate: Date().addingTimeInterval(120)])
+                        SecretPasteboard.copy(key.string)
                         copied = true
                     }
-                    ShareLink(item: key.string, subject: Text("Sempere secret key"))
+                    // The share sheet without its Copy (`SecretSharing`), never a ShareLink.
+                    Button("Share…", systemImage: "square.and.arrow.up") { sharingKey = key.string }
                     Toggle("I saved this key", isOn: $saved)
                 } header: {
                     Text("New Key")

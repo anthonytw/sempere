@@ -25,6 +25,17 @@ struct KeyExportTests {
         }
     }
 
+    /// Security review 2026-10 stage 4, S14 and P2: the share sheet of a secret key (its text on the new-vault
+    /// and upgrade screens, its key file in Save Key… and New Key…) has no Copy, which would put the key on
+    /// the general pasteboard with no expiry and hand it to Universal Clipboard.
+    @Test func secretShareSheetsLeaveCopyOut() {
+        let controller = SecretSharing.controller(items: ["AGE-SECRET-KEY-PQ-1EXAMPLE"])
+        #expect(controller.excludedActivityTypes?.contains(.copyToPasteboard) == true)
+        let sheet = ShareSheet(items: ["AGE-SECRET-KEY-PQ-1EXAMPLE"], secret: true) {}
+        #expect(sheet.secret)
+        #expect(ShareSheet(items: [URL(fileURLWithPath: "/tmp/x.pdf")]) {}.secret == false, "exports keep Copy")
+    }
+
     @Test func saveKeyGivesThisDevicesKeyAfterAuthentication() async throws {
         let (model, url) = try await KeyManagementTests.unlockedModel()
         let auth = FakeAuthenticator()

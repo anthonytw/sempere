@@ -87,6 +87,10 @@ final class AppModel {
     private(set) var phase: Phase = .noVault
     /// The open vault's folder.
     private(set) var vaultURL: URL?
+    /// The open vault was handed to the app from outside (AirDrop, Files, another
+    /// app: `handleOpened`), not opened in it: a remembered key without a
+    /// location is not offered for it (`RememberedKeys.offersSavedKey`, S16).
+    private(set) var vaultOpenedExternally = false
     /// Every note in the vault, deleted ones included, sorted by title
     /// (`byTitle`). Passes change it in batches (`queueListUpdate`).
     var notes: [NoteSummary] = [] {
@@ -651,8 +655,10 @@ final class AppModel {
     /// - Parameter scope: the URL whose security scope covers `url` when it is
     ///   not `url` itself (the folder the user picked, when `url` was found
     ///   inside it). Held instead of `url`'s own.
-    func openVault(at url: URL, accessing scope: URL? = nil) async throws {
+    ///   - external: the URL came from outside the app (`vaultOpenedExternally`).
+    func openVault(at url: URL, accessing scope: URL? = nil, external: Bool = false) async throws {
         close()
+        vaultOpenedExternally = external
         let gen = generation
         let holder = scope ?? url
         let scoped = holder.startAccessingSecurityScopedResource()
@@ -1148,6 +1154,7 @@ final class AppModel {
         migration = nil
         unlockIdentities = []
         vaultURL = nil
+        vaultOpenedExternally = false
         notes = []
         searchIndex.removeAll()
         selectedNoteID = nil

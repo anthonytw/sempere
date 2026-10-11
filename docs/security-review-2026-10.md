@@ -681,7 +681,8 @@ Each request is bounded by size and time, but a run is not:
   - Not fixed here: requiring an `OwnerAuthenticator` there changes every key-management path and its app
     tests (which cannot run outside the macOS CI job), and the policy (Face ID only? the passcode on a Mac
     without Touch ID?) is the maintainer's call. The paper recovery kit (`recoveryKitPDF`) has the same gap.
-- P2, Low: the share sheet's Copy puts the key file on the general pasteboard.
+- P2, Low: the share sheet's Copy puts the key file on the general pasteboard. Fixed in stage 4 with S14
+  (below).
 - P3, Low: the remembered record is chosen by an unauthenticated vault id; the doc says otherwise. Fixed
   in #130 (above).
 - Info: the IndexedDB database is created before the user opts in; old passkeys are not signalled unknown
@@ -818,3 +819,81 @@ Fixed on `audit/sec-parse`. No format change; every existing bound kept.
   reads and bounds an unzipped package to 4 GiB; the Notability image loops cache unreadable files. Tests:
   `ZipArchiveTests.testFailedReadsAreNotRepeated`, `testImpossibleSizesAreRefusedBeforeReading`,
   `testReadsAreChargedToTheArchiveBudget`.
+
+## Audit 2026-10 stage 4: plaintext the app and CLI leave at rest (2026-10-10)
+
+Findings S10 to S17 of the October 2026 pre-release audit (stage 4), area "app storage, app surfaces, CLI,
+web viewer". Each fix has a test that encodes the attack and fails on the code before it.
+
+- **S17 (Low): CLI exports followed the umask, and `--zip` staged plaintext in a default-mode folder.**
+  Fix: `FileIO.writePrivate` (0600 temporary file, renamed), `createPrivateDirectory` (0700 for folders
+  the run creates; an existing folder keeps its mode) and `createStagingDirectory` (`mkdir(2)` 0700,
+  refusing anything already there). Used by `BulkExportSession` (zip staging, folder exports, PNG pages,
+  its manifest), `ZipWriter` (archive 0600), `TreeExporter` (Markdown/HTML), `MediaExport`, and the CLI's
+  per-note `export` and `recognize-math --save-image` (`writePrivateFile`). `docs/cli.md` "Export" says so.
+  Tests: `BulkExportTests.testStagingAndExportsAreOwnerOnly`, `CLIBulkExportTests.testExportsAreOwnerOnly`.
+- **S11 (Low): on a Mac, decrypted attachments outlived quit and crash.** The launch-time delete ran only
+  inside `attachmentCache()`, after an unlock and a first attachment use, so `security.md`'s "deleted at
+  each launch" did not hold. Fix: `BlobCache.purgeAtLaunch` in `SempereApp.init` (every vault's folder
+  renamed aside before any vault opens, deleted in the background) and `BlobCache.purgeAtQuit` from
+  `applicationWillTerminate` (⌘Q), both only where `keepsAcrossLaunches` is false. `security.md`,
+  `format.md` §10.1 and `io.md` say "deleted when the app quits, and after a crash at the next launch".
+  Test: `AttachmentPersistenceTests.withoutDataProtectionQuitAndLaunchDeleteEveryDecryptedFile`.
+- **S12 (Low): transcripts drawn on an audio card, and recordings of a killed session, stayed in the blob
+  cache.** Fix: `BlobCache.isTransient` (audio, video, transcript) files are deleted at pin zero whatever
+  the caller passes, are named with a `t-` prefix, and `indexFolder` deletes such files instead of
+  adopting them; `ItemRendering.audioPicture` also passes `discard: true`. Test:
+  `AttachmentPersistenceTests.transcriptsAndRecordingsNeverStayInTheCache` (on the old code the transcript
+  file survives its release and the next launch adopts the recording).
+- **S15 (Low): Settings ▸ Storage thumbnails decoded image blobs with unrestricted ImageIO** (`UIImage(data:)`),
+  so a GIF, TIFF or other codec, or a pixel bomb, stored by another recipient reached ImageIO on the
+  victim's device, around X9's HEIC-only `ImageIODecoder`. Fix: `ImagePreview.image` (SempereRender) reads
+  the blob exactly as image items are drawn (`ImageStore.loaded`: JPEG and PNG by the pure-Swift decoders,
+  anything else only through the given decoder, `maxPixels` from the header, DCT scaling and box
+  reduction), and `AttachmentThumbnail` passes the restricted `ImageIODecoder`. Tests:
+  `ImageInsertTests.storageThumbnailsDecodeOnlyTheCanvasFormats` (GIF and TIFF give no thumbnail; on the
+  old code both did), `ImageCodecTests.testImagePreviewDecodesOnlyWhatItemsDecode`.
+- **S14 (Low), and P2: a `ShareLink` of the raw secret key, and selectable key text, bypassed the
+  local-only expiring Copy Key** on the new-vault and upgrade screens (the share sheet's Copy and ⌘C write
+  the general pasteboard with no expiry, which Universal Clipboard sends to other devices). Fix: those
+  screens copy through `SecretPasteboard` (local only, 180 s), their key text is not selectable, and they
+  share through `ShareSheet(items:secret: true)`, whose `SecretSharing.controller` excludes
+  `.copyToPasteboard`; `KeyFileActions` ("Share…" of a key file) uses the same, which closes P2.
+  Tests: `KeyExportTests.secretShareSheetsLeaveCopyOut`, `SecretKeySharingTests` (sources, Linux: no
+  `ShareLink` or selectable text in the key views, the general pasteboard written only by
+  `SecretPasteboard` and the public key's Copy).
+- **S10 (Low): the web viewer did not show capture attribution**, so a capture-profile holder's voice note
+  (its title and notebook chosen by that profile) looked like the owner's there, which C2 meant to prevent.
+  Fix: `web/src/format/captured.ts` reads `captured` leniently as Swift's `CaptureAttribution` does (8-hex
+  `device`, optional 64-hex `recipient`, anything else absent) and resolves `recipient` against the
+  vault's recipients by fingerprint; the recordings list says "Voice note from <label>", "… from a device
+  no longer in this vault" or "… from an unverified device" (catalog entries with Spanish). `captured`
+  is now a known, immutable recording field in the viewer too (`recordingFields`), as in Swift: a
+  `setRecording` naming it is invalid instead of an unknown register that could rewrite it. Tests:
+  `web/test/captured.test.ts` (mirrors `RecipientsAlertTests.capturedByNamesTheDevice` and
+  `CaptureAttributionTests.testMalformedAttributionReadsAsAbsent`).
+- **S13 (Low): on a Mac, window restoration kept notebook and tag names and note titles in plaintext.**
+  The library window's `@SceneStorage` selection (Saved Application State) held `notebook:<path>` or
+  `tag:<name>` and survived closing the vault. Fix: `RestorableSelection` stores a notebook or tag as
+  `notebook#<digest>` / `tag#<digest>`, the `LocalCacheKey` (purpose `selection`) `entryName` of the
+  canonical path or tag key, which `AppModel.restore` resolves against the unlocked vault (a plain name
+  reads as All Notes: no backward compatibility, per the owner's v1 decision); the saved selection is cleared when the vault
+  closes (`SelectionStorage.shouldClear`); a note window's title is the note's only while the vault is
+  unlocked. The titles of note windows open at quit can still be in the system's window state:
+  documented in `security.md` and `mac.md`; `format.md` §10.1 lists the purpose. Tests:
+  `NoteWindowTests.theSavedSelectionNamesNoNotebookOrTag` (on the old code the stored value contains the
+  tag and notebook names), `MacSupportTests.aSelectionRoundTripsThroughItsStoredString`.
+- **S16 (Low): an externally opened `.sempere` closed the open vault without asking, and the remembered
+  key was chosen by the unchecked vault id** (the app's counterpart of web P3). Fixes: (1)
+  `AppModel.handleOpened` returns an `OpenedVaultConfirmation` instead of opening when a vault is open,
+  and the window asks ("Open “X”? This closes “Y”…", `OpenedVaultAlert`, library and note windows);
+  (2) `RememberedKeyLocations` (Application Support, SHA-256 of the folder's resolved path, no names)
+  binds each remembered key to the folders it unlocked: `RememberedKeys.offersSavedKey` offers it, and
+  asks for Face ID, only there; a key with no location on this device yet (it arrived through iCloud Keychain) only for a
+  vault opened in the app (`vaultOpenedExternally` false), then bound; a pasted key binds a new folder
+  only when this device's trust record confirms the list (`.verified(.unchanged/.rotated)`); elsewhere
+  the unlock sheet says why and asks for the key or passphrase (`Attempt.notHere`); (3)
+  `refreshQuickCaptureProfile` refreshes only when the open folder is the profile's bookmarked one
+  (`isProfileFolder`) and never re-points the bookmark. Not done: the optional "first use with a
+  remembered key is unconfirmed" rule (4). Tests: `OpenedVaultTests` (all six; on the old code the
+  lookalike closes the open vault, the saved key is read for it, and the profile follows it).

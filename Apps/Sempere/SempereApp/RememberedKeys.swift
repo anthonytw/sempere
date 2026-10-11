@@ -21,6 +21,8 @@ final class RememberedKeys {
         let vaultName: String
         /// The identity, `AGE-SECRET-KEY-PQ-1…` (or a legacy `AGE-SECRET-KEY-1…`).
         let identity: String
+        /// The vault folder it unlocked: a key remembered from this offer is offered there (`RememberedKeyLocations`).
+        var folder: URL?
         var id: UUID { vaultID }
     }
 
@@ -29,6 +31,9 @@ final class RememberedKeys {
         case unlocked
         /// Nothing is remembered for this vault (or it was invalidated).
         case noKey
+        /// A key is remembered for this vault id, but not offered at this
+        /// location (`offersSavedKey`): the user pastes the key or the passphrase.
+        case notHere
         /// The user cancelled Face ID / the passcode, or the vault changed meanwhile.
         case cancelled
         /// A key was read but did not unlock the vault, or the Keychain failed.
@@ -36,6 +41,8 @@ final class RememberedKeys {
     }
 
     let store: any VaultKeyStore
+    /// Where each remembered key may be offered (security review 2026-10 stage 4, S16).
+    let locations: RememberedKeyLocations
     /// Shown after a manual unlock until the user answers.
     var offer: Offer?
     /// Where the open vault's key is remembered (nil: not remembered, or not known yet).
@@ -49,8 +56,23 @@ final class RememberedKeys {
     /// The remembered key was tried and does not work (wrong key, invalidated).
     private var brokenVaultID: UUID?
 
-    init(store: any VaultKeyStore = KeychainVaultKeyStore()) {
+    /// - Parameter locations: the app passes `RememberedKeyLocations.onDisk()`; tests get one in memory.
+    init(store: any VaultKeyStore = KeychainVaultKeyStore(), locations: RememberedKeyLocations = RememberedKeyLocations()) {
         self.store = store
+        self.locations = locations
+    }
+
+    /// Whether the open vault's remembered key may be offered where the vault
+    /// is (S16): the vault id comes from a `vault.json` nothing has checked
+    /// yet, so a lookalike folder could claim it. Offered at a location the
+    /// key (or a confirmed pasted key) unlocked before; a key with no location
+    /// yet (one that arrived through iCloud Keychain) only for a vault
+    /// opened in the app, never for one another app or AirDrop handed over.
+    func offersSavedKey(for model: AppModel) -> Bool {
+        guard let id = model.vault?.vaultId, let folder = model.vaultURL else { return false }
+        let bound = locations.locations(for: id)
+        if bound.isEmpty { return !model.vaultOpenedExternally }
+        return bound.contains(RememberedKeyLocations.location(of: folder))
     }
 
     /// "this iPad", "this iPhone", or "this Mac" under Mac Catalyst.
@@ -130,6 +152,8 @@ final class RememberedKeys {
             storageVaultID = id
             storage = stored
             guard stored != nil else { return .noKey }
+            // Not even a Face ID prompt for a key this location may not have (S16).
+            guard offersSavedKey(for: model) else { return .notHere }
             let reason = model.vaultName.map { String(localized: "Unlock “\($0)” with its saved key", comment: "Face ID prompt") }
                 ?? String(localized: "Unlock the vault with its saved key", comment: "Face ID prompt")
             identity = try await store.readKey(for: id, reason: reason)
@@ -153,6 +177,8 @@ final class RememberedKeys {
             // sheet closes as soon as the key works, and no view can cancel the listing.
             try await model.unlock(identityText: identity, awaitNotes: false)
             brokenVaultID = nil
+            // A key that arrived through iCloud Keychain is bound to where it first unlocked.
+            if model.vault?.vaultId == id, let folder = model.vaultURL { locations.bind(id, to: folder) }
             return .unlocked
         } catch is CancellationError {
             return .cancelled
@@ -202,9 +228,24 @@ final class RememberedKeys {
     /// Offers to remember `identity` unless a working key is already remembered.
     func offerToRemember(_ identity: NativeIdentity, _ model: AppModel) {
         guard model.phase == .unlocked, let id = model.vault?.vaultId else { return }
-        if storageVaultID == id, storage != nil, brokenVaultID != id { return }
+        if storageVaultID == id, storage != nil, brokenVaultID != id {
+            // A key is remembered already. A pasted key that opened this folder, whose list this
+            // device's trust record confirms (not a first use), makes it a place to offer that key.
+            if let folder = model.vaultURL, Self.listIsConfirmed(model.vault?.recipientsStatus) {
+                locations.bind(id, to: folder)
+            }
+            return
+        }
         offer = Offer(vaultID: id, vaultName: model.vaultName ?? String(localized: "Vault", comment: "Name shown for a vault that has none"),
-                      identity: identity.string)
+                      identity: identity.string, folder: model.vaultURL)
+    }
+
+    /// The recipients list verified against this device's trust record (format.md §2.1), not on first use.
+    nonisolated static func listIsConfirmed(_ status: RecipientsStatus?) -> Bool {
+        switch status {
+        case .verified(.unchanged), .verified(.rotated): return true
+        default: return false
+        }
     }
 
     // MARK: - Remembering and forgetting
@@ -214,6 +255,7 @@ final class RememberedKeys {
         if self.offer?.vaultID == offer.vaultID { self.offer = nil }
         guard let storage else { return }
         try await store.save(offer.identity, for: offer.vaultID, vaultName: offer.vaultName, storage: storage)
+        if let folder = offer.folder { locations.bind(offer.vaultID, to: folder) }
         storageVaultID = offer.vaultID
         self.storage = storage
         if brokenVaultID == offer.vaultID { brokenVaultID = nil }
@@ -223,6 +265,7 @@ final class RememberedKeys {
     func forget(_ model: AppModel) async throws {
         guard let id = model.vault?.vaultId else { return }
         try await store.deleteKey(for: id)
+        locations.forget(id)
         if model.vault?.vaultId == id {
             storageVaultID = id
             storage = nil

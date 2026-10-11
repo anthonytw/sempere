@@ -3316,18 +3316,25 @@ It keeps four more, under the same derivation:
 - the **activity** file (purpose `activity`, magic `SMPA` ‖ `0x01`, one entry
   named `activity`, not keyed by `entryName`): the notes "Recognize All" read in
   the last seven days and the recent search queries, kept across launches;
+- the **saved selection** (purpose `selection`, Mac; no file): the library
+  window's selection, which the system keeps in plaintext with its window
+  state, names a notebook or tag only as `entryName("notebook|<canonical
+  path>")` or `entryName("tag|<tag key>")`, resolved against the unlocked
+  vault's notebooks and tags;
 - the **blob cache** (purpose `blob-cache`): decrypted attachment content
   (§8.1), which PDF and image readers need as plain files, so its entries are
   **not** sealed: each file holds a blob's verified content, is named
   `entryName("blob|<note id>|<sha256>|<size>")` plus a type extension, and is
   protected only by the device's file protection. A file found there from an
   earlier session is used only after its size and SHA-256 match the
-  reference again; the folder is deleted when the vault is closed. Audio and
-  transcripts are not kept: their files are deleted as soon as nothing plays
-  or reads them. Where the
+  reference again; the folder is deleted when the vault is closed. Audio, video
+  and transcripts are not kept: their files are deleted as soon as nothing plays
+  or reads them, carry a name prefix (`t-`) so that a launch deletes any a
+  killed session left without knowing the secret, and are never adopted. Where the
   system does not encrypt files at rest (Mac Catalyst has no data protection
-  class), files are never kept across launches: a launch deletes what an
-  earlier one left before using the folder.
+  class), files are never kept across launches: quitting the app deletes them,
+  and a launch (after a crash) deletes what an earlier one left before any vault
+  opens.
 
 ## 11. Capture inbox
 

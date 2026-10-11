@@ -338,8 +338,10 @@ struct ExportCommand: ParsableCommand {
             for w in Self.warnings(report, format: format) { printStderr("sempere: warning: \(note): \(w)") }
         }
         let fm = FileManager.default
+        // Exports are plaintext: folders the command creates are 0700 (a folder that exists keeps its
+        // mode) and files 0600, as `vault summaries --plaintext` (writePrivateFile).
         func mkdir(_ path: String) throws {
-            try fm.createDirectory(atPath: path, withIntermediateDirectories: true)
+            try fm.createDirectory(atPath: path, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         }
         func writePDF(to path: String, _ body: (URL) throws -> Void) throws {
             do { try body(URL(fileURLWithPath: path)) } catch let e as RenderError {
@@ -347,9 +349,7 @@ struct ExportCommand: ParsableCommand {
             }
         }
         func write(_ data: Data, to path: String) throws {
-            do { try data.write(to: URL(fileURLWithPath: path), options: .atomic) } catch {
-                throw CLIError.failure("cannot write \(path): \(error.localizedDescription)")
-            }
+            try writePrivateFile(data, to: URL(fileURLWithPath: path))
         }
 
         var written: [Written] = []

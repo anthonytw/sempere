@@ -51,7 +51,10 @@ What it does:
   language list with an override in the page ("Languages" below).
 - **Attachments** (§8, "Attachments" below): images, text boxes and PDF pages
   in their layers under the ink, placeholders for what cannot be drawn, and
-  the note's recordings with a player and their transcripts.
+  the note's recordings with a player and their transcripts. A voice note
+  adopted from the inbox says which device captured it, as the app does
+  (`captured`, `format.md` §8.3.1: "Voice note from iPad", "… from a device no
+  longer in this vault", "… from an unverified device"; `web/src/format/captured.ts`).
 
 ## Remembering the key with a passkey
 

@@ -342,7 +342,7 @@ struct MenuHandlerTests {
     @Test func aStoredSelectionRoundTripsThroughTheSceneStorageString() async throws {
         let (model, _) = try await NoteWindowTests.unlockedModel()
         let vaultID = try #require(model.vault?.vaultId)
-        let stored = RestorableSelection(sidebar: .allNotes, note: Self.lecture, vault: vaultID).stored
+        let stored = RestorableSelection(sidebar: .allNotes, note: Self.lecture, vault: vaultID, digest: { $0 }).stored
         let saved = try #require(RestorableSelection(stored: stored))
         model.selectedNoteID = nil
         #expect(model.restore(saved))

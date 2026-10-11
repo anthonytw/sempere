@@ -23,7 +23,8 @@ struct SempereApp: App {
         DebugLaunch.resetForFreshLaunch()
         #endif
         let library = VaultLibrary()
-        let keys = RememberedKeys()
+        // Remembered keys are offered only where they opened their vault (S16).
+        let keys = RememberedKeys(locations: .onDisk())
         // A view updated outside its window's environment falls back to these (`AppModelEnvironment`).
         VaultLibrary.current = library
         RememberedKeys.current = keys
@@ -62,6 +63,9 @@ struct SempereApp: App {
         TranscriptionPreference.installSettingsHooks()
         // Per-session attachment caches of earlier builds (the app's is in Caches now, `BlobCache.folder`).
         BlobCache.purgeStale()
+        // A Mac has no data protection: decrypted attachments a crashed or killed run left are deleted
+        // before any vault opens (a quit deletes them itself, `SempereAppDelegate`).
+        BlobCache.purgeAtLaunch()
     }
 
     var body: some Scene {

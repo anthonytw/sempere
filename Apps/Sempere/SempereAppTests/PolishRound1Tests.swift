@@ -128,8 +128,9 @@ struct PolishRound1Tests {
         #expect(other.recognizedEntry(for: Self.lecture)?.pagesRecognized == 2)
         other.sidebarSelection = .recentlyRecognized
         #expect(other.visibleNotes.map(\.id) == [Self.lecture])
-        #expect(RestorableSelection.name(of: .recentlyRecognized) == "recognized")
-        #expect(RestorableSelection(sidebar: .recentlyRecognized, note: nil, vault: nil).sidebarItem == .recentlyRecognized)
+        #expect(RestorableSelection.name(of: .recentlyRecognized, digest: { $0 }) == "recognized")
+        #expect(RestorableSelection(sidebar: .recentlyRecognized, note: nil, vault: nil, digest: { $0 }).sidebarRef
+                == .item(.recentlyRecognized))
 
         // After 7 days it is gone, and so is the selection of it.
         other.activityNow = { start.addingTimeInterval(overSeven) }

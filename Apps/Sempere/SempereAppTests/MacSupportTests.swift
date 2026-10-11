@@ -68,23 +68,31 @@ struct WindowValueTests {
 
     @Test func aSelectionRoundTripsThroughItsStoredString() throws {
         let note = UUID(), vault = UUID()
-        for item in [SidebarItem.allNotes, .deleted, .notebook("School/Math"), .tag("a:b/c")] {
-            let saved = RestorableSelection(sidebar: item, note: note, vault: vault)
+        // A stand-in digest: the model's is keyed by the vault secret (`AppModel.selectionDigest`).
+        let digest: (String) -> String = { "d" + String($0.utf8.count) }
+        let expected: [(SidebarItem, RestorableSelection.Sidebar)] = [
+            (.allNotes, .item(.allNotes)), (.deleted, .item(.deleted)),
+            (.notebook("School/Math"), .notebook(digest: digest(RestorableSelection.digestLabel(notebook: "School/Math")))),
+            (.tag("a:b/c"), .tag(digest: digest(RestorableSelection.digestLabel(tag: "a:b/c")))),
+        ]
+        for (item, ref) in expected {
+            let saved = RestorableSelection(sidebar: item, note: note, vault: vault, digest: digest)
             let back = try #require(RestorableSelection(stored: saved.stored))
             #expect(back == saved)
-            #expect(back.sidebarItem == item)
+            #expect(back.sidebarRef == ref)
+            #expect(!saved.stored.contains("Math") && !saved.stored.contains("a:b/c"), "no names are stored")
         }
-        #expect(RestorableSelection(sidebar: nil, note: nil, vault: nil).sidebarItem == .allNotes)
+        #expect(RestorableSelection(sidebar: nil, note: nil, vault: nil, digest: digest).sidebarRef == .item(.allNotes))
     }
 
     @Test func anUnreadableStoredSelectionIsNoSelection() {
         #expect(RestorableSelection(stored: "") == nil)
         #expect(RestorableSelection(stored: "{not json") == nil)
         #expect(RestorableSelection(stored: "{\"sidebar\":\"all\",\"note\":\"not-a-uuid\"}") == nil)
-        #expect(RestorableSelection(sidebar: .allNotes, note: nil, vault: nil).stored.isEmpty == false)
+        #expect(RestorableSelection(sidebar: .allNotes, note: nil, vault: nil, digest: { $0 }).stored.isEmpty == false)
         // An unknown sidebar word falls back to All Notes.
         let odd = RestorableSelection(stored: "{\"sidebar\":\"future\"}")
-        #expect(odd?.sidebarItem == .allNotes)
+        #expect(odd?.sidebarRef == .item(.allNotes))
     }
 }
 

@@ -110,13 +110,41 @@ extension AppModel {
 
     // MARK: - State restoration
 
+    /// The keyed digest a saved selection names a notebook or tag by
+    /// (`RestorableSelection`): `LocalCacheKey` purpose `selection` of the open
+    /// vault's secret, so the window state the system keeps in plaintext names
+    /// none. Nil while the vault is locked.
+    func selectionDigest() -> ((String) -> String)? {
+        guard phase == .unlocked, let vault,
+              let key = try? LocalCacheKey(vault: vault, purpose: "selection", magic: [0x53, 0x4D, 0x50, 0x53, 0x01])
+        else { return nil }
+        return { key.entryName($0) }
+    }
+
+    /// The library window's selection to save, or nil while no vault is unlocked.
+    func restorableSelection() -> RestorableSelection? {
+        guard let id = vault?.vaultId, let digest = selectionDigest() else { return nil }
+        return RestorableSelection(sidebar: sidebarSelection, note: selectedNoteID, vault: id, digest: digest)
+    }
+
     /// Applies a selection saved with the library window (`RestorableSelection`):
     /// its notebook or tag if the vault still has it (else All Notes), and its
     /// note if the vault still has it. Ignored for another vault.
     @discardableResult
     func restore(_ saved: RestorableSelection) -> Bool {
         guard phase == .unlocked, saved.vault == vault?.vaultId else { return false }
-        var item = saved.sidebarItem
+        var item: SidebarItem
+        switch saved.sidebarRef {
+        case .item(let plain):
+            item = plain
+        case .notebook(let wanted):
+            let digest = selectionDigest()
+            item = notebooks.first { digest?(RestorableSelection.digestLabel(notebook: $0)) == wanted }
+                .map { .notebook($0) } ?? .allNotes
+        case .tag(let wanted):
+            let digest = selectionDigest()
+            item = tags.first { digest?(RestorableSelection.digestLabel(tag: $0)) == wanted }.map { .tag($0) } ?? .allNotes
+        }
         switch item {
         case .notebook(let path):
             let wanted = NotebookPath.canonical(path)

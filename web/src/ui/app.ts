@@ -703,7 +703,7 @@ export class App {
     const blobs = this.source && this.vault ? new NoteBlobs(this.source, this.vault, note.id) : undefined;
     const videos = new VideosPanel(state, blobs);
     this.videos = videos;
-    const recordings = new RecordingsPanel(state.recordings, blobs);
+    const recordings = new RecordingsPanel(state.recordings, blobs, this.vault?.manifest.recipients);
     this.recordings = recordings;
     this.view = new NoteView(state, blobs, (id) => void videos.play(id), (id) => recordings.play(id));
     this.detail.replaceChildren(

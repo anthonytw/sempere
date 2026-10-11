@@ -159,7 +159,8 @@ public struct TreeExporter: Sendable {
     public func run(_ notes: [(NoteSummary, NoteState)], protected: Set<String>, vaultSource: String,
                     onNote: (Int, Int) -> Void = { _, _ in }, onFile: (String, Bool) -> Void = { _, _ in }) throws -> (results: [TreeResult], failures: Int, errors: [String]) {
         let fm = FileManager.default
-        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        // Plaintext: folders and files this run creates are the owner's only (an existing folder keeps its mode).
+        try FileIO.createPrivateDirectory(root)
         let (enc, dec) = Self.coder()
         var manifest = (try? dec.decode(ExportManifest.self,
                                         from: BoundedRead.contents(of: manifestURL, maxBytes: Self.maxManifestBytes)))
@@ -175,8 +176,8 @@ public struct TreeExporter: Sendable {
         func put(_ rel: String, _ data: Data) throws -> Bool {
             let url = root.appendingPathComponent(rel)
             if let old = try? BoundedRead.contents(of: url, maxBytes: data.count), old == data { return false }
-            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            do { try data.write(to: url, options: .atomic) } catch {
+            try FileIO.createPrivateDirectory(url.deletingLastPathComponent())
+            do { try FileIO.writePrivate(data, to: url) } catch {
                 throw TreeExportError.cannotWrite(path: url.path, reason: error.localizedDescription)
             }
             return true
@@ -355,7 +356,7 @@ public struct TreeExporter: Sendable {
             }
         }
 
-        try enc.encode(manifest).write(to: manifestURL, options: .atomic)
+        try FileIO.writePrivate(try enc.encode(manifest), to: manifestURL)
         return (results, failures, errors)
     }
 }

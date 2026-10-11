@@ -147,6 +147,75 @@ struct AttachmentPersistenceTests {
         #expect(BlobCache.keepsAcrossLaunches == !ProcessInfo.processInfo.isMacCatalystApp)
     }
 
+    /// Security review 2026-10 stage 4, S12: a transcript drawn on an audio card was released without
+    /// `discard` and stayed in the cache (across launches on iOS), and a recording a killed session was
+    /// playing was adopted by the next launch. Recordings, clips and transcripts now never stay.
+    @Test func transcriptsAndRecordingsNeverStayInTheCache() async throws {
+        let store = FakeBlobStore()
+        let transcript = store.put(Data(#"{"text":"secret words"}"#.utf8), type: BlobRef.transcriptType)
+        let audio = store.put(Data(repeating: 7, count: 4000), type: "audio/mp4")
+        let video = store.put(Data(repeating: 8, count: 4000), type: "video/mp4")
+        let image = store.put(Data(repeating: 9, count: 4000), type: "image/png")
+        let root = Self.root()
+        let cache = BlobCache(root: root, fetch: store.fetch)
+        for ref in [transcript, audio, video] {
+            let url = try await cache.acquire(note: Self.lecture, ref: ref)
+            #expect(FileManager.default.fileExists(atPath: url.path))
+            await cache.release(note: Self.lecture, ref: ref)   // no `discard`, as the audio card did
+            #expect(!FileManager.default.fileExists(atPath: url.path), "\(ref.type)")
+            #expect(await !cache.contains(note: Self.lecture, ref: ref))
+        }
+        // Other attachments are kept for later, as before.
+        let kept = try await cache.acquire(note: Self.lecture, ref: image)
+        await cache.release(note: Self.lecture, ref: image)
+        #expect(FileManager.default.fileExists(atPath: kept.path))
+
+        // Killed while a recording played and a transcript was read: the next launch deletes both.
+        let playing = try await cache.acquire(note: Self.lecture, ref: audio)
+        let reading = try await cache.acquire(note: Self.lecture, ref: transcript)
+        let next = BlobCache(root: root, fetch: store.fetch)
+        #expect(await !next.contains(note: Self.lecture, ref: audio))
+        #expect(await !next.contains(note: Self.lecture, ref: transcript))
+        #expect(!FileManager.default.fileExists(atPath: playing.path))
+        #expect(!FileManager.default.fileExists(atPath: reading.path))
+        #expect(await next.contains(note: Self.lecture, ref: image), "an image is still adopted after its check")
+    }
+
+    /// Security review 2026-10 stage 4, S11: on a Mac (no data protection) decrypted attachments were deleted
+    /// only once a later launch unlocked a vault and used an attachment. A quit deletes them, and a launch
+    /// after a crash deletes them before any vault opens.
+    @Test func withoutDataProtectionQuitAndLaunchDeleteEveryDecryptedFile() async throws {
+        let blobs = Self.root()
+        let fm = FileManager.default
+        func plant() throws -> URL {
+            let dir = blobs.appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            let file = dir.appendingPathComponent("doc.pdf")
+            try Data("plaintext".utf8).write(to: file)
+            return file
+        }
+        func regularFiles() -> [String] {
+            (fm.enumerator(atPath: blobs.path)?.allObjects as? [String] ?? []).filter {
+                var dir: ObjCBool = false
+                return fm.fileExists(atPath: blobs.appendingPathComponent($0).path, isDirectory: &dir) && !dir.boolValue
+            }
+        }
+        // Where files are protected at rest (iOS), both keep the cache.
+        let kept = try plant()
+        BlobCache.purgeAtLaunch(in: blobs, keepsAcrossLaunches: true)
+        BlobCache.purgeAtQuit(in: blobs, keepsAcrossLaunches: true)
+        #expect(fm.fileExists(atPath: kept.path))
+        // A Mac launch: nothing of an earlier session is left in a vault's folder once it returns.
+        BlobCache.purgeAtLaunch(in: blobs, keepsAcrossLaunches: false)
+        #expect(!fm.fileExists(atPath: kept.path))
+        #expect(await TS.waitUntil { regularFiles().isEmpty })
+        // A Mac quit: deleted at once.
+        let quit = try plant()
+        BlobCache.purgeAtQuit(in: blobs, keepsAcrossLaunches: false)
+        #expect(!fm.fileExists(atPath: quit.path))
+        #expect(!fm.fileExists(atPath: blobs.path))
+    }
+
     // MARK: render cache
 
     static func picture(width: Int, height: Int, opaque: Bool) throws -> RenderCache.Picture {

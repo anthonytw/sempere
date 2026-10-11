@@ -246,6 +246,19 @@ struct ImageInsertTests {
         #expect(pdf.range(of: Data("ftypheic".utf8)) == nil, "the HEIC file is not embedded")
     }
 
+    /// Security review 2026-10 stage 4, S15: Settings ▸ Storage thumbnails decoded blobs with `UIImage(data:)`,
+    /// so a GIF or TIFF stored by someone else reached every ImageIO codec. They now decode as the canvas does.
+    @Test func storageThumbnailsDecodeOnlyTheCanvasFormats() throws {
+        for type in [UTType.jpeg, .png, .heic] {
+            let data = try #require(Self.photo(type, gps: false))
+            #expect(AttachmentThumbnail.thumbnail(data, kind: .image, side: 132) != nil, "\(type)")
+        }
+        for other in [UTType.gif, .tiff] {
+            let data = try #require(Self.photo(other, gps: false))
+            #expect(AttachmentThumbnail.thumbnail(data, kind: .image, side: 132) == nil, "\(other)")
+        }
+    }
+
     /// The fallback decoder parses only HEIC/HEIF: a stored blob in another
     /// codec (here GIF and TIFF claiming to be `image/heic`) is not decoded.
     @Test func imageIODecoderReadsOnlyHEIC() throws {

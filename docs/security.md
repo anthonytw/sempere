@@ -84,12 +84,17 @@ They cannot see titles, text, ink, tags, notebooks, attachments or transcripts.
 - **An unlocked device.** While a vault is unlocked, the app holds the key and
   shows your notes. Anyone using the device, or software that controls it, can
   read them. Use a device passcode; the remembered key is behind Face ID or
-  Touch ID when you choose it.
+  Touch ID when you choose it. A remembered key is offered only for the folder
+  it opened before (any folder can claim a vault's id), and a vault handed to
+  the app from another app or AirDrop asks before it closes the open one.
 - **Plaintext the app keeps on the device for speed or safety:** attachments
   opened for display, a recording until it is saved into the note, a voice note
-  until it is sealed, and files staged for an export or a drag. They rely on the
+  until it is sealed, and files staged for an export or a drag; on a Mac, the
+  titles of note windows open when the app quits, which the system keeps to
+  restore its windows. They rely on the
   system's data protection where the platform has it (on a Mac, which has none,
-  the attachment cache is deleted at each launch instead). The caches of note
+  the attachment cache is deleted when the app quits, and after a crash at the
+  next launch, before any vault opens). The caches of note
   listings, drawings and attachment previews are encrypted under the vault's
   secret ([`format.md`](format.md) §10). Details: [`io.md`](io.md),
   [`quick-capture.md`](quick-capture.md).

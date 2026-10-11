@@ -148,29 +148,32 @@ private struct KeyReceipt: View {
     let created: CreatedVault
     let done: () -> Void
     @State private var copied = false
+    @State private var sharing = false
 
     var body: some View {
         Form {
             Section {
                 Text("“\(created.url.deletingPathExtension().lastPathComponent)” is ready. Save this secret key now: anyone with it can read the vault, and without it (or a passphrase-wrapped copy) the vault cannot be opened again.")
+                // Not selectable, as in the key window: ⌘C would put the secret on the clipboard with no
+                // expiry and let Universal Clipboard sync it; Copy Key below does not.
                 Text(created.secretKey ?? "")
                     .font(.callout.monospaced())
-                    .textSelection(.enabled)
                 Button(copied ? String(localized: "Copied", comment: "Button after the secret key was copied")
                               : String(localized: "Copy Key", comment: "Button: copy the secret key"),
                        systemImage: "doc.on.doc") {
-                    // Local only (no Universal Clipboard to other devices) and
-                    // short-lived: this is the vault's secret key.
-                    UIPasteboard.general.setItems([[UTType.plainText.identifier: created.secretKey ?? ""]],
-                                                  options: [.localOnly: true,
-                                                            .expirationDate: Date().addingTimeInterval(120)])
+                    // Local only (no Universal Clipboard to other devices) and short-lived.
+                    SecretPasteboard.copy(created.secretKey ?? "")
                     copied = true
                 }
-                ShareLink(item: created.secretKey ?? "", subject: Text("Sempere secret key"))
+                // The share sheet without its Copy (`SecretSharing`), never a ShareLink.
+                Button("Share…", systemImage: "square.and.arrow.up") { sharing = true }
             }
             Section {
                 Button("I Saved the Key", action: done)
             }
+        }
+        .sheet(isPresented: $sharing) {
+            ShareSheet(items: [created.secretKey ?? ""], secret: true) { sharing = false }
         }
     }
 }
