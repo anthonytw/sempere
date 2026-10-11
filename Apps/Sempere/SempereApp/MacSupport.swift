@@ -83,8 +83,7 @@ struct NoteWindowValue: Codable, Hashable, Sendable {
 /// resolves (security review 2026-10, S13).
 struct RestorableSelection: Codable, Equatable, Sendable {
     /// `all`, `deleted`, `favorites`, `recognized`, `notebook#<digest>` or
-    /// `tag#<digest>`. Older builds stored `notebook:<path>` and `tag:<name>`:
-    /// still read, never written.
+    /// `tag#<digest>`; anything else is All Notes.
     var sidebar: String
     var note: UUID?
     /// The vault the selection belongs to.
@@ -105,8 +104,6 @@ struct RestorableSelection: Codable, Equatable, Sendable {
         if sidebar == "favorites" { return .item(.favorites) }
         if sidebar.hasPrefix("notebook#") { return .notebook(digest: String(sidebar.dropFirst("notebook#".count))) }
         if sidebar.hasPrefix("tag#") { return .tag(digest: String(sidebar.dropFirst("tag#".count))) }
-        if sidebar.hasPrefix("notebook:") { return .item(.notebook(String(sidebar.dropFirst("notebook:".count)))) }
-        if sidebar.hasPrefix("tag:") { return .item(.tag(String(sidebar.dropFirst("tag:".count)))) }
         return .item(.allNotes)
     }
 

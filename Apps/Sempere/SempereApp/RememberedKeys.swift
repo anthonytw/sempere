@@ -66,7 +66,7 @@ final class RememberedKeys {
     /// is (S16): the vault id comes from a `vault.json` nothing has checked
     /// yet, so a lookalike folder could claim it. Offered at a location the
     /// key (or a confirmed pasted key) unlocked before; a key with no location
-    /// yet (an earlier build's, or one from iCloud Keychain) only for a vault
+    /// yet (one that arrived through iCloud Keychain) only for a vault
     /// opened in the app, never for one another app or AirDrop handed over.
     func offersSavedKey(for model: AppModel) -> Bool {
         guard let id = model.vault?.vaultId, let folder = model.vaultURL else { return false }
@@ -177,7 +177,7 @@ final class RememberedKeys {
             // sheet closes as soon as the key works, and no view can cancel the listing.
             try await model.unlock(identityText: identity, awaitNotes: false)
             brokenVaultID = nil
-            // A key from before locations (or from iCloud Keychain) is bound to where it first unlocked.
+            // A key that arrived through iCloud Keychain is bound to where it first unlocked.
             if model.vault?.vaultId == id, let folder = model.vaultURL { locations.bind(id, to: folder) }
             return .unlocked
         } catch is CancellationError {

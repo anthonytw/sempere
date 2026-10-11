@@ -756,8 +756,8 @@ web viewer". Each fix has a test that encodes the attack and fails on the code b
   The library window's `@SceneStorage` selection (Saved Application State) held `notebook:<path>` or
   `tag:<name>` and survived closing the vault. Fix: `RestorableSelection` stores a notebook or tag as
   `notebook#<digest>` / `tag#<digest>`, the `LocalCacheKey` (purpose `selection`) `entryName` of the
-  canonical path or tag key, which `AppModel.restore` resolves against the unlocked vault (older
-  `notebook:`/`tag:` values are still read, never written); the saved selection is cleared when the vault
+  canonical path or tag key, which `AppModel.restore` resolves against the unlocked vault (a plain name
+  reads as All Notes: no backward compatibility, per the owner's v1 decision); the saved selection is cleared when the vault
   closes (`SelectionStorage.shouldClear`); a note window's title is the note's only while the vault is
   unlocked. The titles of note windows open at quit can still be in the system's window state:
   documented in `security.md` and `mac.md`; `format.md` §10.1 lists the purpose. Tests:
@@ -769,7 +769,7 @@ web viewer". Each fix has a test that encodes the attack and fails on the code b
   and the window asks ("Open “X”? This closes “Y”…", `OpenedVaultAlert`, library and note windows);
   (2) `RememberedKeyLocations` (Application Support, SHA-256 of the folder's resolved path, no names)
   binds each remembered key to the folders it unlocked: `RememberedKeys.offersSavedKey` offers it, and
-  asks for Face ID, only there; a key with no location yet (earlier builds, iCloud Keychain) only for a
+  asks for Face ID, only there; a key with no location on this device yet (it arrived through iCloud Keychain) only for a
   vault opened in the app (`vaultOpenedExternally` false), then bound; a pasted key binds a new folder
   only when this device's trust record confirms the list (`.verified(.unchanged/.rotated)`); elsewhere
   the unlock sheet says why and asks for the key or passphrase (`Attempt.notHere`); (3)

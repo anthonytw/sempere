@@ -200,8 +200,7 @@ struct NoteWindowTests {
 
     /// Security review 2026-10 stage 4, S13: the library window's saved selection (scene storage, which a
     /// Mac keeps in plaintext in Saved Application State) named the notebook or tag. It now holds a digest
-    /// keyed by the vault secret, still restores, is forgotten when the vault closes, and older saved values
-    /// (`tag:<name>`) are still read.
+    /// keyed by the vault secret, still restores, and is forgotten when the vault closes.
     @Test func theSavedSelectionNamesNoNotebookOrTag() async throws {
         let (model, _) = try await Self.unlockedModel()
         let vault = try #require(model.vault?.vaultId)
@@ -224,10 +223,10 @@ struct NoteWindowTests {
         #expect(model.selectedNoteID == Self.lecture)
         #expect(model.restore(try #require(RestorableSelection(stored: savedNotebook.stored))))
         #expect(model.sidebarSelection == .notebook(notebook))
-        // A value an older build saved is still applied (and replaced at the next save).
-        let legacy = #"{"sidebar":"tag:fixture","vault":"\#(vault.uuidString)"}"#
-        #expect(model.restore(try #require(RestorableSelection(stored: legacy))))
-        #expect(model.sidebarSelection == .tag("fixture"))
+        // A plain name is not a form the selection is saved in: All Notes.
+        let plain = #"{"sidebar":"tag:fixture","vault":"\#(vault.uuidString)"}"#
+        #expect(model.restore(try #require(RestorableSelection(stored: plain))))
+        #expect(model.sidebarSelection == .allNotes)
         #expect(SelectionStorage.shouldClear(phase: .noVault))
         #expect(!SelectionStorage.shouldClear(phase: .unlocked))
     }

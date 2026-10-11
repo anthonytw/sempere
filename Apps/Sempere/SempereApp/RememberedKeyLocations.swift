@@ -13,8 +13,8 @@ import Foundation
 /// that vault before. Elsewhere the user pastes the key (or the passphrase).
 ///
 /// A location is the SHA-256 of the vault folder's resolved path, so the file
-/// names no folder. Keys remembered by earlier builds (or arriving through
-/// iCloud Keychain) have no location yet: they are offered for vaults the user
+/// names no folder. Keys arriving through iCloud Keychain from another
+/// device have no location here yet: they are offered for vaults the user
 /// opened in the app (recents, the picker), never for one handed to the app
 /// from outside, and bound to the first location they unlock.
 @MainActor

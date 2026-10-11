@@ -79,7 +79,7 @@ struct OpenedVaultTests {
         let store = FakeKeyStore()
         try await model.openVault(at: received, external: true)
         let id = try #require(model.vault?.vaultId)
-        // Remembered by an earlier build (or arriving through iCloud Keychain): no location yet.
+        // Arrived through iCloud Keychain from another device: no location here yet.
         await store.put((try IdentityFile.parse(key)).string, for: id)
         let keys = RememberedKeys(store: store)
         #expect(await keys.unlockWithRememberedKey(model) == .notHere)
