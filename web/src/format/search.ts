@@ -29,17 +29,41 @@ const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "bas
 
 /** The forest of notebooks named by `names`; intermediate levels exist implicitly. */
 export function notebookTree(names: (string | undefined)[]): NotebookNode[] {
-  const paths = names.map((n) => notebookComponents(n).slice(0, maxNotebookDepth)).filter((p) => p.length > 0);
-  const build = (below: string[][], depth: number, prefix: string[]): NotebookNode[] => {
-    const here = below.filter((p) => p.length > depth);
-    const segs = [...new Set(here.map((p) => p[depth] ?? ""))]
-      .sort((a, b) => collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0));
-    return segs.map((name) => {
-      const path = [...prefix, name];
-      return { name, path: path.join("/"), children: build(here.filter((p) => p[depth] === name), depth + 1, path) };
+  interface Trie { children: Map<string, Trie> }
+  const root: Trie = { children: new Map() };
+  for (const name of names) {
+    let at = root;
+    for (const seg of notebookComponents(name).slice(0, maxNotebookDepth)) {
+      let next = at.children.get(seg);
+      if (!next) {
+        next = { children: new Map() };
+        at.children.set(seg, next);
+      }
+      at = next;
+    }
+  }
+  const build = (t: Trie, prefix: string): NotebookNode[] =>
+    [...t.children.keys()].sort((a, b) => collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0)).map((name) => {
+      const path = prefix === "" ? name : `${prefix}/${name}`;
+      return { name, path, children: build(t.children.get(name) ?? { children: new Map() }, path) };
     });
-  };
-  return build(paths, 0, []);
+  return build(root, "");
+}
+
+/**
+ * How many of `names` are within each notebook of `notebookTree(names)`, by path: what
+ * `isWithinNotebook` counts node by node, in one pass.
+ */
+export function notebookCounts(names: (string | undefined)[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const name of names) {
+    let path = "";
+    for (const seg of notebookComponents(name).slice(0, maxNotebookDepth)) {
+      path = path === "" ? seg : `${path}/${seg}`;
+      counts.set(path, (counts.get(path) ?? 0) + 1);
+    }
+  }
+  return counts;
 }
 
 // MARK: - Search
@@ -49,14 +73,15 @@ export function notebookTree(names: (string | undefined)[]): NotebookNode[] {
  * `.caseInsensitive, .diacriticInsensitive, .widthInsensitive`): each code
  * point is NFKD-decomposed, combining marks dropped, then lowercased.
  * Returns the folded text and, per folded code unit, the index of the
- * original code unit it came from (for highlighting).
+ * original code unit it came from (for highlighting). An ASCII code point is
+ * its own decomposition, so it is only lowercased.
  */
 export function fold(s: string): { text: string; map: number[] } {
   let text = "";
   const map: number[] = [];
   let i = 0;
   for (const ch of s) {
-    const f = ch.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase();
+    const f = ch.length === 1 && ch.charCodeAt(0) < 0x80 ? ch.toLowerCase() : ch.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase();
     text += f;
     for (let k = 0; k < f.length; k++) map.push(i);
     i += ch.length;
@@ -65,12 +90,70 @@ export function fold(s: string): { text: string; map: number[] } {
   return { text, map };
 }
 
-function contains(hay: string, needle: string): boolean {
-  return fold(hay).text.includes(fold(needle).text);
+const asciiOnly = /^[^\u0080-\u{10ffff}]*$/u;
+
+/**
+ * `fold(s).text` without the map: the same per-code-point folding, with ASCII text (whose
+ * decomposition is itself and whose lowercasing never depends on context) lowercased in one call.
+ */
+export function foldText(s: string): string {
+  if (asciiOnly.test(s)) return s.toLowerCase();
+  let text = "";
+  for (const ch of s) {
+    text += ch.length === 1 && ch.charCodeAt(0) < 0x80 ? ch.toLowerCase() : ch.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase();
+  }
+  return text;
 }
 
-function equal(a: string, b: string): boolean {
-  return fold(a).text === fold(b).text;
+/**
+ * The folded form of a string a note holds, made once and kept with the object holding it (a page
+ * entry or the note); `source` is the string it was made from, so a changed field is folded again.
+ */
+interface Folded {
+  source: string;
+  text: string;
+}
+
+function cachedFold(cache: WeakMap<object, Folded>, owner: object, s: string): string {
+  const c = cache.get(owner);
+  if (c && c.source === s) return c.text;
+  const text = foldText(s);
+  cache.set(owner, { source: s, text });
+  return text;
+}
+
+const foldedPages = new WeakMap<object, Folded>();
+const foldedTitles = new WeakMap<object, Folded>();
+
+/** A note's canonical notebook with its folded form and its folded components. */
+interface FoldedNotebook {
+  source: string | undefined;
+  canonical: string | undefined;
+  text: string;
+  components: string[];
+}
+const foldedNotebooks = new WeakMap<object, FoldedNotebook>();
+
+function notebookOf(note: SearchableNote): FoldedNotebook {
+  const c = foldedNotebooks.get(note);
+  if (c && c.source === note.notebook) return c;
+  const canonical = canonicalNotebook(note.notebook);
+  const out: FoldedNotebook = canonical === undefined
+    ? { source: note.notebook, canonical, text: "", components: [] }
+    : { source: note.notebook, canonical, text: foldText(canonical), components: notebookComponents(canonical).map(foldText) };
+  foldedNotebooks.set(note, out);
+  return out;
+}
+
+/** Folded tags, kept per tags array (a note's tags are replaced, never edited in place). */
+const foldedTags = new WeakMap<object, { source: string[]; texts: string[] }>();
+
+function tagsOf(note: SearchableNote): string[] {
+  const c = foldedTags.get(note);
+  if (c && c.source.length === note.tags.length && c.source.every((t, i) => t === note.tags[i])) return c.texts;
+  const texts = note.tags.map(foldText);
+  foldedTags.set(note, { source: [...note.tags], texts });
+  return texts;
 }
 
 /** A part of a page's text from one source (Swift `PageText.Span`): `[start, end)` in UTF-16 code units. */
@@ -124,6 +207,8 @@ const snippetBefore = 50, snippetAfter = 90;
 
 interface Word {
   text: string;
+  /** `text` folded, made once per query. */
+  folded: string;
   tagOnly: boolean;
 }
 
@@ -138,7 +223,7 @@ function words(query: string): Word[] {
     const k = `${tagOnly ? "#" : " "}${w}`;
     if (seen.has(k)) continue;
     seen.add(k);
-    out.push({ text: w, tagOnly });
+    out.push({ text: w, folded: foldText(w), tagOnly });
     if (out.length === maxWords) break;
   }
   return out;
@@ -150,27 +235,31 @@ function hit(ws: Word[], note: SearchableNote): SearchHit | undefined {
   const fields = new Set<SearchField>();
   let score = 0;
   const pageWords = new Map<number, Set<number>>();
-  const nb = canonicalNotebook(note.notebook);
+  const title = cachedFold(foldedTitles, note, note.title);
+  const nb = notebookOf(note);
+  const tags = tagsOf(note);
+  const pages = note.pageTexts.map((p) => cachedFold(foldedPages, p, p.text));
   for (const [wi, word] of ws.entries()) {
+    const w = word.folded;
     let best = 0;
     if (!word.tagOnly) {
-      if (contains(note.title, word.text)) {
+      if (title.includes(w)) {
         fields.add("title");
-        best = Math.max(best, equal(note.title, word.text) ? 150 : 100);
+        best = Math.max(best, title === w ? 150 : 100);
       }
-      if (nb !== undefined && contains(nb, word.text)) {
+      if (nb.canonical !== undefined && nb.text.includes(w)) {
         fields.add("notebook");
-        best = Math.max(best, notebookComponents(nb).some((c) => equal(c, word.text)) ? 50 : 30);
+        best = Math.max(best, nb.components.some((c) => c === w) ? 50 : 30);
       }
     }
-    for (const tag of note.tags) {
-      if (!contains(tag, word.text)) continue;
+    for (const tag of tags) {
+      if (!tag.includes(w)) continue;
       fields.add("tag");
-      best = Math.max(best, equal(tag, word.text) ? 80 : 40);
+      best = Math.max(best, tag === w ? 80 : 40);
     }
     if (!word.tagOnly) {
-      note.pageTexts.forEach((p, pi) => {
-        if (!contains(p.text, word.text)) return;
+      pages.forEach((p, pi) => {
+        if (!p.includes(w)) return;
         fields.add("text");
         const s = pageWords.get(pi) ?? new Set<number>();
         s.add(wi);
@@ -201,7 +290,7 @@ function hit(ws: Word[], note: SearchableNote): SearchHit | undefined {
 
 /** Finds `needle` in `hay` (folded), returning original code-unit ranges. */
 function findAll(hay: string, needle: string): [number, number][] {
-  const f = fold(hay), n = fold(needle).text;
+  const f = fold(hay), n = foldText(needle);
   if (n.length === 0) return [];
   const out: [number, number][] = [];
   let from = 0;
@@ -215,10 +304,16 @@ function findAll(hay: string, needle: string): [number, number][] {
 }
 
 function firstMatch(text: string, ws: string[]): [number, number] | undefined {
+  let f: { text: string; map: number[] } | undefined;
   let first: [number, number] | undefined;
   for (const w of ws) {
-    const r = findAll(text, w)[0];
-    if (r && (!first || r[0] < first[0])) first = r;
+    const n = foldText(w);
+    if (n.length === 0) continue;
+    f ??= fold(text);
+    const i = f.text.indexOf(n);
+    if (i < 0) continue;
+    const r: [number, number] = [f.map[i] ?? 0, f.map[i + n.length] ?? text.length];
+    if (!first || r[0] < first[0]) first = r;
   }
   return first;
 }
@@ -270,6 +365,17 @@ export function pageSnippet(page: PageTextEntry, ws: string[]): Snippet | undefi
 /** `pageSnippet` for plain text (one prose part). */
 export function snippet(text: string, ws: string[]): Snippet | undefined {
   return pageSnippet({ number: 1, text }, ws);
+}
+
+/**
+ * True when every note matching `next` also matches `previous`: each word of `previous` is
+ * inside (folded) a word of `next` that searches no more fields (a `#word` searches tags only).
+ * A search for `next` may then look only at `previous`'s hits, as the box does while typing.
+ */
+export function refinesQuery(previous: string, next: string): boolean {
+  const old = words(previous), now = words(next);
+  if (old.length === 0 || now.length === 0) return false;
+  return old.every((w) => now.some((n) => (n.tagOnly || !w.tagOnly) && n.folded.includes(w.folded)));
 }
 
 /** Notes matching every word of `query`, best first (score, newest, title). */

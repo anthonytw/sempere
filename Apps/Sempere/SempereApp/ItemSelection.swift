@@ -440,9 +440,11 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         defer { reportSelection() }
         overlay.frame = CGRect(origin: .zero, size: canvas?.contentSize ?? .zero)
         canvas?.bringSubviewToFront(overlay)
+        let items = self.items   // sorted from the editor: read once
+        let frames = itemLayer?.shownFrames() ?? [:]
         let shown = items.map { item -> Item in
             var shown = item
-            if let frame = itemLayer?.shownFrame(of: item.id) { shown.frame = frame }
+            if let frame = frames[item.id] { shown.frame = frame }
             return shown
         }
         audioControls.layout(shown, recordings: recordings, playing: playing, zoom: zoom,

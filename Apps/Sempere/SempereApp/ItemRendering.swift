@@ -82,16 +82,16 @@ enum ItemRendering {
         // A Markdown box is drawn through the shared composition below (format.md §8.5.4: its pieces,
         // formulas from their renders), with the CoreText shaper, as the app's exports draw it.
         if item.kind == .text, let text = item.text, !text.isMarkdown {
-            return TextItemImage.picture(text, frame: item.frame, rotation: item.rotation, scale: key.scale)
-                .map { ItemPicture.image($0.0, bounds: $0.1) }
-                ?? .placeholder(.unavailable("text cannot be drawn"))
+            return await native(key, renders: renders) {
+                TextItemImage.picture(text, frame: item.frame, rotation: item.rotation, scale: key.scale)
+            } ?? .placeholder(.unavailable("text cannot be drawn"))
         }
         if item.kind == .audio { return await audioPicture(key, note: note, cache: cache) }
         // An equation no typesetter has rendered yet (the CLI's): typeset here (format.md §8.2.8 step 2).
         if item.kind == .math, let math = item.math, math.render == nil {
-            return MathTypesetter.picture(math, frame: item.frame, rotation: item.rotation, scale: key.scale)
-                .map { ItemPicture.image($0.0, bounds: $0.1) }
-                ?? .placeholder(.unavailable("the equation cannot be typeset"))
+            return await native(key, renders: renders) {
+                MathTypesetter.picture(math, frame: item.frame, rotation: item.rotation, scale: key.scale)
+            } ?? .placeholder(.unavailable("the equation cannot be typeset"))
         }
         let interval = Perf.begin(.itemPicture)
         let label = renders == nil ? nil : RenderCache.pictureLabel(key)
@@ -147,6 +147,30 @@ enum ItemRendering {
         case .failed(let why):
             return .placeholder(.unavailable(why))
         }
+    }
+
+    /// A text box or equation drawn here by CoreText (`draw`), through `renders`: a picture stored
+    /// on an earlier open (this launch or, on disk, an earlier one with the same system and fonts)
+    /// is used without drawing; a new one is stored. Nil when it cannot be drawn.
+    @MainActor
+    private static func native(_ key: ItemRenderKey, renders: RenderCache?,
+                               draw: () -> (CGImage, Rect)?) async -> ItemPicture? {
+        let interval = Perf.begin(.itemPicture)
+        let label = renders == nil ? nil : RenderCache.pictureLabel(key)
+        if let renders, let label {
+            let hit = await Task.detached(priority: .userInitiated) { renders.picture(label) }.value
+            if let hit {
+                Perf.end(interval, "text hit")
+                return .image(hit.image, bounds: hit.bounds)
+            }
+        }
+        defer { Perf.end(interval, "text drawn") }
+        guard let (image, bounds) = draw() else { return nil }
+        if let renders, let label {
+            let picture = RenderCache.Picture(image: image, bounds: bounds)
+            Task.detached(priority: .utility) { renders.store(picture, label: label) }
+        }
+        return .image(image, bounds: bounds)
     }
 
     /// An `audio` item's card (format.md §8.2.9), drawn as exports draw it:

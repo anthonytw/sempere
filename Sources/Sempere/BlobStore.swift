@@ -27,9 +27,16 @@ public protocol BlobSource: Sendable {
     /// header, not its whole content), so an export can leave out a missing
     /// 1 GiB clip instead of failing halfway through writing it.
     func isAvailable(_ ref: BlobRef) -> Bool
+    /// True when `withFile` hands out a file that already exists (a cache),
+    /// false when each call decrypts the whole blob again: a reader that
+    /// needs one blob many times (every page of a PDF) then keeps its own copy.
+    var filesAreCached: Bool { get }
 }
 
 extension BlobSource {
+    /// False: each `withFile` produces the file anew.
+    public var filesAreCached: Bool { false }
+
     /// True: sources without a cheaper check find out when they read.
     public func isAvailable(_ ref: BlobRef) -> Bool { true }
 

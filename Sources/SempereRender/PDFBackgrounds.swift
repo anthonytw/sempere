@@ -5,10 +5,21 @@ import SemperePDF
 /// One export's access to PDF blobs: each PDF is read and parsed once, each
 /// rasterized page is cached by size, and all rasterizing shares one pixel
 /// budget. Not thread-safe; one per render call.
+///
+/// With a rasterizer and a blob source that decrypts on every `withFile`,
+/// each PDF that parses is also written once to a private
+/// temporary file (mode 0600 in a 0700 folder) that every page of it is
+/// rasterized from, with the rotation already parsed; the folder is removed
+/// when the object goes (end of the export, or its cancellation). Before,
+/// every page decrypted the whole blob to a new temporary file and the
+/// rasterizer parsed the PDF again.
 final class PDFBackgrounds {
     let blobs: (any BlobSource)?
     let rasterizer: (any PDFPageRasterizer)?
     private var files: [String: Result<PDFFile, PlaceholderReason>] = [:]
+    /// Temporary copies of parsed PDFs for the rasterizer, by content hash.
+    private var copies: [String: URL] = [:]
+    private var copiesFolder: URL?
     private var rasters: [String: Result<RGBAImage, PlaceholderReason>] = [:]
     private var pixelsLeft: Int
 
@@ -17,6 +28,30 @@ final class PDFBackgrounds {
         self.blobs = blobs
         self.rasterizer = rasterizer
         pixelsLeft = pixelBudget
+    }
+
+    deinit {
+        if let copiesFolder { try? FileManager.default.removeItem(at: copiesFolder) }
+    }
+
+    /// Keeps `data` (the verified content of blob `sha256`) in a private
+    /// temporary file for the rasterizer; nothing when it cannot be written
+    /// (pages then go through `blobs.withFile` as before).
+    private func keepCopy(_ data: Data, sha256: String) {
+        let fm = FileManager.default
+        if copiesFolder == nil {
+            let dir = fm.temporaryDirectory.appendingPathComponent("sempere-pdf-\(UUID().uuidString.lowercased())")
+            guard (try? fm.createDirectory(at: dir, withIntermediateDirectories: false,
+                                           attributes: [.posixPermissions: 0o700])) != nil else { return }
+            copiesFolder = dir
+        }
+        guard let dir = copiesFolder else { return }
+        let url = dir.appendingPathComponent("\(sha256).pdf")
+        guard fm.createFile(atPath: url.path, contents: data, attributes: [.posixPermissions: 0o600]) else {
+            try? fm.removeItem(at: url)
+            return
+        }
+        copies[sha256] = url
     }
 
     /// The parsed PDF of a `pdfPage` item.
@@ -29,7 +64,12 @@ final class PDFBackgrounds {
                 let data = try blobs.withFile(for: ref) { url in
                     try BoundedRead.contents(of: url, maxBytes: PDFLimits.standard.maxFileBytes)
                 }
-                do { r = .success(try PDFFile(data: data)) } catch { r = .failure(.pdfUnreadable(Self.describe(error))) }
+                do {
+                    r = .success(try PDFFile(data: data))
+                    if rasterizer != nil, !blobs.filesAreCached { keepCopy(data, sha256: ref.sha256) }
+                } catch {
+                    r = .failure(.pdfUnreadable(Self.describe(error)))
+                }
             } catch {
                 r = .failure(.blobUnavailable(Self.describe(error)))
             }
@@ -62,8 +102,18 @@ final class PDFBackgrounds {
         pixelsLeft -= pixels
         let r: Result<RGBAImage, PlaceholderReason>
         do {
-            let img = try blobs.withFile(for: ref) { url in
-                try rasterizer.rasterize(pdf: url, pageIndex: index, pixelWidth: pixelWidth, pixelHeight: pixelHeight)
+            _ = file(item)   // parsed once: the copy and the rotation
+            var rotation: Int?
+            if case .success(let f)? = files[ref.sha256] { rotation = try? f.page(index).rotation }
+            let img: RGBAImage
+            if let url = copies[ref.sha256] {
+                img = try rasterizer.rasterize(pdf: url, pageIndex: index, pixelWidth: pixelWidth,
+                                               pixelHeight: pixelHeight, rotation: rotation)
+            } else {
+                img = try blobs.withFile(for: ref) { url in
+                    try rasterizer.rasterize(pdf: url, pageIndex: index, pixelWidth: pixelWidth, pixelHeight: pixelHeight,
+                                             rotation: rotation)
+                }
             }
             if img.width == pixelWidth, img.height == pixelHeight {
                 r = .success(img)

@@ -9,9 +9,35 @@ public enum RecognitionBasis {
     /// sorted as strings and joined with `\n`, as the first 16 bytes in
     /// lowercase hex (32 characters). Strokes are write-once, so the same ids
     /// mean the same ink; the empty set has a digest too.
+    ///
+    /// Built without a string per id: the ids are sorted by their bytes,
+    /// which is the order of their lowercase hex forms (fixed length, digits
+    /// before letters, dashes at the same places), and written as that hex
+    /// into one buffer.
     public static func digest<S: Sequence>(of ids: S) -> String where S.Element == UUID {
-        let joined = ids.map { $0.uuidString.lowercased() }.sorted().joined(separator: "\n")
-        return Hex.encode(SHA256.hash(data: Data(joined.utf8)).prefix(16))
+        // Each id as two big-endian halves: their order is the order of its bytes.
+        var keys = ids.map { id -> (UInt64, UInt64) in
+            withUnsafeBytes(of: id.uuid) { b in
+                (UInt64(bigEndian: b.loadUnaligned(as: UInt64.self)),
+                 UInt64(bigEndian: b.loadUnaligned(fromByteOffset: 8, as: UInt64.self)))
+            }
+        }
+        keys.sort { $0.0 != $1.0 ? $0.0 < $1.0 : $0.1 < $1.1 }
+        let hex = Array("0123456789abcdef".utf8)
+        let dash: UInt8 = 0x2D, newline: UInt8 = 0x0A
+        var text = [UInt8]()
+        text.reserveCapacity(keys.count * 37)
+        for (n, key) in keys.enumerated() {
+            if n > 0 { text.append(newline) }
+            for i in 0..<16 {
+                if i == 4 || i == 6 || i == 8 || i == 10 { text.append(dash) }
+                let half = i < 8 ? key.0 : key.1
+                let byte = UInt8(truncatingIfNeeded: half >> UInt64(8 * (7 - i % 8)))
+                text.append(hex[Int(byte >> 4)])
+                text.append(hex[Int(byte & 0x0F)])
+            }
+        }
+        return Hex.encode(SHA256.hash(data: text).prefix(16))
     }
 
     /// The digest of a page's live strokes.
@@ -30,12 +56,22 @@ public enum RecognitionPolicy {
     ///   no strokes needs a clear only when its recognition has text that the
     ///   strokes no longer back.
     public static func needsRecognition(_ recognition: Recognition?, strokeIDs: [UUID], touched: Bool = false) -> Bool {
-        guard let recognition else { return !strokeIDs.isEmpty }
+        needsRecognition(recognition, hasStrokes: !strokeIDs.isEmpty, digest: RecognitionBasis.digest(of: strokeIDs),
+                         touched: touched)
+    }
+
+    /// `needsRecognition(_:strokeIDs:touched:)` with the strokes' digest
+    /// (`RecognitionBasis.digest`) already computed, for a caller that also
+    /// needs it as the basis of what it reads. `digest` is evaluated only
+    /// when the recognition has a basis.
+    public static func needsRecognition(_ recognition: Recognition?, hasStrokes: Bool, digest: @autoclosure () -> String,
+                                        touched: Bool = false) -> Bool {
+        guard let recognition else { return hasStrokes }
         if let basis = recognition.basis {
-            return basis != RecognitionBasis.digest(of: strokeIDs)
+            return basis != digest()
         }
         guard touched else { return false }
-        return !strokeIDs.isEmpty || !recognition.text.isEmpty
+        return hasStrokes || !recognition.text.isEmpty
     }
 
     /// `needsRecognition(_:strokeIDs:touched:)` for a stored page.

@@ -23,7 +23,7 @@ extension WebDAVSync {
         do {
             // The sealed vault secret too: a rotation (recipient removed) re-seals the file under a new key
             // though no revision name changes (format.md §12.1).
-            var hashed = try WebIndex.encode(remoteRevisions)
+            var hashed = try encodedWebIndex()
             hashed.append(0)
             hashed.append(Data(vault.manifest.vaultSecret.utf8))
             listing = FileDigest.sha256(hashed)

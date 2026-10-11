@@ -19,7 +19,7 @@ import { cmpItems } from "../format/registers.ts";
 import { PreparedPage, chunkHeight, defaultRenderOptions, elementSpec } from "../render/page.ts";
 import { expandMarkdown } from "../render/markdown.ts";
 import { RenderLimits } from "../render/primitives.ts";
-import { applyTransform, meanScale, transformOf } from "../render/stroke.ts";
+import { meanScale, transformOf } from "../render/stroke.ts";
 import { type Measure, fontStacks } from "../render/text.ts";
 import { BlobError, type NoteBlobs } from "../vault/blobs.ts";
 import { type BlobKind, blobProblem } from "./errors.ts";
@@ -27,6 +27,12 @@ import { h, s, svgTree } from "./dom.ts";
 import { NotePDFs, maxPDFBytes } from "./pdf.ts";
 
 const gap = 24;
+/**
+ * Pages are drawn within a screen above and two below the viewport's top, and released (back to
+ * their placeholder) once more than `releaseScreens` screens away, so a long note keeps only the
+ * pages around the viewport in the DOM.
+ */
+const releaseScreens = 4;
 const minZoom = 0.05, maxZoom = 12;
 
 /** A page's drawn height without outlining it (PreparedPage's extent rule). */
@@ -39,12 +45,14 @@ export function pageExtent(page: Page, state: NoteState): number {
     if (n === 0) continue;
     const xf = transformOf(st);
     let radius = Math.abs(st.ink.width), lo = Infinity, hi = -Infinity;
+    // Only y is needed: applyTransform's y, inlined, with no allocation per point.
+    const pts = st.points, b = xf[1], d = xf[3], ty = xf[5];
     for (let i = 0; i < n; i++) {
-      const b = i * pointStride;
-      const q = applyTransform(xf, st.points[b] ?? 0, st.points[b + 1] ?? 0);
-      lo = Math.min(lo, q.y);
-      hi = Math.max(hi, q.y);
-      radius = Math.max(radius, Math.abs(st.points[b + 3] ?? 0), Math.abs(st.points[b + 4] ?? 0));
+      const at = i * pointStride;
+      const y = b * (pts[at] ?? 0) + d * (pts[at + 1] ?? 0) + ty;
+      lo = Math.min(lo, y);
+      hi = Math.max(hi, y);
+      radius = Math.max(radius, Math.abs(pts[at + 3] ?? 0), Math.abs(pts[at + 4] ?? 0));
     }
     spans.push({ maxY: hi + Math.min(radius * meanScale(xf), RenderLimits.maxNibWidth) / 2 + 1, centreY: lo / 2 + hi / 2 });
   }
@@ -116,6 +124,8 @@ interface Slot {
   height: number;
   el: HTMLElement;
   drawn: boolean;
+  /** Bumped when the page is released: a load started before then drops its result. */
+  generation: number;
   pending: PendingItem[];
 }
 
@@ -140,6 +150,10 @@ export class NoteView {
   private readonly problems = new Map<string, ItemProblem>();
   /** The list of placeholders and why; the caller puts it with the note's other warnings. */
   readonly problemsEl = h("details", { class: "warning item-problems" });
+  private readonly problemsSummary = h("summary");
+  private readonly problemsList = h("ul");
+  /** Each problem's line in `problemsList`, by the same key as `problems`. */
+  private readonly problemItems = new Map<string, HTMLElement>();
   private destroyed = false;
   private rerender?: ReturnType<typeof setTimeout>;
   /**
@@ -190,15 +204,26 @@ export class NoteView {
     return [...this.problems.values()];
   }
 
-  /** Records an item that is a placeholder or not drawn, and why (`it` undefined: a page-level note). */
-  private report(slot: Slot, it: PreparedItem | undefined, reason: string): void {
-    const id = it ? String(it.item.id) : `-${this.problems.size}`;
-    this.problems.set(`${slot.index}/${id}`, { page: slot.index + 1, item: it ? id : "", kind: it?.kind ?? "", reason });
-    const list = [...this.problems.values()];
-    this.problemsEl.hidden = false;
-    this.problemsEl.replaceChildren(
-      h("summary", { text: tn("{count} attachments cannot be shown (crossed boxes on the page)", list.length) }),
-      h("ul", {}, ...list.map((p) => h("li", { text: t("Page {page}: {detail}", { page: p.page, detail: `${p.item ? `${p.kind} ${p.item.slice(0, 8)}: ` : ""}${p.reason}` }) }))));
+  /**
+   * Records an item that is a placeholder or not drawn, and why (`it` undefined: a page-level note,
+   * `warning` its index among the page's warnings, so drawing the page again replaces it).
+   */
+  private report(slot: Slot, it: PreparedItem | undefined, reason: string, warning?: number): void {
+    const id = it ? String(it.item.id) : `-${warning ?? this.problems.size}`;
+    const key = `${slot.index}/${id}`;
+    const p: ItemProblem = { page: slot.index + 1, item: it ? id : "", kind: it?.kind ?? "", reason };
+    this.problems.set(key, p);
+    // One line added or replaced in place (the list keeps the order problems were first reported in).
+    const li = h("li", { text: t("Page {page}: {detail}", { page: p.page, detail: `${p.item ? `${p.kind} ${p.item.slice(0, 8)}: ` : ""}${p.reason}` }) });
+    const old = this.problemItems.get(key);
+    if (old) old.replaceWith(li);
+    else this.problemsList.append(li);
+    this.problemItems.set(key, li);
+    this.problemsSummary.textContent = tn("{count} attachments cannot be shown (crossed boxes on the page)", this.problems.size);
+    if (this.problemsEl.hidden) {
+      this.problemsEl.hidden = false;
+      this.problemsEl.replaceChildren(this.problemsSummary, this.problemsList);
+    }
   }
 
   private layout(): void {
@@ -220,7 +245,7 @@ export class NoteView {
       el.style.height = `${height}px`;
       el.style.left = `${(this.contentWidth - width) / 2}px`;
       el.style.top = `${top}px`;
-      const slot: Slot = { page, index, top, left: (this.contentWidth - width) / 2, width, height, el, drawn: false, pending: [] };
+      const slot: Slot = { page, index, top, left: (this.contentWidth - width) / 2, width, height, el, drawn: false, generation: 0, pending: [] };
       top += height + gap;
       this.content.append(el);
       return slot;
@@ -241,7 +266,7 @@ export class NoteView {
         const e = elementSpec(c);
         paper.append(s(e.tag, e.attrs));
       }
-      for (const w of prepared.warnings) this.report(slot, undefined, w);
+      prepared.warnings.forEach((w, i) => this.report(slot, undefined, w, i));
       const under = prepared.underIndex();
       const drawUnder = () => {
         for (const c of prepared.strokeCommands(true)) { const e = elementSpec(c); items.append(s(e.tag, e.attrs)); }
@@ -308,6 +333,25 @@ export class NoteView {
     }
   }
 
+  /**
+   * Puts a drawn page back to its placeholder: its SVG, its attachments' object URLs and its
+   * playable items go; loads still running for it drop their results. It is drawn again (the same
+   * way) when it comes back near the viewport.
+   */
+  private release(slot: Slot): void {
+    slot.drawn = false;
+    slot.generation++;
+    for (const p of slot.pending) {
+      if (p.url) {
+        URL.revokeObjectURL(p.url);
+        this.urls.delete(p.url);
+      }
+    }
+    slot.pending = [];
+    for (let i = this.playables.length - 1; i >= 0; i--) if (this.playables[i]?.slot === slot) this.playables.splice(i, 1);
+    slot.el.replaceChildren(h("div", { class: "page-placeholder", text: t("Page {number}", { number: slot.index + 1 }) }));
+  }
+
   /** Reads the transcript of an audio card's recording and redraws its label with it. */
   private addTranscript(slot: Slot, it: PreparedItem, recording: JSONObject, label: SVGElement): void {
     const ref = asBlobRef(recording.transcript);
@@ -367,6 +411,7 @@ export class NoteView {
 
   private async load(slot: Slot, p: PendingItem): Promise<void> {
     p.state = "loading";
+    const generation = slot.generation;
     const d = p.draw;
     const clipId = `${this.uid}-p${slot.index}-i${slot.pending.indexOf(p)}`;
     try {
@@ -414,8 +459,9 @@ export class NoteView {
         transform = after(placement(crop, d.it.frame, d.it.rotation), translate(shown.x, shown.y));
         p.scale = scale;
       }
-      if (this.destroyed) {
+      if (this.destroyed || slot.generation !== generation) {
         URL.revokeObjectURL(url);
+        this.urls.delete(url);
         return;
       }
       if (p.url) URL.revokeObjectURL(p.url);
@@ -424,7 +470,7 @@ export class NoteView {
       p.g.replaceChildren(svgTree(rasterNode(d.it, url, width, height, transform, clipId)));
       p.state = "done";
     } catch (e) {
-      if (this.destroyed) return;
+      if (this.destroyed || slot.generation !== generation) return;
       p.state = "done";
       // A sharper rendering that failed keeps the one already shown, and is not tried again.
       if (p.url) {
@@ -463,8 +509,10 @@ export class NoteView {
     this.zoomLabel.textContent = new Intl.NumberFormat(locale(), { style: "percent" }).format(Math.round(this.z * 100) / 100);
     const vh = this.viewport.clientHeight;
     const top = (-this.y - vh) / this.z, bottom = (-this.y + 2 * vh) / this.z;
+    const farTop = (-this.y - releaseScreens * vh) / this.z, farBottom = (-this.y + (releaseScreens + 1) * vh) / this.z;
     for (const slot of this.slots) {
       if (!slot.drawn && slot.top + slot.height >= top && slot.top <= bottom) this.draw(slot);
+      else if (slot.drawn && (slot.top + slot.height < farTop || slot.top > farBottom)) this.release(slot);
     }
     // Attachments load only when on screen (half a screen ahead).
     const vw = this.viewport.clientWidth;

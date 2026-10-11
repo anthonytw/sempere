@@ -80,16 +80,22 @@ private struct PageStripRow: View {
     let number: Int
     let selected: Bool
     @Environment(\.displayScale) private var displayScale
+    /// The last thumbnail rendered for this row, shown until the next one lands.
+    @State private var rendered: UIImage?
     private let width: CGFloat = 120
 
     var body: some View {
-        let strokes = editor.thumbnailStrokes(of: page)
         let paper = editor.displayedPaper(of: page)
         let height = CGFloat(PageStrip.thumbnailHeight(width: Double(width), pageSize: editor.pageSize))
+        let size = CGSize(width: width, height: height)
+        let pageSize = editor.pageSize
+        let scale = displayScale
+        // Keyed on the page's ink revision (and stored stroke count, which changes when a note
+        // opened from the cache is read), so no row flattens its strokes to build the key.
+        let key = PageThumbnail.key("\(editor.sessionID)-\(page.id)-\(editor.inkRevisions[page.id] ?? 0)-\(page.strokes.count)",
+                                    paper: paper, pageSize: pageSize, size: size, scale: scale)
         VStack(spacing: 4) {
-            Image(uiImage: PageThumbnail.image(strokes: strokes, paper: paper, pageSize: editor.pageSize,
-                                               size: CGSize(width: width, height: height), scale: displayScale,
-                                               key: "\(editor.sessionID)-\(page.id)-\(editor.inkRevisions[page.id] ?? 0)-\(strokes.count)"))
+            Image(uiImage: PageThumbnail.cached(key) ?? rendered ?? PaperImage.image(for: paper, size: size, scale: scale))
                 .resizable()
                 .frame(width: width, height: height)
                 .overlay(Rectangle().stroke(selected ? SwiftUI.Color.accentColor : SwiftUI.Color.secondary.opacity(0.5),
@@ -102,6 +108,21 @@ private struct PageStripRow: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Page \(number)")
         .accessibilityAddTraits(selected ? .isSelected : [])
+        .task(id: key) {
+            if let hit = PageThumbnail.cached(key) {
+                rendered = hit
+                return
+            }
+            // A page being written on renders once the pen rests, not after every stroke.
+            if rendered != nil {
+                do { try await Task.sleep(for: PageThumbnail.settle) } catch { return }
+            }
+            let source = editor.thumbnailSource(of: page)
+            let image = await PageThumbnail.render(source, paper: paper, pageSize: pageSize, size: size, scale: scale)
+            guard !Task.isCancelled else { return }
+            PageThumbnail.store(image, for: key)
+            rendered = image
+        }
     }
 }
 
@@ -116,36 +137,68 @@ enum PageThumbnail {
         return c
     }()
 
+    /// How long a changed page's thumbnail waits before it is drawn again.
+    static let settle = Duration.milliseconds(400)
+
+    /// The ink a thumbnail draws: the drawing a canvas shows (as it is), or
+    /// stored strokes (converted when drawn).
+    enum Source: @unchecked Sendable {
+        case drawing(PKDrawing)
+        case strokes([Stroke])
+    }
+
+    static func key(_ key: String, paper: Paper, pageSize: PageSize, size: CGSize, scale: CGFloat) -> NSString {
+        "\(key)|\(paper)|\(pageSize)|\(Int(size.width))x\(Int(size.height))@\(scale)" as NSString
+    }
+
+    static func cached(_ key: NSString) -> UIImage? { cache.object(forKey: key) }
+
+    static func store(_ image: UIImage, for key: NSString) { cache.setObject(image, forKey: key) }
+
     static func image(strokes: [Stroke], paper: Paper, pageSize: PageSize, size: CGSize, scale: CGFloat,
                       key: String? = nil) -> UIImage {
-        let full = key.map { "\($0)|\(paper)|\(pageSize)|\(Int(size.width))x\(Int(size.height))@\(scale)" as NSString }
+        let full = key.map { Self.key($0, paper: paper, pageSize: pageSize, size: size, scale: scale) }
         if let full, let hit = cache.object(forKey: full) { return hit }
-        let image = render(strokes: strokes, paper: paper, pageSize: pageSize, size: size, scale: scale)
+        let image = draw(.strokes(strokes), background: PaperImage.image(for: paper, size: size, scale: scale),
+                         pageSize: pageSize, size: size, scale: scale)
         if let full { cache.setObject(image, forKey: full) }
         return image
     }
 
+    /// The thumbnail of `source`, its ink converted and drawn off the main actor.
+    static func render(_ source: Source, paper: Paper, pageSize: PageSize, size: CGSize, scale: CGFloat) async -> UIImage {
+        let background = PaperImage.image(for: paper, size: size, scale: scale)
+        let box = SendableImage(background)
+        return await Task.detached(priority: .utility) {
+            SendableImage(draw(source, background: box.image, pageSize: pageSize, size: size, scale: scale))
+        }.value.image
+    }
+
     /// Most pixels a thumbnail's ink is drawn with.
-    static let maxInkPixels: CGFloat = 4_000_000
+    nonisolated static let maxInkPixels: CGFloat = 4_000_000
 
     /// The scale the ink of a `page`-sized page is drawn at for a thumbnail
     /// `width` points wide, at most `maxInkPixels` for the page: a stored page
     /// size is not validated (a width of 0.001 asked PencilKit for a bitmap
     /// of about 10^15 pixels).
-    static func inkScale(page: CGSize, width: CGFloat, scale: CGFloat) -> CGFloat {
+    nonisolated static func inkScale(page: CGSize, width: CGFloat, scale: CGFloat) -> CGFloat {
         let want = scale * width / page.width
         let area = page.width * page.height
         guard want.isFinite, want > 0, area.isFinite, area > 0 else { return 1 }
         return min(want, (maxInkPixels / area).squareRoot())
     }
 
-    private static func render(strokes: [Stroke], paper: Paper, pageSize: PageSize, size: CGSize, scale: CGFloat) -> UIImage {
+    /// Draws the ink of `source` over `background`. Runs on any thread.
+    nonisolated private static func draw(_ source: Source, background: UIImage, pageSize: PageSize, size: CGSize,
+                                         scale: CGFloat) -> UIImage {
         let page = CGRect(x: 0, y: 0, width: CGFloat(pageSize.width.isFinite && pageSize.width > 0 ? pageSize.width : 612),
                           height: CGFloat(pageSize.sheetHeight))
-        let background = PaperImage.image(for: paper, size: size, scale: scale)
+        let drawing: PKDrawing? = switch source {
+        case .drawing(let d): d.strokes.isEmpty ? nil : d
+        case .strokes(let strokes): strokes.isEmpty ? nil : PKDrawing(strokes: strokes.map(StrokeConversion.pkStroke))
+        }
         var ink: UIImage?
-        if !strokes.isEmpty {
-            let drawing = PKDrawing(strokes: strokes.map(StrokeConversion.pkStroke))
+        if let drawing {
             UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
                 ink = drawing.image(from: page, scale: inkScale(page: page.size, width: size.width, scale: scale))
             }
@@ -158,4 +211,10 @@ enum PageThumbnail {
             ink?.draw(in: CGRect(origin: .zero, size: size))
         }
     }
+}
+
+/// An image handed between actors (immutable once made).
+private struct SendableImage: @unchecked Sendable {
+    let image: UIImage
+    init(_ image: UIImage) { self.image = image }
 }

@@ -308,6 +308,9 @@ public enum Backup {
     static let versionsName = "versions"
     static let restoreMarker = ".sempere-restore.json"
 
+    /// A restored file that does not match `backup.json`.
+    private struct Damaged: Error {}
+
     // MARK: - Listing
 
     /// Relative paths of the vault's format files: `vault.json`,
@@ -399,15 +402,73 @@ public enum Backup {
         FileIO.size(url).map { Int($0) }
     }
 
-    /// Writes `data` atomically and reads it back to check the hash.
-    static func copyVerified(_ data: Data, hash: String, to url: URL, replacing: Bool) throws {
-        try FileIO.createDirectory(url.deletingLastPathComponent())
-        try FileIO.writeAtomically(data, to: url, replacing: replacing)
-        let back = try FileIO.read(url, maxBytes: data.count)
-        guard FileDigest.sha256(back) == hash else {
-            try? FileIO.remove(url)
-            throw VaultError.io("\(url.path): the copy does not read back identical (SHA-256 differs)")
+    /// SHA-256 (lowercase hex) and size of the format file at `path` under
+    /// `root`, streamed within its kind's limit (`maxBytes(forPath:)`).
+    static func digest(_ root: URL, _ path: String) throws -> (sha256: String, size: Int) {
+        let d = try FileDigest.sha256(of: url(root, path), maxBytes: Int64(maxBytes(forPath: path)))
+        return (d.hex, Int(d.size))
+    }
+
+    /// Copies the regular file `src` to `dst` without holding it in memory
+    /// (attachment blobs reach 1 GiB): 1 MiB pieces go to a temporary file in
+    /// `dst`'s folder while being hashed, the file is flushed to disk
+    /// (`fsync`), `check` sees its SHA-256 and size, and only then is it put
+    /// in place (`FileIO.placeNew`, or `place` when `replacing`). The copy is
+    /// then read back from disk and must hash the same, or it is removed.
+    ///
+    /// - Parameter check: throws to refuse the copy; nothing is placed.
+    /// - Returns: the SHA-256 and size of what was copied.
+    /// - Throws: `VaultError.fileTooLarge` past `maxBytes`, `.alreadyExists`
+    ///   when not `replacing` and `dst` exists, `.io`, or what `check` throws.
+    @discardableResult
+    static func copyVerified(from src: URL, to dst: URL, replacing: Bool, maxBytes: Int,
+                             check: (_ sha256: String, _ size: Int) throws -> Void = { _, _ in }) throws
+        -> (sha256: String, size: Int)
+    {
+        let dir = dst.deletingLastPathComponent()
+        // Folders this call creates, deepest first: removed again (when
+        // still empty) if `check` refuses the copy, so a refused file leaves
+        // nothing behind.
+        var created: [URL] = []
+        var d = dir
+        while !FileIO.exists(d), d.path != "/", !d.path.isEmpty {
+            created.append(d)
+            d = d.deletingLastPathComponent()
         }
+        try FileIO.createDirectory(dir)
+        let input = try BoundedRead.openRegularFile(src)
+        defer { try? input.close() }
+        let tmp = FileIO.tempURL(in: dir)
+        var hasher = SHA256()
+        var size = 0
+        try FileIO.writeNewFile(tmp) { write in
+            while true {
+                let piece: Data
+                do { piece = try autoreleasing { try input.read(upToCount: 1 << 20) ?? Data() } } catch {
+                    throw VaultError.io("read \(src.path): \(error)")
+                }
+                if piece.isEmpty { break }
+                size += piece.count
+                guard size <= maxBytes else { throw VaultError.fileTooLarge(src.path, limit: maxBytes) }
+                hasher.update(data: piece)
+                try write(piece)
+            }
+        }
+        let hash = Hex.encode(hasher.finalize())
+        do { try check(hash, size) } catch {
+            try? FileIO.remove(tmp)
+            for c in created where (try? FileManager.default.contentsOfDirectory(atPath: c.path))?.isEmpty == true {
+                try? FileManager.default.removeItem(at: c)
+            }
+            throw error
+        }
+        if replacing { try FileIO.place(tmp, at: dst) } else { try FileIO.placeNew(tmp, at: dst) }
+        let back = try? FileDigest.sha256(of: dst, maxBytes: Int64(size))
+        guard back?.hex == hash, back?.size == Int64(size) else {
+            try? FileIO.remove(dst)
+            throw VaultError.io("\(dst.path): the copy does not read back identical (SHA-256 differs)")
+        }
+        return (hash, size)
     }
 
     /// Removes `.sempere-tmp-*` files an interrupted run left in `dir` and
@@ -417,6 +478,17 @@ public enum Backup {
         for case let u as URL in walker where u.lastPathComponent.hasPrefix(FileIO.tempPrefix) {
             try? FileIO.remove(u)
         }
+    }
+
+    /// Whether a run that wrote `sinceSave` files since `backup.json` was
+    /// last saved should save it again, the index holding `indexed` entries.
+    /// Each save rewrites the whole index, so the interval grows with it (a
+    /// twentieth of the index, at least 100 files): a first run over F files
+    /// costs O(F) in saves, not O(F²). An interruption loses at most that
+    /// many index entries; the next run hashes those files against the
+    /// source before trusting them (the size shortcut needs an entry).
+    static func isSaveDue(sinceSave: Int, indexed: Int) -> Bool {
+        sinceSave >= max(100, indexed / 20)
     }
 
     static func stamp(_ d: Date) -> String {
@@ -469,16 +541,14 @@ public enum Backup {
             try manifest.write(to: manifestURL)
             sinceSave = 0
         }
-        func wrote(_ path: String, _ data: Data, _ hash: String) throws {
-            manifest.files[path] = .init(sha256: hash, size: data.count)
+        func wrote(_ path: String, _ copy: (sha256: String, size: Int)) throws {
+            manifest.files[path] = .init(sha256: copy.sha256, size: copy.size)
             sinceSave += 1
-            if sinceSave >= 100 { try save() }
+            if isSaveDue(sinceSave: sinceSave, indexed: manifest.files.count) { try save() }
             try options.afterEachFile?(path)
         }
         /// Keeps the backup's current copy of `path` under versions/<time>/.
         func keepPrevious(_ path: String) throws {
-            let current = url(dest, path)
-            let old = try readFormatFile(dest, path)
             let folder: String
             if let versionDir {
                 folder = versionDir
@@ -490,10 +560,10 @@ public enum Backup {
                 versionDir = folder
             }
             let vpath = "\(folder)/\(path)"
-            let hash = FileDigest.sha256(old)
-            try copyVerified(old, hash: hash, to: url(dest, vpath), replacing: false)
+            let copy = try copyVerified(from: url(dest, path), to: url(dest, vpath), replacing: false,
+                                        maxBytes: maxBytes(forPath: path))
             report.versioned.append(vpath)
-            try wrote(vpath, old, hash)
+            try wrote(vpath, copy)
         }
 
         // Interrupted mid-run, the index may be stale: whatever is on disk
@@ -529,24 +599,20 @@ public enum Backup {
                         report.unchanged += 1
                         continue
                     }
-                    let data = try readFormatFile(source.url, path)
-                    let hash = FileDigest.sha256(data)
-                    let existing = try readFormatFile(dest, path)
-                    if FileDigest.sha256(existing) == hash {
-                        manifest.files[path] = .init(sha256: hash, size: data.count)
+                    let theirs = try digest(source.url, path)
+                    if try digest(dest, path) == theirs {
+                        manifest.files[path] = .init(sha256: theirs.sha256, size: theirs.size)
                         report.unchanged += 1
                         continue
                     }
                     try keepPrevious(path)
-                    try copyVerified(data, hash: hash, to: dst, replacing: true)
+                    let copy = try copyVerified(from: src, to: dst, replacing: true, maxBytes: maxBytes(forPath: path))
                     report.replaced.append(path)
-                    try wrote(path, data, hash)
+                    try wrote(path, copy)
                 } else {
-                    let data = try readFormatFile(source.url, path)
-                    let hash = FileDigest.sha256(data)
-                    try copyVerified(data, hash: hash, to: dst, replacing: false)
+                    let copy = try copyVerified(from: src, to: dst, replacing: false, maxBytes: maxBytes(forPath: path))
                     report.copied.append(path)
-                    try wrote(path, data, hash)
+                    try wrote(path, copy)
                 }
             } catch let e as VaultError {
                 report.errors.append(.init(path: path, message: "\(e)"))
@@ -606,8 +672,7 @@ public enum Backup {
     /// index is not enough: a copy damaged or removed since it was written
     /// must not count as the snapshot that justifies deleting other files.
     static func backupHolds(_ path: String, source: Vault, dest: URL) -> Bool {
-        guard let mine = try? readFormatFile(dest, path), let theirs = try? readFormatFile(source.url, path)
-        else { return false }
+        guard let mine = try? digest(dest, path), let theirs = try? digest(source.url, path) else { return false }
         return mine == theirs
     }
 
@@ -617,10 +682,14 @@ public enum Backup {
     /// applied by the source's compaction). Anything unreadable is kept.
     static func prunable(note: String, paths: [String], source: Vault, backup: Vault?,
                          backupHolds: (String) -> Bool) -> Set<String> {
-        guard let id = UUID(uuidString: note), let loaded = try? source.loadNote(id) else { return [] }
+        guard let id = UUID(uuidString: note), let names = try? source.revisionNames(of: id) else { return [] }
         let epoch = Date(timeIntervalSince1970: 0)
-        let cover = loaded.revisions
-            .filter { $0.name.kind == .snapshot && backupHolds("\(Vault.notesName)/\(note)/\($0.name.filename)") }
+        // Only snapshots the backup holds identically count, and coverage needs
+        // only their `included` and `wall`: deltas are not read, and stroke
+        // geometry is not decoded (`.withoutStrokePoints`).
+        let cover = names
+            .filter { $0.kind == .snapshot && backupHolds("\(Vault.notesName)/\(note)/\($0.filename)") }
+            .compactMap { try? source.readRevision(noteId: id, name: $0, detail: .withoutStrokePoints) }
             .compactMap(SnapshotCoverage.init)
         guard !cover.isEmpty else { return [] }
         var out = Set<String>()
@@ -629,7 +698,7 @@ public enum Backup {
             var snaps = cover
             if name.kind == .snapshot {
                 // Its coverage comes from the backup's own copy.
-                guard let backup, let rev = try? backup.readRevision(noteId: id, name: name),
+                guard let backup, let rev = try? backup.readRevision(noteId: id, name: name, detail: .withoutStrokePoints),
                       var own = SnapshotCoverage(rev) else { continue }
                 own.wall = epoch
                 snaps.append(own)
@@ -670,10 +739,10 @@ public enum Backup {
                     continue
                 }
                 do {
-                    let data = try FileIO.read(u, maxBytes: maxBytes(forPath: path))
-                    if data.count != entry.size || FileDigest.sha256(data) != entry.sha256 {
+                    let d = try digest(dir, path)
+                    if d.size != entry.size || d.sha256 != entry.sha256 {
                         report.files.append(.init(path: path, status: .modified,
-                                                  detail: "\(data.count) bytes, expected \(entry.size); SHA-256 differs"))
+                                                  detail: "\(d.size) bytes, expected \(entry.size); SHA-256 differs"))
                     } else {
                         report.files.append(.init(path: path, status: .ok, detail: nil))
                     }
@@ -738,20 +807,33 @@ public enum Backup {
         var report = RestoreReport()
         let files = try formatFiles(in: backup).filter { $0 != Vault.manifestName } + [Vault.manifestName]
         for path in files {
+            let entry = manifest?.files[path]
+            func matchesIndex(_ sha256: String, _ size: Int) throws {
+                if let entry, entry.sha256 != sha256 || entry.size != size { throw Damaged() }
+            }
             do {
-                let data = try readFormatFile(backup, path)
-                let hash = FileDigest.sha256(data)
-                if let entry = manifest?.files[path], entry.sha256 != hash || entry.size != data.count {
-                    report.errors.append(.init(path: path, message: "does not match backup.json (damaged); not restored"))
-                    continue
+                let src = url(backup, path), dst = url(target, path)
+                var source: (sha256: String, size: Int)?
+                if FileIO.exists(dst) {
+                    let d = try digest(backup, path)
+                    try matchesIndex(d.sha256, d.size)
+                    if let have = try? digest(target, path), have.sha256 == d.sha256 {
+                        report.alreadyPresent += 1
+                        continue
+                    }
+                    source = d
                 }
-                let dst = url(target, path)
-                if FileIO.exists(dst), let have = try? readFormatFile(target, path), FileDigest.sha256(have) == hash {
-                    report.alreadyPresent += 1
-                    continue
+                // Hashed while copied: a file that does not match the index
+                // (or changed since it was hashed above) is never placed.
+                try copyVerified(from: src, to: dst, replacing: true, maxBytes: maxBytes(forPath: path)) { sha256, size in
+                    try matchesIndex(sha256, size)
+                    if let source, source.sha256 != sha256 || source.size != size {
+                        throw VaultError.io("\(src.path) changed while it was restored")
+                    }
                 }
-                try copyVerified(data, hash: hash, to: dst, replacing: true)
                 report.restored.append(path)
+            } catch is Damaged {
+                report.errors.append(.init(path: path, message: "does not match backup.json (damaged); not restored"))
             } catch let e as VaultError {
                 report.errors.append(.init(path: path, message: "\(e)"))
             }
@@ -919,28 +1001,26 @@ public enum Backup {
                 try writer.directory("\(root)/\(d)")
             }
             for path in paths {
-                let data = try readFormatFile(source.url, path)
                 let member = "\(root)/\(path)"
                 try ensureDirs(member)
-                try writer.file(member, data)
-                expected[member] = FileDigest.sha256(data)
+                expected[member] = try writer.file(member, contentsOf: url(source.url, path),
+                                                   maxBytes: maxBytes(forPath: path))
             }
             try writer.finish()
             try out.synchronize()
             try out.close()
 
             // Read back and compare before the archive takes its name.
-            let written = try FileIO.read(tmp, maxBytes: fileSize(tmp) ?? 0)
-            let members = try TarReader.files(written)
-            guard members.count == expected.count,
-                  members.allSatisfy({ expected[$0.path] == FileDigest.sha256($0.data) }) else {
+            let written = try TarReader.digests(of: tmp)
+            guard written.members.count == expected.count,
+                  written.members.allSatisfy({ expected[$0.path] == $0.sha256 }) else {
                 throw VaultError.io("\(file.path): the archive does not read back identical")
             }
             guard !FileIO.exists(file) else { throw VaultError.alreadyExists(file.path) }
             try FileManager.default.moveItem(at: tmp, to: file)
             try FileIO.syncDirectory(dir)
             return ArchiveReport(archive: file.path, vaultId: source.vaultId.uuidString.lowercased(),
-                                 files: members.count, bytes: written.count, sha256: FileDigest.sha256(written))
+                                 files: written.members.count, bytes: written.bytes, sha256: written.sha256)
         } catch {
             try? FileManager.default.removeItem(at: tmp)
             if error is VaultError || error is BackupError { throw error }
@@ -963,12 +1043,41 @@ struct TarWriter {
                                                      mtime: mtime))
     }
 
-    mutating func file(_ path: String, _ data: Data) throws {
-        try handle.write(contentsOf: try Self.header(path, size: data.count, mode: 0o600, type: UInt8(ascii: "0"),
+    /// Writes the regular file at `url` as the member `path`, streamed in
+    /// 1 MiB pieces, and returns its SHA-256 (lowercase hex). A file larger
+    /// than `maxBytes`, or one that changes size while it is read, throws.
+    mutating func file(_ path: String, contentsOf url: URL, maxBytes: Int) throws -> String {
+        let input = try BoundedRead.openRegularFile(url)
+        defer { try? input.close() }
+        let end: UInt64
+        do {
+            end = try input.seekToEnd()
+            try input.seek(toOffset: 0)
+        } catch {
+            throw VaultError.io("read \(url.path): \(error)")
+        }
+        guard end <= UInt64(max(maxBytes, 0)) else { throw VaultError.fileTooLarge(url.path, limit: maxBytes) }
+        let size = Int(end)
+        try handle.write(contentsOf: try Self.header(path, size: size, mode: 0o600, type: UInt8(ascii: "0"),
                                                      mtime: mtime))
-        try handle.write(contentsOf: data)
-        let pad = (512 - data.count % 512) % 512
+        var hasher = SHA256()
+        var left = size
+        while left > 0 {
+            let piece: Data
+            do { piece = try autoreleasing { try input.read(upToCount: min(left, 1 << 20)) ?? Data() } } catch {
+                throw VaultError.io("read \(url.path): \(error)")
+            }
+            guard !piece.isEmpty else { throw VaultError.io("\(url.path) changed while it was archived") }
+            hasher.update(data: piece)
+            try autoreleasing { try handle.write(contentsOf: piece) }
+            left -= piece.count
+        }
+        let more: Data?
+        do { more = try input.read(upToCount: 1) } catch { throw VaultError.io("read \(url.path): \(error)") }
+        guard more?.isEmpty ?? true else { throw VaultError.io("\(url.path) changed while it was archived") }
+        let pad = (512 - size % 512) % 512
         if pad > 0 { try handle.write(contentsOf: Data(count: pad)) }
+        return Hex.encode(hasher.finalize())
     }
 
     mutating func finish() throws { try handle.write(contentsOf: Data(count: 1024)) }
@@ -1013,33 +1122,84 @@ struct TarWriter {
 enum TarReader {
     struct Member { var path: String; var data: Data }
 
+    /// One parsed 512-byte header block; nil for an all-zero block (the end
+    /// of the archive). `off` is the block's offset, for error messages.
+    static func header(_ block: ArraySlice<UInt8>, at off: Int) throws -> (path: String, size: Int, type: UInt8)? {
+        let base = block.startIndex
+        if block.allSatisfy({ $0 == 0 }) { return nil }
+        func field(_ o: Int, _ n: Int) -> String {
+            let slice = block[(base + o)..<(base + o + n)]
+            return String(decoding: slice.prefix { $0 != 0 }, as: UTF8.self)
+        }
+        let stored = Int(field(148, 8).trimmingCharacters(in: .whitespaces), radix: 8)
+        var check = 0
+        for i in 0..<512 { check += (148..<156).contains(i) ? 32 : Int(block[base + i]) }
+        guard stored == check else { throw VaultError.io("tar header checksum mismatch at \(off)") }
+        guard let size = Int(field(124, 12).trimmingCharacters(in: .whitespaces), radix: 8), size >= 0 else {
+            throw VaultError.io("bad tar size at \(off)")
+        }
+        let name = field(0, 100), prefix = field(345, 155)
+        return (prefix.isEmpty ? name : prefix + "/" + name, size, block[base + 156])
+    }
+
+    static func isRegularFile(_ type: UInt8) -> Bool { type == UInt8(ascii: "0") || type == 0 }
+
     static func files(_ tar: Data) throws -> [Member] {
         let bytes = [UInt8](tar)
         var out: [Member] = []
         var off = 0
-        func field(_ o: Int, _ n: Int) -> String {
-            let slice = bytes[(off + o)..<(off + o + n)]
-            return String(decoding: slice.prefix { $0 != 0 }, as: UTF8.self)
-        }
         while off + 512 <= bytes.count {
-            if bytes[off..<(off + 512)].allSatisfy({ $0 == 0 }) { break }
-            let stored = Int(field(148, 8).trimmingCharacters(in: .whitespaces), radix: 8)
-            var check = 0
-            for i in 0..<512 { check += (148..<156).contains(i) ? 32 : Int(bytes[off + i]) }
-            guard stored == check else { throw VaultError.io("tar header checksum mismatch at \(off)") }
-            guard let size = Int(field(124, 12).trimmingCharacters(in: .whitespaces), radix: 8), size >= 0 else {
-                throw VaultError.io("bad tar size at \(off)")
-            }
-            let name = field(0, 100), prefix = field(345, 155)
-            let path = prefix.isEmpty ? name : prefix + "/" + name
-            let type = bytes[off + 156]
+            guard let h = try header(bytes[off..<(off + 512)], at: off) else { break }
             let start = off + 512
-            guard size <= bytes.count - start else { throw VaultError.io("truncated tar member \(path)") }
-            if type == UInt8(ascii: "0") || type == 0 {
-                out.append(Member(path: path, data: Data(bytes[start..<(start + size)])))
+            guard h.size <= bytes.count - start else { throw VaultError.io("truncated tar member \(h.path)") }
+            if isRegularFile(h.type) {
+                out.append(Member(path: h.path, data: Data(bytes[start..<(start + h.size)])))
             }
-            off = start + (size + 511) / 512 * 512
+            off = start + (h.size + 511) / 512 * 512
         }
         return out
+    }
+
+    /// What `files` reads, without holding the archive in memory: the path
+    /// and SHA-256 of each regular-file member, read from `url` in pieces of
+    /// at most 1 MiB, plus the SHA-256 and size of the whole file.
+    static func digests(of url: URL) throws -> (members: [(path: String, sha256: String)], sha256: String, bytes: Int) {
+        let input = try BoundedRead.openRegularFile(url)
+        defer { try? input.close() }
+        var whole = SHA256()
+        var off = 0
+        /// Up to `n` bytes (fewer only at the end of the file), fed to `whole`.
+        func read(_ n: Int) throws -> Data {
+            var out = Data()
+            while out.count < n {
+                let piece: Data
+                do { piece = try autoreleasing { try input.read(upToCount: n - out.count) ?? Data() } } catch {
+                    throw VaultError.io("read \(url.path): \(error)")
+                }
+                if piece.isEmpty { break }
+                out.append(piece)
+            }
+            whole.update(data: out)
+            off += out.count
+            return out
+        }
+        var members: [(path: String, sha256: String)] = []
+        while true {
+            let at = off
+            let block = try read(512)
+            guard block.count == 512, let h = try header([UInt8](block)[...], at: at) else { break }
+            var hasher = SHA256()
+            var left = h.size
+            while left > 0 {
+                let piece = try read(min(left, 1 << 20))
+                guard !piece.isEmpty else { throw VaultError.io("truncated tar member \(h.path)") }
+                hasher.update(data: piece)
+                left -= piece.count
+            }
+            if isRegularFile(h.type) { members.append((h.path, Hex.encode(hasher.finalize()))) }
+            _ = try read((512 - h.size % 512) % 512)
+        }
+        while try !read(1 << 20).isEmpty {}
+        return (members, Hex.encode(whole.finalize()), off)
     }
 }

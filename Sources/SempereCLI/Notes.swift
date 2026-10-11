@@ -77,6 +77,7 @@ struct NotesList: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
+        OpenedVaults.shared.markUnchanged(vault.url)
         let notes = try vault.summaries(of: nil, cache: cache.cache(for: vault)).filter { n in
             (deleted || !n.deleted) && (!favorites || n.favorite) && (tag.map { t in n.tags.contains { NoteOps.tagKey($0) == NoteOps.tagKey(t) } } ?? true) && (notebook.map { NotebookPath.name(n.notebook, isWithin: $0) } ?? true)
         }
@@ -111,6 +112,7 @@ struct NotesShow: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
+        OpenedVaults.shared.markUnchanged(vault.url)
         let id = try vault.resolveNote(note)
         let loaded = try vault.loadNote(id, detail: .withoutStrokePoints)
         let summary = vault.summary(of: id, loaded: loaded)

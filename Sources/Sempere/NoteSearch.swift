@@ -98,8 +98,9 @@ public struct NoteSearchHit: Hashable, Sendable, Identifiable {
 /// A query is words separated by whitespace; a note matches when every word
 /// is found somewhere in it (case, accents and width ignored, substrings
 /// count). A word starting with `#` only matches tags. Cost: O(Σ text length
-/// × words), no index, which is a few milliseconds per megabyte of
-/// recognised text.
+/// × words). With a `NoteSearchIndex`, page text and words that are all ASCII
+/// are compared as lowercased bytes (`ASCIIFold`, which gives Foundation's
+/// answer for them); the rest goes through Foundation's insensitive compare.
 public enum NoteSearch {
     /// Caps keep a pathological query or page from costing more than the text itself.
     public static let maxWords = 12
@@ -130,10 +131,31 @@ public enum NoteSearch {
 
     /// The notes of `notes` matching `query`, best first (score, then newest, then title).
     /// An empty query matches nothing.
-    public static func search(_ query: String, in notes: [NoteSummary]) -> [NoteSearchHit] {
+    ///
+    /// - Parameters:
+    ///   - index: lowercased page text kept between searches (an app searching as the user types),
+    ///     searched as bytes where page and word are ASCII; nil searches every page through Foundation.
+    ///   - isCancelled: checked between notes; when it returns true the search stops and returns
+    ///     no hits (the caller drops the result).
+    public static func search(_ query: String, in notes: [NoteSummary], index: NoteSearchIndex? = nil,
+                              isCancelled: () -> Bool = { false }) -> [NoteSearchHit] {
         let words = words(query)
         guard !words.isEmpty else { return [] }
-        let hits = notes.compactMap { hit(words, in: $0) }
+        let needles = words.map { ASCIIFold.needle($0.text) }
+        var hits: [NoteSearchHit] = []
+        for (n, note) in notes.enumerated() {
+            if n % 64 == 0, isCancelled() { return [] }
+            // Without an index pages are not folded: folding a page costs a pass over all of it, while
+            // Foundation stops at the first match, so it only pays off when the folds are kept.
+            let folded = index?.foldedPages(of: note) ?? []
+            if let h = hit(words, needles: needles, folded: folded, in: note) { hits.append(h) }
+        }
+        index?.trim(keeping: notes)
+        return sorted(hits, notes: notes)
+    }
+
+    /// `hits` (of notes in `notes`) in `search`'s order: score, then newest, then title, then id.
+    public static func sorted(_ hits: [NoteSearchHit], notes: [NoteSummary]) -> [NoteSearchHit] {
         // Not `uniqueKeysWithValues`: a list holding one id twice must not trap.
         let modified = Dictionary(notes.map { ($0.id, $0.modified ?? .distantPast) }, uniquingKeysWith: { a, _ in a })
         let titles = Dictionary(notes.map { ($0.id, $0.title.lowercased()) }, uniquingKeysWith: { a, _ in a })
@@ -145,6 +167,17 @@ public enum NoteSearch {
         }
     }
 
+    /// The search's result after notes `changed` (by id) of the searched list changed: `previous` (the hits
+    /// of `query` over the list before) without those notes, plus the hits of `query` among the changed notes
+    /// still in `notes`, in `search`'s order. Equal to `search(query, in: notes)` when `previous` was that
+    /// search's result over the earlier list and every note whose summary differs is in `changed`.
+    public static func updated(_ previous: [NoteSearchHit], query: String, changed: Set<UUID>, in notes: [NoteSummary],
+                               index: NoteSearchIndex? = nil) -> [NoteSearchHit] {
+        let retested = notes.filter { changed.contains($0.id) }
+        let fresh = search(query, in: retested, index: index)
+        return sorted(previous.filter { !changed.contains($0.note) } + fresh, notes: notes)
+    }
+
     private static func contains(_ haystack: String, _ needle: String) -> Bool {
         haystack.range(of: needle, options: options) != nil
     }
@@ -153,7 +186,8 @@ public enum NoteSearch {
         a.compare(b, options: options) == .orderedSame
     }
 
-    private static func hit(_ words: [Word], in note: NoteSummary) -> NoteSearchHit? {
+    private static func hit(_ words: [Word], needles: [[UInt8]?], folded: [[UInt8]?],
+                            in note: NoteSummary) -> NoteSearchHit? {
         var fields = Set<NoteSearchHit.Field>()
         var score = 0
         var pageWords: [Int: Set<Int>] = [:]   // page index → indices of words found there
@@ -174,7 +208,13 @@ public enum NoteSearch {
                 best = max(best, equal(tag, word.text) ? 80 : 40)
             }
             if !word.tagOnly {
-                for (pi, page) in note.pageTexts.enumerated() where contains(page.text, word.text) {
+                for (pi, page) in note.pageTexts.enumerated() {
+                    // All-ASCII page and word: byte search, Foundation's answer for them (`ASCIIFold`).
+                    if pi < folded.count, let hay = folded[pi], let needle = needles[wi] {
+                        guard ASCIIFold.contains(hay, needle) else { continue }
+                    } else {
+                        guard contains(page.text, word.text) else { continue }
+                    }
                     fields.insert(.text)
                     pageWords[pi, default: []].insert(wi)
                     best = max(best, 10)
@@ -268,6 +308,107 @@ public enum NoteSearch {
             }
         }
         return .init(text: shown, matches: matches.sorted { $0.lowerBound < $1.lowerBound })
+    }
+}
+
+/// ASCII text lowercased, for `NoteSearch`: for a haystack and a needle that
+/// are both ASCII, Foundation's case-, diacritic- and width-insensitive
+/// search finds the needle exactly when the lowercased bytes contain the
+/// lowercased needle, as long as the needle holds no line break (ASCII has
+/// no accents, width variants, ligatures or characters that fold to several,
+/// and CR LF is its only multi-scalar character; `NoteSearchIndexTests`
+/// checks it against Foundation). Anything else is left to Foundation.
+enum ASCIIFold {
+    /// `text`'s bytes with A-Z lowercased; nil when it is not all ASCII.
+    static func folded(_ text: String) -> [UInt8]? {
+        var out: [UInt8] = []
+        out.reserveCapacity(text.utf8.count)
+        for b in text.utf8 {
+            guard b < 0x80 else { return nil }
+            out.append(b >= 0x41 && b <= 0x5A ? b | 0x20 : b)
+        }
+        return out
+    }
+
+    /// A query word folded, or nil when it is not all ASCII or holds a line
+    /// break or a NUL: CR LF is one character, which Foundation never matches
+    /// in part (`NoteSearch` words never hold white space anyway), and
+    /// swift-corelibs-foundation ends a search string at a NUL.
+    static func needle(_ word: String) -> [UInt8]? {
+        guard let bytes = folded(word), !bytes.contains(0x0A), !bytes.contains(0x0D), !bytes.contains(0) else { return nil }
+        return bytes
+    }
+
+    /// Whether `needle` occurs in `haystack` (bytes).
+    static func contains(_ haystack: [UInt8], _ needle: [UInt8]) -> Bool {
+        let n = needle.count, h = haystack.count
+        guard n > 0 else { return true }
+        guard n <= h else { return false }
+        return haystack.withUnsafeBufferPointer { hay in
+            needle.withUnsafeBufferPointer { nd in
+                let first = nd[0]
+                var i = 0
+                let last = h - n
+                while i <= last {
+                    if hay[i] == first {
+                        var k = 1
+                        while k < n, hay[i + k] == nd[k] { k += 1 }
+                        if k == n { return true }
+                    }
+                    i += 1
+                }
+                return false
+            }
+        }
+    }
+}
+
+/// Lowercased page text (`ASCIIFold`) kept between searches, per note: built
+/// the first time a note is searched and used again while the note's
+/// `pageTexts` are the same (compared on each use, so a note whose
+/// recognised text or text boxes changed is folded again). Memory: about one
+/// byte per byte of ASCII page text. Thread-safe.
+public final class NoteSearchIndex: @unchecked Sendable {
+    private let lock = NSLock()
+    private var entries: [UUID: (pages: [PageText], folded: [[UInt8]?])] = [:]
+
+    public init() {}
+
+    /// The folded text of each of `note`'s pages (nil for a page that is not all ASCII).
+    func foldedPages(of note: NoteSummary) -> [[UInt8]?] {
+        lock.lock()
+        let cached = entries[note.id]
+        lock.unlock()
+        // Equal strings that share storage compare in O(1); changed text compares unequal.
+        if let cached, cached.pages == note.pageTexts { return cached.folded }
+        let folded = note.pageTexts.map { ASCIIFold.folded($0.text) }
+        lock.lock()
+        entries[note.id] = (note.pageTexts, folded)
+        lock.unlock()
+        return folded
+    }
+
+    /// Drops the entries of notes not in `notes` once the index holds many more notes than were searched.
+    func trim(keeping notes: [NoteSummary]) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard entries.count > 2 * notes.count + 1_000 else { return }
+        let ids = Set(notes.map(\.id))
+        entries = entries.filter { ids.contains($0.key) }
+    }
+
+    /// Forgets everything (the vault closed).
+    public func removeAll() {
+        lock.lock()
+        entries = [:]
+        lock.unlock()
+    }
+
+    /// Notes with folded text held.
+    public var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return entries.count
     }
 }
 

@@ -197,17 +197,18 @@ extension NotabilityAttachments {
             }
             missing[k.blob, default: []].append(k.page)
         }
-        if let extractor {
+        if let extractor, !missing.isEmpty {
+            let engine = extractor.engine   // may run a process (`pdftotext -v`): once, not per page
             for (sha, pages) in missing.sorted(by: { $0.key < $1.key }) {
                 guard let pdf = blobs[sha] else { continue }
                 let texts: [Int: String]
                 do { texts = try extractor.pageTexts(pdf.data, pages: Array(Set(pages)).sorted()) } catch {
-                    warnings.append("PDF text: \(extractor.engine) cannot read \(sha.prefix(8))… (\(NotabilityImporter.describe(error)))")
+                    warnings.append("PDF text: \(engine) cannot read \(sha.prefix(8))… (\(NotabilityImporter.describe(error)))")
                     continue
                 }
                 for i in pdfIndices where key(i).blob == sha && placements[i].pageText == nil {
                     guard let t = texts[key(i).page] else { continue }
-                    let text = PDFPageText(text: t, engine: extractor.engine)
+                    let text = PDFPageText(text: t, engine: engine)
                     guard !text.text.isEmpty else { continue }
                     placements[i].pageText = text
                     imported.pdfTextExtracted += 1

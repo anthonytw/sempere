@@ -590,8 +590,9 @@ extension LoadedNote {
 
 extension Vault {
     /// The note's restore points, oldest first (`NoteHistory.restorePoints`).
+    /// They need no stroke geometry, so none is decoded.
     public func restorePoints(noteId: UUID) throws -> [RestorePoint] {
-        try loadNote(noteId).restorePoints
+        try loadNote(noteId, detail: .withoutStrokePoints).restorePoints
     }
 
     /// The note as of restore point `point` (`NoteHistory.state`).

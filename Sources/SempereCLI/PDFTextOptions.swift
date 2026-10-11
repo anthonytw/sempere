@@ -53,7 +53,25 @@ struct PopplerTextExtractor: PDFTextExtracting {
     /// Largest text file read back (a page's text is cut at 64 KiB when stored).
     var maxOutputBytes = 256 << 20
 
-    var engine: String { "pdftotext" + (Self.version(executable).map { "-" + $0 } ?? "") }
+    /// `pdftotext-<version>`: `pdftotext -v` runs once per executable and
+    /// process (it was once per page), since the version cannot change mid-run.
+    var engine: String { Self.engine(for: executable) }
+
+    private final class EngineCache: @unchecked Sendable {
+        let lock = NSLock()
+        var names: [String: String] = [:]
+    }
+    private static let engineCache = EngineCache()
+
+    static func engine(for executable: String) -> String {
+        let cache = engineCache
+        cache.lock.lock()
+        if let name = cache.names[executable] { cache.lock.unlock(); return name }
+        cache.lock.unlock()
+        let name = "pdftotext" + (version(executable).map { "-" + $0 } ?? "")
+        cache.lock.lock(); cache.names[executable] = name; cache.lock.unlock()
+        return name
+    }
 
     typealias Failure = PopplerTool.Failure
 

@@ -465,7 +465,7 @@ struct EditorView: View {
 
     /// Marks this note as a favorite or not (Favorites in the sidebar).
     private var favoriteButton: some View {
-        let on = model.notes.first { $0.id == editor.noteID }?.favorite ?? false
+        let on = model.notesByID[editor.noteID]?.favorite ?? false
         return Button(LocalizedStringKey(on ? "Remove from Favorites" : "Add to Favorites"),
                       systemImage: on ? "star.fill" : "star") {
             Task { await model.report { try await model.setFavorite(!on, for: editor.noteID) } }

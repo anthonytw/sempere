@@ -317,7 +317,11 @@ extension AppModel {
         merge(fresh)
         summariesRead(fresh)
         verifiedNoteIDs.formUnion(fresh.map(\.id))
-        saveSummaryCache()
+        // Each save re-encodes the whole index, and this runs for every
+        // recognized page and browser edit: at most once per
+        // `summaryCacheSaveInterval`. Background, Cloud pause and close
+        // still save; a crash only costs re-reading these notes.
+        saveSummaryCacheIfDue(force: false)
     }
 }
 

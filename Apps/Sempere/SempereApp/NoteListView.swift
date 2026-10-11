@@ -544,21 +544,25 @@ private struct SearchResultsList: View {
                     .padding(.horizontal, 16).padding(.bottom, 6)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            // Hits resolved to their notes once per render (a map, not a scan per row), and one view
+            // per element, so the list builds only the rows it shows.
+            let byID = model.notesByID
+            let rows = model.searchResults.compactMap { hit in byID[hit.note].map { SearchResultRow(hit: hit, note: $0) } }
+            let transcriptRows = model.searchTranscripts
+                ? model.transcriptHits.compactMap { hit in byID[hit.note].map { (hit: hit, note: $0) } } : []
             List {
-                ForEach(model.searchResults) { hit in
-                    if let note = model.note(for: hit) {
-                        Button { model.openSearchHit(hit) } label: { SearchRow(hit: hit, note: note) }
-                            .buttonStyle(.plain)
-                            .listRowBackground(model.selectedNoteID == note.id ? SwiftUI.Color.accentColor.opacity(0.15) : nil)
-                    }
+                ForEach(rows) { row in
+                    Button { model.openSearchHit(row.hit) } label: { SearchRow(hit: row.hit, note: row.note) }
+                        .buttonStyle(.plain)
+                        .listRowBackground(model.selectedNoteID == row.note.id ? SwiftUI.Color.accentColor.opacity(0.15) : nil)
                 }
-                if model.searchTranscripts, !model.transcriptHits.isEmpty {
+                if !transcriptRows.isEmpty {
                     Section("In Recordings") {
-                        ForEach(model.transcriptHits) { hit in
-                            if let note = model.notes.first(where: { $0.id == hit.note }) {
-                                Button { model.openTranscriptHit(hit) } label: { TranscriptHitRow(hit: hit, note: note, query: model.searchText) }
-                                    .buttonStyle(.plain)
+                        ForEach(transcriptRows, id: \.hit.id) { row in
+                            Button { model.openTranscriptHit(row.hit) } label: {
+                                TranscriptHitRow(hit: row.hit, note: row.note, query: model.searchText)
                             }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -741,4 +745,11 @@ private struct RecognitionResultsHeader: View {
         .background(.bar)
         .accessibilityElement(children: .combine)
     }
+}
+
+/// A search hit with its note's summary, for the results list.
+private struct SearchResultRow: Identifiable {
+    var hit: NoteSearchHit
+    var note: NoteSummary
+    var id: UUID { hit.id }
 }

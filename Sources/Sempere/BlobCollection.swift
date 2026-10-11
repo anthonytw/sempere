@@ -33,12 +33,30 @@ enum BlobReferenceScan {
         try facts(in: json).refs.map { FoundBlobReference(sha256: $0.sha256, type: $0.type, size: $0.size) }
     }
 
+    /// `references(in:)` for JSON already decoded as a revision (so known to
+    /// be valid): one that cannot hold a reference is not parsed again. A
+    /// reference needs a `"sha256"` key, spelled so in UTF-8 unless a `\u`
+    /// escape spells it; JSON in another encoding (it holds a NUL byte) is
+    /// always scanned.
+    static func references(inDecoded json: Data) throws -> [FoundBlobReference] {
+        guard json.contains(0) || json.range(of: Data("\"sha256\"".utf8)) != nil
+                || json.range(of: Data("\\u".utf8)) != nil else { return [] }
+        return try references(in: json)
+    }
+
     /// The references with each one's holder hints (`duration`, `title` of
     /// the object holding the reference object) and the revision's
     /// top-level `wall`. Iterative, so nesting depth costs no stack
     /// (Foundation's parser caps it at 512 levels anyway).
-    static func facts(in json: Data) throws -> AttachmentIndexEntry.RevisionFacts {
-        let root = try JSONSerialization.jsonObject(with: json, options: [.fragmentsAllowed])
+    ///
+    /// Stroke point arrays are dropped before parsing (`StrokePointsFilter`,
+    /// on by default): they are almost all of a revision's bytes, hold only
+    /// numbers, so never a reference, and the filter keeps the JSON valid
+    /// exactly when it was. `stripPoints: false` parses everything (tests
+    /// compare the two).
+    static func facts(in json: Data, stripPoints: Bool = true) throws -> AttachmentIndexEntry.RevisionFacts {
+        let root = try JSONSerialization.jsonObject(with: stripPoints ? StrokePointsFilter.strip(json) : json,
+                                                    options: [.fragmentsAllowed])
         var refs: [AttachmentIndexEntry.Reference] = []
         var stack: [(value: Any, holder: [String: Any]?)] = [(root, nil)]
         while let top = stack.popLast() {
@@ -289,6 +307,18 @@ extension Vault {
         return inv
     }
 
+    /// True when the note's `att/` was listed and holds no blob file (what
+    /// `blobInventory` counts as one): collection acts only on such files,
+    /// so it need not read the note's revisions. False when the folder
+    /// cannot be listed (the full path reports why). Repair still reads
+    /// them: finding newer revisions there must make it exit read-only
+    /// (security review 2026-10, N1).
+    func hasNoBlobFiles(_ note: UUID) -> Bool {
+        let att = attURL(note)
+        guard let entries = try? FileIO.entries(att) else { return false }
+        return !entries.contains { BlobName.parse($0) != nil && !FileIO.isDirectory(att.appendingPathComponent($0)) }
+    }
+
     /// Collects the blobs of one note (format.md §8.1.6). A blob file is
     /// deleted only when
     ///
@@ -331,6 +361,12 @@ extension Vault {
         if !dryRun { try requireWritable() }
         guard !pendingRewrap else {
             report.blocked = "a recipient change is unfinished (rule 2): run `sempere vault rewrap-resume`"
+            records = [:]
+            return report
+        }
+        // Without blob files there is nothing to decide: the revisions are
+        // not read (no records survive either, as observing none leaves none).
+        if hasNoBlobFiles(note) {
             records = [:]
             return report
         }

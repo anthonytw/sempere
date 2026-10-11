@@ -1,3 +1,4 @@
+import FuzzSupport
 import Foundation
 import SemperePDF
 import XCTest
@@ -59,4 +60,13 @@ func assertPDFError<T>(_ body: @autoclosure () throws -> T, _ matching: ((PDFErr
     } catch {
         XCTFail("untyped error \(error)", file: file, line: line)
     }
+}
+
+#if canImport(Glibc)
+import Glibc
+#endif
+
+/// The process's peak resident size in MB (benchmarks run one per process).
+func peakRSS() -> Double {
+    Double(peakResidentBytes()) / 1_048_576
 }

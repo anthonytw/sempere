@@ -2,7 +2,8 @@
 // notebooks, tags and notes, search, and read a note. Read-only throughout.
 
 import { type NoteState } from "../format/model.ts";
-import { type NotebookNode, type SearchHit, canonicalNotebook, isWithinNotebook, notebookTree, search } from "../format/search.ts";
+import { type NotebookNode, type SearchHit, canonicalNotebook, isWithinNotebook, notebookCounts, notebookTree, refinesQuery,
+  search } from "../format/search.ts";
 import { tagKey } from "../format/tags.ts";
 import { type LoadedNote, type NoteSummary, loadNote, summarize } from "../vault/library.ts";
 import { CachingSource, cacheNamespace } from "../vault/cache.ts";
@@ -14,6 +15,7 @@ import { type RecipientsStatus, UnlockedVault, VaultError, limits, parseIdentity
 import { newerSummary } from "../format/newer.ts";
 import { clear, formatDate, h } from "./dom.ts";
 import { NoteView, hasUnknownPaper } from "./noteview.ts";
+import { NoteCache } from "./notecache.ts";
 import { RecordingsPanel } from "./recordings.ts";
 import { VideosPanel } from "./videos.ts";
 import { NoteBlobs } from "../vault/blobs.ts";
@@ -55,6 +57,8 @@ export class App {
   private filter: Filter = { kind: "all" };
   private query = "";
   private hits?: Map<string, SearchHit>;
+  /** The last note search: its query, the notes it ran over (in order) and the ids it found. */
+  private searched?: { query: string; notes: NoteSummary[]; ids: Set<string> };
   /** Transcript matches per note (only with "Also search recording transcripts"). */
   private transcriptHits = new Map<string, PhraseHit[]>();
   private transcripts?: TranscriptSearch;
@@ -63,11 +67,14 @@ export class App {
   private recordings?: RecordingsPanel;
   private videos?: VideosPanel;
   /** Recently opened notes; the list itself keeps summaries only. */
-  private readonly cache = new Map<string, LoadedNote>();
+  private readonly cache = new NoteCache();
   private generation = 0;
 
   private readonly sidebar = h("nav", { class: "sidebar", attrs: { "aria-label": t("Notebooks and tags") } });
   private readonly list = h("section", { class: "note-list", attrs: { "aria-label": t("Notes") } });
+  /** The list's rows, and what each was drawn from: a row is drawn again only when one of those changed. */
+  private rows = new Map<string, ListRow>();
+  private readonly rowList = h("ul");
   private readonly detail = h("main", { class: "detail" });
   private readonly status = h("span", { class: "status", attrs: { role: "status" } });
 
@@ -375,6 +382,7 @@ export class App {
    */
   private changedLanguage(): void {
     const open = this.selected;
+    this.rows.clear();   // their words are in the old language
     this.showMain();
     if (open !== undefined && this.notes.has(open)) void this.open(open);
   }
@@ -416,6 +424,9 @@ export class App {
           this.notes.set(r.id, r);
           render();
         },
+        // A note decrypted because it changed is the likeliest to be opened next: kept (bounded) so
+        // that opening it does not decrypt it again.
+        loaded: (note) => this.cache.offer(note),
         gone: (id) => this.notes.delete(id),
         progress: (p) => {
           this.loading = { ...p, listed: false };
@@ -479,8 +490,10 @@ export class App {
       h("li", {}, h("button", {
         class: isActive(f) ? "active" : "", attrs: { type: "button" }, on: { click: () => this.setFilter(f) },
       }, h("span", { class: "label", text: label }), count !== undefined ? h("span", { class: "count", text: String(count) }) : null));
+    const notebooks = live.map((n) => n.notebook);
+    const counts = notebookCounts(notebooks);
     const tree = (nodes: NotebookNode[]): HTMLElement => h("ul", {}, ...nodes.map((n) => {
-      const li = item(n.name, { kind: "notebook", path: n.path }, live.filter((x) => isWithinNotebook(x.notebook, n.path)).length);
+      const li = item(n.name, { kind: "notebook", path: n.path }, counts.get(n.path) ?? 0);
       if (n.children.length) li.append(tree(n.children));
       return li;
     }));
@@ -498,7 +511,7 @@ export class App {
     clear(this.sidebar);
     this.sidebar.append(
       h("ul", {}, item(t("All notes"), { kind: "all" }, live.length), item(t("Favorites"), { kind: "favorites" }, live.filter((n) => n.favorite).length)),
-      h("h3", { text: t("Notebooks") }), tree(notebookTree(live.map((n) => n.notebook))),
+      h("h3", { text: t("Notebooks") }), tree(notebookTree(notebooks)),
       h("h3", { text: t("Tags") }), h("ul", {}, ...tagList.map(([k, v]) => item(`#${v.label}`, { kind: "tag", key: k, label: v.label }, v.count))),
       h("h3", { text: t("Other") }),
       h("ul", {}, item(t("Deleted"), { kind: "deleted" }, all.length - live.length), problems ? item(t("Problems"), { kind: "problems" }, problems) : null));
@@ -510,8 +523,19 @@ export class App {
   }
 
   private runSearch(): void {
-    this.hits = this.query.trim() === "" ? undefined
-      : new Map(search(this.query, [...this.notes.values()]).map((hit) => [hit.id, hit]));
+    if (this.query.trim() === "") {
+      this.hits = undefined;
+      this.searched = undefined;
+    } else {
+      // While typing narrows the last search over the same notes, only its hits can still match.
+      const notes = [...this.notes.values()];
+      const last = this.searched;
+      const same = last !== undefined && last.notes.length === notes.length && last.notes.every((n, i) => n === notes[i]);
+      const candidates = same && refinesQuery(last.query, this.query) ? notes.filter((n) => last.ids.has(n.id)) : notes;
+      const found = search(this.query, candidates);
+      this.searched = { query: this.query, notes, ids: new Set(found.map((hit) => hit.id)) };
+      this.hits = new Map(found.map((hit) => [hit.id, hit]));
+    }
     this.transcriptHits = this.hits && this.transcripts ? this.transcripts.hits(this.query) : new Map<string, PhraseHit[]>();
   }
 
@@ -528,29 +552,53 @@ export class App {
     } else {
       notes.sort((a, b) => (b.modified ?? 0) - (a.modified ?? 0) || a.title.localeCompare(b.title));
     }
-    clear(this.list);
     if (notes.length === 0) {
-      this.list.append(h("p", { class: "empty", text: !this.loading.listed ? t("Loading…") : hits ? t("No matches.") : t("No notes here.") }));
+      this.rows.clear();
+      this.list.replaceChildren(h("p", { class: "empty", text: !this.loading.listed ? t("Loading…") : hits ? t("No matches.") : t("No notes here.") }));
       return;
     }
-    this.list.append(h("ul", {}, ...notes.map((n) => {
-      const hit = hits?.get(n.id);
-      const meta = [canonicalNotebook(n.notebook), ...n.tags.map((t) => `#${t}`)].filter(Boolean).join("  ");
-      const badges: string[] = [];
-      if (n.error !== undefined) badges.push(t("unreadable"));
-      else if (n.failures > 0) badges.push(tn("{count} unreadable revisions", n.failures));
-      if (n.newer) badges.push(t("newer version"));
-      return h("li", {}, h("button", {
-        class: n.id === this.selected ? "note active" : "note", attrs: { type: "button" },
-        on: { click: () => void this.open(n.id, hit?.page?.number) },
-      },
-      h("span", { class: "title", text: n.title || t("Untitled") }),
-      h("span", { class: "sub", text: [formatDate(n.modified), tn("{count} pages", n.pageCount)].filter(Boolean).join(" · ") }),
-      meta ? h("span", { class: "sub", text: meta }) : null,
-      hit?.snippet ? this.snippet(hit) : null,
-      badges.length ? h("span", { class: "badge", text: badges.join(" · ") }) : null),
-      this.spokenHits(n.id, spoken.get(n.id)));
-    })));
+    const rows = new Map<string, ListRow>();
+    const lis = notes.map((n) => {
+      const hit = hits?.get(n.id), said = spoken.get(n.id);
+      const kept = this.rows.get(n.id);
+      const row = kept && kept.note === n && kept.hit === hit && kept.spoken === said ? kept : this.row(n, hit, said);
+      row.button.className = n.id === this.selected ? "note active" : "note";
+      rows.set(n.id, row);
+      return row.li;
+    });
+    this.rows = rows;
+    const shown = this.rowList.children;
+    if (lis.length !== shown.length || lis.some((li, i) => shown[i] !== li)) {
+      // Moving rows drops the focus of a button among them: it is given back.
+      const focused = document.activeElement;
+      this.rowList.replaceChildren(...lis);
+      if (focused instanceof HTMLElement && focused !== document.activeElement && this.rowList.contains(focused)) focused.focus({ preventScroll: true });
+    }
+    if (this.list.firstChild !== this.rowList || this.list.childNodes.length !== 1) this.list.replaceChildren(this.rowList);
+  }
+
+  /** One note's row in the list. */
+  private row(n: NoteSummary, hit: SearchHit | undefined, spoken: PhraseHit[] | undefined): ListRow {
+    const meta = [canonicalNotebook(n.notebook), ...n.tags.map((t) => `#${t}`)].filter(Boolean).join("  ");
+    const badges: string[] = [];
+    if (n.error !== undefined) badges.push(t("unreadable"));
+    else if (n.failures > 0) badges.push(tn("{count} unreadable revisions", n.failures));
+    if (n.newer) badges.push(t("newer version"));
+    const button = h("button", {
+      class: "note", attrs: { type: "button" },
+      on: { click: () => void this.open(n.id, hit?.page?.number) },
+    },
+    h("span", { class: "title", text: n.title || t("Untitled") }),
+    h("span", { class: "sub", text: [formatDate(n.modified), tn("{count} pages", n.pageCount)].filter(Boolean).join(" · ") }),
+    meta ? h("span", { class: "sub", text: meta }) : null,
+    hit?.snippet ? this.snippet(hit) : null,
+    badges.length ? h("span", { class: "badge", text: badges.join(" · ") }) : null);
+    return { note: n, hit, spoken, button, li: h("li", {}, button, this.spokenHits(n.id, spoken)) };
+  }
+
+  /** The selected note's row is marked, without drawing the list again. */
+  private markSelected(): void {
+    for (const [id, row] of this.rows) row.button.className = id === this.selected ? "note active" : "note";
   }
 
   private snippet(hit: SearchHit): HTMLElement {
@@ -602,7 +650,7 @@ export class App {
     const src = this.source, vault = this.vault;
     if (!src || !vault) return;
     this.selected = id;
-    this.renderList();
+    this.markSelected();
     const gen = this.generation;
     this.view?.destroy();
     this.view = undefined;
@@ -619,7 +667,6 @@ export class App {
         note = { id, error: message(e), failures: [], revisionCount: 0, hasAttachments: false };
       }
       this.cache.set(id, note);
-      while (this.cache.size > 8) this.cache.delete(this.cache.keys().next().value ?? "");
       // What the revisions say wins over a published summary (format.md §12.3).
       if (gen === this.generation && this.notes.has(id)) {
         this.notes.set(id, summarize(note));
@@ -668,6 +715,15 @@ export class App {
     if (page !== undefined) requestAnimationFrame(() => requestAnimationFrame(() => this.view?.showPage(page)));
     if (at) recordings.jump(at.recording, at.start);
   }
+}
+
+/** A row of the note list and what it was drawn from. */
+interface ListRow {
+  note: NoteSummary;
+  hit: SearchHit | undefined;
+  spoken: PhraseHit[] | undefined;
+  li: HTMLElement;
+  button: HTMLElement;
 }
 
 /** A banner when vault.json's device list does not check (format.md §2.1). */

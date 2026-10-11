@@ -34,7 +34,8 @@ Core (`Sources/Sempere`, `SempereRender`) holds no Notability code: an importer'
 
 1. `rm -rf Sources/SempereNotability Tests/SempereNotabilityTests`. `swift build`, `swift test`, the CLI and the web goldens
    (they are data) are unaffected; `sempere import` then lists only `pdf`. `scripts/check-removable-importers.sh` does exactly this
-   in a copy and builds and tests it (the Linux CI job runs it on every change).
+   in a copy, builds the package and every test target, and runs the CLI's tests (the Linux CI job runs it on every
+   package change; `check-importer-isolation.sh` covers the other targets).
 2. The app (an Xcode project cannot test for a directory): `scripts/remove-notability-from-xcode.sh` removes the
    `SempereNotability` package product dependency from the app target (four spots in
    `Apps/Sempere/Sempere.xcodeproj/project.pbxproj`, ids `…B009` and `…D007`) and its row in

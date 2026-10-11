@@ -11,7 +11,7 @@ struct TagEditorView: View {
 
     /// One entry per tag key (older notes may store "Math" and "math"; removing
     /// either removes both), so the list never holds duplicate ids.
-    private var current: [String] { NoteOps.normalizedTags(model.notes.first { $0.id == noteID }?.tags ?? []) }
+    private var current: [String] { NoteOps.normalizedTags(model.notesByID[noteID]?.tags ?? []) }
 
     /// Vault tags this note does not have, matching what was typed.
     private var suggestions: [String] {

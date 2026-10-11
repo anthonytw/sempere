@@ -48,6 +48,39 @@ struct SyncState: Codable, Equatable {
     /// §9.1), keyed like `files`: not downloaded again while the server's
     /// copy and the local `vault.json` are unchanged.
     var quarantined: [String: QuarantineRecord]?
+    /// The server's `sempere-index.json` as this device last wrote or
+    /// matched it; nil in state files from before it existed.
+    var webIndex: WebIndexRecord?
+
+    /// Per note folder on the server, the ETag it had when the last run
+    /// left the note unchanged and in step on both sides (`NoteStamps.swift`).
+    var notes: [String: NoteStamp]?
+    /// Note folders this device wrote a revision into, with their ETag from
+    /// before: the next run checks the server changed it.
+    var stampProbes: [String: String]?
+    /// Whether the server was seen to change a note folder's ETag when a
+    /// revision was written into it (true), or seen not to (false, for
+    /// good); nil until a write was checked.
+    var folderETagsChange: Bool?
+    /// When a run last listed every note folder.
+    var lastFullListing: Date?
+
+    /// A note folder's recorded ETag.
+    struct NoteStamp: Codable, Equatable {
+        /// Its strong ETag in the `notes/` listing.
+        var etag: String
+        /// Whether it held an `att/` folder (listed every run regardless).
+        var att: Bool
+    }
+
+    /// What the server's `sempere-index.json` held when this device last
+    /// wrote it or found it current.
+    struct WebIndexRecord: Codable, Equatable {
+        /// SHA-256 (hex) of its bytes.
+        var hash: String
+        /// Its strong ETag then (a weak or missing one is never recorded).
+        var etag: String
+    }
 
     /// A quarantined remote file.
     struct QuarantineRecord: Codable, Equatable {
@@ -57,6 +90,19 @@ struct SyncState: Codable, Equatable {
         /// and whether the vault was unlocked: either changing checks it again.
         var manifest: String?
         var unlocked: Bool
+    }
+
+    /// The keys of `files` grouped by note: for each note id (the key up to
+    /// its first `/`), the rest of each of its keys (`<file name>` for a
+    /// revision, `att/<file name>` for a blob). One pass over `files`, so a
+    /// run looks a note's records up without scanning every other note's.
+    func fileNamesByNote() -> [String: [String]] {
+        var out: [String: [String]] = [:]
+        for key in files.keys {
+            guard let slash = key.firstIndex(of: "/") else { continue }
+            out[String(key[..<slash]), default: []].append(String(key[key.index(after: slash)...]))
+        }
+        return out
     }
 
     /// The default state file for one (remote, local vault) pair.
@@ -83,10 +129,67 @@ struct SyncState: Codable, Equatable {
         return state
     }
 
+    /// Saves the whole state (atomically). Not pretty-printed: it holds a
+    /// record per revision and blob of the vault.
     func save(_ url: URL) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let enc = JSONEncoder()
-        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+        enc.outputFormatting = [.sortedKeys]
         try LocalFS.write(try enc.encode(self), to: url, replacing: true)
+    }
+
+    // MARK: Transfers in flight
+
+    /// What a run must find again if it is killed mid-transfer: the
+    /// interrupted downloads and the temporary upload names. A run saves
+    /// this, not the whole state, before each blob transfer, so a
+    /// checkpoint costs the few entries in flight rather than a record per
+    /// revision and blob; the end-of-run save carries them in the state
+    /// itself and removes this file.
+    struct Transfers: Codable, Equatable {
+        var partials: [String: PartialRecord]?
+        var remoteTemps: [String]?
+    }
+
+    /// `<state file>.transfers`, next to the state file.
+    static func transfersURL(_ url: URL) -> URL {
+        url.deletingLastPathComponent().appendingPathComponent(url.lastPathComponent + ".transfers")
+    }
+
+    /// The transfers file of `url`; nil when there is none. Throws when it
+    /// exists but is unreadable.
+    static func loadTransfers(_ url: URL) throws -> Transfers? {
+        let t = transfersURL(url)
+        guard FileManager.default.fileExists(atPath: t.path) else { return nil }
+        let data = try BoundedRead.contents(of: t, maxBytes: BoundedRead.maxManifestBytes)
+        return try JSONDecoder().decode(Transfers.self, from: data)
+    }
+
+    /// Saves `partials` and `remoteTemps` (atomically) to the transfers file of `url`.
+    func saveTransfers(_ url: URL) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.sortedKeys]
+        try LocalFS.write(try enc.encode(Transfers(partials: partials, remoteTemps: remoteTemps)),
+                          to: Self.transfersURL(url), replacing: true)
+    }
+
+    /// Removes the transfers file of `url`, if any.
+    static func removeTransfers(_ url: URL) {
+        try? FileManager.default.removeItem(at: transfersURL(url))
+    }
+
+    /// Takes in what a killed run saved: its temporary upload names are
+    /// added to ours (deleting one that is gone is harmless), its partial
+    /// downloads win over ours (they are newer).
+    mutating func merge(_ t: Transfers) {
+        if let temps = t.remoteTemps, !temps.isEmpty {
+            var all = remoteTemps ?? []
+            for x in temps where !all.contains(x) { all.append(x) }
+            remoteTemps = all
+        }
+        if let p = t.partials, !p.isEmpty {
+            partials = (partials ?? [:]).merging(p) { _, new in new }
+        }
     }
 }

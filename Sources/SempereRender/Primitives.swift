@@ -266,12 +266,73 @@ extension DrawCommand {
 
 /// Deterministic, locale-independent number formatting: at most `decimals`
 /// decimals, trailing zeros dropped, `-0` and non-finite values as `0`.
+///
+/// The output is exactly `String(format: "%.<decimals>f")`'s (which rounds
+/// the binary value correctly, ties to even), trimmed. Most values take an
+/// integer path (`fastTrimmed`) that is many times faster; the rest
+/// (values within rounding error of a tie, and huge ones) use printf.
 func trimmed(_ v: Double, decimals: Int) -> String {
+    guard v.isFinite else { return "0" }
+    if let s = fastTrimmed(v, decimals: decimals) { return s }
+    return printfTrimmed(v, decimals: decimals)
+}
+
+/// `trimmed` through printf: the reference the fast path must match.
+func printfTrimmed(_ v: Double, decimals: Int) -> String {
     guard v.isFinite else { return "0" }
     var s = String(format: "%.\(decimals)f", v)
     while s.hasSuffix("0") { s.removeLast() }
     if s.hasSuffix(".") { s.removeLast() }
     return (s == "-0" || s.isEmpty) ? "0" : s
+}
+
+private let powersOfTen: [UInt64] = [1, 10, 100, 1_000, 10_000, 100_000, 1_000_000]
+
+/// `trimmed` without printf, or nil when the result could differ from
+/// printf's. `|v| * 10^decimals` is computed with one rounding (at most half
+/// an ulp off the exact product), so its nearest integer is the correctly
+/// rounded one unless the fraction lies within an ulp of one half; those
+/// values, and products of 1e15 or more, return nil.
+func fastTrimmed(_ v: Double, decimals: Int) -> String? {
+    guard decimals >= 0, decimals < powersOfTen.count else { return nil }
+    let unit = powersOfTen[decimals]
+    let scaled = v.magnitude * Double(unit)
+    guard scaled < 1e15 else { return nil }
+    let whole = scaled.rounded(.down)
+    let fraction = scaled - whole   // exact: both are below 2^53
+    guard abs(fraction - 0.5) > scaled.ulp else { return nil }
+    let n = UInt64(whole) + (fraction > 0.5 ? 1 : 0)
+    if n == 0 { return "0" }
+    var integer = n / unit
+    var digits = n % unit
+    var places = decimals
+    while places > 0 && digits % 10 == 0 {
+        digits /= 10
+        places -= 1
+    }
+    // Sign, at most 15 integer digits, the point and 6 decimals.
+    return String(unsafeUninitializedCapacity: 24) { buf in
+        var end = 24
+        func put(_ b: UInt8) {
+            end -= 1
+            buf[end] = b
+        }
+        for _ in 0..<places {
+            put(UInt8(ascii: "0") + UInt8(digits % 10))
+            digits /= 10
+        }
+        if places > 0 { put(UInt8(ascii: ".")) }
+        repeat {
+            put(UInt8(ascii: "0") + UInt8(integer % 10))
+            integer /= 10
+        } while integer > 0
+        if v < 0 { put(UInt8(ascii: "-")) }
+        let count = 24 - end
+        if end > 0 {
+            for i in 0..<count { buf[i] = buf[end + i] }
+        }
+        return count
+    }
 }
 
 /// Deterministic, locale-independent number formatting (<= 3 decimals).

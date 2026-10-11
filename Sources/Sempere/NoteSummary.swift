@@ -283,7 +283,7 @@ extension Vault {
             Result { () throws -> (NoteSummary, Bool, [String]) in
                 let names = try revisionNames(of: id)
                 let files = names.map(\.filename).sorted()
-                if let hit = cache?.summary(for: id, revisions: names) { return (hit, true, files) }
+                if let hit = cache?.summary(for: id, names: files) { return (hit, true, files) }
                 let loaded = try loadNote(id, names: names, detail: .withoutStrokePoints)
                 let s = summary(of: id, loaded: loaded)
                 // The revisions' metadata too, so thinning need not read them again (`revisionIndex`).
@@ -322,13 +322,15 @@ extension Vault {
     /// The revisions `compact` would delete, without deleting them.
     public func compactionPlan(noteId: UUID, retention: TimeInterval = CompactionPlanner.defaultRetention,
                                now: Date = Date(), assumingSnapshot: Bool = false) throws -> [RevisionName] {
-        try loadNote(noteId).compactionPlan(retention: retention, now: now, assumingSnapshot: assumingSnapshot)
+        // Names, kinds, checkpoints and snapshot coverage only: no stroke geometry is decoded.
+        try loadNote(noteId, detail: .withoutStrokePoints).compactionPlan(retention: retention, now: now,
+                                                                         assumingSnapshot: assumingSnapshot)
     }
 
     /// See `LoadedNote.needsSnapshotBeforeCompaction`.
     public func needsSnapshotBeforeCompaction(noteId: UUID, retention: TimeInterval = CompactionPlanner.defaultRetention,
                                               now: Date = Date()) throws -> Bool {
-        try loadNote(noteId).needsSnapshotBeforeCompaction(retention: retention, now: now)
+        try loadNote(noteId, detail: .withoutStrokePoints).needsSnapshotBeforeCompaction(retention: retention, now: now)
     }
 }
 

@@ -1017,9 +1017,11 @@ public enum NotabilityImporter {
             var ops: [Op] = []
             var seq = 1
             var salt: String?
+            var overwritten: NoteState?
             if exists {
                 let loaded = try vault.loadNote(id)
                 let old = try vault.reconstruct(loaded)
+                overwritten = old
                 // Observe the note first (as `Vault.apply` does), so the
                 // overwrite's ops win LWW and are not superseded by a legacy
                 // tags write stamped ahead of this clock (format.md §5.4.1).
@@ -1039,7 +1041,7 @@ public enum NotabilityImporter {
             state.meta.title = title
             state.meta.tags = tags(for: note, folder: source.notebook ?? note.metadata.subject, options: options)
             ops += Self.ops(for: state)
-            if exists, let old = try? vault.reconstruct(vault.loadNote(id)) {
+            if let old = overwritten {
                 // `ops(for:)` writes the optional registers only when set: clear what the old import set.
                 if old.meta.lang != nil, state.meta.lang == nil { ops.append(.setMeta(.lang(nil))) }
                 if old.meta.markersBehindText, !state.meta.markersBehindText { ops.append(.setMeta(.markersBehindText(false))) }

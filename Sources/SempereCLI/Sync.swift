@@ -112,6 +112,10 @@ struct SyncWebDAVCommand: ParsableCommand {
           help: "With --push-only: keep a server vault.json or rewrap-journal.json changed since this device's last sync (exit 3) instead of replacing it.")
     var keepServerChanges = false
 
+    @Flag(name: .customLong("skip-unchanged"),
+          help: "List on the server only the notes whose folder ETag changed since the last run (where the server is seen to keep them current; every note at least daily).")
+    var skipUnchanged = false
+
     @Flag(name: .customLong("web-viewer"),
           help: "Create the server's sempere-index.json and sempere-summaries.sealed for the web viewer (needs the vault unlocked).")
     var webViewer = false
@@ -128,6 +132,7 @@ struct SyncWebDAVCommand: ParsableCommand {
         options.keepServerChanges = keepServerChanges
         options.deleteExtraneous = deleteExtraneous
         options.publishForWebViewer = webViewer
+        options.skipUnchangedNotes = skipUnchanged
         options.summaryCacheDirectory = SummaryCache.cliDirectory(environment: Env.vars)
         if let maxBlobMiB {
             guard (1...(1 << 20)).contains(maxBlobMiB) else { throw CLIError.usage("--max-blob-mib must be 1 to 1048576") }

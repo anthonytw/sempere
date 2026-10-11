@@ -86,3 +86,38 @@ struct EraserGeometryTests {
         #expect(ObjectEraserSize.radii.contains(ObjectEraserSize.defaultRadius))
     }
 }
+
+/// `StrokeBoundsGrid`: every box that overlaps a query is a candidate.
+struct StrokeBoundsGridTests {
+    typealias Box = StrokeBoundsGrid.Box
+
+    static func overlaps(_ a: Box, _ q: Box) -> Bool {
+        !(a.maxX < q.minX || a.minX > q.maxX || a.maxY < q.minY || a.minY > q.maxY)
+    }
+
+    @Test func candidatesIncludeEveryOverlappingBox() {
+        var rng = SystemRandomNumberGenerator()
+        func r(_ a: Double, _ b: Double) -> Double { Double.random(in: a...b, using: &rng) }
+        var boxes: [Box] = (0..<500).map { _ in
+            let x = r(-100, 900), y = r(-100, 1200)
+            return Box(minX: x, minY: y, maxX: x + r(0, 300), maxY: y + r(0, 80))
+        }
+        // Boxes the grid cannot bucket: empty (CGRect.null), not finite, inverted, huge, far away.
+        boxes += [Box(minX: .infinity, minY: .infinity, maxX: -.infinity, maxY: -.infinity),
+                  Box(minX: .nan, minY: 0, maxX: 10, maxY: 10),
+                  Box(minX: 50, minY: 50, maxX: 40, maxY: 60),
+                  Box(minX: -1e9, minY: -1e9, maxX: 1e9, maxY: 1e9),
+                  Box(minX: 1e300, minY: 0, maxX: 1e300, maxY: 1)]
+        let grid = StrokeBoundsGrid(boxes)
+        for _ in 0..<300 {
+            let x = r(-200, 1000), y = r(-200, 1300), w = r(0, 120)
+            let q = Box(minX: x, minY: y, maxX: x + w, maxY: y + w)
+            let found = grid.candidates(q)
+            #expect(found == found.sorted() && Set(found).count == found.count)
+            let wanted = boxes.indices.filter { Self.overlaps(boxes[$0], q) }
+            #expect(Set(wanted).isSubset(of: Set(found)))
+            #expect(found.contains(boxes.count - 5) && found.contains(boxes.count - 4), "boxes that are not finite always are")
+        }
+        #expect(grid.candidates(Box(minX: .nan, minY: 0, maxX: 1, maxY: 1)) == Array(boxes.indices))
+    }
+}

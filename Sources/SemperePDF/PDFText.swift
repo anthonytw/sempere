@@ -28,8 +28,13 @@ public enum PDFText {
     ///
     /// - Throws: `PDFError` when the page or its content cannot be read.
     public static func pageText(_ file: PDFFile, page index: Int) throws -> String {
+        try pageText(file, page: index, cache: ExtractionCache())
+    }
+
+    /// `pageText`, reusing the fonts and forms `cache` holds from other pages of `file`.
+    static func pageText(_ file: PDFFile, page index: Int, cache: ExtractionCache) throws -> String {
         let node = try file.pageNode(index)
-        var state = Extraction(file: file)
+        var state = Extraction(file: file, cache: cache)
         let resources = try node.resources.flatMap { try file.resolve($0).dictValue }
         try state.run(try file.pageContents(index), resources: resources, depth: 0)
         return state.finish()
@@ -39,9 +44,11 @@ public enum PDFText {
     /// be read is missing from the result (the others are still read).
     public static func pageTexts(_ data: Data, pages: [Int]? = nil) throws -> [Int: String] {
         let file = try PDFFile(data: data)
+        // Fonts (their ToUnicode CMaps) and forms shared by pages are decoded once per file.
+        let cache = ExtractionCache()
         var out: [Int: String] = [:]
         for i in pages ?? Array(0..<file.pageCount) {
-            if let t = try? pageText(file, page: i) { out[i] = t }
+            if let t = try? pageText(file, page: i, cache: cache) { out[i] = t }
         }
         return out
     }
@@ -49,18 +56,32 @@ public enum PDFText {
 
 // MARK: - Interpreter
 
+/// What the pages of one `PDFFile` share: font decoders of indirect fonts
+/// and decoded form XObjects, by object number (objects of a parsed file
+/// never change). Forms are kept up to `maxFormBytes` in all.
+final class ExtractionCache {
+    static let maxFormBytes = 64 << 20
+    var fonts: [Int: FontDecoder] = [:]
+    var forms: [Int: [UInt8]] = [:]
+    var formBytes = 0
+}
+
 struct Extraction {
     let file: PDFFile
+    let cache: ExtractionCache
     var out = ""
     var outBytes = 0
     var operators = 0
-    var fonts: [String: FontDecoder] = [:]   // by font object (ref or name in a resource dict)
-    var forms: [Int: [UInt8]] = [:]          // decoded form XObjects, by object number
+    var fonts: [String: FontDecoder] = [:]   // direct fonts, by name in a resource dict (this page only)
+    var forms: [Int: [UInt8]] = [:]          // decoded form XObjects, by object number (this page, uncapped)
     /// Line state: y of the current line in text space, and whether text was shown on it.
     var lineY: Double?
     var pendingSpace = false
 
-    init(file: PDFFile) { self.file = file }
+    init(file: PDFFile, cache: ExtractionCache = ExtractionCache()) {
+        self.file = file
+        self.cache = cache
+    }
 
     mutating func emit(_ s: String) {
         guard outBytes < PDFText.maxOutputBytes, !s.isEmpty else { return }
@@ -224,9 +245,15 @@ struct Extraction {
               s.dict["Subtype"]?.nameValue == "Form" else { return }
         // A form drawn many times is decoded once.
         let data: [UInt8]
-        if case .ref(let r) = entry, let hit = forms[r.num] { data = hit } else {
+        if case .ref(let r) = entry, let hit = forms[r.num] ?? cache.forms[r.num] { data = hit } else {
             data = try file.decodedData(of: s, allowed: PDFFilters.decodable)
-            if case .ref(let r) = entry { forms[r.num] = data }
+            if case .ref(let r) = entry {
+                forms[r.num] = data
+                if cache.formBytes + data.count <= ExtractionCache.maxFormBytes {
+                    cache.forms[r.num] = data
+                    cache.formBytes += data.count
+                }
+            }
         }
         let own = try file.value(s.dict, "Resources")?.dictValue ?? resources
         try run(data, resources: own, depth: depth + 1)
@@ -236,8 +263,14 @@ struct Extraction {
         guard let res = resources, let fontsDict = try file.value(res, "Font")?.dictValue, let entry = fontsDict[n] else {
             return nil
         }
-        let key: String
-        if case .ref(let r) = entry { key = "r\(r.num)" } else { key = "n" + String(decoding: n.bytes, as: UTF8.self) }
+        if case .ref(let r) = entry {
+            if let hit = cache.fonts[r.num] { return hit }
+            guard let dict = try file.resolve(entry).dictValue else { return nil }
+            let d = FontDecoder(dict: dict, file: file)
+            cache.fonts[r.num] = d
+            return d
+        }
+        let key = String(decoding: n.bytes, as: UTF8.self)
         if let hit = fonts[key] { return hit }
         guard let dict = try file.resolve(entry).dictValue else { return nil }
         let d = FontDecoder(dict: dict, file: file)

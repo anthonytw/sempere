@@ -28,6 +28,43 @@ final class WebDAVIntegrationTests: SyncTestCase {
                               options: WebDAVSyncOptions(dryRun: dryRun, deviceLabel: name)).run()
     }
 
+    /// `skipUnchangedNotes` over real HTTP: whatever the server does with
+    /// folder ETags, another device's revision and a new local one are
+    /// still seen.
+    func testSkipUnchangedNotesSeesEveryChange() throws {
+        let c = try realClient(path: "skip-\(UUID().uuidString.lowercased())")
+        let a = try makeVault("A")
+        let other = UUID()
+        _ = try delta(a, device: devA, t: 0, title: "one")
+        _ = try delta(a, device: devA, t: 1, title: "two", note: other)
+        func runA() throws -> (SyncReport, WebDAVSync) {
+            var o = WebDAVSyncOptions(deviceLabel: "A")
+            o.skipUnchangedNotes = true
+            let s = WebDAVSync(directory: dir("A"), vault: try openVault("A"), client: c,
+                               stateURL: tmp.appendingPathComponent("state-A.json"), options: o)
+            let r = try s.run()
+            XCTAssertTrue(r.errors.isEmpty, "\(r)")
+            return (r, s)
+        }
+        _ = try runA()
+        _ = try delta(a, device: devA, t: 2, title: "three")
+        _ = try runA(); _ = try runA()
+        let (_, idle) = try runA()
+        let trusted = idle.state.folderETagsChange
+        print("server folder ETags change on a write: \(String(describing: trusted)); notes not listed: \(idle.notesNotListed)")
+
+        XCTAssertTrue(try run("B", c).errors.isEmpty)
+        let fromB = try delta(try openVault("B"), device: devB, t: 5, title: "from B")
+        XCTAssertTrue(try run("B", c).errors.isEmpty)
+        let (r, _) = try runA()
+        XCTAssertEqual(r.downloaded, ["notes/\(noteID.uuidString.lowercased())/\(fromB.name.filename)"])
+        XCTAssertEqual(try title(try openVault("A")), "from B")
+        let mine = try delta(a, device: devA, t: 9, title: "later", note: other)
+        let (r2, _) = try runA()
+        XCTAssertEqual(r2.uploaded, ["notes/\(other.uuidString.lowercased())/\(mine.name.filename)"])
+        XCTAssertTrue(try runA().0.isEmpty)
+    }
+
     /// The app's WebDAV vault over real HTTP: found by the check, downloaded,
     /// edited, pushed (push-only, keeping another writer's manifest), downloaded again.
     func testLocalCopyLifecycle() throws {

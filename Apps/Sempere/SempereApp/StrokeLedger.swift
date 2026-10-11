@@ -11,8 +11,26 @@ struct CanvasStrokeInfo: Hashable, Sendable {
     /// points, texture seed and mask ranges. Any edit (move, recolour,
     /// partial erase) changes it.
     struct Key: Hashable, Sendable {
-        var ink: String
-        var values: [Double]
+        let ink: String
+        let values: [Double]
+        /// Hashed once: the ledger looks keys up on every drawing change, and
+        /// hashing `values` (about 40 numbers) each time cost more than the lookups.
+        private let hash: Int
+
+        init(ink: String, values: [Double]) {
+            self.ink = ink
+            self.values = values
+            var hasher = Hasher()
+            hasher.combine(ink)
+            hasher.combine(values)
+            hash = hasher.finalize()
+        }
+
+        static func == (a: Key, b: Key) -> Bool {
+            a.hash == b.hash && a.ink == b.ink && a.values == b.values
+        }
+
+        func hash(into hasher: inout Hasher) { hasher.combine(hash) }
     }
 
     /// Strokes that share a family (ink, colour, transform, path creation
@@ -112,6 +130,11 @@ struct StrokeLedger {
     private var written: Set<UUID>
     /// Removed canvas strokes by key, most recent last.
     private var retired: [CanvasStrokeInfo.Key: [[Stroke]]] = [:]
+    /// False only when `live` is known to be what is committed (no ops are
+    /// pending), so a save of an unchanged page scans nothing. Set by every
+    /// change that can make ops pending (`update`, `mergeStored`,
+    /// `saveFailed`); cleared by `beginSave`.
+    private var mayHavePending = false
 
     /// A ledger for a page loaded from disk; `info` fingerprints the canvas
     /// stroke each stored stroke will be shown as.
@@ -154,9 +177,57 @@ struct StrokeLedger {
     /// Matches the canvas's strokes against the table and assigns ids.
     @discardableResult
     mutating func update(_ items: [Item]) -> Change {
+        let old = entries
+        return update(count: items.count, unchanged: { i, j, _ in items[i].info.key == old[j].info.key },
+                      item: { items[$0] })
+    }
+
+    /// `update(_:)` for a canvas of `count` strokes handed over lazily, so a
+    /// change of a few strokes on a dense page fingerprints only those:
+    /// `unchanged(i, j, info)` is true only when canvas stroke `i` is the
+    /// canvas stroke entry `j` (fingerprinted as `info`) was made from,
+    /// unchanged, so its key is `info.key`; it may say false whenever it
+    /// cannot tell cheaply. `item(i)` fingerprints canvas stroke `i`.
+    ///
+    /// The canvas strokes that are unchanged at the start and the end of the
+    /// canvas keep their entries without being fingerprinted; the strokes in
+    /// between are matched as `update(_:)` matches them, with the same
+    /// result: equal keys pair up in order (the n-th canvas stroke with a key
+    /// takes the n-th entry with it), so a run at the start pairs as it would
+    /// anyway, and one at the end does too unless a key in it occurs a
+    /// different number of times among the strokes and the entries in
+    /// between. Then the end is matched in full.
+    @discardableResult
+    mutating func update(count: Int, unchanged: (_ item: Int, _ entry: Int, _ info: CanvasStrokeInfo) -> Bool,
+                         item: (Int) -> Item) -> Change {
+        let n = entries.count
+        var head = 0
+        while head < count, head < n, unchanged(head, head, entries[head].info) { head += 1 }
+        var tail = 0
+        while tail < count - head, tail < n - head, unchanged(count - 1 - tail, n - 1 - tail, entries[n - 1 - tail].info) {
+            tail += 1
+        }
+        var middle = (head..<(count - tail)).map(item)
+        if tail > 0 {
+            var balance: [CanvasStrokeInfo.Key: Int] = [:]
+            for item in middle { balance[item.info.key, default: 0] += 1 }
+            for e in entries[head..<(n - tail)] { balance[e.info.key, default: 0] -= 1 }
+            balance = balance.filter { $0.value != 0 }
+            if !balance.isEmpty, entries[(n - tail)...].contains(where: { balance[$0.info.key] != nil }) {
+                middle += ((count - tail)..<count).map(item)
+                tail = 0
+            }
+        }
+        return match(middle, replacing: head..<(n - tail))
+    }
+
+    /// Matches `items` against the entries in `old` as a multiset, in order,
+    /// and puts the result in their place.
+    private mutating func match(_ items: [Item], replacing old: Range<Int>) -> Change {
         var pool: [CanvasStrokeInfo.Key: [Int]] = [:]
-        for (i, e) in entries.enumerated() { pool[e.info.key, default: []].append(i) }
+        for i in old { pool[entries[i].info.key, default: []].append(i) }
         var keptIndex: [Int?] = []   // per item: matched old entry index
+        keptIndex.reserveCapacity(items.count)
         var used = Set<Int>()
         for item in items {
             if var queue = pool[item.info.key], !queue.isEmpty {
@@ -170,24 +241,27 @@ struct StrokeLedger {
         }
         var change = Change()
         var removedEntries: [Entry] = []
-        for (i, e) in entries.enumerated() where !used.contains(i) {
-            removedEntries.append(e)
-            change.removed += e.strokes
+        for i in old where !used.contains(i) {
+            removedEntries.append(entries[i])
+            change.removed += entries[i].strokes
         }
         for e in removedEntries { retired[e.info.key, default: []].append(e.strokes) }
 
         var next: [Entry] = []
+        next.reserveCapacity(items.count)
+        var onDisk: Set<UUID>?   // committed ids, made on the first revive
+        var removedIndex: RemovedIndex?   // made on the first stroke that needs a parent
         for (item, kept) in zip(items, keptIndex) {
             if let kept {
                 next.append(entries[kept])
                 continue
             }
-            if let revived = revive(item.info.key) {
+            if let revived = revive(item.info.key, onDisk: &onDisk) {
                 change.added += revived
                 next.append(Entry(info: item.info, strokes: revived))
                 continue
             }
-            let parents = parentCandidates(for: item.info, removed: removedEntries)
+            let parents = parentCandidates(for: item.info, removed: removedEntries, index: &removedIndex)
             var strokes = item.make()
             for k in strokes.indices {
                 strokes[k].id = UUID()
@@ -200,7 +274,8 @@ struct StrokeLedger {
             change.added += strokes
             next.append(Entry(info: item.info, strokes: strokes))
         }
-        entries = next
+        entries.replaceSubrange(old, with: next)
+        if !change.isEmpty { mayHavePending = true }
         return change
     }
 
@@ -228,12 +303,20 @@ struct StrokeLedger {
     /// removed id again (format.md §5.2), so the stroke would vanish on disk.
     /// Nil when nothing is pending. Call `saveFailed(_:)` if the write fails.
     mutating func beginSave(page: UUID) -> Save? {
+        guard mayHavePending else { return nil }
         let live = self.live
         let ops = pendingOps(page: page, live: live)
+        mayHavePending = false
         guard !ops.isEmpty else { return nil }
         let save = Save(ops: ops, previous: committed)
         commit(live)
         return save
+    }
+
+    /// Whether any op is pending (`pendingOps` of `live` is not empty);
+    /// scans only a ledger that changed since its last save.
+    var hasPending: Bool {
+        mayHavePending && !pendingOps(page: UUID(), live: live).isEmpty
     }
 
     /// The write started by `save` failed: its ops stay pending. Ids it added
@@ -241,6 +324,7 @@ struct StrokeLedger {
     /// revived after a removal; at worst a later stroke names one as `parent`.
     mutating func saveFailed(_ save: Save) {
         committed = save.previous
+        mayHavePending = true
     }
 
     /// Records that `live` (as passed to `pendingOps`) is now on disk.
@@ -295,6 +379,7 @@ struct StrokeLedger {
     /// `info` fingerprints the canvas stroke a stored stroke is shown as
     /// (`CanvasStrokeInfo.init(stored:)`).
     mutating func mergeStored(_ stored: [Stroke], info: (Stroke) -> CanvasStrokeInfo) -> RemoteMerge {
+        mayHavePending = true   // what is committed changes under what is live
         let committedIDs = Set(committed.map(\.id))
         let liveIDs = Set(live.map(\.id))
         var storedByID: [UUID: Stroke] = [:]
@@ -366,25 +451,52 @@ struct StrokeLedger {
 
     // MARK: - Parents
 
-    private mutating func parentCandidates(for info: CanvasStrokeInfo, removed: [Entry]) -> [Stroke] {
+    /// The entries one update removed, looked up by the parent rules: the
+    /// first entry in order for each rule's key, as a scan would find it.
+    private struct RemovedIndex {
+        struct Created: Hashable { var ink: String, created: Double, pathSignature: [Double] }
+        struct Path: Hashable { var family: CanvasStrokeInfo.Family, pathSignature: [Double] }
+        var canvasID: [UUID: Int] = [:]
+        var path: [Path: Int] = [:]
+        var family: [CanvasStrokeInfo.Family: [Int]] = [:]
+        var created: [Created: Int] = [:]
+
+        init(_ removed: [Entry]) {
+            for (i, e) in removed.enumerated() {
+                let info = e.info
+                if let id = info.canvasID, canvasID[id] == nil { canvasID[id] = i }
+                let p = Path(family: info.family, pathSignature: info.pathSignature)
+                if path[p] == nil { path[p] = i }
+                family[info.family, default: []].append(i)
+                if let date = info.family.created {
+                    let c = Created(ink: info.family.ink, created: date, pathSignature: info.pathSignature)
+                    if created[c] == nil { created[c] = i }
+                }
+            }
+        }
+    }
+
+    private mutating func parentCandidates(for info: CanvasStrokeInfo, removed: [Entry],
+                                           index: inout RemovedIndex?) -> [Stroke] {
         if var stack = retired[info.key], let last = stack.popLast() {
             retired[info.key] = stack
             return last
         }
-        if let id = info.canvasID, let e = removed.first(where: { $0.info.canvasID == id }) {
-            return e.strokes
+        guard !removed.isEmpty else { return [] }
+        let x = index ?? RemovedIndex(removed)
+        index = x
+        if let id = info.canvasID, let i = x.canvasID[id] {
+            return removed[i].strokes
         }
-        if let e = removed.first(where: { $0.info.family == info.family && $0.info.pathSignature == info.pathSignature }) {
-            return e.strokes
+        if let i = x.path[RemovedIndex.Path(family: info.family, pathSignature: info.pathSignature)] {
+            return removed[i].strokes
         }
-        if let e = removed.first(where: { $0.info.family == info.family && $0.info.bounds.contains(info.bounds) }) {
-            return e.strokes
+        if let i = x.family[info.family]?.first(where: { removed[$0].info.bounds.contains(info.bounds) }) {
+            return removed[i].strokes
         }
-        if let created = info.family.created, let e = removed.first(where: {
-            $0.info.family.ink == info.family.ink && $0.info.family.created == created
-                && $0.info.pathSignature == info.pathSignature
-        }) {
-            return e.strokes
+        if let created = info.family.created,
+           let i = x.created[RemovedIndex.Created(ink: info.family.ink, created: created, pathSignature: info.pathSignature)] {
+            return removed[i].strokes
         }
         return []
     }
@@ -392,10 +504,12 @@ struct StrokeLedger {
     /// Identical content coming back (undo, redo) keeps its old ids when none
     /// of them has been removed on disk yet: either still committed, or never
     /// written. Otherwise nil, and the stroke gets new ids (format.md §5.2).
-    private mutating func revive(_ key: CanvasStrokeInfo.Key) -> [Stroke]? {
+    /// `onDisk` caches the committed ids for one update.
+    private mutating func revive(_ key: CanvasStrokeInfo.Key, onDisk: inout Set<UUID>?) -> [Stroke]? {
         guard var stack = retired[key], let last = stack.last else { return nil }
-        let onDisk = Set(committed.map(\.id))
-        guard last.allSatisfy({ onDisk.contains($0.id) || !written.contains($0.id) }) else { return nil }
+        let committedIDs = onDisk ?? Set(committed.map(\.id))
+        onDisk = committedIDs
+        guard last.allSatisfy({ committedIDs.contains($0.id) || !written.contains($0.id) }) else { return nil }
         stack.removeLast()
         retired[key] = stack
         return last

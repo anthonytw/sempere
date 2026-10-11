@@ -46,6 +46,35 @@ final class TextLayoutTests: XCTestCase {
         XCTAssertEqual(s.bottom, 20 + 36, accuracy: 1e-9)
     }
 
+    /// Stored breaks in several paragraphs: each paragraph takes its own
+    /// (the breaks are sorted once for the whole text).
+    func testStoredBreaksAcrossParagraphs() throws {
+        // "aaa bbb\nccc ddd eee\nfff": breaks after "aaa ", "ccc " and "ddd ".
+        let s = try Self.lines(Self.text([TextRun("aaa bbb\nccc ddd eee\nfff")], breaks: [4, 12, 16]), width: 1000)
+        XCTAssertEqual(s.lines.map(\.text), ["aaa", "bbb", "ccc", "ddd", "eee", "fff"])
+        XCTAssertEqual(s.lines.map(\.range), [0..<4, 4..<7, 8..<12, 12..<16, 16..<19, 20..<23])
+    }
+
+    /// `fallback` caches its choice: repeated and interleaved calls give the
+    /// face a fresh library chooses, misses included.
+    func testFallbackCacheMatchesFreshChoice() {
+        let packs = (try? T.fixtureURL("fonts")).map { [$0] } ?? []
+        let cached = FontLibrary(bundled: SempereFonts.directory, packs: packs)
+        let queries: [(UInt32, String?, TextContent.Font, Bool, Bool)] = [
+            (0x65E5, "ja", .sans, false, false), (0x65E5, "zh-Hant", .serif, true, false), (0x3042, nil, .mono, false, true),
+            (0x0928, nil, .sans, false, false), (0x41, nil, .sans, false, false), (0x65E5, "ko", TextContent.Font(rawValue: "x"), false, false),
+        ]
+        for round in 0..<3 {
+            for (c, lang, generic, bold, italic) in queries {
+                let fresh = FontLibrary(bundled: SempereFonts.directory, packs: packs)
+                    .fallback(for: c, lang: lang, generic: generic, bold: bold, italic: italic)
+                let got = cached.fallback(for: c, lang: lang, generic: generic, bold: bold, italic: italic)
+                XCTAssertEqual(got?.key, fresh?.key, "round \(round), U+\(String(c, radix: 16)) \(lang ?? "-")")
+            }
+        }
+        XCTAssertNotNil(cached.fallback(for: 0x65E5, lang: "ja", generic: .sans, bold: false, italic: false))
+    }
+
     func testInvalidBreaksAreIgnored() throws {
         for breaks in [[0], [4, 4], [8, 4], [11], [3, 99]] {   // at 0, not increasing, at the end, beyond
             let s = try Self.lines(Self.text([TextRun("aaa bbb ccc")], breaks: breaks), width: 1000)

@@ -193,7 +193,7 @@ extension AppModel {
     }
 
     /// The title the list shows for note `id`.
-    func noteTitle(_ id: UUID) -> String { notes.first { $0.id == id }?.title ?? "" }
+    func noteTitle(_ id: UUID) -> String { notesByID[id]?.title ?? "" }
 
     // MARK: Deleting
 

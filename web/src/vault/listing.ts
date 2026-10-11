@@ -4,7 +4,7 @@
 // are decrypted. With a `CachingSource` the revisions of those notes come
 // from the browser cache when they were downloaded before.
 
-import { type NoteSummary, loadNote, mapLimited, summarize } from "./library.ts";
+import { type LoadedNote, type NoteSummary, loadNote, mapLimited, summarize } from "./library.ts";
 import { CachingSource } from "./cache.ts";
 import { SourceError, type VaultSource, readOptional } from "./source.ts";
 import { type SummaryEntry, entryMatches, entrySummary, maxSummariesBytes, readSummaries, summariesFileName } from "./summaries.ts";
@@ -26,6 +26,8 @@ export interface ListingCallbacks {
   provisional(rows: NoteSummary[]): void;
   /** A row that is now known to be current (from a matching entry or decrypted). */
   row(row: NoteSummary): void;
+  /** A note the listing decrypted (before its `row`), for a caller that keeps decrypted notes. */
+  loaded?(note: LoadedNote): void;
   /** A note the listing does not have (a provisional row to drop). */
   gone(id: string): void;
   progress(p: ListingProgress): void;
@@ -77,13 +79,15 @@ export async function listVault(source: VaultSource, vault: UnlockedVault, cb: L
   cb.progress({ ...progress });
   const listing = new Map<string, string[]>();
   const read = async (id: string, files: string[]) => {
-    let row: NoteSummary;
+    let row: NoteSummary, note: LoadedNote | undefined;
     try {
-      row = summarize(await loadNote(source, vault, id, 6, files));
+      note = await loadNote(source, vault, id, 6, files);
+      row = summarize(note);
     } catch (e) {
       row = summarize({ id, error: e instanceof Error ? e.message : String(e), failures: [], revisionCount: files.length, hasAttachments: false });
     }
     if (!cb.current()) return;
+    if (note) cb.loaded?.(note);
     progress.read++;
     result.read++;
     cb.row(row);

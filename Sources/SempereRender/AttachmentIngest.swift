@@ -219,9 +219,10 @@ extension PDFIngest {
         do { texts = try extractor.pageTexts(data, pages: refs.map(\.index)) } catch { return (refs, 0, true) }
         var out = refs
         var n = 0
+        let engine = extractor.engine   // may run a process (`pdftotext -v`): once, not per page
         for i in out.indices {
             guard let t = texts[out[i].index] else { continue }
-            let text = PDFPageText(text: t, engine: extractor.engine)
+            let text = PDFPageText(text: t, engine: engine)
             guard !text.text.isEmpty else { continue }
             out[i].text = text
             n += 1

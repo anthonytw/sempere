@@ -71,8 +71,7 @@ extension WebDAVSync {
     /// Listing failures are reported; the note's revisions still sync.
     func syncBlobTransfers(_ id: String, remoteAtt: RemoteEntry?) throws -> BlobSet {
         var set = BlobSet()
-        let prefix = "\(id)/\(Vault.attachmentsName)/"
-        set.recorded = Set(state.files.keys.filter { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)) })
+        set.recorded = recordedBlobs(id)
 
         if remoteAtt != nil {
             do {
@@ -262,13 +261,14 @@ extension WebDAVSync {
 
     // MARK: Transfers
 
-    /// Saves the sync state mid-run, so the next run knows about a partial
-    /// download or a temporary upload even if this one is killed. Every
-    /// record in it is true at that point (per-note records are written only
-    /// once a note is finished). Best effort.
+    /// Saves the transfers in flight mid-run (`SyncState.Transfers`, a file
+    /// next to the state), so the next run knows about a partial download or
+    /// a temporary upload even if this one is killed. A killed run's other
+    /// progress is not saved: the next run finds it on both sides. Best
+    /// effort.
     private func checkpoint() {
         guard !options.dryRun else { return }
-        try? state.save(stateURL)
+        try? state.saveTransfers(stateURL)
     }
 
     /// Uploads one blob: streamed to a temporary name, then `MOVE`d to its

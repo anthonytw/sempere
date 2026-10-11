@@ -128,7 +128,17 @@ jobs:
       # (docs/import-notability.md "Structure"); a step of this job so the rulesets need no change.
       - name: Removable importers (build and test without Sources/SempereNotability)
         run: scripts/check-removable-importers.sh
-      # The static release build only matters for what ships: main and releases.
+      # The static release build only matters for what ships: main and releases. It has its own
+      # cache entry (main restores and saves it; PRs never build it), so PR restores stay the size of
+      # the debug build. It holds the whole .build: where the release products and intermediates go
+      # depends on SwiftPM's build system. Restored here, after the debug cache was saved.
+      - id: release-cache
+        name: Restore the release build cache (toolchain + resolved packages)
+        if: github.event_name != 'pull_request'
+        uses: ./.github/actions/build-cache
+        with:
+          prefix: linux-release
+          version-cmd: swift --version
       - name: Release build of the CLI (static stdlib)
         if: github.event_name != 'pull_request'
         # Swift 6.4's default build system does not link Foundation's own static
@@ -145,6 +155,11 @@ jobs:
           .build/release/sempere --version
           ldd .build/release/sempere
           if ldd .build/release/sempere | grep -Eq 'libswift|libFoundation'; then echo "not static" >&2; exit 1; fi
+      - uses: actions/cache/save@v4
+        if: success() && github.ref == 'refs/heads/main'
+        with:
+          path: .build
+          key: ${{ steps.release-cache.outputs.key }}-${{ github.sha }}
       - uses: actions/upload-artifact@v4
         if: success() && github.event_name != 'pull_request'
         with:
@@ -305,10 +320,6 @@ jobs:
         timeout-minutes: 20
         shell: bash
         run: mkdir -p build && scripts/app.sh test-mac-smoke 2>&1 | tee build/app-test-mac-smoke.log
-      # Same target and sources as the simulator build; checked on main only.
-      - name: Build for Mac Catalyst (unsigned)
-        if: github.event_name != 'pull_request'
-        run: scripts/app.sh catalyst
       # The Mac suites and UI tests on Mac Catalyst (ad-hoc signed, sandboxed like the
       # shipped app): main and dispatch runs (`gh workflow run CI --ref <branch>`).
       - name: Test on Mac Catalyst
@@ -441,10 +452,21 @@ jobs:
         run: |
           npm ci
           npm run build
+      # The browser download is cached by Playwright's version (pinned in package-lock.json); the
+      # install below then finds it and only adds the system packages Chromium needs.
+      - id: playwright
+        name: Playwright version
+        working-directory: web
+        run: echo "version=$(node -p "require('./package-lock.json').packages['node_modules/playwright-core'].version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright's Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-swift-6.4-noble-${{ steps.playwright.outputs.version }}
       - name: Install Chromium for Playwright
         working-directory: web
         run: npx playwright install --with-deps chromium
-      - name: Browser smoke scripts (cache and config.json, sideways pan, listing, attachments, video, passkey, interface language, passphrase keys and transcript search)
+      - name: Browser smoke scripts (cache and config.json, sideways pan, listing, attachments, video, page release, passkey, interface language, passphrase keys and transcript search)
         working-directory: web
         run: scripts/smoke-all.sh
 

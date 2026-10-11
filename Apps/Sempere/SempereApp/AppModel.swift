@@ -92,9 +92,12 @@ final class AppModel {
     var notes: [NoteSummary] = [] {
         didSet {
             listVersion &+= 1
-            updateSearch()
+            updateSearch(changed: listChangeIDs)
         }
     }
+    /// While `applyListChanges` assigns `notes`: the ids it may have changed, so
+    /// that an open search re-tests only those (`updateSearch(changed:)`).
+    @ObservationIgnored var listChangeIDs: Set<UUID>?
     /// Bumped on every change of `notes`; keys the derived lists (`derived`).
     private(set) var listVersion = 0
     /// `visibleNotes`, `tags` and `notebookTree`, computed once per change.
@@ -152,6 +155,11 @@ final class AppModel {
     /// The page to show once the note is open (a tapped search hit).
     var pendingJump: PageJump?
     @ObservationIgnored var searchTask: Task<Void, Never>?
+    /// Lowercased page text kept between searches (`NoteSearchIndex`).
+    @ObservationIgnored let searchIndex = NoteSearchIndex()
+    /// What `searchResults` answer, and the notes changed since (`updateSearch(changed:)`);
+    /// nil while no search has completed for the current query, scope and selection.
+    @ObservationIgnored var completedSearch: CompletedSearch?
     /// The title of a note created at a date with no title typed, as Settings
     /// → New Notes says (`NewNoteSettings`; "" for Blank: the note stays
     /// untitled). Tests replace it.
@@ -296,6 +304,12 @@ final class AppModel {
     @ObservationIgnored var validationRun = 0
     /// When the background validation (`validateVault`) last finished.
     @ObservationIgnored var lastValidation: ContinuousClock.Instant?
+    /// Notes the last validation saw entirely local, with their listing
+    /// digests (`ProgressiveLoad.Pass.settled`): the next one does not ask
+    /// iCloud about them while their listing is the same.
+    @ObservationIgnored var settledCloudNotes: [UUID: Int] = [:]
+    /// Validations since the last one that asked about every file (0: none yet).
+    @ObservationIgnored var validationsSinceFull = 0
     /// How often the background validation runs while the vault is open
     /// (also once, shortly after the list settles).
     var cloudValidationInterval = Duration.seconds(30 * 60)
@@ -624,7 +638,7 @@ final class AppModel {
     }
 
     var selectedNote: NoteSummary? {
-        selectedNoteID.flatMap { id in notes.first { $0.id == id } }
+        selectedNoteID.flatMap { notesByID[$0] }
     }
 
     // MARK: - Opening and unlocking
@@ -1099,6 +1113,8 @@ final class AppModel {
         dirtyNoteIDs = []
         dirtyAll = false
         lastValidation = nil
+        settledCloudNotes = [:]
+        validationsSinceFull = 0
         reportedNoteIDs = []
         pendingCheckCursor = ""
         // Saves are throttled while notes arrive: what the last passes read is kept.
@@ -1115,6 +1131,7 @@ final class AppModel {
         unlockIdentities = []
         vaultURL = nil
         notes = []
+        searchIndex.removeAll()
         selectedNoteID = nil
         isSelectingNotes = false
         multiSelection = []

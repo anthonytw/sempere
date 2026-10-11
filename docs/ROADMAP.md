@@ -124,6 +124,7 @@ The CLI gets every feature first, or at the latest with the app (`CLAUDE.md`
 | sync webdav | ✅ | ✅ |
 | sync webdav of attachment blobs (`--max-blob-mib`) | ✅ #67 | ✅ #67 |
 | sync webdav `--push-only` (one-way mirror, `--delete-extraneous`) | ✅ #97 | ✅ #97 |
+| sync webdav `--skip-unchanged` (list only the note folders whose ETag changed; the app's pushes) | 🚧 | 🚧 |
 | sync webdav `--keep-server-changes` (a push-only run keeps a `vault.json` another writer changed); `webdav check` (test a URL, list its vaults) | 🔀 #137 | 🔀 #137 |
 | `vault summaries` (published summaries for the web viewer, `format.md` §12), kept current by unlocked commands and `sync webdav` (`--web-viewer` creates them and the index on the server) | ✅ #100 | ✅ #100 |
 | Authenticated device list (`format.md` §2.1): `vault info`/`verify` report it (`recipientsAuth`), exit 6 for writes to a tampered list, `vault recipients repair [--keep] [--dry-run]` and `confirm`, `sync webdav` rejects an unchecked remote `vault.json` (exit 6) | ✅ #98 | ✅ #98 |

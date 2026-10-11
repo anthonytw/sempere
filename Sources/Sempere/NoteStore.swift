@@ -267,6 +267,31 @@ extension Vault {
         try loadNote(noteId, names: try revisionNames(of: noteId), detail: detail)
     }
 
+    /// `loadNote` that takes the revisions in `known` (by file name, read
+    /// earlier at the same `detail`) instead of reading them again: revision
+    /// files are write-once, so a name holds the same content for as long as
+    /// it is listed. Only names not in `known` are read; names no longer
+    /// listed are left out, and a name that failed before is read again.
+    public func loadNote(_ noteId: UUID, reusing known: [String: Revision],
+                         detail: RevisionDetail = .full) throws -> LoadedNote {
+        try requireMigrated()
+        _ = try requireReadable()
+        var revs: [Revision] = []
+        var failures: [RevisionName: RevisionReadError] = [:]
+        for n in try revisionNames(of: noteId) {
+            if let r = known[n.filename], r.name == n {
+                // As readRevision does for it: the vault is read-only from then on (format.md §7.3).
+                if r.newer != nil { noteNewerContent(in: noteId) }
+                revs.append(r)
+                continue
+            }
+            do { revs.append(try readRevision(noteId: noteId, name: n, detail: detail)) } catch let e as RevisionReadError {
+                failures[n] = e
+            }
+        }
+        return LoadedNote(revisions: revs, failures: failures)
+    }
+
     /// `loadNote` for names already listed (`revisionNames(of:)`).
     func loadNote(_ noteId: UUID, names: [RevisionName], detail: RevisionDetail) throws -> LoadedNote {
         try requireMigrated()
@@ -369,12 +394,14 @@ extension Vault {
 
     /// Every revision of a note with its wall time, oldest first by
     /// `(hlc, device, seq)`. Unreadable revisions are listed with their error.
+    /// Stroke geometry is not decoded (`.withoutStrokePoints`): only `wall`
+    /// and `app` are kept.
     public func history(noteId: UUID) throws -> [HistoryEntry] {
         try requireMigrated()
         _ = try requireReadable()
         return try revisionNames(of: noteId).map { n in
             do {
-                let r = try readRevision(noteId: noteId, name: n)
+                let r = try readRevision(noteId: noteId, name: n, detail: .withoutStrokePoints)
                 return HistoryEntry(name: n, wall: r.wall, app: r.app, error: nil)
             } catch let e as RevisionReadError {
                 return HistoryEntry(name: n, wall: nil, app: nil, error: e)

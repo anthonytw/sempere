@@ -125,6 +125,25 @@ struct ObjectEraserTests {
         #expect(canvas.drawing.strokes.isEmpty)
     }
 
+    /// Many samples within one display frame: the canvas gets the first
+    /// erase at once and the rest together (at the next frame, here at
+    /// touch-up), as two drawing changes.
+    @Test func erasesWithinAFrameReachTheCanvasTogether() throws {
+        let strokes = (0..<6).map { TS.canvasStroke(TS.stroke(x: 40, y: 60 + Double($0) * 100)) }
+        let (canvas, eraser) = Self.canvas(strokes)
+        var changes = 0
+        let watcher = DrawingWatcher { changes += 1 }
+        canvas.delegate = watcher
+        eraser.begin(at: EraserPoint(x: 40, y: 60))
+        #expect(canvas.drawing.strokes.count == 5 && changes == 1)
+        for y in stride(from: 60.0, through: 560, by: 10) { eraser.move(to: EraserPoint(x: 40, y: y)) }
+        #expect(canvas.drawing.strokes.count == 5, "the rest waits for the next frame")
+        eraser.end(at: EraserPoint(x: 40, y: 560))
+        #expect(canvas.drawing.strokes.isEmpty)
+        #expect(changes == 2)
+        withExtendedLifetime(watcher) {}
+    }
+
     /// Regression: a page switch under the Pencil (`PageCanvasView` loads the
     /// new page's drawing) must not write the old page's strokes onto it.
     @Test func aDrawingLoadedMidGestureIsNeverOverwritten() {
@@ -172,4 +191,12 @@ struct ObjectEraserStepTests {
         #expect(ObjectEraserSize.radii.contains(up) && ObjectEraserSize.radii.contains(down))
         #expect(up > d && down < d)
     }
+}
+
+/// Counts a canvas's drawing changes.
+@MainActor
+final class DrawingWatcher: NSObject, PKCanvasViewDelegate {
+    let changed: () -> Void
+    init(_ changed: @escaping () -> Void) { self.changed = changed }
+    func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) { changed() }
 }

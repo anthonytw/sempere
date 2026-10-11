@@ -290,9 +290,9 @@ struct PreparedPage {
             if chunk.belowPage && s.centreY < meta.pageSize.height { continue }
             for c in s.commands {
                 if let clipped = Self.clip(c, to: chunk.yOffset, chunk.contentEnd) {
-                    if s.behindItems { under.append(clipped.translated(dy: -chunk.yOffset)) } else {
-                        out.append(clipped.translated(dy: -chunk.yOffset))
-                    }
+                    // y + -0 is y for every y, so the first chunk skips copying every point.
+                    let moved = chunk.yOffset == 0 ? clipped : clipped.translated(dy: -chunk.yOffset)
+                    if s.behindItems { under.append(moved) } else { out.append(moved) }
                 }
             }
         }
