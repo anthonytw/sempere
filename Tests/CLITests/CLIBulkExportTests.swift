@@ -50,6 +50,35 @@ final class CLIBulkExportTests: CLITestCase {
         XCTAssertEqual(files(nb), ["Physics/Physics-Week-3-aaaaaaaa/p001.png", "Physics/Physics-Week-3-aaaaaaaa/p002.png"])
     }
 
+    /// Security review 2026-10 stage 4, S17: plaintext exports are owner-only (files 0600, folders the
+    /// command creates 0700), as `vault summaries --plaintext`, whatever the umask.
+    func testExportsAreOwnerOnly() throws {
+        let old = umask(0o022)
+        defer { umask(old) }
+        let (_, _, key) = try makeVault()
+        let args = ["--vault", path("mine.sempere"), "--identity", key]
+        let fm = FileManager.default
+        func mode(_ p: String) throws -> Int {
+            try XCTUnwrap(fm.attributesOfItem(atPath: p)[.posixPermissions] as? NSNumber).intValue & 0o777
+        }
+        let bulk = path("bulk/new")
+        let r = try cli(["export", "--all", "--format", "pdf", "--out", bulk] + args)
+        XCTAssertEqual(r.status, 0, r.err)
+        XCTAssertEqual(try mode(bulk), 0o700)
+        for f in files(bulk) { XCTAssertEqual(try mode(bulk + "/" + f), 0o600, f) }
+
+        let archive = path("zip/Notes.zip")
+        XCTAssertEqual(try cli(["export", "--all", "--format", "pdf", "--zip", "--out", archive] + args).status, 0)
+        XCTAssertEqual(try mode(archive), 0o600)
+
+        let json = path("json")
+        let j = try cli(["export", "--all", "--format", "json", "--out", json] + args)
+        XCTAssertEqual(j.status, 0, j.err)
+        XCTAssertEqual(try mode(json), 0o700)
+        XCTAssertFalse(files(json).isEmpty)
+        for f in files(json) { XCTAssertEqual(try mode(json + "/" + f), 0o600, f) }
+    }
+
     func testZipArchive() throws {
         let (_, _, key) = try makeVault()
         let args = ["--vault", path("mine.sempere"), "--identity", key]

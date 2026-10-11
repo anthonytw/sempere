@@ -24,11 +24,19 @@ struct UnlockView: View {
     private var unlockForm: some View {
         Form {
             if keys.storage(for: model) != nil {
-                Section {
-                    Button("Unlock with Saved Key", systemImage: "faceid") { Task { await tryRememberedKey() } }
-                        .disabled(keys.isUnlocking)
-                } footer: {
-                    Text("The key is saved in the Keychain on \(RememberedKeys.deviceName).")
+                if keys.offersSavedKey(for: model) {
+                    Section {
+                        Button("Unlock with Saved Key", systemImage: "faceid") { Task { await tryRememberedKey() } }
+                            .disabled(keys.isUnlocking)
+                    } footer: {
+                        Text("The key is saved in the Keychain on \(RememberedKeys.deviceName).")
+                    }
+                } else {
+                    Section {
+                        Text("A key for a vault with this id is saved on \(RememberedKeys.deviceName), but it is offered only where it opened this vault before: any folder can claim a vault's id. Unlock this one with the passphrase or the key.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             Section("Passphrase of a stored key") {
@@ -72,7 +80,7 @@ struct UnlockView: View {
         switch await keys.unlockWithRememberedKey(model) {
         case .failed(let message): failure = String(localized: "\(message)\nUse the passphrase or paste the key instead.",
                                                     comment: "%@ is why the saved key could not be used")
-        case .unlocked, .noKey, .cancelled: break
+        case .unlocked, .noKey, .notHere, .cancelled: break
         }
     }
 

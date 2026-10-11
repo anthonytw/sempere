@@ -63,8 +63,15 @@ final class CLICommandTests: CLITestCase {
         XCTAssertEqual(empty.status, 2, empty.err)
         XCTAssertTrue(empty.err.contains("the passphrase is empty"), empty.err)
         XCTAssertFalse(FileManager.default.fileExists(atPath: vault), "nothing created")
+        // One easy to guess offline is refused unless asked for (security review 2026-10, stage 4, S5).
+        let weak = try cli(["vault", "init", vault, "--recipient", pub, "--store-key", key, "--passphrase-env", "MY_PASS",
+                            "--work-factor", "15"], env: ["MY_PASS": "s3cret"])
+        XCTAssertEqual(weak.status, 2, weak.err)
+        XCTAssertTrue(weak.err.contains("too easy to guess"), weak.err)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: vault), "nothing created")
         let r = try cli(["vault", "init", vault, "--recipient", pub, "--label", "laptop", "--store-key", key,
-                         "--passphrase-env", "MY_PASS", "--work-factor", "15"], env: ["MY_PASS": "s3cret"])
+                         "--passphrase-env", "MY_PASS", "--work-factor", "15", "--allow-weak-passphrase"],
+                        env: ["MY_PASS": "s3cret"])
         XCTAssertEqual(r.status, 0, r.err)
         // Stored key works through the passphrase path.
         let info = try cli(["vault", "info", "--vault", vault, "--json"])

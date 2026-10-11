@@ -360,7 +360,7 @@ extension Vault {
         var report = BlobCollectionReport(note: note, dryRun: dryRun)
         if !dryRun { try requireWritable() }
         guard !pendingRewrap else {
-            report.blocked = "a recipient change is unfinished (rule 2): run `sempere vault rewrap-resume`"
+            report.blocked = "rule 2: " + pendingRewrapAdvice
             records = [:]
             return report
         }
@@ -430,7 +430,7 @@ extension Vault {
         try requireWritable()
         var report = BlobRepairReport(note: note)
         guard !pendingRewrap else {
-            report.blocked = "a recipient change is unfinished: run `sempere vault rewrap-resume` first"
+            report.blocked = pendingRewrapAdvice
             return report
         }
         let inv = try blobInventory(note: note)

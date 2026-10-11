@@ -12,11 +12,11 @@ extension AppModel {
     /// Opens what the user picked (a `.sempere` vault, a plain folder, a folder
     /// holding one vault, or a file inside a vault: `VaultLocator`) and
     /// remembers it.
-    func open(picked url: URL, library: VaultLibrary) async throws {
+    func open(picked url: URL, library: VaultLibrary, external: Bool = false) async throws {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         let vaultURL = try VaultLocator.resolve(url)
-        try await openVault(at: vaultURL, accessing: vaultURL == url ? nil : url)
+        try await openVault(at: vaultURL, accessing: vaultURL == url ? nil : url, external: external)
         remember(in: library)
     }
 

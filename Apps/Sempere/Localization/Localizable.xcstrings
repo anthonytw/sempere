@@ -2309,6 +2309,18 @@
         }
       }
     },
+    "A key for a vault with this id is saved on %@, but it is offered only where it opened this vault before: any folder can claim a vault's id. Unlock this one with the passphrase or the key." : {
+      "comment" : "Unlock sheet; the value is “this iPad”, “this iPhone” or “this Mac”",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hay una clave de una bóveda con este identificador guardada en %@, pero solo se ofrece donde ya abrió esta bóveda: cualquier carpeta puede reclamar el identificador de una bóveda. Desbloquea esta con la frase de contraseña o con la clave."
+          }
+        }
+      }
+    },
     "A new note whose title you leave empty is named %@." : {
       "comment" : "Settings ▸ New Notes footer; the value is a quoted sample title",
       "extractionState" : "manual",
@@ -10012,6 +10024,18 @@
         }
       }
     },
+    "Open “%@”?" : {
+      "comment" : "Alert title before a vault opened from another app replaces the open one; the value is the new vault's name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Abrir «%@»?"
+          }
+        }
+      }
+    },
     "Opening the vault…" : {
       "comment" : "Progress",
       "extractionState" : "manual",
@@ -13453,18 +13477,6 @@
         }
       }
     },
-    "Sempere secret key" : {
-      "comment" : "Subject when sharing the new vault's secret key",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clave secreta de Sempere"
-          }
-        }
-      }
-    },
     "Serif" : {
       "comment" : "Typeface",
       "extractionState" : "manual",
@@ -15440,6 +15452,18 @@
         }
       }
     },
+    "The copy is kept in the vault, on its storage: anyone who can read the storage can try passphrases on it offline. Use five or more random words, or a long random password." : {
+      "comment" : "Footnote under the toggle that stores the key in the vault under a passphrase",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La copia se guarda en la bóveda, en su almacenamiento: cualquiera que pueda leer el almacenamiento puede probar frases de contraseña sin conexión. Usa cinco o más palabras al azar, o una contraseña larga al azar."
+          }
+        }
+      }
+    },
     "The copy on this device and the saved password are deleted. The vault on the server is not changed." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -16374,6 +16398,18 @@
         }
       }
     },
+    "This closes “%@”. Open a vault you received only if you know where it came from." : {
+      "comment" : "Alert message; the value is the name of the vault open now",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se cerrará «%@». Abre una bóveda recibida solo si sabes de dónde viene."
+          }
+        }
+      }
+    },
     "This device" : {
       "comment" : "History: a version saved on this device",
       "extractionState" : "manual",
@@ -17086,6 +17122,18 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "Too easy to guess for a copy stored with the vault. Add more random words or characters." : {
+      "comment" : "Shown while the passphrase for the stored key copy is too weak",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demasiado fácil de adivinar para una copia guardada con la bóveda. Añade más palabras o caracteres al azar."
           }
         }
       }

@@ -1,4 +1,5 @@
 import Foundation
+import Sempere
 import UIKit
 
 /// Where the app is running. The Mac behaviour (menus, windows, pointer input)
@@ -75,8 +76,14 @@ struct NoteWindowValue: Codable, Hashable, Sendable {
 
 /// The library window's selection, saved with the scene (`@SceneStorage`) and
 /// applied once the vault is unlocked again.
+///
+/// The system keeps scene storage in plaintext (a Mac's Saved Application
+/// State), so it never names a notebook or a tag: those are stored as a keyed
+/// digest (`digest`, `AppModel.selectionDigest`) that only the unlocked vault
+/// resolves (security review 2026-10, S13).
 struct RestorableSelection: Codable, Equatable, Sendable {
-    /// `all`, `deleted`, `favorites`, `recognized`, `notebook:<path>` or `tag:<name>`.
+    /// `all`, `deleted`, `favorites`, `recognized`, `notebook#<digest>` or
+    /// `tag#<digest>`; anything else is All Notes.
     var sidebar: String
     var note: UUID?
     /// The vault the selection belongs to.
@@ -84,28 +91,42 @@ struct RestorableSelection: Codable, Equatable, Sendable {
 
     static let key = "Sempere.selection"
 
-    var sidebarItem: SidebarItem {
-        if sidebar == "deleted" { return .deleted }
-        if sidebar == "recognized" { return .recentlyRecognized }
-        if sidebar == "favorites" { return .favorites }
-        if sidebar.hasPrefix("notebook:") { return .notebook(String(sidebar.dropFirst("notebook:".count))) }
-        if sidebar.hasPrefix("tag:") { return .tag(String(sidebar.dropFirst("tag:".count))) }
-        return .allNotes
+    /// What `sidebar` names: an item, or a notebook or tag known only by its digest.
+    enum Sidebar: Equatable {
+        case item(SidebarItem)
+        case notebook(digest: String)
+        case tag(digest: String)
     }
 
-    static func name(of item: SidebarItem?) -> String {
+    var sidebarRef: Sidebar {
+        if sidebar == "deleted" { return .item(.deleted) }
+        if sidebar == "recognized" { return .item(.recentlyRecognized) }
+        if sidebar == "favorites" { return .item(.favorites) }
+        if sidebar.hasPrefix("notebook#") { return .notebook(digest: String(sidebar.dropFirst("notebook#".count))) }
+        if sidebar.hasPrefix("tag#") { return .tag(digest: String(sidebar.dropFirst("tag#".count))) }
+        return .item(.allNotes)
+    }
+
+    /// The stored form of `item`; a notebook or tag goes through `digest`
+    /// (of the canonical path or the tag key, `digestLabel`).
+    static func name(of item: SidebarItem?, digest: (String) -> String) -> String {
         switch item ?? .allNotes {
         case .allNotes: return "all"
         case .recentlyRecognized: return "recognized"
         case .favorites: return "favorites"
         case .deleted: return "deleted"
-        case .notebook(let path): return "notebook:" + path
-        case .tag(let tag): return "tag:" + tag
+        case .notebook(let path): return "notebook#" + digest(digestLabel(notebook: path))
+        case .tag(let tag): return "tag#" + digest(digestLabel(tag: tag))
         }
     }
 
-    init(sidebar: SidebarItem?, note: UUID?, vault: UUID?) {
-        self.sidebar = Self.name(of: sidebar)
+    /// What a notebook's or tag's digest is taken of: the same for every
+    /// spelling of the same notebook (`NotebookPath.canonical`) or tag (`NoteOps.tagKey`).
+    static func digestLabel(notebook path: String) -> String { "notebook|" + (NotebookPath.canonical(path) ?? "") }
+    static func digestLabel(tag: String) -> String { "tag|" + NoteOps.tagKey(tag) }
+
+    init(sidebar: SidebarItem?, note: UUID?, vault: UUID?, digest: (String) -> String) {
+        self.sidebar = Self.name(of: sidebar, digest: digest)
         self.note = note
         self.vault = vault
     }

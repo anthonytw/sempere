@@ -60,7 +60,7 @@ public final class ZipWriter {
     /// Bytes read from a source file at a time.
     static let chunk = 1 << 20
 
-    /// Creates (or truncates) the archive at `url`.
+    /// Creates (or replaces) the archive at `url`, mode 0600.
     ///
     /// - Parameter date: the modification time stamped on the entries.
     /// - Throws: `ZipWriterError.io` when the file cannot be created.
@@ -73,7 +73,8 @@ public final class ZipWriter {
         self.zip64Threshold = zip64Threshold
         self.zip64EntryThreshold = zip64EntryThreshold
         let fm = FileManager.default
-        guard fm.createFile(atPath: url.path, contents: nil),
+        // Owner-only: an archive of exported notes is plaintext.
+        guard fm.createFile(atPath: url.path, contents: nil, attributes: [.posixPermissions: 0o600]),
               let h = FileHandle(forWritingAtPath: url.path) else {
             throw ZipWriterError.io(path: url.path, reason: "cannot create the file")
         }

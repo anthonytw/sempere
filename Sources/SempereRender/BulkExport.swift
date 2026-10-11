@@ -404,7 +404,8 @@ public final class BulkExportSession: @unchecked Sendable {
         let fm = FileManager.default
         switch destination {
         case .folder(let root):
-            do { try fm.createDirectory(at: root, withIntermediateDirectories: true) } catch {
+            // Plaintext: folders this run creates are the owner's only (an existing one keeps its mode).
+            do { try FileIO.createPrivateDirectory(root) } catch {
                 throw BulkExportError.cannotWrite(path: root.path, reason: error.localizedDescription)
             }
             if let data = try? BoundedRead.contents(of: root.appendingPathComponent(BulkExportManifest.fileName),
@@ -415,7 +416,10 @@ public final class BulkExportSession: @unchecked Sendable {
             }
         case .zip(let archive, let staging):
             do {
-                try fm.createDirectory(at: staging, withIntermediateDirectories: true)
+                // The staging folder may sit in a shared temporary directory (Linux /tmp): it is made
+                // here, mode 0700, never reused, so nothing staged in it is readable by anyone else.
+                try fm.createDirectory(at: staging.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try FileIO.createStagingDirectory(staging)
                 try fm.createDirectory(at: archive.deletingLastPathComponent(), withIntermediateDirectories: true)
                 zip = try ZipWriter(url: archive)
             } catch let e as ZipWriterError {
@@ -521,7 +525,7 @@ public final class BulkExportSession: @unchecked Sendable {
         do {
             try Task.checkCancellation()
             if options.format != .media {   // a note without media writes nothing, not even its folders
-                try fm.createDirectory(at: url(job.folder.joined(separator: "/")), withIntermediateDirectories: true)
+                try FileIO.createPrivateDirectory(url(job.folder.joined(separator: "/")))
             }
             switch options.format {
             case .pdf, .pdfAttachments:
@@ -550,7 +554,7 @@ public final class BulkExportSession: @unchecked Sendable {
                 // memory, not the note), and renamed once every page is: a note that fails to render
                 // leaves the earlier version's files as they were.
                 let folder = job.path(.png)
-                try fm.createDirectory(at: url(folder), withIntermediateDirectories: true)
+                try FileIO.createPrivateDirectory(url(folder))
                 var staged: [String] = []
                 func removeStaged() { for rel in staged { try? fm.removeItem(at: url(rel + ".partial")) } }
                 do {
@@ -558,7 +562,7 @@ public final class BulkExportSession: @unchecked Sendable {
                                               report: &report) { name, data in
                         try Task.checkCancellation()
                         let rel = folder + "/" + name + ".png"
-                        try data.write(to: url(rel + ".partial"), options: .atomic)
+                        try FileIO.writePrivate(data, to: url(rel + ".partial"))
                         staged.append(rel)
                     }
                 } catch {
@@ -632,7 +636,9 @@ public final class BulkExportSession: @unchecked Sendable {
         unsaved = 0
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try? enc.encode(manifest).write(to: root.appendingPathComponent(BulkExportManifest.fileName), options: .atomic)
+        // It names the notes' titles and notebooks: owner-only, like the files it lists.
+        guard let data = try? enc.encode(manifest) else { return }
+        try? FileIO.writePrivate(data, to: root.appendingPathComponent(BulkExportManifest.fileName))
     }
 
     /// Ends the run. A folder keeps everything written (and its manifest, so

@@ -295,7 +295,13 @@ final class BlobRewrapTests: VaultTestCase {
                                                            stopAfter: 0))
             var j = try journal(vault)
             j.rekeyBlobs = recorded
-            try InkJSON.encoder().encode(j).write(to: vault.url.appendingPathComponent("rewrap-journal.json"))
+            let bytes = try InkJSON.encoder().encode(j)
+            try bytes.write(to: vault.url.appendingPathComponent("rewrap-journal.json"))
+            // As the writer of such a journal would have: bound in vault.json (format.md §3.3.1).
+            let manifestURL = vault.url.appendingPathComponent("vault.json")
+            var m = try VaultManifest.decode(Data(contentsOf: manifestURL))
+            m.rewrapPending = RecipientsAuth.rewrapPending(vaultId: m.vaultId, journal: bytes, secret: try vault.requireSecret())
+            try m.encoded().write(to: manifestURL)
             var resumed = try Vault.open(at: vault.url, identities: [a])
             XCTAssertTrue(try resumed.resumeRewrap().isComplete)
             var opened = 0

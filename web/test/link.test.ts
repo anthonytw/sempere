@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import {
   type SecretLink, linkConnects, linkMessage, linkPublicKeys, linkSeeds, parseSecretLink, verifySignedLink,
 } from "../src/vault/link.ts";
-import { UnlockedVault, parseManifest } from "../src/vault/vault.ts";
+import { UnlockedVault, parseManifest, rewrapPendingTag } from "../src/vault/vault.ts";
 import { fixtures } from "./support.ts";
 
 interface Vectors {
@@ -102,11 +102,13 @@ describe("signed secret link (format.md §2.1)", () => {
     const good: SecretLink = { kind: "signed", ed25519: ed25519.sign(message, seeds.ed25519),
       mldsa65: ml_dsa65.sign(message, ml_dsa65.keygen(seeds.mldsa65).secretKey) };
     const gcm = { name: "AES-GCM", length: 256 } as const;
-    const linked = await UnlockedVault.unlock({ ...manifest, secretLink: good }, identity, journal);
+    // Bound by vault.json, as every unfinished change's journal is (format.md §3.3.1).
+    const rewrapPending = await rewrapPendingTag(manifest.vaultId, journal, current);
+    const linked = await UnlockedVault.unlock({ ...manifest, secretLink: good, rewrapPending }, identity, journal);
     expect(await linked.derivedKeys("sempere/1 test", gcm, ["decrypt"])).toHaveLength(2);
     if (good.kind !== "signed") throw new Error("unreachable");
     const half: SecretLink = { ...good, mldsa65: new Uint8Array(3309) };
-    const unlinked = await UnlockedVault.unlock({ ...manifest, secretLink: half }, identity, journal);
+    const unlinked = await UnlockedVault.unlock({ ...manifest, secretLink: half, rewrapPending }, identity, journal);
     expect(await unlinked.derivedKeys("sempere/1 test", gcm, ["decrypt"])).toHaveLength(1);
   });
 });

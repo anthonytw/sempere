@@ -350,3 +350,42 @@ extension Vault {
         try plan.snapshots.reduce(0) { $0 + (try encodedRevision($1).count) }
     }
 }
+
+extension CompactionPlanner {
+    /// Revisions no compactor or thinner of this format ever deletes
+    /// (format.md §5.3, §5.8.1, §5.8.4): checkpoints, and the first revision
+    /// while another has an earlier `wall` (`createdAnchor`).
+    public static func neverDeleted(_ revisions: [Revision]) -> Set<RevisionName> {
+        var out = Set(revisions.filter { $0.kind == .delta && $0.checkpoint != nil }.map(\.name))
+        if let anchor = createdAnchor(revisions) { out.insert(anchor) }
+        return out
+    }
+
+    /// Whether deleting `gone` from `revisions` (all the note's revisions,
+    /// readable) keeps every checkpoint that is complete now complete
+    /// (format.md §5.8.4 G2): what a compactor or thinner of this format
+    /// guarantees, with the positioned snapshots and witnesses it keeps. A
+    /// sync judging deletions it did not make (a server's, security review
+    /// 2026-10, stage 4, S2) refuses a set that breaks it.
+    public static func deletionKeepsCheckpoints(_ gone: Set<RevisionName>, from revisions: [Revision], now: Date) -> Bool {
+        let revs = revisions.sorted { $0.name < $1.name }
+        guard !gone.isEmpty, let last = revs.last else { return true }
+        let targets = NoteHistory.restorePoints(revs).filter { $0.complete && $0.isCheckpoint && !gone.contains($0.name) }
+            .map(\.name).sorted()
+        guard !targets.isEmpty else { return true }
+        // As in `plan`: a stand-in snapshot ordered after everything says which revisions are gone
+        // (covered elsewhere) and covers nothing at or before any target.
+        var goneSet = Included()
+        for r in revs where gone.contains(r.name) {
+            switch r.body {
+            case .delta: goneSet.insert(device: r.device, seq: r.seq)
+            case .snapshot(let inc, _): goneSet = goneSet.union(inc).union(Included([r.device: .init(upTo: 0, extra: [r.seq])]))
+            }
+        }
+        let standIn = Revision(noteId: last.noteId, device: .zero, seq: 1,
+                               hlc: HLC(millis: HLC.maxMillis, counter: HLC.maxCounter) ?? .zero, wall: now, app: "",
+                               body: .snapshot(included: goneSet, state: NoteState(meta: NoteMeta(created: now))))
+        let survivors = revs.filter { !gone.contains($0.name) } + [standIn]
+        return Completeness(survivors, unreadable: []).isComplete(at: targets).allSatisfy { $0 }
+    }
+}

@@ -85,6 +85,11 @@ enum CLIError: Error {
                 + "\(SharedSettingsMigrations.current)): they are neither read nor written")
         case VaultError.rewrapIncomplete:
             return .unhealthy(text + "; run `sempere vault rewrap-resume`")
+        case VaultError.rewrapJournalUnreadable:
+            // A journal this machine refuses blocks recipient changes until it goes (format.md §3.3.1, S19).
+            let described = (error as? LocalizedError)?.errorDescription ?? text
+            return .failure(described + "; `sempere vault info` says whether it is refused, and "
+                + "`sempere vault rewrap-discard` deletes a refused one")
         case let e as NoteSummary.LookupError:
             switch e {
             case .notFound(let q): return .failure("no note matches '\(q)'")

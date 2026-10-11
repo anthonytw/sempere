@@ -62,6 +62,8 @@ export interface VaultManifest {
   secretLink?: SecretLink;
   /** `markersTag` (format.md §2.1 "Version markers"): read like `recipientsTag`. */
   markersTag?: string;
+  /** `rewrapPending` (format.md §3.3.1 "Binding the journal"): read like `recipientsTag`. */
+  rewrapPending?: string;
 }
 
 const bech32 = /^[02-9ac-hj-np-z]+$/;
@@ -97,6 +99,7 @@ export function parseManifest(bytes: Uint8Array): VaultManifest {
     if (parseRFC3339(created) === undefined) throw new DecodeError("$.created: bad date");
     const tag = opt(o, "recipientsTag");
     const markersTag = opt(o, "markersTag");
+    const rewrapPending = opt(o, "rewrapPending");
     m = {
       format: reqWith(o, "format", "$", str),
       vaultId: reqWith(o, "vaultId", "$", uuid),
@@ -107,6 +110,9 @@ export function parseManifest(bytes: Uint8Array): VaultManifest {
     };
     if (tag !== undefined && tag !== null) m.recipientsTag = typeof tag === "string" ? tag : "";
     if (markersTag !== undefined && markersTag !== null) m.markersTag = typeof markersTag === "string" ? markersTag : "";
+    if (rewrapPending !== undefined && rewrapPending !== null) {
+      m.rewrapPending = typeof rewrapPending === "string" ? rewrapPending : "";
+    }
     const link = parseSecretLink(opt(o, "secretLink"));
     if (link) m.secretLink = link;
   } catch (e) {
@@ -249,6 +255,16 @@ export async function markersTag(vaultId: string, format: string, features: stri
   return hex(new Uint8Array(await crypto.subtle.sign("HMAC", key, buf(concat(parts)))));
 }
 
+/**
+ * Why the version markers do not check (format.md §2.1 "Version markers", without a trust record),
+ * or undefined when they do (or the vault predates them and nothing says otherwise).
+ */
+async function markersProblem(m: VaultManifest, secret: Uint8Array): Promise<"markersMismatch" | "markersRemoved" | undefined> {
+  if (m.markersTag === undefined) return m.features.includes(markersTagFeature) ? "markersRemoved" : undefined;
+  const expected = await markersTag(m.vaultId, m.format, m.features, secret);
+  return expected !== undefined && equalStrings(m.markersTag, expected) ? undefined : "markersMismatch";
+}
+
 /** Classifies the manifest's recipients and version markers under the vault secret (format.md §2.1, without a trust record). */
 export async function checkRecipients(m: VaultManifest, secret: Uint8Array): Promise<RecipientsStatus> {
   let status: RecipientsStatus;
@@ -259,11 +275,32 @@ export async function checkRecipients(m: VaultManifest, secret: Uint8Array): Pro
     status = equalStrings(m.recipientsTag, expected) ? { status: "verified" } : { status: "tampered", reason: "tagMismatch" };
   }
   if (status.status === "tampered") return status;
-  if (m.markersTag === undefined) {
-    return m.features.includes(markersTagFeature) ? { status: "tampered", reason: "markersRemoved" } : status;
-  }
-  const expected = await markersTag(m.vaultId, m.format, m.features, secret);
-  return expected !== undefined && equalStrings(m.markersTag, expected) ? status : { status: "tampered", reason: "markersMismatch" };
+  const markers = await markersProblem(m, secret);
+  return markers ? { status: "tampered", reason: markers } : status;
+}
+
+/**
+ * `rewrapPending` (lowercase hex) binding the journal's exact bytes to the vault under `secret`, the
+ * secret the rotation moved to (format.md §3.3.1 "Binding the journal").
+ */
+export async function rewrapPendingTag(vaultId: string, journal: Uint8Array, secret: Uint8Array): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", buf(journal)));
+  const message = concat([encoder.encode("sempere/1"), Uint8Array.of(0), encoder.encode("rewrap pending"), Uint8Array.of(0),
+    encoder.encode(vaultId.toLowerCase()), Uint8Array.of(0), digest]);
+  const key = await hmacKey(await hkdf(secret, "sempere/1 rewrap pending key"));
+  return hex(new Uint8Array(await crypto.subtle.sign("HMAC", key, buf(message))));
+}
+
+/**
+ * Whether the journal's previous secret counts (format.md §3.3.1 "Accepting the journal"), for a
+ * reader that keeps no trust record (rule 3 needs one): vault.json's `rewrapPending` binds these
+ * exact bytes under the current secret, and the secret is the current one or `secretLink` links it.
+ */
+export async function journalSecretAccepted(manifest: VaultManifest, journal: Uint8Array, previous: Uint8Array,
+  current: Uint8Array): Promise<boolean> {
+  if (manifest.rewrapPending === undefined
+    || !equalStrings(manifest.rewrapPending, await rewrapPendingTag(manifest.vaultId, journal, current))) return false;
+  return equalBytes(previous, current) || verifySecretLink(manifest.secretLink, previous, current, manifest.vaultId);
 }
 
 /**
@@ -337,11 +374,11 @@ export class UnlockedVault {
         if (typeof p === "string") {
           // Plaintext anyone who can write the folder can plant, with a secret
           // anyone can encrypt to the public keys: it counts only when
-          // `secretLink` links it to the current secret, or it is the current
-          // one (security review 2026-10, R4; Vault.readJournal in Swift).
+          // `secretLink` links it to the current secret (R4), and vault.json
+          // still binds it (a removed device keeps the outgoing secret and the
+          // link stays: S0), or it is the current one (Vault.judgeJournal in Swift).
           const bytes = await decryptSecret(decrypter, p);
-          if (equalBytes(bytes, secretBytes)
-            || await verifySecretLink(manifest.secretLink, bytes, secretBytes, manifest.vaultId)) {
+          if (await journalSecretAccepted(manifest, journal, bytes, secretBytes)) {
             previous = await hmacKey(bytes);
             derivation.push(await hkdfKey(bytes));
           }

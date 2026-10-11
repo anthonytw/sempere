@@ -76,6 +76,9 @@ Unknown files and directories must be ignored, never deleted.
   §2.1.
 - `markersTag` (optional, *new: authenticated version markers*): §2.1
   "Version markers".
+- `rewrapPending` (optional): present only while a recipient change is
+  unfinished; it binds `rewrap-journal.json` to this `vault.json` (§3.3.1
+  "Binding the journal").
 
 ### 2.1 Authenticated recipients
 
@@ -233,13 +236,20 @@ Application Support folder, as
 { "format": "sempere-trust/2", "vaultId": "…",
   "linkPublicKeys": { "ed25519": "…(64 hex digits)…", "mldsa65": "…(3904 hex digits)…" },
   "recipients": ["age1pq1…", …],
-  "markers": { "format": "sempere/1", "features": ["attachments", "markers-tag", "recipients-tag"] } }
+  "markers": { "format": "sempere/1", "features": ["attachments", "markers-tag", "recipients-tag"] },
+  "rewrapFinished": true }
 ```
 
 `markers` (optional) is present once the device has verified a
 `markersTag`: `format` and the canonical `features` (distinct, sorted by
 UTF-8 bytes). A writer never stores fewer markers than the record held:
 it keeps the higher major and every feature of either.
+
+`rewrapFinished` (optional) is `true` once
+this device has seen the secret named by `linkPublicKeys` with no rotation
+into it pending (§3.3.1 "Finished rotations"). While the record names the
+same secret it never goes back; a record saved for another secret starts
+without it. A legacy record never carries it.
 
 It holds no secret and no key that can make a link or decrypt anything:
 whoever reads it can check a `secretLink` but not forge one. It is still
@@ -425,7 +435,11 @@ The reader cap exists because scrypt at work factor w needs 2^w × 1 KiB of
 memory (20 → 1 GiB, 22 → 4 GiB), beyond what the iPad target can allocate.
 
 The file is optional. A vault may be used with an identity that is only
-in a device Keychain or supplied externally.
+in a device Keychain or supplied externally. It sits with the vault, so
+whoever can read the vault's storage can try passphrases on it offline:
+writers SHOULD refuse a passphrase that is easy to guess (the reference
+implementation refuses one estimated below 60 bits, `PassphraseStrength`,
+unless the user insists; security review 2026-10, stage 4, S5).
 
 ### 3.3 Changing recipients
 
@@ -467,7 +481,8 @@ change can be finished by any device holding an identity of the new set:
      finishing an interrupted change uses the recorded value.
 2. Write `vault.json` with the new `recipients` and `vaultSecret`, and with
    `recipientsTag` (and, when the secret rotates, `secretLink`) for them
-   (§2.1), in one atomic write.
+   (§2.1), and `rewrapPending` for the journal of step 1 (below), in one
+   atomic write.
 3. For every file under `notes/` (revisions and `att/` blobs), skip it if it is already
    complete (below); otherwise rewrite it as described above, verifying its
    tag under the current secret or, failing that, under
@@ -484,9 +499,13 @@ change can be finished by any device holding an identity of the new set:
    unchanged whatever its `$minReaderVersion`; one that cannot be decrypted
    or verified
    is left as it is, reported, and does not keep the journal.
-4. Delete `rewrap-journal.json` once every file is complete. If any file
-   could not be read or verified, keep the journal (it is the only copy of
-   the outgoing secret), report those files, and retry step 3 later.
+4. Once every file is complete, rewrite `vault.json` without
+   `rewrapPending` (one atomic write that tags its markers as every write
+   does, §2.1, and only over a `vault.json` whose recipients, `vaultSecret`
+   and markers are still the ones this writer holds; otherwise stop and keep
+   the journal), then delete `rewrap-journal.json`. If any file could not be
+   read or verified, keep the journal (it is the only copy of the outgoing
+   secret) and `rewrapPending`, report those files, and retry step 3 later.
 
 A file is complete when its age header has, for each stanza type, exactly
 one stanza per current recipient of the matching type (`X25519` for `age1`
@@ -496,21 +515,91 @@ verifies, §8.1.5). Neither stanza type names its recipient, so these counts
 are the only header-level check; while a journal exists no other recipient
 change is started, so counts from two changes never mix.
 
-If `rewrap-journal.json` exists when a vault is opened, the change is
-unfinished: a writer whose list checks (§2.1) finishes steps 3 and 4 before
-any other recipient change, and may verify tags under `previousVaultSecret` meanwhile. Readers
+If `rewrap-journal.json` exists when a vault is opened and is accepted
+(below), the change is unfinished: a writer whose list checks (§2.1)
+finishes steps 3 and 4 before any other recipient change, and may verify
+tags under `previousVaultSecret` meanwhile. Readers
 that do not implement this procedure treat the journal as an unknown file
 (§1).
 
-The journal is plaintext that anyone who can write the folder can plant,
-and anyone can encrypt a secret of their own to the public keys. A reader
-therefore uses `previousVaultSecret` only when it equals the current secret
-(a change interrupted before step 2) or `vault.json`'s `secretLink` (§2.1)
-verifies a rotation from it to the current secret. Otherwise the journal is
-reported as unreadable: nothing verifies under its secret, and a writer does
-not resume from it. A journal written before §2.1 (no `secretLink`) is
-treated the same way; its files not yet rewrapped are reported as failing
-their tags until they are restored from a backup.
+**Accepting the journal.** The journal is plaintext that anyone who can
+write the folder can plant or put back, and anyone can encrypt a secret of
+their own to the public keys. A removed device even holds a real outgoing
+secret, and `secretLink` stays in `vault.json` until the next rotation
+(§2.1), so a link alone cannot tell an unfinished rotation from a finished
+one (security review 2026-10, S0). A reader therefore accepts the journal
+only when:
+
+1. **Bound:** `vault.json`'s `rewrapPending` verifies over the journal's
+   bytes under the current secret (below); and, when it holds a
+   `previousVaultSecret` other than the current secret,
+2. **Linked:** `vault.json`'s `secretLink` (§2.1) verifies a rotation from
+   that secret to the current one, and
+3. **Not finished:** the reader's trust record does not say that the
+   rotation into the current secret finished (`rewrapFinished`, below).
+
+Otherwise the journal is **refused**: it gives no secret, a writer does not
+resume from it, and files tagged under its secret fail their tags. A journal
+that does not parse, or whose previous secret this reader's keys do not
+decrypt, is refused too. A journal left by a change interrupted before step
+2 is not bound: it is refused, which loses nothing, since `vault.json` did
+not change.
+
+**Binding the journal.** The writer of a recipient change writes, in step 2,
+the lowercase hex (64 digits) of
+
+```
+pendingKey    = HKDF-SHA256(ikm = vaultSecret, salt = "", info = "sempere/1 rewrap pending key", L = 32)
+rewrapPending = HMAC-SHA256(key = pendingKey,
+                            message = "sempere/1" ‖ 0x00 ‖ "rewrap pending" ‖ 0x00 ‖ vaultId
+                                      ‖ 0x00 ‖ SHA-256(journal))
+```
+
+with `vaultSecret` the **new** secret (the current one when it does not
+rotate), `vaultId` lowercase UTF-8, and `journal` the exact bytes of
+`rewrap-journal.json` written in step 1 (32 raw bytes of digest). Only
+holders of the current secret can compute it, so a removed device, which
+holds the outgoing secret only, can neither bind a journal of its own nor
+bind the genuine one again once step 4 removed the field. The field is
+covered by neither `recipientsTag` nor `markersTag`; removing it only makes
+readers refuse the journal, which is no more than deleting the journal does.
+Every other write of `vault.json` (a feature added, a tag, a link upgraded)
+keeps it unchanged.
+
+**Finished rotations.** A `vault.json` from step 2, put back after step 4
+(same secret), still binds the genuine journal, which whoever saved both can
+replay; no field of `vault.json` can tell the two apart. Each device that
+keeps a trust record (§2.1) therefore remembers that the rotation into its
+current secret finished: it sets `rewrapFinished` when it saves its record
+for the current secret (at any write), or opens the vault with a list that
+checks against a record of that same secret, while `vault.json` carries no
+`rewrapPending` and no `rewrap-journal.json` exists, and when it completes
+step 4 itself. From then on it refuses every journal whose previous secret
+is not the current one (rule 3). A device without a record (first use, a
+record lost) applies rules 1 and 2 only.
+
+**Refused journals.** A refused journal gives no secret, but while it is
+there no other recipient change starts. A writer whose list checks (§2.1)
+may take it away, explicitly (`sempere vault rewrap-discard`; the app does
+it when it unlocks the vault): only a journal it refuses, never one it
+accepts or cannot read (an I/O error, a file not yet downloaded). The
+reference implementation moves it to `rewrap-journal.refused.json`, an
+unknown file (§1) that nothing reads, replacing an earlier one. When its trust
+record says the rotation finished, it also removes a `rewrapPending` that
+`vault.json` still carries (a put-back copy), as in step 4. Sync never
+replaces a local journal with another copy unless the local one is refused
+and the other accepted (without the key, the other is kept as a conflict
+copy), and never takes a `vault.json` that, under the same secret and
+recipients, brings back or changes `rewrapPending` (only step 4's removal is
+legitimate there).
+
+**Limits.** A device with no trust record that is given both a `vault.json`
+put back from step 2 and the genuine journal accepts the outgoing secret, as
+it would have during the rotation. A backup taken while a
+rotation was unfinished, restored after the rotation finished, looks like a
+put-back copy to a device that saw it finish: that device refuses its
+journal (and moves it aside), and the rotation is finished from a device
+without that record.
 
 A change may also **replace** one recipient by another in a single pass
 (steps 1–4 as for a removal: the secret rotates). Until it finishes, files
@@ -3043,7 +3132,7 @@ where the table says how they degrade.
 | identity file, device state | 1 MiB | `BoundedRead` |
 | attachment blob file (§8) | 1 GiB of content plus 64 MiB of framing and age overhead (padme of a 1 GiB blob adds up to 32 MiB) | `BoundedRead` |
 | `backup.json`, export manifest (`.sempere-export-*.json`) | 256 MiB | `BoundedRead` |
-| files read at all | regular files only (no FIFOs or devices; symlinks followed in a vault, not in an imported package) | `BoundedRead` |
+| files read at all | regular files only (no FIFOs or devices; symlinks followed in a vault, not in an imported package, and never below a backup folder or a restore source: a backup run, verify or restore reports a link there and does not read through it) | `BoundedRead` |
 | JSON nesting | 512 levels (Foundation's decoder) | |
 | names of skipped ops, fields and features reported (§7.4) | 64 characters each; 32 distinct per note (or vault), the rest counted together | `NewerContent.maxNameLength`, `.maxNames` |
 | unknown fields kept verbatim (§7.5, §8) | 24 levels deep from the document root; 16 384 values per file | `JSONValue.maxDepth`, `.maxValues` |
@@ -3052,7 +3141,7 @@ where the table says how they degrade.
 | scrypt work factor (identity files) | 2^20 by default (1 GiB), at most 2^22 | `IdentityFile` |
 | WebDAV response | 256 MiB for a revision, 16 MiB otherwise; PROPFIND bodies must be UTF-8 with no DTD or processing instruction | `WebDAVClient` |
 | WebDAV sync run (§9.1) | 100 000 note folders, 10⁶ listed entries, 64 GiB downloaded, 12 hours; the run stops there with an error and the next one continues | `SyncLimits` |
-| zip entry (import) | 1 GiB uncompressed, CRC and size checked | `ZipArchive` |
+| zip entry (import) | 1 GiB uncompressed, CRC and size checked; a stored entry's two sizes equal, a deflated one at most its size + 0.1 % + 64 bytes; no two entries of one name, and no two whose header and data overlap (else the archive is refused); all reads of one archive, repeated and failed ones included, at most 32 × its size and at least 2 GiB uncompressed (an unzipped package: 4 GiB read); a read that failed is not repeated; thumbnails: 8, 16 MiB each | `ZipArchive`, `NotePackage` |
 | binary plist (import) | 64 levels; no cycles; each object parsed once; keyed archives must be binary | `BinaryPlist` |
 | XML plist (import: a recordings library, a PDF metadata index, a few small Notability plists) | 4 MiB, 64 levels; only the five predefined entities and numeric character references; a DOCTYPE with an internal subset refused | `XMLPlist` |
 | keyed-archive UID chain | 64 hops | `KeyedArchive` |
@@ -3074,7 +3163,7 @@ where the table says how they degrade.
 | notebook levels shown | 64 | `NotebookNode.maxDepth` |
 | notebook name (a capture's title and notebook, §11.3; the `quickCapture.notebook` setting) | 300 characters and 1 200 Unicode scalars; a capture cuts a longer name, the setting refuses it | `CaptureAdoption.maxNameLength`, `.maxNameScalars` |
 | LaTeX source (`math`, §8.2.8) | 8 192 UTF-8 bytes (else the revision is rejected); typeset only within 4 096 tokens, balanced groups and 64 levels of nesting (else drawn as source text) | `MathSource.check` |
-| PDF attachment (export, `SemperePDF`) | 1 GiB file; 10⁶ objects; 256 MiB per decoded stream, 1 GiB decoded per file; nesting and page-tree depth 64; 32 reference hops; 4 096 cross-reference sections; 16 filters per stream; encrypted files refused | `PDFLimits` |
+| PDF attachment (export, `SemperePDF`) | 1 GiB file; 10⁶ objects; 256 MiB per decoded stream, 1 GiB decoded per file; the object parser reads at most 4 bytes per byte of the file and of its decoded streams, plus 64 MiB; nesting and page-tree depth 64; 32 reference hops; 4 096 cross-reference sections; 16 filters per stream; encrypted files refused | `PDFLimits` |
 | PDF page drawn as pixels (SVG, PNG) | 16 M pixels per page (drawn at a lower resolution beyond), 256 M per export (placeholders beyond) | `RenderLimits.maxBackgroundPixels…` |
 | summary cache file (§10) | 64 MiB on disk, 256 MiB after gunzip; any failure discards it | `SummaryCache.maxFileBytes` |
 | published summaries (§12) | 64 MiB on disk, 256 MiB after gunzip; unknown fields skipped, not kept; any failure ignores the file, a bad entry only that entry | `PublishedSummaries.maxFileBytes` |
@@ -3227,18 +3316,25 @@ It keeps four more, under the same derivation:
 - the **activity** file (purpose `activity`, magic `SMPA` ‖ `0x01`, one entry
   named `activity`, not keyed by `entryName`): the notes "Recognize All" read in
   the last seven days and the recent search queries, kept across launches;
+- the **saved selection** (purpose `selection`, Mac; no file): the library
+  window's selection, which the system keeps in plaintext with its window
+  state, names a notebook or tag only as `entryName("notebook|<canonical
+  path>")` or `entryName("tag|<tag key>")`, resolved against the unlocked
+  vault's notebooks and tags;
 - the **blob cache** (purpose `blob-cache`): decrypted attachment content
   (§8.1), which PDF and image readers need as plain files, so its entries are
   **not** sealed: each file holds a blob's verified content, is named
   `entryName("blob|<note id>|<sha256>|<size>")` plus a type extension, and is
   protected only by the device's file protection. A file found there from an
   earlier session is used only after its size and SHA-256 match the
-  reference again; the folder is deleted when the vault is closed. Audio and
-  transcripts are not kept: their files are deleted as soon as nothing plays
-  or reads them. Where the
+  reference again; the folder is deleted when the vault is closed. Audio, video
+  and transcripts are not kept: their files are deleted as soon as nothing plays
+  or reads them, carry a name prefix (`t-`) so that a launch deletes any a
+  killed session left without knowing the secret, and are never adopted. Where the
   system does not encrypt files at rest (Mac Catalyst has no data protection
-  class), files are never kept across launches: a launch deletes what an
-  earlier one left before using the folder.
+  class), files are never kept across launches: quitting the app deletes them,
+  and a launch (after a crash) deletes what an earlier one left before any vault
+  opens.
 
 ## 11. Capture inbox
 

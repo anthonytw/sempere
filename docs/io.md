@@ -372,8 +372,12 @@ SwiftUI `List`.
     the decrypted, verified blob files PDFKit and ImageIO read. File names are
     keyed (`format.md` §10.1); a file left by an earlier launch is hashed again
     before use (`adopted`), never decrypted again. Not on a Mac: there files
-    are not encrypted at rest, so a launch deletes what an earlier one left
+    are not encrypted at rest, so quitting deletes them (`purgeAtQuit`), a launch
+    deletes what a crashed one left before any vault opens (`purgeAtLaunch`),
     and a reopened PDF is decrypted again (its preview still shows at once).
+    Recordings, clips and transcripts are never kept (`BlobCache.isTransient`):
+    deleted when nothing plays or reads them, and at the next launch if a
+    session was killed first.
   - `RenderCache` (`Library/Caches/Sempere/Renders`, 256 MB,
     `Sempere.renderCacheMegabytes`, plus 96 MB of decoded images in memory):
     image items as drawn (`ItemRendering`), and one preview bitmap per PDF page
@@ -853,7 +857,11 @@ The only in-place rewrite. The procedure is the recommended one of
      first re-tag the unchanged gzip bytes with the new secret, after
      verifying the old tag with the outgoing secret) and replace the file
      atomically.
-4. Delete the journal, but only if every file completed. Any failure
+4. Remove `rewrapPending` from `vault.json` (step 2 wrote it: an HMAC under the
+   new secret over the journal's bytes), then delete the journal, but only if
+   every file completed. The binding goes first, so a journal left by a crash
+   between the two is refused, never accepted again; the device then marks its
+   trust record `rewrapFinished`. Any failure
    (unreadable file, tag that verifies under neither secret, ...) keeps the
    journal and with it the outgoing secret: deleting it would turn a
    transient I/O error into a permanent tag failure. `pendingRewrap` stays
@@ -862,7 +870,9 @@ The only in-place rewrite. The procedure is the recommended one of
    (`VaultError.rewrapIncomplete`).
 
 If the process dies anywhere, the journal is still there. `Vault.open`
-notices it (`pendingRewrap`), keeps the outgoing secret so files not yet
+notices it (`pendingRewrap`) and, when it accepts it (format.md §3.3.1: linked by
+`secretLink`, bound by `vault.json`'s `rewrapPending`, and not a change this
+device saw finish), keeps the outgoing secret so files not yet
 rewrapped still verify (if the journal cannot be read, `open` records why in
 `journalProblem`; `verify()` reports it and such files fail as
 `tagMismatchJournalUnreadable` instead of a plain tag mismatch), and `resumeRewrap()` (or simply repeating the same
@@ -974,7 +984,14 @@ window) over the revisions held locally: a delta needs a snapshot that covers it
 a snapshot needs one that subsumes it. The covering snapshot must be one the
 remote side holds: on the server (as listed at the start of the run) for a file
 the server dropped, since a compaction there keeps its covering snapshot there,
-and also on the server for a remote delete. An emptied or recreated remote
+and also on the server for a remote delete. A file the server dropped is also
+held to what any compactor or thinner of this format guarantees (format.md §5.3,
+§5.8.4; security review stage 4, S2), since the server needs no key to drop
+files: never a checkpoint or the created anchor
+(`CompactionPlanner.neverDeleted`), never a set that would leave a complete
+checkpoint incomplete (`deletionKeepsCheckpoints`: its positioned snapshots and
+witnesses stay), and nothing in a note with an unreadable revision. Its age is
+not judged: thinning everything except checkpoints is a legitimate action. An emptied or recreated remote
 folder therefore deletes nothing locally; its files are uploaded again. A snapshot removed locally can only be judged from
 the `included` coverage recorded when it was last synced. Without an unlocked
 vault nothing can be checked, so nothing is deleted. A removal that fails the
@@ -1057,11 +1074,20 @@ this version can read; two such copies that differ follow the conflict rule
 above, as does the file while the vault is locked. A run that pulled a new `vault.json`
 (a key change elsewhere) leaves `settings.age` to the next run, which opens the
 vault with the new secret.
+`rewrap-journal.json` from the server never replaces a local one unless this
+device refuses the local one and accepts the server's (`Vault.incomingJournalProblem`,
+format.md §3.3.1 "Refused journals"; security review stage 4, S9): an unfinished
+local journal may be the only copy of the outgoing secret. Without the key the
+server's copy is kept as a conflict copy instead. With the key, a server journal
+this device refuses (planted, or put back after its change finished) is listed in
+`rejected` and not written, and does not hold blob collection back.
 Before a remote `vault.json` replaces the local one, its device list is
 checked (`Vault.incomingManifestProblem`, format.md §2.1): the same keys
 (still tagged) pass without a key; a changed list passes only when the vault
 is unlocked and the list verifies (tag under the secret it carries, that
-secret the local one or confirmed by `secretLink`). Otherwise it is listed in
+secret the local one or confirmed by `secretLink`), and, under the same secret and list,
+it never brings back or changes `rewrapPending` (a `vault.json` put back to
+replay a finished change's journal). Otherwise it is listed in
 `rejected`, the local file stays and the sync state is not updated, so the
 next run reports it again.
 
@@ -1097,7 +1123,8 @@ back:
 (format.md §3.3), which sync never propagates: after one, pull into a fresh
 folder from a new collection (or upload the rewritten vault to a new one) and
 retire the old one. `rewrap-journal.json` left on the server by a finished
-change is harmless but stays there. Syncing during an unfinished rewrap can
+change stays there; devices refuse it (`vault.json` no longer binds it, format.md
+§3.3.1), and `--push-only --delete-extraneous` removes it. Syncing during an unfinished rewrap can
 copy a mix of old and new files.
 
 **Bounds per run** (`SyncLimits`, security review 2026-10, W5). Each

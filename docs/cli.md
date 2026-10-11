@@ -226,6 +226,7 @@ sempere vault recipients confirm
 sempere vault link [status|upgrade]
 sempere vault markers [status|tag|repair]
 sempere vault rewrap-resume
+sempere vault rewrap-discard
 sempere vault verify
 sempere vault index [--out PATH|-]
 sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
@@ -236,7 +237,11 @@ sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
   are stored as the app stores them: one line, trimmed, at most 80
   characters; an empty one is shown as "Device". `--store-key` also writes that identity,
   passphrase-wrapped, into `keys/` (the passphrase is confirmed when typed,
-  and an empty one is refused with exit 2, as in the app).
+  and an empty one is refused with exit 2, as in the app). That file is on the
+  vault's storage, where its passphrase can be guessed offline, so one estimated
+  below 60 bits (`PassphraseStrength`: five random words, or a long random
+  password, pass) is refused with exit 2 too, unless `--allow-weak-passphrase`
+  is given; the app refuses it with no override.
 - `info` prints vault id, creation time, recipients with labels, number of
   notes, stored key files, whether a recipient change is pending and whether
   its journal is readable. It works without a key (the journal check then says
@@ -273,7 +278,8 @@ sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
 - `recipients add` / `replace --store-key FILE` also store the new
   recipient's identity (FILE, which must be that key) passphrase-wrapped in
   `keys/`, with the passphrase from `--store-passphrase-env VAR`, else
-  `$SEMPERE_PASSPHRASE`, else the terminal (confirmed; not empty). Use it when the
+  `$SEMPERE_PASSPHRASE`, else the terminal (confirmed; not empty; refused when
+  too easy to guess unless `--allow-weak-passphrase`, as for `init`). Use it when the
   vault is unlocked by passphrase: only key files of current recipients are
   offered for passphrase unlocking, so after a `replace` the old key file
   (left in `keys/`) no longer is.
@@ -365,7 +371,24 @@ sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
   naming a format or feature this version does not implement.
 - `rewrap-resume` finishes an interrupted change; it refuses (exit 6) a list
   that does not check, so a planted journal cannot re-encrypt the vault to a
-  planted key.
+  planted key. It also refuses a journal this machine does not accept
+  (`format.md` §3.3.1 "Accepting the journal": its secret is not linked, or
+  `vault.json` no longer binds it, or this machine saw the change to the
+  current secret finish): such a journal was planted, or put back after its
+  change finished, and gives no secret. `info` then says "REFUSED journal"
+  (`--json`: `journalRefused`).
+- `rewrap-discard` (needs the key, and a device list that checks: exit 6
+  otherwise) moves a journal this machine refuses to
+  `rewrap-journal.refused.json` (nothing reads it; the next discard replaces
+  it), so recipient changes,
+  `recipients repair` and blob collection run again; when this machine saw the
+  change to the current secret finish, it also removes a `rewrapPending` left in
+  `vault.json` (a put-back copy). It never deletes a journal it accepts (finish
+  that with `rewrap-resume`) or cannot read now (exit 1, the journal kept).
+  A backup restored from before a key change finished has a journal this
+  machine refuses if it saw that change finish: finish it from a machine
+  without that trust record (or put the moved journal back there).
+  `--json`: `discarded`, `reason`.
 - `verify` decrypts, tag-checks and decodes every file and prints
   `status  path` per file plus counts, and a `RECIPIENTS` line (the device
   list, as in `info`). Exit 0 only if the vault is healthy, 6 when the device
@@ -716,13 +739,18 @@ for `--prune` and for a full `verify`.
   `vaultId`, `destination`, `copied`, `replaced`, `versioned`, `unchanged`,
   `pruned`, `kept` and `errors` (`{path, message}`). One failing file does not
   stop the run. Exit 0 ok, 1 some files failed, 2 usage, 4 `--prune` without a key.
+  `DIR` may live on storage others can write to, so no symbolic link in it is
+  followed: a file that is a link is reported and replaced by the vault's
+  copy (never read, hashed or kept under `versions/`), and a file reached
+  through a linked folder is reported and skipped.
 - `backup V --archive FILE.tar` writes one uncompressed POSIX tar of the
   encrypted files under `<name>.sempere/` (refuses an existing file). It is
   written to a temporary file, read back and checked member by member, then
   renamed. `tar xf FILE.tar` gives back a vault folder. `--json`: `archive`,
   `vaultId`, `files`, `bytes`, `sha256`.
 - `backup verify DIR` without a key checks every file in `backup.json` (present,
-  same size and SHA-256: a flipped byte or a missing file is found) and that
+  same size and SHA-256: a flipped byte or a missing file is found; a symbolic
+  link counts as missing and is not followed) and that
   `vault.json` is well formed. With `--identity` (or a scripted passphrase for
   the key file the backup holds) it also decrypts, tag-checks and decodes every
   revision like `vault verify`. Files on disk that `backup.json` does not list
@@ -755,7 +783,8 @@ for `--prune` and for a full `verify`.
 - `restore DIR --to NEWPATH` copies `vault.json`, `keys/` and `notes/` (not
   `versions/` or `backup.json`) into a new or empty folder ending in
   `.sempere`, checking every file against `backup.json`; a file that does not
-  match is not restored and is reported. `DIR` may also be any vault folder
+  match, that `backup.json` does not list, or that is (or lies under) a
+  symbolic link is not restored and is reported. `DIR` may also be any vault folder
   (say, an extracted tar). `vault.json` is written last, so an interrupted
   restore is never mistaken for a vault; the same command finishes it. The
   result is then verified: every revision with `--identity`, structure only
@@ -1415,7 +1444,9 @@ it runs as `pdftoppm` does for exports: no shell, resource limits, a timeout,
 a private temporary directory), else the built-in pure-Swift reader
 (`semperepdf-1`: the strings each page shows, decoded through the fonts'
 `/ToUnicode` maps or standard encodings, in content order; no layout
-analysis, so multi-column text comes out in drawing order). `builtin` and
+analysis, so multi-column text comes out in drawing order; form XObjects
+drawn by a page may add at most 16 MiB of lexed content to it and 128 MiB
+to the file, past which the page keeps the text found so far). `builtin` and
 `poppler` force one (`poppler` without `pdftotext` is an error); `none`
 stores no text. A page with no extractable text (a scan) stores nothing.
 `attach pdf --json` adds `pagesWithText` and `textEngine`.
@@ -1731,6 +1762,10 @@ sempere export (ID|TITLE | --all) --format pdf|svg|png|json|markdown|html|media 
 
 - `--at REVISION` (single note only) exports the note as it was at that
   revision, named as for `notes restore --to`.
+- Exports are plaintext, so they are written for their owner only, whatever the umask: files mode 0600
+  (written under a temporary name and renamed), folders the command creates 0700. A folder that already
+  exists keeps its mode. `--zip` stages the files in a fresh 0700 folder of its own in the temporary
+  directory (deleted when the run ends) and writes the archive 0600.
 
 - `pdf`: one file per note; `--merge` puts every selected note in one PDF
   (`--out` is then the file). A paged note gives one PDF page per page (plus,

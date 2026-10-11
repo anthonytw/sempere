@@ -384,6 +384,9 @@ public struct NotabilityAttachments: Sendable {
         let files = Self.mediaFiles(pkg, prefix: prefix)
         let index = FileIndex(files)
         var prepared: [String: Result<ImageImport.Prepared, ImageImport.Failure>] = [:]
+        // Files that could not be read or held, with why: never read again for
+        // another object naming them (security review S18).
+        var unreadable: [String: String] = [:]
         var z = 0
         // Parsing reads at most `maxMediaObjects`; `mediaCount` counts them all.
         let total = max(note.mediaCount, note.mediaObjects.count)
@@ -410,19 +413,22 @@ public struct NotabilityAttachments: Sendable {
                 drop("no file of the package named in it (fields: \(m.fieldNames.joined(separator: ", ")))")
                 continue
             }
+            if let why = unreadable[path] { drop(why); continue }
             let result: Result<ImageImport.Prepared, ImageImport.Failure>
             if let hit = prepared[path] { result = hit } else {
                 do {
                     let p = try ImageImport.prepare(try pkg.read(prefix + path), keepMetadata: keepMetadata)
                     guard hold(p.data.count) else {
-                        drop("\(path): over the \(heldLimit >> 20) MiB of attachments read for one note; not imported")
+                        unreadable[path] = "\(path): over the \(heldLimit >> 20) MiB of attachments read for one note; not imported"
+                        drop(unreadable[path]!)
                         continue
                     }
                     result = .success(p)
                 } catch let f as ImageImport.Failure {
                     result = .failure(f)
                 } catch {
-                    drop("\(path) cannot be read (\(NotabilityImporter.describe(error)))"); continue
+                    unreadable[path] = "\(path) cannot be read (\(NotabilityImporter.describe(error)))"
+                    drop(unreadable[path]!); continue
                 }
                 prepared[path] = result
             }

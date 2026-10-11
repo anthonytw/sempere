@@ -50,8 +50,8 @@ struct NoteNamesAndTagsTests {
     }
 
     @Test func theFavoritesSelectionIsRestoredByName() {
-        #expect(RestorableSelection.name(of: .favorites) == "favorites")
-        #expect(RestorableSelection(sidebar: .favorites, note: nil, vault: nil).sidebarItem == .favorites)
+        #expect(RestorableSelection.name(of: .favorites, digest: { $0 }) == "favorites")
+        #expect(RestorableSelection(sidebar: .favorites, note: nil, vault: nil, digest: { $0 }).sidebarRef == .item(.favorites))
     }
 
     @Test func sameTitlesWorkInOneNotebookAndAcrossNotebooks() async throws {

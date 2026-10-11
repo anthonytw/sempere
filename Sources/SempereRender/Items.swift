@@ -405,6 +405,21 @@ public protocol ImageDecoding: Sendable {
     func decode(_ data: Data, type: String, maxPixels: Int) throws -> RGBAImage?
 }
 
+/// Small pictures of stored images for lists (Settings ▸ Storage in the app).
+public enum ImagePreview {
+    /// `data` (the verified content of an image blob of media type `type`)
+    /// decoded as the renderers decode image items (format.md §8.2.5, §8.4):
+    /// JPEG and PNG by SempereRender's own decoders, any other format only
+    /// through `decoder` (the app's HEIC-only ImageIO decoder), never more than
+    /// `maxPixels`, then reduced to at most about `side` pixels across. Nil
+    /// when the bytes are not such an image.
+    public static func image(_ data: Data, type: String, side: Int, decoder: (any ImageDecoding)?,
+                             maxPixels: Int = ImageLimits.maxPixels) -> RGBAImage? {
+        let store = ImageStore(options: RenderOptions(imageDecoder: decoder, maxImagePixels: maxPixels))
+        return try? store.preview(data, type: type, side: side)
+    }
+}
+
 /// An image blob's bytes and what its header says, read once per export.
 struct LoadedImage {
     enum Format { case jpeg(JPEG.Info), png(PNG.Info), other }
@@ -525,6 +540,12 @@ final class ImageStore {
         } catch {
             throw PlaceholderReason.blobUnavailable(Self.describe(error))
         }
+        return try loaded(data, type: ref.type)
+    }
+
+    /// `data` (an image blob's content) with its header parsed: JPEG and PNG
+    /// by this module's decoders, anything else only for `decoder`.
+    func loaded(_ data: Data, type: String) throws -> LoadedImage {
         let d = [UInt8](data.prefix(16))
         if d.starts(with: [0xFF, 0xD8]) {
             let info = try JPEG.info(data)
@@ -536,14 +557,31 @@ final class ImageStore {
             return try checked(LoadedImage(data: data, format: .png(info), type: "image/png",
                                            width: info.width, height: info.height))
         }
-        if d.count >= 12, Array(d[4..<8]) == Array("ftyp".utf8) || ref.type.lowercased().hasPrefix("image/hei") {
+        if d.count >= 12, Array(d[4..<8]) == Array("ftyp".utf8) || type.lowercased().hasPrefix("image/hei") {
             guard decoder != nil else {
                 throw PlaceholderReason.imageUnreadable("HEIC images cannot be decoded here (convert it to JPEG in the app)")
             }
             return LoadedImage(data: data, format: .other, type: "image/heic", width: 0, height: 0)
         }
-        guard decoder != nil else { throw PlaceholderReason.imageUnreadable("unsupported image type \(ref.type)") }
-        return LoadedImage(data: data, format: .other, type: ref.type, width: 0, height: 0)
+        guard decoder != nil else { throw PlaceholderReason.imageUnreadable("unsupported image type \(type)") }
+        return LoadedImage(data: data, format: .other, type: type, width: 0, height: 0)
+    }
+
+    /// A small picture of an image blob's content (Settings ▸ Storage): read
+    /// exactly as an image item is drawn (`loaded`, the `maxPixels` checks,
+    /// JPEG DCT scaling and box reduction), reduced to at most about `side`
+    /// pixels across. Never any codec other than JPEG, PNG and `decoder`'s.
+    func preview(_ data: Data, type: String, side: Int) throws -> RGBAImage {
+        let image = try loaded(data, type: type)
+        let ref = BlobRef(content: data, type: type)
+        var width = image.width, height = image.height
+        if case .other = image.format {
+            let full = try decodeFull(ref, image).get()
+            width = full.width
+            height = full.height
+        }
+        let reduction = Double(max(width, height)) / Double(max(1, side))
+        return try forRaster(ref, image, reduction: max(1, reduction)).get()
     }
 
     private func checked(_ image: LoadedImage) throws -> LoadedImage {

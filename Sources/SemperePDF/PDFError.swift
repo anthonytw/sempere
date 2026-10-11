@@ -59,6 +59,16 @@ public struct PDFLimits: Sendable {
     public var maxXrefSections = 4096
     /// Most filters applied to one stream.
     public var maxFilters = 16
+    /// Most bytes the object parser may look at over the life of one
+    /// `PDFFile`, per byte of the file and of the streams it decoded, on top
+    /// of `parseBytesBase`. Objects are cached, so a well-formed file is
+    /// parsed about once (twice after a rebuild); overlapping objects, a
+    /// `trailer` before an unterminated string repeated through a rebuild,
+    /// or many references into one long object would otherwise cost time
+    /// quadratic in the file (security review S6).
+    public var parseBytesPerByte = 4
+    /// See `parseBytesPerByte`.
+    public var parseBytesBase = 64 << 20
 
     /// The defaults above.
     public init() {}

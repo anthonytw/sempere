@@ -103,6 +103,8 @@ public final class PDFFile {
     private var objectStreams: [Int: ObjectStream] = [:]
     private var resolving = Set<Int>()
     private var decodedTotal = 0
+    /// Bytes the object parser looked at so far (`chargeParse`).
+    private var parsedTotal = 0
     private var endstreams: [Int]?
     private var pages: [PageNode]?
 
@@ -174,6 +176,37 @@ public final class PDFFile {
         return nil
     }
 
+    // MARK: - Work budget
+
+    /// Charges `n` bytes looked at by the object parser against the file's
+    /// budget (`PDFLimits.parseBytesPerByte`), so no structure, however
+    /// hostile, makes the reader's work more than linear in its input.
+    ///
+    /// - Throws: `limitExceeded` once the budget is spent.
+    func chargeParse(_ n: Int) throws {
+        parsedTotal = parsedTotal.addingReportingOverflow(max(n, 0)).overflow ? Int.max : parsedTotal + max(n, 0)
+        let input = bytes.count.addingReportingOverflow(decodedTotal)
+        let scaled = input.partialValue.multipliedReportingOverflow(by: max(limits.parseBytesPerByte, 0))
+        let sum = scaled.partialValue.addingReportingOverflow(max(limits.parseBytesBase, 0))
+        let budget = input.overflow || scaled.overflow || sum.overflow ? Int.max : sum.partialValue
+        guard parsedTotal <= budget else {
+            throw PDFError.limitExceeded("more than \(budget) bytes parsed (\(limits.parseBytesPerByte) per byte of input)")
+        }
+    }
+
+    /// `lx.parseObject()`, charging what the lexer looked at (also when it throws).
+    private func parseCharged(_ lx: inout PDFLexer) throws -> PDFObject {
+        let before = lx.scanned
+        do {
+            let o = try lx.parseObject()
+            try chargeParse(lx.scanned - before)
+            return o
+        } catch {
+            try chargeParse(lx.scanned - before)
+            throw error
+        }
+    }
+
     // MARK: - Cross-reference data
 
     private func loadXref() throws {
@@ -209,7 +242,17 @@ public final class PDFFile {
 
     private func readSection(at offset: Int) throws -> ([(Int, XrefEntry)], PDFDict) {
         var lx = PDFLexer(bytes, at: offset, maxDepth: limits.maxDepth)
-        if lx.keyword("xref") { return try readTable(&lx) }
+        if lx.keyword("xref") {
+            do {
+                let r = try readTable(&lx)
+                try chargeParse(lx.scanned)
+                return r
+            } catch {
+                try chargeParse(lx.scanned)
+                throw error
+            }
+        }
+        try chargeParse(lx.scanned)
         guard case .stream(let s) = try parseIndirectObject(at: offset, expecting: nil),
               s.dict["Type"]?.nameValue == "XRef" else {
             throw PDFError.syntax("no cross-reference section", offset: offset)
@@ -318,8 +361,12 @@ public final class PDFFile {
             }
             if b[i] == 0x74, i + trl.count <= b.count, Array(b[i..<(i + trl.count)]) == trl {
                 var lx = PDFLexer(b, at: i + trl.count, maxDepth: limits.maxDepth)
-                if case .dict(let d)? = try? lx.parseObject() { trailers.append(d) }
-                i += trl.count
+                let parsed = try? lx.parseObject()
+                try chargeParse(lx.scanned)
+                if case .dict(let d)? = parsed { trailers.append(d) }
+                // Resume where the parse stopped, whether it succeeded or not:
+                // the bytes it read are never scanned for a trailer again.
+                i = max(i + trl.count, lx.pos)
                 continue
             }
             i += 1
@@ -437,13 +484,20 @@ public final class PDFFile {
         guard offset >= 0, offset < bytes.count else { throw PDFError.syntax("offset beyond the file", offset: offset) }
         var lx = PDFLexer(bytes, at: offset, maxDepth: limits.maxDepth)
         guard let n = lx.unsignedInt(), lx.unsignedInt() != nil, lx.keyword("obj") else {
+            try chargeParse(lx.scanned)
             throw PDFError.syntax("no object header", offset: offset)
         }
-        if let num, n != num { throw PDFError.syntax("object \(n) where \(num) was expected", offset: offset) }
-        let o = try lx.parseObject()
+        if let num, n != num {
+            try chargeParse(lx.scanned)
+            throw PDFError.syntax("object \(n) where \(num) was expected", offset: offset)
+        }
+        try chargeParse(lx.scanned)
+        let o = try parseCharged(&lx)
         guard case .dict(let d) = o else { return o }
-        let save = lx.pos
-        guard lx.keyword("stream") else { lx.pos = save; return o }
+        let save = lx.pos, seen = lx.scanned
+        let found = lx.keyword("stream")
+        try chargeParse(lx.scanned - seen)
+        guard found else { lx.rewind(to: save); return o }
         var start = lx.pos
         if start < bytes.count, bytes[start] == 13 { start += 1 }
         if start < bytes.count, bytes[start] == 10 { start += 1 }
@@ -453,7 +507,9 @@ public final class PDFFile {
         }
         if let len = length, len >= 0, len <= bytes.count - start {
             var after = PDFLexer(bytes, at: start + len, maxDepth: limits.maxDepth)
-            if after.keyword("endstream") {
+            let found = after.keyword("endstream")
+            try chargeParse(after.scanned)
+            if found {
                 return .stream(PDFStream(dict: d, raw: Data(bytes[start..<(start + len)])))
             }
         }
@@ -504,6 +560,7 @@ public final class PDFFile {
             guard let on = lx.unsignedInt(), let off = lx.unsignedInt() else { break }
             entries.append((on, off))
         }
+        try chargeParse(lx.scanned)
         let os = ObjectStream(data: data, first: first, entries: entries)
         objectStreams[num] = os
         return os
@@ -518,7 +575,7 @@ public final class PDFFile {
         let (p, overflow) = os.first.addingReportingOverflow(e.offset)
         guard !overflow, p < os.data.count else { throw PDFError.syntax("object \(num) beyond its object stream", offset: 0) }
         var lx = PDFLexer(os.data, at: p, maxDepth: limits.maxDepth)
-        return try lx.parseObject()
+        return try parseCharged(&lx)
     }
 
     // MARK: - Streams

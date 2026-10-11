@@ -30,6 +30,13 @@ your use (no telemetry).
   can hold it on several devices, on paper (the recovery kit), in a password
   manager, and, if you chose one, as a copy in the vault protected by a
   passphrase. Each of those is a way in: protect them accordingly.
+- **A key copy in the vault is only as strong as its passphrase.** That copy
+  sits with the vault on its storage, so your storage provider, or anyone with
+  a copy of the files, can try passphrases on it offline, as many as they
+  like. Sempere refuses a passphrase it estimates as easy to guess; use five
+  or more random words, or a long random password, and never one you use
+  elsewhere. A copy with a weak passphrase gives away the key, which reads
+  and writes everything.
 - **If every copy of the key is lost, the notes cannot be opened.** Not by you,
   not by the developer, not by anyone. There is no reset, no recovery service and
   no back door. Print the recovery kit when you create a vault and keep it
@@ -40,6 +47,16 @@ your use (no telemetry).
   that key from opening what is written afterwards. Old copies of the files
   (backups, a provider's version history) still open with the old key
   ([`cli.md`](cli.md), `vault recipients remove`).
+- **A removed device can still pass things off as authentic for a while.**
+  Removing a key changes the vault's secret, which tags notes as yours. Until
+  the change has re-encrypted every file, files still tagged with the old
+  secret are accepted, so a removed device that kept the old secret and can
+  still write to the storage could add notes, attachments, voice notes or
+  settings that pass as authentic. Once a device has seen the change finish,
+  it accepts nothing made with the old secret again, even if the old change's
+  records are put back on the storage ([`format.md`](format.md) §3.3.1). A
+  device that opens the vault for the first time, or lost its record of the
+  vault, trusts what the vault says about an unfinished change.
 
 ## Backups
 
@@ -67,12 +84,17 @@ They cannot see titles, text, ink, tags, notebooks, attachments or transcripts.
 - **An unlocked device.** While a vault is unlocked, the app holds the key and
   shows your notes. Anyone using the device, or software that controls it, can
   read them. Use a device passcode; the remembered key is behind Face ID or
-  Touch ID when you choose it.
+  Touch ID when you choose it. A remembered key is offered only for the folder
+  it opened before (any folder can claim a vault's id), and a vault handed to
+  the app from another app or AirDrop asks before it closes the open one.
 - **Plaintext the app keeps on the device for speed or safety:** attachments
   opened for display, a recording until it is saved into the note, a voice note
-  until it is sealed, and files staged for an export or a drag. They rely on the
+  until it is sealed, and files staged for an export or a drag; on a Mac, the
+  titles of note windows open when the app quits, which the system keeps to
+  restore its windows. They rely on the
   system's data protection where the platform has it (on a Mac, which has none,
-  the attachment cache is deleted at each launch instead). The caches of note
+  the attachment cache is deleted when the app quits, and after a crash at the
+  next launch, before any vault opens). The caches of note
   listings, drawings and attachment previews are encrypted under the vault's
   secret ([`format.md`](format.md) §10). Details: [`io.md`](io.md),
   [`quick-capture.md`](quick-capture.md).

@@ -184,7 +184,7 @@ public enum MediaExport {
         var entries: [MediaEntry] = []
         func url(_ name: String) -> URL { folder.appendingPathComponent(name) }
         do {
-            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            try FileIO.createPrivateDirectory(folder)
             for p in planned {
                 try Task.checkCancellation()
                 let what = "\(p.kind.label.lowercased()) \(p.base)"
@@ -292,7 +292,7 @@ public enum MediaExport {
     }
 
     private static func write(_ data: Data, to url: URL) throws {
-        do { try data.write(to: url, options: .atomic) } catch { throw RenderError.cannotWrite(url.path) }
+        do { try FileIO.writePrivate(data, to: url) } catch { throw RenderError.cannotWrite(url.path) }
     }
 
     /// The verified blob streamed to a temporary file next to `url`, then moved into place.

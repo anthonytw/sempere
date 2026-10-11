@@ -306,7 +306,8 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
 - Attachment caches outlive note opens and launches (docs/io.md "Opening a note
   fast"): `BlobCache` (plaintext verified blob files, keyed names, a file of an
   earlier launch re-hashed before use; on a Mac, which has no data protection,
-  deleted at launch instead: `blobCacheAcrossLaunches`) and `RenderCache` (sealed image pictures
+  deleted at quit and at launch instead: `blobCacheAcrossLaunches`, `purgeAtQuit`, `purgeAtLaunch`;
+  audio, video and transcripts never stay: `isTransient`) and `RenderCache` (sealed image pictures
   and PDF page previews, memory + disk). Both are per vault secret and go when
   the vault closes (`dropAttachments`). Bump `RenderCache.schemaVersion` when
   `ItemRaster`, `PDFItemDrawing` or the preview drawing changes. Tests get a

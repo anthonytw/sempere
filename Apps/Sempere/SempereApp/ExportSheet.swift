@@ -215,18 +215,37 @@ extension ShareFormat {
 }
 
 /// The system share sheet (AirDrop, Messages, Mail, Save to Files, ...) for files and folders.
+/// `secret` (a vault key): without Copy, which would put it on the general pasteboard with no
+/// expiry and send it to the user's other devices (`SecretSharing`).
 struct ShareSheet: UIViewControllerRepresentable {
-    let items: [URL]
+    let items: [Any]
+    var secret = false
     let done: () -> Void
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        let controller = secret ? SecretSharing.controller(items: items)
+            : UIActivityViewController(activityItems: items, applicationActivities: nil)
         let callback = MainCallback(done)
         controller.completionWithItemsHandler = ExportHandOff.completion { callback.run() }
         return controller
     }
 
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
+}
+
+/// Sharing a secret key (its text or its key file): the share sheet offers no Copy. Copying goes
+/// through `SecretPasteboard` alone (local only, expiring), and the key's text is never selectable.
+@MainActor
+enum SecretSharing {
+    /// Activities a secret is never handed to.
+    static let excluded: [UIActivity.ActivityType] = [.copyToPasteboard]
+
+    /// A share sheet for `items` without the `excluded` activities.
+    static func controller(items: [Any]) -> UIActivityViewController {
+        let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        controller.excludedActivityTypes = excluded
+        return controller
+    }
 }
 
 /// "Save to Files": the document picker in export mode, copying `items` to the folder the user picks.

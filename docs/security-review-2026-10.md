@@ -681,7 +681,8 @@ Each request is bounded by size and time, but a run is not:
   - Not fixed here: requiring an `OwnerAuthenticator` there changes every key-management path and its app
     tests (which cannot run outside the macOS CI job), and the policy (Face ID only? the passcode on a Mac
     without Touch ID?) is the maintainer's call. The paper recovery kit (`recoveryKitPDF`) has the same gap.
-- P2, Low: the share sheet's Copy puts the key file on the general pasteboard.
+- P2, Low: the share sheet's Copy puts the key file on the general pasteboard. Fixed in stage 4 with S14
+  (below).
 - P3, Low: the remembered record is chosen by an unauthenticated vault id; the doc says otherwise. Fixed
   in #130 (above).
 - Info: the IndexedDB database is created before the user opts in; old passkeys are not signalled unknown
@@ -698,3 +699,201 @@ Each request is bounded by size and time, but a run is not:
 - Fixed by R4: summaries sealed under the journal's previous secret were accepted during a rewrap. The web
   viewer now derives the previous summaries key only from a journal secret that `secretLink` links.
 - Summaries are encrypted. `vault.json` and the journal are never cached. Nothing decrypted is persisted.
+
+## Audit 2026-10 stage 4 (2026-10-10)
+
+Fixes of verified findings from the pre-release audit's stage 4. Each test fails on the base
+(96abc5aa) and passes after.
+
+### S0, S1, S4 (High): a removed device could bring its old secret back with a rewrap journal
+
+`readJournal` accepted any journal whose previous secret `secretLink` linked to the current one, and the
+signed link stays in `vault.json` until the next rotation. A removed device, which holds the outgoing
+secret, could therefore plant a journal (or replay the genuine one) after its removal finished: every
+previous-secret fallback (revisions, blobs, `settings.age`, captures, the web viewer's blob names and
+summaries) accepted its forgeries, and a resume re-tagged them under the current secret.
+
+**Fix** (`format.md` §3.3.1 "Accepting the journal", `Sources/Sempere/RewrapBinding.swift`):
+- Binding: every recipient change's `vault.json` write carries `rewrapPending`, an HMAC under the new
+  secret over the journal's SHA-256; step 4 removes it in a tagged write before deleting the journal. A
+  journal counts only when the field binds its bytes (and, for an outgoing secret, `secretLink` links it).
+- Device-local: the trust record's `rewrapFinished`, set when the device saves its record (or opens with a
+  record of the same secret) while nothing is pending, and when it finishes the rewrap itself; it never
+  goes back for the same secret. It is what catches a `vault.json` from step 2 put back with the genuine
+  journal after the rotation finished (same secret, so the binding still verifies): then no journal with
+  another previous secret is accepted (no fallback, no resume).
+- Sync: `incomingManifestProblem` refuses a `vault.json` that, under the same secret and list, brings
+  back or changes `rewrapPending` (a put-back copy), locked or not.
+- Web viewer: `journalSecretAccepted` in `web/src/vault/vault.ts` (binding + link; it keeps no record).
+- Tests: `RewrapJournalBindingTests` (`testARemovedDeviceCannotReopenItsSecretWithAPlantedJournal`,
+  `testAReplayedJournalOfAFinishedRotationIsRefused`, `testTheFinishedMarkerIsMonotonic`, the shared vector
+  in `testRewrapPendingIsHMACOverVaultIdAndJournalDigest`), `RecipientsAuthTests.testAPlantedJournalSecretIsNotAccepted`,
+  `JournalSyncTests.testAJournalThisDeviceRefusesIsNotTaken`, `web/test/journal.test.ts`.
+- Remaining (`format.md` §3.3.1 "Limits"): a device with no trust record that is given both the
+  `vault.json` of step 2 and the genuine journal accepts the outgoing secret, as during the rotation; the
+  web viewer keeps no record, so the same holds there.
+
+### S9 (Low): a two-way sync replaced an unfinished local journal
+
+`WebDAVSync.accept` wrote any server journal over the local one, which may be the only copy of the
+outgoing secret. **Fix:** `Vault.incomingJournalProblem`: a local journal is replaced only when this device
+refuses it and accepts the server's; locked, the server's copy becomes a conflict copy; unlocked, a journal
+this device refuses is `rejected`, not written. Test: `JournalSyncTests.testTheServerCannotReplaceAnUnfinishedLocalJournal`.
+
+### S19 (Low): a planted journal blocked every recipient change
+
+Any `rewrap-journal.json` blocked recipient changes, repairs and blob collection, and held the app in its
+migration screen; nothing removed it. **Fix:** `Vault.discardRefusedJournal` (CLI `vault rewrap-discard`,
+`--json`) moves a journal this device refuses to `rewrap-journal.refused.json` (read by nothing) (never one it accepts or cannot read now, never with a list
+that does not check); the app does it quietly at unlock and in the migration screen, and opens the vault
+normally when a refused journal is left; `vault info` says "REFUSED journal"; the CLI's errors and blob
+collection name `rewrap-discard`; a server journal this device refuses no longer holds blob pruning back.
+Tests: `RewrapJournalBindingTests.testARefusedJournalCanBeDiscardedAndAnAcceptedOneCannot`,
+`testAnUnreadableJournalIsKept`, `CLIRewrapDiscardTests`.
+
+### S2 (Medium): a WebDAV server could make two-way-sync clients delete saved versions
+
+`syncNote` judged a revision the server no longer listed only by snapshot coverage (with its age forced
+away), so a server without any key could make every syncing device delete checkpoints, the created anchor
+and the history a checkpoint needs. **Fix:** such a deletion is followed only when a compactor or thinner
+of this format could have made it: never a checkpoint or the created anchor
+(`CompactionPlanner.neverDeleted`), never a set that leaves a complete checkpoint incomplete
+(`CompactionPlanner.deletionKeepsCheckpoints`, the check `plan` uses), and nothing in a note with an
+unreadable revision; anything else is uploaded again. Age is not judged (thinning everything except
+checkpoints is legitimate), so a server can still drop covered non-checkpoint history after the newest
+checkpoint, as that thinning would. Tests: `RemoteDeletionTests.testTheServerCannotDeleteACheckpoint`,
+`testTheServerCannotDeleteTheHistoryACheckpointNeeds` (fail on the base), and
+`testAnExplainedDeletionStillPropagates`, `testAThinningByAnotherDeviceReachesThisOne` (legitimate
+deletions still propagate).
+
+### S5 (Low): key copies in `keys/` accepted any non-empty passphrase
+
+The passphrase-wrapped key copy is on the sync storage, so whoever can read the storage can guess its
+passphrase offline (scrypt, work factor 18); the app and CLI accepted any non-empty one. **Evaluation:** the
+verifier's fix is sound; a strength floor is the part that matters (raising the work factor is capped by the
+readers' memory limit, §3.2, and does not replace it). **Fix:** `PassphraseStrength` (Sources, no word list:
+letter runs priced as Diceware words, l33t substitutions folded into words, repeats and sequences one bit)
+with a 60-bit floor for a stored copy. The app's New Vault and Upgrade Vault sheets refuse a weaker one and
+say why (footnote: the copy is on the storage and can be guessed offline); the CLI's `vault init` and
+`recipients add`/`replace --store-key` refuse it with exit 2 unless `--allow-weak-passphrase`.
+`format.md` §3.2 and `security.md` say so. The library call (`Vault.writeIdentityFile`) still accepts any
+non-empty passphrase (tests, the demo vault). Tests: `PassphraseStrengthTests`,
+`CLICommandTests` (weak refused, exit 2).
+
+## Audit 2026-10 stage 4 (2026-10-10): parsers and backup
+
+Fixed on `audit/sec-parse`. No format change; every existing bound kept.
+
+- **S3 (Medium): backup and restore followed symbolic links.** A link planted in a backup folder (a share
+  that presents links) made the next run hash and version its target, copying any local file the process
+  could read into `versions/` on the share; restore pulled such files into the vault. Fix: below a backup
+  folder or restore source every path is opened with `openat(O_NOFOLLOW|O_DIRECTORY)` per folder and
+  `O_NOFOLLOW` for the file (`BoundedRead.openRegularFile(under:_:)`, `FileDigest.sha256(under:_:)`). A run
+  replaces a linked file with the vault's copy without reading it and reports it, and skips (reports) a
+  path through a linked folder; restore refuses links and, with a `backup.json`, files it does not list;
+  verify reports a link as missing. The source vault still follows links (§9). Tests:
+  `BackupTests.testRunNeverCopiesTheTargetOfALinkPlantedInTheBackup`,
+  `testRestoreNeverFollowsLinksAndNeedsAnIndexEntry`, `testVerifyDoesNotFollowLinks`.
+- **S6 (Low): PDF cross-reference rebuild was quadratic.** `trailer(` repeated (no `startxref`) lexed to the
+  end of the file at every keyword; nested objects listed in `/Kids` did the same outside the rebuild.
+  Fix: the rebuild resumes where the trailer parse stopped, and every lexer over the file or an object
+  stream charges the bytes it looked at (`PDFLexer.scanned`, rewinds included) to a per-file budget,
+  `PDFLimits.parseBytesPerByte` (4) × (file + decoded streams) + `parseBytesBase` (64 MiB). Tests:
+  `UntrustedPDFClaimTests.testRepeatedTrailerBeforeAnUnterminatedStringIsLinear`,
+  `testOverlappingObjectsHitTheParseBudget` (both hang over 90 s on the base),
+  `testParseBudgetLeavesOrdinaryFilesAlone`.
+- **S8 (Low): PDFText re-lexed a form on every `Do`.** Only operators were counted, so 2·10⁶ `Do`s of a
+  256 KiB form lexed 5·10¹¹ bytes (CLI built-in text, Notability text fallback). Fix: a page may lex its
+  own content plus 16 MiB of form content, the file's pages 128 MiB together
+  (`PDFText.maxFormLexBytesPerPage`, `…PerFile`); past it the page keeps the text found so far. Tests:
+  `PDFTextTests.testFormDrawnManyTimesIsBoundedByBytesLexed` (hangs over 120 s on the base),
+  `testFormLexBudgetPerPageAndPerFile`.
+- **S7 (Low): duplicate and overlapping zip entries.** Thousands of central records naming one deflate
+  bomb each inflated it. Fix: `ZipArchive` refuses two entries of one name, and entries whose header plus
+  stored bytes overlap. Thumbnails: at most 8, 16 MiB each. Tests:
+  `ZipArchiveTests.testOverlappingEntriesAreRefused`, `testDuplicateNamesAreRefused`.
+- **S18 (Low): decompression was capped per entry, not per package, and failed reads were repeated.** Fix:
+  every `ZipArchive.read` charges the declared size, before inflating and also when it fails, to a
+  per-archive `readBudget` (32 × the archive, at least 2 GiB); a stored entry whose sizes differ, or a
+  deflated one larger than deflate can produce, is refused before it is read; `NotePackage` remembers failed
+  reads and bounds an unzipped package to 4 GiB; the Notability image loops cache unreadable files. Tests:
+  `ZipArchiveTests.testFailedReadsAreNotRepeated`, `testImpossibleSizesAreRefusedBeforeReading`,
+  `testReadsAreChargedToTheArchiveBudget`.
+
+## Audit 2026-10 stage 4: plaintext the app and CLI leave at rest (2026-10-10)
+
+Findings S10 to S17 of the October 2026 pre-release audit (stage 4), area "app storage, app surfaces, CLI,
+web viewer". Each fix has a test that encodes the attack and fails on the code before it.
+
+- **S17 (Low): CLI exports followed the umask, and `--zip` staged plaintext in a default-mode folder.**
+  Fix: `FileIO.writePrivate` (0600 temporary file, renamed), `createPrivateDirectory` (0700 for folders
+  the run creates; an existing folder keeps its mode) and `createStagingDirectory` (`mkdir(2)` 0700,
+  refusing anything already there). Used by `BulkExportSession` (zip staging, folder exports, PNG pages,
+  its manifest), `ZipWriter` (archive 0600), `TreeExporter` (Markdown/HTML), `MediaExport`, and the CLI's
+  per-note `export` and `recognize-math --save-image` (`writePrivateFile`). `docs/cli.md` "Export" says so.
+  Tests: `BulkExportTests.testStagingAndExportsAreOwnerOnly`, `CLIBulkExportTests.testExportsAreOwnerOnly`.
+- **S11 (Low): on a Mac, decrypted attachments outlived quit and crash.** The launch-time delete ran only
+  inside `attachmentCache()`, after an unlock and a first attachment use, so `security.md`'s "deleted at
+  each launch" did not hold. Fix: `BlobCache.purgeAtLaunch` in `SempereApp.init` (every vault's folder
+  renamed aside before any vault opens, deleted in the background) and `BlobCache.purgeAtQuit` from
+  `applicationWillTerminate` (⌘Q), both only where `keepsAcrossLaunches` is false. `security.md`,
+  `format.md` §10.1 and `io.md` say "deleted when the app quits, and after a crash at the next launch".
+  Test: `AttachmentPersistenceTests.withoutDataProtectionQuitAndLaunchDeleteEveryDecryptedFile`.
+- **S12 (Low): transcripts drawn on an audio card, and recordings of a killed session, stayed in the blob
+  cache.** Fix: `BlobCache.isTransient` (audio, video, transcript) files are deleted at pin zero whatever
+  the caller passes, are named with a `t-` prefix, and `indexFolder` deletes such files instead of
+  adopting them; `ItemRendering.audioPicture` also passes `discard: true`. Test:
+  `AttachmentPersistenceTests.transcriptsAndRecordingsNeverStayInTheCache` (on the old code the transcript
+  file survives its release and the next launch adopts the recording).
+- **S15 (Low): Settings ▸ Storage thumbnails decoded image blobs with unrestricted ImageIO** (`UIImage(data:)`),
+  so a GIF, TIFF or other codec, or a pixel bomb, stored by another recipient reached ImageIO on the
+  victim's device, around X9's HEIC-only `ImageIODecoder`. Fix: `ImagePreview.image` (SempereRender) reads
+  the blob exactly as image items are drawn (`ImageStore.loaded`: JPEG and PNG by the pure-Swift decoders,
+  anything else only through the given decoder, `maxPixels` from the header, DCT scaling and box
+  reduction), and `AttachmentThumbnail` passes the restricted `ImageIODecoder`. Tests:
+  `ImageInsertTests.storageThumbnailsDecodeOnlyTheCanvasFormats` (GIF and TIFF give no thumbnail; on the
+  old code both did), `ImageCodecTests.testImagePreviewDecodesOnlyWhatItemsDecode`.
+- **S14 (Low), and P2: a `ShareLink` of the raw secret key, and selectable key text, bypassed the
+  local-only expiring Copy Key** on the new-vault and upgrade screens (the share sheet's Copy and ⌘C write
+  the general pasteboard with no expiry, which Universal Clipboard sends to other devices). Fix: those
+  screens copy through `SecretPasteboard` (local only, 180 s), their key text is not selectable, and they
+  share through `ShareSheet(items:secret: true)`, whose `SecretSharing.controller` excludes
+  `.copyToPasteboard`; `KeyFileActions` ("Share…" of a key file) uses the same, which closes P2.
+  Tests: `KeyExportTests.secretShareSheetsLeaveCopyOut`, `SecretKeySharingTests` (sources, Linux: no
+  `ShareLink` or selectable text in the key views, the general pasteboard written only by
+  `SecretPasteboard` and the public key's Copy).
+- **S10 (Low): the web viewer did not show capture attribution**, so a capture-profile holder's voice note
+  (its title and notebook chosen by that profile) looked like the owner's there, which C2 meant to prevent.
+  Fix: `web/src/format/captured.ts` reads `captured` leniently as Swift's `CaptureAttribution` does (8-hex
+  `device`, optional 64-hex `recipient`, anything else absent) and resolves `recipient` against the
+  vault's recipients by fingerprint; the recordings list says "Voice note from <label>", "… from a device
+  no longer in this vault" or "… from an unverified device" (catalog entries with Spanish). `captured`
+  is now a known, immutable recording field in the viewer too (`recordingFields`), as in Swift: a
+  `setRecording` naming it is invalid instead of an unknown register that could rewrite it. Tests:
+  `web/test/captured.test.ts` (mirrors `RecipientsAlertTests.capturedByNamesTheDevice` and
+  `CaptureAttributionTests.testMalformedAttributionReadsAsAbsent`).
+- **S13 (Low): on a Mac, window restoration kept notebook and tag names and note titles in plaintext.**
+  The library window's `@SceneStorage` selection (Saved Application State) held `notebook:<path>` or
+  `tag:<name>` and survived closing the vault. Fix: `RestorableSelection` stores a notebook or tag as
+  `notebook#<digest>` / `tag#<digest>`, the `LocalCacheKey` (purpose `selection`) `entryName` of the
+  canonical path or tag key, which `AppModel.restore` resolves against the unlocked vault (a plain name
+  reads as All Notes: no backward compatibility, per the owner's v1 decision); the saved selection is cleared when the vault
+  closes (`SelectionStorage.shouldClear`); a note window's title is the note's only while the vault is
+  unlocked. The titles of note windows open at quit can still be in the system's window state:
+  documented in `security.md` and `mac.md`; `format.md` §10.1 lists the purpose. Tests:
+  `NoteWindowTests.theSavedSelectionNamesNoNotebookOrTag` (on the old code the stored value contains the
+  tag and notebook names), `MacSupportTests.aSelectionRoundTripsThroughItsStoredString`.
+- **S16 (Low): an externally opened `.sempere` closed the open vault without asking, and the remembered
+  key was chosen by the unchecked vault id** (the app's counterpart of web P3). Fixes: (1)
+  `AppModel.handleOpened` returns an `OpenedVaultConfirmation` instead of opening when a vault is open,
+  and the window asks ("Open “X”? This closes “Y”…", `OpenedVaultAlert`, library and note windows);
+  (2) `RememberedKeyLocations` (Application Support, SHA-256 of the folder's resolved path, no names)
+  binds each remembered key to the folders it unlocked: `RememberedKeys.offersSavedKey` offers it, and
+  asks for Face ID, only there; a key with no location on this device yet (it arrived through iCloud Keychain) only for a
+  vault opened in the app (`vaultOpenedExternally` false), then bound; a pasted key binds a new folder
+  only when this device's trust record confirms the list (`.verified(.unchanged/.rotated)`); elsewhere
+  the unlock sheet says why and asks for the key or passphrase (`Attempt.notHere`); (3)
+  `refreshQuickCaptureProfile` refreshes only when the open folder is the profile's bookmarked one
+  (`isProfileFolder`) and never re-points the bookmark. Not done: the optional "first use with a
+  remembered key is unconfirmed" rule (4). Tests: `OpenedVaultTests` (all six; on the old code the
+  lookalike closes the open vault, the saved key is read for it, and the profile follows it).

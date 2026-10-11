@@ -109,7 +109,19 @@ extension AppModel {
                 }
                 try ensureCurrent(gen)
             }
-            if current.pendingRewrap {
+            if current.pendingRewrap, current.journalRefused {
+                // Not this vault's change (format.md §3.3.1): nothing to finish, it only blocks the next one.
+                let v = current
+                current = try await offMain {
+                    try CloudVault.coordinatedWrite(coordinate) { () throws -> Vault in
+                        var copy = v
+                        try copy.discardRefusedJournal()
+                        return copy
+                    }
+                }
+                try ensureCurrent(gen)
+                replaceMigratingVault(current)
+            } else if current.pendingRewrap {
                 show(String(localized: "Finishing the interrupted key change…"))
                 current = try await rewrap(current, gen: gen) { try $0.resumeRewrap() }
             }

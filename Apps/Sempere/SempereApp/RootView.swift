@@ -10,6 +10,8 @@ struct RootView: View {
     @AppEnvironmentObject private var library: VaultLibrary
     @AppEnvironmentObject private var keys: RememberedKeys
     @State private var pickingVault = false
+    /// A vault opened from outside that would replace the open one (S16).
+    @State private var openedVaultToConfirm: AppModel.OpenedVaultConfirmation?
     @State private var creatingVault = false
     @AppStorage(ColumnLayout.key) private var storedColumns = "all"
     /// Set when a failed reopen should end in the folder picker.
@@ -68,6 +70,10 @@ struct RootView: View {
                 if ready { restoreSelection() }
             }
             .onChange(of: model.selectedNoteID) { saveSelection() }
+            // A closed vault leaves nothing of its selection in the window's saved state.
+            .onChange(of: model.phase) { _, phase in
+                if SelectionStorage.shouldClear(phase: phase) { storedSelection = "" }
+            }
             .onChange(of: model.sidebarSelection) { saveSelection() }
             .menuBarRequests()
     }
@@ -104,6 +110,7 @@ struct RootView: View {
                 }
             }
         }
+        .openedVaultAlert($openedVaultToConfirm)
         .onOpenURL { url in
             switch VoiceNoteLink.route(url) {
             case .link(let link):
@@ -295,8 +302,8 @@ struct RootView: View {
 
     private func saveSelection() {
         guard SelectionStorage.shouldSave(isMac: Platform.isMac, unlocked: model.phase == .unlocked, vault: model.vault?.vaultId, restored: restoredVault),
-              let vaultID = model.vault?.vaultId else { return }
-        storedSelection = RestorableSelection(sidebar: model.sidebarSelection, note: model.selectedNoteID, vault: vaultID).stored
+              let saved = model.restorableSelection() else { return }
+        storedSelection = saved.stored
     }
 
     // MARK: - Menu commands (Mac)
@@ -357,7 +364,7 @@ struct RootView: View {
     }
 
     private func open(_ url: URL) async {
-        await model.handleOpened(url, library: library)
+        if let confirm = await model.handleOpened(url, library: library) { openedVaultToConfirm = confirm }
     }
 
     /// Reopens a recent vault; on failure explains and falls back to the picker.

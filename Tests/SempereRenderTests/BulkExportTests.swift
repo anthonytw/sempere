@@ -351,6 +351,57 @@ final class BulkExportTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: staging.path))
     }
 
+    /// Security review 2026-10 stage 4, S17: a zip is staged in a folder of its own, mode 0700, made by this
+    /// run (never one planted in a shared /tmp), and the archive and folder exports are owner-only, whatever
+    /// the umask.
+    func testStagingAndExportsAreOwnerOnly() throws {
+        let old = umask(0o022)
+        defer { umask(old) }
+        let fm = FileManager.default
+        func mode(_ url: URL) throws -> Int {
+            try XCTUnwrap(fm.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber).intValue & 0o777
+        }
+        let dir = try scratch()
+        let s = summary(1, "One", notebook: "A")
+        let jobs = BulkExportPlan.jobs(for: .vault, from: [s], format: .pdf, layout: .notebooks)
+        let archive = dir.appendingPathComponent("out.zip"), staging = dir.appendingPathComponent("staging")
+        let zip = try BulkExportSession(destination: .zip(archive: archive, staging: staging),
+                                        options: BulkExportOptions(format: .pdf), jobs: jobs)
+        XCTAssertEqual(try mode(staging), 0o700)
+        XCTAssertEqual(try mode(archive), 0o600)
+        try zip.export(jobs[0], state: state("One"), version: "1", blobs: nil)
+        _ = try zip.finish(cancelled: false)
+        XCTAssertEqual(try mode(archive), 0o600)
+
+        // A staging folder that is already there (planted) is refused, not used.
+        let planted = dir.appendingPathComponent("planted")
+        try fm.createDirectory(at: planted, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o777])
+        XCTAssertThrowsError(try BulkExportSession(destination: .zip(archive: dir.appendingPathComponent("p.zip"),
+                                                                     staging: planted),
+                                                   options: BulkExportOptions(format: .pdf), jobs: jobs))
+
+        // Folder export: folders it creates are 0700, files 0600; a folder that exists keeps its mode.
+        let root = dir.appendingPathComponent("tree")
+        let folder = try BulkExportSession(destination: .folder(root), options: BulkExportOptions(format: .pdf), jobs: jobs)
+        try folder.export(jobs[0], state: state("One"), version: "1", blobs: nil)
+        _ = try folder.finish(cancelled: false)
+        XCTAssertEqual(try mode(root), 0o700)
+        XCTAssertEqual(try mode(root.appendingPathComponent("A")), 0o700)
+        XCTAssertEqual(try mode(root.appendingPathComponent("A/One-0d1c6a1e.pdf")), 0o600)
+        XCTAssertEqual(try mode(root.appendingPathComponent(".sempere-export-bulk.json")), 0o600)
+        let png = BulkExportPlan.jobs(for: .vault, from: [s], format: .png, layout: .flat)
+        let shared = dir.appendingPathComponent("shared")
+        try fm.createDirectory(at: shared, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o755])
+        let pngSession = try BulkExportSession(destination: .folder(shared), options: BulkExportOptions(format: .png, dpi: 18),
+                                               jobs: png)
+        try pngSession.export(png[0], state: state("One"), version: "1", blobs: nil)
+        _ = try pngSession.finish(cancelled: false)
+        XCTAssertEqual(try mode(shared), 0o755)
+        let pages = listing(shared)
+        XCTAssertFalse(pages.isEmpty)
+        for p in pages { XCTAssertEqual(try mode(shared.appendingPathComponent(p)), 0o600, p) }
+    }
+
     func testInvalidResolutionIsRefused() {
         XCTAssertThrowsError(try BulkExportSession(destination: .folder(URL(fileURLWithPath: "/tmp/x")),
                                                    options: BulkExportOptions(format: .png, dpi: 0), jobs: []))

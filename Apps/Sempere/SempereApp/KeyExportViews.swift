@@ -47,7 +47,7 @@ struct KeyFileActions: View {
                 }
             Button("Share…", systemImage: "square.and.arrow.up") { share() }
                 .sheet(isPresented: Binding(get: { shared != nil }, set: { if !$0 { unshare() } })) {
-                    if let shared { ShareSheet(items: [shared]) { unshare() } }
+                    if let shared { ShareSheet(items: [shared], secret: true) { unshare() } }
                 }
         } header: {
             Text("Key file")
