@@ -87,10 +87,11 @@ struct AppIconSettingsSection: View {
                 }
                 .padding(.vertical, 6)
                 .syncedSetting("appearance.icon")
+                // On the row, not the section (a section's modifier is on each of its rows).
+                .alert("Could not change the icon.", isPresented: $failed) {}
             } header: {
                 Text("App Icon")
             }
-            .alert("Could not change the icon.", isPresented: $failed) {}
         }
     }
 
