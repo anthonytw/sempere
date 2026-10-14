@@ -485,10 +485,21 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
             return "\(item.kind.rawValue):\(n(f.x)),\(n(f.y)),\(n(f.w)),\(n(f.h)),\(n(item.rotation ?? 0))"
         }
         let selected = model.selected.flatMap { id in items.first { $0.id == id }?.kind.rawValue } ?? "none"
+        // `width` is the canvas's own width in UIKit points: a Catalyst app in the iPad idiom is drawn at
+        // 77 %, so a test scales by the canvas's width on screen over this one to aim the pointer.
+        // `typing`, last since it may hold any character, is the text of the box being typed in: PencilKit
+        // lists only its strokes as the canvas's accessibility children, so a test cannot read the text view.
         canvas.accessibilityValue = "zoom=\(String(format: "%.3f", Double(zoom)));offset=\(n(Double(canvas.contentOffset.x))),"
-            + "\(n(Double(canvas.contentOffset.y)));edits=\(editor?.itemRevisions[pageID] ?? 0);selected=\(selected);items="
-            + list.joined(separator: "|")
+            + "\(n(Double(canvas.contentOffset.y)));width=\(n(Double(canvas.bounds.width)))"
+            + ";edits=\(editor?.itemRevisions[pageID] ?? 0);selected=\(selected);items="
+            + list.joined(separator: "|") + (debugTyping().map { ";typing=" + $0 } ?? "")
     }
+
+    /// The text of the box being typed in on this page, if any (`debugReport`).
+    var debugTyping: () -> String? = { nil }
+
+    /// Writes the report again (the text being typed changed).
+    func debugRefreshReport() { debugReport() }
     #endif
 
     // MARK: Gestures

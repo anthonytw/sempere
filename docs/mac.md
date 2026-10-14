@@ -184,7 +184,9 @@ With an item selection on, the mouse and trackpad work the items:
 
 `MacItemUITests` drags every kind with the mouse in the demo vault
 (`SEMPERE_DEMO_ITEMS`; the canvas reports its items in its accessibility
-value, debug builds only).
+value, debug builds only). The app is in the iPad idiom, which macOS draws at
+77 %: the report gives the canvas's UIKit width, and a test scales page points
+by the canvas's on-screen width over it.
 
 ## Recordings and export
 

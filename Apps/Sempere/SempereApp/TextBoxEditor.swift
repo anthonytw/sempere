@@ -33,6 +33,8 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
     var actions: () -> ItemActions? = { nil }
     /// Called when editing starts or ends (the host turns drawing and selection off meanwhile).
     var onEditingChanged: (Bool) -> Void = { _ in }
+    /// Called when the text being typed changes (DEBUG builds report it for the Mac UI tests).
+    var onTextChanged: () -> Void = {}
 
     /// What is being edited.
     struct Session {
@@ -273,6 +275,7 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
     func textViewDidChange(_ textView: UITextView) {
         session?.dirty = true
         layoutTextView()
+        onTextChanged()
     }
 
     // MARK: Style bar

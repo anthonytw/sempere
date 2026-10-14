@@ -20,6 +20,8 @@ final class MacItemUITests: XCTestCase {
     struct Report {
         var zoom: CGFloat = 1
         var offset = CGPoint.zero
+        /// The canvas's width in UIKit points (`debugReport`).
+        var width: CGFloat = 0
         var edits = 0
         var selected = "none"
         var items: [(kind: String, frame: CGRect, rotation: Double)] = []
@@ -35,6 +37,7 @@ final class MacItemUITests: XCTestCase {
                 case "offset":
                     let c = v.split(separator: ",").compactMap { Double($0) }
                     if c.count == 2 { offset = CGPoint(x: c[0], y: c[1]) }
+                case "width": width = CGFloat(Double(v) ?? 0)
                 case "edits": edits = Int(v) ?? 0
                 case "selected": selected = v
                 case "items":
@@ -82,15 +85,45 @@ final class MacItemUITests: XCTestCase {
         (canvas.value as? String).flatMap(Report.init)
     }
 
+    /// Screen points per canvas (UIKit) point: a Catalyst app in the iPad idiom is drawn at 77 %
+    /// of its UIKit size, so the canvas's on-screen frame is smaller than its bounds.
+    @MainActor
+    private func scale(_ canvas: XCUIElement, _ r: Report) -> CGFloat {
+        r.width > 0 ? canvas.frame.width / r.width : 1
+    }
+
+    /// Page points per screen point at the report's zoom (a drag of `d` screen points moves an item
+    /// `d * pagePerScreen(…)` page points).
+    @MainActor
+    private func pagePerScreen(_ canvas: XCUIElement, _ r: Report) -> CGFloat {
+        1 / (r.zoom * scale(canvas, r))
+    }
+
     /// The screen coordinate of page point `p` on `canvas`.
     @MainActor
     private func point(_ p: CGPoint, on canvas: XCUIElement, _ r: Report, app: XCUIApplication) -> XCUICoordinate {
         let window = app.windows.firstMatch
         let origin = window.coordinate(withNormalizedOffset: .zero)
         let f = canvas.frame
-        let x = f.minX - window.frame.minX + p.x * r.zoom - r.offset.x
-        let y = f.minY - window.frame.minY + p.y * r.zoom - r.offset.y
+        let s = scale(canvas, r)
+        let x = f.minX - window.frame.minX + (p.x * r.zoom - r.offset.x) * s
+        let y = f.minY - window.frame.minY + (p.y * r.zoom - r.offset.y) * s
         return origin.withOffset(CGVector(dx: x, dy: y))
+    }
+
+    /// Scrolls the pages (the wheel, over the window) until item `kind` and room for a drag below and
+    /// right of it are inside the window.
+    @MainActor
+    private func bringIntoView(_ kind: String, on canvas: XCUIElement, app: XCUIApplication) {
+        let window = app.windows.firstMatch
+        for _ in 0..<12 {
+            guard let r = report(canvas), let f = r.frame(kind) else { return }
+            let s = scale(canvas, r)
+            let bottom = canvas.frame.minY + (f.maxY * r.zoom - r.offset.y) * s + 60
+            guard bottom > window.frame.maxY else { return }
+            window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).scroll(byDeltaX: 0, deltaY: -40)
+            Thread.sleep(forTimeInterval: 0.5)
+        }
     }
 
     /// Waits until the canvas's report satisfies `ok`, and returns it.
@@ -129,6 +162,8 @@ final class MacItemUITests: XCTestCase {
         app.typeKey("7", modifierFlags: [.command, .option])   // Tools > Select
         Thread.sleep(forTimeInterval: 1)
         for kind in ["image", "text", "math", "audio"] {
+            // At the fitted width the equation and the audio card start below the window's bottom edge.
+            bringIntoView(kind, on: canvas, app: app)
             guard let r0 = report(canvas), let f0 = r0.frame(kind) else { return XCTFail("\(kind): not reported") }
             point(CGPoint(x: f0.midX, y: f0.midY), on: canvas, r0, app: app).click()
             guard let r1 = waitReport(canvas, "\(kind): a click selects it", { $0.selected == kind }) else { return }
@@ -141,7 +176,7 @@ final class MacItemUITests: XCTestCase {
             drag(from: start, to: start.withOffset(CGVector(dx: 40, dy: 30)))
             guard let r2 = waitReport(canvas, "\(kind): a drag moves it", { r in
                 guard let f = r.frame(kind) else { return false }
-                return abs(f.minX - (f0.minX + 40 / r1.zoom)) < 6 && abs(f.minY - (f0.minY + 30 / r1.zoom)) < 6
+                return abs(f.minX - (f0.minX + 40 * pagePerScreen(canvas, r1))) < 6 && abs(f.minY - (f0.minY + 30 * pagePerScreen(canvas, r1))) < 6
             }) else { return }
             XCTAssertEqual(r2.edits, r1.edits + 1, "\(kind): the move wrote one delta")
             guard let f1 = r2.frame(kind) else { return }
@@ -194,7 +229,9 @@ final class MacItemUITests: XCTestCase {
 
         // Selection mode on: the wheel (two fingers on a trackpad) still scrolls the pages.
         let before = canvas.frame.minY
-        canvas.scroll(byDeltaX: 0, deltaY: -120)
+        // Over the image (the canvas element runs past the window, so it has no hit point of its own).
+        guard let r3 = report(canvas), let f3 = r3.frame("image") else { return XCTFail("no image") }
+        point(CGPoint(x: f3.midX, y: f3.midY), on: canvas, r3, app: app).scroll(byDeltaX: 0, deltaY: -120)
         Thread.sleep(forTimeInterval: 1)
         XCTAssertNotEqual(canvas.frame.minY, before, accuracy: 1, "the wheel scrolls the page in selection mode")
     }
@@ -218,7 +255,7 @@ final class MacItemUITests: XCTestCase {
         drag(from: start, to: start.withOffset(CGVector(dx: 40, dy: 30)))
         guard let r2 = waitReport(canvas, "a drag moves the PDF page", { r in
             guard let f = r.frame("pdfPage") else { return false }
-            return abs(f.minX - (f0.minX + 40 / r1.zoom)) < 6 && abs(f.minY - (f0.minY + 30 / r1.zoom)) < 6
+            return abs(f.minX - (f0.minX + 40 * pagePerScreen(canvas, r1))) < 6 && abs(f.minY - (f0.minY + 30 * pagePerScreen(canvas, r1))) < 6
         }) else { return }
         XCTAssertEqual(r2.edits, r1.edits + 1, "the move wrote one delta")
         guard let f1 = r2.frame("pdfPage") else { return }

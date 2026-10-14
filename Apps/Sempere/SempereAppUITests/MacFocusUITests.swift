@@ -20,13 +20,18 @@ final class MacFocusUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"]
         app.launchEnvironment = ["SEMPERE_DEMO": "1", "SEMPERE_DEBUG_COLUMNS": "all", "SEMPERE_DEMO_NOTE": "respiration",
-                                 "SEMPERE_DEMO_SIDEBAR": "all", "SEMPERE_DEMO_MAC_WINDOW": "1100x760", "TZ": "UTC"]
+                                 "SEMPERE_DEMO_SIDEBAR": "all", "SEMPERE_DEMO_MAC_WINDOW": "1100x760", "TZ": "UTC",
+                                 // The canvases report their state, the text being typed included (`typing`).
+                                 "SEMPERE_DEMO_ITEMS": "1"]
         app.launch()
         return app
     }
 
     @MainActor
     private func dump(_ app: XCUIApplication, _ tag: String) {
+        for c in app.descendants(matching: .any).matching(identifier: "pageCanvas").allElementsBoundByIndex {
+            print("FOCUSDEBUG \(tag) canvas \(c.frame) \(String(describing: c.value))")
+        }
         for (i, window) in app.windows.allElementsBoundByIndex.enumerated() {
             print("FOCUSDEBUG \(tag) window \(i):\n\(window.debugDescription.prefix(8000))")
         }
@@ -88,17 +93,36 @@ final class MacFocusUITests: XCTestCase {
         let origin = window.coordinate(withNormalizedOffset: .zero)
         origin.withOffset(CGVector(dx: area.minX - window.frame.minX + area.width * 0.3,
                                    dy: area.minY - window.frame.minY + area.height * 0.8)).click()
-        let box = app.textViews["textBoxEditor"].firstMatch
-        if !box.waitForExistence(timeout: 10) { dump(app, "textbox-editor") }
-        XCTAssertTrue(box.exists, "a text box is being edited")
+        // The box's text view is not in the accessibility tree (PencilKit lists only its strokes as the
+        // canvas's children), so the canvas's debug report says what is being typed (`typing=`).
+        if typing(app, timeout: 10) == nil { dump(app, "textbox-editor") }
+        XCTAssertNotNil(typing(app, timeout: 1), "a text box is being edited")
         Thread.sleep(forTimeInterval: 1)
         typeSlowly(app, "hello")
         Thread.sleep(forTimeInterval: 1.5)
         typeSlowly(app, " there")
-        let value = box.value as? String ?? ""
+        var value = typing(app, timeout: 1)
+        for _ in 0..<10 where value != "hello there" {
+            Thread.sleep(forTimeInterval: 0.5)
+            value = typing(app, timeout: 1)
+        }
         if value != "hello there" { dump(app, "textbox-value") }
         XCTAssertEqual(value, "hello there", "every key reached the text box")
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+    }
+
+    /// The text of the box being typed in, from a canvas's debug report (`SEMPERE_DEMO_ITEMS`);
+    /// nil while no box is being edited.
+    @MainActor
+    private func typing(_ app: XCUIApplication, timeout: TimeInterval) -> String? {
+        let end = Date().addingTimeInterval(timeout)
+        repeat {
+            for c in app.descendants(matching: .any).matching(identifier: "pageCanvas").allElementsBoundByIndex {
+                if let v = c.value as? String, let r = v.range(of: ";typing=") { return String(v[r.upperBound...]) }
+            }
+            Thread.sleep(forTimeInterval: 0.3)
+        } while Date() < end
+        return nil
     }
 
     /// The sidebar still takes the arrow keys once it has the keyboard: a click

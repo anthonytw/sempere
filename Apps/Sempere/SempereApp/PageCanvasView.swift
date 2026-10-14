@@ -579,6 +579,10 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         textEditor.attach(to: canvas, itemLayer: itemLayer)
         textEditor.actions = { [weak self] in self?.itemSelection.actions }
         textEditor.onEditingChanged = { [weak self] editing in self?.textEditingChanged(editing) }
+        #if DEBUG
+        itemSelection.debugTyping = { [weak self] in self?.textEditor.textView?.text }
+        textEditor.onTextChanged = { [weak self] in self?.itemSelection.debugRefreshReport() }
+        #endif
         itemSelection.onEditText = { [weak self] item in self?.textEditor.begin(item) }
         itemSelection.lassoSelected = { [weak self] in self?.canvas.tool is PKLassoTool }
         textEditor.penColour = { [weak self] in (self?.canvas.tool as? PKInkingTool).map { Sempere.Color($0.color) } }
