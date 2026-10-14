@@ -1309,6 +1309,13 @@ a separate note titled `<title> (version modified <date>)` and gets a
 `separate version …` line. An `.ntb` without a `.note` is imported from the
 bundle.
 
+On a terminal (or with `SEMPERE_PROGRESS=always`; never with `--json` or `--quiet`) a progress line on stderr
+counts the sources as they are read (`Reading 120/1531 notes: Lecture 4.note`) and then written
+(`Importing …`). Ctrl-C stops the import after the note being written: every note written stays whole (one
+delta each), the rest are reported as `skipped` with `not imported: the import was cancelled` (one
+`Cancelled: N note(s) not imported` line, `"cancelled": true` in the JSON summary) and the command exits 1;
+running it again imports the rest, since notes already in the vault are skipped. A second Ctrl-C quits at once.
+
 One row is printed per input file (status, title, notebook, strokes written,
 pages with recognised text, source) plus a summary line; `-v` lists what was
 left behind (typed text, PDFs and their page count, media, recordings, PDF

@@ -39,6 +39,11 @@ public enum NotabilityImporter {
         /// Extracts the text of PDF pages Notability's own PDF index does not
         /// cover (format.md §8.2.6 `pageText`); nil stores the index's text only.
         public var pdfText: (any PDFTextExtracting)?
+        /// Told after each source is read and after each is written (from the importing thread).
+        public var progress: (@Sendable (ImporterProgress) -> Void)?
+        /// Asked before each source is read or written: true stops the import there. Notes written stay
+        /// (each is one delta); the rest are reported as skipped (`cancelledReason`), nothing half-written.
+        public var shouldStop: (@Sendable () -> Bool)?
 
         public init(overwrite: Bool = false, notebook: String? = nil, app: String = "sempere-import/0.1",
                     scaleToLetterWidth: Bool = true, tagsFromFolders: Bool = false, extraTags: [String] = [],
@@ -264,10 +269,15 @@ public enum NotabilityImporter {
         public init(source: String, status: Status) { self.source = source; self.status = status }
     }
 
+    /// The reason of a source not imported because the import was stopped (`Options.shouldStop`).
+    public static let cancelledReason = "not imported: the import was cancelled"
+
     /// Result of `import`.
     public struct ImportReport: Hashable, Sendable {
         /// One entry per source note, in input order.
         public var notes: [NoteResult] = []
+        /// The import was stopped (`Options.shouldStop`) before every source was done.
+        public var cancelled = false
 
         public init() {}
 
@@ -639,12 +649,24 @@ public enum NotabilityImporter {
     ///   opened; `VaultError` when the vault cannot be listed.
     public static func `import`(paths: [URL], into vault: Vault, device: DeviceID, clock: inout HybridClock,
                                 options: Options = Options(), now: () -> Date = Date.init) throws -> ImportReport {
+        options.progress?(ImporterProgress(phase: .finding, done: 0, total: 0))
         let all = try paths.flatMap { try sources($0) }
-        let plan = self.plan(all)
         var report = ImportReport()
+        func stopped(from start: Int) -> ImportReport {
+            report.cancelled = true
+            for source in all[start...] {
+                var r = NoteResult(source: source.label, status: .skipped(cancelledReason))
+                r.format = source.format
+                report.notes.append(r)
+            }
+            return report
+        }
+        guard let plan = self.plan(all, progress: options.progress, shouldStop: options.shouldStop) else { return stopped(from: 0) }
         var existing = Set(try vault.noteIDs())
         var seen = Set<UUID>()
         for (i, source) in all.enumerated() {
+            if options.shouldStop?() == true { return stopped(from: i) }
+            options.progress?(ImporterProgress(phase: .writing, done: i, total: all.count, current: displayName(source.label)))
             let started = Date()
             var result = autoreleasing {
                 importOne(source, plan: plan.decisions[i], into: vault, device: device, clock: &clock,
@@ -653,7 +675,14 @@ public enum NotabilityImporter {
             result.seconds = Date().timeIntervalSince(started) + plan.scanSeconds[i]
             report.notes.append(result)
         }
+        options.progress?(ImporterProgress(phase: .writing, done: all.count, total: all.count))
         return report
+    }
+
+    /// The file name of a source label (`/a/b.zip!Notability/X/Y.note` → `Y.note`), for progress.
+    static func displayName(_ label: String) -> String {
+        let inner = label.split(separator: "!", omittingEmptySubsequences: false).last.map(String.init) ?? label
+        return inner.split(separator: "/").last.map(String.init) ?? inner
     }
 
     /// What happens to one source.
@@ -810,12 +839,15 @@ public enum NotabilityImporter {
         var scanSeconds: [Double]
     }
 
-    /// Reads every source and decides what to import (see `import`).
-    static func plan(_ all: [Source]) -> Plan {
+    /// Reads every source and decides what to import (see `import`); nil when `shouldStop` said so.
+    static func plan(_ all: [Source], progress: (@Sendable (ImporterProgress) -> Void)? = nil,
+                     shouldStop: (@Sendable () -> Bool)? = nil) -> Plan? {
         var decisions: [Decision] = []
         var seconds: [Double] = []
         var summaries: [Summary?] = []
-        for source in all {
+        for (n, source) in all.enumerated() {
+            if shouldStop?() == true { return nil }
+            progress?(ImporterProgress(phase: .reading, done: n, total: all.count, current: displayName(source.label)))
             let started = Date()
             let outcome: Result<Summary, Error> = autoreleasing {
                 do {
@@ -838,6 +870,8 @@ public enum NotabilityImporter {
                 decisions.append(Decision(action: .fail(describe(e))))
             }
         }
+
+        progress?(ImporterProgress(phase: .reading, done: all.count, total: all.count))
 
         // Keys: Notability's uuid for a .note; an .ntb takes the uuid of a
         // .note created at the same millisecond (the bundle has no uuid).

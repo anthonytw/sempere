@@ -109,7 +109,8 @@ enum SyntheticNote {
                         attributed: ((inout KeyedArchiveBuilder) -> BValue)? = nil,
                         eventTokens: [Int32]? = nil,
                         rootExtra: ((inout KeyedArchiveBuilder) -> [(String, BValue)])? = nil,
-                        attrsExtra: ((inout KeyedArchiveBuilder) -> [(String, BValue)])? = nil) -> Data {
+                        attrsExtra: ((inout KeyedArchiveBuilder) -> [(String, BValue)])? = nil,
+                        name: String = "Synthetic note") -> Data {
         var a = KeyedArchiveBuilder()
         let nodes = cs.map { $0.fw.count }.reduce(0, +)
         let totalPoints = cs.map { $0.points.count }.reduce(0, +)
@@ -171,7 +172,7 @@ enum SyntheticNote {
         ] + (attrsExtra.map { $0(&a) } ?? []))
         let layout = a.object("Notability.NoteDocumentPaperLayoutModel", [("documentPaperAttributes", attrs)])
         let root = a.object("NoteTakingSession", [
-            ("name", a.object("NSMutableData", [("NS.data", .data(Data("Synthetic note".utf8)))])),
+            ("name", a.object("NSMutableData", [("NS.data", .data(Data(name.utf8)))])),
             ("subject", a.string("unsortedNotesKey")),
             ("tags", a.string("")),
             ("creationDate", a.date(created)),
@@ -184,16 +185,16 @@ enum SyntheticNote {
     }
 
     static func metadata(subject: String = "Fixtures", tags: String = "alpha, beta", uuid: String = uuid,
-                         created: Date = created, modified: Date? = nil) -> Data {
+                         created: Date = created, modified: Date? = nil, name: String = "Synthetic note") -> Data {
         var b = KeyedArchiveBuilder()
         let d = b.dict([
-            ("noteName", b.string("Synthetic note")),
+            ("noteName", b.string(name)),
             ("noteSubject", b.string(subject)),
             ("noteTags", b.string(tags)),
             ("noteCreationDateKey", b.date(created)),
             ("noteModifiedDateKey", b.date(modified ?? created.addingTimeInterval(60))),
             ("uuidKey", b.string(uuid)),
-            ("notePackagePath", b.string("Synthetic note")),
+            ("notePackagePath", b.string(name)),
         ])
         return b.archive(top: [("root", d)])
     }

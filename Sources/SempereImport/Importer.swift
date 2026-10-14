@@ -74,6 +74,66 @@ public struct ImporterOptionValues: Sendable, Hashable {
     }
 }
 
+/// How far an import has come, for the host's progress display (the CLI's line on stderr, the app's bar).
+/// Reported by the importer from the thread it runs on; a host hops to its own.
+public struct ImporterProgress: Sendable, Hashable {
+    public enum Phase: String, Sendable, Hashable {
+        /// Listing the picked files, folders and archives.
+        case finding
+        /// Reading every source before anything is written (copies of a note are resolved together).
+        case reading
+        /// Writing the notes into the vault, one delta each.
+        case writing
+    }
+
+    public var phase: Phase
+    /// Sources done in this phase.
+    public var done: Int
+    /// Sources in all (0 while finding).
+    public var total: Int
+    /// The file name of the source being worked on (never a folder path or note content).
+    public var current: String?
+
+    public init(phase: Phase, done: Int, total: Int, current: String? = nil) {
+        self.phase = phase; self.done = done; self.total = total; self.current = current
+    }
+
+    /// The fraction of the whole import (reading counts as the first third), 0 while finding.
+    public var fraction: Double {
+        guard total > 0 else { return 0 }
+        let part = Double(min(max(done, 0), total)) / Double(total)
+        switch phase {
+        case .finding: return 0
+        case .reading: return part / 3
+        case .writing: return 1.0 / 3 + part * 2 / 3
+        }
+    }
+
+    /// The CLI's line (English).
+    public var line: String {
+        let what: String
+        switch phase {
+        case .finding: return "Finding notes…"
+        case .reading: what = "Reading"
+        case .writing: what = "Importing"
+        }
+        return "\(what) \(done)/\(total) notes" + (current.map { ": \($0)" } ?? "")
+    }
+}
+
+/// A request to stop an import, set by the host (the app's Cancel) and checked by the importer between
+/// notes: what was written stays (each note is one delta), and the rest is reported as not imported.
+public final class ImporterCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    public init() {}
+
+    public func cancel() { lock.lock(); cancelled = true; lock.unlock() }
+
+    public var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
+}
+
 /// What a host asks an importer to do.
 public struct ImporterRequest: Sendable {
     /// Files, folders or archives the user chose.
@@ -86,11 +146,17 @@ public struct ImporterRequest: Sendable {
     public var pdfText: (any PDFTextExtracting)?
     /// The notebook every note goes to (nil: the importer's own rule). The host canonicalizes it.
     public var notebook: String?
+    /// Told how far the import is, after each source (any thread; nil: nobody asks).
+    public var progress: (@Sendable (ImporterProgress) -> Void)?
+    /// Checked between notes by an importer that `supportsCancel`; nil: the import runs to its end.
+    public var cancellation: ImporterCancellation?
 
     public init(paths: [URL], vault: Vault, device: DeviceID, options: ImporterOptionValues = ImporterOptionValues(),
-                pdfText: (any PDFTextExtracting)? = nil, notebook: String? = nil) {
+                pdfText: (any PDFTextExtracting)? = nil, notebook: String? = nil,
+                progress: (@Sendable (ImporterProgress) -> Void)? = nil, cancellation: ImporterCancellation? = nil) {
         self.paths = paths; self.vault = vault; self.device = device; self.options = options
         self.pdfText = pdfText; self.notebook = notebook
+        self.progress = progress; self.cancellation = cancellation
     }
 }
 
@@ -202,9 +268,12 @@ public struct ImporterResult: Sendable {
     /// The CLI's output for this result; the recognition outcome is given when the host read the notes' handwriting.
     private let present: @Sendable (ImporterStyle, ImporterRecognition?) -> ImporterPresentation
 
-    public init(notes: [ImporterNoteOutcome], imported: [ImporterCount], leftOut: [ImporterCount],
+    /// The import was stopped (`ImporterCancellation`): the notes not written are skipped, and say so.
+    public var cancelled: Bool
+
+    public init(notes: [ImporterNoteOutcome], imported: [ImporterCount], leftOut: [ImporterCount], cancelled: Bool = false,
                 present: @escaping @Sendable (ImporterStyle, ImporterRecognition?) -> ImporterPresentation) {
-        self.notes = notes; self.imported = imported; self.leftOut = leftOut; self.present = present
+        self.notes = notes; self.imported = imported; self.leftOut = leftOut; self.cancelled = cancelled; self.present = present
     }
 
     public func presentation(_ style: ImporterStyle, recognition: ImporterRecognition? = nil) -> ImporterPresentation {
@@ -237,9 +306,15 @@ public protocol VaultImporter: Sendable {
     var usesPDFText: Bool { get }
     /// The importer's notes may lack recognised handwriting that the host can read afterwards.
     var supportsRecognizeAfter: Bool { get }
+    /// The importer stops between notes when `ImporterRequest.cancellation` is set, leaving the vault consistent.
+    var supportsCancel: Bool { get }
 
     /// Imports `request.paths` into the vault, one delta per note.
     func run(_ request: ImporterRequest, clock: inout HybridClock) throws -> ImporterResult
+}
+
+extension VaultImporter {
+    public var supportsCancel: Bool { false }
 }
 
 /// The importers a host was built with.
