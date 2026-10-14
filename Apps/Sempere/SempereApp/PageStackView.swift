@@ -406,7 +406,7 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         return swipeTurnsPages
     }
 
-    /// The vertical scroll and a pinch go on while the swipe is being recognised.
+    /// The vertical scroll and a pinch go on while the swipe is being recognized.
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
                            shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
         gestureRecognizer is UISwipeGestureRecognizer

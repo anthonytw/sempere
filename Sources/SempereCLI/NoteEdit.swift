@@ -166,7 +166,7 @@ struct NotesLanguage: ParsableCommand {
     @Argument(help: ArgumentHelp("A BCP 47 language tag.", valueName: "tag"))
     var tag: String?
 
-    @Flag(name: .long, help: "Clear the language (recognisers use their default).")
+    @Flag(name: .long, help: "Clear the language (recognizers use their default).")
     var none = false
 
     @OptionGroup var access: AccessOptions
@@ -435,13 +435,13 @@ struct PaperOptions: ParsableArguments {
     @Option(name: .customLong("staff-gap"), help: ArgumentHelp("Gap between staves, points (8-150).", valueName: "pt"))
     var staffGap: Double?
 
-    @Option(name: .long, help: ArgumentHelp("Background colour, #RRGGBB or #RRGGBBAA.", valueName: "hex"))
+    @Option(name: .long, help: ArgumentHelp("Background color, #RRGGBB or #RRGGBBAA.", valueName: "hex"))
     var background: String?
 
-    @Option(name: .customLong("line-color"), help: ArgumentHelp("Colour of rules and dots.", valueName: "hex"))
+    @Option(name: .customLong("line-color"), help: ArgumentHelp("Color of rules and dots.", valueName: "hex"))
     var lineColor: String?
 
-    @Option(name: .customLong("margin-color"), help: ArgumentHelp("Colour of the margin lines.", valueName: "hex"))
+    @Option(name: .customLong("margin-color"), help: ArgumentHelp("Color of the margin lines.", valueName: "hex"))
     var marginColor: String?
 
     /// True when any parameter was given.
@@ -775,7 +775,7 @@ struct PagesCommand: ParsableCommand {
 struct PagesList: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "list",
-        abstract: "List a note's pages: number, id, strokes, paper, recognised text.",
+        abstract: "List a note's pages: number, id, strokes, paper, recognized text.",
         discussion: "PAPER is the page's own paper, or the note's (marked *) when the page follows it."
     )
 
@@ -877,7 +877,7 @@ struct PagesMove: ParsableCommand {
         abstract: "Move a page to another position (one setPageOrder delta).",
         discussion: """
             Page numbers are 1-based, as `pages list` prints them. The page ends up at position
-            --to; other pages get new order keys only when none fits between its new neighbours
+            --to; other pages get new order keys only when none fits between its new neighbors
             (format.md §5.4.3).
             """
     )
@@ -945,7 +945,7 @@ struct PagesDelete: ParsableCommand {
 struct PagesDuplicate: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "duplicate",
-        abstract: "Copy a page, its ink, items, paper and recognised text, right after it (one delta).",
+        abstract: "Copy a page, its ink, items, paper and recognized text, right after it (one delta).",
         discussion: "The copies get new ids (format.md §5.4.3), as the app's Duplicate Page."
     )
 

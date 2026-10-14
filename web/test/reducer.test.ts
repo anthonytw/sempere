@@ -362,14 +362,14 @@ describe("merge scenarios", () => {
     expect(reconstruct([snap, lateOld]).pages[0]?.recognition?.text).toBe("two");
     const lateNew = log.delta(devC, 250, [op.setPageRecognition(p1, recognition("new"))]);
     expect(reconstruct([lateNew, snap]).pages[0]?.recognition?.text).toBe("new");
-    // A page the snapshot never saw recognised does not compete: an older uncovered write still lands.
+    // A page the snapshot never saw recognized does not compete: an older uncovered write still lands.
     const lateP2 = log.delta(devC, 60, [op.setPageRecognition(p2, recognition("p2"))]);
     expect(reconstruct([snap, lateP2]).pages[1]?.recognition?.text).toBe("p2");
     // A cleared register in a snapshot does compete.
     const snapCleared = log.snapshot(devB, 400, [add, setA, setB, clear]);
     expect(reconstruct([snapCleared, lateOld]).pages[0]?.recognition).toBeUndefined();
 
-    // Applying to a state honours the same register.
+    // Applying to a state honors the same register.
     expect(applyDeltas([lateNew], snapState, stampOf(snap)).pages[0]?.recognition?.text).toBe("new");
     expect(applyDeltas([lateOld], snapState, stampOf(snap)).pages[0]?.recognition?.text).toBe("two");
 

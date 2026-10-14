@@ -123,7 +123,7 @@ export const catalog = {
   "The key cannot be remembered with a passkey here.": { es: "Aquí no se puede recordar la clave con una llave de acceso." },
   "The key is kept in this tab's memory only: never sent, and stored only if you ask for a passkey (then encrypted under it). A passphrase is used once and never stored. Closing the tab or Lock forgets the key.": { es: "La clave solo se guarda en la memoria de esta pestaña: nunca se envía y solo se almacena si pides una llave de acceso (entonces, cifrada con ella). Una frase de contraseña se usa una sola vez y nunca se guarda. Al cerrar la pestaña o pulsar Bloquear, se olvida la clave." },
   "The passkey did not verify you (no PIN, biometric or device unlock).": { es: "La llave de acceso no te ha verificado (sin PIN, biometría ni desbloqueo del dispositivo)." },
-  "The passkey prompt was cancelled or timed out.": { es: "Se ha cancelado la solicitud de la llave de acceso o ha caducado." },
+  "The passkey prompt was canceled or timed out.": { es: "Se ha cancelado la solicitud de la llave de acceso o ha caducado." },
   "the PDF file is missing from the vault (or not synced yet)": { es: "falta el archivo del PDF en la bóveda (o aún no se ha sincronizado)" },
   "the PDF is larger than this viewer shows ({size} MiB); export it with the CLI": { es: "el PDF es mayor de lo que muestra este visor ({size} MiB); expórtalo con la CLI" },
   "the PDF page cannot be drawn": { es: "no se puede dibujar la página del PDF" },

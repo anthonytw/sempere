@@ -185,7 +185,7 @@ final class TranscriptBuilderTests: XCTestCase {
         XCTAssertEqual(segs.flatMap { $0.words ?? [] }.count, 100)
     }
 
-    /// Whatever a recogniser returns (overlaps, NaN, confidences outside
+    /// Whatever a recognizer returns (overlaps, NaN, confidences outside
     /// 0…1, words outside their phrase) becomes a valid transcript.
     func testHostileRecogniserOutputIsSanitized() {
         let phrases: [(text: String, start: Double, end: Double, confidence: Double?, words: [RecognizedSpan])] = [

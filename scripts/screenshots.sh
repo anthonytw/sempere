@@ -88,7 +88,7 @@ PY
 }
 
 # A Mac window shot has whatever size the window and the display give; scale it to fit
-# and centre it on a plain 2880x1800 canvas (App Store Connect takes only exact sizes).
+# and center it on a plain 2880x1800 canvas (App Store Connect takes only exact sizes).
 mac() {
   local dir="$out/mac" raw="$out/mac-raw" status=0
   rm -rf "$dir" "$raw"; mkdir -p "$dir" "$raw"

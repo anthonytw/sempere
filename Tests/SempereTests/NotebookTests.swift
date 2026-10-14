@@ -127,7 +127,7 @@ final class NotebookMoveTests: XCTestCase {
         XCTAssertEqual(NotebookPath.moved("School/Math", into: nil), "Math")
         XCTAssertEqual(NotebookPath.moved("School/Math", into: "  "), "Math")
         XCTAssertEqual(NotebookPath.moved("Math", into: "School/Year 2"), "School/Year 2/Math")
-        XCTAssertEqual(NotebookPath.moved(" A // B ", into: " C / "), "C/B", "both sides are canonicalised")
+        XCTAssertEqual(NotebookPath.moved(" A // B ", into: " C / "), "C/B", "both sides are canonicalized")
         // Already there: the same path comes back (a no-op for the caller).
         XCTAssertEqual(NotebookPath.moved("School/Math", into: "School"), "School/Math")
         XCTAssertEqual(NotebookPath.moved("Math", into: nil), "Math")

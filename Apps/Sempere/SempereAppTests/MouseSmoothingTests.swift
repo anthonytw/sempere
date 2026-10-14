@@ -149,7 +149,7 @@ struct MouseSmoothingTests {
         return (canvas, ink)
     }
 
-    /// Everything a stroke holds, exactly: ink, colour, transform, mask,
+    /// Everything a stroke holds, exactly: ink, color, transform, mask,
     /// creation date, texture seed and every control point's fields. (The
     /// bytes of `dataRepresentation` differ between encodes of one stroke.)
     static func content(_ s: PKStroke) -> [String] {

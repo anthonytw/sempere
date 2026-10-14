@@ -63,7 +63,7 @@ struct VoiceNoteWidgetView: View {
     var body: some View {
         content
             // The placeholder (shown before the device's first unlock, when nothing can
-            // run or be read yet) is redacted by default: grey boxes instead of the mic.
+            // run or be read yet) is redacted by default: gray boxes instead of the mic.
             .unredacted()
             .containerBackground(.fill.tertiary, for: .widget)
             .accessibilityLabel(status.title)
@@ -233,7 +233,7 @@ struct VoiceNoteActivityView: View {
     }
 }
 
-/// A red dot that pulses while recording (still while paused, grey while saving).
+/// A red dot that pulses while recording (still while paused, gray while saving).
 struct RecordDot: View {
     let state: VoiceNoteAttributes.ContentState
 

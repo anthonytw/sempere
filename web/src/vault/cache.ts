@@ -229,7 +229,7 @@ export class CachingSource implements VaultSource {
     }
     this.cache.stats.misses++;
     const body = await open();
-    // Kept only when the whole file passed through (a cancelled read stores nothing).
+    // Kept only when the whole file passed through (a canceled read stores nothing).
     const chunks: Uint8Array[] = [];
     let total = 0;
     const limit = this.cache.limits.maxEntryBytes;

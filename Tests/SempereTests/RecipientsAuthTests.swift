@@ -424,7 +424,7 @@ final class RecipientsAuthTests: VaultTestCase {
                 XCTAssertThrowsError(try AgeFile.decrypt(Data(contentsOf: fileURL(vault, r.noteId, r.name)), with: [x]))
             }
             if kind == .removedRecipient {
-                XCTAssertEqual(vault.recipients.last?.label, "", "a deleted key comes back from the record, unlabelled")
+                XCTAssertEqual(vault.recipients.last?.label, "", "a deleted key comes back from the record, unlabeled")
             } else {
                 XCTAssertEqual(vault.recipients.map(\.label), ["A", "B"], "\(kind)")
             }
@@ -689,7 +689,7 @@ final class RecipientsAuthTests: VaultTestCase {
         store.failing = true
         XCTAssertThrowsError(try v.requireWritable())
         store.failing = false
-        XCTAssertNoThrow(try v.requireWritable(), "retried, not memoised as saved")
+        XCTAssertNoThrow(try v.requireWritable(), "retried, not memoized as saved")
         XCTAssertEqual(store.saves, 1)
     }
 

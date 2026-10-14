@@ -29,7 +29,7 @@ public enum WebDAVError: Error, Hashable, Sendable {
     /// A bound of the whole run (`SyncLimits`) was reached; the run stopped
     /// there (security review 2026-10, W5).
     case limitExceeded(String)
-    /// The caller cancelled the run (`WebDAVSyncOptions.isCancelled`); it
+    /// The caller canceled the run (`WebDAVSyncOptions.isCancelled`); it
     /// stopped like a run bound does, and the next run continues.
     case cancelled
 }
@@ -70,7 +70,7 @@ extension WebDAVError: LocalizedError {
         case .responseTooLarge(let path, let limit):
             return "the response for \(SyncReport.printable(path)) is over \(limit) bytes; not read"
         case .limitExceeded(let m): return "sync run stopped: \(m)"
-        case .cancelled: return "sync run cancelled"
+        case .cancelled: return "sync run canceled"
         }
     }
 }

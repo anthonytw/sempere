@@ -75,7 +75,7 @@ final class SyncWakeup {
     private var pending = false
     private var nextID = 0
 
-    /// Sleeps for `duration`, or until `wake()`, or until the task is cancelled
+    /// Sleeps for `duration`, or until `wake()`, or until the task is canceled
     /// (then throws `CancellationError`).
     func sleep(for duration: Duration) async throws {
         try Task.checkCancellation()

@@ -227,7 +227,7 @@ function transcriptView(tr: Transcript, seek: (seconds: number) => void): HTMLEl
   const list = h("ol", { class: "segments" }, ...shown.map((seg) => {
     const text = h("span", { class: "seg-text" });
     if (seg.words && seg.words.length > 0) {
-      // Words the recogniser doubted (confidence under 0.5) are marked (§8.3.2).
+      // Words the recognizer doubted (confidence under 0.5) are marked (§8.3.2).
       seg.words.forEach((w, i) => {
         if (i > 0) text.append(" ");
         text.append(w.c !== undefined && w.c < 0.5 ? h("span", { class: "doubtful", text: w.t, title: t("confidence {value}", { value: w.c }) }) : w.t);

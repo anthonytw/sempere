@@ -24,7 +24,7 @@ enum ItemScale {
 enum ItemPicture {
     /// The item's pixels covering `bounds` (page points, the rotated frame's bounds).
     case image(CGImage, bounds: Rect)
-    /// A grey frame with diagonals (format.md §8.5.2), and why.
+    /// A gray frame with diagonals (format.md §8.5.2), and why.
     case placeholder(Reason)
 
     enum Reason: Equatable {
@@ -212,7 +212,7 @@ enum ItemRendering {
     }
 
     /// Whether fetching a blob failed for now only: iCloud has not delivered
-    /// it (or stalled), the cache was cleared, or the draw was cancelled. The
+    /// it (or stalled), the cache was cleared, or the draw was canceled. The
     /// item layer tries such an item again instead of keeping a placeholder.
     nonisolated static func isTransient(_ error: any Error) -> Bool {
         error is CloudVault.CloudError || error is CancellationError || (error as? BlobCache.CacheError) == .cleared
@@ -283,7 +283,7 @@ enum TextItemImage {
     static func picture(_ content: TextContent, frame: Rect, rotation: Double?, scale: Double) -> (CGImage, Rect)? {
         let layout = TextBoxLayout(content, frame: frame)
         let extent = layout.extent
-        // The extent turned about the frame's centre, as the item is.
+        // The extent turned about the frame's center, as the item is.
         let c = (x: frame.x + frame.w / 2, y: frame.y + frame.h / 2)
         let rotated = ItemFrames.corners(extent, rotation: nil).map { p -> ItemFrames.Point in
             let r = ItemFrames.radians(rotation)
@@ -303,7 +303,7 @@ enum TextItemImage {
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: bounds.w, height: bounds.h), format: format)
         let image = renderer.image { ctx in
             let cg = ctx.cgContext
-            // Page coordinates: the item's centre, turned, then the frame's own axes.
+            // Page coordinates: the item's center, turned, then the frame's own axes.
             cg.translateBy(x: CGFloat(c.x - bounds.x), y: CGFloat(c.y - bounds.y))
             cg.rotate(by: CGFloat(ItemFrames.radians(rotation)))
             cg.translateBy(x: CGFloat(-c.x), y: CGFloat(-c.y))

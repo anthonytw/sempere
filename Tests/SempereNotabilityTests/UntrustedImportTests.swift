@@ -208,7 +208,7 @@ final class UntrustedImportTests: XCTestCase {
     }
 
     /// Two copies of one note (same uuid) whose strokes all share a point
-    /// count, colour and x but differ in height: every stroke of the copy
+    /// count, color and x but differ in height: every stroke of the copy
     /// was compared with every stroke of the chosen one (30 000² = 9·10⁸
     /// comparisons, over a minute). Comparisons are now budgeted; past the
     /// budget a stroke counts as missing, so the copy is imported as a

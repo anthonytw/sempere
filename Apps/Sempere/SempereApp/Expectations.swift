@@ -199,7 +199,7 @@ enum AboutInfo {
         return String(decoding: data, as: UTF8.self)
     }
 
-    /// The text cut into paragraphs (blank-line separated), so a long licence
+    /// The text cut into paragraphs (blank-line separated), so a long license
     /// is laid out lazily.
     static func paragraphs(_ text: String) -> [String] {
         var result: [String] = []

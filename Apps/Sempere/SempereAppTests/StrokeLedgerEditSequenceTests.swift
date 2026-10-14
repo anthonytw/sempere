@@ -10,7 +10,7 @@ import UIKit
 /// match (every canvas stroke fingerprinted, nothing trimmed), over random
 /// sequences of the edits PencilKit makes: draw, paste a copy, erase, pixel
 /// erase (masked pieces, some keeping the id), slice (`substroke`), lasso
-/// move and recolour (id kept, sometimes reordered), undo and redo, with
+/// move and recolor (id kept, sometimes reordered), undo and redo, with
 /// saves and failed saves in between. Both ledgers must give the same live
 /// strokes, removals, additions, parents and ops, up to the fresh ids each
 /// one makes. Finding P17.
@@ -29,7 +29,7 @@ struct StrokeLedgerEditSequenceTests {
 
     static let page = UUID()
 
-    /// A new canvas stroke. Few positions, dates and colours, so keys,
+    /// A new canvas stroke. Few positions, dates and colors, so keys,
     /// families and path signatures collide often.
     static func drawn(_ rng: inout RNG) -> PKStroke {
         let color = Bool.random(using: &rng) ? Sempere.Color(r: 0x1A, g: 0x2B, b: 0x3C, a: 0xFF) : Sempere.Color(r: 200, g: 0, b: 0, a: 255)

@@ -61,7 +61,7 @@ iPadOS/iOS 27 and macOS 27 (Mac Catalyst). Open `Apps/Sempere/Sempere.xcodeproj`
 | [docs/cli.md](docs/cli.md) | `sempere` command reference |
 | [docs/io.md](docs/io.md) | Opening, saving, syncing and exporting |
 | [docs/attachments.md](docs/attachments.md) | PDFs, images, video, text and recordings |
-| [docs/mac.md](docs/mac.md), [docs/iphone.md](docs/iphone.md) | Mac and iPhone behaviour |
+| [docs/mac.md](docs/mac.md), [docs/iphone.md](docs/iphone.md) | Mac and iPhone behavior |
 | [docs/quick-capture.md](docs/quick-capture.md) | Quick voice notes |
 | [docs/settings-sync.md](docs/settings-sync.md) | Settings shared through the vault |
 | [docs/web-viewer.md](docs/web-viewer.md) | The web viewer |
@@ -73,5 +73,5 @@ iPadOS/iOS 27 and macOS 27 (Mac Catalyst). Open `Apps/Sempere/Sempere.xcodeproj`
 Tagged releases publish the CLI for Linux (static, x86_64 and aarch64) and macOS
 (universal) with checksums and build provenance: see [CHANGELOG.md](CHANGELOG.md) and
 [docs/releasing.md](docs/releasing.md). To contribute, read
-[CONTRIBUTING.md](CONTRIBUTING.md) (licence, DCO sign-off, no CLA). Report
+[CONTRIBUTING.md](CONTRIBUTING.md) (license, DCO sign-off, no CLA). Report
 vulnerabilities as described in [SECURITY.md](SECURITY.md).

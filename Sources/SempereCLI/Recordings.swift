@@ -25,7 +25,7 @@ struct AudioPlacementOptions: ParsableArguments {
     @Option(name: .long, help: ArgumentHelp("The page (1-based, default 1).", valueName: "n"))
     var page: Int?
 
-    @Option(name: .long, help: ArgumentHelp("The frame as x,y,w,h in points (default 300 × 96, centred, a margin from the top).", valueName: "x,y,w,h"))
+    @Option(name: .long, help: ArgumentHelp("The frame as x,y,w,h in points (default 300 × 96, centered, a margin from the top).", valueName: "x,y,w,h"))
     var frame: RectArgument?
 
     @Option(name: .long, help: ArgumentHelp("Top-left corner as x,y.", valueName: "x,y"))
@@ -106,7 +106,7 @@ struct RecordingsPlace: ParsableCommand {
         commandName: "place",
         abstract: "Put a recording on a page as an audio item (one addItem delta).",
         discussion: """
-            The card is 300 × 96 points (narrower on a narrow page), centred across the page a margin from its \
+            The card is 300 × 96 points (narrower on a narrow page), centered across the page a margin from its \
             top, above the page's other items; --at and --width, or --frame, place it. A recording may be placed \
             any number of times. Prints the new item's id.
             """

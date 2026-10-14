@@ -1,8 +1,8 @@
 import Foundation
 
-/// The recognised text of one page, as search sees it.
+/// The recognized text of one page, as search sees it.
 public struct PageText: Hashable, Sendable, Codable {
-    /// A part of `text` that came from one source: the recognised handwriting, one text box, one PDF page or
+    /// A part of `text` that came from one source: the recognized handwriting, one text box, one PDF page or
     /// one equation (offsets in UTF-16 units, `start ..< end`, the newline between parts excluded).
     public struct Span: Hashable, Sendable, Codable {
         public var start: Int
@@ -27,7 +27,7 @@ public struct PageText: Hashable, Sendable, Codable {
     }
 
     /// The pages of a note (in display order) that have searchable text: the
-    /// recognised handwriting, then the text of each text box and the page
+    /// recognized handwriting, then the text of each text box and the page
     /// text of each PDF page and the LaTeX source of each equation in drawing
     /// order (format.md §8.2.4, §8.2.6, §8.2.8),
     /// joined by newlines. `spans` says which part is which, so a snippet
@@ -92,7 +92,7 @@ public struct NoteSearchHit: Hashable, Sendable, Identifiable {
     public var score: Int
 }
 
-/// Search over note titles, notebooks, tags and recognised handwriting
+/// Search over note titles, notebooks, tags and recognized handwriting
 /// (`NoteSummary.pageTexts`).
 ///
 /// A query is words separated by whitespace; a note matches when every word
@@ -144,7 +144,7 @@ public enum NoteSearch {
         return sorted(hits, notes: notes)
     }
 
-    /// The hits of `query` in `notes`, unsorted; nil when cancelled. The index is not trimmed: `notes` may be
+    /// The hits of `query` in `notes`, unsorted; nil when canceled. The index is not trimmed: `notes` may be
     /// only part of the list (`updated`).
     private static func hits(_ query: String, in notes: [NoteSummary], index: NoteSearchIndex?,
                              isCancelled: () -> Bool) -> [NoteSearchHit]? {
@@ -251,7 +251,7 @@ public enum NoteSearch {
     public static let equationMarker = "[equation]"
 
     /// An excerpt of `page` around the first match of any of `words` in its prose (handwriting, a text box, a PDF
-    /// page), never crossing into the neighbouring part and starting and ending at word boundaries. When the
+    /// page), never crossing into the neighboring part and starting and ending at word boundaries. When the
     /// words are only in equations the snippet is `equationMarker`: LaTeX source is searched but not quoted.
     /// Nil when no part matches.
     static func snippet(_ page: PageText, words: [String]) -> NoteSearchHit.Snippet? {
@@ -378,7 +378,7 @@ enum ASCIIFold {
 /// Lowercased page text (`ASCIIFold`) kept between searches, per note: built
 /// the first time a note is searched and used again while the note's
 /// `pageTexts` are the same (compared on each use, so a note whose
-/// recognised text or text boxes changed is folded again). Memory: about one
+/// recognized text or text boxes changed is folded again). Memory: about one
 /// byte per byte of ASCII page text. Thread-safe.
 public final class NoteSearchIndex: @unchecked Sendable {
     private let lock = NSLock()
@@ -436,16 +436,16 @@ public final class NoteSearchIndex: @unchecked Sendable {
     }
 }
 
-/// One word of recognised handwriting that a search matched, with its box
+/// One word of recognized handwriting that a search matched, with its box
 /// on the page (`format.md` §5.5): what the canvas highlights.
 public struct SearchMatch: Hashable, Sendable, Codable {
     public var pageId: UUID
     /// 1-based position of the page in the note.
     public var page: Int
-    /// The recognised word, or the matched text of a text box.
+    /// The recognized word, or the matched text of a text box.
     public var text: String
     public var box: Recognition.Box
-    /// The text box the match is in; nil for recognised handwriting.
+    /// The text box the match is in; nil for recognized handwriting.
     public var item: UUID?
 
     public init(pageId: UUID, page: Int, text: String, box: Recognition.Box, item: UUID? = nil) {
@@ -464,7 +464,7 @@ public enum SearchMatches {
     /// hostile note may claim more, and the UI steps through them one by one.
     public static let maxMatches = 10_000
 
-    /// The recognised words of `pages` containing a word of `query` (case,
+    /// The recognized words of `pages` containing a word of `query` (case,
     /// accents and width ignored, substrings count, `#tag` words and boxes
     /// that cannot be drawn (`isDrawable`) skipped), in
     /// page order and, within a page, in the order the words are stored
@@ -487,7 +487,7 @@ public enum SearchMatches {
     }
 
     /// `matches(_:in:)` for already split words (any of them matches). With `textBoxes`, the words found in
-    /// the page's text boxes follow the page's recognised words (text boxes in drawing order, each in reading order).
+    /// the page's text boxes follow the page's recognized words (text boxes in drawing order, each in reading order).
     public static func matches(words: [String], in pages: [Page], textBoxes: TextBoxMatcher? = nil) -> [SearchMatch] {
         guard !words.isEmpty else { return [] }
         var out: [SearchMatch] = []
@@ -537,7 +537,7 @@ public struct SearchMatchCursor: Sendable, Hashable {
     public private(set) var index: Int
     /// The words being looked for, kept so the list can be rebuilt after the pages change.
     public let words: [String]
-    /// How text boxes are searched (nil: only recognised handwriting); kept for `refreshed`.
+    /// How text boxes are searched (nil: only recognized handwriting); kept for `refreshed`.
     private let textBoxes: TextBoxMatcher?
 
     /// What one page's matches were computed from. Comparing is O(1) while the

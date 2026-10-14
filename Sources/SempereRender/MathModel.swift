@@ -1,10 +1,10 @@
 import Foundation
 import Sempere
 
-// MARK: - Math recognition models: manifest, catalogue, verified store
+// MARK: - Math recognition models: manifest, catalog, verified store
 //
 // Models are not bundled with the app (tens to hundreds of MB): the app
-// downloads one on demand from a catalogue entry that pins the SHA-256 of
+// downloads one on demand from a catalog entry that pins the SHA-256 of
 // its manifest, and the manifest pins the SHA-256 and size of every file.
 // Nothing is used until every file matched. `Sources/` holds no network
 // code (CLAUDE.md): the app downloads (`MathModelDownload`), the CLI takes
@@ -92,7 +92,7 @@ public struct MathModelManifest: Hashable, Sendable, Codable {
     public var id: String
     /// Shown in Settings and `--json`.
     public var name: String
-    /// SPDX licence of the weights, and where they came from.
+    /// SPDX license of the weights, and where they came from.
     public var licence: String
     public var source: String
     public var files: [File]
@@ -268,7 +268,7 @@ public enum MathModelStore {
 
     /// The installed folder of `entry` when its manifest still hashes to the
     /// entry's, its marker says it was verified, and every file has its
-    /// size; nil otherwise (not installed, or a newer catalogue entry).
+    /// size; nil otherwise (not installed, or a newer catalog entry).
     public static func installed(_ entry: MathModelCatalogEntry, root: URL) -> (folder: URL, manifest: MathModelManifest)? {
         let folder = root.appendingPathComponent(entry.id, isDirectory: true)
         guard let m = try? manifest(in: folder, expectedSHA256: entry.manifestSHA256),

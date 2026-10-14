@@ -95,7 +95,7 @@ public protocol WebDAVTransport: Sendable {
 /// The `URLSession` transport. Redirects are never followed: a redirect would
 /// resend credentials and rewrite methods, so it surfaces as a 3xx response
 /// that the client reports with the target. Bodies are read incrementally and
-/// the request is cancelled once one exceeds `maxResponseBytes`, so a server
+/// the request is canceled once one exceeds `maxResponseBytes`, so a server
 /// cannot make the client buffer more than that.
 public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
     /// `NSURLAuthenticationMethodServerTrust`. swift-corelibs-foundation marks
@@ -109,7 +109,7 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
 
     /// How a challenge is answered: TLS server trust goes to the system's
     /// default handling (Apple platforms deliver it to the task delegate);
-    /// HTTP authentication is cancelled, and the 401 itself is the answer.
+    /// HTTP authentication is canceled, and the 401 itself is the answer.
     static func disposition(forAuthenticationMethod method: String) -> URLSession.AuthChallengeDisposition {
         method == serverTrustMethod ? .performDefaultHandling : .cancelAuthenticationChallenge
     }
@@ -340,7 +340,7 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
         /// Credentials are sent preemptively in the header; a challenge is
         /// answered with the 401 itself, never with a stored credential.
         /// Server trust (TLS) is left to the system: Apple platforms deliver it
-        /// here, and cancelling it fails every HTTPS request.
+        /// here, and canceling it fails every HTTPS request.
         func urlSession(_ session: URLSession, task: URLSessionTask, didReceive challenge: URLAuthenticationChallenge,
                         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
             if let serverTrust, challenge.protectionSpace.authenticationMethod == URLSessionTransport.serverTrustMethod {

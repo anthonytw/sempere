@@ -29,7 +29,7 @@ public struct PDFName: Hashable, Sendable, Comparable, ExpressibleByStringLitera
     public var description: String { "/" + String(decoding: bytes, as: UTF8.self) }
 }
 
-/// A dictionary. Keys are kept in a hash map; serialisation sorts them, so
+/// A dictionary. Keys are kept in a hash map; serialization sorts them, so
 /// output is deterministic.
 public struct PDFDict: Sendable, Equatable {
     /// The entries.

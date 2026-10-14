@@ -3,7 +3,7 @@ Third-party software in the Sempere app
 
 Sempere is free software under the GNU General Public License v3 or later, with an
 App Store exception (see LICENSE and LICENSE-EXCEPTION). The app includes the
-software below, each under its own licence, reproduced here as its authors ask.
+software below, each under its own license, reproduced here as its authors ask.
 
   swift-crypto   Apache-2.0         https://github.com/apple/swift-crypto
                  (on Apple platforms a layer over CryptoKit)

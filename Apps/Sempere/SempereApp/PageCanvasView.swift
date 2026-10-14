@@ -506,7 +506,7 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         backgroundColor = .secondarySystemBackground
         canvas.backgroundColor = .clear
         canvas.isOpaque = false
-        // Ink colours are stored as drawn on light paper; never invert them.
+        // Ink colors are stored as drawn on light paper; never invert them.
         canvas.overrideUserInterfaceStyle = .light
         canvas.accessibilityIdentifier = "pageCanvas"   // UI tests draw on it
         // A Mac has no Pencil: the mouse and trackpad always draw, whatever
@@ -911,7 +911,7 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         layoutHighlights()
     }
 
-    /// Scrolls so the current highlight is on screen (centred unless it is already comfortably visible).
+    /// Scrolls so the current highlight is on screen (centered unless it is already comfortably visible).
     func revealHighlight() {
         guard let current = highlights.first(where: \.isCurrent) else { return }
         pendingReveal = current.box

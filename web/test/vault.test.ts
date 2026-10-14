@@ -209,7 +209,7 @@ describe("reading revisions", () => {
     const notes = join(dir, "notes", lecture);
     const [first] = readdirSync(notes).filter(isRevisionFile).sort();
     // Renaming changes the name the tag is checked under, so this is a tag
-    // failure; the content check is the second line of defence.
+    // failure; the content check is the second line of defense.
     renameSync(join(notes, first ?? ""), join(notes, "17911308010000000-a1b2c3d4-9.delta.age"));
     const { src, vault } = await open(dir);
     const note = await loadNote(src, vault, lecture);

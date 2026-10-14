@@ -13,7 +13,7 @@ final class LegacyImageTests: XCTestCase {
                         "bilevel", "rgb-orient6", "gray16"]
     static let gifs = ["plain", "interlaced", "transparent"]
 
-    /// Pixels equal, except that the colour under alpha 0 is not compared.
+    /// Pixels equal, except that the color under alpha 0 is not compared.
     static func sameVisible(_ a: [UInt8], _ b: [UInt8]) -> Bool {
         guard a.count == b.count else { return false }
         for i in stride(from: 0, to: a.count, by: 4) {

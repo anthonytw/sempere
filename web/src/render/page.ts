@@ -147,7 +147,7 @@ export class PreparedPage {
       if (low > maxE) throw new RenderError("the page is taller than the supported extent");
       this.extent = Math.max(size.height, Math.ceil(low), chunkHeight(options, meta));
     } else {
-      // Ink centred at or below a finite page adds to its extent (PageComposer.swift).
+      // Ink centered at or below a finite page adds to its extent (PageComposer.swift).
       let below = 0;
       for (const sp of [...this.strokes, ...this.items.map((i) => ({ minY: i.minY, maxY: i.maxY, centreY: i.minY / 2 + i.maxY / 2 }))]) {
         if (sp.centreY >= size.height) below = Math.max(below, sp.maxY);
@@ -208,7 +208,7 @@ function chunks(meta: NoteMeta, extent: number, h: number): { yOffset: number; y
 
 // MARK: - SVG
 
-/** An SVG element as tag + attributes, serialisable to text or DOM. */
+/** An SVG element as tag + attributes, serializable to text or DOM. */
 export interface SVGElementSpec {
   tag: "rect" | "line" | "circle" | "polyline" | "path";
   attrs: [string, string][];

@@ -442,7 +442,7 @@ final class RenderCache: @unchecked Sendable {
             ctx.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
             ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
         }
-        // y down, page points, origin at the bounds' top left; then the frame's centre, turned.
+        // y down, page points, origin at the bounds' top left; then the frame's center, turned.
         ctx.translateBy(x: 0, y: CGFloat(h))
         ctx.scaleBy(x: CGFloat(scale), y: -CGFloat(scale))
         ctx.translateBy(x: CGFloat(item.frame.x + item.frame.w / 2 - bounds.x), y: CGFloat(item.frame.y + item.frame.h / 2 - bounds.y))

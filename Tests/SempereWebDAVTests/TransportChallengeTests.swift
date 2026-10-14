@@ -6,7 +6,7 @@ import FoundationNetworking
 #endif
 
 /// Apple platforms deliver the TLS server-trust check to the task's challenge
-/// handler; cancelling it failed every HTTPS sync with "cancelled".
+/// handler; canceling it failed every HTTPS sync with "canceled".
 final class TransportChallengeTests: XCTestCase {
     func testServerTrustIsLeftToTheSystem() {
         XCTAssertEqual(URLSessionTransport.disposition(forAuthenticationMethod: URLSessionTransport.serverTrustMethod),

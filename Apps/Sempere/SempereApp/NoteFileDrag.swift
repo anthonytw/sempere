@@ -69,7 +69,7 @@ enum NoteFileDrag {
     }
 
     /// `prepare`'s value, or `DragError.timedOut` after `timeout` (then
-    /// `prepare` is cancelled). Nothing structured awaits `prepare`: a task
+    /// `prepare` is canceled). Nothing structured awaits `prepare`: a task
     /// group would, at its end, wait for a child still awaiting `prepare.value`,
     /// and main-actor work that cannot run ends only once the main thread is
     /// free, which is never while the system holds it for this very file.

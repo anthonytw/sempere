@@ -37,7 +37,7 @@ function keyFileError(e: KeyFileError): string {
 
 function passkeyError(e: PasskeyError): string {
   switch (e.code) {
-    case "cancelled": return t("The passkey prompt was cancelled or timed out.");
+    case "cancelled": return t("The passkey prompt was canceled or timed out.");
     case "notVerified": return t("The passkey did not verify you (no PIN, biometric or device unlock).");
     case "wrongPasskey": return t("This passkey does not open the remembered key: forget it and paste the key.");
     case "corrupt": return t("The remembered key is missing or damaged: forget it and paste the key.");

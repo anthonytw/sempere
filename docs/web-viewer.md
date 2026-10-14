@@ -30,7 +30,7 @@ What it does:
   device where you chose to, with one passkey prompt (below).
 - **Browse** notebooks (the `/` hierarchy of §5.4), tags (one spelling per tag
   key, §5.4.1), favorites and deleted notes; **search** titles, tags,
-  notebooks and recognised handwriting (the same rules as the app's
+  notebooks and recognized handwriting (the same rules as the app's
   `NoteSearch`: case, accents and width ignored, every word must match,
   `#word` matches tags only), with a snippet and a jump to the matching page
   (the snippet quotes one part of the page, never an equation's LaTeX: a match
@@ -41,7 +41,7 @@ What it does:
 - **Read** a note: pages stacked vertically, or one tall infinite page, with
   pan and zoom (wheel or trackpad, Ctrl/⌘-wheel or pinch to zoom, drag,
   arrow keys, `+` `-` `0` `1`). Panning sideways is possible only while the page at the
-  current zoom is wider than the viewport; a note that fits stays centred, so
+  current zoom is wider than the viewport; a note that fits stays centered, so
   scrolling it with a trackpad or a finger (also in an iframe) only moves it
   vertically (`web/scripts/smoke-pan.mjs`). Pages are drawn as they come near the viewport and
   go back to a placeholder once a few screens away, so a long note keeps only the pages around
@@ -96,7 +96,7 @@ How (`web/src/vault/passkey.ts`):
 **The location.** `vault.json` is not authenticated until a key has opened
 it, so any server can serve one with the id of a vault you remembered (and a
 secret of its own, encrypted to your public key). A record is therefore bound
-to where the vault was opened, not only to its id: the vault's normalised URL
+to where the vault was opened, not only to its id: the vault's normalized URL
 (`HTTPSource.label`: no query, fragment or credentials, a trailing slash; a
 different host, port or path is a different location), or `local:` for any
 folder opened from this computer (picked by the user; its name is no
@@ -368,7 +368,7 @@ version. The viewer never writes, so it needs nothing else to be read-only
 
 A page is drawn bottom to top as §8.2.3 says: paper, items by `(layer, z,
 id)` (a background-layer item first fills its rotated frame with the paper
-colour), then the ink. Each item is one of:
+color), then the ink. Each item is one of:
 
 - **Text box**: laid out by `text.ts` with the stored `breaks` when they are
   valid (strictly increasing, inside a paragraph, on a grapheme cluster
@@ -379,7 +379,7 @@ colour), then the ink. Each item is one of:
   font stacks (`sans`: system-ui, Segoe UI, Roboto, Noto Sans, Helvetica,
   Arial; `serif`: Iowan Old Style, Noto Serif, Georgia, Times; `mono`:
   ui-monospace, SF Mono, Menlo, Consolas, Noto Sans Mono), runs become
-  `<tspan>`s (bold, italic, underline, strikethrough, colour, size, `lang`),
+  `<tspan>`s (bold, italic, underline, strikethrough, color, size, `lang`),
   and the browser shapes and reorders each line within its paragraph's
   direction (`dir`, or for `auto` the first letter's script). Without valid
   `breaks` the viewer breaks greedily with widths measured by the browser
@@ -590,7 +590,7 @@ the site's data in the browser deletes both.
   read the IndexedDB record and ask for the passkey; the user sees a passkey
   prompt and, by approving it, hands that code the PRF output and so the key.
   It can do so at any visit, not only when the user would have pasted the key.
-  The defence stays the same as for pasting: the strict CSP, no markup from
+  The defense stays the same as for pasting: the strict CSP, no markup from
   data, Trusted Types, and serving the viewer from a host you control. Approve
   a passkey prompt only when you pressed "Unlock with passkey".
 - *Another origin* (a phishing copy of the viewer): cannot read this origin's
@@ -777,8 +777,8 @@ are missing: download the vault first.
   the "legacy" one, which polyfills recent JavaScript for older browsers.
   Blobs are held in memory while their note is open (no temporary files in a
   browser). Ink is not linked to audio (`rec`) yet.
-- **Ink** is drawn like `SempereRender`: flat colour per stroke (mean opacity
-  times a tool factor), no pencil grain, watercolour bleed or nib angle; the
+- **Ink** is drawn like `SempereRender`: flat color per stroke (mean opacity
+  times a tool factor), no pencil grain, watercolor bleed or nib angle; the
   same approximations as the CLI's PDF and SVG exports.
 - **Passphrase-wrapped keys** with a scrypt work factor over 20 are refused
   (`format.md` §3.2 allows readers to stop there; writers use 15 to 18): use
@@ -802,7 +802,7 @@ are missing: download the vault first.
   rendering with pdf.js on a transparent page (no white box over the paper);
   an equation without a rendering, or whose rendering cannot be drawn, shows
   its LaTeX source in a monospace font. The viewer has no math typesetter.
-- **Search** covers titles, tags, notebooks, recognised text, text boxes,
+- **Search** covers titles, tags, notebooks, recognized text, text boxes,
   equations' LaTeX source and PDF page text (`pageText`, format.md §8.2.6), as in the app; words are not
   highlighted on the page yet. A note with `markersBehindText` (§5.4) draws
   its marker strokes below its text boxes and images (§8.2.3), as the CLI's
@@ -914,7 +914,7 @@ Tests (`web/test/`, vitest, Node 22):
   are not passphrase files, a work factor over 20 refused before any scrypt,
   and decrypted files that hold no post-quantum key.
 - Passkeys (`passkey.test.ts`, mocked WebAuthn): round trip, PRF at creation
-  or only on assertion, no PRF stores nothing, cancelled prompts, a missing UV
+  or only on assertion, no PRF stores nothing, canceled prompts, a missing UV
   flag, records swapped between vaults or credentials or altered, malformed
   records, forget; only ciphertext, nonce, salt and credential id are stored.
 - A seeded fuzz test of the decoders, the merge, the renderer, item layout,
@@ -932,7 +932,7 @@ Dependencies are pinned exactly in `web/package.json` and
 `web/package-lock.json`. Runtime: `age-encryption` (typage, BSD-3-Clause) with
 its `@noble`/`@scure` libraries (MIT; `@noble/hashes` is also used directly,
 for the streaming SHA-256 of blobs), and `pdfjs-dist` 6.4.299 (Apache-2.0;
-its standard fonts are under the Foxit and Liberation (OFL) licences, copied
+its standard fonts are under the Foxit and Liberation (OFL) licenses, copied
 with them into `dist/pdfjs/`). pdf.js is loaded only when a note shows a PDF
 page; its build-time copy step is the `sempere-pdfjs-assets` plugin in
 `vite.config.ts`. Install

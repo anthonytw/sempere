@@ -77,7 +77,7 @@ struct ImportedStrokeRenderingTests {
         return strokes
     }
 
-    // MARK: - Rasterising
+    // MARK: - Rasterizing
 
     struct Coverage {
         var pixels: Int

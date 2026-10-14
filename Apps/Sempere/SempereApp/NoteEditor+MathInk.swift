@@ -10,7 +10,7 @@ struct MathConversionRequest: Identifiable {
     let page: UUID
     /// The strokes taken (`InkLasso.select`), in page order.
     let strokeIDs: [UUID]
-    /// Those strokes, for the recogniser.
+    /// Those strokes, for the recognizer.
     let strokes: [Stroke]
     /// The canvas's undo manager, for one "Convert to Math" step.
     weak var undoManager: UndoManager?

@@ -358,7 +358,7 @@ final class VideoItemTests: XCTestCase {
         let page = Page(id: UUID(), order: "a0")
         let placed = try NoteOps.placeVideo(blob: Self.clip, info: Self.info, poster: Self.poster, on: page, pageSize: .letter)
         let f = placed.item.frame
-        // 1080 × 1920 (portrait) fitted into 480 × 720: 405 × 720, centred.
+        // 1080 × 1920 (portrait) fitted into 480 × 720: 405 × 720, centered.
         XCTAssertEqual(f.w, 405, accuracy: 0.001)
         XCTAssertEqual(f.h, 720, accuracy: 0.001)
         XCTAssertEqual(f.x, (612 - 405) / 2, accuracy: 0.001)

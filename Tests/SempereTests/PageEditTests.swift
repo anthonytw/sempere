@@ -55,7 +55,7 @@ final class PageEditTests: XCTestCase {
         return (added, removed)
     }
 
-    /// A text box (synthetic content) whose frame is centred at `y`.
+    /// A text box (synthetic content) whose frame is centered at `y`.
     private func box(_ y: Double, z: String = "V") -> Item {
         .text(TextContent(size: 12, color: .black, runs: [TextRun("box")]),
               frame: Rect(x: 20, y: y - 10, w: 100, h: 20), z: z, rec: RecordingLink(id: recording, at: 2))

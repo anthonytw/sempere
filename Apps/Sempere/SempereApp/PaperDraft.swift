@@ -91,7 +91,7 @@ extension PaperKind {
     }
 }
 
-/// Page backgrounds the picker offers as presets; any colour can still be chosen.
+/// Page backgrounds the picker offers as presets; any color can still be chosen.
 enum PaperBackground: CaseIterable, Identifiable {
     case white, cream, dark
 
@@ -119,7 +119,7 @@ enum PaperBackground: CaseIterable, Identifiable {
 @MainActor
 @Observable
 final class PaperDraft {
-    /// Line colour used on the dark background preset.
+    /// Line color used on the dark background preset.
     static let darkLineColor = Sempere.Color(r: 0x4A, g: 0x4F, b: 0x5C)
 
     private(set) var paper: Paper
@@ -128,19 +128,19 @@ final class PaperDraft {
 
     var kind: PaperKind { paper.kind }
     var parameters: [PaperParameter] { PaperParameter.applicable(to: paper.kind) }
-    /// Whether the line / dot colour applies to this kind.
+    /// Whether the line / dot color applies to this kind.
     var hasLineColor: Bool { paper.kind != .blank }
-    /// Whether the margin colour applies to this kind.
+    /// Whether the margin color applies to this kind.
     var hasMarginColor: Bool { paper.kind.supportsMargins && (paper.marginLeft > 0 || paper.marginTop > 0) }
 
     /// Whether `color` is one the app itself chose (a kind's or the dark
-    /// preset's line colour), as opposed to one the user picked.
+    /// preset's line color), as opposed to one the user picked.
     private static func isStock(_ color: Sempere.Color) -> Bool {
         color == darkLineColor || PaperKind.allCases.contains { Paper.template($0).lineColor == color }
     }
 
     /// Switches to `kind` with that kind's own defaults, keeping the page
-    /// background and a line colour the user picked.
+    /// background and a line color the user picked.
     func select(_ kind: PaperKind) {
         guard kind != paper.kind else { return }
         var next = Paper.template(kind)
@@ -169,7 +169,7 @@ final class PaperDraft {
     /// The preset matching the current background, if any.
     var background: PaperBackground? { PaperBackground.allCases.first { $0.color == paper.background } }
 
-    /// Picks a background preset; a stock line colour follows to the preset's.
+    /// Picks a background preset; a stock line color follows to the preset's.
     func select(_ preset: PaperBackground) {
         let stock = Self.isStock(paper.lineColor)
         paper.background = preset.color

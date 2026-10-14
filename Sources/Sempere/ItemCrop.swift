@@ -56,13 +56,13 @@ public enum ItemCrop {
 
     /// The frame that shows `newCrop` where it was on the page while `frame`
     /// showed `oldCrop`: same scale (frame points per source unit on each
-    /// axis), same place, turned by `rotation` about the old frame's centre.
+    /// axis), same place, turned by `rotation` about the old frame's center.
     public static func frame(_ frame: Rect, rotation: Double?, from oldCrop: Rect, to newCrop: Rect) -> Rect {
         guard oldCrop.w > 0, oldCrop.h > 0 else { return frame }
         let sx = frame.w / oldCrop.w, sy = frame.h / oldCrop.h
         let x = (newCrop.x - oldCrop.x) * sx, y = (newCrop.y - oldCrop.y) * sy
         let w = newCrop.w * sx, h = newCrop.h * sy
-        // The new centre, in the old frame's own axes from its centre, then turned onto the page.
+        // The new center, in the old frame's own axes from its center, then turned onto the page.
         let local = ItemFrames.Point(x: x + w / 2 - frame.w / 2, y: y + h / 2 - frame.h / 2)
         let d = ItemFrames.rotate(local, about: ItemFrames.Point(x: 0, y: 0), degrees: rotation ?? 0)
         let c = ItemFrames.centre(frame)
@@ -159,7 +159,7 @@ extension NoteOps {
     /// A frame for content of `size` (pixels or points, shown one per point)
     /// added while `visible` (page points; nil: unknown) is on screen: fitted
     /// inside the visible part of the page less the margin (and inside the
-    /// page's content box), centred on `centre` when given (a drop) or else
+    /// page's content box), centered on `centre` when given (a drop) or else
     /// on the visible area, and kept on the page.
     public static func viewFrame(for size: Size, pageSize: PageSize, visible: Rect?, centre: ItemFrames.Point? = nil) -> Rect {
         let page = Rect(x: 0, y: 0, w: pageSize.width, h: pageSize.infinite ? max(pageSize.height, pageSize.sheetHeight) : pageSize.height)

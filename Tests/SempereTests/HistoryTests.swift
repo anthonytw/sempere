@@ -61,7 +61,7 @@ final class HistoryTests: XCTestCase {
         XCTAssertEqual(Content(a), Content(b), file: file, line: line)
     }
 
-    // MARK: Restore points and materialising
+    // MARK: Restore points and materializing
 
     func testRestorePointsAreOneAndOrderedPerRevision() throws {
         var log = LogBuilder()

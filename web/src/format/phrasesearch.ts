@@ -1,6 +1,6 @@
 // Every occurrence of a phrase in a note: a port of the CLI's `sempere search
 // [--transcripts]` (Sources/SempereCLI/Search.swift). It reads each page's
-// recognised handwriting, PDF page text, equation sources and text boxes, and
+// recognized handwriting, PDF page text, equation sources and text boxes, and
 // (when given) the note's recording transcripts, and returns the CLI's JSON
 // hits, which test/phrasesearch.test.ts compares with the CLI's output for the
 // fixture vaults. The viewer uses the transcript hits for its transcript search.

@@ -69,7 +69,7 @@ for (const framed of [false, true]) {
     check(Math.abs(after.x - fit.x) < 0.5, `${label}: fit width stays centred (x ${fit.x.toFixed(1)} -> ${after.x.toFixed(1)})`);
     check(after.scroll[0] && after.scroll[1] && after.scroll.slice(2).every((v) => v === 0), `${label}: nothing scrolls sideways`);
 
-    // Zoomed out below fit width: still centred, whatever the gesture.
+    // Zoomed out below fit width: still centered, whatever the gesture.
     for (let i = 0; i < 2; i++) await page.keyboard.press("-");
     await page.waitForTimeout(100);
     const small = await state();

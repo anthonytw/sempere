@@ -5,7 +5,7 @@ import XCTest
 
 /// Review of PR #165 (W1): progress must stay monotone and within its total when
 /// a run resumes partial blobs and the server answers the resumed GET with 200
-/// (it ignores `Range`), and a cancelled run must not count unfinished downloads as done.
+/// (it ignores `Range`), and a canceled run must not count unfinished downloads as done.
 extension ConcurrentTransferTests {
     func testReviewProgressMonotoneWhenResumeGets200() throws {
         let server = MockDAV()
@@ -18,7 +18,7 @@ extension ConcurrentTransferTests {
             $0.progress = { p in if p.stage == .downloading && p.bytesDone > p.bytesTotal / 3 { stop.append(true) } }
             $0.isCancelled = { !stop.all.isEmpty }
         }
-        XCTAssertEqual(first.stoppedEarly, "sync run cancelled")
+        XCTAssertEqual(first.stoppedEarly, "sync run canceled")
         XCTAssertFalse(partials("B").isEmpty, "precondition: partial blobs to resume")
         let placed = first.downloaded.filter { $0.hasPrefix("notes/") }.count
         let fp = try XCTUnwrap(first.progress)

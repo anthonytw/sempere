@@ -17,7 +17,7 @@ talks to the terminal and sets exit codes; everything else lives in
 | `--passphrase-env VAR` | Name of the environment variable holding the passphrase of the vault's stored key file. |
 | `--json` | Machine-readable output where it makes sense (everything except `recover`, `keys generate` without `--out`, and `keys export` without `--out`). |
 | `-q`, `-v` | Quieter (data only, or only problems) / more detail. |
-| `--version`, `--help` | On every command. `--version` prints `sempere VERSION`, then the copyright and the GPL notice (no warranty; free to redistribute under the GPL v3 or later) and links to the licence and `SECURITY.md`; `sempere about` adds the rest. |
+| `--version`, `--help` | On every command. `--version` prints `sempere VERSION`, then the copyright and the GPL notice (no warranty; free to redistribute under the GPL v3 or later) and links to the license and `SECURITY.md`; `sempere about` adds the rest. |
 
 `--vault`, `--identity` and `--passphrase-env` apply to the commands that open
 an existing vault. Times are printed in your local time zone with an offset;
@@ -409,7 +409,7 @@ sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
   `--out`, so it never lands at the vault's sealed path by default, and a
   file it writes is readable by its owner only (created 0600 next to the
   target, then renamed over it). `--json` emits `path`, `notes`, `entries`,
-  `read` (notes summarised again) and `bytes`.
+  `read` (notes summarized again) and `bytes`.
 
 ### Attachments
 
@@ -535,13 +535,13 @@ exit 2).
 
 - `image` takes a JPEG or PNG. The stored bytes have location and camera
   metadata removed (every APPn segment but JFIF, ICC and Adobe, and comments,
-  in a JPEG; ancillary chunks but the colour ones in a PNG) unless
+  in a JPEG; ancillary chunks but the color ones in a PNG) unless
   `--keep-metadata`; a JPEG's EXIF orientation is first copied to the item's
   `orientation`, so it still shows upright (`format.md` §8.2.5). HEIC, WebP,
   GIF, TIFF and CMYK or arithmetic-coded JPEGs are refused: convert them first.
   The file must decode, stay under 100 megapixels and 64 MiB. Without a frame
   the image is shown at one pixel per point, shrunk to fit inside a 36 pt
-  margin, centred across the page and a margin from its top; `--at` and
+  margin, centered across the page and a margin from its top; `--at` and
   `--width` set its corner and width (the height follows the aspect of the image
   or its `--crop`, given in oriented pixels), `--frame` all four numbers.
   `--rotation` is degrees clockwise. Items stack in the order they are added
@@ -561,7 +561,7 @@ exit 2).
   the equation is edited there. `--render` stores a one-page, unencrypted PDF of
   the typeset equation made elsewhere (for example `pdflatex` on a `standalone`
   document, or `tectonic`, then `pdfcrop`) as its rendering, drawn only in the
-  equation's colour on a transparent page; the frame is then the PDF's page
+  equation's color on a transparent page; the frame is then the PDF's page
   size (`--width` scales it, keeping the aspect), and `--engine` records what
   made it. The equation is searchable (`sempere search`), and Markdown and HTML
   exports keep its source as `$$…$$` (display) or `$…$` (inline). `items math`
@@ -569,7 +569,7 @@ exit 2).
 - `pdf` stores the PDF once and places pages of it (`--pages`, default all;
   the list keeps its order). By default each selected page becomes a **new note
   page** with the PDF page as a background that fills it (layer 0; fitted and
-  centred when its size differs from the note's page size), inserted after note
+  centered when its size differs from the note's page size), inserted after note
   page `--after` (0: before the first; default the end), all in one delta.
   The note's page size is not changed, and a pageless note takes no inserted pages.
   With `--page` (and `--frame`, or `--at` and `--width`, and `--crop` on the
@@ -612,7 +612,7 @@ exit 2).
   (`--poster-time`, default 0.5 s, upright, at most 1920 px), else (Linux, or
   `--no-poster`) none: renderers draw a crossed box with a play mark, and
   `items poster` can add one later. Without a frame the clip is fitted inside
-  the margins at most 480 pt wide, centred across the page, a margin from the
+  the margins at most 480 pt wide, centered across the page, a margin from the
   top; `--at`, `--width`, `--frame`, `--rotation`, `--layer` and `--rec` as
   for `image`. Blobs are written poster first, then clip, then the delta.
   `--json` adds `poster` (the poster's reference) and `metadataRemoved` (the
@@ -627,7 +627,7 @@ exit 2).
   recordings per note. `--place` (or any of `--page`, `--frame`, `--at`,
   `--width`) also puts it on a page as an **audio item** (`format.md` §8.2.9)
   in the same delta, as the app does when a recording stops: a 300 × 96 point
-  card (narrower on a narrow page), centred across the page a margin from its
+  card (narrower on a narrow page), centered across the page a margin from its
   top, above the page's other items; standard output is then the item's id,
   then the recording's, and `--json` lists the item in `items`. `recordings
   place` places one later. `--rec ID` on `image` and `text` links an item to a
@@ -659,7 +659,7 @@ characters or an exact title. Each change is one delta through the same
   and warns about audio items whose recording is missing. `--json`:
   `{recordings: [{recording, items: [{page, pageId, item}]}], missing: [...]}`.
 - `place` adds an audio item for the recording (`addItem`): a 300 × 96 point
-  card centred across page 1 (or `--page`) a margin from its top, or at
+  card centered across page 1 (or `--page`) a margin from its top, or at
   `--at`/`--width`, or `--frame`. A recording may be placed any number of
   times. Output as for `attach` (the new item's id; `--json` the `attach` form).
 - `rename` sets the title (`setRecording`); an empty title clears it.
@@ -903,7 +903,7 @@ notes in it or below it, comparing whole segments (`A/B` holds `A/B/C` but not
 geometry, and the summaries are kept in an encrypted per-device cache
 (`$XDG_CACHE_HOME/sempere/`, default `~/.cache/sempere/`; `format.md` §10), so
 a later `list` reads only notes whose revision files changed. A damaged cache
-is ignored and rewritten; `--no-cache` neither reads nor writes it. `show` prints the metadata, how many pages have recognised text (`Text:`; `recognizedPages`
+is ignored and rewritten; `--no-cache` neither reads nor writes it. `show` prints the metadata, how many pages have recognized text (`Text:`; `recognizedPages`
 in `--json`), the note's placed items (text boxes, images, PDF pages, unknown
 kinds; by page in drawing order: page, kind, layer, frame, the text or the
 blob's type, size and hash prefix, id) and recordings (start, duration, title,
@@ -972,7 +972,7 @@ infinite page) by writing **one new delta** (`docs/format.md` §5.4.3).
 `pageless` joins the pages into the first one, each page's ink shifted down by
 its offset, with the old page height as the sheet height (`breakHeight`);
 `paged` cuts each infinite page into pages of its sheet height, a stroke going
-to the sheet that holds its vertical centre. No ink is deleted and none moves
+to the sheet that holds its vertical center. No ink is deleted and none moves
 relative to its sheet; strokes that change page are re-added under new ids with
 `parent` naming the old ones, so `pageless` then `paged` gives the pages back.
 The switch is computed from the note as it is on disk when the delta is
@@ -984,7 +984,7 @@ The device id and clock are this machine's, as for `snapshot`. `--json` emits
 
 `search` finds notes as the app's search box does (`NoteSearch`, shared with
 the app): the query is words, and a note matches when every word is found in
-its title, notebook, tags or a page's recognised text (case, accents and width
+its title, notebook, tags or a page's recognized text (case, accents and width
 ignored, substrings count); a word starting with `#` matches tags only. Notes
 are ranked as in the app (exact title and tag matches first, then the page
 holding most of the words) and printed best first with the matching fields,
@@ -1077,7 +1077,7 @@ format's limits is a usage error (exit 2), not clamped:
 | `--cue-width`, `--summary-height` | 40–400 | `cornell` |
 | `--staff-spacing` | 3–20 | `staff`: between lines |
 | `--staff-gap` | 8–150 | `staff`: between staves |
-| `--background`, `--line-color`, `--margin-color` | `#RRGGBB` or `#RRGGBBAA` | colours |
+| `--background`, `--line-color`, `--margin-color` | `#RRGGBB` or `#RRGGBBAA` | colors |
 
 ```
 sempere notes new "Week 3" --notebook School/Physics --tag physics --paper grid --spacing 18
@@ -1094,7 +1094,7 @@ sempere notes list --favorites --json
 
 #### Strokes left over by concurrent edits
 
-When two devices slice (pixel eraser), move or recolour the same stroke
+When two devices slice (pixel eraser), move or recolor the same stroke
 without seeing each other's edit, every reader keeps the later edit and hides
 the other one's strokes (`format.md` §5.6.1). `notes dedupe` lists, per note:
 
@@ -1170,7 +1170,7 @@ sempere pages duplicate ID|TITLE PAGE
 ```
 
 `list` prints each page's number, id, stroke count, paper (its own, or the
-note's marked `*`) and whether it has recognised text. `--json` gives `note`,
+note's marked `*`) and whether it has recognized text. `--json` gives `note`,
 `paper` and `pageSize` (the note's) and `pages` (`page`, `id`, `strokes`,
 `paper` when the page has its own, `recognized`).
 
@@ -1183,7 +1183,7 @@ The page gestures of the app (`docs/format.md` §5.4.3), one delta each, with
 `--to` (one `setPageOrder`; nothing when it is already there), `delete`
 removes a page and its ink (`removePage`; a note keeps at least one page,
 and `notes restore --to` undoes it), `duplicate` copies a page's ink, items,
-paper and recognised text right after it under new ids.
+paper and recognized text right after it under new ids.
 
 A deleted note is refused (exit 1), as is a page number out of range.
 `--json` as for the editing commands.
@@ -1223,7 +1223,7 @@ of its lines changes, the frame): a Markdown box gets the new source and
 keeps its style and the typeset formulas the new source still uses; a plain
 box gets the text as one run in its style (run styles are dropped);
 `--markdown` turns a plain box into a Markdown box in the same font, size,
-colour, alignment, direction and language, `--no-markdown` the other way; the
+color, alignment, direction and language, `--no-markdown` the other way; the
 text is laid out again unless `--no-breaks`. `items list` shows a text box's
 text as search sees it (Markdown without markup) and `(Markdown)`; `--json`
 adds `text` and `markup`. `items move` lays a Markdown box out again at a new
@@ -1266,12 +1266,12 @@ image's picture for a JPEG or PNG, as the app's Replace Image: an image's blob
 cannot change in place (`format.md` §8.2.2), so after the new picture is
 stored (without its metadata unless `--keep-metadata`) one delta removes the
 old image and adds a new one whose `parent` names it, in the largest frame of
-the new picture's proportions inside the old frame, centred on it, with the
+the new picture's proportions inside the old frame, centered on it, with the
 old rotation and stacking and no crop (`NoteOps.replaceImage`; anything but an
 image is refused before anything is written; prints the new item's id;
 `--json`: `note`, `changed`, `file`, `item`, `replaced`, `blob`), `math` writes an
 equation's whole value (`NoteOps.setMath`, `format.md` §8.2.8): the options
-given replace the source, style, size or colour, checked as `attach math`
+given replace the source, style, size or color, checked as `attach math`
 does; any such change drops the rendering (the CLI cannot typeset) unless
 `--render` gives one for the new value, and a new rendering also sets the
 frame (same top-left corner, its size times the scale the frame had to the
@@ -1310,7 +1310,7 @@ a separate note titled `<title> (version modified <date>)` and gets a
 bundle.
 
 One row is printed per input file (status, title, notebook, strokes written,
-pages with recognised text, source) plus a summary line; `-v` lists what was
+pages with recognized text, source) plus a summary line; `-v` lists what was
 left behind (typed text, PDFs and their page count, media, recordings, PDF
 highlights, template PDF paper, dashed strokes, strokes with defaulted
 attributes, shapes or `.ntb` strokes not decoded, `.ntb` strokes placed at the
@@ -1330,7 +1330,7 @@ counted as `transcripts`);
 blobs are written before the note's delta.
 JPEG and PNG metadata (camera, location) is stripped unless
 `--keep-image-metadata`; HEIC is stored as is; GIF (first frame) and baseline
-TIFF are converted to PNG; WebP and other formats are reported and left out. `--no-attachments` imports ink, recognised
+TIFF are converted to PNG; WebP and other formats are reported and left out. `--no-attachments` imports ink, recognized
 handwriting and metadata only and reports every attachment as dropped. A note with
 no ink and none of its PDF pages imported gets a `no ink in …` line. A note
 already in the vault is skipped unless `--overwrite`, which
@@ -1358,7 +1358,7 @@ with `--pdf-text` (default `auto`: Poppler's `pdftotext` when installed, else
 the built-in reader; `none` stores the index's text only).
 
 `--recognize missing` reads the handwriting of every imported page that has
-ink but no recognised text in the backup right after the
+ink but no recognized text in the backup right after the
 import, as `sempere recognize --missing-only` does (see "Handwriting
 recognition"); Notability's own recognition is never replaced. It needs
 macOS: elsewhere the import is refused before anything is written (exit 1).
@@ -1398,7 +1398,7 @@ Makes a **new note from each PDF**: the PDF is stored as one blob of the note
 and every page becomes a note page with a `pdfPage` item filling it in the
 background layer, so the note opens as a PDF to annotate (`docs/attachments.md`
 §8). The note's page size is the first page's effective size (crop box,
-rotation); later pages of another size are fitted and centred; paper is blank.
+rotation); later pages of another size are fitted and centered; paper is blank.
 The whole note is one delta. The title is `--title` (one file only) or the file
 name without `.pdf`; `--notebook` and `--tag` as for `notes new`; `--pages`
 imports a subset. Encrypted PDFs (remove the password first, e.g. `qpdf
@@ -1435,7 +1435,7 @@ sempere search TERM [--transcripts]
 `notes search`.)
 
 Case-insensitive, accent-insensitive substring search over every page's
-recognised handwriting text (imported or on-device recognition),
+recognized handwriting text (imported or on-device recognition),
 **the text of every text box, the LaTeX source of every equation and the
 stored text of every PDF page**
 (`pageText`, see `import pdf`), in all notes except deleted ones. With
@@ -1448,7 +1448,7 @@ page 7 of a PDF shown on note page 3, `rec 12:03 Title` a transcript segment
 at that time) and a snippet. `--json` emits a list
 of hits with `noteId`, `title`, `notebook`, `snippet`, `matches`, `source`
 (`handwriting`, `text`, `math`, `pdf` or `transcript`) and per source: `page` (1-based),
-`pageId`, `engine` and `words` (the recognised words containing the term with
+`pageId`, `engine` and `words` (the recognized words containing the term with
 their `[x, y, w, h]` boxes) for handwriting; `page`, `pageId`, `itemId` and `box`
 (the text box's or equation's frame) for text and math; `page`, `pageId`, `itemId`, `box` (the PDF
 page item's frame), `pdfPage` (1-based page of the PDF) and `engine` (what
@@ -1458,7 +1458,7 @@ matches.` (an empty list with `--json`) and exits 0. Notes are read in parallel
 and without stroke geometry, as for `notes list`.
 
 `--show-boxes` reports where each match is, as the app's "3 of 12" stepper
-does: every recognised word containing a word of the term, numbered across the
+does: every recognized word containing a word of the term, numbered across the
 note (pages in order, words in reading order). Human output adds one line per
 match (`NOTE p.PAGE  N of M  WORD  [x, y, w, h]`); with `--json` every hit gains
 `locations`, a list of `{n, of, text, box}` for the matches on that hit's page
@@ -1467,7 +1467,7 @@ a text box are located too (a `text` hit gets its own `locations`, each with the
 box's `itemId`): the box's text is laid out with the fonts `export` draws with
 and each match is the glyph extent of the matched letters, `0.8 × size` above the
 baseline to `0.25 × size` below it, turned with the item (a right-to-left line
-highlights the whole line). Within a page, recognised words come first, then text
+highlights the whole line). Within a page, recognized words come first, then text
 boxes in drawing order; the app's highlights step through the same list.
 
 ### Handwriting recognition
@@ -1500,7 +1500,7 @@ Which pages are read:
 | `--missing-only` | only pages with ink and no recognition at all |
 | `--force` | every page with ink, replacing any recognition, Notability's included |
 
-A page whose ink is gone has its recognised text cleared (except
+A page whose ink is gone has its recognized text cleared (except
 Notability's, unless `--force`). A page with only marker strokes gets empty
 text. Deleted notes are skipped by `--all` and refused when named. `--dry-run`
 lists the pages without reading or writing anything, and works on every
@@ -1583,7 +1583,7 @@ error. The language is `--language`, else the note's language (`format.md`
 §5.4 `lang`), else this machine's; it is matched to a
 supported one (the same tag, else the same language with this machine's
 region, else the first of that language). Each recording's audio is decrypted
-into a private temporary file (mode 0600) for the recogniser and deleted
+into a private temporary file (mode 0600) for the recognizer and deleted
 afterwards.
 
 By default only recordings without a transcript are read; recordings named on
@@ -1800,7 +1800,7 @@ video clips shown as poster only".
   `--notebook NAME` (with `--all`, any format) keeps only notes in that
   notebook or below it (whole segments, case-sensitive, `NotebookPath`).
 
-File names are the sanitised title plus the first 8 characters of the note id
+File names are the sanitized title plus the first 8 characters of the note id
 (`Physics-Week-3-0d1c6a1e.pdf`). `--out` is a directory (created if needed),
 except that a single note's pdf/json goes to the file when `--out` ends in
 `.pdf`/`.json`. `--all` skips deleted notes unless `--deleted`; a deleted note
@@ -1853,7 +1853,7 @@ that of the largest note, not of the vault.
 - `--zip`: `--out` is a zip archive (stored entries, zip64 when needed) holding
   the same tree; notes are staged in the temporary directory one at a time.
 - Names: two notes whose names would clash in a folder (same title and id
-  prefix, equal ignoring case or Unicode normalisation, or equal to a
+  prefix, equal ignoring case or Unicode normalization, or equal to a
   sub-folder) take the full id, then `-2`, ...
 - **Re-runs skip unchanged notes.** `--out` gets a hidden
   `.sempere-export-bulk.json` listing each file with its note, the note's
@@ -1908,7 +1908,7 @@ note's attachments, verified (`docs/format.md` §8.1.4), and drawn under the ink
 - Anything that cannot be drawn (no renderer, a missing or invalid
   attachment, an unreadable or encrypted PDF, a failed render, an item kind
   this export does not draw yet) is a placeholder: the item's frame outlined in
-  grey with both diagonals (`docs/format.md` §8.5.2). The export still
+  gray with both diagonals (`docs/format.md` §8.5.2). The export still
   succeeds (exit 0) and prints one warning per kind of problem, e.g.
 
   ```
@@ -1927,7 +1927,7 @@ Image items (`docs/format.md` §8.2.5) are drawn from the note's attachments
 rotation); images are clipped to their frame, under the ink.
 
 - `pdf`: a JPEG is embedded as stored (`DCTDecode`, never re-encoded); PNG
-  (and anything else decoded) as lossless 8-bit RGB or grey with a soft mask
+  (and anything else decoded) as lossless 8-bit RGB or gray with a soft mask
   for transparency. One copy per image however many pages use it.
 - `svg`: each image as a `data:` URI. `--assets DIR` (svg only) writes each
   image once into `DIR` instead (named by a hash of its bytes, `.jpg`/`.png`)
@@ -1938,7 +1938,7 @@ rotation); images are clipped to their frame, under the ink.
   ICC and Adobe; COM; PNG text, `eXIf` and other ancillary chunks; anything
   after the image's end) is removed from every image an export carries,
   whatever is stored, unless `--keep-image-metadata`.
-- **Placeholders:** an item that cannot be drawn is a crossed-out grey box
+- **Placeholders:** an item that cannot be drawn is a crossed-out gray box
   (§8.5.2) and a warning on stderr, as for PDF pages above, e.g.
   `sempere: warning: 0d1c6a1e: image item drawn as a placeholder (HEIC images
   cannot be decoded here (convert it to JPEG in the app))`. Causes: a missing, unreadable or
@@ -1954,10 +1954,10 @@ Equations (`math` items, `docs/format.md` §8.2.8) are drawn from their stored
 rendering, a one-page PDF the app (or `attach math --render`) wrote: `pdf`
 copies it as a Form XObject (exact vectors, transparent around the marks);
 `svg` and `png` rasterize it with Poppler as for PDF pages above and turn the
-white page back into coverage of the equation's colour, so the paper shows
+white page back into coverage of the equation's color, so the paper shows
 around it. An equation without a rendering (written by `attach math` alone),
 or whose rendering cannot be drawn (missing, damaged, no Poppler for SVG or
-PNG), is drawn as its LaTeX source in a monospace font at its size and colour,
+PNG), is drawn as its LaTeX source in a monospace font at its size and color,
 with one warning per equation:
 
 ```
@@ -2020,7 +2020,7 @@ text (UAX #9) and aligned; every line sits at the same height on every renderer.
 > (an encrypted volume, not a synced public folder). Nothing is encrypted again.
 
 `--out` is always a directory. Notebooks mirror as folders: the notebook
-`School/Math` (`format.md` §5.4) is `School/Math/`; each segment is sanitised
+`School/Math` (`format.md` §5.4) is `School/Math/`; each segment is sanitized
 like a file name (`ExportName.component`) and names that differ only by case
 share one folder. Notes without a notebook sit in the root. File names are
 `ExportName.stem` (title + 8 id characters), so two notes with the same title
@@ -2035,7 +2035,7 @@ shared folder cannot make an export write or `--clean` delete elsewhere.
 `--format markdown` writes, per note:
 
 - `<stem>.md`: YAML front matter, then the PDF, then one section per page that
-  has an image or recognised text. Front matter keys: `title`, `id`, `created`,
+  has an image or recognized text. Front matter keys: `title`, `id`, `created`,
   `modified` (UTC, `...Z`; `modified` is the newest revision's wall time),
   `tags` (a list; `[]` when none; Obsidian-safe: `#` dropped, whitespace
   becomes `-`, case-insensitive duplicates merged), `notebook` (canonical
@@ -2048,7 +2048,7 @@ shared folder cannot make an export write or `--clean` delete elsewhere.
 - With `--images png`: `<stem>-assets/p001.png`, ... (the PNG writer, `--dpi`
   and `--no-paper` apply; a page that spans several images adds
   `p001-2.png`, ...), embedded as `![Page N](...)` under `## Page N`.
-- Recognised text (`format.md` §5.5), when a page has it, under that page as
+- Recognized text (`format.md` §5.5), when a page has it, under that page as
   `Machine-recognized text (engine ..., may contain errors):` followed by a
   fenced `text` block, so it stays literal and Obsidian or `grep` finds it.
 - The text of the page's text boxes, in drawing order, under `Typed text:` as
@@ -2067,8 +2067,8 @@ pages from the SVG writer, with the text fonts and images of all pages defined o
 `<svg>` at the top of the page; light and dark CSS; title, notebook, dates and
 tags; a link back to the index) and `index.html`: notes grouped by notebook
 and a search box filtering as you type over title, notebook, tags and
-recognised text, ignoring case, accents and width as the app's search does (a few lines of inline script; the page works without it,
-unfiltered). Recognised words are also laid over the ink as an invisible
+recognized text, ignoring case, accents and width as the app's search does (a few lines of inline script; the page works without it,
+unfiltered). Recognized words are also laid over the ink as an invisible
 selectable SVG text layer, and each page's text is listed below it in a
 collapsed "Machine-recognized text" block, and the text of its text boxes in a
 collapsed "Typed text" block; the index search covers both. Video clips are written next to
@@ -2412,10 +2412,10 @@ sempere --version
 Prints what `--version` prints (the version line, `Copyright (C) 2026 Anthony
 Wertz.`, the GPL notice "This program comes with ABSOLUTELY NO WARRANTY. This is
 free software, and you are welcome to redistribute it under the terms of the
-GNU GPL v3 or later." and links to the licence and `SECURITY.md`), then the
+GNU GPL v3 or later." and links to the license and `SECURITY.md`), then the
 source, where to report a vulnerability (GitHub private vulnerability reporting),
 the security design and its limits (`docs/security.md`), and the third-party
-software in this build with its licence (`-v` adds a line on each, `-q` stops
+software in this build with its license (`-v` adds a line on each, `-q` stops
 after the notice). The first line of `--version` is always `sempere VERSION`
 (release checks compare it with the tag). `--json` prints `program`, `version`,
 `copyright`, `notice`, `license` (SPDX), `licenseURL`, `repositoryLicenseURL`,

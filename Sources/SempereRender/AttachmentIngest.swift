@@ -47,7 +47,7 @@ public enum ImageIngest {
     /// Reads the size and orientation of a JPEG or PNG, checks that it decodes
     /// and removes its location and camera metadata (every APPn segment except
     /// JFIF, ICC and Adobe, and comments; ancillary PNG chunks other than the
-    /// colour ones) unless `keepMetadata`. The EXIF orientation is read before
+    /// color ones) unless `keepMetadata`. The EXIF orientation is read before
     /// it is removed and returned as the item's `orientation` field, so a
     /// stripped JPEG still shows upright.
     ///

@@ -2,13 +2,13 @@
 
 Sempere's handwriting-to-LaTeX conversion (the app's Convert to Math, `sempere recognize-math`)
 runs an image-to-LaTeX encoder-decoder with Core ML. No model ships with Sempere: the app's
-catalogue (`MathModelCatalog.entries`) is empty, so you convert one yourself with these scripts
+catalog (`MathModelCatalog.entries`) is empty, so you convert one yourself with these scripts
 and install it.
 
 ## The model folder
 
 A model is a `sempere-math-model/1` folder: `manifest.json` and two Core ML packages (encoder
-and decoder). The manifest names the model, its licence and source, the input size and
+and decoder). The manifest names the model, its license and source, the input size and
 preprocessing, the vocabulary, and the SHA-256 and size of every file; Sempere checks every file
 against it before use (`MathModelStore`). `convert.py` writes the folder.
 
@@ -43,7 +43,7 @@ UNIMERNET_SRC=$PWD/unimernet-src uv run --python 3.12 --with torch==2.7.0 --with
 (cd models/texo-fp16 && zip -0 -r -q ../texo-fp16.zip . -x '.*')
 ```
 
-Check a model's licence and its training data's terms before you use or share it.
+Check a model's license and its training data's terms before you use or share it.
 
 Things to know:
 
@@ -53,8 +53,8 @@ Things to know:
    `load(model_dir)` function).
 2. **Pin the Python packages:** Texo needs `transformers` 4.40.0, UniMERNet 4.42.4; `torch` 2.7,
    Python 3.12 and `numpy<2` for coremltools.
-3. **Preprocessing is part of the model.** Both read 3-channel grey images normalised with mean
-   0.7931 and std 0.1738, the ink cropped, fitted and centred on black padding; Texo reads
+3. **Preprocessing is part of the model.** Both read 3-channel gray images normalized with mean
+   0.7931 and std 0.1738, the ink cropped, fitted and centered on black padding; Texo reads
    384 × 384, UniMERNet-T 192 × 672. The manifest records all of it.
 4. **No KV cache:** the decoder runs one full pass per step at the smallest enumerated length that
    holds the prefix (16, 32, 64, 128 or 256 tokens), so its size dominates latency.

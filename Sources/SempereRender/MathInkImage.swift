@@ -1,13 +1,13 @@
 import Foundation
 import Sempere
 
-// MARK: - The image a math recogniser reads (docs/attachments.md §14 G1 part 2)
+// MARK: - The image a math recognizer reads (docs/attachments.md §14 G1 part 2)
 //
-// Handwritten-math models read a small grey image of the formula, at a
+// Handwritten-math models read a small gray image of the formula, at a
 // fixed size, with strokes of a uniform width: that is how their training
 // images were made (from online ink, CROHME InkML or MathWriting, or from
-// scans binarised and resized). Drawing our vector ink the same way, rather
-// than as drawn (pressure, pen widths, colours), makes the input look like
+// scans binarized and resized). Drawing our vector ink the same way, rather
+// than as drawn (pressure, pen widths, colors), makes the input look like
 // what the model saw. The app and `sempere recognize-math` both draw it here,
 // in pure Swift, so they give the model the same pixels.
 
@@ -16,7 +16,7 @@ public struct MathImageSpec: Hashable, Sendable, Codable {
     /// Size of the input tensor, pixels.
     public var width: Int
     public var height: Int
-    /// 1 (grey) or 3 (the grey value in each of R, G, B).
+    /// 1 (gray) or 3 (the gray value in each of R, G, B).
     public var channels: Int
     /// Free pixels kept on every side of the ink.
     public var padding: Int
@@ -26,11 +26,11 @@ public struct MathImageSpec: Hashable, Sendable, Codable {
     /// ink is not blown up to fill the image); always within the padded box.
     public var maxInkHeight: Double?
     /// Ink at the image's left edge (`true`, as models trained on left-aligned
-    /// lines expect) or centred (`false`).
+    /// lines expect) or centered (`false`).
     public var alignLeft: Bool
     /// White ink on black (`true`, as CROHME-trained models expect) or black on white.
     public var invert: Bool
-    /// Per-channel normalisation of values in 0...1: `(v - mean) / std`.
+    /// Per-channel normalization of values in 0...1: `(v - mean) / std`.
     public var mean: [Double]
     public var std: [Double]
 
@@ -64,26 +64,26 @@ public struct MathImageSpec: Hashable, Sendable, Codable {
     }
 }
 
-/// A grey image of ink for a math recogniser (`MathInkImage.render`).
+/// A gray image of ink for a math recognizer (`MathInkImage.render`).
 public struct MathInkImage: Hashable, Sendable {
     public var width: Int
     public var height: Int
-    /// `width * height` grey values, row-major, 0 black ... 255 white, as
+    /// `width * height` gray values, row-major, 0 black ... 255 white, as
     /// drawn (black ink on white: `MathImageSpec.invert` applies in `tensor`).
     public var gray: [UInt8]
     /// The page region (points) the image shows, and pixels per point.
     public var region: Rect
     public var scale: Double
 
-    /// The model's input: `channels × height × width` values, each grey value
-    /// mapped to 0...1 (inverted when the spec says so), then normalised.
+    /// The model's input: `channels × height × width` values, each gray value
+    /// mapped to 0...1 (inverted when the spec says so), then normalized.
     public func tensor(_ spec: MathImageSpec) -> [Float] {
         let plane = width * height
         var out = [Float](repeating: 0, count: plane * spec.channels)
         for c in 0..<spec.channels {
             let mean = spec.mean.count == 1 ? spec.mean[0] : spec.mean[c]
             let std = spec.std.count == 1 ? spec.std[0] : spec.std[c]
-            // One lookup per grey level.
+            // One lookup per gray level.
             let table: [Float] = (0...255).map { g in
                 var v = Double(g) / 255
                 if spec.invert { v = 1 - v }
@@ -94,7 +94,7 @@ public struct MathInkImage: Hashable, Sendable {
         return out
     }
 
-    /// The image as a grey PNG (debugging, `--save-image`).
+    /// The image as a gray PNG (debugging, `--save-image`).
     public func png() throws -> Data {
         var rgba = [UInt8](repeating: 255, count: width * height * 4)
         for i in 0..<(width * height) {
@@ -107,7 +107,7 @@ public struct MathInkImage: Hashable, Sendable {
     /// and empty strokes left out (`RecognitionImage.readableStrokes`), every
     /// stroke a black line `spec.strokeWidth` pixels wide on white, the ink
     /// scaled uniformly to fit inside the padding (at most
-    /// `spec.maxInkHeight` tall), left-aligned or centred, centred vertically.
+    /// `spec.maxInkHeight` tall), left-aligned or centered, centered vertically.
     /// Nil when no stroke is readable.
     ///
     /// - Throws: `RenderError.invalidGeometry` for a spec that cannot be

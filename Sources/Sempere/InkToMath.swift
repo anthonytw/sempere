@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Handwriting → math items (docs/attachments.md §14 G1 part 2)
 //
-// Strokes chosen with a lasso are read by an on-device recogniser into
+// Strokes chosen with a lasso are read by an on-device recognizer into
 // LaTeX (SempereRender `MathRecognizing`), confirmed by the user, and become
 // a `math` item (format.md §8.2.8): either in place of the ink (one delta of
 // `removeStroke` ops and the `addItem`) or beside it (the `addItem` only).
@@ -165,7 +165,7 @@ extension NoteOps {
 
     /// The frame of an equation converted from ink with bounds `ink`: the
     /// typeset size `natural` scaled to the ink's height (within
-    /// `convertedScale`), vertically centred on the ink. `replace` starts at
+    /// `convertedScale`), vertically centered on the ink. `replace` starts at
     /// the ink's left edge; `beside` starts `besideGap` right of it, or, when
     /// that would cross the right margin of a page `pageWidth` wide, below the
     /// ink at its left edge. Never left of or above the page.

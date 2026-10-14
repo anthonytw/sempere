@@ -74,7 +74,7 @@ final class VideoExportTests: XCTestCase {
         XCTAssertEqual(px(30, 25), [255, 0, 0])
         XCTAssertEqual(px(210, 25), [0, 255, 0])
         XCTAssertEqual(px(250, 25), [255, 255, 255], "outside the frame: paper")
-        // The play mark: white triangle at the centre (120, 45), dark disc around it.
+        // The play mark: white triangle at the center (120, 45), dark disc around it.
         XCTAssertEqual(px(119, 45), [255, 255, 255])
         let ring = px(120, 45 - 6)   // inside the disc (radius 7.5), above the triangle
         XCTAssertLessThan(Int(ring[0]) + Int(ring[1]) + Int(ring[2]), 3 * 200, "darkened by the disc: \(ring)")

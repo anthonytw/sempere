@@ -79,7 +79,7 @@ final class TextBreakFixtureTests: XCTestCase {
         }
     }
 
-    /// Breaks a renderer computes itself and stores are honoured as stored by
+    /// Breaks a renderer computes itself and stores are honored as stored by
     /// the next layout: storing is idempotent.
     func testComputedBreaksRoundTrip() throws {
         for c in try Self.loadCases() {

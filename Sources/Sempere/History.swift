@@ -63,7 +63,7 @@ public struct RestoreSummary: Hashable, Sendable, Codable {
     public var strokesRestored = 0
     /// Pages whose order key is set back.
     public var pageOrderChanges = 0
-    /// Pages whose recognised text is set back (or cleared).
+    /// Pages whose recognized text is set back (or cleared).
     public var recognitionChanges = 0
     /// Pages whose own paper is set back (or cleared).
     public var pagePaperChanges = 0

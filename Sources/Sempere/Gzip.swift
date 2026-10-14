@@ -3,7 +3,7 @@ import Foundation
 
 /// Errors from the gzip layer.
 public enum GzipError: Error, Hashable, Sendable {
-    /// zlib refused to initialise or failed while compressing (zlib return code).
+    /// zlib refused to initialize or failed while compressing (zlib return code).
     case deflate(Int32)
     /// The input is not a single, complete, valid gzip member (zlib return code,
     /// or `Z_DATA_ERROR` for trailing bytes after the member).

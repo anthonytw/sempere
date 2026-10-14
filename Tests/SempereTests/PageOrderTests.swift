@@ -39,7 +39,7 @@ final class PageOrderTests: XCTestCase {
         XCTAssertLessThanOrEqual(keys.map(\.count).max() ?? 0, 400, "back")
 
         // Middle, sequential: each new page goes right after the previous new
-        // one, before a fixed neighbour (typing pages into the middle).
+        // one, before a fixed neighbor (typing pages into the middle).
         keys = ["V", "W"]
         var prev = 0
         for _ in 0..<10_000 {

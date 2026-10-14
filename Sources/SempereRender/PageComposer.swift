@@ -15,7 +15,7 @@ struct PageChunk {
     var startsAtGap = false
     /// The bottom is a gap no stroke spans: strokes starting there belong to the page below.
     var endsAtGap = false
-    /// An output page below a finite page: it draws only the ink centred below
+    /// An output page below a finite page: it draws only the ink centered below
     /// the page (strokes crossing the page's bottom edge are clipped by it).
     var belowPage = false
     var height: Double { yEnd - yOffset }
@@ -145,20 +145,20 @@ struct PreparedPage {
         items = placed
         warnings = notes
         let chunkHeight = Self.chunkHeight(options: options, size: size)
-        // Items take part in page cuts like ink: their frame's extent, their sheet by its centre (§5.4.3).
+        // Items take part in page cuts like ink: their frame's extent, their sheet by its center (§5.4.3).
         let spans = list + placed.map { PreparedStroke(commands: [], minY: $0.minY, maxY: $0.maxY,
                                                        centreY: $0.minY / 2 + $0.maxY / 2) }
         if size.infinite {
             guard low <= maxE else { throw RenderError.extentTooLarge(low) }
             extent = max(size.height, low.rounded(.up), chunkHeight)
         } else {
-            // Ink below the page (a stroke centred at or below its height) adds pages after it.
+            // Ink below the page (a stroke centered at or below its height) adds pages after it.
             // Its outline may reach past the extent limit by its nib: culled there, not an error.
             let below = spans.filter { $0.centreY >= size.height }.map(\.maxY).max()
             extent = max(size.height, min(below ?? 0, maxE).rounded(.up))
         }
         let seekGaps = options.breaks == .gaps && paper.kind != .cornell
-        // Below a finite page only the ink centred there is drawn (format.md §5.4.3): a
+        // Below a finite page only the ink centered there is drawn (format.md §5.4.3): a
         // stroke crossing the bottom edge is clipped by it, so it alone adds no page.
         let blocks = Self.blocks(size.infinite ? spans : spans.filter { $0.centreY >= size.height })
         // Pages below a finite page are cut at its sheet height, at least 72 pt: a tiny

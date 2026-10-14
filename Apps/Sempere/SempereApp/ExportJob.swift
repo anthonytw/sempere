@@ -56,7 +56,7 @@ final class ExportJob {
     /// Starts exporting `ids`. Does nothing while a run is in flight.
     ///
     /// The run owns its scratch folder: unless its result is handed to this
-    /// job (still current, not cancelled), the run deletes the folder itself
+    /// job (still current, not canceled), the run deletes the folder itself
     /// when it ends. A note being rendered when the sheet goes away finishes
     /// writing after `discard`, so deleting the folder only in `discard`
     /// would leave plaintext behind.

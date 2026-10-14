@@ -6,7 +6,7 @@ import Foundation
 /// it, so the wording and the links live in one place.
 ///
 /// The notice is the one the GPL suggests for interactive programs (GPL-3
-/// "How to Apply These Terms"); it states the licence and the absence of a
+/// "How to Apply These Terms"); it states the license and the absence of a
 /// warranty, and promises nothing.
 public enum SempereAbout {
     /// The copyright line.
@@ -18,12 +18,12 @@ public enum SempereAbout {
         welcome to redistribute it under the terms of the GNU GPL v3 or later.
         """
 
-    /// The project's licence identifier (`LICENSE`, `LICENSE-EXCEPTION`).
+    /// The project's license identifier (`LICENSE`, `LICENSE-EXCEPTION`).
     public static let licenseIdentifier = "GPL-3.0-or-later WITH LicenseRef-Sempere-App-Store-Exception"
 
     /// The full text of the GNU GPL v3.
     public static let licenseURL = URL(string: "https://www.gnu.org/licenses/gpl-3.0.html")!
-    /// The repository's own copy of the licence and its App Store exception.
+    /// The repository's own copy of the license and its App Store exception.
     public static let repositoryLicenseURL = URL(string: "https://github.com/anthonytw/sempere/blob/main/LICENSE")!
     /// The source code.
     public static let sourceURL = URL(string: "https://github.com/anthonytw/sempere")!
@@ -44,7 +44,7 @@ public enum SempereAbout {
     public struct Component: Codable, Sendable, Equatable {
         /// The project's name.
         public var name: String
-        /// SPDX expression of its licence(s).
+        /// SPDX expression of its license(s).
         public var license: String
         /// Where to find it.
         public var url: URL

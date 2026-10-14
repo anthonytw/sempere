@@ -267,7 +267,7 @@ public struct NotabilityVaultImporter: VaultImporter {
         } else if report.failed > 0 {
             failure = "\(report.failed) note(s) failed to import"
         } else if let unread = recognition?.failures.count, unread > 0 {
-            failure = "\(unread) imported note(s) could not be recognised"
+            failure = "\(unread) imported note(s) could not be recognized"
         }
         return ImporterPresentation(json: json, lines: lines, failure: failure)
     }

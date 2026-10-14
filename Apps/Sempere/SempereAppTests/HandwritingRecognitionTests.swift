@@ -8,7 +8,7 @@ import UIKit
 import Vision
 @testable import SempereApp
 
-/// A recogniser that returns fixed text, counting the strokes it was shown.
+/// A recognizer that returns fixed text, counting the strokes it was shown.
 final class FakeRecognizer: PageRecognizing, @unchecked Sendable {
     private let lock = NSLock()
     private var seen: [[UUID]] = []
@@ -75,7 +75,7 @@ struct EditorRecognitionTests {
         #expect(fake.calls.count == 2)
     }
 
-    /// The note's handwriting language (format.md §5.4 `lang`) is what the recogniser is asked to read in.
+    /// The note's handwriting language (format.md §5.4 `lang`) is what the recognizer is asked to read in.
     @Test func readsInTheNotesLanguage() async throws {
         let (vault, _) = try TS.unlockedFixture()
         _ = try vault.apply([.setMeta(.lang("es-ES"))], to: Self.lecture, deviceState: TS.deviceStateURL(), app: "test/1")
@@ -84,7 +84,7 @@ struct EditorRecognitionTests {
         await editor.recognizePending()
         #expect(fake.languages == ["es-ES", "es-ES"])
 
-        // Without one, the recogniser's default (nil).
+        // Without one, the recognizer's default (nil).
         let (plain, _) = try TS.unlockedFixture()
         let other = FakeRecognizer()
         let (editor2, _) = try await Self.open(plain, recognizer: other)
@@ -286,7 +286,7 @@ struct EditorRecognitionTests {
     }
 }
 
-/// Whether Vision's text recogniser can run here. It cannot on the CI Mac (a VM without a
+/// Whether Vision's text recognizer can run here. It cannot on the CI Mac (a VM without a
 /// Neural Engine, whose TextRecognition model bundles are empty: "No available backends …
 /// for compute units ane", "Underlying detector load error"), so the Mac Catalyst run there
 /// fails every request with `VNError.unknownError`. The simulator and a real Mac read text.
@@ -304,7 +304,7 @@ enum VisionAvailability {
     }()
 }
 
-/// The Vision recogniser itself, on the simulator's Vision (and a Mac's, where it can load).
+/// The Vision recognizer itself, on the simulator's Vision (and a Mac's, where it can load).
 @MainActor
 struct VisionRecognitionTests {
     /// Printed text on white: what Vision reads most reliably.
@@ -318,7 +318,7 @@ struct VisionRecognitionTests {
         }.cgImage!
     }
 
-    @Test(.enabled(if: VisionAvailability.textRecognition, "Vision cannot load its text recogniser on this Mac"))
+    @Test(.enabled(if: VisionAvailability.textRecognition, "Vision cannot load its text recognizer on this Mac"))
     func readsTextAndPlacesWordsInPageCoordinates() throws {
         let region = Recognition.Box(x: 100, y: 300, w: 640, h: 160)
         let lines = try VisionText.lines(VNImageRequestHandler(cgImage: Self.printed("Hello world"), options: [:]), region: region)
@@ -336,7 +336,7 @@ struct VisionRecognitionTests {
         #expect(hello.box.x < world.box.x)
     }
 
-    @Test(.enabled(if: VisionAvailability.textRecognition, "Vision cannot load its text recogniser on this Mac"))
+    @Test(.enabled(if: VisionAvailability.textRecognition, "Vision cannot load its text recognizer on this Mac"))
     func strokesBecomeAnImageAndANormalRecognition() throws {
         // A block "H" and "I": whether Vision reads them is not the point, the pipeline is.
         func line(_ x0: Double, _ y0: Double, _ x1: Double, _ y1: Double) -> Stroke {

@@ -109,7 +109,7 @@ extension NotabilityNote {
         return (r, used)
     }
 
-    /// A colour from the values of a colour field: `#RRGGBB[AA]`, `NSRGB`
+    /// A color from the values of a color field: `#RRGGBB[AA]`, `NSRGB`
     /// (ASCII `r g b [a]`), `UIRed`/`UIGreen`/`UIBlue`/`UIAlpha`, or
     /// components 0…1.
     static func color(_ leaves: [(path: [String], node: KeyedArchive.Node)]) -> Color? {
@@ -258,7 +258,7 @@ extension NotabilityAttachments {
             for u in start..<end { style[u] = Int32(i) }
             cursor = end
         }
-        // Scalars with their style; line terminators normalised, controls and
+        // Scalars with their style; line terminators normalized, controls and
         // object replacement characters (inline attachments) removed.
         var scalars: [(Unicode.Scalar, Int32)] = []
         var unit = 0, previousCR = false
@@ -332,7 +332,7 @@ extension NotabilityAttachments {
         }
     }
 
-    /// The UTF-8 bytes one text item gets: the per-item limit (format.md §8.4) less a margin for normalisation.
+    /// The UTF-8 bytes one text item gets: the per-item limit (format.md §8.4) less a margin for normalization.
     static let chunkBytes = TextContent.Limits.utf8Bytes - 64
 
     /// Splits a block into pieces within the per-item limits (format.md §8.4)
@@ -401,7 +401,7 @@ extension NotabilityAttachments {
         flush()
         guard !out.isEmpty else { return (nil, cut) }
         let content = TextContent(font: generic(box?.font), size: size, color: color, runs: out)
-        // Normalisation can lengthen text past the margin: such a chunk is reported, not stored.
+        // Normalization can lengthen text past the margin: such a chunk is reported, not stored.
         return content.limitViolation == nil ? (content, cut) : (nil, cut + content.string.count)
     }
 }

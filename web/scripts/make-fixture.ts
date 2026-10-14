@@ -298,7 +298,7 @@ function makePDF(pages: { media: number[]; crop?: number[]; rotate?: number; con
   // A valid blob file stored under another content's name: the name binding fails.
   const forged = await blob(note, readFileSync(join(media, "dot.png")).subarray(0, 100), "image/png", { skip: true });
   await blob(note, readFileSync(join(media, "dot.png")), "image/png", { asName: blobName(Buffer.from(forged.sha256, "hex")) });
-  // An equation's rendering: one page, marks only in the equation's colour, no page fill (§8.2.8).
+  // An equation's rendering: one page, marks only in the equation's color, no page fill (§8.2.8).
   const equation = await blob(note, makePDF([
     { media: [0, 0, 60, 24], content: "0.102 0.102 0.102 rg 4 10 26 4 re f 36 2 20 20 re f" },
   ]), "application/pdf");
@@ -334,7 +334,7 @@ function makePDF(pages: { media: number[]; crop?: number[]; rotate?: number; con
     { op: "addItem", page: p1, item: item(0x714, "text", 100, [72, 200, 220, 120], "a3", { text: text(storedRuns,
       { breaks: ["these", "exactly", "them", "Big"].map((w) => [...storedText.slice(0, storedText.indexOf(w))].length) }) }) },
     { op: "addItem", page: p1, item: item(0x715, "text", 100, [320, 200, 220, 80], "a4", { rotation: 30, text: text([
-      { t: "Centred, rotated" }, { t: "\nsecond paragraph" }], { align: "center", font: "serif", breaks: [3, 99] }) }) },
+      { t: "Centered, rotated" }, { t: "\nsecond paragraph" }], { align: "center", font: "serif", breaks: [3, 99] }) }) },
     { op: "addItem", page: p1, item: item(0x716, "text", 100, [72, 360, 300, 60], "a5", { text: text([
       { t: "Right to left paragraph   " }, { t: "\nend aligned" }], { dir: "rtl", font: "mono", size: 12 }) }) },
     { op: "addItem", page: p1, item: item(0x717, "text", 100, [400, 360, 140, 30], "a6", { text: text([{ t: "Right" }], { align: "right", color: "#0D47A180" }) }) },

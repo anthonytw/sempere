@@ -195,7 +195,7 @@ final class StrokeSmoothingTests: XCTestCase {
                 }
                 let lag = speed * 2 - out.x
                 XCTAssertGreaterThanOrEqual(lag, 0)
-                // The bound of the continuous filter, plus one sample of discretisation.
+                // The bound of the continuous filter, plus one sample of discretization.
                 XCTAssertLessThanOrEqual(lag, p.maximumLag + speed / 120, "sigma \(p.sigma) speed \(speed): lag \(lag)")
                 XCTAssertEqual(out.y, 0, accuracy: 1e-9)
             }

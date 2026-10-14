@@ -146,8 +146,8 @@ final class PNGWriterTests: XCTestCase {
         let wide = T.stroke([T.pt(20, 150, w: 9.5), T.pt(180, 150, w: 9.5)])
         let img = try XCTUnwrap(try render(T.note(pages: [[wide]])).first)
         assertPixel(img.px(5, 5), [255, 255, 255, 255], tol: 0, "background")
-        // Rule: a 0.5 pt line at 2x is 1 px wide centred on y = 288 -> rows 287 and 288 each half covered.
-        let ruleColor = 0xD0 // red channel of the default line colour
+        // Rule: a 0.5 pt line at 2x is 1 px wide centered on y = 288 -> rows 287 and 288 each half covered.
+        let ruleColor = 0xD0 // red channel of the default line color
         assertPixel(img.px(390, 287), [(255 + ruleColor) / 2, (255 + 0xD8) / 2, (255 + 0xE8) / 2, 255], tol: 2, "rule row 287")
         assertPixel(img.px(390, 288), [(255 + ruleColor) / 2, (255 + 0xD8) / 2, (255 + 0xE8) / 2, 255], tol: 2, "rule row 288")
         assertPixel(img.px(390, 300), [255, 255, 255, 255], tol: 0, "between rules")
@@ -174,7 +174,7 @@ final class PNGWriterTests: XCTestCase {
 
         let dots = Paper(kind: .dot, spacing: 20)
         let d = try XCTUnwrap(try render(T.note(pages: [[]], meta: T.meta(paper: dots))).first)
-        // A dot (r = 0.9 pt) at (20, 20) pt -> device (40, 40) is fully covered at its centre.
+        // A dot (r = 0.9 pt) at (20, 20) pt -> device (40, 40) is fully covered at its center.
         assertPixel(d.px(40, 40), [0xD0, 0xD8, 0xE8, 255], tol: 1, "dot centre")
         XCTAssertEqual(d.px(30, 30), white)
     }
@@ -186,7 +186,7 @@ final class PNGWriterTests: XCTestCase {
                          tool: .marker, width: 16, color: red)
         let blank = T.meta(paper: .blank)
         let img = try XCTUnwrap(try render(T.note(pages: [[x]], meta: blank)).first)
-        // Centre of the X (100, 100) pt -> device (200, 200): crossing of two arms.
+        // Center of the X (100, 100) pt -> device (200, 200): crossing of two arms.
         assertPixel(img.px(200, 200), [255, 128, 128, 255], tol: 1, "crossing, blended once")
         // Mid-arm (70, 70) pt -> device (140, 140).
         assertPixel(img.px(140, 140), [255, 128, 128, 255], tol: 1, "arm")
@@ -198,7 +198,7 @@ final class PNGWriterTests: XCTestCase {
 
     /// Stroked paths (monoline, marker, ruling) are unions of segment quads
     /// and cap/join circles. Every piece must wind the same way: a quad of the
-    /// opposite orientation cancelled a circle where only the two overlapped,
+    /// opposite orientation canceled a circle where only the two overlapped,
     /// punching crescents into the ends of wide strokes (seen on imported
     /// Notability highlighters).
     func testStrokedPathCapsHaveNoHoles() throws {
@@ -228,7 +228,7 @@ final class PNGWriterTests: XCTestCase {
         let img = try XCTUnwrap(try render(T.note(pages: [[s]]), options: RenderOptions(paper: false)).first)
         XCTAssertEqual(img.px(5, 5), [0, 0, 0, 0])
         XCTAssertEqual(img.px(200, 100), [0, 0, 0, 255])
-        // Antialiased edge over transparency keeps the colour and lowers alpha.
+        // Antialiased edge over transparency keeps the color and lowers alpha.
         let edge = img.px(200, 90)
         XCTAssertEqual(edge[0], 0)
         XCTAssertEqual(edge[3], 255)   // 90 px = 45 pt = exactly the stroke's top edge: fully covered row

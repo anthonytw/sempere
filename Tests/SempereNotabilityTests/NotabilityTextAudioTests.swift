@@ -275,7 +275,7 @@ final class NotabilityTextAudioTests: XCTestCase {
     }
 
     func testTranscriptFormsAndLimits() throws {
-        // A plain string spans the recording; milliseconds are recognised against the duration.
+        // A plain string spans the recording; milliseconds are recognized against the duration.
         let plain = TranscriptRead.parse(.string("All of it"), duration: 12.5, field: "transcript")
         XCTAssertEqual(plain?.segments.first.map { [$0.start, $0.end] }, [0, 12.5])
         let ms = TranscriptRead.parse(.array([.dict(["text": .string("a"), "start": .int(1000), "end": .int(2000)]),

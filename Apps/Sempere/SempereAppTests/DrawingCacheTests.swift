@@ -113,7 +113,7 @@ struct DrawingCacheTests {
         await gate.open()
         await closed.value
         await closing.loaded()
-        #expect(closing.isPreparing && !closing.loadFailed, "cancelled: neither finished nor failed")
+        #expect(closing.isPreparing && !closing.loadFailed, "canceled: neither finished nor failed")
         #expect(closing.isReadOnly)
         model.close()
     }

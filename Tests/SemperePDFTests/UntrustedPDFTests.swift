@@ -200,7 +200,7 @@ final class UntrustedPDFTests: XCTestCase {
 /// Review regressions (#61): sizes a few bytes of the file claim must not
 /// drive allocation or work.
 final class UntrustedPDFClaimTests: XCTestCase {
-    /// `/DecodeParms` claiming the largest row (2^24 columns × 32 colours ×
+    /// `/DecodeParms` claiming the largest row (2^24 columns × 32 colors ×
     /// 16 bits = 1 GiB) over a four-byte stream: the predictor used to
     /// allocate two such rows and loop over all of one. The row is now
     /// bounded by the data, and the output is what the honest row length

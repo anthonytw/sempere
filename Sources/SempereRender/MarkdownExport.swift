@@ -154,7 +154,7 @@ public enum MarkdownExport {
     ///
     /// - Parameters:
     ///   - pdfName: file name of the note's PDF, next to the `.md`; nil when
-    ///     the export has no PDF (the file then leads with the recognised text).
+    ///     the export has no PDF (the file then leads with the recognized text).
     ///   - pageImages: per note page, the images (paths relative to the `.md`) of that page; may be empty.
     ///   - videos: the note's clips written next to it (`ExportVideos`), with their paths relative to the `.md`.
     public static func note(info: ExportNoteInfo, state: NoteState, pdfName: String?,

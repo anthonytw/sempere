@@ -198,7 +198,7 @@ enum SyntheticNote {
         return b.archive(top: [("root", d)])
     }
 
-    /// Two recognised pages. Page 1: "ab cd" over the first curve; page 2: "x".
+    /// Two recognized pages. Page 1: "ab cd" over the first curve; page 2: "x".
     static func handwritingIndex() -> Data {
         func rects(_ boxes: [(Double, Double, Double, Double)?]) -> Data {
             var d = Data()

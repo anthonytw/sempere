@@ -135,7 +135,7 @@ describe("included", () => {
     expect(u.toJSON()).toEqual(other.union(inc).toJSON());
   });
 
-  it("normalises entries", () => {
+  it("normalizes entries", () => {
     expect(normalizeEntry(2, [4, 3, 1, 7])).toEqual({ upTo: 4, extra: [7] });
     expect(normalizeEntry(0, [3, 3, 2])).toEqual({ upTo: 0, extra: [2, 3] });
     expect(entryCovers({ upTo: 4, extra: [7, 9] }, 9)).toBe(true);
@@ -157,7 +157,7 @@ describe("included", () => {
     expect(decoded.covers("a1b2c3d4", 16)).toBe(true);
     expect(decoded.covers("a1b2c3d4", 13)).toBe(false);
     expect(JSON.stringify(decoded.toJSON())).toBe('{"99ee00ff":{"extra":[],"upTo":3},"a1b2c3d4":{"extra":[15,16],"upTo":12}}');
-    // Normalised on decode.
+    // Normalized on decode.
     expect(snapshotParts(snap({ a1b2c3d4: { upTo: 2, extra: [4, 3, 1, 7] } })).included.entries.get("a1b2c3d4"))
       .toEqual({ upTo: 4, extra: [7] });
     expect(() => snap({ XYZ: { upTo: 1, extra: [] } })).toThrow();

@@ -144,7 +144,7 @@ final class CLIMathTests: CLITestCase {
         let args = try setUpVault()
         try ok(["attach", "math", groceries, "--latex", "x^2", "--render", pdf("equation.pdf"), "--width", "120"] + args)
         let id = try XCTUnwrap(try equations(groceries).first?.id.uuidString.lowercased())
-        // Same source, other colour: the rendering goes (the CLI cannot typeset), the frame stays.
+        // Same source, other color: the rendering goes (the CLI cannot typeset), the frame stays.
         try ok(["items", "math", groceries, String(id.prefix(8)), "--color", "#FF0000"] + args)
         var eq = try XCTUnwrap(try equations(groceries).first)
         XCTAssertNil(eq.math?.render)

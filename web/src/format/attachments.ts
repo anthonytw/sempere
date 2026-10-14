@@ -109,7 +109,7 @@ function color(v: unknown, path: string): string {
   let digits = body;
   if (digits.startsWith("+")) digits = digits.slice(1);
   else if (digits.startsWith("-") && /^-0+$/.test(digits)) digits = "0";
-  if ((count !== 6 && count !== 8) || !/^[0-9a-fA-F]+$/.test(digits)) fail(path, "bad colour");
+  if ((count !== 6 && count !== 8) || !/^[0-9a-fA-F]+$/.test(digits)) fail(path, "bad color");
   return s;
 }
 
@@ -268,7 +268,7 @@ function isPDFType(type: string): boolean {
   return (type.split(";")[0] ?? "").trim().replace(/[A-Z]/g, (ch) => ch.toLowerCase()) === "application/pdf";
 }
 
-/** A math item's `math` value (Swift `MathContent`): source, style, size, colour, optional render. */
+/** A math item's `math` value (Swift `MathContent`): source, style, size, color, optional render. */
 function mathContent(v: unknown, path: string, c: Ctx): JSONObject {
   const o = obj(v, path);
   const latex = reqWith(o, "latex", path, str);

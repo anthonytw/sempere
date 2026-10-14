@@ -67,7 +67,7 @@ enum TextBoxText {
     static let runKey = NSAttributedString.Key("io.github.anthonytw.sempere.textRun")
 
     /// `layout.layoutString` (tabs as four spaces) with each run's font and
-    /// colour and each paragraph's direction: what TextKit and CoreText lay out.
+    /// color and each paragraph's direction: what TextKit and CoreText lay out.
     static func layoutAttributed(_ layout: LayoutText) -> NSAttributedString {
         let out = NSMutableAttributedString(string: layout.layoutString)
         let content = layout.content
@@ -369,7 +369,7 @@ struct TextBoxLayout {
     }
 
     /// A font of `glyphs` of `font`, from CoreText's outlines in font units;
-    /// glyphs with ink but no outline (colour, bitmap) are empty and listed.
+    /// glyphs with ink but no outline (color, bitmap) are empty and listed.
     static func outlineFace(_ font: CTFont, glyphs: [CGGlyph], key: String)
         -> (face: FontFace, ids: [CGGlyph: Int], bitmap: Set<CGGlyph>)? {
         let upem = Int(CTFontGetUnitsPerEm(font))
@@ -386,7 +386,7 @@ struct TextBoxLayout {
             if let path = CTFontCreatePathForGlyph(unit, g, nil) {
                 outline = Self.segments(path)
             } else {
-                // No outline: a space (nothing to draw), or a colour/bitmap glyph (ink without an outline).
+                // No outline: a space (nothing to draw), or a color/bitmap glyph (ink without an outline).
                 var rect = CGRect.zero
                 _ = CTFontGetBoundingRectsForGlyphs(unit, .horizontal, &glyph, &rect, 1)
                 if !rect.isEmpty, !rect.isNull { bitmap.insert(g) }

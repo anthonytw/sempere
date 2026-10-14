@@ -33,7 +33,7 @@ struct DragAndDropTests {
         #expect(DragPayload.decode(mixed, as: .sempereNotes) == .notes([ids[0]]))
     }
 
-    /// TestFlight builds 6 and 7: a `.move` proposal is cancelled at the
+    /// TestFlight builds 6 and 7: a `.move` proposal is canceled at the
     /// release by sessions that allow no move (SwiftUI's `onDrag` from a
     /// `List` row), so the drop never ran. The real drag is in
     /// `SidebarDropUITests`; this pins the rule.
@@ -302,14 +302,14 @@ struct DragAndDropTests {
         #expect(NotebookChoices.rows(matching: "", among: all, excludingSubtree: "A/B") == ["A", "D"])
     }
 
-    /// `onDrag` reports no end, so a cancelled drag leaves its payload: a later
+    /// `onDrag` reports no end, so a canceled drag leaves its payload: a later
     /// drop that is not one of the app's own drags (a photo, text from another
     /// app) never moves those notes, and clears it.
     @Test func aLeftOverDragNeverAnswersAnotherDrop() async throws {
         let (model, ids) = try await NotebookTreeTests.model()
         let lab = try #require(ids["Lab"])
         _ = model.beginDrag(.notes([lab]), provider: NSItemProvider())
-        // The drag was cancelled; something else is dragged over School.
+        // The drag was canceled; something else is dragged over School.
         #expect(!model.acceptsDrop(on: .notebook("School"), carriesAppTypes: false))
         #expect(model.takeDrop(on: .notebook("School"), carriesAppTypes: false) == nil)
         #expect(model.draggedPayload == nil)

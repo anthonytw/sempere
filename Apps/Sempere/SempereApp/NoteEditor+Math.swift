@@ -8,7 +8,7 @@ import Sempere
 /// the CLI's `attach math` and `items math` use.
 extension NoteEditor {
     /// Typesets `content` and adds it on `pageID`: at its natural size (one
-    /// point per point), shrunk to fit and centred in what is on screen
+    /// point per point), shrunk to fit and centered in what is on screen
     /// (`visible`, page points; `NoteOps.viewFrame`). Two files: the render,
     /// then one `addItem`.
     @discardableResult
@@ -26,7 +26,7 @@ extension NoteEditor {
         }
     }
 
-    /// Changes the equation `id` to `content` (source, style, size, colour):
+    /// Changes the equation `id` to `content` (source, style, size, color):
     /// typesets it and writes the new render first, then one delta
     /// (`NoteOps.setMath`: the value, and the frame at the same scale). An
     /// unchanged equation keeps its render and writes nothing. Returns the

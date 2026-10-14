@@ -79,7 +79,7 @@ final class NoteSearchIndexTests: XCTestCase {
         return s
     }
 
-    /// A note whose recognised text changes is folded again (no stale hits or misses).
+    /// A note whose recognized text changes is folded again (no stale hits or misses).
     func testIndexFollowsChangedText() {
         let index = NoteSearchIndex()
         var a = note(1, ["momentum and energy"])

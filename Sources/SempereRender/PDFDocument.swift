@@ -94,7 +94,7 @@ public struct PDFPage: Sendable {
 /// or stroked rectangles. Content streams are left uncompressed unless asked,
 /// so tests (and curious users) can read them.
 public enum PDFDocument {
-    /// Serialises `pages` into a PDF 1.4 file.
+    /// Serializes `pages` into a PDF 1.4 file.
     public static func render(pages: [PDFPage], title: String? = nil, compress: Bool = false) throws -> Data {
         let pages = pages.isEmpty ? [PDFPage()] : pages
         let usedFonts = PDFPage.Font.allCases.filter { f in pages.contains { $0.fonts.contains(f) } }

@@ -9,7 +9,7 @@ import UIKit
 /// "Convert to Math" (docs/attachments.md §14 G1 part 2): the lasso's pick,
 /// the one delta that replaces ink with a typeset equation (or adds it
 /// beside), undo and redo through the ledger, and the model store's
-/// download (a fake fetcher; the model itself is a fake recogniser).
+/// download (a fake fetcher; the model itself is a fake recognizer).
 @MainActor
 @Suite(.serialized)
 struct MathConversionTests {
@@ -161,7 +161,7 @@ struct MathConversionTests {
         }
     }
 
-    /// A model folder with placeholder files (the store checks files, not Core ML) and its catalogue entry.
+    /// A model folder with placeholder files (the store checks files, not Core ML) and its catalog entry.
     func fakeModel(corrupt: Bool = false) throws -> (URL, MathModelCatalogEntry) {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("model-\(UUID().uuidString)")
         let files = ["encoder.mlpackage/Manifest.json": "e", "decoder.mlpackage/Manifest.json": "d",

@@ -235,7 +235,7 @@ public protocol VaultImporter: Sendable {
     var options: [ImporterOptionSpec] { get }
     /// The importer stores the text of PDF pages (`ImporterRequest.pdfText`).
     var usesPDFText: Bool { get }
-    /// The importer's notes may lack recognised handwriting that the host can read afterwards.
+    /// The importer's notes may lack recognized handwriting that the host can read afterwards.
     var supportsRecognizeAfter: Bool { get }
 
     /// Imports `request.paths` into the vault, one delta per note.

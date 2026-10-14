@@ -427,7 +427,7 @@ public enum NoteReducer {
                                  paper: pp?.value, paperClock: pp?.key.stamp.description,
                                  items: (itemsByPage[id] ?? []).sorted(by: Item.drawsBefore)))
         }
-        // Byte-wise (code point) order, not Swift's normalising String `<`.
+        // Byte-wise (code point) order, not Swift's normalizing String `<`.
         outPages.sort { l, r in
             if l.order != r.order { return l.order.utf8.lexicographicallyPrecedes(r.order.utf8) }
             return l.id.uuidString.lowercased() < r.id.uuidString.lowercased()
@@ -488,7 +488,7 @@ struct TagMerge {
     var added: [TagSet.Removal: String] = [:]
     var removed = Set<TagSet.Removal>()
 
-    /// Adds one instance. The spelling is normalised as writers must have
+    /// Adds one instance. The spelling is normalized as writers must have
     /// done; an instance whose tag is empty (blank) is ignored (§5.4.1).
     mutating func add(_ tag: String, _ origin: Origin) {
         let tag = NoteOps.normalizedTag(tag)

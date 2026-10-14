@@ -145,7 +145,7 @@ struct CanvasHostRenderingTests {
                 StrokePoint(x: 60 + Double(j) * 8, y: y + 6 * sin(Double(j) / 4), t: Double(j) / 120,
                             w: w, h: w, o: 1, f: 0.5, az: 0, al: .pi / 2)
             }
-            // Dark colours so every ink passes the darkness threshold.
+            // Dark colors so every ink passes the darkness threshold.
             strokes.append(Stroke(ink: Ink(tool: tool, color: Sempere.Color(r: 0x10, g: 0x10, b: 0x60, a: 0xFF),
                                            width: w), points: points))
         }

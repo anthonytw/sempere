@@ -318,7 +318,7 @@ struct AttachmentPersistenceTests {
         #expect(RenderCache.previewLabel(cropped, scale: 2) != label)
         #expect(RenderCache.previewLabel(page, scale: 3) != label)
         #expect(RenderCache.pictureLabel(ItemRenderKey(page, scale: 2, paper: .blank)) == nil, "PDF pages are previews")
-        // Text boxes are drawn by CoreText: labelled with the system and its fonts, and by their text.
+        // Text boxes are drawn by CoreText: labeled with the system and its fonts, and by their text.
         let textLabel = try #require(RenderCache.pictureLabel(ItemRenderKey(AttachmentEditorTests.textItem(), scale: 2, paper: .blank)))
         #expect(textLabel.hasPrefix("txt|\(RenderCache.nativeSalt)|"))
         #expect(RenderCache.pictureLabel(ItemRenderKey(AttachmentEditorTests.textItem("Other"), scale: 2, paper: .blank)) != textLabel)

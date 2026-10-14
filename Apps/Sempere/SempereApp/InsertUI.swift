@@ -15,7 +15,7 @@ enum InsertOptions {
 
     /// What the Insert menu's PDF entry picks: on a pageless note the switch
     /// to pages waits for the PDF (`EditorInsert.preparePages`), so a
-    /// cancelled picker leaves the note as it was.
+    /// canceled picker leaves the note as it was.
     static func pdfImport(pageless: Bool) -> EditorFileImport { pageless ? .pdfSwitchingToPages : .pdf }
 
     /// The Insert menu's PDF entry, saying where the pages go: after the

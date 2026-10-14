@@ -7,7 +7,7 @@ import UIKit
 /// The app's math typesetter (format.md §8.2.8, docs/attachments.md §14 G1):
 /// SwiftMath (MIT) lays out the LaTeX source; the result is stored as the
 /// item's `render`, a one-page PDF of exactly the typeset box plus a margin,
-/// marks only in the equation's colour on a transparent page, so every other
+/// marks only in the equation's color on a transparent page, so every other
 /// renderer (the CLI, the web viewer, exports) draws it without a typesetter.
 /// Sources are checked against `MathSource` before SwiftMath parses them.
 enum MathTypesetter {

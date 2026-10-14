@@ -87,7 +87,7 @@ enum MacMenus {
             built.append("Settings… added")
         }
         if builder.menu(for: .about) != nil {
-            // UIKit's About opens the standard panel: the app's About shows the licence, links and acknowledgements.
+            // UIKit's About opens the standard panel: the app's About shows the license, links and acknowledgements.
             builder.replaceChildren(ofMenu: .about) { _ in [nativeCommand(.showAbout)] }
             built.append("about → About Sempere")
         }

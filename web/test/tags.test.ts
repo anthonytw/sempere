@@ -38,7 +38,7 @@ function must<T>(v: T | undefined): T {
   return v;
 }
 
-describe("tag normalisation", () => {
+describe("tag normalization", () => {
   it("trims, collapses whitespace and matches case-insensitively", () => {
     expect(normalizedTag("  Fall\n  Term ")).toBe("Fall Term");
     expect(normalizedTag(" \t ")).toBe("");
@@ -183,7 +183,7 @@ describe("tag merge", () => {
     }
   });
 
-  it("never shows a blank or unnormalised tag from a writer", () => {
+  it("never shows a blank or unnormalized tag from a writer", () => {
     const log = new LogBuilder();
     const d = log.delta(devA, 100, [op.addTag(""), op.addTag("  \t "), op.addTag("  Fall\n  Term ")]);
     expect(tags([d])).toEqual(["Fall Term"]);

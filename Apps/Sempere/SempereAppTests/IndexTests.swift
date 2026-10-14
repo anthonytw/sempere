@@ -271,7 +271,7 @@ struct IndexTests {
         }
         model.notes = sorted
         let derive = Self.mainCPU { _ = (model.visibleNotes, model.tags, model.notebookTree) }   // what the views read
-        let again = Self.mainCPU { _ = (model.visibleNotes, model.tags, model.notebookTree) }    // memoised
+        let again = Self.mainCPU { _ = (model.visibleNotes, model.tags, model.notebookTree) }    // memoized
         print("PERF main actor, 640 notes: index shown \(show), batch applied \(apply), lists derived \(derive), again \(again)")
         #expect(show < .milliseconds(100))
         #expect(apply < .milliseconds(30))

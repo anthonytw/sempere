@@ -62,7 +62,7 @@ extension AppModel {
     }
 
     /// True when `format` can export `ids` (`ExportCommand.isAvailable`):
-    /// the text export needs a note with recognised handwriting.
+    /// the text export needs a note with recognized handwriting.
     func canExport(_ format: ShareFormat, ids: [UUID]) -> Bool {
         guard !ids.isEmpty else { return false }
         let wanted = Set(ids)
@@ -78,7 +78,7 @@ extension AppModel {
 
     /// Reads `ids` from the vault and renders them into `scratch`.
     ///
-    /// Reading and rendering run off the main actor; cancelling the calling
+    /// Reading and rendering run off the main actor; canceling the calling
     /// task stops both between notes. A note that cannot be read or rendered
     /// is reported in `failures` and the rest are exported. An open note's
     /// pending changes are saved first (`flushEditors`); one whose changes

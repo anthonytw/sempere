@@ -283,7 +283,7 @@ struct HistoryTests {
         #expect(listed.isDisjoint(with: Set(deleted)))
         let notice = try #require(data.compactionNotice)
         #expect(notice.contains("compaction"))
-        // Every row is either shown and restorable, or greyed out with a reason and refused.
+        // Every row is either shown and restorable, or grayed out with a reason and refused.
         for entry in data.entries {
             if entry.isAvailable {
                 _ = try data.state(at: entry.id)

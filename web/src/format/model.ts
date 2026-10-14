@@ -18,7 +18,7 @@ import { Budget, checkItemChange, checkRecordingChange, decodeItem, decodeRecord
 export const inkTools = ["pen", "pencil", "marker", "monoline", "fountainPen", "watercolor", "crayon"] as const;
 export type InkTool = (typeof inkTools)[number];
 
-/** `#RRGGBBAA`, uppercase: how Swift re-encodes any colour it read. */
+/** `#RRGGBBAA`, uppercase: how Swift re-encodes any color it read. */
 export type Color = string;
 
 export interface Ink {
@@ -296,7 +296,7 @@ export function parseColor(s: string): Color | undefined {
 function color(v: unknown, path: string): Color {
   const s = str(v, path);
   const c = parseColor(s);
-  if (c === undefined) fail(path, "bad colour");
+  if (c === undefined) fail(path, "bad color");
   return c;
 }
 

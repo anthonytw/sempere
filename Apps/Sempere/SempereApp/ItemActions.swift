@@ -116,7 +116,7 @@ final class ItemActions {
         return back
     }
 
-    /// Turns an item by `degrees` clockwise (anticlockwise when negative) from the
+    /// Turns an item by `degrees` clockwise (counterclockwise when negative) from the
     /// rotation it has; `snapping` rounds the result as a two-finger turn does
     /// (`NoteOps.snappedRotation`). One delta, one undo step.
     func rotate(_ id: UUID, by degrees: Double, on page: UUID, snapping: Bool = false) {

@@ -174,7 +174,7 @@ extension AppModel {
     /// (`skip`, `fail`, `export`) still happens in job order from this loop; reading ahead
     /// never touches the session, except to ask `wouldSkip` so an up-to-date note is not read.
     ///
-    /// Cancelling the calling task stops between notes (and between a PDF's
+    /// Canceling the calling task stops between notes (and between a PDF's
     /// pages): the result then says `cancelled`, and what was written stays
     /// in a folder (a zip is deleted).
     ///

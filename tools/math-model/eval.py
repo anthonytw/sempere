@@ -176,7 +176,7 @@ def crohme(a):
     rows = pq.read_table(a.parquet).to_pylist()[:a.limit]
 
     def prepare(png):
-        # The reference preprocessing of UniMERNet / Texo: crop the white margin, scale to fit, pad with BLACK, centre.
+        # The reference preprocessing of UniMERNet / Texo: crop the white margin, scale to fit, pad with BLACK, center.
         im = Image.open(io.BytesIO(png)).convert("RGB")
         g = np.asarray(im.convert("L"), dtype=np.float32)
         lo, hi = g.min(), g.max()

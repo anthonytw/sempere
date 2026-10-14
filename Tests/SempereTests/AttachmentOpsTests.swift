@@ -56,7 +56,7 @@ final class AttachmentOpsTests: XCTestCase {
         XCTAssertNil(placed.item.orientation)
         XCTAssertEqual(placed.ops, [.addItem(page: p.id, item: placed.item)])
 
-        // A small image keeps one pixel per point and is centred across the page.
+        // A small image keeps one pixel per point and is centered across the page.
         let small = try NoteOps.placeImage(blob: blob, pixelSize: Size(w: 100, h: 50), on: p, pageSize: letter).item.frame
         XCTAssertEqual(small, Rect(x: 256, y: 36, w: 100, h: 50))
     }
@@ -136,7 +136,7 @@ final class AttachmentOpsTests: XCTestCase {
 
     func testBackgroundFillsThePageFittedAndCentred() throws {
         let p = page()
-        // The same size fills exactly; another aspect is fitted (up or down) and centred.
+        // The same size fills exactly; another aspect is fitted (up or down) and centered.
         let same = try NoteOps.placePDFPage(blob: pdfBlob, PDFPageRef(index: 3, size: Size(w: 612, h: 792)), on: p, pageSize: letter).item
         XCTAssertEqual(same.frame, Rect(x: 0, y: 0, w: 612, h: 792))
         XCTAssertEqual(same.layer, .background)
@@ -205,7 +205,7 @@ final class AttachmentOpsTests: XCTestCase {
         XCTAssertEqual(state.meta.tags, ["pdf"])
         XCTAssertEqual(state.pages.count, 2)
         XCTAssertEqual(state.pages[0].items.first?.frame, Rect(x: 0, y: 0, w: 360, h: 500))
-        // The wide page is fitted into 360 × 500 and centred.
+        // The wide page is fitted into 360 × 500 and centered.
         let wide = try XCTUnwrap(state.pages[1].items.first)
         XCTAssertEqual(wide.frame.w, 360, accuracy: 0.001)
         XCTAssertEqual(wide.frame.h, 250, accuracy: 0.001)

@@ -10,7 +10,7 @@ import XCTest
 
 /// The import gaps closed after the reference-backup survey: `.ntb`
 /// attachments, PDF page text, handwriting language, highlighter behind text
-/// and paper colour (docs/import-notability.md). Synthetic packages only.
+/// and paper color (docs/import-notability.md). Synthetic packages only.
 final class NotabilityGapsTests: NotabilityTestCase {
     static let letter = (612.0, 792.0)
     static let k = 612 / 716.8
@@ -270,7 +270,7 @@ final class NotabilityGapsTests: NotabilityTestCase {
         return (note, NotabilityAttachments.resolve(note, package: pkg))
     }
 
-    // MARK: - Language, highlighter, paper colour
+    // MARK: - Language, highlighter, paper color
 
     func testLanguageHighlighterAndPaperColour() throws {
         let session = SyntheticNote.session(rootExtra: { a in
@@ -338,7 +338,7 @@ final class NotabilityGapsTests: NotabilityTestCase {
 
 /// `Tests/SempereNotabilityTests/Fixtures/synthetic-gaps.note` and `synthetic-gaps.ntb`, the CLI
 /// tests' notes for the import gaps (PDF index text, language, highlighter
-/// flag, paper colour; `.ntb` PDF and image files). Generated here;
+/// flag, paper color; `.ntb` PDF and image files). Generated here;
 /// `SEMPERE_UPDATE_FIXTURES=1 swift test --filter CLIGapsFixtureTests` rewrites them.
 final class CLIGapsFixtureTests: XCTestCase {
     static var dir: URL {

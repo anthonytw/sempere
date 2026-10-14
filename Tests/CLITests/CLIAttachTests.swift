@@ -72,7 +72,7 @@ final class CLIAttachTests: CLITestCase {
         XCTAssertEqual(item["kind"] as? String, "image")
         XCTAssertEqual(item["orientation"] as? Int, 6)
         XCTAssertEqual(item["pixelSize"] as? [Double], [45, 61])
-        // 1 pixel per point, centred across the 612 pt page, a 36 pt margin from the top.
+        // 1 pixel per point, centered across the 612 pt page, a 36 pt margin from the top.
         XCTAssertEqual(item["frame"] as? [Double], [283.5, 36, 45, 61])
         let blob = try XCTUnwrap(out["blob"] as? [String: Any])
         XCTAssertEqual(blob["type"] as? String, "image/jpeg")
@@ -114,7 +114,7 @@ final class CLIAttachTests: CLITestCase {
         XCTAssertEqual(new.orientation, 6)
         XCTAssertEqual(new.rotation, 90)
         XCTAssertNil(new.crop)
-        // 45 × 61 (upright) fitted into 230 × 170, centred.
+        // 45 × 61 (upright) fitted into 230 × 170, centered.
         XCTAssertEqual(new.frame.h, 170, accuracy: 0.001)
         XCTAssertEqual(new.frame.w, 170 * 45 / 61, accuracy: 0.001)
         XCTAssertEqual(new.frame.x + new.frame.w / 2, 125, accuracy: 0.001)
@@ -242,7 +242,7 @@ final class CLIAttachTests: CLITestCase {
         XCTAssertEqual(items.map(\.blob?.type), ["application/pdf", "application/pdf"])
         XCTAssertEqual(Set(items.compactMap(\.blob?.sha256)).count, 1, "one blob serves both pages")
         XCTAssertEqual(blobFiles(physics).count, 1)
-        // 360 × 500 filling a 612 × 792 page: fitted and centred, scaled up.
+        // 360 × 500 filling a 612 × 792 page: fitted and centered, scaled up.
         XCTAssertEqual(items[0].frame.h, 792, accuracy: 0.01)
         XCTAssertEqual(items[0].frame.w, 570.24, accuracy: 0.01)
         let json = out["items"] as? [[String: Any]]

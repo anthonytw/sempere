@@ -57,15 +57,15 @@ final class CLIImportSearchTests: CLITestCase {
         XCTAssertEqual((try cli(["search", "nothing-here", "--json"] + vaultArgs(vault)).json as? [Any])?.count, 0)
         XCTAssertEqual(try cli(["search", "  "] + vaultArgs(vault)).status, 2)
 
-        // notes show reports pages with recognised text.
+        // notes show reports pages with recognized text.
         let id = try XCTUnwrap(hit["noteId"] as? String)
         let show = try cli(["notes", "show", id] + vaultArgs(vault))
-        XCTAssertTrue(show.out.contains("1 of 1 page(s) with recognised text"), show.out)
+        XCTAssertTrue(show.out.contains("1 of 1 page(s) with recognized text"), show.out)
         let showJSON = try cli(["notes", "show", id, "--json"] + vaultArgs(vault))
         XCTAssertEqual(((showJSON.json as? [String: Any])?["note"] as? [String: Any])?["recognizedPages"] as? Int, 1)
         // The sample note has none.
         let lecture = try cli(["notes", "show", Self.lecture] + vaultArgs(vault))
-        XCTAssertTrue(lecture.out.contains("0 of 2 page(s) with recognised text"), lecture.out)
+        XCTAssertTrue(lecture.out.contains("0 of 2 page(s) with recognized text"), lecture.out)
         XCTAssertEqual(try cli(["vault", "verify", "--vault", vault, "--identity", Self.fixtureKey]).status, 0)
     }
 

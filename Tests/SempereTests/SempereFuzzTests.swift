@@ -485,7 +485,7 @@ final class SempereFuzzTests: VaultTestCase {
         })
     }
 
-    /// File names and the other string encodings (origin, stamps, colours,
+    /// File names and the other string encodings (origin, stamps, colors,
     /// page-order keys, notebook paths).
     func testFuzzNamesAndStrings() throws {
         let seeds = ["17596320000000003-a1b2c3d4-12.delta.age", "17596320000000003-a1b2c3d4-1.snapshot.age",

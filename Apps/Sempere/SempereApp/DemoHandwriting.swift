@@ -150,7 +150,7 @@ struct DemoSheet {
         }
     }
 
-    /// Writes `text` centred on `cx`.
+    /// Writes `text` centered on `cx`.
     mutating func writeCentered(_ text: String, cx: Double, baseline: Double, pen: DemoPen = .ink) {
         write(text, x: cx - width(of: text, pen: pen) / 2, baseline: baseline, pen: pen)
     }

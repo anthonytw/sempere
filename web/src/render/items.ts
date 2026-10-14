@@ -79,7 +79,7 @@ export function rotation(degrees: number): { cos: number; sin: number } {
   }
 }
 
-/** Rotation by `degrees` (clockwise on the y-down page) about the frame's centre. */
+/** Rotation by `degrees` (clockwise on the y-down page) about the frame's center. */
 export function rotate(f: Rect, degrees: number): Affine {
   const { cos: cs, sin: sn } = rotation(degrees);
   const mx = f.x + f.w / 2, my = f.y + f.h / 2;
@@ -155,7 +155,7 @@ export function placeholderCommands(c: Point[]): DrawCommand[] {
 /**
  * The play mark over a video item (§8.2.7, Swift `ItemGeometry.playMark`):
  * a disc of diameter `d = min(48, 0.3 · min(w, h))` filled `#00000080` at
- * the frame's centre, and a white triangle pointing right, turned with the item.
+ * the frame's center, and a white triangle pointing right, turned with the item.
  */
 export function playMarkCommands(f: Rect, degrees: number): DrawCommand[] {
   const d = Math.min(48, 0.3 * Math.min(f.w, f.h));
@@ -202,7 +202,7 @@ export interface PreparedItem {
   corners: Point[];
   minY: number;
   maxY: number;
-  /** Background layers (below 100) first fill their frame with the paper colour (§8.2.3). */
+  /** Background layers (below 100) first fill their frame with the paper color (§8.2.3). */
   fillsBackground: boolean;
   /** Drawn under the item: a Markdown box's markers, bars, rules and code fills (§8.5.4), page coordinates. */
   underlay?: DrawCommand[];

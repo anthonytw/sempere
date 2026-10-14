@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The app entry point. The model, the library (recent vaults) and the
 /// remembered keys are app state, shared by every window, so edits from two
-/// windows are serialised by one model and never race on the device clock.
+/// windows are serialized by one model and never race on the device clock.
 ///
 /// Scenes: the library window (vault, notes, one note on the canvas); on the
 /// Mac also a window per note (`NoteWindowView`, restored at launch with the

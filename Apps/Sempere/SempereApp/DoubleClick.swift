@@ -2,12 +2,12 @@ import SwiftUI
 import UIKit
 import UIKit.UIGestureRecognizerSubclass
 
-/// Recognises the second click of a double-click: a touch that ends with
+/// Recognizes the second click of a double-click: a touch that ends with
 /// `UITouch.tapCount` 2 or more. The system counts the clicks from their own
 /// timestamps (on a Mac, the event's click count), so a main thread kept busy
 /// by the first click (it selects the row and opens the note) changes nothing,
 /// where a two-tap `UITapGestureRecognizer`'s timer might. It never cancels or
-/// delays touches and recognises alongside everything else, so the list's own
+/// delays touches and recognizes alongside everything else, so the list's own
 /// selection works as before.
 final class DoubleClickRecognizer: UIGestureRecognizer, UIGestureRecognizerDelegate {
     /// What a double-click does; replaced when the cell shows another row.

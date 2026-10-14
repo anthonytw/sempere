@@ -210,8 +210,8 @@ enum ImagePreparation {
         return (props[kCGImagePropertyColorModel] as? String) == (kCGImagePropertyColorModelCMYK as String)
     }
 
-    /// `image` in an RGB colour space (a CMYK JPEG is redrawn in sRGB: the
-    /// format's readers decode RGB and grey JPEGs).
+    /// `image` in an RGB color space (a CMYK JPEG is redrawn in sRGB: the
+    /// format's readers decode RGB and gray JPEGs).
     private static func rgb(_ image: CGImage) throws -> CGImage {
         let model = image.colorSpace?.model
         guard model == .cmyk || model == .lab || model == .deviceN else { return image }

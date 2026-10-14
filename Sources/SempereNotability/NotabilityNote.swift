@@ -61,7 +61,7 @@ public struct NotabilityNote: Hashable, Sendable {
         public var lineStyle2: String?
         /// `lineStyle` / root `paperLineStyle` (older integer code) or nil.
         public var lineStyle: Int?
-        /// The page colour (`Notability.NBPaperStyle`'s `paperColor`), when the note records one.
+        /// The page color (`Notability.NBPaperStyle`'s `paperColor`), when the note records one.
         public var color: Color?
 
         public init(width: Double, pageHeight: Double, kind: PaperKind, spacing: Double?, identifier: String? = nil,
@@ -93,7 +93,7 @@ public struct NotabilityNote: Hashable, Sendable {
         public var azimuths: [Double]?
         /// Base width in document units (`curveswidth`).
         public var width: Double
-        /// Colour, stored RGBA.
+        /// Color, stored RGBA.
         public var color: Color
         /// `curvesstyles`: 3 pen, 4 highlighter (other values unseen).
         public var style: Int
@@ -121,7 +121,7 @@ public struct NotabilityNote: Hashable, Sendable {
 
     /// Notability's own handwriting recognition for one page (`HandwritingIndex/index.plist`).
     public struct RecognizedPage: Hashable, Sendable {
-        /// Recognised text, lines separated by `\n`.
+        /// Recognized text, lines separated by `\n`.
         public var text: String
         /// Offset of the character rectangles within the page (`pageContentOrigin`).
         public var origin: Point
@@ -142,7 +142,7 @@ public struct NotabilityNote: Hashable, Sendable {
     public var curves: [Curve]
     /// Typed text (`richText.attributedString`), kept for the report only.
     public var typedText: String
-    /// Recognised handwriting by 1-based Notability page number.
+    /// Recognized handwriting by 1-based Notability page number.
     public var recognition: [Int: RecognizedPage]
     /// `richText.pdfFiles` count (imported PDFs the ink sits on).
     public var pdfCount: Int
@@ -250,7 +250,7 @@ public struct NotabilityNote: Hashable, Sendable {
     /// pages); anything beyond is treated as corrupt.
     public static let maxCoordinate = 1_000_000.0
     /// Handwriting-index pages beyond this number are ignored (a corrupt key
-    /// must not place recognised words 10¹⁸ pages down).
+    /// must not place recognized words 10¹⁸ pages down).
     public static let maxRecognizedPage = 100_000
     /// Thumbnails read for the page aspect, and the largest read (Notability's
     /// biggest, thumb12x.png, is 576 px wide: well under 1 MiB).
@@ -738,9 +738,9 @@ extension NotabilityNote {
                      sizingBehavior: sizing, lineStyle2: lineStyle2, lineStyle: lineStyle)
     }
 
-    /// The page colour: a `paperColor` field (of a `Notability.NBPaperStyle`
+    /// The page color: a `paperColor` field (of a `Notability.NBPaperStyle`
     /// object, or a key named `….paperColor`) anywhere under the paper layout
-    /// model or a root field whose name holds `paper`, read as any colour
+    /// model or a root field whose name holds `paper`, read as any color
     /// Notability archives (`#RRGGBB[AA]`, `UIRed`…, `NSRGB`). Nil when there is none.
     static func paperColor(_ a: KeyedArchive, root: KeyedArchive.Node, total: inout Int) -> Color? {
         var roots: [KeyedArchive.Node] = []

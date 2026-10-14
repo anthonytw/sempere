@@ -10,7 +10,7 @@ import Vision
 /// actor; tests substitute a fake.
 protocol PageRecognizing: Sendable {
     /// The text of `strokes` (one page's live strokes), read in `language`
-    /// (the note's `meta.lang`, format.md §5.4; nil: the recogniser's
+    /// (the note's `meta.lang`, format.md §5.4; nil: the recognizer's
     /// default). `basis` is left nil: the caller sets it from the stroke ids it passed.
     func recognize(strokes: [Stroke], language: String?) async throws -> Recognition
 }
@@ -23,7 +23,7 @@ enum RecognitionFailure: Error, CustomStringConvertible {
     var description: String { String(localized: "The page could not be drawn for reading.") }
 }
 
-/// Whether the app recognises handwriting on its own (default on). It is
+/// Whether the app recognizes handwriting on its own (default on). It is
 /// on-device only: Vision runs here and nothing leaves the device.
 enum RecognitionPreference {
     static let key = "Sempere.recognizeHandwriting"

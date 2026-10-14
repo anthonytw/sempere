@@ -221,7 +221,7 @@ extension AppModel {
     }
 
     /// Writes one delta per entry, one after another, then refreshes just
-    /// those summaries. Edits are serialised (`editGate`) so two taps cannot
+    /// those summaries. Edits are serialized (`editGate`) so two taps cannot
     /// interleave; the vault is looked up after waiting, so an edit queued
     /// before the vault closed is not written into it afterwards (and
     /// `close()` waits for one being written before access to the folder
@@ -478,7 +478,7 @@ extension AppModel {
     /// (nothing started here) is left to the drop. A drag that does not carry
     /// the app's own types (`carriesAppTypes` false: a photo, text from
     /// another app) is never one: `draggedPayload` may be left over from a
-    /// cancelled drag, since `onDrag` reports no end.
+    /// canceled drag, since `onDrag` reports no end.
     func acceptsDrop(on target: DropTarget, carriesAppTypes: Bool = true) -> Bool {
         guard carriesAppTypes else { return false }
         return draggedPayload.map { SidebarDrop.accepts($0, on: target, notes: notes) } ?? true

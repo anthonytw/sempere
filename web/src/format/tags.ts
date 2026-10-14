@@ -1,4 +1,4 @@
-// Tag normalisation and keys (format.md §5.4.1), as `NoteOps` in
+// Tag normalization and keys (format.md §5.4.1), as `NoteOps` in
 // Sources/Sempere/Edit.swift.
 
 const whitespace = /^\p{White_Space}/u;

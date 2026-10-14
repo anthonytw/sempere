@@ -46,7 +46,7 @@ public enum ImageLimits {
     /// Most pixels a file may claim per byte of its own size (plus `pixelAllowance`):
     /// a header claiming a huge image over a few bytes of data is refused before
     /// anything is allocated, so decoding work and memory grow with the input.
-    /// Real JPEGs stay under ~300 pixels per byte (a flat colour at low quality);
+    /// Real JPEGs stay under ~300 pixels per byte (a flat color at low quality);
     /// deflate cannot exceed 1032 bytes out per byte in, so PNG is bounded too.
     public static let pixelsPerInputByte = 1024
     /// See `pixelsPerInputByte`.

@@ -21,7 +21,7 @@ import Foundation
 ///   exactly when the input is, and decodes to the same revision apart from
 ///   `points` being empty. Strings are followed exactly (`\"` escapes), so
 ///   `"points"` inside a string value is never taken for a key.
-/// - A key spelled with escapes (`"points"`) is not recognised: its value
+/// - A key spelled with escapes (`"points"`) is not recognized: its value
 ///   is simply decoded in full.
 ///
 /// - Only UTF-8 is filtered: a body holding a NUL byte (UTF-16 or UTF-32,

@@ -269,7 +269,7 @@ public struct QRCode: Hashable, Sendable {
         return out
     }
 
-    /// Positions of alignment pattern centres along one axis.
+    /// Positions of alignment pattern centers along one axis.
     static func alignmentPositions(version v: Int) -> [Int] {
         guard v > 1 else { return [] }
         let numAlign = v / 7 + 2

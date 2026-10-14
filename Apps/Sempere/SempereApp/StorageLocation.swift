@@ -8,7 +8,7 @@ import Foundation
 /// File Provider extensions, which is how the Mac's `~/Library/CloudStorage`
 /// providers work) take the iCloud path (`CloudVault`): download requests,
 /// dataless detection and coordinated reads and writes. A provider that does
-/// not report its items as ubiquitous still materialises a file only for a
+/// not report its items as ubiquitous still materializes a file only for a
 /// coordinated read, and sees a write only through a coordinated write: its
 /// vault is coordinated too (`needsCoordination`), while the download
 /// requests stay off (there is no downloading status to wait for).

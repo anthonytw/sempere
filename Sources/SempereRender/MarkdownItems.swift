@@ -7,7 +7,7 @@ import Sempere
 /// the formula boxes (their render, else their source), and the shapes
 /// (markers, bars, rules, code fills) as the first piece's underlay. The
 /// pieces turn with the box: each keeps the box's rotation about the box's
-/// centre.
+/// center.
 enum MarkdownItems {
     /// `it`'s pieces, or nil when it is not a Markdown box (or there is no
     /// shaper to measure with: it is then drawn like any text item without one).

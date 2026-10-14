@@ -82,7 +82,7 @@ final class PDFWriterTests: XCTestCase {
         var o = RenderOptions(compress: false)
         o.infiniteChunkHeight = 1000
         XCTAssertEqual(pageCount(try PDFWriter.render(note: note, options: o)), 2)
-        // A finite page ignores it: ink below the page (centre ~905) adds pages of the page's own size.
+        // A finite page ignores it: ink below the page (center ~905) adds pages of the page's own size.
         var finite = note
         finite.meta.pageSize = PageSize(width: 200, height: 300, breakHeight: 50)
         let f = try PDFWriter.render(note: finite, options: RenderOptions(compress: false))

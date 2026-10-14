@@ -67,7 +67,7 @@ Swift. PencilKit's pixel eraser slices strokes into new strokes, so the
 drawing stays vector; in our log that is one `removeStroke` plus the
 surviving pieces as `addStroke`s.
 
-Each page may also carry its recognised handwriting text (`format.md` §5.5):
+Each page may also carry its recognized handwriting text (`format.md` §5.5):
 produced on device by Vision's text recognition on a rendering of the page (iPadOS 27) or
 carried in by an importer, stored inside the
 encrypted note body like everything else, and used to power search. It is
@@ -122,10 +122,10 @@ system's downloads. Network code lives in `Sources/SempereWebDAV` (the CLI's
 `sync webdav` and the app's WebDAV vaults, through
 `Apps/Sempere/SempereApp/WebDAVRemote.swift`) and in one other app file, the
 handwritten-math model downloader (`Apps/Sempere/SempereApp/MathModels.swift`),
-which is inert: it runs only from a Download button per catalogue entry, and
-the catalogue (`MathModelCatalog.entries`) is empty, so no model ships.
+which is inert: it runs only from a Download button per catalog entry, and
+the catalog (`MathModelCatalog.entries`) is empty, so no model ships.
 `scripts/release-check.sh` fails on networking anywhere else in the shipping
-app and on a non-empty catalogue; shipping a model means updating the privacy
+app and on a non-empty catalog; shipping a model means updating the privacy
 policy, the App Store privacy answers and the Mac entitlements first. The web
 viewer (`web/`) fetches only the vault's files and its own assets.
 
@@ -153,7 +153,7 @@ Consequences:
 - Recovery without the app reads the newest snapshot; at worst the deltas
   since it are lost, never the note.
 
-Two devices slicing, moving or recolouring the same stroke concurrently would
+Two devices slicing, moving or recoloring the same stroke concurrently would
 keep both sets of pieces (overlapping copies, each bringing back ink the other
 erased). Readers keep the later edit instead, last writer wins like any other
 register (`format.md` §5.6.1); snapshots carry what the rule needs, so
@@ -227,7 +227,7 @@ approximated; pen, monoline and marker are faithful.
 Public repository on GitHub under GPL-3.0-or-later with an App Store exception
 (`LICENSE-EXCEPTION`): a GPLv3 section 7 additional permission that lets anyone
 distribute builds through the App Store while the complete source stays public.
-There is no contributor licence agreement; contributions are signed off under the
+There is no contributor license agreement; contributions are signed off under the
 Developer Certificate of Origin (`CONTRIBUTING.md`). The app ships through the App Store; the CLI
 ships as GitHub release binaries (`docs/releasing.md`).
 

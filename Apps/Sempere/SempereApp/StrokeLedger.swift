@@ -7,8 +7,8 @@ import Sempere
 /// testable without PencilKit.
 struct CanvasStrokeInfo: Hashable, Sendable {
     /// Identity: equal keys mean "the same canvas stroke, unchanged". Built
-    /// from ink, colour, transform, path length, creation date, a few control
-    /// points, texture seed and mask ranges. Any edit (move, recolour,
+    /// from ink, color, transform, path length, creation date, a few control
+    /// points, texture seed and mask ranges. Any edit (move, recolor,
     /// partial erase) changes it.
     struct Key: Hashable, Sendable {
         let ink: String
@@ -33,14 +33,14 @@ struct CanvasStrokeInfo: Hashable, Sendable {
         func hash(into hasher: inout Hasher) { hasher.combine(hash) }
     }
 
-    /// Strokes that share a family (ink, colour, transform, path creation
+    /// Strokes that share a family (ink, color, transform, path creation
     /// date) can be pieces of one another.
     struct Family: Hashable, Sendable {
         var ink: String
         var values: [Double]
 
         /// The path's creation date: the last value (`init(_: PKStroke)`).
-        /// A lasso move, resize or recolour changes the colour or transform
+        /// A lasso move, resize or recolor changes the color or transform
         /// but keeps the path and this date.
         var created: Double? { values.last }
     }
@@ -91,8 +91,8 @@ struct CanvasStrokeInfo: Hashable, Sendable {
 /// 4. a stroke removed in the same change of the same family whose bounds
 ///    contain the new one (a slice that rewrote the path);
 /// 5. a stroke removed in the same change with the same ink type, path
-///    signature and path creation date (a lasso move, resize or recolour:
-///    the path stays, colour or transform change). So the edit replaces the
+///    signature and path creation date (a lasso move, resize or recolor:
+///    the path stays, color or transform change). So the edit replaces the
 ///    original (format.md §5.6.1) and a concurrent edit of it on another
 ///    device does not leave both.
 /// A parent that was never written to disk is replaced by its own parent.

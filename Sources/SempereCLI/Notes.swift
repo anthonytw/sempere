@@ -142,7 +142,7 @@ struct NotesShow: ParsableCommand {
         print("Notebook: \(summary.notebook ?? "-")")
         print("Deleted:  \(summary.deleted ? "yes" : "no")")
         print("Pages:    \(summary.pages)   Strokes: \(summary.strokes)")
-        print("Text:     \(summary.recognizedPages) of \(summary.pages) page(s) with recognised text")
+        print("Text:     \(summary.recognizedPages) of \(summary.pages) page(s) with recognized text")
         print("Modified: \(Format.local(summary.modified))")
         if let p = summary.problem { print("Problem:  \(p)") }
         if let n = summary.newer { print("Newer:    \(n.summary); shown as far as this version understands it") }

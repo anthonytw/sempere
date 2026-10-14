@@ -6,7 +6,7 @@ import UIKit
 /// A text box as the editor's text view holds it, and back (format.md
 /// §8.2.4, task E2): runs ↔ attributed string. Bold and italic are the
 /// font's traits (so the system's ⌘B / ⌘I and the edit menu work), sizes the
-/// font's point size, colour, underline and strikethrough their attributes;
+/// font's point size, color, underline and strikethrough their attributes;
 /// a run's language and unknown fields ride along in attributes of their
 /// own, so editing a box never drops what it does not show. Pure, tested.
 enum TextBoxEditing {
@@ -92,14 +92,14 @@ enum TextBoxEditing {
         return out
     }
 
-    /// What typing into an empty box (or at a caret without neighbours) gets.
+    /// What typing into an empty box (or at a caret without neighbors) gets.
     static func typingAttributes(_ style: BoxStyle) -> [NSAttributedString.Key: Any] {
         attributes(TextRun(""), style: style)
     }
 
     /// The runs of an edited text, against the box's style: overrides only
     /// where a run differs from the box (sizes at the stored precision),
-    /// normalised as writers store them (`NoteOps.normalizedRuns`).
+    /// normalized as writers store them (`NoteOps.normalizedRuns`).
     static func runs(from text: NSAttributedString, style: BoxStyle) -> [TextRun] {
         var out: [TextRun] = []
         let ns = text.string as NSString
@@ -216,7 +216,7 @@ enum TextBoxEditing {
         return out
     }
 
-    /// `text` restyled for a new box style (family, size, colour, alignment,
+    /// `text` restyled for a new box style (family, size, color, alignment,
     /// direction): runs keep their own overrides.
     static func restyled(_ text: NSAttributedString, from old: BoxStyle, to new: BoxStyle) -> NSAttributedString {
         attributed(TextContent(font: new.font, size: new.size, color: new.color, align: new.align, dir: new.dir,
@@ -232,7 +232,7 @@ enum TextBoxEditing {
     // MARK: Markdown boxes (format.md §8.2.4 "Markdown text")
 
     /// How a Markdown box's source is shown while it is edited: plain text in
-    /// the box's body family (sans or serif), size and colour.
+    /// the box's body family (sans or serif), size and color.
     static func markdownAttributes(_ style: BoxStyle) -> [NSAttributedString.Key: Any] {
         let f = TextBoxFonts.font(style.font == .serif ? .serif : .sans, size: style.size, bold: false, italic: false)
         return [.font: f.font, .foregroundColor: style.color.uiColor,

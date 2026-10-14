@@ -786,7 +786,7 @@ public struct Vault: Sendable {
     /// Saves this device's trust record for the current (verified) list.
     /// Writers keep one (format.md §2.1), so a record that cannot be read
     /// or saved is an error, and it is tried again by the next write (only a
-    /// saved record is memoised; security review 2026-10, R5).
+    /// saved record is memoized; security review 2026-10, R5).
     /// With `replacing`, the record is saved without reading the old one
     /// (the user confirmed the list: an unreadable record is replaced).
     ///

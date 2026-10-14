@@ -138,7 +138,7 @@ final class ShareExportTests: XCTestCase {
 
     // MARK: Markdown
 
-    /// The default: no PDF, so one `.md` that leads with the recognised text.
+    /// The default: no PDF, so one `.md` that leads with the recognized text.
     func testSingleNoteMarkdownIsOneFileLeadingWithTheText() throws {
         let dir = try scratch()
         var n = note(1, title: "Lecture 1", notebook: "School/Math", pages: 2)

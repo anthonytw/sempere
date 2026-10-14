@@ -54,7 +54,7 @@ final class ItemCropTests: XCTestCase {
 
     func testRotatedCropMovesAlongTheItemsAxes() throws {
         let item = image(rotation: 90)
-        // Keep the right half: in the item's axes the centre moves +25 pt in x,
+        // Keep the right half: in the item's axes the center moves +25 pt in x,
         // which turned 90° clockwise is +25 pt in y on the page.
         let edit = try XCTUnwrap(try NoteOps.setCrop(item.id, to: Rect(x: 100, y: 0, w: 100, h: 100), on: page([item])))
         let f = try XCTUnwrap(edit.page.items.first?.frame)
@@ -99,7 +99,7 @@ final class ItemCropTests: XCTestCase {
 
     func testViewFrameFitsTheVisibleAreaAndStaysOnThePage() {
         let letter = PageSize.letter
-        // Unknown viewport: inside the margins, centred on the page.
+        // Unknown viewport: inside the margins, centered on the page.
         let a = NoteOps.viewFrame(for: Size(w: 4000, h: 3000), pageSize: letter, visible: nil)
         XCTAssertEqual(a.w, 540, accuracy: 0.001)
         XCTAssertEqual(a.x + a.w / 2, 306, accuracy: 0.001)

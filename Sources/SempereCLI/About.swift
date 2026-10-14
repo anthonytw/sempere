@@ -2,12 +2,12 @@ import ArgumentParser
 import Foundation
 import Sempere
 
-/// `sempere about`: the version, the GPL notice, the links (licence, security
+/// `sempere about`: the version, the GPL notice, the links (license, security
 /// policy, source) and the third-party software in this build.
 struct AboutCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "about",
-        abstract: "Print the version, the licence and warranty notice, links, and third-party software.",
+        abstract: "Print the version, the license and warranty notice, links, and third-party software.",
         discussion: """
             Sempere is free software under the GNU GPL v3 or later and comes with no warranty.
             `--version` prints the same notice without the third-party list.

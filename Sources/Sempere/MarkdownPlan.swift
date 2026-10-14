@@ -30,7 +30,7 @@ public struct MarkdownPlan: Sendable {
         public var kind: Kind
         /// Source offset (Unicode scalar values) the stored breaks refer to.
         public var offset: Int
-        /// The attributes of a character (its `t` is empty); a box's size and colour.
+        /// The attributes of a character (its `t` is empty); a box's size and color.
         public var run: TextRun
     }
 

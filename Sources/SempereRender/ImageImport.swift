@@ -234,7 +234,7 @@ enum HEIF {
         guard let primary, let indices = associations[primary] else { return fallback }
         let own = indices.compactMap { $0 >= 1 && $0 <= properties.count ? properties[$0 - 1] : nil }
         guard let (w, h) = own.first(where: { $0.type == "ispe" }).flatMap({ extents($0.body) }) else { return fallback }
-        // `irot`: anticlockwise quarter turns in the low two bits; `imir`: the mirror axis in the low bit,
+        // `irot`: counterclockwise quarter turns in the low two bits; `imir`: the mirror axis in the low bit,
         // applied after the turn. The EXIF orientation of each pair, as ImageIO writes and reads them.
         let turns = own.first { $0.type == "irot" && !$0.body.isEmpty }.map { Int(d[$0.body.lowerBound] & 3) } ?? 0
         let axis = own.first { $0.type == "imir" && !$0.body.isEmpty }.map { Int(d[$0.body.lowerBound] & 1) }

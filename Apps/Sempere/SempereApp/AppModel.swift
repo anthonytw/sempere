@@ -154,7 +154,7 @@ final class AppModel {
     /// note list shows `searchResults` (`AppModel+Search`) while it is not empty.
     var searchText = "" { didSet { updateSearch() } }
     var searchScope = SearchScope.list { didSet { updateSearch() } }
-    /// Notes matching `searchText` (title, notebook, tag, recognised handwriting), best first.
+    /// Notes matching `searchText` (title, notebook, tag, recognized handwriting), best first.
     var searchResults: [NoteSearchHit] = []
     /// True from a change of the query until its results are in.
     var isSearching = false
@@ -255,7 +255,7 @@ final class AppModel {
     /// The sidebar row a drag is over that would accept it (highlighted).
     var dropTarget: DropTarget?
     @ObservationIgnored var recognitionTask: Task<Void, Never>?
-    /// Pause after the last stroke change before the open note's pages are recognised.
+    /// Pause after the last stroke change before the open note's pages are recognized.
     let recognitionDelay: Duration
     /// True while the note list ticks several notes (to export them); the
     /// open note (`selectedNoteID`) is untouched meanwhile.
@@ -277,7 +277,7 @@ final class AppModel {
     var sortOrder = NoteSort.modified
     /// True while an edit is being written.
     var isEditing = false
-    /// Serialises edits (`commit`).
+    /// Serializes edits (`commit`).
     let editGate = EditGate()
     /// Thin old autosaves once a day after a vault's notes are listed
     /// (`thinIfDue`, format.md §5.8.4). The app turns it on; tests leave it
@@ -458,7 +458,7 @@ final class AppModel {
     /// The listing started by `unlock`, owned by the model so that no view
     /// (an unlock sheet going away) can cancel it.
     @ObservationIgnored var loadTask: Task<Void, any Error>?
-    /// Serialises listings: a reload, the iCloud sync loop and a pull to
+    /// Serializes listings: a reload, the iCloud sync loop and a pull to
     /// refresh never read the same notes at once.
     let loadGate = EditGate()
 

@@ -43,7 +43,7 @@ enum ExportCommand: String, CaseIterable, Identifiable, Sendable {
     static var formats: [ShareFormat] { allCases.map(\.format) }
 
     /// Whether the command makes sense for notes with these summaries: the
-    /// text export needs recognised handwriting in at least one of them
+    /// text export needs recognized handwriting in at least one of them
     /// (otherwise it would hold titles and tags only), the media export a
     /// recording, video, image or PDF (`MediaExport.mayHaveMedia`).
     static func isAvailable(_ format: ShareFormat, for notes: [NoteSummary]) -> Bool {
@@ -61,7 +61,7 @@ enum ExportCommand: String, CaseIterable, Identifiable, Sendable {
 
 /// "Export ▸ PDF…, PNG Pages…, Text (Markdown)…, Media…" for `ids` (the notes,
 /// in the order given). Disabled without notes; the text export is disabled
-/// when no note has recognised handwriting, the media export when none has media.
+/// when no note has recognized handwriting, the media export when none has media.
 struct ExportMenu: View {
     @AppModelEnvironment private var model
     /// The window's UI state: the export sheet opens in this window.

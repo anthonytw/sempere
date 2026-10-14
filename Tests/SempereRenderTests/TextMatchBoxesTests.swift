@@ -71,7 +71,7 @@ final class TextMatchBoxesTests: XCTestCase {
         let b = TextMatchBoxes.boxes(of: ["beta"], in: turned, shaper: Self.shaper)[0].box
         XCTAssertEqual(a.w, b.h, accuracy: 1e-6, "width and height swap")
         XCTAssertEqual(a.h, b.w, accuracy: 1e-6)
-        // The word starts left of the centre (200, 120); turned a quarter clockwise it sits above it.
+        // The word starts left of the center (200, 120); turned a quarter clockwise it sits above it.
         XCTAssertLessThan(b.y + b.h, 120 + 1e-6)
     }
 

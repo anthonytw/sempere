@@ -35,7 +35,7 @@ public enum NoteOps {
         return .removeTag(normalizedTag(tag), observed: observed)
     }
 
-    /// The ops that make a note in `state` carry exactly `tags` (normalised,
+    /// The ops that make a note in `state` carry exactly `tags` (normalized,
     /// first spelling per key wins): `removeTag` for keys it should lose or
     /// whose spelling differs, then `addTag` for keys it lacks, in `tags` order.
     public static func setTags(_ tags: [String], on state: NoteState) -> [Op] {
@@ -61,7 +61,7 @@ public enum NoteOps {
         normalizedTag(tag).lowercased()
     }
 
-    /// Normalises each tag (`normalizedTag`), drops empty ones and duplicates
+    /// Normalizes each tag (`normalizedTag`), drops empty ones and duplicates
     /// that differ only in case (the first spelling wins), keeps order.
     public static func normalizedTags(_ tags: [String]) -> [String] {
         var seen = Set<String>()
@@ -120,7 +120,7 @@ extension NoteOps {
     }
 
     /// The op that puts a note in `state` into the notebook path `notebook`
-    /// (canonicalised, format.md §5.4; nil or blank: no notebook), or none
+    /// (canonicalized, format.md §5.4; nil or blank: no notebook), or none
     /// when it is already there.
     public static func move(toNotebook notebook: String?, state: NoteState) -> [Op] {
         let target = NotebookPath.canonical(notebook)
@@ -158,7 +158,7 @@ extension NoteOps {
 
     /// The spelling to store for a typed tag: the spelling of the same tag
     /// (`tagKey`) already in `existing` (the vault's tags), else the typed one
-    /// normalised. Keeps "Math" from becoming "math" on one note.
+    /// normalized. Keeps "Math" from becoming "math" on one note.
     public static func tagSpelling(_ typed: String, among existing: [String]) -> String {
         let typed = normalizedTag(typed)
         return existing.first { tagKey($0) == tagKey(typed) }.map(normalizedTag) ?? typed

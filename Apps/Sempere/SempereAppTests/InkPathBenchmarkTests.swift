@@ -218,7 +218,7 @@ extension InkPathBenchmarkTests {
         _ = Self.time("read PKStroke.path (count, date, ends)") {
             for pk in shown { let p = pk.path; _ = p.count; _ = p.creationDate; _ = p[0]; _ = p[p.count - 1] }
         }
-        _ = Self.time("read PKStroke.ink colour") { for pk in shown { _ = Sempere.Color(pk.ink.color) } }
+        _ = Self.time("read PKStroke.ink color") { for pk in shown { _ = Sempere.Color(pk.ink.color) } }
         _ = Self.time("read PKStroke.mask") { for pk in shown { _ = pk.mask } }
         _ = Self.time("read PKStroke.transform, seed") { for pk in shown { _ = pk.transform; _ = pk.randomSeed } }
         for (label, next, expected) in cases {

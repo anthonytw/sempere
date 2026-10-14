@@ -124,7 +124,7 @@ final class CCTVTests: XCTestCase {
                 XCTAssertEqual(v.expect, "armor failure", "\(name): unexpected armor failure")
                 return checkPublicAPIFails(v)
             }
-            // Armor round trip (README): re-encoding gives the normalised input.
+            // Armor round trip (README): re-encoding gives the normalized input.
             var norm = [UInt8](v.file)
             norm = Array(String(decoding: norm, as: UTF8.self).replacingOccurrences(of: "\r\n", with: "\n").utf8)
             while let f = norm.first, Armor.isSpace(f) { norm.removeFirst() }

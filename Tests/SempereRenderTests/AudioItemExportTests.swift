@@ -60,7 +60,7 @@ final class AudioItemExportTests: XCTestCase {
         let img = try PNG.decode(page)
         func px(_ x: Int, _ y: Int) -> [UInt8] { Array(img.pixels[((y * img.width + x) * 4)..<((y * img.width + x) * 4 + 3)]) }
         XCTAssertTrue(report.placeholders.isEmpty, "\(report.placeholders)")
-        // Icon disc centred at (20 + 8 + 12, 20 + 8 + 12) = (40, 40), d = 24: blue left of the microphone, white on it.
+        // Icon disc centered at (20 + 8 + 12, 20 + 8 + 12) = (40, 40), d = 24: blue left of the microphone, white on it.
         XCTAssertEqual(px(31, 40), [0x1A, 0x73, 0xE8])
         XCTAssertEqual(px(40, 35), [255, 255, 255])
         XCTAssertEqual(px(300, 100), [0xF1, 0xF3, 0xF4], "the card")

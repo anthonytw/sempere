@@ -37,7 +37,7 @@ public enum SVGWriter {
     ///
     /// With `inline`, the markup goes straight into an HTML document (`HTMLExport.notePage`):
     /// no XML prolog, namespace URL or `<title>`, `paper` and `strokes` as classes, the
-    /// accessibility attributes of the page, and `inline.ocr` (the recognised-words layer)
+    /// accessibility attributes of the page, and `inline.ocr` (the recognized-words layer)
     /// before the end. `doc` holds the fonts and images pages of one document share.
     static func render(page: Page, meta: NoteMeta, options: RenderOptions, pageNumber: Int,
                        backgrounds: PDFBackgrounds, images: ImageStore, assets: inout SVGAssets,
@@ -294,7 +294,7 @@ public enum SVGWriter {
 /// What a page rendered for inline use in an HTML document adds (`SVGWriter.render(inline:)`).
 struct InlineSVG {
     var number: Int
-    /// Elements of the invisible recognised-words layer, "" for none.
+    /// Elements of the invisible recognized-words layer, "" for none.
     var ocr: String
 }
 

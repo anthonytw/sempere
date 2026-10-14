@@ -28,7 +28,7 @@ anyway:
    readable after the first unlock), and write ordinary revisions. Whoever
    extracts it (a forensic dump of a phone after its first unlock, malware
    running as the app) would get the per-device summary and drawing caches
-   (§10, §10.1), which hold titles, recognised text and the drawings of
+   (§10, §10.1), which hold titles, recognized text and the drawings of
    recently opened notes, and could forge revisions into any note. The
    caches are otherwise protected by Face ID.
 2. **A capture key and an inbox (used).** The device keeps a key derived
@@ -178,7 +178,7 @@ extension cannot read it (and nothing can record: the capture profile is a
 Keychain item readable only after the first unlock), and the widget shows
 the plain mic button. The widget uses only system symbols and is marked
 `unredacted()`: the placeholder iOS shows before the first unlock is
-otherwise redacted to an empty grey box. Without the App Group (an
+otherwise redacted to an empty gray box. Without the App Group (an
 unsigned build) the widgets show the plain mic button.
 
 A stale status cannot trap anyone: the app rewrites it at launch, and Stop on

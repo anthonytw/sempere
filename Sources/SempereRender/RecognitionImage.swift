@@ -1,7 +1,7 @@
 import Foundation
 import Sempere
 
-/// The image a handwriting recogniser reads for one page: its ink black on
+/// The image a handwriting recognizer reads for one page: its ink black on
 /// white, cropped to the ink with a margin, at up to 2x. Shared by the app
 /// (which draws the same region with PencilKit) and the CLI (which draws it
 /// here, in pure Swift), so both read the same part of a page at the same

@@ -138,7 +138,7 @@ final class ItemLayerView: UIView {
 
     /// Shows item `id` turned by `degrees` more than its rotation while a two-finger
     /// turn runs (nil: as stored). The drawn picture is turned as it is, about the
-    /// frame's centre; PDF page tiles are not turned until the turn ends.
+    /// frame's center; PDF page tiles are not turned until the turn ends.
     func preview(_ id: UUID, turn degrees: Double?) {
         turns[id] = degrees
         if !placeOnly(id) { layout() }

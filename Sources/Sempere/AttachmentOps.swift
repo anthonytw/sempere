@@ -155,7 +155,7 @@ extension NoteOps {
     }
 
     /// Places an image on `page`. Without `frame` the image is shown at one
-    /// pixel per point, shrunk to fit inside the margins, centred across the
+    /// pixel per point, shrunk to fit inside the margins, centered across the
     /// page and a margin from its top; `width` (points) instead sets the
     /// frame's width, its height following the crop's (or the image's)
     /// aspect, and `at` the top-left corner. `crop` is in oriented pixel
@@ -195,7 +195,7 @@ extension NoteOps {
     /// Image): blobs are immutable (format.md §8.2.2), so it is one delta of
     /// `removeItem` and `addItem` of a new image whose `parent` names the old
     /// one (§8.2.1). The new image takes the old one's place: the largest
-    /// frame of its proportions inside the old frame, centred on it
+    /// frame of its proportions inside the old frame, centered on it
     /// (`ItemFrames.fitted`), with the old rotation, layer and `z`; the whole
     /// picture is shown (no crop) and it carries no `rec` (it was not placed
     /// during that recording). Store the blob first (`Vault.writeBlob`).
@@ -259,9 +259,9 @@ extension NoteOps {
     }
 
     /// Places one page of a PDF on `page` as an item. Without `frame` it
-    /// fills the page (layer 0, a background: fitted and centred when the
+    /// fills the page (layer 0, a background: fitted and centered when the
     /// sizes differ) or, as a figure (`layer` 100), is fitted inside the
-    /// margins and centred across the page; `width` and `at` choose a figure's
+    /// margins and centered across the page; `width` and `at` choose a figure's
     /// width (the height follows the crop's or the page's aspect) and top-left corner.
     public static func placePDFPage(blob: BlobRef, _ pdfPage: PDFPageRef, crop: Rect? = nil, on page: Page,
                                     pageSize: PageSize, frame: Rect? = nil, at origin: (x: Double, y: Double)? = nil,

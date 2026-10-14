@@ -80,12 +80,12 @@ extension CanvasStrokeInfo {
 
     /// Whether `pk` is, as far as a few reads tell, the canvas stroke this
     /// fingerprints, unchanged: the same `PKStroke.id`, and in the key the
-    /// same colour, transform, path creation date, control-point count,
+    /// same color, transform, path creation date, control-point count,
     /// texture seed, ink, first and last control point and mask ranges.
     /// Leaves out the control points in between and the render bounds, the
     /// costly reads; no edit PencilKit makes keeps all of the above and
     /// changes only those (a move or resize changes the transform, a
-    /// recolour the colour, an erase the mask or the path). False for a
+    /// recolor the color, an erase the mask or the path). False for a
     /// fingerprint without a canvas id. `StrokeLedger.update(count:unchanged:item:)`
     /// takes the stroke's entry as it is when this is true.
     func isUnchanged(_ pk: PKStroke) -> Bool {

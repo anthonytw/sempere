@@ -18,7 +18,7 @@ enum KeyStoreError: Error, Equatable, CustomStringConvertible {
     /// No key is stored for the vault (or it was invalidated, e.g. by a Face ID
     /// enrollment change).
     case notFound
-    /// The user cancelled Face ID / the passcode prompt.
+    /// The user canceled Face ID / the passcode prompt.
     case cancelled
     case authenticationFailed
     /// The device has no passcode, so nothing can be protected by one.
@@ -181,7 +181,7 @@ struct KeychainVaultKeyStore: VaultKeyStore {
     /// as the vault's key in `storage`, never losing the key stored before
     /// unless the new one is in place: the new item is added (or the existing
     /// item of the same storage updated) first, and only then is an item of
-    /// the other storage deleted. A failed or cancelled add or update leaves
+    /// the other storage deleted. A failed or canceled add or update leaves
     /// the old key as it was. The one exception is an existing same-storage
     /// item that can no longer be read (a Face ID enrollment change
     /// invalidated it): it is deleted and the new one added.

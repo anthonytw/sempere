@@ -20,7 +20,7 @@ struct AttachVideo: ParsableCommand {
             (ffmpeg -i IN -c:v libx264 -c:a aac OUT.mp4). The poster frame is what exports and readers that do \
             not play video draw: --poster IMAGE (JPEG or PNG, upright), else on macOS a frame taken from the clip \
             (--poster-time, default 0.5 s), else none (a placeholder with a play mark; `items poster` sets one \
-            later). Without a frame the clip is fitted inside the margins, at most 480 pt wide, centred across \
+            later). Without a frame the clip is fitted inside the margins, at most 480 pt wide, centered across \
             the page. Prints the new item's id.
             """
     )
@@ -42,7 +42,7 @@ struct AttachVideo: ParsableCommand {
     @Flag(name: .customLong("no-poster"), help: "Store no poster (readers draw a placeholder with a play mark).")
     var noPoster = false
 
-    @Option(name: .long, help: ArgumentHelp("Degrees clockwise about the frame's centre.", valueName: "deg"))
+    @Option(name: .long, help: ArgumentHelp("Degrees clockwise about the frame's center.", valueName: "deg"))
     var rotation: Double?
 
     @Option(name: .long, help: ArgumentHelp("content (default) or background.", valueName: "layer"))

@@ -41,8 +41,8 @@ extension NoteOps {
     /// Places recording `recording` (already in the note) on `page` as an
     /// `audio` item (format.md §8.2.9). Without `frame` the card is
     /// `audioItemSize` (narrower on a narrow page): inside `visible` (the part
-    /// of the page the user sees, page coordinates) centred across it and a
-    /// margin below its top, else centred across the page a margin from its
+    /// of the page the user sees, page coordinates) centered across it and a
+    /// margin below its top, else centered across the page a margin from its
     /// top; `at` sets the top-left corner and `width` the width instead.
     ///
     /// - Throws: `AttachmentOpsError.noSuchRecording` when `recordings` has
@@ -100,9 +100,9 @@ public struct AudioCard: Hashable, Sendable {
     public static let outline = Color(r: 0xDA, g: 0xDC, b: 0xE0, a: 0xFF)
     /// The icon's disc, `#1A73E8FF`.
     public static let iconFill = Color(r: 0x1A, g: 0x73, b: 0xE8, a: 0xFF)
-    /// The title line's colour, `#202124FF`.
+    /// The title line's color, `#202124FF`.
     public static let titleColor = Color(r: 0x20, g: 0x21, b: 0x24, a: 0xFF)
-    /// The transcript's colour, `#5F6368FF`.
+    /// The transcript's color, `#5F6368FF`.
     public static let transcriptColor = Color(r: 0x5F, g: 0x63, b: 0x68, a: 0xFF)
     /// Title and duration size, points.
     public static let titleSize = 12.0
@@ -129,7 +129,7 @@ public struct AudioCard: Hashable, Sendable {
         iconSize = min(24, m - 2 * padding)
     }
 
-    /// The icon disc's centre, page coordinates before rotation.
+    /// The icon disc's center, page coordinates before rotation.
     public var iconCenter: (x: Double, y: Double) {
         (frame.x + padding + iconSize / 2, frame.y + padding + iconSize / 2)
     }
@@ -145,9 +145,9 @@ public struct AudioCard: Hashable, Sendable {
     public var labelBottom: Double { frame.y + frame.h - padding }
 
     /// Where an app draws the card's play/pause control: a disc of diameter
-    /// `0.6 d` centred at `(cx + 0.4 d, cy + 0.4 d)`, over the icon's lower
+    /// `0.6 d` centered at `(cx + 0.4 d, cy + 0.4 d)`, over the icon's lower
     /// right, turned with the item's `rotation` (degrees) about the frame's
-    /// centre. Not part of the format: exports draw only the icon.
+    /// center. Not part of the format: exports draw only the icon.
     public func badge(rotation: Double?) -> (center: (x: Double, y: Double), diameter: Double) {
         let d = max(iconSize, 0)
         let (cx, cy) = iconCenter
@@ -169,7 +169,7 @@ public struct AudioCard: Hashable, Sendable {
         return within(cx, cy, d / 2) || within(cx + 0.4 * d, cy + 0.4 * d, 0.3 * d)
     }
 
-    /// (`x`, `y`) turned by `degrees` clockwise (y down) about the frame's centre.
+    /// (`x`, `y`) turned by `degrees` clockwise (y down) about the frame's center.
     private func turned(x: Double, y: Double, degrees: Double) -> (x: Double, y: Double) {
         guard degrees != 0, degrees.isFinite else { return (x, y) }
         // Reduced to one turn first: `1e308 * .pi` is infinite and its cos and sin NaN.

@@ -47,7 +47,7 @@ public struct TranscriptHit: Hashable, Sendable {
     public var snippet: String
     /// Occurrences in the segment.
     public var matches: Int
-    /// The recogniser that made the transcript (`Transcript.engine`).
+    /// The recognizer that made the transcript (`Transcript.engine`).
     public var engine: String
 }
 

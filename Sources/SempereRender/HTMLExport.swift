@@ -56,7 +56,7 @@ public enum HTMLExport {
 
     private static func num(_ v: Double) -> String { String(format: "%.2f", v) }
 
-    /// The invisible, selectable elements for the recognised words of `page`, laid over the ink.
+    /// The invisible, selectable elements for the recognized words of `page`, laid over the ink.
     static func ocrLayer(of page: Page) -> String {
         var layer = ""
         for w in page.recognition?.words ?? [] {
@@ -70,7 +70,7 @@ public enum HTMLExport {
 
     /// Turns a standalone page SVG (from `SVGWriter`) into an inline element:
     /// no XML prolog or namespace URL, `paper` and `strokes` as classes, and
-    /// an invisible selectable layer with the recognised words on top of the
+    /// an invisible selectable layer with the recognized words on top of the
     /// ink. The other ids are unique across pages only when the SVG was
     /// rendered with `pagePrefixedIDs`. (`SVGWriter.exportInline` writes this
     /// form directly, and shares fonts and images between the pages.)
@@ -211,7 +211,7 @@ public enum HTMLExport {
     }
 
     /// The index page: notes grouped by notebook, with a search box that
-    /// filters by title, notebook, tags and recognised text in the browser.
+    /// filters by title, notebook, tags and recognized text in the browser.
     public static func indexPage(entries: [ExportIndexEntry]) -> String {
         var h = head("Sempere notes")
         h += "<h1>Sempere notes</h1>\n"

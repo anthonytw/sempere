@@ -70,7 +70,7 @@ def main():
     p.add_argument("--tiny", action="store_true", help="convert a random tiny model instead (pipeline check)")
     p.add_argument("--loader", help="a Python file defining load(model_dir) -> VisionEncoderDecoderModel, for models "
                                     "whose encoder or config is not in transformers (see texo_loader.py, unimernet_loader.py)")
-    p.add_argument("--int8", action="store_true", help="also quantise weights to 8 bits (per-channel linear, coremltools.optimize)")
+    p.add_argument("--int8", action="store_true", help="also quantize weights to 8 bits (per-channel linear, coremltools.optimize)")
     p.add_argument("--trust-remote-code", action="store_true", help="allow the model folder's own Python code")
     p.add_argument("--out", required=True)
     p.add_argument("--id", default="tiny-test")
@@ -86,7 +86,7 @@ def main():
     p.add_argument("--stroke-width", type=float, default=3.0)
     p.add_argument("--padding", type=int, default=8)
     p.add_argument("--max-ink-height", type=float)
-    p.add_argument("--centre", action="store_true", help="centre the ink (default: left-aligned)")
+    p.add_argument("--centre", action="store_true", help="center the ink (default: left-aligned)")
     p.add_argument("--max-length", type=int, default=64)
     p.add_argument("--lengths", type=int, nargs="+",
                    help="token lengths the decoder accepts (default: 16, 32, ... up to --max-length); each step pads "

@@ -106,7 +106,7 @@ public struct BulkExportOptions: Sendable, Equatable {
 public struct BulkExportJob: Sendable, Equatable, Identifiable {
     public var noteId: UUID
     public var title: String
-    /// Sanitised folder names below the output folder (empty: at the top).
+    /// Sanitized folder names below the output folder (empty: at the top).
     public var folder: [String]
     /// The note's file name without extension (`<title>-<8 hex>`, longer on a collision).
     public var stem: String
@@ -177,7 +177,7 @@ public enum BulkExportPlan {
     /// start at the chosen notebook (exporting `School/Math` gives `Math/…`).
     /// Names are `ExportName.stem` (`<title>-<8 hex>`); two notes whose names
     /// would clash in one folder (equal ignoring case and Unicode
-    /// normalisation, or equal to a sub-folder's name) get the full id
+    /// normalization, or equal to a sub-folder's name) get the full id
     /// instead, then `-2`, `-3`, ... Which note keeps the short name depends
     /// only on the ids, so a re-run names every note the same way.
     public static func jobs(for scope: BulkExportScope, from notes: [NoteSummary], format: BulkExportFormat,
@@ -298,7 +298,7 @@ public struct BulkExportResult: Sendable, Equatable {
     public var output: URL
     /// One per job that was reached, in job order.
     public var notes: [BulkNoteOutcome]
-    /// Jobs never reached because the run was cancelled.
+    /// Jobs never reached because the run was canceled.
     public var notReached: Int
     public var cancelled: Bool
 
@@ -346,14 +346,14 @@ public enum BulkExportError: Error, Equatable, CustomStringConvertible, Sendable
 /// ```swift
 /// let session = try BulkExportSession(destination: .folder(out), options: options, jobs: jobs)
 /// for job in jobs {
-///     try Task.checkCancellation()           // or stop the loop: session.finish(cancelled: true)
+///     try Task.checkCancellation()           // or stop the loop: session.finish(canceled: true)
 ///     let version = BulkExportPlan.version(of: try vault.revisionNames(of: job.noteId))
 ///     if session.skip(job, version: version) { continue }
 ///     do { let (summary, state) = try load(job.noteId)
 ///          session.export(job, state: state, version: version, blobs: vault.blobSource(note: job.noteId))
 ///     } catch { session.fail(job, error) }
 /// }
-/// let result = try session.finish(cancelled: false)
+/// let result = try session.finish(canceled: false)
 /// ```
 ///
 /// Folder output: each note's files are written in place (a PDF under a
@@ -672,7 +672,7 @@ public final class BulkExportSession: @unchecked Sendable {
     }
 
     /// Ends the run. A folder keeps everything written (and its manifest, so
-    /// a re-run resumes); a finished zip is complete, a cancelled one is deleted.
+    /// a re-run resumes); a finished zip is complete, a canceled one is deleted.
     ///
     /// - Throws: `BulkExportError.cannotWrite` when the archive cannot be completed.
     public func finish(cancelled: Bool) throws -> BulkExportResult {

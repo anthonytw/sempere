@@ -256,7 +256,7 @@ describe("snippets leave equations out", () => {
   };
   const pendulum: SearchableNote = { id: "p", title: "Pendulum", tags: [], modified: 0, pageTexts: [page] };
 
-  it("quotes the prose part and nothing of its neighbours", () => {
+  it("quotes the prose part and nothing of its neighbors", () => {
     for (const q of ["oscillator", "pendulum", "small"]) {
       const s = search(q, [pendulum])[0]?.snippet;
       expect(s?.isEquation ?? false).toBe(false);

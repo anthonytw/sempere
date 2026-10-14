@@ -48,7 +48,7 @@ final class MathItemTests: VaultTestCase {
             base + "}",                                                                   // no math
             base + ##","math":{"latex":"x","display":true,"size":0,"color":"#000000FF"}}"##,    // size out of range
             base + ##","math":{"latex":"x","display":"yes","size":12,"color":"#000000FF"}}"##, // display not a bool
-            base + ##","math":{"latex":"x","display":true,"size":12,"color":"red"}}"##,         // colour
+            base + ##","math":{"latex":"x","display":true,"size":12,"color":"red"}}"##,         // color
             base + ##","math":{"latex":"x","display":true,"size":12,"color":"#000000FF","render":"##
                 + ##"{"sha256":"\##(String(repeating: "cd", count: 32))","size":5,"type":"application/pdf"}}}"##,   // render without size
             base + ##","math":{"latex":"x","display":true,"size":12,"color":"#000000FF","renderSize":[1,1]}}"##, // size without render

@@ -153,7 +153,7 @@ final class NoteSearchTests: XCTestCase {
             let snippet = try XCTUnwrap(hit.snippet, query)
             XCTAssertFalse(snippet.isEquation)
             XCTAssertFalse(snippet.text.contains("\\") || snippet.text.contains("frac") || snippet.text.contains("sqrt"), snippet.text)
-            XCTAssertEqual(snippet.text, "For small angles a pendulum is a harmonic oscillator", "the whole part, nothing of its neighbours")
+            XCTAssertEqual(snippet.text, "For small angles a pendulum is a harmonic oscillator", "the whole part, nothing of its neighbors")
             XCTAssertFalse(snippet.matches.isEmpty)
         }
         // A match in the text box after the equation stays in the box.

@@ -26,7 +26,7 @@ export function clamp01(v: number): number {
   return Number.isNaN(v) ? 0 : Math.min(Math.max(v, 0), 1);
 }
 
-/** Paint from a `#RRGGBBAA` colour: alpha = `a / 255 × opacity`. */
+/** Paint from a `#RRGGBBAA` color: alpha = `a / 255 × opacity`. */
 export function paint(c: Color, opacity = 1): Paint {
   const v = parseInt(c.slice(1), 16);
   return {

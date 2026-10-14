@@ -271,7 +271,7 @@ struct AttachImage: ParsableCommand {
         discussion: """
             The image is stored without its location and camera metadata (EXIF, XMP, GPS, comments) unless \
             --keep-metadata; a JPEG's EXIF orientation is kept as the item's orientation. Without a frame the \
-            image is shown at one pixel per point, shrunk to fit inside a 36 pt margin, centred across the page \
+            image is shown at one pixel per point, shrunk to fit inside a 36 pt margin, centered across the page \
             and a margin from its top. HEIC, WebP, GIF and TIFF must be converted first. Prints the new item's id.
             """
     )
@@ -287,7 +287,7 @@ struct AttachImage: ParsableCommand {
     @Option(name: .long, help: ArgumentHelp("Show only this part of the image: x,y,w,h in (oriented) pixels.", valueName: "x,y,w,h"))
     var crop: RectArgument?
 
-    @Option(name: .long, help: ArgumentHelp("Degrees clockwise about the frame's centre.", valueName: "deg"))
+    @Option(name: .long, help: ArgumentHelp("Degrees clockwise about the frame's center.", valueName: "deg"))
     var rotation: Double?
 
     @Option(name: .long, help: ArgumentHelp("content (default) or background (under the page's other items).", valueName: "layer"))
@@ -340,7 +340,7 @@ struct AttachPDF: ParsableCommand {
         discussion: """
             One blob holds the PDF; each selected page becomes a pdfPage item. By default the pages are inserted \
             as new note pages after page N (--after, default: at the end), each with the PDF page as a background \
-            that fills it (fitted and centred when the sizes differ). With --page (and optionally --frame, --at, \
+            that fills it (fitted and centered when the sizes differ). With --page (and optionally --frame, --at, \
             --width, --crop) ONE page is placed as a figure on an existing page instead, drawn above the paper in \
             the content layer. The note's page size is not changed. A pageless note takes figures only. Encrypted \
             PDFs are refused: remove the password first (qpdf --decrypt). Each page's text is stored for \
@@ -481,7 +481,7 @@ struct AttachText: ParsableCommand {
     @Option(name: .long, help: ArgumentHelp("Size in points (default 14).", valueName: "pt"))
     var size: Double = 14
 
-    @Option(name: .long, help: ArgumentHelp("Colour as #RRGGBB or #RRGGBBAA (default black).", valueName: "hex"))
+    @Option(name: .long, help: ArgumentHelp("Color as #RRGGBB or #RRGGBBAA (default black).", valueName: "hex"))
     var color: ColorArgument?
 
     @Option(name: .long, help: ArgumentHelp("start (default), center, end, left or right.", valueName: "align"))
@@ -827,7 +827,7 @@ struct AttachMath: ParsableCommand {
             4096 symbols and 64 levels of nesting. The CLI has no math typesetter: without --render the item has \
             no rendering, exports draw its source in a monospace font (and say so), and the app typesets it when \
             the equation is edited there. --render takes a one-page PDF of the typeset equation made elsewhere \
-            (e.g. with LaTeX and `pdfcrop`), drawn only in the equation's colour on a transparent page; the \
+            (e.g. with LaTeX and `pdfcrop`), drawn only in the equation's color on a transparent page; the \
             frame is then its size (or --width, keeping the aspect). Without it the frame is estimated from \
             the source. Equations are searchable (`sempere search`). Prints the new item's id.
             """
@@ -846,7 +846,7 @@ struct AttachMath: ParsableCommand {
     @Option(name: .long, help: ArgumentHelp("Font size in points (default 20).", valueName: "pt"))
     var size: Double = 20
 
-    @Option(name: .long, help: ArgumentHelp("Colour as #RRGGBB or #RRGGBBAA (default black).", valueName: "hex"))
+    @Option(name: .long, help: ArgumentHelp("Color as #RRGGBB or #RRGGBBAA (default black).", valueName: "hex"))
     var color: ColorArgument?
 
     @Option(name: .long, help: ArgumentHelp("A one-page PDF of the typeset equation, stored as its rendering.", valueName: "file"))

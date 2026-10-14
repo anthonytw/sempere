@@ -113,7 +113,7 @@ struct StrokeLedgerTests {
 
     /// An edit PencilKit made without changing the stroke's `PKStroke.id`
     /// (iOS 27) names the stroke as its parent even when nothing else ties
-    /// them (another path, colour and creation date).
+    /// them (another path, color and creation date).
     @Test func anEditThatKeepsThePencilKitIdNamesItsParent() throws {
         let stored = [TS.stroke(), TS.stroke(x: 300)]
         var l = Self.ledger(stored)

@@ -13,7 +13,7 @@ import UIKit
 //
 // Carried exactly: every control point's location, time offset, opacity,
 // force, azimuth and altitude; the ink type (except `reed`, below); the
-// colour as 8-bit RGBA; the transform. Point sizes go through `NibSize`:
+// color as 8-bit RGBA; the transform. Point sizes go through `NibSize`:
 // the format stores the width the ink is drawn at, PencilKit a size that
 // it renders much thinner (or not at all), per ink.
 // Not representable in the format, so approximated:
@@ -58,12 +58,12 @@ extension InkTool {
 }
 
 extension Sempere.Color {
-    /// The colour as sRGB `UIColor`.
+    /// The color as sRGB `UIColor`.
     var uiColor: UIColor {
         UIColor(red: CGFloat(r) / 255, green: CGFloat(g) / 255, blue: CGFloat(b) / 255, alpha: CGFloat(a) / 255)
     }
 
-    /// The nearest 8-bit sRGB colour (wide-gamut components are clamped).
+    /// The nearest 8-bit sRGB color (wide-gamut components are clamped).
     init(_ color: UIColor) {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         if !color.getRed(&r, green: &g, blue: &b, alpha: &a) {
@@ -111,7 +111,7 @@ extension Transform {
 /// Any change to these maps (or to how strokes become `PKStroke`s) must bump
 /// `DrawingCache.schemaVersion`: cached drawings are checked against the
 /// stored strokes only by count, id, seed, ink type, point count, end points
-/// and transform, not by width or colour.
+/// and transform, not by width or color.
 enum NibSize {
     /// Pen family: drawn width `2s − 4`.
     static let penOffset = 2.0

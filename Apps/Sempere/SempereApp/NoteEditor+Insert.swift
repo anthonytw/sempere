@@ -9,7 +9,7 @@ import SempereRender
 /// CLI's `attach image`, `attach pdf` and `items crop` use.
 extension NoteEditor {
     /// Places `image` (from `ImagePreparation`) on `pageID`: fitted into the
-    /// part of the page on screen (`visible`, page points), centred on `point`
+    /// part of the page on screen (`visible`, page points), centered on `point`
     /// when given (a drop), else on what is on screen (`NoteOps.viewFrame`).
     @discardableResult
     func insertImage(_ image: PreparedImage, on pageID: UUID, visible: CGRect?,

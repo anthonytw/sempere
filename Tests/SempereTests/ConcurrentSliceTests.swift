@@ -3,7 +3,7 @@ import XCTest
 @testable import Sempere
 
 /// Concurrent replacements of one stroke (format.md §5.6.1): two devices
-/// slice, move or recolour the same stroke without seeing each other's edit.
+/// slice, move or recolor the same stroke without seeing each other's edit.
 final class ConcurrentSliceTests: XCTestCase {
     let p1 = UUID(uuidString: "00000000-0000-4000-8000-0000000000a1")!
     let p2 = UUID(uuidString: "00000000-0000-4000-8000-0000000000a2")!

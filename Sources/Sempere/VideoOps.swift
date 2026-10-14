@@ -52,7 +52,7 @@ public enum VideoIngestRules {
 extension NoteOps {
     /// Places a video clip on `page` (format.md §8.2.7). Without `frame` the
     /// clip is fitted, aspect kept, inside the margins and at most
-    /// `VideoIngestRules.defaultWidth` wide, centred across the page and a
+    /// `VideoIngestRules.defaultWidth` wide, centered across the page and a
     /// margin from its top; `width` (points) sets the frame's width, its
     /// height following the clip's aspect, and `at` the top-left corner.
     /// `blob` is the clip already stored (`Vault.writeBlob`), `poster` its

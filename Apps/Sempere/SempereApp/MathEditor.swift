@@ -66,7 +66,7 @@ struct MathEditorView: View {
         _color = State(initialValue: SwiftUI.Color(uiColor: start.color.uiColor))
     }
 
-    /// The value the form describes (the source as typed: `NoteOps.math` normalises it on Done).
+    /// The value the form describes (the source as typed: `NoteOps.math` normalizes it on Done).
     private var content: MathContent {
         MathContent(latex: latex, display: display, size: size, color: Sempere.Color(UIColor(color)))
     }

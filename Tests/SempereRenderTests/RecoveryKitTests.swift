@@ -208,7 +208,7 @@ final class RecoveryKitTests: XCTestCase {
         XCTAssertTrue(String(decoding: compressed, as: UTF8.self).contains("/FlateDecode"))
     }
 
-    /// Rasterises the kit with poppler and decodes the QR code with zbar,
+    /// Rasterizes the kit with poppler and decodes the QR code with zbar,
     /// where both are installed (apt install poppler-utils zbar-tools).
     func testPrintedQRDecodesWithZbar() throws {
         guard let pdftoppm = ExternalTool.find("pdftoppm"),

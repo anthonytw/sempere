@@ -42,12 +42,12 @@ public struct StrokeSample: Hashable, Sendable {
 ///
 /// The parametric range is `0 ... points.count - 1`; at integer `t` the curve
 /// is the usual B-spline node `(P[t-1] + 4 P[t] + P[t+1]) / 6`. Past either end
-/// the missing neighbour is the *reflection* `2 P[0] - P[1]` (resp.
+/// the missing neighbor is the *reflection* `2 P[0] - P[1]` (resp.
 /// `2 P[n-1] - P[n-2]`), which makes the curve start and end exactly on the
 /// first and last control points. Verified against `PKStrokePath` on macOS
 /// (see `PencilKitParityTests`): location is the B-spline, while size, opacity,
 /// force, azimuth, altitude and time are interpolated *linearly* between the
-/// two neighbouring control points.
+/// two neighboring control points.
 public enum BSpline {
     private static func control(_ p: [StrokePoint], _ j: Int) -> (x: Double, y: Double) {
         let n = p.count
@@ -171,7 +171,7 @@ public enum StrokeSampler {
             }
         }
 
-        // Drop coincident neighbours (repeated control points).
+        // Drop coincident neighbors (repeated control points).
         var dedup: [StrokeSample] = []
         for s in out {
             if let last = dedup.last, last.point.distance(to: s.point) < 1e-9 { continue }

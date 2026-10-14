@@ -54,7 +54,7 @@ struct MathEditorTests {
         let render = try #require(math.render)
         #expect(math.engine == MathTypesetter.engine)
         #expect(item.frame.w == math.renderSize?.w && item.frame.h == math.renderSize?.h, "one point per point")
-        #expect(item.frame.y > 100, "centred in what is on screen")
+        #expect(item.frame.y > 100, "centered in what is on screen")
         let stored = try vault.readBlob(note: AppModelTests.lecture, render, maxBytes: 1 << 20)
         let storedSize = try MathRenderIngest.pageSize(stored)
         #expect(abs(storedSize.w - (math.renderSize?.w ?? 0)) < 0.01)

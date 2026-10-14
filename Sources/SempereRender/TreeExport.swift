@@ -43,13 +43,13 @@ struct ExportManifest: Codable {
         var title: String
         /// File name without extension.
         var stem: String
-        /// Sanitised folder components below the output root.
+        /// Sanitized folder components below the output root.
         var folder: [String]
         var notebook: String?
         var tags: [String]
         var pages: Int
         var modified: Date?
-        /// Recognised text of the note (HTML index search only).
+        /// Recognized text of the note (HTML index search only).
         var searchText: String?
         /// What the files below were made from (`TreeExporter.inputKey`); nil when the run
         /// could not tell, so the note is rendered again next time.
@@ -119,7 +119,7 @@ struct InputKey {
 /// Re-running rewrites only files whose content changed.
 ///
 /// `run` is synchronous and blocking: call it off the main actor. It checks
-/// `Task.checkCancellation()` before each note, so cancelling the task that
+/// `Task.checkCancellation()` before each note, so canceling the task that
 /// runs it stops the export between notes (files already written stay).
 public struct TreeExporter: Sendable {
     public var root: URL
@@ -185,7 +185,7 @@ public struct TreeExporter: Sendable {
         }
     }
 
-    /// Folder components for each notebook: segments sanitised, and names
+    /// Folder components for each notebook: segments sanitized, and names
     /// that differ only by case share one spelling (the smallest), so a
     /// case-insensitive file system cannot merge two folders by accident.
     public static func folders(for notebooks: [String?]) -> [String?: [String]] {

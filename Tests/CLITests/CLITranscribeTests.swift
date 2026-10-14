@@ -7,7 +7,7 @@ import XCTest
 /// `sempere transcribe`. Transcription needs the Speech framework: on Linux
 /// the command must refuse and change nothing (`--dry-run` and `--check`
 /// work); on macOS it may run, and whatever it stores must be a valid
-/// transcript of the right recording. No test asserts what a recogniser
+/// transcript of the right recording. No test asserts what a recognizer
 /// hears in a synthetic tone.
 final class CLITranscribeTests: CLITestCase {
     static let tone = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()

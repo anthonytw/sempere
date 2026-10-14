@@ -4,7 +4,7 @@ import Foundation
 /// E2): how the app hands CoreText's glyphs to the export writers. The app
 /// cannot embed its system fonts' own tables reliably: SF Pro and New York
 /// are variable fonts whose `glyf` holds only the default instance (a bold
-/// run would export regular outlines), and colour or bitmap fonts have no
+/// run would export regular outlines), and color or bitmap fonts have no
 /// outlines at all. CoreText gives every glyph's outline at the instance it
 /// draws (`CTFontCreatePathForGlyph`), so the app builds one small font of
 /// exactly the glyphs a text box uses, and the PDF, SVG and PNG writers

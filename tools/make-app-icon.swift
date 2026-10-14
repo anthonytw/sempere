@@ -16,7 +16,7 @@ func rgb(_ r: Int, _ g: Int, _ b: Int) -> CGColor {
 let grad = CGGradient(colorsSpace: cs, colors: [rgb(0x1F, 0x3A, 0x6B), rgb(0x0B, 0x16, 0x2E)] as CFArray, locations: [0, 1])!
 ctx.drawLinearGradient(grad, start: CGPoint(x: 0, y: CGFloat(n)), end: CGPoint(x: 0, y: 0), options: [])
 
-// A fountain-pen nib pointing down, centred, slightly tilted.
+// A fountain-pen nib pointing down, centered, slightly tilted.
 ctx.translateBy(x: 512, y: 560)
 let cream = rgb(0xF4, 0xEB, 0xD6)
 let nib = CGMutablePath()
@@ -28,7 +28,7 @@ nib.addLine(to: CGPoint(x: -190, y: 120))
 nib.addCurve(to: CGPoint(x: 0, y: -330), control1: CGPoint(x: -200, y: -40), control2: CGPoint(x: -70, y: -200))
 nib.closeSubpath()
 ctx.addPath(nib); ctx.setFillColor(cream); ctx.fillPath()
-// Slit and breather hole in the background colour.
+// Slit and breather hole in the background color.
 ctx.setFillColor(rgb(0x14, 0x27, 0x4C))
 ctx.fillEllipse(in: CGRect(x: -34, y: 30, width: 68, height: 68))
 ctx.setStrokeColor(rgb(0x14, 0x27, 0x4C)); ctx.setLineWidth(14); ctx.setLineCap(.round)

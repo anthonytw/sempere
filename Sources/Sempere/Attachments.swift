@@ -205,7 +205,7 @@ public struct TextRun: Hashable, Sendable, Codable {
     public var t: String
     /// Bold, italic, underline, strikethrough; `false` is not written.
     public var b: Bool, i: Bool, u: Bool, s: Bool
-    /// Overrides of the box's colour, size and language.
+    /// Overrides of the box's color, size and language.
     public var color: Color?
     public var size: Double?
     public var lang: String?
@@ -517,7 +517,7 @@ public struct ItemLayer: RawRepresentable, Hashable, Sendable, Comparable, Codab
     public var rawValue: Int
     public init(rawValue: Int) { self.rawValue = rawValue }
 
-    /// Drawn under content; fills its frame with the paper colour first.
+    /// Drawn under content; fills its frame with the paper color first.
     public static let background = ItemLayer(rawValue: 0)
     /// The default layer.
     public static let content = ItemLayer(rawValue: 100)
@@ -525,7 +525,7 @@ public struct ItemLayer: RawRepresentable, Hashable, Sendable, Comparable, Codab
     public static let range = 0...65_535
 
     /// True below `content`: such an item first fills its frame with the
-    /// paper colour (format.md §8.2.3).
+    /// paper color (format.md §8.2.3).
     public var isBackground: Bool { rawValue < Self.content.rawValue }
 
     public static func < (l: ItemLayer, r: ItemLayer) -> Bool { l.rawValue < r.rawValue }
@@ -567,7 +567,7 @@ public struct Item: Hashable, Sendable, Codable, Identifiable {
     public var layer: ItemLayer
     /// Register: `[x, y, w, h]` before rotation; `w`, `h` > 0.
     public var frame: Rect
-    /// Register: degrees clockwise about the frame's centre; nil (absent) is 0.
+    /// Register: degrees clockwise about the frame's center; nil (absent) is 0.
     public var rotation: Double?
     /// Register: order key within the layer, compared like page `order`.
     public var z: String
@@ -1089,10 +1089,10 @@ public enum RecordingChange: Hashable, Sendable {
 // MARK: - Transcripts (§8.3.2)
 
 /// The content of a transcript blob (format.md §8.3.2): time-stamped
-/// segments of recognised speech, optionally with word timings. Derived data,
+/// segments of recognized speech, optionally with word timings. Derived data,
 /// replaced whole.
 public struct Transcript: Hashable, Sendable, Codable {
-    /// A recognised word with its timing.
+    /// A recognized word with its timing.
     public struct Word: Hashable, Sendable, Codable {
         /// The word as it appears in the segment's `text`.
         public var t: String
@@ -1121,7 +1121,7 @@ public struct Transcript: Hashable, Sendable, Codable {
         /// Seconds from the start of the recording; `start ≤ end`.
         public var start: Double, end: Double
         public var text: String
-        /// The recogniser's confidence 0…1.
+        /// The recognizer's confidence 0…1.
         public var confidence: Double?
         /// BCP 47 tag, when it differs from the transcript's.
         public var language: String?
@@ -1154,9 +1154,9 @@ public struct Transcript: Hashable, Sendable, Codable {
 
     /// The recording whose `transcript` register holds this transcript.
     public var recording: UUID
-    /// Name and version of the recogniser.
+    /// Name and version of the recognizer.
     public var engine: String
-    /// BCP 47 tag of the language recognised.
+    /// BCP 47 tag of the language recognized.
     public var language: String
     /// When the transcript was produced.
     public var created: Date
@@ -1260,7 +1260,7 @@ public struct PDFPageText: Hashable, Sendable {
     /// Most UTF-8 bytes of `text` (format.md §8.4, as a text item's text).
     public static let maxBytes = 65_536
 
-    /// `text` normalised as format.md §8.2.6 says (NFC, `\n` line breaks, no
+    /// `text` normalized as format.md §8.2.6 says (NFC, `\n` line breaks, no
     /// other controls but `\t`, runs of blank lines collapsed, trimmed) and cut
     /// at `maxBytes` on a character boundary.
     public init(text: String, engine: String) {

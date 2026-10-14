@@ -74,7 +74,7 @@ final class ItemRasterTests: XCTestCase {
         let item = Item.image(blob: ref, pixelSize: Size(w: 40, h: 30), frame: Rect(x: 0, y: 0, w: 80, h: 60), z: "a")
         let r = try ItemRaster.render(item, scale: 1, options: RenderOptions(blobs: MemoryBlobSource()))
         guard case .blobUnavailable? = r.placeholder else { return XCTFail("\(String(describing: r.placeholder))") }
-        // The diagonal through the centre is drawn, the area beside it is not.
+        // The diagonal through the center is drawn, the area beside it is not.
         XCTAssertGreaterThan(pixel(r, Point(x: 40, y: 30))?.3 ?? 0, 0)
         XCTAssertEqual(pixel(r, Point(x: 40, y: 10))?.3, 0)
         let none = try ItemRaster.render(item, scale: 1)

@@ -455,7 +455,7 @@ export function unrenderedFormulas(text: JSONObject): number {
  * A Markdown text item as the items every renderer draws in its place
  * (Swift `MarkdownItems.pieces`): an empty text item at the box's frame
  * carrying the shapes as its underlay, then the text pieces and the formula
- * boxes (math items), each turned with the box about the box's centre.
+ * boxes (math items), each turned with the box about the box's center.
  * Undefined for anything else.
  */
 export function expandMarkdown(it: PreparedItem, measure: Measure = approximateMeasure): { pieces: PreparedItem[]; unrendered: number } | undefined {

@@ -130,7 +130,7 @@ struct VideoTests {
             return
         }
         #expect(cg.width == 160 && cg.height == 90)
-        // The play mark's white triangle at the centre.
+        // The play mark's white triangle at the center.
         let centre = try #require(ImageInsertTests.pixel(cg, x: 80, y: 45))
         #expect(centre.r > 200 && centre.g > 200 && centre.b > 200, "\(centre)")
         // Without a poster: the placeholder with the play mark, drawn (not the canvas's loading frame).

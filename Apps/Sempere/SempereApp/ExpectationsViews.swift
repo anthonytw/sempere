@@ -374,7 +374,7 @@ private struct TourPageView: View {
 
 // MARK: - About
 
-/// Settings ▸ About: version, the licence notice and the way to the rest.
+/// Settings ▸ About: version, the license notice and the way to the rest.
 struct AboutSettingsSection: View {
     @State private var showingTour = false
     @State private var showingKeyNotice = false
@@ -398,8 +398,8 @@ struct AboutSettingsSection: View {
     }
 }
 
-/// About Sempere: version and build, the licence and its text, the security
-/// links, the source, third-party licences, and the tour and key notice.
+/// About Sempere: version and build, the license and its text, the security
+/// links, the source, third-party licenses, and the tour and key notice.
 struct AboutView: View {
     @Environment(\.dismiss) private var dismiss
     /// True in a sheet of its own (Sempere ▸ About Sempere); false pushed from Settings.
@@ -467,7 +467,7 @@ struct AboutView: View {
     }
 }
 
-/// Bundled texts (the licence, third-party notices), read as they ship.
+/// Bundled texts (the license, third-party notices), read as they ship.
 struct BundledTextView: View {
     let documents: [AboutInfo.Document]
     @State private var paragraphs: [String]?

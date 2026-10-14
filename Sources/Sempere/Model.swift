@@ -5,7 +5,7 @@ import Foundation
 // These are the Codable value types every other module builds on. Their JSON
 // shape is normative; changing an encoding here is a format change.
 
-/// `#RRGGBBAA` colour.
+/// `#RRGGBBAA` color.
 public struct Color: Hashable, Sendable, Codable {
     public var r: UInt8, g: UInt8, b: UInt8, a: UInt8
 
@@ -33,7 +33,7 @@ public struct Color: Hashable, Sendable, Codable {
     public init(from decoder: Decoder) throws {
         let s = try decoder.singleValueContainer().decode(String.self)
         guard let c = Color(hex: s) else {
-            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "bad colour \(s)"))
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "bad color \(s)"))
         }
         self = c
     }
@@ -172,10 +172,10 @@ public struct Stroke: Hashable, Sendable, Codable, Identifiable {
     }
 }
 
-/// Text recognised in a page's handwriting (format.md §5.5): produced on
+/// Text recognized in a page's handwriting (format.md §5.5): produced on
 /// device (PencilKit) or carried in by an importer; used for search.
 public struct Recognition: Hashable, Sendable, Codable {
-    /// One recognised word and where it is on the page.
+    /// One recognized word and where it is on the page.
     public struct Word: Hashable, Sendable, Codable {
         /// The word.
         public var text: String
@@ -207,13 +207,13 @@ public struct Recognition: Hashable, Sendable, Codable {
         }
     }
 
-    /// Name and version of the recogniser, e.g. `pencilkit-27.0` or `notability-14.2.6`.
+    /// Name and version of the recognizer, e.g. `pencilkit-27.0` or `notability-14.2.6`.
     public var engine: String
     /// The page's text in reading order, lines separated by `\n`.
     public var text: String
     /// Words of `text` with their boxes; may be empty.
     public var words: [Word]
-    /// Which strokes this was recognised from: `RecognitionBasis.digest` of the
+    /// Which strokes this was recognized from: `RecognitionBasis.digest` of the
     /// page's live stroke ids. Nil for recognition that does not say (an import).
     public var basis: String?
 
@@ -245,7 +245,7 @@ public struct Page: Hashable, Sendable, Codable, Identifiable {
     /// Snapshot only: `"<hlc>-<device>-<seq>-<op>"` of the `addPage` that
     /// added the page (format.md §5.5).
     public var origin: String?
-    /// Recognised handwriting text; set by `setPageRecognition` (format.md §5.5).
+    /// Recognized handwriting text; set by `setPageRecognition` (format.md §5.5).
     public var recognition: Recognition?
     /// Snapshot only: `"<hlc>-<device>"` stamp of the `setPageRecognition`
     /// that last set `recognition`. Nil with a nil `recognition` means never set.
@@ -364,7 +364,7 @@ public struct Paper: Hashable, Sendable, Codable {
     /// Line, dot or grid spacing in points.
     public var spacing: Double
     public var background: Color
-    /// Colour of rules and dots.
+    /// Color of rules and dots.
     public var lineColor: Color
     /// Width of rules, points.
     public var lineWidth: Double
@@ -562,7 +562,7 @@ public struct NoteMeta: Hashable, Sendable, Codable {
     public var paper: Paper
     public var pageSize: PageSize
     /// The language of the note's handwriting, a BCP 47 tag (`en-US`, `es`);
-    /// nil when unknown. Recognisers read the note in it (format.md §5.4).
+    /// nil when unknown. Recognizers read the note in it (format.md §5.4).
     public var lang: String?
     /// Marker strokes are drawn below the note's content items (text boxes,
     /// images) instead of above them, as a highlighter behind typed text
@@ -924,7 +924,7 @@ public enum Op: Hashable, Sendable {
     case addPage(Page)
     case removePage(pageId: UUID)
     case setPageOrder(pageId: UUID, order: String)
-    /// LWW on the page's recognised text; nil clears it (format.md §5.5).
+    /// LWW on the page's recognized text; nil clears it (format.md §5.5).
     case setPageRecognition(pageId: UUID, recognition: Recognition?)
     /// LWW on the page's own paper; nil makes the page follow the note's
     /// paper again (format.md §5.4.2).
