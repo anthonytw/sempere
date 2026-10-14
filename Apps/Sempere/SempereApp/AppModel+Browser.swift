@@ -39,7 +39,7 @@ extension AppModel {
     }
 
     /// Creates a vault in `parent` and opens it: unlocked when a key was
-    /// generated, locked (asking for the key) when only a recipient was given.
+    /// generated or given, locked (asking for the key) when only a recipient was given.
     ///
     /// When another vault is opened or this one closed meanwhile, the vault
     /// is still created and returned (with its key, which nothing else holds)
@@ -58,7 +58,7 @@ extension AppModel {
                 try await openVault(at: created.url)
             }
             let opened = generation
-            if let secret = created.secretKey {
+            if let secret = created.unlockKey {
                 try ensureCurrent(opened)
                 try await unlock(identityText: secret)
             }
