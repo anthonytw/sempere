@@ -23,6 +23,10 @@ final class RememberedKeys {
         let identity: String
         /// The vault folder it unlocked: a key remembered from this offer is offered there (`RememberedKeyLocations`).
         var folder: URL?
+        /// Where a key for this vault id is remembered already, when it is not
+        /// offered at `folder` (another copy of the vault, a WebDAV vault added
+        /// again): answering replaces it, and the sheet starts on its storage.
+        var replacing: KeyStorage? = nil
         var id: UUID { vaultID }
     }
 
@@ -225,19 +229,28 @@ final class RememberedKeys {
         return model.phase == .unlocked && offer.vaultID == model.vault?.vaultId
     }
 
-    /// Offers to remember `identity` unless a working key is already remembered.
+    /// Offers to remember `identity` unless a working key is already
+    /// remembered and offered at this folder.
     func offerToRemember(_ identity: NativeIdentity, _ model: AppModel) {
         guard model.phase == .unlocked, let id = model.vault?.vaultId else { return }
-        if storageVaultID == id, storage != nil, brokenVaultID != id {
-            // A key is remembered already. A pasted key that opened this folder, whose list this
-            // device's trust record confirms (not a first use), makes it a place to offer that key.
+        var replacing: KeyStorage?
+        if storageVaultID == id, let stored = storage, brokenVaultID != id {
+            // A key is remembered already, and offered here: nothing to ask.
+            if offersSavedKey(for: model) { return }
+            // A pasted key that opened this folder, whose list this device's trust record
+            // confirms (not a first use), makes it a place to offer that key.
             if let folder = model.vaultURL, Self.listIsConfirmed(model.vault?.recipientsStatus) {
                 locations.bind(id, to: folder)
+                return
             }
-            return
+            // Not offered here, and nothing confirms this folder (a WebDAV copy or a vault added
+            // again, whose list is a first use until this device writes to it): ask, as for a
+            // first key. Without this the saved key was never offered here and never offered to
+            // remember either, so every launch needed the key (TestFlight 1.0.0, Mac).
+            replacing = stored
         }
         offer = Offer(vaultID: id, vaultName: model.vaultName ?? String(localized: "Vault", comment: "Name shown for a vault that has none"),
-                      identity: identity.string, folder: model.vaultURL)
+                      identity: identity.string, folder: model.vaultURL, replacing: replacing)
     }
 
     /// The recipients list verified against this device's trust record (format.md §2.1), not on first use.

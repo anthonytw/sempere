@@ -33,7 +33,7 @@ struct UnlockView: View {
                     }
                 } else {
                     Section {
-                        Text("A key for a vault with this id is saved on \(RememberedKeys.deviceName), but it is offered only where it opened this vault before: any folder can claim a vault's id. Unlock this one with the passphrase or the key.")
+                        Text("A key for a vault with this id is saved on \(RememberedKeys.deviceName), but it is offered only where it opened this vault before: any folder can claim a vault's id. Unlock this one with the passphrase or the key; Sempere then offers to remember the key here too.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -99,12 +99,26 @@ private struct RememberKeyView: View {
     @AppEnvironmentObject private var keys: RememberedKeys
     let offer: RememberedKeys.Offer
     @State private var remember = true
-    @State private var sync = false
+    @State private var sync: Bool
     @State private var saving = false
     @State private var failure: String?
 
+    init(offer: RememberedKeys.Offer) {
+        self.offer = offer
+        // Replacing a key kept in iCloud Keychain keeps it there unless the user turns sync off:
+        // a device-only save deletes the synced copy on every device.
+        _sync = State(initialValue: offer.replacing == .iCloudKeychain)
+    }
+
     var body: some View {
         Form {
+            if offer.replacing != nil {
+                Section {
+                    Text("A key for a vault with this id is saved on \(RememberedKeys.deviceName), but for another folder (another copy of this vault, or a WebDAV vault added again). Remembering this key replaces it, and it is then offered here too.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
             Section {
                 Toggle("Remember on \(RememberedKeys.deviceName)", isOn: $remember)
             } footer: {
