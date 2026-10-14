@@ -166,7 +166,11 @@ With an item selection on, the mouse and trackpad work the items:
   page's scroll (the canvas's, or the paged stack's, which takes the pointer
   while nothing draws) waits until the item drag has failed
   (`ItemSelectionController`, `shouldBeRequiredToFailBy`); the wheel and a
-  two-finger trackpad scroll still scroll.
+  two-finger trackpad scroll still scroll. PencilKit on macOS 27 keeps a second
+  drawing recognizer on an inner view that every other gesture waits for until
+  the button goes up; it is turned off and on with the public one
+  (`PageCanvasHost.setInnerDrawingGestures`), or an item drag began only at the
+  release and moved nothing.
 * The pointer shows what a drag does (`ItemPointer`, a region per zone in
   `PageCanvasHost.pointerInteraction`): a four-way arrow over an item, a
   two-way arrow along each handle's drag (turned with the item), the system

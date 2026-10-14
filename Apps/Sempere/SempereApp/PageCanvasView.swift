@@ -796,7 +796,25 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
             inkingTool: toolPicker.selectedToolItem is PKToolPickerInkingItem, rulerActive: canvas.isRulerActive)
         mouseInk.setActive(pointer)
         mathLasso.setActive(mathLassoHandler != nil && !isReadOnly && !isPreparing && !drawingSuspended)
-        canvas.drawingGestureRecognizer.isEnabled = editable && !ours && !pointer
+        let draws = editable && !ours && !pointer
+        canvas.drawingGestureRecognizer.isEnabled = draws
+        Self.setInnerDrawingGestures(of: canvas, enabled: draws)
+    }
+
+    /// PencilKit on Mac Catalyst (macOS 27) has a second drawing recognizer of its own, on an inner
+    /// view (`PKTiledGestureView`), besides the public `drawingGestureRecognizer`; turning the public
+    /// one off leaves it on. Other recognizers wait for it to fail, which it does only when the mouse
+    /// button goes up, so in selection mode an item drag began at the release with no movement and
+    /// moved nothing ("objects can't be moved or resized with the mouse"). It follows the public one.
+    static func setInnerDrawingGestures(of canvas: PKCanvasView, enabled: Bool) {
+        let drawing = canvas.drawingGestureRecognizer
+        var views: [UIView] = canvas.subviews
+        while let view = views.popLast() {
+            for g in view.gestureRecognizers ?? [] where g !== drawing && g.isKind(of: type(of: drawing)) {
+                g.isEnabled = enabled
+            }
+            views.append(contentsOf: view.subviews)
+        }
     }
 
     /// Typing in a text box started or ended: nothing draws or selects
