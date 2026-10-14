@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 /// The New Vault sheet as the owner met it (device check c26, and "what goes
@@ -35,12 +36,14 @@ final class NewVaultSheetUITests: XCTestCase {
         type(in: first, "lunar", app)
         XCTAssertEqual(requirement(app, "strength"), "Missing")
         XCTAssertFalse(app.buttons["newVault.create"].isEnabled, "a weak passphrase cannot create")
-        XCTAssertTrue(app.staticTexts.matching(identifier: "passphrase.hint").firstMatch.waitForExistence(timeout: 5),
-                      "a hint says why it is weak")
+        let hint = app.staticTexts.matching(identifier: "passphrase.hint").firstMatch
+        reveal(hint, in: app)
+        XCTAssertTrue(hint.exists, "a hint says why it is weak")
 
         let second = app.secureTextFields["newVault.confirmation"].firstMatch
         type(in: second, "x", app)
         // c26 (2): clicking the first field again kept its text (it was cleared).
+        reveal(first, in: app, down: false)
         click(first)
         Thread.sleep(forTimeInterval: 1)
         XCTAssertEqual(length(of: first), 5, "the first field kept its text when clicked again")
@@ -49,6 +52,7 @@ final class NewVaultSheetUITests: XCTestCase {
         XCTAssertEqual(length(of: first), Self.applePassword.count)
 
         // c26 (3): the eye shows both fields' text.
+        reveal(element(app, "newVault.passphrase.reveal"), in: app, down: false)
         click(element(app, "newVault.passphrase.reveal"))
         let shown = app.textFields["newVault.passphrase"].firstMatch
         require(shown, "the shown passphrase", in: app)
@@ -61,6 +65,7 @@ final class NewVaultSheetUITests: XCTestCase {
         XCTAssertEqual(requirement(app, "match"), "Done")
         XCTAssertTrue(app.buttons["newVault.create"].isEnabled)
         // Hide again: the text stays.
+        reveal(element(app, "newVault.passphrase.reveal"), in: app, down: false)
         click(element(app, "newVault.passphrase.reveal"))
         XCTAssertEqual(length(of: app.secureTextFields["newVault.passphrase"].firstMatch), Self.applePassword.count)
         XCTAssertEqual(requirement(app, "match"), "Done")
@@ -78,10 +83,12 @@ final class NewVaultSheetUITests: XCTestCase {
         XCTAssertTrue(footer.label.contains("AGE-SECRET-KEY-PQ-1"), footer.label)
         XCTAssertTrue(footer.label.contains("age1pq1"), footer.label)
 
-        let field = app.textFields["newVault.existingKey"].firstMatch
+        // A multi-line field: a text field on the iPad, a text view on the Mac.
+        let field = element(app, "newVault.existingKey")
         // The public key pasted by mistake.
         type(in: field, Self.publicKeyStart, app)
         let status = element(app, "newVault.existingStatus")
+        reveal(status, in: app)
         require(status, "the existing key's status", in: app)
         XCTAssertTrue(status.label.contains("public key"), status.label)
         XCTAssertFalse(app.buttons["newVault.create"].isEnabled)
@@ -92,10 +99,21 @@ final class NewVaultSheetUITests: XCTestCase {
         XCTAssertTrue(status.label.contains("classic"), status.label)
         // The secret key, with stray spaces.
         clear(field, count: 22, app)
+        // Pasted, as the footer asks: typed, the key meets the Mac's text replacements (a Spanish
+        // Mac's "PQ" → "PORQUE" turned AGE-SECRET-KEY-PQ-1 into AGE-SECRET-KEY-PORQUE-1).
+        #if targetEnvironment(macCatalyst)
+        UIPasteboard.general.string = "  " + Self.secretKey + " "
+        field.typeKey("v", modifierFlags: .command)
+        #else
         field.typeText("  " + Self.secretKey + " ")
+        #endif
         let ready = element(app, "newVault.existingStatus")
         XCTAssertTrue(ready.waitForExistence(timeout: 5))
-        XCTAssertTrue(ready.label.contains(String(Self.publicKeyStart.prefix(14))), ready.label)
+        // The status follows every key: wait for the last ones to land before reading it.
+        let recipient = String(Self.publicKeyStart.prefix(14))
+        _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", recipient),
+                                                           object: ready)], timeout: 10)
+        XCTAssertTrue(ready.label.contains(recipient), "\(ready.label) (field: \(String(describing: field.value)))")
         XCTAssertTrue(app.buttons["newVault.create"].isEnabled)
 
         click(app.buttons["newVault.create"])
@@ -125,7 +143,9 @@ final class NewVaultSheetUITests: XCTestCase {
         let newVault = app.buttons["New Vault…"].firstMatch
         require(newVault, "the welcome screen's New Vault…", in: app, timeout: 90)
         click(newVault)
-        require(app.textFields["newVault.name"].firstMatch, "the New Vault sheet", in: app, timeout: 60)
+        let name = app.textFields["newVault.name"].firstMatch
+        require(name, "the New Vault sheet", in: app, timeout: 60)
+        formPoint = name.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).withOffset(CGVector(dx: 0, dy: 120))
         return app
     }
 
@@ -137,8 +157,29 @@ final class NewVaultSheetUITests: XCTestCase {
     @MainActor
     private func requirement(_ app: XCUIApplication, _ kind: String) -> String? {
         let line = element(app, "passphrase.requirement." + kind)
-        _ = line.waitForExistence(timeout: 5)
+        reveal(line, in: app)
         return line.value as? String
+    }
+
+    /// Where the sheet's form scrolls: a point in it, below the name field (fixed on screen while the
+    /// form scrolls under it).
+    private var formPoint: XCUICoordinate?
+
+    /// Scrolls the sheet's form until `element` is on screen. The Mac's sheet is small (Catalyst's
+    /// form sheet in a window that fits the screen), and a form does not report rows scrolled out
+    /// of view, so the lines under the passphrase fields need a scroll before they can be found.
+    @MainActor
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication, down: Bool = true) {
+        for _ in 0..<8 {
+            if element.waitForExistence(timeout: 1), element.isHittable { return }
+            guard let point = formPoint else { return }
+            #if targetEnvironment(macCatalyst)
+            point.scroll(byDeltaX: 0, deltaY: down ? -80 : 80)
+            #else
+            point.press(forDuration: 0.05, thenDragTo: point.withOffset(CGVector(dx: 0, dy: down ? -150 : 150)))
+            #endif
+            Thread.sleep(forTimeInterval: 0.5)
+        }
     }
 
     /// Characters in a field (a secure field's value is one bullet per character).
@@ -157,6 +198,7 @@ final class NewVaultSheetUITests: XCTestCase {
     /// Focuses the field (tapping until it has the keyboard) and types.
     @MainActor
     private func type(in field: XCUIElement, _ text: String, _ app: XCUIApplication) {
+        reveal(field, in: app)
         require(field, "field \(field.identifier)", in: app)
         let focused = NSPredicate(format: "hasKeyboardFocus == true")
         for _ in 0..<5 where !focused.evaluate(with: field) {
