@@ -233,18 +233,40 @@ struct ShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
-/// Sharing a secret key (its text or its key file): the share sheet offers no Copy. Copying goes
+/// Sharing a secret key (its text or its key file): the share sheet offers no Copy (the Mac's share
+/// menu still lists one, which is handed nothing: `SecretItem`). Copying goes
 /// through `SecretPasteboard` alone (local only, expiring), and the key's text is never selectable.
 @MainActor
 enum SecretSharing {
     /// Activities a secret is never handed to.
     static let excluded: [UIActivity.ActivityType] = [.copyToPasteboard]
 
-    /// A share sheet for `items` without the `excluded` activities.
+    /// A share sheet for `items` without the `excluded` activities. On a Mac the share menu
+    /// (macOS 27) lists Copy whatever `excludedActivityTypes` says, so each item is also handed
+    /// out through `SecretItem`, which gives a copy activity nothing.
     static func controller(items: [Any]) -> UIActivityViewController {
-        let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        let controller = UIActivityViewController(activityItems: items.map(SecretItem.init), applicationActivities: nil)
         controller.excludedActivityTypes = excluded
         return controller
+    }
+
+    /// Whether `type` copies to the pasteboard: UIKit's own, or a Mac sharing service named so.
+    nonisolated static func copies(_ type: UIActivity.ActivityType?) -> Bool {
+        guard let type else { return false }
+        return type == .copyToPasteboard || type.rawValue.localizedCaseInsensitiveContains("copy")
+    }
+}
+
+/// One shared secret item: the item itself for every activity except a copy (`SecretSharing.copies`).
+final class SecretItem: NSObject, UIActivityItemSource {
+    let item: Any
+    init(_ item: Any) { self.item = item }
+
+    func activityViewControllerPlaceholderItem(_ controller: UIActivityViewController) -> Any { item }
+
+    func activityViewController(_ controller: UIActivityViewController,
+                                itemForActivityType type: UIActivity.ActivityType?) -> Any? {
+        SecretSharing.copies(type) ? nil : item
     }
 }
 

@@ -1,6 +1,8 @@
+import UIKit
+import Vision
 import XCTest
 
-/// Device check c28: sharing a key on the Mac offers no Copy. Opens the demo vault (unlocked
+/// Device check c28: sharing a key on the Mac copies no key. Opens the demo vault (unlocked
 /// by the app), the key window (⌥⌘K), Save Key… on this device's key, then Share…, with the
 /// owner check answered by `SEMPERE_DEBUG_OWNER_CHECK` (XCTest cannot give Touch ID).
 /// Run by `scripts/app.sh test-mac-ui`; takes the screen. Skipped on the iPad.
@@ -40,37 +42,72 @@ final class KeyShareMacUITests: XCTestCase {
         save.click()
     }
 
-    /// With the owner check passed: Share… opens the system share menu, which lists
-    /// activities but no Copy (key file).
+    /// With the owner check passed: Share… opens the system share menu, and its Copy puts no key
+    /// on the pasteboard (c28: a secret key never goes to the general pasteboard, which has no
+    /// expiry and reaches the user's other devices through Universal Clipboard).
+    ///
+    /// On macOS 27 the menu is drawn by the ShareSheetUI service, out of process and outside the
+    /// app's accessibility tree (XCTest cannot attach to the service, and keys do not reach its
+    /// menu), and it lists Copy whatever `excludedActivityTypes` says (screenshot `key-share-menu`).
+    /// So the test finds Copy on a screenshot (Vision text recognition), clicks it, and checks that
+    /// the pasteboard holds no key.
     @MainActor
-    func testSharingAKeyFromTheKeyWindowOffersNoCopy() throws {
+    func testSharingAKeyFromTheKeyWindowCopiesNothing() throws {
         let app = launch(ownerCheck: "pass")
         defer { app.terminate() }
         openSaveKey(app)
         let share = app.buttons["Share…"].firstMatch
         if !share.waitForExistence(timeout: 20) { dump(app, "no Share in Save Key") }
         XCTAssertTrue(share.exists, "Save Key… shows Share… once the owner check passed")
+        UIPasteboard.general.string = "sempere-ui-test-sentinel"
         share.click()
-        // The Catalyst share sheet is a menu of sharing services (NSSharingServicePicker).
-        var titles: [String] = []
-        for _ in 0..<10 {
-            Thread.sleep(forTimeInterval: 1)
-            titles = app.menuItems.allElementsBoundByIndex.map(\.title).filter { !$0.isEmpty }
-            if titles.count > 2 { break }
-        }
-        let others = XCUIApplication(bundleIdentifier: "com.apple.ShareSheetUI")
-        let remote = others.state == .runningForeground || others.state == .runningBackground
-            ? others.menuItems.allElementsBoundByIndex.map(\.title) : []
-        print("MACUIDEBUG share menu: \(titles) remote: \(remote)")
-        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        Thread.sleep(forTimeInterval: 3)   // the service draws its menu
+        let shot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: shot)
         attachment.name = "key-share-menu"
         attachment.lifetime = .keepAlways
         add(attachment)
-        let all = titles + remote
-        if all.isEmpty { dump(app, "share menu") }
-        XCTAssertFalse(all.isEmpty, "the share menu listed its activities")
-        XCTAssertFalse(all.contains { $0.caseInsensitiveCompare("Copy") == .orderedSame }, "no Copy: \(all)")
+        guard let copy = Self.locate("Copy", on: shot, screenWidth: app.menuBars.firstMatch.frame.width) else {
+            return XCTFail("no Copy in the share menu (screenshot key-share-menu)")
+        }
+        let window = app.windows.firstMatch
+        window.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: copy.x - window.frame.minX, dy: copy.y - window.frame.minY)).click()
+        Thread.sleep(forTimeInterval: 3)
+        XCTAssertNil(Self.locate("Copy", on: XCUIScreen.main.screenshot(),
+                                   screenWidth: app.menuBars.firstMatch.frame.width), "the click chose Copy (the menu closed)")
+        let after = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        after.name = "after-copy"
+        after.lifetime = .keepAlways
+        add(after)
+        let pb = UIPasteboard.general
+        print("MACUIDEBUG pasteboard after Copy: types=\(pb.types) "
+              + "sentinel=\(pb.string == "sempere-ui-test-sentinel") urls=\(pb.urls ?? []) strlen=\(pb.string?.count ?? -1)")
+        // Copy still runs (it empties the pasteboard) but is handed nothing: without `SecretItem` it put
+        // the staged key file's URL and path on the pasteboard (measured 2026-10-14).
+        XCTAssertFalse(pb.hasURLs, "no key file on the pasteboard: \(pb.types)")
+        XCTAssertFalse(pb.hasStrings && pb.string != "sempere-ui-test-sentinel", "no key text or path on the pasteboard: \(pb.types)")
+        XCTAssertTrue(pb.types.allSatisfy { $0.hasPrefix("public.utf8-plain-text") || $0 == "public.plain-text" }
+                      || pb.types.isEmpty, "nothing else on the pasteboard: \(pb.types)")
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+    }
+
+    /// The middle of the line of text reading exactly `text` on a screenshot of the main screen
+    /// (`screenWidth` points wide), in screen points; nil when there is none.
+    static func locate(_ text: String, on shot: XCUIScreenshot, screenWidth: CGFloat) -> CGPoint? {
+        guard let cg = shot.image.cgImage else { return nil }
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = false
+        try? VNImageRequestHandler(cgImage: cg).perform([request])
+        // The image is in pixels; the menu bar spans the screen, so its width gives the points.
+        let size = CGSize(width: screenWidth, height: screenWidth * CGFloat(cg.height) / CGFloat(cg.width))
+        for observation in request.results ?? [] {
+            guard observation.topCandidates(1).first?.string.trimmingCharacters(in: .whitespaces) == text else { continue }
+            let box = observation.boundingBox   // normalized, origin at the bottom left
+            return CGPoint(x: box.midX * size.width, y: (1 - box.midY) * size.height)
+        }
+        return nil
     }
 
     /// A failed owner check shows why and no key, Share… or Save to Files….
