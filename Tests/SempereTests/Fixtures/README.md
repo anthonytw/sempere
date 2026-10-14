@@ -10,6 +10,7 @@ to its recipient.**
 | `sample.sempere/` | A small vault in the format of `docs/format.md` |
 | `sample.sempere/keys/age1pq-<sha256>.key.age` | The same identity, passphrase-wrapped: passphrase `sempere-test`, scrypt work factor 15 |
 | `notability/synthetic.note` | The importer tests' synthetic Notability note (`SyntheticNote.package()` in `Tests/SempereImportTests`): no personal data. The app's Notability import tests read it |
+| `notability/portrait.heic`, `notability/portrait-heic.note` | A landscape HEIC turned upright to portrait by its `irot` (red top, blue bottom, green top right; written by ImageIO with orientation 6), and a Notability note holding it (`PortraitHEICTests`, `SEMPERE_UPDATE_FIXTURES=1`). The app's `PortraitHEICAppTests` check its exports (device check c35) |
 | `items.sempere/`, `newer.sempere/` | Vaults with items and of a later format version (below) |
 | `audio/`, `video/` | Synthetic tones and test-pattern clips; each folder's README has the ffmpeg commands |
 | `text/` | Text-box line breaks and Markdown layout expected by the renderers and the web viewer |
