@@ -8,7 +8,7 @@ import SempereRender
 ///
 /// The page is drawn through the effective-page matrix of `format.md`
 /// §8.5.1 (`PDFPageGeometry`), not `CGPDFPage.getDrawingTransform`, which
-/// never scales up and centres instead of stretching. White underneath, as
+/// never scales up and centers instead of stretching. White underneath, as
 /// viewers and Poppler show a page.
 struct PDFKitRasterizer: PDFPageRasterizer {
     enum Failure: Error, Equatable {

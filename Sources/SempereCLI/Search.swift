@@ -15,9 +15,9 @@ struct SearchHit: Encodable {
     /// `handwriting` (page recognition), `text` (a text box), `pdf` (a PDF page's text,
     /// format.md §8.2.6) or `transcript` (a recording's).
     var source: String
-    /// The recogniser's or extractor's name (`handwriting`, `pdf` and `transcript` hits; absent for a text box).
+    /// The recognizer's or extractor's name (`handwriting`, `pdf` and `transcript` hits; absent for a text box).
     var engine: String?
-    /// The recognised words containing the term (`handwriting` hits only; empty otherwise).
+    /// The recognized words containing the term (`handwriting` hits only; empty otherwise).
     var words: [Word]
     /// With `--show-boxes`: every matching word on the page (`handwriting` hits), numbered as the app steps through them.
     var locations: [Location]?
@@ -42,7 +42,7 @@ struct SearchHit: Encodable {
         var text: String
         /// `[x, y, w, h]` in page points.
         var box: [Double]
-        /// The text box the match is in (a `text` hit's); absent for recognised handwriting.
+        /// The text box the match is in (a `text` hit's); absent for recognized handwriting.
         var itemId: String?
     }
 
@@ -72,9 +72,9 @@ struct SearchCommand: ParsableCommand {
 
     static let configuration = CommandConfiguration(
         commandName: "search",
-        abstract: "Search the recognised handwriting, typed text, equations, PDF page text and (with --transcripts) transcripts of all notes.",
+        abstract: "Search the recognized handwriting, typed text, equations, PDF page text and (with --transcripts) transcripts of all notes.",
         discussion: """
-            Case-insensitive substring search over each page's recognised text (from the Notability
+            Case-insensitive substring search over each page's recognized text (from the Notability
             import or on-device recognition), over the text of every text box, the LaTeX source of every
             equation (format.md §8.2.8; hits say "p3 math") and over the stored text of
             every PDF page (format.md §8.2.6; hits say "p3 pdf p7": note page 3, PDF page 7). With --transcripts it
@@ -251,10 +251,10 @@ struct SearchCommand: ParsableCommand {
 struct NotesSearch: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "search",
-        abstract: "Find notes as the app's search box does: titles, tags, notebooks and recognised text, best first.",
+        abstract: "Find notes as the app's search box does: titles, tags, notebooks and recognized text, best first.",
         discussion: """
             The query is words; a note matches when every word is found somewhere in it (title,
-            notebook, tags or a page's recognised handwriting and typed text), ignoring case and accents,
+            notebook, tags or a page's recognized handwriting and typed text), ignoring case and accents,
             substrings included. A word starting with # matches tags only. Notes are ranked as in the app
             (title and tag matches first, then the page with most of the words) and printed with the page
             and a snippet of the best match. --notebook and --tag search within one notebook (and below)

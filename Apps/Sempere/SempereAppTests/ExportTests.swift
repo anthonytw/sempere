@@ -354,10 +354,10 @@ struct ExportTests {
         #expect(ShareOptions(format: .markdown).markdownPDF == false, "the PDF is opt-in")
     }
 
-    /// The text export needs recognised handwriting in some selected note.
+    /// The text export needs recognized handwriting in some selected note.
     @Test func textExportNeedsRecognisedText() async throws {
         let model = try await BrowserTests.unlockedFixtureModel()
-        // The fixture has no recognised text; pretend the lecture has some.
+        // The fixture has no recognized text; pretend the lecture has some.
         let i = try #require(model.notes.firstIndex { $0.id == Self.lecture })
         #expect(!model.canExport(.markdown, ids: [Self.lecture, Self.deleted]))
         model.requestExport(.markdown, ids: [Self.lecture])

@@ -48,7 +48,7 @@ extension NoteEditor {
     /// Starts highlighting the words of `query`, on the first match of `page`
     /// (the page the search result named) when it has one, and shows it.
     /// Shows nothing when no word has a box (a match in the title or a tag, or
-    /// in a page with neither recognised words nor a text box that contains one).
+    /// in a page with neither recognized words nor a text box that contains one).
     func highlightSearch(query: String, page: UUID?) {
         guard !isPreparing else {
             pendingSearch = (query, page)   // `applyPendingSearch` runs when the pages are read

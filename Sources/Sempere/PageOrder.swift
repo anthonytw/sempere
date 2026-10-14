@@ -19,7 +19,7 @@ public enum PageOrder {
     /// about one character per 6 inserts. If no key fits
     /// (`a >= b`, characters outside the alphabet, or `b` is `a` followed only
     /// by `0`s) the result is a key just after `a`; the caller should then
-    /// re-key a neighbour.
+    /// re-key a neighbor.
     public static func between(_ a: String?, _ b: String?) -> String {
         if let key = strictlyBetween(a ?? "", b) { return key }
         return (a ?? "") + "V"

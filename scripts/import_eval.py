@@ -39,8 +39,8 @@ PAGE_WIDTH = 612.0  # imported pages are letter width in points
 
 # Ink classification, applied identically to both images of every pair.
 DARK_LUM = 170  # luminance below this is ink (Notability's dot paper is >= 181)
-CHROMA = 60  # max-min RGB above this is coloured ink or highlighter
-PDF_DIFF = 60  # PDF notes: RGB distance from the PDF page (best of a 5x5 neighbourhood)
+CHROMA = 60  # max-min RGB above this is colored ink or highlighter
+PDF_DIFF = 60  # PDF notes: RGB distance from the PDF page (best of a 5x5 neighborhood)
 PDF_NOISE_FRACTION = 0.01  # PDF notes: a thumbnail differing from our PDF render in < 1 % of pixels shows no ink
 LOW_RES_CORRELATION = 0.6  # darkness correlation needed when only a low-resolution thumbnail is current
 
@@ -57,7 +57,7 @@ PDF_F1 = 0.85  # Notability PDF page vs our page, 1-pixel-tolerant F1 (worst ink
 PDF_CHAMFER_PT = 1.0
 PDF_RATIO = (0.7, 1.4)
 PDF_EDGE_PT = 4.0
-PAPER_RGB = (163, 183, 211)  # Notability's PDF export draws dot/line paper as one page-wide path in this colour
+PAPER_RGB = (163, 183, 211)  # Notability's PDF export draws dot/line paper as one page-wide path in this color
 
 
 # ---------------------------------------------------------------- images
@@ -96,7 +96,7 @@ def ink_mask(rgb: np.ndarray) -> np.ndarray:
 def pdf_ink_mask(rgb: np.ndarray, bg: np.ndarray) -> np.ndarray:
     """Pixels that differ from the PDF page by more than PDF_DIFF, allowing the
     page a two-pixel misregistration (the smallest distance to any background
-    pixel in the 5x5 neighbourhood counts): Notability's own rasterization of
+    pixel in the 5x5 neighborhood counts): Notability's own rasterization of
     the page is offset by about a pixel from pdfium's."""
     best = np.full(rgb.shape[:2], np.inf, np.float32)
     pad = np.pad(bg, ((2, 2), (2, 2), (0, 0)), mode="edge")

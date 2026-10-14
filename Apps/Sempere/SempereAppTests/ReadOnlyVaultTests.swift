@@ -72,7 +72,7 @@ struct ReadOnlyVaultTests {
         #expect(await model.adoptInbox() == 0)
         model.thinIfDue(now: .distantFuture)
 
-        // The editor never autosaves or recognises.
+        // The editor never autosaves or recognizes.
         model.selectedNoteID = Self.mixed
         try await model.openEditor(for: Self.mixed)
         let editor = try #require(model.editor)

@@ -11,7 +11,7 @@ import UniformTypeIdentifiers
 /// mode, the text tool, a lasso tap, a held finger, a secondary click), the
 /// handles each kind shows, what a tap does (tap selects, tap again or double
 /// tap edits a text box), the menu per kind, Replace Image with undo, the
-/// text colour swatches and the Insert menu's PDF entry.
+/// text color swatches and the Insert menu's PDF entry.
 @MainActor
 struct CanvasSelectionTests {
     static let lecture = AppModelTests.lecture
@@ -271,9 +271,9 @@ struct CanvasSelectionTests {
         #expect(try NoteEditorTests.myDeltas(vault, clock).count == count)
     }
 
-    // MARK: Colours and the Insert menu
+    // MARK: Colors and the Insert menu
 
-    /// The text colours are the pen's palette, the pen's own colour first
+    /// The text colors are the pen's palette, the pen's own color first
     /// when the palette lacks it, opaque; the names are for VoiceOver only.
     @Test func textColoursAreThePensPalette() {
         let standard = TextColourPalette.standard
@@ -300,7 +300,7 @@ struct CanvasSelectionTests {
     }
 
     /// "Switch to Pages and Insert PDF…" on a pageless note writes nothing
-    /// until a PDF is picked (a cancelled picker leaves the note pageless);
+    /// until a PDF is picked (a canceled picker leaves the note pageless);
     /// once one is, the switch is one delta and the note has pages for it.
     @Test func switchingToPagesForAPDFWaitsForThePick() async throws {
         let (vault, _) = try TS.unlockedFixture()

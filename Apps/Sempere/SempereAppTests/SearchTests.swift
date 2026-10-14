@@ -3,7 +3,7 @@ import Sempere
 import Testing
 @testable import SempereApp
 
-/// Search over the vault's notes, jumping to a page, and "recognise all".
+/// Search over the vault's notes, jumping to a page, and "recognize all".
 @MainActor
 struct SearchTests {
     static let lecture = AppModelTests.lecture
@@ -69,10 +69,10 @@ struct SearchTests {
         model.applyListChanges(upserts: [lecture], removals: [])
         #expect(await TS.waitUntil { model.searchResults.map(\.note) == [other] && !model.isSearching })
 
-        lecture.pageTexts = [PageText(pageId: pageID, number: 1, text: "momentum, recognised again")]
+        lecture.pageTexts = [PageText(pageId: pageID, number: 1, text: "momentum, recognized again")]
         model.applyListChanges(upserts: [lecture], removals: [])
         #expect(await TS.waitUntil { Set(model.searchResults.map(\.note)) == [Self.lecture, other] && !model.isSearching })
-        #expect(model.searchResults.first { $0.note == Self.lecture }?.page?.text == "momentum, recognised again")
+        #expect(model.searchResults.first { $0.note == Self.lecture }?.page?.text == "momentum, recognized again")
         // The same as a full search of the list.
         #expect(model.searchResults == NoteSearch.search("momentum", in: model.searchCandidates))
 

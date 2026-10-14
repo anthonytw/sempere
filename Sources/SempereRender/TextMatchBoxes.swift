@@ -4,7 +4,7 @@ import Sempere
 /// Where a search finds its words inside a text box (GA-07): the text is laid out by the
 /// caller's shaper (the CLI's `DefaultTextShaper`, the app's CoreText one), each line's text is
 /// searched, and the glyphs of a match give its box in page points — the same coordinates as the
-/// boxes of recognised handwriting, so the canvas highlights both alike.
+/// boxes of recognized handwriting, so the canvas highlights both alike.
 ///
 /// Boxes are approximate in height (`0.8 × size` above the baseline, `0.25 × size` below) and exact in
 /// width for left-to-right lines whose glyphs map one to one onto the line's characters; any other line
@@ -115,7 +115,7 @@ public enum TextMatchBoxes {
         return spans
     }
 
-    /// `rect` turned by the item's rotation about its frame's centre, as a bounding box (nil when not finite).
+    /// `rect` turned by the item's rotation about its frame's center, as a bounding box (nil when not finite).
     private static func rotated(_ rect: Rect, item: Item) -> Recognition.Box? {
         var points = [(rect.x, rect.y), (rect.x + rect.w, rect.y), (rect.x + rect.w, rect.y + rect.h), (rect.x, rect.y + rect.h)]
         if let degrees = item.rotation, degrees != 0, degrees.isFinite {

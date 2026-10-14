@@ -205,7 +205,7 @@ struct PDFImportTests {
         let ref = try #require(state.pages.first?.items.first?.blob)
         let stored = try #require(try model.vault?.readBlob(note: id, ref))
         #expect(stored.range(of: Data("/Encrypt".utf8)) == nil)
-        // Cancelling removes the plaintext copy.
+        // Canceling removes the plaintext copy.
         let other = try Self.makePDF(pages: 1, userPassword: "pw", ownerPassword: "owner")   // Core Graphics encrypts only with an owner password
         guard case .needsPassword(let pending) = await model.importPDF(copy: other, to: .newNote(notebook: nil), password: nil) else {
             Issue.record("did not ask"); return

@@ -285,14 +285,14 @@ public enum RecordingSync {
 
 // MARK: - Transcripts (format.md §8.3.2)
 
-/// A piece of recognised speech as a recogniser reports it: a word or a
+/// A piece of recognized speech as a recognizer reports it: a word or a
 /// short run, with its time range in the recording.
 public struct RecognizedSpan: Hashable, Sendable {
     public var text: String
     /// Seconds from the start of the recording.
     public var start: Double
     public var end: Double
-    /// 0…1, when the recogniser gives one.
+    /// 0…1, when the recognizer gives one.
     public var confidence: Double?
 
     public init(text: String, start: Double, end: Double, confidence: Double? = nil) {
@@ -300,7 +300,7 @@ public struct RecognizedSpan: Hashable, Sendable {
     }
 }
 
-/// Builds valid transcripts (format.md §8.3.2) from what a recogniser
+/// Builds valid transcripts (format.md §8.3.2) from what a recognizer
 /// returns, whichever engine it is: times are clamped and ordered, words kept
 /// inside their segments, confidences inside 0…1, so the result always
 /// passes `Transcript.validationError`.
@@ -311,8 +311,8 @@ public enum TranscriptBuilder {
     public static let sentenceMinimum = 1.0
     /// …and in any case once a segment reaches this many seconds.
     public static let maxSegmentSeconds = 20.0
-    /// Most words a recogniser result may give (bounds memory and work on
-    /// whatever a recogniser returns): about 10 hours of speech.
+    /// Most words a recognizer result may give (bounds memory and work on
+    /// whatever a recognizer returns): about 10 hours of speech.
     public static let maxWords = 200_000
 
     /// Words grouped into segments: at pauses, after sentence-ending
@@ -345,9 +345,9 @@ public enum TranscriptBuilder {
         return out
     }
 
-    /// Phrases (each a recogniser result with its own words) as segments: one
+    /// Phrases (each a recognizer result with its own words) as segments: one
     /// segment per phrase with its words, or with no words when the
-    /// recogniser gave none. Phrases are sorted and made not to overlap.
+    /// recognizer gave none. Phrases are sorted and made not to overlap.
     public static func segments(fromPhrases phrases: [(text: String, start: Double, end: Double, confidence: Double?,
                                                         words: [RecognizedSpan])]) -> [Transcript.Segment] {
         var segments: [Transcript.Segment] = []

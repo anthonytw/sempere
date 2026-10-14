@@ -129,7 +129,7 @@ expect "YES without a compliance code warns" warn "without ITSEncryptionExportCo
 fresh; edit "docs/privacy/index.html" 're.sub(r"\d{4}-\d{2}-\d{2}</span>", "2099-01-01</span>", s) if (re:=__import__("re")) else s'
 expect "privacy policy copies out of date" fail "privacy policy copies differ in date"
 
-# Networking: only the allow-listed model downloader, and only while its catalogue is empty.
+# Networking: only the allow-listed model downloader, and only while its catalog is empty.
 fresh; printf 'import Foundation\nfunc ping() { URLSession.shared.dataTask(with: URL(fileURLWithPath: "/")).resume() }\n' > "$tmp/root/Apps/Sempere/SempereApp/Ping.swift"
 expect "URLSession outside the allow-list" fail "SempereApp/Ping.swift:2: networking in the shipping app"
 
@@ -155,7 +155,7 @@ fresh; edit "Apps/Sempere/SempereApp/MathModels.swift" '__import__("re").sub(r"\
 expect "an allow-listed file without networking warns" warn "MathModels.swift is in NETWORK_ALLOWED but has no networking"
 
 fresh; edit "Sources/SempereRender/MathModel.swift" 's.replace("entries: [MathModelCatalogEntry] = []", "entries: [MathModelCatalogEntry] = [MathModelCatalogEntry(id: \"m\", name: \"M\", manifestURL: \"https://example.com/m/manifest.json\", manifestSHA256: \"00\", downloadBytes: 1, licence: \"x\")]")'
-expect "a model in the catalogue turns the downloader on" fail "MathModelCatalog.entries is not"
+expect "a model in the catalog turns the downloader on" fail "MathModelCatalog.entries is not"
 
 # The app's package pins.
 fresh; edit "Apps/Sempere/Sempere.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved" 's.replace("\"version\" : \"1.7.3\"", "\"version\" : \"1.7.4\"", 1)'

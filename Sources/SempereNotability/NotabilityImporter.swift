@@ -123,7 +123,7 @@ public enum NotabilityImporter {
         public var dashedStrokes = 0
         /// Strokes of a `curvesstyles` value other than pen or highlighter (imported as pen).
         public var unknownStyleStrokes = 0
-        /// Strokes imported with a default style, colour or width because
+        /// Strokes imported with a default style, color or width because
         /// Notability's per-curve array was shorter than its curve count.
         public var defaultedAttributeStrokes = 0
         /// Shape-tool objects that could not be converted to strokes.
@@ -194,7 +194,7 @@ public enum NotabilityImporter {
                 case .recordings: return "recordings"
                 case .dashedStrokes: return "dashed strokes imported solid"
                 case .unknownStyleStrokes: return "strokes of unknown style imported as pen"
-                case .defaultedAttributeStrokes: return "strokes with a missing style, colour or width (defaulted)"
+                case .defaultedAttributeStrokes: return "strokes with a missing style, color or width (defaulted)"
                 case .unsupportedShapes: return "shapes not converted"
                 case .unsupportedStrokes: return "strokes of an undecoded .ntb kind"
                 case .clampedStrokes: return ".ntb strokes placed at the page edge (position not stored)"
@@ -228,7 +228,7 @@ public enum NotabilityImporter {
         public var status: Status
         /// Strokes written.
         public var strokes = 0
-        /// Notability pages with recognised text.
+        /// Notability pages with recognized text.
         public var recognizedPages = 0
         /// Notability's document width before any scaling (document units).
         public var originalWidth: Double?
@@ -255,7 +255,7 @@ public enum NotabilityImporter {
         public var lang: String?
         /// `meta.markersBehindText` (`NBNoteTakingSessionIsHighlighterBehindTextKey`).
         public var markersBehindText = false
-        /// The paper colour imported from `paperColor` (`#RRGGBBAA`), when the note has one.
+        /// The paper color imported from `paperColor` (`#RRGGBBAA`), when the note has one.
         public var paperColor: String?
         /// Attachments left out or placed by a guess, one line each (file
         /// names and Notability field names, never note content).
@@ -304,7 +304,7 @@ public enum NotabilityImporter {
     }
 
     /// Maps a parsed note to a Sempere note state: one infinite page, one
-    /// stroke per curve, Notability's recognised text merged into the page's
+    /// stroke per curve, Notability's recognized text merged into the page's
     /// `recognition`. Ids are derived from the Notability uuid (and
     /// `idSalt`, set by an overwrite), so the mapping is deterministic.
     ///
@@ -363,7 +363,7 @@ public enum NotabilityImporter {
             }
             guard !pts.isEmpty else { continue }
             let highlighter = c.isHighlighter
-            // Marker colours are opaque pigment; the marker tool supplies the
+            // Marker colors are opaque pigment; the marker tool supplies the
             // translucency (as PencilKit's does).
             var color = c.color
             if highlighter { color.a = 255 }
@@ -459,7 +459,7 @@ public enum NotabilityImporter {
     }
 
     /// The note's paper: kind and pitch from Notability's line style, the page
-    /// colour from `paperColor` when the note records one (opaque, as a page is).
+    /// color from `paperColor` when the note records one (opaque, as a page is).
     static func notePaper(_ paper: NotabilityNote.Paper, scale k: Double) -> Paper {
         var p = Paper(kind: paper.kind, spacing: (paper.spacing ?? 24 / k) * k)
         if var c = paper.color {
@@ -691,7 +691,7 @@ public enum NotabilityImporter {
         var curveCount: Int
     }
 
-    /// A stroke's shape and place: point count, colour, first point, and the
+    /// A stroke's shape and place: point count, color, first point, and the
     /// vector from its first to its last point. Two copies of a note store the
     /// same stroke within float precision (an `.ntb` uses half floats), so
     /// prints are compared with a tolerance. The first y is compared only
@@ -1073,7 +1073,7 @@ public enum NotabilityImporter {
         return result
     }
 
-    /// How the checkpoint every import writes is labelled (format.md §5.8.1).
+    /// How the checkpoint every import writes is labeled (format.md §5.8.1).
     public static let checkpointName = "Imported from Notability"
 
     /// The checkpoint's full name: `checkpointName`, the import time and,
@@ -1096,7 +1096,7 @@ public enum NotabilityImporter {
         return String(format: "%04d-%02d-%02d %02d:%02d UTC", c.year ?? 0, c.month ?? 0, c.day ?? 0, c.hour ?? 0, c.minute ?? 0)
     }
 
-    /// SHA-256 (hex) of a note's ink: per curve its style, colour, width
+    /// SHA-256 (hex) of a note's ink: per curve its style, color, width
     /// and every point. Names an extra version (`import`).
     static func contentDigest(_ note: NotabilityNote) -> String {
         var h = SHA256()
@@ -1114,7 +1114,7 @@ public enum NotabilityImporter {
     /// The tags an import writes (the whole set, so an overwrite drops tags
     /// of a folder the note has left): Notability's tags, then one per
     /// folder path segment when `tagsFromFolders`, then `extraTags`,
-    /// normalised and deduplicated case-insensitively, first spelling kept
+    /// normalized and deduplicated case-insensitively, first spelling kept
     /// (`NoteOps.normalizedTags`, format.md §5.4).
     public static func tags(for note: NotabilityNote, folder: String?, options: Options) -> [String] {
         var tags = note.metadata.tags

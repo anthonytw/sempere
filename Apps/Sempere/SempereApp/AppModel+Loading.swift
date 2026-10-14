@@ -5,7 +5,7 @@ import Sempere
 struct NoteLoading: Equatable, Sendable {
     /// Notes whose summary is in (from the cache or read).
     var done = 0
-    /// Notes to summarise in this pass.
+    /// Notes to summarize in this pass.
     var total = 0
     /// True when the list already shows every note (from the cache or a
     /// previous listing) and this pass only picks up changes.
@@ -185,7 +185,7 @@ extension AppModel {
     /// names each summary was made from (`indexedNames`; `listedNames` when
     /// the index file does not have the note). Publishes nothing once the
     /// vault closed (`CancellationError`) or, for the sync loop, once its task
-    /// is cancelled.
+    /// is canceled.
     func readSummaries(_ ids: [UUID], listedNames: [UUID: [String]] = [:],
                        onBatch: (([NoteSummary]) -> Void)? = nil) async throws {
         guard let vault else { throw ModelError.noVaultOpen }

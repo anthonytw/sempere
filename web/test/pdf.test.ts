@@ -52,7 +52,7 @@ describe.runIf(canvasLib !== undefined)("pdf.js and the effective page", () => {
       const bw = vis.x1 - vis.x0, bh = vis.y1 - vis.y0;
       const v1 = page.getViewport({ scale: 1 });
       expect([v1.width, v1.height]).toEqual(rot % 180 === 0 ? [bw, bh] : [bh, bw]);
-      // The red rectangle's centre and a point beside it, in effective-page coordinates.
+      // The red rectangle's center and a point beside it, in effective-page coordinates.
       const m = pdfToEffective(vis, rot);
       const inside = apply(m, { x: 100, y: 80 });
       const outside = apply(m, { x: 200, y: 200 });

@@ -109,7 +109,7 @@ final class AudioItemTests: XCTestCase {
         XCTAssertEqual(top.recording, Self.recID)
         XCTAssertEqual(top.frame, Rect(x: (612 - 300) / 2, y: 36, w: 300, h: 96))
         XCTAssertNil(top.validationError)
-        // Where the user is looking: centred across the visible part, a margin below its top.
+        // Where the user is looking: centered across the visible part, a margin below its top.
         let seen = try NoteOps.placeRecording(Self.recID, recordings: recs, on: page, pageSize: .letter,
                                               visible: Rect(x: 0, y: 1000, w: 400, h: 500)).item
         XCTAssertEqual(seen.frame, Rect(x: 50, y: 1036, w: 300, h: 96))
@@ -200,7 +200,7 @@ final class AudioCardControlTests: XCTestCase {
         XCTAssertEqual(badge.center.x, 20 + 9.6, accuracy: 1e-9)
         XCTAssertEqual(badge.center.y, 20 + 9.6, accuracy: 1e-9)
         XCTAssertEqual(badge.diameter, 14.4, accuracy: 1e-9)
-        XCTAssertTrue(card.controlContains(x: 20, y: 20, rotation: nil))           // the icon's centre
+        XCTAssertTrue(card.controlContains(x: 20, y: 20, rotation: nil))           // the icon's center
         XCTAssertTrue(card.controlContains(x: 32, y: 32, rotation: nil))           // on the badge, outside the icon
         XCTAssertFalse(card.controlContains(x: 150, y: 50, rotation: nil))         // the label
         XCTAssertFalse(card.controlContains(x: 33, y: 20, rotation: nil))

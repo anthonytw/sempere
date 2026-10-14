@@ -18,7 +18,7 @@ enum JPEG {
     struct Info: Equatable {
         var width: Int
         var height: Int
-        /// 1 (grey) or 3 (colour).
+        /// 1 (gray) or 3 (color).
         var components: Int
         var progressive: Bool
         /// True when three components hold R, G, B rather than Y, Cb, Cr
@@ -369,7 +369,7 @@ enum JPEG {
         }
 
         /// Drops buffered bits and skips the RSTn marker that should be next (or
-        /// searches forward for one), as libjpeg resynchronises.
+        /// searches forward for one), as libjpeg resynchronizes.
         mutating func restart() {
             acc = 0
             nbits = 0
@@ -627,7 +627,7 @@ enum JPEG {
             return d.count
         }
 
-        /// Counts one MCU; at the end of a restart interval resynchronises on
+        /// Counts one MCU; at the end of a restart interval resynchronizes on
         /// the RSTn marker and resets the predictors and the EOB run.
         mutating func restartIfDue(_ r: inout BitReader, _ pred: inout [Int32], _ count: inout Int) {
             guard restartInterval > 0 else { return }
@@ -774,7 +774,7 @@ enum JPEG {
             }
         }
 
-        /// Upsamples and colour-converts the planes into the RGBA output.
+        /// Upsamples and color-converts the planes into the RGBA output.
         func output(_ f: Frame) throws -> RGBAImage {
             let ow = (f.width + scale - 1) / scale, oh = (f.height + scale - 1) / scale
             var px = [UInt8](repeating: 255, count: ow * oh * 4)
@@ -1002,7 +1002,7 @@ enum JPEG {
         return out
     }
 
-    // MARK: - Colour (libjpeg jdcolor.c)
+    // MARK: - Color (libjpeg jdcolor.c)
 
     private static let crR: [Int32] = (0..<256).map { (Int32(91881) * Int32($0 - 128) + 32768) >> 16 }
     private static let cbB: [Int32] = (0..<256).map { (Int32(116130) * Int32($0 - 128) + 32768) >> 16 }

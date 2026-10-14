@@ -1,7 +1,7 @@
 import Crypto
 import Foundation
 
-/// Ties a page's recognised text to the strokes it was read from
+/// Ties a page's recognized text to the strokes it was read from
 /// (format.md §5.5 `basis`), so a writer can tell current recognition from
 /// stale without reading the ink again.
 public enum RecognitionBasis {
@@ -88,7 +88,7 @@ public enum RecognitionMode: String, Hashable, Sendable, CaseIterable {
     case stale
     /// Only pages with ink and no recognition at all.
     case missing
-    /// Every page with ink, and every page whose recognised text has no ink
+    /// Every page with ink, and every page whose recognized text has no ink
     /// left (it is cleared), replacing whatever recognition is there,
     /// Notability's included.
     case all
@@ -96,7 +96,7 @@ public enum RecognitionMode: String, Hashable, Sendable, CaseIterable {
 
 extension RecognitionPolicy {
     /// The pages of `pages` a pass in `mode` reads, in order. A page without
-    /// strokes is included only to clear recognised text it no longer has ink for.
+    /// strokes is included only to clear recognized text it no longer has ink for.
     public static func pagesToRead(_ pages: [Page], mode: RecognitionMode) -> [Page] {
         pages.filter { page in
             switch mode {
@@ -108,7 +108,7 @@ extension RecognitionPolicy {
     }
 }
 
-/// One line of text a recogniser found, with its words placed on the page.
+/// One line of text a recognizer found, with its words placed on the page.
 public struct RecognizedLine: Hashable, Sendable {
     public var text: String
     public var words: [Recognition.Word]
@@ -116,7 +116,7 @@ public struct RecognizedLine: Hashable, Sendable {
     public init(text: String, words: [Recognition.Word]) { self.text = text; self.words = words }
 }
 
-/// Turns a recogniser's lines and normalised boxes into format §5.5 values.
+/// Turns a recognizer's lines and normalized boxes into format §5.5 values.
 public enum RecognitionLayout {
     /// A box from Vision-style coordinates (`[x, y, w, h]` in 0…1, origin at
     /// the bottom left) to page points, for an image that shows `region`
@@ -131,7 +131,7 @@ public enum RecognitionLayout {
 
     /// Words of `text` (split at whitespace) placed side by side across `box`,
     /// each given a width in proportion to its length: the fallback when a
-    /// recogniser cannot box single words.
+    /// recognizer cannot box single words.
     public static func distribute(text: String, in box: Recognition.Box) -> [Recognition.Word] {
         let words = text.split(whereSeparator: \.isWhitespace).map(String.init)
         let total = words.reduce(0) { $0 + $1.count } + max(words.count - 1, 0)   // one space between words
@@ -145,7 +145,7 @@ public enum RecognitionLayout {
     }
 
     /// The reading order of `lines`: top to bottom, and left to right for
-    /// lines on the same row (their vertical centres closer than half the
+    /// lines on the same row (their vertical centers closer than half the
     /// smaller height).
     public static func readingOrder(_ lines: [RecognizedLine]) -> [[RecognizedLine]] {
         struct Placed { var line: RecognizedLine; var box: Recognition.Box }
@@ -195,16 +195,16 @@ public enum RecognitionLayout {
 }
 
 /// The recognition language of a note (format.md §5.4 `lang`, §5.5): which of
-/// a recogniser's languages to ask for. Shared by the app's Vision recogniser
+/// a recognizer's languages to ask for. Shared by the app's Vision recognizer
 /// and `sempere recognize`; pure, so it is tested on Linux.
 public enum RecognitionLanguage {
     /// The languages to request for a note whose `lang` is `lang`, from the
-    /// recogniser's `supported` identifiers (Vision's are like `en-US`,
+    /// recognizer's `supported` identifiers (Vision's are like `en-US`,
     /// `es-ES`, `zh-Hans`), best first: the exact tag (case-insensitive,
     /// `_` read as `-`), else every supported tag of the same language
     /// (`es` → `es-ES`, `es-MX`; `es-AR` → `es-ES` too), preferring the
     /// region's own. Nil when `lang` is nil or invalid or no supported
-    /// language matches: the recogniser then uses its default (automatic
+    /// language matches: the recognizer then uses its default (automatic
     /// detection).
     public static func preferred(for lang: String?, supported: [String]) -> [String]? {
         guard let lang, let tag = NoteMeta.validLanguage(lang) else { return nil }

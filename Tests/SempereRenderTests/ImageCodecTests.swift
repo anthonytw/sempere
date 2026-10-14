@@ -21,7 +21,7 @@ final class ImageCodecTests: XCTestCase {
     }
 
     /// Bit-exact: the decoder follows libjpeg-turbo's integer IDCT,
-    /// upsampling and colour tables (the task's bar was ±2 per channel).
+    /// upsampling and color tables (the task's bar was ±2 per channel).
     func testJPEGMatchesLibjpegTurbo() throws {
         for name in Self.jpegs + ["quadrants"] {
             let data = try Self.fixture(name + ".jpg")

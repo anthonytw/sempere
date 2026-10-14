@@ -9,7 +9,7 @@ import SempereRender
 /// come from the shared `NoteOps.placeVideo` that `sempere attach video` uses.
 extension NoteEditor {
     /// Places `video` (from `VideoPreparation`) on `pageID`: fitted into the
-    /// part of the page on screen (`visible`, page points), centred on
+    /// part of the page on screen (`visible`, page points), centered on
     /// `point` when given (a drop), else on what is on screen.
     @discardableResult
     func insertVideo(_ video: PreparedVideo, on pageID: UUID, visible: CGRect?, at point: CGPoint? = nil) async throws -> Item {

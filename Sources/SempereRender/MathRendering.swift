@@ -20,7 +20,7 @@ enum MathItems {
     }
 
     /// The item as the text box its source is drawn as: font `mono`, the
-    /// math size and colour, the frame, one run, no stored breaks.
+    /// math size and color, the frame, one run, no stored breaks.
     static func sourceView(_ it: PreparedItem) -> PreparedItem? {
         guard it.item.kind == .math, let math = it.item.math else { return nil }
         let runs = math.latex.isEmpty ? [] : [TextRun(math.latex)]
@@ -72,7 +72,7 @@ extension RenderOptions {
 
 extension RasterItems {
     /// A math item for the SVG and PNG writers (format.md §8.2.8): its
-    /// render rasterized and turned back into coverage of its colour, else
+    /// render rasterized and turned back into coverage of its color, else
     /// its source as text (with a warning), else a placeholder.
     static func resolveMath(_ it: PreparedItem, backgrounds: PDFBackgrounds, shaper: (any TextShaper)?, scale: Double,
                             maxPixels: Int, report: inout RenderReport) -> Draw {

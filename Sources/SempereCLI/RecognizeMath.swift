@@ -6,7 +6,7 @@ import SempereRender
 
 /// `sempere recognize-math`: handwritten math → LaTeX → a math item, as the
 /// app's "Convert to Math" (docs/attachments.md §14 G1 part 2): the same
-/// lasso rule (`InkLasso`), image (`MathInkImage`), recogniser
+/// lasso rule (`InkLasso`), image (`MathInkImage`), recognizer
 /// (`CoreMLMathRecognizer`, macOS) and conversion (`NoteOps.convertInk`, one delta).
 struct RecognizeMathCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
@@ -64,7 +64,7 @@ struct RecognizeMathCommand: ParsableCommand {
     @Option(name: .long, help: ArgumentHelp("Font size in points (default 20).", valueName: "pt"))
     var size: Double = 20
 
-    @Option(name: .long, help: ArgumentHelp("Colour as #RRGGBB or #RRGGBBAA (default black).", valueName: "hex"))
+    @Option(name: .long, help: ArgumentHelp("Color as #RRGGBB or #RRGGBBAA (default black).", valueName: "hex"))
     var color: ColorArgument?
 
     @Option(name: .customLong("save-image"), help: ArgumentHelp("Write the image the model reads to this PNG file.", valueName: "file"))

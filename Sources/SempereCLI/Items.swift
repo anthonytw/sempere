@@ -256,7 +256,7 @@ struct ItemsReplace: ParsableCommand {
         discussion: """
             An image's picture cannot change in place (format.md §8.2.2): the old image is removed and a new one \
             added whose parent names it, in one delta, after the new picture is stored. The new image takes the \
-            old one's place: the largest frame of its proportions inside the old frame, centred on it, with the \
+            old one's place: the largest frame of its proportions inside the old frame, centered on it, with the \
             same rotation and stacking; it shows the whole picture (no crop). The picture is stored without its \
             location and camera metadata unless --keep-metadata. Prints the new item's id.
             """
@@ -467,9 +467,9 @@ struct ItemsCopy: ParsableCommand {
 struct ItemsMath: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "math",
-        abstract: "Change an equation: its source, style, size, colour or rendering (one delta).",
+        abstract: "Change an equation: its source, style, size, color or rendering (one delta).",
         discussion: """
-            Writes the item's whole `math` value (format.md §8.2.8). Changing the source, style, size or colour \
+            Writes the item's whole `math` value (format.md §8.2.8). Changing the source, style, size or color \
             drops the stored rendering (the CLI cannot typeset; exports then draw the source until the app \
             typesets it), unless --render gives a one-page PDF typeset elsewhere for the new value; with a new \
             rendering the frame keeps its top-left corner and its scale. --render alone replaces the rendering \
@@ -491,7 +491,7 @@ struct ItemsMath: ParsableCommand {
     @Option(name: .long, help: ArgumentHelp("Font size in points.", valueName: "pt"))
     var size: Double?
 
-    @Option(name: .long, help: ArgumentHelp("Colour as #RRGGBB or #RRGGBBAA.", valueName: "hex"))
+    @Option(name: .long, help: ArgumentHelp("Color as #RRGGBB or #RRGGBBAA.", valueName: "hex"))
     var color: ColorArgument?
 
     @Option(name: .long, help: ArgumentHelp("A one-page PDF of the typeset equation, stored as its rendering.", valueName: "file"))

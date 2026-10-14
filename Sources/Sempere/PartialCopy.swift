@@ -87,7 +87,7 @@ extension Vault {
         }
     }
 
-    /// The `problem` of an incomplete note's summary: it is never summarised
+    /// The `problem` of an incomplete note's summary: it is never summarized
     /// from part of its log.
     public static let incompleteNoteProblem = "not completely downloaded yet (partial copy)"
 

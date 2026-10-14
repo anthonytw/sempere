@@ -109,7 +109,7 @@ struct HistoryEntry: Identifiable, Hashable, Sendable {
         return c.name ?? String(localized: "Saved Version", comment: "History: title of a saved version without a name")
     }
 
-    /// Why the point is greyed out, when it is.
+    /// Why the point is grayed out, when it is.
     var unavailableReason: String? {
         isAvailable ? nil : String(localized: "Earlier revisions were compacted away or cannot be read, so this version cannot be rebuilt.")
     }
@@ -227,7 +227,7 @@ extension AppModel {
     }
 
     /// Restores note `id` to `point` with one delta (`NoteWriter.restore`),
-    /// serialised with the other edits. The open note's pending canvas
+    /// serialized with the other edits. The open note's pending canvas
     /// changes are saved first (so they are part of the history that is kept,
     /// not written over the restore later), and the open canvas is reopened
     /// from the restored state.

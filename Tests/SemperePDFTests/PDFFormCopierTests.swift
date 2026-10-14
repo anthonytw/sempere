@@ -36,7 +36,7 @@ final class PDFFormCopierTests: XCTestCase {
         var next = 5
         let copier = PDFFormCopier(file: src) { defer { next += 1 }; return next }
         let form = try copier.formObject(page: 0)
-        XCTAssertEqual(try copier.formObject(page: 0), form)   // memoised
+        XCTAssertEqual(try copier.formObject(page: 0), form)   // memoized
         let objects = copier.takeObjects()
         // form + font + image
         XCTAssertEqual(objects.count, 3)

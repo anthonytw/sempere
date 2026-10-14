@@ -13,7 +13,7 @@ enum PNGEncoder {
         var out = Data(signature)
         var ihdr = [UInt8]()
         ihdr += be32(width) + be32(height)
-        ihdr += [8, 6, 0, 0, 0]   // depth 8, colour type 6 (RGBA), deflate, adaptive filtering, no interlace
+        ihdr += [8, 6, 0, 0, 0]   // depth 8, color type 6 (RGBA), deflate, adaptive filtering, no interlace
         appendChunk("IHDR", ihdr, to: &out)
 
         var stream = z_stream()

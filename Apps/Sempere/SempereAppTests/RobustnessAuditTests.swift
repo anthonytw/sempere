@@ -133,7 +133,7 @@ struct RobustnessAuditTests {
     }
 
     /// The real case: main-actor work that cannot run does not end when it is
-    /// cancelled. The request must still fail at the timeout, not when the
+    /// canceled. The request must still fail at the timeout, not when the
     /// preparation finally ends (here released after 5 s, in the app never).
     @Test func aDragOutFailsAtTheTimeoutEvenIfThePreparationIgnoresCancellation() async throws {
         let stuck = Task<PreparedExport, any Error> {
@@ -153,7 +153,7 @@ struct RobustnessAuditTests {
         #expect(stuck.isCancelled)
     }
 
-    /// An audio card whose frame overflows gets no play button (its centre
+    /// An audio card whose frame overflows gets no play button (its center
     /// would be NaN, which Core Animation raises on); a huge rotation still
     /// turns the button by a finite angle.
     @Test func anAudioCardWhoseFrameOverflowsGetsNoButton() throws {

@@ -15,7 +15,7 @@ import UIKit
 /// starts a new box there (`beginNew`); the menus' "Edit Text" edits too. The box is edited in a `UITextView`
 /// (TextKit 1, the layout `TextKitBreaks` uses) laid over the page at the
 /// canvas zoom, with a style bar above the keyboard (bold, italic,
-/// underline, strikethrough, size, colour, font, alignment, direction);
+/// underline, strikethrough, size, color, font, alignment, direction);
 /// Scribble writes into it like any text field. Ending the edit (Done, a
 /// tap outside, another page or note) writes one delta through
 /// `ItemActions`: the text with `breaks` from TextKit and the height of its
@@ -150,7 +150,7 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
         tv.textContainer.lineFragmentPadding = 0
         tv.isScrollEnabled = false
         tv.allowsEditingTextAttributes = !session.markdown
-        tv.overrideUserInterfaceStyle = .light   // text colours are stored as on light paper
+        tv.overrideUserInterfaceStyle = .light   // text colors are stored as on light paper
         tv.attributedText = text
         if session.markdown {
             tv.typingAttributes = TextBoxEditing.markdownAttributes(session.style)
@@ -339,12 +339,12 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
         return bar
     }
 
-    /// The style bar's colour button (it shows the colour of the text at the cursor).
+    /// The style bar's color button (it shows the color of the text at the cursor).
     private weak var colourItem: UIBarButtonItem?
-    /// The pen's colour now, offered first among the swatches (the host's tool picker).
+    /// The pen's color now, offered first among the swatches (the host's tool picker).
     var penColour: () -> Sempere.Color? = { nil }
 
-    /// The colour of the selected text, or of what is typed next.
+    /// The color of the selected text, or of what is typed next.
     var currentColour: Sempere.Color {
         guard let tv = textView, let session else { return Self.lastStyle.color }
         let r = tv.selectedRange
@@ -353,7 +353,7 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
         return (attributes[.foregroundColor] as? UIColor).map { Sempere.Color($0) } ?? session.style.color
     }
 
-    /// Shows the colour swatches (the pen's palette) under the style bar's button.
+    /// Shows the color swatches (the pen's palette) under the style bar's button.
     private func showColours(from item: UIBarButtonItem) {
         guard let tv = textView, let presenter = Self.presenter(for: tv) else { return }
         let range = tv.selectedRange
@@ -380,7 +380,7 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
     }
 
     /// Applies a style change to the selection, or to what is typed next.
-    /// In a Markdown box a size or colour is the box's (Markdown says the rest).
+    /// In a Markdown box a size or color is the box's (Markdown says the rest).
     func apply(_ change: TextBoxEditing.Change) {
         defer { colourItem?.image = TextColourPalette.swatchImage(currentColour, size: 22) }
         if session?.markdown == true {
@@ -428,7 +428,7 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
 
     // MARK: Markdown bar
 
-    /// Changes a Markdown box's own style (size, colour, font, alignment) and redraws its source.
+    /// Changes a Markdown box's own style (size, color, font, alignment) and redraws its source.
     func restyleMarkdown(_ change: (inout TextBoxEditing.BoxStyle) -> Void) {
         guard let tv = textView, var session, session.markdown else { return }
         let old = session.style
@@ -580,13 +580,13 @@ enum TextBoxPlacement {
     }
 }
 
-/// The text colours the style bar offers: the pen's palette (pure, tested).
+/// The text colors the style bar offers: the pen's palette (pure, tested).
 /// PencilKit's tool picker offers black, blue, green, yellow and red (the
-/// system colours as on light paper) and a colour wheel; the swatches are the
-/// same, the pen's current colour first when it is another one, and "More"
-/// opens the same system colour picker as the pen's wheel.
+/// system colors as on light paper) and a color wheel; the swatches are the
+/// same, the pen's current color first when it is another one, and "More"
+/// opens the same system color picker as the pen's wheel.
 enum TextColourPalette {
-    /// The pen palette's colours, as drawn on (light) paper, with their names (for VoiceOver).
+    /// The pen palette's colors, as drawn on (light) paper, with their names (for VoiceOver).
     @MainActor static var standard: [(name: String, color: Sempere.Color)] {
         let light = UITraitCollection(userInterfaceStyle: .light)
         return [(String(localized: "Black", comment: "Text color"), UIColor.black),
@@ -596,7 +596,7 @@ enum TextColourPalette {
                 (String(localized: "Red", comment: "Text color"), .systemRed)].map { ($0.0, opaque(Sempere.Color($0.1.resolvedColor(with: light)))) }
     }
 
-    /// The swatches: the pen's colour (opaque) first unless the palette has
+    /// The swatches: the pen's color (opaque) first unless the palette has
     /// it, then the palette.
     static func swatches(pen: Sempere.Color?, standard: [Sempere.Color]) -> [Sempere.Color] {
         var out = standard
@@ -619,7 +619,7 @@ enum TextColourPalette {
         return String(format: "#%02X%02X%02X", colour.r, colour.g, colour.b)
     }
 
-    /// Text is drawn opaque: a marker's translucent colour is taken without its alpha.
+    /// Text is drawn opaque: a marker's translucent color is taken without its alpha.
     static func opaque(_ c: Sempere.Color) -> Sempere.Color { Sempere.Color(r: c.r, g: c.g, b: c.b) }
 
     /// A round swatch of `colour`, with a thin ring so white and yellow show on a light bar.
@@ -642,8 +642,8 @@ enum TextColourPalette {
     }
 }
 
-/// The colour popover of the text style bar: a row of round swatches (the
-/// current colour ringed) and the system colour picker ("More").
+/// The color popover of the text style bar: a row of round swatches (the
+/// current color ringed) and the system color picker ("More").
 @MainActor
 final class ColourSwatchesController: UIViewController, UIPopoverPresentationControllerDelegate,
     UIColorPickerViewControllerDelegate {
@@ -704,7 +704,7 @@ final class ColourSwatchesController: UIViewController, UIPopoverPresentationCon
         dismiss(animated: true) { [choose] in choose(c) }
     }
 
-    /// The system colour picker, as the pen's colour wheel opens.
+    /// The system color picker, as the pen's color wheel opens.
     private func showPicker() {
         let picker = UIColorPickerViewController()
         picker.supportsAlpha = false

@@ -78,7 +78,7 @@ struct StrokeConversionTests {
         for tool in [InkTool.pen, .monoline, .marker] {
             let s = TS.stroke(tool: tool, width: 4)
             let pk = StrokeConversion.pkStroke(s)
-            // Our renderer's outline bounds: sampled centre line widened by half the size.
+            // Our renderer's outline bounds: sampled center line widened by half the size.
             let samples = StrokeSampler.samples(for: s)
             let minX = samples.map { $0.x - $0.w / 2 }.min() ?? 0, maxX = samples.map { $0.x + $0.w / 2 }.max() ?? 0
             let minY = samples.map { $0.y - $0.h / 2 }.min() ?? 0, maxY = samples.map { $0.y + $0.h / 2 }.max() ?? 0

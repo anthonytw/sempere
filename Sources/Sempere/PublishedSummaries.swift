@@ -51,7 +51,7 @@ public enum PublishedSummaries {
         /// The entry for a summary made from `revisions`; nil when the summary
         /// has a problem (unreadable revisions, no state) or holds content of a
         /// newer format version (format.md §7.4), which this writer cannot
-        /// summarise in full: such notes are never published.
+        /// summarize in full: such notes are never published.
         public init?(summary s: NoteSummary, revisions: [String]) {
             guard s.problem == nil, s.newer == nil, !revisions.isEmpty, let created = s.created, let modified = s.modified,
                   RFC3339.string(from: created) != nil, RFC3339.string(from: modified) != nil else { return nil }
@@ -230,12 +230,12 @@ extension Vault {
     /// the vault's own listing when nil): one per note whose revisions in the
     /// listing are exactly the vault's and read cleanly. An entry of `reuse`
     /// made from the same names is kept without reading the note; the others
-    /// are summarised through `cache` (format.md §10).
+    /// are summarized through `cache` (format.md §10).
     ///
     /// - Parameter ownListing: the vault's own listing in the form of
     ///   `webIndexListing()`, when the caller just made it (the vault is not
     ///   listed again); nil lists the vault.
-    /// - Returns: the entries and how many notes had to be summarised.
+    /// - Returns: the entries and how many notes had to be summarized.
     public func publishedSummaryEntries(for listing: [String: [String]]? = nil,
                                         reuse: [UUID: PublishedSummaries.Entry] = [:],
                                         cache: SummaryCache? = nil,
@@ -271,7 +271,7 @@ extension Vault {
     ///
     /// - Returns: true when the file was rewritten.
     /// The vault is opened again first (a command may have changed its
-    /// manifest); with `cacheDirectory`, notes are summarised through the
+    /// manifest); with `cacheDirectory`, notes are summarized through the
     /// summary cache there (format.md §10).
     @discardableResult
     public func refreshPublishedSummaries(cacheDirectory: URL? = nil, ownListing: [String: [String]]? = nil) throws -> Bool {
@@ -288,7 +288,7 @@ extension Vault {
         let current = data.flatMap { try? openPublishedSummaries($0) }
         guard !isReadOnly else { return false }
         let (entries, _) = try publishedSummaryEntries(reuse: current ?? [:], cache: cache, ownListing: ownListing)
-        // Summarising may have just read newer content (format.md §7.3).
+        // Summarizing may have just read newer content (format.md §7.3).
         guard !isReadOnly else { return false }
         if let current, current == entries { return false }
         try FileIO.writeAtomically(try sealPublishedSummaries(entries), to: publishedSummariesURL, replacing: true)

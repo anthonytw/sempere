@@ -7,7 +7,7 @@ import Foundation
 ///
 /// - GIF: the first frame only, drawn on a transparent canvas of the logical
 ///   screen's size (87a and 89a, interlaced or not, a transparent index).
-/// - TIFF: the first image of a baseline file: grey, palette and RGB(A),
+/// - TIFF: the first image of a baseline file: gray, palette and RGB(A),
 ///   1, 2, 4, 8 or 16 bits, in strips, uncompressed, PackBits, LZW or
 ///   Deflate, with the horizontal predictor (8 bit) and any orientation.
 ///   Tiles, planar data, CMYK, YCbCr and other bit depths are `unsupported`.

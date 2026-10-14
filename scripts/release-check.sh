@@ -163,11 +163,11 @@ NETWORK_ALLOWED = {
     "Sources/SempereWebDAV/Transport.swift",
     "Sources/SempereWebDAV/WebDAVClient.swift",
     # The handwritten-math model downloader (URLSessionModelFetcher): runs only when the user
-    # taps Download on a MathModelCatalog entry, and the catalogue is empty (checked below).
+    # taps Download on a MathModelCatalog entry, and the catalog is empty (checked below).
     "Apps/Sempere/SempereApp/MathModels.swift",
 }
 
-# Where the downloader's catalogue lives; it must stay empty while the documents say the
+# Where the downloader's catalog lives; it must stay empty while the documents say the
 # downloader is inert.
 MATH_CATALOG = ("Sources/SempereRender/MathModel.swift",
                 re.compile(r"public\s+static\s+let\s+entries\s*:\s*\[MathModelCatalogEntry\]\s*=\s*\[\s*\]"))

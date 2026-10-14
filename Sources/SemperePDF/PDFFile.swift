@@ -1,6 +1,6 @@
 import Foundation
 
-/// A rectangle in PDF user space, normalised so that `x0 < x1`, `y0 < y1`.
+/// A rectangle in PDF user space, normalized so that `x0 < x1`, `y0 < y1`.
 public struct PDFRect: Hashable, Sendable {
     public var x0: Double, y0: Double, x1: Double, y1: Double
 
@@ -29,7 +29,7 @@ public struct PDFPageInfo: Hashable, Sendable {
     public var cropBox: PDFRect
     /// CropBox ∩ MediaBox: the part of the page that is shown.
     public var visibleBox: PDFRect
-    /// `/Rotate` (inherited), normalised to 0, 90, 180 or 270 (clockwise).
+    /// `/Rotate` (inherited), normalized to 0, 90, 180 or 270 (clockwise).
     public var rotation: Int
 
     /// The effective page: the visible box turned by `rotation`, `W' × H'` points.

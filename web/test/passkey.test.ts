@@ -301,19 +301,19 @@ describe("remembered keys are bound to the vault's location", () => {
   });
 
   it("remembering at a new location replaces the record and signals the old passkey unknown", async () => {
-    const signalled: { rpId: string; credentialId: string }[] = [];
+    const signaled: { rpId: string; credentialId: string }[] = [];
     vi.stubGlobal("location", { hostname: "viewer.example" });
     vi.stubGlobal("PublicKeyCredential", { signalUnknownCredential: (o: { rpId: string; credentialId: string }) => {
-      signalled.push(o);
+      signaled.push(o);
       return Promise.resolve();
     } });
     const storage = new MemoryKeyStorage();
     const pv = new PasskeyVault(new MockAuthenticator({ prfAtCreate: true }), storage);
     const first = await pv.remember(identity, vaultA, here, "Notes");
-    expect(signalled).toEqual([]);
+    expect(signaled).toEqual([]);
     await pv.remember(identity, vaultA, elsewhere, "Notes");
     expect(storage.records.size).toBe(1);
-    expect(signalled).toEqual([{ rpId: "viewer.example", credentialId: Buffer.from(first.credentialId).toString("base64url") }]);
+    expect(signaled).toEqual([{ rpId: "viewer.example", credentialId: Buffer.from(first.credentialId).toString("base64url") }]);
     expect((await caught(pv.unlock(vaultA, here))).code).toBe("otherLocation");
     expect(await pv.unlock(vaultA, elsewhere)).toBe(identity);
   });
@@ -325,7 +325,7 @@ describe("remembered keys are bound to the vault's location", () => {
     }
   });
 
-  it("names a location by the vault's normalised URL, or as a local folder", () => {
+  it("names a location by the vault's normalized URL, or as a local folder", () => {
     const a = vaultLocation(new HTTPSource("https://notes.example/vault?x=1#y"));
     expect(a).toBe("https://notes.example/vault/");
     expect(vaultLocation(new HTTPSource("https://notes.example/vault/"))).toBe(a);

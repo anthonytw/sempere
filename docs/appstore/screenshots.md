@@ -22,7 +22,7 @@ another; `SEMPERE_SHOTS_OUT` changes the output folder). In CI, run the **CI** w
 | --- | --- | --- |
 | iPad 13" | 2064 × 2752, portrait | `XCUIScreen` screenshot on the iPad Pro 13-inch simulator (2x of 1032 × 1376 pt). App Store Connect takes the 13" size for every iPad. The script fails if a PNG has another size. |
 | iPhone 6.9" | 1320 × 2868 (or 1290 × 2796), portrait | `XCUIScreen` screenshot on the newest "iPhone … Pro Max" simulator (iOS 27+). App Store Connect scales the 6.9" set to the other iPhone sizes. The script fails if a PNG has another size. The status bar shows full cellular bars. |
-| Mac | 2880 × 1800 | The Catalyst window (pinned to 1280 × 800 pt) is scaled to fit and centred on a plain 2880 × 1800 canvas with `sips`. A window on a plain background is how Mac shots are usually shown; it avoids depending on the runner's display size. |
+| Mac | 2880 × 1800 | The Catalyst window (pinned to 1280 × 800 pt) is scaled to fit and centered on a plain 2880 × 1800 canvas with `sips`. A window on a plain background is how Mac shots are usually shown; it avoids depending on the runner's display size. |
 
 The app runs on iPhone and iPad (`TARGETED_DEVICE_FAMILY = "1,2"`). The simulator is
 set to light mode and `simctl status_bar override` gives 9:41, full battery and full Wi-Fi (no clutter).

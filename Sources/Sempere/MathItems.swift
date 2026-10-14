@@ -5,7 +5,7 @@ import Foundation
 // An equation, stored as LaTeX source with the style it is typeset in and,
 // once a typesetter has run, a one-page PDF of the result (`render`) that
 // renderers without a typesetter draw. The whole `math` object is one
-// register: the rendering belongs to the exact source, style, size and colour
+// register: the rendering belongs to the exact source, style, size and color
 // it was made from.
 
 /// The content of a `math` item (format.md §8.2.8). One register: replaced whole.
@@ -16,7 +16,7 @@ public struct MathContent: Hashable, Sendable, Codable {
     public var display: Bool
     /// Font size of the typeset result in points (1 em): greater than 0, at most 1000.
     public var size: Double
-    /// The colour of every mark.
+    /// The color of every mark.
     public var color: Color
     /// The typeset result: a PDF whose first page is the typeset box. Nil until a typesetter ran.
     public var render: BlobRef?
@@ -59,7 +59,7 @@ public struct MathContent: Hashable, Sendable, Codable {
     }
 
     /// True when `other` is the same equation as typeset: source, style,
-    /// size and colour (the rendering and unknown fields aside).
+    /// size and color (the rendering and unknown fields aside).
     public func typesetsLike(_ other: MathContent) -> Bool {
         latex == other.latex && display == other.display && InkJSON.round3(size) == InkJSON.round3(other.size)
             && color == other.color

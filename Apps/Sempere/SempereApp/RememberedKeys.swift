@@ -34,7 +34,7 @@ final class RememberedKeys {
         /// A key is remembered for this vault id, but not offered at this
         /// location (`offersSavedKey`): the user pastes the key or the passphrase.
         case notHere
-        /// The user cancelled Face ID / the passcode, or the vault changed meanwhile.
+        /// The user canceled Face ID / the passcode, or the vault changed meanwhile.
         case cancelled
         /// A key was read but did not unlock the vault, or the Keychain failed.
         case failed(String)

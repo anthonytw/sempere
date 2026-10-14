@@ -304,7 +304,7 @@ extension AppModel {
         do {
             result = try await offMain { try work(runOptions) }
         } catch {
-            if flag.isSet { throw CancellationError() }   // a cancelled run may also throw `.cancelled`
+            if flag.isSet { throw CancellationError() }   // a canceled run may also throw `.cancelled`
             throw error
         }
         if flag.isSet { throw CancellationError() }

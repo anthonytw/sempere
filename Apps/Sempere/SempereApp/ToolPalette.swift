@@ -3,7 +3,7 @@ import PencilKit
 
 /// The user's tool palette choices: shown or hidden, full or compact.
 ///
-/// PencilKit has no API to minimise `PKToolPicker` (no minimised state, no
+/// PencilKit has no API to minimize `PKToolPicker` (no minimized state, no
 /// docking position; the user drags it to an edge or taps its collapse
 /// control by hand). What the app can do is hide it (`setVisible`) and build a
 /// picker with fewer tools, which is a shorter palette: `compactItems`, with

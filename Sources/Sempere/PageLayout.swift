@@ -64,13 +64,13 @@ extension NoteOps {
 
     /// Adds a blank page at `index` (0 = first, `pages.count` = last; clamped)
     /// of `pages` (display order). One `addPage`, plus `setPageOrder` for
-    /// neighbours only when no order key fits between them (`PageOrder.keys`).
+    /// neighbors only when no order key fits between them (`PageOrder.keys`).
     public static func addPage(at index: Int, in pages: [Page], id: UUID = UUID()) -> PageEdit {
         insert([Page(id: id, order: "")], at: index, in: pages, ops: { [.addPage(Page(id: $0[0].id, order: $0[0].order))] })
     }
 
     /// Moves page `id` so it ends up at `index` of the result (clamped): one
-    /// `setPageOrder` (more only when neighbours must be re-keyed). Nil when
+    /// `setPageOrder` (more only when neighbors must be re-keyed). Nil when
     /// the page is not in `pages` or would not move.
     public static func movePage(_ id: UUID, to index: Int, in pages: [Page]) -> PageEdit? {
         guard let from = pages.firstIndex(where: { $0.id == id }) else { return nil }
@@ -125,7 +125,7 @@ extension NoteOps {
     }
 
     /// Places `new` (their `order` is replaced) at `index` of `pages`; `ops`
-    /// builds the ops for the placed pages, re-keys of neighbours follow them.
+    /// builds the ops for the placed pages, re-keys of neighbors follow them.
     private static func insert(_ new: [Page], at index: Int, in pages: [Page], ops: ([Page]) -> [Op]) -> PageEdit {
         let at = min(max(index, 0), pages.count)
         let placement = PageOrder.keys(count: new.count, at: at, among: pages.map(\.order))
@@ -147,7 +147,7 @@ extension PageOrder {
     /// are `orders` (display order), so that they sort right after
     /// `orders[index - 1]` and before `orders[index]`.
     ///
-    /// When no keys fit strictly between those neighbours (equal keys from
+    /// When no keys fit strictly between those neighbors (equal keys from
     /// two devices inserting at the same place, or keys this library would
     /// not generate) the following pages are re-keyed too, one at a time,
     /// until they do: `rekeyed` lists their offsets in `orders` and new keys.
@@ -245,14 +245,14 @@ extension NoteOps {
     /// Converts a pageless note to paged (format.md §5.4.3, "split"): each
     /// page is cut into sheets of the note's sheet height `H`
     /// (`PageSize.sheetHeight`). A stroke belongs to the sheet holding the
-    /// vertical centre of its transformed control points; strokes of the
+    /// vertical center of its transformed control points; strokes of the
     /// first sheet stay where they are, every other stroke is re-added under
     /// a new id (`parent` = old id) on a new page for its sheet, its transform
     /// shifted up by `k × H`, and removed from the old page; items likewise,
-    /// by the vertical centre of their frame. A page becomes as many sheets
+    /// by the vertical center of their frame. A page becomes as many sheets
     /// as its ink, its items or its stored height reach (blank sheets
     /// between keep later ink in place), at most `maxSheetsPerPage`. Words
-    /// of recognised text go to the sheet holding their box's centre. New
+    /// of recognized text go to the sheet holding their box's center. New
     /// pages copy the page's own paper. The page size becomes finite,
     /// `width × H`. Empty `ops` when the note is already paged.
     public static func makePaged(pages: [Page], pageSize: PageSize, newID: () -> UUID = UUID.init) -> LayoutEdit {
@@ -354,7 +354,7 @@ extension NoteOps {
 
     /// The sheets of height `height` a page's ink reaches (format.md §5.4.3):
     /// 1 + the largest sheet of its strokes (`sheet(of:)`) and items (their
-    /// frame's vertical centre), at least 1. A page's stored height does not count.
+    /// frame's vertical center), at least 1. A page's stored height does not count.
     static func sheetsReached(_ page: Page, height: Double) -> Int {
         var last = 0
         for s in page.strokes { last = max(last, sheet(of: s, height: height)) }
@@ -385,7 +385,7 @@ extension NoteOps {
         return Int(min((y / height).rounded(.down), Double(maxSheetsPerPage - 1)))
     }
 
-    /// The sheet of a stroke: the one holding the vertical centre of its
+    /// The sheet of a stroke: the one holding the vertical center of its
     /// control points under its transform.
     static func sheet(of stroke: Stroke, height: Double) -> Int {
         let t = stroke.transform ?? .identity
@@ -399,7 +399,7 @@ extension NoteOps {
         return sheetIndex(lo / 2 + hi / 2, height: height)
     }
 
-    /// Indices of `recognition.words` by sheet (their box's vertical centre;
+    /// Indices of `recognition.words` by sheet (their box's vertical center;
     /// words beyond `lastSheet` go to it).
     static func sheetWords(_ recognition: Recognition?, height: Double, lastSheet: Int) -> [Int: [Int]] {
         var out: [Int: [Int]] = [:]

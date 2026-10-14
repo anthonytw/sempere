@@ -72,7 +72,7 @@ final class AboutTests: XCTestCase {
         XCTAssertTrue(notices.contains("SIL OPEN FONT LICENSE Version 1.1"), "the OFL text is bundled")
     }
 
-    /// The app bundles the repository's own licence files (About ▸ Licence).
+    /// The app bundles the repository's own license files (About ▸ License).
     func testAppBundlesTheLicence() throws {
         let pbx = Self.apps.appendingPathComponent("Sempere.xcodeproj/project.pbxproj")
         try XCTSkipUnless(FileManager.default.fileExists(atPath: pbx.path), "the app is not part of this checkout")

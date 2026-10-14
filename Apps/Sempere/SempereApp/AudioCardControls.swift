@@ -114,7 +114,7 @@ final class AudioCardButton: UIButton {
         layer.cornerRadius = bounds.width / 2
         layer.borderWidth = max(1, bounds.width / 14)
         let inset = bounds.width * 0.28
-        // The play triangle looks centred a little right of the middle.
+        // The play triangle looks centered a little right of the middle.
         glyph.frame = bounds.inset(by: UIEdgeInsets(top: inset, left: inset * (isPlaying ? 1 : 1.1), bottom: inset,
                                                     right: inset * (isPlaying ? 1 : 0.9)))
     }

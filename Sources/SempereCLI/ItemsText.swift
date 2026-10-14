@@ -14,7 +14,7 @@ struct ItemsText: ParsableCommand {
             The text is the argument, or read from --file (- for standard input). A Markdown box (format.md \\
             §8.2.4 "Markdown text") gets the new Markdown source and keeps its style and the typeset formulas \\
             the new source still uses; a plain box gets the text as one run in the box's style (run styles are \\
-            dropped). --markdown turns a plain box into a Markdown box (in its font, size, colour, alignment, \\
+            dropped). --markdown turns a plain box into a Markdown box (in its font, size, color, alignment, \\
             direction and language), --no-markdown a Markdown box into a plain one. The text is laid out again \\
             with the CLI's fonts (line breaks, and the height of the lines) unless --no-breaks. Nothing is \\
             written when nothing changes.

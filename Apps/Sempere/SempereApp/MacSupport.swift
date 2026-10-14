@@ -2,7 +2,7 @@ import Foundation
 import Sempere
 import UIKit
 
-/// Where the app is running. The Mac behaviour (menus, windows, pointer input)
+/// Where the app is running. The Mac behavior (menus, windows, pointer input)
 /// is gated on this at run time, or on `#if targetEnvironment(macCatalyst)`
 /// where the code only builds there, so the iPad is unchanged.
 enum Platform {

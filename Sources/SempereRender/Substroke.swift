@@ -4,7 +4,7 @@ import Sempere
 extension BSpline {
     /// The full control-point record at parameter `t` (clamped): location on
     /// the B-spline, every other channel (time, size, opacity, force, azimuth,
-    /// altitude) interpolated linearly between the neighbouring control
+    /// altitude) interpolated linearly between the neighboring control
     /// points, as `PKStrokePath` interpolates them.
     public static func point(of points: [StrokePoint], at t: Double) -> StrokePoint {
         let n = points.count
@@ -26,7 +26,7 @@ extension BSpline {
     /// This is how a partially erased stroke (PencilKit's `maskedPathRanges`)
     /// becomes a stroke of its own (format.md §5.6 `parent`). The result
     /// starts exactly at `point(at: lower)` and ends exactly at
-    /// `point(at: upper)` (a uniform B-spline with reflected end neighbours
+    /// `point(at: upper)` (a uniform B-spline with reflected end neighbors
     /// passes through its end control points); in between it keeps the
     /// original control points strictly inside the range, so the interior
     /// follows the original curve closely but not exactly near the cut ends.

@@ -32,7 +32,7 @@ Verify a download: `sha256sum -c SHA256SUMS` and
 `gh attestation verify FILE --repo anthonytw/sempere`.
 
 Not included: a man page (the ArgumentParser manual plugin is not a dependency of the
-package; `sempere --help` and `docs/cli.md` ship instead), Apple notarisation of the macOS
+package; `sempere --help` and `docs/cli.md` ship instead), Apple notarization of the macOS
 binary, and the iPad/Mac app (TestFlight and App Store builds are made from Xcode).
 To exercise the workflow without a release, push a prerelease tag (`vX.Y.Z-rc.1`, which also
 needs a CHANGELOG section).

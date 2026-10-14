@@ -80,7 +80,7 @@ extension AppModel {
 
     /// A scheduled task (`BackgroundSync.run`): passes of the sync over
     /// every note folder, `cloudPollInterval` apart, until nothing is pending,
-    /// the task is cancelled (iOS ends it) or the vault closes. Nothing to do
+    /// the task is canceled (iOS ends it) or the vault closes. Nothing to do
     /// without an iCloud vault open in this process.
     ///
     /// - Returns: whether the sync settled.

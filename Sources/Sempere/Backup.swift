@@ -238,7 +238,7 @@ extension BackupStatus {
 /// "No backup in N days" (the app's Remind Me, `sempere backup status
 /// --max-age`): one rule for both.
 public enum BackupSchedule {
-    /// The largest number of days honoured (ten years); larger values are
+    /// The largest number of days honored (ten years); larger values are
     /// clamped, so the date arithmetic cannot overflow.
     public static let maxDays = 3650
     /// A last backup dated further than this ahead of `now` cannot be

@@ -1,9 +1,9 @@
 import Foundation
 import Sempere
 
-// MARK: - Handwritten math → LaTeX: the recogniser side (docs/attachments.md §14 G1 part 2)
+// MARK: - Handwritten math → LaTeX: the recognizer side (docs/attachments.md §14 G1 part 2)
 //
-// A recogniser reads a `MathInkImage` and proposes LaTeX. The model runs
+// A recognizer reads a `MathInkImage` and proposes LaTeX. The model runs
 // behind `MathRecognizing` (Core ML in `CoreMLMathRecognizer`, a fake in
 // tests); everything around it is pure Swift and shared by the app and
 // `sempere recognize-math`: the token vocabulary, beam search over the
@@ -15,13 +15,13 @@ public struct MathCandidate: Hashable, Sendable, Codable {
     /// LaTeX math-mode source, cleaned (`LaTeXCleanup.clean`).
     public var latex: String
     /// Mean log-probability per token of the decoder's reading (higher is
-    /// more confident; 0 is certain). Nil from recognisers that give none.
+    /// more confident; 0 is certain). Nil from recognizers that give none.
     public var score: Double?
 
     public init(latex: String, score: Double? = nil) { self.latex = latex; self.score = score }
 }
 
-/// What a recogniser read, best first.
+/// What a recognizer read, best first.
 public struct MathRecognition: Hashable, Sendable, Codable {
     public var candidates: [MathCandidate]
     /// The model that read it (`MathModelManifest.id`), for `--json` and diagnostics.
@@ -39,7 +39,7 @@ public struct MathRecognition: Hashable, Sendable, Codable {
 /// Reads handwritten math. Implementations are on device only (DESIGN.md):
 /// `CoreMLMathRecognizer` on Apple platforms; tests use a fake.
 public protocol MathRecognizing: Sendable {
-    /// The image the recogniser wants (`MathInkImage.render(strokes:spec:)`).
+    /// The image the recognizer wants (`MathInkImage.render(strokes:spec:)`).
     var imageSpec: MathImageSpec { get }
     /// Reads `image`. Slow (a model runs): call it off the main actor.
     func recognize(_ image: MathInkImage) throws -> MathRecognition
@@ -56,7 +56,7 @@ extension MathRecognizing {
 // MARK: - Vocabulary
 
 /// A decoder's vocabulary, for turning token ids back into text (decoding
-/// only: recognisers never encode text).
+/// only: recognizers never encode text).
 public struct MathVocabulary: Hashable, Sendable {
     /// How tokens become text.
     public enum Joining: String, Hashable, Sendable, Codable {
@@ -260,7 +260,7 @@ public enum MathBeamSearch {
 // MARK: - Clean-up
 
 /// Turns a model's output into a LaTeX source for `NoteOps.math`: the
-/// recognisers write tokens separated by spaces, sometimes with delimiters
+/// recognizers write tokens separated by spaces, sometimes with delimiters
 /// or display wrappers around them.
 public enum LaTeXCleanup {
     /// Commands models emit that change nothing in a math item, removed.
@@ -278,7 +278,7 @@ public enum LaTeXCleanup {
             s = String(s.dropFirst(open.count).dropLast(close.count))
             break
         }
-        // Tokenise: control words, control symbols, single characters.
+        // Tokenize: control words, control symbols, single characters.
         var out = ""
         var previousWasControlWord = false
         var pendingSpace = false

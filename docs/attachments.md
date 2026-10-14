@@ -88,7 +88,7 @@ the others) and the unused-attachments view (§4) is a per-note computation.
 **The kind suffix.** `image`, `pdf`, `audio`, `transcript`, `video`, or `bin`,
 derived from the reference's media type (`format.md` §8.1.2). It tells storage
 which kinds of attachment a note has (not which note, its title, or the
-content). The app and sync tools can prioritise without decrypting anything:
+content). The app and sync tools can prioritize without decrypting anything:
 on iCloud, download `image` and `pdf` blobs when the note opens and `audio`
 only when it is played; on WebDAV, sync small kinds first. The size class
 (padding, below) already says roughly as much.
@@ -302,7 +302,7 @@ a browsable list grouped by note: a preview (thumbnail for images and PDF
 pages, duration and title for audio from the last revision that had them), the
 note it belongs to with a link to that note's history (the restore point where
 it was last used, if any survives), the date it became unused, and
-**Delete**. Deletion honours the safety window: a blob unreferenced for less
+**Delete**. Deletion honors the safety window: a blob unreferenced for less
 than 30 days shows "can be deleted from <date>" and the button is disabled
 until then. "Delete all eligible" applies the same rule to each. A separate
 line shows space held only by history (blobs that the current notes no longer
@@ -422,7 +422,7 @@ is nil.
 
 Ink is always on top of every item. Items carry an integer `layer`
 (`format.md` §8.2.3): `0` is the background layer (PDF pages; drawn with a
-paper-coloured fill that hides the ruling under them) and `100` the content
+paper-colored fill that hides the ruling under them) and `100` the content
 layer (images, text). Items draw by `(layer, z, id)`; within a layer by an
 order key `z`, like pages.
 
@@ -448,11 +448,11 @@ transparent PNG on ruled paper shows the ruling, as on paper.
 ### Plain or rich (chosen: minimal rich text)
 
 Options considered: plain text with one style per box; minimal rich text (runs
-with bold, italic, underline, strikethrough, colour, size); full rich text
+with bold, italic, underline, strikethrough, color, size); full rich text
 (fonts, lists, paragraph styles, links).
 
-Chosen: **minimal rich text**, a box-level family/size/colour/alignment/
-direction plus runs (`format.md` §8.2.4). Bold, a colour and a bigger size are
+Chosen: **minimal rich text**, a box-level family/size/color/alignment/
+direction plus runs (`format.md` §8.2.4). Bold, a color and a bigger size are
 what text boxes on handwritten pages are used for (headings, labels); lists
 can be typed as `•` lines. The whole text is one LWW register, so runs add no
 merge complexity.
@@ -547,7 +547,7 @@ shown typeset, edited as text in a sheet with a live preview. The item also
 stores a rendered PDF of the result (a blob, `render`), so the CLI, the web
 viewer and any reader without a math typesetter draw it. The whole `math`
 object is one register, because the rendering belongs to the exact source,
-style, size and colour it was typeset from (two separate registers could pair
+style, size and color it was typeset from (two separate registers could pair
 one device's source with another's rendering). Typesetting runs on device with
 a Swift math layout library; candidates, all GPL-compatible:
 
@@ -612,7 +612,7 @@ The format does not fix this; two layouts, both supported by the same item:
   PDF page, each with one `pdfPage` item in the background layer (`0`) whose
   frame fills the page. The note's `pageSize` is the first page's effective
   size, so an exported PDF has the original's page size. Pages of another size
-  are fitted (uniform scale, centred) into the note's page size, since
+  are fitted (uniform scale, centered) into the note's page size, since
   `pageSize` is per note (a per-page size is a possible extension). Paper is
   `blank`. A PDF with more than 2 000 pages is refused.
 - **Notability import.** One infinite page with one `pdfPage` per PDF page at
@@ -737,7 +737,7 @@ What it holds (`format.md` §8.3.2):
 The word level serves two features: *read-back highlighting* (while the
 recording plays, the current word is highlighted in the transcript, and
 tapping a word seeks to it) and *confidence* (doubtful words shown underlined
-or greyed, and search that can skip words under a threshold). SpeechTranscriber
+or grayed, and search that can skip words under a threshold). SpeechTranscriber
 gives time ranges and confidence per run, so both are available;
 SFSpeechRecognizer gives them per segment (its "segments" are words), which
 maps to words as well.
@@ -759,7 +759,7 @@ with the stroke and never changes. It enables:
   fills in as the recording plays.
 - *Tap a transcript word*: seek to its `start`; strokes written around that
   time can be highlighted.
-- *Tap a recognised word*: find the strokes under its box, take the smallest
+- *Tap a recognized word*: find the strokes under its box, take the smallest
   `at`, play from there.
 
 A stamp on each stroke rather than a list of events in the recording: a list
@@ -798,7 +798,7 @@ Matrices: the content stream starts with `1 0 0 -1 0 H cm` (y down). An image
 XObject paints the unit square with y up; a form paints its BBox in PDF user
 space. The exporter composes, per item: source → effective/oriented
 coordinates (`format.md` §8.5.1 tables) → crop to frame → rotation about the
-frame centre, and emits it as one `cm` after `q`, with the frame (rotated) as
+frame center, and emits it as one `cm` after `q`, with the frame (rotated) as
 clip path (`W n`).
 
 ### PDF backgrounds in SVG and PNG
@@ -903,9 +903,9 @@ instance (bold would export with regular outlines), so the app builds a small
 TrueType font per text box and font instance from CoreText's own glyph
 outlines at the instance drawn (`CTFontCreatePathForGlyph`; `OutlineFont` in
 SempereRender, cubic outlines approximated by quadratics within 1 font unit),
-which the writers subset like any font. Colour and bitmap glyphs (Apple Color
+which the writers subset like any font. Color and bitmap glyphs (Apple Color
 Emoji) have no outlines: they are left out of the export and reported. Bold
-and italic use the family's faces; synthesised ones (`format.md` §8.5.3) use
+and italic use the family's faces; synthesized ones (`format.md` §8.5.3) use
 an outline stroke or a `Tm` shear (12°).
 
 CLI shaper (task C2): it also applies GSUB multiple and (chained) context
@@ -947,7 +947,7 @@ Pages show a video item as its poster with the play mark (`format.md`
 the clips alone) embeds each clip once as a PDF file attachment, named
 `<title> – Video N.mp4`. A clip can be 1 GiB, so the PDF is not built in
 memory when it is written to a file (`PDFWriter.write(…to:)`): the embedded
-file objects hold a blob reference, and serialising the PDF streams the
+file objects hold a blob reference, and serializing the PDF streams the
 verified clip from the vault straight into the output (xref offsets counted as
 it goes), up to 8 GiB of attachments per PDF. The in-memory
 `PDFWriter.render` has a 512 MiB budget. Markdown and HTML exports write each
@@ -1120,7 +1120,7 @@ for its note (§4).
   app in the background; microphone usage string in `Info.plist`.
 - Long recordings: keep the file on disk, never in memory; a 3-hour lecture is
   about 86 MB at the default. If the app is killed mid-recording, the `.m4a` is
-  not finalised; record in segments (for example a new file every 10 minutes,
+  not finalized; record in segments (for example a new file every 10 minutes,
   stitched as several recordings or concatenated with `AVMutableComposition`
   on stop) so that a crash loses at most one segment.
 - `rec.at` for strokes: `PKStroke.path.creationDate − recordingStart`.
@@ -1238,17 +1238,17 @@ and `ItemFrames` in `Sources/Sempere/ItemOps.swift`):
 - **Replace Image.** An image's blob is immutable (`format.md` §8.2.2): the new
   picture is stored first (photo privacy setting applies), then one delta
   removes the old image and adds a new one whose `parent` names it, in the
-  largest frame of the new picture's proportions inside the old frame, centred,
+  largest frame of the new picture's proportions inside the old frame, centered,
   with its rotation and stacking (`NoteOps.replaceImage`, CLI `sempere items
   replace`). Undo puts the old picture back the same way.
 - **Insert menu** (pictures and video, a text box, PDF): the PDF entry says
   where the pages go ("Insert PDF Pages After Page N…", "…at the End…"; also in
   the Add Page menu). On a pageless note it reads "Switch to Pages and Insert
   PDF…": the note is switched to pages (one delta) only once a PDF is picked,
-  so cancelling the picker changes nothing.
-- **Text colour** is a row of swatches (the pen palette: black, blue, green,
-  yellow, red, and the pen's current colour first when it is another one) plus
-  the system colour picker, as the pen's colour wheel opens.
+  so canceling the picker changes nothing.
+- **Text color** is a row of swatches (the pen palette: black, blue, green,
+  yellow, red, and the pen's current color first when it is another one) plus
+  the system color picker, as the pen's color wheel opens.
 
 ### Export options
 
@@ -1453,10 +1453,10 @@ bundle next to the binary), font-pack discovery and selection by `cmap`
 coverage and `lang`, OpenType reader (`head`, `hhea`, `maxp`, `cmap` 4/12/14,
 `hmtx`, `loca`, `glyf` including composite glyphs, `CFF ` for CJK packs,
 GSUB/GPOS subset of §6), UAX #9, #14 and #29, layout per `format.md` §8.5.3
-honouring `breaks`, the `TextShaper` protocol with the CLI's default
+honoring `breaks`, the `TextShaper` protocol with the CLI's default
 implementation, **font subsetting** (TrueType and CFF) for PDF (Type0 +
 `ToUnicode`) and SVG (`@font-face`), raster glyphs, the missing-script report.
-*Done when:* layout unit tests (stored breaks honoured, invalid breaks ignored,
+*Done when:* layout unit tests (stored breaks honored, invalid breaks ignored,
 UAX #14 fallback, long word, alignment with `start`/`end` in LTR and RTL, mixed
 sizes, empty lines, tabs); an Arabic and a Hebrew line reorder and join
 correctly against reference renderings; with a CJK font pack, `pdftotext`
@@ -1566,14 +1566,14 @@ recording and they ascend; else reported with their range, `dropped.recLinks`).
   with ImageIO to JPEG q 0.9 (PNG with alpha) and then through `ImageIngest`,
   so one place decides what is stored; with the setting off a HEIC is stored as
   picked. Frames from `NoteOps.placeImage` and `NoteOps.viewFrame` (fitted into
-  what is on screen, or centred on a drop). Insert menu in the editor toolbar
+  what is on screen, or centered on a drop). Insert menu in the editor toolbar
   (Photos, Take Photo where there is a camera and never on a Mac, Paste, PDF
   Pages), drops on the canvas (`UIDropInteraction`: images and PDFs from other
   apps), Crop… in the item menu (a sheet over the whole source; `NoteOps.setCrop`
   keeps the visible part in place; one undo step), the setting in Settings
   (`PhotoPrivacy`, `Sempere.photoPrivacy`). CLI: `items crop`.
 - **E2 — text boxes:** text tool, editor overlay with system fonts, styles
-  (bold, italic, underline, colour, size, alignment, family), `lang` and `dir`,
+  (bold, italic, underline, color, size, alignment, family), `lang` and `dir`,
   `breaks` from TextKit, committed text drawn by CoreText per `format.md`
   §8.5.3, the app's `TextShaper` (CoreText glyphs and font tables for
   subsetting), search hits highlighted. *Done when:* text in Latin, CJK and
@@ -1599,7 +1599,7 @@ recording and they ascend; else reported with their range, `dropped.recLinks`).
   box are highlighted on the page: `TextMatchBoxes` (SempereRender) lays the box
   out with the caller's shaper (CoreText in the app, the export fonts in
   `sempere search --show-boxes`) and boxes the matched letters; the cursor steps
-  through them with the recognised words.
+  through them with the recognized words.
   *Not implemented:* the style bar is an input accessory view, which Mac
   Catalyst does not show (⌘B/⌘I/⌘U work there); emoji are left out of app
   exports (reported).
@@ -1677,7 +1677,7 @@ recording and they ascend; else reported with their range, `dropped.recLinks`).
   the blob then one `setRecording(transcript)` delta through the browser path
   (`AppModel.storeTranscript`), so it finishes if the note is closed, and an
   open editor takes the result. `TranscriptView`: segments with times, the
-  playing word highlighted, words under 0.5 confidence grey and dotted, tap a
+  playing word highlighted, words under 0.5 confidence gray and dotted, tap a
   word or time to play from it. Settings lists each engine's availability for
   the device language (`SpeechTranscription.availability`; the CLI's `transcribe
   --check`). Settings ▸ Transcription has a download button that runs
@@ -1705,7 +1705,7 @@ recording and they ascend; else reported with their range, `dropped.recLinks`).
   of §4 (Application Support, per vault and note, updated by every `NoteWriter`
   write and every sync arrival, using A1's per-note references), "Unused
   attachments: N items, X MB" in Settings, the browsable list (preview, the note
-  and its history, became-unused date, Delete honouring the 30-day window,
+  and its history, became-unused date, Delete honoring the 30-day window,
   "Delete all eligible"), the "held by history" total. *Done when:* index
   updates touch only the changed note (test with a counting vault fake); a blob
   becomes deletable exactly 30 days after it was first seen unreferenced; a
@@ -1746,7 +1746,7 @@ orientation and metadata removal; PDF page sizes).
   linear, no recursion, fuzzed), `NoteOps.math` / `placeMath` / `setMath` /
   `mathFrame` (`Sources/Sempere/MathItems.swift`). Render: `MathRendering.swift`
   (the render as a pdfPage without crop; SVG/PNG through Poppler turned back
-  into coverage of the colour; else the source as monospace text with a
+  into coverage of the color; else the source as monospace text with a
   warning). CLI: `attach math`, `items math`, `items list`, `notes show`,
   `search`, `$$…$$` in Markdown/HTML. **How the CLI renders math:** it has no
   typesetter (`Sources/` stays pure Swift and no TeX engine is spawned); it
@@ -1756,7 +1756,7 @@ orientation and metadata removal; PDF page sizes).
   engine and a math font in `Sources/`, a large surface for little gain while
   every equation the app writes carries its rendering. App: Insert → Equation…,
   "Edit Equation…" on a selected one (`MathEditorView`, live SwiftMath preview,
-  display/inline, size, colour), `MathTypesetter` (SwiftMath → one-page PDF),
+  display/inline, size, color), `MathTypesetter` (SwiftMath → one-page PDF),
   render blob first then one delta, undo; an equation without a render (the
   CLI's) is typeset on the canvas. Web viewer: the render through pdf.js on a
   transparent page, else the source.
@@ -1771,20 +1771,20 @@ orientation and metadata removal; PDF page sizes).
   input is Sempere's own vector ink, so both online (stroke) and offline
   (rendered image, as `RecognitionImage` already makes for Vision) models fit.
 
-  | Option | Licence (code / weights / data) | Size | Accuracy (published) | Notes |
+  | Option | License (code / weights / data) | Size | Accuracy (published) | Notes |
   | --- | --- | --- | --- | --- |
   | Apple (Math Notes in Notes/Calculator, PencilKit recognition) | system | — | good | no public API for math; PencilKit recognition requires iPadOS 27+ |
   | TexTeller (OleehyO) | Apache-2.0 / Apache-2.0 / Tex80M, partly scraped; handwritten part ~5 % | 298 M params (~600 MB fp16, ~300 MB 8-bit) | strong on handwritten benchmarks | ViT + Transformer decoder; too large for a first version on a low-end iPad, and the provenance of its data is not documented well enough to ship |
   | UniMERNet (OpenDataLab) | Apache-2.0 / Apache-2.0 / UniMER-1M (arXiv + CROHME + HME100K) | T ≈ 100 M, S ≈ 200 M, B ≈ 325 M params | good on handwritten subsets | the Tiny model is the realistic size; CROHME and HME100K terms are research-oriented |
   | Pix2Text MFR (breezedeus) | MIT / MIT (open version) / mixed | TrOCR-style encoder-decoder, size to measure | printed first, handwriting improved in 1.5 | ONNX exports exist; Core ML conversion straightforward |
-  | Texo (2025 paper) | unverified | ~20 M params | near UniMERNet-T | the size to aim for; licence and weights to check |
-  | BTTR / CoMER / TAMER / PosFormer (CROHME research models) | BTTR MIT; CoMER, TAMER no licence file; PosFormer academic use only | 6–10 M params | ~55–65 % ExpRate on CROHME 2014–2019 | small enough for any iPad, but only BTTR's code is usable, and all are trained on CROHME |
+  | Texo (2025 paper) | unverified | ~20 M params | near UniMERNet-T | the size to aim for; license and weights to check |
+  | BTTR / CoMER / TAMER / PosFormer (CROHME research models) | BTTR MIT; CoMER, TAMER no license file; PosFormer academic use only | 6–10 M params | ~55–65 % ExpRate on CROHME 2014–2019 | small enough for any iPad, but only BTTR's code is usable, and all are trained on CROHME |
   | Own small model on MathWriting (Google, 230 k human + 400 k synthetic online inks) | — / own / **CC BY-NC-SA 4.0** | ~10 M params | the paper reports baselines on it | the best data, but non-commercial and share-alike: not usable for weights shipped in the App Store |
 
   Findings. Every strong handwritten-math model is trained at least partly on
   CROHME, HME100K or MathWriting, whose terms are research-only or
-  non-commercial; the code and weight licences (MIT, Apache-2.0) do not settle
-  that. The models with clean code licences that are small enough for such an iPad
+  non-commercial; the code and weight licenses (MIT, Apache-2.0) do not settle
+  that. The models with clean code licenses that are small enough for such an iPad
   (≤ 100 M parameters, ≤ 100 MB on disk after 8-bit palettization, well under a
   second per equation on the Neural Engine with a cached encoder pass and a
   256-token decoder limit) are UniMERNet-T and Pix2Text MFR; both need a Core ML
@@ -1795,7 +1795,7 @@ orientation and metadata removal; PDF page sizes).
   app that is free and GPL but distributed through the App Store). (2) Prototype
   behind a DEBUG flag with UniMERNet-T converted to Core ML (8-bit, model
   downloaded on first use with Background Assets so the app does not grow),
-  recognising the strokes of a lasso selection rendered by `RecognitionImage`,
+  recognizing the strokes of a lasso selection rendered by `RecognitionImage`,
   and measure on a sample of real handwriting and on CROHME 2019 test:
   accept only if ExpRate ≥ 50 % and latency ≤ 1 s on such an iPad. (3) The clean
   long-term path is an own ~10–20 M parameter online model trained on data that

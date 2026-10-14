@@ -132,7 +132,7 @@ struct PaperPickerTests {
         let thick = PaperView.groups(paper: Paper(kind: .ruled, lineWidth: 2), size: page)
         #expect(thick.map(\.lineWidth) == [2])
         let margin = PaperView.groups(paper: Paper(kind: .marginRuled, marginTop: 50), size: page)
-        #expect(margin.count == 2)   // ruling, and the margin lines in their own colour
+        #expect(margin.count == 2)   // ruling, and the margin lines in their own color
         #expect(Set(margin.compactMap(\.stroke)).count == 2)
         let cornell = PaperView.groups(paper: Paper(kind: .cornell), size: page, sheetHeight: 792)
         #expect(Set(cornell.map(\.lineWidth)) == [0.5, 1])   // notes rules and the heavier cue / summary rules

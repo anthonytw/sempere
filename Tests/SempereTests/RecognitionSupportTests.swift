@@ -120,7 +120,7 @@ final class RecognitionSupportTests: VaultTestCase {
 
     func testPageBoxFlipsYAndScalesToTheRegion() {
         let r = box(100, 200, 400, 300)
-        // A normalised box in the bottom-left quarter of the image.
+        // A normalized box in the bottom-left quarter of the image.
         let b = RecognitionLayout.pageBox(normalized: box(0, 0, 0.5, 0.5), region: r)
         XCTAssertEqual(b, box(100, 350, 200, 150))
         // Top-right quarter.
@@ -343,7 +343,7 @@ final class SearchMatchCursorTests: XCTestCase {
         r = try XCTUnwrap(r.refreshed(pages: pages))
         XCTAssertEqual(r.pagesComputed, 1)
         XCTAssertTrue(r.matches(onPage: pages[20].id).isEmpty)
-        pages[20].recognition = recognition   // re-recognised: back
+        pages[20].recognition = recognition   // re-recognized: back
         r = try XCTUnwrap(r.refreshed(pages: pages))
         XCTAssertEqual(r.pagesComputed, 1)
         XCTAssertEqual(r.matches(onPage: pages[20].id).count, 5)

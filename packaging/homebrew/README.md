@@ -35,8 +35,8 @@ Before trusting a download you can also verify provenance:
 - The Linux binary is static except for libcurl and libxml2 (used by WebDAV sync); on
   Linuxbrew these come from the system. If `brew audit` objects, add
   `depends_on "curl"` / `depends_on "libxml2"` under `on_linux`.
-- The macOS binary is not notarised. Homebrew downloads set no quarantine flag, so it runs;
+- The macOS binary is not notarized. Homebrew downloads set no quarantine flag, so it runs;
   a tarball downloaded in a browser may need `xattr -d com.apple.quarantine sempere`.
-  TODO(user): notarise once the Developer ID certificate exists (requires the paid program).
+  TODO(user): notarize once the Developer ID certificate exists (requires the paid program).
 - Optional automation: a workflow in the tap, triggered by `repository_dispatch` from the
   release job, running `update-formula.sh` and opening a PR. Not set up.

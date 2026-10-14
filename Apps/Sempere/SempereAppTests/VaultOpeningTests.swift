@@ -93,13 +93,13 @@ struct VaultOpeningTests {
 
     /// The listing belongs to the model: the task that unlocked (an unlock
     /// sheet's `.task`, which SwiftUI cancels when the sheet goes away) can
-    /// be cancelled without the list staying empty.
+    /// be canceled without the list staying empty.
     @Test func cancellingTheUnlockingTaskDoesNotStopTheListing() async throws {
         let gate = Gate()
         let (model, key, _) = try await Self.lockedModel(gate: gate)
         await gate.close()
         let start = await gate.arrivals
-        // Awaiting the notes: the task is cancelled while the listing waits at the gate.
+        // Awaiting the notes: the task is canceled while the listing waits at the gate.
         let unlocking = Task { _ = try? await model.unlock(identityText: key, awaitNotes: true) }
         await gate.waitForArrivals(start + 1)
         await gate.releaseOne()                  // the key check

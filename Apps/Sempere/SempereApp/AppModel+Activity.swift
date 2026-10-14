@@ -18,7 +18,7 @@ extension AppModel {
         activity.save(root: activityRoot, vault: vault)
     }
 
-    /// Live notes recognised in the last 7 days, newest first: the sidebar
+    /// Live notes recognized in the last 7 days, newest first: the sidebar
     /// shows "Recently Recognized" only while there are some. Written by this
     /// device's runs and by every other device's (`RecentlyRecognized`).
     var recentlyRecognizedNotes: [NoteSummary] {

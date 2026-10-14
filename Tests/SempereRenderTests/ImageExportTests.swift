@@ -111,7 +111,7 @@ final class ImageExportTests: XCTestCase {
                     expected = (255, 255, 255)
                 } else if let s = probes[0], probes.allSatisfy({ $0 != nil }) {
                     // At least 1.5 source pixels from the quadrant boundaries and the
-                    // image's edges: resampling blends neighbouring pixels.
+                    // image's edges: resampling blends neighboring pixels.
                     let margin = 1.5
                     guard abs(s.a - w / 2) >= margin, abs(s.b - h / 2) >= margin, s.a >= margin, s.a <= w - margin,
                           s.b >= margin, s.b <= h - margin else { continue }
@@ -356,7 +356,7 @@ final class ImageExportTests: XCTestCase {
         ])])
         let pdf = try PDFWriter.render(note: note, options: RenderOptions(blobs: MemoryBlobSource([rgba, grey])))
         XCTAssertEqual(T.count(pdf, "/SMask"), 1)
-        XCTAssertEqual(T.count(pdf, "/ColorSpace /DeviceGray"), 2)   // the grey image and the mask
+        XCTAssertEqual(T.count(pdf, "/ColorSpace /DeviceGray"), 2)   // the gray image and the mask
         XCTAssertEqual(T.count(pdf, "/ColorSpace /DeviceRGB"), 1)
     }
 
@@ -380,7 +380,7 @@ final class ImageExportTests: XCTestCase {
 
     // MARK: Placeholders and the report
 
-    /// The placeholder (format.md §8.5.2): grey outline and diagonals.
+    /// The placeholder (format.md §8.5.2): gray outline and diagonals.
     static func isPlaceholderGrey(_ img: RGBAImage, _ x: Int, _ y: Int) -> Bool {
         let i = (y * img.width + x) * 4
         let r = Int(img.pixels[i]), g = Int(img.pixels[i + 1]), b = Int(img.pixels[i + 2])

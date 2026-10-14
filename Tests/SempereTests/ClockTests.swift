@@ -162,7 +162,7 @@ final class ClockTests: XCTestCase {
         XCTAssertEqual(u.entries[devB], Included.Entry(upTo: 1, extra: [3]))
         XCTAssertEqual(u, other.union(inc))
 
-        // Normalises on construction and decode.
+        // Normalizes on construction and decode.
         XCTAssertEqual(Included.Entry(upTo: 2, extra: [4, 3, 1, 7]), Included.Entry(upTo: 4, extra: [7]))
         let json = #"{"a1b2c3d4":{"upTo":12,"extra":[15,16]},"99ee00ff":{"upTo":3,"extra":[]}}"#
         let decoded = try InkJSON.decoder().decode(Included.self, from: Data(json.utf8))

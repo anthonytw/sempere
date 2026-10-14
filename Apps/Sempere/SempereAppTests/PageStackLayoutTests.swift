@@ -138,7 +138,7 @@ struct PageStackLayoutTests {
     }
 
     /// A search match on a page of the stack (`PageStackHost.performReveal`):
-    /// left alone when comfortably on screen, else centred, within the scroll.
+    /// left alone when comfortably on screen, else centered, within the scroll.
     @Test func aSearchMatchIsBroughtIntoView() throws {
         let l = Self.letter
         let view = (width: 612.0, height: 1000.0)
@@ -146,7 +146,7 @@ struct PageStackLayoutTests {
         // Page 3 at the top of the screen: the box is in the middle, nothing moves.
         let top = l.offset(toShow: 3, scale: 1, viewportHeight: view.height)
         #expect(l.revealOffset(of: box, onPage: 3, scale: 1, offset: (0, top), viewport: view) == nil)
-        // Page 3 far below: the box is centred, in page 3's coordinates at the scale.
+        // Page 3 far below: the box is centered, in page 3's coordinates at the scale.
         let r = try #require(l.revealOffset(of: box, onPage: 3, scale: 2, offset: (0, 0), viewport: view))
         let centre = (Double(l.pageFrame(3, scale: 2).minY) + (400 + 10) * 2)
         #expect(abs(r.y - (centre - 500)) < 1e-9)

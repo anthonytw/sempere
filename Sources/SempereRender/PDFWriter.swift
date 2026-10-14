@@ -2,7 +2,7 @@ import Foundation
 import Sempere
 import SemperePDF
 
-/// Minimal PDF 1.4 writer: vector paths, RGB colour, alpha via `ExtGState`.
+/// Minimal PDF 1.4 writer: vector paths, RGB color, alpha via `ExtGState`.
 ///
 /// Every note page becomes one PDF page of `pageSize` points; an `infinite`
 /// page is split into pages of `infiniteChunkHeight`, else the page's
@@ -42,7 +42,7 @@ public enum PDFWriter {
     /// Images (format.md §8.2.5) become Image XObjects, one per blob however
     /// often it is used: a JPEG is passed through (`DCTDecode`) with its
     /// metadata stripped unless `options.keepImageMetadata`; other images
-    /// are decoded and stored as 8-bit Flate RGB or grey with an `/SMask`
+    /// are decoded and stored as 8-bit Flate RGB or gray with an `/SMask`
     /// for transparency. Each is drawn with one `cm` (orientation, crop,
     /// frame and rotation) inside a clip to its rotated frame.
     ///
@@ -399,7 +399,7 @@ public enum PDFWriter {
         case form(Int, Affine)
         /// An image XObject and the matrix from its unit square to page coordinates.
         case image(Int, Affine)
-        /// Laid-out text and its rotation about the frame's centre.
+        /// Laid-out text and its rotation about the frame's center.
         case text(ShapedText, Affine)
         /// An `audio` item's card (format.md §8.2.9).
         case card(AudioCardDraw)
@@ -699,7 +699,7 @@ final class PDFObjects {
 
     /// An image item's Image XObject: a JPEG passed through (`DCTDecode`,
     /// metadata stripped unless `keepMetadata`), anything else decoded and
-    /// stored as 8-bit Flate grey or RGB, with an `/SMask` when not opaque.
+    /// stored as 8-bit Flate gray or RGB, with an `/SMask` when not opaque.
     func addImage(_ placed: PlacedImage, store: ImageStore, keepMetadata: Bool) throws -> Int {
         let image = placed.image
         let size = "/Width \(image.width) /Height \(image.height) /BitsPerComponent 8"

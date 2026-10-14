@@ -2,7 +2,7 @@ import SempereRender
 import Sempere
 import UIKit
 
-/// The page's paper (background colour plus its ruling) under the canvas,
+/// The page's paper (background color plus its ruling) under the canvas,
 /// built from `SempereRender.PaperRenderer` so it matches exports for every kind.
 ///
 /// Rulings are vector shape layers rather than a bitmap: an infinite page can
@@ -10,7 +10,7 @@ import UIKit
 /// and line width into one path per group (a layer each), built once in page
 /// points and re-scaled for the zoom level.
 final class PaperView: UIView {
-    /// Commands of one look: all lines of a colour and width, or all dots of a colour.
+    /// Commands of one look: all lines of a color and width, or all dots of a color.
     struct Group {
         var path = CGMutablePath()
         var stroke: Paint?

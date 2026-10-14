@@ -227,7 +227,7 @@ final class RibbonOutlineTests: XCTestCase {
             let t = Self.tally(strokes, scales: name == "fixture" || Self.full ? [2, 300.0 / 72] : [2])
             print(Self.report(name, t))
             // Dense ink changes width at every control point, so about half its ends are wider than
-            // their neighbour and keep a whole disc (fixture ~1.9x).
+            // their neighbor and keep a whole disc (fixture ~1.9x).
             XCTAssertGreaterThanOrEqual(Double(t.oldPoints) / Double(t.newPoints), name == "dense" ? 1.6 : 1.8, name)
             XCTAssertEqual(t.newSubpaths, strokes.count, name)
             for (scale, d) in t.diff {

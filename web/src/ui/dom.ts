@@ -27,7 +27,7 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Props = 
 
 export const svgNS = "http://www.w3.org/2000/svg";
 
-/** Attributes the renderer emits; anything else is refused (defence in depth). */
+/** Attributes the renderer emits; anything else is refused (defense in depth). */
 const allowedSVGAttrs = new Set([
   "x", "y", "width", "height", "x1", "y1", "x2", "y2", "cx", "cy", "r", "points", "d", "fill", "fill-opacity",
   "stroke", "stroke-opacity", "stroke-width", "stroke-linecap", "stroke-linejoin", "viewBox",

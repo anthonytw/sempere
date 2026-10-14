@@ -30,7 +30,7 @@ struct AttachmentDeletion: Equatable, Sendable {
 /// notes not indexed yet (an existing install, or notes whose summary came
 /// from the summary cache) are indexed when Settings asks (`indexAttachments`).
 /// Deleting goes through `Vault.collectBlobs(note:records:only:)` with the
-/// entry's records, which reads the note again and honours the 30-day window.
+/// entry's records, which reads the note again and honors the 30-day window.
 /// In iCloud Drive a note with a revision not on this device decides nothing
 /// (`CloudVault.requireLocal`).
 extension AppModel {

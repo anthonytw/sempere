@@ -22,7 +22,7 @@ struct ImportPDFCommand: ParsableCommand {
             The PDF is stored as one blob of the new note and each page becomes a note page with a pdfPage \
             item that fills it (docs/attachments.md §8): the note's page size is the first PDF page's \
             (effective size: crop box, rotation), paper is blank, later pages of another size are fitted and \
-            centred. Everything is one delta. The title is --title (one file only) or the file name without \
+            centered. Everything is one delta. The title is --title (one file only) or the file name without \
             .pdf. Encrypted PDFs are refused, and so are more than 2000 pages; --pages imports a subset. \
             Each page's text is stored for search (--pdf-text: pdftotext when installed, else the built-in \
             reader; format.md §8.2.6). Writing on the pages is the app's job: ink is stored as usual on top. \

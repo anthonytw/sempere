@@ -29,7 +29,7 @@ the XCTest `Executed N tests` line is the one that matters.
 4. Add tests with the change; format changes go through `docs/format.md` first.
 5. Update `CHANGELOG.md` under `[Unreleased]` for anything a user would notice.
 6. CI must be green (Linux, macOS, app). Maintainers squash-merge.
-7. Fill in the PR template, including the licence and sign-off checkbox.
+7. Fill in the PR template, including the license and sign-off checkbox.
 
 Style: Swift 6 strict concurrency, `Sendable` value types for the model, typed error enums per
 module, no force-unwraps outside tests, `///` on public API, XCTest for tests.
@@ -52,7 +52,7 @@ localized. Full rules and the Spanish glossary: [docs/localization.md](docs/loca
    `Sources/` or what the app writes into a vault.
 5. Open the pull request. A native speaker reviewing the glossary choices helps most.
 
-## Licence and sign-off
+## License and sign-off
 
 Sempere is licensed **GPL-3.0-or-later with an App Store exception** (`LICENSE`,
 `LICENSE-EXCEPTION`). The exception is a
@@ -61,13 +61,13 @@ builds through Apple's App Store under Apple's terms as long as the complete sou
 public under the GPL. It does not relicense your code or give the maintainer any right the
 other contributors do not have.
 
-There is **no contributor licence agreement** and no copyright assignment. You keep your
+There is **no contributor license agreement** and no copyright assignment. You keep your
 copyright. By contributing you license your work under those same terms (inbound = outbound),
 and you certify the [Developer Certificate of Origin](https://developercertificate.org/) by
 signing off each commit (`git commit -s`, which adds `Signed-off-by: Your Name <you@example.org>`):
-you wrote it or have the right to submit it under this licence, and your employer does not
+you wrote it or have the right to submit it under this license, and your employer does not
 claim it. Ticking the box in the PR template is the fallback for a commit you could not sign.
 
-Third-party code needs a licence compatible with GPL-3.0-or-later and with App Store
+Third-party code needs a license compatible with GPL-3.0-or-later and with App Store
 distribution (MIT, BSD, Apache-2.0, ISC); say where it came from in the PR. GPL-only (without
 this permission) and AGPL code cannot be accepted.

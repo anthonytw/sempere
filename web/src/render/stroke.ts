@@ -133,7 +133,7 @@ export function samples(stroke: Stroke, tolerance = 0.05, maxSpacing = 1.0, offs
     }
   }
 
-  // Drop coincident neighbours (repeated control points).
+  // Drop coincident neighbors (repeated control points).
   const dedup: Sample[] = [];
   for (const s of out) {
     const last = dedup[dedup.length - 1];
@@ -147,7 +147,7 @@ export function samples(stroke: Stroke, tolerance = 0.05, maxSpacing = 1.0, offs
   return dedup;
 }
 
-/** Opacity multiplier per tool, on top of colour alpha and sample opacity. */
+/** Opacity multiplier per tool, on top of color alpha and sample opacity. */
 export function toolOpacity(tool: InkTool): number {
   switch (tool) {
     case "pen": case "fountainPen": case "monoline": return 1;

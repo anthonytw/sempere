@@ -1,4 +1,4 @@
-// Search over titles, notebooks, tags and recognised text, and notebook paths:
+// Search over titles, notebooks, tags and recognized text, and notebook paths:
 // ports of Sources/Sempere/NoteSearch.swift and Notebooks.swift.
 
 /** The display segments of a notebook name (format.md §5.4); empty for none. */
@@ -344,7 +344,7 @@ function excerpt(text: string, ws: string[]): Snippet | undefined {
 }
 
 /** An excerpt of `page` around the first match of any of `ws` in its prose, never crossing into a
- * neighbouring part; `equationMarker` when the words are only in equations (Swift `NoteSearch.snippet`). */
+ * neighboring part; `equationMarker` when the words are only in equations (Swift `NoteSearch.snippet`). */
 export function pageSnippet(page: PageTextEntry, ws: string[]): Snippet | undefined {
   const spans = page.spans && page.spans.length > 0 ? page.spans : [{ start: 0, end: page.text.length, isMath: false }];
   let inEquation = false;

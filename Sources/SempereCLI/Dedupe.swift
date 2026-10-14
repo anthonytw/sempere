@@ -9,7 +9,7 @@ struct NotesDedupe: ParsableCommand {
         commandName: "dedupe",
         abstract: "Find and remove strokes left over by concurrent edits of the same stroke.",
         discussion: """
-            When two devices slice, move or recolour the same stroke without seeing each other's edit,
+            When two devices slice, move or recolor the same stroke without seeing each other's edit,
             readers keep the later edit and hide the other one's strokes (format.md §5.6.1). This
             command lists, per note, the strokes so hidden that revisions still add ("superseded"),
             and live strokes that duplicate others descending from the same stroke, which the merge

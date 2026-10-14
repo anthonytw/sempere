@@ -175,8 +175,8 @@ final class TagMergeTests: VaultTestCase {
         }
     }
 
-    /// Hardening: a blank or unnormalised `addTag` (a buggy or hostile
-    /// writer) never shows an empty tag, and reads normalised everywhere.
+    /// Hardening: a blank or unnormalized `addTag` (a buggy or hostile
+    /// writer) never shows an empty tag, and reads normalized everywhere.
     func testBlankAndUnnormalisedAddTagFromAWriter() throws {
         var log = LogBuilder()
         let d = log.delta(devA, 100, [.addTag(""), .addTag("  \t "), .addTag("  Fall\n  Term ")])

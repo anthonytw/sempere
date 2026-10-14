@@ -295,7 +295,7 @@ final class SummaryTests: VaultTestCase {
     func testCacheDropsDeletedNotesAndKeepsNoProblems() throws {
         let (vault, dir, _) = try makeCachedVault()
         let ids = try vault.noteIDs()
-        // A broken revision: summarised with a problem, never cached.
+        // A broken revision: summarized with a problem, never cached.
         let broken = ids[1]
         let file = vault.noteURL(broken).appendingPathComponent(try vault.revisionNames(of: broken)[0].filename)
         try flipByte(file, at: 20)

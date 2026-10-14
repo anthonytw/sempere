@@ -19,7 +19,7 @@ public struct PlacedGlyph: Sendable {
     }
 }
 
-/// Consecutive glyphs of one font, size, colour and style on one line.
+/// Consecutive glyphs of one font, size, color and style on one line.
 public struct GlyphRun: Sendable {
     public var face: FontFace
     /// Font size in points.
@@ -84,7 +84,7 @@ public struct ShapedText: Sendable {
     /// Scripts the shaper draws approximately (they need a full shaping engine).
     public var approximateScripts: Set<String> = []
     /// Scripts of characters whose glyphs have no outlines the exporters can
-    /// draw (colour or bitmap glyphs, e.g. Apple Color Emoji in the app), with
+    /// draw (color or bitmap glyphs, e.g. Apple Color Emoji in the app), with
     /// an example character each: left out of the export and reported.
     public var bitmapScripts: [String: UInt32] = [:]
     /// Bottom of the last line.
@@ -389,7 +389,7 @@ public struct DefaultTextShaper: TextShaper {
     /// choosing a font per character (the run's face, else a font pack).
     private func itemize(_ chars: [Char], _ para: Range<Int>, content: TextContent, levels: [UInt8],
                          out: inout ShapedText) throws -> [Segment] {
-        // Scripts, with Common and Inherited taking their neighbour's.
+        // Scripts, with Common and Inherited taking their neighbor's.
         var scripts = chars[para].map { UnicodeProperties.script[$0.scalar] }
         var last = "Common"
         for i in scripts.indices {

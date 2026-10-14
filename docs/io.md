@@ -295,7 +295,7 @@ The note list is shown from a persistent local **index**: the encrypted
 per-device summary cache (`SummaryCache`, `format.md` §10) in Application
 Support, never in iCloud. It holds each note's summary (title, tags,
 notebook, deleted flag, counts, newest time, and whatever `NoteSummary` gains,
-such as recognised text for search) and the sorted revision file names it was
+such as recognized text for search) and the sorted revision file names it was
 made from. On a reopen it is decrypted and shown as it is, before any note
 folder is looked at (`openSummaryCache`, `Perf` phase `index.load`).
 
@@ -547,13 +547,13 @@ out (the same bytes `sempere export` writes) and `TreeExporter` (in
 | --- | --- | --- |
 | PDF | `<stem>.pdf` | one per note, or one merged `Sempere-Notes.pdf` |
 | PNG pages | `<stem>-p001.png`, ... (`-p001-2.png`, ... for the further images of a pageless page) | a folder per note |
-| Text (Markdown) | `<stem>.md` leading with the recognised text; with the PDF (optional, off) or page PNGs, a folder with them and `README.md` | `Sempere Export/`, mirroring the notebook tree |
+| Text (Markdown) | `<stem>.md` leading with the recognized text; with the PDF (optional, off) or page PNGs, a folder with them and `README.md` | `Sempere Export/`, mirroring the notebook tree |
 | Media | a folder `<stem>/` with the note's recordings, transcripts, clips, images and PDFs and `media.json` ("Media export" below) | a folder per note; notes without media are counted, not written |
 
-`<stem>` is `ExportName.stem` (sanitised title and the first 8 characters of the
+`<stem>` is `ExportName.stem` (sanitized title and the first 8 characters of the
 note id). Options: paper background (on), PNG resolution (72, 144, 216, 300
 dpi), merged PDF, and for text the PDF (off) and page images. The text export
-is disabled when no selected note has recognised handwriting, the media
+is disabled when no selected note has recognized handwriting, the media
 export when none has a recording, video, image or PDF. HTML is the
 CLI's only (`sempere export --format html`). A one-off share writes no export
 manifest.
@@ -574,9 +574,9 @@ manifest.
   vault cancels it (generation token). Nothing is written to the vault.
 - **Scratch files.** Output is staged under `tmp/SempereExports/<uuid>` (file
   protection "complete" on iOS), deleted when the sheet closes and at every
-  launch. A run owns its folder: a run that is cancelled, fails or outlives
+  launch. A run owns its folder: a run that is canceled, fails or outlives
   its sheet deletes it when it ends (the note being rendered at that moment
-  finishes, and no file is written once the run is cancelled). Share and Save to Files copy from there.
+  finishes, and no file is written once the run is canceled). Share and Save to Files copy from there.
 - **Plaintext.** Exports strip nothing and encrypt nothing, exactly like the
   CLI's; the sheet says so. The share sheet holds the selected notes' states at
   once while rendering; "Export to Folder or Zip…" (below) streams one note at a time.
@@ -601,14 +601,14 @@ sidebar's notebook, else the vault). iPad, iPhone and Mac share the sheet
   summary names no audio, video, image or PDF blob are not planned, so they
   are never read). SVG is the CLI's only, as in the single-note export.
 - **Layout.** "Folders like your notebooks" (on by default) mirrors the
-  notebook tree (`TreeExporter.folders`: sanitised segments, names that differ
+  notebook tree (`TreeExporter.folders`: sanitized segments, names that differ
   only by case share one spelling); a notebook export starts at that notebook
   (`School/Math` gives `Math/…`). Off: every note at the top.
 - **Names.** `ExportName.stem` (`<title>-<8 hex of the id>`): path separators,
   `\ : * ? " < > |`, controls and newlines become `-`, length is capped, an empty
   title is `untitled`, reserved folder names (`CON`, `NUL`, ...) get `_`. Two
   notes whose names would still clash in one folder (equal ignoring case and
-  Unicode normalisation, or equal to a sub-folder's name) take the full id,
+  Unicode normalization, or equal to a sub-folder's name) take the full id,
   then `-2`, `-3`, ...; the note with the smaller id keeps the short name, so
   a re-run names every note the same way (`BulkExportPlan.jobs`).
 - **Destination.** A folder the user picks (the default on a Mac; on iPadOS
@@ -1005,7 +1005,7 @@ state (`<state>.quarantine/`), reported, and not fetched again while it and
 the local `vault.json` are unchanged (`--retry-quarantined`). A first pull
 with `--identity` checks under the `vault.json` it pulls. Remote names are reported with control
 characters escaped, so a hostile name cannot drive the terminal. Response
-bodies are read incrementally and the request is cancelled past a limit
+bodies are read incrementally and the request is canceled past a limit
 (`maxFileBytes`, 256 MiB, for revisions; 16 MiB for listings, manifests and
 everything else), so a server cannot make the client buffer more.
 
@@ -1449,7 +1449,7 @@ Download Again pulls), an overlay shows a bar with the stage and counts
 (`WebDAVDownloadStatus`, from the run's `WebDAVSyncProgress` through
 `WebDAVProgressRelay`) and a Cancel: the run stops after the requests in
 flight, nothing is reported as an error, and opening the vault again
-continues; a cancelled Download Again leaves the copy as it was. The fill
+continues; a canceled Download Again leaves the copy as it was. The fill
 that follows has no second overlay: it shows in the note list's bar as
 "Downloading from <server>: n of m notes" (fed by the listing passes). Offline, a usable copy opens
 from what it holds.

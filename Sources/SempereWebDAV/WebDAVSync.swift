@@ -39,7 +39,7 @@ public struct WebDAVSyncOptions: Sendable {
     /// none; existing ones are kept current either way (the summaries need the
     /// vault unlocked).
     public var publishForWebViewer = false
-    /// Where notes are summarised for that file through the summary cache
+    /// Where notes are summarized for that file through the summary cache
     /// (format.md §10); nil reads every changed note.
     public var summaryCacheDirectory: URL?
 

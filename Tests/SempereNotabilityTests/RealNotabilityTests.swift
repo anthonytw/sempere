@@ -38,7 +38,7 @@ final class RealNotabilityTests: XCTestCase {
 
     /// Every `.ntb` that has a `.note` of the same note (same creation time)
     /// holds the same strokes: each bundle stroke matches a `.note` curve
-    /// (same point count and colour) point for point, within half-float
+    /// (same point count and color) point for point, within half-float
     /// precision, after the bundle's page offset and margin are undone.
     func testBundlesMatchTheirNotes() throws {
         let sources = try allSources()
@@ -110,7 +110,7 @@ final class RealNotabilityTests: XCTestCase {
         print("parsed curves: \(curves)")
     }
 
-    /// Every recognised page's `pageContentOrigin`, moved down by the page's
+    /// Every recognized page's `pageContentOrigin`, moved down by the page's
     /// offset (`(n - 1) × pageHeight`), lands on the top-left of the ink on
     /// that page (with a small allowance, below). This checks the page geometry of every note with
     /// recognition, including notes on PDF pages (whose stride is not the
@@ -145,7 +145,7 @@ final class RealNotabilityTests: XCTestCase {
     }
 
     /// Notes that import with no strokes really have no ink: no curves and
-    /// no recognised handwriting, except a recognition index Notability left
+    /// no recognized handwriting, except a recognition index Notability left
     /// behind after all the ink was erased (its `.ntb` has no strokes either),
     /// which is counted. An index with no pages is not ink.
     func testNotesWithoutCurvesAreInkless() throws {
@@ -157,7 +157,7 @@ final class RealNotabilityTests: XCTestCase {
             if note.pdfPageCount > 0 { pdfOnly += 1 } else { blank += 1 }
         }
         print("notes with ink: \(inked); without: \(pdfOnly) PDF-only, \(blank) blank; "
-              + "\(staleIndex) with recognised text but no ink")
+              + "\(staleIndex) with recognized text but no ink")
         XCTAssertLessThanOrEqual(staleIndex, 2)
     }
 
@@ -227,7 +227,7 @@ final class RealNotabilityTests: XCTestCase {
                     let i = 4 * (y * width + x)
                     let r = Int(pixels[i]), g = Int(pixels[i + 1]), b = Int(pixels[i + 2])
                     let lum = 0.3 * Double(r) + 0.59 * Double(g) + 0.11 * Double(b)
-                    // Dark ink, or grey (thin, antialiased) ink; not the bluish paper pattern.
+                    // Dark ink, or gray (thin, antialiased) ink; not the bluish paper pattern.
                     let grey = max(r, g, b) - min(r, g, b) < 16
                     guard pixels[i + 3] > 128, lum < 110 || (grey && lum < 200) else { continue }
                     x0 = min(x0, x); y0 = min(y0, y); x1 = max(x1, x); y1 = max(y1, y)
@@ -324,7 +324,7 @@ final class RealNotabilityTests: XCTestCase {
         BULK: notes \(report.notes.count) ok \(report.imported) skipped \(report.skipped) failed \(report.failed)
         BULK: notes without strokes \(report.notes.filter { $0.status == .ok && $0.strokes == 0 }.count) \
         (\(report.notes.filter { $0.status == .ok && $0.strokes == 0 && $0.dropped.pdfPages > 0 }.count) on PDF pages)
-        BULK: strokes \(report.strokes) recognised pages \(report.notes.reduce(0) { $0 + $1.recognizedPages })
+        BULK: strokes \(report.strokes) recognized pages \(report.notes.reduce(0) { $0 + $1.recognizedPages })
         BULK: wall \(String(format: "%.1f", elapsed)) s; slowest \(String(format: "%.2f", slowest?.seconds ?? 0)) s \(slowest?.source ?? "")
         BULK: dropped \(dropped)
         """)

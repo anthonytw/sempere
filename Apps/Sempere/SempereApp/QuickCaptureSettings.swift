@@ -31,7 +31,7 @@ struct QuickCaptureSettingsSection: View {
             }))
             .disabled(model.phase != .unlocked)
             if model.phase != .unlocked, !model.quickCaptureIsForOpenVault, stored == nil, !unreadable {
-                // Why the switch is grey (build 7: "nothing said it was disabled").
+                // Why the switch is gray (build 7: "nothing said it was disabled").
                 Text("Open and unlock the vault that voice notes should go to, then turn this on.")
                     .font(.footnote).foregroundStyle(.secondary)
             }

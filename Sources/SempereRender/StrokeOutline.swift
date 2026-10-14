@@ -19,7 +19,7 @@ import Sempere
 /// Opacity is one value per stroke (the mean sample opacity); per-sample
 /// opacity variation along a stroke is not representable in a single fill.
 public enum StrokeOutline {
-    /// Opacity multiplier for a tool, on top of colour alpha and sample opacity.
+    /// Opacity multiplier for a tool, on top of color alpha and sample opacity.
     public static func toolOpacity(_ tool: InkTool) -> Double {
         switch tool {
         case .pen, .fountainPen, .monoline: return 1
@@ -30,7 +30,7 @@ public enum StrokeOutline {
         }
     }
 
-    /// Opacity factor applied on top of the colour's own alpha:
+    /// Opacity factor applied on top of the color's own alpha:
     /// `mean(sample o) * toolOpacity`. Feed it to `Paint(_:opacity:)`.
     public static func opacityFactor(for stroke: Stroke, samples: [StrokeSample]) -> Double {
         let meanO = samples.isEmpty ? 1 : samples.reduce(0) { $0 + $1.o } / Double(samples.count)
@@ -91,7 +91,7 @@ public enum StrokeOutline {
     /// the sample point, around the disc and back, so the turn adds no
     /// negative area that could cancel a covered spot.
     static func outline(_ input: [Point], radii inputRadii: [Double], closed: Bool) -> [[Point]] {
-        // Coincident neighbours collapse into one point with the larger radius.
+        // Coincident neighbors collapse into one point with the larger radius.
         var p: [Point] = [], r: [Double] = []
         p.reserveCapacity(input.count); r.reserveCapacity(input.count)
         for (i, q) in input.enumerated() {
@@ -172,7 +172,7 @@ public enum StrokeOutline {
             let turnsLeft = cross > 0 || (cross == 0 && dx[i] * dx[o] + dy[i] * dy[o] < 0)   // turning left, y-up sense
             if sharp[v] {
                 // The whole disc at the sample, as one positive loop on the inner side: it covers the outer
-                // fan, the inner sector and what lies behind short neighbouring segments, so a sharp turn
+                // fan, the inner sector and what lies behind short neighboring segments, so a sharp turn
                 // is drawn as fully as the disc there. The outer side just joins its two offsets.
                 let loop = disc(c, rv)
                 if turnsLeft {   // the right side is outside; the left side is walked backwards

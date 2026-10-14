@@ -1,7 +1,7 @@
 import ImageIO
 import XCTest
 
-/// Mac Catalyst behaviour that only a running app shows (TestFlight build 6
+/// Mac Catalyst behavior that only a running app shows (TestFlight build 6
 /// feedback, docs/mac.md): a note opened in a new window gets a window of its
 /// own, and the new-note sheet's notebook combo box suggests notebooks.
 /// Launches the synthetic demo vault (`DemoLaunch`); skipped on the iPad.

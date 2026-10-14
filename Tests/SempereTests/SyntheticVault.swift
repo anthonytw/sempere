@@ -41,7 +41,7 @@ enum SyntheticVault {
 
     /// One note as a single delta, the way the importer writes them: pages,
     /// title, notebook, tags, `strokes` strokes of `points` points, and
-    /// recognised text on the first page of every third note.
+    /// recognized text on the first page of every third note.
     static func importedNote(index: Int, strokes: Int, points: Int, rng: inout SeededRNG, baseMillis: Int64)
         -> Revision {
         let note = UUID.random(&rng)

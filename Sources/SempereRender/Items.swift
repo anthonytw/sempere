@@ -186,7 +186,7 @@ enum ItemGeometry {
         }
     }
 
-    /// Rotation by `degrees` (clockwise on the y-down page) about the frame's centre.
+    /// Rotation by `degrees` (clockwise on the y-down page) about the frame's center.
     static func rotate(frame f: Rect, degrees: Double) -> Affine {
         let (cs, sn) = rotation(degrees)
         let mx = f.x + f.w / 2, my = f.y + f.h / 2
@@ -237,7 +237,7 @@ enum ItemGeometry {
 
     /// The play mark over a video item (format.md §8.2.7): a disc of
     /// diameter `d = min(48, 0.3 · min(w, h))` filled `#00000080` at the
-    /// frame's centre, and a white triangle pointing right, turned with the item.
+    /// frame's center, and a white triangle pointing right, turned with the item.
     static func playMark(frame f: Rect, degrees: Double) -> [DrawCommand] {
         let d = min(48, 0.3 * min(f.w, f.h))
         guard d.isFinite, d > 0 else { return [] }
@@ -282,7 +282,7 @@ struct PreparedItem {
     /// markers, bars, rules and code fills (format.md §8.5.4), in page coordinates.
     var underlay: [DrawCommand] = []
 
-    /// Background items first fill their frame with the paper colour (format.md §8.2.3).
+    /// Background items first fill their frame with the paper color (format.md §8.2.3).
     var fillsBackground: Bool { item.layer.rawValue < ItemLayer.content.rawValue }
 
     /// - Throws: `RenderError.invalidGeometry` for a non-finite frame or
@@ -339,7 +339,7 @@ enum RasterItems {
     enum Draw {
         case raster(RasterBackground)
         case image(PlacedImage)
-        /// Laid-out text and its rotation about the frame's centre.
+        /// Laid-out text and its rotation about the frame's center.
         case text(ShapedText, rotation: Affine)
         /// An `audio` item's card (format.md §8.2.9).
         case card(AudioCardDraw)
@@ -679,7 +679,7 @@ final class ImageStore {
 /// Lays out text items for every writer.
 enum TextItems {
     /// `it` laid out by `shaper`, with its rotation about the frame's
-    /// centre, or why it is a placeholder (format.md §8.5.2: no text, no
+    /// center, or why it is a placeholder (format.md §8.5.2: no text, no
     /// shaper, layout failed). Scripts no font covers, or drawn without full
     /// shaping, are warnings.
     static func shape(_ it: PreparedItem, shaper: (any TextShaper)?,
@@ -697,7 +697,7 @@ enum TextItems {
                     + "the app's export is exact")
             }
             for (script, example) in shaped.bitmapScripts.sorted(by: { $0.key < $1.key }) {
-                report.warn(prefix + "\(TextIssues.name(script)) characters such as U+\(String(format: "%04X", example)) have colour "
+                report.warn(prefix + "\(TextIssues.name(script)) characters such as U+\(String(format: "%04X", example)) have color "
                     + "or bitmap glyphs only and are left out of the export")
             }
             return .success((shaped, ItemGeometry.rotate(frame: it.item.frame, degrees: it.item.rotation ?? 0)))

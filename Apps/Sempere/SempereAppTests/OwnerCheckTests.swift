@@ -12,7 +12,7 @@ struct PassingOwnerAuthenticator: OwnerAuthenticator {
 
 /// Security review 2026-10 (P1): New Key…, adding a pasted public key and the
 /// recovery kit ask the device owner first, like Save Key…, and change
-/// nothing when the check fails, is cancelled, or the vault changes meanwhile.
+/// nothing when the check fails, is canceled, or the vault changes meanwhile.
 @MainActor
 struct OwnerCheckTests {
     typealias Fake = KeyExportTests.FakeAuthenticator

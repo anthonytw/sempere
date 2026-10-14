@@ -14,7 +14,7 @@ public enum VisionText {
         return "vision-\(v.majorVersion).\(v.minorVersion)"
     }
 
-    /// Recognised lines of the image `handler` holds, with word boxes in page
+    /// Recognized lines of the image `handler` holds, with word boxes in page
     /// points. `region` is the page rectangle the image shows.
     ///
     /// `language` is the note's `meta.lang` (format.md §5.4): Vision reads in

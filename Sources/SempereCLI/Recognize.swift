@@ -24,9 +24,9 @@ enum RecognitionRun {
     struct NoteResult: Encodable {
         var note: String
         var title: String
-        /// Pages read (1-based), with recognised text or none.
+        /// Pages read (1-based), with recognized text or none.
         var read: [Int] = []
-        /// Pages whose recognised text was cleared: they have no ink left.
+        /// Pages whose recognized text was cleared: they have no ink left.
         var cleared: [Int] = []
         /// The note's `meta.lang`, the language Vision was asked to read in (absent: automatic).
         var language: String?
@@ -107,7 +107,7 @@ struct RecognizeCommand: ParsableCommand {
             changed since it was read). Recognition Notability made cannot be checked against the ink
             and is kept. --missing-only reads only pages with no recognition at all. --force reads
             every page with ink, replacing any recognition (Notability's included). A page whose ink
-            is gone has its recognised text cleared. --dry-run lists the pages without reading them
+            is gone has its recognized text cleared. --dry-run lists the pages without reading them
             (this works on Linux too). macOS only: elsewhere the command exits 1 and changes nothing.
 
             Each note it writes recognition for is marked with the time of the run (format.md §5.4
@@ -132,7 +132,7 @@ struct RecognizeCommand: ParsableCommand {
     @Flag(name: .customLong("dry-run"), help: "Only list the pages that would be read.")
     var dryRun = false
 
-    @Flag(name: .long, help: "List the notes recognised recently (the app's Recently Recognized) instead.")
+    @Flag(name: .long, help: "List the notes recognized recently (the app's Recently Recognized) instead.")
     var recent = false
 
     @Option(name: .long, help: ArgumentHelp("With --recent: the window in days (default 7).", valueName: "n"))
@@ -196,7 +196,7 @@ struct RecognizeCommand: ParsableCommand {
             let title = s.title.isEmpty ? "(untitled)" : s.title
             print("\(s.id.uuidString.lowercased())  \(RFC3339.string(from: r.at) ?? "-")  \(title): read \(r.read) of \(r.pages) page(s)")
         }
-        output.info("\(recent.count) note(s) recognised in the last \(days ?? 7) day(s).")
+        output.info("\(recent.count) note(s) recognized in the last \(days ?? 7) day(s).")
     }
 }
 
@@ -225,7 +225,7 @@ func report(_ results: [RecognitionRun.NoteResult], output: OutputOptions, dryRu
                     + "\(results.filter { !$0.read.isEmpty || !$0.cleared.isEmpty }.count) of \(results.count) note(s).")
     }
     let failed = results.filter { $0.error != nil }.count
-    if failed > 0 { throw CLIError.failure("\(failed) note(s) could not be recognised") }
+    if failed > 0 { throw CLIError.failure("\(failed) note(s) could not be recognized") }
 }
 
 extension Format {

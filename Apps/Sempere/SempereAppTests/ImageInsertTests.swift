@@ -187,7 +187,7 @@ struct ImageInsertTests {
         #expect(deltas.count == 1)
         #expect(item.orientation == 6)
         #expect(item.pixelSize == Size(w: 6, h: 8))
-        #expect(item.frame.y + item.frame.h / 2 == 400, "centred in what was on screen")
+        #expect(item.frame.y + item.frame.h / 2 == 400, "centered in what was on screen")
         let ref = try #require(item.blob)
         #expect(ref.type == "image/jpeg")
         let blob = try vault.readBlob(note: Self.lecture, ref)

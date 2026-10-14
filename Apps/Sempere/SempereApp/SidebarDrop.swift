@@ -113,7 +113,7 @@ enum SidebarDrop {
     /// `onDrag` starts from a `List` row do not allow a move operation
     /// (`UIDropSession.allowsMoveOperation` is false on iOS; the drag source's
     /// operation mask has no move on Mac Catalyst). UIKit turns a `.move`
-    /// proposal the session does not allow into a cancelled drop: the row is
+    /// proposal the session does not allow into a canceled drop: the row is
     /// highlighted while the finger or pointer hovers, but releasing it calls
     /// `dropExited` and never `performDrop`. That was TestFlight builds 6 and 7
     /// ("dropping does nothing", iPad and Mac), shown by `SidebarDropUITests`'

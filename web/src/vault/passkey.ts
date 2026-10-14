@@ -195,7 +195,7 @@ export function userVerified(authenticatorData: ArrayBuffer | Uint8Array): boole
 function cancelled(e: unknown): PasskeyError {
   if (e instanceof PasskeyError) return e;
   if (e instanceof DOMException && (e.name === "NotAllowedError" || e.name === "AbortError")) {
-    return new PasskeyError("cancelled", "the passkey prompt was cancelled or timed out");
+    return new PasskeyError("cancelled", "the passkey prompt was canceled or timed out");
   }
   if (e instanceof DOMException && e.name === "NotSupportedError") {
     return new PasskeyError("unsupported", "this browser or authenticator cannot create such a passkey");
@@ -252,7 +252,7 @@ export class PasskeyVault {
    * Creates a passkey with PRF (user verification required) and stores the
    * identity encrypted under it, bound to the vault id and `location`
    * (`vaultLocation`), replacing any key remembered for the vault (whose
-   * passkey is then signalled unknown). Nothing is stored unless PRF works.
+   * passkey is then signaled unknown). Nothing is stored unless PRF works.
    * `vaultName` labels the passkey.
    */
   async remember(identity: string, vaultId: string, location: string, vaultName: string): Promise<StoredKey> {

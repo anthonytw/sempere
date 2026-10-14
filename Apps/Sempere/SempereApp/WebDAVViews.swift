@@ -223,7 +223,7 @@ struct WebDAVConnectSheet: View {
             try await model.connectWebDAV(vault, user: userName, password: password, pin: pin, library: library)
             dismiss()
         } catch is CancellationError {
-            // Cancelled download (the vault is listed; opening it continues), or another vault opened meanwhile.
+            // Canceled download (the vault is listed; opening it continues), or another vault opened meanwhile.
             dismiss()
         } catch {
             failure = String(describing: error)

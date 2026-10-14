@@ -254,7 +254,7 @@ struct RenameRecordingSheet: View {
 
 /// A recording's transcript (format.md §8.3.2): segments with their times;
 /// while the recording plays, the current word is highlighted (read-back),
-/// words the recogniser was unsure of are grey and underlined, and a tap on
+/// words the recognizer was unsure of are gray and underlined, and a tap on
 /// a word (or a segment's time) plays from there.
 struct TranscriptView: View {
     let editor: NoteEditor

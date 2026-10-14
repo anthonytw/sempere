@@ -37,7 +37,7 @@ struct ExportCommand: ParsableCommand {
         commandName: "export",
         abstract: "Export notes to PDF, SVG or PNG (one file per page), JSON, a Markdown or HTML folder tree, or their media files.",
         discussion: """
-            File names are the sanitised title plus the first 8 characters of the note id, e.g.
+            File names are the sanitized title plus the first 8 characters of the note id, e.g.
             Physics-week-3-0d1c6a1e.pdf. --out is a directory, except for a single note's pdf/json
             (a path ending in .pdf/.json is taken as the file) and for --merge (always the file).
             Deleted notes are skipped by --all unless --deleted; a deleted note named explicitly
@@ -51,7 +51,7 @@ struct ExportCommand: ParsableCommand {
             unless --overwrite.
 
             markdown and html write a folder tree under --out that mirrors the notebook hierarchy:
-            markdown gives <name>.md (YAML front matter, the PDF, recognised text) plus the PDF,
+            markdown gives <name>.md (YAML front matter, the PDF, recognized text) plus the PDF,
             optionally per-page PNGs (--images png), and a README.md per folder; html gives one
             self-contained <name>.html per note and an index.html with a search box. Re-running
             rewrites only files whose content changed; --clean (with --all) removes files an earlier
@@ -293,7 +293,7 @@ struct ExportCommand: ParsableCommand {
     func run() throws {
         let vault = try access.openVault(.required)
         if bulk { return try runBulk(vault) }
-        // Each note is decrypted once: loaded, summarised and reconstructed from the same read.
+        // Each note is decrypted once: loaded, summarized and reconstructed from the same read.
         if note == nil { try vault.requireCompleteCopy() }
         let ids = try note.map { [try vault.resolveNote($0)] } ?? vault.noteIDs()
         var states: [(NoteSummary, NoteState)] = []

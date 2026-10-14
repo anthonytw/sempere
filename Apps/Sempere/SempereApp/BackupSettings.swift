@@ -94,7 +94,7 @@ enum BackupLocation {
     }
 
     /// "<vault name> Backup". A folder name on disk, the same in every
-    /// language, so `suggestedName` recognises it on any device.
+    /// language, so `suggestedName` recognizes it on any device.
     static func folderName(forVault name: String) -> String { "\(name) Backup" }   // l10n:ignore
 
     /// The vault id a backup folder holds, from its `backup.json`; nil for a

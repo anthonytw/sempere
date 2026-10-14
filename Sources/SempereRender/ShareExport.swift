@@ -34,7 +34,7 @@ public struct ShareOptions: Sendable, Equatable {
     /// Markdown only: a PNG per page next to the note's `.md`.
     public var markdownImages: ExportImages
     /// Markdown only: a PDF of the note next to its `.md`, embedded at the
-    /// top. Off by default, so the file leads with the recognised text.
+    /// top. Off by default, so the file leads with the recognized text.
     public var markdownPDF: Bool
     /// PDF only: "PDF + attachments": each note's recordings, and their
     /// transcripts as text, embedded as PDF file attachments (the CLI's
@@ -147,7 +147,7 @@ public enum ShareExport {
         var exported = 0
         var mediaFiles = 0, withoutMedia = 0
         func write(_ data: Data, _ url: URL) throws {
-            // A cancelled run (the sheet went away) writes no more plaintext.
+            // A canceled run (the sheet went away) writes no more plaintext.
             try Task.checkCancellation()
             try FileIO.createPrivateDirectory(url.deletingLastPathComponent())
             do { try FileIO.writePrivate(data, to: url) } catch {

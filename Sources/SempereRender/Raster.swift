@@ -49,7 +49,7 @@ struct Raster {
         fill(polygons, shader: SolidShader(paint: paint))
     }
 
-    /// Fills the union of `polygons` with the colour `shader` gives each
+    /// Fills the union of `polygons` with the color `shader` gives each
     /// pixel, scaled by the pixel's coverage, blended "over".
     mutating func fill<S: RasterShader>(_ polygons: [[Point]], shader: S) {
         guard width > 0, height > 0 else { return }
@@ -147,7 +147,7 @@ struct Raster {
         flush(row)
     }
 
-    /// Composites a rasterized PDF page: every device pixel whose centre
+    /// Composites a rasterized PDF page: every device pixel whose center
     /// maps (through the inverse of `device`, effective page → device) into
     /// the crop and the page is sampled bilinearly from the image and blended
     /// over. Work is bounded by the frame's device bounding box.
@@ -176,7 +176,7 @@ struct Raster {
         }
     }
 
-    /// Bilinear sample (edge pixels extended); colour weighted by alpha.
+    /// Bilinear sample (edge pixels extended); color weighted by alpha.
     static func sample(_ img: RGBAImage, x: Double, y: Double) -> ((UInt8, UInt8, UInt8), Double) {
         let fx = min(max(x, 0), Double(img.width - 1)), fy = min(max(y, 0), Double(img.height - 1))
         let ix = Int(fx), iy = Int(fy)
@@ -212,12 +212,12 @@ struct Raster {
     }
 }
 
-/// A colour with components 0...255 and alpha 0...1 (straight).
+/// A color with components 0...255 and alpha 0...1 (straight).
 struct ShadedColor {
     var r: Double, g: Double, b: Double, a: Double
 }
 
-/// The colour of each pixel a `Raster.fill` covers.
+/// The color of each pixel a `Raster.fill` covers.
 protocol RasterShader {
     func color(x: Int, y: Int) -> ShadedColor
 }
@@ -229,7 +229,7 @@ struct SolidShader: RasterShader {
     @inline(__always) func color(x: Int, y: Int) -> ShadedColor { c }
 }
 
-/// An image sampled through an inverse map (device pixel centre → image
+/// An image sampled through an inverse map (device pixel center → image
 /// pixel coordinates): bilinear, in premultiplied alpha, edges clamped.
 struct ImageShader: RasterShader {
     let image: RGBAImage

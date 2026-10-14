@@ -523,9 +523,9 @@ public struct NotabilityAttachments: Sendable {
         warnings.append("\(label): text box placed from \(m.geometrySource ?? "?") in the default style (field names unconfirmed)")
     }
 
-    /// Lowest y of `frame` rotated by `rotation` degrees about its centre.
+    /// Lowest y of `frame` rotated by `rotation` degrees about its center.
     /// True when `frame` (document units, inset applied), rotated by
-    /// `rotation` degrees about its centre, stays within the renderer's extent
+    /// `rotation` degrees about its center, stays within the renderer's extent
     /// (format.md §8.4: writers stay within it) at the largest scale `convert`
     /// applies, and is at most a quarter of it tall, so that it also fits on
     /// whichever sheet a long note is cut into.

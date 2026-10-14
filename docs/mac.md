@@ -4,7 +4,7 @@ The Mac app is the iPad target built for Mac Catalyst: same sources, same
 vault code, plus what a Mac expects: menus, windows, pointer input.
 Everything Mac-only is gated on `targetEnvironment(macCatalyst)` or on
 `Platform.isMac` (`MacSupport.swift`), so the iPad build is unchanged: no
-menu bar entries, one window, the same pointer behaviour.
+menu bar entries, one window, the same pointer behavior.
 
 **Tests.** The logic (command list, enabling, zoom steps,
 window editors, key changes, PDF export, selection restore, folder-access
@@ -445,7 +445,7 @@ never changed: a smoothed stroke is appended to `canvas.drawing`, which the
 `StrokeLedger` turns into one `addStroke`, and is one undo step.
 
 **While drawing: a 1€ filter** (Casiez, Roussel and Vogel, CHI 2012) on the
-pointer, shown as a line in the tool's colour and width over the ink. It is
+pointer, shown as a line in the tool's color and width over the ink. It is
 an exponential smoother whose cutoff rises with the pointer's speed,
 `fc = fmin + β·|v|`: slow movement, where jitter shows, is averaged hard; fast
 movement, where lag would show, hardly at all. At constant speed `v` the

@@ -21,8 +21,8 @@ enum MathRecognitionPreference {
 /// (`MathModelCatalog`, plus a local folder in DEBUG scripted runs), which
 /// is installed (`MathModelStore`, Application Support/Sempere/MathModels,
 /// excluded from backups), downloading one (every file checked against the
-/// manifest the catalogue pins before anything is used) and the loaded
-/// recogniser. Device-wide: models are not vault data.
+/// manifest the catalog pins before anything is used) and the loaded
+/// recognizer. Device-wide: models are not vault data.
 @MainActor
 @Observable
 final class MathModels {
@@ -40,7 +40,7 @@ final class MathModels {
     /// The models offered, best first.
     let catalog: [MathModelCatalogEntry]
     private(set) var status: [String: Status] = [:]
-    /// Every model in the store that is not a catalogue download: the ones added from Files
+    /// Every model in the store that is not a catalog download: the ones added from Files
     /// (`importModel`), shown in Settings to choose from or remove.
     private(set) var added: [InstalledMathModel] = []
     /// The id of the model used for reading (`MathRecognitionPreference.modelKey`); nil: the first installed.
@@ -72,7 +72,7 @@ final class MathModels {
     nonisolated static var defaultRoot: URL { AppSupport.folder("MathModels") }
 
     /// `SEMPERE_DEBUG_MATH_MODEL` (DEBUG builds): a converted model folder to
-    /// use without a catalogue entry (`~/` is the app's data container).
+    /// use without a catalog entry (`~/` is the app's data container).
     nonisolated static var debugFolder: URL? {
         #if DEBUG
         guard let path = ProcessInfo.processInfo.environment["SEMPERE_DEBUG_MATH_MODEL"], !path.isEmpty else { return nil }
@@ -190,7 +190,7 @@ final class MathModels {
         refresh()
     }
 
-    /// The recogniser of the first installed model, loaded (and compiled,
+    /// The recognizer of the first installed model, loaded (and compiled,
     /// once) off the main actor.
     func recognizer() async throws -> any MathRecognizing {
         if let recognizerOverride { return recognizerOverride }
@@ -224,7 +224,7 @@ final class MathModels {
             try MathModelStore.verify(m, in: local)
             return (m.id, try CoreMLMathRecognizer(folder: local, manifest: m))
         }
-        // Catalogue models must still match the catalogue's pin; models added from Files are checked
+        // Catalog models must still match the catalog's pin; models added from Files are checked
         // when added (the store's marker holds the manifest hash) and their sizes again here.
         var candidates: [InstalledMathModel] = []
         for entry in catalog {
@@ -322,7 +322,7 @@ enum MathModelDownload {
         try fm.createDirectory(at: staging, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: staging) }
         guard let manifestURL = URL(string: entry.manifestURL), manifestURL.scheme == "https" else {
-            throw MathModelManifest.Failure.malformed("the catalogue's manifest URL is not HTTPS")
+            throw MathModelManifest.Failure.malformed("the catalog's manifest URL is not HTTPS")
         }
         let manifestFile = try await session.fetch(manifestURL, maxBytes: Int64(MathModelManifest.maxBytes))
         try fm.moveItem(at: manifestFile, to: staging.appendingPathComponent("manifest.json"))

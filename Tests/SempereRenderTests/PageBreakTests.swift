@@ -40,7 +40,7 @@ final class PageBreakTests: XCTestCase {
     }
 
     /// Items take part in cuts like ink (format.md §5.4.3): a cut is not put
-    /// through an image when it can move up to its top, and an image centred
+    /// through an image when it can move up to its top, and an image centered
     /// below a finite page adds an output page.
     func testItemsTakePartInCuts() throws {
         let ref = BlobRef(content: Data("synthetic".utf8), type: "image/png")
@@ -88,11 +88,11 @@ final class PageBreakTests: XCTestCase {
 
     func testFinitePageKeepsItsHeightAndOverflowPagesHoldInk() throws {
         let size = PageSize(width: 200, height: 300)
-        // A line crossing the bottom edge (centre above it) is clipped, no extra page.
+        // A line crossing the bottom edge (center above it) is clipped, no extra page.
         let crossing = try prepared([line(250, 320)], size: size)
         XCTAssertEqual(crossing.chunks.count, 1)
         XCTAssertEqual(crossing.extent, 300)
-        // Ink centred below the page: one more page of the same size, from the page's bottom.
+        // Ink centered below the page: one more page of the same size, from the page's bottom.
         let below = try prepared([line(20, 100), line(1000, 1050)], size: size)
         XCTAssertEqual(below.chunks.count, 2)
         XCTAssertEqual(below.chunks[0].yOffset, 0)
@@ -101,7 +101,7 @@ final class PageBreakTests: XCTestCase {
         XCTAssertEqual(drawn(below, below.chunks[1]), 1)
     }
 
-    /// Below a finite page only ink centred there makes and fills pages: the
+    /// Below a finite page only ink centered there makes and fills pages: the
     /// tail of a stroke crossing the bottom edge is clipped by it, not drawn on
     /// a page of its own.
     func testOverflowPagesDrawOnlyInkCentredBelowThePage() throws {

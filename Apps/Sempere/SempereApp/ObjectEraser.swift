@@ -176,7 +176,7 @@ final class ObjectEraserController: NSObject, UIGestureRecognizerDelegate {
         erase(to: p)
     }
 
-    /// Touch-up (or a cancelled gesture): one undo step for the whole gesture.
+    /// Touch-up (or a canceled gesture): one undo step for the whole gesture.
     func end(at p: EraserPoint) {
         erase(to: p)
         flush()
@@ -258,7 +258,7 @@ final class ObjectEraserController: NSObject, UIGestureRecognizerDelegate {
     /// Gives the canvas the strokes still alive, if any were erased since it
     /// last got them. Setting `drawing` reaches the canvas delegate, so the
     /// ledger sees the change. A drawing replaced behind the gesture's back
-    /// (defence in depth for `cancelGesture`) is never overwritten: the
+    /// (defense in depth for `cancelGesture`) is never overwritten: the
     /// gesture is dropped instead.
     private func flush() {
         guard pending, let canvas else { return }

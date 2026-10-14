@@ -6,7 +6,7 @@ import XCTest
 @testable import SempereImport
 @testable import SempereNotability
 
-/// Whole-backup behaviour on synthetic data: copies and versions of one
+/// Whole-backup behavior on synthetic data: copies and versions of one
 /// note, short per-curve arrays, shapes, and `.ntb` bundles
 /// (`docs/import-notability.md`, "Duplicates and versions", ".ntb format").
 final class NotabilityBackupTests: NotabilityTestCase {
@@ -45,7 +45,7 @@ final class NotabilityBackupTests: NotabilityTestCase {
 
     // MARK: Copies and versions
 
-    /// The same note in two folders (a reorganised Drive backup keeps both):
+    /// The same note in two folders (a reorganized Drive backup keeps both):
     /// imported once, from the copy Notability modified last.
     func testIdenticalCopiesImportOnceNewestChosen() throws {
         let older = SyntheticNote.package(modified: t0.addingTimeInterval(100))

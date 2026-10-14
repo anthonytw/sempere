@@ -91,7 +91,7 @@ public struct TypesetFormula: Hashable, Sendable, Codable {
         return nil
     }
 
-    /// True when this entry draws the formula `latex` in that style, size and colour.
+    /// True when this entry draws the formula `latex` in that style, size and color.
     public func draws(latex: String, display: Bool, size: Double, color: Color) -> Bool {
         math.latex == latex && math.display == display && InkJSON.round3(math.size) == InkJSON.round3(size)
             && math.color == color
@@ -130,7 +130,7 @@ public enum MarkdownText {
         return String(repeating: "0", count: 8 - hex.count) + hex
     }
 
-    /// The colour of link text (format.md §8.5.4).
+    /// The color of link text (format.md §8.5.4).
     public static let linkColor = Color(r: 0x1F, g: 0x6F, b: 0xEB)
 
     /// The text of `content` as search and reports see it: a Markdown box's
@@ -153,7 +153,7 @@ public enum MarkdownText {
         return content
     }
 
-    /// `content` with its source replaced by `source` (normalised like
+    /// `content` with its source replaced by `source` (normalized like
     /// `content(_:style:)`), its layout dropped (it belonged to the old
     /// text) and its formulas kept (they match by formula, so the ones still
     /// in the source still draw).
@@ -169,7 +169,7 @@ public enum MarkdownText {
         return out
     }
 
-    /// The typeset formula drawing `latex` in that style, size and colour, if any.
+    /// The typeset formula drawing `latex` in that style, size and color, if any.
     public static func formula(in content: TextContent, latex: String, display: Bool, size: Double,
                                color: Color) -> TypesetFormula? {
         content.math?.first { $0.draws(latex: latex, display: display, size: size, color: color) }

@@ -141,7 +141,7 @@ final class PDFReaderTests: XCTestCase {
         let letter = try PDFFile(bytes: PDFBuild.onePage(pageExtra: "/MediaBox [0 0 0 0] /CropBox [1 2 (x) 4]"))
         XCTAssertEqual(try letter.page(0).mediaBox, PDFRect(0, 0, 612, 792))
         XCTAssertEqual(try letter.page(0).visibleBox, PDFRect(0, 0, 612, 792))
-        // Reversed corners are normalised.
+        // Reversed corners are normalized.
         let reversed = try PDFFile(bytes: PDFBuild.onePage(pageExtra: "/CropBox [90 80 10 20]"))
         XCTAssertEqual(try reversed.page(0).visibleBox, PDFRect(10, 20, 90, 80))
         // A CropBox outside the MediaBox leaves nothing to show.

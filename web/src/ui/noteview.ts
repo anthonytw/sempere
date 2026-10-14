@@ -56,7 +56,7 @@ export function provisionalHeight(state: NoteState): number {
 /** A page's drawn height without outlining it (PreparedPage's extent rule). */
 export function pageExtent(page: Page, state: NoteState): number {
   const size = state.meta.pageSize;
-  // Each stroke's and item's lowest point and vertical centre (PreparedPage's spans).
+  // Each stroke's and item's lowest point and vertical center (PreparedPage's spans).
   const spans: { maxY: number; centreY: number }[] = [];
   for (const st of page.strokes) {
     const n = st.points.length / pointStride;
@@ -85,7 +85,7 @@ export function pageExtent(page: Page, state: NoteState): number {
   let low = 0, below = 0;
   for (const x of spans) {
     low = Math.max(low, x.maxY);
-    // Ink centred at or below a finite page adds to its extent (PageComposer.swift).
+    // Ink centered at or below a finite page adds to its extent (PageComposer.swift).
     if (x.centreY >= size.height) below = Math.max(below, x.maxY);
   }
   const e = size.infinite ? Math.max(size.height, Math.ceil(low), chunkHeight(defaultRenderOptions, state.meta))
@@ -802,7 +802,7 @@ export class NoteView {
 const panMargin = 40;
 
 /**
- * The horizontal offset of content `w` wide in a viewport `vw` wide: centred (no sideways pan at
+ * The horizontal offset of content `w` wide in a viewport `vw` wide: centered (no sideways pan at
  * all) while the content fits, otherwise free within `panMargin` of either edge.
  */
 export function clampX(x: number, w: number, vw: number): number {

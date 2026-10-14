@@ -4,7 +4,7 @@ import XCTest
 @testable import SempereWebDAV
 
 /// W1 review: a partial copy's metadata pull and fetch report progress (what `sync webdav
-/// --metadata-only` / `--fetch` show on a terminal) and honour a cancellation.
+/// --metadata-only` / `--fetch` show on a terminal) and honor a cancellation.
 extension PartialCopyTests {
     func testMetadataPullAndFetchReportProgress() throws {
         let server = MockDAV()
@@ -45,7 +45,7 @@ extension PartialCopyTests {
         var o = WebDAVSyncOptions()
         o.isCancelled = { true }
         let stopped = try c.fetch(client: try client(server), vault: nil, scope: WebDAVFetchScope(), options: o)
-        XCTAssertEqual(stopped.stoppedEarly, "sync run cancelled", "\(stopped)")
+        XCTAssertEqual(stopped.stoppedEarly, "sync run canceled", "\(stopped)")
         XCTAssertEqual(stopped.progress?.filesDone, 0)
         XCTAssertTrue(c.isPartial)
         let rest = try fetch(c, server, vault: try openCopy(c))

@@ -88,7 +88,7 @@ extension NoteOps {
     }
 
     /// The rotation (degrees clockwise, in 0..<360) of an item that has `current`
-    /// (nil is upright) after it is turned by `delta` degrees (negative: anticlockwise).
+    /// (nil is upright) after it is turned by `delta` degrees (negative: counterclockwise).
     /// Non-finite input gives 0.
     public static func rotation(_ current: Double?, turnedBy delta: Double) -> Double {
         let sum = (current ?? 0) + delta
@@ -214,7 +214,7 @@ extension Rect {
 
 /// Geometry of placed items on a page (format.md §8.5.1): hit testing,
 /// bounds, moving and resizing a rotated frame. Page coordinates, y down;
-/// rotation is clockwise about the frame's centre.
+/// rotation is clockwise about the frame's center.
 public enum ItemFrames {
     /// A point in page coordinates.
     public struct Point: Hashable, Sendable {
@@ -289,7 +289,7 @@ public enum ItemFrames {
 
         /// The corner across the frame (it stays put while this one is dragged).
         var opposite: Corner { Corner(rawValue: (rawValue + 2) % 4) ?? .topLeft }
-        /// Unit signs of this corner relative to the centre, in frame axes.
+        /// Unit signs of this corner relative to the center, in frame axes.
         var signs: (x: Double, y: Double) {
             switch self {
             case .topLeft: return (-1, -1)
@@ -306,7 +306,7 @@ public enum ItemFrames {
 
         /// The side across the frame (it stays put while this one is dragged).
         var opposite: Edge { Edge(rawValue: (rawValue + 2) % 4) ?? .top }
-        /// Unit signs of this side's middle relative to the centre, in frame axes.
+        /// Unit signs of this side's middle relative to the center, in frame axes.
         var signs: (x: Double, y: Double) {
             switch self {
             case .top: return (0, -1)
@@ -322,7 +322,7 @@ public enum ItemFrames {
         case corner(Corner)
         case edge(Edge)
 
-        /// Unit signs of the handle relative to the centre, in frame axes (0: that axis is not dragged).
+        /// Unit signs of the handle relative to the center, in frame axes (0: that axis is not dragged).
         var signs: (x: Double, y: Double) {
             switch self {
             case .corner(let c): return c.signs
@@ -404,7 +404,7 @@ public enum ItemFrames {
         }
         guard w.isFinite, h.isFinite else { return frame }
         // The fixed point on the page (the opposite corner, or the opposite
-        // side's middle), and the new centre from it.
+        // side's middle), and the new center from it.
         let fixed = point(of: handle.opposite, frame, rotation: d)
         let o = handle.opposite.signs
         let half = rotate(Point(x: -o.x * w / 2, y: -o.y * h / 2), about: Point(x: 0, y: 0), degrees: d)
@@ -413,7 +413,7 @@ public enum ItemFrames {
     }
 
     /// `frame` fitted to an item of proportions `size` (`w` × `h`, both
-    /// positive): the largest such frame inside `frame`, centred on it.
+    /// positive): the largest such frame inside `frame`, centered on it.
     /// The frame unchanged when either is empty or not finite.
     public static func fitted(_ size: Size, into frame: Rect) -> Rect {
         guard size.w.isFinite, size.h.isFinite, size.w > 0, size.h > 0, frame.hasPositiveSize,

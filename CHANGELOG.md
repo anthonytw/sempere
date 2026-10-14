@@ -15,7 +15,7 @@ web viewer.
 ### Writing
 
 - Pencil ink on paper or pageless canvases. Strokes are vectors with stable ids; erasing is by object
-  (adjustable size) or by pixel. Concurrent slicing, moving or recolouring of one stroke on two devices
+  (adjustable size) or by pixel. Concurrent slicing, moving or recoloring of one stroke on two devices
   resolves to the later edit (`format.md` §5.6.1); `sempere notes dedupe` removes leftover strokes.
 - Paged notes (fixed-size pages) and pageless notes (one infinite page) switch into each other without
   moving ink (`sempere notes layout`). Pages are added, moved, duplicated and deleted, with undo;
@@ -157,8 +157,8 @@ web viewer.
 - Mac: menu bar and shortcuts from one command list, a window per note with state restoration, mouse and
   trackpad input, a Vault Keys window, and an optional system menu-bar item (Quick Voice Note, New Note,
   Open Sempere).
-- Licence: GPL-3.0-or-later with an App Store exception (`LICENSE-EXCEPTION`). Contributions carry a DCO
-  sign-off; there is no contributor licence agreement.
+- License: GPL-3.0-or-later with an App Store exception (`LICENSE-EXCEPTION`). Contributions carry a DCO
+  sign-off; there is no contributor license agreement.
 
 [Unreleased]: https://github.com/anthonytw/sempere/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/anthonytw/sempere/releases/tag/v1.0.0

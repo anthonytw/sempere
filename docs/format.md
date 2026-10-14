@@ -740,7 +740,7 @@ Adds `"ops": [Op, ...]`, applied in order. Ops:
 | `addPage` | `page: {id, order, parent?}` | add an empty page |
 | `removePage` | `pageId` | remove page and its strokes; wins over adds |
 | `setPageOrder` | `pageId`, `order` | LWW on the page's order key |
-| `setPageRecognition` | `pageId`, `recognition` | LWW on the page's recognised text (§5.5); `null` clears it |
+| `setPageRecognition` | `pageId`, `recognition` | LWW on the page's recognized text (§5.5); `null` clears it |
 | `setPagePaper` | `pageId`, `paper` | LWW on the page's own paper (§5.4.2); `null` makes the page follow the note's paper again |
 | `setMeta` | `field`, `value` | LWW per field (§5.4); `tags` is not a field (§5.4.1) |
 | `addTag` | `tag` | add one instance of a tag (§5.4.1) |
@@ -873,8 +873,8 @@ notes may share a title, in one notebook or several.
 - `lang` (optional): the language the note is handwritten in, a BCP 47 tag
   (`en-US`, `es-ES`, `es`). Writers store 1 to 8 subtags of 1 to 8 ASCII
   letters or digits joined by `-`, the first subtag letters only, at most 64
-  characters (an imported `en_US` is stored `en-US`). Recognisers (§5.5) read
-  the note's handwriting in this language; absent means the recogniser's
+  characters (an imported `en_US` is stored `en-US`). Recognizers (§5.5) read
+  the note's handwriting in this language; absent means the recognizer's
   default (the device language, or English). `setMeta` with `null` clears it.
   A `setMeta` value that is not such a tag is invalid (the revision is
   rejected); a snapshot `lang` that is not one reads as absent.
@@ -945,7 +945,7 @@ A `removeTag` op removes exactly the instances it lists:
 
 - `addTag.tag`: the tag as written: whitespace runs collapsed to one space,
   trimmed, not empty. A writer adds a tag only when the note has no live
-  instance of its key. Readers normalise `tag` the same way (in deltas and
+  instance of its key. Readers normalize `tag` the same way (in deltas and
   in snapshots) and ignore an instance whose tag is then empty.
 - `removeTag.tag`: any spelling of the key; `observed`: every live instance of
   that key the writer sees (a writer removes a tag by listing all of them).
@@ -1019,13 +1019,13 @@ other field is written only when it differs from the default of its kind
 | --- | --- | --- | --- |
 | `kind` | pattern, below | | |
 | `spacing` | pitch of lines, grid and dots; for `isoDot` / `isoGrid` the dot pitch along a row | 24 | 4 … 200 |
-| `background` | page colour `#RRGGBB[AA]` (presets: white `#FFFFFFFF`, cream `#FFF8E1FF`, dark `#1C1C1EFF`) | white | |
-| `lineColor` | colour of rules and dots | `#D0D8E8FF` | |
+| `background` | page color `#RRGGBB[AA]` (presets: white `#FFFFFFFF`, cream `#FFF8E1FF`, dark `#1C1C1EFF`) | white | |
+| `lineColor` | color of rules and dots | `#D0D8E8FF` | |
 | `lineWidth` | width of rules | 0.5 | 0.1 … 4 |
 | `dotRadius` | radius of dots (`dot`, `isoDot`) | 0.9 | 0.3 … 4 |
 | `marginLeft` | distance of a vertical margin line from the left edge; 0 = none | 0 (`marginRuled`: 72) | 0 … 300 |
 | `marginTop` | distance of a horizontal margin line from the top; 0 = none | 0 | 0 … 300 |
-| `marginColor` | colour of the margin lines | `#F2A6A6FF` | |
+| `marginColor` | color of the margin lines | `#F2A6A6FF` | |
 | `cueWidth` | `cornell`: width of the cue column | 150 | 40 … 400 |
 | `summaryHeight` | `cornell`: height of the summary band | 120 | 40 … 400 |
 | `staffSpacing` | `staff`: distance between the five lines of one staff | 7 | 3 … 20 |
@@ -1104,7 +1104,7 @@ its reading order. A re-added stroke keeps everything else, `rec` included
 (§8.3.3). Placed items (§8.2) move the same way: `removeItem` (or the page's
 `removePage`) and `addItem` of a new id with `parent` naming the old one
 (§8.2.2), `frame` moved vertically by the same amount, every other field
-kept; an item's sheet is the one holding the vertical centre of its `frame`.
+kept; an item's sheet is the one holding the vertical center of its `frame`.
 
 - **Paged → pageless (join).** Let the pages be `P0 … Pn-1` in page order,
   and `s(P)` the sheets a page's ink reaches: 1 + the largest sheet `k` (as
@@ -1135,7 +1135,7 @@ kept; an item's sheet is the one holding the vertical centre of its `frame`.
   `P` and its earlier sheets and before the next page; each of its strokes
   is removed from `P` and re-added to it with `ty − k × H`; it gets `P`'s own
   paper, if any (`setPagePaper`). A recognition with `words` is split: each
-  word goes to the sheet holding the vertical centre of its box (beyond the
+  word goes to the sheet holding the vertical center of its box (beyond the
   last sheet: the last), box moved by `−k × H`; a sheet's `text` is its
   words in order, separated by `\n` where the original text has a line
   break between them (found by locating each word in order in the text;
@@ -1172,10 +1172,10 @@ page order and a join merges.
 action:
 
 - *Add a page* (after the current one, or at the end): `addPage` with an
-  `order` strictly between its neighbours' keys (§5.5).
+  `order` strictly between its neighbors' keys (§5.5).
 - *Move a page*: one `setPageOrder` with a key strictly between its new
-  neighbours. Pages with equal keys (two devices inserted at the same place)
-  sort by id; when no key fits between the new neighbours, the writer also
+  neighbors. Pages with equal keys (two devices inserted at the same place)
+  sort by id; when no key fits between the new neighbors, the writer also
   gives the following pages new keys, in order, until one does.
 - *Delete a page*: `removePage`. It wins over every concurrent edit of the
   page, a concurrent `setPageOrder` included.
@@ -1193,11 +1193,11 @@ intentions but always holds every live page exactly once.
 
 **Exporting.** A paginating exporter (PDF, PNG) writes one output page per
 page of a paged note, `width × height`. Ink below a finite page (a stroke
-whose centre `c`, as for a split, is at or below `height`: only a concurrent
+whose center `c`, as for a split, is at or below `height`: only a concurrent
 edit, above, or another writer leaves one) adds output pages of the same
 size after it (at least 72 pt tall, the clamped sheet height), cut like a
 pageless page from `height` down and keeping only those that hold ink
-centred below the page, so no ink is lost; strokes merely crossing the
+centered below the page, so no ink is lost; strokes merely crossing the
 bottom edge are clipped by it. A
 pageless page is cut into output pages of `width × H`: from the top `t`
 of the current output page, the cut is at `t + H`, unless that line
@@ -1207,7 +1207,7 @@ otherwise it stays at `t + H` and strokes crossing it appear on both
 pages, clipped. A stroke spans the extent of its drawn outline (its
 control points under its transform, widened by half its nib); a placed item
 (§8.2) spans its frame and, below a finite page, counts by its frame's
-vertical centre. The next
+vertical center. The next
 output page starts at the cut, and the paper is drawn over each whole
 output page from `t` down, so ruling stays aligned with the ink. Notes
 on `cornell` paper, whose layout repeats every sheet, are always cut at
@@ -1232,15 +1232,15 @@ informational, set by the `addPage` that adds the page and carried into
 snapshots; readers may ignore it.
 
 `order` is any string; pages sort lexicographically by `(order, id)`. The
-library provides a helper to generate a key between two neighbours.
+library provides a helper to generate a key between two neighbors.
 
 In a snapshot, a page may carry `"orderClock"`, the `"<hlc>-<device>"` stamp
 of the `addPage` or `setPageOrder` that set its `order`, with the same LWW
 rule and default as `clocks` (§5.4).
 
-#### Recognised text
+#### Recognized text
 
-A page may carry `"recognition"`, the text recognised in its handwriting:
+A page may carry `"recognition"`, the text recognized in its handwriting:
 
 ```json
 "recognition": {
@@ -1255,7 +1255,7 @@ A page may carry `"recognition"`, the text recognised in its handwriting:
   `vision-<OS version>` (Apple's Vision on device: the app on iPadOS, or
   `sempere recognize` on macOS),
   `pencilkit-<iPadOS version>` or `notability-<version>` for an import.
-- `text`: the page's recognised text in reading order, lines separated by `\n`.
+- `text`: the page's recognized text in reading order, lines separated by `\n`.
 - `words[].t`: one word of `text`; `words[].box`: its bounding box
   `[x, y, w, h]` in page coordinates (points, origin top-left, y down).
   Writers round to at most 3 decimals. `words` may be empty. Readers that
@@ -1283,14 +1283,14 @@ a `setPageRecognition` the snapshot does not cover. `addPage` ignores any
 `recognition` in its page object (the page is added empty, §5.2).
 
 Readers that index text for search use `text`; `words` lets a viewer
-highlight hits on the page. A recogniser reads a note whose `meta.lang` is
+highlight hits on the page. A recognizer reads a note whose `meta.lang` is
 set (§5.4) in that language (with its own fallback when it does not support
 it), and otherwise in its default language.
 
 **When recognition is stale.** A page's recognition is *current* when it has
 a `basis` equal to the digest of the page's live stroke ids; one with a
 different basis is stale (strokes were added or erased since) and a writer
-that recognises text replaces it, with a `basis` of its own. Recognition
+that recognizes text replaces it, with a `basis` of its own. Recognition
 without a `basis` (an import, or a writer that does not record one) cannot be
 checked: a writer keeps it until it itself changes the page's strokes, and
 then replaces it. A page with strokes and no recognition has none yet; a page
@@ -1349,7 +1349,7 @@ snapshot holding it, at op index equal to its position.
 #### 5.6.1 Replacements and concurrent replacements
 
 A stroke cannot be edited in place, so every edit of one (the pixel eraser
-slicing it, a lasso move, resize or recolour, a split moving it to another
+slicing it, a lasso move, resize or recolor, a split moving it to another
 sheet, §5.4.3) is a **replacement**: one revision removes stroke `P`
 (`removeStroke`) and adds its successors, each with `parent` = `P`. A stroke
 `X` *replaces* its parent iff the revision that adds `X` also holds a
@@ -1513,7 +1513,7 @@ unless any of these holds, in which case it starts a new one:
 - (c) its `device` differs from the previous point's.
 
 "Previous point" is the one just before it in the walk, which is always in
-the current session. A session is labelled by its first and last `wall`, its
+the current session. A session is labeled by its first and last `wall`, its
 device and its number of points. The grouping is derived, never stored: any
 reader computes the same sessions from the same revisions.
 
@@ -1564,7 +1564,7 @@ deletes nothing) and the note's revisions ordered by `(hlc, device, seq)`:
 A cutoff of zero ("thin everything except checkpoints") puts every revision
 whose `wall` is not in the future in the range: what stays is every
 checkpoint, each session's last point and the newest revision. Writers offer
-it as its own, explicitly labelled action, never as the default, and say in
+it as its own, explicitly labeled action, never as the default, and say in
 the preview which rule applies and what it keeps.
 
 Whether a note has anything to delete is decided from its revisions' names,
@@ -1892,7 +1892,7 @@ a revision. Its plaintext is:
 | 45 + `L` | rest | padding: zero bytes |
 
 Writers should pad the plaintext to `padme(45 + L)` bytes, which hides the
-exact content length (a known file is otherwise recognisable by its size)
+exact content length (a known file is otherwise recognizable by its size)
 for at most 12 % overhead, less for large blobs:
 
 ```
@@ -2079,7 +2079,7 @@ plus the fields of its kind (§8.2.4–§8.2.9).
   readers order by any value in range and treat a value out of range or not
   an integer as `100`.
 - `frame`: `[x, y, w, h]`, the item's box before rotation; `w` and `h` > 0.
-- `rotation`: degrees, clockwise about the frame's centre; absent means 0.
+- `rotation`: degrees, clockwise about the frame's center; absent means 0.
 - `z`: order key within the layer, compared like page `order` (§5.5).
 - `parent`: optional, the item this one replaces (moved to another page or
   note, restored from history, or an image whose picture was replaced:
@@ -2150,11 +2150,11 @@ writer's value per field; the other is still in history (§5.7).
 
 A page is drawn, bottom to top:
 
-1. the paper background colour (the page's own paper, else the note's, §5.4.2);
+1. the paper background color (the page's own paper, else the note's, §5.4.2);
 2. the paper ruling;
 3. items by `(layer, z, id)`: lower layers first, then by `z`, then by `id`.
    An item whose `layer` is below 100 (a background layer) first fills its
-   frame (rotated) with the paper background colour, so ruling never shows
+   frame (rotated) with the paper background color, so ruling never shows
    through it;
 4. strokes, by `origin` (§5.5).
 
@@ -2324,7 +2324,7 @@ aspect ratio equal to the crop's; renderers scale the axes independently.
 - `pageIndex`: 0-based index of the page in page-tree order.
 - The *effective page* is the page's CropBox (inherited; default the
   MediaBox) intersected with its MediaBox, turned clockwise by its `/Rotate`
-  (inherited; normalised to 0, 90, 180 or 270). It is a `W' × H'` rectangle
+  (inherited; normalized to 0, 90, 180 or 270). It is a `W' × H'` rectangle
   in points, origin top-left, y down (§8.5.1).
 - `pageSize`: `[W', H']`, informational: renderers that parse the PDF use its
   own boxes; others use it for layout and placeholders.
@@ -2419,7 +2419,7 @@ Drawing (renderers, exports and readers that do not play the clip, or before
 it plays): the whole poster is mapped onto the frame (§8.5.1, with the crop
 `[0, 0, w, h]` of the poster's decoded size, orientation 1), clipped to the
 frame, then a *play mark* is drawn over it: with `d = min(48, 0.3 · min(fw, fh))`
-and the frame's centre `(mx, my)`, a disc of diameter `d` centred there,
+and the frame's center `(mx, my)`, a disc of diameter `d` centered there,
 filled `#00000080`, and a triangle filled `#FFFFFFFF` with corners
 `(mx − 0.18 d, my − 0.25 d)`, `(mx − 0.18 d, my + 0.25 d)` and
 `(mx + 0.27 d, my)`; both are turned with the item's `rotation` about
@@ -2452,7 +2452,7 @@ An equation, edited as LaTeX source and drawn typeset:
 
 `math` is the item's only register of its own, and it is replaced whole
 (like `text`, §8.2.4): the rendering belongs to the exact source, style,
-size and colour it was typeset from, so concurrent edits never pair one
+size and color it was typeset from, so concurrent edits never pair one
 device's source with another's rendering. Its fields:
 
 - `latex`: the source, in LaTeX math mode without delimiters (no `$`, `\[`
@@ -2464,13 +2464,13 @@ device's source with another's rendering. Its fields:
   below, full-size fractions, as in `\[…\]`), `false` for text (inline)
   style (as in `$…$`). The item is placed freely either way.
 - `size`: the font size of the typeset result in points (1 em), greater than
-  0 and at most 1000. `color`: `#RRGGBBAA`, the colour of every mark.
+  0 and at most 1000. `color`: `#RRGGBBAA`, the color of every mark.
 - `render`: optional, a blob reference (§8.1.1) to the typeset result: a PDF
   (`application/pdf`, kind `pdf`; versions 1.0–2.0, no `/Encrypt`, as for
   `pdfPage`, §8.2.6) whose first page's effective page (§8.2.6) is the
   typeset box, in points at `size`, with the margin the writer chose. It
   draws only marks in `color` (alpha included) on a transparent page: no
-  page fill, no other colour. Absent: no typesetter has rendered this value
+  page fill, no other color. Absent: no typesetter has rendered this value
   yet (a writer without one, such as the reference CLI, writes none).
 - `renderSize`: `[w, h]`, the size in points of `render`'s effective page,
   both positive; present exactly when `render` is (else the item is
@@ -2497,7 +2497,7 @@ ratio equal to the render's; renderers scale the axes independently.
    the frame. A renderer that rasterizes the page onto an opaque white
    background (the CLI's Poppler, Core Graphics as the app uses it) recovers
    the coverage from the known `color`: a pixel `p` of channel `k`, where `k`
-   maximises `255 − color_k`, has coverage `(255 − p_k) / (255 − color_k)`
+   maximizes `255 − color_k`, has coverage `(255 − p_k) / (255 − color_k)`
    (clamped to 0…1), drawn in `color`; when every channel of `color` is
    above 250 the page is drawn as rasterized.
 2. Its own typesetting of `latex` (the app, when there is no `render` yet),
@@ -2564,16 +2564,16 @@ any writer.
 Drawing (renderers, exports, and readers before they play): with the frame
 `[fx, fy, fw, fh]`, `m = min(fw, fh)`, the padding `p = min(8, 0.1 · m)` and
 the icon size `d = min(24, m − 2p)`, everything below in frame coordinates
-and then turned with the item's `rotation` about the frame's centre:
+and then turned with the item's `rotation` about the frame's center:
 
 1. the *card*: the frame filled `#F1F3F4FF` and outlined 1 pt in
    `#DADCE0FF`;
 2. the *icon*, when `d > 0`: a disc of diameter `d` filled `#1A73E8FF`
-   centred at `(cx, cy) = (fx + p + d/2, fy + p + d/2)`, and over it, in
+   centered at `(cx, cy) = (fx + p + d/2, fy + p + d/2)`, and over it, in
    `#FFFFFFFF`, a microphone: a capsule (a rectangle with semicircular ends)
    filled, from `(cx − 0.12 d, cy − 0.3 d)` to `(cx + 0.12 d, cy + 0.08 d)`;
    and stroked `0.06 d` wide with round caps, the lower half of a circle of
-   radius `0.2 d` centred at `(cx, cy − 0.04 d)`, a line from
+   radius `0.2 d` centered at `(cx, cy − 0.04 d)`, a line from
    `(cx, cy + 0.16 d)` to `(cx, cy + 0.3 d)` and a line from
    `(cx − 0.12 d, cy + 0.3 d)` to `(cx + 0.12 d, cy + 0.3 d)`;
 3. the *label*: a text box (§8.2.4, laid out by §8.5.3) with the frame
@@ -2669,15 +2669,15 @@ A transcript is a blob whose content is UTF-8 JSON (not compressed):
 
 - `recording`: must be the id of the recording whose `transcript` register
   holds it; readers ignore and report a transcript naming another one.
-- `engine`: name and version of the speech recogniser, as for recognition
+- `engine`: name and version of the speech recognizer, as for recognition
   (§5.5), e.g. `apple-speechtranscriber-26.4`, `apple-sfspeech-26.7`,
-  `notability-<version>`. `language`: BCP 47 tag of the language recognised; a
+  `notability-<version>`. `language`: BCP 47 tag of the language recognized; a
   segment may carry its own `language` when it differs.
 - `created`: when the transcript was produced (RFC 3339).
 - `segments`: time-stamped pieces of text (a phrase or sentence), sorted by
   `start`, not overlapping. Each has `start` and `end` (seconds from the
   start of the recording, 3 decimals, `start ≤ end`), `text`, and optional
-  `confidence` (0…1, the recogniser's confidence in the segment).
+  `confidence` (0…1, the recognizer's confidence in the segment).
 - `words`: optional, per segment: the segment's words in order, each with
   `t` (the word as it appears in `text`), `start`, `end` (as for segments,
   within the segment's range) and optional `c` (confidence 0…1). A segment
@@ -2739,7 +2739,7 @@ limit, as stroke coordinates are.
 
 An image or PDF page is drawn by mapping its crop rectangle `[cx, cy, cw, ch]`
 (source coordinates, y down) onto the frame `[fx, fy, fw, fh]`, then
-rotating about the frame's centre `(mx, my)` by `rotation` θ:
+rotating about the frame's center `(mx, my)` by `rotation` θ:
 
 ```
 p = (fx + (u − cx) · fw / cw,  fy + (v − cy) · fh / ch)
@@ -2927,11 +2927,11 @@ formula and thematic break becomes one rendered paragraph, laid out in a
 
 - Containers: a block quote moves the column right by `s`, and draws a bar
   `0.15 s` wide at its left edge + `0.25 s`, from its first paragraph's top
-  to its last paragraph's bottom, in the box colour at 40 % of its alpha. A
+  to its last paragraph's bottom, in the box color at 40 % of its alpha. A
   list item moves it right by `1.6 s`; its first paragraph gets the marker
   in the space it leaves, on its first line: a bullet is a disc of diameter
-  `0.36 S` (`S` that line's size) centred `0.8 s` left of the column and
-  `0.32 S` above the baseline, filled in the box colour, a ring (stroke
+  `0.36 S` (`S` that line's size) centered `0.8 s` left of the column and
+  `0.32 S` above the baseline, filled in the box color, a ring (stroke
   `S/16`) at odd nesting depths of bullet lists (the second, fourth, …); a
   task is a square of side `0.66 S`, stroke `S/14`, its right side
   `0.35 s` left of the column and its bottom on the baseline, with a check
@@ -2947,20 +2947,20 @@ formula and thematic break becomes one rendered paragraph, laid out in a
   in font `mono` at the size around them; a code block is laid out without
   alignment (`start`), `0.5 s` in from its column, with `0.25 s` more above
   its first line and below its last, all of which (the column's width) is
-  filled with the box colour at 8 % of its alpha; a thematic break is one
+  filled with the box color at 8 % of its alpha; a thematic break is one
   empty line of size `s` with a line `s/12` thick across the column at
-  `0.6 s` below its top, colour as the quote bar; links are underlined and
+  `0.6 s` below its top, color as the quote bar; links are underlined and
   `#1F6FEBFF`; bold, italic and strikethrough as runs' `b`, `i`, `s`
   (§8.5.3).
-- Formulas: an inline formula has the size and colour of the text around
-  it; a display formula (a display-math block, drawn centred in its column)
-  has the paragraph's size and the box colour. A formula with a matching
+- Formulas: an inline formula has the size and color of the text around
+  it; a display formula (a display-math block, drawn centered in its column)
+  has the paragraph's size and the box color. A formula with a matching
   `math` entry (§8.2.4) is one *box*: `renderSize` wide and high, its
   baseline `depth` above its bottom, never broken, with a break
   opportunity before and after it; drawn like a math item's render
   (§8.2.8 step 1) without rotation of its own. A formula without one is its
   `latex` as text in font `mono` (a display one as a paragraph in its
-  own right, centred), and the export reports it like an equation drawn as
+  own right, centered), and the export reports it like an equation drawn as
   its source.
 
 **Lines.** A rendered paragraph is cut into lines at its hard line breaks,
@@ -2977,7 +2977,7 @@ of `0.95 S` and every box's height minus its depth, its descent the larger
 of `0.25 S` and every box's depth; so a line without boxes is `1.2 S`
 high. The first paragraph's top is the frame's top. Lines are aligned in
 their column by the box `align` and `dir` (§8.5.3), display formulas
-centred.
+centered.
 
 **Drawing.** Text lines are drawn as text items (§8.2.4, §8.5.3) with the
 lines decided above (never broken again), boxes as math renders, markers,
@@ -3043,7 +3043,7 @@ where the table says how they degrade.
 | binary plist (import) | 64 levels; no cycles; each object parsed once; keyed archives must be binary | `BinaryPlist` |
 | XML plist (import: a recordings library, a PDF metadata index, a few small Notability plists) | 4 MiB, 64 levels; only the five predefined entities and numeric character references; a DOCTYPE with an internal subset refused | `XMLPlist` |
 | keyed-archive UID chain | 64 hops | `KeyedArchive` |
-| Notability coordinates and widths | ±10⁶ units, finite; recognised pages up to 100 000; dates outside 0001…9999 dropped (`.note` and `.ntb`) | `NotabilityNote` |
+| Notability coordinates and widths | ±10⁶ units, finite; recognized pages up to 100 000; dates outside 0001…9999 dropped (`.note` and `.ntb`) | `NotabilityNote` |
 | `.ntb` bundle (import) | geometry, erase lists and titles decoded: 4 × the bundle's size + 64 KiB; pages below 100 000 | `NotabilityBundle.decodeBudgetFactor` |
 | shape objects (import) | 1 curve point per byte of the `shapes` plist + 65 536 | `NotabilityShapes.pointsPerByte` |
 | duplicate detection (import) | 256 stroke comparisons per stroke + 10⁶ per copy; beyond, the copy is imported as a separate version | `NotabilityImporter.PrintIndex` |
@@ -3117,7 +3117,7 @@ forgeries (it cannot tell), and they then fail only their own reads.
 
 Not part of a vault and never stored in one: a reader may keep, per device,
 the summaries of a vault's notes (title, tags, notebook, deleted flag, page,
-stroke and recognised-page counts, the recognised text of each page for search, newest `wall`) so that listing the vault
+stroke and recognized-page counts, the recognized text of each page for search, newest `wall`) so that listing the vault
 again does not decrypt every note. The reference implementation keeps it in
 the app's Application Support folder and, for the CLI, in
 `$XDG_CACHE_HOME/sempere/` (default `~/.cache/sempere/`). Other readers need
@@ -3201,7 +3201,7 @@ It keeps four more, under the same derivation:
 
 - the **render cache** (purpose `render-cache`, magic `SMPI` ‖ `0x01`):
   pictures of image items and previews of PDF page items as drawn on that
-  device, labelled by everything the pixels depend on (the item's drawing
+  device, labeled by everything the pixels depend on (the item's drawing
   fields, the blob reference, the scale), sealed as above; limited in size and
   deleted when the vault is closed;
 - the **attachment index** (purpose `attachment-index`, magic `SMPX` ‖
@@ -3517,7 +3517,7 @@ file = 534d505501a0a1a2a3a4a5a6a7a8a9aaabb466bcf027fe45b94f3fe195f6e0b57d9c6e
   when the note has none; `favorite`; `deleted`; `created`; `modified`, the
   greatest `wall` (§5.1) among the revisions; `pages`, the number of pages;
   `pageTexts`, for each page with searchable text, its 1-based position and
-  that text: the page's recognised text (§5.5), then the text of each text
+  that text: the page's recognized text (§5.5), then the text of each text
   item (§8.2.4), the `pageText` of each PDF page item (§8.2.6) and the LaTeX
   source of each math item (§8.2.8) in drawing order (§8.2.3), the non-empty
   ones joined by `\n`, in page order. Pages
@@ -3560,7 +3560,7 @@ each writer computes it from its own listing. The app does not write it.
 
 A vault may hold, at its root, `settings.age`: settings
 that the devices which opted in follow, merged per key (rationale, the list of
-settings and the app's behaviour: `docs/settings-sync.md`; JSON Schema:
+settings and the app's behavior: `docs/settings-sync.md`; JSON Schema:
 `docs/settings.schema.json`). It is not under `notes/` and is not write-once: a
 writer replaces it whole, atomically. A reader that does not implement this
 section ignores it (§1).

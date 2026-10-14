@@ -235,7 +235,7 @@ final class NoteEditor {
     static let growStep = 400.0
     /// Default pause before an autosave.
     static let defaultDebounce = Duration.milliseconds(1500)
-    /// Default pause after the last stroke change before pages are recognised.
+    /// Default pause after the last stroke change before pages are recognized.
     static let defaultRecognitionDelay = Duration.seconds(4)
 
     init(noteID: UUID, state: NoteState, writer: NoteWriter?, readOnlyReason: String?,
@@ -1461,7 +1461,7 @@ extension NoteEditor {
         return digest
     }
 
-    /// Recognises the pages that need it after `recognitionDelay` without
+    /// Recognizes the pages that need it after `recognitionDelay` without
     /// further stroke changes (and once when the note opens).
     func scheduleRecognition() {
         guard recognizer != nil, !isReadOnly, !isClosed else { return }
@@ -1497,7 +1497,7 @@ extension NoteEditor {
     private func recognizeOnce() async {
         guard let recognizer, let writer, !isClosed else { return }
         await flush()
-        guard saveError == nil, recognitionWanted else { return }   // never recognise strokes that are not on disk
+        guard saveError == nil, recognitionWanted else { return }   // never recognize strokes that are not on disk
         var read: [(pageID: UUID, digest: String, recognition: Recognition?)] = []
         var failed = false
         for page in pages {
@@ -1647,7 +1647,7 @@ extension NoteEditor {
     }
 
     /// The page's ink changed outside its canvas: the drawing its canvases
-    /// show, saved like a canvas change (dirty, recognised again).
+    /// show, saved like a canvas change (dirty, recognized again).
     private func showChangedInk(_ drawing: PKDrawing, change: StrokeLedger.Change, on pageID: UUID, keepUndo: Bool) {
         canvasDrawings[pageID] = drawing
         if !change.isEmpty {

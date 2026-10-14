@@ -144,7 +144,7 @@ struct BackgroundSyncTests {
         #expect(await run.value)
         #expect(model.pendingNoteIDs.isEmpty)
 
-        // Cancelled (iOS ended the task) before it settles: false.
+        // Canceled (iOS ended the task) before it settles: false.
         let (second, _, _, _) = try await Self.syncing()
         defer { second.close() }
         second.pauseCloudSync()

@@ -241,8 +241,8 @@ Branch per task, PR to `main`, squash merge, CI green. The app suites run on a M
   (not part of `SempereApp`'s test action, so `scripts/app.sh test` never
   builds it); CI runs it only by dispatch (`-f screenshots=true`). Never put
   real notes in a demo.
-- `PKCanvasView` inverts ink colours in dark mode; the canvas forces
-  `.light` because ink colours are stored as drawn on (light) paper.
+- `PKCanvasView` inverts ink colors in dark mode; the canvas forces
+  `.light` because ink colors are stored as drawn on (light) paper.
 - Vaults are one item in Files: `SempereInfo.plist` (referenced by `INFOPLIST_FILE`,
   outside the synchronized group so it is not copied as a resource) exports the
   `.sempere` package UTType. `VaultLocator.resolve` maps whatever was picked
@@ -266,7 +266,7 @@ Branch per task, PR to `main`, squash merge, CI green. The app suites run on a M
   false`; a view's `.task` must never own a listing, SwiftUI cancels it when
   the view goes). Summaries come in batches (`loadBatchSize`) through
   `Vault.summaries(of:cache:)`, never one `summary(of:)` per note; listings
-  are serialised by `loadGate`. The per-device `SummaryCache` (format.md §10)
+  are serialized by `loadGate`. The per-device `SummaryCache` (format.md §10)
   is keyed by revision file names, so bump `SummaryCache.schemaVersion` when
   `NoteSummary` gains or changes a field. `RevisionDetail.withoutStrokePoints`
   revisions are for listings and search only: never write, snapshot, render
@@ -324,7 +324,7 @@ Branch per task, PR to `main`, squash merge, CI green. The app suites run on a M
 - Sidebar drops: a drag the app started is dropped from `AppModel.draggedPayload`
   (`beginDrag` / `takeDrop`), never by loading the item provider (the system
   releases it as soon as `onDrag` returned). `onDrag`
-  reports no end, so the payload of a cancelled drag lingers: only a drop that
+  reports no end, so the payload of a canceled drag lingers: only a drop that
   carries the app's own types (`carriesAppTypes`) may use it, never a photo or
   text dragged in from another app. Rows propose `.copy`, never `.move`
   (`SidebarDrop.proposedOperation`): `onDrag` sessions from a `List` row allow
@@ -379,9 +379,9 @@ Branch per task, PR to `main`, squash merge, CI green. The app suites run on a M
 - `NavigationSplitView` ignores a programmatic column change that arrives
   while the view is first being built, so the stored choice (`ColumnLayout`,
   `@AppStorage`) is never made to depend on selection state.
-- `PKToolPicker` has no minimised/docked API (see `ToolPalette.swift`): the app
+- `PKToolPicker` has no minimized/docked API (see `ToolPalette.swift`): the app
   can hide it (`setVisible`) and build a picker with fewer tools; the user
-  minimises or docks the system palette by dragging it to an edge or tapping its
+  minimizes or docks the system palette by dragging it to an edge or tapping its
   collapse handle. Changing the compact option swaps the picker object.
 - Tags match case-insensitively (`NoteOps.tagKey`); titles are never keys.
   Tags merge per tag (`format.md` §5.4.1): write `addTag` / `removeTag` via
@@ -470,7 +470,7 @@ Branch per task, PR to `main`, squash merge, CI green. The app suites run on a M
   compiled into both): state and localized titles go in, the chosen entry comes out. The bundle
   has no strings, no logic and no network; keep it that way. The app must work with it missing.
   A new entry is a case of `StatusItemProtocol.Action` handled in `StatusItemHost.run`.
-- Mac (Catalyst) behaviour is in `docs/mac.md`. Menu entries are cases of
+- Mac (Catalyst) behavior is in `docs/mac.md`. Menu entries are cases of
   `MenuCommand` (title, shortcut, enabling in one place; `MenuCommandTests`
   checks shortcut clashes); never add a menu item elsewhere. Menus act through
   the focused window's `CommandRouter`. A note has at most one `NoteEditor`:
@@ -479,7 +479,7 @@ Branch per task, PR to `main`, squash merge, CI green. The app suites run on a M
   changes) closes them all first and bumps `keyEpoch`. Sheets and alerts that
   commands open live in `WindowUI`, attached by `windowSheets` to a view that
   is always on screen (the note list is not when the columns are hidden).
-  Gate Mac-only behaviour on `Platform.isMac` (compiles on the iPad, so the
+  Gate Mac-only behavior on `Platform.isMac` (compiles on the iPad, so the
   simulator CI checks it) rather than `#if targetEnvironment(macCatalyst)`:
   the Catalyst build runs on `main` only (or `gh workflow run CI --ref <branch>`).
   Only the `.commands` line and the entitlements/scene build settings are
@@ -584,7 +584,7 @@ Branch per task, PR to `main`, squash merge, CI green. The app suites run on a M
   Linux). Recognition carries `basis` = `RecognitionBasis.digest` of the page's live stroke ids
   (`format.md` §5.5): current iff equal. Recognition without a basis (imported) is
   never replaced unless the editor itself changed that page's strokes (`touchedPages`), via
-  `RecognitionPolicy.needsRecognition`. The editor saves strokes first, recognises off the main
+  `RecognitionPolicy.needsRecognition`. The editor saves strokes first, recognizes off the main
   actor (`VisionPageRecognizer`, ink drawn black on white, markers skipped), re-checks the digest
   before writing and drops the result if strokes changed meanwhile; it writes one delta per
   pass (all pages read) through its own `NoteWriter`, and stops without writing once closed or
@@ -632,7 +632,7 @@ Branch per task, PR to `main`, squash merge, CI green. The app suites run on a M
   fixture `Fixtures/newer.sempere`. Mirror changes in `web/src/format/newer.ts`.
 - Note `lang` and `markersBehindText` (`format.md` §5.4) are ordinary LWW registers
   (a snapshot records all nine clocks, the zero stamp for one never set), and writers omit their
-  values when unset. Recognisers pass
+  values when unset. Recognizers pass
   `meta.lang` to Vision (`RecognitionLanguage.preferred`, `VisionText.lines(language:)`).
   `markersBehindText` draws markers after background items and before content
   items (`PreparedPage.underIndex`; the canvas instead multiplies a copy of the
@@ -644,7 +644,7 @@ Branch per task, PR to `main`, squash merge, CI green. The app suites run on a M
   IS the box's text (one run, no `breaks`), so a reader without Markdown shows and edits it as plain text. Readers ignore run
   attributes and `breaks` of such a box; `layout` (rendered breaks as SOURCE offsets) counts only when its `of`
   equals `MarkdownText.hash` of the text (an editor without Markdown keeps the field after changing the source); `math`
-  entries match a formula by latex/display/size/colour (stale ones are ignored, their blobs still referenced).
+  entries match a formula by latex/display/size/color (stale ones are ignored, their blobs still referenced).
   One parser and layout: `MarkdownDocument` / `MarkdownPlan` (core), `MarkdownLayout` / `MarkdownItems`
   (SempereRender: a box is expanded at `PreparedPage` into text items with fixed breaks, `math` items and an
   `underlay` of shapes, so every writer and `ItemRaster` draws it), ported in `web/src/format/markdown.ts` and
@@ -705,7 +705,7 @@ Branch per task, PR to `main`, squash merge, CI green. The app suites run on a M
   Posters come from `VideoPoster` (AVFoundation, shared by the app and the CLI
   on macOS); the Linux CLI stores none without `--poster`.
 - Equations (`math` items, `format.md` §8.2.8, task G1): the whole `math` object is ONE register
-  (source, style, size, colour, `render`, `renderSize`, `engine`); a value whose source or style
+  (source, style, size, color, `render`, `renderSize`, `engine`); a value whose source or style
   changed carries a new render or none (`MathContent.withoutRender`, `typesetsLike`). Build edits
   with `NoteOps.math` / `placeMath` / `setMath` (frame follows the render at the same scale,
   `mathFrame`). Every LaTeX source goes through `MathSource.check` before any parser sees it.
@@ -719,7 +719,7 @@ Branch per task, PR to `main`, squash merge, CI green. The app suites run on a M
   recognize-math`; the model runs only behind `MathRecognizing` (`CoreMLMathRecognizer`, `#if
   canImport(CoreML)`; tests use fakes and the tiny random model `Fixtures/math-tiny`, made by
   `tools/math-model/convert.py --tiny`). Models are `sempere-math-model/1` folders whose every file
-  is checked against the manifest's SHA-256 (`MathModelStore`) before use; the app's catalogue
+  is checked against the manifest's SHA-256 (`MathModelStore`) before use; the app's catalog
   (`MathModelCatalog.entries`) pins each manifest's hash and is EMPTY until the maintainer settles the
   training-data question, so the app's downloader (`MathModels`, its only network code) never runs;
   offering a model also needs the Mac `network.client` entitlement and a privacy-policy change. The

@@ -217,7 +217,7 @@ enum SyntheticBundle {
         return TestZip.write(entries)
     }
 
-    /// One recognised page of a synthetic `ios/HandwritingIndex.fb`: its
+    /// One recognized page of a synthetic `ios/HandwritingIndex.fb`: its
     /// 0-based index, text, and one page-coordinate box per UTF-16 unit
     /// (nil for whitespace, stored as infinities like Notability).
     struct RecognizedPage {

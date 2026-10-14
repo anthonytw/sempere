@@ -10,7 +10,7 @@ import Speech
 public enum SpeechTranscriptionError: Error, Hashable, Sendable, CustomStringConvertible {
     /// This platform has no Speech framework (Linux).
     case unavailable
-    /// No on-device recogniser for the language.
+    /// No on-device recognizer for the language.
     case unsupportedLanguage(String)
     /// Speech recognition is not allowed (Settings ▸ Privacy ▸ Speech Recognition).
     case notAuthorized
@@ -18,14 +18,14 @@ public enum SpeechTranscriptionError: Error, Hashable, Sendable, CustomStringCon
     case needsUsageDescription
     /// The engine asked for cannot run here (OS too old, device not supported).
     case engineUnavailable(String)
-    /// The recogniser failed.
+    /// The recognizer failed.
     case failed(String)
 
     public var description: String {
         switch self {
         case .unavailable:
             return "transcription needs Apple's Speech framework, so it runs only on macOS, iOS and iPadOS (or in the app)"
-        case .unsupportedLanguage(let l): return "no on-device speech recogniser for \(l) on this device"
+        case .unsupportedLanguage(let l): return "no on-device speech recognizer for \(l) on this device"
         case .notAuthorized: return "speech recognition is not allowed (System Settings ▸ Privacy & Security ▸ Speech Recognition)"
         case .needsUsageDescription:
             return "the SFSpeechRecognizer fallback needs an app with a speech recognition usage description; "
@@ -423,7 +423,7 @@ enum Recognizer {
             } else if let error = task.error as NSError?, error.domain == "kAFAssistantErrorDomain", error.code == 1110 {
                 finish(.success([]))   // no speech in the recording
             } else {
-                finish(.failure(SpeechTranscriptionError.failed(task.error?.localizedDescription ?? "the recogniser stopped")))
+                finish(.failure(SpeechTranscriptionError.failed(task.error?.localizedDescription ?? "the recognizer stopped")))
             }
         }
 

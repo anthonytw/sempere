@@ -107,7 +107,7 @@ struct PageStackLayout: Equatable, Sendable {
     /// The content offset (screen points) that brings `box` (page points, on
     /// page `index`) into view: nil when it is already comfortably visible
     /// (inside the viewport less 15 % of its height at top and bottom), else
-    /// the offset that centres it, within the scrollable range. `offset` and
+    /// the offset that centers it, within the scrollable range. `offset` and
     /// `viewport` are the scroll's current offset and size. A box that is not
     /// finite gives nil.
     func revealOffset(of box: (x: Double, y: Double, w: Double, h: Double), onPage index: Int, scale: Double,

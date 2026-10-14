@@ -1,7 +1,7 @@
 import Foundation
 import Sempere
 
-/// RGB colour plus alpha (0...1), the paint used by every draw command.
+/// RGB color plus alpha (0...1), the paint used by every draw command.
 public struct Paint: Hashable, Sendable {
     /// Red, green and blue components, 0...255.
     public var r: UInt8, g: UInt8, b: UInt8
@@ -13,7 +13,7 @@ public struct Paint: Hashable, Sendable {
         self.r = r; self.g = g; self.b = b; self.alpha = clamp01(alpha)
     }
 
-    /// Paint from a model colour: alpha = `color.a / 255 * opacity`.
+    /// Paint from a model color: alpha = `color.a / 255 * opacity`.
     public init(_ c: Color, opacity: Double = 1) {
         self.init(r: c.r, g: c.g, b: c.b, alpha: Double(c.a) / 255 * opacity)
     }

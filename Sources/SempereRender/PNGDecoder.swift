@@ -3,7 +3,7 @@ import Foundation
 
 /// PNG reading for exports (docs/attachments.md §10): the header for layout
 /// and SVG passthrough, metadata stripping, and a decoder for every valid
-/// PNG (all colour types and bit depths, palettes, `tRNS`, Adam7) to RGBA8.
+/// PNG (all color types and bit depths, palettes, `tRNS`, Adam7) to RGBA8.
 /// 16-bit samples are reduced to their high byte, low bit depths scaled to
 /// 0–255, palettes expanded.
 ///
@@ -18,7 +18,7 @@ enum PNG {
         var width: Int
         var height: Int
         var depth: Int
-        /// 0 grey, 2 RGB, 3 palette, 4 grey + alpha, 6 RGBA.
+        /// 0 gray, 2 RGB, 3 palette, 4 gray + alpha, 6 RGBA.
         var colorType: Int
         var interlaced: Bool
 
@@ -81,7 +81,7 @@ enum PNG {
         }
         let depths: [Int: [Int]] = [0: [1, 2, 4, 8, 16], 2: [8, 16], 3: [1, 2, 4, 8], 4: [8, 16], 6: [8, 16]]
         guard let allowed = depths[info.colorType], allowed.contains(info.depth) else {
-            throw ImageError.malformed("colour type \(info.colorType) with bit depth \(info.depth)")
+            throw ImageError.malformed("color type \(info.colorType) with bit depth \(info.depth)")
         }
         guard d[b + 10] == 0, d[b + 11] == 0, d[b + 12] <= 1 else {
             throw ImageError.malformed("compression, filter or interlace method")

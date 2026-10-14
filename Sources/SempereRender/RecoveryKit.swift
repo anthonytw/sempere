@@ -228,7 +228,7 @@ public struct RecoveryKit: Sendable {
                         font: .courier, gray: 0.35)
         }
         w.space(10)
-        w.paragraph("Grey numbers on the right are line checksums, not part of the key. To find a mistyped "
+        w.paragraph("Gray numbers on the right are line checksums, not part of the key. To find a mistyped "
                     + "line, check each one: printf '%s' 'LINE WITHOUT SPACES' | sha256sum | cut -c1-4", size: 8.5)
         if isPlain {
             w.space(4)

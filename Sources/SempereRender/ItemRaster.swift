@@ -24,7 +24,7 @@ public enum ItemRaster {
 
     /// Draws `item` alone at `scale` pixels per point (lowered so the image
     /// has at most `maxPixels`), transparent around it. A background item
-    /// (layer below `content`) is first filled with `paper`'s colour when
+    /// (layer below `content`) is first filled with `paper`'s color when
     /// given, as on the page (format.md §8.2.3). An `audio` item is drawn
     /// with the note's `recordings` (format.md §8.2.9); without them it is a
     /// placeholder.

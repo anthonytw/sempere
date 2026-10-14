@@ -3,7 +3,7 @@ import Sempere
 
 // MARK: - Installing a model from a folder or a zip the user picked
 //
-// For trying a converted model without a catalogue entry or a download
+// For trying a converted model without a catalog entry or a download
 // (tools/math-model/README.md): the user picks a model folder
 // (`manifest.json` and the files it lists) or a zip of one in Files, and it is
 // copied into the store after every listed file matched its SHA-256 and size.

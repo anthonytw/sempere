@@ -26,7 +26,7 @@ enum PDFImportOutcome {
     case done(UUID)
     /// It needs a password: ask, then `continuePDFImport` (or `cancelPDFImport`).
     case needsPassword(PDFImportRequest)
-    /// It failed or was cancelled; `errorMessage` says why when it failed.
+    /// It failed or was canceled; `errorMessage` says why when it failed.
     case failed
 }
 

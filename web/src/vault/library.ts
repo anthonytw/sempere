@@ -1,5 +1,5 @@
 // Loading notes from a source: list, read and decrypt every revision, merge,
-// and summarise for the note list and search. Unreadable revisions are
+// and summarize for the note list and search. Unreadable revisions are
 // reported with the note (format.md §4), never silently dropped.
 
 import { type NoteState, type Revision } from "../format/model.ts";
@@ -42,7 +42,7 @@ export interface NoteSummary {
   created: number;
   modified?: number;
   pageCount: number;
-  /** Recognised text per page (1-based page numbers), for search. */
+  /** Recognized text per page (1-based page numbers), for search. */
   pageTexts: PageTextEntry[];
   failures: number;
   error?: string;
@@ -138,7 +138,7 @@ export function summarize(n: LoadedNote): NoteSummary {
     id: n.id, title: s?.meta.title ?? "", tags: s?.meta.tags ?? [], favorite: s?.meta.favorite ?? false,
     deleted: s?.deleted ?? false, created: s?.meta.created ?? 0, pageCount: s?.pages.length ?? 0,
     pageTexts: (s?.pages ?? []).flatMap((p, i) => {
-      // Recognised handwriting, then each text box, PDF page text and equation source in drawing order
+      // Recognized handwriting, then each text box, PDF page text and equation source in drawing order
       // (Swift `PageText.texts`).
       // `spans` say which part is which (UTF-16 offsets, as Swift's), so a snippet leaves equations out.
       const parts = [{ text: p.recognition?.text ?? "", isMath: false },

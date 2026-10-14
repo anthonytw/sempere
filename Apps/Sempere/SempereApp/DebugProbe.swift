@@ -8,7 +8,7 @@ import Sempere
 enum DebugProbe {
     static func log(_ message: String) { NSLog("SempereProbe %@", message) }
 
-    /// Summarises the vault folder at `root`. Security scope must be active.
+    /// Summarizes the vault folder at `root`. Security scope must be active.
     static func probe(_ root: URL, label: String) {
         let fm = FileManager.default
         log("[\(label)] ubiquitous=\(fm.isUbiquitousItem(at: root)) cloud=\(CloudVault.isUbiquitous(root))")

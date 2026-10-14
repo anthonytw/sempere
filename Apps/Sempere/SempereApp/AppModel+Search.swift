@@ -110,7 +110,7 @@ extension AppModel {
     }
 
     /// Re-runs the search after `searchDebounce`, off the main actor; an
-    /// older search still running is cancelled. Called whenever the query, the
+    /// older search still running is canceled. Called whenever the query, the
     /// scope, the selection or the notes change. `changed`: the notes a list
     /// update may have changed; when the results answer the same query, scope
     /// and selection (and transcripts are not searched), only those notes are
@@ -138,7 +138,7 @@ extension AppModel {
         if !withTranscripts, !transcriptHits.isEmpty { transcriptHits = [] }
         if let changed, !withTranscripts, var done = completedSearch, done.answers(key) {
             // A list update with the results current: re-test the notes it changed (and those of
-            // updates whose re-test was cancelled), against the results they were merged into.
+            // updates whose re-test was canceled), against the results they were merged into.
             done.changed.formUnion(changed)
             completedSearch = done
             let previous = searchResults, retest = done.changed
@@ -158,7 +158,7 @@ extension AppModel {
         completedSearch = nil
         searchTask = Task { [weak self] in
             do { try await Task.sleep(for: delay) } catch { return }
-            // Cancelling this task (the next keystroke) stops the scan between notes.
+            // Canceling this task (the next keystroke) stops the scan between notes.
             let job = Task.detached(priority: .userInitiated) {
                 NoteSearch.search(query, in: candidates, index: index, isCancelled: { Task.isCancelled })
             }

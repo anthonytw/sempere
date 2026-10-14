@@ -2,7 +2,7 @@ import Foundation
 
 /// One line of a note listing.
 ///
-/// `Codable` for `SummaryCache` only (the synthesised form, not a format):
+/// `Codable` for `SummaryCache` only (the synthesized form, not a format):
 /// a new field is cached automatically; bump `SummaryCache.schemaVersion`
 /// whenever a field is added or computed differently.
 public struct NoteSummary: Hashable, Sendable, Codable {
@@ -25,9 +25,9 @@ public struct NoteSummary: Hashable, Sendable, Codable {
     /// Set when some revisions could not be read (the numbers are then a
     /// best effort) or the note could not be reconstructed at all.
     public var problem: String?
-    /// Number of pages with recognised handwriting text.
+    /// Number of pages with recognized handwriting text.
     public var recognizedPages: Int = 0
-    /// The recognised text of each page that has some, for search (`NoteSearch`).
+    /// The recognized text of each page that has some, for search (`NoteSearch`).
     public var pageTexts: [PageText] = []
     /// Number of pages whose recognition is missing or stale (`RecognitionPolicy`).
     public var pagesNeedingRecognition: Int = 0
@@ -222,14 +222,14 @@ public struct SummaryProgress: Hashable, Sendable {
 }
 
 extension Vault {
-    /// Summarises one note from whatever revisions can be read. Stroke
+    /// Summarizes one note from whatever revisions can be read. Stroke
     /// geometry is skipped (`RevisionDetail.withoutStrokePoints`); the result
     /// equals `summary(of:loaded:)` of the fully decoded note.
     public func summary(of noteId: UUID) throws -> NoteSummary {
         summary(of: noteId, loaded: try loadNote(noteId, detail: .withoutStrokePoints))
     }
 
-    /// Summarises a note already loaded with `loadNote` (any `RevisionDetail`).
+    /// Summarizes a note already loaded with `loadNote` (any `RevisionDetail`).
     public func summary(of noteId: UUID, loaded: LoadedNote) -> NoteSummary {
         summaryAndCheckpoint(of: noteId, loaded: loaded, wantCheckpoint: false).summary
     }
@@ -323,7 +323,7 @@ extension Vault {
                 let names = try revisionNames(of: id)
                 let files = names.map(\.filename).sorted()
                 if isNoteIncomplete(id) {
-                    // A partial copy's note not fetched in full (format.md §1.2): never summarised from part of its log.
+                    // A partial copy's note not fetched in full (format.md §1.2): never summarized from part of its log.
                     return (NoteSummary(id: id, title: "", tags: [], notebook: nil, deleted: false, pages: 0, strokes: 0,
                                         modified: nil, problem: Self.incompleteNoteProblem), false, files)
                 }
@@ -408,7 +408,7 @@ final class ProgressCounter: @unchecked Sendable {
 
 /// File names for exports.
 public enum ExportName {
-    /// `<sanitised title>-<first 8 hex of the id>`, safe on every filesystem:
+    /// `<sanitized title>-<first 8 hex of the id>`, safe on every filesystem:
     /// path separators, control and reserved characters become `-`, runs
     /// collapse, length is capped, an empty title becomes `untitled`.
     public static func stem(title: String, noteId: UUID) -> String {

@@ -3,7 +3,7 @@
 #   scripts/package-cli.sh BINARY VERSION PLATFORM OUTDIR
 # Produces OUTDIR/sempere-VERSION-PLATFORM.tar.gz containing
 # sempere-VERSION-PLATFORM/{sempere,LICENSE,LICENSE-EXCEPTION,README.md,CHANGELOG.md,docs/cli.md,fonts/}
-# (fonts/: the Noto fonts for text in exports and their OFL licence, found next to the binary).
+# (fonts/: the Noto fonts for text in exports and their OFL license, found next to the binary).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 bin="${1:?binary}"; version="${2:?version}"; platform="${3:?platform}"; out="${4:?outdir}"

@@ -1,8 +1,8 @@
-# Sempere licence agreement (App Store) — DRAFT
+# Sempere license agreement (App Store) — DRAFT
 
 > **Draft for the maintainer and a lawyer. Not legal advice. Not in use yet.** Until the
 > maintainer pastes a reviewed version into App Store Connect (App Information ▸ License
-> Agreement ▸ Edit ▸ custom licence), the App Store applies Apple's standard licence
+> Agreement ▸ Edit ▸ custom license), the App Store applies Apple's standard license
 > agreement. Placeholders (`TODO(user)`) must be filled before submission.
 
 How this text was built:
@@ -11,9 +11,9 @@ How this text was built:
   restated in plain words: the source is free software (GPL v3 or later, with the App Store
   exception in `LICENSE-EXCEPTION`), sections 15 (no warranty) and 16 (limitation of
   liability) in plain form, and section 17 (how to read 15–16 where local law limits them).
-  The GPL itself stays the licence of the source; nothing here may take away a right it gives
+  The GPL itself stays the license of the source; nothing here may take away a right it gives
   (the exception's condition 2).
-- **Section 4** carries the minimum terms Apple requires in a custom licence agreement
+- **Section 4** carries the minimum terms Apple requires in a custom license agreement
   (Apple's "Instructions for Minimum Terms of Developer's End-User License Agreement": the
   agreement is with the developer, not Apple; support; warranty and refunds; product claims;
   intellectual property claims; legal compliance; contact; third-party terms; Apple as third-party
@@ -23,7 +23,7 @@ How this text was built:
 
 ---
 
-## Sempere licence agreement
+## Sempere license agreement
 
 This agreement is between you and Anthony Wertz ("the developer") and covers the Sempere app
 you get from the App Store (the "App"). By installing or using the App you accept it.
@@ -35,7 +35,7 @@ Sempere is free software. Its source code is published at
 your option) any later version, with an additional permission that allows distribution
 through the App Store (the "App Store exception"). You may use, study, share and change that
 source code under those terms; the full texts are in the App (Settings ▸ About ▸ About Sempere ▸ License) and
-in the repository. Third-party components keep their own licences, listed in Settings ▸ About ▸ About Sempere ▸
+in the repository. Third-party components keep their own licenses, listed in Settings ▸ About ▸ About Sempere ▸
 Acknowledgments.
 
 This agreement covers the copy of the App you received from the App Store. It does not limit
@@ -77,7 +77,7 @@ waived. `TODO(user)`: a lawyer to confirm this paragraph for the EU and the UK.
 a. **Who this agreement is with.** This agreement is between you and the developer only,
    not Apple. The developer, not Apple, is responsible for the App and its content.
 
-b. **Licence.** You may use the App on any Apple-branded device you own or control, as the
+b. **License.** You may use the App on any Apple-branded device you own or control, as the
    App Store's Usage Rules allow, and, as section 1 says, under the GNU GPL for the source
    code.
 
@@ -101,7 +101,7 @@ e. **Product claims.** The developer, not Apple, is responsible for addressing a
 
 f. **Intellectual property.** If a third party claims that the App or your possession and
    use of it infringes their intellectual property rights, the developer, not Apple, is
-   solely responsible for the investigation, defence, settlement and discharge of that claim.
+   solely responsible for the investigation, defense, settlement and discharge of that claim.
 
 g. **Legal compliance.** You represent that you are not located in a country subject to a
    U.S. Government embargo or designated by the U.S. Government as a "terrorist supporting"

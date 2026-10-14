@@ -4,7 +4,7 @@ import XCTest
 @testable import SempereRender
 
 /// How exports draw `math` items (format.md §8.2.8 "Drawing"): the stored
-/// render as a PDF form or as coverage of its colour, else the source as
+/// render as a PDF form or as coverage of its color, else the source as
 /// monospace text with a warning, else a placeholder; and the text exports.
 final class MathRenderTests: XCTestCase {
     static let ink = Color(r: 0x1A, g: 0x1A, b: 0x1A)
@@ -80,7 +80,7 @@ final class MathRenderTests: XCTestCase {
     }
 
     /// PNG: the rasterized render (opaque white) becomes coverage of the
-    /// item's colour, so the paper shows through around the marks.
+    /// item's color, so the paper shows through around the marks.
     func testPNGDrawsTheRenderAsCoverageOverThePaper() throws {
         var blobs = MemoryBlobs()
         let ref = blobs.add(try PDFFixture.data("equation.pdf"))
@@ -135,7 +135,7 @@ final class MathRenderTests: XCTestCase {
         XCTAssertEqual(Array(out[0..<4]), [0x1A, 0x1A, 0x1A, 0])
         XCTAssertEqual(Array(out[4..<8]), [0x1A, 0x1A, 0x1A, 255])
         XCTAssertEqual(Double(out[11]), 255 * (255 - 140) / (255 - 26), accuracy: 1)
-        // A colour with a strong channel uses that channel; near-white ink is left as drawn.
+        // A color with a strong channel uses that channel; near-white ink is left as drawn.
         let red = MathItems.coverage(try RGBAImage(width: 1, height: 1, pixels: [255, 128, 128, 255]),
                                      color: Color(r: 255, g: 0, b: 0)).pixels
         XCTAssertEqual(red, [255, 0, 0, 127])

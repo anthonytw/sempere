@@ -74,7 +74,7 @@ struct VaultSummaries: ParsableCommand {
         var notes: Int
         /// Notes with an entry (the others have unreadable revisions).
         var entries: Int
-        /// Notes summarised again (not reused from the existing file).
+        /// Notes summarized again (not reused from the existing file).
         var read: Int
         var bytes: Int
     }

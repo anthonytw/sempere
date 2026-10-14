@@ -4,7 +4,7 @@ import Foundation
 //
 // Every stroke with a `parent` is an edge of a forest. An edge is a
 // replacement when the revision that added the child also removed the parent
-// (a slice, move, recolour, split); otherwise it is a re-creation (undo,
+// (a slice, move, recolor, split); otherwise it is a re-creation (undo,
 // restore, page restore, join). A parent with replacements from two or more
 // revisions was replaced concurrently: the greatest revision wins and the
 // others' strokes, and what replaced them in turn, are superseded.

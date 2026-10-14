@@ -44,7 +44,7 @@ public enum NotabilityBundle {
 
     /// Notability's handwriting recognition in an `.ntb` (`ios/HandwritingIndex.fb`,
     /// FlatBuffers; `docs/import-notability.md`): root field 2 is a table whose
-    /// field 0 lists one table per recognised page. A page table holds field 0,
+    /// field 0 lists one table per recognized page. A page table holds field 0,
     /// three words whose third is the 0-based page index (as in stroke
     /// records), field 1 the text, field 2 one 8-byte box per UTF-16 unit (four
     /// IEEE half floats, the `.note` `characterRects` encoding) and field 3 a
@@ -340,7 +340,7 @@ public enum NotabilityBundle {
     }
 
     /// A stroke record: origin (field 1), tool (4; 2 is the highlighter),
-    /// colour RGBA (7), width (8) and the geometry bytes (9). One curve per
+    /// color RGBA (7), width (8) and the geometry bytes (9). One curve per
     /// piece (an erased gap splits a stroke into pieces, where a `.note` has
     /// separate curves). Nil for a geometry this reader does not decode.
     static func stroke(_ fb: FlatBuffer, _ p: Int, budget: inout Budget) throws -> [NotabilityNote.Curve]? {
@@ -454,7 +454,7 @@ public enum NotabilityBundle {
     }
 
     /// A straight-line shape record: origin (field 1), kind 1 (field 4), the
-    /// end point as an offset (field 5 → field 3), colour (9), width (10).
+    /// end point as an offset (field 5 → field 3), color (9), width (10).
     static func line(_ fb: FlatBuffer, _ p: Int) throws -> NotabilityNote.Curve? {
         guard let k = try fb.field(p, 4), try fb.u8(k) == 1, let o = try fb.field(p, 1),
               let gf = try fb.field(p, 5) else { return nil }

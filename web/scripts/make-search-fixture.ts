@@ -1,7 +1,7 @@
 // Writes web/test/fixtures/search.sempere: a small vault, encrypted to the
 // throwaway test recipient of Tests/SempereTests/Fixtures/sample.key, whose
 // text exercises `sempere search` and the viewer's port of it
-// (src/format/phrasesearch.ts): recognised handwriting with word boxes, text
+// (src/format/phrasesearch.ts): recognized handwriting with word boxes, text
 // boxes, an equation, PDF page text, and recording transcripts with accents,
 // folded letters, repeated words, long segments (snippets) and line breaks;
 // a deleted note, a missing transcript and one naming another recording.

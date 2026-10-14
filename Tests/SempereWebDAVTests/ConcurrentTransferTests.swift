@@ -237,7 +237,7 @@ final class ConcurrentTransferTests: BlobSyncTestCase {
         XCTAssertEqual(push.progress?.filesTotal, 0)
     }
 
-    /// Cancelled with several blobs in flight: what arrived is kept, partial blobs continue
+    /// Canceled with several blobs in flight: what arrived is kept, partial blobs continue
     /// (`Range` from where they stopped) and the copy ends identical to the server's.
     func testCancelledMidwayWithSeveralInFlightResumes() throws {
         let server = MockDAV()
@@ -250,7 +250,7 @@ final class ConcurrentTransferTests: BlobSyncTestCase {
             $0.progress = { p in if p.stage == .downloading && p.bytesDone > p.bytesTotal / 3 { stop.append(true) } }
             $0.isCancelled = { !stop.all.isEmpty }
         }
-        XCTAssertEqual(first.stoppedEarly, "sync run cancelled", "\(first)")
+        XCTAssertEqual(first.stoppedEarly, "sync run canceled", "\(first)")
         XCTAssertTrue(first.quarantined.isEmpty, "\(first)")
         let placed = first.downloaded.filter { $0.hasPrefix("notes/") }.count
         XCTAssertLessThan(placed, 6 * 4)
@@ -345,7 +345,7 @@ final class ConcurrentTransferTests: BlobSyncTestCase {
         var o = WebDAVSyncOptions()
         o.isCancelled = { true }
         let stopped = try copy.download(client: try client(server), options: o)
-        XCTAssertEqual(stopped.stoppedEarly, "sync run cancelled")
+        XCTAssertEqual(stopped.stoppedEarly, "sync run canceled")
         let seen = Recorder<WebDAVSyncProgress>()
         o.isCancelled = nil
         o.progress = { seen.append($0) }

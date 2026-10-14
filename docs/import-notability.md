@@ -85,7 +85,7 @@ whatever happens to it: nothing is silently ignored.
   per segment of the folder path (`Research/Daily log` → `Research`,
   `Daily log`; the Notability subject when the path has no folder, never
   `options.notebook`); then `extraTags` (`--tag`, repeatable). The set is
-  normalised as `format.md` §5.4 says (`NoteOps.normalizedTags`: whitespace
+  normalized as `format.md` §5.4 says (`NoteOps.normalizedTags`: whitespace
   collapsed, matched case-insensitively, first spelling kept) and written
   as one `addTag` per tag; an overwrite first removes every tag instance it
   sees (`removeTag`), so it drops the old folder's tags when a note moved,
@@ -112,7 +112,7 @@ whatever happens to it: nothing is silently ignored.
   Notability's document units.
 - **Report**: per source `ok`, `skipped(reason)` or `failed(reason)`, its
   format (`note` / `ntb`), stroke count (shape-tool strokes included and
-  also counted in `shapes`), recognised pages, Notability's original document
+  also counted in `shapes`), recognized pages, Notability's original document
   width, what was dropped, and for a note with several sources
   `duplicateOf` (the source imported as the note), `extraVersion` and
   `selection` (why this source was or was not chosen). A corrupt note (bad
@@ -143,7 +143,7 @@ them by Notability uuid (an `.ntb` by creation time, below). Per group:
    says which rule decided.
 2. **Every other source**, newest first, is compared stroke by stroke with
    what is already imported for the group. A stroke matches when point count
-   and colour are equal and its first x and its first-to-last vector agree
+   and color are equal and its first x and its first-to-last vector agree
    within 0.3 units plus 1/512 of the value (half-float precision of an
    `.ntb`), and, between two sources of the same format, its first y as
    well. Between an `.ntb` and a `.note` y is not compared: the bundle
@@ -157,7 +157,7 @@ them by Notability uuid (an `.ntb` by creation time, below). Per group:
      subset), or `superseded:` (an `.ntb` copy);
    - otherwise → **imported as a separate note** (`extraVersion`), title
      `<title> (version modified <ISO date>)`, id derived from the uuid plus
-     format and the SHA-256 of its ink (every curve's style, colour, width
+     format and the SHA-256 of its ink (every curve's style, color, width
      and points: two versions with different ink never share an id, and
      file times, which change between downloads of a backup, play no part),
      filed in its own folder's notebook. Nothing a user drew is lost; deleting the extra note is a
@@ -179,7 +179,7 @@ Notes drawn with the shape tool store the shapes next to the curves, as
 [...], kinds: [...]}`, in the same ink
 coordinates as the curves (checked against the `.ntb` copies, which store
 them as records). Each kind is converted to Bézier curves and imported as
-pen strokes (width `appearance.strokeWidth`, colour `appearance.strokeColor`
+pen strokes (width `appearance.strokeWidth`, color `appearance.strokeColor`
 RGBA 0…1):
 
 | kind | keys | curve |
@@ -281,7 +281,7 @@ compared with our export page *n* (the same `breakHeight` band), both at the
 same pixel width (918 px ↔ 612 pt; a landscape page is 792 pt wide in the
 PDF and 612 pt in the vault, so the scale differs, the pixels agree). The
 PDF draws, in order: white image tiles, the page content (the paper pattern
-as **one page-wide filled path of colour (163, 183, 211)**, or the source
+as **one page-wide filled path of color (163, 183, 211)**, or the source
 PDF page re-embedded), invisible text (Notability's handwriting OCR), then
 the ink as filled, unstroked paths. Paper pages: the tiles, the text and the
 paper path are removed with pdfium and both images go through the ink
@@ -300,11 +300,11 @@ and are often stale); the thumbnail flags stay in `oracleFlags`.
 
 **Ink masks.** Both images of a pair go through the same classifier. On
 paper, a pixel is ink when its luminance is below 170 (Notability's dot paper
-is 181 and lighter) or its chroma (max − min of RGB) is above 60 (coloured ink
+is 181 and lighter) or its chroma (max − min of RGB) is above 60 (colored ink
 and highlighter); our renders are composited on white first. On a PDF page the
 reference is the PDF page rendered with pdfium at the thumbnail size, and a
 pixel is ink when its RGB distance from the page exceeds 60 for every page
-pixel in its 5 × 5 neighbourhood: Notability's own raster of the page is about
+pixel in its 5 × 5 neighborhood: Notability's own raster of the page is about
 a pixel off pdfium's, and without that tolerance page edges show up as ink.
 Our render is composited on the same PDF raster, so both sides are judged the
 same way. A thumbnail that differs from our PDF raster in under 1 % of its
@@ -316,7 +316,7 @@ ink pixel ratio, IoU, F1 with one pixel of tolerance (precision: our ink
 pixels within a pixel of reference ink; recall the other way), symmetric mean
 chamfer distance in points (and the larger 95th percentile), ink bounding-box
 edge deltas in points, and, for thumbnails at least 288 px wide, the integer
-pixel shift within ±4 px that maximises IoU (the residual offset; zero means
+pixel shift within ±4 px that maximizes IoU (the residual offset; zero means
 the geometry needs no correction). A darkness correlation (Pearson, after a
 one-pixel blur) covers the low-resolution thumbnails, where thin ink is too
 faint for a mask.
@@ -585,7 +585,7 @@ metadata stripped (`format.md` §8.2.5; the EXIF orientation becomes the
 item's `orientation`, `pixelSize` is after it) unless `--keep-image-metadata`;
 HEIC is stored as is (sized from the primary item's `ispe`, its `irot`/`imir`
 become the item's `orientation`, metadata not stripped, with a warning); a GIF (its first frame, on a transparent canvas of the logical
-screen) or a baseline TIFF (grey, palette or RGB(A), 1–16 bits, strips,
+screen) or a baseline TIFF (gray, palette or RGB(A), 1–16 bits, strips,
 uncompressed, PackBits, LZW or Deflate, orientation applied) is decoded by the
 importer itself (pure Swift, so on Linux too) and stored as a PNG; a TIFF
 with tiles, planar data, CMYK or YCbCr is left out. WebP, BMP and AVIF are
@@ -610,7 +610,7 @@ which names are real.
 shapes: Notability's dictionary (`stringKey`, and `subRangesKey` entries
 walked for a range, `rangeKey` `{location, length}` or `location`/`length`
 in UTF-16 units, and the candidate style fields `fontName`/`font`,
-`fontSize`/`size`, a colour field (`#RRGGBBAA`, `NSRGB`, `UIRed`…), and
+`fontSize`/`size`, a color field (`#RRGGBBAA`, `NSRGB`, `UIRed`…), and
 `underline`/`strikethrough`), or a standard archived `NSAttributedString`
 (`NSString`, `NSAttributes` indexed by the `NSAttributeInfo` run lengths,
 `NSFont` → `NSName`/`NSSize`, `NSColor`, `NSUnderline`, `NSStrikethrough`).
@@ -628,9 +628,9 @@ and blocks stacked below 1 000 000 units are left out (counted in
 box's font (`Helvetica*`, `SF*`, `Avenir*` and anything unknown → `sans`;
 `Times*`, `Georgia*`, `NewYork*`, `Palatino*`, … → `serif`; `Courier*`,
 `Menlo*`, `Monaco*`, `SFMono*` → `mono`), size (16 document units where
-none is stored) and colour (black); runs carry bold and italic from the font
+none is stored) and color (black); runs carry bold and italic from the font
 name (`-Bold`, `-Heavy`, `-Italic`, `-Oblique`, …), underline, strikethrough
-and a colour or size that differs from the box. A run in Chinese, Japanese,
+and a color or size that differs from the box. A run in Chinese, Japanese,
 Korean, Arabic or Hebrew gets `lang` (`zh`, `ja` when it holds kana, `ko`,
 `ar`, `he`). Text is stored in NFC; `\r\n`, `\r`, U+2028 and U+2029 become
 `\n`; other control characters and U+FFFC (Notability's inline attachment
@@ -755,10 +755,10 @@ Root class `NoteTakingSession`:
   for example `en_US` or `es_ES`. Imported as `meta.lang` in BCP 47 form
   (`en-US`, `es-ES`; a value that is not a language tag is left out);
   recognition (`sempere recognize`, the app) reads the note in it.
-- `Notability.NBPaperStyle.paperColor` (rare): the paper's colour. Read from
+- `Notability.NBPaperStyle.paperColor` (rare): the paper's color. Read from
   a `paperColor` field (of a `Notability.NBPaperStyle` object, or a key named
   `….paperColor`) under the paper layout model or a root field whose name
-  holds `paper`, as any archived colour (`#RRGGBB[AA]`, `UIRed`…, `NSRGB`);
+  holds `paper`, as any archived color (`#RRGGBB[AA]`, `UIRed`…, `NSRGB`);
   imported as the paper's `background` (opaque). The exact archive shape was
   not seen; the report's `paperColor` says what was read.
 
@@ -791,7 +791,7 @@ for every curve of every sample, which is what identifies the points as
 Bézier control polygons rather than samples. Segments are short (median
 chord 1.2 units, 90th percentile 3.9).
 
-Highlighter alpha is stored in the colour (`0x6B` ≈ 0.42); pens are opaque.
+Highlighter alpha is stored in the color (`0x6B` ≈ 0.42); pens are opaque.
 Rendered stroke diameter is `curveswidth × fractional width`: rendering
 that way matches the total ink darkness of Notability's thumbnails within
 2 %. Typical pen widths are 0.933, 1.4 and 1.867 units; highlighters 6 and 28.
@@ -828,11 +828,11 @@ index origins to stroke positions gives a page height of 940.8 = 716.8 ×
 laid out at the document width, and the thumbnails show the PDF's aspect. The
 ink of such a note is in the same `InkedSpatialHash`, in the same continuous
 coordinates. Its pages repeat every `⌈W × aspect⌉` units, not `W × aspect`:
-fitting the handwriting index origins to the ink (recognised pages of PDF
+fitting the handwriting index origins to the ink (recognized pages of PDF
 notes, up to page 64) gives 538.02 for 716.8 × 0.75 = 537.6 and 429.01 for
 572 × 0.75 = 429. Without the rounding, page 39 is 16 units off. Rounding to
 the nearest unit fits the same data; 16:9 slides (403.2 → 404) have no
-recognised pages in the samples, so that case is unverified. All PDF pages
+recognized pages in the samples, so that case is unverified. All PDF pages
 of one note had the same size in the samples; a PDF with mixed page sizes
 would need the PDF's page boxes, which the importer does not read. A PDF note
 without a usable thumbnail falls back to 21/16 like paper, rounded up too
@@ -857,8 +857,8 @@ defaults are used.
 
 The imported `paper` (format.md §5.4.2) takes `kind` and `spacing` from this
 table and every other parameter from the kind's defaults (white page, default
-line colour and width, dot radius 0.9 pt). The reverse-engineered data has no
-line colour, line width, margin or page colour, and no Cornell, staff or
+line color and width, dot radius 0.9 pt). The reverse-engineered data has no
+line color, line width, margin or page color, and no Cornell, staff or
 isometric styles (`lineStyle2` values for them are not known and import as
 blank paper), so nothing richer is mapped. An imported note can be restyled
 in the app (paper picker, "Apply to all pages").
@@ -868,7 +868,7 @@ in the app (paper picker, "Apply to all pages").
 `version` and `minCompatibleVersion` (7), and `pages`: a dictionary keyed by
 1-based page number (as a string) with:
 
-- `text`: recognised handwriting, lines separated by `\n`.
+- `text`: recognized handwriting, lines separated by `\n`.
 - `characterRects`: per UTF-16 unit of `text`, four little-endian
   **IEEE half floats** (x, y, w, h) — 8 bytes per character, relative to
   `pageContentOrigin`. Whitespace has `(inf, inf, 0, 0)`.
@@ -876,7 +876,7 @@ in the app (paper picker, "Apply to all pages").
   the top-left of the page's ink, less about 0.7).
 - `returnIndexes` (line breaks), `sha256Hash` (of the page content).
 
-Only pages with recognised ink are listed. The importer merges them into
+Only pages with recognized ink are listed. The importer merges them into
 the single page's `recognition`: texts joined with `\n` in page order,
 words grouped between whitespace with the union of their character boxes,
 moved by `pageContentOrigin`, the `W / 38.4` inset and `(n − 1) × page
@@ -918,7 +918,7 @@ note (rare).
 | `lineStyle2` / `lineStyle` | `paper.kind`, `paper.spacing` |
 | curve | one `Stroke`; id derived from the note uuid and curve index |
 | style 3 / 4 | `pen` / `marker` (highlighters are written first so they sit behind the ink) |
-| colour bytes | `ink.color`; for markers alpha is set to opaque, since the marker tool supplies the translucency (as PencilKit's does; SempereRender draws markers at 50 %, where the stored alpha 0x6B is about 42 %) |
+| color bytes | `ink.color`; for markers alpha is set to opaque, since the marker tool supplies the translucency (as PencilKit's does; SempereRender draws markers at 50 %, where the stored alpha 0x6B is about 42 %) |
 | `curveswidth` | `ink.width` |
 | Bézier polygon | B-spline control points (below) |
 | width × fractional width | `w`, `h` |

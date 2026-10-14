@@ -50,7 +50,7 @@ final class MarkersBehindTextTests: XCTestCase {
         let strokes = try XCTUnwrap(svg.range(of: "<g id=\"strokes\">"))
         XCTAssertLessThan(items.lowerBound, behind.lowerBound)
         XCTAssertLessThan(behind.lowerBound, strokes.lowerBound)
-        // The marker's colour is in the behind group only.
+        // The marker's color is in the behind group only.
         let tail = svg[strokes.lowerBound...]
         XCTAssertFalse(tail.contains("#FFE600") || tail.lowercased().contains("rgb(255,230,0)"))
         let plain = try SVGWriter.render(page: page(), meta: meta(false))

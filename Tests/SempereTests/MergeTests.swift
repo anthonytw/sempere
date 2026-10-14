@@ -369,14 +369,14 @@ final class MergeTests: XCTestCase {
         XCTAssertEqual(try NoteReducer.reconstruct([snap, lateOld]).pages[0].recognition?.text, "two")
         let lateNew = log.delta(devC, 250, [.setPageRecognition(pageId: p1, recognition: rec("new"))])
         XCTAssertEqual(try NoteReducer.reconstruct([lateNew, snap]).pages[0].recognition?.text, "new")
-        // A page the snapshot never saw recognised does not compete: an older uncovered write still lands.
+        // A page the snapshot never saw recognized does not compete: an older uncovered write still lands.
         let lateP2 = log.delta(devC, 60, [.setPageRecognition(pageId: p2, recognition: rec("p2"))])
         XCTAssertEqual(try NoteReducer.reconstruct([snap, lateP2]).pages[1].recognition?.text, "p2")
         // A cleared register in a snapshot does compete.
         let snapCleared = try log.snapshot(devB, 400, from: [add, setA, setB, clear])
         XCTAssertNil(try NoteReducer.reconstruct([snapCleared, lateOld]).pages[0].recognition)
 
-        // `apply` honours the same register.
+        // `apply` honors the same register.
         let applied = try NoteReducer.apply([lateNew], to: snapState, stamp: snap.stamp)
         XCTAssertEqual(applied.pages[0].recognition?.text, "new")
         XCTAssertEqual(try NoteReducer.apply([lateOld], to: snapState, stamp: snap.stamp).pages[0].recognition?.text,

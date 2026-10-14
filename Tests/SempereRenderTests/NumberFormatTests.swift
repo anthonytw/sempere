@@ -31,7 +31,7 @@ final class NumberFormatTests: XCTestCase {
         }
     }
 
-    /// Every tie at 3 and 6 decimals in a range, and its neighbours.
+    /// Every tie at 3 and 6 decimals in a range, and its neighbors.
     func testTies() {
         for k in -20_000...20_000 {
             let tie3 = (Double(k) + 0.5) / 1000, tie6 = (Double(k) + 0.5) / 1_000_000

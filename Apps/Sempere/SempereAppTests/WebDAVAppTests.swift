@@ -336,7 +336,7 @@ struct WebDAVAppTests {
         #expect(s.model.webdavDownloadCancel == nil)
         #expect(s.model.phase == .noVault)
         let location = try #require(s.model.webdavLocations.locations.first)
-        #expect(!location.downloaded, "a cancelled download is not complete")
+        #expect(!location.downloaded, "a canceled download is not complete")
 
         s.remote.set { $0.downloadSteps = []; $0.downloadGate = nil }
         try await s.model.openWebDAV(location.id, library: s.library)

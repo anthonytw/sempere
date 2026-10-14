@@ -4,7 +4,7 @@
 # CLI and every test target, runs the CLI's tests, and checks that `sempere import` lists what is left.
 # The other test targets are built but not run again: scripts/check-importer-isolation.sh (run first) proves
 # that nothing outside the module and the registries gated by `#if canImport(SempereNotability)` (the CLI's
-# and the app's) names it, so their behaviour cannot depend on its absence.
+# and the app's) names it, so their behavior cannot depend on its absence.
 # Run by the Linux CI job; takes a full build (the copy has no build cache). The removal is done in a copy, not
 # in place: an incremental build keeps the module's built files, so `canImport` would still find it.
 set -euo pipefail

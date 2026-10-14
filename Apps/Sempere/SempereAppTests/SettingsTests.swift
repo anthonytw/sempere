@@ -4,7 +4,7 @@ import Testing
 @testable import SempereApp
 
 /// The Settings panel's settings (docs/attachments.md §15): defaults, valid
-/// choices, persistence in `UserDefaults`, and the behaviour each one drives.
+/// choices, persistence in `UserDefaults`, and the behavior each one drives.
 @MainActor
 @Suite(.serialized)
 struct SettingsTests {

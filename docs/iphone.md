@@ -3,7 +3,7 @@
 The iPhone app is the iPad app's target with the iPhone device family added
 (`TARGETED_DEVICE_FAMILY = "1,2"`): one target, one bundle id, one code base. It is a
 **reader**: browsing, searching, opening, exporting and unlocking work as on the iPad; writing
-is possible but not emphasised. iPad and Mac behaviour does not change: everything phone-only
+is possible but not emphasized. iPad and Mac behavior does not change: everything phone-only
 is gated on `Platform.isPhone` (`UIDevice` idiom `.phone`) or lives in `PhoneLayout.swift`.
 
 ## Layout
@@ -24,7 +24,7 @@ back to the list; note and sidebar on back to the vault), and the same row can b
 Closing the note this way also saves and closes its editor (`AppModel.didShowCompactColumn`; a pop
 removes the view whose task would have). Only the iPhone binds the stack's column
 (`preferredCompactColumn`): an iPad in compact width (Slide Over, a narrow Split View) keeps the
-split view's own behaviour, unchanged.
+split view's own behavior, unchanged.
 A wide landscape iPhone (Pro Max) is a regular-width split view: the columns are shown by the
 system and the stored column choice (`ColumnLayout`) is ignored on the phone, so a list can never
 be left hidden.
@@ -61,7 +61,7 @@ Read-first:
 
 ## Search, export, history, keys
 
-All of them are the shared views and model code: handwriting search over the recognised text
+All of them are the shared views and model code: handwriting search over the recognized text
 (Vision recognition also runs on the iPhone if switched on; the text is stored in the vault so
 the iPad's recognition is searchable here), share/export sheets, the history browser and its
 restore, and key unlock. Status texts say "this device". Remembered keys use the Keychain with Face ID exactly as on the iPad

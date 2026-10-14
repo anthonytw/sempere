@@ -18,9 +18,9 @@ This is a volunteer-run project, so these are aims, not promises:
 1. **Acknowledge.** You get a reply on the report within a week, saying whether it reproduces
    and how serious it looks (severity, highest first: someone
    can read notes or plant content that passes as authentic; a documented guarantee does not
-   hold; defence in depth).
+   hold; defense in depth).
 2. **Fix.** The fix is developed in the advisory's private fork, with a regression test, and
-   you are asked to check it if you wish. Fixes are prioritised by impact.
+   you are asked to check it if you wish. Fixes are prioritized by impact.
 3. **Publish.** Once a fixed release is out, the advisory is published as a GitHub Security
    Advisory. For a serious issue (anything that exposes note content or keys, or lets someone
    plant content that passes as authentic) a CVE is requested through GitHub. The timing is
@@ -42,7 +42,7 @@ exhaustion on hostile vault, `.note` or PDF input, and the release pipeline's in
 Out of scope: threats that need the unlocked device or the user's identity file, the
 metadata a storage provider can see by design (file names, sizes and times; see `DESIGN.md`),
 and age's own non-goals (no signatures). What the encryption protects and what it does not is
-summarised in [`docs/security.md`](docs/security.md).
+summarized in [`docs/security.md`](docs/security.md).
 
 ## Supported versions
 

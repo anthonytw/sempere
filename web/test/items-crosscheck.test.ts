@@ -53,7 +53,7 @@ function unescape(s: string): string {
   return s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&amp;/g, "&");
 }
 
-/** The structure of the Swift export's `<g id="items">`, given the page's paper colour. */
+/** The structure of the Swift export's `<g id="items">`, given the page's paper color. */
 function parseGolden(svg: string, paper: string): Structure {
   const out: Structure = { fills: [], placeholders: [], images: [], lines: [], transforms: [], marks: [], cards: [] };
   const m = /<g id="items">\n([\s\S]*?)<\/g>\n<g id="strokes">/.exec(svg);

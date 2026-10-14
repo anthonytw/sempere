@@ -2,7 +2,7 @@
 // box laid out now, an image or PDF page to fetch and place, or a
 // placeholder. The SVG nodes follow SVGWriter.swift's `items` group: a
 // background item's paper fill, then the item; images inside a clip to their
-// rotated frame with one `matrix`; text rotated about the frame's centre.
+// rotated frame with one `matrix`; text rotated about the frame's center.
 
 import type { JSONObject } from "../format/json.ts";
 import { type BlobRef, asBlobRef } from "../vault/blobs.ts";
@@ -124,7 +124,7 @@ export function audioCardNodes(it: PreparedItem): SVGNode[] {
   return audioCardCommands(it.frame, it.rotation).map((c) => spec(elementSpec(c)));
 }
 
-/** An audio item's label, turned with the card (about the card's centre, not the label's). */
+/** An audio item's label, turned with the card (about the card's center, not the label's). */
 export function audioLabelNode(d: Extract<ItemDraw, { kind: "audio" }>): SVGNode | undefined {
   const frame = audioCardLayout(d.it.frame).labelFrame;
   if (!frame || !d.layout) return undefined;
@@ -163,7 +163,7 @@ function fillAttrs(color: string): [string, string][] {
   return out;
 }
 
-/** The rotation of a text item about its frame's centre (identity when not rotated). */
+/** The rotation of a text item about its frame's center (identity when not rotated). */
 export function textTransform(it: PreparedItem): Affine {
   return it.rotation === 0 ? identity : rotate(it.frame, it.rotation);
 }

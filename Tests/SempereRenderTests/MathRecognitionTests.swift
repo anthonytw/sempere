@@ -6,7 +6,7 @@ import XCTest
 
 /// Handwritten math → LaTeX, the pure parts (docs/attachments.md §14 G1 part 2):
 /// the model's image, its vocabulary, beam search, clean-up, model manifests
-/// and the verified store. The Core ML recogniser runs on the tiny random
+/// and the verified store. The Core ML recognizer runs on the tiny random
 /// fixture model on macOS only.
 final class MathRecognitionTests: XCTestCase {
     // MARK: Image
@@ -43,8 +43,8 @@ final class MathRecognitionTests: XCTestCase {
         XCTAssertLessThanOrEqual(box.minX, 13)   // left-aligned at the padding
         XCTAssertGreaterThanOrEqual(box.minY, 9)
         XCTAssertLessThanOrEqual(box.maxY, 50)
-        XCTAssertEqual(Double(box.minY + box.maxY) / 2, 30, accuracy: 2)   // centred vertically
-        // Only white and ink: the colour and pressure are gone.
+        XCTAssertEqual(Double(box.minY + box.maxY) / 2, 30, accuracy: 2)   // centered vertically
+        // Only white and ink: the color and pressure are gone.
         XCTAssertEqual(img.gray.first, 255)
         XCTAssertTrue(img.gray.contains(0))
     }
@@ -304,7 +304,7 @@ final class MathRecognitionTests: XCTestCase {
         // Installing again replaces it.
         let again = try copyOfTiny()
         XCTAssertNoThrow(try MathModelStore.install(from: again, manifestSHA256: sha, root: root))
-        // A newer catalogue entry (another manifest hash) does not take the old copy; a truncated file is not installed.
+        // A newer catalog entry (another manifest hash) does not take the old copy; a truncated file is not installed.
         var newer = entry
         newer.manifestSHA256 = String(repeating: "1", count: 64)
         XCTAssertNil(MathModelStore.installed(newer, root: root))
@@ -326,7 +326,7 @@ final class MathRecognitionTests: XCTestCase {
         XCTAssertTrue(MathModelCatalog.entries.allSatisfy { $0.manifestURL.hasPrefix("https://") })
     }
 
-    // MARK: A fake recogniser through the protocol
+    // MARK: A fake recognizer through the protocol
 
     struct Fake: MathRecognizing {
         let imageSpec = MathImageSpec(width: 64, height: 32)
