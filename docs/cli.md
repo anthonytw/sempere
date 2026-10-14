@@ -711,7 +711,11 @@ for `--prune` and for a full `verify`.
   backup keeps every blob it has seen). `--prune` needs the key (exit 4
   without). An interrupted run
   (crash, full disk, Ctrl-C) leaves only complete files; running it again
-  finishes the job and removes leftover temporary files.
+  finishes the job and removes leftover temporary files. A full disk fails
+  each file that does not fit (`errors`, exit 1) and the run never counts as
+  completed (`backup status`). If `DIR` disappears during a run (a drive
+  unplugged, a share disconnected: its `backup.json` is gone) the run stops
+  with an error instead of recreating `DIR` and writing a partial backup there.
   `DIR` is itself a vault (`sempere --vault DIR` reads it) plus
   `DIR/backup.json` (vault id, and SHA-256 and size of every file the backup
   wrote) and `DIR/versions/`. Output: `copied`, `replaced` and `pruned` lines

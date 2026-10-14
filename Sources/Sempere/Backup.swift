@@ -19,6 +19,10 @@ public enum BackupError: Error, Hashable, Sendable, CustomStringConvertible {
     /// The restore target is, holds or lies inside a folder that must not be
     /// written to (the vault the caller has open).
     case protectedTarget(String)
+    /// The backup folder (its `backup.json`) disappeared during the run: a drive
+    /// unplugged or a share disconnected. The run stops instead of recreating
+    /// the folder and reporting a backup that holds only the files written since.
+    case destinationGone(String)
 
     public var description: String {
         switch self {
@@ -30,6 +34,9 @@ public enum BackupError: Error, Hashable, Sendable, CustomStringConvertible {
         case .nothingToRestore(let p): return "\(p) holds no backup.json or vault.json"
         case .protectedTarget(let p):
             return "\(p) is, holds or is inside the open vault; restore into a new folder elsewhere"
+        case .destinationGone(let p):
+            return "the backup folder \(p) disappeared during the backup (a drive unplugged or a share disconnected); "
+                + "connect it again and back up again"
         }
     }
 }
@@ -563,7 +570,13 @@ public enum Backup {
         var report = BackupReport(vaultId: vaultId, destination: dest.path)
         var versionDir: String?
         var sinceSave = 0
+        /// The folder is still the one this run started in: its `backup.json` is there. Checked before every
+        /// file, so an unplugged drive stops the run rather than being recreated by the next file's folders.
+        func requireDestination() throws {
+            guard FileIO.exists(manifestURL) else { throw BackupError.destinationGone(dest.path) }
+        }
         func save() throws {
+            try requireDestination()
             manifest.updated = options.now
             try manifest.write(to: manifestURL)
             sinceSave = 0
@@ -625,6 +638,7 @@ public enum Backup {
             + sourceFiles.filter { $0.hasPrefix(Vault.keysName + "/") }
             + [SharedSettings.fileName, Vault.journalName, Vault.manifestName].filter(sourceFiles.contains)
         for path in ordered {
+            try requireDestination()
             do {
                 let src = url(source.url, path)
                 let dst = url(dest, path)
