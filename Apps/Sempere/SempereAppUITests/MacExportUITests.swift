@@ -25,7 +25,9 @@ final class MacExportUITests: XCTestCase {
         return app
     }
 
-    private var panelService: XCUIApplication { XCUIApplication(bundleIdentifier: "com.apple.appkit.xpc.openAndSavePanelService") }
+    // AppKit's open and save panels run in `com.apple.appkit.xpc.openAndSavePanelService`, but that service is no
+    // app XCTest can attach to (`XCUIApplication(bundleIdentifier:)` throws "could not be found"); the panel is
+    // shown in the app's accessibility tree, as a sheet on its window, and is driven from there.
 
     private func dump(_ app: XCUIApplication, _ tag: String) {
         for (i, window) in app.windows.allElementsBoundByIndex.enumerated() {
@@ -43,8 +45,7 @@ final class MacExportUITests: XCTestCase {
 
     /// The panel's window, from whichever process shows it.
     private func panelWindow(_ app: XCUIApplication) -> XCUIElement? {
-        let service = panelService
-        for candidate in [service.windows.firstMatch, app.sheets.firstMatch, app.dialogs.firstMatch]
+        for candidate in [app.sheets.firstMatch, app.dialogs.firstMatch]
             where candidate.waitForExistence(timeout: 4) {
             return candidate
         }
@@ -63,7 +64,8 @@ final class MacExportUITests: XCTestCase {
         sleep(1)
         panel.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
         // Saving over an existing file asks first: replace it.
-        let replace = panelService.buttons["Replace"].firstMatch
+        // In the panel's window (the Touch Bar has a Replace button too, which cannot be clicked).
+        let replace = app.windows.descendants(matching: .button).matching(identifier: "Replace").firstMatch
         if replace.waitForExistence(timeout: 3) { replace.click() }
     }
 
@@ -143,12 +145,23 @@ final class MacExportUITests: XCTestCase {
         let sheet = app.descendants(matching: .any)["bulkExportSheet"]
         XCTAssertTrue(sheet.waitForExistence(timeout: 20))
         // Save As: Zip Archive, then Export.
-        let zip = app.radioButtons["Zip Archive"].firstMatch
-        if zip.waitForExistence(timeout: 3) { zip.click() } else {
-            app.popUpButtons["Save As"].firstMatch.click()
-            app.menuItems["Zip Archive"].click()
+        // On the Mac the form's menu picker is a button ("Save As, Files in a Folder") that opens a menu.
+        let picker = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Save As")).firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 10), "the Save As picker")
+        picker.click()
+        let zip = app.menuItems["Zip Archive"].firstMatch
+        XCTAssertTrue(zip.waitForExistence(timeout: 5), "Zip Archive in the picker's menu")
+        zip.click()
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label == %@", "Save As, Zip Archive")).firstMatch
+            .waitForExistence(timeout: 5), "Zip Archive chosen")
+        // Export is below the options: scroll the sheet's form until it is on screen (a form does not
+        // report rows scrolled out of view).
+        let export = app.buttons["Export"].firstMatch
+        for _ in 0..<10 where !(export.exists && export.isHittable) {
+            sheet.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).scroll(byDeltaX: 0, deltaY: -80)
+            Thread.sleep(forTimeInterval: 0.5)
         }
-        app.buttons["Export"].firstMatch.click()
+        export.click()
         XCTAssertTrue(app.buttons["Save…"].firstMatch.waitForExistence(timeout: 120), "the zip was written")
         let dir = try folder()
         app.buttons["Save…"].firstMatch.click()
