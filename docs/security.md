@@ -87,7 +87,9 @@ They cannot see titles, text, ink, tags, notebooks, attachments or transcripts.
   Touch ID when you choose it. A remembered key is offered only for the folder
   it opened before (any folder can claim a vault's id): the same path, or for a
   vault On This Device the same name there, so a vault moved or renamed in
-  Files needs the key or passphrase once more. A vault handed to the app from
+  Files, or a WebDAV vault removed and added again (its copy is a new folder),
+  needs the key or passphrase once more; the app then offers to remember the
+  key there too. A vault handed to the app from
   another app or AirDrop asks before it closes the open one.
 - **Plaintext the app keeps on the device for speed or safety:** attachments
   opened for display, a recording until it is saved into the note, a voice note

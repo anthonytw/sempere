@@ -2453,14 +2453,26 @@
         }
       }
     },
-    "A key for a vault with this id is saved on %@, but it is offered only where it opened this vault before: any folder can claim a vault's id. Unlock this one with the passphrase or the key." : {
+    "A key for a vault with this id is saved on %@, but for another folder (another copy of this vault, or a WebDAV vault added again). Remembering this key replaces it, and it is then offered here too." : {
+      "comment" : "Remember Key sheet; the value is “this iPad”, “this iPhone” or “this Mac”",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hay una clave de una bóveda con este identificador guardada en %@, pero para otra carpeta (otra copia de esta bóveda, o una bóveda WebDAV añadida de nuevo). Si recuerdas esta clave, sustituye a la guardada y desde entonces también se ofrece aquí."
+          }
+        }
+      }
+    },
+    "A key for a vault with this id is saved on %@, but it is offered only where it opened this vault before: any folder can claim a vault's id. Unlock this one with the passphrase or the key; Sempere then offers to remember the key here too." : {
       "comment" : "Unlock sheet; the value is “this iPad”, “this iPhone” or “this Mac”",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hay una clave de una bóveda con este identificador guardada en %@, pero solo se ofrece donde ya abrió esta bóveda: cualquier carpeta puede reclamar el identificador de una bóveda. Desbloquea esta con la frase de contraseña o con la clave."
+            "value" : "Hay una clave de una bóveda con este identificador guardada en %@, pero solo se ofrece donde ya abrió esta bóveda: cualquier carpeta puede reclamar el identificador de una bóveda. Desbloquea esta con la frase de contraseña o con la clave; después Sempere ofrece recordar la clave también aquí."
           }
         }
       }

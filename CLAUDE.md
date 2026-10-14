@@ -452,6 +452,11 @@ Branch per task, PR to `main`, squash merge, CI green. The app suites run on a M
   `FakeKeychainItems`). Device-only keys are Face ID only, no passcode
   fallback: after a lockout the user unlocks with the key or passphrase, and
   the remember sheet says so (`RememberedKeys.deviceOnlyFooter`).
+  A remembered key is offered only at folders it opened (`RememberedKeyLocations`, S16); a manual
+  unlock elsewhere binds the folder silently only when the trust record confirms the list, and
+  otherwise brings the remember sheet (`Offer.replacing`), never nothing: a WebDAV copy's list is a
+  first use until the device writes, so without the sheet the key was needed at every launch
+  (`RememberedKeysWebDAVTests`).
 - The object eraser is the app's (`ObjectEraser.swift`, `EraserGeometry.swift`):
   PencilKit's `.vector` eraser has no size. When the picker's eraser is in
   object mode, `PageCanvasHost` disables `drawingGestureRecognizer` and
