@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<title>Ink Wind</title>
+<defs>
+<radialGradient id="navy" cx="50%" cy="38%" r="75%"><stop offset="0" stop-color="#26385e"/><stop offset="1" stop-color="#0d1424"/></radialGradient>
+<linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f0d38c"/><stop offset=".55" stop-color="#c79a4a"/><stop offset="1" stop-color="#8c6128"/></linearGradient>
+</defs>
+ <rect width="1024" height="1024" fill="url(#navy)"/>
+ <path d="M512 800 C430 760 300 750 190 772 L190 470 C300 448 430 458 512 500 Z" fill="#f4ead2"/>
+ <path d="M512 800 C594 760 724 750 834 772 L834 470 C724 448 594 458 512 500 Z" fill="#e7dbbd"/>
+ <path d="M512 500 L512 800" stroke="#c9b48a" stroke-width="6"/>
+ <path d="M236 540 C320 524 420 530 480 556 M236 600 C320 584 420 590 480 616 M236 660 C320 644 400 650 470 672" stroke="#b9a882" stroke-width="8" fill="none" stroke-linecap="round" opacity=".7"/>
+ <path d="M512 520 C520 400 600 330 700 300 C790 272 850 220 880 150 C870 250 800 330 700 360 C620 384 552 440 524 520 Z" fill="url(#gold)"/>
+ <path d="M690 250 C760 230 810 200 840 160" stroke="#f0d38c" stroke-width="10" fill="none" stroke-linecap="round" opacity=".6"/>
+</svg>

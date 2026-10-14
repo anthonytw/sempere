@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<title>Keyhole Nib (dark)</title>
+<defs>
+<linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f0d38c"/><stop offset=".55" stop-color="#c79a4a"/><stop offset="1" stop-color="#8c6128"/></linearGradient>
+<linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f0d38c"/><stop offset=".55" stop-color="#c79a4a"/><stop offset="1" stop-color="#8c6128"/></linearGradient>
+<radialGradient id="navydark" cx="50%" cy="38%" r="75%"><stop offset="0" stop-color="#0f1626"/><stop offset="1" stop-color="#03050a"/></radialGradient>
+</defs>
+ <rect width="1024" height="1024" fill="url(#navydark)"/>
+ <path d="M150 760 C330 690 470 820 640 760 S880 700 930 730" fill="none" stroke="#33476f" stroke-width="18" stroke-linecap="round" opacity=".7"/>
+ <path d="M110 840 C300 780 520 900 720 840" fill="none" stroke="#2a3b5f" stroke-width="12" stroke-linecap="round" opacity=".6"/>
+ <rect x="404" y="196" width="216" height="92" rx="14" fill="#8c6128"/>
+ <path d="M512 880 L374 530 Q352 476 374 424 L420 288 L604 288 L650 424 Q672 476 650 530 Z" fill="url(#gold)"/>
+ <path d="M424 318 L392 470" stroke="#fff6dc" stroke-width="10" stroke-linecap="round" opacity=".45"/>
+ <circle cx="512" cy="486" r="62" fill="#0f1830"/>
+ <path d="M483 520 L455 650 L569 650 L541 520 Z" fill="#0f1830"/>
+ <path d="M512 650 L512 868" stroke="#0f1830" stroke-width="12" stroke-linecap="round"/>
+</svg>

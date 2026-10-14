@@ -1,0 +1,136 @@
+[
+  {
+    "engine" : "vision-26",
+    "matches" : 1,
+    "noteId" : "5ea4c001-0000-4000-8000-000000000001",
+    "notebook" : "Search/Fixtures",
+    "page" : 1,
+    "pageId" : "5ea4c000-0000-4000-8000-000000000101",
+    "snippet" : "Café au lait the Straße is long",
+    "source" : "handwriting",
+    "title" : "Lecture: cafés & streets",
+    "words" : [
+      {
+        "box" : [
+          73,
+          70,
+          54,
+          20
+        ],
+        "text" : "Straße"
+      }
+    ]
+  },
+  {
+    "box" : [
+      0,
+      0,
+      612,
+      792
+    ],
+    "engine" : "semperepdf-1",
+    "itemId" : "5ea4c000-0000-4000-8000-000000000112",
+    "matches" : 2,
+    "noteId" : "5ea4c001-0000-4000-8000-000000000001",
+    "notebook" : "Search/Fixtures",
+    "page" : 2,
+    "pageId" : "5ea4c000-0000-4000-8000-000000000102",
+    "pdfPage" : 7,
+    "snippet" : "…inted handout CAFÉ menu: espresso, latte Straße map",
+    "source" : "pdf",
+    "title" : "Lecture: cafés & streets",
+    "words" : [
+
+    ]
+  },
+  {
+    "box" : [
+      40,
+      100,
+      400,
+      120
+    ],
+    "itemId" : "5ea4c000-0000-4000-8000-000000000110",
+    "matches" : 1,
+    "noteId" : "5ea4c001-0000-4000-8000-000000000001",
+    "notebook" : "Search/Fixtures",
+    "page" : 2,
+    "pageId" : "5ea4c000-0000-4000-8000-000000000102",
+    "snippet" : "…café on the corner of the Straße. Café again, bold.",
+    "source" : "text",
+    "title" : "Lecture: cafés & streets",
+    "words" : [
+
+    ]
+  },
+  {
+    "engine" : "notability-14",
+    "matches" : 1,
+    "noteId" : "5ea4c001-0000-4000-8000-000000000001",
+    "notebook" : "Search/Fixtures",
+    "page" : 3,
+    "pageId" : "5ea4c000-0000-4000-8000-000000000103",
+    "snippet" : "…a café in a hurry, by the Strasse corner",
+    "source" : "handwriting",
+    "title" : "Lecture: cafés & streets",
+    "words" : [
+      {
+        "box" : [
+          565,
+          40,
+          63,
+          20
+        ],
+        "text" : "Strasse"
+      }
+    ]
+  },
+  {
+    "end" : 4.5,
+    "engine" : "synthetic-speech-2",
+    "matches" : 1,
+    "noteId" : "5ea4c001-0000-4000-8000-000000000001",
+    "notebook" : "Search/Fixtures",
+    "recordingId" : "5ea4c000-0000-4000-8000-000000000180",
+    "recordingTitle" : "Walk to the café",
+    "snippet" : "…k. Today we walk down the Straße to the café, and the café is…",
+    "source" : "transcript",
+    "start" : 0,
+    "title" : "Lecture: cafés & streets",
+    "words" : [
+
+    ]
+  },
+  {
+    "end" : 15,
+    "engine" : "synthetic-speech-2",
+    "matches" : 1,
+    "noteId" : "5ea4c001-0000-4000-8000-000000000001",
+    "notebook" : "Search/Fixtures",
+    "recordingId" : "5ea4c000-0000-4000-8000-000000000180",
+    "recordingTitle" : "Walk to the café",
+    "snippet" : "…Then a new line about the STRASSE, and another about ﬁsh and f…",
+    "source" : "transcript",
+    "start" : 9.25,
+    "title" : "Lecture: cafés & streets",
+    "words" : [
+
+    ]
+  },
+  {
+    "end" : 3605,
+    "engine" : "synthetic-speech-2",
+    "matches" : 2,
+    "noteId" : "5ea4c001-0000-4000-8000-000000000001",
+    "notebook" : "Search/Fixtures",
+    "recordingId" : "5ea4c000-0000-4000-8000-000000000181",
+    "recordingTitle" : "Spät",
+    "snippet" : "…r eine Stunde später: die Straße ist nass.",
+    "source" : "transcript",
+    "start" : 3601,
+    "title" : "Lecture: cafés & streets",
+    "words" : [
+
+    ]
+  }
+]

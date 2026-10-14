@@ -1,0 +1,570 @@
+name: CI
+
+# When CI runs (docs/ci.md):
+# - Draft PRs run nothing. Open work as a draft; `gh pr ready` (or "Ready for
+#   review") starts CI, and later pushes to a ready PR run it again.
+# - Any branch can be checked on demand: `gh workflow run CI --ref <branch>`;
+#   `-f screenshots=true` runs only the App Store screenshots job instead.
+# - A newer push to the same PR cancels the older run.
+# - Only the jobs a change can affect run (the `changes` job); main runs all.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      screenshots:
+        description: "Only build the App Store screenshots (docs/appstore/screenshots.md) and upload them"
+        type: boolean
+        default: false
+
+concurrency:
+  # A screenshots run gets its own group: it must not queue (or be replaced) behind main's CI.
+  group: ci-${{ github.event.pull_request.number || github.ref }}${{ inputs.screenshots && '-screenshots' || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    name: Decide which jobs to run
+    if: (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !inputs.screenshots
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      statuses: write   # the `local/app-tests` status of a PR that cannot affect the app (below)
+    outputs:
+      package: ${{ steps.f.outputs.package }}
+      app: ${{ steps.f.outputs.app }}
+      localization: ${{ steps.f.outputs.localization }}
+      web: ${{ steps.f.outputs.web }}
+      webgolden: ${{ steps.f.outputs.webgolden }}
+      release: ${{ steps.f.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: f
+        name: Classify changed paths
+        run: |
+          if [ "${{ github.event_name }}" != pull_request ]; then
+            echo "package=true" >> "$GITHUB_OUTPUT"; echo "app=true" >> "$GITHUB_OUTPUT"
+            echo "web=true" >> "$GITHUB_OUTPUT"; echo "webgolden=true" >> "$GITHUB_OUTPUT"
+            echo "localization=true" >> "$GITHUB_OUTPUT"; echo "release=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}")"
+          echo "$files"
+          has() { printf '%s\n' "$files" | grep -Eq "$1" && echo true || echo false; }
+          # Swift package: Linux + macOS build and test.
+          # scripts/screenshots.sh only drives the manual screenshots job.
+          pkgfiles="$(printf '%s\n' "$files" | grep -v '^scripts/screenshots\.sh$' || true)"
+          package=$(printf '%s\n' "$pkgfiles" | grep -Eq '^(Sources/|Tests/|Package\.(swift|resolved)$|scripts/|\.github/(workflows/ci\.yml$|actions/))' && echo true || echo false)
+          # The Sources/ targets the app links (PRODUCT_SOURCES in scripts/release-check.sh, which
+          # fails when the project links a product it does not list), e.g. Age|CZlib|Sempere|….
+          appsrc="$(scripts/release-check.sh --app-sources)"
+          # The app job: those targets, and its tests open the package's fixture vault; CLI-only
+          # changes cannot affect it.
+          app=$(has "^(Apps/|Sources/($appsrc)/|Tests/SempereTests/Fixtures/|Package\\.(swift|resolved)\$|scripts/(app\\.sh|check-help\\.py|pick-simulator\\.py)\$|\\.github/(workflows/ci\\.yml\$|actions/))")
+          # The string catalogs and the scenes' environment against the app sources
+          # (LocalizationCatalogTests and AppSceneEnvironmentTests read Apps/ and run on Linux): an
+          # app-only change runs just those tests, not the macOS package job.
+          localization=$(has '^(Apps/Sempere/(Localization|SempereApp|SempereShared|SempereWidgets|Sempere\.xcodeproj)/|Apps/Sempere/SempereInfo\.plist$|Tests/SempereTests/(LocalizationCatalogTests|AppSceneEnvironmentTests)\.swift$)')
+          # Web viewer (web/): its own job; app changes do not run it.
+          web=$(has '^(web/|\.github/(workflows/ci\.yml$|actions/))')
+          # The goldens are the CLI's JSON and SVG export of the fixture vaults: a
+          # change to the reducer, the renderer, the CLI or the fixtures can move them,
+          # and the PR that moves them must update web/ too (not find out on main).
+          webgolden=$(has '^(web/|Sources/(Age|Sempere|SempereRender|SempereCLI|CZlib)/|Tests/SempereTests/Fixtures/|Package\.(swift|resolved)$|\.github/(workflows/ci\.yml$|actions/))')
+          echo "package=$package" >> "$GITHUB_OUTPUT"
+          echo "app=$app" >> "$GITHUB_OUTPUT"
+          echo "localization=$localization" >> "$GITHUB_OUTPUT"
+          echo "web=$web" >> "$GITHUB_OUTPUT"
+          # App Store release checks (scripts/release-check.sh): the
+          # project, plists and privacy manifests under Apps/, the Sources/ the app links (the
+          # required-reason API scan) and the privacy policy pages. Linux, seconds.
+          release=$(has "^(Apps/|Sources/($appsrc)/|scripts/(test-)?release-check\\.sh\$|scripts/(test-)?changelog-section\\.sh\$|docs/privacy/|docs/appstore/privacy-policy\\.md\$|\\.github/(workflows/ci\\.yml\$|actions/))")
+          echo "webgolden=$webgolden" >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "package=$package app=$app web=$web webgolden=$webgolden release=$release"
+
+      # The `main` ruleset requires `local/app-tests`, which scripts/local-ci.sh posts after the app
+      # suites passed on a Mac. A PR whose changes cannot affect the app (the `app` rule above:
+      # docs, web/, CLI-only Sources) needs no Mac run, so the status is posted here.
+      - name: No app changes, so no Mac run
+        if: github.event_name == 'pull_request' && steps.f.outputs.app == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X POST "repos/${{ github.repository }}/statuses/${{ github.event.pull_request.head.sha }}" \
+            -f state=success -f context=local/app-tests -f description="No app-affecting changes: no Mac run needed" --silent
+
+  linux:
+    name: Linux (swift:6.4-noble)
+    needs: changes
+    if: needs.changes.outputs.package == 'true'
+    runs-on: ubuntu-24.04
+    container: swift:6.4-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install zlib headers, zbar, zip, poppler (QR decode, zip interop, text extraction, PDF background pixel checks) and the UCD (BidiTest.txt)
+        run: |
+          apt-get update -q
+          apt-get install -y -q zlib1g-dev curl zbar-tools zip poppler-utils unicode-data
+      - name: Install age v1.3.2 (post-quantum interop; Ubuntu's package is 1.1)
+        run: |
+          curl -fsSL -o /tmp/age.tgz https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz
+          echo "cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10  /tmp/age.tgz" | sha256sum -c -
+          tar xzf /tmp/age.tgz -C /usr/local/bin --strip-components=1 age/age age/age-keygen
+          age --version
+      # Build cache: main saves it, PRs only restore (docs/ci.md).
+      - id: cache
+        name: Restore the build cache (toolchain + resolved packages)
+        uses: ./.github/actions/build-cache
+        with:
+          prefix: linux
+          version-cmd: swift --version
+      - name: Build
+        run: swift build --build-tests
+      - name: Test
+        env:
+          SEMPERE_REQUIRE_AGE_PQ: "1"
+          # PDF background pixel checks against pdftoppm (poppler-utils, installed above).
+          SEMPERE_REQUIRE_POPPLER: "1"
+          # A missing tool fails its test instead of skipping it (Tests/FuzzSupport/RequiredTools.swift):
+          # zbarimg (QR decode), zip (archive interop), pdftotext (PDF text), BidiTest.txt (UCD 15.1).
+          SEMPERE_REQUIRE_TOOLS: "zbar,zip,pdftotext,bidi"
+        run: swift test --skip-build --parallel
+      - uses: actions/cache/save@v4
+        if: success() && github.ref == 'refs/heads/main'
+        with:
+          path: .build
+          key: ${{ steps.cache.outputs.key }}-${{ github.sha }}
+      - name: Portability guard
+        run: scripts/check-portability.sh
+      # Deleting the Notability importer's directory must leave a package that builds and passes its tests
+      # (docs/import-notability.md "Structure"); a step of this job so the rulesets need no change.
+      - name: Removable importers (build and test without Sources/SempereNotability)
+        run: scripts/check-removable-importers.sh
+      # The static release build only matters for what ships: main and releases. It has its own
+      # cache entry (main restores and saves it; PRs never build it), so PR restores stay the size of
+      # the debug build. It holds the whole .build: where the release products and intermediates go
+      # depends on SwiftPM's build system. Restored here, after the debug cache was saved.
+      - id: release-cache
+        name: Restore the release build cache (toolchain + resolved packages)
+        if: github.event_name != 'pull_request'
+        uses: ./.github/actions/build-cache
+        with:
+          prefix: linux-release
+          version-cmd: swift --version
+      - name: Release build of the CLI (static stdlib)
+        if: github.event_name != 'pull_request'
+        # Swift 6.4's default build system does not link Foundation's own static
+        # dependencies under --static-swift-stdlib; name them explicitly (CLAUDE.md).
+        run: >-
+          swift build -c release --product sempere --static-swift-stdlib
+          -Xlinker -lCoreFoundation -Xlinker -l_FoundationICU
+          -Xlinker -l_FoundationCollections -Xlinker -l_FoundationCShims
+          -Xlinker -lswiftSynchronization -Xlinker -l_CFXMLInterface
+          -Xlinker -l_CFURLSessionInterface -Xlinker -lcurl -Xlinker -lxml2
+      - name: Verify the CLI is static
+        if: github.event_name != 'pull_request'
+        run: |
+          .build/release/sempere --version
+          ldd .build/release/sempere
+          if ldd .build/release/sempere | grep -Eq 'libswift|libFoundation'; then echo "not static" >&2; exit 1; fi
+      - uses: actions/cache/save@v4
+        if: success() && github.ref == 'refs/heads/main'
+        with:
+          path: .build
+          key: ${{ steps.release-cache.outputs.key }}-${{ github.sha }}
+      - uses: actions/upload-artifact@v4
+        if: success() && github.event_name != 'pull_request'
+        with:
+          name: sempere-linux-x86_64
+          path: .build/release/sempere
+          if-no-files-found: ignore
+
+  localization:
+    name: Localization catalogs and app scenes (Linux)
+    needs: changes
+    # The Linux job runs these tests too; this one is for changes that only touch Apps/.
+    if: needs.changes.outputs.localization == 'true' && needs.changes.outputs.package != 'true'
+    runs-on: ubuntu-24.04
+    container: swift:6.4-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install zlib headers
+        run: apt-get update -q && apt-get install -y -q zlib1g-dev
+      - id: cache
+        name: Restore the build cache (toolchain + resolved packages)
+        uses: ./.github/actions/build-cache
+        with:
+          prefix: linux
+          version-cmd: swift --version
+      - name: Test the catalogs and the scenes' environment against the app sources
+        run: swift test --filter 'LocalizationCatalogTests|AppSceneEnvironmentTests'
+
+  macos:
+    name: macOS
+    needs: changes
+    if: needs.changes.outputs.package == 'true'
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select newest Xcode
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)/Contents/Developer"
+          swift --version
+      # poppler (pdftoppm, pdftotext) and zbar are required here too: their tests fail, not skip.
+      - name: Install poppler and zbar
+        run: brew install poppler zbar
+      - name: Install age v1.3.2 (post-quantum interop)
+        run: |
+          curl -fsSL -o /tmp/age.tgz https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-darwin-arm64.tar.gz
+          echo "e2020b073c44f692685a24d6abc378817eb81ffaaf49fd0531ef8565f767f2f5  /tmp/age.tgz" | shasum -a 256 -c -
+          sudo tar xzf /tmp/age.tgz -C /usr/local/bin --strip-components=1 age/age age/age-keygen
+          age --version
+      # Build cache: main saves it, PRs only restore (docs/ci.md).
+      - id: cache
+        name: Restore the build cache (toolchain + resolved packages)
+        uses: ./.github/actions/build-cache
+        with:
+          prefix: macos
+          version-cmd: swift --version
+      - name: Build
+        run: swift build --build-tests
+      - name: Test
+        env:
+          SEMPERE_REQUIRE_AGE_PQ: "1"
+          SEMPERE_REQUIRE_POPPLER: "1"
+          # /usr/bin/zip ships with macOS; zbarimg and pdftotext come from brew above.
+          # (BidiTest.txt is Linux-only: macOS has no system UCD.)
+          SEMPERE_REQUIRE_TOOLS: "zbar,zip,pdftotext"
+        run: swift test --skip-build --parallel
+      # Apple's URLSession, unlike FoundationNetworking, revalidates from its HTTP cache and adds
+      # If-None-Match to later requests (aae704d): only a run on macOS against the real server shows it.
+      - name: WebDAV integration tests (wsgidav)
+        env:
+          SEMPERE_WEBDAV_LARGE_MB: "64"
+        run: |
+          python3 -m venv /tmp/dav
+          /tmp/dav/bin/pip install --quiet -r scripts/webdav-server-requirements.txt
+          PATH=/tmp/dav/bin:$PATH scripts/test-webdav.sh --skip-build
+      - uses: actions/cache/save@v4
+        if: success() && github.ref == 'refs/heads/main'
+        with:
+          path: .build
+          key: ${{ steps.cache.outputs.key }}-${{ github.sha }}
+
+  # The WebDAV integration tests (IntegrationTests, BlobIntegrationTests, CLIWebDAVTests) need a
+  # real server and skip without one. scripts/test-webdav.sh starts wsgidav (Basic auth, the version in
+  # scripts/webdav-server-requirements.txt) and fails if any of them skips. The macOS job runs it too.
+  webdav:
+    name: WebDAV integration tests (wsgidav)
+    needs: changes
+    if: needs.changes.outputs.package == 'true'
+    runs-on: ubuntu-24.04
+    container: swift:6.4-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install zlib headers, curl and wsgidav
+        run: |
+          apt-get update -q
+          apt-get install -y -q zlib1g-dev curl python3-venv
+          python3 -m venv /opt/dav
+          /opt/dav/bin/pip install --quiet -r scripts/webdav-server-requirements.txt
+      # Restores the Linux job's cache from main (same key); never saves.
+      - id: cache
+        name: Restore the build cache (toolchain + resolved packages)
+        uses: ./.github/actions/build-cache
+        with:
+          prefix: linux
+          version-cmd: swift --version
+      - name: Integration tests against the server
+        env:
+          SEMPERE_WEBDAV_LARGE_MB: "64"
+        run: PATH=/opt/dav/bin:$PATH scripts/test-webdav.sh
+
+  app:
+    name: iPad and iPhone app (simulators + Mac Catalyst)
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    # The xcode-27 image (macOS 27, Xcode 27, iOS 27 simulators); macos-26 has only Xcode 26.
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 27.0 (the image's newest is a beta)
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.0.app/Contents/Developer
+          xcodebuild -version
+          xcrun simctl list runtimes
+          # The app's minimum is iPadOS/iOS 27: fail here, not in the middle of a build.
+          sdk=$(xcrun --sdk iphoneos --show-sdk-version)
+          if [[ ${sdk%%.*} -lt 27 ]]; then echo "::error::the app needs the iOS 27 SDK (Xcode 27); this runner has $sdk"; exit 1; fi
+      # Build cache: main saves it, PRs only restore (docs/ci.md).
+      - id: cache
+        name: Restore the build cache (toolchain + resolved packages)
+        uses: ./.github/actions/build-cache
+        with:
+          prefix: app
+          version-cmd: xcodebuild -version
+          path: .build/xcode
+      # Every icon-only control has a tooltip on the Mac (TestFlight build 7).
+      - name: Tooltips on icon-only controls
+        run: scripts/check-help.py --self-test && scripts/check-help.py
+      # Which simulator scripts/app.sh tests on: the preferred model, not the last name in sort order.
+      - name: Simulator choice
+        run: scripts/pick-simulator.py --self-test && scripts/app.sh simulator && scripts/app.sh simulator iPhone
+      - name: Test on an iPad simulator
+        timeout-minutes: 40
+        shell: bash
+        run: mkdir -p build && scripts/app.sh test 2>&1 | tee build/app-test.log
+      # The packages are resolved now: scan SwiftMath's sources (networking, required-reason APIs,
+      # its privacy manifest) and check the checkout is the pinned revision (GA-42).
+      - name: Third-party package privacy (SwiftMath)
+        run: scripts/release-check.sh --checkouts .build/xcode/SourcePackages/checkouts
+      # The iPhone suites on an iPhone simulator: the build products are the iPad run's,
+      # so this adds a boot and a few seconds of tests.
+      - name: Test the iPhone layouts on an iPhone simulator
+        run: scripts/app.sh test-phone
+      # Real drags onto the sidebar (SidebarDropUITests): the drop delegate needs a drag session.
+      # Also the launch smoke tests' iPad layouts (LaunchSmokeUITests: fresh state, unlock sheet).
+      # This and the steps below run on main and dispatch only: a PR gets them from
+      # scripts/local-ci.sh (its `local/app-tests` status), the hosted runner needs an hour.
+      - name: UI tests on the iPad simulator
+        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+        timeout-minutes: 25
+        shell: bash
+        run: mkdir -p build && scripts/app.sh test-ui 2>&1 | tee build/app-test-ui.log
+      # Layout in double-length, right-to-left and Spanish text (docs/localization.md "Checking
+      # layouts"); the build products are test-ui's, so this adds 18 launches of the demo vault.
+      - name: Pseudo-language layout tests on the iPad simulator
+        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+        timeout-minutes: 45
+        shell: bash
+        run: mkdir -p build && scripts/app.sh pseudo 2>&1 | tee build/app-test-pseudo.log
+      # A first launch on the Mac in every column layout, then every window and sheet
+      # (LaunchSmokeUITests; a build that crashed there shipped): a Catalyst build of the app and
+      # its UI tests, then four launches (docs/ci.md).
+      - name: Launch smoke tests on Mac Catalyst
+        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+        timeout-minutes: 20
+        shell: bash
+        run: mkdir -p build && scripts/app.sh test-mac-smoke 2>&1 | tee build/app-test-mac-smoke.log
+      # The Mac suites and UI tests on Mac Catalyst (ad-hoc signed, sandboxed like the
+      # shipped app): main and dispatch runs (`gh workflow run CI --ref <branch>`).
+      - name: Test on Mac Catalyst
+        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+        timeout-minutes: 45
+        shell: bash
+        run: mkdir -p build && scripts/app.sh test-mac 2>&1 | tee build/app-test-mac.log
+      - name: UI tests on Mac Catalyst
+        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+        timeout-minutes: 20
+        shell: bash
+        run: mkdir -p build && scripts/app.sh test-mac-ui 2>&1 | tee build/app-test-mac-ui.log
+      # The logs run to thousands of lines: the failures, at the end where they are easy to find.
+      - name: Summary of failures
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          for f in build/app-test*.log; do
+            [ -f "$f" ] || continue
+            echo "== $f"
+            grep -E "✘|↳|error:|DROPDEBUG|SMOKEDEBUG no|Failing tests|SempereMenus|SempereMenuTree|PDF-SCALE|Executed [0-9]+ test|Test run with" "$f" | cut -c1-2000 | tail -400
+            # UI test dumps of the windows (several lines each).
+            awk '/MACUIDEBUG|DROPDEBUG tree|SMOKEDEBUG/{n=120} n>0{print; n--}' "$f" | cut -c1-300 | head -1500
+          done
+          # A stalled app in an iPad UI test ("Timed out while evaluating UI query"): what it logged.
+          if xcrun simctl list devices booted 2>/dev/null | grep -q Booted; then
+            echo "== simulator log (Sempere faults, hangs and debug lines, last 40 min)"
+            xcrun simctl spawn booted log show --last 40m --style compact \
+              --predicate 'process == "Sempere" AND (messageType == fault OR eventMessage CONTAINS[c] "hang" OR eventMessage CONTAINS "SempereDebug")' \
+              2>/dev/null | cut -c1-300 | tail -150 || true
+          fi
+          # A crash in a Mac test ("crashed in <external symbol>"): the newest report's crashing thread.
+          report=$(ls -t ~/Library/Logs/DiagnosticReports/Sempere*.ips 2>/dev/null | head -1 || true)
+          if [ -n "$report" ]; then
+            echo "== $report"
+            /usr/bin/python3 - "$report" <<'PY' || head -c 6000 "$report"
+          import json, sys
+          text = open(sys.argv[1]).read()
+          header, _, body = text.partition("\n")
+          crash = json.loads(body)
+          print(json.dumps(crash.get("exception"), indent=None), crash.get("asi"))
+          images = crash.get("usedImages", [])
+          for thread in crash.get("threads", []):
+              if not thread.get("triggered"):
+                  continue
+              for frame in thread.get("frames", [])[:40]:
+                  image = images[frame["imageIndex"]] if frame.get("imageIndex", -1) < len(images) else {}
+                  print(image.get("name", "?"), frame.get("symbol", hex(frame.get("imageOffset", 0))))
+          PY
+          fi
+      - uses: actions/cache/save@v4
+        if: success() && github.ref == 'refs/heads/main'
+        with:
+          path: .build/xcode
+          key: ${{ steps.cache.outputs.key }}-${{ github.sha }}
+
+  release:
+    name: App Store release checks
+    needs: changes
+    if: needs.changes.outputs.release == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Release checks (versions, signing team, privacy manifests, entitlements)
+        run: scripts/release-check.sh --list
+      - name: Tests of the release checks
+        run: scripts/test-release-check.sh
+      # release.yml's changelog guard (no TODO(user), a dated heading); not run on CHANGELOG.md
+      # itself, whose next section may still wait for the maintainer.
+      - name: Tests of the changelog section guard
+        run: scripts/test-changelog-section.sh
+
+  web:
+    name: Web viewer (lint, typecheck, tests, build)
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install (lockfile only)
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests and cross-check against the committed Swift goldens
+        run: npm test
+      - name: Build (strict CSP)
+        run: |
+          npm run build
+          grep -q 'Content-Security-Policy' dist/index.html
+
+  # All the browser smoke scripts (web/scripts/smoke-all.sh), in the Swift image: the CLI gives a
+  # copy of the sample vault its sealed summaries and index, so smoke-cache covers the summaries and
+  # index listings too (the committed fixture has neither file). Node and Chromium come on top.
+  web-smoke:
+    name: Web viewer browser smoke tests (Chromium)
+    needs: changes
+    if: needs.changes.outputs.webgolden == 'true'
+    runs-on: ubuntu-24.04
+    container: swift:6.4-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install zlib headers
+        run: apt-get update -q && apt-get install -y -q zlib1g-dev curl
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # Restores the Linux job's cache from main (same key); never saves.
+      - id: cache
+        name: Restore the build cache (toolchain + resolved packages)
+        uses: ./.github/actions/build-cache
+        with:
+          prefix: linux
+          version-cmd: swift --version
+      - name: Build the CLI
+        run: swift build --product sempere
+      - name: Install and build the viewer
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+      # The browser download is cached by Playwright's version (pinned in package-lock.json); the
+      # install below then finds it and only adds the system packages Chromium needs.
+      - id: playwright
+        name: Playwright version
+        working-directory: web
+        run: echo "version=$(node -p "require('./package-lock.json').packages['node_modules/playwright-core'].version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright's Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-swift-6.4-noble-${{ steps.playwright.outputs.version }}
+      - name: Install Chromium for Playwright
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Browser smoke scripts (cache and config.json, sideways pan, listing, attachments, video, page release, passkey, interface language, passphrase keys and transcript search)
+        working-directory: web
+        run: scripts/smoke-all.sh
+
+  web-golden:
+    name: Web viewer goldens match the Swift CLI
+    needs: changes
+    if: needs.changes.outputs.webgolden == 'true'
+    runs-on: ubuntu-24.04
+    container: swift:6.4-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install zlib headers
+        run: apt-get update -q && apt-get install -y -q zlib1g-dev
+      # Restores the Linux job's cache from main (same key); never saves.
+      - id: cache
+        name: Restore the build cache (toolchain + resolved packages)
+        uses: ./.github/actions/build-cache
+        with:
+          prefix: linux
+          version-cmd: swift --version
+      - name: Build the CLI
+        run: swift build --product sempere
+      - name: Export the fixture vaults with the CLI and compare with web/test/golden
+        run: |
+          SEMPERE=.build/debug/sempere web/scripts/golden.sh /tmp/golden
+          diff -r web/test/golden /tmp/golden
+
+  # Manual only (`-f screenshots=true`): the App Store screenshots from a synthetic
+  # demo vault. Nothing is uploaded to App Store Connect; download the artifact.
+  screenshots:
+    name: App Store screenshots
+    if: github.event_name == 'workflow_dispatch' && inputs.screenshots
+    runs-on: xcode-27
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 27.0 (the image's newest is a beta)
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.0.app/Contents/Developer
+          xcodebuild -version
+          xcrun simctl list runtimes
+          # The app's minimum is iPadOS/iOS 27: fail here, not in the middle of a build.
+          sdk=$(xcrun --sdk iphoneos --show-sdk-version)
+          if [[ ${sdk%%.*} -lt 27 ]]; then echo "::error::the app needs the iOS 27 SDK (Xcode 27); this runner has $sdk"; exit 1; fi
+      - name: iPad (iPad Pro 13-inch simulator, 2064x2752)
+        run: scripts/screenshots.sh ipad
+      - name: iPhone (iPhone Pro Max simulator, 6.9")
+        if: always()
+        run: scripts/screenshots.sh iphone
+      # Best effort: a Mac UI test needs automation permission on the runner.
+      - name: Mac (Catalyst, 2880x1800)
+        if: always()
+        continue-on-error: true
+        run: scripts/screenshots.sh mac
+      - name: Summary of errors
+        if: always()
+        run: |
+          for f in build/screenshots/*-summary.txt; do [ -f "$f" ] || continue; echo "== $f"; cut -c1-1500 "$f" | tail -40; done
+          ls -l build/screenshots/ipad build/screenshots/iphone build/screenshots/mac 2>&1 | head -30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: appstore-screenshots
+          path: |
+            build/screenshots/ipad/*.png
+            build/screenshots/iphone/*.png
+            build/screenshots/mac/*.png
+            build/screenshots/mac-raw/*.png
+            build/screenshots/*.log
+            build/screenshots/*.xcresult
+          if-no-files-found: warn

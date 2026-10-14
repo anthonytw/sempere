@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<title>Keyhole Nib (tinted)</title>
+<defs>
+<linearGradient id="graynib" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".55" stop-color="#bdbdbd"/><stop offset="1" stop-color="#7d7d7d"/></linearGradient>
+</defs>
+ <rect width="1024" height="1024" fill="#000"/>
+ <path d="M150 760 C330 690 470 820 640 760 S880 700 930 730" fill="none" stroke="#2a2a2a" stroke-width="18" stroke-linecap="round" opacity=".7"/>
+ <path d="M110 840 C300 780 520 900 720 840" fill="none" stroke="#222" stroke-width="12" stroke-linecap="round" opacity=".6"/>
+ <rect x="404" y="196" width="216" height="92" rx="14" fill="#7a7a7a"/>
+ <path d="M512 880 L374 530 Q352 476 374 424 L420 288 L604 288 L650 424 Q672 476 650 530 Z" fill="url(#graynib)"/>
+ <path d="M424 318 L392 470" stroke="#fff" stroke-width="10" stroke-linecap="round" opacity=".45"/>
+ <circle cx="512" cy="486" r="62" fill="#000"/>
+ <path d="M483 520 L455 650 L569 650 L541 520 Z" fill="#000"/>
+ <path d="M512 650 L512 868" stroke="#000" stroke-width="12" stroke-linecap="round"/>
+</svg>

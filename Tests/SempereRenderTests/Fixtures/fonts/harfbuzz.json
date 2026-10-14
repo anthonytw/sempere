@@ -1,0 +1,417 @@
+[
+ {
+  "font": "arabic.ttf",
+  "text": "مرحبا بالعالم",
+  "glyphs": [
+   {
+    "glyph": 44,
+    "cluster": 12,
+    "advance": 528,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 41,
+    "cluster": 11,
+    "advance": 212,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 2,
+    "cluster": 10,
+    "advance": 253,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 31,
+    "cluster": 9,
+    "advance": 414,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 41,
+    "cluster": 8,
+    "advance": 212,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 2,
+    "cluster": 7,
+    "advance": 253,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 14,
+    "cluster": 6,
+    "advance": 275,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 64,
+    "cluster": 5,
+    "advance": 221,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 2,
+    "cluster": 4,
+    "advance": 253,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 13,
+    "cluster": 3,
+    "advance": 292,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 22,
+    "cluster": 2,
+    "advance": 636,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 24,
+    "cluster": 1,
+    "advance": 404,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 46,
+    "cluster": 0,
+    "advance": 456,
+    "dx": 0,
+    "dy": 0
+   }
+  ]
+ },
+ {
+  "font": "arabic.ttf",
+  "text": "لا إله",
+  "glyphs": [
+   {
+    "glyph": 48,
+    "cluster": 5,
+    "advance": 452,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 41,
+    "cluster": 4,
+    "advance": 212,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 4,
+    "cluster": 3,
+    "advance": 256,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 64,
+    "cluster": 2,
+    "advance": 221,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 3,
+    "cluster": 1,
+    "advance": 0,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 42,
+    "cluster": 0,
+    "advance": 518,
+    "dx": 0,
+    "dy": 0
+   }
+  ]
+ },
+ {
+  "font": "arabic.ttf",
+  "text": "بِسْمِ اللَّهِ",
+  "glyphs": [
+   {
+    "glyph": 68,
+    "cluster": 12,
+    "advance": 0,
+    "dx": 173,
+    "dy": -94
+   },
+   {
+    "glyph": 48,
+    "cluster": 12,
+    "advance": 452,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 67,
+    "cluster": 9,
+    "advance": 0,
+    "dx": 33,
+    "dy": 278
+   },
+   {
+    "glyph": 39,
+    "cluster": 9,
+    "advance": 245,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 41,
+    "cluster": 8,
+    "advance": 212,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 1,
+    "cluster": 7,
+    "advance": 238,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 64,
+    "cluster": 6,
+    "advance": 221,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 68,
+    "cluster": 4,
+    "advance": 0,
+    "dx": 262,
+    "dy": -94
+   },
+   {
+    "glyph": 44,
+    "cluster": 4,
+    "advance": 528,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 72,
+    "cluster": 2,
+    "advance": 0,
+    "dx": 292,
+    "dy": 17
+   },
+   {
+    "glyph": 27,
+    "cluster": 2,
+    "advance": 663,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 68,
+    "cluster": 0,
+    "advance": 0,
+    "dx": 63,
+    "dy": -233
+   },
+   {
+    "glyph": 14,
+    "cluster": 0,
+    "advance": 275,
+    "dx": 0,
+    "dy": 0
+   }
+  ]
+ },
+ {
+  "font": "hebrew.ttf",
+  "text": "שָׁלוֹם עולם",
+  "glyphs": [
+   {
+    "glyph": 6,
+    "cluster": 11,
+    "advance": 684,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 9,
+    "cluster": 10,
+    "advance": 522,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 18,
+    "cluster": 9,
+    "advance": 301,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 3,
+    "cluster": 8,
+    "advance": 593,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 15,
+    "cluster": 7,
+    "advance": 270,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 6,
+    "cluster": 6,
+    "advance": 684,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 8,
+    "cluster": 4,
+    "advance": 0,
+    "dx": 92,
+    "dy": 0
+   },
+   {
+    "glyph": 18,
+    "cluster": 4,
+    "advance": 301,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 9,
+    "cluster": 3,
+    "advance": 522,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 10,
+    "cluster": 0,
+    "advance": 0,
+    "dx": 227,
+    "dy": 0
+   },
+   {
+    "glyph": 14,
+    "cluster": 0,
+    "advance": 0,
+    "dx": 539,
+    "dy": 0
+   },
+   {
+    "glyph": 13,
+    "cluster": 0,
+    "advance": 730,
+    "dx": 0,
+    "dy": 0
+   }
+  ]
+ },
+ {
+  "font": "hebrew.ttf",
+  "text": "בְּרֵאשִׁית",
+  "glyphs": [
+   {
+    "glyph": 16,
+    "cluster": 10,
+    "advance": 685,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 21,
+    "cluster": 9,
+    "advance": 295,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 7,
+    "cluster": 6,
+    "advance": 0,
+    "dx": 284,
+    "dy": 0
+   },
+   {
+    "glyph": 14,
+    "cluster": 6,
+    "advance": 0,
+    "dx": 539,
+    "dy": 0
+   },
+   {
+    "glyph": 13,
+    "cluster": 6,
+    "advance": 730,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 1,
+    "cluster": 5,
+    "advance": 632,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 17,
+    "cluster": 3,
+    "advance": 0,
+    "dx": 268,
+    "dy": 0
+   },
+   {
+    "glyph": 11,
+    "cluster": 3,
+    "advance": 523,
+    "dx": 0,
+    "dy": 0
+   },
+   {
+    "glyph": 12,
+    "cluster": 0,
+    "advance": 0,
+    "dx": 192,
+    "dy": 0
+   },
+   {
+    "glyph": 5,
+    "cluster": 0,
+    "advance": 0,
+    "dx": 126,
+    "dy": 0
+   },
+   {
+    "glyph": 4,
+    "cluster": 0,
+    "advance": 572,
+    "dx": 0,
+    "dy": 0
+   }
+  ]
+ }
+]

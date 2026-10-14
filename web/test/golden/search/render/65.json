@@ -1,0 +1,222 @@
+[
+  {
+    "box" : [
+      72,
+      525,
+      200,
+      26
+    ],
+    "itemId" : "f1c70000-0000-4000-8000-000000000719",
+    "matches" : 1,
+    "noteId" : "77777777-7777-4777-8777-777777777777",
+    "page" : 1,
+    "pageId" : "f1c70000-0000-4000-8000-000000000700",
+    "snippet" : "e^{i\\pi}+1=0",
+    "source" : "math",
+    "title" : "Attachments",
+    "words" : [
+
+    ]
+  },
+  {
+    "box" : [
+      72,
+      200,
+      220,
+      120
+    ],
+    "itemId" : "f1c70000-0000-4000-8000-000000000714",
+    "matches" : 12,
+    "noteId" : "77777777-7777-4777-8777-777777777777",
+    "page" : 1,
+    "pageId" : "f1c70000-0000-4000-8000-000000000700",
+    "snippet" : "Stored breaks keep these lines exac…",
+    "source" : "text",
+    "title" : "Attachments",
+    "words" : [
+
+    ]
+  },
+  {
+    "box" : [
+      320,
+      200,
+      220,
+      80
+    ],
+    "itemId" : "f1c70000-0000-4000-8000-000000000715",
+    "matches" : 4,
+    "noteId" : "77777777-7777-4777-8777-777777777777",
+    "page" : 1,
+    "pageId" : "f1c70000-0000-4000-8000-000000000700",
+    "snippet" : "Centred, rotated second paragrap…",
+    "source" : "text",
+    "title" : "Attachments",
+    "words" : [
+
+    ]
+  },
+  {
+    "box" : [
+      72,
+      360,
+      300,
+      60
+    ],
+    "itemId" : "f1c70000-0000-4000-8000-000000000716",
+    "matches" : 3,
+    "noteId" : "77777777-7777-4777-8777-777777777777",
+    "page" : 1,
+    "pageId" : "f1c70000-0000-4000-8000-000000000700",
+    "snippet" : "Right to left paragraph    end aligned",
+    "source" : "text",
+    "title" : "Attachments",
+    "words" : [
+
+    ]
+  },
+  {
+    "end" : 0.5,
+    "engine" : "synthetic-1",
+    "matches" : 2,
+    "noteId" : "77777777-7777-4777-8777-777777777777",
+    "recordingId" : "f1c70000-0000-4000-8000-000000000980",
+    "recordingTitle" : "Synthetic tone",
+    "snippet" : "A synthetic tone.",
+    "source" : "transcript",
+    "start" : 0,
+    "title" : "Attachments",
+    "words" : [
+
+    ]
+  },
+  {
+    "end" : 1,
+    "engine" : "synthetic-1",
+    "matches" : 2,
+    "noteId" : "77777777-7777-4777-8777-777777777777",
+    "recordingId" : "f1c70000-0000-4000-8000-000000000980",
+    "recordingTitle" : "Synthetic tone",
+    "snippet" : "Still the tone.",
+    "source" : "transcript",
+    "start" : 0.5,
+    "title" : "Attachments",
+    "words" : [
+
+    ]
+  },
+  {
+    "box" : [
+      100,
+      1500,
+      400,
+      50
+    ],
+    "itemId" : "f1c70000-0000-4000-8000-000000000883",
+    "matches" : 2,
+    "noteId" : "88888888-8888-4888-8888-888888888888",
+    "page" : 1,
+    "pageId" : "f1c70000-0000-4000-8000-000000000880",
+    "snippet" : "Far below the ink",
+    "source" : "text",
+    "title" : "Long attachments",
+    "words" : [
+
+    ]
+  },
+  {
+    "box" : [
+      72,
+      72,
+      260,
+      170.64
+    ],
+    "itemId" : "f1c70000-0000-4000-8000-000000000b01",
+    "matches" : 17,
+    "noteId" : "7d7d7d7d-7d7d-47d7-87d7-7d7d7d7d7d7d",
+    "page" : 1,
+    "pageId" : "f1c70000-0000-4000-8000-000000000b00",
+    "snippet" : "Markdown box Some bold, italic, struck and code…",
+    "source" : "text",
+    "title" : "Markdown boxes",
+    "words" : [
+
+    ]
+  },
+  {
+    "box" : [
+      340,
+      120,
+      200,
+      88.6
+    ],
+    "itemId" : "f1c70000-0000-4000-8000-000000000b02",
+    "matches" : 5,
+    "noteId" : "7d7d7d7d-7d7d-47d7-87d7-7d7d7d7d7d7d",
+    "page" : 1,
+    "pageId" : "f1c70000-0000-4000-8000-000000000b00",
+    "snippet" : "e^{x} starts this line and the…",
+    "source" : "text",
+    "title" : "Markdown boxes",
+    "words" : [
+
+    ]
+  },
+  {
+    "engine" : "vision-26.7",
+    "matches" : 3,
+    "noteId" : "55555555-5555-4555-8555-555555555555",
+    "notebook" : " School // Physics ",
+    "page" : 2,
+    "pageId" : "f1c70000-0000-4000-8000-000000000400",
+    "snippet" : "wave one wave two",
+    "source" : "handwriting",
+    "title" : "Merge lab (B)",
+    "words" : [
+      {
+        "box" : [
+          60,
+          90,
+          40,
+          20
+        ],
+        "text" : "wave"
+      }
+    ]
+  },
+  {
+    "box" : [
+      72,
+      600,
+      300,
+      40
+    ],
+    "itemId" : "f1c70000-0000-4000-8000-000000000800",
+    "matches" : 2,
+    "noteId" : "55555555-5555-4555-8555-555555555555",
+    "notebook" : " School // Physics ",
+    "page" : 2,
+    "pageId" : "f1c70000-0000-4000-8000-000000000400",
+    "snippet" : "Typed text",
+    "source" : "text",
+    "title" : "Merge lab (B)",
+    "words" : [
+
+    ]
+  },
+  {
+    "end" : 0.5,
+    "engine" : "synthetic-1",
+    "matches" : 2,
+    "noteId" : "7c7c7c7c-7c7c-47c7-87c7-7c7c7c7c7c7c",
+    "recordingId" : "f1c70000-0000-4000-8000-000000000a80",
+    "recordingTitle" : "Lecture",
+    "snippet" : "A synthetic tone.",
+    "source" : "transcript",
+    "start" : 0,
+    "title" : "Recordings on the page",
+    "words" : [
+
+    ]
+  }
+]

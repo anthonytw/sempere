@@ -1,0 +1,210 @@
+import Crypto
+import Foundation
+import Sempere
+
+/// What the last successful sync left behind, so the next one can tell which
+/// side changed. It lives outside the vault (default `$XDG_STATE_HOME/sempere/sync/`)
+/// and holds no secrets: file names, hashes, ETags and snapshot coverage.
+struct SyncState: Codable, Equatable {
+    /// Last-synced version of a mutable file.
+    struct MutableRecord: Codable, Equatable {
+        /// SHA-256 (hex) of the content both sides had.
+        var hash: String
+        /// The remote ETag (else Last-Modified) at that time.
+        var stamp: String?
+    }
+
+    /// A revision or blob file both sides had.
+    struct FileRecord: Codable, Equatable {
+        /// For a snapshot, what it covered, so a later compaction that removed it can be checked.
+        var included: Included?
+        /// For a blob the server dropped while this device holds it: when this
+        /// device first found it collectable (format.md §8.1.6 rules 1–3), with
+        /// every look since agreeing. The deletion is followed here only once
+        /// that is `blobRetention` ago (rule 4; `BlobSync.swift`).
+        var unreferencedSince: Date?
+    }
+
+    /// A rewrap journal on the server that this device refuses but that may
+    /// be step 1 of a recipient change whose `vault.json` has not reached
+    /// the server yet (`WebDAVSync.holdInFlightJournal`).
+    struct InFlightJournal: Codable, Equatable {
+        /// SHA-256 (hex) of its bytes.
+        var hash: String
+        /// When this device first found it so.
+        var firstSeen: Date
+    }
+
+    /// A blob download that was interrupted: its partial file
+    /// (`att/.sempere-tmp-part-<name>`) continues only from the same remote
+    /// version.
+    struct PartialRecord: Codable, Equatable {
+        /// The ETag the download started from (sent as `If-Range`).
+        var etag: String
+    }
+
+    var version = 1
+    var mutable: [String: MutableRecord] = [:]
+    /// Keyed `<noteId>/<file name>` for revisions and
+    /// `<noteId>/att/<file name>` for blobs.
+    var files: [String: FileRecord] = [:]
+    /// Interrupted blob downloads, keyed `<noteId>/att/<file name>`.
+    var partials: [String: PartialRecord] = [:]
+    /// Temporary upload names (paths below the collection) this device
+    /// created on the server and has not removed yet; the next run deletes them.
+    var remoteTemps: [String] = []
+    /// SHA-256 (hex) of the server listing (`sempere-index.json` bytes, then
+    /// 0 and the manifest's sealed vault secret) the server's published
+    /// summaries were last written for by this device,
+    /// when every note there got an entry (else nil: try again next run).
+    var publishedSummaries: String?
+    /// Remote files an earlier run downloaded and quarantined (format.md
+    /// §9.1), keyed like `files`: not downloaded again while the server's
+    /// copy and the local `vault.json` are unchanged.
+    var quarantined: [String: QuarantineRecord]?
+    /// The server's `sempere-index.json` as this device last wrote or
+    /// matched it; nil until it was.
+    var webIndex: WebIndexRecord?
+
+    /// Per note folder on the server, the ETag it had when the last run
+    /// left the note unchanged and in step on both sides (`NoteStamps.swift`).
+    var notes: [String: NoteStamp] = [:]
+    /// Note folders this device wrote a revision into, with their ETag from
+    /// before: the next run checks the server changed it.
+    var stampProbes: [String: String] = [:]
+    /// Whether the server was seen to change a note folder's ETag when a
+    /// revision was written into it (true), or seen not to (false, for
+    /// good); nil until a write was checked.
+    var folderETagsChange: Bool?
+    /// When a run last listed every note folder.
+    var lastFullListing: Date?
+    /// The server's journal while it may be in flight; nil otherwise.
+    var inFlightJournal: InFlightJournal?
+
+    /// A note folder's recorded ETag.
+    struct NoteStamp: Codable, Equatable {
+        /// Its strong ETag in the `notes/` listing.
+        var etag: String
+        /// Whether it held an `att/` folder (listed every run regardless).
+        var att: Bool
+    }
+
+    /// What the server's `sempere-index.json` held when this device last
+    /// wrote it or found it current.
+    struct WebIndexRecord: Codable, Equatable {
+        /// SHA-256 (hex) of its bytes.
+        var hash: String
+        /// Its strong ETag then (a weak or missing one is never recorded).
+        var etag: String
+    }
+
+    /// A quarantined remote file.
+    struct QuarantineRecord: Codable, Equatable {
+        /// The remote version (ETag, else Last-Modified, else size) that failed.
+        var stamp: String?
+        /// SHA-256 (hex) of the local `vault.json` it was checked against,
+        /// and whether the vault was unlocked: either changing checks it again.
+        var manifest: String?
+        var unlocked: Bool
+    }
+
+    /// The keys of `files` grouped by note: for each note id (the key up to
+    /// its first `/`), the rest of each of its keys (`<file name>` for a
+    /// revision, `att/<file name>` for a blob). One pass over `files`, so a
+    /// run looks a note's records up without scanning every other note's.
+    func fileNamesByNote() -> [String: [String]] {
+        var out: [String: [String]] = [:]
+        for key in files.keys {
+            guard let slash = key.firstIndex(of: "/") else { continue }
+            out[String(key[..<slash]), default: []].append(String(key[key.index(after: slash)...]))
+        }
+        return out
+    }
+
+    /// The default state file for one (remote, local vault) pair.
+    static func defaultURL(remote: URL, vault: URL,
+                                  environment: [String: String] = ProcessInfo.processInfo.environment,
+                                  home: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)) -> URL {
+        let base: URL
+        if let xdg = environment["XDG_STATE_HOME"], xdg.hasPrefix("/") {
+            base = URL(fileURLWithPath: xdg, isDirectory: true)
+        } else {
+            base = home.appendingPathComponent(".local/state", isDirectory: true)
+        }
+        let key = remote.absoluteString + "\n" + vault.standardizedFileURL.path
+        let id = Hex.encode(SHA256.hash(data: Data(key.utf8)).prefix(8))
+        return base.appendingPathComponent("sempere/sync/\(id).json")
+    }
+
+    /// Nil when there is no state file; throws when it exists but is unreadable.
+    static func load(_ url: URL) throws -> SyncState? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let data = try BoundedRead.contents(of: url, maxBytes: BoundedRead.maxRevisionBytes)
+        // The version first: a newer layout is refused as such, whatever its fields.
+        let version = try JSONDecoder().decode(Version.self, from: data).version
+        guard version == 1 else { throw WebDAVError.io("sync state \(url.path) has version \(version)") }
+        return try JSONDecoder().decode(SyncState.self, from: data)
+    }
+
+    private struct Version: Decodable {
+        var version: Int
+    }
+
+    /// Saves the whole state (atomically). Not pretty-printed: it holds a
+    /// record per revision and blob of the vault.
+    func save(_ url: URL) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.sortedKeys]
+        try LocalFS.write(try enc.encode(self), to: url, replacing: true)
+    }
+
+    // MARK: Transfers in flight
+
+    /// What a run must find again if it is killed mid-transfer: the
+    /// interrupted downloads and the temporary upload names. A run saves
+    /// this, not the whole state, before each blob transfer, so a
+    /// checkpoint costs the few entries in flight rather than a record per
+    /// revision and blob; the end-of-run save carries them in the state
+    /// itself and removes this file.
+    struct Transfers: Codable, Equatable {
+        var partials: [String: PartialRecord]
+        var remoteTemps: [String]
+    }
+
+    /// `<state file>.transfers`, next to the state file.
+    static func transfersURL(_ url: URL) -> URL {
+        url.deletingLastPathComponent().appendingPathComponent(url.lastPathComponent + ".transfers")
+    }
+
+    /// The transfers file of `url`; nil when there is none. Throws when it
+    /// exists but is unreadable.
+    static func loadTransfers(_ url: URL) throws -> Transfers? {
+        let t = transfersURL(url)
+        guard FileManager.default.fileExists(atPath: t.path) else { return nil }
+        let data = try BoundedRead.contents(of: t, maxBytes: BoundedRead.maxManifestBytes)
+        return try JSONDecoder().decode(Transfers.self, from: data)
+    }
+
+    /// Saves `partials` and `remoteTemps` (atomically) to the transfers file of `url`.
+    func saveTransfers(_ url: URL) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.sortedKeys]
+        try LocalFS.write(try enc.encode(Transfers(partials: partials, remoteTemps: remoteTemps)),
+                          to: Self.transfersURL(url), replacing: true)
+    }
+
+    /// Removes the transfers file of `url`, if any.
+    static func removeTransfers(_ url: URL) {
+        try? FileManager.default.removeItem(at: transfersURL(url))
+    }
+
+    /// Takes in what a killed run saved: its temporary upload names are
+    /// added to ours (deleting one that is gone is harmless), its partial
+    /// downloads win over ours (they are newer).
+    mutating func merge(_ t: Transfers) {
+        for x in t.remoteTemps where !remoteTemps.contains(x) { remoteTemps.append(x) }
+        partials.merge(t.partials) { _, new in new }
+    }
+}

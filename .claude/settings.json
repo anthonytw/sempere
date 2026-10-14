@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(swift build*)",
+      "Bash(swift test*)",
+      "Bash(swift package*)",
+      "Bash(swift run*)",
+      "Bash(age *)",
+      "Bash(age-keygen *)",
+      "Bash(scripts/check-portability.sh*)",
+      "Bash(scripts/test-linux.sh*)"
+    ]
+  }
+}

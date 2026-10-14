@@ -1,0 +1,6 @@
+# The WebDAV server scripts/test-webdav.sh runs (pip install -r this file). CI's `webdav` job (Linux) and
+# its `macos` job install exactly these, and the script refuses another wsgidav version, so a local run
+# and CI test against the same server. 4.3.5 refuses a DELETE that carries a matching If-None-Match
+# (412), which is what caught URLSession's HTTP cache on macOS (aae704d); 4.3.3 did not.
+wsgidav==4.3.5
+cheroot==11.1.2

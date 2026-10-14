@@ -1,0 +1,22 @@
+[
+  {
+    "box" : [
+      40,
+      260,
+      200,
+      40
+    ],
+    "itemId" : "5ea4c000-0000-4000-8000-000000000111",
+    "matches" : 1,
+    "noteId" : "5ea4c001-0000-4000-8000-000000000001",
+    "notebook" : "Search/Fixtures",
+    "page" : 2,
+    "pageId" : "5ea4c000-0000-4000-8000-000000000102",
+    "snippet" : "\\text{café} = \\frac{a}{b}",
+    "source" : "math",
+    "title" : "Lecture: cafés & streets",
+    "words" : [
+
+    ]
+  }
+]

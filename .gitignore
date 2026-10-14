@@ -1,0 +1,20 @@
+.build/
+.swiftpm/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+.DS_Store
+*.key
+!Tests/SempereTests/Fixtures/sample.key
+*.key.txt
+/tmp/
+.worktrees/
+
+# Personal sample data for importer development (never commit)
+/data/
+
+# Xcode per-user state
+**/xcuserdata/
+__pycache__/
+*.pyc
+/build/

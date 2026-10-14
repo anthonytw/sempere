@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="200pt" height="300pt" viewBox="0 0 200 300">
+<title>Test</title>
+<g id="paper">
+<rect x="0" y="0" width="200" height="300" fill="#ffffff"/>
+<line x1="0" y1="24" x2="200" y2="24" fill="none" stroke="#d0d8e8" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="0" y1="48" x2="200" y2="48" fill="none" stroke="#d0d8e8" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="0" y1="72" x2="200" y2="72" fill="none" stroke="#d0d8e8" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="0" y1="96" x2="200" y2="96" fill="none" stroke="#d0d8e8" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="0" y1="120" x2="200" y2="120" fill="none" stroke="#d0d8e8" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="0" y1="144" x2="200" y2="144" fill="none" stroke="#d0d8e8" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="0" y1="168" x2="200" y2="168" fill="none" stroke="#d0d8e8" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="0" y1="192" x2="200" y2="192" fill="none" stroke="#d0d8e8" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="0" y1="216" x2="200" y2="216" fill="none" stroke="#d0d8e8" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="0" y1="240" x2="200" y2="240" fill="none" stroke="#d0d8e8" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="0" y1="264" x2="200" y2="264" fill="none" stroke="#d0d8e8" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="0" y1="288" x2="200" y2="288" fill="none" stroke="#d0d8e8" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="72" y1="0" x2="72" y2="300" fill="none" stroke="#f2a6a6" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g id="strokes">
+</g>
+</svg>

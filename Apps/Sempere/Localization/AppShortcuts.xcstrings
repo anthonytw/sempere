@@ -1,0 +1,54 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "New ${applicationName} voice note" : {
+      "comment" : "Siri phrase.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nueva nota de voz en ${applicationName}"
+          }
+        }
+      }
+    },
+    "Record a ${applicationName} voice note" : {
+      "comment" : "Siri phrase; must contain the app name token.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Graba una nota de voz en ${applicationName}"
+          }
+        }
+      }
+    },
+    "Start a ${applicationName} voice note" : {
+      "comment" : "Siri phrase.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empieza una nota de voz en ${applicationName}"
+          }
+        }
+      }
+    },
+    "Stop the ${applicationName} voice note" : {
+      "comment" : "Siri phrase.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detén la nota de voz de ${applicationName}"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

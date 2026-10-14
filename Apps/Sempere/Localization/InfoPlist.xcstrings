@@ -1,0 +1,111 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSCameraUsageDescription" : {
+      "comment" : "Camera permission prompt. Key is the Info.plist key.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sempere uses the camera to add photos to your notes."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sempere usa la cámara para añadir fotos a tus notas."
+          }
+        }
+      }
+    },
+    "NSFaceIDUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sempere uses Face ID to unlock vaults with keys saved in the Keychain."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sempere usa Face ID para desbloquear bóvedas con claves guardadas en el Llavero."
+          }
+        }
+      }
+    },
+    "NSMicrophoneUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sempere uses the microphone to record audio into your notes. Recordings are encrypted in your vault."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sempere usa el micrófono para grabar audio en tus notas. Las grabaciones se cifran en tu bóveda."
+          }
+        }
+      }
+    },
+    "NSSpeechRecognitionUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sempere transcribes your recordings on this device. Audio is never sent to a server."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sempere transcribe tus grabaciones en este dispositivo. El audio nunca se envía a un servidor."
+          }
+        }
+      }
+    },
+    "Sempere Notebook (drag inside the app)" : {
+      "comment" : "UTTypeDescription of the in-app drag type for a notebook.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuaderno de Sempere (arrastrar dentro de la app)"
+          }
+        }
+      }
+    },
+    "Sempere Notes (drag inside the app)" : {
+      "comment" : "UTTypeDescription of the in-app drag type for notes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notas de Sempere (arrastrar dentro de la app)"
+          }
+        }
+      }
+    },
+    "Sempere Vault" : {
+      "comment" : "Name of the .sempere vault document type in Files (UTTypeDescription).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bóveda de Sempere"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

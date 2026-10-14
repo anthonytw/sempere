@@ -1,0 +1,49 @@
+{
+  "$comment": "synthetic: what a later additive version could write",
+  "$meta": {
+    "[ipad]": {
+      "pencil.doubleTap": {
+        "modified": 1770000000000,
+        "type": "ipad"
+      }
+    },
+    "[vision]": {
+      "immersive.paper": {
+        "modified": 1770000000000,
+        "type": "vision"
+      }
+    },
+    "appearance.icon": {
+      "modified": 1770000000000,
+      "reason": "new member",
+      "type": "iphone"
+    },
+    "ink.width": {
+      "modified": 1770000000000,
+      "type": "ipad"
+    },
+    "newNote.titleFormat": {
+      "modified": 1770000000000,
+      "type": "mac"
+    },
+    "pen.width": {
+      "modified": 1770000000000,
+      "type": "ipad"
+    }
+  },
+  "$minReaderVersion": 1,
+  "$schemaVersion": 2,
+  "[ipad]": {
+    "editor.keepScreenOn": true,
+    "pencil.doubleTap": "lastTool"
+  },
+  "[vision]": {
+    "immersive.paper": "desk"
+  },
+  "appearance.icon": "midnight",
+  "ink.width": 2,
+  "newNote.titleFormat": "weekday",
+  "pen.width": 2,
+  "pencil.doubleTap": "eraser",
+  "photos.removeMetadata": false
+}

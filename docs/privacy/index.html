@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sempere Privacy Policy</title>
+<!-- Served by GitHub Pages from docs/ (docs/.nojekyll: no Jekyll). Same text as
+     docs/appstore/privacy-policy.md; scripts/release-check.sh compares the dates. -->
+<style>
+  :root { --bg: #fdfcf9; --fg: #1d1d1f; --muted: #5f5f66; --rule: #e3e1da; --link: #0b5cad; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161618; --fg: #ececf0; --muted: #a4a4ad; --rule: #333338; --link: #6cb2ff; }
+  }
+  html { background: var(--bg); }
+  body { margin: 0 auto; max-width: 42rem; padding: 2.5rem 16px 4rem; color: var(--fg); background: var(--bg);
+         font: 17px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 .25rem; }
+  h2 { font-size: 1.2rem; margin: 2.2rem 0 .5rem; padding-top: 1rem; border-top: 1px solid var(--rule); }
+  .date { color: var(--muted); margin: 0 0 1.5rem; }
+  .short { font-weight: 600; }
+  a { color: var(--link); overflow-wrap: anywhere; }
+  li { margin: .3rem 0; }
+</style>
+</head>
+<body>
+<h1>Sempere Privacy Policy</h1>
+<p class="date">Effective: 2026-10-06. Last updated: <span id="updated">2026-10-09</span>.</p>
+
+<p class="short">Short version: Sempere does not collect, transmit or share any data about you. It has no
+servers, no accounts, no analytics and no advertising. The only network connections it makes are to a WebDAV
+server that you set up yourself, if you choose to keep a vault there (see “Network connections”).</p>
+
+<h2>What Sempere is</h2>
+<p>Sempere is a handwriting notes app for iPad, iPhone and Mac. Your notes are stored in a “vault”, a folder of
+files encrypted on your device with a key that you create and control. The developer (Anthony Wertz, “we”)
+cannot read your notes and does not receive them.</p>
+
+<h2>Data we collect</h2>
+<p>None. Sempere does not collect personal data, usage data, diagnostics, identifiers, location, contacts or
+content. It contains no analytics, advertising or crash-reporting software and no third-party SDK that collects
+data. We run no server that the app talks to.</p>
+
+<h2>Where your notes live</h2>
+<p>Your notes, and everything you add to them (photos, video, PDFs, text, equations, audio recordings and their
+transcripts), are saved only where you choose:</p>
+<ul>
+  <li>on your device, in the app’s storage;</li>
+  <li>in a folder you pick in the Files app, such as iCloud Drive or another provider;</li>
+  <li>on a WebDAV server you run or rent and connect to in the app (Open from WebDAV). The app then connects to
+  that server’s address, over HTTPS, with the user name and password you enter, to upload your encrypted notes.
+  The password is kept only in your device’s Keychain. Nothing is sent to us or to anyone else.</li>
+</ul>
+<p>Those storage services are run by you or by their providers (for example Apple, for iCloud Drive), under their
+own terms and privacy policies; we have no access to them. Notes are encrypted before they are saved, so a
+storage provider sees file names, sizes and modification times, but not what you wrote, drew or recorded.</p>
+
+<h2>Your keys</h2>
+<p>Your encryption key (an “age” identity) is generated on your device. You can keep it in the iOS/macOS
+Keychain (optionally synced through iCloud Keychain, if you choose that), print a recovery kit or export it.
+<strong>We cannot recover your key or your notes. If you lose every copy of your key, nobody can decrypt your
+notes.</strong></p>
+
+<h2>On-device features</h2>
+<ul>
+  <li><strong>Handwriting search</strong> reads your handwriting with Apple’s Vision framework on your device.</li>
+  <li><strong>Transcription</strong> of recordings uses Apple’s on-device speech recognition. Audio is never sent
+    to a server. The system may download a speech model for your language from Apple; that download contains none
+    of your data.</li>
+  <li><strong>Photos</strong> you add have their location and camera data removed by default (Settings →
+    Photos).</li>
+  <li><strong>Quick voice notes</strong> from the Lock Screen or Control Center are encrypted on the device before
+    they are saved, without unlocking your vault.</li>
+</ul>
+
+<h2>Network connections</h2>
+<p>Sempere connects only to a WebDAV server you set up yourself, and only if you open a vault there (Open from
+WebDAV): it then downloads the vault from that server’s address, and uploads your already encrypted vault files
+to it, over HTTPS, with the user
+name and password you entered (the password stays in your device’s Keychain). Nothing is sent to us or to anyone
+else. Otherwise your notes reach iCloud Drive or another storage provider only through the system’s Files and
+iCloud services, which copy the encrypted files you saved there; the speech model download above is the system’s
+too.</p>
+<p>Besides the WebDAV client, the app contains one other piece of networking code: a downloader for an optional handwriting-to-math recognition
+model (Settings → Handwritten Math). It runs only when you tap a model’s Download button, and this version offers
+no model, so it never runs and has no address to connect to. If a future version offers a model, it will be downloaded only when you ask, over HTTPS,
+from an address this policy will name, and it will be checked against a fingerprint built into the app. The
+download request carries nothing from your vault, and the model then runs on your device: your ink never leaves
+it. This policy will be updated before such a version is released.</p>
+
+<h2>Device permissions</h2>
+<p>Sempere asks for a permission only when you use the feature that needs it:</p>
+<ul>
+  <li>the camera, to add photos and video (iPad and iPhone);</li>
+  <li>the microphone, to record audio;</li>
+  <li>speech recognition, to transcribe recordings on the device;</li>
+  <li>Face ID or Touch ID, to unlock a key saved in the Keychain;</li>
+  <li>Live Activities, to show a voice note in progress.</li>
+</ul>
+<p>Photos and files are chosen with the system pickers, which give the app only what you pick. Face ID and
+Touch ID data never leaves the system and is never seen by the app.</p>
+
+<h2>Children</h2>
+<p>Sempere collects no data from anyone, including children.</p>
+
+<h2>Open source</h2>
+<p>The source code is public under the GPL-3.0-or-later (with an App Store exception) at
+<a href="https://github.com/anthonytw/sempere">github.com/anthonytw/sempere</a>, so these statements can be
+checked.</p>
+
+<h2>Changes</h2>
+<p>If this policy changes, it will be updated here with a new date. A change that collects data would first be
+described in the app’s release notes.</p>
+
+<h2>Contact</h2>
+<p>Questions: open an issue at
+<a href="https://github.com/anthonytw/sempere/issues">github.com/anthonytw/sempere/issues</a>.
+Security reports: see
+<a href="https://github.com/anthonytw/sempere/blob/main/SECURITY.md">SECURITY.md</a>.</p>
+</body>
+</html>

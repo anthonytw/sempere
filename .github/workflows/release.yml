@@ -1,0 +1,149 @@
+name: Release
+
+# Push a tag `vX.Y.Z` to build the CLI for Linux (static, x86_64 and aarch64) and macOS
+# (universal), attest provenance, and publish a GitHub Release whose notes are the
+# matching CHANGELOG.md section. See docs/releasing.md.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+env:
+  # Swift 6.4's default build system does not link Foundation's own static
+  # dependencies under --static-swift-stdlib; name them explicitly (CLAUDE.md).
+  STATIC_FLAGS: >-
+    --static-swift-stdlib
+    -Xlinker -lCoreFoundation -Xlinker -l_FoundationICU
+    -Xlinker -l_FoundationCollections -Xlinker -l_FoundationCShims
+    -Xlinker -lswiftSynchronization -Xlinker -l_CFXMLInterface
+    -Xlinker -l_CFURLSessionInterface -Xlinker -lcurl -Xlinker -lxml2
+
+jobs:
+  prepare:
+    name: Check version and changelog
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Tag must point at a commit on main
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::tag $GITHUB_REF_NAME is not on main; releases are cut from merged, CI-checked commits"; exit 1
+          fi
+      - id: v
+        name: Tag must equal the CLI version
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::tag '$tag' is not vMAJOR.MINOR.PATCH[-prerelease]"; exit 1
+          fi
+          version="${tag#v}"
+          source_version="$(sed -n 's/^let sempereVersion = "\(.*\)"$/\1/p' Sources/SempereCLI/Version.swift)"
+          if [ "$source_version" != "$version" ]; then
+            echo "::error::tag $tag but Sources/SempereCLI/Version.swift says $source_version"; exit 1
+          fi
+          scripts/changelog-section.sh "$version" > /dev/null
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  linux:
+    name: Linux ${{ matrix.arch }} (static)
+    needs: prepare
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    container: swift:6.4-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install zlib headers
+        run: |
+          apt-get update -q
+          apt-get install -y -q zlib1g-dev
+      - name: Build
+        run: swift build -c release --product sempere $STATIC_FLAGS
+      - name: Verify the CLI is static and reports the tag's version
+        run: |
+          bin=.build/release/sempere
+          test "$($bin --version | sed -n 1p)" = "sempere ${{ needs.prepare.outputs.version }}"
+          ldd "$bin"
+          if ldd "$bin" | grep -Eq 'libswift|libFoundation'; then echo "not static" >&2; exit 1; fi
+      - name: Package
+        run: scripts/package-cli.sh .build/release/sempere "${{ needs.prepare.outputs.version }}" "linux-${{ matrix.arch }}" dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-linux-${{ matrix.arch }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  macos:
+    name: macOS universal
+    needs: prepare
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select newest Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)/Contents/Developer"
+      - name: Build arm64 + x86_64
+        run: swift build -c release --product sempere --arch arm64 --arch x86_64
+      - name: Verify the binary
+        run: |
+          bin="$(swift build -c release --product sempere --arch arm64 --arch x86_64 --show-bin-path)/sempere"
+          lipo -archs "$bin" | tee /dev/stderr | grep -q arm64
+          lipo -archs "$bin" | grep -q x86_64
+          test "$("$bin" --version | sed -n 1p)" = "sempere ${{ needs.prepare.outputs.version }}"
+          echo "BIN=$bin" >> "$GITHUB_ENV"
+      - name: Package
+        run: scripts/package-cli.sh "$BIN" "${{ needs.prepare.outputs.version }}" macos-universal dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-macos-universal
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    name: Checksums, attestations, release
+    needs: [prepare, linux, macos]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write      # create the release
+      id-token: write      # sign attestations
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: dist-*
+          merge-multiple: true
+      - name: SHA256SUMS
+        working-directory: dist
+        run: |
+          sha256sum *.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/SHA256SUMS
+      - name: Release notes from CHANGELOG.md
+        run: scripts/changelog-section.sh "${{ needs.prepare.outputs.version }}" > release-notes.md
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=()
+          # A tag with a prerelease suffix (v1.0.0-rc.1) is published as a prerelease.
+          case "$GITHUB_REF_NAME" in *-*) flags+=(--prerelease) ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS \
+            --title "Sempere CLI $GITHUB_REF_NAME" --notes-file release-notes.md --verify-tag "${flags[@]}"
