@@ -257,6 +257,25 @@ the same notes as the menu (`AppModel.noteWindowValue`: listed, downloaded,
 not in Recently Deleted). Note > Move to
 Recently Deleted (⌘⌫) is off while a search, rename or tag field may have focus.
 
+## Keyboard focus
+
+The open note's canvas wants the first responder (the tool palette shows for it, and
+the menus' undo acts on it), but the page stack lays out on every SwiftUI update: a
+search result, a sync tick, a list reconcile, a drop, the sidebar collapsing. In
+TestFlight 1.0.0 each of those layouts gave the current page's canvas the first
+responder, taking the keyboard from the search field (or a new text box's neighbour
+fields) after every key, and the window's keyboard focus then fell back to the
+sidebar's selected row ("the selected folder constantly steals focus"). Now a canvas
+takes the focus by itself only when nothing outside it holds the keyboard
+(`CanvasFocus.keyboardIsElsewhere`: no text field, text view or search field elsewhere
+is the first responder, the window's keyboard focus is not on a list row, and the
+window is key); a stroke on a canvas always takes it. So a field keeps the keyboard
+until the user leaves it, the arrow keys keep moving the sidebar or list that has the
+keyboard focus, and the palette appears when the note opens with nothing else typed in,
+or at the first stroke. A note window updating in the background takes nothing; it gives
+its canvas the focus when it becomes key. Tests: `CanvasFocusTests` (hosted, iPad and
+Catalyst) and `MacFocusUITests` (typing in the running app, `scripts/app.sh test-mac-ui`).
+
 ## Tooltips
 
 Toolbar buttons show no title on a Mac, so every icon-only control has a

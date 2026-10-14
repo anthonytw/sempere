@@ -277,11 +277,13 @@ struct PageCanvasView: UIViewRepresentable {
             host?.zoomChanged()
         }
 
-        /// A stroke starts on a page of the stack: that page's canvas takes
-        /// the focus, so undo and the palette act on it.
+        /// A stroke starts: the canvas (a page of the stack, or the one-page
+        /// canvas, which takes the focus by itself only when nothing else holds
+        /// the keyboard, `CanvasFocus`) takes the focus, so undo and the
+        /// palette act on it.
         func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) {
             usingTool = true
-            guard let host, host.isEmbedded, !canvasView.isFirstResponder else { return }
+            guard let host, !canvasView.isFirstResponder else { return }
             host.focus()
         }
     }
@@ -538,8 +540,8 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         objectEraser.attach(to: self, canvas: canvas)
         mouseInk.attach(to: canvas)
         mouseInk.onBegin = { [weak self] in
-            // As `canvasViewDidBeginUsingTool`: a page of the stack takes the focus.
-            guard let self, self.isEmbedded, !self.canvas.isFirstResponder else { return }
+            // As `canvasViewDidBeginUsingTool`: the canvas drawn on takes the focus.
+            guard let self, !self.canvas.isFirstResponder else { return }
             self.focus()
         }
         mathLasso.attach(to: canvas)
@@ -567,6 +569,11 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
             NotificationCenter.default.addObserver(self, selector: #selector(defaultsChanged),
                                                    name: UserDefaults.didChangeNotification, object: nil)
         }
+        if !isEmbedded {
+            // A window that becomes key (a note window opened or clicked) gives the canvas the focus then.
+            NotificationCenter.default.addObserver(self, selector: #selector(windowBecameKey(_:)),
+                                                   name: UIWindow.didBecomeKeyNotification, object: nil)
+        }
         if isEmbedded {
             // The stack scrolls and zooms; the page shows a sheet with a shadow on the stack's background.
             backgroundColor = .clear
@@ -590,11 +597,29 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         isEmbedded ? pageUndo : super.undoManager
     }
 
-    /// Makes this canvas the first responder (its palette, its undo) when it can be drawn on.
+    /// Makes this canvas the first responder (its palette, its undo) when it
+    /// can be drawn on: the user drew on it.
     func focus() {
         // A text box being typed in keeps the keyboard: its text view is the first responder.
         guard window != nil, !isReadOnly, !drawingSuspended, !textEditor.isEditing else { return }
         canvas.becomeFirstResponder()
+    }
+
+    /// `focus()` unless something outside `container` (the stack for a page
+    /// of it) holds the keyboard: a search or text field, or a list moved
+    /// through with the arrow keys (`CanvasFocus`). For focus the canvas takes
+    /// by itself (opening, layout, an edit ending), never the user's.
+    func focusUnlessKeyboardElsewhere(container: UIView? = nil) {
+        guard window != nil, !canvas.isFirstResponder,
+              !CanvasFocus.keyboardIsElsewhere(than: container ?? self) else { return }
+        focus()
+    }
+
+    /// The paged stack this page belongs to (embedded only).
+    private var enclosingStack: UIView? {
+        var view = superview
+        while let v = view, !(v is PageStackHost) { view = v.superview }
+        return view
     }
 
     /// The selected tool changed outside the picker's own UI (a menu command):
@@ -674,6 +699,12 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         mouseInk.cancelStroke()
     }
 
+    /// Its window became key: the one-page canvas takes the focus unless something holds the keyboard.
+    @objc private func windowBecameKey(_ note: Notification) {
+        guard let window, note.object as? UIWindow === window, !isReadOnly, !drawingSuspended else { return }
+        focusUnlessKeyboardElsewhere()
+    }
+
     /// Any setting changed (possibly off the main thread): if "Smooth Mouse
     /// Strokes" did, PencilKit or the app draws the pointer from now on. Other
     /// settings (the eraser mode is saved during erasing) change nothing here.
@@ -725,7 +756,9 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         updateSelectionMode()
         guard !editing else { return }
         updateToolPicker()
-        if isEmbedded { focus() }   // a page of the stack takes the palette back itself
+        // A page of the stack takes the palette back itself, unless the edit ended because
+        // the user went to a field elsewhere (`CanvasFocus`).
+        if isEmbedded { focusUnlessKeyboardElsewhere(container: enclosingStack) }
     }
 
     @available(*, unavailable)
@@ -742,7 +775,8 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         let show = !isReadOnly && !drawingSuspended && paletteVisible
         toolPicker.setVisible(show, forFirstResponder: canvas)
         // The stack decides which of its pages has the focus (`focus()`); a text box being typed in keeps the keyboard.
-        if !isReadOnly && !drawingSuspended && !isEmbedded && !textEditor.isEditing { canvas.becomeFirstResponder() }
+        // Never from a field or list that holds the keyboard (`CanvasFocus`).
+        if !isEmbedded { focusUnlessKeyboardElsewhere() }
     }
 
     /// Swaps in a picker of the other size, keeping the selected tool when the
