@@ -75,7 +75,7 @@ struct VaultInit: ParsableCommand {
         try requirePostQuantum(recipients)
         var stored: (NativeIdentity, String)?
         if let storeKey {
-            let id = try readIdentityFile(storeKey)
+            let id = try readStoreKeyFile(storeKey)
             guard recipients.contains(id.recipient) else {
                 throw CLIError.usage("\(storeKey) is not one of the --recipient keys")
             }
@@ -587,7 +587,7 @@ struct StoreKeyOptions: ParsableArguments {
     /// before the vault changes.
     func prepare(for recipient: NativeRecipient) throws -> (NativeIdentity, String)? {
         guard let storeKey else { return nil }
-        let id = try readIdentityFile(storeKey)
+        let id = try readStoreKeyFile(storeKey)
         guard id.recipient == recipient else {
             throw CLIError.usage("\(storeKey) is not the key of the new recipient \(RecipientsProblem.abbreviate(recipient.string))")
         }

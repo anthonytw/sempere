@@ -226,7 +226,10 @@ sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
   or one per `--recipient`. Labels (here and in `recipients add`/`replace`)
   are stored as the app stores them: one line, trimmed, at most 80
   characters; an empty one is shown as "Device". `--store-key` also writes that identity,
-  passphrase-wrapped, into `keys/` (the passphrase is confirmed when typed,
+  passphrase-wrapped, into `keys/`; its file must hold one post-quantum secret key
+  (`AGE-SECRET-KEY-PQ-1…`, alone or as `age-keygen -pq` writes it), and a public key, a
+  classic key or a passphrase-wrapped file is refused naming what it holds (`KeyText`, the
+  check behind the app's "Use an existing key") (the passphrase is confirmed when typed,
   and an empty one is refused with exit 2, as in the app). That file is on the
   vault's storage, where its passphrase can be guessed offline, so one estimated
   below 60 bits (`PassphraseStrength`: five random words, or a long random
