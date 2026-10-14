@@ -140,6 +140,8 @@ struct ImportProgressOverlay: View {
         }
         .padding()
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        // A container: the identifier would otherwise replace its children's (the count's, Cancel's).
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("importProgress")
     }
 

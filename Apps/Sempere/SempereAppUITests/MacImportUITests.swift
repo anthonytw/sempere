@@ -3,7 +3,10 @@ import XCTest
 /// Device check c23, the part only the running app shows: during a long import from another app the window shows
 /// a progress bar, the note count and Cancel; the result's report can be saved as a text file (Save… in the report
 /// sheet, AppKit's save panel in another process) and is shown again from File ▸ Last Import Report…. The backup
-/// is thousands of copies of the importer tests' synthetic note (no personal data), in a temporary folder.
+/// is thousands of copies of the importer tests' synthetic note (no personal data), which the app writes into its
+/// own temporary folder and takes as the picked folder (`SEMPERE_DEBUG_IMPORT_PICK`): the open panel cannot choose
+/// a folder in the test runner's container (macOS keeps Open disabled there, measured 2026-10-14), and the app
+/// cannot read that container either. `testImportFromOpensTheOpenPanel` checks the panel itself.
 /// Run by `scripts/app.sh test-mac-ui -only-testing:SempereAppUITests/MacImportUITests`.
 @MainActor
 final class MacImportUITests: XCTestCase {
@@ -17,31 +20,26 @@ final class MacImportUITests: XCTestCase {
     private static let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Tests/SempereTests/Fixtures/notability/synthetic.note")
 
-    private var panelService: XCUIApplication { XCUIApplication(bundleIdentifier: "com.apple.appkit.xpc.openAndSavePanelService") }
-
-    /// A folder of `count` copies of the synthetic note in nested folders: every copy is read before anything
-    /// is written, so the reading phase is long enough to watch and to cancel.
-    private func backup(count: Int) throws -> URL {
-        let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("sempere-ui-import-\(UUID().uuidString)")
-        let data = try Data(contentsOf: Self.fixture)
-        for i in 0..<count {
-            let dir = root.appendingPathComponent("Notability/Folder \(i % 20)/Sub \(i % 7)")
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            try data.write(to: dir.appendingPathComponent("Copy \(i).note"))
-        }
-        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        return root
-    }
+    // AppKit's open and save panels run in `com.apple.appkit.xpc.openAndSavePanelService`, but that service is no
+    // app XCTest can attach to (`XCUIApplication(bundleIdentifier:)` throws "could not be found"); the panel is
+    // shown in the app's accessibility tree, as a sheet on its window, and is driven from there.
 
     @MainActor
-    private func launch() -> XCUIApplication {
+    /// `copies` > 0: File ▸ Import from … takes that many copies of the synthetic note instead of the open panel.
+    private func launch(copies: Int = 0) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"]
         app.launchEnvironment = ["SEMPERE_DEMO": "1", "SEMPERE_DEBUG_COLUMNS": "all", "SEMPERE_DEMO_NOTE": "respiration",
                                  "SEMPERE_DEMO_MAC_WINDOW": "1100x760", "TZ": "UTC"]
+        if copies > 0 { app.launchEnvironment["SEMPERE_DEBUG_IMPORT_PICK"] = "\(copies):\(Self.fixture.path)" }
         app.launch()
         XCTAssertTrue(app.staticTexts["Cellular Respiration"].firstMatch.waitForExistence(timeout: 60))
         return app
+    }
+
+    /// A button in the app's windows: the Touch Bar repeats some (Show Report, Import), and its copies cannot be clicked.
+    private func button(_ app: XCUIApplication, _ name: String) -> XCUIElement {
+        app.windows.descendants(matching: .button).matching(identifier: name).firstMatch
     }
 
     private func dump(_ app: XCUIApplication, _ tag: String) {
@@ -51,51 +49,67 @@ final class MacImportUITests: XCTestCase {
     }
 
     private func panel(_ app: XCUIApplication) -> XCUIElement? {
-        for candidate in [panelService.windows.firstMatch, app.sheets.firstMatch, app.dialogs.firstMatch]
+        for candidate in [app.sheets.firstMatch, app.dialogs.firstMatch]
             where candidate.waitForExistence(timeout: 5) {
             return candidate
         }
         return nil
     }
 
-    /// Goes to `dir` in an open or save panel (⇧⌘G) and confirms with Return.
+    /// Goes to `dir` in a save panel (⇧⌘G) and confirms with Return.
     private func choose(_ dir: URL, in app: XCUIApplication) {
         guard let window = panel(app) else { dump(app, "no-panel"); XCTFail("no file panel"); return }
         window.typeKey("g", modifierFlags: [.command, .shift])
         window.typeText(dir.path + "\r")
         sleep(1)
         window.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
-        let replace = panelService.buttons["Replace"].firstMatch
+        let replace = app.windows.descendants(matching: .button).matching(identifier: "Replace").firstMatch
         if replace.waitForExistence(timeout: 2) { replace.click() }
     }
 
-    /// File ▸ Import from Notability…, the backup folder, then Import in the options sheet.
+    /// File ▸ Import from Notability….
     @MainActor
-    private func startImport(_ app: XCUIApplication, folder: URL) {
+    private func importFromMenu(_ app: XCUIApplication) {
         app.menuBarItems["File"].click()
         let item = app.menuItems.matching(NSPredicate(format: "title BEGINSWITH %@", "Import from")).firstMatch
         XCTAssertTrue(item.waitForExistence(timeout: 5), "File ▸ Import from …")
         item.click()
-        choose(folder, in: app)
+    }
+
+    /// File ▸ Import from Notability… (the launch's copies, `launch(copies:)`), then Import in the options sheet.
+    @MainActor
+    private func startImport(_ app: XCUIApplication) {
+        importFromMenu(app)
         let options = app.descendants(matching: .any)["importOptions"]
         XCTAssertTrue(options.waitForExistence(timeout: 20), "the import options sheet")
-        app.buttons["Import"].firstMatch.click()
+        button(app, "Import").click()
+    }
+
+    /// Without the launch's copies the menu opens AppKit's open panel (in the app's tree as a sheet); Escape closes it.
+    @MainActor
+    func testImportFromOpensTheOpenPanel() throws {
+        let app = launch()
+        defer { app.terminate() }
+        importFromMenu(app)
+        guard let window = panel(app) else { dump(app, "no-panel"); return XCTFail("the open panel") }
+        window.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+        XCTAssertTrue(window.waitForNonExistence(timeout: 10), "Escape closed the panel")
+        XCTAssertFalse(app.descendants(matching: .any)["importOptions"].exists, "nothing to import")
     }
 
     @MainActor
     func testALongImportShowsProgressAndCanBeCanceled() throws {
-        let folder = try backup(count: 4_000)
-        let app = launch()
+        let app = launch(copies: 12_000)
         defer { app.terminate() }
-        startImport(app, folder: folder)
+        startImport(app)
         let overlay = app.descendants(matching: .any)["importProgress"]
         XCTAssertTrue(overlay.waitForExistence(timeout: 20), "the progress overlay")
-        let count = app.staticTexts["importProgressCount"]
+        let count = app.descendants(matching: .any)["importProgressCount"]
         XCTAssertTrue(count.waitForExistence(timeout: 30), "a count of notes appears")
         let first = count.label
         sleep(1)
         XCTAssertNotEqual(count.exists ? count.label : "done", first, "the count moves")
-        app.buttons["importCancel"].click()
+        button(app, "importCancel").click()
         let alert = app.staticTexts["Import Canceled"].firstMatch
         XCTAssertTrue(alert.waitForExistence(timeout: 30), "the result says it was canceled")
         if !alert.exists { dump(app, "after-cancel") }
@@ -103,15 +117,14 @@ final class MacImportUITests: XCTestCase {
 
     @MainActor
     func testTheReportCanBeSavedAndShownAgain() throws {
-        let folder = try backup(count: 30)
-        let app = launch()
+        let app = launch(copies: 30)
         defer { app.terminate() }
-        startImport(app, folder: folder)
-        let show = app.buttons["Show Report"].firstMatch
+        startImport(app)
+        let show = button(app, "Show Report")
         XCTAssertTrue(show.waitForExistence(timeout: 60), "the result alert offers the report")
         show.click()
         XCTAssertTrue(app.descendants(matching: .any)["importReport"].waitForExistence(timeout: 10))
-        let save = app.buttons["Save…"].firstMatch
+        let save = button(app, "Save…")
         XCTAssertTrue(save.waitForExistence(timeout: 10), "Save… in the report")
         save.click()
         let out = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("sempere-ui-report-\(UUID().uuidString)")
@@ -128,7 +141,7 @@ final class MacImportUITests: XCTestCase {
             let text = try String(contentsOf: out.appendingPathComponent(name), encoding: .utf8)
             XCTAssertTrue(text.contains("Copy 0.note"), "every file is in the report")
         }
-        app.buttons["Done"].firstMatch.click()
+        button(app, "Done").click()
 
         // Shown again from the File menu.
         app.menuBarItems["File"].click()

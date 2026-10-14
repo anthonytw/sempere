@@ -27,6 +27,10 @@ import UIKit
 ///   a staged key file) and for the given text (a demo note title) in the saved window state,
 ///   preferences and Application Support, and show the counts in the app's alert
 ///   (`leftoverReport`, `QuitPurgeMacUITests`); that launch opens no vault.
+/// - `SEMPERE_DEBUG_IMPORT_PICK`: `COUNT:PATH`. File ▸ Import from … skips the open panel and
+///   imports COUNT copies of the note file at PATH, in nested folders under the app's temporary
+///   directory, as if that folder had been picked (`importPick`, `MacImportUITests`: the panel
+///   cannot open a folder in the test runner's container).
 ///
 /// Release builds compile none of this.
 enum DebugLaunch {
@@ -86,6 +90,29 @@ enum DebugLaunch {
     }
 
     /// Page y to scroll to after a note opens, if requested.
+    /// `SEMPERE_DEBUG_IMPORT_PICK`: builds the folder to import (anew each time) and returns it; nil
+    /// when the variable is not set or the folder cannot be built.
+    static func importPick() -> [URL]? {
+        guard let value = environment["SEMPERE_DEBUG_IMPORT_PICK"], let colon = value.firstIndex(of: ":"),
+              let count = Int(value[..<colon]) else { return nil }
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("SempereDebugImport", isDirectory: true)
+        try? fm.removeItem(at: root)
+        let top = root.appendingPathComponent("Notability", isDirectory: true)
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: String(value[value.index(after: colon)...])))
+            for i in 0..<count {
+                let dir = top.appendingPathComponent("Folder \(i % 20)/Sub \(i % 7)", isDirectory: true)
+                try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+                try data.write(to: dir.appendingPathComponent("Copy \(i).note"))
+            }
+        } catch {
+            NSLog("SempereDebug importPick failed: %@", "\(error)")
+            return nil
+        }
+        return [top]
+    }
+
     static var scrollY: Double? { environment["SEMPERE_DEBUG_SCROLL_Y"].flatMap(Double.init) }
 
     /// What `SEMPERE_DEBUG_OWNER_CHECK` asks the owner check to answer.
