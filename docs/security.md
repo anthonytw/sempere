@@ -33,9 +33,11 @@ your use (no telemetry).
 - **A key copy in the vault is only as strong as its passphrase.** That copy
   sits with the vault on its storage, so your storage provider, or anyone with
   a copy of the files, can try passphrases on it offline, as many as they
-  like. Sempere refuses a passphrase it estimates as easy to guess; use five
-  or more random words, or a long random password, and never one you use
-  elsewhere. A copy with a weak passphrase gives away the key, which reads
+  like. Sempere refuses a passphrase it estimates as easy to guess (below
+  about 60 bits; the estimate prices words as dictionary words and finds
+  keyboard walks, sequences, repeats and common passwords); use five or more
+  random words, a long random password, or one your password manager
+  generates (Apple's pass), and never one you use elsewhere. A copy with a weak passphrase gives away the key, which reads
   and writes everything.
 - **If every copy of the key is lost, the notes cannot be opened.** Not by you,
   not by the developer, not by anyone. There is no reset, no recovery service and

@@ -89,6 +89,13 @@ final class CLICommandTests: CLITestCase {
         XCTAssertEqual(weak.status, 2, weak.err)
         XCTAssertTrue(weak.err.contains("too easy to guess"), weak.err)
         XCTAssertFalse(FileManager.default.fileExists(atPath: vault), "nothing created")
+        // --store-key names what a wrong file holds (the app's New Vault "Use an existing key" shares the check).
+        try (pub + "\n").write(toFile: path("pub.txt"), atomically: true, encoding: .utf8)
+        let publicOnly = try cli(["vault", "init", vault, "--recipient", pub, "--store-key", path("pub.txt"),
+                                  "--work-factor", "15"], env: ["SEMPERE_PASSPHRASE": "lunar-pickle-tundra-mosaic-quiver"])
+        XCTAssertNotEqual(publicOnly.status, 0)
+        XCTAssertTrue(publicOnly.err.contains("is a public key"), publicOnly.err)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: vault), "nothing created")
         let r = try cli(["vault", "init", vault, "--recipient", pub, "--label", "laptop", "--store-key", key,
                          "--passphrase-env", "MY_PASS", "--work-factor", "15", "--allow-weak-passphrase"],
                         env: ["MY_PASS": "s3cret"])

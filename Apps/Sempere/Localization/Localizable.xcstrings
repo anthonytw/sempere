@@ -145,6 +145,30 @@
         }
       }
     },
+    "%@ is a classic age1… public key, which is not quantum-safe. Vaults take only post-quantum keys (AGE-SECRET-KEY-PQ-1…, from age-keygen -pq or sempere keys generate)." : {
+      "comment" : "%@ is the classic age1… public key the user pasted",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ es una clave pública age1… clásica, que no es resistente a la computación cuántica. Las bóvedas solo admiten claves poscuánticas (AGE-SECRET-KEY-PQ-1…, de age-keygen -pq o sempere keys generate)."
+          }
+        }
+      }
+    },
+    "%@ is a public key: it can only encrypt to the key, not open the vault. Paste the secret key (AGE-SECRET-KEY-PQ-1…) instead, or choose “Public key only” to make a vault this device cannot open." : {
+      "comment" : "%@ is the abbreviated age1pq1… public key the user pasted",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ es una clave pública: solo sirve para cifrar a esa clave, no para abrir la bóveda. Pega en su lugar la clave secreta (AGE-SECRET-KEY-PQ-1…) o elige «Solo clave pública» para crear una bóveda que este dispositivo no puede abrir."
+          }
+        }
+      }
+    },
     "%@ page" : {
       "comment" : "Accessibility label of a page color preset; %@ is White, Cream or Dark",
       "extractionState" : "manual",
@@ -2560,13 +2584,14 @@
         }
       }
     },
-    "A passphrase can only wrap a key generated on this device." : {
+    "A passphrase can only wrap a key this device has, not a public key." : {
+      "comment" : "Error when a passphrase is given with a public key only",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Una frase de contraseña solo puede proteger una clave generada en este dispositivo."
+            "value" : "Una frase de contraseña solo puede proteger una clave que tenga este dispositivo, no una clave pública."
           }
         }
       }
@@ -3852,6 +3877,18 @@
         }
       }
     },
+    "Both entries match" : {
+      "comment" : "Checklist line: passphrase and its repetition are equal",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las dos entradas coinciden"
+          }
+        }
+      }
+    },
     "Bring Item to Front" : {
       "comment" : "Note menu: draw the selected item above the others",
       "extractionState" : "manual",
@@ -4291,6 +4328,18 @@
         }
       }
     },
+    "Choose Key File…" : {
+      "comment" : "Button: pick a key file for the new vault",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elegir archivo de clave…"
+          }
+        }
+      }
+    },
     "Choose a backup folder first." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4309,6 +4358,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Elige una carpeta fuera de la bóveda: las notas exportadas no están cifradas."
+          }
+        }
+      }
+    },
+    "Choose a saved key file or a passphrase-wrapped key file" : {
+      "comment" : "Tooltip of Choose Key File",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elegir un archivo de clave guardado o uno protegido con frase de contraseña"
           }
         }
       }
@@ -5105,6 +5166,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Crear"
+          }
+        }
+      }
+    },
+    "Create Folder" : {
+      "comment" : "Confirms the new folder for the vault",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crear carpeta"
           }
         }
       }
@@ -6071,6 +6144,18 @@
         }
       }
     },
+    "Encrypt to someone's public key (age1pq1…). This device gets no key: only the matching secret key opens the vault, and you will be asked for it." : {
+      "comment" : "Footer of the key choice: public key only",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cifra a la clave pública de alguien (age1pq1…). Este dispositivo no recibe ninguna clave: solo la clave secreta correspondiente abre la bóveda, y se te pedirá."
+          }
+        }
+      }
+    },
     "Encrypted. It becomes a note the next time you unlock the vault." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6644,6 +6729,18 @@
         }
       }
     },
+    "Folder name" : {
+      "comment" : "Placeholder of the new folder name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nombre de la carpeta"
+          }
+        }
+      }
+    },
     "Folders Like Your Notebooks" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6738,6 +6835,18 @@
         }
       }
     },
+    "Forget the key file and paste a key" : {
+      "comment" : "Tooltip of Paste a Key Instead",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Olvidar el archivo de clave y pegar una clave"
+          }
+        }
+      }
+    },
     "Forget this vault's key?" : {
       "comment" : "Confirmation title",
       "extractionState" : "manual",
@@ -6810,14 +6919,14 @@
         }
       }
     },
-    "Generate on this device" : {
-      "comment" : "New vault key option",
+    "Generate a new key" : {
+      "comment" : "Key choice in New Vault",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Generar en este dispositivo"
+            "value" : "Generar una clave nueva"
           }
         }
       }
@@ -6842,6 +6951,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Obteniendo el vídeo…"
+          }
+        }
+      }
+    },
+    "Give the new folder a name without slashes, colons, leading dots or control characters, not ending in .sempere." : {
+      "comment" : "Invalid new folder name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pon a la carpeta nueva un nombre sin barras, dos puntos, puntos iniciales ni caracteres de control, que no termine en .sempere."
           }
         }
       }
@@ -7083,6 +7204,18 @@
         }
       }
     },
+    "Hard to guess: about %lld of %lld bits" : {
+      "comment" : "Checklist line; first %lld is the estimated strength in bits, second the minimum [not-plural]",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Difícil de adivinar: unos %lld de %lld bits"
+          }
+        }
+      }
+    },
     "Heading" : {
       "comment" : "Markdown bar: make the line a heading (# Title); again for a smaller one",
       "extractionState" : "manual",
@@ -7163,6 +7296,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ocultar páginas"
+          }
+        }
+      }
+    },
+    "Hide Passphrase" : {
+      "comment" : "Tooltip of the eye button of a passphrase field",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ocultar frase de contraseña"
           }
         }
       }
@@ -7837,6 +7982,42 @@
         }
       }
     },
+    "It contains a keyboard pattern, like “qwerty” or “1qaz”." : {
+      "comment" : "Passphrase hint",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contiene un patrón de teclado, como «qwerty» o «1qaz»."
+          }
+        }
+      }
+    },
+    "It contains a sequence or repeated characters, like “abc”, “123” or “aaa”." : {
+      "comment" : "Passphrase hint",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contiene una secuencia o caracteres repetidos, como «abc», «123» o «aaa»."
+          }
+        }
+      }
+    },
+    "It contains a very common password, which is guessed first." : {
+      "comment" : "Passphrase hint",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contiene una contraseña muy común, de las primeras que se prueban."
+          }
+        }
+      }
+    },
     "It is there already." : {
       "comment" : "Footer: moving the notebook would change nothing",
       "extractionState" : "manual",
@@ -7845,6 +8026,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ya está ahí."
+          }
+        }
+      }
+    },
+    "It repeats a word or part." : {
+      "comment" : "Passphrase hint",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repite una palabra o una parte."
           }
         }
       }
@@ -8028,7 +8221,7 @@
       }
     },
     "Key file" : {
-      "comment" : "Section header: export a key as a file",
+      "comment" : "Section header: export a key as a file; also the label of a key file picked in New Vault",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -8511,6 +8704,18 @@
         }
       }
     },
+    "Make a new folder for the vault inside the chosen one" : {
+      "comment" : "Tooltip of the New Folder button",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crear una carpeta nueva para la bóveda dentro de la elegida"
+          }
+        }
+      }
+    },
     "Make a note from a PDF: one page per PDF page, to write on" : {
       "comment" : "Help tag of Import PDF…",
       "extractionState" : "manual",
@@ -8603,6 +8808,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mediano"
+          }
+        }
+      }
+    },
+    "Missing" : {
+      "comment" : "Accessibility value of an unmet checklist line",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falta"
           }
         }
       }
@@ -8858,6 +9075,30 @@
         }
       }
     },
+    "New Folder" : {
+      "comment" : "Title of the alert that names a new folder for the vault",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nueva carpeta"
+          }
+        }
+      }
+    },
+    "New Folder…" : {
+      "comment" : "Button: put the vault into a new folder",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nueva carpeta…"
+          }
+        }
+      }
+    },
     "New Key" : {
       "comment" : "Section header",
       "extractionState" : "manual",
@@ -9105,6 +9346,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La próxima vez, %@ se abrirá tras el código del dispositivo. La clave se queda en el Llavero de este dispositivo y no se incluye en las copias de seguridad."
+          }
+        }
+      }
+    },
+    "No New Folder" : {
+      "comment" : "Button: put the vault directly in the chosen folder",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin carpeta nueva"
           }
         }
       }
@@ -10115,17 +10368,6 @@
         }
       }
     },
-    "Only the matching secret key can open the vault; you will be asked for it." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Solo la clave secreta correspondiente puede abrir la bóveda; se te pedirá."
-          }
-        }
-      }
-    },
     "Only your key opens these notes" : {
       "comment" : "About Your Key: heading",
       "extractionState" : "manual",
@@ -10146,6 +10388,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abrir"
+          }
+        }
+      }
+    },
+    "Open Key File" : {
+      "comment" : "Button: decrypt the passphrase-wrapped key file",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir archivo de clave"
           }
         }
       }
@@ -10922,6 +11176,18 @@
         }
       }
     },
+    "Passphrase of the key file" : {
+      "comment" : "Placeholder",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frase de contraseña del archivo de clave"
+          }
+        }
+      }
+    },
     "Password" : {
       "comment" : "Secure field placeholder: a PDF's password",
       "extractionState" : "manual",
@@ -10946,6 +11212,18 @@
         }
       }
     },
+    "Paste a Key Instead" : {
+      "comment" : "Button: forget the picked key file",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pegar una clave"
+          }
+        }
+      }
+    },
     "Paste a Public Key" : {
       "comment" : "Add Device Key: segment, paste another device's public key",
       "extractionState" : "manual",
@@ -10954,6 +11232,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pegar una clave pública"
+          }
+        }
+      }
+    },
+    "Paste a secret key or choose a key file." : {
+      "comment" : "Existing key field is empty",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pega una clave secreta o elige un archivo de clave."
+          }
+        }
+      }
+    },
+    "Paste a secret key that starts with AGE-SECRET-KEY-PQ-1 (the whole output of age-keygen -pq or sempere keys generate works too), or choose a key file: a saved key, or a passphrase-wrapped key file (keys/….key.age) from another vault. A public key (age1pq1…) cannot open a vault, and classic keys (AGE-SECRET-KEY-1…) are not accepted." : {
+      "comment" : "Footer of the key choice: use an existing key",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pega una clave secreta que empiece por AGE-SECRET-KEY-PQ-1 (también vale toda la salida de age-keygen -pq o sempere keys generate) o elige un archivo de clave: una clave guardada o un archivo de clave protegido con frase de contraseña (keys/….key.age) de otra bóveda. Una clave pública (age1pq1…) no puede abrir una bóveda, y las claves clásicas (AGE-SECRET-KEY-1…) no se admiten."
           }
         }
       }
@@ -11483,6 +11785,18 @@
         }
       }
     },
+    "Public key only" : {
+      "comment" : "Key choice in New Vault: encrypt to a public key; this device gets no key",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo clave pública"
+          }
+        }
+      }
+    },
     "Purple" : {
       "comment" : "Text color",
       "extractionState" : "manual",
@@ -11491,6 +11805,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Morado"
+          }
+        }
+      }
+    },
+    "Put the vault directly in the chosen folder" : {
+      "comment" : "Tooltip of the No New Folder button",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poner la bóveda directamente en la carpeta elegida"
           }
         }
       }
@@ -11791,6 +12117,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lee en este dispositivo la escritura a mano de las páginas que la aplicación de origen nunca reconoció, justo después de importar."
+          }
+        }
+      }
+    },
+    "Ready. The vault will be encrypted to %@." : {
+      "comment" : "%@ is the abbreviated public key of the existing key",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lista. La bóveda se cifrará a %@."
           }
         }
       }
@@ -12523,6 +12861,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Renombrar"
+          }
+        }
+      }
+    },
+    "Rename New Folder…" : {
+      "comment" : "Button: rename the new folder for the vault",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renombrar carpeta nueva…"
           }
         }
       }
@@ -13744,6 +14094,18 @@
         }
       }
     },
+    "Sempere could not read that file: %@" : {
+      "comment" : "%@ is the error",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sempere no pudo leer ese archivo: %@"
+          }
+        }
+      }
+    },
     "Sempere has no access to “%@” any more (the saved permission did not come back). The system only keeps access to folders you choose yourself." : {
       "comment" : "%@ is a vault's name",
       "extractionState" : "manual",
@@ -13809,6 +14171,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sempere no tiene permiso para usar el micrófono. Permítelo en Ajustes ▸ Privacidad y seguridad ▸ Micrófono."
+          }
+        }
+      }
+    },
+    "Sempere makes a new post-quantum key (AGE-SECRET-KEY-PQ-1…) on this device and shows it once, after the vault is created. Save it: without it, or a passphrase copy, the vault cannot be opened." : {
+      "comment" : "Footer of the key choice: generate a new key",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sempere crea una clave poscuántica nueva (AGE-SECRET-KEY-PQ-1…) en este dispositivo y la muestra una vez, después de crear la bóveda. Guárdala: sin ella, o sin una copia con frase de contraseña, la bóveda no se puede abrir."
           }
         }
       }
@@ -14154,6 +14528,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mostrar páginas"
+          }
+        }
+      }
+    },
+    "Show Passphrase" : {
+      "comment" : "Tooltip of the eye button of a passphrase field",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar frase de contraseña"
           }
         }
       }
@@ -15491,6 +15877,18 @@
         }
       }
     },
+    "That file is encrypted to keys, not to a passphrase: it is not a key file." : {
+      "comment" : "Picked an age file not protected by a passphrase",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ese archivo está cifrado a claves, no a una frase de contraseña: no es un archivo de clave."
+          }
+        }
+      }
+    },
     "That folder holds several backups (%@). Choose one of them." : {
       "comment" : "Restore from Backup: %@ is a list of folder names",
       "extractionState" : "manual",
@@ -15522,6 +15920,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Esa carpeta es la bóveda abierta, la contiene o está dentro de ella. La copia debe estar en otro lugar."
+          }
+        }
+      }
+    },
+    "That holds %lld different secret keys. Give only one." : {
+      "comment" : "%lld is the number of secret keys found, always 2 or more [not-plural]",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contiene %lld claves secretas distintas. Indica solo una."
+          }
+        }
+      }
+    },
+    "That is a classic AGE-SECRET-KEY-1… key, which is not quantum-safe. Use a post-quantum key (AGE-SECRET-KEY-PQ-1…) or generate one." : {
+      "comment" : "Library error for a classic secret key",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es una clave AGE-SECRET-KEY-1… clásica, que no es resistente a la computación cuántica. Usa una clave poscuántica (AGE-SECRET-KEY-PQ-1…) o genera una."
+          }
+        }
+      }
+    },
+    "That is a classic AGE-SECRET-KEY-1… key, which is not quantum-safe. Vaults take only post-quantum keys (AGE-SECRET-KEY-PQ-1…, from age-keygen -pq or sempere keys generate)." : {
+      "comment" : "The user pasted a classic X25519 secret key",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es una clave AGE-SECRET-KEY-1… clásica, que no es resistente a la computación cuántica. Las bóvedas solo admiten claves poscuánticas (AGE-SECRET-KEY-PQ-1…, de age-keygen -pq o sempere keys generate)."
           }
         }
       }
@@ -15560,6 +15994,18 @@
         }
       }
     },
+    "That is not an age key. Paste the secret key, AGE-SECRET-KEY-PQ-1…, or choose a key file." : {
+      "comment" : "Existing key input is not recognized",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No es una clave de age. Pega la clave secreta, AGE-SECRET-KEY-PQ-1…, o elige un archivo de clave."
+          }
+        }
+      }
+    },
     "That is the key this vault was unlocked with. To replace it, add a new key for this device, unlock with it, then remove this one." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -15578,6 +16024,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Es la clave con la que se desbloqueó esta bóveda. Desbloquéala con otra clave para quitarla."
+          }
+        }
+      }
+    },
+    "That is too large to be a key. A key file is a few kilobytes at most." : {
+      "comment" : "Existing key input is too large",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es demasiado grande para ser una clave. Un archivo de clave ocupa unos pocos kilobytes como mucho."
+          }
+        }
+      }
+    },
+    "That key file asks for more work than Sempere allows to open it." : {
+      "comment" : "Picked key file has an scrypt work factor above the cap",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ese archivo de clave pide más trabajo del que Sempere permite para abrirlo."
+          }
+        }
+      }
+    },
+    "That key file is damaged." : {
+      "comment" : "Picked key file cannot be read",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ese archivo de clave está dañado."
           }
         }
       }
@@ -15656,6 +16138,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ese texto no es un destinatario age1pq1…"
+          }
+        }
+      }
+    },
+    "The AGE-SECRET-KEY-PQ-1… key is incomplete or mistyped. Copy all of it." : {
+      "comment" : "Existing key does not decode",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La clave AGE-SECRET-KEY-PQ-1… está incompleta o mal escrita. Cópiala entera."
           }
         }
       }
@@ -15813,14 +16307,14 @@
         }
       }
     },
-    "The copy is kept in the vault, on its storage: anyone who can read the storage can try passphrases on it offline. Use five or more random words, or a long random password." : {
+    "The copy is kept in the vault, on its storage: anyone who can read the storage can try passphrases on it offline. Use five or more random words, a password from your password manager, or about 16 random characters." : {
       "comment" : "Footnote under the toggle that stores the key in the vault under a passphrase",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La copia se guarda en la bóveda, en su almacenamiento: cualquiera que pueda leer el almacenamiento puede probar frases de contraseña sin conexión. Usa cinco o más palabras al azar, o una contraseña larga al azar."
+            "value" : "La copia se guarda en la bóveda, en su almacenamiento: quien pueda leer el almacenamiento puede probar frases de contraseña sin conexión. Usa cinco o más palabras al azar, una contraseña de tu gestor de contraseñas o unos 16 caracteres al azar."
           }
         }
       }
@@ -16150,6 +16644,18 @@
         }
       }
     },
+    "The passphrase does not open that key file." : {
+      "comment" : "Wrong passphrase for a picked key file",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La frase de contraseña no abre ese archivo de clave."
+          }
+        }
+      }
+    },
     "The passphrase opens none of this vault's key files." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -16354,6 +16860,18 @@
         }
       }
     },
+    "The vault goes into a new folder inside “%@”. It is made when you create the vault." : {
+      "comment" : "%@ is the name of the chosen folder",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La bóveda irá en una carpeta nueva dentro de «%@». Se crea al crear la bóveda."
+          }
+        }
+      }
+    },
     "The vault is already encrypted to that key." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -16476,6 +16994,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No se ha podido leer el vídeo. %@"
+          }
+        }
+      }
+    },
+    "The “public key” line does not belong to the secret key: this is not one key file." : {
+      "comment" : "age-keygen output whose public key comment names another key",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La línea «public key» no corresponde a la clave secreta: esto no es un único archivo de clave."
           }
         }
       }
@@ -17077,6 +17607,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Solo se confía en este servidor con el certificado que elegiste: %@"
+          }
+        }
+      }
+    },
+    "This system cannot use post-quantum keys." : {
+      "comment" : "No ML-KEM on this OS",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este sistema no puede usar claves poscuánticas."
           }
         }
       }
@@ -18195,14 +18737,14 @@
         }
       }
     },
-    "Use an existing recipient" : {
-      "comment" : "New vault key option",
+    "Use an existing key" : {
+      "comment" : "Key choice in New Vault",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Usar un destinatario existente"
+            "value" : "Usar una clave existente"
           }
         }
       }
@@ -18645,6 +19187,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Blanco"
+          }
+        }
+      }
+    },
+    "Words count as words, not as letters: use five or more random words." : {
+      "comment" : "Passphrase hint",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las palabras cuentan como palabras, no como letras: usa cinco o más palabras al azar."
           }
         }
       }

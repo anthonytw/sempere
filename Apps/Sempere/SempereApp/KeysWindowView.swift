@@ -16,6 +16,8 @@ struct KeysWindowView: View {
     @State private var confirmingKit = false
     @State private var kitDocument: PDFFile?
     @State private var exportingKit = false
+    /// Save Key… (this device's key: Save to Files, Share…, the recovery kit), as in Settings.
+    @State private var savingKey = false
 
     var body: some View {
         NavigationStack {
@@ -48,6 +50,7 @@ struct KeysWindowView: View {
         .sheet(item: $replacing) { key in
             AddDeviceKeyView(replacing: key)
         }
+        .sheet(isPresented: $savingKey) { SaveKeyView() }
         .confirmationDialog("Remove this key?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
                             titleVisibility: .visible, presenting: removing) { key in
             Button("Remove “\(key.label)”", role: .destructive) {
@@ -86,6 +89,11 @@ struct KeysWindowView: View {
                             Text(key.label).font(.headline)
                             if key.isInUse { Text("This key unlocked the vault").font(.caption).foregroundStyle(.green) }
                             Spacer()
+                            // The key this device holds can leave the app (after the owner check);
+                            // the owner looked for Share here, not in Settings (device check c28).
+                            if canSave(key) {
+                                Button("Save Key…") { savingKey = true }
+                            }
                             Button("Replace Key…") { replacing = key }
                                 .disabled(key.isInUse)
                             Button("Remove Key…", role: .destructive) { removing = key }
@@ -96,6 +104,9 @@ struct KeysWindowView: View {
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                     .contextMenu {
+                        if canSave(key) {
+                            Button("Save Key…", systemImage: "key") { savingKey = true }
+                        }
                         Button("Replace Key…", systemImage: "arrow.triangle.2.circlepath") { replacing = key }
                             .disabled(key.isInUse)
                         Button("Remove Key…", systemImage: "trash", role: .destructive) { removing = key }
@@ -119,6 +130,11 @@ struct KeysWindowView: View {
                 Text("A printed page with your key as a QR code and checked text, and how to open the vault with stock tools. The same kit from a terminal: sempere keys paper.")
             }
         }
+    }
+
+    /// Whether `key` is the one this device unlocked the vault with (the only one it can save).
+    private func canSave(_ key: DeviceKey) -> Bool {
+        model.heldIdentity?.recipient.string == key.recipient
     }
 
     private func run(_ message: String, _ work: () async throws -> Void) async {
