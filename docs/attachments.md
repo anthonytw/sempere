@@ -1228,7 +1228,10 @@ and `ItemFrames` in `Sources/Sempere/ItemOps.swift`):
   again, or types in it for a text box, so a double tap edits a box from
   scratch; a tap beside the selection clears it; only a tap on the empty page
   with nothing selected is the page's (Paste in selection mode, a new box with
-  the text tool). The text tool is the same selection limited to text boxes:
+  the text tool). On a Mac a click selects without the menu (the secondary
+  click shows it), the pointer shows move and resize arrows, Escape drops the
+  selection and the arrow keys nudge it (`docs/mac.md` "Placed items").
+  The text tool is the same selection limited to text boxes:
   tap selects a box (to move it or set its width), tap again or double-tap
   edits, tap on the page starts a new box.
 - **Menu** (`ItemMenu`): Play (video), Edit Text (text), Copy, Duplicate, Edit

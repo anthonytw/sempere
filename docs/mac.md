@@ -155,6 +155,33 @@ menu (Crop…, Replace Image, Delete…) without leaving the drawing tool; a cli
 with the lasso does the same, and Select in the toolbar turns selection mode
 on (`docs/attachments.md` §13 "Selecting items").
 
+With an item selection on, the mouse and trackpad work the items:
+
+* A click selects an item; its menu is the secondary click's (or Control-click).
+  A click does not pop the menu up as a tap does on the iPad: a menu open on
+  the Mac takes the next press, so the drag that follows a click did nothing
+  (TestFlight 1.0.0).
+* A drag inside an item moves it and a drag on a handle resizes it (pictures
+  and PDF pages keep their proportions), one delta and one undo step each. The
+  page's scroll (the canvas's, or the paged stack's, which takes the pointer
+  while nothing draws) waits until the item drag has failed
+  (`ItemSelectionController`, `shouldBeRequiredToFailBy`); the wheel and a
+  two-finger trackpad scroll still scroll.
+* The pointer shows what a drag does (`ItemPointer`, a region per zone in
+  `PageCanvasHost.pointerInteraction`): a four-way arrow over an item, a
+  two-way arrow along each handle's drag (turned with the item), the system
+  arrow elsewhere.
+* A trackpad rotation with the pointer over the selected item turns it (it
+  reports no touches, so the pointer stands in for the two fingers); the
+  item's menu (secondary click) has Rotate Left and Rotate Right in 90° steps.
+* Escape drops the selection; the arrow keys move the selected item one
+  point (Shift: ten), one undo step per press (`PageCanvasHost.keyCommands`,
+  only while an item is selected, so the keys scroll otherwise).
+
+`MacItemUITests` drags every kind with the mouse in the demo vault
+(`SEMPERE_DEMO_ITEMS`; the canvas reports its items in its accessibility
+value, debug builds only).
+
 ## Recordings and export
 
 A recording that stops is placed on the page as a card (`format.md` §8.2.9)

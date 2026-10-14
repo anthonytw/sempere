@@ -64,7 +64,11 @@ enum DemoVault {
     /// `passphrase` the key is also stored in the vault's `keys/` (scrypt work
     /// factor 15, the lowest a writer allows), so it unlocks the way a user
     /// unlocks a real vault: the passphrase typed into the unlock sheet.
-    static func build(in directory: URL, specs: [Spec] = DemoVault.specs, passphrase: String? = nil) async throws -> Built {
+    ///
+    /// `itemsImage` (UI tests, `SEMPERE_DEMO_ITEMS`): PNG bytes; the "thoughts"
+    /// note then also gets one item of each kind a user places (`itemOps`).
+    static func build(in directory: URL, specs: [Spec] = DemoVault.specs, passphrase: String? = nil,
+                      itemsImage: Data? = nil) async throws -> Built {
         let fm = FileManager.default
         if fm.fileExists(atPath: directory.path) { try fm.removeItem(at: directory) }
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -84,8 +88,31 @@ enum DemoVault {
             ids[spec.key] = id
             try await NoteWriter.append(ops(for: spec, id: id), to: id, vault: vault, clock: clock,
                                         wall: anchor.addingTimeInterval(-spec.daysAgo * 86_400))
+            if let png = itemsImage, spec.key == itemsNote {
+                let ops = try itemOps(vault: vault, note: id, png: png)
+                try await NoteWriter.append(ops, to: id, vault: vault, clock: clock,
+                                            wall: anchor.addingTimeInterval(-spec.daysAgo * 86_400 + 60))
+            }
         }
         return Built(url: vaultURL, identityText: text, notes: ids)
+    }
+
+    /// The note `itemsImage` places items on.
+    static let itemsNote = "thoughts"
+
+    /// A text box, an image (`png`, 4 × 3 pixels, stored first), an equation and a
+    /// recording's card on the first page of note `note`, clear of its ink.
+    static func itemOps(vault: Vault, note: UUID, png: Data) throws -> [Op] {
+        var rng = DemoRandom(seed: seed("page/" + itemsNote))
+        let page = rng.uuid()
+        let blob = try vault.writeBlob(note: note, png, type: "image/png")
+        let items: [Item] = [
+            .text(try NoteOps.text("Drag me"), frame: Rect(x: 60, y: 260, w: 200, h: 44), z: "a"),
+            .image(blob: blob, pixelSize: Size(w: 4, h: 3), frame: Rect(x: 320, y: 240, w: 160, h: 120), z: "b"),
+            .math(try NoteOps.math("E = mc^2"), frame: Rect(x: 60, y: 420, w: 160, h: 40), z: "c"),
+            .audio(recording: UUID(), frame: Rect(x: 320, y: 440, w: 220, h: 56), z: "d"),
+        ]
+        return items.map { .addItem(page: page, item: $0) }
     }
 
     /// The ops that create `spec`'s note: its pages, metadata, tags and ink.
