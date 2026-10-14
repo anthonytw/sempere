@@ -19,10 +19,13 @@
 			<string>io.github.anthonytw.sempere.vault</string>
 			<key>UTTypeDescription</key>
 			<string>Sempere Vault</string>
+			<!-- A plain folder, never com.apple.package: iCloud Drive syncs a package as ONE item, so
+			     two devices writing into a vault package make a conflict of the whole vault, and the
+			     version the user does not pick loses every note written on that side (docs/io.md
+			     "Vaults are folders"). -->
 			<key>UTTypeConformsTo</key>
 			<array>
-				<string>com.apple.package</string>
-				<string>public.directory</string>
+				<string>public.folder</string>
 			</array>
 			<key>UTTypeTagSpecification</key>
 			<dict>

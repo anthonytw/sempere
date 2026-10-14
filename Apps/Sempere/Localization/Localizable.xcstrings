@@ -9620,13 +9620,13 @@
         }
       }
     },
-    "Nothing to remove: every note keeps only checkpoints and the newest save of each editing session." : {
+    "Nothing to remove: every note keeps only checkpoints and its newest version." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nada que eliminar: todas las notas conservan solo puntos de control y el guardado más reciente de cada sesión de edición."
+            "value" : "Nada que eliminar: todas las notas conservan solo puntos de control y su versión más reciente."
           }
         }
       }
@@ -12372,13 +12372,13 @@
         }
       }
     },
-    "Removes every autosave, however recent, except the newest save of each editing session. Keeps every checkpoint (saved and imported versions) and the note's newest version." : {
+    "Removes every autosave, however recent. Keeps every checkpoint (saved and imported versions) and the note's newest version." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Elimina todos los guardados automáticos, por recientes que sean, salvo el más reciente de cada sesión de edición. Conserva todos los puntos de control (versiones guardadas e importadas) y la versión más reciente de la nota."
+            "value" : "Elimina todos los guardados automáticos, por recientes que sean. Conserva todos los puntos de control (versiones guardadas e importadas) y la versión más reciente de la nota."
           }
         }
       }
@@ -15738,13 +15738,13 @@
         }
       }
     },
-    "The first applies the setting above; the second ignores it and removes every autosave except the newest save of each editing session. Both keep every saved and imported version, and show what they would remove before anything is." : {
+    "The first applies the setting above; the second ignores it and removes every autosave, keeping only saved and imported versions and the newest version of each note. Both show what they would remove before anything is." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "El primero aplica el ajuste de arriba; el segundo lo ignora y elimina todos los guardados automáticos salvo el más reciente de cada sesión de edición. Los dos conservan todas las versiones guardadas e importadas, y muestran lo que eliminarían antes de eliminar nada."
+            "value" : "El primero aplica el ajuste de arriba; el segundo lo ignora y elimina todos los guardados automáticos, y conserva solo las versiones guardadas e importadas y la versión más reciente de cada nota. Los dos muestran lo que eliminarían antes de eliminar nada."
           }
         }
       }
@@ -18878,6 +18878,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "iCloud Drive aún no ha listado los archivos de esta nota (sin listar: %lld). Vuelve a intentarlo en un momento."
+          }
+        }
+      }
+    },
+    "iCloud Drive holds two versions of “%@” that Sempere cannot merge (both devices changed the vault's keys). The version on this device is used." : {
+      "comment" : "%@ is a vault file name such as vault.json",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud Drive tiene dos versiones de «%@» que Sempere no puede combinar (los dos dispositivos cambiaron las claves de la bóveda). Se usa la versión de este dispositivo."
           }
         }
       }

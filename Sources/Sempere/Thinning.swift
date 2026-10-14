@@ -10,6 +10,19 @@ public enum CompactionMode: Hashable, Sendable {
     /// Thinning (format.md §5.8.4): in the revisions older than this, keep
     /// checkpoints and the newest point of each editing session.
     case thin(olderThan: TimeInterval)
+    /// "Thin everything except checkpoints" (format.md §5.8.4): every revision
+    /// whose `wall` is not in the future is in the range, and only the
+    /// checkpoints and the note's newest revision are kept as versions (no
+    /// session ends), plus what the rules need (witnesses, positioned snapshots).
+    case thinAll
+
+    /// True for the two thinning modes.
+    public var isThinning: Bool {
+        switch self {
+        case .retention: return false
+        case .thin, .thinAll: return true
+        }
+    }
 }
 
 /// Errors from planning a compaction.
@@ -174,7 +187,7 @@ extension CompactionPlanner {
             if uncovered.isEmpty { break }
             if !coverPlanned {
                 coverPlanned = true
-                if case .thin = mode { planned.append(try build(at: newest)) } else { planned.append(try build(at: nil)) }
+                if mode.isThinning { planned.append(try build(at: newest)) } else { planned.append(try build(at: nil)) }
                 continue
             }
             // Not even a snapshot of everything covers it (an orphan delta, §5.3): keep it.
@@ -241,7 +254,9 @@ extension CompactionPlanner {
             candidates = Set(loaded.compactionPlan(retention: window, now: now, assumingSnapshot: needs,
                                                     protectingCheckpoints: false))
             targets = checkpoints.intersection(completeBefore)
-        case .thin(let age):
+        case .thin, .thinAll:
+            var age: TimeInterval = 0
+            if case .thin(let a) = mode { age = a }
             var range = Set<RevisionName>()
             for r in revs {
                 guard now.timeIntervalSince(r.wall) > age else { break }
@@ -249,11 +264,27 @@ extension CompactionPlanner {
             }
             var kept = checkpoints
             kept.insert(newest)
-            for case .session(let s) in NoteHistory.groups(points) { kept.insert(s.newest.name) }
+            // "Everything except checkpoints" keeps no session ends (the owner's report, 2026-10:
+            // after it, every editing session still left its last autosave in the history).
+            if case .thin = mode {
+                for case .session(let s) in NoteHistory.groups(points) { kept.insert(s.newest.name) }
+            } else if let last = points.last {
+                // The newest version, which a positioned snapshot written by an earlier run may
+                // now follow by name: kept, so running it again deletes nothing (G4).
+                kept.insert(last.name)
+            }
             candidates = range.subtracting(kept)
             targets = kept.union(points.map(\.name).filter { !range.contains($0) }).intersection(completeBefore)
         }
-        if let anchor = createdAnchor(revs) { candidates.remove(anchor) }
+        if let anchor = createdAnchor(revs) {
+            candidates.remove(anchor)
+            // With no session end kept, the revisions that make it the anchor (an earlier `wall`
+            // from a device whose clock was behind) could all go, and a second run would then
+            // delete the anchor: they stay too, so running it again deletes nothing (G4).
+            if case .thinAll = mode, let first = revs.first {
+                for r in revs where r.wall < first.wall { candidates.remove(r.name) }
+            }
+        }
 
         // Rule 3: witnesses. Per device, names in order.
         var lanes: [DeviceID: [RevisionName]] = [:]

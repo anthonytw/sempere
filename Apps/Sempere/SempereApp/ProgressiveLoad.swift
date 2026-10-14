@@ -27,6 +27,12 @@ enum ProgressiveLoad {
         /// iCloud has not listed its contents yet. A note always has at least
         /// one revision, so an empty folder is never an empty note.
         var unlisted: [UUID] = []
+        /// Folders that list no revision but other entries (`att/` and the like):
+        /// a note whose first revision has not been written yet (an import in
+        /// progress, or one interrupted for good). Not a note, and not pending:
+        /// waiting for it would show "Downloading" forever. A later revision
+        /// changes the folder's names, and the note is read then.
+        var orphans: [UUID] = []
         /// Revision files listed, and how many of them are local.
         var files = 0
         var localFiles = 0
@@ -73,10 +79,7 @@ enum ProgressiveLoad {
         let groups: [CloudScan.NoteGroup]
         if let notes {
             groups = try notes.sorted { $0.uuidString.lowercased() < $1.uuidString.lowercased() }.compactMap { id in
-                let folder = CloudScan.noteFolder(inVault: root, id: id)
-                guard FileManager.default.fileExists(atPath: folder.path) else { return nil }   // gone
-                return CloudScan.NoteGroup(directory: id.uuidString.lowercased(), url: folder,
-                                           items: try CloudScan.noteItems(inVault: root, id: id))
+                try CloudScan.noteGroup(inVault: root, id: id)   // nil: gone
             }
         } else {
             groups = try CloudScan.noteGroups(inVault: root)
@@ -92,6 +95,10 @@ enum ProgressiveLoad {
                 pass.localFiles += group.items.count
                 pass.ready.append(id)
                 pass.settled[id] = digest
+                continue
+            }
+            if group.items.isEmpty && group.hasOtherEntries {
+                pass.orphans.append(id)
                 continue
             }
             if group.items.isEmpty {

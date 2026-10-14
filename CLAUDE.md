@@ -168,7 +168,16 @@ Branch per task, PR to `main`, squash merge, CI green. The app suites run on a M
   dataless files under their real names with status "not downloaded" (`FakeCloud.evictDataless` in tests). A plain
   listing skips the stand-ins, so the vault or a note looks empty; a note
   folder iCloud has not listed yet is empty too and must be treated as
-  pending, never as an empty note (`FakeCloud.unlist`). The app downloads them first and coordinates
+  pending, never as an empty note (`FakeCloud.unlist`), but only for
+  `cloudUnlistedTimeout`, and a folder holding only `att/` (an import's blobs
+  before its revision) is not a note and not pending (`emptyNoteFolders`):
+  "Downloading" must never wait forever. iCloud conflict versions of the
+  vault's mutable files (and of a vault that conflicted as a package) are
+  merged and resolved by `CloudConflicts` (`Vault.mergeCopy`, format.md §1.3)
+  before each full pass; never pick a version by last-writer-wins. Tests use
+  `FakeCloud.addConflict`. Each device publishes its own
+  `summaries/<device>.sealed` (format.md §12.5) and lists arriving notes from
+  every device's file (`publishedRows`); never write another device's file. The app downloads them first and coordinates
   reads/writes (`CloudVault.swift`, `docs/io.md` "iCloud Drive"); this is
   app-only code, `Sources/` stays plain `FileManager`. The simulator has no
   iCloud: only the pure logic (`CloudScan.swift`) is tested there; the
@@ -243,9 +252,11 @@ Branch per task, PR to `main`, squash merge, CI green. The app suites run on a M
   real notes in a demo.
 - `PKCanvasView` inverts ink colors in dark mode; the canvas forces
   `.light` because ink colors are stored as drawn on (light) paper.
-- Vaults are one item in Files: `SempereInfo.plist` (referenced by `INFOPLIST_FILE`,
+- Vaults are plain folders: `SempereInfo.plist` (referenced by `INFOPLIST_FILE`,
   outside the synchronized group so it is not copied as a resource) exports the
-  `.sempere` package UTType. `VaultLocator.resolve` maps whatever was picked
+  `.sempere` UTType as `public.folder`, NEVER `com.apple.package`: iCloud Drive syncs a
+  package as one item, and a whole-vault conflict lost a note in TestFlight 1.0.0
+  (`theVaultTypeIsAFolderNeverAPackage`, docs/io.md "Vaults are folders"). `VaultLocator.resolve` maps whatever was picked
   to the vault folder (never upward: a pick inside a vault is an error, its scope
   does not cover the vault); `openVault(at:accessing:)` holds the security scope of the
   picked URL, not the derived one.

@@ -354,12 +354,27 @@ final class AppModel {
         set { iCloudHooks = newValue }
     }
     @ObservationIgnored var iCloudHooks = CloudVault.Hooks.live
+    /// What the last conflict pass did (`resolveCloudConflicts`), for tests.
+    @ObservationIgnored var lastConflictOutcome: CloudConflicts.Outcome?
+    /// The bar's line while a conflict no rule can merge is left unresolved (kept over "settled").
+    @ObservationIgnored var conflictProblem: String?
     /// Fills the open WebDAV vault's partial copy (`AppModel+WebDAV`); nil
     /// for any other vault, and for a complete copy.
     @ObservationIgnored var webdavFetcher: WebDAVFetcher?
-    /// The rows of the open WebDAV copy's notes not downloaded yet, from the
-    /// server's sealed summaries (format.md §12), by note id.
-    @ObservationIgnored var webdavSummaries: [UUID: NoteSummary] = [:]
+    /// The rows of notes not downloaded yet, by note id, from published summaries
+    /// (format.md §12): a WebDAV copy's from the server's file, an iCloud vault's
+    /// from every device's `summaries/<device>.sealed` (`AppModel+PublishedSummaries`).
+    @ObservationIgnored var publishedRows: [UUID: NoteSummary] = [:]
+    /// The published summary files the rows were last read from (name, size, date), so they are
+    /// read again only when one changes.
+    @ObservationIgnored var publishedRowsSignature: [String] = []
+    /// What this device last published (`summaries/<device>.sealed`) and when.
+    @ObservationIgnored var publishedOwnEntries: [UUID: PublishedSummaries.Entry]?
+    @ObservationIgnored var publishedOwnAt: ContinuousClock.Instant?
+    /// The shortest time between two writes of this device's published summaries.
+    var publishSummariesInterval = Duration.seconds(120)
+    /// Off: this device never writes its published summaries (tests that count vault files).
+    var publishesSummaries = true
     /// The WebDAV locations of this device (`AppModel+WebDAV`, docs/io.md
     /// "WebDAV vaults in the app"). The app passes the default store; without
     /// one (tests) a store in a folder of this model alone.
@@ -418,6 +433,17 @@ final class AppModel {
     var cloudIdleInterval = Duration.seconds(15)
     var cloudMaxIdleInterval = Duration.seconds(60)
     var cloudStallTimeout = Duration.seconds(90)
+    /// How long a note folder that lists nothing at all stays pending ("not listed yet").
+    /// After that it is set aside (`emptyNoteFolders`): not a row, not pending, so the
+    /// "Downloading" bar cannot wait forever on a folder left empty by an interrupted
+    /// write on another device. Every pass still looks at it and reads it once it lists a revision.
+    var cloudUnlistedTimeout = Duration.seconds(120)
+    /// When each note folder that lists nothing was first seen so (`cloudUnlistedTimeout`).
+    @ObservationIgnored var unlistedSince: [UUID: ContinuousClock.Instant] = [:]
+    /// Note folders that are not notes for now: no revision, and either other
+    /// entries (an `att/` written before the first revision) or nothing listed for
+    /// longer than `cloudUnlistedTimeout`. Not counted, not pending.
+    @ObservationIgnored var emptyNoteFolders: Set<UUID> = []
     /// How many pending notes have downloads requested at once (`ProgressiveLoad`).
     var cloudWindow = ProgressiveLoad.defaultWindow
     /// How many notes already known to be arriving a pass re-checks with
@@ -1092,7 +1118,10 @@ final class AppModel {
         inboxAdoption?.cancel()   // it may wait minutes for iCloud; the next vault adopts its own inbox
         inboxAdoption = nil
         isCloudVault = false
-        webdavSummaries = [:]
+        publishedRows = [:]
+        publishedRowsSignature = []
+        publishedOwnEntries = nil
+        publishedOwnAt = nil
         isBusy = false
         let editor = self.editor
         let windowed = Array(windowEditors.values)

@@ -22,12 +22,21 @@ Notes.sempere/
     <captureId>.capture.age               a voice note sealed without the vault's key (§11), until adopted
     <captureId>.transcript.age            its transcript, sealed the same way (§11)
   sempere-summaries.sealed                optional published note summaries, a hint for listing (§12)
+  summaries/
+    <device>.sealed                       optional published summaries, one file per writing device (§12.5)
   settings.age                            optional shared settings, merged per key (§13)
 ```
 
 Everything under `notes/` (revisions and `att/` blobs alike) is written once
 and never modified (`settings.age`, at the root, is a mutable file, §13). The only exception is a recipient change (§3.3), which
 rewrites files in place (and renames blobs, §8.1.5).
+
+A vault is a plain directory, never a package (a bundle that file-sync
+services such as iCloud Drive treat as one document): such a service syncs
+a package as one item, so two devices writing into it at once make a conflict
+of the whole vault, and whichever version is kept lacks what the other device
+wrote. As plain files, write-once files with unique names (§5, §8.1.2, §11.2)
+never conflict, and only the mutable files below can (§1.3).
 
 Unknown files and directories must be ignored, never deleted.
 
@@ -85,6 +94,44 @@ copy valid once the rest arrives:
 4. Whatever the copy lacks is never taken as deleted. A sync from a partial
    copy (docs/io.md "WebDAV sync") never removes, nor reports as unexplained,
    a file of an incomplete note or a blob with a stand-in.
+
+### 1.3 Mutable files and conflicting copies
+
+Every file of a vault is written once under a name no other writer uses,
+except these, which are replaced whole (atomically):
+
+| File | Written by | When |
+| --- | --- | --- |
+| `vault.json` | any writer | creation, a recipient change (§3.3), a label change (§2), a markers repair (§2.1) |
+| `rewrap-journal.json` | the writer changing recipients | during a recipient change only (§3.3.1) |
+| `keys/<name>.key.age` | any writer | when a passphrase-wrapped key is stored; its name is its key's (§3.2), so a rewrite holds the same key |
+| `settings.age` | devices that opted in | when a shared setting changes, or a device's merged copy is newer (§13.3) |
+| `sempere-summaries.sealed` | the CLI and the WebDAV sync | when a listed note changed (§12.4) |
+| `summaries/<device>.sealed` | that device only | when its listing changed (§12.5) |
+
+A file-sync service may keep two versions of one of them, written by two
+devices at once (iCloud Drive's conflict versions), or a whole other copy of
+the vault may turn up (another device's copy, a restored backup). Merging
+another copy into a vault keeps everything a reader needs, whichever copy is
+kept, and is the same whatever the order of copies merged:
+
+- **Write-once files** (revisions, blobs, inbox files, key files): the union.
+  A file the vault lacks is checked like any received file (§9.1) and copied
+  in under its name; nothing is overwritten or deleted. A revision a
+  compaction deleted on one side may come back; it is covered by the snapshot
+  that let it go (§5.3), so notes read the same, and the next compaction
+  deletes it again.
+- **`settings.age`**: merged per key (§13.3); this needs the vault secret.
+- **`vault.json` and `rewrap-journal.json`**: the vault's own stay. Two
+  versions that differ only in `label` (§2, covered by no tag) are the same
+  vault; any other difference means both sides changed the keys, which no
+  rule merges: a writer keeps its own version and reports the other.
+- **Published summaries** (§12): the version kept stays; they are hints and
+  are rewritten by their writers.
+
+A writer that resolves such conflicts by itself never needs to ask the user
+to pick a version, and must not pick one by whole-vault or last-writer-wins
+rules, which lose notes.
 
 ## 2. vault.json
 
@@ -1561,11 +1608,17 @@ deletes nothing) and the note's revisions ordered by `(hlc, device, seq)`:
 - Everything else in the range may be deleted, deltas and snapshots alike,
   subject to the rules below. Revisions after the range are never deleted.
 
-A cutoff of zero ("thin everything except checkpoints") puts every revision
-whose `wall` is not in the future in the range: what stays is every
-checkpoint, each session's last point and the newest revision. Writers offer
-it as its own, explicitly labeled action, never as the default, and say in
-the preview which rule applies and what it keeps.
+**Thin everything except checkpoints** is its own rule: every revision whose
+`wall` is not in the future is in the range, and no session end is kept: what
+stays is every checkpoint and the note's newest revision (and the newest
+restore point, which a positioned snapshot of an earlier run may follow by
+name), plus the snapshots, witnesses and first revision the rules below and
+§5.3 keep. When the first revision is kept because another has an earlier
+`wall`, those revisions stay too, so running it twice deletes nothing the
+second time (G4). Writers offer it as its own, explicitly labeled action,
+never as the default, and say in the preview which rule applies and what it
+keeps. (A cutoff of zero with the ordinary rule keeps each session's last
+point as well.)
 
 Whether a note has anything to delete is decided from its revisions' names,
 `wall`, `checkpoint`, `session`, `asOf` and snapshot `included` only, never
@@ -3554,7 +3607,32 @@ say once it opens a note, and prefers that summary from then on.
 `sempere vault summaries` writes the file (docs/cli.md); `sempere sync
 webdav` keeps the server's copy current, computed from what the server holds
 after the sync. The file is never copied between the two sides of a sync:
-each writer computes it from its own listing. The app does not write it.
+each writer computes it from its own listing. The apps do not write it: they
+write per-device files (§12.5).
+
+### 12.5 Per-device files
+
+A vault may also hold `summaries/<device>.sealed`, where `<device>` is a
+writer's device id (§5, 8 lowercase hex digits): the same file as §12.1 and
+§12.2 (same key, same associated data, same content), written only by that
+device, from its own listing, when the notes it has read change. Since no two
+devices ever write one file, a file-sync service never has two versions of
+it to reconcile (§1.3), whatever the devices do at once. Names that are not
+`<device>.sealed` with a valid device id are ignored.
+
+A reader may read all of them, and the root file, before the notes arrive
+(a device opening a vault that a file-sync service is still delivering):
+for each note it uses an entry whose `revisions` are exactly the note's
+listed revision file names (§12.3), else, provisionally, the entry made from
+the most revisions, then with the latest `modified`, then with the greatest
+last revision name, so every reader picks the same one. A provisional entry is
+shown only until the note's revisions are read, which replaces it. Entries are
+hints from the vault's recipients (§12.3 "Trust"): never used to write.
+
+Writers write their own file when their listing is complete, not on every
+change (it is replaced whole), and leave other devices' files alone; a file
+that no longer opens (a secret rotation, §3.3) is rewritten by its device or
+ignored. A writer that no longer exists leaves a file that only goes stale.
 
 ## 13. Shared settings
 
