@@ -16,6 +16,9 @@ import UIKit
 /// - `SEMPERE_DEMO_NOTE`: a `DemoVault.Spec.key` (`respiration`, `atlas`, …) to open.
 /// - `SEMPERE_DEMO_SIDEBAR`: `all`, `notebook:School/Physics` or `tag:lecture`.
 /// - `SEMPERE_DEMO_PAPER_PICKER`: open the paper picker over the note.
+/// - `SEMPERE_DEMO_ITEMS`: place an image, a text box, an equation and an audio card on the
+///   "thoughts" note (`DemoVault.itemOps`), and report the canvas's items to UI tests
+///   (`ItemSelectionController.debugReport`, `MacItemUITests`).
 /// - `SEMPERE_DEMO_PDF`: also import a synthetic PDF as a new note and open it (Mac UI tests).
 /// - `SEMPERE_DEMO_MAC_WINDOW`: `WIDTHxHEIGHT` in points, Mac Catalyst only.
 /// - `SEMPERE_DEBUG_COLUMNS`: `all`, `doubleColumn`, `detailOnly`, or `stored` to keep the
@@ -43,7 +46,8 @@ enum DemoLaunch {
         let passphrase = env["SEMPERE_DEMO_PASSPHRASE"]
         await model.report {
             let dir = directory
-            let built = try await Task.detached { try await DemoVault.build(in: dir, passphrase: passphrase) }.value
+            let png = env["SEMPERE_DEMO_ITEMS"] != nil ? demoImage() : nil
+            let built = try await Task.detached { try await DemoVault.build(in: dir, passphrase: passphrase, itemsImage: png) }.value
             try await model.openVault(at: built.url)
             if passphrase != nil {
                 // Unlocked by the test through the unlock sheet; then the choices below.
@@ -79,6 +83,16 @@ enum DemoLaunch {
                 return
             }
             try? await Task.sleep(for: .milliseconds(200))
+        }
+    }
+
+    /// A 4 × 3 pixel PNG, orange (the image `SEMPERE_DEMO_ITEMS` places).
+    static func demoImage() -> Data? {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: CGSize(width: 4, height: 3), format: format).pngData { ctx in
+            UIColor.orange.setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: 4, height: 3))
         }
     }
 

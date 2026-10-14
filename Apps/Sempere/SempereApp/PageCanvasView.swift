@@ -371,6 +371,36 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
             itemSelection.setActive(false)
         }
         updateEraser()
+        cursorInteraction?.invalidate()
+    }
+
+    // MARK: Keys for the selected item (Mac keyboards, an iPad's too)
+
+    /// Escape drops the selection; the arrow keys move the selected item by
+    /// one point (ten with Shift), one undo step per press. Only while an item
+    /// is selected and nothing is typed, so the keys scroll otherwise.
+    override var keyCommands: [UIKeyCommand]? {
+        guard itemSelection.hasSelection, !textEditor.isEditing else { return super.keyCommands }
+        var commands = [UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(itemKey(_:)))]
+        for input in [UIKeyCommand.inputUpArrow, UIKeyCommand.inputDownArrow, UIKeyCommand.inputLeftArrow,
+                      UIKeyCommand.inputRightArrow] {
+            commands.append(UIKeyCommand(input: input, modifierFlags: [], action: #selector(itemKey(_:))))
+            commands.append(UIKeyCommand(input: input, modifierFlags: .shift, action: #selector(itemKey(_:))))
+        }
+        for command in commands { command.wantsPriorityOverSystemBehavior = true }
+        return commands + (super.keyCommands ?? [])
+    }
+
+    @objc private func itemKey(_ command: UIKeyCommand) {
+        let step: Double = command.modifierFlags.contains(.shift) ? 10 : 1
+        switch command.input {
+        case UIKeyCommand.inputEscape: itemSelection.clearSelection()
+        case UIKeyCommand.inputUpArrow: itemSelection.nudge(dx: 0, dy: -step)
+        case UIKeyCommand.inputDownArrow: itemSelection.nudge(dx: 0, dy: step)
+        case UIKeyCommand.inputLeftArrow: itemSelection.nudge(dx: -step, dy: 0)
+        case UIKeyCommand.inputRightArrow: itemSelection.nudge(dx: step, dy: 0)
+        default: break
+        }
     }
 
     /// Ends a transient selection (the drawing tool comes back).
@@ -606,8 +636,27 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
     /// A circle the size of the ink tool's stroke at the current zoom, so the
     /// pointer shows where a mouse stroke lands. The object eraser draws its
     /// own cursor, and the lasso and the pixel eraser keep the system arrow.
+    ///
+    /// While items can be selected, the pointer says what a drag does instead
+    /// (`ItemPointer`): a four-way arrow over an item, a two-way arrow along a
+    /// resize handle, the system arrow elsewhere. Each such zone is a region of
+    /// its own, so the shape follows the pointer across them.
+    func pointerInteraction(_ interaction: UIPointerInteraction, regionFor request: UIPointerRegionRequest,
+                            defaultRegion: UIPointerRegion) -> UIPointerRegion? {
+        guard itemSelection.isActive else { return defaultRegion }
+        let zone = itemSelection.pointer(at: convert(request.location, to: canvas))
+        // A small region around the pointer: UIKit asks again once it leaves it.
+        let rect = CGRect(x: request.location.x - 2, y: request.location.y - 2, width: 4, height: 4)
+        return UIPointerRegion(rect: rect, identifier: (zone?.identifier ?? "item.none") as NSString)
+    }
+
     func pointerInteraction(_ interaction: UIPointerInteraction, styleFor region: UIPointerRegion) -> UIPointerStyle? {
         guard !isReadOnly else { return nil }
+        if itemSelection.isActive {
+            guard let zone = itemSelection.pointer(at: convert(CGPoint(x: region.rect.midX, y: region.rect.midY), to: canvas))
+            else { return UIPointerStyle.system() }
+            return UIPointerStyle(shape: .path(zone.path), constrainedAxes: [])
+        }
         if objectEraserSelected { return UIPointerStyle.hidden() }
         guard let tool = canvas.tool as? PKInkingTool else { return nil }
         let d = CGFloat(PointerCursor.diameter(toolWidth: Double(tool.width), zoom: Double(canvas.zoomScale)))
