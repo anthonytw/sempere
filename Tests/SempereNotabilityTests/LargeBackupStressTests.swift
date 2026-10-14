@@ -103,7 +103,7 @@ final class LargeBackupStressTests: NotabilityTestCase {
         // The CLI's view of a cancelled run: one line, and a failure exit.
         let presentation = NotabilityVaultImporter.result(report, noAttachments: false).presentation(ImporterStyle())
         XCTAssertNotNil(presentation.failure)
-        XCTAssertTrue(presentation.lines.contains { $0.text.hasPrefix("Cancelled: \(b.expected.sources - 21) note(s)") })
+        XCTAssertTrue(presentation.lines.contains { $0.text.hasPrefix("Canceled: \(b.expected.sources - 21) note(s)") })
         XCTAssertFalse(presentation.lines.contains { $0.text.contains(NotabilityImporter.cancelledReason) },
                        "no line per cancelled note")
     }

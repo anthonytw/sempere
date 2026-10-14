@@ -270,7 +270,7 @@ public enum NotabilityImporter {
     }
 
     /// The reason of a source not imported because the import was stopped (`Options.shouldStop`).
-    public static let cancelledReason = "not imported: the import was cancelled"
+    public static let cancelledReason = ImporterResult.cancelledReason
 
     /// Result of `import`.
     public struct ImportReport: Hashable, Sendable {

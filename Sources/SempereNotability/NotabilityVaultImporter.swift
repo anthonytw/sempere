@@ -254,7 +254,7 @@ public struct NotabilityVaultImporter: VaultImporter {
         info("\(style.dryRun ? "Dry run: " : "")\(report.imported) \(style.dryRun ? "would be imported" : "imported"), "
                     + "\(report.skipped) skipped, \(report.failed) failed; \(report.strokes) strokes.")
         if report.cancelled {
-            info("Cancelled: \(cancelledCount(report)) note(s) not imported; import again to continue (notes already in the vault are skipped).")
+            info("Canceled: \(cancelledCount(report)) note(s) not imported; import again to continue (notes already in the vault are skipped).")
         }
         if let recognition {
             info("Recognition: \(recognition.pagesRead) page(s) without Notability's text \(style.dryRun ? "would be read" : "read") in "
@@ -273,7 +273,7 @@ public struct NotabilityVaultImporter: VaultImporter {
                                lines: [ImporterPresentation.Line] = []) -> ImporterPresentation {
         var failure: String?
         if report.cancelled {
-            failure = "the import was cancelled: \(cancelledCount(report)) note(s) not imported"
+            failure = "the import was canceled: \(cancelledCount(report)) note(s) not imported"
         } else if report.notes.isEmpty {
             failure = "no .note or .ntb files found in the given paths"
         } else if report.failed > 0 {

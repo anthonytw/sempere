@@ -280,7 +280,13 @@ public struct ImporterResult: Sendable {
         present(style, recognition)
     }
 
+    /// The reason of a note an importer did not get to because the import was stopped (`ImporterCancellation`).
+    public static let cancelledReason = "not imported: the import was canceled"
+
+    /// Notes not imported because the import was stopped.
+    public var cancelledCount: Int { notes.filter { $0.status == .skipped(Self.cancelledReason) }.count }
     public var importedCount: Int { notes.filter { $0.status == .imported }.count }
+    /// Notes skipped for any reason, the cancelled ones included.
     public var skippedCount: Int { notes.filter { if case .skipped = $0.status { return true }; return false }.count }
     public var failedCount: Int { notes.filter { if case .failed = $0.status { return true }; return false }.count }
     /// Ids of the notes written.
