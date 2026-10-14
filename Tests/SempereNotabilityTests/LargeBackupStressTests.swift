@@ -136,6 +136,20 @@ final class LargeBackupStressTests: NotabilityTestCase {
         XCTAssertEqual(twice.failed, 2 * b.expected.failed)
     }
 
+    /// A part that is not a zip at all (a broken download): the import refuses before writing anything, naming the
+    /// part, rather than importing the other parts with copies resolved against an incomplete backup.
+    func testACorruptPartStopsTheImportBeforeAnythingIsWritten() throws {
+        let b = try backup(.init(notes: 30, hugeStrokes: 0))
+        let broken = b.parts[1]
+        let data = try Data(contentsOf: broken)
+        try data.prefix(data.count / 3).write(to: broken)
+        let vault = try makeVault()
+        XCTAssertThrowsError(try run(b, into: vault)) { error in
+            XCTAssertTrue("\(error)".contains("zip"), "\(error)")
+        }
+        XCTAssertTrue(try vault.noteIDs().isEmpty)
+    }
+
     private func failures(_ r: NotabilityImporter.ImportReport) -> String {
         r.notes.compactMap { n in
             if case .failed(let why) = n.status { return "\(n.source): \(why)" }
