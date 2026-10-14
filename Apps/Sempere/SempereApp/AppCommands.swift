@@ -221,6 +221,7 @@ enum WindowCommands {
         switch command {
         case .importPDF: ui.importingPDF = true
         case .importFromApp: ui.importingFromApp = true
+        case .lastImportReport: ui.importReport = model.lastImportReport
         case .exportNotes: model.requestExport(.pdf, ids: exportIDs, window: ui.id)
         case .showAbout: ui.expectations = .about
         case .showTour: ui.expectations = .tour(firstRun: false)
@@ -234,6 +235,7 @@ enum WindowCommands {
     /// The part of the menu context that comes from the model.
     static func fill(_ context: inout MenuCommand.Context, model: AppModel, exportIDs: [UUID]) {
         context.vaultReadOnly = model.isVaultReadOnly
+        context.hasImportReport = model.lastImportReport != nil
         context.hasExportTargets = !exportIDs.isEmpty
         context.voiceNote = VoiceNoteMenu.phase(model.quickCapture.state)
     }

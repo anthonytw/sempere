@@ -711,7 +711,11 @@ for `--prune` and for a full `verify`.
   backup keeps every blob it has seen). `--prune` needs the key (exit 4
   without). An interrupted run
   (crash, full disk, Ctrl-C) leaves only complete files; running it again
-  finishes the job and removes leftover temporary files.
+  finishes the job and removes leftover temporary files. A full disk fails
+  each file that does not fit (`errors`, exit 1) and the run never counts as
+  completed (`backup status`). If `DIR` disappears during a run (a drive
+  unplugged, a share disconnected: its `backup.json` is gone) the run stops
+  with an error instead of recreating `DIR` and writing a partial backup there.
   `DIR` is itself a vault (`sempere --vault DIR` reads it) plus
   `DIR/backup.json` (vault id, and SHA-256 and size of every file the backup
   wrote) and `DIR/versions/`. Output: `copied`, `replaced` and `pruned` lines
@@ -1308,6 +1312,13 @@ was imported), and a copy holding strokes the chosen one lacks is imported as
 a separate note titled `<title> (version modified <date>)` and gets a
 `separate version …` line. An `.ntb` without a `.note` is imported from the
 bundle.
+
+On a terminal (or with `SEMPERE_PROGRESS=always`; never with `--json` or `--quiet`) a progress line on stderr
+counts the sources as they are read (`Reading 120/1531 notes: Lecture 4.note`) and then written
+(`Importing …`). Ctrl-C stops the import after the note being written: every note written stays whole (one
+delta each), the rest are reported as `skipped` with `not imported: the import was canceled` (one
+`Canceled: N note(s) not imported` line, `"cancelled": true` in the JSON summary) and the command exits 1;
+running it again imports the rest, since notes already in the vault are skipped. A second Ctrl-C quits at once.
 
 One row is printed per input file (status, title, notebook, strokes written,
 pages with recognized text, source) plus a summary line; `-v` lists what was

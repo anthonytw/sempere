@@ -126,7 +126,7 @@ final class ImportFuzzTests: XCTestCase {
                 let note = try NotabilityBundle.parse(bundle: input)
                 let source = NotabilityImporter.Source(label: "x.ntb", notebook: nil, format: .ntb, modified: nil,
                                                        load: { NotePackage(zip: try ZipArchive(data: SyntheticBundle.package(input))) })
-                _ = NotabilityImporter.plan([source, source])
+                _ = NotabilityImporter.plan([source, source])!
                 let state = NotabilityImporter.convert(note, key: "fuzz")
                 _ = try InkJSON.encoder().encode(NotabilityImporter.ops(for: state))
             }

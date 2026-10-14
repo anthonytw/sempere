@@ -40,6 +40,9 @@ struct ImportDetails: Equatable, Sendable {
     var warnings: [String] = []
     /// Warnings beyond `maxWarnings`.
     var moreWarnings = 0
+    /// The whole report as text, for Save Report… (`ImportReportText`): the summary, the totals and every note's
+    /// line as `sempere import <id> -v` prints it (file names and titles of the user's own backup).
+    var text = ""
     /// Reading the handwriting afterwards was asked for, and what it did.
     var recognitionAsked = false
     var recognizedPages = 0
@@ -62,7 +65,7 @@ struct ImportDetails: Equatable, Sendable {
         moreWarnings = max(0, all.count - Self.maxWarnings)
     }
 
-    /// Nothing to show beyond the summary lines.
+    /// Nothing to show beyond the summary lines (the text report can still be saved).
     var isEmpty: Bool { imported.isEmpty && notImported.isEmpty && warnings.isEmpty && moreWarnings == 0 }
 
     /// The localized name of a counted line: the ids the importers use today have catalog entries; an id
@@ -107,6 +110,10 @@ struct ImportSummary: Equatable, Sendable {
     var imported = 0
     var skipped = 0
     var failed = 0
+    /// Notes not imported because the import was canceled (counted in `skipped` by the importer, not here).
+    var cancelled = 0
+    /// The import was stopped with Cancel.
+    var wasCancelled = false
     /// Source names (file names, never note content) of the notes that failed, with why.
     var failures: [String] = []
     /// Nothing to import was found in what was picked.
@@ -125,18 +132,23 @@ struct ImportSummary: Equatable, Sendable {
         self.nothingFound = nothingFound
     }
 
-    init(source: String, result: ImporterResult) {
-        self.init(source: source, imported: result.importedCount, skipped: result.skippedCount, failed: result.failedCount,
+    init(source: String, result: ImporterResult, at date: Date = Date()) {
+        self.init(source: source, imported: result.importedCount, skipped: result.skippedCount - result.cancelledCount,
+                  failed: result.failedCount,
                   failures: result.notes.compactMap { note in
                       guard case .failed(let why) = note.status else { return nil }
                       return (note.source, why)
                   },
                   nothingFound: result.notes.isEmpty)
+        cancelled = result.cancelledCount
+        wasCancelled = result.cancelled
         details = ImportDetails(result)
+        details.text = ImportReportText.text(summary: self, result: result, at: date)
     }
 
     var title: String {
-        failed > 0 ? String(localized: "Import Finished with Errors", comment: "Alert title after an import from another app")
+        if wasCancelled { return String(localized: "Import Canceled", comment: "Alert title after an import from another app was stopped") }
+        return failed > 0 ? String(localized: "Import Finished with Errors", comment: "Alert title after an import from another app")
             : String(localized: "\(source) Import", comment: "Alert title after an import from another app (the app's name)")
     }
 
@@ -150,6 +162,10 @@ struct ImportSummary: Equatable, Sendable {
         if skipped > 0 {
             lines.append(String(localized: "\(skipped) notes skipped (already in the vault, or a copy of a note imported from another file).",
                                 comment: "Import result"))
+        }
+        if cancelled > 0 {
+            lines.append(String(localized: "\(cancelled) notes not imported because you canceled. Import the same files again to continue: notes already in the vault are skipped.",
+                                comment: "Import result after Cancel"))
         }
         if details.recognitionAsked, details.recognizedPages > 0 {
             lines.append(String(localized: "Handwriting read on \(details.recognizedPages) pages.",
@@ -196,7 +212,16 @@ extension AppModel {
         try requireWritableVault()   // format.md §7.3
         guard !isImporting else { return }
         isImporting = true
-        defer { isImporting = false }
+        let relay = ImportProgressRelay(model: self)
+        let cancellation = ImporterCancellation()
+        importProgress = ImporterProgress(phase: .finding, done: 0, total: 0)
+        importCancellation = importer.supportsCancel ? cancellation : nil
+        defer {
+            relay.finish()
+            isImporting = false
+            importProgress = nil
+            importCancellation = nil
+        }
         let gen = generation
         let result: ImporterResult
         do {
@@ -208,7 +233,8 @@ extension AppModel {
             let notes = isCloudVault ? vault.url.appendingPathComponent("notes", isDirectory: true) : nil
             let extractor: (any PDFTextExtracting)? = importer.usesPDFText && options.pdfText ? PDFKitTextExtractor() : nil
             let request = ImporterRequest(paths: urls, vault: vault, device: device, options: options.appValues(for: importer),
-                                          pdfText: extractor, notebook: NotebookPath.canonical(notebook))
+                                          pdfText: extractor, notebook: NotebookPath.canonical(notebook),
+                                          progress: { relay.post($0) }, cancellation: cancellation)
             let scoped = urls.map { $0.startAccessingSecurityScopedResource() }
             defer { for (url, s) in zip(urls, scoped) where s { url.stopAccessingSecurityScopedResource() } }
             result = try await clock.withClock(save: true) { c in
@@ -227,6 +253,13 @@ extension AppModel {
         }
         try ensureCurrent(gen)
         importSummary = summary
+        lastImportReport = summary.details
+    }
+
+    /// Cancel on the import's progress: the importer stops after the note it is writing (`ImporterCancellation`);
+    /// what was written stays, and the summary says how many were not imported.
+    func cancelImport() {
+        importCancellation?.cancel()
     }
 
     /// `--recognize missing`: reads the pages of the notes just written that the source app never indexed
@@ -244,5 +277,80 @@ extension AppModel {
                 summary.details.recognitionFailed += 1
             }
         }
+    }
+}
+
+/// Carries an importer's progress reports (made on the importing thread) to the model on the main thread: only
+/// the latest one is shown, at most one hop is queued at a time, and nothing arrives after `finish`.
+final class ImportProgressRelay: @unchecked Sendable {
+    private let lock = NSLock()
+    private var latest: ImporterProgress?
+    private var queued = false
+    private var finished = false
+    private weak var model: AppModel?
+
+    @MainActor init(model: AppModel) { self.model = model }
+
+    func post(_ progress: ImporterProgress) {
+        lock.lock()
+        latest = progress
+        let hop = !queued && !finished
+        if hop { queued = true }
+        lock.unlock()
+        guard hop else { return }
+        DispatchQueue.main.async { [self] in
+            MainActor.assumeIsolated { deliver() }
+        }
+    }
+
+    @MainActor private func deliver() {
+        lock.lock()
+        let progress = finished ? nil : latest
+        queued = false
+        lock.unlock()
+        if let progress { model?.importProgress = progress }
+    }
+
+    /// No report reaches the model after this (the import ended).
+    func finish() {
+        lock.lock(); finished = true; lock.unlock()
+    }
+}
+
+/// The import report as a text file (Save Report… in `ImportReportView`): the alert's title and lines, the
+/// date, the localized totals, then the importer's own per-note lines (English, as `sempere import <id> -v`
+/// prints them).
+enum ImportReportText {
+    static func text(summary: ImportSummary, result: ImporterResult, at date: Date) -> String {
+        var out = [summary.title, date.formatted(date: .long, time: .standard), "", summary.message]
+        if !summary.details.imported.isEmpty {
+            out += ["", String(localized: "Imported", comment: "Import report heading")]
+            out += summary.details.imported.map { "  \($0.label): \($0.count)" }
+        }
+        if !summary.details.notImported.isEmpty {
+            out += ["", String(localized: "Not Imported", comment: "Import report heading")]
+            out += summary.details.notImported.map { "  \($0.label): \($0.count)" }
+        }
+        let lines = result.presentation(ImporterStyle(verbose: true)).lines.map(\.text)
+        if !lines.isEmpty {
+            out += ["", String(localized: "Notes", comment: "Import report heading: one line per imported file")]
+            out += lines
+        }
+        return out.joined(separator: "\n") + "\n"
+    }
+
+    /// Writes `text` to a new file under the temporary folder for the share sheet or save panel; the caller
+    /// removes the folder (`discard`) when the report closes.
+    static func write(_ text: String, name: String = String(localized: "Import Report", comment: "File name of a saved import report")) throws -> URL {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("SempereImportReports", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent(name + ".txt")
+        try Data(text.utf8).write(to: file, options: [.atomic, .completeFileProtection])
+        return file
+    }
+
+    static func discard(_ file: URL) {
+        try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
     }
 }

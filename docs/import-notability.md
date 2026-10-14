@@ -118,6 +118,22 @@ whatever happens to it: nothing is silently ignored.
   `selection` (why this source was or was not chosen). A corrupt note (bad
   zip, inconsistent point arrays, coordinates beyond ±10⁶, an undecodable
   bundle) fails with a reason and never stops the run.
+- **Progress and stopping**: `options.progress` is told after each source is read and before each is written
+  (`ImporterProgress`: phase `finding`, `reading`, `writing`, done of total, the source's file name);
+  `options.shouldStop` is asked before each source. Stopping while reading writes nothing; stopping while
+  writing keeps the notes written (each is one delta) and reports the rest as `skipped(cancelledReason)` with
+  `report.cancelled`. Hosts pass these through `ImporterRequest.progress` / `cancellation` (the CLI's stderr
+  line and Ctrl-C, the app's bar and Cancel button). The app's window shows the phase, a bar, "Importing
+  note n of N" and the file's name, with Cancel (`ImportProgressOverlay`, `AppModel.importProgress`,
+  `cancelImport`); the result's report sheet has Share… and Save… for the whole report as a text file
+  (`ImportReportText`: the summary, the totals and the importer's `-v` lines), and File ▸ Last Import Report…
+  shows it again until the vault closes.
+- **Stress test**: `SyntheticBackup` (Tests/SempereNotabilityTests) generates a split backup from a seed
+  (PDFs, images, typed text, recordings, odd and repeated names, deep folders, identical, older and diverging
+  copies across parts, a huge note, truncated entries, stored and zip64 parts); `LargeBackupStressTests` imports
+  it, and `SEMPERE_STRESS_NOTES=1500 swift test --filter LargeBackupStressTests` runs it at the size of a real
+  backup. A zip holding two entries of one path is refused whole (`ZipArchive`), so one bad part stops the run
+  before anything is written.
 
 ## Duplicates and versions
 

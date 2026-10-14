@@ -49,15 +49,13 @@ struct WindowSheets: ViewModifier {
             }
             .overlay {
                 if model.isImporting {
-                    ProgressView(String(localized: "Importing from \(AppImporters.primary?.displayName ?? "")…",
-                                        comment: "Progress while notes are imported from another app (its name)"))
-                        .padding()
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    ImportProgressOverlay(source: AppImporters.primary?.displayName ?? "")
                 }
             }
             .alert(model.importSummary?.title ?? "", isPresented: Binding(get: { model.importSummary != nil && isFront },
                                                                           set: { if !$0 { model.importSummary = nil } })) {
-                if let details = model.importSummary?.details, !details.isEmpty {
+                // The report can always be shown and saved (its text lists every note), even with no totals.
+                if let details = model.importSummary?.details, !details.isEmpty || !details.text.isEmpty {
                     Button("Show Report") {
                         ui.importReport = details
                         model.importSummary = nil

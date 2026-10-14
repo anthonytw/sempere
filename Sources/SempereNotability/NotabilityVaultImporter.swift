@@ -27,6 +27,7 @@ public struct NotabilityVaultImporter: VaultImporter {
     public let fileExtensions = ["note", "ntb"]
     public let usesPDFText = true
     public let supportsRecognizeAfter = true
+    public let supportsCancel = true
 
     public let options: [ImporterOptionSpec] = [
         .init(id: "overwrite", kind: .flag(defaultOn: false), cliName: "overwrite",
@@ -48,12 +49,14 @@ public struct NotabilityVaultImporter: VaultImporter {
     public func run(_ request: ImporterRequest, clock: inout HybridClock) throws -> ImporterResult {
         let o = request.options
         let attachments = o.bool("attachments", default: true)
-        let options = NotabilityImporter.Options(overwrite: o.bool("overwrite", default: false), notebook: request.notebook,
+        var options = NotabilityImporter.Options(overwrite: o.bool("overwrite", default: false), notebook: request.notebook,
                                                  scaleToLetterWidth: o.bool("scale", default: true),
                                                  tagsFromFolders: o.bool("folderTags", default: true), extraTags: o.list("tag"),
                                                  attachments: attachments,
                                                  keepImageMetadata: o.bool("keepImageMetadata", default: false),
                                                  pdfText: request.pdfText)
+        options.progress = request.progress
+        if let stop = request.cancellation { options.shouldStop = { stop.isCancelled } }
         let report = try NotabilityImporter.import(paths: request.paths, into: request.vault, device: request.device,
                                                    clock: &clock, options: options)
         return Self.result(report, noAttachments: !attachments)
@@ -86,7 +89,7 @@ public struct NotabilityVaultImporter: VaultImporter {
         let leftOut = NotabilityImporter.Dropped.Kind.allCases.compactMap { kind in
             left[kind].map { ImporterCount(id: kind.rawValue, english: kind.english, count: $0) }
         }
-        return ImporterResult(notes: notes, imported: imported, leftOut: leftOut) { style, recognition in
+        return ImporterResult(notes: notes, imported: imported, leftOut: leftOut, cancelled: report.cancelled) { style, recognition in
             present(report, noAttachments: noAttachments, style: style, recognition: recognition)
         }
     }
@@ -175,7 +178,7 @@ public struct NotabilityVaultImporter: VaultImporter {
         func info(_ s: @autoclosure () -> String) { if !style.quiet && !style.json { out(s()) } }
         if style.json {
             struct Summary: Encodable {
-                var dryRun: Bool, notes: Int, imported: Int, skipped: Int, failed: Int, strokes: Int
+                var dryRun: Bool, cancelled: Bool, notes: Int, imported: Int, skipped: Int, failed: Int, strokes: Int
                 var ntb: Int, extraVersions: Int
                 var pdfPages: Int, images: Int, textItems: Int, recordings: Int, recLinkedStrokes: Int, transcripts: Int
                 var blobs: Int, blobBytes: Int64, droppedPDFPages: Int, droppedMedia: Int
@@ -187,7 +190,7 @@ public struct NotabilityVaultImporter: VaultImporter {
             struct Out: Encodable {
                 var summary: Summary; var notes: [ImportNoteJSON]; var recognized: [AnyEncodable]?
             }
-            return finish(AnyEncodable(Out(summary: Summary(dryRun: style.dryRun, notes: report.notes.count, imported: report.imported,
+            return finish(AnyEncodable(Out(summary: Summary(dryRun: style.dryRun, cancelled: report.cancelled, notes: report.notes.count, imported: report.imported,
                                                      skipped: report.skipped, failed: report.failed, strokes: report.strokes,
                                                      ntb: report.notes.filter { $0.format == .ntb }.count,
                                                      extraVersions: report.notes.filter(\.extraVersion).count,
@@ -229,7 +232,7 @@ public struct NotabilityVaultImporter: VaultImporter {
         if !rows.isEmpty { out(ImporterPresentation.table(rows)) }
         for n in report.notes {
             switch n.status {
-            case .skipped(let why) where !style.quiet: out("skipped \(n.source): \(why)")
+            case .skipped(let why) where !style.quiet && why != NotabilityImporter.cancelledReason: out("skipped \(n.source): \(why)")
             case .failed(let why): err("failed \(n.source): \(why)")
             default: break
             }
@@ -250,6 +253,9 @@ public struct NotabilityVaultImporter: VaultImporter {
         }
         info("\(style.dryRun ? "Dry run: " : "")\(report.imported) \(style.dryRun ? "would be imported" : "imported"), "
                     + "\(report.skipped) skipped, \(report.failed) failed; \(report.strokes) strokes.")
+        if report.cancelled {
+            info("Canceled: \(cancelledCount(report)) note(s) not imported; import again to continue (notes already in the vault are skipped).")
+        }
         if let recognition {
             info("Recognition: \(recognition.pagesRead) page(s) without Notability's text \(style.dryRun ? "would be read" : "read") in "
                  + "\(recognition.notesRead) note(s).")
@@ -258,11 +264,17 @@ public struct NotabilityVaultImporter: VaultImporter {
         return finish(nil, report, recognition, lines: lines)
     }
 
+    private static func cancelledCount(_ report: NotabilityImporter.ImportReport) -> Int {
+        report.notes.filter { $0.status == .skipped(NotabilityImporter.cancelledReason) }.count
+    }
+
     /// The result of the CLI command: the lines (or JSON) and the failure that sets the exit status.
     private static func finish(_ json: AnyEncodable?, _ report: NotabilityImporter.ImportReport, _ recognition: ImporterRecognition?,
                                lines: [ImporterPresentation.Line] = []) -> ImporterPresentation {
         var failure: String?
-        if report.notes.isEmpty {
+        if report.cancelled {
+            failure = "the import was canceled: \(cancelledCount(report)) note(s) not imported"
+        } else if report.notes.isEmpty {
             failure = "no .note or .ntb files found in the given paths"
         } else if report.failed > 0 {
             failure = "\(report.failed) note(s) failed to import"
