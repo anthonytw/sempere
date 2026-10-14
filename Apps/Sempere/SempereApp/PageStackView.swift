@@ -152,6 +152,14 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         footerButton.configuration = config
         footerButton.addAction(UIAction { [weak self] _ in self?.editor?.addPage() }, for: .primaryActionTriggered)
         content.addSubview(footerButton)
+        // A note window that becomes key (opened, or clicked) gives its page the focus then.
+        NotificationCenter.default.addObserver(self, selector: #selector(windowBecameKey(_:)),
+                                               name: UIWindow.didBecomeKeyNotification, object: nil)
+    }
+
+    @objc private func windowBecameKey(_ note: Notification) {
+        guard let window, note.object as? UIWindow === window else { return }
+        ensureFocus()
     }
 
     @available(*, unavailable)
@@ -374,7 +382,9 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         // A page being drawn on, or a text box being typed in, already has it.
         if slots.values.contains(where: { $0.host.canvas.isFirstResponder || $0.host.textEditor.isEditing }) { return }
         guard let id = editor?.currentPage?.id, let slot = slots[id] else { return }
-        slot.host.focus()
+        // Runs on every layout: never take the keyboard from a search or text field, or from a
+        // list moved through with the arrow keys (TestFlight 1.0.0, `CanvasFocus`).
+        slot.host.focusUnlessKeyboardElsewhere(container: self)
     }
 
     /// Fingers and the Pencil: while the pages can be drawn on, the Pencil

@@ -370,6 +370,12 @@ Branch per task, PR to `main`, squash merge, CI green. The app suites run on a M
   page they land on (the stack's `PageStackLayout.visiblePart`). The stack gives
   a page canvas the focus only when no canvas has it and no text box is being
   typed in (`ensureFocus`, `PageCanvasHost.focus`): the text view keeps the keyboard.
+  A canvas takes the first responder by itself (layout, opening, a box ending, its
+  window becoming key) only through `focusUnlessKeyboardElsewhere` (`CanvasFocus`):
+  never from a text input elsewhere (search, rename, sheets), from a list holding the
+  keyboard focus, or in a window that is not key; only a stroke calls `focus()` directly.
+  Calling `becomeFirstResponder` on a canvas from layout or `updateUIView` took the
+  search field's keyboard after every key on a Mac (`CanvasFocusTests`, `MacFocusUITests`).
 - Paged vs pageless is only `pageSize.infinite` (`format.md` §5.4.3). Page
   gestures (add, move, delete, undo, duplicate) and the layout switch are built
   by `NoteOps` (`Sources/Sempere/PageLayout.swift`), which also predicts the
