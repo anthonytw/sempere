@@ -329,6 +329,10 @@ struct NewVaultView: View {
             guard let identity = existing.identity else { return }
             keySource = .identity(identity)
         }
+        // End editing first: a focused multi-line field (the pasted key) under the form that
+        // `working` disables, in a sheet going away, kept becoming first responder again in
+        // a layout loop that hung the main thread (iPad simulator, iOS 27).
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         working = true
         let request = NewVaultRequest(
             name: name,
