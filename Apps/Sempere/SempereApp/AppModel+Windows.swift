@@ -259,7 +259,7 @@ enum NotePDFExport {
         // PDF page backgrounds are copied from the note's attachments (docs/attachments.md §10);
         // text boxes are laid out as the canvas shows them.
         let options = RenderOptions(blobs: vault.blobSource(note: noteID), pdfRasterizer: PDFKitRasterizer(),
-                                    shaper: CoreTextShaper())
+                                    imageDecoder: ImageIODecoder(), shaper: CoreTextShaper())
         return Rendered(title: state.meta.title, pdf: try PDFWriter.render(note: state, options: options))
     }
 

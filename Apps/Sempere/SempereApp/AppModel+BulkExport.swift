@@ -378,6 +378,7 @@ final class BulkExportRun {
                 }
                 let session = try BulkExportSession(destination: destination, options: options, jobs: jobs,
                                                     renderBase: RenderOptions(pdfRasterizer: PDFKitRasterizer(),
+                                                                              imageDecoder: ImageIODecoder(),
                                                                               shaper: CoreTextShaper()))
                 let result = try await model.runBulkExport(jobs, session: session) { progress in
                     self?.advance(to: progress)

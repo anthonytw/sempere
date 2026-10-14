@@ -131,7 +131,7 @@ extension AppModel {
         let render = Task.detached(priority: .userInitiated) { [loaded, vault] in
             try ShareExport.run(loaded, options: options, into: scratch, vaultSource: source,
                                 blobs: { vault.blobSource(note: $0) }, pdfRasterizer: PDFKitRasterizer(),
-                                shaper: CoreTextShaper(),
+                                shaper: CoreTextShaper(), imageDecoder: ImageIODecoder(),
                                 progress: { done, _ in
                 let shown = done + skipped
                 Task { @MainActor in progress(ExportProgress(phase: .rendering, done: shown, total: total)) }

@@ -125,13 +125,14 @@ public enum ShareExport {
     public static func run(_ notes: [(NoteSummary, NoteState)], options: ShareOptions, into scratch: URL,
                            vaultSource: String, blobs: (@Sendable (UUID) -> (any BlobSource)?)? = nil,
                            pdfRasterizer: (any PDFPageRasterizer)? = nil, shaper: (any TextShaper)? = nil,
+                           imageDecoder: (any ImageDecoding)? = nil,
                            progress: (Int, Int) -> Void = { _, _ in },
                            errorText: @escaping @Sendable (Error) -> String = { "\($0)" }) throws -> ShareResult {
         let needsDPI = options.format == .png || (options.format == .markdown && options.markdownImages == .png)
         if needsDPI && !options.isValid { throw ShareExportError.invalidResolution(options.dpi) }
         let fm = FileManager.default
         try FileIO.createPrivateDirectory(scratch)   // plaintext: owner only, whatever the umask
-        var render = RenderOptions(paper: options.paper, pdfRasterizer: pdfRasterizer, shaper: shaper)
+        var render = RenderOptions(paper: options.paper, pdfRasterizer: pdfRasterizer, imageDecoder: imageDecoder, shaper: shaper)
         render.embedRecordings = options.format == .pdf && options.pdfAttachments
         render.embedVideos = options.format == .pdf && options.pdfAttachments
         render.listAttachments = options.format == .pdf && options.pdfAttachments
