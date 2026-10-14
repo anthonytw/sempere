@@ -18,6 +18,15 @@ import UIKit
 /// - `SEMPERE_DEBUG_FRESH`: start as a first launch (`resetForFreshLaunch`).
 /// - `SEMPERE_DEBUG_ONBOARDING`: show the key notice and the quick tour by themselves, which
 ///   every other scripted launch skips (`OnboardingPolicy.automatic`).
+/// - `SEMPERE_DEBUG_OWNER_CHECK`: `pass`, `fail` or `cancel` instead of Face ID, Touch ID or the
+///   password whenever the app asks for the owner (`SystemOwnerAuthenticator`: Save Key…, the
+///   recovery kit, key changes), so a UI test can reach what is behind it (`KeyShareMacUITests`).
+///   The remembered-key unlock (`RememberedKeys`, the Keychain) is not affected.
+/// - `SEMPERE_DEBUG_LEFTOVERS`: at launch, before anything is purged, look for plaintext a
+///   previous run left in the container (decrypted attachments, staged exports and imports,
+///   a staged key file) and for the given text (a demo note title) in the saved window state,
+///   preferences and Application Support, and show the counts in the app's alert
+///   (`leftoverReport`, `QuitPurgeMacUITests`).
 ///
 /// Release builds compile none of this.
 enum DebugLaunch {
@@ -79,10 +88,62 @@ enum DebugLaunch {
     /// Page y to scroll to after a note opens, if requested.
     static var scrollY: Double? { environment["SEMPERE_DEBUG_SCROLL_Y"].flatMap(Double.init) }
 
+    /// What `SEMPERE_DEBUG_OWNER_CHECK` asks the owner check to answer.
+    enum OwnerCheckAnswer: String {
+        case pass, fail, cancel
+    }
+
+    /// `SEMPERE_DEBUG_OWNER_CHECK`, when set to a known answer.
+    static var ownerCheck: OwnerCheckAnswer? { environment["SEMPERE_DEBUG_OWNER_CHECK"].flatMap(OwnerCheckAnswer.init) }
+
+    /// `SEMPERE_DEBUG_LEFTOVERS`: what `takeLeftoverReport` found at launch.
+    nonisolated(unsafe) private(set) static var leftoverReport: String?
+
+    /// Called first thing at launch (after `resetForFreshLaunch`), before any purge: counts the
+    /// regular files left in the app's plaintext folders and the files of the saved window
+    /// state, preferences and Application Support that hold `SEMPERE_DEBUG_LEFTOVERS`'s text
+    /// (UTF-8 or UTF-16). Only counts and container-relative paths: never the content.
+    static func takeLeftoverReport() {
+        guard let needle = environment["SEMPERE_DEBUG_LEFTOVERS"] else { return }
+        let fm = FileManager.default
+        let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        let tmp = fm.temporaryDirectory
+        func regularFiles(_ dir: URL) -> [URL] {
+            guard let walk = fm.enumerator(at: dir, includingPropertiesForKeys: [.isRegularFileKey]) else { return [] }
+            return walk.compactMap { $0 as? URL }.filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true }
+        }
+        let plaintext: [(String, URL)] = [
+            ("blobs", BlobCache.folder),
+            ("import", tmp.appendingPathComponent("SempereImport", isDirectory: true)),
+            ("keyshare", KeyShareFile.root),
+            ("export", tmp.appendingPathComponent("SempereExport", isDirectory: true)),
+        ]
+        var parts = plaintext.map { "\($0.0)=\(regularFiles($0.1).count)" }
+        let patterns = [Data(needle.utf8), needle.data(using: .utf16LittleEndian) ?? Data(),
+                        needle.data(using: .utf16BigEndian) ?? Data()].filter { !$0.isEmpty }
+        var hits: [String] = []
+        var scanned = 0
+        for area in ["Library/Saved Application State", "Library/Preferences", "Library/Application Support"] {
+            for file in regularFiles(home.appendingPathComponent(area, isDirectory: true)) {
+                let size = (try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+                guard size <= 8 << 20, let data = try? Data(contentsOf: file) else { continue }
+                scanned += 1
+                if patterns.contains(where: { data.range(of: $0) != nil }) {
+                    hits.append(String(file.path.dropFirst(home.path.count + 1)))
+                }
+            }
+        }
+        parts.append("scanned=\(scanned)")
+        parts.append("hits=\(hits.count)")
+        leftoverReport = "SempereLeftovers " + parts.joined(separator: " ") + (hits.isEmpty ? "" : " in " + hits.joined(separator: ", "))
+        NSLog("%@", leftoverReport ?? "")
+    }
+
     /// Opens what the environment names; errors land in `model.errorMessage`.
     @MainActor
     static func run(_ model: AppModel, library: VaultLibrary, keys: RememberedKeys? = nil) async {
         let env = environment
+        if let report = leftoverReport { model.errorMessage = report }
         if DemoLaunch.isActive {
             await DemoLaunch.run(model, keys: keys)
             return

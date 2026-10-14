@@ -21,6 +21,8 @@ struct SempereApp: App {
         #if DEBUG
         // A scripted first launch: nothing below may read state from an earlier run.
         DebugLaunch.resetForFreshLaunch()
+        // What an earlier run left behind (`SEMPERE_DEBUG_LEFTOVERS`), before anything below purges it.
+        DebugLaunch.takeLeftoverReport()
         #endif
         let library = VaultLibrary()
         // Remembered keys are offered only where they opened their vault (S16).

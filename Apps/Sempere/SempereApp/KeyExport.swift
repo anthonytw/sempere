@@ -56,6 +56,16 @@ enum OwnerCheck: Equatable {
 /// without biometrics.
 struct SystemOwnerAuthenticator: OwnerAuthenticator {
     func authenticate(reason: String) async throws {
+        #if DEBUG
+        // UI tests: a scripted answer instead of Touch ID, which XCTest cannot give (`DebugLaunch`).
+        if let answer = DebugLaunch.ownerCheck {
+            switch answer {
+            case .pass: return
+            case .fail: throw AppModel.KeyExportError.notAuthenticated
+            case .cancel: throw CancellationError()
+            }
+        }
+        #endif
         let context = LAContext()
         var biometricsError: NSError?
         let usable = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &biometricsError)
