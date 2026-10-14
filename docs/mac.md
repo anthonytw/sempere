@@ -343,7 +343,7 @@ folder at once, since its security scope ends with the call, and queues it
   another vault or Cancel.
 
 Work copies are plaintext: they are removed after the import, on Discard or
-Cancel, and at launch (`PDFPreparation.purge`).
+Cancel, at quit and at launch (`PDFPreparation.purge`).
 
 ## Drag a note out as PDF
 

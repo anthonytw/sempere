@@ -34,6 +34,17 @@ struct QuitPurgeAndOwnerCheckTests {
         }
     }
 
+    /// ⌘Q also removes the plaintext work copies of PDFs being imported (`PDFPreparation.workFolder`):
+    /// one waiting for its password or for a vault to open, or picked for Insert PDF Pages, used to
+    /// wait for the next launch's purge.
+    @Test func quittingThroughTheAppDelegatePurgesPDFWorkCopies() throws {
+        let copy = try PDFPreparation.workFolder().appendingPathComponent("waiting.pdf")
+        try Data("%PDF-1.4 plaintext".utf8).write(to: copy)
+        SempereAppDelegate().applicationWillTerminate(UIApplication.shared)
+        #expect(!fm.fileExists(atPath: copy.path))
+        #expect(!fm.fileExists(atPath: fm.temporaryDirectory.appendingPathComponent("SempereImport").path))
+    }
+
     /// Stress: two vaults' folders, a folder a vault close set aside, and files of a fetch
     /// that finished after the quit's purge (the process exits only after the delegate returns):
     /// the quit removes all it sees, and the next launch removes the late file.

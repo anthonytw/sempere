@@ -26,7 +26,7 @@ import UIKit
 ///   previous run left in the container (decrypted attachments, staged exports and imports,
 ///   a staged key file) and for the given text (a demo note title) in the saved window state,
 ///   preferences and Application Support, and show the counts in the app's alert
-///   (`leftoverReport`, `QuitPurgeMacUITests`).
+///   (`leftoverReport`, `QuitPurgeMacUITests`); that launch opens no vault.
 ///
 /// Release builds compile none of this.
 enum DebugLaunch {
@@ -143,7 +143,12 @@ enum DebugLaunch {
     @MainActor
     static func run(_ model: AppModel, library: VaultLibrary, keys: RememberedKeys? = nil) async {
         let env = environment
-        if let report = leftoverReport { model.errorMessage = report }
+        // The leftover probe's launch only shows its report: opening the demo vault replaced the welcome
+        // screen under the alert half a second later and dismissed it (QuitPurgeMacUITests).
+        if let report = leftoverReport {
+            model.errorMessage = report
+            return
+        }
         if DemoLaunch.isActive {
             await DemoLaunch.run(model, keys: keys)
             return

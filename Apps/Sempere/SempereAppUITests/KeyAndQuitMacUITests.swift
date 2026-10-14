@@ -174,14 +174,19 @@ final class QuitPurgeMacUITests: XCTestCase {
     @MainActor
     private func leftovers() -> (report: String, counts: [String: Int]) {
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        // Saved windows are not restored: the probe reads the saved state files at launch, before any
+        // window comes back, and a restored note window that closes (it brings the library up) took
+        // the report's alert with it a few seconds after it appeared.
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"]
         app.launchEnvironment = ["SEMPERE_DEMO": "1", "SEMPERE_DEMO_LOCKED": "1", "SEMPERE_DEBUG_LEFTOVERS": Self.title,
                                  "SEMPERE_DEMO_MAC_WINDOW": "1100x760"]
         app.launch()
         defer { app.terminate() }
-        let text = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@", "SempereLeftovers")).firstMatch
+        // On the Mac an alert's message is the static text's value, not its label.
+        let text = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@ OR value BEGINSWITH %@",
+                                                        "SempereLeftovers", "SempereLeftovers")).firstMatch
         XCTAssertTrue(text.waitForExistence(timeout: 60), "the launch showed its leftover report")
-        let report = text.label
+        let report = (text.value as? String).flatMap { $0.hasPrefix("SempereLeftovers") ? $0 : nil } ?? text.label
         print("MACUIDEBUG \(report)")
         var counts: [String: Int] = [:]
         for part in report.split(separator: " ") {
@@ -198,12 +203,11 @@ final class QuitPurgeMacUITests: XCTestCase {
         XCTAssertTrue(app.wait(for: .notRunning, timeout: 30), "⌘Q quit the app")
         let (report, counts) = leftovers()
         XCTAssertEqual(counts["blobs"], 0, "no decrypted attachment after ⌘Q: \(report)")
+        XCTAssertEqual(counts["import"], 0, "no plaintext work copy of the imported PDF after ⌘Q: \(report)")
         XCTAssertEqual(counts["keyshare"], 0, report)
         XCTAssertEqual(counts["export"], 0, report)
         XCTAssertGreaterThan(counts["scanned"] ?? 0, 0, "the probe read the saved state and preferences: \(report)")
         XCTAssertEqual(counts["hits"], 0, "no note title in the saved window state or preferences: \(report)")
-        // Not asserted: `import`, the import's plaintext work copy of the PDF, which only the next
-        // launch purges (`PDFPreparation.purge`); reported for the record.
     }
 
     /// A kill skips `applicationWillTerminate`: the files are there at the next launch (so the
