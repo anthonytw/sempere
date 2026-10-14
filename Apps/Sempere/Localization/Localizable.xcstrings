@@ -1197,6 +1197,54 @@
         }
       }
     },
+    "%lld notes not imported because you canceled. Import the same files again to continue: notes already in the vault are skipped." : {
+      "comment" : "Import result after Cancel",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld note not imported because you canceled. Import the same files again to continue: notes already in the vault are skipped."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notes not imported because you canceled. Import the same files again to continue: notes already in the vault are skipped."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld de notas no importadas porque cancelaste. Importa los mismos archivos otra vez para continuar: se omiten las notas que ya están en la bóveda."
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld nota no importada porque cancelaste. Importa los mismos archivos otra vez para continuar: se omiten las notas que ya están en la bóveda."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notas no importadas porque cancelaste. Importa los mismos archivos otra vez para continuar: se omiten las notas que ya están en la bóveda."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld notes skipped (already in the vault, or a copy of a note imported from another file)." : {
       "comment" : "Notability import result",
       "extractionState" : "manual",
@@ -6500,6 +6548,18 @@
         }
       }
     },
+    "Finding notes…" : {
+      "comment" : "Import progress: listing the chosen files",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscando notas…"
+          }
+        }
+      }
+    },
     "Fine" : {
       "comment" : "Object eraser size",
       "extractionState" : "manual",
@@ -7310,6 +7370,18 @@
         }
       }
     },
+    "Import Canceled" : {
+      "comment" : "Alert title after an import from another app was stopped",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importación cancelada"
+          }
+        }
+      }
+    },
     "Import Finished with Errors" : {
       "comment" : "Alert title after a Notability import",
       "extractionState" : "manual",
@@ -7462,6 +7534,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Importando de %@…"
+          }
+        }
+      }
+    },
+    "Importing note %lld of %lld" : {
+      "comment" : "Import progress: notes being written to the vault",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importando la nota %lld de %lld"
           }
         }
       }
@@ -8135,6 +8219,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Última verificación"
+          }
+        }
+      }
+    },
+    "Last Import Report…" : {
+      "comment" : "File menu: show (and save) the report of the last import",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Último informe de importación…"
           }
         }
       }
@@ -11611,6 +11707,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Leyendo el historial…"
+          }
+        }
+      }
+    },
+    "Reading note %lld of %lld" : {
+      "comment" : "Import progress: every file is read before anything is written",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leyendo la nota %lld de %lld"
           }
         }
       }
@@ -16049,6 +16157,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La grabación se conserva en este dispositivo, y Sempere vuelve a intentar guardarla cada vez que se abre."
+          }
+        }
+      }
+    },
+    "The report lists every file of the import with what happened to it." : {
+      "comment" : "Import report: under Share… and Save…",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El informe enumera cada archivo de la importación y lo que pasó con él."
           }
         }
       }

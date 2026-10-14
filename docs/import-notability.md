@@ -123,7 +123,11 @@ whatever happens to it: nothing is silently ignored.
   `options.shouldStop` is asked before each source. Stopping while reading writes nothing; stopping while
   writing keeps the notes written (each is one delta) and reports the rest as `skipped(cancelledReason)` with
   `report.cancelled`. Hosts pass these through `ImporterRequest.progress` / `cancellation` (the CLI's stderr
-  line and Ctrl-C, the app's bar and Cancel button).
+  line and Ctrl-C, the app's bar and Cancel button). The app's window shows the phase, a bar, "Importing
+  note n of N" and the file's name, with Cancel (`ImportProgressOverlay`, `AppModel.importProgress`,
+  `cancelImport`); the result's report sheet has Share… and Save… for the whole report as a text file
+  (`ImportReportText`: the summary, the totals and the importer's `-v` lines), and File ▸ Last Import Report…
+  shows it again until the vault closes.
 - **Stress test**: `SyntheticBackup` (Tests/SempereNotabilityTests) generates a split backup from a seed
   (PDFs, images, typed text, recordings, odd and repeated names, deep folders, identical, older and diverging
   copies across parts, a huge note, truncated entries, stored and zip64 parts); `LargeBackupStressTests` imports

@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import Sempere
+import SempereImport
 import SempereWebDAV
 import Observation
 
@@ -272,6 +273,12 @@ final class AppModel {
     var isImporting = false
     /// What the last import did, until the alert is dismissed.
     var importSummary: ImportSummary?
+    /// How far the running import is (nil when none runs): the window's progress overlay.
+    var importProgress: ImporterProgress?
+    /// Stops the running import between notes (`cancelImport`); nil when the importer cannot stop safely.
+    var importCancellation: ImporterCancellation?
+    /// The report of the last import of this vault, for File > Last Import Report (until the vault closes).
+    var lastImportReport: ImportDetails?
     /// The "Export to Folder or Zip…" sheet's request (`AppModel+BulkExport`).
     var bulkExportRequest: BulkExportRequest?
     var sortOrder = NoteSort.modified
@@ -1091,6 +1098,8 @@ final class AppModel {
         backupControl?.cancel()   // it reads the vault, whose access ends here
         inboxAdoption?.cancel()   // it may wait minutes for iCloud; the next vault adopts its own inbox
         inboxAdoption = nil
+        importCancellation?.cancel()   // a running import stops after its current note
+        lastImportReport = nil
         isCloudVault = false
         webdavSummaries = [:]
         isBusy = false

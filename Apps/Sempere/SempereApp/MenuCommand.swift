@@ -12,7 +12,7 @@ import SempereImport
 enum MenuCommand: String, CaseIterable, Sendable {
     // File
     case newNote, openNoteInWindow, newVault, openVault, reopenVault, closeVault, reloadVault
-    case importPDF, importFromApp, insertPDFPages, insertPhoto, exportNotes
+    case importPDF, importFromApp, lastImportReport, insertPDFPages, insertPhoto, exportNotes
     case bulkExport
     /// Start or stop a quick voice note (`toggleVoiceNote`, docs/quick-capture.md "Surfaces").
     case toggleVoiceNote
@@ -123,6 +123,7 @@ enum MenuCommand: String, CaseIterable, Sendable {
             // The registered importer's name ("Import from Notability…"); a build without importers has no such entry.
             return AppImporters.primary.map { String(localized: "Import from \($0.displayName)…", comment: "File menu: import notes from another app (its name)") }
                 ?? String(localized: "Import from Other App…")
+        case .lastImportReport: return String(localized: "Last Import Report…", comment: "File menu: show (and save) the report of the last import")
         case .insertPDFPages: return String(localized: "Insert PDF Pages…")
         case .insertPhoto: return String(localized: "Insert Photo…")
         case .exportNotes: return String(localized: "Export…", comment: "File menu: open the export sheet")
@@ -197,6 +198,7 @@ enum MenuCommand: String, CaseIterable, Sendable {
         // ⌘I is UIKit's Italic (Format menu); ⌘E its "Use Selection for Find".
         case .importPDF: return Shortcut("i", shift)
         case .importFromApp: return nil
+        case .lastImportReport: return nil
         case .insertPDFPages: return nil
         case .insertPhoto: return Shortcut("i", option)
         case .exportNotes: return Shortcut("e", shift)
@@ -273,6 +275,8 @@ enum MenuCommand: String, CaseIterable, Sendable {
         var notePageless = false
         /// The vault opened read-only (a newer format version, format.md §7.3).
         var vaultReadOnly = false
+        /// An import ran in this vault since it was opened (`AppModel.lastImportReport`).
+        var hasImportReport = false
         /// The notes File > Export acts on (`CommandRouter.exportIDs`) are not empty.
         var hasExportTargets = false
         /// The open note has more than one page (a note keeps at least one).
@@ -330,6 +334,7 @@ enum MenuCommand: String, CaseIterable, Sendable {
         // The importers and their sheets are per window (`WindowSheets`): any window with a vault.
         case .importPDF: return unlocked && !context.vaultReadOnly && context.window != .other
         case .importFromApp: return AppImporters.primary != nil && unlocked && !context.vaultReadOnly && context.window != .other
+        case .lastImportReport: return unlocked && context.hasImportReport && context.window != .other
         // The Insert menu's own rule (`InsertMenu`): an editable note with a page. On a pageless note
         // Insert PDF Pages… switches it to pages once a PDF is picked (`InsertOptions.pdfImport`).
         case .insertPhoto, .insertPDFPages: return context.canEditNote && context.hasPage
@@ -377,7 +382,7 @@ enum MenuLayout {
         [.newNote, .openNoteInWindow],
         [.newVault, .openVault, .reopenVault, .closeVault],
         // Import from another app only when the build has an importer (`AppImporters`).
-        [.importPDF] + (AppImporters.primary == nil ? [] : [.importFromApp]),
+        [.importPDF] + (AppImporters.primary == nil ? [] : [.importFromApp, .lastImportReport]),
         [.insertPDFPages, .insertPhoto],
         [.exportNotes, .bulkExport],
         [.reloadVault],
