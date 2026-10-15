@@ -63,5 +63,7 @@ run smoke-stress.mjs "$stress" "$key"
 # The viewer's pages against the CLI's SVG export, rasterized in the browser.
 run smoke-pixels.mjs test/fixtures/render.sempere "$key" test/golden/render
 run smoke-pixels.mjs "$fixtures/sample.sempere" "$key" test/golden/sample
-run smoke-pixels.mjs "$stress" "$key" "$stress_golden" 'pageless|deep'
+# The heavy dense note's own export is a 63 MB SVG, more than a browser decodes as an image: not compared there.
+if [ "${STRESS_HEAVY:-0}" = 1 ]; then pixel_notes='pageless [0-9]+$|deep'; else pixel_notes='pageless|deep'; fi
+run smoke-pixels.mjs "$stress" "$key" "$stress_golden" "$pixel_notes"
 echo "all browser smoke scripts passed"

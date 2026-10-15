@@ -33,7 +33,7 @@ page.on("console", (m) => { if (m.type() === "error" && !m.text().includes("404"
 const raster = await browser.newPage();   // about:blank: no CSP, so a blob image loads
 await raster.goto("about:blank");
 
-/** Rasterizes both SVG texts at their viewBox size and counts the pixels of rows [y0, y1) that differ. */
+/** Rasterizes rows [y0, y1) of both SVG texts at their viewBox size and counts the pixels that differ. */
 const compare = (a, b, y0, y1, tol) => raster.evaluate(async ({ a, b, y0, y1, tol }) => {
   const prepare = (text) => {
     const doc = new DOMParser().parseFromString(text, "image/svg+xml");
@@ -43,6 +43,11 @@ const compare = (a, b, y0, y1, tol) => raster.evaluate(async ({ a, b, y0, y1, to
     svg.setAttribute("height", String(h));
     return { text: new XMLSerializer().serializeToString(svg), w, h };
   };
+  const pa = prepare(a), pb = prepare(b);
+  if (pa.w !== pb.w || pa.h !== pb.h) return { sizes: [`${pa.w}x${pa.h}`, `${pb.w}x${pb.h}`] };
+  const top = Math.max(0, Math.floor(y0)), bottom = Math.min(pa.h, Math.ceil(y1));
+  if (bottom <= top) return { total: 0, diff: 0, worst: 0 };
+  // Only the rows asked for are drawn: the canvas is that tall and the image is shifted up.
   const draw = async ({ text, w, h }) => {
     const url = URL.createObjectURL(new Blob([text], { type: "image/svg+xml" }));
     const img = new Image();
@@ -50,25 +55,21 @@ const compare = (a, b, y0, y1, tol) => raster.evaluate(async ({ a, b, y0, y1, to
     await img.decode();
     const canvas = document.createElement("canvas");
     canvas.width = w;
-    canvas.height = Math.min(h, 16000);
+    canvas.height = bottom - top;
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     ctx.fillStyle = "#fff";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, 0, 0, w, h);
+    ctx.fillRect(0, 0, w, bottom - top);
+    ctx.drawImage(img, 0, -top, w, h);
     URL.revokeObjectURL(url);
-    return { ctx, canvas, w, h: canvas.height };
+    const data = ctx.getImageData(0, 0, w, bottom - top).data;
+    canvas.width = canvas.height = 0;   // give the memory back now
+    return data;
   };
-  const pa = prepare(a), pb = prepare(b);
-  if (pa.w !== pb.w || pa.h !== pb.h) return { sizes: [`${pa.w}x${pa.h}`, `${pb.w}x${pb.h}`] };
-  const A = await draw(pa), B = await draw(pb);
-  const top = Math.max(0, Math.floor(y0)), bottom = Math.min(A.h, Math.ceil(y1));
-  if (bottom <= top) return { total: 0, diff: 0, worst: 0 };
-  const da = A.ctx.getImageData(0, top, A.w, bottom - top).data, db = B.ctx.getImageData(0, top, B.w, bottom - top).data;
-  A.canvas.width = A.canvas.height = B.canvas.width = B.canvas.height = 0;   // give the memory back now
+  const da = await draw(pa), db = await draw(pb);
   let diff = 0, worst = 0, firstRow = -1;
   for (let i = 0; i < da.length; i += 4) {
     const d = Math.max(Math.abs(da[i] - db[i]), Math.abs(da[i + 1] - db[i + 1]), Math.abs(da[i + 2] - db[i + 2]), Math.abs(da[i + 3] - db[i + 3]));
-    if (d > tol) { diff++; if (firstRow < 0) firstRow = top + Math.floor(i / 4 / A.w); }
+    if (d > tol) { diff++; if (firstRow < 0) firstRow = top + Math.floor(i / 4 / pa.w); }
     if (d > worst) worst = d;
   }
   return { total: da.length / 4, diff, worst, firstRow };
