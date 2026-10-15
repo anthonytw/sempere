@@ -199,3 +199,22 @@ public struct VaultManifest: Hashable, Sendable, Codable {
         try InkJSON.decoder().decode(VaultManifest.self, from: data)
     }
 }
+
+extension VaultManifest {
+    /// Whether two `vault.json` files are the same vault: the same bytes, or
+    /// manifests that differ only in the display `label` (format.md §1.3: it
+    /// is covered by no tag, §2). Compared as JSON objects without `label`,
+    /// so a difference in any other member, unknown ones included, counts.
+    public static func sameExceptLabel(_ a: Data, _ b: Data) -> Bool {
+        if a == b { return true }
+        guard (try? decode(a)) != nil, (try? decode(b)) != nil,
+              var x = (try? JSONSerialization.jsonObject(with: a)) as? [String: Any],
+              var y = (try? JSONSerialization.jsonObject(with: b)) as? [String: Any] else { return false }
+        x["label"] = nil
+        y["label"] = nil
+        // Canonical JSON (sorted keys at every level), so member order and spacing do not count.
+        guard let cx = try? JSONSerialization.data(withJSONObject: x, options: [.sortedKeys]),
+              let cy = try? JSONSerialization.data(withJSONObject: y, options: [.sortedKeys]) else { return false }
+        return cx == cy
+    }
+}

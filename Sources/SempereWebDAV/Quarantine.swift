@@ -48,9 +48,12 @@ struct RunBudget {
     }
 
     func checkTime() throws {
-        if Date() > deadline {
-            throw WebDAVError.limitExceeded("it ran for more than \(Int(limits.maxDuration / 60)) minutes (--max-minutes)")
-        }
+        if Date() > deadline { throw Self.timeExceeded(limits) }
+    }
+
+    /// The error of a run past `limits.maxDuration`.
+    static func timeExceeded(_ limits: SyncLimits) -> WebDAVError {
+        .limitExceeded("it ran for more than \(Int(limits.maxDuration / 60)) minutes (--max-minutes)")
     }
 
     mutating func list(_ count: Int) throws {

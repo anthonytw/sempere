@@ -58,10 +58,39 @@ only after every step passed), and something enforces each one:
   and sandboxed). When the app job fails, its "Summary of failures" step prints the failing tests and UI-test window
   dumps.
 - **Extra jobs:** changes to the package run `webdav` (`scripts/test-webdav.sh` against
-  wsgidav, pinned in `scripts/webdav-server-requirements.txt`; a skip fails it); changes the
+  wsgidav, pinned in `scripts/webdav-server-requirements.txt`, and the fault proxy in front of it
+  for `SyncFaultProxyTests` ([Sync stress](#sync-stress)); a skip fails it); changes the
   web viewer reads run `web-smoke` (`web/scripts/smoke-all.sh`, browser smoke tests in
   Chromium, including the large-note stress run, the scroll-anchor check and the pixel diff against
   the CLI's SVG export; the heavy sizes and WebKit are run by hand, `web-viewer.md` "Stress tests").
+
+## Sync stress
+
+WebDAV sync is stressed at three levels; all three share a two-device harness
+(`Tests/SempereWebDAVTests/SyncDevices.swift`: `SyncDevice` is one device with its own vault
+folder, key, device clock (`device.json`, with an optional wall-clock skew) and sync state;
+`SyncDevices` makes two or more on one remote, the first creating the vault with every device's
+key, and checks convergence: every device and the server hold the same note files, nothing written
+was lost, nothing is left in flight, every device reads the same notes).
+
+| Level | Runs in | What |
+| --- | --- | --- |
+| `TwoDeviceStressTests` | every `swift test` (6 seeds; `SEMPERE_STRESS_SEEDS=N` for more) | devices on the in-memory `MockDAV`, each through a `FaultyTransport` (seeded: requests dropped, answered 503, applied with the answer lost, downloads cut midway), interleaving notes, renames, tags, blobs, shared settings, two-way runs, pushes and simultaneous runs; request counts of idle and catching-up runs; label-only `vault.json` changes; per-device summaries; merge-copy round trips |
+| `SyncFaultProxyTests` | `scripts/test-webdav.sh` (CI's `webdav` job) | real sockets: wsgidav behind `scripts/dav-fault-proxy.py`; a reset mid-download resumes with `Range`, a reset mid-upload leaves no partial blob, random 5xx and resets converge, a stalled request ends at the idle timeout, a dripping download ends at the run's time bound, request counts over latency and a bandwidth cap |
+| `SyncStressTests` | `scripts/sync-stress.sh` only (about five minutes) | the seeded 640-note vault the CLI builds (`scripts/make-stress-vault.sh`: notebooks, tags, text boxes, edits from a second device, small and 3 MB images), uploaded and pulled through faults, 240 concurrent edits from both devices, idle request counts, a fresh pull canceled at random points, a merge-copy round trip; prints `STRESS` lines (times, requests by method, faults) |
+
+`scripts/sync-stress.sh` runs all three (60 seeds) against a local wsgidav and the proxy, building
+the vault once per seed and size in `build/sync-stress/` (`SEMPERE_STRESS_SEED`,
+`SEMPERE_STRESS_NOTES`). Run it after a change to `Sources/SempereWebDAV`; it is not part of CI or
+the PR gate, so list it under `## Tests run`.
+
+**The fault proxy** (`scripts/dav-fault-proxy.py`, standard library only) forwards to the server
+and, as each test configures it (`POST /__proxy__/config`, Swift: `FaultProxy`), adds latency,
+caps bandwidth, resets the connection (TCP RST) after N bytes of a request or response body,
+answers 5xx at random or by rule, stalls, or drips a response; rules match a method and a path
+pattern, can skip the first matches and fire a number of times with a probability, all from a
+seeded generator. `GET /__proxy__/stats` is the request log (method, path, status, fault, `Range`).
+Its configuration is global, so tests that use it never run in parallel.
 
 ## Launch smoke tests
 
