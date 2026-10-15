@@ -984,7 +984,7 @@ ones and WebKit are run by hand (below). Nothing here reads a real vault: the va
 ```bash
 cd web && npm ci && npm run build        # and swift build --product sempere, from the repo root
 scripts/smoke-all.sh                     # includes the fast stress run and the pixel diffs
-STRESS_HEAVY=1 scripts/smoke-all.sh      # the large vault (a few minutes)
+STRESS_HEAVY=1 scripts/smoke-all.sh      # the large vault (about ten minutes)
 BROWSER=webkit scripts/smoke-all.sh      # Playwright WebKit
 # one at a time, against a vault of your own sizes:
 node scripts/make-stress-fixture.ts /tmp/stress.sempere --pages 300 --strokes 10000
