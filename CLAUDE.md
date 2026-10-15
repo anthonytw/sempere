@@ -386,7 +386,8 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   (recycled, at most `spareLimit` spares), each at the stack's scale with its
   own undo manager and the stack's shared `PKToolPicker`. The stack zooms
   natively during a pinch and bakes the scale into the page canvases when it
-  ends (`bake`); never zoom an inner canvas. The current page follows the
+  ends (`bake`, which settles it with `ZoomDetent`: the fitted width is a detent, and
+  the pages zoom out to half of it, centered); never zoom an inner canvas. The current page follows the
   scroll (`NoteEditor.scrolledToPage`, no flush); `NoteEditor.pageJump` (bumped
   by `selectPage` and page adds/restores) scrolls to `pageIndex`. Ink and items
   stay in page coordinates: only page frames come from the layout. A recycled
@@ -402,7 +403,9 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   A canvas takes the first responder by itself (layout, opening, a box ending, its
   window becoming key) only through `focusUnlessKeyboardElsewhere` (`CanvasFocus`):
   never from a text input elsewhere (search, rename, sheets), from a list holding the
-  keyboard focus, or in a window that is not key; only a stroke calls `focus()` directly.
+  keyboard focus, or in a window that is not key; only a stroke calls `focus()` directly,
+  and a touch on the canvas takes it back with the palette (`PageCanvasHost.hitTest` →
+  `reclaimFocus`: the user's own focus, after the sidebar or a list took it).
   Calling `becomeFirstResponder` on a canvas from layout or `updateUIView` took the
   search field's keyboard after every key on a Mac (`CanvasFocusTests`, `MacFocusUITests`).
 - Paged vs pageless is only `pageSize.infinite` (`format.md` §5.4.3). Page

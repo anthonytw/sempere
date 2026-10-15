@@ -33,7 +33,10 @@ be left hidden.
 
 Read-first:
 
-- **Pan and zoom.** The page fits the width; pinch zooms up to 4x, one finger pans.
+- **Pan and zoom.** The page fits the width; pinch zooms up to 4x, one finger pans. The fitted
+  width is a detent (`ZoomDetent`, as on the iPad and the Mac): a pinch that ends within 12 % of it
+  settles on it. A paged note also zooms out to half the fitted width (several pages at once); a
+  pageless note stops at the fit.
   Paged notes scroll from one page to the next (`PageStackView`), with a gap and a shadow between
   pages; the counter follows the scroll. The end of the note shows "Add Page" only while annotating:
   a tap while reading never writes. Pageless notes scroll one screen past the ink.
