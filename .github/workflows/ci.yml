@@ -7,6 +7,8 @@ name: CI
 #   `-f screenshots=true` runs only the App Store screenshots job instead.
 # - A newer push to the same PR cancels the older run.
 # - Only the jobs a change can affect run (the `changes` job); main runs all.
+# - The app job only builds on a PR: the app's tests run on a Mac (scripts/local-ci.sh, the
+#   `local/app-tests` status). The description check is its own workflow (pr-description.yml).
 on:
   push:
     branches: [main]
@@ -63,7 +65,7 @@ jobs:
           appsrc="$(scripts/release-check.sh --app-sources)"
           # The app job: those targets, and its tests open the package's fixture vault; CLI-only
           # changes cannot affect it.
-          app=$(has "^(Apps/|Sources/($appsrc)/|Tests/SempereTests/Fixtures/|Package\\.(swift|resolved)\$|scripts/(app\\.sh|check-help\\.py|pick-simulator\\.py)\$|\\.github/(workflows/ci\\.yml\$|actions/))")
+          app=$(has "^(Apps/|Sources/($appsrc)/|Tests/SempereTests/Fixtures/|Package\\.(swift|resolved)\$|scripts/(app\\.sh|local-ci\\.sh|check-help\\.py|pick-simulator\\.py)\$|\\.github/(workflows/ci\\.yml\$|actions/))")
           # The string catalogs and the scenes' environment against the app sources
           # (LocalizationCatalogTests and AppSceneEnvironmentTests read Apps/ and run on Linux): an
           # app-only change runs just those tests, not the macOS package job.
@@ -86,9 +88,10 @@ jobs:
           echo "release=$release" >> "$GITHUB_OUTPUT"
           echo "package=$package app=$app web=$web webgolden=$webgolden release=$release"
 
-      # The `main` ruleset requires `local/app-tests`, which scripts/local-ci.sh posts after the app
-      # suites passed on a Mac. A PR whose changes cannot affect the app (the `app` rule above:
-      # docs, web/, CLI-only Sources) needs no Mac run, so the status is posted here.
+      # The `main` ruleset requires `local/app-tests`, which scripts/local-ci.sh posts after the PR
+      # gate (package tests, Mac Catalyst unit tests, iOS compile check) passed on a Mac. A PR whose
+      # changes cannot affect the app (the `app` rule above: docs, web/, CLI-only Sources) needs no
+      # Mac run, so the status is posted here.
       - name: No app changes, so no Mac run
         if: github.event_name == 'pull_request' && steps.f.outputs.app == 'false'
         env:
@@ -314,7 +317,16 @@ jobs:
       # Which simulator scripts/app.sh tests on: the preferred model, not the last name in sort order.
       - name: Simulator choice
         run: scripts/pick-simulator.py --self-test && scripts/app.sh simulator && scripts/app.sh simulator iPhone
+      # A pull request only compiles the app, its unit tests and its UI tests for an iOS simulator:
+      # the PR gate's tests run on a Mac (scripts/local-ci.sh), and the 3-CPU runner needed half an
+      # hour for the simulator suites. main and dispatch runs run the tests.
+      - name: Build for an iOS simulator (no tests)
+        if: github.event_name == 'pull_request'
+        timeout-minutes: 40
+        shell: bash
+        run: mkdir -p build && scripts/app.sh build-ios 2>&1 | tee build/app-test-build-ios.log
       - name: Test on an iPad simulator
+        if: github.event_name != 'pull_request'
         timeout-minutes: 40
         shell: bash
         run: mkdir -p build && scripts/app.sh test 2>&1 | tee build/app-test.log
@@ -325,11 +337,12 @@ jobs:
       # The iPhone suites on an iPhone simulator: the build products are the iPad run's,
       # so this adds a boot and a few seconds of tests.
       - name: Test the iPhone layouts on an iPhone simulator
+        if: github.event_name != 'pull_request'
         run: scripts/app.sh test-phone
       # Real drags onto the sidebar (SidebarDropUITests): the drop delegate needs a drag session.
       # Also the launch smoke tests' iPad layouts (LaunchSmokeUITests: fresh state, unlock sheet).
-      # This and the steps below run on main and dispatch only: a PR gets them from
-      # scripts/local-ci.sh (its `local/app-tests` status), the hosted runner needs an hour.
+      # This and the steps below run on main and dispatch only (the hosted runner needs an hour);
+      # locally they are scripts/local-ci.sh --testflight and --release (docs/ci.md).
       - name: UI tests on the iPad simulator
         if: ${{ !cancelled() && github.event_name != 'pull_request' }}
         timeout-minutes: 25

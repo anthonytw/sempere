@@ -2,21 +2,41 @@
 
 CI is `.github/workflows/ci.yml`. It is gated so that scarce macOS runners are not wasted.
 
-## App suites run on a Mac
+## Policy: what runs where
 
-The hosted macOS runner is a 3-CPU VM that needs over an hour for the app job, so a pull
-request's app suites run on a developer's Mac instead:
+The hosted macOS runner is a 3-CPU VM that needs over an hour for the app's suites, so the app is
+tested on a developer's Mac by `scripts/local-ci.sh`, in three layers. Each layer posts a commit
+status for the exact commit it ran on (a clean checkout of a commit GitHub has; a status is posted
+only after every step passed), and something enforces each one:
 
-- `scripts/local-ci.sh` runs the package, iPad, iPhone, iPad UI, pseudo-language and Mac
-  Catalyst suites on a clean checkout of a pushed commit and posts the commit status
-  `local/app-tests` for it. `--quick` runs the package, iPad and iPhone suites only;
-  `--mac-ui` adds the Mac UI and launch smoke tests (they need the app in front, so they fail
-  on a Mac someone is using); `--no-status` posts nothing. Logs: `build/local-ci/`.
-- The `main` ruleset requires `local/app-tests`, so a pull request merges only once its head
-  commit passed on a Mac; a new push needs a new run. A change that cannot affect the app
-  (docs, `web/`, CLI-only sources) gets the status from CI's first job instead.
-- On a pull request the hosted app job runs only the iPad and iPhone suites, for feedback; its
-  UI, pseudo-language and Mac Catalyst steps run on `main` and on dispatch.
+| Layer | Command | Runs | Status | Enforced by |
+|---|---|---|---|---|
+| PR gate | `scripts/local-ci.sh` | package tests (`swift build --build-tests && swift test --parallel`), Mac Catalyst unit tests (`scripts/app.sh test-mac`), iOS compile check (`scripts/app.sh build-ios`: the app, its unit tests and its UI tests built for an iOS simulator, nothing run) | `local/app-tests` | the `main` ruleset (required) |
+| Author's targeted tests | whatever the change calls for | e.g. `scripts/app.sh test-mac-ui -only-testing:SempereAppUITests/MacItemUITests` | the PR's `## Tests run` section | the `PR lists tests run` job (`.github/workflows/pr-description.yml`) |
+| Pre-TestFlight | `scripts/local-ci.sh --testflight` | the gate, then every Mac UI test (`test-mac-ui`), the Mac launch smoke tests (`test-mac-smoke`) and the pseudo-language check on the Mac (`pseudo-mac`) | `local/testflight-suite` | the TestFlight upload script checks it on the commit it builds |
+| Release sweep | `scripts/local-ci.sh --release` | all of `--testflight`, then the iPad unit suite (`test`), the iPhone suites (`test-phone`), the iPad UI tests (`test-ui`) and the pseudo-language check on the iPad (`pseudo`) | `local/release-sweep` | `release.yml`'s `prepare` job: a `vX.Y.Z` tag fails without it (a `-rc` prerelease only warns) |
+
+- **The gate never needs the screen** and runs no simulator, so it can run on a Mac someone is
+  using. It takes about ten minutes on an Apple silicon Mac with warm build caches. The
+  `--testflight` and `--release` steps after the gate are UI tests that take over the screen (a
+  Mac UI test fails with "Running Background" when the app cannot come to the front): leave the
+  Mac alone while they run. Both also post `local/app-tests` once their gate steps passed.
+- **Targeted tests**: the gate runs no UI test and no simulator, so the author picks the tests
+  the change calls for (a Mac UI test for a window or menu change, `test-ui` for an iPad drag,
+  `test-phone` for an iPhone layout, `pseudo-mac` for new interface text, …), runs them with
+  `-only-testing:` where that narrows them, and lists each with its result under `## Tests run`
+  in the PR description (`.github/pull_request_template.md`), or writes "None beyond the gate:
+  <why>". The check fails while the section is missing or empty and re-runs when the description
+  is edited.
+- `scripts/local-ci.sh --list` (with any mode) prints the steps and the status a mode posts;
+  `--no-status` runs without posting. Logs: `build/local-ci/<step>.log`. The script runs under
+  `caffeinate -dimsu` (it re-runs itself that way) so the Mac does not sleep mid-run.
+- A new push needs a new gate run. A change that cannot affect the app (docs, `web/`, CLI-only
+  sources: the `app` rule of the `changes` job) gets `local/app-tests` from CI's first job instead.
+- **Hosted app job on a pull request:** build only (`scripts/app.sh build-ios`, plus the tooltip,
+  simulator-choice and SwiftMath checks); it runs no simulator tests. On `main` and on dispatch it
+  runs the iPad and iPhone suites, the iPad UI tests, the pseudo-language check and the Mac
+  Catalyst suites.
 - Off CI, `scripts/app.sh` stops an `xcodebuild` that sits idle after printing its test
   summary (`SEMPERE_STALL_SECS`, default 180 s).
 
@@ -33,9 +53,9 @@ request's app suites run on a developer's Mac instead:
   `web-golden` (the Swift CLI's exports of the fixture vaults compared with
   `web/test/golden`). A Swift change that moves the goldens shows up on `main`; regenerate
   them with `web/scripts/golden.sh` ([web-viewer.md](web-viewer.md)).
-- **Shipping-only steps** run on `main`: the static Linux release build and the Mac Catalyst
-  suites (`scripts/app.sh test-mac`, `test-mac-ui`, ad-hoc signed and sandboxed). When the
-  app job fails, its "Summary of failures" step prints the failing tests and UI-test window
+- **Shipping-only steps** run on `main`: the static Linux release build, the app's simulator
+  suites and the Mac Catalyst suites (`scripts/app.sh test-mac`, `test-mac-ui`, ad-hoc signed
+  and sandboxed). When the app job fails, its "Summary of failures" step prints the failing tests and UI-test window
   dumps.
 - **Extra jobs:** changes to the package run `webdav` (`scripts/test-webdav.sh` against
   wsgidav, pinned in `scripts/webdav-server-requirements.txt`; a skip fails it); changes the
@@ -48,9 +68,9 @@ request's app suites run on a developer's Mac instead:
 (`SEMPERE_DEBUG_FRESH`), unlocks the demo vault through the unlock sheet
 (`SEMPERE_DEMO_PASSPHRASE`), checks the library in each column layout and opens Settings,
 Vault Keys, a note window, the export sheets and Restore from Backup. On the Mac it is
-`scripts/app.sh test-mac-smoke` (on `main`, and locally with `local-ci.sh --mac-ui`); the
-iPad's sidebar and list layouts run inside `scripts/app.sh test-ui` in every
-`local-ci.sh` run. Failures print `SMOKEDEBUG` window dumps, the newest Mac crash report's
+`scripts/app.sh test-mac-smoke` (on `main`, and locally in `local-ci.sh --testflight` and
+`--release`); the iPad's sidebar and list layouts run inside `scripts/app.sh test-ui` (on `main`
+and in `local-ci.sh --release`). Failures print `SMOKEDEBUG` window dumps, the newest Mac crash report's
 crashing thread and, on the iPad, the simulator's log of the app's faults and hangs.
 
 ## Other checks

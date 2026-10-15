@@ -24,6 +24,9 @@ jobs:
   prepare:
     name: Check version and changelog
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      statuses: read   # the release sweep's status on the tagged commit
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
@@ -35,6 +38,23 @@ jobs:
           git fetch --no-tags origin main
           if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
             echo "::error::tag $GITHUB_REF_NAME is not on main; releases are cut from merged, CI-checked commits"; exit 1
+          fi
+      # Every suite, on a Mac, for the exact commit being released: scripts/local-ci.sh --release posts
+      # `local/release-sweep` (docs/ci.md). A prerelease tag (vX.Y.Z-rc.1, for exercising this
+      # workflow) only warns.
+      - name: The commit passed the release sweep (local/release-sweep)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          state=$(gh api "repos/${{ github.repository }}/commits/$GITHUB_SHA/status" \
+            --jq '[.statuses[] | select(.context == "local/release-sweep")][0].state // "missing"')
+          echo "local/release-sweep on $GITHUB_SHA: $state"
+          if [ "$state" != success ]; then
+            msg="local/release-sweep is $state on $GITHUB_SHA; run scripts/local-ci.sh --release on that commit first"
+            case "$GITHUB_REF_NAME" in
+              *-*) echo "::warning::$msg (prerelease tag: not blocking)" ;;
+              *) echo "::error::$msg"; exit 1 ;;
+            esac
           fi
       - id: v
         name: Tag must equal the CLI version
