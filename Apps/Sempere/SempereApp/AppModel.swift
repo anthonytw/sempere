@@ -91,6 +91,10 @@ final class AppModel {
         case unsavedChanges(String)
         /// A notebook dropped into itself or a notebook inside it.
         case invalidNotebookMove
+        /// Delete Notebook on a notebook a note is still in.
+        case notebookNotEmpty
+        /// A new notebook's name is longer than a notebook record allows.
+        case notebookNameTooLong
 
         var description: String {
             switch self {
@@ -110,6 +114,8 @@ final class AppModel {
             case .notesStillDownloading:
                 return String(localized: "Some notes are still loading or downloading from iCloud Drive. Try again once the list has finished loading.")
             case .invalidNotebookMove: return String(localized: "A notebook cannot be moved into itself or into a notebook inside it.")
+            case .notebookNotEmpty: return String(localized: "Only an empty notebook can be deleted. Move or delete its notes first.")
+            case .notebookNameTooLong: return String(localized: "That notebook name is too long.")
             case .unsavedChanges(let reason):
                 return String(localized: "The note's latest changes could not be saved first, so nothing was restored. \(reason)")
             }
@@ -134,8 +140,16 @@ final class AppModel {
     /// While `applyListChanges` assigns `notes`: the ids it may have changed, so
     /// that an open search re-tests only those (`updateSearch(changed:)`).
     @ObservationIgnored var listChangeIDs: Set<UUID>?
-    /// Bumped on every change of `notes`; keys the derived lists (`derived`).
+    /// Bumped on every change of `notes` (and of `declaredNotebooks`); keys the derived lists (`derived`).
     private(set) var listVersion = 0
+    /// Empty notebooks kept by notebook records (format.md §14), canonical paths
+    /// (`refreshNotebookRecords`). The sidebar shows them with the notes' notebooks.
+    var declaredNotebooks: [String] = [] {
+        didSet { if declaredNotebooks != oldValue { listVersion &+= 1 } }
+    }
+    /// The record file names `declaredNotebooks` was read from: a pass that
+    /// lists the same names reads nothing.
+    @ObservationIgnored var notebookRecordNamesRead: [String]?
     /// `visibleNotes`, `tags` and `notebookTree`, computed once per change.
     @ObservationIgnored var derived = DerivedLists()
     /// True while vault I/O is in flight.
@@ -667,17 +681,17 @@ final class AppModel {
         vaultURL.map { $0.deletingPathExtension().lastPathComponent }
     }
 
-    /// The notebook hierarchy of live notes (names are `/`-separated paths,
-    /// format.md §5.4).
+    /// The notebook hierarchy of live notes and of the empty notebooks records
+    /// keep (names are `/`-separated paths, format.md §5.4, §14).
     var notebookTree: [NotebookNode] {
         let version = listVersion
         if let t = derived.tree, t.version == version { return t.value }
-        let tree = NotebookNode.tree(notes.filter { !$0.deleted }.map(\.notebook))
+        let tree = NotebookRecords.tree(noteNotebooks: notes.filter { !$0.deleted }.map(\.notebook), declared: declaredNotebooks)
         derived.tree = (version, tree)
         return tree
     }
 
-    /// Every notebook path in use by live notes, parents included, in tree order.
+    /// Every notebook path in use by live notes or declared, parents included, in tree order.
     var notebooks: [String] {
         NotebookNode.flatten(notebookTree)
     }
@@ -1172,6 +1186,8 @@ final class AppModel {
         loading = nil
         listLoaded = false
         loadFailure = nil
+        declaredNotebooks = []
+        notebookRecordNamesRead = nil
         verifiedNoteIDs = []
         summaryEpochs = [:]
         indexedNames = [:]

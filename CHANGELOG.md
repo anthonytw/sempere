@@ -22,6 +22,12 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
 
 ### Added
 
+- Empty notebooks: File ▸ New Notebook… (⌃⌘N), the sidebar's New Notebook button and a notebook's
+  New Notebook Inside… make a notebook that stays while it holds no note; Delete Notebook removes an
+  empty one. They are kept by small write-once notebook records (`format.md` §14), synced by iCloud
+  Drive and WebDAV, merged by `vault merge-copy`, backed up and rewrapped with the vault. CLI:
+  `sempere notebooks create|delete`, and `notebooks list|rename|move` include empty notebooks.
+- Mac: a notebook drags by its whole row in the sidebar, not only by its name.
 - `sempere vault merge-copy FROM` merges another copy of the vault (an iCloud conflict version, another
   device's copy, a restored backup) without overwriting or deleting anything (`format.md` §1.3).
 - Note list: rows show small icons for the attachments a note holds (pictures, equations, video,

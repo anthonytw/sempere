@@ -25,9 +25,11 @@ Notes.sempere/
   summaries/
     <device>.sealed                       optional published summaries, one file per writing device (§12.5)
   settings.age                            optional shared settings, merged per key (§13)
+  notebooks/
+    <recordId>.notebook.age               optional notebook record: keeps empty notebooks (§14)
 ```
 
-Everything under `notes/` (revisions and `att/` blobs alike) is written once
+Everything under `notes/` (revisions and `att/` blobs alike) and `notebooks/` is written once
 and never modified (`settings.age`, at the root, is a mutable file, §13). The only exception is a recipient change (§3.3), which
 rewrites files in place (and renames blobs, §8.1.5).
 
@@ -50,7 +52,7 @@ linked into place, docs/io.md "Atomic writes") and for the markers below.
 ### 1.2 Partial copies
 
 A *partial copy* is a vault folder that holds the root files (`vault.json`,
-`rewrap-journal.json`, `settings.age`) of the vault it copies, and a folder
+`rewrap-journal.json`, `settings.age`, and the notebook records of §14) of the vault it copies, and a folder
 for each of its notes, but not yet every revision or blob: the rest is
 fetched later (the WebDAV app copies and `sempere sync webdav
 --metadata-only`, docs/io.md "Partial copies"). Three markers, all hidden
@@ -115,7 +117,7 @@ the vault may turn up (another device's copy, a restored backup). Merging
 another copy into a vault keeps everything a reader needs, whichever copy is
 kept, and is the same whatever the order of copies merged:
 
-- **Write-once files** (revisions, blobs, inbox files, key files): the union.
+- **Write-once files** (revisions, blobs, inbox files, key files, notebook records, §14): the union.
   A file the vault lacks is checked like any received file (§9.1) and copied
   in under its name; nothing is overwritten or deleted. A revision a
   compaction deleted on one side may come back; it is covered by the snapshot
@@ -536,7 +538,10 @@ change can be finished by any device holding an identity of the new set:
    `settings.age` (§13): re-encrypted and re-tagged like a revision, its JSON
    unchanged whatever its `$minReaderVersion`; one that cannot be decrypted
    or verified
-   is left as it is, reported, and does not keep the journal.
+   is left as it is, reported, and does not keep the journal. Notebook records
+   (§14) are rewritten like revisions (re-encrypted, re-tagged under their own
+   label); one that cannot be decrypted or verified is left as it is, reported,
+   and does not keep the journal either.
 4. Once every file is complete, rewrite `vault.json` without
    `rewrapPending` (one atomic write that tags its markers as every write
    does, §2.1, and only over a `vault.json` whose recipients, `vaultSecret`
@@ -907,7 +912,10 @@ notes may share a title, in one notebook or several.
   implicitly (no note needs to be in `Research` itself), and selecting a
   notebook shows the notes in it and in every notebook below it. Renaming or
   moving a notebook is one `setMeta` of `notebook` per affected note,
-  replacing the old path prefix; there is no separate notebook object.
+  replacing the old path prefix. A notebook no note names exists only while
+  a notebook record declares it (§14): records keep notebooks the user
+  created and has not filled yet, or emptied; the rename or move of a
+  notebook also renames its records.
 - `paper` is the note's paper; see §5.4.2 for its kinds and parameters. Lengths are points (1/72 in).
 - `pageSize.infinite: true` means the page grows downward; `height` is then
   the current extent.
@@ -1738,7 +1746,8 @@ open (and, for markers 1 and 2, whenever it opens it), it:
   trust record for it (§2.1);
 - writes nothing to and deletes nothing from `inbox/` (§11): it adopts no
   capture and enables no capture profile;
-- does not write `settings.age` (§13).
+- does not write `settings.age` (§13);
+- writes no notebook record (§14).
 
 It still may: read, verify and report on everything; export and render;
 write per-device data outside the vault (caches, §10); and copy the vault's
@@ -3118,6 +3127,7 @@ where the table says how they degrade.
 | PDF page drawn as pixels (SVG, PNG) | 16 M pixels per page (drawn at a lower resolution beyond), 256 M per export (placeholders beyond) | `RenderLimits.maxBackgroundPixels…` |
 | summary cache file (§10) | 64 MiB on disk, 256 MiB after gunzip; any failure discards it | `SummaryCache.maxFileBytes` |
 | published summaries (§12) | 64 MiB on disk, 256 MiB after gunzip; unknown fields skipped, not kept; any failure ignores the file, a bad entry only that entry | `PublishedSummaries.maxFileBytes` |
+| notebook records (§14) | 64 KiB on disk and after gunzip per record; 256 `add` paths and 4 096 `remove` ids per record, a path at most 1 200 Unicode scalars (else the record is refused); 10 000 records per vault (the rest ignored and reported) | `NotebookRecords.maxFileBytes`, `.maxAdds`, `.maxRemoves`, `.maxRecords` |
 | shared settings (§13) | 1 MiB on disk, 1 MiB after gunzip; 4 096 slots, 32 type blocks (else the file is refused); a malformed `$meta` entry or version, or an invalid value, is ignored alone | `SharedSettings.maxFileBytes`, `.maxSlots`, `.maxBlocks` |
 
 Foundation's own parsers are not safe on hostile bytes on every platform:
@@ -3733,3 +3743,108 @@ that does not verify first checks that `vault.json` on disk still lists the reci
 wraps the secret it holds: one that stayed open while another device changed the keys
 would otherwise overwrite the current file with one for the old recipients. WebDAV sync (`docs/io.md`)
 merges the file when both sides changed and the vault is unlocked.
+
+## 14. Notebook records
+
+A notebook exists while a note names it (§5.4). A notebook that no note names
+(one the user created and has not filled yet, or emptied) is kept by *notebook
+records*: small write-once files under `notebooks/` at the vault root, each
+declaring notebooks or ending earlier records.
+
+```
+Notes.sempere/
+  notebooks/
+    <recordId>.notebook.age
+```
+
+`<recordId>` is a random lowercase UUID (§6), new for every file. Records are
+written once under a name no other writer uses, so a file-sync service never
+has two versions of one, and merging another copy of the vault is the union
+of its records (§1.3). They are never modified, except rewritten in place by
+a recipient change (§3.3), and never deleted in this version (a record is a
+few hundred bytes). A reader that does not implement this section ignores the
+folder (§1) and shows only the notebooks notes name; a notebook record needs
+no `features` entry (§2). Names in `notebooks/` that are not
+`<recordId>.notebook.age` are ignored.
+
+### 14.1 File
+
+An age file encrypted to the vault's recipients, whose plaintext is the body
+framing of §4 with the label `notebooks` in place of the note id and the
+record's file name:
+
+```
+Tag = HMAC-SHA256(key = vaultSecret,
+                  message = "sempere/1" ‖ 0x00 ‖ "notebooks" ‖ 0x00 ‖ "<recordId>.notebook.age" ‖ 0x00 ‖ gzipBytes)
+```
+
+(`notebooks` is never a note id, §6.) Binding the file name stops a record
+being replayed under another id, which another record's `remove` would not
+name. Recovery without the app is that of §4:
+`age -d -i key notebooks/F.notebook.age | tail -c +38 | gunzip | jq .`
+A reader verifies the tag under the current secret or, while a rewrap journal
+is pending, the previous one (§3.3.1).
+
+### 14.2 JSON
+
+```json
+{
+  "format": "sempere-notebooks/1",
+  "created": "2026-10-15T14:00:00.000Z",
+  "add": ["School/Math", "Archive"],
+  "remove": ["3f0c6a1e-9a44-4a6c-8a6b-0e2a0e9b1f3c"]
+}
+```
+
+- `format`: `sempere-notebooks/1`. A record with another value is not read
+  (reported); a later change that readers must not misread changes it.
+- `created`: when the record was written (§6). Informational only.
+- `add` (optional, absent means none): notebook paths (§5.4) the record
+  declares. Writers store canonical paths; readers canonicalize each, and skip
+  one that names no notebook.
+- `remove` (optional, absent means none): the ids of records (their
+  `<recordId>`, lowercase) this record ends. A record never names itself; a
+  reader ignores such an entry, and ids that name no record.
+
+Writers write a record only when `add` or `remove` is non-empty. Unknown
+fields are ignored.
+
+### 14.3 Reading
+
+A record is *ended* when any readable record lists its id in `remove`. The
+*declared notebooks* are the canonical paths that records which are not
+ended `add`. This is an observed-remove set, like tags (§5.4.1): a `remove`
+ends only the records its writer had seen, so a notebook declared on another
+device at the same time survives (add wins), whatever the order the records
+arrive in.
+
+The notebooks a reader shows are every notebook a live note names, every
+declared notebook, and every parent level of either (§5.4). Selecting a
+declared notebook no note is in shows no notes.
+
+A record that cannot be read (it does not decrypt, its tag does not verify,
+it does not gunzip or decode, it breaks a limit of §9 or has another
+`format`) is skipped and reported: its `add` and its `remove` both count for
+nothing. A damaged record can thus only bring back a notebook it ended, never
+hide one.
+
+### 14.4 Writing
+
+Writing a record is a write to the vault: refused for a read-only vault
+(§7.3) and a tampered recipients list (§2.1). Records are written whole under
+their final name (atomically, docs/io.md "Atomic writes").
+
+- **Create** a notebook `P`: when `P` is not declared already, write a record
+  adding `P` (its parent levels need no record). A notebook a note names may
+  be declared too: it then stays when its last note leaves.
+- **Rename or move** `P` to `Q` (the `setMeta` of every note within `P`,
+  §5.4): one record that ends every record (not already ended) adding a path
+  within `P`, and adds each of their paths again, renamed as the notes are
+  (`Q` replacing the `P` prefix; a path that renames to no notebook is
+  dropped) or unchanged for paths outside `P`. Writers write it before the
+  notes' deltas: an interrupted move then shows the notebook under both names,
+  never under neither.
+- **Delete** `P`: one record that ends every record adding a path within `P`
+  and adds again their paths outside it. Deleting a notebook does not delete
+  or move notes: a writer deletes only a notebook no live note is in, or moves
+  or deletes the notes first (one delta per note, §5.4).

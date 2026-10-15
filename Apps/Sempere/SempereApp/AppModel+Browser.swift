@@ -109,7 +109,9 @@ extension AppModel {
     /// §5.4) to `new`: every note in it or below it, deleted ones too, gets
     /// the `old` prefix of its notebook replaced by `new` (one `setMeta` per
     /// note). An empty `new` takes the notes directly in `old` out of any
-    /// notebook and lifts its sub-notebooks to the top level.
+    /// notebook and lifts its sub-notebooks to the top level. Empty notebooks
+    /// within `old` (notebook records, format.md §14.4) are renamed too, by one
+    /// record written before the notes' deltas.
     ///
     /// Returns the notebook each changed note had before (to undo the rename).
     @discardableResult
@@ -133,7 +135,10 @@ extension AppModel {
             try await downloadNote(edit.noteId)
             try ensureCurrent(gen)
         }
-        try await commit(edits.map { (id: $0.noteId, ops: $0.ops) })
+        if declaredNotebooks.contains(where: { NotebookPath.name($0, isWithin: old) }) {
+            try await writeNotebookRecords { vault in _ = try vault.renameNotebookRecords(old, to: target) }
+        }
+        if !edits.isEmpty { try await commit(edits.map { (id: $0.noteId, ops: $0.ops) }) }
         if case .notebook(let selected)? = sidebarSelection, NotebookPath.name(selected, isWithin: old) {
             sidebarSelection = NotebookPath.renamed(selected, from: old, to: target).map(SidebarItem.notebook) ?? .allNotes
         }
@@ -405,12 +410,19 @@ extension AppModel {
             throw ModelError.invalidNotebookMove
         }
         guard target != from else { return nil }
+        let carriesEmpty = declaredNotebooks.contains { NotebookPath.name($0, isWithin: from) }
         let previous = try await renameNotebook(from, to: target)
-        return previous.isEmpty ? nil : NotebookMoveRecord(previous: previous, actionName: String(localized: "Move Notebook", comment: "Undo action name"))
+        guard !previous.isEmpty || carriesEmpty else { return nil }
+        return NotebookMoveRecord(previous: previous, actionName: String(localized: "Move Notebook", comment: "Undo action name"),
+                                  emptyNotebooks: carriesEmpty ? NotebookPathMove(from: from, to: target) : nil)
     }
 
-    /// Puts the notes of `record` back where they were (undo of a move), one commit.
+    /// Puts the notes of `record` back where they were (undo of a move), one commit,
+    /// and the empty notebooks it moved (one notebook record).
     func restoreNotebooks(_ record: NotebookMoveRecord) async throws {
+        if let moved = record.emptyNotebooks, let to = moved.to {
+            try await writeNotebookRecords { vault in _ = try vault.renameNotebookRecords(to, to: moved.from) }
+        }
         let batch = Array(record.previous.keys).filter { id in notes.contains { $0.id == id } }
         guard !batch.isEmpty else { return }
         let gen = generation

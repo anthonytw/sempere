@@ -147,6 +147,28 @@ extension Vault {
             if !dryRun { try Self.copyNew(from, to: to) }
         }
 
+        // notebooks/<record> (§14): write-once, so the union. Unlocked, a record must open
+        // (decrypt, verify, decode) before it is placed; locked, only its size is checked.
+        let otherNotebooks = other.appendingPathComponent(NotebookRecords.folderName, isDirectory: true)
+        for name in Self.visibleEntries(otherNotebooks) where NotebookRecords.id(ofFileName: name) != nil {
+            let path = "\(NotebookRecords.folderName)/\(name)"
+            let to = notebooksURL.appendingPathComponent(name)
+            if Self.holds(to) { continue }
+            let data: Data
+            do {
+                data = try BoundedRead.contents(of: otherNotebooks.appendingPathComponent(name), maxBytes: NotebookRecords.maxFileBytes)
+                if canRead { _ = try openNotebookRecord(data, fileName: name) }
+            } catch {
+                report.refused[path] = "\(error)"
+                continue
+            }
+            report.added.append(path)
+            if !dryRun {
+                try FileIO.createDirectory(notebooksURL)
+                do { try FileIO.writeAtomically(data, to: to, replacing: false) } catch VaultError.alreadyExists {}
+            }
+        }
+
         // keys/<identity file>: named by the recipient they hold (§3.2), never replaced.
         let otherKeys = other.appendingPathComponent(Self.keysName, isDirectory: true)
         for name in Self.visibleEntries(otherKeys) where name.hasSuffix(".key.age") {

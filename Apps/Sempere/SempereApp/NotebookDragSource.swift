@@ -55,27 +55,38 @@ struct NotebookTransfer: Codable, Transferable, Sendable {
 struct NotebookRowAction: Identifiable, Sendable {
     let title: LocalizedStringResource
     let systemImage: String
+    /// Shown as destructive (red) in the menu.
+    var destructive = false
     let perform: @MainActor @Sendable () -> Void
     var id: String { title.key }
     /// The title in the app's language.
     var localizedTitle: String { String(localized: title) }
 
-    /// A notebook row's menu: Rename or Move…, Move Notebook To…, Export Notebook….
-    static func notebookMenu(rename: @escaping @MainActor @Sendable () -> Void,
+    /// A notebook row's menu: New Notebook Inside…, Rename or Move…, Move Notebook To…,
+    /// Export Notebook…, and Delete Notebook when `delete` is given (an empty notebook).
+    static func notebookMenu(newInside: @escaping @MainActor @Sendable () -> Void,
+                             rename: @escaping @MainActor @Sendable () -> Void,
                              move: @escaping @MainActor @Sendable () -> Void,
-                             export: @escaping @MainActor @Sendable () -> Void) -> [NotebookRowAction] {
-        [NotebookRowAction(title: "Rename or Move…", systemImage: "pencil", perform: rename),
-         NotebookRowAction(title: "Move Notebook To…", systemImage: "folder", perform: move),
-         NotebookRowAction(title: "Export Notebook…", systemImage: ExportCommand.menuImage, perform: export)]
+                             export: @escaping @MainActor @Sendable () -> Void,
+                             delete: (@MainActor @Sendable () -> Void)? = nil) -> [NotebookRowAction] {
+        var actions = [NotebookRowAction(title: "New Notebook Inside…", systemImage: "folder.badge.plus", perform: newInside),
+                       NotebookRowAction(title: "Rename or Move…", systemImage: "pencil", perform: rename),
+                       NotebookRowAction(title: "Move Notebook To…", systemImage: "folder", perform: move),
+                       NotebookRowAction(title: "Export Notebook…", systemImage: ExportCommand.menuImage, perform: export)]
+        if let delete {
+            actions.append(NotebookRowAction(title: "Delete Notebook", systemImage: "trash", destructive: true, perform: delete))
+        }
+        return actions
     }
 }
 
 extension View {
     /// Makes a sidebar notebook row draggable (dropped on another notebook it
     /// nests there; on All Notes it goes to the top level) with `menu` as its
-    /// context menu, in the current `NotebookDragStyle`.
-    func notebookDragSource(_ path: String, menu: [NotebookRowAction]) -> some View {
-        modifier(NotebookDragSourceModifier(path: path, menu: menu))
+    /// context menu, in the current `NotebookDragStyle`. The whole row drags
+    /// (`hasChildren`: but its trailing disclosure chevron).
+    func notebookDragSource(_ path: String, hasChildren: Bool = false, menu: [NotebookRowAction]) -> some View {
+        modifier(NotebookDragSourceModifier(path: path, hasChildren: hasChildren, menu: menu))
     }
 }
 
@@ -83,7 +94,11 @@ private struct NotebookDragSourceModifier: ViewModifier {
     @AppModelEnvironment private var model
     @Environment(\.undoManager) private var undoManager
     let path: String
+    let hasChildren: Bool
     let menu: [NotebookRowAction]
+
+    /// The trailing width left to the row's disclosure chevron.
+    static let chevronWidth: CGFloat = 44
 
     func body(content: Content) -> some View {
         switch NotebookDragStyle.current {
@@ -92,13 +107,18 @@ private struct NotebookDragSourceModifier: ViewModifier {
                 .onDrag { model.beginDrag(.notebook(path), provider: DragPayload.notebook(path).provider()) }
                 .contextMenu { menuButtons }
         case .uikit:
-            // Leaves the trailing disclosure chevron to the row.
-            content.overlay(alignment: .leading) {
-                GeometryReader { geo in
-                    UIKitDragHandle(model: model, path: path, menu: menu, undoManager: undoManager)
-                        .frame(width: max(0, geo.size.width - 44), height: geo.size.height)
+            // The handle spans the whole row (the label is stretched to the row's width first: sized
+            // to the label alone, a short name left a sliver to drag on a Mac). A row with children
+            // leaves its trailing disclosure chevron to the row.
+            content
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .overlay(alignment: .leading) {
+                    GeometryReader { geo in
+                        UIKitDragHandle(model: model, path: path, menu: menu, undoManager: undoManager)
+                            .frame(width: max(0, geo.size.width - (hasChildren ? Self.chevronWidth : 0)), height: geo.size.height)
+                    }
                 }
-            }
         case .transferable:
             content.draggable(NotebookTransfer(path: path)).contextMenu { menuButtons }
         }
@@ -107,7 +127,7 @@ private struct NotebookDragSourceModifier: ViewModifier {
     // help-lint: titled
     @ViewBuilder private var menuButtons: some View {
         ForEach(menu) { action in
-            Button(action.localizedTitle, systemImage: action.systemImage) { action.perform() }
+            Button(action.localizedTitle, systemImage: action.systemImage, role: action.destructive ? .destructive : nil) { action.perform() }
         }
     }
 }
@@ -170,7 +190,8 @@ private struct UIKitDragHandle: UIViewRepresentable {
             guard !actions.isEmpty else { return nil }
             return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
                 UIMenu(children: actions.map { action in
-                    UIAction(title: action.localizedTitle, image: UIImage(systemName: action.systemImage)) { _ in
+                    UIAction(title: action.localizedTitle, image: UIImage(systemName: action.systemImage),
+                             attributes: action.destructive ? .destructive : []) { _ in
                         MainActor.assumeIsolated { action.perform() }
                     }
                 })

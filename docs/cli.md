@@ -1156,15 +1156,26 @@ sempere notes dedupe "Week 3"
 
 ```
 sempere notebooks list [--deleted] [--no-cache]
+sempere notebooks create PATH
 sempere notebooks rename OLD NEW [--dry-run]
 sempere notebooks move NOTEBOOK (PARENT | --top-level) [--dry-run]
+sempere notebooks delete PATH [--dry-run]
 sempere tags list [--no-cache]
 ```
 
 `notebooks list` prints the notebook tree (parents included, even when they
 hold no note directly) with `NOTES`, the notes directly in a notebook, and
 `TOTAL`, those in it or below it; deleted notes count only with `--deleted`.
-`--json` gives `path`, `depth`, `notes` and `total` per notebook.
+Empty notebooks kept by notebook records (format.md §14) are listed too, with
+`DECLARED` `yes`. `--json` gives `path`, `depth`, `notes`, `total` and
+`declared` per notebook. A record that cannot be read is reported on stderr and
+skipped (it then neither declares nor removes anything).
+
+`notebooks create` makes an empty notebook (the app's New Notebook): one
+notebook record declaring `PATH` (`/` for levels; parent levels need nothing),
+so it is listed, and stays when the notes put in it later leave again. Nothing is
+written when `PATH` is declared already. `--json` gives `notebook`, `created`
+and `record` (the file written under `notebooks/`).
 
 `notebooks rename` renames or moves a notebook with everything below it: each
 note in `OLD` or below it, deleted ones too, gets the `OLD` prefix of its
@@ -1174,8 +1185,10 @@ empty `NEW` (`""`) takes the notes directly in `OLD` out of any notebook and
 lifts its sub-notebooks to the top level. Every note is read first, without
 the cache; if any cannot be read the command writes nothing and exits 1 (its
 notebook is unknown, so it would be left behind). `--dry-run` lists the notes
-that would move. `--json` gives `from`, `to`, `dryRun` and `notes`
-(`note`, `title`, `from`, `to`, `file`).
+that would move. Empty notebooks within `OLD` (records, format.md §14.4) are
+renamed too, by one record written before the notes' deltas. `--json` gives
+`from`, `to`, `dryRun`, `notes` (`note`, `title`, `from`, `to`, `file`),
+`declared` (the empty notebooks renamed) and `record`.
 
 `notebooks move` is what dragging a notebook onto another does in the app (or
 "Move Notebook To…"): `NOTEBOOK` keeps its last level and takes `PARENT` as its
@@ -1187,6 +1200,14 @@ itself or a notebook inside it is a usage error (exit 2, nothing written), and a
 notebook that already has the name at the destination is merged with it.
 Moving into the notebook it is already in changes nothing. Notes are moved with
 `notes move`.
+
+`notebooks delete` deletes an empty notebook and the empty notebooks inside it
+(one record ending the records that declare them). It never deletes or moves a
+note: while a note that is not deleted is in `PATH` or below it, it exits 1 and
+writes nothing (move or delete the notes first). Notes in Recently Deleted keep
+their notebook, so restoring one shows the notebook again. A notebook that only
+notes name (no record) is not deleted by this command: it goes when its last
+note leaves. `--json` gives `notebook`, `removed`, `dryRun` and `record`.
 
 `tags list` prints each tag once (tags match case-insensitively; the first
 spelling found is shown, as in the app's sidebar) with the number of notes

@@ -208,6 +208,52 @@ final class SidebarDropUITests: XCTestCase {
         XCTAssertTrue(working.contains("uikit"), "the shipped drag style nests the notebook")
     }
 
+    /// A notebook drags by its whole row, not only by its name: here from a point well past the end of
+    /// "Work" (owner's Mac check: on a Mac only a sliver of a short name's row started a drag).
+    @MainActor
+    func testANotebookDragsFromAnywhereOnItsRow() throws {
+        let app = launch()
+        defer { app.terminate() }
+        require(noteRow(app, "Sync design sketch"), "note row", in: app, timeout: 90)
+        showSidebar(app)
+        let cell = sidebarCell(app, "Work"), personal = sidebarRow(app, "Personal")
+        require(cell, "sidebar cell Work", in: app)
+        require(personal, "sidebar row Personal", in: app)
+        sleep(2)
+        // 65 % of the row's width: past the label, short of the disclosure chevron.
+        let start = cell.coordinate(withNormalizedOffset: CGVector(dx: 0.65, dy: 0.5))
+        #if targetEnvironment(macCatalyst)
+        start.click(forDuration: 0.6, thenDragTo: personal.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)),
+                    withVelocity: .slow, thenHoldForDuration: 1.0)
+        #else
+        start.press(forDuration: 0.6, thenDragTo: personal.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)),
+                    withVelocity: .slow, thenHoldForDuration: 1.0)
+        #endif
+        let nested = waitForNotebook(app, note: "Sync design sketch", "Personal › Work › Atlas")
+        trace(app, "notebook dragged by its row")
+        XCTAssertTrue(nested, "Work, dragged by the end of its row, is in Personal")
+    }
+
+    /// New Notebook (File ▸ New Notebook…, ⌃⌘N on a Mac; the sidebar's button on the iPad) makes an
+    /// empty notebook that is listed and selected.
+    @MainActor
+    func testNewNotebookAddsAnEmptyNotebook() throws {
+        let app = launch()
+        defer { app.terminate() }
+        require(noteRow(app, "Sync design sketch"), "note row", in: app, timeout: 90)
+        showSidebar(app)
+        #if targetEnvironment(macCatalyst)
+        app.typeKey("n", modifierFlags: [.command, .control])
+        #else
+        app.buttons["sidebar-new-notebook"].firstMatch.tap()
+        #endif
+        let field = app.textFields["new-notebook-name"].firstMatch
+        require(field, "New Notebook name field", in: app, timeout: 10)
+        field.typeText("Empty shelf")
+        app.buttons["new-notebook-create"].firstMatch.tap()
+        require(sidebarRow(app, "Empty shelf"), "sidebar row Empty shelf", in: app, timeout: 15)
+    }
+
     /// The notebook rows' context menu lives on the drag handle now: it still opens.
     @MainActor
     func testNotebookRowsKeepTheirContextMenu() throws {

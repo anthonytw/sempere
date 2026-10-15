@@ -224,6 +224,8 @@ extension AppModel {
         listLoaded = true
         loadFailure = nil
         if let id = selectedNoteID, !notes.contains(where: { $0.id == id }) { selectedNoteID = nil }
+        // Empty notebooks (format.md §14): read again only when the record names changed.
+        if canRead { await refreshNotebookRecords() }
         return pendingNoteIDs.count
     }
 

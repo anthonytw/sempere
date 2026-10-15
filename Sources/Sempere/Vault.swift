@@ -509,6 +509,9 @@ public struct Vault: Sendable {
         /// cannot be decrypted or verified here: it does not keep the journal,
         /// and the next settings write replaces it.
         public var settingsSkipped: [String] = []
+        /// Notebook records (format.md §14) left as they are because they
+        /// cannot be decrypted or verified here: they do not keep the journal.
+        public var notebooksSkipped: [String] = []
         /// Why a rewrap journal this device refuses was moved aside when this
         /// change started (`discardRefusedJournal`); nil when there was none.
         public var discardedJournal: String?
@@ -525,6 +528,7 @@ public struct Vault: Sendable {
             failures.merge(o.failures) { $1 }
             inboxSkipped += o.inboxSkipped
             settingsSkipped += o.settingsSkipped
+            notebooksSkipped += o.notebooksSkipped
             discardedJournal = o.discardedJournal ?? discardedJournal
         }
     }
@@ -984,6 +988,7 @@ public struct Vault: Sendable {
         }
         try rewrapInbox(recipients: recips, report: &report, stopAfter: stopAfter)
         try rewrapSharedSettings(recipients: recips, report: &report, stopAfter: stopAfter)
+        try rewrapNotebookRecords(recipients: recips, report: &report, stopAfter: stopAfter)
         return report
     }
 

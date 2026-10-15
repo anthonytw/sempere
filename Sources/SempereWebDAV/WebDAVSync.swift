@@ -284,6 +284,12 @@ public final class WebDAVSync {
             report.errors.append(.init(path: SharedSettings.fileName, message: Self.describe(error)))
         }
 
+        // Notebook records (format.md §14): write-once, so the union of both sides.
+        do { try syncNotebookRecords(remoteRoot: remoteRoot) } catch {
+            try rethrowRunLimit(error)
+            report.errors.append(.init(path: NotebookRecords.folderName, message: Self.describe(error)))
+        }
+
         do {
             recordedFiles = state.fileNamesByNote()
             let remoteNotes = try listRemoteNotes(rootEntries)

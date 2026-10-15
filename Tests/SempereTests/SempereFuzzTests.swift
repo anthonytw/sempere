@@ -33,6 +33,7 @@ final class SempereFuzzTests: VaultTestCase {
         } catch is GzipError {
         } catch is AgeError {
         } catch is SharedSettingsError {
+        } catch is NotebookRecordError {
         } catch { return "untyped error \(type(of: error)): \(error)" }
         return nil
     }
@@ -433,6 +434,26 @@ final class SempereFuzzTests: VaultTestCase {
                 _ = try state.enable(.useVault, local: local, file: s, type: .ipad, now: Self.wall)
                 let again = try SharedSettings.decode(try decoded.settings.encoded()).settings
                 if again != decoded.settings { throw SettingsInvariant(what: "round trip changed the settings") }
+            }
+        })
+    }
+
+    /// A notebook record's JSON (format.md §14.2): decoding, the set rules and
+    /// re-encoding. A record that decodes round-trips.
+    func testFuzzNotebookRecords() throws {
+        let id = UUID(uuidString: "7e57c0de-0000-4000-8000-0000000000c1")!
+        let seed = try NotebookRecords.encode(NotebookRecord(id: id, created: Self.wall, add: ["School/Math", "Home"],
+                                                             remove: [Self.pageA]))
+        assertClean(Fuzz.run("notebooks", seeds: [seed], quick: 1500, text: true) { input in
+            Self.typed {
+                let r = try NotebookRecords.decode(input, id: id)
+                let other = NotebookRecord(id: Self.pageA, add: ["School"])
+                _ = NotebookRecords.declared([r, other])
+                _ = NotebookRecords.rename("School", to: "Uni", records: [r, other], now: Self.wall)
+                _ = NotebookRecords.delete("Home", records: [r, other], now: Self.wall)
+                if try NotebookRecords.decode(try NotebookRecords.encode(r), id: id) != r {
+                    throw SettingsInvariant(what: "notebook record round trip changed it")
+                }
             }
         })
     }

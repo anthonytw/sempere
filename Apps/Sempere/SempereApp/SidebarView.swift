@@ -19,6 +19,28 @@ struct SidebarView: View {
     /// The notebook a "Move Notebook To…" sheet is open for.
     @State private var movingNotebook: MovingNotebook?
     @State private var newName = ""
+    /// The New Notebook sheet opened from the sidebar (its button and menus).
+    @State private var newNotebook: NewNotebookRequest?
+    /// The empty notebook a Delete Notebook confirmation is open for.
+    @State private var deletingNotebook: String?
+
+    /// A notebook row's context menu (`NotebookRowAction.notebookMenu`).
+    private func menu(for path: String) -> [NotebookRowAction] {
+        let actions = NotebookRowAction.notebookMenu(newInside: {
+            newNotebook = NewNotebookRequest(parent: path)
+        }, rename: {
+            newName = path
+            renaming = path
+        }, move: {
+            movingNotebook = MovingNotebook(path: path)
+        }, export: {
+            model.requestBulkExport(.notebook(path), window: ui?.id)
+        }, delete: {
+            deletingNotebook = path
+        })
+        // Delete Notebook only for an empty notebook a record keeps (format.md §14).
+        return model.canDeleteNotebook(path) ? actions : actions.filter { !$0.destructive }
+    }
 
     var body: some View {
         @Bindable var model = model
@@ -26,6 +48,7 @@ struct SidebarView: View {
             Label("All Notes", systemImage: "note.text").tag(SidebarItem.allNotes)
                 .sidebarDropTarget(.allNotes)
                 .contextMenu {
+                    Button("New Notebook…", systemImage: "folder.badge.plus") { newNotebook = NewNotebookRequest() }
                     Button("Export All Notes…", systemImage: ExportCommand.menuImage) {
                         model.requestBulkExport(.vault, window: ui?.id)
                     }
@@ -53,14 +76,7 @@ struct SidebarView: View {
                             .accessibilityIdentifier("sidebar-notebook-\(node.path)")
                             .sidebarDropTarget(.notebook(node.path))
                             // The drag and the context menu come from one UIKit view (`NotebookDragSource`).
-                            .notebookDragSource(node.path, menu: NotebookRowAction.notebookMenu(rename: {
-                                newName = node.path
-                                renaming = node.path
-                            }, move: {
-                                movingNotebook = MovingNotebook(path: node.path)
-                            }, export: {
-                                model.requestBulkExport(.notebook(node.path), window: ui?.id)
-                            }))
+                            .notebookDragSource(node.path, hasChildren: !node.children.isEmpty, menu: menu(for: node.path))
                             .swipeActions {
                                 Button("Rename", systemImage: "pencil") { newName = node.path; renaming = node.path }
                             }
@@ -95,6 +111,14 @@ struct SidebarView: View {
                     .help("Close the vault (⇧⌘W)")
             }
             ToolbarItem {
+                Button("New Notebook", systemImage: "folder.badge.plus") {
+                    newNotebook = NewNotebookRequest(parent: model.selectedNotebook)
+                }
+                .help("New notebook (⌃⌘N)")
+                .disabled(model.phase != .unlocked || model.isVaultReadOnly)
+                .accessibilityIdentifier("sidebar-new-notebook")
+            }
+            ToolbarItem {
                 Button("Settings", systemImage: "gearshape") { showingSettings = true }
                     .help("Settings for this device")
             }
@@ -117,6 +141,19 @@ struct SidebarView: View {
             }
         }
         .sheet(item: $movingNotebook) { MoveNotebookView(path: $0.path) }
+        .sheet(item: $newNotebook) { NewNotebookView(request: $0) }
+        .confirmationDialog("Delete this notebook?", isPresented: Binding(get: { deletingNotebook != nil },
+                                                                          set: { if !$0 { deletingNotebook = nil } }),
+                            titleVisibility: .visible) {
+            Button("Delete Notebook", role: .destructive) {
+                if let path = deletingNotebook {
+                    Task { await model.report { try await model.deleteNotebook(path) } }
+                }
+                deletingNotebook = nil
+            }
+        } message: {
+            Text("“\(deletingNotebook ?? "")” and the empty notebooks inside it are removed. It holds no notes.")
+        }
         .task(id: model.vault?.vaultId) { await keys.refresh(model) }
         .sheet(isPresented: $showingSettings) { SettingsView() }
         #if DEBUG

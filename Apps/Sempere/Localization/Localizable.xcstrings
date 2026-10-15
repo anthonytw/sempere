@@ -5422,6 +5422,18 @@
         }
       }
     },
+    "Delete Notebook" : {
+      "comment" : "Notebook row menu and confirmation button: delete an empty notebook",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminar cuaderno"
+          }
+        }
+      }
+    },
     "Delete Page" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5429,6 +5441,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Eliminar página"
+          }
+        }
+      }
+    },
+    "Delete this notebook?" : {
+      "comment" : "Confirmation title before deleting an empty notebook",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Eliminar este cuaderno?"
           }
         }
       }
@@ -9183,6 +9207,42 @@
         }
       }
     },
+    "New Notebook" : {
+      "comment" : "Sheet title and sidebar button: create an empty notebook",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuevo cuaderno"
+          }
+        }
+      }
+    },
+    "New Notebook Inside…" : {
+      "comment" : "Notebook row menu: create an empty notebook inside this one",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuevo cuaderno dentro…"
+          }
+        }
+      }
+    },
+    "New Notebook…" : {
+      "comment" : "File menu: create an empty notebook",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuevo cuaderno…"
+          }
+        }
+      }
+    },
     "New Notes" : {
       "comment" : "Settings section header",
       "extractionState" : "manual",
@@ -9250,6 +9310,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nota nueva (⌘N)"
+          }
+        }
+      }
+    },
+    "New notebook (⌃⌘N)" : {
+      "comment" : "Tooltip of the sidebar's New Notebook button",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuevo cuaderno (⌃⌘N)"
           }
         }
       }
@@ -9903,6 +9975,18 @@
         }
       }
     },
+    "Notebook name" : {
+      "comment" : "Text field placeholder in New Notebook",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nombre del cuaderno"
+          }
+        }
+      }
+    },
     "Notebook “%@”" : {
       "comment" : "Bulk export sheet: a notebook being exported; %@ is its name",
       "extractionState" : "manual",
@@ -10342,6 +10426,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Un archivo HTML independiente."
+          }
+        }
+      }
+    },
+    "Only an empty notebook can be deleted. Move or delete its notes first." : {
+      "comment" : "Error: Delete Notebook on a notebook with notes",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo se puede eliminar un cuaderno vacío. Mueve o elimina antes sus notas."
           }
         }
       }
@@ -16170,6 +16266,18 @@
         }
       }
     },
+    "That notebook name is too long." : {
+      "comment" : "Error: a new notebook's name is too long",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ese nombre de cuaderno es demasiado largo."
+          }
+        }
+      }
+    },
     "That password does not open this PDF." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -18749,6 +18857,18 @@
         }
       }
     },
+    "Use / for levels, e.g. School/Math. An empty notebook stays in the sidebar until you delete it." : {
+      "comment" : "New Notebook footer",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usa / para los niveles, p. ej. Colegio/Mates. Un cuaderno vacío se queda en la barra lateral hasta que lo elimines."
+          }
+        }
+      }
+    },
     "Use Compact Palette" : {
       "comment" : "Tools menu: the short tool palette",
       "extractionState" : "manual",
@@ -19868,6 +19988,18 @@
         }
       }
     },
+    "“%@” and the empty notebooks inside it are removed. It holds no notes." : {
+      "comment" : "Confirmation message; %@ is a notebook path",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se eliminan “%@” y los cuadernos vacíos que contiene. No contiene notas."
+          }
+        }
+      }
+    },
     "“%@” can't be found any more. It may have been moved or deleted, or access to it expired. Choose its folder again." : {
       "comment" : "%@ is a vault's name",
       "extractionState" : "manual",
@@ -19888,6 +20020,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No se ha podido descargar “%1$@” de %2$@: %3$@"
+          }
+        }
+      }
+    },
+    "“%@” exists already: it will be selected." : {
+      "comment" : "New Notebook: the typed notebook exists; %@ is its path",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” ya existe: se seleccionará."
           }
         }
       }

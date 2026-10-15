@@ -321,7 +321,7 @@ public enum Backup {
 
     /// Relative paths of the vault's format files: `vault.json`,
     /// `rewrap-journal.json`, `settings.age` (format.md §13), `keys/*.key.age`,
-    /// `notes/<id>/<revision>`.
+    /// `notebooks/*.notebook.age` (§14), `notes/<id>/<revision>`.
     /// Temporary and unknown files are skipped.
     static func formatFiles(in root: URL) throws -> [String] {
         var out: [String] = []
@@ -333,6 +333,11 @@ public enum Backup {
         for e in try FileIO.entries(keys)
         where isKeyFileName(e) && !FileIO.isDirectory(keys.appendingPathComponent(e)) {
             out.append("\(Vault.keysName)/\(e)")
+        }
+        let notebooks = root.appendingPathComponent(NotebookRecords.folderName)
+        for e in try FileIO.entries(notebooks)
+        where NotebookRecords.id(ofFileName: e) != nil && !FileIO.isDirectory(notebooks.appendingPathComponent(e)) {
+            out.append("\(NotebookRecords.folderName)/\(e)")
         }
         let notes = root.appendingPathComponent(Vault.notesName)
         for d in try FileIO.entries(notes) where Vault.isNoteDirectoryName(d) {
@@ -361,6 +366,7 @@ public enum Backup {
         if last == Vault.manifestName || last == Vault.journalName { return BoundedRead.maxManifestBytes }
         if parts.count == 1, last == SharedSettings.fileName { return SharedSettings.maxFileBytes }
         if parts.count >= 2, parts[parts.count - 2] == Vault.keysName { return BoundedRead.maxSmallFileBytes }
+        if parts.count >= 2, parts[parts.count - 2] == NotebookRecords.folderName { return NotebookRecords.maxFileBytes }
         if parts.count >= 2, parts[parts.count - 2] == Vault.attachmentsName { return BoundedRead.maxBlobFileBytes }
         return BoundedRead.maxRevisionBytes
     }

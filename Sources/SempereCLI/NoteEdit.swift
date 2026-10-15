@@ -564,8 +564,8 @@ struct NotesPaper: ParsableCommand {
 struct NotebooksCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "notebooks",
-        abstract: "List notebooks and rename or move them with every note inside.",
-        subcommands: [NotebooksList.self, NotebooksRename.self, NotebooksMove.self]
+        abstract: "List, create, rename, move and delete notebooks.",
+        subcommands: [NotebooksList.self, NotebooksCreate.self, NotebooksRename.self, NotebooksMove.self, NotebooksDelete.self]
     )
 }
 
@@ -575,8 +575,10 @@ struct NotebooksList: ParsableCommand {
         abstract: "List the notebook tree with note counts.",
         discussion: """
             Notebooks are /-separated paths (format.md §5.4); parents are listed even when they hold
-            no note directly. NOTES counts the notes directly in a notebook, TOTAL those in it or below
-            it. Deleted notes are not counted unless --deleted.
+            no note directly. Empty notebooks kept by notebook records (format.md §14, `notebooks
+            create`) are listed too (DECLARED yes). NOTES counts the notes directly in a notebook, TOTAL
+            those in it or below it. Deleted notes are not counted unless --deleted. Records that cannot
+            be read are reported on stderr and skipped.
             """
     )
 
@@ -590,16 +592,21 @@ struct NotebooksList: ParsableCommand {
     func run() throws {
         let vault = try access.openVault(.required)
         let notes = try vault.summaries(of: nil, cache: cache.cache(for: vault)).filter { deleted || !$0.deleted }
-        struct Row: Encodable { var path: String; var depth: Int; var notes: Int; var total: Int }
-        let rows = NotebookNode.flatten(NotebookNode.tree(notes.map(\.notebook))).map { path in
+        let records = try vault.readNotebookRecords()
+        reportRecordProblems(records, output: output)
+        let declared = Set(records.declared)
+        struct Row: Encodable { var path: String; var depth: Int; var notes: Int; var total: Int; var declared: Bool }
+        let tree = NotebookRecords.tree(noteNotebooks: notes.map(\.notebook), declared: records.declared)
+        let rows = NotebookNode.flatten(tree).map { path in
             Row(path: path, depth: NotebookPath.components(path).count - 1,
                 notes: notes.filter { NotebookPath.canonical($0.notebook) == path }.count,
-                total: notes.filter { NotebookPath.name($0.notebook, isWithin: path) }.count)
+                total: notes.filter { NotebookPath.name($0.notebook, isWithin: path) }.count,
+                declared: declared.contains(path))
         }
         if output.json { try output.emitJSON(rows); return }
         if rows.isEmpty { output.info("No notebooks."); return }
-        var table = output.quiet ? [] : [["NOTEBOOK", "NOTES", "TOTAL"]]
-        for r in rows { table.append([r.path, String(r.notes), String(r.total)]) }
+        var table = output.quiet ? [] : [["NOTEBOOK", "NOTES", "TOTAL", "DECLARED"]]
+        for r in rows { table.append([r.path, String(r.notes), String(r.total), r.declared ? "yes" : "-"]) }
         print(Format.table(table))
     }
 }
@@ -610,7 +617,8 @@ struct NotebooksRename: ParsableCommand {
         abstract: "Rename or move a notebook and everything below it.",
         discussion: """
             Every note in OLD or below it, deleted ones too, gets the OLD prefix of its notebook replaced
-            by NEW: one setMeta notebook delta per note (as the app's sidebar rename). Paths compare by
+            by NEW: one setMeta notebook delta per note (as the app's sidebar rename). Notebook records
+            within OLD (empty notebooks, format.md §14) are renamed first, in one record. Paths compare by
             whole segments, so renaming A/B leaves A/Bc alone. An empty NEW ("") takes the notes directly
             in OLD out of any notebook and lifts its sub-notebooks to the top level. Refused, before
             anything is written, when any note cannot be read (its notebook is unknown).
@@ -652,6 +660,14 @@ struct NotebooksRename: ParsableCommand {
                                              notebooks: Dictionary(uniqueKeysWithValues: notes.map { ($0.id, $0.notebook) }))
         struct Change: Encodable { var note: String; var title: String; var from: String?; var to: String?; var file: String? }
         var changes: [Change] = []
+        // Records first (format.md §14.4): an interrupted rename shows the notebook under both names.
+        let records = try vault.readNotebookRecords()
+        reportRecordProblems(records, output: output)
+        let recordPlan = NotebookRecords.rename(old, to: target, records: records.records, now: Date())
+        if let recordPlan, !dryRun { try vault.writeNotebookRecord(recordPlan) }
+        let renamedEmpty = recordPlan.map { _ in
+            records.declared.filter { NotebookPath.name($0, isWithin: old) }
+        } ?? []
         for edit in planned {
             guard let s = notes.first(where: { $0.id == edit.noteId }) else { continue }
             var file: String?
@@ -666,11 +682,22 @@ struct NotebooksRename: ParsableCommand {
                                   to: NotebookPath.renamed(s.notebook, from: old, to: target), file: file))
         }
         if output.json {
-            struct Out: Encodable { var from: String; var to: String?; var dryRun: Bool; var notes: [Change] }
-            try output.emitJSON(Out(from: NotebookPath.canonical(old) ?? old, to: target, dryRun: dryRun, notes: changes))
+            struct Out: Encodable {
+                var from: String; var to: String?; var dryRun: Bool; var notes: [Change]
+                var declared: [String]; var record: String?
+            }
+            try output.emitJSON(Out(from: NotebookPath.canonical(old) ?? old, to: target, dryRun: dryRun, notes: changes,
+                                    declared: renamedEmpty, record: dryRun ? nil : recordPlan?.fileName))
             return
         }
-        if changes.isEmpty { output.info("No note is in \(old)."); return }
+        for path in renamedEmpty {
+            output.info("\(dryRun ? "would rename" : "renamed") notebook \(path) -> "
+                        + "\(NotebookPath.renamed(path, from: old, to: target) ?? "-")")
+        }
+        if changes.isEmpty {
+            if renamedEmpty.isEmpty { output.info("No note or notebook is in \(old).") }
+            return
+        }
         for c in changes {
             output.info("\(dryRun ? "would move" : "moved") \(c.note) \(c.title.isEmpty ? "(untitled)" : c.title): "
                         + "\(c.from ?? "-") -> \(c.to ?? "-")")
@@ -721,6 +748,107 @@ struct NotebooksMove: ParsableCommand {
         let vault = try access.openVault(.required)
         try NotebooksRename.perform(vault, old: from, to: target, dryRun: dryRun, output: output)
     }
+}
+
+struct NotebooksCreate: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "create",
+        abstract: "Create an empty notebook.",
+        discussion: """
+            Writes a notebook record (format.md §14) declaring PATH, so the notebook exists, and stays,
+            while no note is in it (as the app's New Notebook). Levels are /-separated (School/Math);
+            parent levels need nothing. Nothing is written when PATH is declared already.
+            """
+    )
+
+    @Argument(help: ArgumentHelp("The notebook's path.", valueName: "path"))
+    var path: String
+
+    @OptionGroup var access: AccessOptions
+    @OptionGroup var output: OutputOptions
+
+    func validate() throws {
+        if NotebookPath.canonical(path) == nil { throw ValidationError("the notebook name is empty") }
+        if path.unicodeScalars.count > NotebookRecords.maxPathScalars { throw ValidationError("the notebook name is too long") }
+    }
+
+    func run() throws {
+        let vault = try access.openVault(.required)
+        let canonical = NotebookPath.canonical(path) ?? path
+        let record = try vault.createNotebook(canonical)
+        if output.json {
+            struct Out: Encodable { var notebook: String; var created: Bool; var record: String? }
+            try output.emitJSON(Out(notebook: canonical, created: record != nil, record: record?.fileName))
+        } else if let record {
+            output.info("Created notebook \(canonical) (\(NotebookRecords.folderName)/\(record.fileName))")
+        } else {
+            output.info("Notebook \(canonical) exists already.")
+        }
+    }
+}
+
+struct NotebooksDelete: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "delete",
+        abstract: "Delete an empty notebook and the empty notebooks inside it.",
+        discussion: """
+            Writes a notebook record (format.md §14) that ends the records declaring PATH and every
+            notebook below it. Notes are never deleted or moved: refused (exit 1) while a note that is
+            not deleted is in PATH or below it; move or delete those notes first (`notes move`,
+            `notes delete`). Notes in Recently Deleted keep their notebook, and restoring one shows it
+            again.
+            """
+    )
+
+    @Argument(help: ArgumentHelp("The notebook to delete.", valueName: "path"))
+    var path: String
+
+    @Flag(name: .customLong("dry-run"), help: "Only say what would be deleted.")
+    var dryRun = false
+
+    @OptionGroup var access: AccessOptions
+    @OptionGroup var output: OutputOptions
+
+    func validate() throws {
+        if NotebookPath.canonical(path) == nil { throw ValidationError("the notebook name is empty") }
+    }
+
+    func run() throws {
+        let vault = try access.openVault(.required)
+        let canonical = NotebookPath.canonical(path) ?? path
+        let notes = try vault.summaries(of: nil)
+        let unreadable = notes.filter { $0.problem != nil }
+        guard unreadable.isEmpty else {
+            throw CLIError.failure("\(unreadable.count) note(s) cannot be read, so their notebooks are unknown: "
+                + unreadable.map { $0.id.uuidString.lowercased() }.joined(separator: ", "))
+        }
+        let inside = notes.filter { !$0.deleted && NotebookPath.name($0.notebook, isWithin: canonical) }
+        guard inside.isEmpty else {
+            throw CLIError.failure("\(canonical) is not empty: \(inside.count) note(s) are in it or below it; "
+                + "move or delete them first")
+        }
+        let records = try vault.readNotebookRecords()
+        reportRecordProblems(records, output: output)
+        let removed = records.declared.filter { NotebookPath.name($0, isWithin: canonical) }
+        guard let plan = NotebookRecords.delete(canonical, records: records.records, now: Date()) else {
+            throw CLIError.failure("no empty notebook \(canonical)")
+        }
+        if !dryRun { try vault.writeNotebookRecord(plan) }
+        if output.json {
+            struct Out: Encodable { var notebook: String; var removed: [String]; var dryRun: Bool; var record: String? }
+            try output.emitJSON(Out(notebook: canonical, removed: removed, dryRun: dryRun, record: dryRun ? nil : plan.fileName))
+            return
+        }
+        for p in removed { output.info("\(dryRun ? "would delete" : "deleted") notebook \(p)") }
+    }
+}
+
+/// Reports, on stderr, notebook records that could not be read (format.md §14.3: skipped).
+func reportRecordProblems(_ set: NotebookRecordSet, output: OutputOptions) {
+    for (path, why) in set.problems.sorted(by: { $0.key < $1.key }) {
+        printStderr("warning: \(path) skipped: \(why)")
+    }
+    if set.ignored > 0 { printStderr("warning: \(set.ignored) notebook records beyond \(NotebookRecords.maxRecords) ignored") }
 }
 
 // MARK: - tags

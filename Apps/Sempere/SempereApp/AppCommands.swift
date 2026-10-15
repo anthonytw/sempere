@@ -258,6 +258,8 @@ final class WindowUI {
     /// Identifies the window (`AppModel.canvasWindow`).
     let id = UUID()
     var creatingNote = false
+    /// The New Notebook sheet (`NewNotebookView`), with the notebook it starts in.
+    var creatingNotebook: NewNotebookRequest?
     /// The note being renamed.
     var renameNoteID: UUID?
     /// The note whose tags are being edited.
