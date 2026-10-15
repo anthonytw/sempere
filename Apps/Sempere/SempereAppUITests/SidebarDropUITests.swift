@@ -251,7 +251,9 @@ final class SidebarDropUITests: XCTestCase {
         require(field, "New Notebook name field", in: app, timeout: 10)
         field.typeText("Empty shelf")
         app.buttons["new-notebook-create"].firstMatch.tap()
-        require(sidebarRow(app, "Empty shelf"), "sidebar row Empty shelf", in: app, timeout: 15)
+        let made = sidebarRow(app, "Empty shelf").waitForExistence(timeout: 15)
+        trace(app, "new notebook")
+        XCTAssertTrue(made, "the new notebook is in the sidebar")
     }
 
     /// The notebook rows' context menu lives on the drag handle now: it still opens.

@@ -16,6 +16,7 @@ struct NewNotebookView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
     @State private var failure: String?
+    @State private var selection: TextSelection?
     @FocusState private var focused: Bool
 
     init(request: NewNotebookRequest) {
@@ -29,11 +30,12 @@ struct NewNotebookView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Notebook name", text: $name)
+                    TextField("Notebook name", text: $name, selection: $selection)
                         .autocorrectionDisabled()
                         .focused($focused)
                         .accessibilityIdentifier("new-notebook-name")
-                        .onSubmit(create)
+                        // Return picks a suggested emoji while the list is open (":smile" -> 😄), else creates.
+                        .emojiCompletion(text: $name, onSubmit: create, selection: $selection)
                 } footer: {
                     Text("Use / for levels, e.g. School/Math. An empty notebook stays in the sidebar until you delete it.")
                 }
@@ -59,10 +61,21 @@ struct NewNotebookView: View {
         guard path != nil else { return }
         let typed = name
         Task {
+            #if DEBUG
+            DropTrace.note("newNotebook start")
+            #endif
             do {
                 try await model.createNotebook(typed)
+                #if DEBUG
+                DropTrace.note("newNotebook done declared=\(model.declaredNotebooks.count)")
+                #endif
                 dismiss()
-            } catch { failure = "\(error)" }
+            } catch {
+                #if DEBUG
+                DropTrace.note("newNotebook failed \(type(of: error))")
+                #endif
+                failure = "\(error)"
+            }
         }
     }
 }

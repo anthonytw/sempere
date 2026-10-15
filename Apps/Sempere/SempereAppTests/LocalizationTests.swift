@@ -55,9 +55,9 @@ struct LocalizationTests {
     @Test func notebookMenuTitlesAreTranslated() throws {
         let es = try #require(Self.spanish)
         let missing = "\u{1}missing"
-        let menu = NotebookRowAction.notebookMenu(rename: {}, move: {}, export: {})
+        let menu = NotebookRowAction.notebookMenu(newInside: {}, rename: {}, move: {}, export: {}, delete: {})
         #expect(menu.map { es.localizedString(forKey: $0.title.key, value: missing, table: nil) }
-                == ["Renombrar o mover…", "Mover cuaderno a…", "Exportar cuaderno…"])
+                == ["Nuevo cuaderno dentro…", "Renombrar o mover…", "Mover cuaderno a…", "Exportar cuaderno…", "Eliminar cuaderno"])
     }
 
     @Test func permissionPromptsAreTranslated() throws {
