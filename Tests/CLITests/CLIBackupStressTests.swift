@@ -82,6 +82,7 @@ final class CLIBackupStressTests: CLITestCase {
     }
 
     func testAFolderThatCannotBeWrittenIsAnErrorNotACrash() throws {
+        try XCTSkipIf(getuid() == 0, "root writes into a folder whatever its permissions")
         _ = try bigVault(notes: 2, kb: 20)
         let dir = path("readonly")
         try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)

@@ -525,7 +525,8 @@ struct VaultLocatorTests {
         let conforms = try #require(vault["UTTypeConformsTo"] as? [String])
         #expect(!conforms.contains("com.apple.package"))
         #expect(conforms.contains("public.folder"))
-        #expect(!UTType.sempere.conforms(to: .package))
+        // Not `UTType.sempere.conforms(to:)`: Launch Services may answer from another installed copy of
+        // the app (a TestFlight build in /Applications) whose declaration is older than this one.
     }
 }
 
