@@ -252,13 +252,14 @@ final class IPadCanvasUITests: XCTestCase {
         point(Self.emptySpot, on: canvas, r0, app: app).tap()
         waitReport(canvas, "a new box is being typed in") { $0.typing != nil }
         // (The text view is inside the canvas, out of the accessibility tree: XCTest cannot type into it.)
-        // A tap elsewhere ends the box; the tool is done, typed in or not.
-        point(CGPoint(x: 120, y: 720), on: canvas, r0, app: app).tap()
+        // A tap elsewhere ends the box; the tool is done, typed in or not. Above the box: the
+        // software keyboard, when the simulator shows one, covers the bottom of the page.
+        point(CGPoint(x: 500, y: 110), on: canvas, r0, app: app).tap()
         waitReport(canvas, "the box's edit ended", timeout: 10) { $0.typing == nil }
         XCTAssertEqual(report(canvas)?.items.filter { $0.kind == "text" }.count, textBoxes, "an empty box writes nothing")
         Thread.sleep(forTimeInterval: 1)
         guard let r1 = report(canvas) else { return }
-        point(CGPoint(x: 160, y: 820), on: canvas, r1, app: app).tap()
+        point(CGPoint(x: 520, y: 170), on: canvas, r1, app: app).tap()
         Thread.sleep(forTimeInterval: 1.5)
         XCTAssertNil(report(canvas)?.typing, "the text tool was one-shot: no second box")
     }
