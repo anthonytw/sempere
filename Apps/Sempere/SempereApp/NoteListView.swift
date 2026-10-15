@@ -20,6 +20,9 @@ struct NoteListView: View {
     @State private var promptText = ""
     /// The note being moved to a notebook (`MoveNoteView`).
     @State private var movingNote: MovingNote?
+    /// The list's order on this device (`NoteSortPreference`), handed to the model when the list appears.
+    @AppStorage(NoteSortPreference.sortKey) private var storedSort = NoteSort.modified.rawValue
+    @AppStorage(NoteSortPreference.favoritesFirstKey) private var storedFavoritesFirst = false
 
     private struct MovingNote: Identifiable {
         let note: NoteSummary
@@ -77,11 +80,19 @@ struct NoteListView: View {
             }
             ToolbarItem(placement: secondary) {
                 Menu("Sort", systemImage: "arrow.up.arrow.down") {
-                    Picker("Sort By", selection: $model.sortOrder) {
+                    Picker("Sort By", selection: Binding(get: { model.sortOrder }, set: { storedSort = $0.rawValue; model.sortOrder = $0 })) {
                         ForEach(NoteSort.allCases) { Text($0.title).tag($0) }
                     }
+                    Toggle("Favorites at Top", systemImage: "star",
+                           isOn: Binding(get: { model.favoritesFirst }, set: { storedFavoritesFirst = $0; model.favoritesFirst = $0 }))
                 }
-                .help("Sort the notes by date or title")
+                .help("Sort the notes by date or title, with favorites at the top")
+            }
+            // Second, after Sort: the most used button stays in view when the bar is narrow.
+            ToolbarItem {
+                Button("New Note", systemImage: "square.and.pencil") { ui.creatingNote = true }
+                    .disabled(model.phase != .unlocked || model.isVaultReadOnly)
+                    .help("New note (⌘N)")
             }
             ToolbarItem(placement: secondary) {
                 Menu("Handwriting", systemImage: "text.viewfinder") {
@@ -113,11 +124,6 @@ struct NoteListView: View {
                                  comment: "Tooltip of the import-from-another-app button (its name)"))
                 }
             }
-            ToolbarItem {
-                Button("New Note", systemImage: "square.and.pencil") { ui.creatingNote = true }
-                    .disabled(model.phase != .unlocked || model.isVaultReadOnly)
-                    .help("New note (⌘N)")
-            }
         }
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 0) {
@@ -132,6 +138,10 @@ struct NoteListView: View {
         }
         .refreshable {
             await model.report { try await model.reload() }
+        }
+        .onAppear {
+            if let sort = NoteSort(rawValue: storedSort), sort != model.sortOrder { model.sortOrder = sort }
+            if storedFavoritesFirst != model.favoritesFirst { model.favoritesFirst = storedFavoritesFirst }
         }
         .sheet(item: $movingNote) { MoveNoteView(note: $0.note) }
         .alert(promptTitle, isPresented: Binding(get: { prompt != nil }, set: { if !$0 { prompt = nil } })) {
@@ -384,6 +394,9 @@ private struct NoteRow: View {
             HStack(spacing: 6) {
                 Text(note.title.isEmpty ? String(localized: "Untitled", comment: "Shown for a note without a title") : note.title)
                     .font(.headline)
+                if note.favorite {
+                    FavoriteMark()
+                }
                 if downloading {
                     ProgressView().controlSize(.mini)
                         .accessibilityLabel("Updating from iCloud")
@@ -394,6 +407,7 @@ private struct NoteRow: View {
                     Text(modified, format: .dateTime.year().month().day())
                 }
                 Text("\(note.pages) pages")
+                AttachmentIcons(kinds: note.attachments)
                 if let recognized {
                     Label(RecognitionResultsText.pagesRead(recognized.pagesRecognized, of: note.pages), systemImage: "text.viewfinder")
                 }
@@ -415,13 +429,83 @@ private struct NoteRow: View {
                     .lineLimit(2)
             }
             if !note.tags.isEmpty {
-                HStack(spacing: 4) {
-                    // One chip per tag key: older notes may store two spellings.
-                    let tags = NoteOps.normalizedTags(note.tags)
-                    ForEach(tags.prefix(4), id: \.self) { TagChip(tag: $0) }
-                    if tags.count > 4 { Text("+\(tags.count - 4)").font(.caption2).foregroundStyle(.secondary) }
+                // One chip per tag key: older notes may store two spellings.
+                TagLine(tags: NoteOps.normalizedTags(note.tags))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+/// The favorite star of a note row: filled, in the favorites' accent color (the sidebar's Favorites row uses it too).
+struct FavoriteMark: View {
+    /// A warm accent that reads on light and dark lists (system orange), never the label color.
+    static let color = SwiftUI.Color.orange
+
+    var body: some View {
+        Image(systemName: "star.fill")
+            .font(.caption)
+            .foregroundStyle(Self.color)
+            .accessibilityLabel(String(localized: "Favorite", comment: "Accessibility: the note is a favorite"))
+    }
+}
+
+/// Small symbols for the kinds of attachments a note holds (`NoteSummary.attachments`), in the row's caption line.
+struct AttachmentIcons: View {
+    let kinds: NoteAttachments
+
+    /// Each kind's symbol and spoken name, in the order shown.
+    static let symbols: [(kind: NoteAttachments, symbol: String, label: String)] = [
+        (.images, "photo", String(localized: "Pictures", comment: "Accessibility: the note holds pictures")),
+        (.math, "function", String(localized: "Equations", comment: "Accessibility: the note holds equations")),
+        (.video, "video", String(localized: "Video", comment: "Accessibility: the note holds video")),
+        (.audio, "waveform", String(localized: "Audio", comment: "Accessibility: the note holds audio recordings")),
+        (.pdf, "doc.richtext", String(localized: "PDF", comment: "Accessibility: the note holds PDF pages")),
+    ]
+
+    var body: some View {
+        let shown = Self.symbols.filter { kinds.contains($0.kind) }
+        if !shown.isEmpty {
+            HStack(spacing: 3) {
+                ForEach(shown, id: \.symbol) { entry in
+                    Image(systemName: entry.symbol)
+                        .imageScale(.small)
+                        .accessibilityLabel(entry.label)
                 }
-                .foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .combine)
+        }
+    }
+}
+
+/// A row's tags on one line: as many chips as fit, then "+N" for the rest; a single
+/// chip that does not fit is truncated.
+struct TagLine: View {
+    let tags: [String]
+    /// The most chips tried before the count takes over (bounds the layouts measured per row).
+    static let maxChips = 6
+
+    var body: some View {
+        let limit = min(tags.count, Self.maxChips)
+        ViewThatFits(in: .horizontal) {
+            ForEach(Array(stride(from: limit, through: 1, by: -1)), id: \.self) { shown in
+                line(showing: shown)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func line(showing shown: Int) -> some View {
+        HStack(spacing: 4) {
+            ForEach(tags.prefix(shown), id: \.self) { tag in
+                TagChip(tag: tag).lineLimit(1)
+            }
+            if tags.count > shown {
+                Text(verbatim: "+\(tags.count - shown)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+                    .layoutPriority(1)
             }
         }
     }
