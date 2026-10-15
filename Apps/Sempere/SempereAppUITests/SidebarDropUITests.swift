@@ -79,7 +79,12 @@ final class SidebarDropUITests: XCTestCase {
     /// a drag starts from the menu's preview as well.
     private func drag(_ source: XCUIElement, onto target: XCUIElement, press: TimeInterval = 0.6) {
         #if targetEnvironment(macCatalyst)
-        source.click(forDuration: 0.6, thenDragTo: target, withVelocity: .slow, thenHoldForDuration: 1.0)
+        // By coordinates: on a Mac a notebook row's identifier can resolve to its icon, which the row's
+        // clear drag view covers, and XCUITest refuses an element it judges not hittable ("in scroll
+        // view without scrollable trait") although a pointer there drags the row.
+        let center = CGVector(dx: 0.5, dy: 0.5)
+        source.coordinate(withNormalizedOffset: center).click(forDuration: 0.6, thenDragTo: target.coordinate(withNormalizedOffset: center),
+                                                              withVelocity: .slow, thenHoldForDuration: 1.0)
         #else
         source.press(forDuration: press, thenDragTo: target, withVelocity: .slow, thenHoldForDuration: 1.0)
         #endif
@@ -250,7 +255,9 @@ final class SidebarDropUITests: XCTestCase {
         let field = app.textFields["new-notebook-name"].firstMatch
         require(field, "New Notebook name field", in: app, timeout: 10)
         field.typeText("Empty shelf")
-        app.buttons["new-notebook-create"].firstMatch.tap()
+        // Return submits (the field's onSubmit). A synthesized click on a sheet's toolbar button does not
+        // reach its action under XCUITest on Mac Catalyst (measured: New Note's Create too).
+        field.typeText("\r")
         let made = sidebarRow(app, "Empty shelf").waitForExistence(timeout: 15)
         trace(app, "new notebook")
         XCTAssertTrue(made, "the new notebook is in the sidebar")

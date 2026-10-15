@@ -61,19 +61,10 @@ struct NewNotebookView: View {
         guard path != nil else { return }
         let typed = name
         Task {
-            #if DEBUG
-            DropTrace.note("newNotebook start")
-            #endif
             do {
                 try await model.createNotebook(typed)
-                #if DEBUG
-                DropTrace.note("newNotebook done declared=\(model.declaredNotebooks.count)")
-                #endif
                 dismiss()
             } catch {
-                #if DEBUG
-                DropTrace.note("newNotebook failed \(type(of: error))")
-                #endif
                 failure = "\(error)"
             }
         }
