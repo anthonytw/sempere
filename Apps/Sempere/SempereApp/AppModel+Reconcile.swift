@@ -95,7 +95,12 @@ extension AppModel {
                 // pass over N arriving notes costs O(limit), not O(N), and N notes arriving
                 // over many passes cost O(N + passes × limit) in all, not O(N × passes).
                 let arriving = pendingNoteIDs.intersection(present)
-                let fresh = Set(diff.changed).subtracting(arriving).union(reported.intersection(present))
+                // A reported note whose names are the indexed ones is not checked: the report is
+                // often iCloud evicting its files (placeholders, dataless files), and a check
+                // would request them, downloading back every note iCloud evicts. Its row comes
+                // from the index; opening it downloads it (`downloadNote`).
+                let reportedNow = reported.intersection(present).subtracting(diff.unchanged)
+                let fresh = Set(diff.changed).subtracting(arriving).union(reportedNow)
                 let rotation = nextPendingChecks(arriving.subtracting(fresh), limit: cloudCheckLimit)
                 focus = fresh.union(rotation)
                 if let selected = selectedNoteID, arriving.contains(selected) { focus.insert(selected) }

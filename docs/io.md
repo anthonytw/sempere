@@ -118,7 +118,8 @@ iCloud (`ProgressiveLoad.pass(notes:)`, one state query per file), sorted
 into *ready* (all files local: read at once) and *pending* (some file not
 local), and pending ones requested at most 64 notes at a time, the note the
 user selected first. A note first seen changed (or reported by the file
-presenter) is checked at once; notes already known to be arriving are
+presenter, unless its names are the indexed ones: iCloud evicting a note's
+files is reported too) is checked at once; notes already known to be arriving are
 re-checked at most 64 per pass, in rotation (`cloudCheckLimit`,
 `nextPendingChecks`), so N notes arriving over many passes cost
 O(N + passes × 64) state queries, not O(N × passes) (a mass re-import can

@@ -312,6 +312,33 @@ struct VaultOpeningTests {
         model.close()
     }
 
+    /// iCloud: evicting a note's files is reported by the file presenter like any
+    /// change below `notes/`. A reported note whose names are the indexed ones is
+    /// not checked, so it is not downloaded back (the report reached the open
+    /// vault's loop at random times, and then both notes were requested).
+    @Test func aReportedEvictionWithUnchangedNamesDownloadsNothing() async throws {
+        let cacheDir = Self.tempDir()
+        let (url, keyURL) = try AppModelTests.fixtureVault()
+        let key = try Self.key(keyURL)
+        let cloud = FakeCloud(vault: url)
+        let model = AppModel(deviceStateURL: TS.deviceStateURL(), summaryCacheDirectory: cacheDir)
+        model.cloudHooks = cloud.hooks
+        model.cloudPollInterval = .milliseconds(10)
+        try await model.openVault(at: url)
+        try await model.unlock(identityText: key)
+        #expect(model.notes.count == 2)
+
+        try cloud.evict(Self.lecture)
+        try cloud.evictDataless(Self.other)
+        model.noteFoldersChanged([Self.lecture, Self.other])
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(cloud.requestedNotes.isEmpty, "nothing downloaded: \(cloud.requestedNotes)")
+        #expect(model.pendingNoteIDs.isEmpty)
+        #expect(model.cloudSync?.isDownloading == false)
+        #expect(model.notes.count == 2)
+        model.close()
+    }
+
     /// iCloud: a revision another device added since the last launch changes
     /// the note's names: the note keeps its indexed summary (marked
     /// downloading), is downloaded and read, and only it is read.
