@@ -8,6 +8,10 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
 
 ### Fixed
 
+- Settings ▸ Quick Voice Notes says when Live Activities or the microphone are off for Sempere, and why that stops the voice-note widgets, with a button to the system Settings.
+- Settings: App Language opens Sempere's page in the system Settings; About links the website and the privacy policy.
+- Transcription has one Preferred Language control (Automatic by default); the app picks SpeechTranscriber or SFSpeechRecognizer for it and says which.
+- The status bar under the note list no longer flashes for each edit: it shows only for transfers of five or more notes.
 - iCloud Drive: a vault is a plain folder, no longer a package, so iCloud syncs its files one by one; as
   a package, two devices writing at once made a conflict of the whole vault, and choosing one version
   lost the notes written on the other device. The app now merges iCloud's conflict versions of the

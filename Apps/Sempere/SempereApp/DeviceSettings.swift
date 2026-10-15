@@ -230,6 +230,8 @@ enum TranscriptionSettings {
 
     /// Asks the engines for their status for a locale (nil: the device's), for the panel's engine list.
     @MainActor static var enginesProvider: @Sendable (String?) async -> [EngineLine] = { _ in [] }
+    /// The one line under the Preferred Language picker: which engine the app chose for a locale.
+    @MainActor static var engineNoteProvider: @Sendable (String?) async -> String = { _ in "" }
 
     /// Starts downloading the model; nil when no engine is installed
     /// (`TranscriptionPreference.installSettingsHooks` sets it at launch).

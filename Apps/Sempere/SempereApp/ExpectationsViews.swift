@@ -384,6 +384,8 @@ struct AboutSettingsSection: View {
             LabeledContent("Version", value: AboutInfo.versionText())
             NavigationLink("About Sempere") { AboutView(showsDone: false) }
                 .accessibilityIdentifier("settingsAboutSempere")
+            Link("Sempere Website", destination: SempereAbout.websiteURL)
+            Link("Privacy Policy", destination: SempereAbout.privacyPolicyURL)
             // Each sheet on its button, not the section: a section's modifier is on each of its
             // rows, and several rows presenting at once can close it again on Mac Catalyst 27.
             Button("Show Quick Tour") { showingTour = true }
@@ -423,6 +425,14 @@ struct AboutView: View {
                 Text("License")
             } footer: {
                 Text("You may use, study, share and change Sempere under the GPL v3 or any later version. An App Store exception lets the app be distributed under the App Store's terms.")
+            }
+            Section {
+                Link("Sempere Website", destination: SempereAbout.websiteURL)
+                Link("Privacy Policy", destination: SempereAbout.privacyPolicyURL)
+            } header: {
+                Text("Website and Privacy")
+            } footer: {
+                Text("Sempere collects no data. The privacy policy says what that means.")
             }
             Section {
                 Link("Security Design and Limits", destination: SempereAbout.securityDesignURL)

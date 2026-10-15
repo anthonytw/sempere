@@ -1,3 +1,4 @@
+import AVFAudio
 #if os(iOS) && !targetEnvironment(macCatalyst)
 import ActivityKit
 #endif
@@ -17,6 +18,8 @@ struct QuickCaptureSettingsSection: View {
     @State private var unreadable = false
     @State private var notebook = CaptureProfile.defaultNotebook
     @State private var problem: String?
+    /// Bumped when the app becomes active again, so the permission notices re-check after a visit to the system Settings.
+    @State private var activations = 0
 
     var body: some View {
         Section {
@@ -51,14 +54,19 @@ struct QuickCaptureSettingsSection: View {
                 Text(QuickCaptureError.profileUnreadable.description).font(.footnote).foregroundStyle(.orange)
             }
             if let problem { Text(problem).font(.footnote).foregroundStyle(.orange) }
-            #if os(iOS) && !targetEnvironment(macCatalyst)
-            if stored != nil, !ActivityAuthorizationInfo().areActivitiesEnabled {
-                Text(QuickCaptureError.liveActivitiesOff.description).font(.footnote).foregroundStyle(.orange)
+            // Why the Lock Screen / Control Center / Action button / widget shortcuts cannot record,
+            // whether or not Quick Voice Notes is set up yet, with the way to the system Settings.
+            ForEach(blockers, id: \.self) { blocker in
+                VStack(alignment: .leading, spacing: 4) {
+                    Label(blocker.title, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text(blocker.explanation).font(.footnote).foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
                 Button("Open Sempere's Settings") {
                     if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                 }
             }
-            #endif
         } header: {
             Text("Quick Voice Notes")
         } footer: {
@@ -69,12 +77,28 @@ struct QuickCaptureSettingsSection: View {
             }
         }
         .id(Self.anchor)
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in activations += 1 }
         .onChange(of: model.settingsAppliedRevision) { reload() }
         .onAppear {
             reload()
             // Live Activities may have been switched in Settings ▸ Sempere meanwhile.
             model.quickCapture.publishStatus()
         }
+    }
+
+    /// What keeps voice notes from recording on this device right now.
+    private var blockers: [VoiceNoteBlocker] {
+        _ = activations
+        return VoiceNoteBlocker.current(liveActivitiesEnabled: Self.liveActivitiesEnabled,
+                                 microphoneDenied: AVAudioApplication.shared.recordPermission == .denied)
+    }
+
+    private static var liveActivitiesEnabled: Bool {
+        #if os(iOS) && !targetEnvironment(macCatalyst)
+        return ActivityAuthorizationInfo().areActivitiesEnabled
+        #else
+        return true   // Live Activities are not used on a Mac
+        #endif
     }
 
     private func reload() {
@@ -105,5 +129,37 @@ struct QuickCaptureSettingsSection: View {
         model.quickCapture.publishStatus()
         model.settingsChanged()   // a synced setting (docs/settings-sync.md §5.2)
         reload()
+    }
+}
+
+/// A system permission that keeps voice notes (widgets, Lock Screen, Control Center, Action button,
+/// Siri) from recording, shown in Settings ▸ Quick Voice Notes with a way to turn it on.
+enum VoiceNoteBlocker: Hashable {
+    case liveActivitiesOff
+    case microphoneDenied
+
+    static func current(liveActivitiesEnabled: Bool, microphoneDenied: Bool) -> [VoiceNoteBlocker] {
+        var out: [VoiceNoteBlocker] = []
+        if !liveActivitiesEnabled { out.append(.liveActivitiesOff) }
+        if microphoneDenied { out.append(.microphoneDenied) }
+        return out
+    }
+
+    var title: String {
+        switch self {
+        case .liveActivitiesOff: return String(localized: "Live Activities are off", comment: "Settings ▸ Quick Voice Notes: a permission is missing")
+        case .microphoneDenied: return String(localized: "Microphone access is off", comment: "Settings ▸ Quick Voice Notes: a permission is missing")
+        }
+    }
+
+    var explanation: String {
+        switch self {
+        case .liveActivitiesOff:
+            return String(localized: "The voice-note widgets, Lock Screen control and Action button cannot record until Live Activities are on, because iOS ends a recording that shows none. Open Sempere's Settings and turn on Live Activities.",
+                          comment: "Settings ▸ Quick Voice Notes: why voice notes cannot record, and what to do")
+        case .microphoneDenied:
+            return String(localized: "Voice notes cannot record without the microphone. Open Sempere's Settings and turn on Microphone.",
+                          comment: "Settings ▸ Quick Voice Notes: why voice notes cannot record, and what to do")
+        }
     }
 }
