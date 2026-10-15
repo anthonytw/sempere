@@ -43,7 +43,9 @@ extension NoteOps {
     /// `audioItemSize` (narrower on a narrow page): inside `visible` (the part
     /// of the page the user sees, page coordinates) centered across it and a
     /// margin below its top, else centered across the page a margin from its
-    /// top; `at` sets the top-left corner and `width` the width instead.
+    /// top, then below the page's items it would cover (`unoccupied`), so a
+    /// second card goes under the first; `at` sets the top-left corner and
+    /// `width` the width instead.
     ///
     /// - Throws: `AttachmentOpsError.noSuchRecording` when `recordings` has
     ///   no such recording, `.pageFull`, `.invalidFrame`.
@@ -66,7 +68,9 @@ extension NoteOps {
             let h = audioItemSize.h
             let x = origin?.x ?? area.x + (area.w - w) / 2
             let y = origin?.y ?? area.y + min(Limits.margin, max(0, area.h - h))
-            rect = Rect(x: InkJSON.round3(x), y: InkJSON.round3(y), w: InkJSON.round3(w), h: InkJSON.round3(h))
+            let placed = Rect(x: InkJSON.round3(x), y: InkJSON.round3(y), w: InkJSON.round3(w), h: InkJSON.round3(h))
+            // Placed by default: below the page's items (an earlier card), never on them.
+            rect = origin == nil ? unoccupied(placed, among: page.items, pageSize: pageSize) : placed
         }
         try validate(frame: rect)
         let item = Item.audio(id: id, recording: recording, frame: rect, z: topZ(of: page, layer: .content, extra: extraZ),

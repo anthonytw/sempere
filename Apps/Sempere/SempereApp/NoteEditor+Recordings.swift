@@ -129,8 +129,11 @@ extension NoteEditor {
     func audioPlacement(for recording: Recording) -> ItemPlacement? {
         guard let page = currentPage ?? pages.first else { return nil }
         let visible = (canvasTarget?.visibleRect(ofPage: page.id) ?? canvasTarget?.visiblePageRect).map { Rect($0) }
-        return try? NoteOps.placeRecording(recording.id, recordings: recordings + [recording], on: page, pageSize: pageSize,
-                                           visible: visible)
+        // Below the page's items (an earlier card), never on them (`NoteOps.unoccupied`); an infinite page grows to keep it in reach.
+        let placed = try? NoteOps.placeRecording(recording.id, recordings: recordings + [recording], on: page, pageSize: pageSize,
+                                                 visible: visible)
+        if let f = placed?.item.frame { growPage(toFit: f.y + f.h) }
+        return placed
     }
 
     /// Places `recording` (already in the note) on the page being looked at

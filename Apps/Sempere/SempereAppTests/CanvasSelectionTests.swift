@@ -23,9 +23,10 @@ struct CanvasSelectionTests {
     // MARK: The model
 
     /// Tap selects; a tap on the selected text box edits it (so a double tap
-    /// edits), on any other selected kind shows its menu; a tap beside the
-    /// selection clears it; only a tap with nothing selected is the page's.
-    @Test func tapSelectsThenEditsTextAndShowsTheMenuOfOtherKinds() {
+    /// edits), any other selected kind stays selected (a tap never shows the
+    /// menu: TestFlight 1.0.0); a tap beside the selection clears it; only a
+    /// tap with nothing selected is the page's.
+    @Test func tapSelectsThenEditsTextAndKeepsOtherKinds() {
         let image = Self.image()
         let text = AttachmentEditorTests.textItem()   // 10, 10, 200 × 40
         let items = [image, text]
@@ -34,11 +35,11 @@ struct CanvasSelectionTests {
         #expect(model.tap(at: .init(x: 500, y: 500), items: items, zoom: 1) == .empty)
         model.selected = text.id
         #expect(model.tap(at: .init(x: 50, y: 30), items: items, zoom: 1) == .edit(text.id))
-        #expect(model.tap(at: .init(x: 50, y: 30), items: items, zoom: 1, editable: false) == .menu(text.id), "read-only")
+        #expect(model.tap(at: .init(x: 50, y: 30), items: items, zoom: 1, editable: false) == .keep(text.id), "read-only")
         #expect(model.tap(at: .init(x: 150, y: 150), items: items, zoom: 1) == .select(image.id))
         #expect(model.tap(at: .init(x: 500, y: 500), items: items, zoom: 1) == .clear)
         model.selected = image.id
-        #expect(model.tap(at: .init(x: 150, y: 150), items: items, zoom: 1) == .menu(image.id))
+        #expect(model.tap(at: .init(x: 150, y: 150), items: items, zoom: 1) == .keep(image.id))
     }
 
     /// Every kind is selected the same way, a video, a PDF page and a kind
@@ -56,13 +57,17 @@ struct CanvasSelectionTests {
     }
 
     /// With the text tool (scope `.textBoxes`) pictures are not picked: a tap
-    /// on an image is the page's (a new box), a drag on it scrolls.
+    /// on an image does nothing (TestFlight 1.0.0: a tap on a video made a new
+    /// box on it), a drag on it scrolls; a PDF page under the ink is page.
     @Test func theTextToolPicksTextBoxesOnly() {
         let image = Self.image()
         let text = AttachmentEditorTests.textItem()
         var model = ItemSelectionModel()
         model.scope = .textBoxes
-        #expect(model.tap(at: .init(x: 150, y: 150), items: [image, text], zoom: 1) == .empty)
+        #expect(model.tap(at: .init(x: 150, y: 150), items: [image, text], zoom: 1) == .ignore)
+        let pdf = Item.pdfPage(blob: BlobRef(content: Data("p".utf8), type: "application/pdf"), pageIndex: 0,
+                               pageSize: Size(w: 612, h: 792), frame: Rect(x: 0, y: 0, w: 612, h: 792), z: "a", layer: .background)
+        #expect(model.tap(at: .init(x: 400, y: 500), items: [pdf, image, text], zoom: 1) == .empty, "a new box on a PDF page")
         #expect(model.drag(at: .init(x: 150, y: 150), items: [image, text], zoom: 1) == nil)
         #expect(model.tap(at: .init(x: 50, y: 30), items: [image, text], zoom: 1) == .select(text.id))
         #expect(model.drag(at: .init(x: 50, y: 30), items: [image, text], zoom: 1) == .move(text.id))
