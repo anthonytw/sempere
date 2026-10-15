@@ -393,4 +393,29 @@ struct BrowserTests {
         #expect(AppModel.sorted(list, by: .modified).map(\.title) == ["t3", "t1", "t2"])
         #expect(AppModel.sorted(list, by: .title).map(\.title) == ["t1", "t2", "t3"])
     }
+
+    /// Date Created (newest first) and "Favorites at Top" under every order (`NoteOrder`, shared with the CLI).
+    @Test func sortsByCreationAndPutsFavoritesFirstUnderAnyOrder() async throws {
+        let model = try await Self.unlockedFixtureModel()
+        let a = try await model.createNote(title: "alpha", paper: .ruled, notebook: nil)
+        try await Task.sleep(for: .milliseconds(20))
+        let b = try await model.createNote(title: "Beta", paper: .ruled, notebook: nil)
+        // `a` changes last: newest by modification, older by creation.
+        try await model.renameNote(a, to: "alpha 2")
+        model.sortOrder = .created
+        #expect(model.visibleNotes.map(\.id).prefix(2) == [b, a])
+        model.sortOrder = .modified
+        #expect(model.visibleNotes.map(\.id).prefix(2) == [a, b])
+
+        try await model.setFavorite(true, for: Self.lecture)
+        model.favoritesFirst = true
+        for order in NoteSort.allCases {
+            model.sortOrder = order
+            #expect(model.visibleNotes.first?.id == Self.lecture, "\(order)")
+        }
+        model.sortOrder = .created
+        #expect(model.visibleNotes.map(\.id) == [Self.lecture, b, a])
+        model.favoritesFirst = false
+        #expect(model.visibleNotes.map(\.id).prefix(2) == [b, a])
+    }
 }

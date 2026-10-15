@@ -273,12 +273,15 @@ private struct SidebarDropRow: ViewModifier {
     func body(content: Content) -> some View {
         if let target = DropTarget(item) {
             let highlighted = model.dropTarget == target
+            // After a drop: the row the notes or the notebook went into glows for a moment (`AppModel.landedDrop`).
+            let landed = model.landedDrop?.target == target
             content
-                .background(highlighted ? SwiftUI.Color.accentColor.opacity(0.25) : SwiftUI.Color.clear,
+                .background(highlighted || landed ? SwiftUI.Color.accentColor.opacity(landed ? 0.35 : 0.25) : SwiftUI.Color.clear,
                             in: RoundedRectangle(cornerRadius: 8))
                 .overlay {
                     if highlighted { RoundedRectangle(cornerRadius: 8).stroke(SwiftUI.Color.accentColor, lineWidth: 2) }
                 }
+                .animation(.easeInOut(duration: landed ? 0.15 : 0.6), value: landed)
                 .onDrop(of: [.sempereNotes, .sempereNotebook],
                         delegate: SidebarDropDelegate(model: model, target: target, undoManager: undoManager))
                 .modifier(TransferDropDestination(target: target, undoManager: undoManager))

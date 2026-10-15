@@ -4,7 +4,7 @@
 // Usage: node scripts/smoke.mjs VAULT_DIR KEY_FILE [SCREENSHOT_DIR [SEARCH_TERM]]
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { launchChromium, openVault, serveVault } from "./smoke-lib.mjs";
+import { engineNoise, launchBrowser, openVault, serveVault } from "./smoke-lib.mjs";
 
 const [vaultDir, keyFile, shots = ".", term] = process.argv.slice(2);
 const { base, close } = await serveVault({ mounts: [
@@ -13,13 +13,13 @@ const { base, close } = await serveVault({ mounts: [
 ] });
 const key = readFileSync(keyFile, "utf8");
 
-const browser = await launchChromium();
+const browser = await launchBrowser();
 let failures = 0;
 for (const mount of ["static", "dav"]) {
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
   const problems = [];
   // 404s are expected: rewrap-journal.json, and the index on the WebDAV mount.
-  page.on("console", (m) => { if ((m.type() === "error" || m.type() === "warning") && !m.text().includes("404")) problems.push(m.text()); });
+  page.on("console", (m) => { if ((m.type() === "error" || m.type() === "warning") && !m.text().includes("404") && !engineNoise(m.text())) problems.push(m.text()); });
   page.on("pageerror", (e) => problems.push(String(e)));
   await page.goto(`${base}/`);
   await openVault(page, `${base}/${mount}/`, key);

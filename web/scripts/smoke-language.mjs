@@ -9,7 +9,7 @@
 //   - switching the language with a vault open redraws the screen and keeps the open note.
 // Usage: node scripts/smoke-language.mjs VAULT_DIR KEY_FILE (CI: test/fixtures/render.sempere, which has notebooks and tags)
 import { readFileSync } from "node:fs";
-import { launchChromium, serveVault, unlocked } from "./smoke-lib.mjs";
+import { launchBrowser, serveVault, unlocked } from "./smoke-lib.mjs";
 
 const [vaultDir, keyFile] = process.argv.slice(2);
 const { base, close } = await serveVault({ mounts: [{ prefix: "/static/", vaultDir }] });
@@ -18,7 +18,7 @@ const key = readFileSync(keyFile, "utf8");
 let failures = 0;
 const check = (ok, what) => { console.log(ok ? "ok  " : "FAIL", what); if (!ok) failures++; };
 
-const browser = await launchChromium();
+const browser = await launchBrowser();
 const newPage = async (locale, languages) => {
   const ctx = await browser.newContext({ locale, viewport: { width: 1300, height: 800 } });
   if (languages) await ctx.addInitScript((l) => Object.defineProperty(navigator, "languages", { get: () => l }), languages);

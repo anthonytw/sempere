@@ -35,7 +35,8 @@ the XCTest `Executed N tests` line is the one that matters.
 8. **List the tests you ran.** The gate runs no UI test and nothing on a simulator, so run the
    targeted tests your change calls for (for example `scripts/app.sh test-mac-ui
    -only-testing:SempereAppUITests/MacWindowUITests` for a Mac window change, `scripts/app.sh
-   test-phone` for an iPhone layout, `scripts/app.sh pseudo-mac` for new interface text) and list
+   test-phone` for an iPhone layout; new interface text is checked by the gate's
+   `PseudoLanguageLayoutTests`) and list
    each with its result under `## Tests run` in the description, or write "None beyond the gate:"
    and why. The `PR lists tests run` check fails while that section is missing or empty.
 
@@ -56,8 +57,8 @@ localized. Full rules and the Spanish glossary: [docs/localization.md](docs/loca
 3. Add a short glossary for your language to `docs/localization.md` first (vault, notebook, tag,
    page) and use it throughout.
 4. `swift test --filter LocalizationCatalogTests` must pass (it runs on Linux), and
-   `scripts/app.sh pseudo` (iPad simulator) and `scripts/app.sh pseudo-mac` (the Mac app) should
-   show no clipped labels. Do not translate the identifiers in
+   `PseudoLanguageLayoutTests` (in `scripts/app.sh test-mac`, the gate) should find no clipped
+   labels. Do not translate the identifiers in
    `Sources/` or what the app writes into a vault.
 5. Open the pull request. A native speaker reviewing the glossary choices helps most.
 

@@ -6,13 +6,37 @@ import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, extname } from "node:path";
 
 // PLAYWRIGHT: path to playwright/index.mjs when it is not installed here.
-const { chromium } = await import(process.env.PLAYWRIGHT ?? "playwright");
+const { chromium, webkit } = await import(process.env.PLAYWRIGHT ?? "playwright");
 
 export const dist = join(import.meta.dirname, "..", "dist");
 const types = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json" };
 
 /** CHROMIUM: path to a Chromium to use instead of Playwright's. */
 export const launchChromium = () => chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
+
+/**
+ * BROWSER=webkit runs the script in Playwright's WebKit (the desktop Safari approximation of
+ * docs/web-viewer.md "Stress tests"); anything else is Chromium. Scripts that use Chromium-only
+ * features (CDP: virtual authenticator, touch emulation, heap sampling) call `launchChromium`.
+ */
+export async function launchBrowser() {
+  if (process.env.BROWSER !== "webkit") return launchChromium();
+  const browser = await webkit.launch();
+  // Chromium's headless default is en-US; WebKit takes the Mac's language, and the scripts read English.
+  for (const name of ["newPage", "newContext"]) {
+    const original = browser[name].bind(browser);
+    browser[name] = (options = {}) => original({ locale: "en-US", ...options });
+  }
+  return browser;
+}
+
+/**
+ * True for a console message that is the browser's or Playwright's own, not the page's. In WebKit the
+ * page's strict `style-src 'self'` refuses stylesheets that are not the page's: the one Playwright
+ * injects for a screenshot (to freeze animations and hide the caret) and WebKit's built-in
+ * media-controls styles for <audio controls> and <video controls> (the controls still draw and play).
+ */
+export const engineNoise = (text) => process.env.BROWSER === "webkit" && text.startsWith("Refused to apply a stylesheet");
 
 /**
  * Serves dist/ and, under each mount's `prefix`, the files of its `vaultDir`: minimal

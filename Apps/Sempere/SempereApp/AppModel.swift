@@ -5,9 +5,11 @@ import SempereImport
 import SempereWebDAV
 import Observation
 
-/// How the note list is ordered.
+/// How the note list is ordered (the field; "Favorites at Top" is `AppModel.favoritesFirst`).
+/// The order itself is the package's `NoteOrder`, which `sempere notes list --sort` uses too.
 enum NoteSort: String, CaseIterable, Identifiable, Sendable {
     case modified = "Date Modified"
+    case created = "Date Created"
     case title = "Title"
 
     var id: String { rawValue }
@@ -16,9 +18,27 @@ enum NoteSort: String, CaseIterable, Identifiable, Sendable {
     var title: String {
         switch self {
         case .modified: return String(localized: "Date Modified", comment: "Note list sort order")
+        case .created: return String(localized: "Date Created", comment: "Note list sort order: by creation date, newest first")
         case .title: return String(localized: "Title", comment: "Note list sort order: by title")
         }
     }
+
+    /// The package's key for this order.
+    var key: NoteOrder.Key {
+        switch self {
+        case .modified: return .modified
+        case .created: return .created
+        case .title: return .title
+        }
+    }
+}
+
+/// The note list's order on this device (`UserDefaults`): kept by the list's
+/// view (`NoteListView`), which hands it to the model, so tests start from the
+/// model's defaults.
+enum NoteSortPreference {
+    static let sortKey = "Sempere.noteSort"
+    static let favoritesFirstKey = "Sempere.noteSortFavoritesFirst"
 }
 
 /// What the sidebar has selected; filters the note list.
@@ -255,6 +275,11 @@ final class AppModel {
     var draggedPayload: DragPayload?
     /// The sidebar row a drag is over that would accept it (highlighted).
     var dropTarget: DropTarget?
+    /// The sidebar row a drop just moved notes or a notebook into: flashed for
+    /// `landedDropDuration` so it is clear where they went (`move(_:to:undoManager:)`).
+    var landedDrop: LandedDrop?
+    /// How long `landedDrop` stays set (tests shorten it).
+    @ObservationIgnored var landedDropDuration: Duration = .seconds(1.6)
     @ObservationIgnored var recognitionTask: Task<Void, Never>?
     /// Pause after the last stroke change before the open note's pages are recognized.
     let recognitionDelay: Duration
@@ -282,6 +307,8 @@ final class AppModel {
     /// The "Export to Folder or Zip…" sheet's request (`AppModel+BulkExport`).
     var bulkExportRequest: BulkExportRequest?
     var sortOrder = NoteSort.modified
+    /// Favorites at the top of the note list, under any `sortOrder`.
+    var favoritesFirst = false
     /// True while an edit is being written.
     var isEditing = false
     /// Serializes edits (`commit`).
@@ -670,7 +697,7 @@ final class AppModel {
         // Recently Recognized depends on the time too (`activityNow`), which no key holds: never cached.
         if sidebarSelection == .recentlyRecognized { return computeVisibleNotes() }
         let key = DerivedLists.VisibleKey(version: listVersion, selection: sidebarSelection, search: searchText,
-                                          sort: sortOrder)
+                                          sort: sortOrder, favoritesFirst: favoritesFirst)
         if let v = derived.visible, v.key == key { return v.value }
         let value = computeVisibleNotes()
         derived.visible = (key, value)
@@ -681,7 +708,7 @@ final class AppModel {
         let inSelection = notesInSelection
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let matching = query.isEmpty ? inSelection : inSelection.filter { $0.title.localizedCaseInsensitiveContains(query) }
-        return Self.sorted(matching, by: sortOrder)
+        return Self.sorted(matching, by: sortOrder, favoritesFirst: favoritesFirst)
     }
 
     /// The notes the sidebar selection shows, before any search.
@@ -697,23 +724,8 @@ final class AppModel {
         }
     }
 
-    static func sorted(_ list: [NoteSummary], by order: NoteSort) -> [NoteSummary] {
-        switch order {
-        case .title:
-            return list.sorted {
-                let c = $0.title.localizedStandardCompare($1.title)
-                return c == .orderedSame ? $0.id.uuidString < $1.id.uuidString : c == .orderedAscending
-            }
-        case .modified:
-            return list.sorted {
-                switch ($0.modified, $1.modified) {
-                case let (a?, b?) where a != b: return a > b
-                case (_?, nil): return true
-                case (nil, _?): return false
-                default: return $0.id.uuidString < $1.id.uuidString
-                }
-            }
-        }
+    static func sorted(_ list: [NoteSummary], by order: NoteSort, favoritesFirst: Bool = false) -> [NoteSummary] {
+        NoteOrder(order.key, favoritesFirst: favoritesFirst).sorted(list)
     }
 
     var selectedNote: NoteSummary? {

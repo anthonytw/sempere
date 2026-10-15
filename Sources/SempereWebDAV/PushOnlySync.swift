@@ -62,6 +62,11 @@ extension WebDAVSync {
             // sync was written by someone else (another device's key change, say).
             let record = state.mutable[name]
             guard let record, let current, FileDigest.sha256(current) == record.hash else {
+                if name == Vault.manifestName, let current, VaultManifest.sameExceptLabel(local, current) {
+                    // Another device renamed the vault: the same vault (format.md §1.3), not a conflict.
+                    report.skipped.append(.init(path: name, message: "the server copy differs only in its label; kept on the server"))
+                    return
+                }
                 report.conflicts.append(.init(path: name, remoteCopy: nil, detail: record == nil
                     ? "the server copy differs and this device never synced it; kept on the server"
                     : "the server copy changed since this device's last sync; kept on the server"))

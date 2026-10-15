@@ -13,7 +13,7 @@
 // Usage: node scripts/smoke-cache.mjs VAULT_DIR KEY_FILE
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { launchChromium, serveVault } from "./smoke-lib.mjs";
+import { launchBrowser, serveVault } from "./smoke-lib.mjs";
 
 const [vaultDir, keyFile] = process.argv.slice(2);
 const latency = Number(process.env.LATENCY_MS ?? "0");
@@ -76,7 +76,7 @@ async function visit(context, label, { query = "", expectPrompt = false } = {}) 
   return { ...r, titles, fileReads };
 }
 
-const browser = await launchChromium();
+const browser = await launchBrowser();
 try {
   // 1. Ad-hoc mode (no config.json), no summaries: first and second visit in one profile.
   config = null; withSummaries = false;

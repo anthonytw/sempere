@@ -2,6 +2,20 @@ import Foundation
 import Sempere
 
 /// How far a listing of the open vault has got, for "Opening vault: 120 of 640".
+/// When the status bar under the note list is worth showing for a sync (as opposed to flashing
+/// for every edit): only for a bulk transfer of at least `minimumNotes` notes. Once a bulk
+/// transfer is showing it stays until it finishes, so it does not blink off at the last few notes.
+enum SyncBarPolicy {
+    static let minimumNotes = 5
+
+    static func isBulk(_ notes: Int) -> Bool { notes >= minimumNotes }
+
+    /// Whether to show the bar for `pending` notes still to arrive; `wasShown`: it was showing on the previous pass.
+    static func shows(pending: Int, wasShown: Bool) -> Bool {
+        pending > 0 && (isBulk(pending) || wasShown)
+    }
+}
+
 struct NoteLoading: Equatable, Sendable {
     /// Notes whose summary is in (from the cache or read).
     var done = 0
@@ -12,6 +26,11 @@ struct NoteLoading: Equatable, Sendable {
     var refreshing = false
 
     var fractionCompleted: Double { total == 0 ? 1 : min(1, Double(done) / Double(total)) }
+
+    /// Whether the status bar shows this pass. Opening a vault always does; a refresh of notes
+    /// already listed (every edit, and every change another device syncs, causes one) only when it
+    /// is a real bulk update (`SyncBarPolicy`), so a one-note edit does not flash a bar.
+    var showsBar: Bool { !refreshing || SyncBarPolicy.isBulk(total) }
 
     /// "Opening vault: 120 of 640 notes", or "Updating 640 changed notes: 120 done"
     /// over a list already shown.

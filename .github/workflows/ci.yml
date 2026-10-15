@@ -509,7 +509,7 @@ jobs:
       - name: Install Chromium for Playwright
         working-directory: web
         run: npx playwright install --with-deps chromium
-      - name: Browser smoke scripts (cache and config.json, sideways pan, listing, attachments, video, page release, passkey, interface language, passphrase keys and transcript search)
+      - name: Browser smoke scripts (cache and config.json, sideways pan, listing, attachments, video, page release, passkey, interface language, passphrase keys, transcript search, large-note stress and scroll anchoring, SVG pixel diff)
         working-directory: web
         run: scripts/smoke-all.sh
 

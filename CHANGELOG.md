@@ -8,6 +8,10 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
 
 ### Fixed
 
+- Settings ▸ Quick Voice Notes says when Live Activities or the microphone are off for Sempere, and why that stops the voice-note widgets, with a button to the system Settings.
+- Settings: App Language opens Sempere's page in the system Settings; About links the website and the privacy policy.
+- Transcription has one Preferred Language control (Automatic by default); the app picks SpeechTranscriber or SFSpeechRecognizer for it and says which.
+- The status bar under the note list no longer flashes for each edit: it shows only for transfers of five or more notes.
 - iCloud Drive: a vault is a plain folder, no longer a package, so iCloud syncs its files one by one; as
   a package, two devices writing at once made a conflict of the whole vault, and choosing one version
   lost the notes written on the other device. The app now merges iCloud's conflict versions of the
@@ -18,11 +22,26 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
 - Mac: with the lasso as the palette's tool, placed items can be moved and resized with the mouse in
   Select mode again, and a new text box keeps the keyboard; PencilKit's own lasso gestures took the
   drag and the click.
+- WebDAV sync: a vault renamed on two devices (`vault.json` differing only in its label) is no longer a
+  conflict reported on every run: it is the same vault (`format.md` §1.3), and the server's copy is kept.
+- WebDAV sync: the run's time bound (`--max-minutes`) and a cancellation now stop a request in flight, so
+  a server that keeps a download alive with a trickle of bytes can no longer hold a run for hours.
+- WebDAV sync: no MKCOL before uploading into a note folder the run's listing already showed (one wasted
+  request per changed note, every run).
+- iPad: a dragged notebook's row lifts under the finger (it showed nothing, so notebooks seemed not
+  to drag onto other notebooks or onto All Notes); after a drop the notebook that received the notes or the notebook
+  flashes, so it is clear where they went.
+- iPad: the sidebar and the note list no longer take the keyboard from the search field.
 
 ### Added
 
 - `sempere vault merge-copy FROM` merges another copy of the vault (an iCloud conflict version, another
   device's copy, a restored backup) without overwriting or deleting anything (`format.md` §1.3).
+- Note list: rows show small icons for the attachments a note holds (pictures, equations, video,
+  audio, PDF) and a colored star for favorites, and keep their tags on one line. Sort by Date Created
+  joins Date Modified and Title, and "Favorites at Top" applies under any order; both are remembered on
+  the device. New Note sits right after Sort in the toolbar. CLI: `sempere notes list --sort
+  title|modified|created --favorites-first`, and `--json` rows gain `created` and `attachments`.
 - Index-first listing: each device publishes its notes' summaries in `summaries/<device>.sealed`
   (`format.md` §12.5; `sempere vault summaries --device-file`), and a device on which notes are still
   arriving lists them by title from those files.
