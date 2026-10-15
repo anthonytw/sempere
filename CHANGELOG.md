@@ -15,6 +15,12 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
 - iCloud Drive: note folders without a revision (an import's attachments written before its first
   revision, or a folder iCloud never lists) no longer keep the list on "Downloading" forever.
 - "Thin everything except checkpoints" removes every autosave, including each editing session's last one.
+- WebDAV sync: a vault renamed on two devices (`vault.json` differing only in its label) is no longer a
+  conflict reported on every run: it is the same vault (`format.md` §1.3), and the server's copy is kept.
+- WebDAV sync: the run's time bound (`--max-minutes`) and a cancellation now stop a request in flight, so
+  a server that keeps a download alive with a trickle of bytes can no longer hold a run for hours.
+- WebDAV sync: no MKCOL before uploading into a note folder the run's listing already showed (one wasted
+  request per changed note, every run).
 
 ### Added
 

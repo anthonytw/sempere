@@ -133,7 +133,8 @@ public final class WebDAVSync {
 
     let root: URL
     let vault: Vault?
-    let client: WebDAVClient
+    /// The run's client: `interrupt` set to the run's bound and cancellation (`runLocked`).
+    private(set) var client: WebDAVClient
     let stateURL: URL
     let options: WebDAVSyncOptions
     var state = SyncState()
@@ -235,6 +236,14 @@ public final class WebDAVSync {
     }
 
     private func runLocked() throws -> SyncReport {
+        // A request in flight stops at the run's time bound or a cancellation, not only between requests.
+        let limits = options.limits, cancelled = options.isCancelled
+        let deadline = Date().addingTimeInterval(limits.maxDuration)
+        client.interrupt = {
+            if cancelled?() == true { return .cancelled }
+            if Date() > deadline { return RunBudget.timeExceeded(limits) }
+            return nil
+        }
         updateProgress { _ in }
         defer { updateProgress { $0.stage = .done } }
         do {
@@ -443,6 +452,10 @@ public final class WebDAVSync {
             } else {
                 try conflict(name, remote: remoteData, detail: "the server copy changed while uploading")
             }
+        case (true, true) where name == Vault.manifestName && VaultManifest.sameExceptLabel(local, remoteData):
+            // Only the display label differs: the same vault (format.md §1.3). The server's copy is
+            // the one every device shares, so it stays, as iCloud Drive's current version does.
+            try accept(name, remoteData, stamp: stamp)
         case (true, true):
             try conflict(name, remote: remoteData,
                          detail: record == nil ? "both sides differ and there is no common ancestor" : "changed on both sides since the last sync")
@@ -640,6 +653,14 @@ public final class WebDAVSync {
         }
         checkNoteStamps(dirs)
         updateProgress { $0.notesTotal = noteDirs }
+        // Collections the listings show need no MKCOL before an upload into them (one request
+        // per note uploaded to, every run, otherwise).
+        func exists(_ name: String, _ entries: [RemoteEntry]) {
+            madeCollections.formUnion([[], [Vault.notesName], [Vault.notesName, name]])
+            if entries.contains(where: { $0.name == Vault.attachmentsName && $0.isCollection }) {
+                madeCollections.insert([Vault.notesName, name, Vault.attachmentsName])
+            }
+        }
         var out: [String: [RemoteEntry]] = [:]
         var toList: [String] = []
         for d in dirs {
@@ -650,6 +671,7 @@ public final class WebDAVSync {
             }
             if let unchanged = unchangedNoteEntries(d) {
                 out[d.name] = unchanged
+                exists(d.name, unchanged)
                 updateProgress { $0.notesListed += 1 }
                 continue
             }
@@ -661,6 +683,7 @@ public final class WebDAVSync {
             switch result {
             case .success(let entries):
                 out[name] = entries ?? []
+                if let entries { exists(name, entries) }
             case .failure(let error):
                 report.errors.append(.init(path: "notes/\(name)", message: Self.describe(error)))
                 notesNotReadable.insert(name)

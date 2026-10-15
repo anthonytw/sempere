@@ -2247,7 +2247,8 @@ Revision files are copied to the side that lacks them and never overwritten.
 in `$XDG_STATE_HOME/sempere/sync/`); a change on one side is copied over, a
 change on both keeps both copies (`vault.conflict-<device>-<time>.json` next to
 the local file; `--device` names this machine, default the host name) and exits
-3. Deletions follow only compaction: a file removed on one side is removed on
+3; a `vault.json` that differs only in its label (the vault renamed on both
+sides) is the same vault and is taken from the server. Deletions follow only compaction: a file removed on one side is removed on
 the other only if the compaction rules (`docs/format.md` §5.3) allow it with
 the revisions held locally, which needs the vault unlocked (`--identity`, or
 `--passphrase-env`/`$SEMPERE_PASSPHRASE` for the stored key file); otherwise
@@ -2296,7 +2297,9 @@ again. A run is bounded as a whole (`format.md` §9 table): `--max-notes`
 (default 100000 note folders listed), `--max-entries` (1000000 remote entries
 listed in all), `--max-download-mib` (65536) and `--max-minutes` (720).
 Reaching one stops the run with an error naming the flag (exit 1, JSON
-`stoppedEarly`); what was done is kept and the next run continues. A note
+`stoppedEarly`); what was done is kept and the next run continues. `--max-minutes`
+also cuts a request in flight (a download the server trickles), keeping a
+blob's partial file for the next run. A note
 folder whose listing fails is an error for that note only: it is left out of
 the run (nothing is copied or deleted for it) and the rest syncs.
 `--dry-run` makes no request that changes anything and writes nothing; it

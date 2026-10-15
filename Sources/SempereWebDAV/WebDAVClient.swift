@@ -47,6 +47,10 @@ public struct WebDAVClient: Sendable {
     private let authorization: String?
     private var baseComponents: [String]
     private let origin: String
+    /// Passed with every request (`WebDAVRequest.interrupt`): an error it
+    /// returns cancels the request in flight. The sync sets it to its run
+    /// bound and cancellation.
+    public var interrupt: (@Sendable () -> WebDAVError?)?
 
     /// Largest response body read for listings, manifests and status replies (16 MiB).
     public static let defaultMaxResponseBytes = 16 << 20
@@ -401,7 +405,7 @@ public struct WebDAVClient: Sendable {
         h["User-Agent"] = "sempere-webdav/0.1"
         let r = try transport.send(WebDAVRequest(method: method, url: url, headers: h, body: body,
                                                  maxResponseBytes: maxResponseBytes, bodyFile: bodyFile,
-                                                 responseFile: responseFile))
+                                                 responseFile: responseFile, interrupt: interrupt))
         try Self.checkSize(r, url: url, limit: responseFile == nil ? maxResponseBytes : Self.defaultMaxResponseBytes)
         return r
     }

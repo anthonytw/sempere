@@ -73,4 +73,19 @@ final class TransportChallengeTests: XCTestCase {
         }
         XCTAssertLessThan(Date().timeIntervalSince(start), 30)
     }
+
+    /// A request in flight stops when its `interrupt` says so, long before the
+    /// idle timeout (a server that trickles bytes never reaches that one), and
+    /// throws what `interrupt` returned: the sync's run bound and cancellation
+    /// reach a request that is already waiting (`SyncFaultProxyTests.testDripFeedIsBoundedByTheRunLimit`).
+    func testInterruptStopsARequestInFlight() throws {
+        let server = try SlowHTTPServer(bytesPerSecond: 0)
+        defer { server.stop() }
+        let transport = URLSessionTransport(timeout: 60)
+        let start = Date()
+        let request = WebDAVRequest(method: "GET", url: URL(string: "http://127.0.0.1:\(server.port)/blob")!,
+                                    interrupt: { Date().timeIntervalSince(start) > 0.5 ? .cancelled : nil })
+        XCTAssertThrowsError(try transport.send(request)) { XCTAssertEqual($0 as? WebDAVError, .cancelled) }
+        XCTAssertLessThan(Date().timeIntervalSince(start), 10)
+    }
 }

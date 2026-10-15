@@ -394,9 +394,10 @@ extension WebDAVSync {
                 }
             } catch let e as WebDAVError {
                 // A dropped connection or a timeout (`.offline` from
-                // URLSessionTransport), or a cancellation, keeps the partial file for the next run.
+                // URLSessionTransport), a cancellation or the run's time bound keeps the partial file
+                // for the next run.
                 switch e {
-                case .transport, .offline, .cancelled:
+                case .transport, .offline, .cancelled, .limitExceeded:
                     if etag == nil || LocalFS.regularFileSize(part) == nil { discard() }
                 default:
                     discard()
