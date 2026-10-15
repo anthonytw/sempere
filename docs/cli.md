@@ -905,7 +905,7 @@ The app never prunes (`--prune`) and does not write tar archives
 ### Notes
 
 ```
-sempere notes list [--tag T] [--notebook N] [--deleted] [--no-cache]
+sempere notes list [--tag T] [--notebook N] [--deleted] [--favorites] [--sort title|modified|created] [--favorites-first] [--no-cache]
 sempere notes show ID|TITLE
 sempere notes new [TITLE] [--title-format PATTERN] [--notebook PATH] [--tag T]... [--paper KIND] [PAPER OPTIONS] [--page-size letter|a4] [--no-cache]
 sempere notes rename ID|TITLE NEW-TITLE
@@ -923,7 +923,11 @@ sempere notes dedupe (ID|TITLE ... | --all) [--dry-run]
 ```
 
 `list` prints id, title, pages, strokes and last modified; deleted notes are
-hidden unless `--deleted`. `--notebook` takes a notebook path and lists the
+hidden unless `--deleted`, and `--favorites` lists only favorites. Notes are in
+title order (Finder order: `Note 2` before `Note 10`) unless `--sort modified`
+or `--sort created` (newest first, notes without the date last);
+`--favorites-first` puts the favorites ahead of the other notes, each group in
+that order. These are the app's note-list rules (`NoteOrder`). `--notebook` takes a notebook path and lists the
 notes in it or below it, comparing whole segments (`A/B` holds `A/B/C` but not
 `A/Bc`), as the app's sidebar does; `--tag` ignores case. Notes are read in parallel without their stroke
 geometry, and the summaries are kept in an encrypted per-device cache
@@ -937,7 +941,10 @@ blob, whether it has a transcript, id), and the revision history
 (kind, wall time, file name; `-v` adds the app string). `--json` adds `items`
 (each `{page, pageId, item}`, `item` in its `format.md` §8.2 form) and
 `recordings` (§8.3.1 form), both without the snapshot-only `origin` and
-`clocks`; `list --json` gains the counts `items` and `recordings`. A note is named by its
+`clocks`; `list --json` gains the counts `items` and `recordings`, `created`, and
+`attachments`: the kinds of attachments the note holds, among `image`, `math`,
+`video`, `audio` (recordings or audio cards) and `pdf`, in that order (the
+app's row icons). A note is named by its
 full id, an id prefix of 4 or more characters, or its exact title
 (case-insensitive); an ambiguous name is an error that lists the candidates.
 

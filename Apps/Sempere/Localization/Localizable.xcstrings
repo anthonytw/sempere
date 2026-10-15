@@ -5326,6 +5326,18 @@
         }
       }
     },
+    "Date Created" : {
+      "comment" : "Note list sort order: by creation date, newest first",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fecha de creación"
+          }
+        }
+      }
+    },
     "Date Modified" : {
       "comment" : "Note list sort order",
       "extractionState" : "manual",
@@ -6238,6 +6250,18 @@
         }
       }
     },
+    "Equations" : {
+      "comment" : "Accessibility: the note holds equations",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ecuaciones"
+          }
+        }
+      }
+    },
     "Equation…" : {
       "comment" : "Insert menu: add a LaTeX equation",
       "extractionState" : "manual",
@@ -6586,6 +6610,18 @@
         }
       }
     },
+    "Favorite" : {
+      "comment" : "Accessibility: the note is a favorite",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Favorita"
+          }
+        }
+      }
+    },
     "Favorites" : {
       "comment" : "Sidebar row and note list title: notes marked as favorites",
       "extractionState" : "manual",
@@ -6594,6 +6630,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Favoritas"
+          }
+        }
+      }
+    },
+    "Favorites at Top" : {
+      "comment" : "Note list sort menu: favorites before the other notes, under any order",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Favoritas arriba"
           }
         }
       }
@@ -11450,6 +11498,18 @@
         }
       }
     },
+    "Pictures" : {
+      "comment" : "Accessibility: the note holds pictures",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imágenes"
+          }
+        }
+      }
+    },
     "Pictures and Video" : {
       "comment" : "Insert menu section",
       "extractionState" : "manual",
@@ -14930,6 +14990,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ordenar las notas por fecha o título"
+          }
+        }
+      }
+    },
+    "Sort the notes by date or title, with favorites at the top" : {
+      "comment" : "Tooltip of the note list's sort menu",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ordenar las notas por fecha o título, con las favoritas arriba"
           }
         }
       }

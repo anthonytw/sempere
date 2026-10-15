@@ -15,11 +15,20 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
 - iCloud Drive: note folders without a revision (an import's attachments written before its first
   revision, or a folder iCloud never lists) no longer keep the list on "Downloading" forever.
 - "Thin everything except checkpoints" removes every autosave, including each editing session's last one.
+- iPad: a dragged notebook's row lifts under the finger (it showed nothing, so notebooks seemed not
+  to drag onto other notebooks or onto All Notes); after a drop the notebook that received the notes or the notebook
+  flashes, so it is clear where they went.
+- iPad: the sidebar and the note list no longer take the keyboard from the search field.
 
 ### Added
 
 - `sempere vault merge-copy FROM` merges another copy of the vault (an iCloud conflict version, another
   device's copy, a restored backup) without overwriting or deleting anything (`format.md` §1.3).
+- Note list: rows show small icons for the attachments a note holds (pictures, equations, video,
+  audio, PDF) and a colored star for favorites, and keep their tags on one line. Sort by Date Created
+  joins Date Modified and Title, and "Favorites at Top" applies under any order; both are remembered on
+  the device. New Note sits right after Sort in the toolbar. CLI: `sempere notes list --sort
+  title|modified|created --favorites-first`, and `--json` rows gain `created` and `attachments`.
 - Index-first listing: each device publishes its notes' summaries in `summaries/<device>.sealed`
   (`format.md` §12.5; `sempere vault summaries --device-file`), and a device on which notes are still
   arriving lists them by title from those files.

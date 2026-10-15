@@ -135,6 +135,7 @@ struct DerivedLists {
         var selection: SidebarItem?
         var search: String
         var sort: NoteSort
+        var favoritesFirst: Bool
     }
 
     var visible: (key: VisibleKey, value: [NoteSummary])?
