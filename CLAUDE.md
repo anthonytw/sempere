@@ -98,11 +98,11 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   For example a window or menu change: `scripts/app.sh test-mac-ui
   -only-testing:SempereAppUITests/MacWindowUITests`; an iPad drag: `scripts/app.sh test-ui
   -only-testing:SempereAppUITests/SidebarDropUITests`; an iPhone layout: `scripts/app.sh
-  test-phone`; new interface text: `scripts/app.sh pseudo-mac`; a new window or sheet:
+  test-phone`; a new window or sheet:
   `scripts/app.sh test-mac-smoke`. Nothing beyond the gate is a valid answer only with the reason
   ("None beyond the gate: docs only").
-- **Before TestFlight**: `scripts/local-ci.sh --testflight` (the gate plus every Mac UI test, the
-  Mac launch smoke tests and the Mac pseudo-language check; posts `local/testflight-suite`).
+- **Before TestFlight**: `scripts/local-ci.sh --testflight` (the gate plus every Mac UI test and the
+  Mac launch smoke tests; posts `local/testflight-suite`).
 - **Before a release**: `scripts/local-ci.sh --release` (everything, iPad and iPhone simulators
   included; posts `local/release-sweep`, which `release.yml` requires on the tagged commit).
 
@@ -785,8 +785,12 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   (`scripts/l10n.py merge`): `LocalizationCatalogTests` (Linux, runs in `swift test` and in
   its own CI job for `Apps/`-only changes) fails otherwise. The Linux scratch package for
   `AppModel*` needs a `String(localized:)` shim (the Linux Foundation lacks the interpolated
-  form and `comment:`). `scripts/app.sh pseudo` (iPad simulator) and `pseudo-mac` (the Mac
-  app at a narrow and a wide window) check double-length, right-to-left and Spanish layouts.
+  form and `comment:`). `PseudoLanguageLayoutTests` (a hosted unit test, Mac Catalyst only, so in
+  the PR gate's `test-mac`) checks the main screens in double-length, right-to-left and Spanish at
+  a narrow and a wide window, in process (`PseudoLanguageHarness.swift` swaps `NSBundle`'s string
+  lookups; docs/localization.md "Checking layouts" has the limits). A new screen worth checking
+  gets a `Screen` case there. `scripts/app.sh pseudo` (iPad, in `local-ci.sh --release`) and
+  `pseudo-mac` (by hand) run the UI-test version.
 - WebDAV vaults in the app (`AppModel+WebDAV`, `WebDAVSession`, docs/io.md "WebDAV vaults in the
   app"): a local copy in Application Support (`WebDAVLocalCopy`, `WebDAVLocationStore`) opened like any
   folder, and a push-only sync (`WebDAVLocalCopy.push`: `pushOnly` + `keepServerChanges`) scheduled by

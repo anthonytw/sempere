@@ -563,10 +563,11 @@ struct VaultStatusBar: View {
     let retry: () -> Void
 
     var body: some View {
-        let showSync = sync.map { $0.isDownloading || $0.problem != nil } ?? false
-        if loading != nil || showSync {
+        let showSync = sync.map { $0.showsBar || $0.problem != nil } ?? false
+        let showLoading = loading?.showsBar ?? false
+        if showLoading || showSync {
             VStack(alignment: .leading, spacing: 10) {
-                if let loading {
+                if let loading, showLoading {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(loading.headline).font(.footnote.weight(.semibold)).monospacedDigit()
                         ProgressView(value: loading.fractionCompleted)
@@ -594,7 +595,7 @@ struct CloudSyncBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if status.isDownloading {
+            if status.showsBar {
                 Text(status.headline).font(.footnote.weight(.semibold)).monospacedDigit()
                 ProgressView(value: status.fractionCompleted)
                 Text(status.detail).font(.caption).foregroundStyle(.secondary).monospacedDigit()

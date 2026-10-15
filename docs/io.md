@@ -1184,7 +1184,11 @@ changed (or no common ancestor and different content): the remote copy is
 saved as `<name>.conflict-<device>-<yyyymmddThhmmssZ>.<ext>` in the vault root
 (not again if an identical one exists), nothing else changes, and the
 conflict is reported on every run until the files agree. A PUT rejected with
-412 is a conflict too. `rewrap-journal.json` deleted locally is not restored
+412 is a conflict too. Two `vault.json` versions that differ only in `label`
+(a vault renamed on two devices) are the same vault (format.md §1.3), not a
+conflict: the server's copy, the one every device shares, is taken (as
+iCloud Drive's current version stays), and a push-only run keeps it on the
+server and lists it as skipped. `rewrap-journal.json` deleted locally is not restored
 locally. It is deleted on the server only when it is the copy this device
 synced (same ETag, same bytes), the vault is unlocked, this device now refuses
 it (format.md §3.3.1: its change finished, nothing binds it) and the server's
@@ -1272,7 +1276,11 @@ request is bounded on its own; the run as a whole is bounded too: at most
 100 000 note folders listed, 10⁶ remote entries listed (root, note folders,
 `att/`), 64 GiB downloaded and 12 hours (`--max-notes`, `--max-entries`,
 `--max-download-mib`, `--max-minutes`). Time is checked before each note and
-each download, bytes before (from the listing) and after each download.
+each download, and a request in flight is canceled once the time is up
+(`WebDAVRequest.interrupt`, polled a few times a second; a cancellation,
+`isCancelled`, stops it the same way): a server that trickles a response,
+never idle long enough for the idle timeout, cannot hold a run past its bound,
+and a cut blob download keeps its partial file. Bytes are checked before (from the listing) and after each download.
 Reaching a bound stops the run: the error says which (`stoppedEarly` in the
 JSON report), what was done is recorded in the state, and the next run
 continues from there. A note folder whose listing fails is an error for that

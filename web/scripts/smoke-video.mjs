@@ -9,17 +9,17 @@
 // Usage: node scripts/smoke-video.mjs VAULT_DIR KEY_FILE [SCREENSHOT_DIR]
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { launchChromium, openVault, serveVault } from "./smoke-lib.mjs";
+import { engineNoise, launchBrowser, openVault, serveVault } from "./smoke-lib.mjs";
 
 const [vaultDir, keyFile, shots = "."] = process.argv.slice(2);
 const { base, close } = await serveVault({ mounts: [{ prefix: "/dav/", vaultDir }], csp: true });
 const requests = [];
 
-const browser = await launchChromium();
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
 const problems = [];
 // 404s are expected: rewrap-journal.json, the index, and the fixture's missing blob.
-page.on("console", (m) => { if ((m.type() === "error" || m.type() === "warning") && !m.text().includes("404")) problems.push(m.text()); });
+page.on("console", (m) => { if ((m.type() === "error" || m.type() === "warning") && !m.text().includes("404") && !engineNoise(m.text())) problems.push(m.text()); });
 page.on("pageerror", (e) => problems.push(String(e)));
 page.on("request", (r) => requests.push(r.url()));
 await page.goto(`${base}/`);

@@ -22,12 +22,23 @@ public struct WebDAVRequest: Sendable {
     /// response body is discarded. `maxResponseBytes` counts the bytes of
     /// this response only.
     public var responseFile: URL?
+    /// Asked while the request is in flight (a few times a second): an error
+    /// it returns cancels the request, and `send` throws that error. What a
+    /// streamed response wrote to `responseFile` stays there. The sync passes
+    /// its run bound and cancellation (`SyncLimits.maxDuration`,
+    /// `WebDAVSyncOptions.isCancelled`), so a server that keeps a request
+    /// alive with a trickle of bytes, never idle long enough for the idle
+    /// timeout, cannot hold a run past them. Transports that answer at once
+    /// may ignore it.
+    public var interrupt: (@Sendable () -> WebDAVError?)?
 
     public init(method: String, url: URL, headers: [String: String] = [:], body: Data? = nil,
-                maxResponseBytes: Int? = nil, bodyFile: URL? = nil, responseFile: URL? = nil) {
+                maxResponseBytes: Int? = nil, bodyFile: URL? = nil, responseFile: URL? = nil,
+                interrupt: (@Sendable () -> WebDAVError?)? = nil) {
         self.method = method; self.url = url; self.headers = headers; self.body = body
         self.maxResponseBytes = maxResponseBytes
         self.bodyFile = bodyFile; self.responseFile = responseFile
+        self.interrupt = interrupt
     }
 }
 
@@ -171,7 +182,17 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
         delegate.register(task.taskIdentifier, pending)
         defer { delegate.unregister(task.taskIdentifier) }
         task.resume()
-        pending.done.wait()
+        if let interrupt = request.interrupt {
+            while pending.done.wait(timeout: .now() + Self.interruptPoll) == .timedOut {
+                guard let stop = interrupt() else { continue }
+                task.cancel()
+                pending.done.wait()
+                if let failure = pending.fileFailure { throw failure }
+                throw stop
+            }
+        } else {
+            pending.done.wait()
+        }
         var (data, response, error, tooLarge, challenged) = pending.result()
         if let failure = pending.fileFailure { throw failure }
         if let refused = pending.trustRefusal { throw WebDAVError.untrustedCertificate(refused) }
@@ -191,6 +212,9 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
     private static func describe(_ error: Error) -> String {
         (error as NSError).localizedDescription
     }
+
+    /// How often a request in flight asks its `interrupt`.
+    static let interruptPoll: DispatchTimeInterval = .milliseconds(250)
 
     /// `URLError` codes that mean the server cannot be reached from here now.
     static let offlineCodes: Set<Int> = [

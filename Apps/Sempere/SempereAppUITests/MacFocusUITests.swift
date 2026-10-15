@@ -81,6 +81,10 @@ final class MacFocusUITests: XCTestCase {
         let app = launch()
         defer { app.terminate() }
         ready(app)
+        // From the lasso: PencilKit's selection tap, there while the lasso is the palette's tool, took
+        // the keyboard from the new box (the palette remembers its tool across launches, so the test
+        // picks it rather than depend on the last run's).
+        app.typeKey("5", modifierFlags: [.command, .option])   // Tools > Lasso
         app.typeKey("6", modifierFlags: [.command, .option])   // Tools > Text
         Thread.sleep(forTimeInterval: 1)
         let window = app.windows.firstMatch

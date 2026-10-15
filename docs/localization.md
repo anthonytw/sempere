@@ -162,17 +162,60 @@ tooling. The differences from the app:
 
 ## Checking layouts
 
-- CI runs `scripts/app.sh pseudo` on an iPad simulator in the `app` job on `main`
-  (`SEMPERE_PSEUDO_DEVICE=iPhone` runs it at phone width, by hand), and `scripts/local-ci.sh --release`
-  runs it too. `scripts/app.sh pseudo-mac` runs the same test as the Mac Catalyst app (in
-  `local-ci.sh --testflight` and `--release`), at every window size in `SEMPERE_PSEUDO_MAC_WINDOWS`
-  (default `700x800,1280x800`: narrower than an iPad mini in portrait, and wide), pinned through
-  `SEMPERE_DEMO_MAC_WINDOW`. Run one of them for a change that adds or changes interface text.
-- `scripts/app.sh pseudo` runs the UI test `PseudoLanguageUITests` on the simulator three times: with
-  the **double-length** pseudo-language (`-NSDoubleLocalizedStrings YES`), with the **right-to-left**
-  pseudo-language (`-AppleTextDirection YES -NSForceRightToLeftWritingDirection YES`) and in Spanish
-  (`-AppleLanguages (es)`), walking the main screens of the demo vault (library, locked, note, tags, paper picker and, through `SEMPERE_DEMO_SETTINGS`, Settings). It fails when a control or label
-  leaves the window or a single-line label is cut off, and attaches a screenshot of every screen.
+- **`PseudoLanguageLayoutTests`** (a hosted unit test in `SempereAppTests`) is the check that runs on
+  every pull request: it is part of `scripts/app.sh test-mac`, so the PR gate (`scripts/local-ci.sh`)
+  runs it on Mac Catalyst. It needs no screen focus and no UI automation and takes under a minute
+  (about 50 s for the 36 screens). It puts
+  the main screens of the demo vault (library, locked, note, tags, paper picker, Settings, built from
+  `DemoVault` as `SEMPERE_DEMO` builds them) in a test window of the test host's scene at
+  700 × 800 points (narrower than an iPad mini in portrait) and 1280 × 800, in three
+  pseudo-languages:
+  - **double-length**: every string any bundle returns (the app's, UIKit's, SwiftUI's) is doubled, as
+    `-NSDoubleLocalizedStrings YES` doubles it (“Settings Settings”);
+  - **right-to-left**: the window's `layoutDirection` trait and SwiftUI's `layoutDirection`;
+  - **Spanish**: SwiftUI's `locale` for the literals in views, and every bundle lookup
+    (`String(localized:)`, UIKit's own titles) answered from `es`.
+
+  After layout it walks the window's accessibility elements (and those of a sheet that is up) and
+  fails, like the UI test below, when a control or label reaches past the window sideways or a
+  single-line label's text needs more width than its frame at the smallest text style (a lower
+  bound: a wrapped label is exempt). A picture of every failing screen is attached to the result
+  bundle, each screen logs a `PSEUDO-LAYOUT` line (elements, problems, time), and
+  `TEST_RUNNER_SEMPERE_PSEUDO_LAYOUT_DUMP=1 scripts/app.sh test-mac
+  -only-testing:SempereAppTests/PseudoLanguageLayoutTests` also prints every element it checked.
+  `theCheckCatchesClipping` proves the check on a fixture in each language: a label with room for
+  its English text only is reported as cut off in double-length and Spanish (and passes in
+  English), a row wider than the window is reported in every language, and right to left mirrors
+  the layout.
+- **How the languages are reached in process, and the limits.** A process cannot switch
+  `AppleLanguages` or turn on `NSDoubleLocalizedStrings` for SwiftUI after launch, so the test
+  replaces `NSBundle`'s string lookups for the duration (`LanguageOverride` in
+  `PseudoLanguageHarness.swift`). Its limits: catalog plurals and variable strings (`%#@…@`) are not
+  doubled; dates and numbers formatted in code with `Locale.current` stay English in the Spanish run
+  (SwiftUI's own `Text(date, format:)` follows the locale); text is laid out right to left but not
+  forced to run right to left (`NSForceRightToLeftWritingDirection`, which changes no widths); the Mac
+  menu bar and the window's title bar are not part of the window it checks; the Settings and paper
+  picker sheets are presented from the window's root view rather than from the sidebar and the
+  canvas (same sheet, same size); and only the six screens are walked. **The screens are checked
+  on Mac Catalyst only**: on the iPad simulator the in-process accessibility tree came back
+  incomplete (3 to 5 elements for the library and tags screens, where the Mac lists 30 to 50), so
+  a pass there would prove nothing, and the iPad's compact paper picker scrolls its kinds sideways,
+  which the check would need to tell from overflow. The fixture test runs on the iPad too. Accessibility is turned on for the test process only (`InProcessAccessibility`).
+- The UI test **`PseudoLanguageUITests`** checks the same screens in the real app, relaunched once
+  per language with `-NSDoubleLocalizedStrings YES`, `-AppleTextDirection YES
+  -NSForceRightToLeftWritingDirection YES` or `-AppleLanguages (es)`, and attaches a screenshot of
+  every screen: `scripts/app.sh pseudo` on an iPad simulator (CI's `app` job on `main` and
+  `scripts/local-ci.sh --release`: the iPad's layouts are checked only here;
+  `SEMPERE_PSEUDO_DEVICE=iPhone` runs it at phone width), `scripts/app.sh pseudo-mac` as the Mac
+  Catalyst app at every window size in `SEMPERE_PSEUDO_MAC_WINDOWS` (default `700x800,1280x800`,
+  pinned through `SEMPERE_DEMO_MAC_WINDOW`; it takes over the screen). Run one by hand when you want
+  to see the screens, or for a layout the unit test cannot reach (a menu, a phone). On the Mac its
+  truncation check is not reliable: element frames come back in the Mac's scaled points (77 % of
+  the iPad's) while the text is measured in the app's own points, so it reports nearly every short
+  label as cut off (a run on 2026-10-15 reported dozens on screens the in-process check,
+  which measures both in the same points, passes); its sideways check still holds. In the real
+  double-length language the catalog's plural strings show as `%#@value@`, which is not a layout
+  problem.
 - `LocalizationCatalogTests` also fails if a Spanish string is more than twice as long as its English
   source for short strings (under 40 characters) — the budget the double-length check proves the
   layouts can take.
@@ -193,8 +236,8 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md#adding-a-language) for the short versio
 4. Add a glossary section for the language to this file (fix the term for *vault*, *notebook*, *tag*
    before translating, then use it everywhere).
 5. `swift test --filter LocalizationCatalogTests` must pass with the language added to the test's
-   `languages` (and, if needed, `pluralCategories`), and
-   `scripts/app.sh pseudo` should show no clipping in a language of similar length.
+   `languages` (and, if needed, `pluralCategories`), and `PseudoLanguageLayoutTests` should find
+   no clipping (it checks Spanish; add a case for a language that needs more room than Spanish).
 6. Open a pull request; the maintainer (or a native-speaking reviewer) checks the glossary.
 
 ## Tooling

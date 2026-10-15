@@ -144,6 +144,7 @@ extension AppModel {
                                          unlistedNotes: unlisted.subtracting(setAside).count)
             status.problem = cloudSync?.problem
             status.serverName = cloudSource.serverName
+            status.carryBarState(from: cloudSync)
             if let failure = pass.failures.first?.value { status.problem = cloudSource.problem(failure) }
             cloudSync = status
         } else {
