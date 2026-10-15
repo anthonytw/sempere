@@ -363,9 +363,9 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   from a `UIDragInteraction` of their own that also carries their context menu
   (`NotebookDragSource.swift`; one view, or the menu takes the long press on the
   iPad); never put `onDrag`/`draggable` or a SwiftUI `contextMenu` back on them. Their lift and menu
-  previews are the row's cell (`SidebarCellPreview`; the handle is clear). Such a drag never reaches a
-  SwiftUI `onDrop` on the iPad, so rows take drops through UIKit too (`UIKitSidebarDrop`: the handles,
-  and `UIKitDropArea` on All Notes). A drop that moved something flashes its row (`AppModel.landedDrop`).
+  previews are the row's cell (`SidebarCellPreview`; the handle is clear, and a device showed nothing
+  lifting). Notebook rows take drops on the handle (`UIKitSidebarDrop`); All Notes through its SwiftUI
+  `onDrop`. A drop that moved something flashes its row (`AppModel.landedDrop`).
   `SidebarDropUITests` drags for real (`scripts/app.sh test-ui`,
   `SEMPERE_DEBUG_DROPS` trace, `SEMPERE_DEBUG_NOTEBOOK_DRAG` styles).
 - Per-vault device memory (`RecentActivity`, sealed, Application Support):

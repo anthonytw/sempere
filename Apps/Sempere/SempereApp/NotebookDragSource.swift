@@ -238,11 +238,10 @@ enum SidebarCellPreview {
     }
 }
 
-/// A sidebar row's drops through UIKit (`UIDropInteraction`), with the rules of
-/// `SidebarDropDelegate`: the notebook rows' drag handles and the All Notes
-/// row's `UIKitDropArea`. On the iPad a notebook's drag (a `UIDragInteraction`,
-/// not the list's own) never reached All Notes' SwiftUI `onDrop`, so a
-/// notebook could not be taken out to the top level by dragging.
+/// A notebook row's drops through UIKit (`UIDropInteraction` on its drag
+/// handle), with the rules of `SidebarDropDelegate`. All Notes keeps its
+/// SwiftUI `onDrop`, which a notebook's drag reaches
+/// (`SidebarDropUITests.testDroppingANestedNotebookOnAllNotesTakesItToTheTopLevel`).
 @MainActor
 final class UIKitSidebarDrop: NSObject, UIDropInteractionDelegate {
     let model: AppModel
@@ -295,26 +294,4 @@ final class UIKitSidebarDrop: NSObject, UIDropInteractionDelegate {
             providers.first { $0.hasItemConformingToTypeIdentifier(type.identifier) }
         }
     }
-}
-
-/// A clear view over a sidebar row that only takes drops (`UIKitSidebarDrop`), for rows without a
-/// drag handle (All Notes). Taps go through to the row.
-struct UIKitDropArea: UIViewRepresentable {
-    let model: AppModel
-    let target: DropTarget
-    let undoManager: UndoManager?
-
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
-        view.backgroundColor = .clear
-        view.addInteraction(UIDropInteraction(delegate: context.coordinator))
-        return view
-    }
-
-    func updateUIView(_ view: UIView, context: Context) {
-        context.coordinator.target = target
-        context.coordinator.undoManager = undoManager
-    }
-
-    func makeCoordinator() -> UIKitSidebarDrop { UIKitSidebarDrop(model: model, target: target, undoManager: undoManager) }
 }

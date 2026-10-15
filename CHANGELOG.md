@@ -15,8 +15,8 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
 - iCloud Drive: note folders without a revision (an import's attachments written before its first
   revision, or a folder iCloud never lists) no longer keep the list on "Downloading" forever.
 - "Thin everything except checkpoints" removes every autosave, including each editing session's last one.
-- iPad: notebooks drag onto other notebooks and onto All Notes (to take one out to the top level), and
-  the row lifts under the finger; after a drop the notebook that received the notes or the notebook
+- iPad: a dragged notebook's row lifts under the finger (it showed nothing, so notebooks seemed not
+  to drag onto other notebooks or onto All Notes); after a drop the notebook that received the notes or the notebook
   flashes, so it is clear where they went.
 - iPad: the sidebar and the note list no longer take the keyboard from the search field.
 

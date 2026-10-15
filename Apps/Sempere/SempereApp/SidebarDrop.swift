@@ -285,13 +285,6 @@ private struct SidebarDropRow: ViewModifier {
                 .onDrop(of: [.sempereNotes, .sempereNotebook],
                         delegate: SidebarDropDelegate(model: model, target: target, undoManager: undoManager))
                 .modifier(TransferDropDestination(target: target, undoManager: undoManager))
-                .overlay {
-                    // Notebook rows take drops on their drag handle (`NotebookDragSource`); the top
-                    // level takes them through UIKit as well, or a notebook's drag never reaches it on the iPad.
-                    if target == .topLevel, NotebookDragStyle.current == .uikit {
-                        UIKitDropArea(model: model, target: target, undoManager: undoManager)
-                    }
-                }
         } else {
             content
         }
