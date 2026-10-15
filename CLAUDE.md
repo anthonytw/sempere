@@ -362,7 +362,10 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   started itself and never asks its rows' drop delegates, so notebook rows drag
   from a `UIDragInteraction` of their own that also carries their context menu
   (`NotebookDragSource.swift`; one view, or the menu takes the long press on the
-  iPad); never put `onDrag`/`draggable` or a SwiftUI `contextMenu` back on them.
+  iPad); never put `onDrag`/`draggable` or a SwiftUI `contextMenu` back on them. Their lift and menu
+  previews are the row's cell (`SidebarCellPreview`; the handle is clear). Such a drag never reaches a
+  SwiftUI `onDrop` on the iPad, so rows take drops through UIKit too (`UIKitSidebarDrop`: the handles,
+  and `UIKitDropArea` on All Notes). A drop that moved something flashes its row (`AppModel.landedDrop`).
   `SidebarDropUITests` drags for real (`scripts/app.sh test-ui`,
   `SEMPERE_DEBUG_DROPS` trace, `SEMPERE_DEBUG_NOTEBOOK_DRAG` styles).
 - Per-vault device memory (`RecentActivity`, sealed, Application Support):
@@ -654,7 +657,9 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   (recognition, items, place), so `refreshed` searches only changed pages and `matches(onPage:)` is a slice;
   `pagesForHighlight` caches its stale-judged pages (`highlightCache`) and judges only pages whose value or dirty flag changed.
 - Favorites (`meta.favorite`): written only via `NoteOps.setFavorite` (CLI `notes favorite`, the app's
-  `AppModel.setFavorite`); the sidebar's Favorites is `SidebarItem.favorites`. The quick-voice-notes notebook is
+  `AppModel.setFavorite`); the sidebar's Favorites is `SidebarItem.favorites`. The note list's order
+  (title, modified, created, favorites first) is the package's `NoteOrder`, shared with `notes list --sort`;
+  never sort notes in the app by another rule. The quick-voice-notes notebook is
   the capture profile's alone (Settings ▸ Quick Voice Notes). The Mac's item commands (`duplicateItem`, `bringItemToFront`, `deleteItem`)
   run on the selected item through `CanvasCommandTarget.perform(itemCommand:)`, enabled from
   `NoteEditor.hasItemSelection` (each canvas reports its page); rotation is `ItemActions.rotate` (menu quarter
