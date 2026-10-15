@@ -516,7 +516,10 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         guard !baking else { return }
         updateSlots(reconfigure: false)
         trackCurrentPage()
-        for slot in slots.values { slot.host.itemSelection.viewMoved() }
+        // The user scrolls: an item's menu goes (layout moving the offset does not count).
+        if scrollView.isDragging || scrollView.isDecelerating {
+            for slot in slots.values { slot.host.itemSelection.viewMoved() }
+        }
     }
 
     func viewForZooming(in scrollView: UIScrollView) -> UIView? {
@@ -529,7 +532,7 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         let side = Self.sideMargin(contentWidth: content.frame.width, viewWidth: scrollView.bounds.width)
         if content.frame.minX != side { content.frame.origin.x = side }
         updateSlots(reconfigure: false)
-        for slot in slots.values { slot.host.itemSelection.viewMoved() }
+        if scrollView.isZooming { for slot in slots.values { slot.host.itemSelection.viewMoved() } }
     }
 
     func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale zoom: CGFloat) {

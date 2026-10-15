@@ -383,6 +383,9 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         hold.minimumPressDuration = 0.45
         secondaryClick.addTarget(self, action: #selector(secondaryClicked(_:)))
         secondaryClick.buttonMaskRequired = .secondary
+        // A mouse or trackpad only: on the iPad simulator (and so perhaps on a device) a finger tap
+        // also passed the button mask, so every tap showed the menu.
+        secondaryClick.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
         for g in [itemTap, lassoTap, hold, secondaryClick] as [UIGestureRecognizer] {
             g.cancelsTouchesInView = false
             g.delegate = self
@@ -555,7 +558,8 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         canvas.accessibilityValue = "zoom=\(String(format: "%.3f", Double(zoom)));offset=\(n(Double(canvas.contentOffset.x))),"
             + "\(n(Double(canvas.contentOffset.y)));width=\(n(Double(canvas.bounds.width)))"
             + ";edits=\(editor?.itemRevisions[pageID] ?? 0);selected=\(selected);menu=\(menuShown ? 1 : 0)"
-            + ";bar=\(bar.isHidden ? 0 : 1);palette=\(debugPalette() ? 1 : 0);items="
+            + ";menus=\(menusShown);trace=\(debugTrace.joined(separator: ","));bar=\(bar.isHidden ? 0 : 1);barFrame=\(n(Double(bar.frame.minX))),\(n(Double(bar.frame.minY))),"
+            + "\(n(Double(bar.frame.width))),\(n(Double(bar.frame.height)));palette=\(debugPalette() ? 1 : 0);items="
             + list.joined(separator: "|") + (debugTyping().map { ";typing=" + $0 } ?? "")
     }
 
@@ -586,7 +590,6 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
     /// While drawing, a held Pencil is ink: only a finger holds an item then. A touch on a
     /// button (a card's, a clip's, the selection bar's) or in a text box being typed in is theirs.
     func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-        guard g === hold || g === itemTap else { return true }
         var view = touch.view
         while let v = view, v !== canvas {
             if v is UIControl || v is UITextView { return false }
@@ -659,23 +662,43 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
 
     /// A hold is under way, or just ended: the tap the same touch may still end as is not a tap.
     private var holding = false
+    /// What the hold under way picked, and where (its menu comes when the finger lifts).
+    private var heldTarget: (target: HoldTarget, point: CGPoint)?
 
+    /// A hold selects the item at once and shows its menu when the finger lifts, as UIKit's own
+    /// edit menus do: a menu shown while the finger is still down went away at the lift (iPad
+    /// simulator). A hold that turns into a drag shows no menu.
     @objc private func held(_ g: UILongPressGestureRecognizer) {
         switch g.state {
-        case .began: holding = true
-        case .ended, .cancelled, .failed:
-            // After this turn of the run loop: a tap recognized at the same touch's end comes first.
+        case .began:
+            holding = true
+            guard let target = holdTarget(g) else { return }
+            heldTarget = (target, g.location(in: canvas))
+            switch target {
+            case .item(let id): pick(id, menu: false)
+            case .page: select(nil)
+            }
+        case .ended:
+            DispatchQueue.main.async { [weak self] in self?.holding = false }   // after a tap at the same lift
+            guard let current = heldTarget else { return }
+            heldTarget = nil
+            // A moment after the lift: the touch's other recognizers (PencilKit's, which end after this
+            // one while drawing) dismiss an edit menu that is already up.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+                guard let self, self.drag == nil else { return }
+                switch current.target {
+                case .item(let id):
+                    guard self.model.selected == id else { return }
+                    self.presentMenu()
+                    if let shown = self.shownMenu { self.menuKeep = (id, Date().addingTimeInterval(0.8), shown) }
+                case .page: if self.model.selected == nil { self.presentMenu(at: current.point) }
+                }
+            }
+        case .cancelled, .failed:
             DispatchQueue.main.async { [weak self] in self?.holding = false }
-            return
-        default: return
-        }
-        guard let target = holdTarget(g) else { return }
-        switch target {
-        case .item(let id):
-            pick(id)
-        case .page:
-            select(nil)
-            presentMenu(at: g.location(in: canvas))
+            heldTarget = nil
+        default:
+            break
         }
     }
 
@@ -721,6 +744,7 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
             switch d { case .move(let i), .resize(let i, _): id = i }
             guard let item = items.first(where: { $0.id == id }) else { return }
             drag = (d, item)
+            heldTarget = nil   // a hold that became a drag shows no menu
             dismissMenu()
             model.selected = id
             refresh()
@@ -814,28 +838,73 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
     // MARK: Menu
 
     /// Shows the menu next to the selected item (or at `point`, for Paste on the empty page).
-    private func presentMenu(at point: CGPoint? = nil) {
+    private func presentMenu(at point: CGPoint? = nil, _ line: Int = #line) {
         guard canvas?.window != nil, let source = point ?? selectedRect.map({ CGPoint(x: $0.midX, y: $0.minY) }) else { return }
-        menu?.presentEditMenu(with: UIEditMenuConfiguration(identifier: nil, sourcePoint: source))
+        #if DEBUG
+        trace("p\(line)")
+        #endif
+        let id = UUID()
+        shownMenu = id
+        menu?.presentEditMenu(with: UIEditMenuConfiguration(identifier: id as NSUUID, sourcePoint: source))
     }
 
-    private func dismissMenu() { menu?.dismissMenu() }
+    /// The configuration of the menu presented last: a late dismissal of an earlier one does not count.
+    private var shownMenu: UUID?
 
-    /// Whether the item's (or Paste's) edit menu is up.
+    private func dismissMenu(_ line: Int = #line) {
+        #if DEBUG
+        if menuShown { trace("d\(line)") }
+        #endif
+        menuKeep = nil
+        menu?.dismissMenu()
+    }
+
+    /// A menu a hold brought up for an item, while it may be put back once: the update that a new
+    /// selection sets off (the editor's selected-item state, the window's commands) dismissed it
+    /// right after it appeared when the hold picked the item while drawing (iPad simulator). Any
+    /// dismissal the app asks for (a tap, a scroll, Escape, a drag) clears it.
+    private var menuKeep: (item: UUID, until: Date, menu: UUID)?
+
+    #if DEBUG
+    /// The last menu events, for the UI tests' report (`debugReport`).
+    private var debugTrace: [String] = []
+    func trace(_ event: String) {
+        debugTrace.append(event)
+        if debugTrace.count > 12 { debugTrace.removeFirst() }
+    }
+    #endif
+
+    /// Whether the item's (or Paste's) edit menu is up, and how many times it came up (debug report).
     private(set) var menuShown = false
+    private(set) var menusShown = 0
 
     func editMenuInteraction(_ interaction: UIEditMenuInteraction, willPresentMenuFor configuration: UIEditMenuConfiguration,
                              animator: any UIEditMenuInteractionAnimating) {
         menuShown = true
+        menusShown += 1
         #if DEBUG
+        trace("W")
         debugReport()
         #endif
     }
 
     func editMenuInteraction(_ interaction: UIEditMenuInteraction, willDismissMenuFor configuration: UIEditMenuConfiguration,
                              animator: any UIEditMenuInteractionAnimating) {
+        let dismissed = (configuration.identifier as? NSUUID).map { $0 as UUID }
+        guard dismissed == shownMenu else { return }
         menuShown = false
+        if let keep = menuKeep, keep.menu == dismissed, Date() < keep.until {
+            menuKeep = nil
+            #if DEBUG
+            trace("k")
+            #endif
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                guard let self, self.model.selected == keep.item, self.drag == nil, self.turning == nil else { return }
+                self.presentMenu()
+            }
+        }
         #if DEBUG
+        trace("X")
         debugReport()
         #endif
     }

@@ -1231,7 +1231,9 @@ and `ItemFrames` in `Sources/Sempere/ItemOps.swift`):
   as on a Mac (TestFlight 1.0.0: a menu that came up with every tap floated
   over the page and came back at the next tap). The menu comes from a
   deliberate gesture: a **held finger** (the Pencil too in selection mode) on
-  the item, a secondary click, or the **menu button** of the bar the iPad shows
+  the item, which selects it at once and shows the menu when it lifts (as
+  UIKit's own edit menus do), a secondary click (mouse or trackpad only: on the
+  simulator a finger tap passed its button mask, so every tap showed the menu), or the **menu button** of the bar the iPad shows
   next to the selection (`ItemSelectionBar`: the item's menu and **Delete**,
   above the item, below it when there is no room). It goes with a tap anywhere,
   a scroll or zoom, Escape, or a drag of the item. PencilKit's own long press

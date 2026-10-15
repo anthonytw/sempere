@@ -275,11 +275,12 @@ struct PageCanvasView: UIViewRepresentable {
 
         func scrollViewDidZoom(_ scrollView: UIScrollView) {
             host?.zoomChanged()
-            host?.itemSelection.viewMoved()
+            if scrollView.isZooming { host?.itemSelection.viewMoved() }
         }
 
+        /// The user scrolls: the item's menu goes (layout and focus changes that move the offset do not count).
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
-            host?.itemSelection.viewMoved()
+            if scrollView.isDragging || scrollView.isDecelerating { host?.itemSelection.viewMoved() }
         }
 
         /// A pinch ended: the fitted width is a detent (`ZoomDetent`).
@@ -702,6 +703,7 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         toolPicker.setVisible(paletteVisible, forFirstResponder: canvas)
         if !canvas.isFirstResponder { canvas.becomeFirstResponder() }
         #if DEBUG
+        itemSelection.trace("r")
         itemSelection.debugRefreshReport()
         #endif
     }
