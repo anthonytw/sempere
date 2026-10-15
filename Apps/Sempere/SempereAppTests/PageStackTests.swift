@@ -315,13 +315,13 @@ struct PageStackTests {
         #expect(abs(stack.scale - fit * 2.5) < 0.001)
         try expectPagesAtScale()
         #expect(stack.scroller.contentSize == stack.layout.contentSize(scale: Double(stack.scale)))
-        // Never beyond 4x, never below the fit.
+        // Never beyond 4x; the menu's steps never below the fit (a pinch goes to half of it, `ZoomDetent`).
         stack.setScale(fit * 10)
         #expect(abs(stack.scale - fit * 4) < 0.001)
         stack.zoomToFit()
         #expect(stack.scale == fit)
         try expectPagesAtScale()
-        #expect(abs(stack.scroller.minimumZoomScale - 1) < 0.0001)
+        #expect(abs(stack.scroller.minimumZoomScale - 0.5) < 0.0001, "a pinch zooms out to half the fit")
         #expect(abs(stack.scroller.maximumZoomScale - 4) < 0.0001)
     }
 

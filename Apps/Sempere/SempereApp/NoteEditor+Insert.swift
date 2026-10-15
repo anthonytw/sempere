@@ -17,12 +17,24 @@ extension NoteEditor {
         guard canEditItems else { throw ItemError.notEditable }
         guard let page = pages.first(where: { $0.id == pageID }) else { throw ItemError.noPage }
         let size = pageSize
-        let frame = NoteOps.viewFrame(for: image.pixelSize, pageSize: size, visible: visible.map { Rect($0) },
-                                      centre: point.map { ItemFrames.Point(x: Double($0.x), y: Double($0.y)) })
+        let frame = placedFrame(NoteOps.viewFrame(for: image.pixelSize, pageSize: size, visible: visible.map { Rect($0) },
+                                                  centre: point.map { ItemFrames.Point(x: Double($0.x), y: Double($0.y)) }),
+                                on: page, dropped: point != nil)
         return try await addAttachment(data: image.data, type: image.mediaType, on: pageID) { ref in
             try NoteOps.placeImage(blob: ref, pixelSize: image.pixelSize, orientation: image.orientation, on: page,
                                    pageSize: size, frame: frame).item
         }
+    }
+
+    /// Where an inserted item goes: `frame` (from `NoteOps.viewFrame`), moved
+    /// below the page's items it would cover (`NoteOps.unoccupied`: TestFlight
+    /// 1.0.0, a second clip or card landed on the first), unless the user
+    /// dropped it there. An infinite page grows to keep it in reach.
+    func placedFrame(_ frame: Rect, on page: Page, dropped: Bool) -> Rect {
+        guard !dropped else { return frame }
+        let placed = NoteOps.unoccupied(frame, among: page.items, pageSize: pageSize)
+        growPage(toFit: placed.y + placed.h)
+        return placed
     }
 
     /// Replaces the image `id` with another picture (Replace Image): the

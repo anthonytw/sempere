@@ -18,7 +18,8 @@ extension NoteEditor {
         let (data, value) = try MathTypesetter.rendered(content)
         let size = pageSize
         let natural = value.renderSize ?? Size(w: 1, h: 1)
-        let frame = NoteOps.viewFrame(for: natural, pageSize: size, visible: visible.map { Rect($0) })
+        let frame = placedFrame(NoteOps.viewFrame(for: natural, pageSize: size, visible: visible.map { Rect($0) }),
+                                on: page, dropped: false)
         return try await addAttachment(data: data, type: MathContent.renderType, on: pageID) { ref in
             var stored = value
             stored.render = ref

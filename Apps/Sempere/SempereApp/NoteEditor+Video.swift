@@ -16,8 +16,9 @@ extension NoteEditor {
         guard canEditItems else { throw ItemError.notEditable }
         guard let page = pages.first(where: { $0.id == pageID }) else { throw ItemError.noPage }
         let size = pageSize
-        let frame = NoteOps.viewFrame(for: video.info.pixelSize, pageSize: size, visible: visible.map { Rect($0) },
-                                      centre: point.map { ItemFrames.Point(x: Double($0.x), y: Double($0.y)) })
+        let frame = placedFrame(NoteOps.viewFrame(for: video.info.pixelSize, pageSize: size, visible: visible.map { Rect($0) },
+                                                  centre: point.map { ItemFrames.Point(x: Double($0.x), y: Double($0.y)) }),
+                                on: page, dropped: point != nil)
         // Refuse before anything is written.
         let placeholder = BlobRef(sha256: String(repeating: "0", count: 64), size: 1, type: video.info.mediaType)
         _ = try NoteOps.placeVideo(blob: placeholder, info: video.info, on: page, pageSize: size, frame: frame)

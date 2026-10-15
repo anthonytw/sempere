@@ -156,7 +156,8 @@ extension NoteOps {
 
     /// Places an image on `page`. Without `frame` the image is shown at one
     /// pixel per point, shrunk to fit inside the margins, centered across the
-    /// page and a margin from its top; `width` (points) instead sets the
+    /// page and a margin from its top, then below the page's items it would
+    /// cover (`unoccupied`); `width` (points) instead sets the
     /// frame's width, its height following the crop's (or the image's)
     /// aspect, and `at` the top-left corner. `crop` is in oriented pixel
     /// coordinates (format.md §8.2.5); a frame keeps the crop's aspect when
@@ -182,7 +183,9 @@ extension NoteOps {
             }
             let x = origin?.x ?? (pageSize.width - natural.w) / 2
             let y = origin?.y ?? Limits.margin
-            rect = Rect(x: InkJSON.round3(x), y: InkJSON.round3(y), w: InkJSON.round3(natural.w), h: InkJSON.round3(natural.h))
+            let placed = Rect(x: InkJSON.round3(x), y: InkJSON.round3(y), w: InkJSON.round3(natural.w), h: InkJSON.round3(natural.h))
+            // Placed by default: below the page's items, never on them.
+            rect = origin == nil ? unoccupied(placed, among: page.items, pageSize: pageSize) : placed
         }
         try validate(frame: rect)
         var item = Item.image(id: id, blob: blob, pixelSize: pixelSize, orientation: orientation == 1 ? nil : orientation,

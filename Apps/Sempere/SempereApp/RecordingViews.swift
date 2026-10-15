@@ -19,6 +19,7 @@ enum RecordingClock {
 struct RecordingBar: View {
     let editor: NoteEditor
     @AppModelEnvironment private var model
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @Binding var showingTranscript: Recording?
 
     var body: some View {
@@ -89,10 +90,15 @@ struct RecordingBar: View {
             Slider(value: Binding(get: { player.position }, set: { player.seek(to: $0) }),
                    in: RecordingClock.sliderRange(player.duration))
             Text(RecordingClock.text(player.duration)).monospacedDigit().font(.callout).foregroundStyle(.secondary)
+            // Its name shows with the hand where there is room (TestFlight 1.0.0: the hand alone said
+            // nothing on an iPad, which shows no tooltips); VoiceOver reads the name and the hint.
             Toggle("Tap Ink to Play", systemImage: "hand.tap", isOn: Binding(get: { editor.listeningToInk },
                                                                          set: { editor.listeningToInk = $0 }))
                 .toggleStyle(.button)
+                .labelStyle(PlayerLabelStyle(showsTitle: sizeClass != .compact))
+                .fixedSize()
                 .help("Tap something you wrote during the recording to hear that moment")
+                .accessibilityHint(Text("Tap something you wrote during the recording to hear that moment"))
             if recording.transcript != nil {
                 Button("Transcript", systemImage: "text.quote") { showingTranscript = recording }
                     .help("Show the recording's transcript")
@@ -108,6 +114,22 @@ struct RecordingBar: View {
         .padding(.horizontal).padding(.vertical, 6)
         .background(.bar)
         .accessibilityIdentifier("playerBar")
+    }
+}
+
+/// The player's label style for a control that needs its name to be understood:
+/// title and icon where there is room, the icon alone otherwise.
+private struct PlayerLabelStyle: LabelStyle {
+    var showsTitle: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        if showsTitle {
+            Label { configuration.title } icon: { configuration.icon }
+                .labelStyle(.titleAndIcon)
+        } else {
+            Label { configuration.title } icon: { configuration.icon }
+                .labelStyle(.iconOnly)
+        }
     }
 }
 

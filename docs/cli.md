@@ -563,7 +563,9 @@ exit 2).
   GIF, TIFF and CMYK or arithmetic-coded JPEGs are refused: convert them first.
   The file must decode, stay under 100 megapixels and 64 MiB. Without a frame
   the image is shown at one pixel per point, shrunk to fit inside a 36 pt
-  margin, centered across the page and a margin from its top; `--at` and
+  margin, centered across the page and a margin from its top, moved down below
+  any item it would cover (`NoteOps.unoccupied`: background items do not count,
+  and on a page too short for that it stays at the top); `--at` and
   `--width` set its corner and width (the height follows the aspect of the image
   or its `--crop`, given in oriented pixels), `--frame` all four numbers.
   `--rotation` is degrees clockwise. Items stack in the order they are added
@@ -635,7 +637,7 @@ exit 2).
   `--no-poster`) none: renderers draw a crossed box with a play mark, and
   `items poster` can add one later. Without a frame the clip is fitted inside
   the margins at most 480 pt wide, centered across the page, a margin from the
-  top; `--at`, `--width`, `--frame`, `--rotation`, `--layer` and `--rec` as
+  top, below any item it would cover (as for `image`); `--at`, `--width`, `--frame`, `--rotation`, `--layer` and `--rec` as
   for `image`. Blobs are written poster first, then clip, then the delta.
   `--json` adds `poster` (the poster's reference) and `metadataRemoved` (the
   number of boxes blanked). `--dry-run` probes and hashes the clip (streamed)
@@ -650,7 +652,7 @@ exit 2).
   `--width`) also puts it on a page as an **audio item** (`format.md` §8.2.9)
   in the same delta, as the app does when a recording stops: a 300 × 96 point
   card (narrower on a narrow page), centered across the page a margin from its
-  top, above the page's other items; standard output is then the item's id,
+  top and below any item it would cover (as for `image`), above the page's other items; standard output is then the item's id,
   then the recording's, and `--json` lists the item in `items`. `recordings
   place` places one later. `--rec ID` on `image` and `text` links an item to a
   recording (id, id prefix of 4+ characters or exact title) at `--rec-at` seconds
@@ -681,7 +683,8 @@ characters or an exact title. Each change is one delta through the same
   and warns about audio items whose recording is missing. `--json`:
   `{recordings: [{recording, items: [{page, pageId, item}]}], missing: [...]}`.
 - `place` adds an audio item for the recording (`addItem`): a 300 × 96 point
-  card centered across page 1 (or `--page`) a margin from its top, or at
+  card centered across page 1 (or `--page`) a margin from its top and below
+  any item it would cover (a second placement goes under the first), or at
   `--at`/`--width`, or `--frame`. A recording may be placed any number of
   times. Output as for `attach` (the new item's id; `--json` the `attach` form).
 - `rename` sets the title (`setRecording`); an empty title clears it.

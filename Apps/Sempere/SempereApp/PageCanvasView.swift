@@ -31,7 +31,7 @@ struct PageCanvasView: UIViewRepresentable {
     /// The text tool: taps edit text boxes or start new ones.
     var addingText = false
     /// Called when the text tool ends from the canvas (a tool was picked).
-    var onAddingTextEnded: () -> Void = {}
+    var onAddingTextEnded: (CanvasModes.TextToolEnd) -> Void = { _ in }
     /// Images and PDFs dropped on the page (`CanvasDrop`), with the page point they were dropped at.
     var onDrop: ((_ providers: [NSItemProvider], _ pageID: UUID, _ point: CGPoint) -> Void)?
 
@@ -275,6 +275,17 @@ struct PageCanvasView: UIViewRepresentable {
 
         func scrollViewDidZoom(_ scrollView: UIScrollView) {
             host?.zoomChanged()
+            if scrollView.isZooming { host?.itemSelection.viewMoved() }
+        }
+
+        /// The user scrolls: the item's menu goes (layout and focus changes that move the offset do not count).
+        func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            if scrollView.isDragging || scrollView.isDecelerating { host?.itemSelection.viewMoved() }
+        }
+
+        /// A pinch ended: the fitted width is a detent (`ZoomDetent`).
+        func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
+            host?.zoomEnded()
         }
 
         /// A stroke starts: the canvas (a page of the stack, or the one-page
@@ -304,7 +315,7 @@ struct PageCanvasContent {
     var onDrop: ((_ providers: [NSItemProvider], _ pageID: UUID, _ point: CGPoint) -> Void)?
     /// The text tool: taps edit text boxes or start new ones.
     var addingText = false
-    var onAddingTextEnded: () -> Void = {}
+    var onAddingTextEnded: (CanvasModes.TextToolEnd) -> Void = { _ in }
 }
 
 /// UIKit side of `PageCanvasView`.
@@ -322,8 +333,10 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
     var onItemSelectionEnded: (() -> Void)?
     /// Typing in text boxes (the text tool, and "Edit Text" in selection mode).
     let textEditor = TextBoxEditorController()
-    /// Called when picking a tool ends the text tool.
-    var onTextToolEnded: (() -> Void)?
+    /// Called when picking a tool ends the text tool, or it placed its one box.
+    var onTextToolEnded: ((CanvasModes.TextToolEnd) -> Void)?
+    /// The text tool started a new box: when its edit ends, the tool has done its one placement.
+    private var placingTextBox = false
 
     /// The text tool: PencilKit's drawing is off, a tap selects a text box
     /// (a tap on the selected one, or a double tap, types in it) or starts a
@@ -366,7 +379,11 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
             itemSelection.onEmptyTap = nil
             itemSelection.setActive(!editing, scope: .all)
         } else if textToolActive {
-            itemSelection.onEmptyTap = { [weak self] p in self?.textEditor.beginNew(at: p) }
+            itemSelection.onEmptyTap = { [weak self] p in
+                guard let self else { return }
+                self.textEditor.beginNew(at: p)
+                self.placingTextBox = self.textEditor.isEditing
+            }
             itemSelection.setActive(!editing, scope: .textBoxes)
         } else {
             itemSelection.onEmptyTap = nil
@@ -379,11 +396,15 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
     // MARK: Keys for the selected item (Mac keyboards, an iPad's too)
 
     /// Escape drops the selection; the arrow keys move the selected item by
-    /// one point (ten with Shift), one undo step per press. Only while an item
-    /// is selected and nothing is typed, so the keys scroll otherwise.
+    /// one point (ten with Shift), one undo step per press; Delete deletes it.
+    /// Only while an item is selected and nothing is typed, so the keys scroll
+    /// otherwise.
     override var keyCommands: [UIKeyCommand]? {
         guard itemSelection.hasSelection, !textEditor.isEditing else { return super.keyCommands }
         var commands = [UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(itemKey(_:)))]
+        if !isReadOnly {
+            commands.append(UIKeyCommand(input: UIKeyCommand.inputDelete, modifierFlags: [], action: #selector(itemKey(_:))))
+        }
         for input in [UIKeyCommand.inputUpArrow, UIKeyCommand.inputDownArrow, UIKeyCommand.inputLeftArrow,
                       UIKeyCommand.inputRightArrow] {
             commands.append(UIKeyCommand(input: input, modifierFlags: [], action: #selector(itemKey(_:))))
@@ -397,6 +418,7 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         let step: Double = command.modifierFlags.contains(.shift) ? 10 : 1
         switch command.input {
         case UIKeyCommand.inputEscape: itemSelection.clearSelection()
+        case UIKeyCommand.inputDelete: itemSelection.perform(.deleteItem)
         case UIKeyCommand.inputUpArrow: itemSelection.nudge(dx: 0, dy: -step)
         case UIKeyCommand.inputDownArrow: itemSelection.nudge(dx: 0, dy: step)
         case UIKeyCommand.inputLeftArrow: itemSelection.nudge(dx: -step, dy: 0)
@@ -545,6 +567,11 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         // the system's Pencil preference says (`.default` follows it).
         // An iPhone has no Pencil: a finger draws (once annotating is switched on).
         canvas.drawingPolicy = Platform.isMac || Platform.isPhone ? .anyInput : .default
+        #if DEBUG
+        // UI tests on the iPad simulator (`IPadCanvasUITests`): a paired Pencil's default, where a finger
+        // taps, holds and scrolls instead of drawing (the simulator's fingers draw otherwise).
+        if DebugLaunch.environment["SEMPERE_DEBUG_PENCIL_ONLY"] != nil { canvas.drawingPolicy = .pencilOnly }
+        #endif
         canvas.alwaysBounceVertical = true
         canvas.contentInsetAdjustmentBehavior = .never
         canvas.insertSubview(paperView, at: 0)
@@ -581,6 +608,10 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         textEditor.onEditingChanged = { [weak self] editing in self?.textEditingChanged(editing) }
         #if DEBUG
         itemSelection.debugTyping = { [weak self] in self?.textEditor.textView?.text }
+        itemSelection.debugPalette = { [weak self] in
+            guard let self else { return false }
+            return self.canvas.isFirstResponder && self.toolPicker.isVisible
+        }
         textEditor.onTextChanged = { [weak self] in self?.itemSelection.debugRefreshReport() }
         #endif
         itemSelection.onEditText = { [weak self] item in self?.textEditor.begin(item) }
@@ -637,6 +668,52 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         // A text box being typed in keeps the keyboard: its text view is the first responder.
         guard window != nil, !isReadOnly, !drawingSuspended, !textEditor.isEditing else { return }
         canvas.becomeFirstResponder()
+    }
+
+    /// A touch on the canvas (a stroke, a tap, a click) brings its palette
+    /// back: once something else took the first responder (the sidebar, a
+    /// list, a field), drawing or tapping the page must restore the tools
+    /// (TestFlight 1.0.0: the palette went when the sidebar took the focus,
+    /// and drawing did not bring it back). The user touched the canvas, so
+    /// this is the user's focus, not the canvas taking it by itself
+    /// (`CanvasFocus`); a text box being typed in keeps the keyboard.
+    ///
+    /// Also, while PencilKit's drawing is off, a recognizer of its own made or turned on since
+    /// (PencilKit sets up its selection views when the canvas's tool becomes the lasso, which the
+    /// picker may tell it after `updateEraser` ran) is turned off before the press is handed to the
+    /// recognizers.
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let hit = super.hitTest(point, with: event)
+        if hit != nil, event?.type == .touches, !canvas.drawingGestureRecognizer.isEnabled {
+            setPencilKitGestures(enabled: false)
+        }
+        if hit != nil, event?.type == .touches, !reclaimScheduled, !paletteShowing {
+            reclaimScheduled = true
+            // After the touch is delivered: becoming first responder in the middle of hit-testing is not safe.
+            DispatchQueue.main.async { [weak self] in
+                self?.reclaimScheduled = false
+                self?.reclaimFocus()
+            }
+        }
+        return hit
+    }
+
+    private var reclaimScheduled = false
+
+    /// Whether this canvas has the focus and its palette is up (or the palette is meant to be hidden).
+    var paletteShowing: Bool {
+        canvas.isFirstResponder && (toolPicker.isVisible || !paletteVisible)
+    }
+
+    /// Takes the first responder and shows the palette for it (a touch on the canvas).
+    func reclaimFocus() {
+        guard window != nil, !isReadOnly, !drawingSuspended, !textEditor.isEditing else { return }
+        toolPicker.setVisible(paletteVisible, forFirstResponder: canvas)
+        if !canvas.isFirstResponder { canvas.becomeFirstResponder() }
+        #if DEBUG
+        itemSelection.trace("r")
+        itemSelection.debugRefreshReport()
+        #endif
     }
 
     /// `focus()` unless something outside `container` (the stack for a page
@@ -724,7 +801,7 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
             EraserPreference.save(eraser.eraserTool.eraserType)
         }
         if itemSelectionActive { onItemSelectionEnded?() }   // picking a tool is picking drawing
-        if textToolActive { onTextToolEnded?() }
+        if textToolActive { onTextToolEnded?(.toolPicked) }
         if mathLassoHandler != nil { onMathLassoEnded?() }
         endTransientSelection()
         updateEraser()
@@ -854,23 +931,16 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         return found
     }
 
-    /// A press is about to reach the canvas: while PencilKit's drawing is off, a recognizer of its
-    /// own made or turned on since (PencilKit sets up its selection views when the canvas's tool
-    /// becomes the lasso, which the picker may tell it after `updateEraser` ran) is turned off
-    /// before the press is handed to the recognizers.
-    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        let hit = super.hitTest(point, with: event)
-        if hit != nil, event?.type == .touches, !canvas.drawingGestureRecognizer.isEnabled {
-            setPencilKitGestures(enabled: false)
-        }
-        return hit
-    }
-
     /// Typing in a text box started or ended: nothing draws or selects
     /// meanwhile; afterwards the palette comes back.
     private func textEditingChanged(_ editing: Bool) {
         updateSelectionMode()
         guard !editing else { return }
+        // The text tool is one-shot (`CanvasModes`): the box it started is done, the canvas goes back.
+        if placingTextBox {
+            placingTextBox = false
+            if textToolActive { onTextToolEnded?(.placed) }
+        }
         updateToolPicker()
         // A page of the stack takes the palette back itself, unless the edit ended because
         // the user went to a field elsewhere (`CanvasFocus`).
@@ -1019,6 +1089,25 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
             if wasFitted || canvas.zoomScale < fit { canvas.zoomScale = fit }
         }
         zoomChanged()
+    }
+
+    /// A pinch on the one-page canvas ended: within `ZoomDetent.snapBand` of
+    /// the fitted width it settles exactly there (a pageless note does not
+    /// zoom out below it: the scroll view bounces back). The stack settles its
+    /// own pinches (`PageStackHost.bake`).
+    func zoomEnded() {
+        guard !isEmbedded, fittedWidth > 0 else { return }
+        let z = Double(canvas.zoomScale), fit = Double(fittedWidth)
+        let target = ZoomDetent.settle(z, fit: fit, paged: false)
+        guard abs(target - z) > fit * 0.001 else { return }
+        canvas.setZoomScale(CGFloat(target), animated: true)
+        if ZoomDetent.isFit(target, fit: fit) { Self.snapFeedback() }
+    }
+
+    /// The tick a pinch gives when it settles on the fitted width.
+    static func snapFeedback() {
+        guard !Platform.isMac else { return }
+        UISelectionFeedbackGenerator().selectionChanged()
     }
 
     /// Content size and paper follow the zoom (`PageExtent`): an infinite

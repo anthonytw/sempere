@@ -153,8 +153,8 @@ running app.
 Placed items (images, text boxes, PDF pages, videos, recordings' cards): the mouse always draws,
 so a right-click (or two-finger click) on an item selects it and shows its
 menu (Crop…, Replace Image, Delete…) without leaving the drawing tool; a click
-with the lasso does the same, and Select in the toolbar turns selection mode
-on (`docs/attachments.md` §13 "Selecting items").
+with the lasso selects it (without the menu, as every click), and Select in the
+toolbar turns selection mode on (`docs/attachments.md` §13 "Selecting items").
 
 With an item selection on, the mouse and trackpad work the items:
 
@@ -186,8 +186,12 @@ With an item selection on, the mouse and trackpad work the items:
   reports no touches, so the pointer stands in for the two fingers); the
   item's menu (secondary click) has Rotate Left and Rotate Right in 90° steps.
 * Escape drops the selection; the arrow keys move the selected item one
-  point (Shift: ten), one undo step per press (`PageCanvasHost.keyCommands`,
-  only while an item is selected, so the keys scroll otherwise).
+  point (Shift: ten), one undo step per press; Delete (⌫) deletes it, as
+  Delete Item does (`PageCanvasHost.keyCommands`, only while an item is
+  selected and nothing is typed, so the keys scroll otherwise). An iPad with a
+  keyboard has the same keys; the iPad also shows a bar with the item's menu
+  and Delete next to the selection (`ItemSelectionBar`), which the Mac leaves
+  out (its secondary click and Note menu do that).
 
 `MacItemUITests` drags every kind with the mouse in the demo vault
 (`SEMPERE_DEMO_ITEMS`; the canvas reports its items in its accessibility
@@ -475,7 +479,8 @@ There is no Pencil, so on a Mac:
 * **Ruler** (⌥⌘R) toggles PencilKit's ruler for straight lines.
 * **Smoothed strokes** (below): Settings ▸ General ▸ Smooth Mouse Strokes,
   Off, Light (the default) or Strong.
-* Two-finger scroll and pinch scroll and zoom the canvas, as PencilKit's
+* Two-finger scroll and pinch scroll and zoom the canvas (the fitted width is
+  a detent a pinch snaps to, `ZoomDetent`), as PencilKit's
   scroll view does; click-drag draws. In a paged note the pages scroll as one
   (`PageStackView`); the pointer does not drag the pages while they can be
   drawn on, and the zoom commands apply to all pages.

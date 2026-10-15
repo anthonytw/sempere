@@ -19,6 +19,15 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
 - iCloud Drive: note folders without a revision (an import's attachments written before its first
   revision, or a folder iCloud never lists) no longer keep the list on "Downloading" forever.
 - "Thin everything except checkpoints" removes every autosave, including each editing session's last one.
+- iPad canvas: a tap on an item selects it (as a click does on a Mac) instead of opening a menu that
+  floated over the page; the item's menu comes from holding a finger on it (not PencilKit's "Select
+  All / Insert Space" bar), a secondary click, or the menu button next to the selection, and goes with
+  a tap elsewhere, a scroll or Escape. Videos and recordings' cards play only from their play buttons.
+- The text tool places one box, then goes back to the previous tool; a tap on a picture or a clip with
+  the text tool no longer makes a box on it.
+- New pictures, clips, equations and recordings' cards are placed below the items already on the page
+  instead of on top of them (also `sempere attach` and `recordings place` without a frame).
+- Touching the canvas brings the tool palette back after the sidebar or the note list took the focus.
 - Mac: with the lasso as the palette's tool, placed items can be moved and resized with the mouse in
   Select mode again, and a new text box keeps the keyboard; PencilKit's own lasso gestures took the
   drag and the click.
@@ -35,6 +44,9 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
 
 ### Added
 
+- iPad canvas: a bar next to the selected item with its menu and Delete; the Delete key deletes the
+  selected item (iPad keyboards and the Mac). Pinch zoom snaps to the fitted width, and a paged note
+  zooms out to half of it to show several pages. The player's "Tap Ink to Play" shows its name.
 - `sempere vault merge-copy FROM` merges another copy of the vault (an iCloud conflict version, another
   device's copy, a restored backup) without overwriting or deleting anything (`format.md` §1.3).
 - Note list: rows show small icons for the attachments a note holds (pictures, equations, video,

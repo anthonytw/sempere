@@ -1208,14 +1208,17 @@ and `ItemFrames` in `Sources/Sempere/ItemOps.swift`):
 
 - **Ways in.** *Select* in the editor toolbar (always shown on an editable
   note) turns selection mode on: a tap selects the topmost item, content before
-  backgrounds. While drawing, an item is picked without changing tools by a tap
-  with PencilKit's **lasso** (the lasso still lassoes ink), by **holding a
-  finger** on it when fingers do not draw (with the Pencil, the default on an
-  iPad), or by a **secondary click** (right-click, two-finger click; a Mac's
-  mouse always draws, so this is its way). Such a pick is a transient
-  selection: drawing is off while the item is selected and comes back as soon
-  as nothing is (a tap beside it, Delete) or a tool is picked. A finger *tap*
-  on a video still plays it.
+  backgrounds. While drawing, an item is picked without changing tools by a
+  **finger tap** on it when fingers do not draw (with the Pencil, the default on
+  an iPad), a tap with PencilKit's **lasso** (the lasso still lassoes ink), by
+  **holding a finger** on it (its menu too), or by a **secondary click**
+  (right-click, two-finger click, with the menu; a Mac's mouse always draws, so
+  this is its way). Such a pick is a transient selection: drawing is off while
+  the item is selected and comes back as soon as nothing is (a tap beside it,
+  Delete) or a tool is picked. A tap never plays a clip or a recording's card:
+  their own buttons do (a clear button over a clip's play mark,
+  `VideoPlayButtons`; the card's play/pause, `AudioCardControls`), outside
+  selection mode; in it, the menu's Play.
 - **Selected state.** A solid outline over a faint tint, white handles and the
   item's menu next to it. A text box's height follows its lines (`format.md`
   §8.2.4), so it has side handles that set its wrapping width; every other
@@ -1224,16 +1227,37 @@ and `ItemFrames` in `Sources/Sempere/ItemOps.swift`):
   so it resizes freely (`ItemFrames.handles`, `keepsAspect`). A drag inside
   moves the item, a drag on a handle resizes it; one delta and one undo step
   per gesture.
-- **Taps.** The first tap selects; a tap on the selected item shows its menu
-  again, or types in it for a text box, so a double tap edits a box from
-  scratch; a tap beside the selection clears it; only a tap on the empty page
-  with nothing selected is the page's (Paste in selection mode, a new box with
-  the text tool). On a Mac a click selects without the menu (the secondary
-  click shows it), the pointer shows move and resize arrows, Escape drops the
-  selection and the arrow keys nudge it (`docs/mac.md` "Placed items").
-  The text tool is the same selection limited to text boxes:
+- **Taps and the menu.** A tap selects and never shows the menu, on the iPad
+  as on a Mac (TestFlight 1.0.0: a menu that came up with every tap floated
+  over the page and came back at the next tap). The menu comes from a
+  deliberate gesture: a **held finger** (the Pencil too in selection mode) on
+  the item, which selects it at once and shows the menu when it lifts (as
+  UIKit's own edit menus do), a secondary click (mouse or trackpad only: on the
+  simulator a finger tap passed its button mask, so every tap showed the menu), or the **menu button** of the bar the iPad shows
+  next to the selection (`ItemSelectionBar`: the item's menu and **Delete**,
+  above the item, below it when there is no room). It goes with a tap anywhere,
+  a scroll or zoom, Escape, or a drag of the item. PencilKit's own long press
+  ("Select All", "Insert Space") waits for the hold, which fails at once off an
+  item, and is off in selection mode, so a hold on an item shows the item's
+  menu. Held on the empty page in selection mode with items on the clipboard,
+  a finger offers Paste. A tap on the selected item keeps it, or types in it
+  for a text box, so a double tap edits a box from scratch; a tap beside the
+  selection clears it; only a tap on the empty page with nothing selected is
+  the page's (a new box with the text tool). The **Delete key** deletes the
+  selection, Escape drops it and the arrow keys nudge it, with any hardware
+  keyboard (`docs/mac.md` "Placed items"); on a Mac the pointer shows move and
+  resize arrows. The text tool is the same selection limited to text boxes:
   tap selects a box (to move it or set its width), tap again or double-tap
-  edits, tap on the page starts a new box.
+  edits, tap on the page starts a new box; a tap on a picture or a clip does
+  nothing. It is **one-shot** (`CanvasModes`): once the new box's editing ends,
+  the canvas goes back to the mode before it (the palette's tool, or selection
+  mode); editing existing boxes does not end it.
+- **Where new items go.** A picture, a clip, an equation or a recording's card
+  added without a drop point goes where the user is looking, then below any
+  item it would cover (`NoteOps.unoccupied`, shared with the CLI): a second
+  card or clip lands under the first, not on it. An infinite page grows to
+  keep it in reach; on a finite page with no room left below it stays at the
+  top of the view.
 - **Menu** (`ItemMenu`): Play (video), Edit Text (text), Copy, Duplicate, Edit
   Equation… (math), Crop… (images, PDF pages), Replace Image ▸ From Photos… /
   From Files… (images), Bring to Front, Delete; Paste when the clipboard holds
