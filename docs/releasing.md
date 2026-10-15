@@ -8,11 +8,15 @@ A release is a git tag `vX.Y.Z`. `.github/workflows/release.yml` does the rest.
    `--version` assertion in `Tests/CLITests/CLICommandTests.swift`, and in `CHANGELOG.md`
    rename `[Unreleased]` content into a `## [X.Y.Z] - YYYY-MM-DD` section (add the compare
    link at the bottom). Merge.
-2. Tag the merge commit on `main` and push the tag (a maintainer does this by hand):
+2. On a Mac, check out the merge commit on `main` and run `scripts/local-ci.sh --release` (every
+   suite, iPad and iPhone simulators and UI tests included; it takes over the screen).
+   Then tag that commit and push the tag (a maintainer does this by hand):
    `git tag -s vX.Y.Z -m "Sempere CLI X.Y.Z" && git push origin vX.Y.Z`.
 3. The workflow:
    - **prepare**: fails unless the tag points at a commit reachable from `main` (the workflow does not run
-     the tests itself: merge only with CI green, then tag), is `vMAJOR.MINOR.PATCH[-pre]`, equals the version in
+     the tests itself: merge only with CI green, then tag), that commit has a successful
+     `local/release-sweep` status (`scripts/local-ci.sh --release` run on it, [ci.md](ci.md); a
+     prerelease tag only warns), the tag is `vMAJOR.MINOR.PATCH[-pre]`, equals the version in
      `Version.swift`, and `CHANGELOG.md` has a non-empty section for it whose heading is
      `## [X.Y.Z] - YYYY-MM-DD` and which holds no `TODO(user)` anywhere
      (`scripts/changelog-section.sh`, tested by `scripts/test-changelog-section.sh` in CI's `release` job):

@@ -14,9 +14,10 @@ run **on Mac Catalyst** (ad-hoc signed and sandboxed like the shipped app):
 `scripts/app.sh test-mac` runs the app suites there and `scripts/app.sh
 test-mac-ui` runs `MacWindowUITests` (menus, note windows, the new-note sheet)
 against the synthetic demo vault. CI runs both on `main` and on a dispatch
-(`gh workflow run CI --ref <branch>`), not on pull requests. The launch smoke
-tests (`scripts/app.sh test-mac-smoke`, `LaunchSmokeUITests`) run on every CI
-run, pull requests included: a first launch (no preferences, caches or saved
+(`gh workflow run CI --ref <branch>`); `test-mac` is also part of the PR gate
+(`scripts/local-ci.sh`) and `test-mac-ui` of `local-ci.sh --testflight` (docs/ci.md).
+The launch smoke tests (`scripts/app.sh test-mac-smoke`, `LaunchSmokeUITests`) run on `main`
+and in `local-ci.sh --testflight`: a first launch (no preferences, caches or saved
 windows) unlocks the demo vault through the unlock sheet, shows the library
 in each column layout (`all`, `doubleColumn`, `detailOnly`), and opens
 Settings, Vault Keys, a note window, Export…, Export to Folder or Zip… and Restore from
