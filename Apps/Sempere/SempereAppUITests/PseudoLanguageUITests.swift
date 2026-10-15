@@ -14,6 +14,11 @@ import XCTest
 ///
 /// Without the variable the test is skipped, so `screenshots.sh` and the app job never run it.
 ///
+/// The PR gate runs the in-process version on the Mac, `PseudoLanguageLayoutTests` (SempereAppTests): same
+/// screens, sizes, languages and criteria, without relaunching the app or taking over the screen, so
+/// `pseudo-mac` is for looking at the screens by hand. `pseudo` remains the iPad's check (CI's `app` job on
+/// `main`, `local-ci.sh --release`).
+///
 /// As the Mac Catalyst app (`scripts/app.sh pseudo-mac`) it walks the screens once per window size in
 /// `TEST_RUNNER_SEMPERE_PSEUDO_MAC_WINDOWS` (`WIDTHxHEIGHT` in points, comma-separated; the app pins its
 /// window through `SEMPERE_DEMO_MAC_WINDOW`), so the narrow layouts a Mac window can reach are checked too.

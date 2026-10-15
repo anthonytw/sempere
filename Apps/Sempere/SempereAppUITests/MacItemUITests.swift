@@ -159,6 +159,10 @@ final class MacItemUITests: XCTestCase {
             XCTFail("no canvas reports the demo items")
             return
         }
+        // From the lasso: PencilKit's own lasso gestures are there while it is the palette's tool, and
+        // took the drag from the item (the palette remembers its tool across launches, so the tests
+        // pick it rather than depend on the last run's).
+        app.typeKey("5", modifierFlags: [.command, .option])   // Tools > Lasso
         app.typeKey("7", modifierFlags: [.command, .option])   // Tools > Select
         Thread.sleep(forTimeInterval: 1)
         for kind in ["image", "text", "math", "audio"] {
@@ -212,6 +216,7 @@ final class MacItemUITests: XCTestCase {
         let app = launch()
         defer { app.terminate() }
         guard let canvas = canvas(app, holding: "image") else { return XCTFail("no canvas reports the demo items") }
+        app.typeKey("1", modifierFlags: [.command, .option])   // Tools > Pen (the lasso is the drag tests')
         app.typeKey("7", modifierFlags: [.command, .option])   // Tools > Select
         Thread.sleep(forTimeInterval: 1)
         guard let r0 = report(canvas), let f0 = r0.frame("image") else { return XCTFail("no image") }
@@ -244,6 +249,10 @@ final class MacItemUITests: XCTestCase {
         defer { app.terminate() }
         guard let canvas = canvas(app, holding: "pdfPage") else { return XCTFail("no canvas reports the PDF page") }
         Thread.sleep(forTimeInterval: 2)
+        // From the lasso: PencilKit's own lasso gestures are there while it is the palette's tool, and
+        // took the drag from the item (the palette remembers its tool across launches, so the tests
+        // pick it rather than depend on the last run's).
+        app.typeKey("5", modifierFlags: [.command, .option])   // Tools > Lasso
         app.typeKey("7", modifierFlags: [.command, .option])   // Tools > Select
         Thread.sleep(forTimeInterval: 1)
         guard let r0 = report(canvas), let f0 = r0.frame("pdfPage") else { return XCTFail("no PDF page") }

@@ -871,23 +871,68 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         mathLasso.setActive(mathLassoHandler != nil && !isReadOnly && !isPreparing && !drawingSuspended)
         let draws = editable && !ours && !pointer
         canvas.drawingGestureRecognizer.isEnabled = draws
-        Self.setInnerDrawingGestures(of: canvas, enabled: draws)
+        setPencilKitGestures(enabled: draws)
     }
 
-    /// PencilKit on Mac Catalyst (macOS 27) has a second drawing recognizer of its own, on an inner
-    /// view (`PKTiledGestureView`), besides the public `drawingGestureRecognizer`; turning the public
-    /// one off leaves it on. Other recognizers wait for it to fail, which it does only when the mouse
-    /// button goes up, so in selection mode an item drag began at the release with no movement and
-    /// moved nothing ("objects can't be moved or resized with the mouse"). It follows the public one.
-    static func setInnerDrawingGestures(of canvas: PKCanvasView, enabled: Bool) {
+    /// PencilKit's recognizers the app turned off along with `drawingGestureRecognizer`
+    /// (`setPencilKitGestures`), to turn back on with it.
+    private let suppressedGestures = NSHashTable<UIGestureRecognizer>.weakObjects()
+
+    /// PencilKit's other recognizers follow its public drawing one: while the app's own selection,
+    /// text tool, object eraser, pointer ink or math lasso has the pointer, none of them may take it.
+    /// Turned off, each one that was on is remembered, and only those are turned on again.
+    private func setPencilKitGestures(enabled: Bool) {
+        if enabled {
+            for g in suppressedGestures.allObjects { g.isEnabled = true }
+            suppressedGestures.removeAllObjects()
+        } else {
+            for g in Self.pencilKitGestures(of: canvas) where g.isEnabled {
+                g.isEnabled = false
+                suppressedGestures.add(g)
+            }
+        }
+    }
+
+    /// PencilKit's own recognizers inside `canvas` besides the public `drawingGestureRecognizer`
+    /// (macOS 27 Catalyst; found with gesture traces in the Mac UI tests):
+    ///
+    /// * A second drawing recognizer on an inner view (`PKTiledGestureView`) that stays on when
+    ///   the public one is turned off. Other recognizers wait for it to fail, which it does only
+    ///   when the mouse button goes up, so an item drag began at the release and moved nothing.
+    /// * The selection interaction's, on `PKSelectionGestureView`, there while the palette's tool
+    ///   is the lasso, which it stays when Select or Text is picked: a pan
+    ///   (`com.apple.PencilKit.lasso`) and a tap (`com.apple.PencilKit.progressiveTaps`). The pan
+    ///   began with an item drag and kept it, so the item never moved ("objects can't be moved
+    ///   with the mouse"); the tap's delayed single-tap handler (`_handleSingleTap:`, after the
+    ///   double-tap wait) shows PencilKit's edit menu and makes its tiled view the first
+    ///   responder, which took the keyboard from the text box the same click had just started
+    ///   ("typing into a new text box loses focus").
+    static func pencilKitGestures(of canvas: PKCanvasView) -> [UIGestureRecognizer] {
         let drawing = canvas.drawingGestureRecognizer
+        var found: [UIGestureRecognizer] = []
         var views: [UIView] = canvas.subviews
         while let view = views.popLast() {
-            for g in view.gestureRecognizers ?? [] where g !== drawing && g.isKind(of: type(of: drawing)) {
-                g.isEnabled = enabled
+            let selectionView = NSStringFromClass(type(of: view)).contains("PKSelectionGestureView")
+            for g in view.gestureRecognizers ?? [] where g !== drawing {
+                if selectionView || g.isKind(of: type(of: drawing)) || g.name?.hasPrefix("com.apple.PencilKit.") == true {
+                    found.append(g)
+                }
             }
             views.append(contentsOf: view.subviews)
         }
+        return found
+    }
+
+    /// A press is about to reach the canvas: while PencilKit's drawing is off, a recognizer of its
+    /// own made or turned on since (PencilKit sets up its selection views when the canvas's tool
+    /// becomes the lasso, which the picker may tell it after `updateEraser` ran) is turned off
+    /// before the press is handed to the recognizers.
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let hit = super.hitTest(point, with: event)
+        if hit != nil, event?.type == .touches, !canvas.drawingGestureRecognizer.isEnabled {
+            setPencilKitGestures(enabled: false)
+        }
+        return hit
     }
 
     /// Typing in a text box started or ended: nothing draws or selects

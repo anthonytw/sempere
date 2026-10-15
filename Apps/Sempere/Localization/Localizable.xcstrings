@@ -3390,6 +3390,30 @@
         }
       }
     },
+    "App Language" : {
+      "comment" : "Settings ▸ General: row that opens Sempere's language page in the system Settings",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Idioma de la app"
+          }
+        }
+      }
+    },
+    "App Language opens Sempere's page in the system Settings: Sempere uses the language chosen for it there, so its widgets, shortcuts and system dialogs agree with it." : {
+      "comment" : "Settings ▸ General footer",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Idioma de la app abre la página de Sempere en los ajustes del sistema: Sempere usa el idioma que elijas allí, así que sus widgets, atajos y diálogos del sistema coinciden con él."
+          }
+        }
+      }
+    },
     "Applies to every note in “%@” and its sub-notebooks. Use / for levels, e.g. School/Math. An empty name takes the notes out of the notebook and lifts its sub-notebooks to the top." : {
       "comment" : "%@ is the notebook's path",
       "extractionState" : "manual",
@@ -5326,6 +5350,18 @@
         }
       }
     },
+    "Date Created" : {
+      "comment" : "Note list sort order: by creation date, newest first",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fecha de creación"
+          }
+        }
+      }
+    },
     "Date Modified" : {
       "comment" : "Note list sort order",
       "extractionState" : "manual",
@@ -6214,6 +6250,30 @@
         }
       }
     },
+    "Engine: SFSpeechRecognizer (on device)" : {
+      "comment" : "Settings ▸ Transcription: the speech engine chosen for the language (a product name)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Motor: SFSpeechRecognizer (en el dispositivo)"
+          }
+        }
+      }
+    },
+    "Engine: SpeechTranscriber (on device)" : {
+      "comment" : "Settings ▸ Transcription: the speech engine chosen for the language (a product name)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Motor: SpeechTranscriber (en el dispositivo)"
+          }
+        }
+      }
+    },
     "Equation" : {
       "comment" : "Insert menu section",
       "extractionState" : "manual",
@@ -6234,6 +6294,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ecuación a partir de escritura a mano…"
+          }
+        }
+      }
+    },
+    "Equations" : {
+      "comment" : "Accessibility: the note holds equations",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ecuaciones"
           }
         }
       }
@@ -6586,6 +6658,18 @@
         }
       }
     },
+    "Favorite" : {
+      "comment" : "Accessibility: the note is a favorite",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Favorita"
+          }
+        }
+      }
+    },
     "Favorites" : {
       "comment" : "Sidebar row and note list title: notes marked as favorites",
       "extractionState" : "manual",
@@ -6594,6 +6678,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Favoritas"
+          }
+        }
+      }
+    },
+    "Favorites at Top" : {
+      "comment" : "Note list sort menu: favorites before the other notes, under any order",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Favoritas arriba"
           }
         }
       }
@@ -8680,6 +8776,18 @@
         }
       }
     },
+    "Live Activities are off" : {
+      "comment" : "Settings ▸ Quick Voice Notes: a permission is missing",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las actividades en directo están desactivadas"
+          }
+        }
+      }
+    },
     "Live Activities are off for Sempere, and iOS needs one to record a voice note: turn them on in the Settings app ▸ Sempere ▸ Live Activities." : {
       "comment" : "Error from the quick voice note intents, also shown in Settings: Live Activities are turned off for the app",
       "extractionState" : "manual",
@@ -8820,6 +8928,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mediano"
+          }
+        }
+      }
+    },
+    "Microphone access is off" : {
+      "comment" : "Settings ▸ Quick Voice Notes: a permission is missing",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El acceso al micrófono está desactivado"
           }
         }
       }
@@ -9567,6 +9687,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No hay ninguna contraseña guardada para este servidor. Vuelve a escribirla."
+          }
+        }
+      }
+    },
+    "No speech engine on this device can transcribe this language." : {
+      "comment" : "Settings ▸ Transcription: shown under the language picker",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ningún motor de voz de este dispositivo puede transcribir este idioma."
           }
         }
       }
@@ -10471,6 +10603,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abrir los ajustes de Sempere"
+          }
+        }
+      }
+    },
+    "Open System Settings" : {
+      "comment" : "Button: open the system Settings app",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir Ajustes del sistema"
           }
         }
       }
@@ -11462,6 +11606,18 @@
         }
       }
     },
+    "Pictures" : {
+      "comment" : "Accessibility: the note holds pictures",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imágenes"
+          }
+        }
+      }
+    },
     "Pictures and Video" : {
       "comment" : "Insert menu section",
       "extractionState" : "manual",
@@ -11590,6 +11746,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reproduce desde aquí."
+          }
+        }
+      }
+    },
+    "Preferred Language" : {
+      "comment" : "Settings ▸ Transcription: language picker (default Automatic)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Idioma preferido"
           }
         }
       }
@@ -11769,6 +11937,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Imprimir…"
+          }
+        }
+      }
+    },
+    "Privacy Policy" : {
+      "comment" : "Link to the privacy policy",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Política de privacidad"
           }
         }
       }
@@ -14107,6 +14287,30 @@
         }
       }
     },
+    "Sempere Website" : {
+      "comment" : "Link to the project's website",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sitio web de Sempere"
+          }
+        }
+      }
+    },
+    "Sempere collects no data. The privacy policy says what that means." : {
+      "comment" : "About: footer",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sempere no recopila datos. La política de privacidad explica qué significa eso."
+          }
+        }
+      }
+    },
     "Sempere could not confirm it is you, so the key was not shown." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14954,6 +15158,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ordenar las notas por fecha o título"
+          }
+        }
+      }
+    },
+    "Sort the notes by date or title, with favorites at the top" : {
+      "comment" : "Tooltip of the note list's sort menu",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ordenar las notas por fecha o título, con las favoritas arriba"
           }
         }
       }
@@ -17022,6 +17238,18 @@
         }
       }
     },
+    "The voice-note widgets, Lock Screen control and Action button cannot record until Live Activities are on, because iOS ends a recording that shows none. Open Sempere's Settings and turn on Live Activities." : {
+      "comment" : "Settings ▸ Quick Voice Notes: why voice notes cannot record, and what to do",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los widgets de notas de voz, el control de la pantalla de bloqueo y el botón de acción no pueden grabar hasta que se activen las actividades en directo, porque iOS termina una grabación que no muestra ninguna. Abre los ajustes de Sempere y activa las actividades en directo."
+          }
+        }
+      }
+    },
     "The “public key” line does not belong to the secret key: this is not one key file." : {
       "comment" : "age-keygen output whose public key comment names another key",
       "extractionState" : "manual",
@@ -19068,6 +19296,18 @@
         }
       }
     },
+    "Voice notes cannot record without the microphone. Open Sempere's Settings and turn on Microphone." : {
+      "comment" : "Settings ▸ Quick Voice Notes: why voice notes cannot record, and what to do",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las notas de voz no pueden grabar sin el micrófono. Abre los ajustes de Sempere y activa el micrófono."
+          }
+        }
+      }
+    },
     "Voice notes could not be read from the inbox: %@" : {
       "comment" : "%@ is the error",
       "extractionState" : "manual",
@@ -19139,6 +19379,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sincronización WebDAV"
+          }
+        }
+      }
+    },
+    "Website and Privacy" : {
+      "comment" : "About: section header",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sitio web y privacidad"
           }
         }
       }

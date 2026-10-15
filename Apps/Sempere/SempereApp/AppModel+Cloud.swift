@@ -85,6 +85,14 @@ struct CloudSyncStatus: Equatable, Sendable {
     var pendingNotes: Int { notes - readyNotes }
     /// Something is still to arrive: the progress bar is shown.
     var isDownloading: Bool { pendingNotes > 0 }
+    /// The bar is on screen: a bulk transfer (`SyncBarPolicy`), latched by `carryBarState`.
+    /// A few notes arriving after an edit are not announced with a bar.
+    private(set) var showsBar = false
+
+    /// Decides `showsBar` for the pass after `previous`.
+    mutating func carryBarState(from previous: CloudSyncStatus?) {
+        showsBar = SyncBarPolicy.shows(pending: pendingNotes, wasShown: previous?.showsBar ?? false)
+    }
     var fractionCompleted: Double { notes == 0 ? 1 : Double(readyNotes) / Double(notes) }
 
     /// "Downloading from iCloud: 37 of 128 notes" (or from a WebDAV server, `CloudSource`).

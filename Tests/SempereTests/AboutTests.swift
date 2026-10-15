@@ -20,6 +20,12 @@ final class AboutTests: XCTestCase {
         XCTAssertTrue(text.contains(SempereAbout.securityPolicyURL.absoluteString))
     }
 
+    func testWebsiteLinks() {
+        XCTAssertEqual(SempereAbout.websiteURL.absoluteString, "https://sempere.anthonywertz.com")
+        XCTAssertEqual(SempereAbout.privacyPolicyURL.absoluteString, "https://sempere.anthonywertz.com/privacy")
+        XCTAssertEqual(SempereAbout.privacyPolicyURL.host, SempereAbout.websiteURL.host)
+    }
+
     func testLinksPointAtThisRepository() {
         for url in [SempereAbout.sourceURL, SempereAbout.securityPolicyURL, SempereAbout.reportVulnerabilityURL,
                     SempereAbout.securityDesignURL, SempereAbout.repositoryLicenseURL] {

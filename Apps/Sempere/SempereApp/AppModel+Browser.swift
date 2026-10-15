@@ -444,6 +444,7 @@ extension AppModel {
             }
         }
         guard let record else { return }
+        flashLandedDrop(target)
         undoManager?.registerUndo(withTarget: self) { model in
             Task { @MainActor in
                 await model.report { try await model.restoreNotebooks(record) }
@@ -500,4 +501,25 @@ extension AppModel {
         draggedPayload = nil
         setDropTarget(nil)
     }
+
+    /// Flashes `target`'s sidebar row after a drop moved something there (`landedDrop`), until
+    /// `landedDropDuration` has passed or another drop lands.
+    func flashLandedDrop(_ target: DropTarget) {
+        let landed = LandedDrop(target: target)
+        landedDrop = landed
+        #if DEBUG
+        DropTrace.note("landed target=\(target)")
+        #endif
+        let duration = landedDropDuration
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: duration)
+            if self?.landedDrop == landed { self?.landedDrop = nil }
+        }
+    }
+}
+
+/// A drop that just landed on a sidebar row (`AppModel.landedDrop`); each drop is a new value.
+struct LandedDrop: Equatable, Sendable {
+    let target: DropTarget
+    let id = UUID()
 }

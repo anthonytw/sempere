@@ -25,6 +25,10 @@ public enum SempereAbout {
     public static let licenseURL = URL(string: "https://www.gnu.org/licenses/gpl-3.0.html")!
     /// The repository's own copy of the license and its App Store exception.
     public static let repositoryLicenseURL = URL(string: "https://github.com/anthonytw/sempere/blob/main/LICENSE")!
+    /// The project's website.
+    public static let websiteURL = URL(string: "https://sempere.anthonywertz.com")!
+    /// The privacy policy (the page the App Store listing points at too).
+    public static let privacyPolicyURL = URL(string: "https://sempere.anthonywertz.com/privacy")!
     /// The source code.
     public static let sourceURL = URL(string: "https://github.com/anthonytw/sempere")!
     /// The security policy: how to report a vulnerability and what happens next.
