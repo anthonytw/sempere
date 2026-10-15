@@ -38,7 +38,12 @@ struct SidebarView: View {
                     .badge(recognized)
                     .tag(SidebarItem.recentlyRecognized)
             }
-            Label("Favorites", systemImage: "star").tag(SidebarItem.favorites)
+            Label {
+                Text("Favorites")
+            } icon: {
+                Image(systemName: "star.fill").foregroundStyle(FavoriteMark.color)
+            }
+            .tag(SidebarItem.favorites)
             let tree = model.notebookTree
             if !tree.isEmpty {
                 Section("Notebooks") {

@@ -38,6 +38,8 @@ public struct NoteSummary: Hashable, Sendable, Codable {
     public var textItems: Int = 0
     /// Number of audio recordings (format.md §8.3).
     public var recordings: Int = 0
+    /// The kinds of attachments the note holds (images, PDF pages, video, equations, audio).
+    public var attachments: NoteAttachments = []
     /// The recordings that have a transcript, for transcript search (`TranscriptSearch`).
     public var transcribed: [TranscribedRecording] = []
     /// The blobs the current state references (items' `blob`, recordings'
@@ -197,6 +199,7 @@ extension NoteSummary {
         self.items = items.count
         textItems = items.filter { $0.kind == .text }.count
         recordings = state.recordings.count
+        attachments = NoteAttachments(state: state)
         transcribed = state.recordings.compactMap { r in
             r.transcript.map { TranscribedRecording(recording: r.id, title: r.title, blob: $0) }
         }

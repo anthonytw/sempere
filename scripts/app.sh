@@ -221,7 +221,7 @@ case "${1:-}" in
     # and for the first-unlock notices (About Your Key, the quick tour).
     sim=$(pick_simulator)
     settle_simulator "$sim"
-    suites -only-testing:SempereAppUITests/SidebarDropUITests \
+    suites -only-testing:SempereAppUITests/SidebarDropUITests -only-testing:SempereAppUITests/PadFocusUITests \
       -only-testing:SempereAppUITests/LaunchSmokeUITests/testFreshLaunchDefaultLayoutShowsSidebarListAndNote \
       -only-testing:SempereAppUITests/LaunchSmokeUITests/testFreshLaunchDoubleColumn \
       -only-testing:SempereAppUITests/LaunchSmokeUITests/testFirstUnlockShowsKeyNoticeThenTour \

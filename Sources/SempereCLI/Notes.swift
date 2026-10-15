@@ -23,6 +23,9 @@ struct NoteJSON: Encodable {
     var recognizedPages: Int
     var items: Int
     var recordings: Int
+    /// The kinds of attachments the note holds (`image`, `math`, `video`, `audio`, `pdf`).
+    var attachments: [String]
+    var created: Date?
     var modified: Date?
     var problem: String?
     /// The handwriting language (format.md §5.4), when set.
@@ -44,6 +47,7 @@ struct NoteJSON: Encodable {
         id = s.id.uuidString.lowercased(); title = s.title; tags = s.tags; notebook = s.notebook
         deleted = s.deleted; pages = s.pages; strokes = s.strokes
         recognizedPages = s.recognizedPages; items = s.items; recordings = s.recordings
+        attachments = s.attachments.names; created = s.created
         modified = s.modified; problem = s.problem
         lang = s.lang; markersBehindText = s.markersBehindText; favorite = s.favorite; recognized = s.recognized
     }
@@ -71,6 +75,13 @@ struct NotesList: ParsableCommand {
     @Flag(name: .long, help: "Only favorite notes (see `notes favorite`).")
     var favorites = false
 
+    @Option(name: .long, help: ArgumentHelp("Order: title (A to Z, the default), modified or created (newest first).",
+                                            valueName: "key"))
+    var sort: NoteOrder.Key = .title
+
+    @Flag(name: .customLong("favorites-first"), help: "Favorites before the other notes, each group in the --sort order.")
+    var favoritesFirst = false
+
     @OptionGroup var access: AccessOptions
     @OptionGroup var output: OutputOptions
     @OptionGroup var cache: CacheOptions
@@ -78,9 +89,9 @@ struct NotesList: ParsableCommand {
     func run() throws {
         let vault = try access.openVault(.required)
         OpenedVaults.shared.markUnchanged(vault.url)
-        let notes = try vault.summaries(of: nil, cache: cache.cache(for: vault)).filter { n in
+        let notes = NoteOrder(sort, favoritesFirst: favoritesFirst).sorted(try vault.summaries(of: nil, cache: cache.cache(for: vault)).filter { n in
             (deleted || !n.deleted) && (!favorites || n.favorite) && (tag.map { t in n.tags.contains { NoteOps.tagKey($0) == NoteOps.tagKey(t) } } ?? true) && (notebook.map { NotebookPath.name(n.notebook, isWithin: $0) } ?? true)
-        }
+        })
         let readOnly = vault.isReadOnly
         if output.json { try output.emitJSON(notes.map { NoteJSON($0, vaultReadOnly: readOnly) }); return }
         if notes.isEmpty { output.info("No notes."); return }
@@ -317,3 +328,5 @@ struct NotesLayout: ParsableCommand {
         if let file { output.info("Wrote \(noteName)/\(file)") }
     }
 }
+
+extension NoteOrder.Key: ExpressibleByArgument {}
