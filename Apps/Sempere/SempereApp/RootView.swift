@@ -58,6 +58,7 @@ struct RootView: View {
             .sheet(isPresented: $ui.creatingNote) {
                 NewNoteView(notebook: currentNotebook)
             }
+            .sheet(item: $ui.creatingNotebook) { NewNotebookView(request: $0) }
             .onAppear {
                 model.libraryWindowCount += 1
                 if model.canvasWindow == nil { model.canvasWindow = ui.id }

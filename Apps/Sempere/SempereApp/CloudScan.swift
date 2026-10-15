@@ -124,8 +124,8 @@ enum CloudScan {
     /// settings applied at unlock (format.md §13).
     static let rootFiles: Set<String> = ["vault.json", "rewrap-journal.json", "settings.age"]
 
-    /// `vault.json`, `rewrap-journal.json`, `keys/*.age` and
-    /// `notes/<id>/*.age`, with placeholders mapped to the real names.
+    /// `vault.json`, `rewrap-journal.json`, `keys/*.age`, `notebooks/*.notebook.age`
+    /// and `notes/<id>/*.age`, with placeholders mapped to the real names.
     /// Other files are not fetched (format.md §1: unknown files are ignored).
     /// A missing `keys/` or `notes/` lists as empty.
     ///
@@ -133,6 +133,7 @@ enum CloudScan {
     ///   cannot be listed ("could not read" never looks like "nothing there").
     static func items(inVault root: URL, fileManager: FileManager = .default) throws -> [Item] {
         try essentialItems(inVault: root, fileManager: fileManager)
+            + notebookItems(inVault: root, fileManager: fileManager)
             + noteGroups(inVault: root, fileManager: fileManager).flatMap(\.items)
     }
 
@@ -163,6 +164,15 @@ enum CloudScan {
             items.append(entry.item(in: folder))
         }
         return items
+    }
+
+    /// The notebook records (format.md §14), `notebooks/<id>.notebook.age`, placeholders
+    /// mapped to their real names; empty without `notebooks/`. Other names are skipped.
+    static func notebookItems(inVault root: URL, fileManager: FileManager = .default) throws -> [Item] {
+        let folder = root.appendingPathComponent(NotebookRecords.folderName, isDirectory: true)
+        return try list(folder, fileManager, allowMissing: true)
+            .filter { !$0.isDirectory && NotebookRecords.id(ofFileName: $0.name) != nil }
+            .map { $0.item(in: folder) }
     }
 
     /// The files of one `notes/<dir>` folder.

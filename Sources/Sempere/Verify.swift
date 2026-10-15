@@ -123,6 +123,7 @@ extension Vault {
 
         var settingsFile = false
         var inboxFolder = false
+        var notebooksFolder = false
         for entry in list(url, as: ".") where ![Self.manifestName, Self.keysName, Self.notesName,
                                                 Self.journalName].contains(entry) {
             if entry == CaptureFile.folderName, FileIO.isDirectory(inboxURL) {
@@ -131,6 +132,10 @@ extension Vault {
             }
             if entry == SharedSettings.fileName, !FileIO.isDirectory(sharedSettingsURL) {
                 settingsFile = true
+                continue
+            }
+            if entry == NotebookRecords.folderName, FileIO.isDirectory(notebooksURL) {
+                notebooksFolder = true
                 continue
             }
             report.files.append(.init(path: entry, status: .unknownFile, detail: nil))
@@ -144,6 +149,11 @@ extension Vault {
         let expected = Self.expectedStanzas((try? ageRecipients()) ?? [])
         let notReadable = secret == nil ? "vault locked" : identities.isEmpty ? "no identities" : nil
         if settingsFile { report.files.append(verifySharedSettings(notReadable: notReadable, expected: expected)) }
+        if notebooksFolder, only == nil {
+            for entry in list(notebooksURL, as: NotebookRecords.folderName) {
+                report.files.append(verifyNotebookRecord(entry, notReadable: notReadable, expected: expected))
+            }
+        }
         // The inbox is not part of a note: checked by a whole-vault verify only.
         if inboxFolder, only == nil {
             verifyInbox(entries: list(inboxURL, as: CaptureFile.folderName), notReadable: notReadable, expected: expected,
@@ -225,6 +235,39 @@ extension Vault {
             case .framing: status = .corruptBody
             case .undecryptable: status = .undecryptable
             case .tooLarge, .invalid, .clockExhausted, .needsNewerReader: status = .undecodable
+            }
+            return .init(path: path, status: status, detail: "\(e)")
+        } catch {
+            return .init(path: path, status: .undecryptable, detail: "\(error)")
+        }
+    }
+
+    /// The `verify` line of one entry of `notebooks/` (format.md §14): a record
+    /// is read within its limit, opened as `readNotebookRecords` does and its
+    /// stanzas compared with the recipients; other names are unknown files.
+    private func verifyNotebookRecord(_ name: String, notReadable: String?, expected: [String: Int]) -> VerifyReport.FileResult {
+        let path = "\(NotebookRecords.folderName)/\(name)"
+        let file = notebooksURL.appendingPathComponent(name)
+        guard NotebookRecords.id(ofFileName: name) != nil, !FileIO.isDirectory(file) else {
+            return .init(path: path, status: .unknownFile, detail: nil)
+        }
+        guard notReadable == nil else { return .init(path: path, status: .notChecked, detail: notReadable) }
+        do {
+            let data = try readFile(file, maxBytes: NotebookRecords.maxFileBytes)
+            _ = try openNotebookRecord(data, fileName: name)
+            let stanzas = (try? Self.stanzaCounts(data)) ?? [:]
+            guard stanzas == expected else {
+                return .init(path: path, status: .staleRecipients,
+                             detail: "stanzas: \(Self.describe(stanzas)); recipients need: " + Self.describe(expected))
+            }
+            return .init(path: path, status: .ok, detail: nil)
+        } catch let e as NotebookRecordError {
+            let status: VerifyReport.Status
+            switch e {
+            case .framing(.tagMismatch): status = .tagMismatch
+            case .framing: status = .corruptBody
+            case .undecryptable: status = .undecryptable
+            case .tooLarge, .invalid: status = .undecodable
             }
             return .init(path: path, status: status, detail: "\(e)")
         } catch {

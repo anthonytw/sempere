@@ -841,8 +841,8 @@ would make readers drop the new delta).
 ## Backups
 
 `Backup` (`Sources/Sempere/Backup.swift`) copies a vault's format files
-(`vault.json`, `rewrap-journal.json`, `settings.age`, `keys/*.key.age`, `notes/<id>/<revision>`,
-`notes/<id>/att/<blob>`;
+(`vault.json`, `rewrap-journal.json`, `settings.age`, `keys/*.key.age`, `notebooks/*.notebook.age`,
+`notes/<id>/<revision>`, `notes/<id>/att/<blob>`;
 nothing else) with the same atomic-write helper, then reads each copy back
 and compares SHA-256. The backup folder is a vault plus `backup.json`
 (`format: sempere-backup/1`, `vaultId`, `created`, `updated`, `completed`,
@@ -1051,7 +1051,10 @@ A remote `vault.json` with another `vaultId` aborts the run before any
 change.
 
 **What is synced.** `vault.json`, `rewrap-journal.json`, `settings.age` (shared
-settings, merged per key: below), `notes/<uuid>/<name>.age` and each note's attachment blobs
+settings, merged per key: below), the notebook records `notebooks/<uuid>.notebook.age`
+(format.md §14: write-once, so each side gets the other's; uploads only create, nothing is
+deleted, and an unlocked run places a downloaded record only once it opens),
+`notes/<uuid>/<name>.age` and each note's attachment blobs
 `notes/<uuid>/att/<64 hex>.<kind>.age` (below). Remote entries that are not a lowercase-UUID note
 directory, a canonical revision file name (format.md §5), an `att`
 collection or a canonical blob name (format.md §8.1.2) are ignored and

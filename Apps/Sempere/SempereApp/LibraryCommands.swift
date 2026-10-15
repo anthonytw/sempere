@@ -34,6 +34,7 @@ enum LibraryCommands {
         var outcome = Outcome()
         switch command {
         case .newNote: ui.creatingNote = true
+        case .newNotebook: ui.creatingNotebook = NewNotebookRequest(parent: model.selectedNotebook)
         case .openNoteInWindow:
             if let value = model.noteWindowValue(for: selected) { outcome.effect = .openNoteWindow(value) }
         case .newVault: outcome.effect = .createVault

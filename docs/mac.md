@@ -85,6 +85,7 @@ the Insert menu's entry does. Imports file new notes under the sidebar's noteboo
 | Menu | Command | Shortcut |
 | --- | --- | --- |
 | File | New Note… | ⌘N |
+| File | New Notebook… (an empty notebook, inside the sidebar's notebook by default; format.md §14) | ⌃⌘N |
 | File | Open Note in New Window | ⌥⌘N |
 | File | New Vault… | ⇧⌘N |
 | File | Open Vault… | ⌘O |
@@ -355,6 +356,23 @@ folder at once, since its security scope ends with the call, and queues it
 
 Work copies are plaintext: they are removed after the import, on Discard or
 Cancel, at quit and at launch (`PDFPreparation.purge`).
+
+## Opening a vault from the Finder
+
+A vault is a plain folder (`public.folder`, never a package: docs/io.md "Vaults are folders"),
+so the Finder treats it as a folder: double-clicking it opens the folder in a Finder window, and
+Open With does not list Sempere. Measured on macOS 27 with LaunchServices
+(`NSWorkspace.urlsForApplications(toOpen:)` on a `.sempere` folder): no application is offered
+for a type that conforms to `public.folder`, even with Sempere declaring the vault type at rank
+Owner and `public.folder` itself at rank Alternate. Only a package type is opened by its owner
+on a double-click, and a package is what iCloud Drive syncs as one item (a whole-vault conflict
+lost a note in TestFlight 1.0.0), so that stays off. A Mac with TestFlight 1.0.0 still installed
+keeps that build's package declaration in LaunchServices: there a vault still shows as a package
+and opens in Sempere on a double-click, until the newer build replaces it.
+
+What opens a vault in Sempere: File ▸ Open Vault… (⌘O) or Open Recent, the Library window, and
+`open -a Sempere /path/Notes.sempere` in Terminal; the app handles a vault URL it is handed
+(`onOpenURL`, `AppModel.handleOpened`) like a picked folder.
 
 ## Drag a note out as PDF
 

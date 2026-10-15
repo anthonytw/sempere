@@ -11,7 +11,7 @@ import SempereImport
 /// `KeyboardShortcut` (`AppCommands.swift`).
 enum MenuCommand: String, CaseIterable, Sendable {
     // File
-    case newNote, openNoteInWindow, newVault, openVault, reopenVault, closeVault, reloadVault
+    case newNote, newNotebook, openNoteInWindow, newVault, openVault, reopenVault, closeVault, reloadVault
     case importPDF, importFromApp, lastImportReport, insertPDFPages, insertPhoto, exportNotes
     case bulkExport
     /// Start or stop a quick voice note (`toggleVoiceNote`, docs/quick-capture.md "Surfaces").
@@ -112,6 +112,7 @@ enum MenuCommand: String, CaseIterable, Sendable {
     var title: String {
         switch self {
         case .newNote: return String(localized: "New Note…")
+        case .newNotebook: return String(localized: "New Notebook…", comment: "File menu: create an empty notebook")
         case .openNoteInWindow: return String(localized: "Open Note in New Window")
         case .newVault: return String(localized: "New Vault…")
         case .openVault: return String(localized: "Open Vault…")
@@ -189,6 +190,8 @@ enum MenuCommand: String, CaseIterable, Sendable {
         let shiftOption: Shortcut.Modifiers = [.command, .shift, .option]
         switch self {
         case .newNote: return Shortcut("n", cmd)
+        // ⇧⌘N is New Vault…; UIKit has nothing on ⌃⌘N.
+        case .newNotebook: return Shortcut("n", control)
         case .openNoteInWindow: return Shortcut("n", option)
         case .newVault: return Shortcut("n", shift)
         case .openVault: return Shortcut("o", cmd)
@@ -323,6 +326,7 @@ enum MenuCommand: String, CaseIterable, Sendable {
         // The ticked notes, the sidebar's notebook or the vault of the library window.
         case .bulkExport: return unlocked && context.hasNoteList
         case .newNote: return unlocked && context.hasNoteList
+        case .newNotebook: return unlocked && context.hasNoteList && !context.vaultReadOnly
         case .openNoteInWindow: return unlocked && context.hasNoteList && context.hasNote && !context.noteDeleted
         case .renameNote, .editTags, .saveVersion: return unlocked && context.hasNote && !context.noteDeleted
         // Browsing is read-only: a deleted note's history can be looked at too.
@@ -379,7 +383,7 @@ enum MenuCommand: String, CaseIterable, Sendable {
 /// layout is written down (`AppCommands` walks it).
 enum MenuLayout {
     static let file: [[MenuCommand]] = [
-        [.newNote, .openNoteInWindow],
+        [.newNote, .newNotebook, .openNoteInWindow],
         [.newVault, .openVault, .reopenVault, .closeVault],
         // Import from another app only when the build has an importer (`AppImporters`).
         [.importPDF] + (AppImporters.primary == nil ? [] : [.importFromApp, .lastImportReport]),

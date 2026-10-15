@@ -6,6 +6,12 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
 
 ## [Unreleased]
 
+### Added
+
+- Emoji shortcodes in naming fields (note titles, notebooks, tags), as in Slack and GitHub: type `:`
+  and two letters (`:smile`) for a list of emoji (↑ ↓ to choose, Return or Tab to insert, Escape to
+  close); a closed `:smile:` becomes 😄 by itself, in rename dialogs too. Built-in table, no network.
+
 ### Fixed
 
 - Settings ▸ Quick Voice Notes says when Live Activities or the microphone are off for Sempere, and why that stops the voice-note widgets, with a button to the system Settings.
@@ -44,6 +50,12 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
 
 ### Added
 
+- Empty notebooks: File ▸ New Notebook… (⌃⌘N), the sidebar's New Notebook button and a notebook's
+  New Notebook Inside… make a notebook that stays while it holds no note; Delete Notebook removes an
+  empty one. They are kept by small write-once notebook records (`format.md` §14), synced by iCloud
+  Drive and WebDAV, merged by `vault merge-copy`, backed up and rewrapped with the vault. CLI:
+  `sempere notebooks create|delete`, and `notebooks list|rename|move` include empty notebooks.
+- Mac: a notebook drags by its whole row in the sidebar, not only by its name.
 - iPad canvas: a bar next to the selected item with its menu and Delete; the Delete key deletes the
   selected item (iPad keyboards and the Mac). Pinch zoom snaps to the fitted width, and a paged note
   zooms out to half of it to show several pages. The player's "Tap Ink to Play" shows its name.

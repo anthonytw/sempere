@@ -204,6 +204,10 @@ extension WebDAVSync {
         do { try syncSharedSettings(remote: remoteSettings) } catch {
             report.errors.append(.init(path: SharedSettings.fileName, message: Self.describe(error)))
         }
+        // Notebook records are root files of a partial copy (format.md §1.2, §14).
+        do { try syncNotebookRecords(remoteRoot: remoteRoot) } catch {
+            report.errors.append(.init(path: NotebookRecords.folderName, message: Self.describe(error)))
+        }
         guard FileManager.default.fileExists(atPath: manifestURL.path) else {
             // Nothing can be checked or opened without it; the next run tries again.
             report.errors.append(.init(path: Vault.manifestName, message: "not received; run again"))

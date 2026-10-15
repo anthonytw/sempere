@@ -17,6 +17,7 @@ struct QuickCaptureSettingsSection: View {
     /// The profile could not be read (`QuickCaptureError.profileUnreadable`): not "off".
     @State private var unreadable = false
     @State private var notebook = CaptureProfile.defaultNotebook
+    @State private var notebookSelection: TextSelection?
     @State private var problem: String?
     /// Bumped when the app becomes active again, so the permission notices re-check after a visit to the system Settings.
     @State private var activations = 0
@@ -39,9 +40,11 @@ struct QuickCaptureSettingsSection: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
             if let stored, model.quickCaptureIsForOpenVault {
-                TextField("Notebook", text: $notebook)
-                    .onSubmit { update { $0.profile.notebook = NoteOps.normalizedNotebook(notebook) ?? CaptureProfile.defaultNotebook } }
+                TextField("Notebook", text: $notebook, selection: $notebookSelection)
                     .syncedSetting("quickCapture.notebook")
+                    .emojiCompletion(text: $notebook, onSubmit: {
+                        update { $0.profile.notebook = NoteOps.normalizedNotebook(notebook) ?? CaptureProfile.defaultNotebook }
+                    }, selection: $notebookSelection)
                 Toggle("Transcribe Voice Notes", isOn: Binding(get: { stored.transcribe }, set: { on in
                     update { $0.transcribe = on }
                 }))

@@ -136,6 +136,14 @@ enum SidebarDrop {
 struct NotebookMoveRecord: Equatable, Sendable {
     var previous: [UUID: String?]
     var actionName: String
+    /// The empty notebooks (notebook records, format.md §14) the move renamed, if any.
+    var emptyNotebooks: NotebookPathMove? = nil
+}
+
+/// A notebook path renamed from `from` to `to` (nil: its levels lifted to the top).
+struct NotebookPathMove: Equatable, Sendable {
+    var from: String
+    var to: String?
 }
 
 /// The delegate of one sidebar row: validates and highlights while a drag is over it,
