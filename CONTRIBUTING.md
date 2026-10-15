@@ -28,8 +28,16 @@ the XCTest `Executed N tests` line is the one that matters.
 3. Commit messages: `area: imperative summary` (for example `render: clamp page height`).
 4. Add tests with the change; format changes go through `docs/format.md` first.
 5. Update `CHANGELOG.md` under `[Unreleased]` for anything a user would notice.
-6. CI must be green (Linux, macOS, app). Maintainers squash-merge.
+6. CI must be green (Linux, macOS, app), and an app-affecting change needs the PR gate's
+   `local/app-tests` status: `scripts/local-ci.sh` on a Mac with Xcode (package tests, Mac Catalyst
+   unit tests, an iOS compile check; [docs/ci.md](docs/ci.md)). Maintainers squash-merge.
 7. Fill in the PR template, including the license and sign-off checkbox.
+8. **List the tests you ran.** The gate runs no UI test and nothing on a simulator, so run the
+   targeted tests your change calls for (for example `scripts/app.sh test-mac-ui
+   -only-testing:SempereAppUITests/MacWindowUITests` for a Mac window change, `scripts/app.sh
+   test-phone` for an iPhone layout, `scripts/app.sh pseudo-mac` for new interface text) and list
+   each with its result under `## Tests run` in the description, or write "None beyond the gate:"
+   and why. The `PR lists tests run` check fails while that section is missing or empty.
 
 Style: Swift 6 strict concurrency, `Sendable` value types for the model, typed error enums per
 module, no force-unwraps outside tests, `///` on public API, XCTest for tests.
@@ -48,7 +56,8 @@ localized. Full rules and the Spanish glossary: [docs/localization.md](docs/loca
 3. Add a short glossary for your language to `docs/localization.md` first (vault, notebook, tag,
    page) and use it throughout.
 4. `swift test --filter LocalizationCatalogTests` must pass (it runs on Linux), and
-   `scripts/app.sh pseudo` should show no clipped labels. Do not translate the identifiers in
+   `scripts/app.sh pseudo` (iPad simulator) and `scripts/app.sh pseudo-mac` (the Mac app) should
+   show no clipped labels. Do not translate the identifiers in
    `Sources/` or what the app writes into a vault.
 5. Open the pull request. A native speaker reviewing the glossary choices helps most.
 

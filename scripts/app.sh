@@ -3,8 +3,10 @@
 #
 #   scripts/app.sh test       # xcodebuild test on an iPad simulator
 #   scripts/app.sh test-phone # the iPhone suites (PhoneLayoutTests) on an iPhone simulator
+#   scripts/app.sh build-ios  # compile only: the app, its unit tests and its UI tests for an iOS simulator (runs nothing)
 #   scripts/app.sh catalyst   # Mac Catalyst build, unsigned
-#   scripts/app.sh pseudo     # layout check in the double-length, right-to-left and Spanish languages
+#   scripts/app.sh pseudo     # layout check in the double-length, right-to-left and Spanish languages, iPad simulator
+#   scripts/app.sh pseudo-mac # the same as the Mac Catalyst app, at a narrow and a wide window (takes over the screen)
 #   scripts/app.sh test-mac   # every app suite on Mac Catalyst, ad-hoc signed and sandboxed
 #   scripts/app.sh test-mac-ui # the Mac UI tests (MacWindowUITests, MacItemUITests, SidebarDropUITests, MacFocusUITests,
 #                              # KeyShareMacUITests, QuitPurgeMacUITests, NewVaultSheetUITests, MacImportUITests, MacExportUITests) on Mac Catalyst
@@ -137,22 +139,46 @@ case "${1:-}" in
       || { status=$?; shutdown_simulators "$sim"; exit $status; }
     shutdown_simulators "$sim"
     ;;
-  pseudo)
+  build-ios)
+    # Compile-only check for iOS (scripts/local-ci.sh's gate, the hosted app job on pull requests):
+    # the app and its unit tests (SempereApp), then its UI tests (SempereScreenshots), built for the
+    # simulator `test` uses so that a later `test` reuses the products. Nothing boots or runs.
+    sim=$(pick_simulator)
+    for scheme_name in "$scheme" SempereScreenshots; do
+      xcodebuild build-for-testing -project "$project" -scheme "$scheme_name" -derivedDataPath "$derived" \
+        -destination "platform=iOS Simulator,id=$sim" CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"}
+    done
+    ;;
+  pseudo|pseudo-mac)
     # docs/localization.md "Checking layouts": PseudoLanguageUITests once per language, on the
     # screenshots scheme (it owns the UI test target). Screenshots land in the result bundles.
-    # SEMPERE_PSEUDO_DEVICE=iPhone runs it at phone width (default: an iPad).
-    sim=$(pick_simulator ${SEMPERE_PSEUDO_DEVICE:-})
-    settle_simulator "$sim"
+    # `pseudo`: on an iPad simulator (SEMPERE_PSEUDO_DEVICE=iPhone runs it at phone width).
+    # `pseudo-mac`: as the Mac Catalyst app, every screen at each window size in
+    # SEMPERE_PSEUDO_MAC_WINDOWS (default: 700 points wide, narrower than an iPad mini in portrait,
+    # and 1280 wide). A UI test on the Mac: it takes over the screen.
+    if [[ $1 == pseudo-mac ]]; then
+      shutdown_simulators
+      destination=(-destination 'platform=macOS,variant=Mac Catalyst')
+      signing=("${mac_ui_signing[@]}")
+      prefix=mac-
+      export TEST_RUNNER_SEMPERE_PSEUDO_MAC_WINDOWS=${SEMPERE_PSEUDO_MAC_WINDOWS:-700x800,1280x800}
+    else
+      sim=$(pick_simulator "${SEMPERE_PSEUDO_DEVICE:-}")
+      settle_simulator "$sim"
+      destination=(-destination "platform=iOS Simulator,id=$sim")
+      signing=(CODE_SIGNING_ALLOWED=NO)
+      prefix=
+    fi
     status=0
     mkdir -p build/pseudo
     for mode in double rtl es; do
-      echo "PSEUDO-TIME $mode start $(date -u +%H:%M:%S)"
-      rm -rf "build/pseudo/$mode.xcresult"   # xcodebuild refuses to write over an earlier run's bundle
+      echo "PSEUDO-TIME $prefix$mode start $(date -u +%H:%M:%S)"
+      rm -rf "build/pseudo/$prefix$mode.xcresult"   # xcodebuild refuses to write over an earlier run's bundle
       TEST_RUNNER_SEMPERE_PSEUDO=$mode xcb test -project "$project" -scheme SempereScreenshots \
-        -derivedDataPath "$derived" -destination "platform=iOS Simulator,id=$sim" \
+        -derivedDataPath "$derived" "${destination[@]}" \
         -only-testing:SempereAppUITests/PseudoLanguageUITests -parallel-testing-enabled NO ${ui_retry[@]+"${ui_retry[@]}"} \
-        -resultBundlePath "build/pseudo/$mode.xcresult" CODE_SIGNING_ALLOWED=NO || status=$?
-      echo "PSEUDO-TIME $mode end $(date -u +%H:%M:%S) status=$status"
+        -resultBundlePath "build/pseudo/$prefix$mode.xcresult" "${signing[@]}" ${extra[@]+"${extra[@]}"} || status=$?
+      echo "PSEUDO-TIME $prefix$mode end $(date -u +%H:%M:%S) status=$status"
     done
     exit $status
     ;;
@@ -206,7 +232,7 @@ case "${1:-}" in
       -parallel-testing-enabled NO ${ui_retry[@]+"${ui_retry[@]}"} CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"}
     ;;
   *)
-    echo "usage: $0 test|test-phone|test-ui|pseudo|catalyst|test-mac|test-mac-ui|test-mac-smoke|simulator" >&2
+    echo "usage: $0 test|test-phone|test-ui|build-ios|pseudo|pseudo-mac|catalyst|test-mac|test-mac-ui|test-mac-smoke|simulator" >&2
     exit 2
     ;;
 esac

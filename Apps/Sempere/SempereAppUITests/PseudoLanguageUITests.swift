@@ -13,6 +13,10 @@ import XCTest
 /// - `es`: the Spanish translation.
 ///
 /// Without the variable the test is skipped, so `screenshots.sh` and the app job never run it.
+///
+/// As the Mac Catalyst app (`scripts/app.sh pseudo-mac`) it walks the screens once per window size in
+/// `TEST_RUNNER_SEMPERE_PSEUDO_MAC_WINDOWS` (`WIDTHxHEIGHT` in points, comma-separated; the app pins its
+/// window through `SEMPERE_DEMO_MAC_WINDOW`), so the narrow layouts a Mac window can reach are checked too.
 final class PseudoLanguageUITests: XCTestCase {
     enum Mode: String {
         case double, rtl, es
@@ -52,20 +56,36 @@ final class PseudoLanguageUITests: XCTestCase {
         #if !targetEnvironment(macCatalyst)
         XCUIDevice.shared.orientation = .portrait
         #endif
-        for screen in Self.screens {
-            check(screen, mode: mode)
+        for size in Self.macWindowSizes {
+            for screen in Self.screens {
+                check(screen, mode: mode, macWindow: size)
+            }
         }
     }
 
+    /// The Mac window sizes to check (`SEMPERE_PSEUDO_MAC_WINDOWS`); `[nil]` (the window as it opens)
+    /// on the iPad and iPhone, or when the variable is not set.
+    static var macWindowSizes: [String?] {
+        #if targetEnvironment(macCatalyst)
+        let raw = ProcessInfo.processInfo.environment["SEMPERE_PSEUDO_MAC_WINDOWS"] ?? ""
+        let sizes = raw.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        if !sizes.isEmpty { return sizes }
+        #endif
+        return [nil]
+    }
+
     @MainActor
-    private func check(_ screen: Screen, mode: Mode) {
+    private func check(_ screen: Screen, mode: Mode, macWindow: String?) {
         let app = XCUIApplication()
         app.launchArguments = mode.arguments
-        app.launchEnvironment = screen.environment.merging(["TZ": "UTC"]) { mine, _ in mine }
+        var environment = screen.environment.merging(["TZ": "UTC"]) { mine, _ in mine }
+        if let macWindow { environment["SEMPERE_DEMO_MAC_WINDOW"] = macWindow }
+        app.launchEnvironment = environment
         app.launch()
         defer { app.terminate() }
+        let name = macWindow.map { "\(mode.rawValue)/\(screen.name)@\($0)" } ?? "\(mode.rawValue)/\(screen.name)"
         let window = app.windows.firstMatch
-        XCTAssertTrue(window.waitForExistence(timeout: 45), "\(mode.rawValue)/\(screen.name): no window")
+        XCTAssertTrue(window.waitForExistence(timeout: 45), "\(name): no window")
         // The demo vault is built, opened and drawn asynchronously.
         Thread.sleep(forTimeInterval: 8)
 
@@ -86,11 +106,11 @@ final class PseudoLanguageUITests: XCTestCase {
             }
         }
         let attachment = XCTAttachment(screenshot: window.screenshot())
-        attachment.name = "\(mode.rawValue)-\(screen.name)"
+        attachment.name = name.replacingOccurrences(of: "/", with: "-")
         attachment.lifetime = .keepAlways
         add(attachment)
         for problem in Set(problems).sorted() {
-            XCTFail("\(mode.rawValue)/\(screen.name): \(problem)")
+            XCTFail("\(name): \(problem)")
         }
     }
 

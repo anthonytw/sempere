@@ -162,8 +162,12 @@ tooling. The differences from the app:
 
 ## Checking layouts
 
-- CI runs `scripts/app.sh pseudo` on an iPad simulator in the `app` job (`SEMPERE_PSEUDO_DEVICE=iPhone`
-  runs it at phone width, by hand).
+- CI runs `scripts/app.sh pseudo` on an iPad simulator in the `app` job on `main`
+  (`SEMPERE_PSEUDO_DEVICE=iPhone` runs it at phone width, by hand), and `scripts/local-ci.sh --release`
+  runs it too. `scripts/app.sh pseudo-mac` runs the same test as the Mac Catalyst app (in
+  `local-ci.sh --testflight` and `--release`), at every window size in `SEMPERE_PSEUDO_MAC_WINDOWS`
+  (default `700x800,1280x800`: narrower than an iPad mini in portrait, and wide), pinned through
+  `SEMPERE_DEMO_MAC_WINDOW`. Run one of them for a change that adds or changes interface text.
 - `scripts/app.sh pseudo` runs the UI test `PseudoLanguageUITests` on the simulator three times: with
   the **double-length** pseudo-language (`-NSDoubleLocalizedStrings YES`), with the **right-to-left**
   pseudo-language (`-AppleTextDirection YES -NSForceRightToLeftWritingDirection YES`) and in Spanish

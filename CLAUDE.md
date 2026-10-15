@@ -14,6 +14,7 @@ scripts/test-linux.sh       # on a Mac with Docker, or in a cloud VM: run tests 
 scripts/app.sh test         # iPad app: xcodebuild test on the newest iPadOS 27+ simulator
 scripts/app.sh test -only-testing:SempereAppTests/FooTests   # one suite (any test-* subcommand)
 scripts/app.sh catalyst     # iPad app: unsigned Mac Catalyst build
+scripts/local-ci.sh         # the PR gate (package, Mac Catalyst unit tests, iOS compile check); see Workflow
 SEMPERE_FUZZ_LONG=1 swift test --filter Fuzz   # deep fuzz run (quick mode runs in every swift test)
 (cd web && npm ci && npm run lint && npm run typecheck && npm test)   # web viewer
 ```
@@ -84,9 +85,26 @@ the CLI).
 
 ## Workflow
 
-Branch per task, PR to `main`, squash merge, CI green. The app suites run on a Mac:
-`scripts/local-ci.sh` (on a Mac with Xcode) runs the package, iPad, iPhone, UI, pseudo-language and Catalyst suites on a pushed commit and posts the `local/app-tests` status a PR needs to merge (`--quick`: package, iPad and iPhone only; logs in `build/local-ci/`). Commit messages:
-`area: imperative summary`. Co-author line as the harness instructs.
+Branch per task, PR to `main`, squash merge, CI green. Commit messages:
+`area: imperative summary`. Co-author line as the harness instructs. Testing layers (docs/ci.md):
+
+- **PR gate**: `scripts/local-ci.sh` (a Mac with Xcode) runs the package tests, the Mac Catalyst
+  unit tests and an iOS compile check (no simulator, no screen, about ten minutes) on a pushed,
+  clean commit and posts `local/app-tests`, which a PR needs to merge. Logs in `build/local-ci/`;
+  `--list` prints the steps.
+- **Your targeted tests**: the gate runs no UI test and nothing on a simulator. Pick the tests
+  your change calls for, run them, and list each with its result under `## Tests run` in the PR
+  description (the template has the section; the `PR lists tests run` check fails without it).
+  For example a window or menu change: `scripts/app.sh test-mac-ui
+  -only-testing:SempereAppUITests/MacWindowUITests`; an iPad drag: `scripts/app.sh test-ui
+  -only-testing:SempereAppUITests/SidebarDropUITests`; an iPhone layout: `scripts/app.sh
+  test-phone`; new interface text: `scripts/app.sh pseudo-mac`; a new window or sheet:
+  `scripts/app.sh test-mac-smoke`. Nothing beyond the gate is a valid answer only with the reason
+  ("None beyond the gate: docs only").
+- **Before TestFlight**: `scripts/local-ci.sh --testflight` (the gate plus every Mac UI test, the
+  Mac launch smoke tests and the Mac pseudo-language check; posts `local/testflight-suite`).
+- **Before a release**: `scripts/local-ci.sh --release` (everything, iPad and iPhone simulators
+  included; posts `local/release-sweep`, which `release.yml` requires on the tagged commit).
 
 ## Gotchas
 
@@ -502,8 +520,8 @@ Branch per task, PR to `main`, squash merge, CI green. The app suites run on a M
   commands open live in `WindowUI`, attached by `windowSheets` to a view that
   is always on screen (the note list is not when the columns are hidden).
   Gate Mac-only behavior on `Platform.isMac` (compiles on the iPad, so the
-  simulator CI checks it) rather than `#if targetEnvironment(macCatalyst)`:
-  the Catalyst build runs on `main` only (or `gh workflow run CI --ref <branch>`).
+  iOS compile check covers it) rather than `#if targetEnvironment(macCatalyst)`:
+  the hosted Catalyst build runs on `main` only (or `gh workflow run CI --ref <branch>`).
   Only the `.commands` line and the entitlements/scene build settings are
   Catalyst-only.
 - Every `WindowGroup` gets `appEnvironment(model:library:keys:)` and every
@@ -523,11 +541,12 @@ Branch per task, PR to `main`, squash merge, CI green. The app suites run on a M
   `MenuCommand` shortcut must not collide with UIKit's; ⌘O and ⌘F are UIKit's
   items renamed by `MacMenus` (`MenuCommand.nativeOnMac`). Check menus on a
   real Catalyst runtime: `scripts/app.sh test-mac` (every app suite, ad-hoc
-  signed and sandboxed) and `test-mac-ui` (`MacWindowUITests`), run by CI on
-  `main` and on dispatch. A test that needs pixels on a Mac puts its view in a
-  window of the host app's scene (a window without one is never drawn there).
+  signed and sandboxed; the PR gate) and `test-mac-ui` (`MacWindowUITests`; CI on
+  `main` and on dispatch, `local-ci.sh --testflight`). A test that needs pixels
+  on a Mac puts its view in a window of the host app's scene (a window without
+  one is never drawn there).
 - Launch smoke tests (`LaunchSmokeUITests`; `scripts/app.sh test-mac-smoke` on
-  `main` and in `scripts/local-ci.sh --mac-ui`, the iPad layouts in `test-ui`) start from fresh state
+  `main` and in `scripts/local-ci.sh --testflight`, the iPad layouts in `test-ui`) start from fresh state
   (`SEMPERE_DEBUG_FRESH`), unlock the demo vault through the unlock sheet
   (`SEMPERE_DEMO_PASSPHRASE`) and open every column layout, window and sheet.
   A new window, sheet or column layout gets a step there; a new scene must
@@ -761,8 +780,8 @@ Branch per task, PR to `main`, squash merge, CI green. The app suites run on a M
   (`scripts/l10n.py merge`): `LocalizationCatalogTests` (Linux, runs in `swift test` and in
   its own CI job for `Apps/`-only changes) fails otherwise. The Linux scratch package for
   `AppModel*` needs a `String(localized:)` shim (the Linux Foundation lacks the interpolated
-  form and `comment:`). `scripts/app.sh pseudo` checks double-length, right-to-left and
-  Spanish layouts.
+  form and `comment:`). `scripts/app.sh pseudo` (iPad simulator) and `pseudo-mac` (the Mac
+  app at a narrow and a wide window) check double-length, right-to-left and Spanish layouts.
 - WebDAV vaults in the app (`AppModel+WebDAV`, `WebDAVSession`, docs/io.md "WebDAV vaults in the
   app"): a local copy in Application Support (`WebDAVLocalCopy`, `WebDAVLocationStore`) opened like any
   folder, and a push-only sync (`WebDAVLocalCopy.push`: `pushOnly` + `keepServerChanges`) scheduled by
