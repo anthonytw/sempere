@@ -8,6 +8,7 @@ struct TagEditorView: View {
     @Environment(\.dismiss) private var dismiss
     let noteID: UUID
     @State private var text = ""
+    @State private var selection: TextSelection?
 
     /// One entry per tag key (older notes may store "Math" and "math"; removing
     /// either removes both), so the list never holds duplicate ids.
@@ -40,10 +41,10 @@ struct TagEditorView: View {
                 }
                 Section("Add") {
                     HStack {
-                        TextField("New tag", text: $text)
+                        TextField("New tag", text: $text, selection: $selection)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
-                            .onSubmit(add)
+                            .emojiCompletion(text: $text, onSubmit: add, selection: $selection)
                         Button("Add", action: add)
                             .disabled(NoteOps.normalizedTag(text).isEmpty)
                     }

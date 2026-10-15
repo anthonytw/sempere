@@ -316,4 +316,53 @@ final class MacWindowUITests: XCTestCase {
         if !visible { print("MACUIDEBUG sheet \(sheet) rows \(rows.map(\.frame))") }
         XCTAssertTrue(visible, "the list is inside the sheet's window")
     }
+
+    /// `:name` emoji completion in a naming field (the new-note sheet's notebook field):
+    /// the list opens after two letters, Return takes the highlighted row, ↓ moves the
+    /// highlight, Escape closes the list without closing the sheet, and a closed
+    /// `:name:` turns into its emoji.
+    @MainActor
+    func testNamingFieldsCompleteEmojiShortcodes() throws {
+        let app = launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Cellular Respiration"].firstMatch.waitForExistence(timeout: 60))
+        app.typeKey("n", modifierFlags: .command)   // File > New Note…
+        let field = app.textFields["notebookField"]
+        let found = field.waitForExistence(timeout: 20)
+        if !found { dump(app, "emoji-sheet") }
+        XCTAssertTrue(found, "the notebook field")
+        guard found else { return }
+        field.click()
+        field.typeText(":smile")
+        let rows = app.buttons.matching(identifier: "emojiSuggestion")
+        let shown = rows.firstMatch.waitForExistence(timeout: 10)
+        if !shown { dump(app, "emoji-list") }
+        XCTAssertTrue(shown, "suggestions under the field")
+        XCTAssertTrue(rows.element(boundBy: 0).isSelected, "the first row is highlighted")
+        field.typeKey(XCUIKeyboardKey.downArrow.rawValue, modifierFlags: [])
+        XCTAssertTrue(rows.element(boundBy: 1).isSelected, "↓ highlights the second row")
+        field.typeKey(XCUIKeyboardKey.upArrow.rawValue, modifierFlags: [])
+        XCTAssertTrue(rows.element(boundBy: 0).isSelected, "↑ goes back")
+        field.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
+        XCTAssertEqual(field.value as? String, "😄", "Return takes the first row")
+        XCTAssertTrue(field.exists, "the sheet stays open")
+
+        field.typeText(" :smile")
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 10))
+        field.typeKey(XCUIKeyboardKey.downArrow.rawValue, modifierFlags: [])
+        field.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
+        let second = field.value as? String ?? ""
+        XCTAssertTrue(second.hasPrefix("😄 ") && second != "😄 😄" && !second.contains(":"), "↓ then Return takes the second row: \(second)")
+
+        field.typeText(" :boo")
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 10))
+        field.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertFalse(rows.firstMatch.exists, "Escape closes the list")
+        XCTAssertTrue(field.exists, "and not the sheet")
+
+        field.typeText("ks: :bulb:")
+        let closed = field.value as? String ?? ""
+        XCTAssertTrue(closed.hasSuffix(" 📚 💡"), "closed shortcodes turn into emoji: \(closed)")
+    }
 }

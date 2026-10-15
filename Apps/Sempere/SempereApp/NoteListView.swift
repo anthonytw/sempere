@@ -145,7 +145,7 @@ struct NoteListView: View {
         }
         .sheet(item: $movingNote) { MoveNoteView(note: $0.note) }
         .alert(promptTitle, isPresented: Binding(get: { prompt != nil }, set: { if !$0 { prompt = nil } })) {
-            TextField(promptField, text: $promptText)
+            TextField(promptField, text: $promptText.replacingEmojiShortcodes())
             Button("OK") {
                 if let p = prompt {
                     let text = promptText

@@ -48,6 +48,7 @@ struct NotebookField: View {
     static let scrollID = "notebookField"
     @FocusState private var focused: Bool
     @State private var expanded = false
+    @State private var selection: TextSelection?
 
     private var rows: [String] {
         NotebookChoices.rows(matching: text, among: notebooks, excluding: excluding, excludingSubtree: excludingSubtree)
@@ -58,13 +59,14 @@ struct NotebookField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                TextField(title, text: $text)
+                TextField(title, text: $text, selection: $selection)
                     .focused($focused)
                     .autocorrectionDisabled()
                     #if !os(macOS)
                     .textInputAutocapitalization(.words)
                     #endif
                     .accessibilityIdentifier("notebookField")
+                    .emojiCompletion(text: $text, selection: $selection)
                 Button {
                     expanded.toggle()
                 } label: {

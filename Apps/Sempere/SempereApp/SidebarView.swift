@@ -177,7 +177,7 @@ struct SidebarView: View {
             }
         }
         .alert("Rename or Move Notebook", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
-            TextField("Path", text: $newName)
+            TextField("Path", text: $newName.replacingEmojiShortcodes())
                 .autocorrectionDisabled()
             Button("Rename") {
                 if let old = renaming {

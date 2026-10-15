@@ -80,7 +80,7 @@ struct WindowSheets: ViewModifier {
             }
             .alert("Rename Note", isPresented: Binding(get: { ui.renameNoteID != nil },
                                                        set: { if !$0 { ui.renameNoteID = nil } })) {
-                TextField("Title", text: $title)
+                TextField("Title", text: $title.replacingEmojiShortcodes())
                 Button("Rename") {
                     if let id = ui.renameNoteID {
                         let text = title
