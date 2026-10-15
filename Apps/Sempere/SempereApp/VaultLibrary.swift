@@ -5,12 +5,14 @@ import Observation
 import UniformTypeIdentifiers
 
 extension UTType {
-    /// A `.sempere` folder, shown by Files as one document (a package). Declared
-    /// as an exported type in `SempereInfo.plist`.
-    static let sempere = UTType(exportedAs: "io.github.anthonytw.sempere.vault", conformingTo: .package)
+    /// A `.sempere` folder. Declared as an exported type in `SempereInfo.plist`, as a
+    /// plain folder and never a package: iCloud Drive syncs a package as one item, so
+    /// concurrent writes from two devices would conflict over the whole vault (docs/io.md
+    /// "Vaults are folders").
+    static let sempere = UTType(exportedAs: "io.github.anthonytw.sempere.vault", conformingTo: .folder)
 
-    /// What the "open vault" pickers accept: vault packages, and plain folders
-    /// (a vault in a plain folder, or one not named `.sempere`).
+    /// What the "open vault" pickers accept: vault folders, and plain folders
+    /// (a vault in a folder not named `.sempere`, or the folder holding one).
     static var vaultPickerTypes: [UTType] { [.sempere, .folder] }
 }
 

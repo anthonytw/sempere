@@ -143,14 +143,16 @@ final class CLIVersionHistoryTests: CLITestCase {
     }
 
     /// `--thin-older-than` applies the window; `--thin-all` ignores it and keeps
-    /// checkpoints plus each session's newest save. Both say which rule they apply.
+    /// only checkpoints and the newest revision. Both say which rule they apply.
     func testThinAllIgnoresTheWindowAndKeepsCheckpoints() throws {
         let (vault, _, keyPath) = try makeVault()
         let v = path("mine.sempere")
         let args = ["--vault", v, "--identity", keyPath]
         // Sessions from an hour ago: inside any window.
         let base = Int64(Date().timeIntervalSince1970 * 1000) - 3_600_000
-        let (note, keep, all) = try writeOldSessions(vault, baseMs: base)
+        let (note, sessions, all) = try writeOldSessions(vault, baseMs: base)
+        // No session end stays: only the checkpoint and the newest revision.
+        let keep = Array(sessions.dropFirst())
         let id = note.uuidString.lowercased()
         let windowed = try cli(["compact", id, "--thin-older-than", "30d", "--dry-run"] + args)
         XCTAssertEqual(windowed.status, 0, windowed.err)

@@ -253,6 +253,49 @@ final class VersionHistoryTests: XCTestCase {
         XCTAssertTrue(try thin(revs, olderThan: 365 * 86_400, now: now).isEmpty)
     }
 
+    /// "Thin everything except checkpoints" leaves only the checkpoints and the
+    /// newest version in the history: no session end of any age (the owner's
+    /// report, 2026-10: each editing session's last autosave stayed).
+    func testThinAllKeepsOnlyCheckpointsAndTheNewest() throws {
+        var log = LogBuilder()
+        var revs: [Revision] = []
+        func add(_ m: Double, _ ops: [Op], session: String?, checkpoint: Checkpoint? = nil) -> Revision {
+            var r = log.delta(devA, minutes(m), ops)
+            r.session = session; r.checkpoint = checkpoint
+            revs.append(r)
+            return r
+        }
+        let imported = add(0, [.addPage(Page(id: p1, order: "a0"))], session: nil, checkpoint: Checkpoint(name: "Imported"))
+        for i in 1...3 { _ = add(Double(i), [.addStroke(page: p1, stroke: stroke())], session: "s1") }
+        let cp = add(4, [], session: "s1", checkpoint: Checkpoint(name: "v1"))
+        for i in 0..<3 { _ = add(30 + Double(i), [.addStroke(page: p1, stroke: stroke())], session: "s2") }
+        // Recognition written without a session, then a recent session.
+        _ = add(50, [.setMeta(.title("read"))], session: nil)
+        for i in 0..<3 { _ = add(90 + Double(i), [.addStroke(page: p1, stroke: stroke())], session: "s3") }
+        let newest = revs.last!
+        let now = wallAt(baseMillis + minutes(100))
+        var clock = HybridClock()
+        // The window rule keeps every session's end.
+        let windowed = try CompactionPlanner.plan(revs, mode: .thin(olderThan: 0), now: now, device: devC, clock: &clock,
+                                                  wall: now, app: "test/0")
+        XCTAssertGreaterThan(NoteHistory.restorePoints(applied(revs, windowed)).count, 3)
+
+        let plan = try CompactionPlanner.plan(revs, mode: ThinningRule.allButCheckpoints.mode, now: now, device: devC,
+                                              clock: &clock, wall: now, app: "test/0")
+        let after = applied(revs, plan)
+        XCTAssertEqual(NoteHistory.restorePoints(after).map(\.name), [imported.name, cp.name, newest.name])
+        XCTAssertTrue(NoteHistory.restorePoints(after).allSatisfy(\.complete))
+        XCTAssertEqual(try NoteReducer.reconstruct(after).comparable, try NoteReducer.reconstruct(revs).comparable)
+        for p in [imported, cp, newest] {
+            XCTAssertEqual(try NoteHistory.state(after, at: p.name).comparable, try NoteHistory.state(revs, at: p.name).comparable)
+        }
+        let again = try CompactionPlanner.plan(after, mode: .thinAll, now: now, device: devC, clock: &clock, wall: now,
+                                               app: "test/0")
+        XCTAssertTrue(again.isEmpty, "thinning again does nothing: \(again.deletions.map(\.filename)) \(again.snapshots.map { "\($0.name.filename) asOf \($0.asOf.map { "\($0)" } ?? "-")" }) after: \(after.map { "\($0.name.filename)\($0.asOf.map { " asOf \($0)" } ?? "")" })")
+        // Decided from metadata alone, like every rule (`mayDelete`).
+        XCTAssertTrue(CompactionPlanner.mayDelete(revs.map { RevisionMeta($0) }, noteId: testNote, mode: .thinAll, now: now))
+    }
+
     func testWitnessKeepsAnotherDevicesOrder() throws {
         var log = LogBuilder()
         var revs: [Revision] = []
@@ -551,8 +594,19 @@ final class VersionHistoryTests: XCTestCase {
         // Positioned snapshots written are valid.
         let positions = NoteHistory.positions(after)
         for s in plan.snapshots where s.asOf != nil { XCTAssertEqual(positions[s.name], s.asOf, ctx) }
+        // G3 for "everything except checkpoints": the range is every revision not in the future;
+        // the newest revision (by name and as a version) and every complete checkpoint are targets.
+        if case .thinAll = mode {
+            let range = revs.sorted { $0.name < $1.name }.prefix { now.timeIntervalSince($0.wall) > 0 }
+            XCTAssertTrue(gone.isSubset(of: Set(range.map(\.name))), ctx)
+            var kept = Set(checkpoints)
+            if let newest = revs.map(\.name).max() { kept.insert(newest) }
+            if let last = before.last { kept.insert(last.name) }
+            kept.formUnion(before.map(\.name).filter { !Set(range.map(\.name)).contains($0) })
+            XCTAssertTrue(kept.intersection(Set(before.filter(\.complete).map(\.name))).isSubset(of: Set(plan.targets)), ctx)
+        }
         // G4: again with the same cutoff: nothing.
-        if case .thin = mode, !plan.isEmpty {
+        if mode.isThinning, !plan.isEmpty {
             var c2 = clock
             let again = try CompactionPlanner.plan(after, mode: mode, now: now, device: DeviceID("dddddddd")!, clock: &c2,
                                                    wall: now, app: "t")
@@ -813,7 +867,7 @@ extension VersionHistoryTests {
     /// and the metadata-only stage still decides exactly what the full one does.
     func testThinEverythingExceptCheckpointsGuarantees() throws {
         let mode = ThinningRule.allButCheckpoints.mode
-        XCTAssertEqual(mode, .thin(olderThan: 0))
+        XCTAssertEqual(mode, .thinAll)
         var deleted = 0
         for seed in UInt64(1)...120 {
             var rng = SplitMix64(seed: seed &* 6_151)
@@ -825,7 +879,7 @@ extension VersionHistoryTests {
             deleted += plan.deletions.count
             XCTAssertEqual(CompactionPlanner.mayDelete(revs.map(RevisionMeta.init), noteId: revs[0].noteId, mode: mode, now: now),
                            !CompactionPlanner.select(revs, mode: mode, now: now).candidates.isEmpty, "seed \(seed)")
-            // What stays: every checkpoint, each session's newest point and the newest revision.
+            // What stays: every checkpoint and the newest revision (no session ends).
             let points = NoteHistory.restorePoints(revs)
             let gone = Set(plan.deletions)
             XCTAssertTrue(gone.isDisjoint(with: points.filter(\.isCheckpoint).map(\.name)), "seed \(seed)")

@@ -6,6 +6,24 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
 
 ## [Unreleased]
 
+### Fixed
+
+- iCloud Drive: a vault is a plain folder, no longer a package, so iCloud syncs its files one by one; as
+  a package, two devices writing at once made a conflict of the whole vault, and choosing one version
+  lost the notes written on the other device. The app now merges iCloud's conflict versions of the
+  vault's own files itself (union of write-once files, settings per key), so no version picker appears.
+- iCloud Drive: note folders without a revision (an import's attachments written before its first
+  revision, or a folder iCloud never lists) no longer keep the list on "Downloading" forever.
+- "Thin everything except checkpoints" removes every autosave, including each editing session's last one.
+
+### Added
+
+- `sempere vault merge-copy FROM` merges another copy of the vault (an iCloud conflict version, another
+  device's copy, a restored backup) without overwriting or deleting anything (`format.md` §1.3).
+- Index-first listing: each device publishes its notes' summaries in `summaries/<device>.sealed`
+  (`format.md` §12.5; `sempere vault summaries --device-file`), and a device on which notes are still
+  arriving lists them by title from those files.
+
 ## [1.0.0] - TODO(user): date of the first release
 
 First release. Sempere stores handwriting notes as end-to-end-encrypted files in a plain folder

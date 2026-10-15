@@ -150,6 +150,21 @@ enum CloudScan {
         return items
     }
 
+    /// The published summaries files (format.md §12, §12.5): `sempere-summaries.sealed`
+    /// at the root and `summaries/<device>.sealed`, placeholders mapped to their real names.
+    static func summaryItems(inVault root: URL, fileManager: FileManager = .default) throws -> [Item] {
+        var items: [Item] = []
+        for entry in try list(root, fileManager) where entry.name == PublishedSummaries.fileName && !entry.isDirectory {
+            items.append(entry.item(in: root))
+        }
+        let folder = root.appendingPathComponent(PublishedSummaries.deviceFolderName, isDirectory: true)
+        for entry in try list(folder, fileManager, allowMissing: true)
+        where !entry.isDirectory && PublishedSummaries.device(ofFileName: entry.name) != nil {
+            items.append(entry.item(in: folder))
+        }
+        return items
+    }
+
     /// The files of one `notes/<dir>` folder.
     struct NoteGroup: Sendable {
         /// The folder name.
@@ -159,6 +174,11 @@ enum CloudScan {
         /// The note id when the folder is named like one (others are ignored by readers).
         var id: UUID? { UUID(uuidString: directory) }
         var items: [Item]
+        /// The folder lists something besides revision files (`att/`, a marker, a
+        /// temporary file): iCloud has listed its contents, so no revision means
+        /// none has been written yet (blobs are written before the revision that
+        /// names them), never "not listed yet".
+        var hasOtherEntries = false
     }
 
     /// Every `notes/<dir>` folder with its revision files, in folder-name order.
@@ -167,10 +187,22 @@ enum CloudScan {
         var groups: [NoteGroup] = []
         for dir in try list(notes, fileManager, allowMissing: true) where dir.isDirectory && !dir.name.hasPrefix(".") {
             let noteDir = notes.appendingPathComponent(dir.name, isDirectory: true)
-            let items = try list(noteDir, fileManager, allowMissing: true).filter(\.isRevisionLike).map { $0.item(in: noteDir) }
-            groups.append(NoteGroup(directory: dir.name, url: noteDir, items: items))
+            let entries = try list(noteDir, fileManager, allowMissing: true)
+            let items = entries.filter(\.isRevisionLike).map { $0.item(in: noteDir) }
+            groups.append(NoteGroup(directory: dir.name, url: noteDir, items: items,
+                                    hasOtherEntries: Self.listsOtherEntries(entries)))
         }
         return groups
+    }
+
+    /// The folder of note `id` as a `NoteGroup`, listed fresh; nil when it is gone.
+    static func noteGroup(inVault root: URL, id: UUID, fileManager: FileManager = .default) throws -> NoteGroup? {
+        let noteDir = noteFolder(inVault: root, id: id)
+        guard fileManager.fileExists(atPath: noteDir.path) else { return nil }
+        let entries = try list(noteDir, fileManager, allowMissing: true)
+        return NoteGroup(directory: id.uuidString.lowercased(), url: noteDir,
+                         items: entries.filter(\.isRevisionLike).map { $0.item(in: noteDir) },
+                         hasOtherEntries: Self.listsOtherEntries(entries))
     }
 
     /// The revision files of note `id` (`notes/<id>/`), listed fresh; empty
@@ -236,6 +268,15 @@ enum CloudScan {
     /// `notes/<id>/` of the vault at `root`.
     static func noteFolder(inVault root: URL, id: UUID) -> URL {
         root.appendingPathComponent("notes/\(id.uuidString.lowercased())", isDirectory: true)
+    }
+
+    /// Whether a note folder's entries show that iCloud listed its contents although no revision
+    /// is there: a visible entry that is not a revision (`att/`). Hidden names (temporary files)
+    /// say nothing, and a partial copy's note marked incomplete (format.md §1.2) is pending, not
+    /// an orphan.
+    private static func listsOtherEntries(_ entries: [Entry]) -> Bool {
+        !entries.contains { $0.name == PartialCopy.noteMarkerName }
+            && entries.contains { !$0.isRevisionLike && !$0.name.hasPrefix(".") }
     }
 
     private struct Entry {

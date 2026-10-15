@@ -129,9 +129,31 @@ index of the vault fetches nothing (the index will show which notes changed);
 a device opening the vault for the first time requests every note, so they
 download while the key is typed.
 
+A folder that lists something but no revision (an `att/` folder: the
+writer writes blobs before the revision that names them, so an import in
+progress on another device, or one interrupted for good, leaves such
+folders) is not a note yet and not pending (`ProgressiveLoad.Pass.orphans`).
+A folder that lists nothing at all is pending for `cloudUnlistedTimeout`
+(120 s) and then set aside the same way (`emptyNoteFolders`): neither is a
+row or counted in the bar, so "Downloading" cannot wait on them forever.
+Every pass still looks at them, and a revision that appears makes them notes.
+
 Pending notes appear in the list with their indexed summary and a small
-spinner, or, when nothing is indexed, as "Downloading from iCloud…" rows with
-a spinner. A bar under the list shows "Downloading from iCloud: n of m
+spinner, or, when nothing is indexed, with their row from the other
+devices' published summaries (below), or else as "Downloading from iCloud…"
+rows with a spinner.
+
+**Listing before the notes arrive** (`AppModel+PublishedSummaries`,
+`format.md` §12.5). Every device with a complete listing writes the
+summaries of the notes it read to its own sealed file,
+`summaries/<device>.sealed` (at most every 2 minutes, only when they
+changed; it is the only device that writes that file, so it never
+conflicts). A device on which notes are still arriving asks iCloud for
+those files (not waited for) and, once they are here, lists the pending
+notes from them: title, notebook, tags, dates and page text for search,
+the entry whose revisions match the listing, else the one made from the
+most revisions. Such a row is replaced when the note's own revisions are
+read; it is never used to write (an edit downloads the note first). A bar under the list shows "Downloading from iCloud: n of m
 notes", a progress bar and "n of m files" (`CloudSyncStatus`); it disappears
 when no note is pending. While notes are pending the loop re-checks just
 those every second (and lists every folder every 15 s); once settled it lists
@@ -719,12 +741,20 @@ records the files in its manifest, so a re-run skips unchanged notes and a
 changed note's earlier files are removed first. Shared code: `MediaExport`
 (SempereRender), used by `ShareExport`, `BulkExportSession` and the CLI.
 
-## Vaults as single items (app)
+## Vaults are folders (app)
 
 The app exports the UTType `io.github.anthonytw.sempere.vault` (extension
-`sempere`, conforms to `com.apple.package` and `public.directory`;
-`Apps/Sempere/SempereInfo.plist`, merged into the generated Info.plist), so
-Files shows a vault folder as one document and opening it launches Sempere.
+`sempere`), conforming to `public.folder` only (`Apps/Sempere/SempereInfo.plist`,
+merged into the generated Info.plist), so opening a vault from Files launches
+Sempere. It is **not** a package (`com.apple.package`): iCloud Drive syncs a
+package as one item, so a note written into it on one device while another
+device also wrote (a large import on the Mac, a new note on the iPad) made a
+conflict of the whole vault, and the version the user did not pick in the
+system's "choose a version" prompt took that note with it (TestFlight 1.0.0,
+2026-10). As a plain folder each file syncs on its own, write-once files never
+conflict, and the app resolves the few mutable files itself ("Conflicting
+versions" below). Files and Finder show a vault as a folder.
+
 The picker accepts that type and plain folders. `VaultLocator.resolve` turns
 what was picked into the vault folder: a folder holding exactly one
 `.sempere` resolves to it (several: an error naming them). A file or folder
@@ -732,9 +762,37 @@ inside a vault (`vault.json`, `notes/…`) is an error naming the vault: the
 access the picker grants covers the picked item and what is below it, never
 its parents, so the vault could not be read from it.
 New vaults are always created as `<name>.sempere`. Security scope is held on
-the URL the user picked. On macOS, Finder shows `.sempere` as a package
-(Show Package Contents opens the folder); the CLI and the on-disk layout are
-unaffected.
+the URL the user picked. The CLI and the on-disk layout are unaffected.
+
+A vault created by a build that still declared the package type may be held
+by iCloud Drive as a package until it is re-created; `sempere vault
+merge-copy` merges any copy of it (the other device's, or a version restored
+from iCloud's version history) into a new vault without losing a file.
+
+## Conflicting versions (app)
+
+iCloud Drive keeps a *conflict version* of a file two devices replaced at
+once (`NSFileVersion.unresolvedConflictVersionsOfItem`). Before every full pass
+of the sync loop (`AppModel.resolveCloudConflicts`, `CloudConflicts.swift`) the
+app looks for them on the vault folder itself (a vault that conflicted while it
+was a package), `vault.json`, `rewrap-journal.json`, `settings.age`, the
+published summaries and `keys/`, merges them by the rules of `format.md` §1.3,
+marks them resolved and removes them, so the system never has to ask the user
+to pick a version:
+
+- the vault folder: `Vault.mergeCopy` (the library code behind `sempere vault
+  merge-copy`): every write-once file the kept version lacks is checked and
+  copied in, so a note written on either device is listed (the notes it brought
+  back are looked at by the same pass); its `settings.age` waits for the key;
+- `settings.age`: merged per key once the vault is unlocked (while locked the
+  conflict stays until the unlock);
+- `vault.json` and the journal: the current version stays when the other is the
+  same or differs only in the label; otherwise (both devices changed the keys)
+  it is left unresolved and the list's bar says so;
+- published summaries and key files: the current version stays.
+
+Revisions and blobs are write-once under unique names and never conflict.
+Tests fake versions with `FakeCloud.addConflict` (`CloudConflictTests`).
 
 ## Atomic writes
 

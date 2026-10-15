@@ -25,6 +25,29 @@ final class FakeCloud: @unchecked Sendable {
     private var dataless: Set<String> = []
     /// Deliver a file the moment it is requested (like a fast connection).
     var autoDeliver = false
+    private var conflictVersions: [String: [CloudConflictVersion]] = [:]
+    private var resolvedLog: [String] = []
+
+    /// iCloud kept `version` (a readable copy) of the item at `item` after a conflict
+    /// (`NSFileVersion.unresolvedConflictVersionsOfItem`).
+    func addConflict(of item: URL, version: URL) {
+        lock.withLock { conflictVersions[item.standardizedFileURL.path, default: []].append(CloudConflictVersion(url: version)) }
+    }
+
+    /// The items whose conflict versions were resolved, relative to the vault, in order.
+    var resolved: [String] {
+        lock.withLock { resolvedLog }
+    }
+
+    /// Conflict versions still unresolved, by item path relative to the vault.
+    var unresolved: [String] {
+        lock.withLock { conflictVersions.filter { !$0.value.isEmpty }.keys.map(relative).sorted() }
+    }
+
+    private func relative(_ path: String) -> String {
+        let root = vault.standardizedFileURL.path
+        return path == root ? "." : String(path.dropFirst(root.count + 1))
+    }
 
     init(vault: URL) { self.vault = vault }
 
@@ -111,6 +134,14 @@ final class FakeCloud: @unchecked Sendable {
             let note = item.url.deletingLastPathComponent().lastPathComponent
             if item.url.path.contains("/notes/") { lock.withLock { log.append(note) } }
             if autoDeliver, let id = UUID(uuidString: note) { try? deliver(id) }
+        }, conflicts: { [self] url in
+            lock.withLock { conflictVersions[url.standardizedFileURL.path] ?? [] }
+        }, resolve: { [self] url, versions in
+            lock.withLock {
+                let path = url.standardizedFileURL.path
+                conflictVersions[path]?.removeAll { versions.contains($0) }
+                resolvedLog.append(relative(path))
+            }
         })
     }
 }
@@ -477,12 +508,24 @@ struct VaultLocatorTests {
         #expect(try VaultLocator.resolve(missing) == missing)
     }
 
-    @Test func newVaultsGetTheExtensionAndThePickerAcceptsPackagesAndFolders() throws {
+    @Test func newVaultsGetTheExtensionAndThePickerAcceptsVaultsAndFolders() throws {
         #expect(try VaultLibrary.folderName(for: " Notes ") == "Notes.sempere")
         #expect(UTType.vaultPickerTypes.contains(.sempere))
         #expect(UTType.vaultPickerTypes.contains(.folder))
-        #expect(UTType.sempere.conforms(to: .package))
         #expect(UTType.sempere.conforms(to: .directory))
+    }
+
+    /// iCloud Drive syncs a package as one item: a note written into a vault package on one
+    /// device while another device wrote too was lost when the user picked the other device's
+    /// version of the whole vault (TestFlight 1.0.0, 2026-10). A vault is a plain folder, so each
+    /// file syncs on its own and write-once files never conflict.
+    @Test func theVaultTypeIsAFolderNeverAPackage() throws {
+        let declared = try #require(Bundle.main.infoDictionary?["UTExportedTypeDeclarations"] as? [[String: Any]])
+        let vault = try #require(declared.first { $0["UTTypeIdentifier"] as? String == "io.github.anthonytw.sempere.vault" })
+        let conforms = try #require(vault["UTTypeConformsTo"] as? [String])
+        #expect(!conforms.contains("com.apple.package"))
+        #expect(conforms.contains("public.folder"))
+        #expect(!UTType.sempere.conforms(to: .package))
     }
 }
 

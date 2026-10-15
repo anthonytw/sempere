@@ -219,7 +219,8 @@ sempere vault rewrap-resume
 sempere vault rewrap-discard
 sempere vault verify
 sempere vault index [--out PATH|-]
-sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
+sempere vault summaries [--out PATH|- | --device-file] [--plaintext] [--no-cache]
+sempere vault merge-copy FROM [--dry-run] [--json]
 ```
 
 - `init` creates the vault. `PATH` must end in `.sempere`. Give no `--label`
@@ -412,7 +413,25 @@ sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
   `--out`, so it never lands at the vault's sealed path by default, and a
   file it writes is readable by its owner only (created 0600 next to the
   target, then renamed over it). `--json` emits `path`, `notes`, `entries`,
-  `read` (notes summarized again) and `bytes`.
+  `read` (notes summarized again) and `bytes`. `--device-file` writes this
+  machine's own copy instead, `summaries/<device>.sealed` (`format.md` §12.5,
+  the device id of the CLI's device state): the per-device files the apps
+  publish so that another device lists a vault's notes before they arrive.
+- `merge-copy FROM` merges another copy of the same vault into the vault
+  (`format.md` §1.3): the losing side of an iCloud Drive conflict, a copy taken
+  from another device, a folder restored from a backup. Every revision, blob,
+  inbox file and identity file the vault lacks is checked as a received file
+  (`format.md` §9.1: with the key, decrypted and verified; without it, its age
+  structure) and copied in; `settings.age` is merged per key (§13.3), which
+  needs the key (locked, it is reported as pending). `vault.json` and
+  `rewrap-journal.json` are never taken from `FROM`: a difference is only
+  reported. Nothing in the vault is overwritten or deleted, so a second run
+  does nothing; a file both copies hold with different bytes keeps the vault's
+  and is listed. `FROM` must hold a `vault.json` of the same vault id (else exit
+  1). Lines: `added PATH` (`would add` with `--dry-run`), `refused PATH: why`,
+  `differs PATH`, then the settings and manifest notes. Exit 1 when a file was
+  refused. `--json` emits `added`, `differing`, `refused` (path → why),
+  `settingsMerged`, `settingsPending` and `manifestDiffers`.
 
 ### Attachments
 
@@ -2174,11 +2193,10 @@ time. Before the per-file lines it prints the rule it applies and what it keeps
 (`Thin versions older than 30 days (dry run). Removes autosaves older than 30
 days. Keeps every checkpoint …`).
 
-`--thin-all` is the same rule with no age window ("thin everything except
-checkpoints", `docs/format.md` §5.8.4 with a cutoff of zero): every autosave
-goes, however recent, except the newest save of each editing session; every
-checkpoint (saved versions and imports, §5.8.1) and the note's newest revision
-stay. It prints its own rule line. `--retention`, `--thin-older-than` and
+`--thin-all` is "thin everything except checkpoints" (`docs/format.md` §5.8.4):
+no age window and no session ends, so every autosave goes, however recent;
+every checkpoint (saved versions and imports, §5.8.1) and the note's newest
+version stay (plus the few revisions the rules keep for ordering, §5.8.4 rule 3). It prints its own rule line. `--retention`, `--thin-older-than` and
 `--thin-all` are different modes; give one.
 
 Thinning and compaction decide from each revision's metadata (names, wall

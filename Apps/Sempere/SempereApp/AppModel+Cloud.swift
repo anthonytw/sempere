@@ -165,8 +165,15 @@ extension AppModel {
                 guard let self, self.generation == gen else { return }
                 var interval = self.cloudPollInterval
                 do {
+                    // Conflict versions of the vault's own files: merged before the folders are listed,
+                    // so a note only another version held is listed by this very pass.
+                    if scope == nil { await self.resolveCloudConflicts() }
                     let pending = try await self.reconcile(scope: scope)
                     if scope == nil { lastFullPass = clock.now }
+                    // Index-first: notes still to arrive are listed from the devices' published
+                    // summaries; once nothing is pending, this device publishes its own.
+                    if !self.pendingNoteIDs.isEmpty { await self.refreshPublishedRows() }
+                    if pending == 0 { await self.publishOwnSummariesIfDue() }
                     let known = self.cloudSync?.notes ?? 0
                     let local = self.cloudSync?.localFiles ?? 0
                     if local != lastLocal || known != lastKnown {
@@ -178,7 +185,7 @@ extension AppModel {
                     quiet = (pending == 0 && known == lastKnown) ? quiet + 1 : 0
                     lastLocal = local
                     lastKnown = known
-                    if pending == 0 { self.cloudSync?.problem = nil }
+                    if pending == 0 { self.cloudSync?.problem = self.conflictProblem }
                     // Off screen: done once nothing is pending (`enterBackground`).
                     if pending == 0, self.syncingInBackground, !self.syncInFlight {
                         self.finishBackgroundSync()
@@ -301,6 +308,9 @@ extension AppModel {
         pauseCloudSync()
         pendingNoteIDs = []
         placeholderNoteIDs = []
+        unlistedSince = [:]
+        emptyNoteFolders = []
+        conflictProblem = nil
         cloudSync = nil
     }
 

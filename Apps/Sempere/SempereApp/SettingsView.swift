@@ -504,7 +504,7 @@ private struct HistorySettingsSection: View {
             } header: {
                 Text("Thin Now")
             } footer: {
-                Text("The first applies the setting above; the second ignores it and removes every autosave except the newest save of each editing session. Both keep every saved and imported version, and show what they would remove before anything is.")
+                Text("The first applies the setting above; the second ignores it and removes every autosave, keeping only saved and imported versions and the newest version of each note. Both show what they would remove before anything is.")
             }
         }
     }
@@ -812,7 +812,7 @@ struct ThinningPreviewView: View {
     static func sentence(_ r: ThinningReport, done: Bool) -> String {
         guard !r.isEmpty else {
             if case .allButCheckpoints = r.rule {
-                return String(localized: "Nothing to remove: every note keeps only checkpoints and the newest save of each editing session.")
+                return String(localized: "Nothing to remove: every note keeps only checkpoints and its newest version.")
             }
             return String(localized: "Nothing to remove: no autosave is old enough to be thinned.")
         }
@@ -903,7 +903,7 @@ extension ThinningRule {
             return String(localized: "Removes autosaves older than \(age). Keeps every checkpoint (saved and imported versions), the newest save of each editing session, the note's newest version and everything from the last \(age).",
                           comment: "Thinning rule explanation; both values are the same age, “30 days”, “1 year”…")
         case .allButCheckpoints:
-            return String(localized: "Removes every autosave, however recent, except the newest save of each editing session. Keeps every checkpoint (saved and imported versions) and the note's newest version.")
+            return String(localized: "Removes every autosave, however recent. Keeps every checkpoint (saved and imported versions) and the note's newest version.")
         }
     }
 }

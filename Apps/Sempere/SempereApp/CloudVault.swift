@@ -104,6 +104,11 @@ enum CloudVault {
         var request: @Sendable (CloudScan.Item) throws -> Void
         /// Where the files come from, for the texts (a partial WebDAV copy's fetcher names its server).
         var source = CloudSource.iCloudDrive
+        /// The versions iCloud kept of the file or folder at the URL from a conflict
+        /// (`NSFileVersion.unresolvedConflictVersionsOfItem`); none outside iCloud.
+        var conflicts: @Sendable (URL) -> [CloudConflictVersion] = { _ in [] }
+        /// Marks those versions of the item resolved and removes them (after their content was merged).
+        var resolve: @Sendable (URL, [CloudConflictVersion]) throws -> Void = { _, _ in }
 
         static let live = Hooks(isUbiquitous: { CloudVault.isUbiquitous($0) },
                                 state: { CloudVault.state(of: $0) },
@@ -111,7 +116,8 @@ enum CloudVault {
             do { try FileManager.default.startDownloadingUbiquitousItem(at: item.url) } catch {
                 throw CloudError.failed(name: item.url.lastPathComponent, reason: error.localizedDescription)
             }
-        })
+        }, conflicts: { CloudConflicts.liveConflicts(of: $0) },
+           resolve: { try CloudConflicts.liveResolve($0, $1) })
     }
 
     /// Throws `noteNotLocal` unless every revision file of note `id` is
