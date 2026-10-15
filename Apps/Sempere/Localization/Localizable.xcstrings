@@ -8054,6 +8054,18 @@
         }
       }
     },
+    "Item Actions" : {
+      "comment" : "Button next to a selected item on the page: opens its menu (copy, duplicate, rotate, delete…)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acciones del elemento"
+          }
+        }
+      }
+    },
     "Its latest changes could not be saved, so it was not exported." : {
       "comment" : "Export: a note open in an editor whose changes failed to save is left out",
       "extractionState" : "manual",
@@ -11546,6 +11558,18 @@
         }
       }
     },
+    "Play Video" : {
+      "comment" : "Button over a video clip on the page: plays it",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproducir vídeo"
+          }
+        }
+      }
+    },
     "Play or pause the recording" : {
       "comment" : "Help tag in the player",
       "extractionState" : "manual",
@@ -14042,14 +14066,14 @@
         }
       }
     },
-    "Select images, text boxes, PDF pages and videos to move, resize, crop, replace or delete them. While drawing: tap one with the lasso, hold a finger on it, or right-click it" : {
+    "Select images, text boxes, PDF pages and videos to move, resize, crop, replace or delete them. While drawing: tap one with a finger or the lasso, hold a finger on it for its menu, or right-click it" : {
       "comment" : "Tooltip of the item selection toggle",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Seleccionar imágenes, cuadros de texto, páginas PDF y vídeos para moverlos, redimensionarlos, recortarlos, sustituirlos o eliminarlos. Mientras dibujas: toca uno con el lazo, mantén un dedo sobre él o haz clic secundario en él"
+            "value" : "Seleccionar imágenes, cuadros de texto, páginas PDF y vídeos para moverlos, redimensionarlos, recortarlos, sustituirlos o eliminarlos. Mientras dibujas: toca uno con un dedo o con el lazo, mantén un dedo sobre él para ver su menú o haz clic secundario en él"
           }
         }
       }

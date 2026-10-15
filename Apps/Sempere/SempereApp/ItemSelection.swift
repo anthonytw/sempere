@@ -39,19 +39,25 @@ struct ItemSelectionModel {
         case resize(UUID, ItemFrames.Handle)
     }
 
-    /// What a tap does.
+    /// What a tap does. A tap never shows the item's menu: that is a held
+    /// finger's, a secondary click's or the selection's menu button's
+    /// (TestFlight 1.0.0: a menu that came up on every tap floated over the
+    /// page and came back at the next tap).
     enum Tap: Equatable {
-        /// Select this item (and show its menu).
+        /// Select this item.
         case select(UUID)
-        /// The tap is on the selected item: show its menu again.
-        case menu(UUID)
+        /// The tap is on the selected item (not a text box being edited): it stays selected.
+        case keep(UUID)
         /// The tap is on the selected text box: type in it.
         case edit(UUID)
         /// The tap is beside the selection: drop it.
         case clear
         /// Nothing selected and nothing hit: the page's own action (a new
-        /// text box with the text tool, Paste in selection mode).
+        /// text box with the text tool).
         case empty
+        /// Nothing selected, and the tap is on an item the scope leaves out (a
+        /// picture or a clip under the text tool): nothing, not a new box on it.
+        case ignore
     }
 
     /// The items `scope` lets a touch pick.
@@ -64,15 +70,18 @@ struct ItemSelectionModel {
 
     /// What a tap at `p` does: the first tap on an item selects it, a tap
     /// on the selected one edits a text box (so a double tap edits it from
-    /// scratch) or shows the menu of any other kind; a tap beside the
-    /// selection clears it, and only a tap with nothing selected is the
-    /// page's. `editable` false (a read-only note) never edits.
+    /// scratch) and keeps any other kind selected; a tap beside the
+    /// selection clears it, and only a tap with nothing selected and no item
+    /// under it is the page's. `editable` false (a read-only note) never edits.
     func tap(at p: ItemFrames.Point, items: [Item], zoom: Double, editable: Bool = true) -> Tap {
         guard let hit = Self.hit(p, items: candidates(items), zoom: zoom) else {
-            return selected == nil ? .empty : .clear
+            if selected != nil { return .clear }
+            // A content item the scope leaves out is not empty page (a background, a PDF page, is).
+            let other = Self.hit(p, items: items.filter { !$0.layer.isBackground }, zoom: zoom)
+            return other == nil ? .empty : .ignore
         }
         guard hit.id == selected else { return .select(hit.id) }
-        return editable && hit.kind == .text && hit.text != nil ? .edit(hit.id) : .menu(hit.id)
+        return editable && hit.kind == .text && hit.text != nil ? .edit(hit.id) : .keep(hit.id)
     }
 
     /// The handles the selected `item` shows and takes (`ItemFrames.handles`).
@@ -294,16 +303,24 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
     private let rotate = UIRotationGestureRecognizer()
     /// The item a two-finger turn is turning, and the turn so far (degrees clockwise).
     private var turning: (item: Item, degrees: Double)?
-    /// Outside selection mode: a finger tap on a video item plays it, when fingers do not draw.
-    private let videoTap = UITapGestureRecognizer()
+    /// While drawing: a finger tap on an item selects it, when fingers do not draw (a tap selects,
+    /// as a click does on a Mac; only a clip's or a card's own button plays it).
+    private let itemTap = UITapGestureRecognizer()
     /// The play/pause buttons of the page's audio cards (format.md §8.2.9).
     private let audioControls = AudioCardControls()
+    /// The play buttons of the page's videos (format.md §8.2.7).
+    private let videoButtons = VideoPlayButtons()
+    /// The selected item's menu and Delete buttons (iPad).
+    let bar = ItemSelectionBar()
     /// The note's recordings and what the player plays, for the cards' buttons (`PageCanvasView.Coordinator.apply`).
     var recordings: [Recording] = []
     var playing: AudioPlayState?
     /// While drawing with the lasso: a tap on an item picks it.
     private let lassoTap = UITapGestureRecognizer()
-    /// While drawing: a finger held on an item picks it (when fingers do not draw).
+    /// A finger held on an item selects it and shows its menu: while drawing (when fingers do not
+    /// draw), in selection mode and with the text tool (the Pencil too, then). Held on the empty
+    /// page in selection mode it offers Paste. PencilKit's own long press ("Select All", "Insert
+    /// Space") waits for it (`shouldBeRequiredToFailBy`), so a hold on an item shows the item's menu.
     private let hold = UILongPressGestureRecognizer()
     /// Any time: a secondary click (right button, two-finger click) on an item picks it and shows its menu.
     private let secondaryClick = UITapGestureRecognizer()
@@ -346,6 +363,9 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         self.canvas = canvas
         self.itemLayer = itemLayer
         canvas.addSubview(overlay)
+        canvas.addSubview(bar)
+        bar.menuElements = { [weak self] in self?.menuElements() ?? [] }
+        bar.onDelete = { [weak self] in self?.deleteSelection() }
         tap.addTarget(self, action: #selector(tapped(_:)))
         pan.addTarget(self, action: #selector(panned(_:)))
         pan.maximumNumberOfTouches = 1
@@ -355,30 +375,34 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
             g.isEnabled = false
             canvas.addGestureRecognizer(g)
         }
-        videoTap.addTarget(self, action: #selector(videoTapped(_:)))
-        videoTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        itemTap.addTarget(self, action: #selector(itemTapped(_:)))
+        itemTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         lassoTap.addTarget(self, action: #selector(lassoTapped(_:)))
         hold.addTarget(self, action: #selector(held(_:)))
-        hold.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        hold.allowedTouchTypes = [UITouch.TouchType.direct, .pencil].map { NSNumber(value: $0.rawValue) }
         hold.minimumPressDuration = 0.45
         secondaryClick.addTarget(self, action: #selector(secondaryClicked(_:)))
         secondaryClick.buttonMaskRequired = .secondary
-        for g in [videoTap, lassoTap, hold, secondaryClick] as [UIGestureRecognizer] {
+        for g in [itemTap, lassoTap, hold, secondaryClick] as [UIGestureRecognizer] {
             g.cancelsTouchesInView = false
             g.delegate = self
             canvas.addGestureRecognizer(g)
         }
         audioControls.attach(to: canvas)
+        videoButtons.attach(to: canvas)
         let menu = UIEditMenuInteraction(delegate: self)
         canvas.addInteraction(menu)
         self.menu = menu
     }
 
-    /// Selection on or off, for `scope`; off clears the selection.
+    /// Selection on or off, for `scope`; off clears the selection. While it is on, PencilKit's
+    /// own long press ("Select All", "Insert Space": nothing to select or move in this mode) is
+    /// off, so a hold is the item's.
     func setActive(_ active: Bool, scope: ItemSelectionModel.Scope = .all) {
         tap.isEnabled = active
         pan.isEnabled = active
         rotate.isEnabled = active
+        if let canvas { setSystemLongPresses(in: canvas, enabled: !active) }
         if model.scope != scope {
             model.scope = scope
             if let id = model.selected, !items.contains(where: { $0.id == id && scope.includes($0) }) { select(nil) }
@@ -387,6 +411,18 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
     }
 
     var isActive: Bool { tap.isEnabled }
+
+    /// Turns the menu long presses PencilKit keeps on the canvas and its inner views
+    /// (`isSystemLongPress`) on or off.
+    private func setSystemLongPresses(in canvas: UIView, enabled: Bool) {
+        var views: [UIView] = [canvas]
+        while let view = views.popLast() {
+            for g in view.gestureRecognizers ?? [] where Self.isSystemLongPress(g, ours: self) && g.isEnabled != enabled {
+                g.isEnabled = enabled
+            }
+            views.append(contentsOf: view.subviews)
+        }
+    }
 
     /// The note or page on the canvas changed.
     func reset(editor: NoteEditor, pageID: UUID, undoManager: UndoManager?) {
@@ -420,13 +456,21 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         if id == nil, had != nil { onCleared?() }
     }
 
-    /// Picks `id` as a lasso tap, a held finger or a secondary click does:
-    /// the host's transient selection first, then the item and its menu.
-    func pick(_ id: UUID) {
+    /// Picks `id` as a finger or lasso tap, a held finger or a secondary click
+    /// does: the host's transient selection first, then the item, and its
+    /// menu when `menu` (a held finger, a secondary click; never a tap).
+    func pick(_ id: UUID, menu: Bool = true) {
         if !isActive { onPick?() }
         guard isActive else { return }
         select(id)
-        presentMenu()
+        if menu { presentMenu() }
+    }
+
+    /// The page scrolled or zoomed under the selection: its menu goes (it would float over
+    /// another part of the page).
+    func viewMoved() {
+        guard drag == nil, turning == nil else { return }
+        dismissMenu()
     }
 
     /// The recording audio item `item` shows (format.md §8.2.9: by id, else a restored copy), if the note has it.
@@ -454,6 +498,14 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         }
         audioControls.layout(shown, recordings: recordings, playing: playing, zoom: zoom,
                              hidden: itemLayer?.hiddenItem, toggle: isActive ? nil : commands.toggleRecording)
+        var playVideo: (@MainActor (Item) -> Void)?
+        if !isActive, let play = commands.play {
+            playVideo = { [weak self] item in
+                guard let pageID = self?.pageID else { return }
+                play(item, pageID)
+            }
+        }
+        videoButtons.layout(shown, zoom: zoom, hidden: itemLayer?.hiddenItem, play: playVideo)
         guard let id = model.selected, let item = items.first(where: { $0.id == id }) else {
             if model.selected != nil, drag == nil {
                 model.selected = nil
@@ -461,12 +513,23 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
                 onCleared?()
             }
             overlay.show(frame: nil, rotation: nil, zoom: zoom, handles: [])
+            bar.show(around: nil, in: .zero, canDelete: false)
             return
         }
         let frame = itemLayer?.shownFrame(of: id) ?? item.frame
-        overlay.show(frame: frame, rotation: turning?.item.id == id ? (item.rotation ?? 0) + (turning?.degrees ?? 0) : item.rotation,
-                     zoom: zoom,
+        let rotation = turning?.item.id == id ? (item.rotation ?? 0) + (turning?.degrees ?? 0) : item.rotation
+        overlay.show(frame: frame, rotation: rotation, zoom: zoom,
                      handles: editor?.canEditItems == true ? ItemSelectionModel.handles(for: item) : [])
+        // The bar steps aside while the item moves or turns; a Mac has the secondary click and the menus instead.
+        if Platform.isMac || drag != nil || turning != nil {
+            bar.show(around: nil, in: .zero, canDelete: false)
+        } else {
+            let b = ItemFrames.bounds(frame, rotation: rotation)
+            let z = Double(zoom)
+            bar.show(around: CGRect(x: b.x * z, y: b.y * z, width: b.w * z, height: b.h * z),
+                     in: canvas?.contentSize ?? .zero, canDelete: editor?.canEditItems == true)
+            canvas?.bringSubviewToFront(bar)
+        }
     }
 
     #if DEBUG
@@ -491,12 +554,16 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         // lists only its strokes as the canvas's accessibility children, so a test cannot read the text view.
         canvas.accessibilityValue = "zoom=\(String(format: "%.3f", Double(zoom)));offset=\(n(Double(canvas.contentOffset.x))),"
             + "\(n(Double(canvas.contentOffset.y)));width=\(n(Double(canvas.bounds.width)))"
-            + ";edits=\(editor?.itemRevisions[pageID] ?? 0);selected=\(selected);items="
+            + ";edits=\(editor?.itemRevisions[pageID] ?? 0);selected=\(selected);menu=\(menuShown ? 1 : 0)"
+            + ";bar=\(bar.isHidden ? 0 : 1);palette=\(debugPalette() ? 1 : 0);items="
             + list.joined(separator: "|") + (debugTyping().map { ";typing=" + $0 } ?? "")
     }
 
     /// The text of the box being typed in on this page, if any (`debugReport`).
     var debugTyping: () -> String? = { nil }
+
+    /// Whether this canvas has the focus with its palette up (`debugReport`).
+    var debugPalette: () -> Bool = { false }
 
     /// Writes the report again (the text being typed changed).
     func debugRefreshReport() { debugReport() }
@@ -505,9 +572,9 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
     // MARK: Gestures
 
     func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
-        if g === videoTap { return videoUnderFingerTap(g) != nil }
+        if g === itemTap { return !isActive && canPick() && !fingersDraw && itemHit(g) != nil }
         if g === lassoTap { return !isActive && lassoSelected() && canPick() && itemHit(g) != nil }
-        if g === hold { return !isActive && canPick() && !fingersDraw && itemHit(g) != nil }
+        if g === hold { return holdTarget(g) != nil }
         if g === secondaryClick { return editor != nil && (isActive || canPick()) }
         if g === rotate { return turnTarget(g) != nil }
         guard g === pan else { return true }
@@ -516,24 +583,43 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         return model.drag(at: pagePoint(g), items: items, zoom: Double(zoom)) != nil
     }
 
+    /// While drawing, a held Pencil is ink: only a finger holds an item then. A touch on a
+    /// button (a card's, a clip's, the selection bar's) or in a text box being typed in is theirs.
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        guard g === hold || g === itemTap else { return true }
+        var view = touch.view
+        while let v = view, v !== canvas {
+            if v is UIControl || v is UITextView { return false }
+            view = v.superview
+        }
+        return g !== hold || touch.type != .pencil || isActive
+    }
+
     func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
         // Picking while drawing never stops PencilKit's own gestures (the lasso still lassoes ink).
-        g === videoTap || g === lassoTap || g === hold || g === secondaryClick || g === rotate
+        g === itemTap || g === lassoTap || g === hold || g === secondaryClick || g === rotate
     }
 
     /// On a Mac a pointer drag on an item is the item's: the page's scroll (the canvas's own, or
     /// the paged stack's, which takes the pointer while nothing draws) waits until the item drag
     /// has failed (it fails at once off an item), instead of starting with the same mouse event
     /// and keeping the drag from ever beginning (TestFlight 1.0.0). The iPad keeps its behaviour.
+    ///
+    /// PencilKit's own long press (the "Select All" / "Insert Space" bar, TestFlight 1.0.0: it came
+    /// up instead of the item's menu) waits for the hold to fail, which it does at once off an item.
     func gestureRecognizer(_ g: UIGestureRecognizer, shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
+        if g === hold { return Self.isSystemLongPress(other, ours: self) }
         guard Platform.isMac, g === pan else { return false }
         return other === canvas?.panGestureRecognizer || other === scroller?.panGestureRecognizer
     }
 
-    /// Whether a click shows the item's menu: on the iPad a tap selects and shows it; on a Mac
-    /// the menu is the secondary click's (a menu popping up on every click takes the next press,
-    /// so a drag right after selecting did nothing: TestFlight 1.0.0).
-    private var clickShowsMenu: Bool { !Platform.isMac }
+    /// A long press that shows a menu (PencilKit's own, on the canvas or its inner views): one
+    /// with a hold time. The app's long presses that draw or erase (`ObjectEraserController`'s)
+    /// begin at once and never wait.
+    static func isSystemLongPress(_ g: UIGestureRecognizer, ours: ItemSelectionController) -> Bool {
+        guard let press = g as? UILongPressGestureRecognizer, press !== ours.hold else { return false }
+        return press.minimumPressDuration > 0.1
+    }
 
     /// Whether a finger draws on this canvas (then a held finger is ink, not a pick).
     private var fingersDraw: Bool {
@@ -546,34 +632,51 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         ItemSelectionModel.hit(pagePoint(g), items: items, zoom: Double(zoom))
     }
 
-    /// The video (or audio card) under a finger tap in drawing mode: only when Play is wired,
-    /// selection mode is off, and fingers do not draw on this canvas (else the tap is ink). A tap on a
-    /// card's button is the button's (UIKit gives a control's tap to it, not to this recognizer).
-    private func videoUnderFingerTap(_ g: UIGestureRecognizer) -> Item? {
-        guard !isActive, !fingersDraw, let hit = itemHit(g) else { return nil }
-        switch hit.kind {
-        case .video: return commands.play == nil ? nil : hit
-        case .audio: return commands.toggleRecording == nil ? nil : hit
-        default: return nil
+    /// What a held finger (or, with selection on, the Pencil) picks: an item, or the empty page
+    /// for Paste in selection mode; nil: the hold is not ours (ink, scrolling, PencilKit's).
+    private enum HoldTarget { case item(UUID), page }
+
+    private func holdTarget(_ g: UIGestureRecognizer) -> HoldTarget? {
+        guard editor != nil else { return nil }
+        if isActive {
+            if let hit = ItemSelectionModel.hit(pagePoint(g), items: model.candidates(items), zoom: Double(zoom)) {
+                return .item(hit.id)
+            }
+            return scope == .all && commands.canPaste() && editor?.canEditItems == true ? .page : nil
         }
+        guard canPick(), !fingersDraw, let hit = itemHit(g) else { return nil }
+        return .item(hit.id)
     }
 
-    @objc private func videoTapped(_ g: UITapGestureRecognizer) {
-        guard let item = videoUnderFingerTap(g), let pageID else { return }
-        if item.kind == .audio {
-            if let recording = shownRecording(item) { commands.toggleRecording?(recording) }
-        } else {
-            commands.play?(item, pageID)
-        }
+    @objc private func itemTapped(_ g: UITapGestureRecognizer) {
+        guard !isActive, let hit = itemHit(g) else { return }
+        pick(hit.id, menu: false)
     }
 
     @objc private func lassoTapped(_ g: UITapGestureRecognizer) {
-        if let hit = itemHit(g) { pick(hit.id) }
+        if let hit = itemHit(g) { pick(hit.id, menu: false) }
     }
 
+    /// A hold is under way, or just ended: the tap the same touch may still end as is not a tap.
+    private var holding = false
+
     @objc private func held(_ g: UILongPressGestureRecognizer) {
-        guard g.state == .began, let hit = itemHit(g) else { return }
-        pick(hit.id)
+        switch g.state {
+        case .began: holding = true
+        case .ended, .cancelled, .failed:
+            // After this turn of the run loop: a tap recognized at the same touch's end comes first.
+            DispatchQueue.main.async { [weak self] in self?.holding = false }
+            return
+        default: return
+        }
+        guard let target = holdTarget(g) else { return }
+        switch target {
+        case .item(let id):
+            pick(id)
+        case .page:
+            select(nil)
+            presentMenu(at: g.location(in: canvas))
+        }
     }
 
     @objc private func secondaryClicked(_ g: UITapGestureRecognizer) {
@@ -585,14 +688,17 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         }
     }
 
+    /// A tap selects and never shows the menu (a held finger, a secondary click or the menu
+    /// button does); any tap dismisses a menu that is up.
     @objc private func tapped(_ g: UITapGestureRecognizer) {
+        guard !holding else { return }   // the end of a hold, which showed the menu
+        dismissMenu()
         let p = pagePoint(g)
         switch model.tap(at: p, items: items, zoom: Double(zoom), editable: editor?.canEditItems == true) {
         case .select(let id):
             select(id)
-            if clickShowsMenu { presentMenu() }
-        case .menu:
-            if clickShowsMenu { presentMenu() }
+        case .keep, .ignore:
+            break
         case .edit(let id):
             guard let pageID, let item = editor?.item(id, on: pageID), let edit = onEditText else { return }
             select(nil)
@@ -600,11 +706,7 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         case .clear:
             select(nil)
         case .empty:
-            if let empty = onEmptyTap {
-                empty(p)
-            } else if clickShowsMenu, commands.canPaste(), editor?.canEditItems == true {
-                presentMenu(at: g.location(in: canvas))
-            }
+            onEmptyTap?(p)
         }
     }
 
@@ -719,6 +821,25 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
 
     private func dismissMenu() { menu?.dismissMenu() }
 
+    /// Whether the item's (or Paste's) edit menu is up.
+    private(set) var menuShown = false
+
+    func editMenuInteraction(_ interaction: UIEditMenuInteraction, willPresentMenuFor configuration: UIEditMenuConfiguration,
+                             animator: any UIEditMenuInteractionAnimating) {
+        menuShown = true
+        #if DEBUG
+        debugReport()
+        #endif
+    }
+
+    func editMenuInteraction(_ interaction: UIEditMenuInteraction, willDismissMenuFor configuration: UIEditMenuConfiguration,
+                             animator: any UIEditMenuInteractionAnimating) {
+        menuShown = false
+        #if DEBUG
+        debugReport()
+        #endif
+    }
+
     /// The selected item's bounds in canvas coordinates.
     private var selectedRect: CGRect? {
         guard let id = model.selected, let item = items.first(where: { $0.id == id }) else { return nil }
@@ -734,6 +855,13 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
 
     func editMenuInteraction(_ interaction: UIEditMenuInteraction, menuFor configuration: UIEditMenuConfiguration,
                              suggestedActions: [UIMenuElement]) -> UIMenu? {
+        let elements = menuElements()
+        return elements.isEmpty ? nil : UIMenu(children: elements)
+    }
+
+    /// The selected item's menu (`ItemMenu`), or Paste alone with nothing selected: the held
+    /// finger's and secondary click's menu, and the selection bar's menu button's.
+    func menuElements() -> [UIMenuElement] {
         let editable = editor?.canEditItems == true
         let item = model.selected.flatMap { id in pageID.flatMap { editor?.item(id, on: $0) } }
         let recording = item.flatMap(shownRecording)
@@ -745,8 +873,7 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         let entries = ItemMenu.entries(for: item, editable: editable, canPlay: commands.play != nil, canCrop: commands.crop != nil,
                                        canReplace: commands.replace != nil, canPaste: commands.canPaste(),
                                        canEditMath: commands.editMath != nil, audio: audio)
-        let elements = entries.compactMap { menuElement($0, item: item) }
-        return elements.isEmpty ? nil : UIMenu(children: elements)
+        return entries.compactMap { menuElement($0, item: item) }
     }
 
     private func menuElement(_ entry: ItemMenu.Entry, item: Item?) -> UIMenuElement? {

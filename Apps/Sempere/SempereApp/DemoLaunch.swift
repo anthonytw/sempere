@@ -23,6 +23,8 @@ import UIKit
 /// - `SEMPERE_DEMO_MAC_WINDOW`: `WIDTHxHEIGHT` in points, Mac Catalyst only.
 /// - `SEMPERE_DEBUG_COLUMNS`: `all`, `doubleColumn`, `detailOnly`, or `stored` to keep the
 ///   stored (with `SEMPERE_DEBUG_FRESH`, the default) layout (`DebugLaunch`).
+/// - `SEMPERE_DEBUG_PENCIL_ONLY`: the canvases draw with the Pencil only, as on an iPad with a
+///   paired Pencil, so a simulated finger taps, holds and scrolls (`IPadCanvasUITests`).
 enum DemoLaunch {
     static var isActive: Bool { DebugLaunch.environment["SEMPERE_DEMO"] != nil }
 

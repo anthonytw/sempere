@@ -135,3 +135,77 @@ final class AudioCardButton: UIButton {
         toolTip = accessibilityLabel
     }
 }
+
+/// The play buttons of a page's video items (format.md §8.2.7): a clear
+/// button over each clip's play mark (`ItemGeometry.playMark`: a disc of
+/// `min(48, 0.3 · min(w, h))` at the frame's center), at least 44 points on
+/// screen. A tap on the clip elsewhere selects it; only this button plays it
+/// (TestFlight 1.0.0: a tap anywhere on a clip played it, so it could not be
+/// selected). Shown where the audio cards' buttons are: outside selection
+/// mode, while Play is wired.
+@MainActor
+final class VideoPlayButtons {
+    private weak var canvas: UIScrollView?
+    private var buttons: [UUID: VideoPlayButton] = [:]
+    private var play: (@MainActor (Item) -> Void)?
+
+    func attach(to canvas: UIScrollView) {
+        self.canvas = canvas
+    }
+
+    /// Places a button on every video of `items` (frames as shown); `play` nil hides them all.
+    func layout(_ items: [Item], zoom: CGFloat, hidden: UUID?, play: (@MainActor (Item) -> Void)?) {
+        self.play = play
+        var keep: Set<UUID> = []
+        if play != nil, let canvas {
+            for item in items where item.kind == .video && item.id != hidden
+                && ItemFrames.isDrawable(item.frame, rotation: item.rotation) {
+                let f = item.frame
+                let d = min(48, 0.3 * min(f.w, f.h))
+                guard d.isFinite, d > 0 else { continue }
+                keep.insert(item.id)
+                let button = buttons[item.id] ?? makeButton(for: item.id, in: canvas)
+                button.item = item
+                let side = max(d * Double(zoom), 44)
+                button.bounds = CGRect(x: 0, y: 0, width: side, height: side)
+                button.center = CGPoint(x: (f.x + f.w / 2) * Double(zoom), y: (f.y + f.h / 2) * Double(zoom))
+                canvas.bringSubviewToFront(button)
+            }
+        }
+        for (id, button) in buttons where !keep.contains(id) {
+            button.removeFromSuperview()
+            buttons[id] = nil
+        }
+    }
+
+    private func makeButton(for id: UUID, in canvas: UIScrollView) -> VideoPlayButton {
+        let button = VideoPlayButton()
+        button.addAction(UIAction { [weak self, weak button] _ in
+            guard let self, let item = button?.item else { return }
+            self.play?(item)
+        }, for: .primaryActionTriggered)
+        canvas.addSubview(button)
+        buttons[id] = button
+        return button
+    }
+
+    /// The buttons on the page, by item id (tests).
+    var shownButtons: [UUID: VideoPlayButton] { buttons }
+}
+
+/// A clip's play button: clear, over the play mark the item layer draws.
+final class VideoPlayButton: UIButton {
+    var item: Item?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        accessibilityIdentifier = "videoPlayButton"
+        accessibilityLabel = String(localized: "Play Video", comment: "Button over a video clip on the page: plays it")
+        toolTip = accessibilityLabel
+        if Platform.isMac { isPointerInteractionEnabled = true }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+}

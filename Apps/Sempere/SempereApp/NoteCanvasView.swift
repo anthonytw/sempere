@@ -141,10 +141,10 @@ struct EditorView: View {
     let editor: NoteEditor
     @Environment(WindowUI.self) private var ui
     @AppModelEnvironment private var model
-    /// Selection mode for placed items (images, text boxes, PDF pages).
-    @State private var selectingItems = false
-    /// The text tool: a tap edits a text box or starts a new one (`TextBoxEditorController`).
-    @State private var addingText = false
+    /// Selection mode for placed items (images, text boxes, PDF pages), or the
+    /// text tool (a tap edits a text box or starts a new one, once:
+    /// `TextBoxEditorController`, `CanvasModes`), or drawing.
+    @State private var modes = CanvasModes()
     /// PencilKit's palette floats above sheets; it hides while a notice or the tour is up.
     @AppStorage(ToolPalette.visibleKey) private var paletteVisible = true
     @AppStorage(ToolPalette.compactKey) private var paletteCompact = false
@@ -201,8 +201,8 @@ struct EditorView: View {
                               drawingSuspended: PhoneReading.drawingSuspended(isPhone: Platform.isPhone, annotating: annotating),
                               generation: editor.canvasGeneration,
                               itemSource: model.itemLayerSource, itemCommands: itemCommands,
-                              selectingItems: selectingItems, onSelectingItemsEnded: { selectingItems = false },
-                              addingText: addingText, onAddingTextEnded: { addingText = false },
+                              selectingItems: modes.selectingItems, onSelectingItemsEnded: { modes.selectingItems = false },
+                              addingText: modes.addingText, onAddingTextEnded: { modes.textToolEnded($0) },
                               onDrop: editor.isReadOnly ? nil : { providers, page, point in
                                   EditorInsert.add(providers, to: editor, page: page, at: point, model: model, ui: ui, state: insert)
                               })
@@ -214,8 +214,8 @@ struct EditorView: View {
                                drawingSuspended: PhoneReading.drawingSuspended(isPhone: Platform.isPhone, annotating: annotating),
                                generation: editor.canvasGeneration,
                                itemSource: model.itemLayerSource, itemCommands: itemCommands,
-                               selectingItems: selectingItems, onSelectingItemsEnded: { selectingItems = false },
-                               addingText: addingText, onAddingTextEnded: { addingText = false },
+                               selectingItems: modes.selectingItems, onSelectingItemsEnded: { modes.selectingItems = false },
+                               addingText: modes.addingText, onAddingTextEnded: { modes.textToolEnded($0) },
                                onDrop: editor.isReadOnly ? nil : { providers, page, point in
                                    EditorInsert.add(providers, to: editor, page: page, at: point, model: model, ui: ui, state: insert)
                                })
@@ -280,8 +280,7 @@ struct EditorView: View {
         }
         .onChange(of: editor.noteID) {
             annotating = PhoneReading.annotatingAfterNoteChange()
-            selectingItems = false
-            addingText = false
+            modes.reset()
             showingTranscript = nil
             remoteNoticeFor = 0
         }
@@ -290,12 +289,10 @@ struct EditorView: View {
             guard let request else { return }
             ui.toolRequest = nil
             switch request {
-            case .text: if !editor.isReadOnly, editor.currentPage != nil { addingText.toggle() }
-            case .select: if showsItemSelection { selectingItems.toggle() }
+            case .text: if !editor.isReadOnly, editor.currentPage != nil { modes.addingText.toggle() }
+            case .select: if showsItemSelection { modes.selectingItems.toggle() }
             }
         }
-        .onChange(of: selectingItems) { if selectingItems { addingText = false } }
-        .onChange(of: addingText) { if addingText { selectingItems = false } }
         .sheet(item: $showingTranscript) { TranscriptView(editor: editor, recording: $0) }
         // The note's recordings, on or off its pages (Recordings…, Note > Recordings… on the Mac).
         .sheet(isPresented: $ui.showingRecordings) {
@@ -411,7 +408,7 @@ struct EditorView: View {
     }
 
     private var insertMenu: some View {
-        InsertMenu(editor: editor, state: insert, onAddText: { addingText = true }) { providers in
+        InsertMenu(editor: editor, state: insert, onAddText: { modes.addingText = true }) { providers in
             EditorInsert.add(providers, to: editor, page: editor.currentPage?.id, at: nil, model: model, ui: ui, state: insert)
         }
     }
@@ -425,15 +422,15 @@ struct EditorView: View {
     }
 
     private var textToolToggle: some View {
-        Toggle("Text", systemImage: "character.textbox", isOn: $addingText)
+        Toggle("Text", systemImage: "character.textbox", isOn: $modes.addingText)
             .toggleStyle(.button)
             .help("Type text: tap the page for a new text box, or a text box to edit it")
     }
 
     private var itemSelectionToggle: some View {
-        Toggle("Select", systemImage: "cursorarrow.rays", isOn: $selectingItems)
+        Toggle("Select", systemImage: "cursorarrow.rays", isOn: $modes.selectingItems)
             .toggleStyle(.button)
-            .help("Select images, text boxes, PDF pages and videos to move, resize, crop, replace or delete them. While drawing: tap one with the lasso, hold a finger on it, or right-click it")
+            .help("Select images, text boxes, PDF pages and videos to move, resize, crop, replace or delete them. While drawing: tap one with a finger or the lasso, hold a finger on it for its menu, or right-click it")
     }
 
     private var pageCounter: some View {
