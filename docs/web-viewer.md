@@ -837,7 +837,8 @@ node scripts/smoke-language.mjs test/fixtures/render.sempere ../Tests/SempereTes
 # config.json modes, the cache (second visit fetches no unchanged file) and the summaries, with timings
 # (run `sempere vault summaries` and `sempere vault index` on a copy of the vault first; LATENCY_MS=40 adds latency):
 node scripts/smoke-cache.mjs COPY_OF_VAULT KEY_FILE
-# all of them, as CI's `web-smoke` job runs them (needs the built CLI: it gives a copy of the sample vault summaries and an index):
+# all of them, as CI's `web-smoke` job runs them (needs the built CLI: it gives a copy of the sample vault summaries and an index);
+# BROWSER=webkit runs them in WebKit, STRESS_HEAVY=1 makes the stress vault large ("Stress tests" below):
 scripts/smoke-all.sh
 ```
 
@@ -920,6 +921,77 @@ Tests (`web/test/`, vitest, Node 22):
 - A seeded fuzz test of the decoders, the merge, the renderer, item layout,
   image headers, transcripts, blob framing, the listing parsers and key files
   (typed errors only), and of the phrase search (ranges stay in the text).
+
+## Stress tests
+
+Large-note checks that need a real browser (owner's audit, package 6: w2/c55, c56, c19 and the
+SVG pixel diff). The fast ones run in CI's `web-smoke` job through `scripts/smoke-all.sh`; the heavy
+ones and WebKit are run by hand (below). Nothing here reads a real vault: the vault is synthetic.
+
+- **The vault** (`scripts/make-stress-fixture.ts OUT_DIR [--pages N] [--strokes N] [--dense N]
+  [--deep N]`, encrypted to the test key; written fresh into a temporary directory, never
+  committed): "Stress: N pages" (letter pages, 20 strokes each), "Stress: pageless N" (one pageless
+  page, N strokes over 40 000 pt), "Stress: pageless dense" (strokes inside 3000 pt: hundreds per
+  band, thousands in the window) and "Stress: N deep pages" (pageless pages of differing depth, so
+  every exact height differs from the provisional one). Fast sizes are 110 pages, 2500 / 2000
+  strokes and 100 deep pages; the heavy ones are 400, 20 000 / 12 000 and 300
+  (`STRESS_HEAVY=1`).
+- **`scripts/smoke-stress.mjs VAULT KEY`** (w2/c55, c56). For each note it opens it, scrolls it
+  with the wheel and prints one `STRESS {json}` line of measurements, then checks them against
+  budgets (`BUDGET_SCALE=2` doubles every time and size budget; heavy mode does by default):
+  open time (click to the first drawn page, 2 s), frame pacing while scrolling (p95 of
+  `requestAnimationFrame` intervals, 100 ms, and the longest, 600 ms), the JS heap after a forced
+  GC and the document nodes at open, in the middle, at the end and back at the top (heap 400 MB,
+  250 000 nodes, and no growth of more than 80 MB between open and the return), that only the
+  pages or bands near the view are in the DOM, the pageless page zoomed out to the minimum (every
+  stroke of the page outlined at once), and that after switching notes no old note view is still
+  alive (WeakRefs to the viewports, after a GC). Typical numbers on an Apple silicon Mac in
+  Chromium, fast sizes: every note opens in 100 to 300 ms, p95 frame 17 ms (the display's), heap
+  8 to 55 MB, 700 to 6000 nodes; heavy sizes: 120 to 850 ms, 130 to 310 MB for 12 000 strokes
+  inside three screens, the worst frame 400 ms while a dense band comes in. The heap checks use
+  Chromium's DevTools protocol and are skipped in WebKit.
+- **Scroll anchoring** (c56, in the same script): the page at the top of the view must not move on
+  screen when pages load and get their exact heights. It is measured as the on-screen jump of that
+  page beyond the distance the wheel moved it (budget 1 px), only at moments when no animation
+  frame callback of the viewer is pending (the viewer moves a page in an idle callback and pans in
+  the next frame; a reading between the two shows a jump that is never painted). Two sessions make
+  the heights change where the check can see it: idle measuring switched off, a jump far down and
+  then wheel steps up draw each page above the view with its new height ("drawn"); idle measuring
+  held back for 700 ms after a jump far down changes the height of every page above the view while
+  the page there is watched ("idle"). Both fail (jumps of 2862 and 61 339 px) when
+  `NoteView.anchored` stops compensating.
+- **`scripts/smoke-pixels.mjs VAULT KEY GOLDEN_DIR [TITLE_REGEX]`** (SVG export against what the
+  browser draws): for each page with a golden (`sempere export --format svg`, as `golden.sh`
+  writes them: `test/golden/render`, `test/golden/sample`, and the stress vault's own export made
+  by `smoke-all.sh`) it serializes the SVG the viewer put in the page, rasterizes it next to the
+  export in the same browser and compares the pixels of the rows that were on screen (a pixel differs when a channel
+  differs by more than 2, and none may: the same engine draws the same geometry the same way).
+  Pages with items are skipped: text, images and PDF pages differ by design ("Limits";
+  `items-crosscheck.test.ts` covers them). Pageless pages are compared band by band as the view
+  scrolls down and back up, which is what checks that the bands' stroke order paints like the whole
+  page (putting a band's strokes in at the end instead of in order differs by 183 pixels).
+- **WebKit** (c19, desktop Safari approximation): `BROWSER=webkit scripts/smoke-all.sh` runs every
+  script that does not need Chromium's DevTools protocol (the touch pan, passkey and passphrase
+  scripts are skipped) in Playwright's WebKit, with the language set to `en-US` as Chromium's
+  headless default is. WebKit's own media-controls stylesheet is refused by the page's
+  `style-src 'self'` and logged; the scripts ignore exactly that message. Playwright's WebKit is
+  not Safari (no iCloud Keychain, no Safari-only privacy features), but it is the same WebCore:
+  layout, SVG, `DecompressionStream`, workers, and, unlike Chromium, no `requestIdleCallback` (the
+  viewer's timer path). `playwright install` can hang here: download the build for the Playwright
+  version in `package-lock.json` (`npx playwright install --dry-run webkit` prints the URL and
+  the directory) and unzip it there, then `touch INSTALLATION_COMPLETE`.
+
+```bash
+cd web && npm ci && npm run build        # and swift build --product sempere, from the repo root
+scripts/smoke-all.sh                     # includes the fast stress run and the pixel diffs
+STRESS_HEAVY=1 scripts/smoke-all.sh      # the large vault (a few minutes)
+BROWSER=webkit scripts/smoke-all.sh      # Playwright WebKit
+# one at a time, against a vault of your own sizes:
+node scripts/make-stress-fixture.ts /tmp/stress.sempere --pages 300 --strokes 10000
+node scripts/smoke-stress.mjs /tmp/stress.sempere ../Tests/SempereTests/Fixtures/sample.key
+STRESS_ONLY=anchor node scripts/smoke-stress.mjs ...   # pages | pageless | dense | anchor
+PIXEL_DUMP=/tmp/pix node scripts/smoke-pixels.mjs test/fixtures/render.sempere ../Tests/SempereTests/Fixtures/sample.key test/golden/render
+```
 
 CI (`.github/workflows/ci.yml`): the `changes` job runs the `web` job (lint,
 typecheck, tests, build) only when `web/` (or the workflow) changes, and the

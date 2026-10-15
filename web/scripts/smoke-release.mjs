@@ -4,14 +4,14 @@
 // viewport are drawn again when they come back, and that nothing failed on the way.
 // Usage: node scripts/smoke-release.mjs VAULT_DIR KEY_FILE
 import { readFileSync } from "node:fs";
-import { launchChromium, openVault, serveVault } from "./smoke-lib.mjs";
+import { launchBrowser, openVault, serveVault } from "./smoke-lib.mjs";
 
 const [vaultDir, keyFile] = process.argv.slice(2);
 const { base, close } = await serveVault({ mounts: [{ prefix: "/dav/", vaultDir }] });
 let failures = 0;
 const check = (ok, what) => { console.log(ok ? "ok  " : "FAIL", what); if (!ok) failures++; };
 
-const browser = await launchChromium();
+const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 1000, height: 500 } });
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));

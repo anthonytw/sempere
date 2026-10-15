@@ -60,7 +60,8 @@ only after every step passed), and something enforces each one:
 - **Extra jobs:** changes to the package run `webdav` (`scripts/test-webdav.sh` against
   wsgidav, pinned in `scripts/webdav-server-requirements.txt`; a skip fails it); changes the
   web viewer reads run `web-smoke` (`web/scripts/smoke-all.sh`, browser smoke tests in
-  Chromium).
+  Chromium, including the large-note stress run, the scroll-anchor check and the pixel diff against
+  the CLI's SVG export; the heavy sizes and WebKit are run by hand, `web-viewer.md` "Stress tests").
 
 ## Launch smoke tests
 
