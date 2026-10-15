@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # The app suites, run on a developer's Mac and recorded on GitHub as commit statuses (docs/ci.md).
 #
-#   scripts/local-ci.sh               # the PR gate: package tests, Mac Catalyst unit tests, iOS compile
-#                                     # check; posts `local/app-tests` (the `main` ruleset requires it)
-#   scripts/local-ci.sh --testflight  # the gate, then every Mac UI test, the Mac launch smoke tests and
-#                                     # the pseudo-language check on the Mac; posts `local/testflight-suite`
+#   scripts/local-ci.sh               # the PR gate: package tests, Mac Catalyst unit tests (the
+#                                     # pseudo-language layout check among them), iOS compile check;
+#                                     # posts `local/app-tests` (the `main` ruleset requires it)
+#   scripts/local-ci.sh --testflight  # the gate, then every Mac UI test and the Mac launch smoke tests;
+#                                     # posts `local/testflight-suite`
 #   scripts/local-ci.sh --release     # all of --testflight, then the iPad and iPhone suites, the iPad UI
-#                                     # tests and the pseudo-language check on the iPad; posts `local/release-sweep`
+#                                     # tests and the pseudo-language UI test on the iPad; posts `local/release-sweep`
 #   scripts/local-ci.sh --no-status   # with any mode: run, but post nothing to GitHub
 #   scripts/local-ci.sh --list        # with any mode: print its steps and status, run nothing
 #
@@ -35,7 +36,7 @@ for arg in "$@"; do
     --release) mode=release ;;
     --no-status) post=false ;;
     --list) list=true ;;
-    -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
     *) echo "$usage" >&2; exit 2 ;;
   esac
 done
@@ -44,18 +45,17 @@ gate_steps=(package mac ios-build)
 steps=("${gate_steps[@]}")
 case "$mode" in
   gate)       context=$gate_context ;;
-  testflight) context=local/testflight-suite; steps+=(mac-ui mac-smoke pseudo-mac) ;;
-  release)    context=local/release-sweep;    steps+=(mac-ui mac-smoke pseudo-mac ipad iphone ipad-ui pseudo) ;;
+  testflight) context=local/testflight-suite; steps+=(mac-ui mac-smoke) ;;
+  release)    context=local/release-sweep;    steps+=(mac-ui mac-smoke ipad iphone ipad-ui pseudo) ;;
 esac
 
 describe() {   # step: what it runs
   case "$1" in
     package)    echo "swift build --build-tests && swift test --parallel" ;;
-    mac)        echo "scripts/app.sh test-mac        (Mac Catalyst unit tests)" ;;
+    mac)        echo "scripts/app.sh test-mac        (Mac Catalyst unit tests, pseudo-language layouts included)" ;;
     ios-build)  echo "scripts/app.sh build-ios       (iOS simulator compile check, no tests)" ;;
     mac-ui)     echo "scripts/app.sh test-mac-ui     (Mac UI tests; screen)" ;;
     mac-smoke)  echo "scripts/app.sh test-mac-smoke  (Mac launch smoke tests; screen)" ;;
-    pseudo-mac) echo "scripts/app.sh pseudo-mac      (pseudo-languages on the Mac, narrow and wide; screen)" ;;
     ipad)       echo "scripts/app.sh test            (iPad simulator unit tests)" ;;
     iphone)     echo "scripts/app.sh test-phone      (iPhone simulator suites)" ;;
     ipad-ui)    echo "scripts/app.sh test-ui         (iPad simulator UI tests)" ;;
@@ -99,7 +99,6 @@ run_step() {
     ios-build)  scripts/app.sh build-ios ;;
     mac-ui)     scripts/app.sh test-mac-ui ;;
     mac-smoke)  scripts/app.sh test-mac-smoke ;;
-    pseudo-mac) scripts/app.sh pseudo-mac ;;
     ipad)       scripts/app.sh test ;;
     iphone)     scripts/app.sh test-phone ;;
     ipad-ui)    scripts/app.sh test-ui ;;
