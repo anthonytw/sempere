@@ -117,9 +117,12 @@ private struct NotebookDragSourceModifier: ViewModifier {
 /// `UIContextMenuInteraction` shows the row's menu (one view, so UIKit
 /// arbitrates the long press: the menu, then a drag when the finger moves).
 /// Taps go through to the row (the list's selection is the collection view's).
-/// It takes drops on the row too (`UIDropInteraction`, the rules of
-/// `SidebarDropDelegate`): on the iPad a drop over a platform view inside a
-/// row never reaches the row's SwiftUI `onDrop`.
+/// It takes drops on the row too (`UIKitSidebarDrop`): on the iPad a drop over
+/// a platform view inside a row never reaches the row's SwiftUI `onDrop`.
+///
+/// The view is clear, so the lift and the menu's highlight show the row's cell
+/// (`SidebarCellPreview`): with the view itself as the preview, a device showed
+/// nothing lifting under the finger and the notebook seemed not to drag.
 private struct UIKitDragHandle: UIViewRepresentable {
     let model: AppModel
     let path: String
@@ -133,73 +136,32 @@ private struct UIKitDragHandle: UIViewRepresentable {
         drag.isEnabled = true
         view.addInteraction(drag)
         view.addInteraction(UIContextMenuInteraction(delegate: context.coordinator))
-        view.addInteraction(UIDropInteraction(delegate: context.coordinator))
+        view.addInteraction(UIDropInteraction(delegate: context.coordinator.drop))
         return view
     }
 
     func updateUIView(_ view: UIView, context: Context) {
         context.coordinator.path = path
         context.coordinator.menu = menu
-        context.coordinator.undoManager = undoManager
+        context.coordinator.drop.target = DropTarget(.notebook(path)) ?? .topLevel
+        context.coordinator.drop.undoManager = undoManager
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(model: model, path: path, menu: menu, undoManager: undoManager) }
 
     @MainActor
-    final class Coordinator: NSObject, UIDragInteractionDelegate, UIContextMenuInteractionDelegate, UIDropInteractionDelegate {
+    final class Coordinator: NSObject, UIDragInteractionDelegate, UIContextMenuInteractionDelegate {
         let model: AppModel
         var path: String
         var menu: [NotebookRowAction]
-        weak var undoManager: UndoManager?
+        /// The row's drops (held here: an interaction keeps its delegate weakly).
+        let drop: UIKitSidebarDrop
 
         init(model: AppModel, path: String, menu: [NotebookRowAction], undoManager: UndoManager?) {
             self.model = model
             self.path = path
             self.menu = menu
-            self.undoManager = undoManager
-        }
-
-        private var target: DropTarget { DropTarget(.notebook(path)) ?? .topLevel }
-
-        private func trace(_ event: String) {
-            #if DEBUG
-            DropTrace.note("\(event) target=\(target) payload=\(model.draggedPayload.map { "\($0)" } ?? "nil") (uikit)")
-            #endif
-        }
-
-        private func ours(_ session: UIDropSession) -> Bool {
-            session.hasItemsConforming(toTypeIdentifiers: SidebarDropDelegate.acceptedTypes.map(\.identifier))
-        }
-
-        func dropInteraction(_ interaction: UIDropInteraction, canHandle session: UIDropSession) -> Bool {
-            let ours = ours(session)
-            trace("validate ours=\(ours)")
-            return ours
-        }
-
-        func dropInteraction(_ interaction: UIDropInteraction, sessionDidUpdate session: UIDropSession) -> UIDropProposal {
-            trace("updated")
-            let allowed = model.acceptsDrop(on: target, carriesAppTypes: ours(session))
-            model.setDropTarget(allowed ? target : nil)
-            return UIDropProposal(operation: allowed ? .copy : .forbidden)   // never .move: `SidebarDrop.proposedOperation`
-        }
-
-        func dropInteraction(_ interaction: UIDropInteraction, sessionDidExit session: UIDropSession) {
-            trace("exited")
-            if model.dropTarget == target { model.setDropTarget(nil) }
-        }
-
-        func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnd session: UIDropSession) {
-            if model.dropTarget == target { model.setDropTarget(nil) }
-        }
-
-        func dropInteraction(_ interaction: UIDropInteraction, performDrop session: UIDropSession) {
-            trace("perform")
-            let providers = session.items.map(\.itemProvider)
-            _ = SidebarDropDelegate.perform(model: model, target: target, undoManager: undoManager,
-                                            carriesAppTypes: ours(session)) { type in
-                providers.first { $0.hasItemConformingToTypeIdentifier(type.identifier) }
-            }
+            drop = UIKitSidebarDrop(model: model, target: DropTarget(.notebook(path)) ?? .topLevel, undoManager: undoManager)
         }
 
         func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
@@ -215,15 +177,144 @@ private struct UIKitDragHandle: UIViewRepresentable {
             }
         }
 
+        func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                    configuration: UIContextMenuConfiguration,
+                                    highlightPreviewForItemWithIdentifier identifier: any NSCopying) -> UITargetedPreview? {
+            SidebarCellPreview.targeted(for: interaction.view)
+        }
+
         func dragInteraction(_ interaction: UIDragInteraction, itemsForBeginning session: UIDragSession) -> [UIDragItem] {
+            #if DEBUG
+            DropTrace.note("lift notebook=\(path) (uikit)")
+            #endif
             let provider = model.beginDrag(.notebook(path), provider: DragPayload.notebook(path).provider())
             let item = UIDragItem(itemProvider: provider)
             item.localObject = path
             return [item]
         }
 
+        func dragInteraction(_ interaction: UIDragInteraction, previewForLifting item: UIDragItem,
+                             session: UIDragSession) -> UITargetedDragPreview? {
+            SidebarCellPreview.drag(for: interaction.view)
+        }
+
+        func dragInteraction(_ interaction: UIDragInteraction, session: UIDragSession,
+                             didEndWith operation: UIDropOperation) {
+            // A drag that went nowhere: forget its payload (`onDrag` drags never say so).
+            if operation == .cancel || operation == .forbidden { model.endDrag() }
+        }
+
         func dragInteraction(_ interaction: UIDragInteraction, sessionAllowsMoveOperation session: UIDragSession) -> Bool {
             true
         }
     }
+}
+
+/// The previews of a sidebar row's UIKit interactions: the row's cell (the
+/// interaction's own view is clear), or nil (UIKit's default) outside one.
+@MainActor
+enum SidebarCellPreview {
+    static func cell(around view: UIView?) -> UIView? {
+        var current = view?.superview
+        while let v = current {
+            if v is UICollectionViewCell || v is UITableViewCell { return v }
+            current = v.superview
+        }
+        return nil
+    }
+
+    static func drag(for view: UIView?) -> UITargetedDragPreview? {
+        guard let cell = cell(around: view), cell.window != nil else { return nil }
+        let parameters = UIDragPreviewParameters()
+        parameters.visiblePath = UIBezierPath(roundedRect: cell.bounds, cornerRadius: 10)
+        return UITargetedDragPreview(view: cell, parameters: parameters)
+    }
+
+    static func targeted(for view: UIView?) -> UITargetedPreview? {
+        guard let cell = cell(around: view), cell.window != nil else { return nil }
+        let parameters = UIPreviewParameters()
+        parameters.visiblePath = UIBezierPath(roundedRect: cell.bounds, cornerRadius: 10)
+        return UITargetedPreview(view: cell, parameters: parameters)
+    }
+}
+
+/// A sidebar row's drops through UIKit (`UIDropInteraction`), with the rules of
+/// `SidebarDropDelegate`: the notebook rows' drag handles and the All Notes
+/// row's `UIKitDropArea`. On the iPad a notebook's drag (a `UIDragInteraction`,
+/// not the list's own) never reached All Notes' SwiftUI `onDrop`, so a
+/// notebook could not be taken out to the top level by dragging.
+@MainActor
+final class UIKitSidebarDrop: NSObject, UIDropInteractionDelegate {
+    let model: AppModel
+    var target: DropTarget
+    weak var undoManager: UndoManager?
+
+    init(model: AppModel, target: DropTarget, undoManager: UndoManager?) {
+        self.model = model
+        self.target = target
+        self.undoManager = undoManager
+    }
+
+    private func trace(_ event: String) {
+        #if DEBUG
+        DropTrace.note("\(event) target=\(target) payload=\(model.draggedPayload.map { "\($0)" } ?? "nil") (uikit)")
+        #endif
+    }
+
+    private func ours(_ session: UIDropSession) -> Bool {
+        session.hasItemsConforming(toTypeIdentifiers: SidebarDropDelegate.acceptedTypes.map(\.identifier))
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, canHandle session: UIDropSession) -> Bool {
+        let ours = ours(session)
+        trace("validate ours=\(ours)")
+        return ours
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidUpdate session: UIDropSession) -> UIDropProposal {
+        trace("updated")
+        let allowed = model.acceptsDrop(on: target, carriesAppTypes: ours(session))
+        model.setDropTarget(allowed ? target : nil)
+        return UIDropProposal(operation: allowed ? .copy : .forbidden)   // never .move: `SidebarDrop.proposedOperation`
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidExit session: UIDropSession) {
+        trace("exited")
+        if model.dropTarget == target { model.setDropTarget(nil) }
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnd session: UIDropSession) {
+        if model.dropTarget == target { model.setDropTarget(nil) }
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, performDrop session: UIDropSession) {
+        trace("perform")
+        let providers = session.items.map(\.itemProvider)
+        _ = SidebarDropDelegate.perform(model: model, target: target, undoManager: undoManager,
+                                        carriesAppTypes: ours(session)) { type in
+            providers.first { $0.hasItemConformingToTypeIdentifier(type.identifier) }
+        }
+    }
+}
+
+/// A clear view over a sidebar row that only takes drops (`UIKitSidebarDrop`), for rows without a
+/// drag handle (All Notes). Taps go through to the row.
+struct UIKitDropArea: UIViewRepresentable {
+    let model: AppModel
+    let target: DropTarget
+    let undoManager: UndoManager?
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .clear
+        view.addInteraction(UIDropInteraction(delegate: context.coordinator))
+        return view
+    }
+
+    func updateUIView(_ view: UIView, context: Context) {
+        context.coordinator.target = target
+        context.coordinator.undoManager = undoManager
+    }
+
+    func makeCoordinator() -> UIKitSidebarDrop { UIKitSidebarDrop(model: model, target: target, undoManager: undoManager) }
 }

@@ -221,6 +221,27 @@ struct DragAndDropTests {
         #expect(!other.canUndo)
     }
 
+    // MARK: feedback (TestFlight 1.0.0: "it is not clear where the note went")
+
+    /// A drop that moved something flashes its target row for a moment; a refused one flashes nothing.
+    @Test func aDropFlashesTheRowItLandedOn() async throws {
+        let (model, ids) = try await NotebookTreeTests.model()
+        let lab = try #require(ids["Lab"])
+        model.landedDropDuration = .milliseconds(200)
+        await model.move(.notebook("Research"), to: .notebook("Research/Lab"), undoManager: nil)
+        #expect(model.landedDrop == nil, "a refused drop")
+
+        await model.move(.notes([lab]), to: .notebook("School"), undoManager: nil)
+        #expect(model.landedDrop?.target == .notebook("School"))
+        let first = model.landedDrop
+        await model.move(.notebook("School"), to: .topLevel, undoManager: nil)
+        #expect(model.landedDrop == nil || model.landedDrop?.target == .notebook("School"), "already at the top: nothing moved")
+        await model.move(.notebook("Research"), to: .notebook("School"), undoManager: nil)
+        #expect(model.landedDrop?.target == .notebook("School"))
+        #expect(model.landedDrop != first, "each drop is a new flash")
+        #expect(await TS.waitUntil { model.landedDrop == nil }, "the flash ends by itself")
+    }
+
     // MARK: the drag session (TestFlight build 6: releasing over a notebook did nothing)
 
     /// A drop inside the app is made from the payload the model recorded when

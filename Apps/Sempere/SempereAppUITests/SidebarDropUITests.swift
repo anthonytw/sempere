@@ -108,6 +108,80 @@ final class SidebarDropUITests: XCTestCase {
         let moved = waitForNotebook(app, note: "Sync design sketch", "Personal")
         trace(app, "note onto notebook")
         XCTAssertTrue(moved, "the dropped note is in Personal")
+        // Where it went is shown: the notebook's row flashes (`AppModel.landedDrop`, traced as `landed`).
+        XCTAssertTrue(traceContains(app, "landed target=notebook(\"Personal\")"), "the target notebook flashed")
+    }
+
+    /// Whether the drop trace mentions `text` (it keeps the last 40 events).
+    @MainActor
+    private func traceContains(_ app: XCUIApplication, _ text: String, timeout: TimeInterval = 10) -> Bool {
+        let label = app.staticTexts["drop-trace"].firstMatch
+        let end = Date().addingTimeInterval(timeout)
+        repeat {
+            if label.exists, label.label.contains(text) { return true }
+            Thread.sleep(forTimeInterval: 0.3)
+        } while Date() < end
+        trace(app, "missing \(text)")
+        return false
+    }
+
+    /// The sidebar cell holding the notebook row `path`.
+    @MainActor
+    private func sidebarCell(_ app: XCUIApplication, _ path: String) -> XCUIElement {
+        app.cells.containing(.any, identifier: "sidebar-notebook-\(path)").firstMatch
+    }
+
+    /// Expands the notebook `path` in the sidebar (its disclosure chevron, at the row's trailing edge,
+    /// outside the drag handle) until `child` shows.
+    @MainActor
+    private func expand(_ app: XCUIApplication, _ path: String, showing child: String) {
+        let cell = sidebarCell(app, path)
+        require(cell, "sidebar cell \(path)", in: app)
+        for _ in 0..<3 where !sidebarRow(app, child).waitForExistence(timeout: 2) {
+            let chevron = cell.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5)).withOffset(CGVector(dx: -18, dy: 0))
+            #if targetEnvironment(macCatalyst)
+            chevron.click()
+            #else
+            chevron.tap()
+            #endif
+        }
+        require(sidebarRow(app, child), "sidebar row \(child)", in: app)
+    }
+
+    /// A notebook inside another, dragged onto All Notes, goes to the top level with its notes
+    /// (TestFlight 1.0.0 on the iPad: notebooks could not be un-nested by dragging).
+    @MainActor
+    func testDroppingANestedNotebookOnAllNotesTakesItToTheTopLevel() throws {
+        let app = launch()
+        defer { app.terminate() }
+        require(noteRow(app, "Sync design sketch"), "note row", in: app, timeout: 90)
+        showSidebar(app)
+        expand(app, "Work", showing: "Work/Atlas")
+        let all = app.cells.containing(NSPredicate(format: "label == %@", "All Notes")).firstMatch
+        require(all, "sidebar row All Notes", in: app)
+        sleep(2)
+        drag(sidebarRow(app, "Work/Atlas"), onto: all)
+        let moved = waitForNotebook(app, note: "Sync design sketch", "Atlas")
+        trace(app, "nested notebook onto All Notes")
+        XCTAssertTrue(moved, "Atlas is a top-level notebook")
+        XCTAssertTrue(traceContains(app, "landed target=topLevel"), "All Notes flashed")
+    }
+
+    /// A notebook inside another, dragged onto a third, moves there (one level kept).
+    @MainActor
+    func testDroppingANestedNotebookOnAnotherNotebookMovesIt() throws {
+        let app = launch()
+        defer { app.terminate() }
+        require(noteRow(app, "Sync design sketch"), "note row", in: app, timeout: 90)
+        showSidebar(app)
+        expand(app, "Work", showing: "Work/Atlas")
+        let personal = sidebarRow(app, "Personal")
+        require(personal, "sidebar row Personal", in: app)
+        sleep(2)
+        drag(sidebarRow(app, "Work/Atlas"), onto: personal)
+        let moved = waitForNotebook(app, note: "Sync design sketch", "Personal › Atlas")
+        trace(app, "nested notebook onto notebook")
+        XCTAssertTrue(moved, "Atlas is in Personal")
     }
 
     /// A notebook dragged onto another notebook nests there (with its notes),
