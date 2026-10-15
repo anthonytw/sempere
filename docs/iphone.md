@@ -100,8 +100,10 @@ that is a bug.
   `PhoneRootTests` (the root view hosted at an iPhone width, on the welcome screen and with an
   unlocked vault and a note open). They run on the iPad destination
   as well (the idiom-dependent expectations follow the destination).
-- CI runs them on an iPhone simulator after the iPad run (`scripts/app.sh test-phone`; the
-  build products are shared, so it adds a boot and a few seconds). Run it locally the same way;
+- CI runs them on an iPhone simulator after the iPad run on `main` (`scripts/app.sh test-phone`;
+  the build products are shared, so it adds a boot and a few seconds), and so does
+  `scripts/local-ci.sh --release`. A PR that changes an iPhone layout runs it and lists it under
+  `## Tests run`. Run it locally the same way;
   `SEMPERE_SIM_ID` picks a simulator.
 - Screenshots: `scripts/screenshots.sh iphone` (6.9", `docs/appstore/screenshots.md`).
 
