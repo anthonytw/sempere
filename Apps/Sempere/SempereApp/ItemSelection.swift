@@ -399,13 +399,12 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
     }
 
     /// Selection on or off, for `scope`; off clears the selection. While it is on, PencilKit's
-    /// own long press ("Select All", "Insert Space": nothing to select or move in this mode) is
-    /// off, so a hold is the item's.
+    /// own recognizers (its long press: "Select All", "Insert Space") are off with its drawing
+    /// (`PageCanvasHost.setPencilKitGestures`), so a hold is the item's.
     func setActive(_ active: Bool, scope: ItemSelectionModel.Scope = .all) {
         tap.isEnabled = active
         pan.isEnabled = active
         rotate.isEnabled = active
-        if let canvas { setSystemLongPresses(in: canvas, enabled: !active) }
         if model.scope != scope {
             model.scope = scope
             if let id = model.selected, !items.contains(where: { $0.id == id && scope.includes($0) }) { select(nil) }
@@ -414,18 +413,6 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
     }
 
     var isActive: Bool { tap.isEnabled }
-
-    /// Turns the menu long presses PencilKit keeps on the canvas and its inner views
-    /// (`isSystemLongPress`) on or off.
-    private func setSystemLongPresses(in canvas: UIView, enabled: Bool) {
-        var views: [UIView] = [canvas]
-        while let view = views.popLast() {
-            for g in view.gestureRecognizers ?? [] where Self.isSystemLongPress(g, ours: self) && g.isEnabled != enabled {
-                g.isEnabled = enabled
-            }
-            views.append(contentsOf: view.subviews)
-        }
-    }
 
     /// The note or page on the canvas changed.
     func reset(editor: NoteEditor, pageID: UUID, undoManager: UndoManager?) {
