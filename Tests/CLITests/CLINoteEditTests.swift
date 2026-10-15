@@ -349,4 +349,37 @@ final class CLINoteEditTests: CLITestCase {
         XCTAssertTrue(last.err.contains("at least one page"), last.err)
         XCTAssertEqual(try cli(["vault", "verify"] + access).status, 0)
     }
+
+    /// `notes list --sort` orders by title (the default), modification or creation date (newest first),
+    /// and `--favorites-first` puts favorites ahead under any order (the app's note list rules, `NoteOrder`).
+    func testListSortsByTitleDatesAndFavoritesFirst() throws {
+        func newNote(_ title: String) throws -> String {
+            let id = try XCTUnwrap(try note(try json(["notes", "new", title, "--notebook", "Sorted"]))["id"] as? String)
+            Thread.sleep(forTimeInterval: 0.02)   // distinct creation times
+            return id
+        }
+        let b = try newNote("Note 10"), a = try newNote("Note 2"), c = try newNote("Alpha")
+        // The first one changes last: newest by modification, oldest by creation.
+        _ = try json(["notes", "rename", b, "Note 10 b"])
+        func list(_ extra: [String]) throws -> [String] {
+            let r = try cli(["notes", "list", "--notebook", "Sorted", "--json"] + extra + access)
+            XCTAssertEqual(r.status, 0, r.err)
+            let rows = try XCTUnwrap(r.json as? [[String: Any]], r.out)
+            XCTAssertTrue(rows.allSatisfy { $0["created"] is String }, r.out)
+            return rows.compactMap { $0["id"] as? String }
+        }
+        XCTAssertEqual(try list([]), [c, a, b], "titles in Finder order: Note 2 before Note 10")
+        XCTAssertEqual(try list(["--sort", "title"]), [c, a, b])
+        XCTAssertEqual(try list(["--sort", "created"]), [c, a, b])
+        XCTAssertEqual(try list(["--sort", "modified"]), [b, c, a])
+
+        _ = try json(["notes", "favorite", a])
+        XCTAssertEqual(try list(["--sort", "created", "--favorites-first"]), [a, c, b])
+        XCTAssertEqual(try list(["--sort", "modified", "--favorites-first"]), [a, b, c])
+        XCTAssertEqual(try list(["--favorites-first"]), [a, c, b])
+        XCTAssertEqual(try list(["--sort", "created"]), [c, a, b], "without the flag favorites are not moved")
+
+        let bad = try cli(["notes", "list", "--sort", "size"] + access)
+        XCTAssertEqual(bad.status, 2, bad.err)
+    }
 }

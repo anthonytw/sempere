@@ -640,4 +640,26 @@ final class CLIAttachTests: CLITestCase {
         let files = try FileManager.default.contentsOfDirectory(atPath: path("html"))
         return try XCTUnwrap(files.first { $0.hasPrefix("Groceries") && $0.hasSuffix(".html") })
     }
+
+    // MARK: notes list attachments
+
+    /// `notes list --json` names the kinds of attachments each note holds (the app's row icons).
+    func testListNamesTheAttachmentKindsOfEachNote() throws {
+        let args = try setUpVault()
+        func kinds() throws -> [String: [String]] {
+            let r = try cli(["notes", "list", "--json"] + args)
+            XCTAssertEqual(r.status, 0, r.err)
+            let rows = try XCTUnwrap(r.json as? [[String: Any]], r.out)
+            var out: [String: [String]] = [:]
+            for row in rows { out[row["id"] as? String ?? ""] = row["attachments"] as? [String] }
+            return out
+        }
+        XCTAssertEqual(try kinds()[physics], [])
+        _ = try ok(["attach", "image", physics, image("rgb8.png"), "--json"] + args)
+        _ = try ok(["attach", "math", physics, "--latex", "x^2", "--json"] + args)
+        _ = try ok(["attach", "math", groceries, "--latex", "y", "--json"] + args)
+        let after = try kinds()
+        XCTAssertEqual(after[physics], ["image", "math"])
+        XCTAssertEqual(after[groceries], ["math"])
+    }
 }
