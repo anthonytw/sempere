@@ -677,8 +677,16 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
     /// and drawing did not bring it back). The user touched the canvas, so
     /// this is the user's focus, not the canvas taking it by itself
     /// (`CanvasFocus`); a text box being typed in keeps the keyboard.
+    ///
+    /// Also, while PencilKit's drawing is off, a recognizer of its own made or turned on since
+    /// (PencilKit sets up its selection views when the canvas's tool becomes the lasso, which the
+    /// picker may tell it after `updateEraser` ran) is turned off before the press is handed to the
+    /// recognizers.
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         let hit = super.hitTest(point, with: event)
+        if hit != nil, event?.type == .touches, !canvas.drawingGestureRecognizer.isEnabled {
+            setPencilKitGestures(enabled: false)
+        }
         if hit != nil, event?.type == .touches, !reclaimScheduled, !paletteShowing {
             reclaimScheduled = true
             // After the touch is delivered: becoming first responder in the middle of hit-testing is not safe.
@@ -921,18 +929,6 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
             views.append(contentsOf: view.subviews)
         }
         return found
-    }
-
-    /// A press is about to reach the canvas: while PencilKit's drawing is off, a recognizer of its
-    /// own made or turned on since (PencilKit sets up its selection views when the canvas's tool
-    /// becomes the lasso, which the picker may tell it after `updateEraser` ran) is turned off
-    /// before the press is handed to the recognizers.
-    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        let hit = super.hitTest(point, with: event)
-        if hit != nil, event?.type == .touches, !canvas.drawingGestureRecognizer.isEnabled {
-            setPencilKitGestures(enabled: false)
-        }
-        return hit
     }
 
     /// Typing in a text box started or ended: nothing draws or selects
