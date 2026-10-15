@@ -30,7 +30,7 @@ struct PageStackView: UIViewRepresentable {
     var onSelectingItemsEnded: () -> Void = {}
     /// The text tool (`PageCanvasContent.addingText`).
     var addingText = false
-    var onAddingTextEnded: () -> Void = {}
+    var onAddingTextEnded: (CanvasModes.TextToolEnd) -> Void = { _ in }
     /// Images and PDFs dropped on a page (`PageCanvasContent.onDrop`).
     var onDrop: ((_ providers: [NSItemProvider], _ pageID: UUID, _ point: CGPoint) -> Void)?
 
@@ -79,7 +79,7 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         var selectingItems = false
         var onSelectingItemsEnded: () -> Void = {}
         var addingText = false
-        var onAddingTextEnded: () -> Void = {}
+        var onAddingTextEnded: (CanvasModes.TextToolEnd) -> Void = { _ in }
         var onDrop: ((_ providers: [NSItemProvider], _ pageID: UUID, _ point: CGPoint) -> Void)?
     }
 
@@ -267,13 +267,17 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
     private func layoutContent() {
         guard let fit = fitScale else { return }
         let maxScale = fit * CGFloat(ZoomSteps.maxFactor)
-        scale = scale == 0 || fitted ? fit : min(max(scale, fit), maxScale)
+        let minScale = CGFloat(ZoomDetent.minimum(fit: Double(fit), paged: true))
+        scale = scale == 0 || fitted ? fit : min(max(scale, minScale), maxScale)
         // During a pinch the content carries the zoom's transform: it is sized when the pinch ends.
         guard scroller.zoomScale == 1 else { return }
         let size = layout.contentSize(scale: Double(scale))
-        content.frame = CGRect(origin: .zero, size: size)
-        scroller.contentSize = size
-        scroller.minimumZoomScale = fit / scale
+        // Zoomed out below the fit (an overview of the pages): the pages stand in the middle.
+        let side = Self.sideMargin(contentWidth: size.width, viewWidth: bounds.width)
+        scroller.contentInset = .zero
+        content.frame = CGRect(origin: CGPoint(x: side, y: 0), size: size)
+        scroller.contentSize = CGSize(width: size.width + 2 * side, height: size.height)
+        scroller.minimumZoomScale = minScale / scale
         scroller.maximumZoomScale = maxScale / scale
         placeFooter()
         // Fewer pages (a delete) or a smaller scale: never left past the end. Not while
@@ -282,6 +286,13 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
             let offset = clamped(scroller.contentOffset)
             if offset != scroller.contentOffset { scroller.contentOffset = offset }
         }
+    }
+
+    /// The margin on each side that centers content `contentWidth` wide in a view
+    /// `viewWidth` wide (0 when it is as wide or wider).
+    static func sideMargin(contentWidth: CGFloat, viewWidth: CGFloat) -> CGFloat {
+        guard contentWidth.isFinite, viewWidth.isFinite else { return 0 }
+        return max((viewWidth - contentWidth) / 2, 0)
     }
 
     private func placeFooter() {
@@ -505,6 +516,7 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         guard !baking else { return }
         updateSlots(reconfigure: false)
         trackCurrentPage()
+        for slot in slots.values { slot.host.itemSelection.viewMoved() }
     }
 
     func viewForZooming(in scrollView: UIScrollView) -> UIView? {
@@ -513,7 +525,11 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
 
     func scrollViewDidZoom(_ scrollView: UIScrollView) {
         guard !baking else { return }
+        // Pinched below the fit: the shrinking pages stay in the middle.
+        let side = Self.sideMargin(contentWidth: content.frame.width, viewWidth: scrollView.bounds.width)
+        if content.frame.minX != side { content.frame.origin.x = side }
         updateSlots(reconfigure: false)
+        for slot in slots.values { slot.host.itemSelection.viewMoved() }
     }
 
     func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale zoom: CGFloat) {
@@ -529,11 +545,20 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         baking = true
         scroller.zoomScale = 1
         baking = false
-        let new = min(max(scale * zoom, fit), fit * CGFloat(ZoomSteps.maxFactor))
-        fitted = abs(new - fit) < fit * 0.001
+        // The fitted width is a detent (`ZoomDetent`): a pinch that ends near it settles on it.
+        let pinched = scale * zoom
+        let new = CGFloat(ZoomDetent.settle(Double(pinched), fit: Double(fit), paged: true))
+        fitted = ZoomDetent.isFit(Double(new), fit: Double(fit))
+        if fitted, !ZoomDetent.isFit(Double(pinched), fit: Double(fit)) { PageCanvasHost.snapFeedback() }
         scale = new
         layoutContent()
-        scroller.contentOffset = clamped(offset)
+        // The screen keeps its middle when the detent moved the scale from where the fingers left it.
+        let view = scroller.bounds.size, size = scroller.contentSize
+        let y = PageStackLayout.rescaledOffset(Double(offset.y), anchor: Double(view.height / 2), from: Double(pinched),
+                                               to: Double(new), contentLength: Double(size.height), viewport: Double(view.height))
+        let x = PageStackLayout.rescaledOffset(Double(offset.x), anchor: Double(view.width / 2), from: Double(pinched),
+                                               to: Double(new), contentLength: Double(size.width), viewport: Double(view.width))
+        scroller.contentOffset = CGPoint(x: CGFloat(x), y: CGFloat(y))
         if pendingJump { performJump() }
         if pendingReveal { performReveal() }
         updateSlots()
