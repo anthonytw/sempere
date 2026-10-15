@@ -205,11 +205,10 @@ struct VersionHistoryAppTests {
         #expect(done.notes.first { $0.id == Self.lecture }?.deletions == lecture.deletions)
         let after = try vault.revisionNames(of: Self.lecture)
         #expect(after.contains(checkpoint))
-        #expect(after.contains(sessionEnd))
+        #expect(!after.contains(sessionEnd), "no session end stays (format.md §5.8.4)")
         #expect(try vault.reconstruct(noteId: Self.lecture).pages.map(\.strokes.count) == current.pages.map(\.strokes.count))
         let points = try vault.restorePoints(noteId: Self.lecture)
         #expect(points.first { $0.name == checkpoint }?.complete == true)
-        #expect(points.first { $0.name == sessionEnd }?.complete == true)
         #expect(try await model.thinVault(rule: .allButCheckpoints, dryRun: true).notes.isEmpty, "nothing left")
     }
 

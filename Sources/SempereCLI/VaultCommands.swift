@@ -9,7 +9,7 @@ struct VaultCommand: ParsableCommand {
         abstract: "Create, inspect, verify and re-key a vault.",
         subcommands: [VaultInit.self, VaultInfo.self, VaultLabelCommand.self, VaultRecipients.self, VaultMarkersCommand.self, VaultRewrapResume.self,
                       VaultRewrapDiscard.self,
-                      VaultVerify.self, VaultIndex.self, VaultSummaries.self]
+                      VaultVerify.self, VaultIndex.self, VaultSummaries.self, VaultMergeCopy.self]
     )
 }
 
@@ -75,7 +75,7 @@ struct VaultInit: ParsableCommand {
         try requirePostQuantum(recipients)
         var stored: (NativeIdentity, String)?
         if let storeKey {
-            let id = try readIdentityFile(storeKey)
+            let id = try readStoreKeyFile(storeKey)
             guard recipients.contains(id.recipient) else {
                 throw CLIError.usage("\(storeKey) is not one of the --recipient keys")
             }
@@ -587,7 +587,7 @@ struct StoreKeyOptions: ParsableArguments {
     /// before the vault changes.
     func prepare(for recipient: NativeRecipient) throws -> (NativeIdentity, String)? {
         guard let storeKey else { return nil }
-        let id = try readIdentityFile(storeKey)
+        let id = try readStoreKeyFile(storeKey)
         guard id.recipient == recipient else {
             throw CLIError.usage("\(storeKey) is not the key of the new recipient \(RecipientsProblem.abbreviate(recipient.string))")
         }
@@ -730,5 +730,56 @@ struct VaultVerify: ParsableCommand {
             counts = Dictionary(uniqueKeysWithValues: r.counts.map { ($0.key.rawValue, $0.value) })
             files = r.files.map { File(path: $0.path, status: $0.status.rawValue, detail: $0.detail) }
         }
+    }
+}
+
+// MARK: - merge-copy
+
+struct VaultMergeCopy: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "merge-copy",
+        abstract: "Merge another copy of the vault into it (nothing is overwritten or deleted).",
+        discussion: """
+            FROM is another copy of the same vault (same vault id): the losing side of an iCloud Drive \
+            conflict, a copy taken from another device, a folder restored from a backup. Every revision, \
+            attachment blob, inbox file and identity file the vault lacks is checked as a received file \
+            (format.md §9.1) and copied in; settings.age is merged per key (needs the key; locked, it is \
+            reported as pending). vault.json and rewrap-journal.json are never taken from FROM: a \
+            difference is only reported. Nothing in the vault is overwritten or deleted, so running it \
+            again does nothing. Exit 1 when a file of FROM was refused (it is listed), 0 otherwise.
+            """
+    )
+
+    @Argument(help: ArgumentHelp("The other copy (a vault folder).", valueName: "from"))
+    var from: String
+
+    @Flag(name: .long, help: "Only report what would be copied or merged.")
+    var dryRun = false
+
+    @OptionGroup var access: AccessOptions
+    @OptionGroup var output: OutputOptions
+
+    func run() throws {
+        let vault = try access.openVault(.ifPossible)
+        let report: CopyMergeReport
+        do {
+            report = try vault.mergeCopy(from: URL(fileURLWithPath: (from as NSString).expandingTildeInPath),
+                                         dryRun: dryRun)
+        } catch let e as CopyMergeError {
+            throw CLIError.failure("\(from): \(e)")
+        }
+        if output.json {
+            try output.emitJSON(report)
+        } else {
+            let verb = dryRun ? "would add" : "added"
+            for path in report.added { print("\(verb) \(path)") }
+            for (path, why) in report.refused.sorted(by: { $0.key < $1.key }) { print("refused \(path): \(why)") }
+            for path in report.differing { print("differs \(path) (kept the vault's)") }
+            if report.settingsMerged { print(dryRun ? "would merge settings.age" : "merged settings.age") }
+            if let why = report.settingsPending { print("settings.age differs, not merged: \(why)") }
+            if report.manifestDiffers { print("vault.json or rewrap-journal.json differs (kept the vault's)") }
+            output.info(report.isEmpty ? "Nothing to merge." : "\(report.added.count) file(s) \(verb).")
+        }
+        if !report.refused.isEmpty { throw ExitCode(ExitStatus.failure) }
     }
 }

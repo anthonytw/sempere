@@ -220,7 +220,16 @@ enum WindowCommands {
     static func perform(_ command: MenuCommand, model: AppModel, ui: WindowUI, exportIDs: [UUID]) -> Bool {
         switch command {
         case .importPDF: ui.importingPDF = true
-        case .importFromApp: ui.importingFromApp = true
+        case .importFromApp:
+            #if DEBUG
+            // UI tests: the folder comes from the launch environment, not the open panel.
+            if let urls = DebugLaunch.importPick(), let importer = AppImporters.primary {
+                ui.importPick = ImportPick(importer: importer.id, urls: urls, notebook: model.sidebarNotebook)
+                return true
+            }
+            #endif
+            ui.importingFromApp = true
+        case .lastImportReport: ui.importReport = model.lastImportReport
         case .exportNotes: model.requestExport(.pdf, ids: exportIDs, window: ui.id)
         case .showAbout: ui.expectations = .about
         case .showTour: ui.expectations = .tour(firstRun: false)
@@ -234,6 +243,7 @@ enum WindowCommands {
     /// The part of the menu context that comes from the model.
     static func fill(_ context: inout MenuCommand.Context, model: AppModel, exportIDs: [UUID]) {
         context.vaultReadOnly = model.isVaultReadOnly
+        context.hasImportReport = model.lastImportReport != nil
         context.hasExportTargets = !exportIDs.isEmpty
         context.voiceNote = VoiceNoteMenu.phase(model.quickCapture.state)
     }

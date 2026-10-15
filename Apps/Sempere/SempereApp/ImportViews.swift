@@ -107,15 +107,75 @@ struct ImportOptionsSheet: View {
     }
 }
 
+/// The running import over the window: what it is doing, a bar and the count of notes, the file being read
+/// or written, and Cancel when the importer can stop between notes (`AppModel.cancelImport`).
+struct ImportProgressOverlay: View {
+    @AppModelEnvironment private var model
+    /// The importer's name ("Notability").
+    let source: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Text("Importing from \(source)…", comment: "Progress while notes are imported from another app (its name)")
+                .font(.headline)
+            if let p = model.importProgress, p.phase != .finding, p.total > 0 {
+                ProgressView(value: p.fraction)
+                    .frame(width: 260)
+                    .accessibilityIdentifier("importProgressBar")
+                Text(Self.phaseLine(p)).font(.subheadline).monospacedDigit()
+                    .accessibilityIdentifier("importProgressCount")
+                if let current = p.current {
+                    Text(verbatim: current).font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.middle).frame(maxWidth: 260)
+                }
+            } else {
+                ProgressView()
+                Text("Finding notes…", comment: "Import progress: listing the chosen files").font(.subheadline)
+            }
+            if model.importCancellation != nil {
+                Button("Cancel", role: .cancel) { model.cancelImport() }
+                    .accessibilityIdentifier("importCancel")
+                    .disabled(model.importCancellation?.isCancelled == true)
+            }
+        }
+        .padding()
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        // A container: the identifier would otherwise replace its children's (the count's, Cancel's).
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("importProgress")
+    }
+
+    /// "Reading 120 of 1,531 notes", "Importing 7 of 1,531 notes".
+    static func phaseLine(_ p: ImporterProgress) -> String {
+        switch p.phase {
+        case .finding:
+            return String(localized: "Finding notes…", comment: "Import progress: listing the chosen files")
+        case .reading:
+            return String(localized: "Reading note \(p.done) of \(p.total)", comment: "Import progress: every file is read before anything is written")
+        case .writing:
+            return String(localized: "Importing note \(p.done) of \(p.total)", comment: "Import progress: notes being written to the vault")
+        }
+    }
+}
+
 /// The full report of the last import: what was imported, what was left out and the importer's warnings (the
-/// same lines `sempere import <id> -v` prints).
+/// same lines `sempere import <id> -v` prints), and Save Report… / Share… for the whole report as a text file.
 struct ImportReportView: View {
     @Environment(\.dismiss) private var dismiss
     let details: ImportDetails
+    @State private var handOff = ExportHandOffState()
+    @State private var file: URL?
 
     var body: some View {
         NavigationStack {
             List {
+                if let file {
+                    Section {
+                        ExportHandOffButtons(state: $handOff, items: [file])
+                    } footer: {
+                        Text("The report lists every file of the import with what happened to it.", comment: "Import report: under Share… and Save…")
+                    }
+                }
                 if !details.imported.isEmpty {
                     Section("Imported") { rows(details.imported) }
                 }
@@ -141,6 +201,14 @@ struct ImportReportView: View {
                 }
             }
             .accessibilityIdentifier("importReport")
+            .exportHandOff($handOff)
+            .task {
+                guard file == nil, !details.text.isEmpty else { return }
+                file = try? ImportReportText.write(details.text)
+            }
+            .onDisappear {
+                if let file { ImportReportText.discard(file) }
+            }
             .navigationTitle("Import Report")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

@@ -95,7 +95,12 @@ extension AppModel {
                 // pass over N arriving notes costs O(limit), not O(N), and N notes arriving
                 // over many passes cost O(N + passes × limit) in all, not O(N × passes).
                 let arriving = pendingNoteIDs.intersection(present)
-                let fresh = Set(diff.changed).subtracting(arriving).union(reported.intersection(present))
+                // A reported note whose names are the indexed ones is not checked: the report is
+                // often iCloud evicting its files (placeholders, dataless files), and a check
+                // would request them, downloading back every note iCloud evicts. Its row comes
+                // from the index; opening it downloads it (`downloadNote`).
+                let reportedNow = reported.intersection(present).subtracting(diff.unchanged)
+                let fresh = Set(diff.changed).subtracting(arriving).union(reportedNow)
                 let rotation = nextPendingChecks(arriving.subtracting(fresh), limit: cloudCheckLimit)
                 focus = fresh.union(rotation)
                 if let selected = selectedNoteID, arriving.contains(selected) { focus.insert(selected) }
@@ -113,11 +118,30 @@ extension AppModel {
             // A replaced (or paused) sync loop's pass is stale: never publish it over a newer one.
             try Task.checkCancellation()
             ready = pass.ready
-            pending = pass.pending
-            let total = scope == nil ? listings.count : max(cloudSync?.notes ?? 0, notes.count)
+            // Folders that are not notes for now: one holding only `att/` (its first revision not
+            // written yet), or one listing nothing for longer than `cloudUnlistedTimeout`. Waiting on
+            // them kept the bar on "Downloading" for good (TestFlight 1.0.0, an import interrupted on
+            // another device); they are looked at again by every pass and read once they list a revision.
+            let now = ContinuousClock.now
+            var setAside = Set(pass.orphans)
+            let unlisted = Set(pass.unlisted)
+            for id in unlisted {
+                let since = unlistedSince[id] ?? now
+                unlistedSince[id] = since
+                // A partial WebDAV copy's folder is listed by the fetcher itself: it waits for it.
+                if webdavFetcher == nil, now - since >= cloudUnlistedTimeout { setAside.insert(id) }
+            }
+            for id in toCheck where !unlisted.contains(id) { unlistedSince[id] = nil }
+            emptyNoteFolders.subtract(toCheck)
+            emptyNoteFolders.formUnion(setAside)
+            if let scope { emptyNoteFolders.subtract(scope.subtracting(present)) } else { emptyNoteFolders.formIntersection(present) }
+            pendingElsewhere.subtract(emptyNoteFolders)
+            pending = pass.pending.filter { !setAside.contains($0) }
+            let total = scope == nil ? listings.count - emptyNoteFolders.count : max(cloudSync?.notes ?? 0, notes.count)
             let arriving = pendingElsewhere.union(pending).count
             var status = CloudSyncStatus(notes: total, readyNotes: max(0, total - arriving), files: pass.files,
-                                         localFiles: pass.localFiles, unlistedNotes: pass.unlisted.count)
+                                         localFiles: pass.localFiles,
+                                         unlistedNotes: unlisted.subtracting(setAside).count)
             status.problem = cloudSync?.problem
             status.serverName = cloudSource.serverName
             if let failure = pass.failures.first?.value { status.problem = cloudSource.problem(failure) }
@@ -146,21 +170,27 @@ extension AppModel {
         let shown = before.subtracting(gone)
         var added: [NoteSummary] = []
         var placeholders = placeholderNoteIDs.intersection(present)
+        // A "Downloading…" row of a folder set aside since (no revision after all) goes.
+        let notNotes = placeholders.intersection(emptyNoteFolders)
+        if !notNotes.isEmpty {
+            queueListUpdate(removals: notNotes)
+            placeholders.subtract(notNotes)
+        }
         for id in diff.unchanged where !shown.contains(id) {
             // Indexed but not shown yet: its summary is current.
             if let s = summaryCache?.summary(for: id, names: names[id] ?? []) { added.append(s) }
         }
         for id in pending where !shown.contains(id) {
-            // A partial WebDAV copy's note not downloaded yet: its row from the server's summaries.
-            if let c = summaryCache?.storedSummary(of: id) ?? webdavSummaries[id] { added.append(c) } else {
+            // Not downloaded yet: its row from published summaries (a WebDAV server's, or other devices').
+            if let c = summaryCache?.storedSummary(of: id) ?? publishedRows[id] { added.append(c) } else {
                 added.append(Self.placeholderSummary(id))
                 placeholders.insert(id)
             }
         }
-        // A placeholder listed before the server's summaries were opened (a pass right after the
+        // A placeholder listed before the published summaries were opened (a pass right after the
         // unlock) gets its row from them now.
         for id in Array(placeholders) {
-            guard let row = webdavSummaries[id] else { continue }
+            guard let row = publishedRows[id] else { continue }
             added.append(row)
             placeholders.remove(id)
         }

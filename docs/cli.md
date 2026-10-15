@@ -219,14 +219,18 @@ sempere vault rewrap-resume
 sempere vault rewrap-discard
 sempere vault verify
 sempere vault index [--out PATH|-]
-sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
+sempere vault summaries [--out PATH|- | --device-file] [--plaintext] [--no-cache]
+sempere vault merge-copy FROM [--dry-run] [--json]
 ```
 
 - `init` creates the vault. `PATH` must end in `.sempere`. Give no `--label`
   or one per `--recipient`. Labels (here and in `recipients add`/`replace`)
   are stored as the app stores them: one line, trimmed, at most 80
   characters; an empty one is shown as "Device". `--store-key` also writes that identity,
-  passphrase-wrapped, into `keys/` (the passphrase is confirmed when typed,
+  passphrase-wrapped, into `keys/`; its file must hold one post-quantum secret key
+  (`AGE-SECRET-KEY-PQ-1…`, alone or as `age-keygen -pq` writes it), and a public key, a
+  classic key or a passphrase-wrapped file is refused naming what it holds (`KeyText`, the
+  check behind the app's "Use an existing key") (the passphrase is confirmed when typed,
   and an empty one is refused with exit 2, as in the app). That file is on the
   vault's storage, where its passphrase can be guessed offline, so one estimated
   below 60 bits (`PassphraseStrength`: five random words, or a long random
@@ -409,7 +413,25 @@ sempere vault summaries [--out PATH|-] [--plaintext] [--no-cache]
   `--out`, so it never lands at the vault's sealed path by default, and a
   file it writes is readable by its owner only (created 0600 next to the
   target, then renamed over it). `--json` emits `path`, `notes`, `entries`,
-  `read` (notes summarized again) and `bytes`.
+  `read` (notes summarized again) and `bytes`. `--device-file` writes this
+  machine's own copy instead, `summaries/<device>.sealed` (`format.md` §12.5,
+  the device id of the CLI's device state): the per-device files the apps
+  publish so that another device lists a vault's notes before they arrive.
+- `merge-copy FROM` merges another copy of the same vault into the vault
+  (`format.md` §1.3): the losing side of an iCloud Drive conflict, a copy taken
+  from another device, a folder restored from a backup. Every revision, blob,
+  inbox file and identity file the vault lacks is checked as a received file
+  (`format.md` §9.1: with the key, decrypted and verified; without it, its age
+  structure) and copied in; `settings.age` is merged per key (§13.3), which
+  needs the key (locked, it is reported as pending). `vault.json` and
+  `rewrap-journal.json` are never taken from `FROM`: a difference is only
+  reported. Nothing in the vault is overwritten or deleted, so a second run
+  does nothing; a file both copies hold with different bytes keeps the vault's
+  and is listed. `FROM` must hold a `vault.json` of the same vault id (else exit
+  1). Lines: `added PATH` (`would add` with `--dry-run`), `refused PATH: why`,
+  `differs PATH`, then the settings and manifest notes. Exit 1 when a file was
+  refused. `--json` emits `added`, `differing`, `refused` (path → why),
+  `settingsMerged`, `settingsPending` and `manifestDiffers`.
 
 ### Attachments
 
@@ -711,7 +733,11 @@ for `--prune` and for a full `verify`.
   backup keeps every blob it has seen). `--prune` needs the key (exit 4
   without). An interrupted run
   (crash, full disk, Ctrl-C) leaves only complete files; running it again
-  finishes the job and removes leftover temporary files.
+  finishes the job and removes leftover temporary files. A full disk fails
+  each file that does not fit (`errors`, exit 1) and the run never counts as
+  completed (`backup status`). If `DIR` disappears during a run (a drive
+  unplugged, a share disconnected: its `backup.json` is gone) the run stops
+  with an error instead of recreating `DIR` and writing a partial backup there.
   `DIR` is itself a vault (`sempere --vault DIR` reads it) plus
   `DIR/backup.json` (vault id, and SHA-256 and size of every file the backup
   wrote) and `DIR/versions/`. Output: `copied`, `replaced` and `pruned` lines
@@ -1308,6 +1334,13 @@ was imported), and a copy holding strokes the chosen one lacks is imported as
 a separate note titled `<title> (version modified <date>)` and gets a
 `separate version …` line. An `.ntb` without a `.note` is imported from the
 bundle.
+
+On a terminal (or with `SEMPERE_PROGRESS=always`; never with `--json` or `--quiet`) a progress line on stderr
+counts the sources as they are read (`Reading 120/1531 notes: Lecture 4.note`) and then written
+(`Importing …`). Ctrl-C stops the import after the note being written: every note written stays whole (one
+delta each), the rest are reported as `skipped` with `not imported: the import was canceled` (one
+`Canceled: N note(s) not imported` line, `"cancelled": true` in the JSON summary) and the command exits 1;
+running it again imports the rest, since notes already in the vault are skipped. A second Ctrl-C quits at once.
 
 One row is printed per input file (status, title, notebook, strokes written,
 pages with recognized text, source) plus a summary line; `-v` lists what was
@@ -2160,11 +2193,10 @@ time. Before the per-file lines it prints the rule it applies and what it keeps
 (`Thin versions older than 30 days (dry run). Removes autosaves older than 30
 days. Keeps every checkpoint …`).
 
-`--thin-all` is the same rule with no age window ("thin everything except
-checkpoints", `docs/format.md` §5.8.4 with a cutoff of zero): every autosave
-goes, however recent, except the newest save of each editing session; every
-checkpoint (saved versions and imports, §5.8.1) and the note's newest revision
-stay. It prints its own rule line. `--retention`, `--thin-older-than` and
+`--thin-all` is "thin everything except checkpoints" (`docs/format.md` §5.8.4):
+no age window and no session ends, so every autosave goes, however recent;
+every checkpoint (saved versions and imports, §5.8.1) and the note's newest
+version stay (plus the few revisions the rules keep for ordering, §5.8.4 rule 3). It prints its own rule line. `--retention`, `--thin-older-than` and
 `--thin-all` are different modes; give one.
 
 Thinning and compaction decide from each revision's metadata (names, wall

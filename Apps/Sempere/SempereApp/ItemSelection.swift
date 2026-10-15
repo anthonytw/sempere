@@ -437,7 +437,12 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
 
     /// Redraws the outline (the zoom, the item or the selection changed).
     func refresh() {
-        defer { reportSelection() }
+        defer {
+            reportSelection()
+            #if DEBUG
+            debugReport()
+            #endif
+        }
         overlay.frame = CGRect(origin: .zero, size: canvas?.contentSize ?? .zero)
         canvas?.bringSubviewToFront(overlay)
         let items = self.items   // sorted from the editor: read once
@@ -464,6 +469,39 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
                      handles: editor?.canEditItems == true ? ItemSelectionModel.handles(for: item) : [])
     }
 
+    #if DEBUG
+    /// `SEMPERE_DEMO_ITEMS` (Mac UI tests, `MacItemUITests`): the canvas's
+    /// accessibility value says where its items are, which one is selected and
+    /// how many item edits the page has had, so a test can aim the pointer and
+    /// check that a gesture wrote one delta.
+    private static let reports = DebugLaunch.environment["SEMPERE_DEMO_ITEMS"] != nil
+
+    private func debugReport() {
+        guard Self.reports, let canvas, let pageID else { return }
+        func n(_ v: Double) -> String { String(format: "%.1f", v) }
+        let frames = itemLayer?.shownFrames() ?? [:]
+        let list = items.map { item in
+            let f = frames[item.id] ?? item.frame
+            return "\(item.kind.rawValue):\(n(f.x)),\(n(f.y)),\(n(f.w)),\(n(f.h)),\(n(item.rotation ?? 0))"
+        }
+        let selected = model.selected.flatMap { id in items.first { $0.id == id }?.kind.rawValue } ?? "none"
+        // `width` is the canvas's own width in UIKit points: a Catalyst app in the iPad idiom is drawn at
+        // 77 %, so a test scales by the canvas's width on screen over this one to aim the pointer.
+        // `typing`, last since it may hold any character, is the text of the box being typed in: PencilKit
+        // lists only its strokes as the canvas's accessibility children, so a test cannot read the text view.
+        canvas.accessibilityValue = "zoom=\(String(format: "%.3f", Double(zoom)));offset=\(n(Double(canvas.contentOffset.x))),"
+            + "\(n(Double(canvas.contentOffset.y)));width=\(n(Double(canvas.bounds.width)))"
+            + ";edits=\(editor?.itemRevisions[pageID] ?? 0);selected=\(selected);items="
+            + list.joined(separator: "|") + (debugTyping().map { ";typing=" + $0 } ?? "")
+    }
+
+    /// The text of the box being typed in on this page, if any (`debugReport`).
+    var debugTyping: () -> String? = { nil }
+
+    /// Writes the report again (the text being typed changed).
+    func debugRefreshReport() { debugReport() }
+    #endif
+
     // MARK: Gestures
 
     func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
@@ -482,6 +520,20 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         // Picking while drawing never stops PencilKit's own gestures (the lasso still lassoes ink).
         g === videoTap || g === lassoTap || g === hold || g === secondaryClick || g === rotate
     }
+
+    /// On a Mac a pointer drag on an item is the item's: the page's scroll (the canvas's own, or
+    /// the paged stack's, which takes the pointer while nothing draws) waits until the item drag
+    /// has failed (it fails at once off an item), instead of starting with the same mouse event
+    /// and keeping the drag from ever beginning (TestFlight 1.0.0). The iPad keeps its behaviour.
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
+        guard Platform.isMac, g === pan else { return false }
+        return other === canvas?.panGestureRecognizer || other === scroller?.panGestureRecognizer
+    }
+
+    /// Whether a click shows the item's menu: on the iPad a tap selects and shows it; on a Mac
+    /// the menu is the secondary click's (a menu popping up on every click takes the next press,
+    /// so a drag right after selecting did nothing: TestFlight 1.0.0).
+    private var clickShowsMenu: Bool { !Platform.isMac }
 
     /// Whether a finger draws on this canvas (then a held finger is ink, not a pick).
     private var fingersDraw: Bool {
@@ -538,9 +590,9 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         switch model.tap(at: p, items: items, zoom: Double(zoom), editable: editor?.canEditItems == true) {
         case .select(let id):
             select(id)
-            presentMenu()
+            if clickShowsMenu { presentMenu() }
         case .menu:
-            presentMenu()
+            if clickShowsMenu { presentMenu() }
         case .edit(let id):
             guard let pageID, let item = editor?.item(id, on: pageID), let edit = onEditText else { return }
             select(nil)
@@ -550,7 +602,7 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         case .empty:
             if let empty = onEmptyTap {
                 empty(p)
-            } else if commands.canPaste(), editor?.canEditItems == true {
+            } else if clickShowsMenu, commands.canPaste(), editor?.canEditItems == true {
                 presentMenu(at: g.location(in: canvas))
             }
         }
@@ -602,13 +654,17 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
     }
 
     /// The selected item when both fingers of `g` are on it (and it can be edited).
+    /// On a Mac a trackpad rotation reports no touches: the pointer must be over the selected item.
     private func turnTarget(_ g: UIGestureRecognizer) -> Item? {
         guard editor?.canEditItems == true, let id = model.selected, let pageID,
-              let item = editor?.item(id, on: pageID), let canvas, g.numberOfTouches == 2 else { return nil }
+              let item = editor?.item(id, on: pageID), let canvas else { return nil }
         let z = Double(zoom)
         let b = ItemFrames.bounds(itemLayer?.shownFrame(of: id) ?? item.frame, rotation: item.rotation)
         let rect = CGRect(x: b.x * z, y: b.y * z, width: b.w * z, height: b.h * z)
-        return (0..<2).allSatisfy { rect.contains(g.location(ofTouch: $0, in: canvas)) } ? item : nil
+        if g.numberOfTouches == 2 {
+            return (0..<2).allSatisfy { rect.contains(g.location(ofTouch: $0, in: canvas)) } ? item : nil
+        }
+        return Platform.isMac && rect.contains(g.location(in: canvas)) ? item : nil
     }
 
     /// A two-finger turn of the selected item: the item and its outline follow the
@@ -790,6 +846,45 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         }
         return true
     }
+
+    // MARK: Pointer and keys (Mac)
+
+    /// The pointer's shape at `point` (canvas content coordinates): what a drag
+    /// starting there would do (`ItemSelectionModel.drag`), nil: nothing (the
+    /// system arrow) or selection is off.
+    func pointer(at point: CGPoint) -> ItemPointer? {
+        guard isActive, editor?.canEditItems == true else { return nil }
+        // While a drag runs the pointer keeps the shape it started with.
+        if let current = drag { return ItemPointer.zone(current.0, items: [current.1]) }
+        let p = ItemFrames.Point(x: Double(point.x / zoom), y: Double(point.y / zoom))
+        let items = self.items
+        return ItemPointer.zone(model.drag(at: p, items: items, zoom: Double(zoom)), items: items)
+    }
+
+    /// Escape: drops the selection; false when nothing is selected.
+    @discardableResult
+    func clearSelection() -> Bool {
+        guard model.selected != nil else { return false }
+        select(nil)
+        return true
+    }
+
+    /// An arrow key: moves the selected item by `dx`, `dy` screen points (one
+    /// delta and one undo step per press); false when nothing can move.
+    @discardableResult
+    func nudge(dx: Double, dy: Double) -> Bool {
+        guard drag == nil, turning == nil, editor?.canEditItems == true, let id = model.selected, let pageID,
+              let item = editor?.item(id, on: pageID) else { return false }
+        let z = Double(zoom)
+        dismissMenu()
+        actions?.setFrame(id, to: ItemFrames.moved(item.frame, dx: dx / z, dy: dy / z), on: pageID,
+                          name: String(localized: "Move", comment: "Undo action name (Edit menu: Undo …)"))
+        refresh()
+        return true
+    }
+
+    /// Whether an item is selected (keys act on it).
+    var hasSelection: Bool { model.selected != nil }
 
     /// Tells the editor whether this canvas's page has a selected item (it enables the menu commands).
     private func reportSelection() {

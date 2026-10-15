@@ -73,6 +73,10 @@ enum Perf {
         case changeNotified = "change.notified"
         /// Background time and scheduled tasks of the iCloud sync (an event; detail: what happened).
         case backgroundSync = "sync.background"
+        /// iCloud conflict versions of the vault's own files merged and resolved (an event; detail: counts).
+        case conflicts = "sync.conflicts"
+        /// This device's published summaries written (`summaries/<device>.sealed`; detail: entries).
+        case publishSummaries = "sync.publishSummaries"
         /// A thinning run or preview over the vault (`thinVault`).
         case thin = "thin"
         /// Thinning one note: metadata, then (when something may go) read, plan, encode, write.
@@ -175,6 +179,8 @@ extension Perf.Phase {
         case .cacheWrite: return "cache.write"
         case .changeNotified: return "change.notified"
         case .backgroundSync: return "sync.background"
+        case .conflicts: return "sync.conflicts"
+        case .publishSummaries: return "sync.publishSummaries"
         case .thin: return "thin"
         case .thinNote: return "thin.note"
         case .itemPicture: return "item.picture"

@@ -33,14 +33,24 @@ struct VaultSummaries: ParsableCommand {
     @Flag(name: .long, help: "Write the decrypted JSON content instead of the sealed file.")
     var plaintext = false
 
+    @Flag(name: .long, help: "Write this machine's own file, summaries/<device>.sealed (format.md §12.5), instead of the root file.")
+    var deviceFile = false
+
     func run() throws {
         // Plaintext only where the user names it, never at the vault's sealed path by default.
         if plaintext && out == nil { throw CLIError.usage("--plaintext needs --out (a file outside the vault, or -)") }
+        if deviceFile && out != nil { throw CLIError.usage("--device-file writes into the vault; give it or --out, not both") }
         let vault = try access.openVault(.required)
         try vault.requireCompleteCopy()   // entries come from the local notes: missing ones would be dropped
         // Into the vault only if it may be written (format.md §7.3: exit 7), as `vault index`.
         if out == nil { try vault.requireWritable() }
-        let target = out.map { $0 == "-" ? nil : URL(fileURLWithPath: $0) } ?? vault.publishedSummariesURL
+        var inVault = vault.publishedSummariesURL
+        if deviceFile {
+            let device = try DeviceState.loadOrCreate(at: DeviceState.defaultURL()).device
+            inVault = vault.devicePublishedSummariesURL(device)
+            try FileManager.default.createDirectory(at: inVault.deletingLastPathComponent(), withIntermediateDirectories: true)
+        }
+        let target = out.map { $0 == "-" ? nil : URL(fileURLWithPath: $0) } ?? inVault
         let reuse = target.map { url -> [UUID: PublishedSummaries.Entry] in
             guard let data = try? BoundedRead.contents(of: url, maxBytes: PublishedSummaries.maxFileBytes) else { return [:] }
             return (try? vault.openPublishedSummaries(data)) ?? [:]

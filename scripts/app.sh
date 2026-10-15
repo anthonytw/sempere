@@ -8,7 +8,8 @@
 #   scripts/app.sh pseudo     # layout check in the double-length, right-to-left and Spanish languages, iPad simulator
 #   scripts/app.sh pseudo-mac # the same as the Mac Catalyst app, at a narrow and a wide window (takes over the screen)
 #   scripts/app.sh test-mac   # every app suite on Mac Catalyst, ad-hoc signed and sandboxed
-#   scripts/app.sh test-mac-ui # the Mac UI tests (MacWindowUITests, SidebarDropUITests) on Mac Catalyst
+#   scripts/app.sh test-mac-ui # the Mac UI tests (MacWindowUITests, MacItemUITests, SidebarDropUITests, MacFocusUITests,
+#                              # KeyShareMacUITests, QuitPurgeMacUITests, NewVaultSheetUITests, MacImportUITests, MacExportUITests) on Mac Catalyst
 #   scripts/app.sh test-ui    # the iPad UI tests (SidebarDropUITests: real drags; the launch smoke tests) on an iPad simulator
 #   scripts/app.sh test-mac-smoke # the launch smoke tests (LaunchSmokeUITests: fresh state, every layout and window) on Mac Catalyst
 #   scripts/app.sh simulator [PREFIX [SUFFIX]] # print the simulator id `test` would use (or one named PREFIX…SUFFIX)
@@ -197,7 +198,11 @@ case "${1:-}" in
   test-mac-ui)
     shutdown_simulators
     # The UI tests live in the SempereScreenshots scheme (never built by `test`).
-    suites -only-testing:SempereAppUITests/MacWindowUITests -only-testing:SempereAppUITests/SidebarDropUITests
+    suites -only-testing:SempereAppUITests/MacWindowUITests -only-testing:SempereAppUITests/MacItemUITests \
+      -only-testing:SempereAppUITests/SidebarDropUITests -only-testing:SempereAppUITests/MacFocusUITests \
+      -only-testing:SempereAppUITests/KeyShareMacUITests -only-testing:SempereAppUITests/QuitPurgeMacUITests \
+      -only-testing:SempereAppUITests/NewVaultSheetUITests -only-testing:SempereAppUITests/MacImportUITests \
+      -only-testing:SempereAppUITests/MacExportUITests
     xcb test -project "$project" -scheme SempereScreenshots -derivedDataPath "$derived" \
       -destination 'platform=macOS,variant=Mac Catalyst' ${only[@]+"${only[@]}"} \
       "${mac_ui_signing[@]}" ${ui_retry[@]+"${ui_retry[@]}"} ${extra[@]+"${extra[@]}"}
@@ -219,7 +224,9 @@ case "${1:-}" in
     suites -only-testing:SempereAppUITests/SidebarDropUITests \
       -only-testing:SempereAppUITests/LaunchSmokeUITests/testFreshLaunchDefaultLayoutShowsSidebarListAndNote \
       -only-testing:SempereAppUITests/LaunchSmokeUITests/testFreshLaunchDoubleColumn \
-      -only-testing:SempereAppUITests/LaunchSmokeUITests/testFirstUnlockShowsKeyNoticeThenTour
+      -only-testing:SempereAppUITests/LaunchSmokeUITests/testFirstUnlockShowsKeyNoticeThenTour \
+      -only-testing:SempereAppUITests/NewVaultSheetUITests -only-testing:SempereAppUITests/MacImportUITests \
+      -only-testing:SempereAppUITests/MacExportUITests
     xcb test -project "$project" -scheme SempereScreenshots -derivedDataPath "$derived" \
       -destination "platform=iOS Simulator,id=$sim" ${only[@]+"${only[@]}"} \
       -parallel-testing-enabled NO ${ui_retry[@]+"${ui_retry[@]}"} CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"}

@@ -5,12 +5,14 @@ import Observation
 import UniformTypeIdentifiers
 
 extension UTType {
-    /// A `.sempere` folder, shown by Files as one document (a package). Declared
-    /// as an exported type in `SempereInfo.plist`.
-    static let sempere = UTType(exportedAs: "io.github.anthonytw.sempere.vault", conformingTo: .package)
+    /// A `.sempere` folder. Declared as an exported type in `SempereInfo.plist`, as a
+    /// plain folder and never a package: iCloud Drive syncs a package as one item, so
+    /// concurrent writes from two devices would conflict over the whole vault (docs/io.md
+    /// "Vaults are folders").
+    static let sempere = UTType(exportedAs: "io.github.anthonytw.sempere.vault", conformingTo: .folder)
 
-    /// What the "open vault" pickers accept: vault packages, and plain folders
-    /// (a vault in a plain folder, or one not named `.sempere`).
+    /// What the "open vault" pickers accept: vault folders, and plain folders
+    /// (a vault in a folder not named `.sempere`, or the folder holding one).
     static var vaultPickerTypes: [UTType] { [.sempere, .folder] }
 }
 
@@ -168,14 +170,20 @@ struct NewVaultRequest: Sendable {
         /// Generate a post-quantum MLKEM768-X25519 key on this device
         /// (docs/post-quantum.md).
         case generate
+        /// Use a post-quantum secret key the user already has (`KeyText`):
+        /// the vault is encrypted to it and opens with it.
+        case identity(NativeIdentity)
         /// Encrypt to an existing post-quantum `age1pq1…` recipient; this device gets no key.
         case recipient(String)
     }
 
     var name: String
     var keySource: KeySource
-    /// Wrap the generated key with this passphrase into `keys/` (generate only).
+    /// Wrap the vault's key with this passphrase into `keys/` (a generated or existing key, not a recipient).
     var passphrase: String?
+    /// A new folder (one level, `VaultLibrary.subfolderName`) to create in the
+    /// picked location and put the vault in; nil puts it in the location itself.
+    var subfolder: String?
 }
 
 /// The outcome of creating a vault.
@@ -184,6 +192,8 @@ struct CreatedVault: Sendable {
     /// The new secret key (`AGE-SECRET-KEY-PQ-1…`) when one was generated; the
     /// user must save it, nothing else holds it unless a passphrase wrapped it.
     var secretKey: String?
+    /// The key that opens the vault, generated or given (nil for a recipient only).
+    var unlockKey: String?
     /// The recents entry saved for it, whose bookmark carries the access the
     /// app needs to reopen it; nil when saving it failed.
     var recentID: UUID?
@@ -200,6 +210,9 @@ final class VaultLibrary {
         case classicRecipient
         case passphraseNeedsGeneratedKey
         case cannotResolve(name: String)
+        case invalidFolderName
+        /// The existing key is not a post-quantum one.
+        case classicIdentity
 
         var description: String {
             switch self {
@@ -207,7 +220,11 @@ final class VaultLibrary {
             case .invalidRecipient: return String(localized: "That text is not an age1pq1… recipient.")
             case .classicRecipient:
                 return String(localized: "That is a classic age1… key, which is not quantum-safe. Create a new key instead (here, or with age-keygen -pq) and use its age1pq1… recipient.")
-            case .passphraseNeedsGeneratedKey: return String(localized: "A passphrase can only wrap a key generated on this device.")
+            case .passphraseNeedsGeneratedKey: return String(localized: "A passphrase can only wrap a key this device has, not a public key.")
+            case .invalidFolderName:
+                return String(localized: "Give the new folder a name without slashes, colons, leading dots or control characters, not ending in .sempere.")
+            case .classicIdentity:
+                return String(localized: "That is a classic AGE-SECRET-KEY-1… key, which is not quantum-safe. Use a post-quantum key (AGE-SECRET-KEY-PQ-1…) or generate one.")
             case .cannotResolve(let name):
                 return String(localized: "“\(name)” can't be found any more. It may have been moved or deleted, or access to it expired. Choose its folder again.")
             }
@@ -334,17 +351,40 @@ final class VaultLibrary {
     /// Runs the blocking work (scrypt, file I/O) off the main actor.
     func create(_ request: NewVaultRequest, in parent: URL) async throws -> CreatedVault {
         let folder = try Self.folderName(for: request.name)
+        let subfolder = try request.subfolder.map(Self.subfolderName)
         let scoped = parent.startAccessingSecurityScopedResource()
         defer { if scoped { parent.stopAccessingSecurityScopedResource() } }
         var created = try await Task.detached(priority: .userInitiated) {
+            let location = subfolder.map { parent.appendingPathComponent($0, isDirectory: true) } ?? parent
             // In iCloud Drive, a coordinated write so the new folder is uploaded.
-            let target = parent.appendingPathComponent(folder, isDirectory: true)
+            let target = (subfolder != nil ? location : location.appendingPathComponent(folder, isDirectory: true))
             return try CloudVault.coordinatedWrite(CloudVault.isUbiquitous(parent) ? target : nil) {
-                try Self.createVault(request, folder: folder, in: parent)
+                // A folder of that name already there is used (the vault's own name is still checked).
+                if subfolder != nil, !Self.isDirectory(location) {
+                    try FileManager.default.createDirectory(at: location, withIntermediateDirectories: false,
+                                                            attributes: nil)
+                }
+                return try Self.createVault(request, folder: folder, in: location)
             }
         }.value
         created.recentID = try? remember(created.url).id
         return created
+    }
+
+    nonisolated private static func isDirectory(_ url: URL) -> Bool {
+        var directory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &directory) && directory.boolValue
+    }
+
+    /// A new folder's name, typed in the New Vault sheet: trimmed, one path
+    /// level, no leading dot (hidden), not a vault (`.sempere`).
+    nonisolated static func subfolderName(_ typed: String) throws -> String {
+        let trimmed = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        let bad = trimmed.isEmpty || trimmed.hasPrefix(".") || trimmed.lowercased().hasSuffix(".sempere")
+            || trimmed.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
+            || trimmed.contains { $0 == "/" || $0 == ":" || $0 == "\0" || $0.isNewline } || trimmed.utf8.count > 255
+        if bad { throw LibraryError.invalidFolderName }
+        return trimmed
     }
 
     /// Synchronous core of `create` (testable without the main actor).
@@ -358,7 +398,15 @@ final class VaultLibrary {
             if let passphrase = request.passphrase, !passphrase.isEmpty {
                 try vault.writeIdentityFile(identity, passphrase: passphrase)
             }
-            return CreatedVault(url: url, secretKey: identity.string)
+            return CreatedVault(url: url, secretKey: identity.string, unlockKey: identity.string)
+        case .identity(let identity):
+            guard identity.isPostQuantum else { throw LibraryError.classicIdentity }
+            let vault = try Vault.create(at: url, recipients: [identity.recipient], labels: ["This device"],
+                                         identities: [identity])
+            if let passphrase = request.passphrase, !passphrase.isEmpty {
+                try vault.writeIdentityFile(identity, passphrase: passphrase)
+            }
+            return CreatedVault(url: url, secretKey: nil, unlockKey: identity.string)
         case .recipient(let text):
             guard request.passphrase?.isEmpty ?? true else { throw LibraryError.passphraseNeedsGeneratedKey }
             let recipient: NativeRecipient

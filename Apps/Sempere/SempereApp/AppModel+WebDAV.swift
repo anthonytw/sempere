@@ -212,7 +212,7 @@ extension AppModel {
             return Dictionary(uniqueKeysWithValues: entries.map { ($0.key, Self.pendingSummary($0.key, $0.value)) })
         }.value
         guard generation == gen else { return }
-        webdavSummaries = rows
+        publishedRows = rows
     }
 
     /// The row of a note not downloaded yet, from its published summary. It

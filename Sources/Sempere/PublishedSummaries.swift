@@ -13,6 +13,46 @@ import Foundation
 public enum PublishedSummaries {
     /// The file at the vault root.
     public static let fileName = "sempere-summaries.sealed"
+    /// The folder of the per-device files (format.md §12.5): `summaries/<device>.sealed`.
+    public static let deviceFolderName = "summaries"
+    /// `<device>.sealed`.
+    public static func deviceFileName(_ device: DeviceID) -> String { "\(device).sealed" }
+    /// The device of a per-device file name; nil for any other name (ignored).
+    public static func device(ofFileName name: String) -> DeviceID? {
+        guard name.hasSuffix(".sealed") else { return nil }
+        return DeviceID(String(name.dropLast(".sealed".count)))
+    }
+
+    /// For each note, the entry to show (format.md §12.3, §12.5), out of every
+    /// published file the reader opened: one whose `revisions` are exactly the
+    /// note's listed revision file names (`listing`, sorted or not) when there
+    /// is one; otherwise, provisionally (the note has not arrived, or changed
+    /// since), the entry made from the most revisions, then the latest
+    /// `modified`, then the greatest first revision name, so every reader picks
+    /// the same one. Notes `listing` does not name keep their best entry too
+    /// (a reader that has not listed the folder yet); the caller decides
+    /// whether to show them.
+    public static func best(of files: [[UUID: Entry]], listing: [UUID: [String]] = [:]) -> [UUID: Entry] {
+        var out: [UUID: Entry] = [:]
+        var exact: Set<UUID> = []
+        for file in files {
+            for (id, e) in file {
+                if exact.contains(id) { continue }
+                if let names = listing[id], !names.isEmpty, names.sorted() == e.revisions {
+                    out[id] = e
+                    exact.insert(id)
+                    continue
+                }
+                guard let current = out[id] else { out[id] = e; continue }
+                if (e.revisions.count, e.modified, e.revisions.last ?? "")
+                    > (current.revisions.count, current.modified, current.revisions.last ?? "") {
+                    out[id] = e
+                }
+            }
+        }
+        return out
+    }
+
     /// `format` of the JSON content.
     public static let format = "sempere-summaries/1"
     /// The largest file read (format.md §9).
@@ -199,6 +239,35 @@ public enum PublishedSummariesError: Error, Hashable, Sendable {
 extension Vault {
     /// `<vault>/sempere-summaries.sealed`.
     public var publishedSummariesURL: URL { url.appendingPathComponent(PublishedSummaries.fileName) }
+
+    /// `<vault>/summaries/<device>.sealed`: the published summaries `device` writes (format.md §12.5).
+    public func devicePublishedSummariesURL(_ device: DeviceID) -> URL {
+        url.appendingPathComponent(PublishedSummaries.deviceFolderName, isDirectory: true)
+            .appendingPathComponent(PublishedSummaries.deviceFileName(device))
+    }
+
+    /// Every published summaries file the vault holds, as listed: the root file
+    /// (§12) and the per-device files (§12.5), sorted; other names are ignored.
+    public func publishedSummaryFiles() -> [URL] {
+        var files: [URL] = []
+        if FileIO.exists(publishedSummariesURL) { files.append(publishedSummariesURL) }
+        let folder = url.appendingPathComponent(PublishedSummaries.deviceFolderName, isDirectory: true)
+        let names = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).sorted()
+        for name in names where PublishedSummaries.device(ofFileName: name) != nil {
+            files.append(folder.appendingPathComponent(name))
+        }
+        return files
+    }
+
+    /// The valid entries of every published summaries file of the vault that is
+    /// here and opens (`publishedSummaryFiles`), one dictionary per file; a
+    /// file that is missing, too large or does not open is skipped.
+    public func readEveryPublishedSummaries() -> [[UUID: PublishedSummaries.Entry]] {
+        publishedSummaryFiles().compactMap { file in
+            guard let data = try? BoundedRead.contents(of: file, maxBytes: PublishedSummaries.maxFileBytes) else { return nil }
+            return try? openPublishedSummaries(data)
+        }
+    }
 
     /// The sealed file for `entries`.
     public func sealPublishedSummaries(_ entries: [UUID: PublishedSummaries.Entry]) throws -> Data {

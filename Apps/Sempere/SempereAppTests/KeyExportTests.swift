@@ -2,6 +2,7 @@ import Age
 import Foundation
 import Sempere
 import Testing
+import UIKit
 @testable import SempereApp
 
 /// Settings → Device Keys: Save Key… (this device's key after Face ID) and
@@ -34,6 +35,22 @@ struct KeyExportTests {
         let sheet = ShareSheet(items: ["AGE-SECRET-KEY-PQ-1EXAMPLE"], secret: true) {}
         #expect(sheet.secret)
         #expect(ShareSheet(items: [URL(fileURLWithPath: "/tmp/x.pdf")]) {}.secret == false, "exports keep Copy")
+    }
+
+    /// The Mac's share menu (macOS 27) lists Copy despite `excludedActivityTypes`, and its Copy put the
+    /// staged key file's URL and path on the pasteboard (KeyShareMacUITests): every secret item is a
+    /// `SecretItem`, which hands a copy activity nothing and any other activity the item.
+    @Test func secretItemsGiveCopyNothing() {
+        let controller = SecretSharing.controller(items: ["AGE-SECRET-KEY-PQ-1EXAMPLE"])
+        let source = SecretItem("AGE-SECRET-KEY-PQ-1EXAMPLE")
+        #expect(source.activityViewControllerPlaceholderItem(controller) as? String == "AGE-SECRET-KEY-PQ-1EXAMPLE")
+        for type: UIActivity.ActivityType in [.copyToPasteboard, UIActivity.ActivityType("com.apple.share.Copy"),
+                                              UIActivity.ActivityType("com.apple.NSSharingService.copy")] {
+            #expect(source.activityViewController(controller, itemForActivityType: type) == nil, "\(type.rawValue)")
+        }
+        for type: UIActivity.ActivityType? in [.mail, .airDrop, .message, nil] {
+            #expect(source.activityViewController(controller, itemForActivityType: type) as? String == "AGE-SECRET-KEY-PQ-1EXAMPLE")
+        }
     }
 
     @Test func saveKeyGivesThisDevicesKeyAfterAuthentication() async throws {

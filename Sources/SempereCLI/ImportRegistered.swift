@@ -63,8 +63,14 @@ struct RegisteredImportCommand<Tag: ImporterTag>: ParsableCommand {
         if recognize != nil && !dryRun && !RecognitionRun.available { throw RecognitionRun.unavailable }
         let extractor = importer.usesPDFText ? try pdfText.extractor() : nil
         let urls = parsed.paths.map { URL(fileURLWithPath: $0) }
+        // Progress on stderr (a terminal, or SEMPERE_PROGRESS=always), and Ctrl-C stops between notes.
+        let meter = ProgressLine.forStderr(json: output.json, quiet: output.quiet)
+        let cancellation = ImporterCancellation()
+        let interrupt = importer.supportsCancel ? ImportInterrupt(cancellation) : nil
+        defer { interrupt?.stop() }
         func request(_ vault: Vault, _ device: DeviceID) -> ImporterRequest {
-            ImporterRequest(paths: urls, vault: vault, device: device, options: parsed.values, pdfText: extractor, notebook: notebook)
+            ImporterRequest(paths: urls, vault: vault, device: device, options: parsed.values, pdfText: extractor, notebook: notebook,
+                            progress: meter.map { m in { @Sendable p in m.show(p.line) } }, cancellation: cancellation)
         }
         let result: ImporterResult
         var recognized: [RecognitionRun.NoteResult] = []
@@ -110,6 +116,7 @@ struct RegisteredImportCommand<Tag: ImporterTag>: ParsableCommand {
             recognizeImported(result, in: vault)
             if let saved = try? DeviceState.loadOrCreate(at: stateURL) { state = saved; clock = saved.clock }
         }
+        meter?.finish()   // the progress line ends before the report is printed
         let recognition: ImporterRecognition? = recognize == nil ? nil : ImporterRecognition(
             results: recognized.map { AnyEncodable($0) },
             pagesRead: recognized.reduce(0) { $0 + $1.read.count },
@@ -122,6 +129,28 @@ struct RegisteredImportCommand<Tag: ImporterTag>: ParsableCommand {
             if line.isError { printStderr(line.text) } else { print(line.text) }
         }
         if let failure = presentation.failure { throw CLIError.failure(failure) }
+    }
+}
+
+/// Ctrl-C during an import: the first asks the importer to stop after the note it is writing (what was written
+/// stays, and the report says what was not imported); a second one ends the process at once.
+final class ImportInterrupt: @unchecked Sendable {
+    private let source: DispatchSourceSignal
+
+    init(_ cancellation: ImporterCancellation) {
+        signal(SIGINT, SIG_IGN)
+        source = DispatchSource.makeSignalSource(signal: SIGINT, queue: .global())
+        source.setEventHandler {
+            if cancellation.isCancelled { exit(130) }
+            cancellation.cancel()
+            FileHandle.standardError.write(Data("\nStopping after the current note (Ctrl-C again to quit now)…\n".utf8))
+        }
+        source.resume()
+    }
+
+    func stop() {
+        source.cancel()
+        signal(SIGINT, SIG_DFL)
     }
 }
 

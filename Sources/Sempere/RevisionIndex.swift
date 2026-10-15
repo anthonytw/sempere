@@ -321,16 +321,16 @@ extension Vault {
 public enum ThinningRule: Hashable, Sendable {
     /// The configured window: only versions older than this many days are thinned.
     case olderThan(days: Int)
-    /// No window: every autosave goes except each editing session's newest
-    /// save; checkpoints stay.
+    /// No window: every autosave goes; checkpoints and the note's newest version stay.
     case allButCheckpoints
 
-    /// The compaction mode: a cutoff of `days`, or of zero for `allButCheckpoints`
-    /// (every revision whose `wall` is not in the future is in the thinned range).
+    /// The compaction mode: a cutoff of `days`, or `thinAll` for `allButCheckpoints`
+    /// (every revision whose `wall` is not in the future is in the thinned range,
+    /// and no session end is kept).
     public var mode: CompactionMode {
         switch self {
         case .olderThan(let days): return .thin(olderThan: Double(max(days, 0)) * 86_400)
-        case .allButCheckpoints: return .thin(olderThan: 0)
+        case .allButCheckpoints: return .thinAll
         }
     }
 
@@ -350,8 +350,8 @@ public enum ThinningRule: Hashable, Sendable {
                 + "versions), the newest save of each editing session, the note's newest version and everything "
                 + "from the last \(Self.days(days))."
         case .allButCheckpoints:
-            return "Removes every autosave, however recent, except the newest save of each editing session. Keeps "
-                + "every checkpoint (saved and imported versions) and the note's newest version."
+            return "Removes every autosave, however recent. Keeps every checkpoint (saved and imported versions) "
+                + "and the note's newest version."
         }
     }
 

@@ -156,6 +156,39 @@ menu (Crop…, Replace Image, Delete…) without leaving the drawing tool; a cli
 with the lasso does the same, and Select in the toolbar turns selection mode
 on (`docs/attachments.md` §13 "Selecting items").
 
+With an item selection on, the mouse and trackpad work the items:
+
+* A click selects an item; its menu is the secondary click's (or Control-click).
+  A click does not pop the menu up as a tap does on the iPad: a menu open on
+  the Mac takes the next press, so the drag that follows a click did nothing
+  (TestFlight 1.0.0).
+* A drag inside an item moves it and a drag on a handle resizes it (pictures
+  and PDF pages keep their proportions), one delta and one undo step each. The
+  page's scroll (the canvas's, or the paged stack's, which takes the pointer
+  while nothing draws) waits until the item drag has failed
+  (`ItemSelectionController`, `shouldBeRequiredToFailBy`); the wheel and a
+  two-finger trackpad scroll still scroll. PencilKit on macOS 27 keeps a second
+  drawing recognizer on an inner view that every other gesture waits for until
+  the button goes up; it is turned off and on with the public one
+  (`PageCanvasHost.setInnerDrawingGestures`), or an item drag began only at the
+  release and moved nothing.
+* The pointer shows what a drag does (`ItemPointer`, a region per zone in
+  `PageCanvasHost.pointerInteraction`): a four-way arrow over an item, a
+  two-way arrow along each handle's drag (turned with the item), the system
+  arrow elsewhere.
+* A trackpad rotation with the pointer over the selected item turns it (it
+  reports no touches, so the pointer stands in for the two fingers); the
+  item's menu (secondary click) has Rotate Left and Rotate Right in 90° steps.
+* Escape drops the selection; the arrow keys move the selected item one
+  point (Shift: ten), one undo step per press (`PageCanvasHost.keyCommands`,
+  only while an item is selected, so the keys scroll otherwise).
+
+`MacItemUITests` drags every kind with the mouse in the demo vault
+(`SEMPERE_DEMO_ITEMS`; the canvas reports its items in its accessibility
+value, debug builds only). The app is in the iPad idiom, which macOS draws at
+77 %: the report gives the canvas's UIKit width, and a test scales page points
+by the canvas's on-screen width over it.
+
 ## Recordings and export
 
 A recording that stops is placed on the page as a card (`format.md` §8.2.9)
@@ -258,6 +291,25 @@ the same notes as the menu (`AppModel.noteWindowValue`: listed, downloaded,
 not in Recently Deleted). Note > Move to
 Recently Deleted (⌘⌫) is off while a search, rename or tag field may have focus.
 
+## Keyboard focus
+
+The open note's canvas wants the first responder (the tool palette shows for it, and
+the menus' undo acts on it), but the page stack lays out on every SwiftUI update: a
+search result, a sync tick, a list reconcile, a drop, the sidebar collapsing. In
+TestFlight 1.0.0 each of those layouts gave the current page's canvas the first
+responder, taking the keyboard from the search field (or a new text box's neighbour
+fields) after every key, and the window's keyboard focus then fell back to the
+sidebar's selected row ("the selected folder constantly steals focus"). Now a canvas
+takes the focus by itself only when nothing outside it holds the keyboard
+(`CanvasFocus.keyboardIsElsewhere`: no text field, text view or search field elsewhere
+is the first responder, the window's keyboard focus is not on a list row, and the
+window is key); a stroke on a canvas always takes it. So a field keeps the keyboard
+until the user leaves it, the arrow keys keep moving the sidebar or list that has the
+keyboard focus, and the palette appears when the note opens with nothing else typed in,
+or at the first stroke. A note window updating in the background takes nothing; it gives
+its canvas the focus when it becomes key. Tests: `CanvasFocusTests` (hosted, iPad and
+Catalyst) and `MacFocusUITests` (typing in the running app, `scripts/app.sh test-mac-ui`).
+
 ## Tooltips
 
 Toolbar buttons show no title on a Mac, so every icon-only control has a
@@ -292,7 +344,7 @@ folder at once, since its security scope ends with the call, and queues it
   another vault or Cancel.
 
 Work copies are plaintext: they are removed after the import, on Discard or
-Cancel, and at launch (`PDFPreparation.purge`).
+Cancel, at quit and at launch (`PDFPreparation.purge`).
 
 ## Drag a note out as PDF
 

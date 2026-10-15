@@ -275,6 +275,23 @@ func readIdentityFile(_ path: String) throws -> NativeIdentity {
     }
 }
 
+/// Reads the identity file given to `--store-key`: a post-quantum secret key
+/// (`KeyText`, as the app's New Vault "Use an existing key"), with an error
+/// naming what the file holds otherwise (a public key, a classic key, a
+/// passphrase-wrapped file).
+func readStoreKeyFile(_ path: String) throws -> NativeIdentity {
+    let data: Data
+    do { data = try BoundedRead.contents(of: URL(fileURLWithPath: path), maxBytes: KeyText.maximumBytes) } catch {
+        throw CLIError.failure("cannot read \(path): \(error)")
+    }
+    switch KeyText.classify(data) {
+    case .success(.identity(let id)): return id
+    case .success(.passphraseWrapped):
+        throw CLIError.failure("\(path) is a passphrase-wrapped key file; decrypt it first (sempere keys export, or age -d)")
+    case .failure(let problem): throw CLIError.failure("\(path): \(problem)")
+    }
+}
+
 // MARK: - Passphrase and vault access
 
 enum Env {
