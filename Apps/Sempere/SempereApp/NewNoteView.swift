@@ -6,6 +6,7 @@ struct NewNoteView: View {
     @AppModelEnvironment private var model
     @Environment(\.dismiss) private var dismiss
     @State private var title = ""
+    @State private var titleSelection: TextSelection?
     @State private var paper = PaperPreference.load()
     @State private var layout = NewNoteLayout.load()
     @State private var choosingPaper = false
@@ -22,7 +23,8 @@ struct NewNoteView: View {
         NavigationStack {
             ScrollViewReader { proxy in
                 Form {
-                    TextField(NewNoteSettings.defaultTitle().isEmpty ? String(localized: "Title", comment: "Text field placeholder: a note title") : NewNoteSettings.defaultTitle(), text: $title)
+                    TextField(NewNoteSettings.defaultTitle().isEmpty ? String(localized: "Title", comment: "Text field placeholder: a note title") : NewNoteSettings.defaultTitle(), text: $title, selection: $titleSelection)
+                        .emojiCompletion(text: $title, selection: $titleSelection)
                     Button { choosingPaper = true } label: {
                         HStack(spacing: 12) {
                             Image(uiImage: PaperImage.image(for: paper, size: CGSize(width: 44, height: 57), scale: displayScale))

@@ -6,6 +6,12 @@ The section for a version is the body of its GitHub Release (`docs/releasing.md`
 
 ## [Unreleased]
 
+### Added
+
+- Emoji shortcodes in naming fields (note titles, notebooks, tags), as in Slack and GitHub: type `:`
+  and two letters (`:smile`) for a list of emoji (↑ ↓ to choose, Return or Tab to insert, Escape to
+  close); a closed `:smile:` becomes 😄 by itself, in rename dialogs too. Built-in table, no network.
+
 ### Fixed
 
 - iCloud Drive: a vault is a plain folder, no longer a package, so iCloud syncs its files one by one; as

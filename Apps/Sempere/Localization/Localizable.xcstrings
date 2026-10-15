@@ -6156,6 +6156,18 @@
         }
       }
     },
+    "Emoji Suggestions" : {
+      "comment" : "Accessibility label of the list of emoji offered while typing :name in a text field",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sugerencias de emoji"
+          }
+        }
+      }
+    },
     "Encrypt to someone's public key (age1pq1…). This device gets no key: only the matching secret key opens the vault, and you will be asked for it." : {
       "comment" : "Footer of the key choice: public key only",
       "extractionState" : "manual",
