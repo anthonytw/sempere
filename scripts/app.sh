@@ -5,7 +5,8 @@
 #   scripts/app.sh test-phone # the iPhone suites (PhoneLayoutTests) on an iPhone simulator
 #   scripts/app.sh build-ios  # compile only: the app, its unit tests and its UI tests for an iOS simulator (runs nothing)
 #   scripts/app.sh catalyst   # Mac Catalyst build, unsigned
-#   scripts/app.sh pseudo     # layout check in the double-length, right-to-left and Spanish languages, iPad simulator
+#   scripts/app.sh pseudo     # UI-test layout check in the double-length, right-to-left and Spanish languages, iPad
+#                             # simulator (by hand; the gate runs the in-process PseudoLanguageLayoutTests in test-mac)
 #   scripts/app.sh pseudo-mac # the same as the Mac Catalyst app, at a narrow and a wide window (takes over the screen)
 #   scripts/app.sh test-mac   # every app suite on Mac Catalyst, ad-hoc signed and sandboxed
 #   scripts/app.sh test-mac-ui # the Mac UI tests (MacWindowUITests, SidebarDropUITests) on Mac Catalyst
