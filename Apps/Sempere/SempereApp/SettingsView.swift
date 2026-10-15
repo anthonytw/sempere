@@ -1,5 +1,6 @@
 import Sempere
 import SwiftUI
+import UIKit
 
 /// The Settings panel (docs/attachments.md §15): one screen, a sheet from the
 /// sidebar's gear button on iPad and iPhone and a window (Settings…, ⌘,) on
@@ -73,6 +74,15 @@ private struct GeneralSettings: View {
         Section {
             Toggle("Keep Screen On", isOn: $keepScreenOn)
                 .syncedSetting("editor.keepScreenOn")
+            // No in-app override: iOS keeps one language per app in the system Settings (Settings ▸
+            // Sempere ▸ Language; on a Mac, System Settings ▸ General ▸ Language & Region ▸ Applications),
+            // and the app, its widgets and its Siri phrases all follow it. Overriding AppleLanguages in
+            // code would leave the system sheets, widgets and shortcuts in another language.
+            LabeledContent("App Language") {
+                Button("Open System Settings") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                }
+            }
             Toggle("Recognize Handwriting", isOn: Binding(
                 get: { recognize },
                 set: { recognize = $0; model.setHandwritingRecognition($0) }))
@@ -92,6 +102,7 @@ private struct GeneralSettings: View {
             Text("General")
         } footer: {
             VStack(alignment: .leading, spacing: 4) {
+                Text("App Language opens Sempere's page in the system Settings: Sempere uses the language chosen for it there, so its widgets, shortcuts and system dialogs agree with it.")
                 Text("Keep Screen On stops the screen from locking while a note is open. Handwriting recognition makes handwriting searchable; it runs on this device and nothing leaves it.")
                 if Platform.isMac {
                     Text("Smooth Mouse Strokes evens out lines drawn with a mouse or trackpad; Strong rounds them more. Strokes drawn with the ruler are not smoothed.")
@@ -352,7 +363,7 @@ private struct TranscriptionSettingsSection: View {
     @State private var enabled = TranscriptionSettings.isEnabled()
     @State private var locale = TranscriptionSettings.localeIdentifier()
     @State private var status = TranscriptionSettings.ModelStatus.unavailable
-    @State private var engines: [TranscriptionSettings.EngineLine] = []
+    @State private var engineNote = ""
     @State private var downloading = false
     @State private var failure: String?
 
@@ -362,22 +373,17 @@ private struct TranscriptionSettingsSection: View {
                 .onChange(of: enabled) { TranscriptionSettings.setEnabled(enabled) }
                 .syncedSetting("transcription.enabled")
             if enabled {
-                Picker("Language", selection: $locale) {
-                    Text("Same as Device").tag(String?.none)
+                Picker("Preferred Language", selection: $locale) {
+                    Text("Automatic", comment: "Settings ▸ Transcription ▸ Preferred Language: the note's language, else the device's").tag(String?.none)
                     ForEach(TranscriptionSettings.offeredLocales(), id: \.self) { id in
                         Text(Locale.current.localizedString(forIdentifier: id) ?? id).tag(String?.some(id))
                     }
                 }
                 .onChange(of: locale) { TranscriptionSettings.setLocaleIdentifier(locale) }
                 .syncedSetting("transcription.language")
-                LabeledContent("Language Model", value: status.text)
-                LabeledContent("Engine in Use", value: engines.first(where: \.isUsed)?.title
-                               ?? String(localized: "None available", comment: "Settings ▸ Transcription: no speech engine can transcribe the chosen language"))
-                ForEach(engines, id: \.title) { engine in
-                    LabeledContent(engine.title, value: engine.state)
-                        .font(.footnote)
-                        .foregroundStyle(engine.available ? Color.primary : Color.secondary)
-                }
+                // The app picks the engine for the language; this says which one it chose.
+                Text(engineNote)
+                    .font(.caption).foregroundStyle(.secondary)
                 if TranscriptionSettings.offersDownload(status, hasDownloader: TranscriptionSettings.downloader != nil) {
                     Button(LocalizedStringKey(downloading ? "Downloading…" : "Download Language Model")) { Task { await download() } }
                         .disabled(downloading)
@@ -398,7 +404,7 @@ private struct TranscriptionSettingsSection: View {
     private func refresh() async {
         guard enabled else { return }
         status = await TranscriptionSettings.statusProvider(locale)
-        engines = await TranscriptionSettings.enginesProvider(locale)
+        engineNote = await TranscriptionSettings.engineNoteProvider(locale)
     }
 
     private func download() async {

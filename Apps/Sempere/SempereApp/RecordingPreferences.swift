@@ -65,15 +65,52 @@ enum TranscriptionPreference {
             let engines = await SpeechTranscription.availability(options: SpeechTranscription.Options(language: locale))
             return engineLines(engines)
         }
+        TranscriptionSettings.engineNoteProvider = { locale in
+            engineNote(await SpeechTranscription.availability(options: SpeechTranscription.Options(language: locale)))
+        }
         TranscriptionSettings.downloader = { locale in
             try await SpeechTranscription.downloadModel(options: SpeechTranscription.Options(language: locale))
+        }
+    }
+
+    /// The speech engines the app can choose between.
+    enum Engine: Equatable, Sendable {
+        /// The newer on-device engine (iOS and macOS 26): more languages, better accuracy.
+        case speechTranscriber
+        /// The older on-device `SFSpeechRecognizer`: the fallback for a language the newer one lacks.
+        case sfSpeech
+    }
+
+    /// The engine for the Preferred Language, from what the engines say for it
+    /// (`SpeechTranscription.availability`): SpeechTranscriber when it supports the language,
+    /// else SFSpeechRecognizer when it can run on device, else nil. This is the order
+    /// `SpeechTranscription.transcribe` tries them in, so Settings shows what will be used.
+    static func chosenEngine(_ engines: [SpeechTranscription.EngineStatus]) -> Engine? {
+        func available(_ marker: String) -> Bool { engines.contains { $0.engine.contains(marker) && $0.available } }
+        if available("speechtranscriber") { return .speechTranscriber }
+        if available("sfspeech") { return .sfSpeech }
+        return nil
+    }
+
+    /// The small text under the Preferred Language picker.
+    static func engineNote(_ engines: [SpeechTranscription.EngineStatus]) -> String {
+        switch chosenEngine(engines) {
+        case .speechTranscriber?:
+            return String(localized: "Engine: SpeechTranscriber (on device)", comment: "Settings ▸ Transcription: the speech engine chosen for the language (a product name)")
+        case .sfSpeech?:
+            return String(localized: "Engine: SFSpeechRecognizer (on device)", comment: "Settings ▸ Transcription: the speech engine chosen for the language (a product name)")
+        case nil:
+            return String(localized: "No speech engine on this device can transcribe this language.", comment: "Settings ▸ Transcription: shown under the language picker")
         }
     }
 
     /// The engines as the panel lists them, in the order transcription tries them; the first available
     /// one is the one in use. The engines' own `detail` texts (English, for the CLI) become localized states.
     static func engineLines(_ engines: [SpeechTranscription.EngineStatus]) -> [TranscriptionSettings.EngineLine] {
-        let used = engines.firstIndex(where: \.available)
+        let chosen = chosenEngine(engines)
+        let used = engines.firstIndex { e in
+            e.available && (chosen == .speechTranscriber ? e.engine.contains("speechtranscriber") : e.engine.contains("sfspeech"))
+        }
         return engines.enumerated().map { index, e in
             let title: String
             if e.engine.contains("speechtranscriber") {
