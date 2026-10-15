@@ -12,6 +12,76 @@ and decoder). The manifest names the model, its license and source, the input si
 preprocessing, the vocabulary, and the SHA-256 and size of every file; Sempere checks every file
 against it before use (`MathModelStore`). `convert.py` writes the folder.
 
+## Bring your own model
+
+Any image-to-LaTeX encoder-decoder can be used if it fits the folder contract below. The easy
+path is `convert.py`: it takes any Hugging Face `VisionEncoderDecoderModel` (`--model DIR`), or
+any other PyTorch model through a loader (`--loader FILE`, a `load(model_dir)` function returning
+something with the same `encoder`/`decoder` interface), and writes the whole folder. To build
+the folder another way, match this contract (`MathModelManifest`, `Sources/SempereRender/MathModel.swift`).
+
+**How Sempere runs it.** The selected ink is drawn as a gray image as `image` specifies
+(`MathInkImage`: every stroke the same width, cropped, scaled into the padded box, normalized
+`(v - mean) / std`). The encoder runs once. The decoder then runs once per step of a beam search
+(`beamWidth` beams), starting from `start` and ending at `end` or `maxLength`. The surviving
+token sequences become text through the vocabulary, are tidied (`LaTeXCleanup`) and are offered
+as candidates, best first.
+
+**Core ML packages** (`coreml` in the manifest names both folders and every feature):
+
+| Model | Inputs | Output |
+|---|---|---|
+| encoder | `image`: `[1, channels, height, width]` Float32 | `encoderOutput`: any shape |
+| decoder | `tokens`: `[1, L]` Int32, the prefix padded with `pad`; `encoderStates`: the encoder's output | `logits`: `[1, L, vocabularySize]` |
+
+The decoder must be causal (position *i* sees tokens 0…*i* only); Sempere reads the logits at the
+prefix's last position. `L` is `maxLength`, or with `lengths` (Core ML enumerated shapes,
+ascending, the last equal to `maxLength`) the shortest that holds the prefix. There is no KV
+cache. `computeUnits` is `all`, `cpuAndGPU`, `cpuOnly` or `cpuAndNeuralEngine`; measure before
+choosing the Neural Engine, as some encoders compute wrongly on it.
+
+**Vocabulary:** a Hugging Face `tokenizer.json` (`model.vocab` plus `added_tokens`; added tokens
+marked special are never shown) or a JSON array of token strings indexed by id. Ids must be
+exactly `0..<count`. `joining` is `byteLevel` (GPT-2 byte-level BPE, as in TrOCR, Nougat and
+UniMERNet tokenizers) or `words` (whole LaTeX tokens joined with spaces, as in CROHME models).
+
+**manifest.json**, abbreviated (`convert.py` writes it; the hashes and sizes must be exact):
+
+```json
+{
+  "format": "sempere-math-model/1",
+  "id": "my-model", "name": "My Model",
+  "licence": "Apache-2.0", "source": "https://example.org/my-model",
+  "files": [
+    {"path": "decoder.mlpackage/Manifest.json", "sha256": "…64 lowercase hex…", "size": 617},
+    {"path": "tokenizer.json", "sha256": "…", "size": 2154630}
+  ],
+  "image": {"width": 384, "height": 384, "channels": 3, "padding": 8, "strokeWidth": 3,
+            "alignLeft": false, "invert": false, "mean": [0.7931], "std": [0.1738]},
+  "vocabulary": {"file": "tokenizer.json", "joining": "byteLevel"},
+  "decoder": {"start": 0, "end": 2, "pad": 1, "maxLength": 256, "lengths": [16, 32, 64, 128, 256],
+              "vocabularySize": 687, "beamWidth": 3},
+  "coreml": {"encoder": "encoder.mlpackage", "decoder": "decoder.mlpackage",
+             "image": "image", "encoderOutput": "encoder_states", "tokens": "tokens",
+             "encoderStates": "encoder_states", "logits": "logits", "computeUnits": "cpuAndGPU"}
+}
+```
+
+- `files` lists every file in the folder except `manifest.json`, including each file inside the
+  two `.mlpackage` folders. Paths are relative, `/`-separated, and use only letters, digits,
+  `.`, `_` and `-`, with no part starting with `.`. At most 64 files and 2 GB in all.
+- `image`: sides up to 2048 pixels; `channels` 1 or 3 (gray repeated); `invert` true means white
+  ink on black; `alignLeft` false centers the ink; `maxInkHeight` (optional) caps how tall a
+  short line of ink is drawn; `mean` and `std` have one value or one per channel.
+- `decoder`: `start`, `end` and `pad` are ids below `vocabularySize`; `beamWidth` is 1 to 16.
+- Get the preprocessing right: a model fed images unlike its training images reads badly, and
+  nothing in the folder can detect that. Compare against the model's own preprocessing code.
+
+**Test it** before installing: `sempere recognize-math NOTE --all-ink --model DIR --json` reads
+a note's ink with the folder as is (any manifest problem is reported by name), and
+`--save-image FILE.png` writes the exact image the encoder was given. `eval.py` (below) measures
+accuracy on MathWriting.
+
 ## Converting a model
 
 Work outside the repository; nothing downloaded or converted is committed. The scripts:
