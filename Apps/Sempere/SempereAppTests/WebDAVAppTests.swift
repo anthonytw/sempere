@@ -14,6 +14,10 @@ final class FakeWebDAVRemote: WebDAVRemote, @unchecked Sendable {
     private var _downloads = 0, _pushes = 0, _redownloads = 0
     private var _pushedUnlocked: [Bool] = []
     private var _redownloadKeys: [Int] = []
+    private var _releases = 0
+    /// How often the app told the remote the open vault closed (`releaseConnections`).
+    var releases: Int { lock.lock(); defer { lock.unlock() }; return _releases }
+    func releaseConnections() { lock.lock(); _releases += 1; lock.unlock() }
     var downloadError: (any Error)?
     var downloadReport = SyncReport()
     var pushError: (any Error)?
@@ -203,6 +207,14 @@ struct WebDAVAppTests {
         #expect(try s.passwords.password(for: id) == "pw")
         #expect(s.model.isWebDAVVault, "the open copy stays open")
         s.model.close()
+    }
+
+    @Test func closingTheVaultReleasesItsPooledConnections() async throws {
+        let s = try Self.setup()
+        _ = try await s.model.connectWebDAV(s.listing, user: "me", password: "pw", pin: nil, library: s.library)
+        let before = s.remote.releases
+        s.model.close()
+        #expect(s.remote.releases > before)
     }
 
     @Test func anotherVaultAtTheAddressReplacesACleanCopyAndItsPassword() async throws {

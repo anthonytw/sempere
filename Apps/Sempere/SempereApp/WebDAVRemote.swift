@@ -52,17 +52,37 @@ protocol WebDAVRemote: Sendable {
     /// With `partial`, the new copy is a partial copy filled by `fetch` afterwards.
     func redownload(_ endpoint: WebDAVEndpoint, copy: WebDAVLocalCopy, identities: [any AgeIdentity],
                     partial: Bool, options: WebDAVSyncOptions) throws -> (report: SyncReport, replaced: Bool)
+    /// The open vault closed: drop any connections kept for it.
+    func releaseConnections()
+}
+
+extension WebDAVRemote {
+    func releaseConnections() {}
 }
 
 /// `WebDAVRemote` over `URLSession` (`SempereWebDAV`): https only (http to
 /// localhost), Basic auth, redirects never followed, the certificate either
 /// trusted by the system or the one pinned for the location.
 struct LiveWebDAVRemote: WebDAVRemote {
+    /// The open vault's transport, reused by every operation with the same address, credentials and pin.
+    let pool: WebDAVTransportPool
+
+    init(pool: WebDAVTransportPool = WebDAVTransportPool(make: { e in
+        URLSessionTransport(timeout: 30, serverTrust: PinnedServerTrust(pin: e.pinnedCertificate, recorder: nil))
+    })) {
+        self.pool = pool
+    }
+
+    func releaseConnections() { pool.release() }
+
+    /// A client on the pooled transport; `check` (Test Connection, which needs the recorder and runs once) is
+    /// the only caller that builds a transport of its own.
     func client(_ e: WebDAVEndpoint, recorder: CertificateRecorder? = nil) throws -> WebDAVClient {
-        let trust = PinnedServerTrust(pin: e.pinnedCertificate, recorder: recorder)
         let credentials = e.user.map { WebDAVCredentials(user: $0, password: e.password ?? "") }
-        return try WebDAVClient(baseURL: e.url, credentials: credentials,
-                                transport: URLSessionTransport(timeout: 30, serverTrust: trust))
+        let transport: any WebDAVTransport = recorder == nil
+            ? pool.transport(for: e)
+            : URLSessionTransport(timeout: 30, serverTrust: PinnedServerTrust(pin: e.pinnedCertificate, recorder: recorder))
+        return try WebDAVClient(baseURL: e.url, credentials: credentials, transport: transport)
     }
 
     func check(_ endpoint: WebDAVEndpoint) -> WebDAVProbe {

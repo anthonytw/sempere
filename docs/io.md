@@ -1493,6 +1493,14 @@ server it talks to itself (`Open Vault ▸ WebDAV…`). It wraps the same
 `SempereWebDAV` library as `sempere sync webdav`; nothing about the server
 side changes, and any server the CLI works with works here.
 
+**One transport per connection.** `LiveWebDAVRemote` keeps a single `URLSessionTransport` in a
+`WebDAVTransportPool`, keyed by URL, user, password and pin, so consecutive pushes and fetches reuse its
+TCP/TLS connections. A different key replaces it (trust is decided by that transport's own
+`PinnedServerTrust`, built from the key's pin, so a pin is never evaluated under another); closing the vault
+(`stopWebDAV`) empties the pool. A dropped transport is not killed: operations still holding it finish, and
+its sessions invalidate in `deinit` (`finishTasksAndInvalidate`). "Test Connection" builds its own transport
+(it needs the certificate recorder).
+
 **Model: a local copy that is pushed.** The vault the app opens is a local
 copy in the app's container (`Application Support/Sempere/WebDAV/<location
 id>/<name>.sempere`, sync state and quarantine beside it). Every read and
