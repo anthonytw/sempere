@@ -27,7 +27,7 @@ the XCTest `Executed N tests` line is the one that matters.
 2. One task per branch, one PR to `main`. Branch names like `feat/…`, `fix/…`, `docs/…`.
 3. Commit messages: `area: imperative summary` (for example `render: clamp page height`).
 4. Add tests with the change; format changes go through `docs/format.md` first.
-5. Update `CHANGELOG.md` under `[Unreleased]` for anything a user would notice.
+5. For anything a user would notice, add a fragment `changelog.d/<topic>.md` (format: [changelog.d/README.md](changelog.d/README.md)). Never edit `CHANGELOG.md` in a PR: every PR conflicted there.
 6. CI must be green (Linux, macOS, app), and an app-affecting change needs the PR gate's
    `local/app-tests` status: `scripts/local-ci.sh` on a Mac with Xcode (package tests, Mac Catalyst
    unit tests, an iOS compile check; [docs/ci.md](docs/ci.md)). Maintainers squash-merge.

@@ -4,7 +4,8 @@ A release is a git tag `vX.Y.Z`. `.github/workflows/release.yml` does the rest.
 
 ## Steps
 
-1. In a PR: bump `sempereVersion` in `Sources/SempereCLI/Version.swift`, update the
+1. In a PR: run `python3 -I scripts/changelog-collect.py` (folds the `changelog.d/` fragments into
+   `[Unreleased]` and deletes them), bump `sempereVersion` in `Sources/SempereCLI/Version.swift`, update the
    `--version` assertion in `Tests/CLITests/CLICommandTests.swift`, and in `CHANGELOG.md`
    rename `[Unreleased]` content into a `## [X.Y.Z] - YYYY-MM-DD` section (add the compare
    link at the bottom). Merge.
