@@ -45,6 +45,13 @@ only after every step passed), and something enforces each one:
 - Off CI, `scripts/app.sh` stops an `xcodebuild` that sits idle after printing its test
   summary (`SEMPERE_STALL_SECS`, default 180 s).
 
+## Changelog fragments
+
+PRs never edit `CHANGELOG.md` (every PR conflicted there). Each adds `changelog.d/<topic>.md`
+([format](../changelog.d/README.md)). `python3 -I scripts/changelog-collect.py` folds them into
+`[Unreleased]` and deletes them: run it on `main` before a TestFlight build and in the release PR
+([releasing.md](releasing.md)). Tested by `scripts/test-changelog-collect.sh` (CI `release` job).
+
 ## What runs when
 
 - **Draft pull requests run nothing.** Mark a pull request ready (`gh pr ready`) to run CI;

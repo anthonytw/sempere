@@ -83,7 +83,7 @@ jobs:
           # App Store release checks (scripts/release-check.sh): the
           # project, plists and privacy manifests under Apps/, the Sources/ the app links (the
           # required-reason API scan) and the privacy policy pages. Linux, seconds.
-          release=$(has "^(Apps/|Sources/($appsrc)/|scripts/(test-)?release-check\\.sh\$|scripts/(test-)?changelog-section\\.sh\$|docs/privacy/|docs/appstore/privacy-policy\\.md\$|\\.github/(workflows/ci\\.yml\$|actions/))")
+          release=$(has "^(Apps/|Sources/($appsrc)/|scripts/(test-)?release-check\\.sh\$|scripts/(test-)?changelog-(section|collect)\\.(sh|py)\$|docs/privacy/|docs/appstore/privacy-policy\\.md\$|\\.github/(workflows/ci\\.yml\$|actions/))")
           echo "webgolden=$webgolden" >> "$GITHUB_OUTPUT"
           echo "release=$release" >> "$GITHUB_OUTPUT"
           echo "package=$package app=$app web=$web webgolden=$webgolden release=$release"
@@ -434,6 +434,8 @@ jobs:
       # itself, whose next section may still wait for the maintainer.
       - name: Tests of the changelog section guard
         run: scripts/test-changelog-section.sh
+      - name: Tests of the changelog fragment collector
+        run: scripts/test-changelog-collect.sh
 
   web:
     name: Web viewer (lint, typecheck, tests, build)

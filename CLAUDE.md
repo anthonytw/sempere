@@ -106,6 +106,16 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
 - **Before a release**: `scripts/local-ci.sh --release` (everything, iPad and iPhone simulators
   included; posts `local/release-sweep`, which `release.yml` requires on the tagged commit).
 
+### Parallel agents
+
+- Changelog: add a fragment `changelog.d/<topic>.md` ([format](changelog.d/README.md)); never edit
+  `CHANGELOG.md` (`scripts/changelog-collect.py` folds fragments at release time, docs/ci.md).
+- At most two agents at once may run anything that needs the screen (Mac UI tests, Catalyst XCUITest).
+- Run all Xcode work (`xcodebuild`, `scripts/app.sh`, `scripts/local-ci.sh`) through the build lock your
+  environment provides (the agent harness's `xc-lock`); never start a second Xcode build beside it.
+- Cancel only your own processes, by PID; never `pkill -f` or `killall` patterns (they kill other agents' runs).
+- Temp files go in your own scratch directory, never shared names (`/tmp/out.log`).
+
 ## Gotchas
 
 - Untrusted input (`docs/format.md` §9): every byte from a vault folder, a
