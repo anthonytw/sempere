@@ -80,6 +80,51 @@ final class JournalSyncTests: SyncTestCase {
         }
     }
 
+    /// Device check c51: a key change that really runs (a removal interrupted after its first file, its journal
+    /// synced to the server and to a second device, then finished) takes `rewrap-journal.json` off the server on
+    /// the next sync, with no conflict, and the second device drops its copy too.
+    func testAFinishedKeyChangeRemovesTheServersJournalWithoutAConflict() throws {
+        let server = MockDAV()
+        _ = try interruptedRemoval()
+        let genuine = try Data(contentsOf: journal("A"))
+        try sync("A", server)
+        XCTAssertEqual(server.file("rewrap-journal.json"), genuine, "the pending change's journal is on the server")
+        try sync("B", server)   // B takes the change's files and the journal (or waits on it); no conflict either way
+
+        var a = try openVault("A")
+        XCTAssertTrue(try a.resumeRewrap().isComplete)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: journal("A").path), "finished: A's journal is gone")
+
+        let report = try sync("A", server)
+        XCTAssertTrue(report.conflicts.isEmpty && report.errors.isEmpty && report.rejected.isEmpty, "\(report)")
+        XCTAssertNil(server.file("rewrap-journal.json"), "the server's journal is removed: \(report)")
+        XCTAssertEqual(report.deleted, [.init(side: "remote", path: "rewrap-journal.json")], "\(report)")
+        XCTAssertTrue(try sync("A", server).isEmpty, "and nothing is left to do")
+
+        // B still holds the journal it took while the change was pending: its next run learns of the finished
+        // change (vault.json) and drops the journal it now refuses instead of putting it back on the server
+        // (before the fix it did, and the two devices then rejected each other's copy for ever). Alternating
+        // runs settle, with no conflict and no error, and neither the server nor B keeps the journal. (The
+        // files the change rewrapped in place are not propagated by sync, by design: docs/io.md "Not offered
+        // for a WebDAV vault in the app"; B quarantines the stale server copy of such a file.)
+        var rounds = 0
+        for round in 1...6 {
+            rounds = round
+            let b = try sync("B", server, vault: .some(try openVault("B")))
+            let a2 = try sync("A", server, vault: .some(try openVault("A")))
+            for r in [a2, b] {
+                XCTAssertTrue(r.conflicts.isEmpty && r.errors.isEmpty, "round \(round): \(r)")
+            }
+            if b.isEmpty && a2.isEmpty { break }
+        }
+        XCTAssertLessThan(rounds, 6, "the two devices settle")
+        XCTAssertNil(server.file("rewrap-journal.json"), "the server does not keep the finished change's journal")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: journal("B").path), "B drops its copy of the finished change's journal")
+        let reopened = try openVault("B")
+        XCTAssertFalse(reopened.pendingRewrap)
+        XCTAssertTrue(reopened.verify().isHealthy)
+    }
+
     // MARK: A journal arriving before its vault.json (audit leftovers, group 2)
 
     /// A change's step 1 (the journal) on the server while its vault.json is

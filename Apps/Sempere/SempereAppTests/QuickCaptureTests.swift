@@ -75,6 +75,27 @@ struct QuickCaptureTests {
         #expect(pending.transcript?.segments.first?.words?.map(\.t) == ["Linear", "maps."])
     }
 
+    /// Device check c48: a voice note stopped within a second of starting (before the first segment tick, and with
+    /// a recorder that wrote almost nothing) is saved, not dropped as too short.
+    @Test func aVoiceNoteStoppedWithinASecondIsSaved() async throws {
+        let (url, _, identity, qc, _) = try Self.setUp(transcribe: false)
+        try await qc.start()
+        let outcome = try await qc.stop()   // no time passes
+        #expect(outcome.error == nil && outcome.delivery == .vault)
+        #expect(qc.notice?.result == .savedToInbox)
+        #expect(Self.inbox(url) == [CaptureFile.name(outcome.id, .capture)])
+        #expect(Self.leftovers(qc.root).isEmpty)
+        let pending = try Vault.open(at: url, identities: [identity]).readCapture(outcome.id)
+        #expect((pending.audio?.count ?? 0) > 0)
+        // And again right after, from the other side of a pause: start, interruption, stop.
+        try await qc.start()
+        let session = try #require(qc.session)
+        session.interruption(began: true, shouldResume: false)
+        let second = try await qc.stop()
+        #expect(second.error == nil)
+        #expect(Self.inbox(url).count == 2)
+    }
+
     /// A voice note started and stopped on the Lock Screen is assembled and
     /// read back from closed files before any unlock: its files must use a
     /// class that is readable while locked (after the first unlock), not

@@ -106,6 +106,28 @@ final class SyncFaultProxyTests: TempDirTestCase {
                         .appendingPathComponent("notes/\(note.uuidString.lowercased())/att/\(blob)").path)[.size] as? Int)
     }
 
+    /// Device check c33: a long upload over a slow link (the proxy caps the bandwidth at 300 KB/s, so a 1.5 MB
+    /// blob takes several seconds) completes in one run, with no error and nothing partial under its name, and a
+    /// second device then downloads it whole.
+    func testALongUploadOverASlowLinkCompletes() throws {
+        let set = try devices()
+        let note = try set.a.newNote("slow upload")
+        let blob = try set.a.attach(note, noise(1_500_000, seed: 33))
+        try proxy.configure(latencyMs: 40, bytesPerSecond: 300_000)
+        let started = Date()
+        let report = try set.a.sync()
+        let took = Date().timeIntervalSince(started)
+        XCTAssertTrue(report.errors.isEmpty && report.conflicts.isEmpty, "\(report)")
+        XCTAssertGreaterThan(took, 3, "the link really was slow (\(took) s)")
+        let file = "notes/\(note.uuidString.lowercased())/att/\(blob)"
+        XCTAssertTrue(report.uploaded.contains(file), "\(report.uploaded)")
+        let localSize = try FileManager.default.attributesOfItem(atPath: set.a.folder.appendingPathComponent(file).path)[.size] as? Int
+        XCTAssertEqual(try set.inspector.stat(["notes", note.uuidString.lowercased(), "att", blob])?.size, localSize)
+        try proxy.configure()
+        try set.converge()
+        try set.assertConverged(written: [file])
+    }
+
     /// Both devices write and sync while one request in ten is answered 503
     /// and a third of blob downloads are reset midway: once the faults stop,
     /// everything converges and nothing written is lost.

@@ -1,3 +1,4 @@
+import BackgroundTasks
 import Foundation
 import Sempere
 import Testing
@@ -151,5 +152,30 @@ struct BackgroundSyncTests {
         let cancelled = Task { await second.runScheduledSync() }
         cancelled.cancel()
         #expect(await cancelled.value == false)
+    }
+
+    /// Device check c2, "no schedule failed log": `BGTaskScheduler` refuses (`notPermitted`) a request whose
+    /// identifier is not in the Info.plist's `BGTaskSchedulerPermittedIdentifiers`, and the scheduler then logs
+    /// "schedule failed 1". Every identifier the app submits must be permitted, and the two the SwiftUI
+    /// `.backgroundTask` handlers register must be the ones submitted.
+    @Test func everySubmittedIdentifierIsPermittedInTheInfoPlist() throws {
+        let permitted = try Self.permittedIdentifiers()
+        for request in [BackgroundSyncRequest.refresh, .processing] {
+            let id = BGTaskSyncScheduler.makeRequest(request).identifier
+            #expect(permitted.contains(id), "\(id) is in BGTaskSchedulerPermittedIdentifiers")
+        }
+        #expect(BGTaskSyncScheduler.makeRequest(.refresh) is BGAppRefreshTaskRequest)
+        #expect(BGTaskSyncScheduler.makeRequest(.processing) is BGProcessingTaskRequest)
+        #expect(BGTaskSyncScheduler.makeRequest(.refresh).identifier == BackgroundSync.refreshIdentifier)
+        #expect(BGTaskSyncScheduler.makeRequest(.processing).identifier == BackgroundSync.processingIdentifier)
+        #expect(permitted.count == 2, "nothing permitted that the app never submits: \(permitted)")
+    }
+
+    /// The same list from the source `SempereInfo.plist` (the test host's bundle may be a stub).
+    static func permittedIdentifiers() throws -> [String] {
+        let plist = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("SempereInfo.plist")
+        let dict = try #require(try PropertyListSerialization.propertyList(from: Data(contentsOf: plist), format: nil) as? [String: Any])
+        return try #require(dict["BGTaskSchedulerPermittedIdentifiers"] as? [String])
     }
 }

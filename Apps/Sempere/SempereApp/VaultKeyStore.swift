@@ -78,7 +78,8 @@ protocol VaultKeyStore: Sendable {
 struct KeychainVaultKeyStore: VaultKeyStore {
     static let service = "io.github.anthonytw.sempere.vault-key"
 
-    private static func baseQuery(_ vaultID: UUID) -> [String: Any] {
+    /// The attributes that identify a vault's item (a test pins them: a change would hide every saved key after an update).
+    static func baseQuery(_ vaultID: UUID) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: service,
          kSecAttrAccount as String: vaultID.uuidString.lowercased(),

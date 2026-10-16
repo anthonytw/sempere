@@ -432,6 +432,20 @@ public final class WebDAVSync {
         let localHash = FileDigest.sha256(local)
 
         guard let remote else {
+            // A rewrap journal this device synced that is now gone from the server was removed there when its
+            // change finished. If this device refuses it too (vault.json no longer binds it), it is finished
+            // business here as well: dropped, never put back (putting it back made two devices that had both
+            // taken a pending change's journal hand a stale one to each other for ever).
+            if name == Vault.journalName, record != nil, let vault, let manifest = try localMutable(Vault.manifestName),
+               case .refused? = Vault.incomingJournalProblem(local, local: nil, manifest: manifest, vault: vault) {
+                if !options.dryRun {
+                    try requireLocalWrite("remove \(name)")
+                    try FileManager.default.removeItem(at: root.appendingPathComponent(name))
+                    state.mutable[name] = nil
+                }
+                report.deleted.append(.init(side: "local", path: name))
+                return
+            }
             // Never on the server, or wiped there: (re)create it, never overwriting.
             if try push(name, local, condition: .create) { try recordMutable(name, hash: localHash) }
             return
