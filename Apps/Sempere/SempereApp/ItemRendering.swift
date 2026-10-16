@@ -94,7 +94,7 @@ enum ItemRendering {
             } ?? .placeholder(.unavailable("the equation cannot be typeset"))
         }
         let interval = Perf.begin(.itemPicture)
-        let label = renders == nil ? nil : RenderCache.pictureLabel(key)
+        let label = renders?.label(for: key)
         if let renders, let label {
             let hit = await Task.detached(priority: .userInitiated) { renders.picture(label) }.value
             if let hit {
@@ -156,7 +156,7 @@ enum ItemRendering {
     private static func native(_ key: ItemRenderKey, renders: RenderCache?,
                                draw: () -> (CGImage, Rect)?) async -> ItemPicture? {
         let interval = Perf.begin(.itemPicture)
-        let label = renders == nil ? nil : RenderCache.pictureLabel(key)
+        let label = renders?.label(for: key)
         if let renders, let label {
             let hit = await Task.detached(priority: .userInitiated) { renders.picture(label) }.value
             if let hit {
