@@ -155,6 +155,9 @@ public final class URLSessionTransport: WebDAVTransport, @unchecked Sendable {
             // a DELETE included, which a server then refuses with 412.
             config.urlCache = nil
             config.requestCachePolicy = .reloadIgnoringLocalCacheData
+            // One connection per transfer a run makes at once (`TransferPool`), kept alive
+            // between requests; the default (6 on Apple platforms) queued `--jobs` above it.
+            config.httpMaximumConnectionsPerHost = TransferPool.maxWidth
             return URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
         }
         delegate = Delegate(serverTrust: serverTrust)

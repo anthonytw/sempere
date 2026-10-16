@@ -113,7 +113,14 @@ extension WebDAVSync {
         // A partial copy's note not fetched in full: what it lacks is pending, never
         // extraneous, and nothing of it is judged for deletion (format.md §1.2).
         let incomplete = PartialCopy.isIncomplete(noteFolder: dir)
-        for n in L.subtracting(R).sorted() { attempt(n) { try upload(id, n); R.insert(n) } }
+        for n in L.subtracting(R).sorted() {
+            // The pre-upload pass may have made it already (`preuploadNewFiles`), or tried and reported it.
+            switch preuploadOutcome(id, key(id, n)) {
+            case .uploaded: R.insert(n)
+            case .failed: break
+            case .notTried: attempt(n) { try upload(id, n); R.insert(n) }
+            }
+        }
 
         // Read only when a deletion is judged or a shared snapshot's coverage
         // is not recorded yet (see syncNote); the cover is of what the server

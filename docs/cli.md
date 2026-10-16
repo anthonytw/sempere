@@ -2259,8 +2259,8 @@ device id and clock from `$XDG_STATE_HOME/sempere/device.json` (default
 sempere sync webdav URL --vault V [--user U --password-env VAR] [--device NAME]
                          [--max-blob-mib N] [--web-viewer] [--dry-run] [--json] [--identity FILE | --passphrase-env VAR]
                          [--push-only [--delete-extraneous] [--keep-server-changes]] [--retry-quarantined]
-                         [--skip-unchanged] [--max-notes N] [--max-entries N] [--max-download-mib N] [--max-minutes N]
-                         [--jobs N]
+                         [--skip-unchanged] [--no-deep-listing] [--max-notes N] [--max-entries N] [--max-download-mib N]
+                         [--max-minutes N] [--jobs N]
 sempere sync webdav URL --vault V [--user U --password-env VAR] [--identity FILE]
                          (--metadata-only | --fetch [--note ID]... [--no-blobs] | --no-blobs) [--jobs N]
 ```
@@ -2419,6 +2419,14 @@ a revision into it, never with weak or missing ETags, and every note is
 listed at least once a day (`docs/io.md`, "Unchanged notes"). The app's
 pushes use it.
 
+**Deep listing.** By default, with 8 to 5 000 note folders, a run lists all of
+them and their `att/` with one `PROPFIND` (`Depth: infinity` on `notes/`)
+instead of one request each, on a server seen to answer it in full: a run
+first compares it with the one-by-one listings (and again once a day), and a
+server that refuses it (Apache's default) or answers it as `Depth: 1` is
+remembered and listed one by one (`docs/io.md`, "One listing for every note
+folder"). `--no-deep-listing` always lists one by one.
+
 ```
 sempere webdav check URL [--user U --password-env VAR] [--json]
 ```
@@ -2440,12 +2448,12 @@ when at least one vault was found, 1 otherwise (no vault, or the server could
 not be used), 2 usage.
 
 **`--jobs N`** (1 to 16, default 6) lists the note folders and their `att/`,
-and downloads the files the vault lacks, N at a time (`docs/io.md`,
-"Concurrent transfers and progress"): on a slow or distant server the round
-trips overlap. Each file is still checked, quarantined or resumed as alone,
-a note's blobs arrive before its revisions, and the run bounds hold across
-the transfers in flight. Uploads, deletions and `vault.json` go one at a
-time. With `--fetch`, N is the fetch's own concurrency (default 4: note
+downloads the files the vault lacks and uploads the files the server lacks,
+N at a time (`docs/io.md`, "Concurrent transfers and progress"): on a slow
+or distant server the round trips overlap. Each file is still checked,
+quarantined or resumed as alone, a note's blobs travel before its revisions,
+uploads still only create (never replace), and the run bounds hold across
+the transfers in flight. Deletions and `vault.json` go one at a time. With `--fetch`, N is the fetch's own concurrency (default 4: note
 folders and small revisions).
 
 **Progress.** When stderr is a terminal (and neither `--json` nor `-q` is

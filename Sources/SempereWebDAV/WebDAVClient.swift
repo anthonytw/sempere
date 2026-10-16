@@ -128,6 +128,58 @@ public struct WebDAVClient: Sendable {
         return out
     }
 
+    /// What `listTree` found below a collection.
+    public enum Tree: Sendable, Equatable {
+        /// The children of every collection below it, keyed by its path
+        /// relative to the listed one (`[]` for the listed one itself). A
+        /// collection the response names but whose children it does not
+        /// list has no key.
+        case listed([[String]: [RemoteEntry]])
+        /// The server refused `Depth: infinity` (403 `propfind-finite-depth`,
+        /// 400, 501, or another 4xx except 401, 404, 408 and 429), or
+        /// answered as if it had been asked `Depth: 1` (nothing deeper than
+        /// the children of the listed collection).
+        case refused
+    }
+
+    /// Lists everything below a collection in one request (`PROPFIND`,
+    /// `Depth: infinity`). Nil when it does not exist. Many servers refuse
+    /// it or answer it as `Depth: 1` (Apache's default, Sabre/Nextcloud with
+    /// infinite depth off): those are `.refused`, never a short listing,
+    /// unless the collection holds no collection with anything in it. The
+    /// body is bounded like any listing (`maxBytes`, default 16 MiB).
+    ///
+    /// - Throws: what `list` throws, for a status that is not a refusal
+    ///   (401, 5xx, ...) and for a body that is too large or not a multistatus.
+    public func listTree(_ path: [String], maxBytes: Int = defaultMaxResponseBytes) throws -> Tree? {
+        var h = ["Depth": "infinity", "Content-Type": "application/xml; charset=utf-8"]
+        h["Accept"] = "application/xml, text/xml"
+        let r = try send("PROPFIND", path, collection: true, headers: h, body: Data(Self.propfindBody.utf8),
+                         maxResponseBytes: maxBytes)
+        if r.status == 404 { return nil }
+        if (400..<500).contains(r.status), ![401, 404, 408, 429].contains(r.status) { return .refused }
+        if r.status == 501 { return .refused }
+        guard r.status == 207 else { throw try failure("PROPFIND", path, r) }
+        let parsed = try PropfindParser.parse(r.body)
+        let prefix = baseComponents + path
+        var out: [[String]: [RemoteEntry]] = [:]
+        var deeper = false
+        for item in parsed {
+            let comps = Self.components(of: Self.decodedPath(item.href))
+            guard comps.count > prefix.count, Array(comps.prefix(prefix.count)) == prefix else { continue }
+            let relative = Array(comps[prefix.count...])
+            let parent = Array(relative.dropLast())
+            if !parent.isEmpty { deeper = true }
+            out[parent, default: []].append(RemoteEntry(name: relative[relative.count - 1], isCollection: item.isCollection,
+                                                        etag: item.etag, lastModified: item.lastModified, size: item.size))
+        }
+        if !deeper, (out[[]] ?? []).contains(where: \.isCollection) {
+            // Collections and nothing in any of them: most likely `Depth: 1` in disguise.
+            return .refused
+        }
+        return .listed(out)
+    }
+
     /// Metadata of one file; nil when it does not exist.
     public func stat(_ path: [String]) throws -> RemoteEntry? {
         guard let name = path.last else { return nil }

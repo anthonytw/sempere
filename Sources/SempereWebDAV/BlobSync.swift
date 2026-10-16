@@ -140,9 +140,15 @@ extension WebDAVSync {
             }
         }
         for name in ordered(newLocal, { set.local[$0] ?? 0 }) {
-            try blobAttempt(id, name) {
-                try uploadBlob(id, name)
-                set.remote[name] = RemoteEntry(name: name, isCollection: false)
+            // The pre-upload pass may have made it already (`preuploadNewFiles`), or tried and reported it.
+            switch preuploadOutcome(id, blobKey(id, name)) {
+            case .uploaded: set.remote[name] = RemoteEntry(name: name, isCollection: false)
+            case .failed: break
+            case .notTried:
+                try blobAttempt(id, name) {
+                    try uploadBlob(id, name)
+                    set.remote[name] = RemoteEntry(name: name, isCollection: false)
+                }
             }
         }
         return set
@@ -304,29 +310,30 @@ extension WebDAVSync {
     /// Uploads one blob: streamed to a temporary name, then `MOVE`d to its
     /// own name without overwriting. A blob the server already has under
     /// that name is the same content (the name is keyed by its hash), so
-    /// losing that race is success.
+    /// losing that race is success. Safe on the pool's threads
+    /// (`preuploadNewFiles`): what it shares with the run is under `mutex`.
     func uploadBlob(_ id: String, _ name: String) throws {
         let path = blobPath(id, name)
         let file = attURL(id).appendingPathComponent(name)
         guard let size = LocalFS.regularFileSize(file) else { throw WebDAVError.io("\(path) is not a regular file") }
         if size > options.maxBlobBytes { throw WebDAVError.io("\(path) is \(size) bytes, over the blob limit; not uploaded") }
-        guard !options.dryRun else { report.uploaded.append(path); return }
+        guard !options.dryRun else { locked { report.uploaded.append(path) }; return }
         try ensureCollection([Vault.notesName, id, Vault.attachmentsName])
         let tempName = FileIO.tempPrefix + UUID().uuidString.lowercased()
         let temp = [Vault.notesName, id, Vault.attachmentsName, tempName]
         let tempRel = temp.joined(separator: "/")
-        state.remoteTemps.append(tempRel)
+        locked { state.remoteTemps.append(tempRel) }
         checkpoint()
         var moved = false
         defer {
             // Gone after a MOVE; otherwise removed now, or by the next run if that fails.
-            if moved || (try? client.delete(temp)) != nil { state.remoteTemps.removeAll { $0 == tempRel } }
+            if moved || (try? client.delete(temp)) != nil { locked { state.remoteTemps.removeAll { $0 == tempRel } } }
         }
         guard try client.put(temp, fromFile: file, condition: .create) else {
             throw WebDAVError.io("\(path): the temporary upload name already exists on the server")
         }
         moved = try client.move(temp, to: [Vault.notesName, id, Vault.attachmentsName, name], overwrite: false)
-        report.uploaded.append(path)
+        locked { report.uploaded.append(path) }
         updateProgress { $0.uploaded = report.uploaded.count }
     }
 

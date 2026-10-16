@@ -6,6 +6,8 @@
 # (both started by scripts/test-webdav.sh, which also checks that nothing skipped):
 #   SyncStressTests       the vault between two devices: upload and pull through resets and 5xx,
 #                         concurrent edits, idle request counts, canceled pulls, merge-copy round trip
+#   SyncTimingTests       wall time, requests and connections of a first upload, a first pull, idle runs and
+#                         a push, without faults, at SEMPERE_STRESS_LATENCIES ms per request (0,20)
 #   SyncFaultProxyTests   the fast proxy scenarios (also in the CI webdav job)
 #   TwoDeviceStressTests  the in-memory random interleavings, with SEMPERE_STRESS_SEEDS seeds
 # Environment: SEMPERE_STRESS_SEED (1), SEMPERE_STRESS_NOTES (640), SEMPERE_STRESS_SEEDS (60).
@@ -19,5 +21,5 @@ out="build/sync-stress/seed-$seed-$notes"
 SEMPERE_BIN="$(swift build --show-bin-path)/sempere" scripts/make-stress-vault.sh "$out" "$seed" "$notes"
 export SEMPERE_STRESS_VAULT="$PWD/$out"
 export SEMPERE_STRESS_SEEDS="${SEMPERE_STRESS_SEEDS:-60}"
-export SEMPERE_WEBDAV_TESTS='SyncStressTests|SyncFaultProxyTests|TwoDeviceStressTests'
+export SEMPERE_WEBDAV_TESTS='SyncStressTests|SyncTimingTests|SyncFaultProxyTests|TwoDeviceStressTests'
 exec scripts/test-webdav.sh --skip-build "$@"

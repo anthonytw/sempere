@@ -55,9 +55,10 @@ struct SyncWebDAVCommand: ParsableCommand {
             (exit 1), and not fetched again while it and the local vault.json are unchanged
             (--retry-quarantined fetches it again).
 
-            Note folders are listed, and the files the vault lacks downloaded, --jobs at a time (default 6,
-            1 to 16); each download is still checked on its own, and a note's blobs arrive before its
-            revisions (with --fetch, the note folders and small revisions, default 4). Uploads go one at a time. On a terminal, progress is shown on stderr (listing, then
+            Note folders are listed, the files the vault lacks downloaded, and the files the server lacks
+            uploaded, --jobs at a time (default 6, 1 to 16); each download is still checked on its own, and
+            a note's blobs travel before its revisions (with --fetch, the note folders and small revisions,
+            default 4). Deletions and vault.json go one at a time. On a terminal, progress is shown on stderr (listing, then
             files and MB downloaded of the total); with --json, the report's "progress" object is the summary.
 
             A run is bounded as a whole: --max-notes, --max-entries (listed remote entries),
@@ -112,7 +113,7 @@ struct SyncWebDAVCommand: ParsableCommand {
             help: ArgumentHelp("Longest a run may take, in minutes (default 720).", valueName: "n"))
     var maxMinutes: Int?
 
-    @Option(name: .long, help: ArgumentHelp("Listings and downloads at once, 1 to 16 (default 6).", valueName: "n"))
+    @Option(name: .long, help: ArgumentHelp("Listings, downloads and uploads at once, 1 to 16 (default 6).", valueName: "n"))
     var jobs: Int?
 
     @Flag(name: .customLong("retry-quarantined"),
@@ -137,6 +138,10 @@ struct SyncWebDAVCommand: ParsableCommand {
     @Flag(name: .customLong("skip-unchanged"),
           help: "List on the server only the notes whose folder ETag changed since the last run (where the server is seen to keep them current; every note at least daily).")
     var skipUnchanged = false
+
+    @Flag(name: .customLong("no-deep-listing"),
+          help: "List each note folder with its own request, never all of them with one Depth: infinity PROPFIND (used only where the server is seen to answer it in full).")
+    var noDeepListing = false
 
     @Flag(name: .customLong("metadata-only"),
           help: "Make or continue a partial copy: root files, sealed summaries and the note list, no revision or blob.")
@@ -173,6 +178,7 @@ struct SyncWebDAVCommand: ParsableCommand {
         options.deleteExtraneous = deleteExtraneous
         options.publishForWebViewer = webViewer
         options.skipUnchangedNotes = skipUnchanged
+        options.deepListing = !noDeepListing
         options.summaryCacheDirectory = SummaryCache.cliDirectory(environment: Env.vars)
         options.retryQuarantined = retryQuarantined
         try applyLimits(&options)
@@ -241,7 +247,7 @@ struct SyncWebDAVCommand: ParsableCommand {
         if !fetchNotes.isEmpty && !fetch { throw CLIError.usage("--note needs --fetch") }
         for (set, flag) in [(pushOnly, "--push-only"), (dryRun, "--dry-run"), (deleteExtraneous, "--delete-extraneous"),
                             (keepServerChanges, "--keep-server-changes"), (webViewer, "--web-viewer"),
-                            (skipUnchanged, "--skip-unchanged")] where set {
+                            (skipUnchanged, "--skip-unchanged"), (noDeepListing, "--no-deep-listing")] where set {
             throw CLIError.usage("\(flag) does not go with a partial pull (--metadata-only, --fetch, --no-blobs)")
         }
         var options = WebDAVSyncOptions()

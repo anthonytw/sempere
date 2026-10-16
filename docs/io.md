@@ -1314,9 +1314,22 @@ between blob segments), stops the pool: no new transfer starts, the running
 ones finish (a blob stops at its next segment and keeps its partial file),
 and the run stops early as it would one at a time. The note loop then runs
 as usual; what the prefetch tried and failed is reported once and not tried
-again in the same run. Reports are sorted by path where the prefetch added to
-them, so they do not depend on thread timing. Uploads, deletions and the
-mutable files stay one at a time. `WebDAVSyncOptions.progress` gets a
+again in the same run. Uploads work the same way (`Preupload.swift`): before
+the note loop, what it would upload as new on this side (a two-way run: what
+the server's listing lacks and the last sync did not record; a push-only run:
+what the listing lacks) is uploaded the same number at a time, a note's blobs
+first and its revisions once they all finished, each through the note loop's
+own `upload` / `uploadBlob` (`If-None-Match: *`; a blob to a temporary name,
+then `MOVE` without overwrite), so nothing on the server is ever replaced.
+The note loop counts those as its own uploads (also for the folder-ETag check
+of "Unchanged notes"), decides deletions and restores exactly as before, and
+does not try a failed one again in the same run. Revisions over 8 MiB, read
+whole to upload, are left to the note loop. Reports are sorted by path where
+the prefetch or the uploads added to them, so they do not depend on thread
+timing. Deletions and the mutable files stay one at a time. The transport
+keeps one connection per transfer alive between requests
+(`httpMaximumConnectionsPerHost` 16, the most `--jobs` allows; URLSession's
+default of 6 queued the rest). `WebDAVSyncOptions.progress` gets a
 `WebDAVSyncProgress` (stage; notes listed and synced; files and bytes
 downloaded of the total, known once every note folder was listed; uploads)
 from the run's threads, one call at a time; the final value is in the
@@ -1343,6 +1356,30 @@ deleted). Weak (`W/`) and missing ETags are never recorded. Any doubt in a
 note's run (an error, a skipped, ignored or extraneous file, a file on one
 side only, a write) clears its record so the next run lists it, and a run
 lists every note at least every `fullListingInterval` (a day).
+
+**One listing for every note folder** (`deepListing`, `TreeListing.swift`;
+off with `--no-deep-listing`). Listing each note folder and each `att/` costs a
+request apiece every run (~685 for a vault of 640 notes, even when nothing
+changed). `PROPFIND` with `Depth: infinity` on `notes/` gives the same entries
+in one request where the server allows it; many refuse it (Apache's default)
+and some answer it as `Depth: 1` (Sabre/Nextcloud with infinite depth off), so
+it is trusted only where it is seen to work. A run that has not seen it work
+lists one by one as before and also asks for the tree once; when every note
+folder and `att/` it listed holds exactly what the tree says, the server is
+recorded (`treeListing` in the sync state) as answering in full. A refusal (a
+4xx such as 403 `propfind-finite-depth`, a 501, or an answer with nothing below
+the note folders) is recorded for good, until the state is deleted; any other
+difference (another device writing between the two) records nothing and the
+next run checks again. Runs within `fullListingInterval` (a day) of the last
+check take every note folder and `att/` from the tree: the root, `notes/` and
+the tree, three PROPFINDs whatever the vault's size; a later run checks again.
+Only with 8 to 5 000 note folders (below, the requests saved are few; above,
+the answer nears the 16 MiB listing bound). A tree request that fails (5xx, a
+cut connection, too large) falls back to one-by-one listings for that run. A
+tree that missed files (a server whose behavior changed since the check) loses
+nothing: the server is untrusted anyway, and a file it does not list is one it
+dropped (uploaded again, or a revision deleted here only when compaction
+explains it from snapshots the server lists, as above).
 
 **Partial copies** (format.md §1.2). A vault can be opened from
 its root files and note list and filled later, so a large vault (~1 GB,

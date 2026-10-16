@@ -140,7 +140,8 @@ extension WebDAVSync {
     /// `syncBlobTransfers` takes them from there).
     func listAttachments(_ remoteNotes: [String: [RemoteEntry]]) throws {
         let ids = remoteNotes.keys.sorted().filter { id in
-            !notesNotReadable.contains(id)
+            // Taken from the tree when the run used one (`TreeListing.swift`).
+            attListings[id] == nil && !notesNotReadable.contains(id)
                 && (remoteNotes[id] ?? []).contains { $0.name == Vault.attachmentsName && $0.isCollection }
         }
         let results = try listConcurrently(ids.map { [Vault.notesName, $0, Vault.attachmentsName] }, notes: false)
