@@ -265,8 +265,10 @@ struct PageCanvasView: UIViewRepresentable {
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             if let type = EraserPreference.eraserType(of: canvasView.tool) { EraserPreference.save(type) }
             guard !isLoading, let editor, let pageID else { return }
-            editor.drawingDidChange(pageID: pageID, drawing: canvasView.drawing, tool: canvasView.tool)
+            let interval = Perf.begin(.inkChange)
+            let change = editor.drawingDidChange(pageID: pageID, drawing: canvasView.drawing, tool: canvasView.tool)
             host?.inkDidChange(measured: editor.takeMeasuredInk(of: pageID))
+            Perf.end(interval, "added=\(change.added.count) removed=\(change.removed.count)")
         }
 
         func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
@@ -475,7 +477,8 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
     private var paper = Paper.blank
     private var fittedWidth: CGFloat = 0
     /// The sized object eraser that replaces PencilKit's (`ObjectEraser.swift`).
-    private let objectEraser = ObjectEraserController()
+    /// The app's object eraser (tests drive its gesture through `begin`, `move` and `end`).
+    let objectEraser = ObjectEraserController()
     /// Smoothed mouse and trackpad strokes on a Mac (`MouseInk.swift`).
     private let mouseInk = MouseInkController()
     /// The "Smooth Mouse Strokes" level last applied (Mac; Off elsewhere).
@@ -659,8 +662,16 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
 
     /// Embedded pages have their own undo manager; the canvas finds it up the responder chain.
     override var undoManager: UndoManager? {
-        isEmbedded ? pageUndo : super.undoManager
+        #if DEBUG
+        if !isEmbedded, let testUndoManager { return testUndoManager }
+        #endif
+        return isEmbedded ? pageUndo : super.undoManager
     }
+
+    #if DEBUG
+    /// Tests give a one-page canvas outside the app's scenes an undo manager (`InkInjector`).
+    var testUndoManager: UndoManager?
+    #endif
 
     /// Makes this canvas the first responder (its palette, its undo) when it
     /// can be drawn on: the user drew on it.
@@ -1024,9 +1035,18 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
     /// follows its ink. `measured`: the drawing's bounds as already known
     /// (`NoteEditor.takeMeasuredInk`), else PencilKit measures them.
     func inkDidChange(measured: CGRect? = nil) {
+        #if DEBUG
+        if measured == nil { boundsMeasured &+= 1 }
+        #endif
         inkMaxY = Self.inkBottom(measured ?? canvas.drawing.bounds)
         zoomChanged()
     }
+
+    #if DEBUG
+    /// How often `inkDidChange` asked PencilKit for `drawing.bounds` (it walks every stroke):
+    /// a pen-up must take the extent the editor's ledger measured instead (finding P17, check c52).
+    private(set) var boundsMeasured = 0
+    #endif
 
     private static func inkBottom(_ drawing: PKDrawing) -> Double? {
         inkBottom(drawing.bounds)

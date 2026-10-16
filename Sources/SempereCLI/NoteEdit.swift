@@ -896,7 +896,7 @@ struct PagesCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "pages",
         abstract: "List, add, move, delete and duplicate a note's pages.",
-        subcommands: [PagesList.self, PagesAdd.self, PagesMove.self, PagesDelete.self, PagesDuplicate.self]
+        subcommands: [PagesList.self, PagesAdd.self, PagesMove.self, PagesDelete.self, PagesDuplicate.self, PagesScribble.self]
     )
 }
 

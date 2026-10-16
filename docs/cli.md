@@ -1224,6 +1224,8 @@ sempere pages add ID|TITLE [--count N] [--after PAGE]
 sempere pages move ID|TITLE PAGE --to PAGE
 sempere pages delete ID|TITLE PAGE
 sempere pages duplicate ID|TITLE PAGE
+sempere pages scribble ID|TITLE [--page N] [--strokes N] [--points N] [--per-revision N] [--seed N]
+                       [--top Y] [--row-height PT] [--recording ID]
 ```
 
 `list` prints each page's number, id, stroke count, paper (its own, or the
@@ -1241,6 +1243,20 @@ The page gestures of the app (`docs/format.md` §5.4.3), one delta each, with
 removes a page and its ink (`removePage`; a note keeps at least one page,
 and `notes restore --to` undoes it), `duplicate` copies a page's ink, items,
 paper and recognized text right after it under new ids.
+
+`scribble` writes synthetic handwriting, for test fixtures, stress tests and
+benchmarks (the app's dense-page tests use the same generator, `SyntheticInk`):
+`--strokes` (1–200 000, default 1000) word-sized pen loops of `--points`
+control points (default 24) in rows `--row-height` apart (default 24) from
+`--top` down (default 48), between the page margins, as `addStroke` ops on page
+`--page` (default 1). `--per-revision` writes them that many to a delta (default:
+all in one), so `--strokes 300 --per-revision 1` makes a note of 300 revisions;
+the note is read once for all of them. The same `--seed` gives the same
+geometry; stroke ids are new each run. `--recording` links every stroke to a
+recording of the note (`rec`, format.md §5.6), spread evenly over its length,
+as ink written while it ran. `--json` gives `note`, `page` (its id), `strokes`
+and `files` (the revisions written). A dense page for the app's checks:
+`notes new Dense`, `notes layout Dense pageless`, then `pages scribble Dense --strokes 20000`.
 
 A deleted note is refused (exit 1), as is a page number out of range.
 `--json` as for the editing commands.
