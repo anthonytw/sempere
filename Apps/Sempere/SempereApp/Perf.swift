@@ -67,6 +67,11 @@ enum Perf {
         /// The main-actor part of a remote merge: applying the merged note to
         /// the editor (detail: pages compared, strokes visited).
         case remoteMergeApply = "note.remoteMerge.apply"
+        /// A canvas's drawing changed (pen-up, erase, lasso edit, undo): the editor's ledger
+        /// update and the extent it measured, on the main actor (detail: strokes added, removed).
+        case inkChange = "ink.change"
+        /// Sealing and writing the summary cache (the list's index), in the background.
+        case summaryCacheSave = "index.save"
         /// Writing pages to the drawing cache.
         case cacheWrite = "cache.write"
         /// A note folder reported changed by the file presenter (an event).
@@ -176,6 +181,8 @@ extension Perf.Phase {
         case .noteFirstRender: return "note.firstRender"
         case .remoteMerge: return "note.remoteMerge"
         case .remoteMergeApply: return "note.remoteMerge.apply"
+        case .inkChange: return "ink.change"
+        case .summaryCacheSave: return "index.save"
         case .cacheWrite: return "cache.write"
         case .changeNotified: return "change.notified"
         case .backgroundSync: return "sync.background"

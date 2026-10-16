@@ -211,6 +211,22 @@ extension Vault {
         return try writeDelta(ops, to: noteId, loaded: try loadNote(noteId), deviceState: deviceState, app: app, wall: wall)
     }
 
+    /// Writes `deltas` to `noteId` as consecutive revisions, one per element, reading the note
+    /// once (each `apply` would read it again, which a run of hundreds of deltas on a large note
+    /// cannot afford). Empty deltas are skipped. Fixtures and the CLI's `pages scribble`.
+    public func applyInOrder(_ deltas: [[Op]], to noteId: UUID, deviceState: URL, app: String,
+                             wall: Date = Date()) throws -> [Revision] {
+        guard canRead else { throw isLocked ? VaultError.locked : VaultError.noIdentities }
+        var loaded = try loadNote(noteId)
+        var written: [Revision] = []
+        for ops in deltas where !ops.isEmpty {
+            let revision = try writeDelta(ops, to: noteId, loaded: loaded, deviceState: deviceState, app: app, wall: wall)
+            loaded.revisions.append(revision)
+            written.append(revision)
+        }
+        return written
+    }
+
     func writeDelta(_ ops: [Op], to noteId: UUID, loaded: LoadedNote, deviceState: URL, app: String,
                     wall: Date, checkpoint: Checkpoint? = nil) throws -> Revision {
         var state = try DeviceState.loadOrCreate(at: deviceState)

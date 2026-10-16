@@ -289,9 +289,10 @@ extension AppModel {
     func saveSummaryCache() {
         guard let cache = summaryCache, cache.hasChanges else { return }
         let previous = summaryCacheSave
+        summaryCacheSaves += 1
         summaryCacheSave = Task.detached(priority: .utility) {
             await previous?.value
-            try? cache.save()
+            Perf.measure(.summaryCacheSave) { try? cache.save() }
         }
     }
 
