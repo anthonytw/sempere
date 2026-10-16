@@ -174,4 +174,34 @@ final class MacExportUITests: XCTestCase {
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
         XCTAssertEqual(app.state, .runningForeground)
     }
+
+    /// Device check c9: the Export menu in a note window's toolbar (not the File menu): PDF… opens the export sheet
+    /// for that note, To Folder or Zip… the bulk export sheet, and the app survives both being dismissed.
+    /// (Written without a screen to run it on: the toolbar's element type under XCUITest is found by label.)
+    @MainActor
+    func testNoteWindowExportToolbarMenu() throws {
+        let app = launch()
+        defer { app.terminate() }
+        app.typeKey("n", modifierFlags: [.command, .option])   // Open Note in New Window
+        let window = app.windows.containing(.any, identifier: "noteWindow").firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 30), "a note window opened")
+
+        func chooseFromExportMenu(_ item: String, opens identifier: String) {
+            let toolbarMenu = window.descendants(matching: .any).matching(NSPredicate(format: "label == %@ OR title == %@", "Export", "Export"))
+                .matching(NSPredicate(format: "elementType IN %@", [XCUIElement.ElementType.popUpButton.rawValue,
+                                                                  XCUIElement.ElementType.menuButton.rawValue,
+                                                                  XCUIElement.ElementType.button.rawValue])).firstMatch
+            XCTAssertTrue(toolbarMenu.waitForExistence(timeout: 20), "the note window's toolbar has an Export menu")
+            toolbarMenu.click()
+            let entry = app.menuItems[item].firstMatch
+            XCTAssertTrue(entry.waitForExistence(timeout: 10), "\(item) is in the Export menu")
+            entry.click()
+            XCTAssertTrue(app.descendants(matching: .any)[identifier].waitForExistence(timeout: 20), "\(item) opened \(identifier)")
+            app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+            XCTAssertTrue(app.descendants(matching: .any)[identifier].waitForNonExistence(timeout: 10), "\(identifier) closed")
+        }
+        chooseFromExportMenu("PDF…", opens: "exportSheet")
+        chooseFromExportMenu("To Folder or Zip…", opens: "bulkExportSheet")
+        XCTAssertEqual(app.state, .runningForeground, "the app survived")
+    }
 }

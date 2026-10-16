@@ -127,6 +127,34 @@ struct QuickCaptureIntentTests {
         #expect(qc.state == .idle)
     }
 
+    /// Device check c45: Siri (or a widget) right after a restart, before the first unlock, finds the capture
+    /// profile's Keychain item unreadable. The intent must fail with the "could not read its settings" text,
+    /// not "not set up", start no recording, and succeed after the unlock.
+    @Test func siriBeforeTheFirstUnlockSaysItCannotReadItsSettings() async throws {
+        let (url, _, _, qc, _) = try QuickCaptureTests.setUp(transcribe: false)
+        let readable = qc.store
+        VoiceNoteActions.start = { try await qc.start() }
+        VoiceNoteActions.stop = { _ = try await qc.stop() }
+        defer { Self.reset() }
+
+        qc.store = FailingCaptureProfileStore()   // the Keychain before the first unlock
+        do {
+            _ = try await StartVoiceNoteIntent().perform()
+            Issue.record("the intent started a recording without its settings")
+        } catch let error as QuickCaptureError {
+            #expect(error == .profileUnreadable)
+            #expect(String(localized: error.localizedStringResource).hasPrefix("Quick Voice Notes could not read its settings"))
+        }
+        #expect(qc.state == .idle && qc.session == nil)
+        #expect(QuickCaptureTests.inbox(url).isEmpty)
+
+        qc.store = readable   // unlocked
+        _ = try await StartVoiceNoteIntent().perform()
+        #expect(qc.state == .recording)
+        _ = try await StopVoiceNoteIntent().perform()
+        #expect(QuickCaptureTests.inbox(url).count == 1)
+    }
+
     /// Every error an intent can show has text (an empty message would show nothing in Shortcuts).
     @Test func intentErrorsHaveText() {
         for error in [QuickCaptureError.notSetUp, .profileUnreadable, .microphoneDenied, .liveActivitiesOff, .alreadyRecording, .notRecording] {

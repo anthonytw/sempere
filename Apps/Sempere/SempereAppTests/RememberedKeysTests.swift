@@ -350,3 +350,41 @@ struct KeychainReplaceTests {
         #expect(keychain.items == [true: new])
     }
 }
+
+// MARK: - Keychain identity across updates
+
+/// Device check c46: a remembered key survives an app update. The Keychain finds an item by its class, service,
+/// account, synchronizable flag and access group; a build that changed any of them would not see the old item
+/// (the saved key would look gone). Pinned here, as the sources define them.
+struct KeychainIdentityTests {
+    @Test func theItemsIdentityIsStableAcrossBuilds() {
+        let vault = UUID(uuidString: "0A1B2C3D-0000-4000-8000-00000000ABCD")!
+        let query = KeychainVaultKeyStore.baseQuery(vault)
+        #expect(KeychainVaultKeyStore.service == "io.github.anthonytw.sempere.vault-key")
+        #expect(query[kSecClass as String] as? String == kSecClassGenericPassword as String)
+        #expect(query[kSecAttrService as String] as? String == "io.github.anthonytw.sempere.vault-key")
+        #expect(query[kSecAttrAccount as String] as? String == "0a1b2c3d-0000-4000-8000-00000000abcd")
+        #expect(query[kSecUseDataProtectionKeychain as String] as? Bool == true)
+        #expect(query[kSecAttrAccessGroup as String] == nil, "the default access group: the app's own identifier")
+        #expect(Set(query.keys) == [kSecClass as String, kSecAttrService as String, kSecAttrAccount as String,
+                                    kSecUseDataProtectionKeychain as String], "no attribute was added to the identity")
+    }
+
+    @Test func noEntitlementMovesTheDefaultKeychainGroup() throws {
+        let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        for name in ["Sempere.entitlements", "SempereiOS.entitlements"] {
+            let text = try String(contentsOf: dir.appendingPathComponent(name), encoding: .utf8)
+            #expect(!text.contains("keychain-access-groups"), "\(name) leaves the default group alone")
+            #expect(!text.contains("application-identifier"), "\(name) does not override the application identifier")
+        }
+    }
+
+    /// An item a build wrote keeps being updated in place by the next (its descriptive attributes and data
+    /// change; the identity does not), so a new build never has to delete and re-add (and so ask Face ID again).
+    @Test func descriptiveAttributesAreUpdatedInPlace() {
+        let identity: Set<String> = [kSecClass as String, kSecAttrService as String, kSecAttrAccount as String,
+                                     kSecAttrSynchronizable as String, kSecUseDataProtectionKeychain as String,
+                                     kSecAttrAccessGroup as String]
+        #expect(KeychainVaultKeyStore.updatableKeys.isDisjoint(with: identity))
+    }
+}

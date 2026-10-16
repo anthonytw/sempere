@@ -74,6 +74,65 @@ final class CopyMergeTests: VaultTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: vault.url.appendingPathComponent("unknown.txt").path))
     }
 
+    /// Device check c53: two copies of a vault that both kept editing one large note (an iCloud conflict
+    /// on the vault folder) merge into a note holding every stroke of both, quickly, with the counts
+    /// adding up, and the merge is idempotent. 600 revisions of 10 strokes each are shared; each copy
+    /// then writes 200 more.
+    func testTwoCopiesEditingOneLargeNoteMergeWithCorrectCounts() throws {
+        let id = pqIdentity()
+        let vault = try makeVault(id)
+        let note = UUID(uuidString: "5a5a5a5a-0000-4000-8000-000000000053")!
+        let pages = (0..<20).map { UUID(uuidString: String(format: "5a5a5a5a-0000-4000-8000-0000000001%02d", $0))! }
+        let devA = DeviceID("0a0a0a0a")!, devB = DeviceID("0b0b0b0b")!
+        var strokeCount: [DeviceID: Int] = [:]
+        var clockMillis: Int64 = 1_790_000_000_000
+        func revision(_ device: DeviceID, seq: Int, _ ops: [Op]) -> Revision {
+            clockMillis += 7
+            return Revision(noteId: note, device: device, seq: seq, hlc: HLC(millis: clockMillis, counter: 0)!,
+                            wall: Date(timeIntervalSince1970: Double(clockMillis) / 1000), app: "test/1", body: .delta(ops: ops))
+        }
+        func strokes(_ device: DeviceID, perRevision: Int, revision n: Int) -> [Op] {
+            (0..<perRevision).map { k in
+                strokeCount[device, default: 0] += 1
+                let sid = UUID(uuidString: String(format: "%@-0000-4000-8000-%012x", device == devA ? "0a0a0a0a" : "0b0b0b0b", strokeCount[device]!))!
+                var stroke = wireStroke(sid)
+                stroke.points[1].x = Double(n % 400) + Double(k)
+                return .addStroke(page: pages[(n + k) % pages.count], stroke: stroke)
+            }
+        }
+        try vault.write(revision(devA, seq: 1, [.setMeta(.title("Large lecture"))]
+                                 + pages.enumerated().map { .addPage(Page(id: $1, order: String(format: "p%03d", $0))) }))
+        for n in 2...600 { try vault.write(revision(devA, seq: n, strokes(devA, perRevision: 10, revision: n))) }
+        let other = try copy(of: vault, name: "Other")
+        let otherVault = try Vault.open(at: other, identities: [id])
+        for n in 1...200 {
+            try vault.write(revision(devA, seq: 600 + n, strokes(devA, perRevision: 10, revision: n)))
+            try otherVault.write(revision(devB, seq: n, strokes(devB, perRevision: 10, revision: n)))
+        }
+        let baseStrokes = 599 * 10
+        let before = try vault.reconstruct(noteId: note).pages.reduce(0) { $0 + $1.strokes.count }
+        XCTAssertEqual(before, baseStrokes + 2000)
+
+        let started = Date()
+        let report = try vault.mergeCopy(from: other)
+        let took = Date().timeIntervalSince(started)
+        XCTAssertEqual(report.added.count, 200, "exactly the other copy's 200 revisions arrive")
+        XCTAssertTrue(report.refused.isEmpty && report.differing.isEmpty)
+        XCTAssertLessThan(took, 20, "merging 200 revisions into a 800-revision note is quick (took \(took) s)")
+        let merged = try vault.reconstruct(noteId: note)
+        let ids = merged.pages.flatMap(\.strokes).map(\.id)
+        XCTAssertEqual(ids.count, baseStrokes + 2000 + 2000, "both sides' strokes, none lost")
+        XCTAssertEqual(Set(ids).count, ids.count, "none doubled")
+        XCTAssertEqual(merged.pages.count, 20)
+        XCTAssertEqual(try vault.revisionNames(of: note).count, 1000, "800 of ours + 200 of theirs")
+        XCTAssertTrue(vault.verify().isHealthy)
+        XCTAssertTrue(try vault.mergeCopy(from: other).isEmpty, "idempotent")
+        // The other side can take ours the same way, and both then read the same note.
+        let back = try otherVault.mergeCopy(from: vault.url)
+        XCTAssertEqual(back.added.count, 200, "the shared 600 are already there")
+        XCTAssertEqual(try otherVault.reconstruct(noteId: note), merged)
+    }
+
     func testAnICloudPlaceholderCountsAsHeld() throws {
         let id = pqIdentity()
         let vault = try makeVault(id)

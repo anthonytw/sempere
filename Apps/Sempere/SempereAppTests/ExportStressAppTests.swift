@@ -172,4 +172,60 @@ extension BulkExportAppTests {
         #expect(result.failures.count == 3 && result.exported.isEmpty)
         model.close()
     }
+
+    // MARK: c57 - read-ahead on evicted iCloud notes
+
+    /// Device check c57: Export to Folder over an iCloud vault whose notes are all evicted. Downloads are asked
+    /// for in list order, never more than `bulkReadAheadDepth` (2) notes after the one being exported, and a
+    /// stop keeps what was written and asks for nothing more; the next run goes on from there. (That reads do
+    /// run ahead, one at a time, while the current note renders is `BulkLoadAheadTests` in the package: with
+    /// notes this small the consumer is never slow enough to see it from here.)
+    @Test func bulkExportReadsEvictedICloudNotesAheadInOrderAndAtMostTwo() async throws {
+        let (url, key, ids) = try Self.vaultWithNotes(8)
+        let cloud = FakeCloud(vault: url)
+        cloud.autoDeliver = true
+        let model = try await ProgressiveLoadTests.cloudModel(cloud, key: key)
+        defer { model.close() }
+        // The notes are listed; then iCloud evicts them all, and the sync loop (which would download them
+        // all at once and blur what the export asks for) is paused, as it is while the app is in the background.
+        model.pauseCloudSync()
+        for id in ids { try cloud.evict(id) }
+        #expect(cloud.requestedNotes.filter { n in ids.contains { $0.uuidString.lowercased() == n } }.isEmpty)
+        let options = BulkExportOptions(format: .pdf, layout: .flat)
+        let jobs = ids.enumerated().map { i, id in
+            BulkExportJob(noteId: id, title: "Note \(i)", folder: [], stem: "Note-\(i)")
+        }
+        let order = ids.map { $0.uuidString.lowercased() }
+        let dir = try folder()
+
+        // Stop after the third note has been written: a folder keeps what was written.
+        let session = try BulkExportSession(destination: .folder(dir), options: options, jobs: jobs)
+        let task = Task { () -> BulkExportResult in
+            try await model.runBulkExport(jobs, session: session) { p in
+                // Before job `p.done` is taken: its download and at most two after it have been asked for.
+                let asked = cloud.requestedNotes.filter(order.contains)
+                #expect(asked == Array(order.prefix(asked.count)), "list order: \(asked)")
+                #expect(asked.count <= p.done + 1 + BulkExportAppTests.readAheadDepth, "asked for \(asked.count) at \(p.done) done")
+                if p.done == 3 { withUnsafeCurrentTask { $0?.cancel() } }
+            }
+        }
+        let stopped = try await task.value
+        #expect(stopped.cancelled)
+        #expect(stopped.exported.count == 3 && stopped.notReached == 5, "\(stopped.exported.count) written, \(stopped.notReached) not reached")
+        #expect(files(dir).count == 3, "what was written is kept")
+        let askedAtStop = cloud.requestedNotes.filter(order.contains)
+        #expect(askedAtStop.count <= 3 + BulkExportAppTests.readAheadDepth, "nothing beyond the read-ahead was asked for: \(askedAtStop.count)")
+
+        // Run again: the three written are skipped and the other five exported, in order.
+        let again = try await model.runBulkExport(jobs, session: try BulkExportSession(destination: .folder(dir), options: options, jobs: jobs)) { p in
+            let asked = cloud.requestedNotes.filter(order.contains)
+            #expect(asked.count <= max(askedAtStop.count, p.done + 1 + BulkExportAppTests.readAheadDepth))
+        }
+        #expect(!again.cancelled && again.failures.isEmpty)
+        #expect(again.skipped.count == 3 && again.exported.count == 5, "\(again.skipped.count) skipped, \(again.exported.count) exported")
+        #expect(files(dir).count == 8)
+        #expect(cloud.requestedNotes.filter(order.contains) == order, "every note was asked for once, in list order")
+    }
+
+    static var readAheadDepth: Int { AppModel.bulkReadAheadDepth }
 }
