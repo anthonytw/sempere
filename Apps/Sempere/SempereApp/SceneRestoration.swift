@@ -55,6 +55,27 @@ enum SceneRestoration {
     }
 }
 
+extension SceneRestoration {
+    /// What a restored note window does once the vault's state is known (Mac).
+    enum NoteWindow: Equatable, Sendable {
+        /// Not decided yet: the vault is not open, unlocked or listed.
+        case waiting
+        /// Its note is listed: it opens.
+        case show
+        /// The note is not in the vault (any more): the window closes, instead of staying empty.
+        case close
+    }
+
+    /// The fate of a note window restored for `noteID`. `listed` is whether the open vault lists the
+    /// note, `listLoaded` whether a listing has completed. A cloud vault never closes the window
+    /// (the note may still arrive from another device); the window says "Note Not Found".
+    static func noteWindow(unlocked: Bool, sameVault: Bool, listLoaded: Bool, listed: Bool, cloud: Bool) -> NoteWindow {
+        guard unlocked, sameVault else { return .waiting }
+        if listed { return .show }
+        return listLoaded && !cloud ? .close : .waiting
+    }
+}
+
 /// The app state every window reads from its environment. Every `WindowGroup`
 /// gets all of it through `appEnvironment`, whatever its own views need today:
 /// a view that reads one that is missing traps (`EnvironmentValues`), and a

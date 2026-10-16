@@ -190,8 +190,9 @@ tooling. The differences from the app:
 - **How the languages are reached in process, and the limits.** A process cannot switch
   `AppleLanguages` or turn on `NSDoubleLocalizedStrings` for SwiftUI after launch, so the test
   replaces `NSBundle`'s string lookups for the duration (`LanguageOverride` in
-  `PseudoLanguageHarness.swift`). Its limits: catalog plurals and variable strings (`%#@…@`) are not
-  doubled; dates and numbers formatted in code with `Locale.current` stay English in the Spanish run
+  `PseudoLanguageHarness.swift`). A catalog plural (`%#@…@`) is doubled once, after its count has chosen the form: the lookup is
+  asked again of a temporary copy of the bundle whose `.stringsdict` forms are doubled
+  (`PluralDoubling`; `aPluralIsDoubledOnce`). Its limits: dates and numbers formatted in code with `Locale.current` stay English in the Spanish run
   (SwiftUI's own `Text(date, format:)` follows the locale); text is laid out right to left but not
   forced to run right to left (`NSForceRightToLeftWritingDirection`, which changes no widths); the Mac
   menu bar and the window's title bar are not part of the window it checks; the Settings and paper
@@ -215,7 +216,7 @@ tooling. The differences from the app:
   label as cut off (a run on 2026-10-15 reported dozens on screens the in-process check,
   which measures both in the same points, passes); its sideways check still holds. In the real
   double-length language the catalog's plural strings show as `%#@value@`, which is not a layout
-  problem.
+  problem (the in-process check doubles them properly instead).
 - `LocalizationCatalogTests` also fails if a Spanish string is more than twice as long as its English
   source for short strings (under 40 characters) — the budget the double-length check proves the
   layouts can take.

@@ -1187,6 +1187,14 @@ for its note (§4).
   canvas zoom and offset) with the system fonts of §6. While editing, the
   canvas's drawing gesture is disabled; Scribble works inside the text view;
   the keyboard's language gives the box's `lang`.
+- `:name` emoji completion works at the caret (`TextBoxEmoji`, on the package's
+  `EmojiCompletion`, as in the naming fields): two letters after `:` list up to six
+  emoji in a plain view under the box (`TextBoxEditorController`; not zoomed), ↑ ↓
+  move, Return or Tab insert (the text view's key presses go to the list first,
+  `CompletingTextView`; the soft keyboard's Return is caught in
+  `shouldChangeTextIn`), Escape closes the list and not the box, a tap picks a
+  row, and a closed `:smile:` at the caret becomes its emoji. Edits go through the
+  text input, so each is an undo step; a language composition (marked text) is left alone.
 - On end of editing: `addItem` (new) or `setItem(text)` with `breaks` taken
   from the text view's layout (TextKit 2 line fragments, converted to Unicode
   scalar offsets); empty new box → no op. Debounce like strokes (one delta per
