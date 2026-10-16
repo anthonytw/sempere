@@ -26,6 +26,29 @@ struct SceneRestorationTests {
         #expect(SceneRestoration.shows(.note, hasValue: false, multipleScenes: true) == .closeOpeningLibrary)
     }
 
+    /// A restored note window whose note the vault no longer has closes (it showed an empty "Note Not
+    /// Found" window); one whose vault is not ready yet waits, and a cloud vault never closes it.
+    @Test func aRestoredNoteWindowClosesWhenItsNoteIsGone() {
+        func fate(unlocked: Bool = true, sameVault: Bool = true, loaded: Bool = true, listed: Bool = false, cloud: Bool = false)
+            -> SceneRestoration.NoteWindow {
+            SceneRestoration.noteWindow(unlocked: unlocked, sameVault: sameVault, listLoaded: loaded, listed: listed, cloud: cloud)
+        }
+        #expect(fate(listed: true) == .show)
+        #expect(fate(loaded: false, listed: true) == .show, "a listed note opens before the listing completes")
+        #expect(fate() == .close)
+        #expect(fate(loaded: false) == .waiting, "the note may still be listed")
+        #expect(fate(unlocked: false) == .waiting)
+        #expect(fate(sameVault: false) == .waiting, "another vault's window says so and offers to close")
+        #expect(fate(cloud: true) == .waiting, "the note may still arrive from another device")
+    }
+
+    /// The library window restored with its note list hidden and nothing selected shows the list.
+    @Test func aHiddenListWithoutANoteComesBack() {
+        #expect(ColumnLayout.withoutNote("detailOnly") == "doubleColumn")
+        #expect(ColumnLayout.withoutNote("doubleColumn") == "doubleColumn")
+        #expect(ColumnLayout.withoutNote("all") == "all")
+    }
+
     @Test func sceneIDsAreDistinctAndTheMenusUseThem() {
         let ids = [SceneRestoration.Kind.library, .note, .settings, .keys].map(\.sceneID)
         #expect(Set(ids).count == ids.count)

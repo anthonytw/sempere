@@ -31,6 +31,12 @@ struct NoteWindowView: View {
     private var otherVault: Bool { model.phase == .unlocked && model.vault?.vaultId != value.vaultID }
     private var ready: Bool { model.phase == .unlocked && !otherVault && note != nil }
 
+    /// What the window does with its note (`SceneRestoration.noteWindow`).
+    private var fate: SceneRestoration.NoteWindow {
+        SceneRestoration.noteWindow(unlocked: model.phase == .unlocked, sameVault: !otherVault, listLoaded: model.listLoaded,
+                                    listed: note != nil, cloud: model.isCloudVault)
+    }
+
     private struct LoadKey: Hashable {
         var ready: Bool
         var epoch: Int
@@ -98,6 +104,10 @@ struct NoteWindowView: View {
         }
         .onChange(of: model.phase) { _, phase in
             if phase == .noVault { dismissWindow(id: NoteWindowValue.sceneID, value: value) }
+        }
+        // A window restored for a note the vault no longer has closes (no empty "Note Not Found" window).
+        .onChange(of: fate, initial: true) { _, fate in
+            if fate == .close { dismissWindow(id: NoteWindowValue.sceneID, value: value) }
         }
         .onDisappear {
             let id = value.noteID

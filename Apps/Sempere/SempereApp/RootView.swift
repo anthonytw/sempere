@@ -70,7 +70,9 @@ struct RootView: View {
             .onChange(of: model.phase == .unlocked && !model.isBusy) { _, ready in
                 if ready { restoreSelection() }
             }
-            .onChange(of: model.selectedNoteID) { saveSelection() }
+            .onChange(of: model.selectedNoteID) { saveSelection(); showListWithoutNote() }
+            .onChange(of: model.listLoaded) { showListWithoutNote() }
+            .onChange(of: restoredVault) { showListWithoutNote() }
             // A closed vault leaves nothing of its selection in the window's saved state.
             .onChange(of: model.phase) { _, phase in
                 if SelectionStorage.shouldClear(phase: phase) { storedSelection = "" }
@@ -291,6 +293,18 @@ struct RootView: View {
               let vaultID = model.vault?.vaultId else { return }
         restoredVault = vaultID
         if let saved = RestorableSelection(stored: storedSelection) { model.restore(saved) }
+    }
+
+    /// A library window restored (or opened for a restored note window) with the note list hidden and no
+    /// note to show would be an empty "No Note Selected" window: it shows the list instead (Mac; once the
+    /// saved selection has been applied and the vault is listed).
+    private func showListWithoutNote() {
+        guard restoredVault != nil, model.phase == .unlocked, model.listLoaded, !model.isBusy, model.selectedNoteID == nil else { return }
+        #if DEBUG
+        if DebugLaunch.isActive { return }
+        #endif
+        let next = ColumnLayout.withoutNote(storedColumns)
+        if next != storedColumns { storedColumns = next }
     }
 
     private func saveSelection() {

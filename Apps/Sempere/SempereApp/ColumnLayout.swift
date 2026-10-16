@@ -41,4 +41,11 @@ enum ColumnLayout {
     static func storing(_ visibility: NavigationSplitViewVisibility, over stored: String, isPhone: Bool) -> String {
         isPhone ? stored : Self.stored(visibility)
     }
+
+    /// The layout to keep when a window has no note to show: the full-width canvas of nothing
+    /// ("No Note Selected" over the whole window, with the list hidden) is no layout, so it
+    /// becomes the list next to the canvas. Anything else stays.
+    static func withoutNote(_ stored: String) -> String {
+        visibility(from: stored) == .detailOnly ? "doubleColumn" : stored
+    }
 }

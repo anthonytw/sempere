@@ -797,7 +797,8 @@ are missing: download the vault first.
   requests at a time), on later visits too (the files then come from the
   cache, but decryption dominates). Publish one (`sempere vault summaries`,
   or `sync webdav --web-viewer`). Decrypted notes are kept in memory only for
-  the notes opened most recently.
+  the notes opened most recently: at most eight, and at most 128 MiB by an estimate of their size
+  (`NoteCache`; a note over that alone is not kept).
 - **Equations** (`math` items, format.md §8.2.8) are drawn from their stored
   rendering with pdf.js on a transparent page (no white box over the paper);
   an equation without a rendering, or whose rendering cannot be drawn, shows

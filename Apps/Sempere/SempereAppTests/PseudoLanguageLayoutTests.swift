@@ -195,5 +195,31 @@ struct PseudoLanguageLayoutTests {
             }
         }
     }
+
+    /// A catalog plural ("\(n) notes", whose form the count picks) is doubled once in the double-length
+    /// language, like any other string: it used to stay single length through `String(localized:)` and
+    /// SwiftUI's `Text`. Spanish and English plurals are untouched by the override.
+    @Test(arguments: [1, 3])
+    func aPluralIsDoubledOnce(_ count: Int) async throws {
+        guard let restoreAccessibility = InProcessAccessibility.enable() else {
+            Issue.record("no in-process accessibility switch")
+            return
+        }
+        defer { restoreAccessibility() }
+        let english = Locale(identifier: "en")
+        let single = String(localized: "\(count) notes", locale: english)
+        #expect(single == (count == 1 ? "1 note" : "\(count) notes"))
+        let restoreLanguage = PseudoLanguage.double.apply()
+        defer { restoreLanguage() }
+        // The same count picks the same form; each form's text appears twice (the copy loses its `%`).
+        let twice = String(localized: "\(count) notes", locale: english)
+        let word = count == 1 ? "note" : "notes"
+        #expect(twice == "\(count) \(word) lld \(word)", "doubled once: \(twice)")
+        // SwiftUI's own lookup (what a `Text` in a view reaches) does the same.
+        let host = try await LayoutHost(Text("\(count) notes"), size: CGSize(width: 600, height: 200), language: .double)
+        defer { host.close() }
+        let labels = try await host.settle().map(\.label)
+        #expect(labels == [twice], "SwiftUI: \(labels)")
+    }
 }
 #endif

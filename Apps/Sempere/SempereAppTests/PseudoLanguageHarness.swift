@@ -16,7 +16,9 @@ import UIKit
 /// - `double`: `LanguageOverride.doubles`, which doubles what every bundle's lookups return, as
 ///   `-NSDoubleLocalizedStrings YES` does (the app's strings, UIKit's and SwiftUI's own). Setting that
 ///   default in process reaches `NSLocalizedString` but not SwiftUI's `Text`, so the lookups are
-///   doubled here instead. Catalog plurals (`%#@…@`) are not doubled.
+///   doubled here instead. A catalog plural (`%#@…@`) is looked up in a copy of the bundle whose
+///   `.stringsdict` variants are doubled (`PluralDoubling`), so it is doubled once, after the count
+///   has chosen its form.
 /// - `rtl`: the window's `layoutDirection` trait and SwiftUI's `layoutDirection`, so UIKit and
 ///   SwiftUI both lay out right to left. Text is not forced to run right to left
 ///   (`NSForceRightToLeftWritingDirection`), which changes no widths.
@@ -65,7 +67,9 @@ enum PseudoLanguage: String, CaseIterable, Sendable {
 /// two `…localizations:` forms (what `String(localized:)` calls), which answer in `language`, and
 /// the forms SwiftUI's `Text` reaches with the localization its `locale` picked (attributed, for
 /// Markdown), which are only doubled. Only the outermost lookup on a thread doubles, since one
-/// form calls another.
+/// form calls another. A lookup that answers a plural (`%#@…@`: an object that carries the plural
+/// rules, so a doubled copy of its text would lose them) is asked again of a bundle whose
+/// `.stringsdict` has every form doubled (`PluralDoubling`).
 enum LanguageOverride {
     nonisolated(unsafe) static var language: String?
     nonisolated(unsafe) static var doubles = false
@@ -80,7 +84,8 @@ enum LanguageOverride {
 
     /// `text` twice, as `-NSDoubleLocalizedStrings YES` shows it (“Settings Settings”). The copy
     /// drops `%` so a format string keeps one set of specifiers; a catalog plural or variable
-    /// string (`%#@…@`, whose forms are chosen when it is formatted) stays as it is.
+    /// string (`%#@…@`, whose forms are chosen when it is formatted) is not doubled here: its
+    /// lookup is redone in a bundle with doubled forms (`PluralDoubling`).
     static func doubled(_ text: String) -> String? {
         if text.isEmpty || text.contains("%#@") { return nil }
         return "\(text) \(text.replacingOccurrences(of: "%", with: ""))"
@@ -100,15 +105,27 @@ enum LanguageOverride {
         return result
     }
 
-    /// Runs one lookup, doubling its result if it is the outermost one on this thread.
-    private static func lookup(_ body: () -> AnyObject) -> AnyObject {
-        guard doubles else { return body() }
+    /// Runs one lookup (`body` gets the bundle to ask), doubling its result if it is the outermost one
+    /// on this thread. A plural answer is asked again of the bundle with doubled forms.
+    private static func lookup(_ bundle: AnyObject, table: NSString?, _ body: (AnyObject) -> AnyObject) -> AnyObject {
+        guard doubles else { return body(bundle) }
         let thread = Thread.current.threadDictionary
         let depth = thread[depthKey] as? Int ?? 0
         thread[depthKey] = depth + 1
         defer { thread[depthKey] = depth }
-        let result = body()
-        return depth == 0 ? doubled(result) : result
+        let result = body(bundle)
+        guard depth == 0 else { return result }
+        if isPlural(result), let twice = PluralDoubling.bundle(for: bundle, table: table as String?) {
+            let again = body(twice)
+            if isPlural(again) { return again }
+        }
+        return doubled(result)
+    }
+
+    /// Whether a lookup's answer is a catalog plural (its text is `%#@name@`).
+    static func isPlural(_ result: AnyObject) -> Bool {
+        if let attributed = result as? NSAttributedString { return attributed.string.contains("%#@") }
+        return (result as? String)?.contains("%#@") ?? false
     }
 
     private static func replace<F>(_ name: String, as _: F.Type, _ make: (F, Selector) -> Any) -> F? {
@@ -125,32 +142,32 @@ enum LanguageOverride {
         let four = NSSelectorFromString("localizedStringForKey:value:table:localizations:")
         let original4 = replace("localizedStringForKey:value:table:localizations:", as: Lookup4.self) { original, selector in
             { (bundle: AnyObject, key: NSString, value: NSString?, table: NSString?, localizations: NSArray?) -> AnyObject in
-                lookup { original(bundle, selector, key, value, table, language.map { [$0] as NSArray } ?? localizations) }
+                lookup(bundle, table: table) { original($0, selector, key, value, table, language.map { [$0] as NSArray } ?? localizations) }
             } as @convention(block) (AnyObject, NSString, NSString?, NSString?, NSArray?) -> AnyObject
         }
         _ = replace("_localizedStringForKey:value:table:localizations:", as: Lookup4.self) { original, selector in
             { (bundle: AnyObject, key: NSString, value: NSString?, table: NSString?, localizations: NSArray?) -> AnyObject in
-                lookup { original(bundle, selector, key, value, table, language.map { [$0] as NSArray } ?? localizations) }
+                lookup(bundle, table: table) { original($0, selector, key, value, table, language.map { [$0] as NSArray } ?? localizations) }
             } as @convention(block) (AnyObject, NSString, NSString?, NSString?, NSArray?) -> AnyObject
         }
         _ = replace("localizedStringForKey:value:table:", as: Lookup3.self) { original, selector in
             { (bundle: AnyObject, key: NSString, value: NSString?, table: NSString?) -> AnyObject in
-                lookup {
-                    if let language, let original4 { return original4(bundle, four, key, value, table, [language] as NSArray) }
-                    return original(bundle, selector, key, value, table)
+                lookup(bundle, table: table) { b in
+                    if let language, let original4 { return original4(b, four, key, value, table, [language] as NSArray) }
+                    return original(b, selector, key, value, table)
                 }
             } as @convention(block) (AnyObject, NSString, NSString?, NSString?) -> AnyObject
         }
         // Doubled only: SwiftUI's own lookups, which pick the localization from its `locale`.
         _ = replace("localizedAttributedStringForKey:value:table:", as: Lookup3.self) { original, selector in
             { (bundle: AnyObject, key: NSString, value: NSString?, table: NSString?) -> AnyObject in
-                lookup { original(bundle, selector, key, value, table) }
+                lookup(bundle, table: table) { original($0, selector, key, value, table) }
             } as @convention(block) (AnyObject, NSString, NSString?, NSString?) -> AnyObject
         }
         for name in ["localizedStringForKey:value:table:localization:", "localizedAttributedStringForKey:value:table:localization:"] {
             _ = replace(name, as: LookupIn.self) { original, selector in
                 { (bundle: AnyObject, key: NSString, value: NSString?, table: NSString?, localization: NSString?) -> AnyObject in
-                    lookup { original(bundle, selector, key, value, table, localization) }
+                    lookup(bundle, table: table) { original($0, selector, key, value, table, localization) }
                 } as @convention(block) (AnyObject, NSString, NSString?, NSString?, NSString?) -> AnyObject
             }
         }
@@ -158,9 +175,77 @@ enum LanguageOverride {
                     as: LookupPrivate.self) { original, selector in
             { (bundle: AnyObject, key: NSString, value: NSString?, table: NSString?, localizations: NSArray?,
                localization: UnsafeMutableRawPointer?, plain: Bool) -> AnyObject in
-                lookup { original(bundle, selector, key, value, table, localizations, localization, plain) }
+                lookup(bundle, table: table) { original($0, selector, key, value, table, localizations, localization, plain) }
             } as @convention(block) (AnyObject, NSString, NSString?, NSString?, NSArray?, UnsafeMutableRawPointer?, Bool) -> AnyObject
         }
+    }
+}
+
+/// Bundles whose plural forms are doubled: for a bundle and table, a copy in the temporary folder
+/// whose `.stringsdict` files (every language) have every form's text doubled, as `doubled(_:)`
+/// does for a plain string (the copy loses its `%`, so a form keeps one set of specifiers). The
+/// plural machinery stays the real one: the count picks the form, then the form is doubled once.
+enum PluralDoubling {
+    nonisolated(unsafe) private static var bundles: [String: Bundle?] = [:]
+    private static let lock = NSLock()
+
+    /// The bundle with doubled forms for `table` (`Localizable` by default) of `bundle`, or nil when it has none.
+    static func bundle(for bundle: AnyObject, table: String?) -> Bundle? {
+        guard let original = bundle as? Bundle, let resources = original.resourcePath else { return nil }
+        let name = table?.isEmpty == false ? table! : "Localizable"
+        let key = "\(original.bundlePath)|\(name)"
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached = bundles[key] { return cached }
+        let made = make(from: URL(fileURLWithPath: resources), table: name)
+        bundles[key] = made
+        return made
+    }
+
+    private static func make(from resources: URL, table: String) -> Bundle? {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("SemperePluralDoubling-\(UUID().uuidString).bundle", isDirectory: true)
+        var any = false
+        for entry in (try? fm.contentsOfDirectory(atPath: resources.path)) ?? [] where entry.hasSuffix(".lproj") {
+            let source = resources.appendingPathComponent(entry).appendingPathComponent("\(table).stringsdict")
+            guard let dict = NSDictionary(contentsOf: source) as? [String: Any] else { continue }
+            let folder = root.appendingPathComponent(entry, isDirectory: true)
+            guard (try? fm.createDirectory(at: folder, withIntermediateDirectories: true)) != nil,
+                  (try? (doubledEntries(dict) as NSDictionary).write(to: folder.appendingPathComponent("\(table).stringsdict"))) != nil
+            else { continue }
+            any = true
+        }
+        guard any else { return nil }
+        let info: NSDictionary = ["CFBundleIdentifier": "io.github.anthonytw.sempere.plural-doubling.\(UUID().uuidString)",
+                                  "CFBundleDevelopmentRegion": "en", "CFBundlePackageType": "BNDL"]
+        _ = try? info.write(to: root.appendingPathComponent("Info.plist"))
+        return Bundle(url: root)
+    }
+
+    /// Every entry with the text of its forms doubled; the plural machinery's own keys (`NSString…`) and
+    /// the format key (which only names the variables) stay.
+    static func doubledEntries(_ entries: [String: Any]) -> [String: Any] {
+        var out: [String: Any] = [:]
+        for (key, value) in entries {
+            guard let entry = value as? [String: Any] else { out[key] = value; continue }
+            var copy: [String: Any] = [:]
+            for (field, inner) in entry {
+                if let variable = inner as? [String: Any] { copy[field] = doubledForms(variable) } else { copy[field] = inner }
+            }
+            out[key] = copy
+        }
+        return out
+    }
+
+    private static func doubledForms(_ variable: [String: Any]) -> [String: Any] {
+        var out: [String: Any] = [:]
+        for (form, text) in variable {
+            if form.hasPrefix("NSString") { out[form] = text }
+            else if let text = text as? String { out[form] = LanguageOverride.doubled(text) ?? text }
+            else if let nested = text as? [String: Any] { out[form] = doubledForms(nested) }
+            else { out[form] = text }
+        }
+        return out
     }
 }
 

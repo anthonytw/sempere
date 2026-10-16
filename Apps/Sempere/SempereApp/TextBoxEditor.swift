@@ -103,6 +103,7 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
     func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         // Touches in the text view (or its bar) are the text view's.
         if let tv = textView, let view = touch.view, view.isDescendant(of: tv) { return false }
+        if let list = emojiList, let view = touch.view, view.isDescendant(of: list) { return false }
         return true
     }
 
@@ -143,7 +144,8 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
         guard let canvas, let session else { return }
         if let other = Self.editing, other !== self { other.endEditing() }
         Self.editing = self
-        let tv = UITextView(usingTextLayoutManager: false)
+        let tv = CompletingTextView(usingTextLayoutManager: false)
+        tv.onKey = { [weak self] key in self?.emojiKey(key.keyCode, modifiers: key.modifierFlags) ?? false }
         tv.accessibilityIdentifier = "textBoxEditor"
         tv.backgroundColor = UIColor.white.withAlphaComponent(0.85)
         tv.layer.borderColor = UIColor.tintColor.cgColor
@@ -179,6 +181,7 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
         guard let session, let tv = textView else { return }
         self.session = nil
         textView = nil
+        hideEmoji()
         if Self.editing === self { Self.editing = nil }
         tv.delegate = nil
         let text = tv.attributedText ?? NSAttributedString()
@@ -255,13 +258,20 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
         }
         sharpen(tv)
         canvas?.bringSubviewToFront(tv)
+        placeEmojiList()
     }
 
     /// Typing or pasting that would take the box past the format's text
     /// limit (format.md §8.4) is refused as it happens: a box over it could
     /// not be written, and the whole edit would be lost when it closes.
     func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
-        Self.fits(textView.text ?? "", replacing: range, with: text)
+        // The soft keyboard's Return (and a hardware Tab that got here) takes the highlighted emoji
+        // while the list is open, as the key presses do (`emojiKey`).
+        if !applyingEmoji, text == "\n" || text == "\t", !emojiRows.isEmpty, range.length == 0 || textView.selectedRange == range {
+            acceptEmoji(emojiRows[min(emojiHighlight, emojiRows.count - 1)])
+            return false
+        }
+        return Self.fits(textView.text ?? "", replacing: range, with: text)
     }
 
     /// Whether `current` with `range` (UTF-16) replaced by `text` stays
@@ -274,8 +284,175 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
 
     func textViewDidChange(_ textView: UITextView) {
         session?.dirty = true
+        if !applyingEmoji { closeShortcodeAtCaret() }
         layoutTextView()
         onTextChanged()
+        refreshEmoji()
+    }
+
+    func textViewDidChangeSelection(_ textView: UITextView) {
+        if !applyingEmoji { refreshEmoji() }
+    }
+
+    // MARK: Emoji completion
+
+    /// The `:name` suggestions under the box (task: the naming fields' completion, on the canvas).
+    private var emojiRows: [EmojiCompletion.Suggestion] = []
+    private var emojiHighlight = 0
+    private var emojiQuery: String?
+    /// The query Escape closed the list for; it stays closed until the query changes.
+    private var emojiDismissed: String?
+    private var applyingEmoji = false
+    private(set) var emojiList: UIView?
+
+    /// The caret (UTF-16), when nothing is selected and no composition is under way.
+    private var emojiCaret: Int? {
+        guard let tv = textView, tv.markedTextRange == nil, tv.selectedRange.length == 0 else { return nil }
+        return tv.selectedRange.location
+    }
+
+    /// The list's state for the Mac UI tests' report: `rows,highlighted`.
+    var emojiSummary: String { "\(emojiRows.count),\(emojiHighlight)" }
+
+    /// Shows, updates or hides the list for the query before the caret.
+    func refreshEmoji() {
+        defer { onTextChanged() }
+        guard let tv = textView, let caret = emojiCaret else { hideEmoji(); return }
+        let text = tv.text ?? ""
+        let query = TextBoxEmoji.query(in: text, caret: caret)
+        if query != emojiDismissed { emojiDismissed = nil }
+        if query != emojiQuery { emojiHighlight = 0 }
+        emojiQuery = query
+        let rows = TextBoxEmoji.suggestions(in: text, caret: caret, dismissed: emojiDismissed)
+        guard !rows.isEmpty else { hideEmoji(keepQuery: true); return }
+        emojiRows = rows
+        emojiHighlight = min(emojiHighlight, rows.count - 1)
+        rebuildEmojiList()
+    }
+
+    private func hideEmoji(keepQuery: Bool = false) {
+        emojiRows = []
+        if !keepQuery { emojiQuery = nil; emojiDismissed = nil; emojiHighlight = 0 }
+        emojiList?.removeFromSuperview()
+        emojiList = nil
+    }
+
+    private func rebuildEmojiList() {
+        guard let canvas else { return }
+        emojiList?.removeFromSuperview()
+        let box = UIView()
+        box.accessibilityIdentifier = "emojiSuggestions"
+        box.accessibilityLabel = String(localized: "Emoji Suggestions", comment: "Accessibility label of the list of emoji offered while typing :name in a text field")
+        box.isAccessibilityElement = false
+        box.shouldGroupAccessibilityChildren = true
+        box.overrideUserInterfaceStyle = .light
+        box.backgroundColor = .white
+        box.layer.cornerRadius = 8
+        box.layer.borderWidth = 1
+        box.layer.borderColor = UIColor.black.withAlphaComponent(0.15).cgColor
+        box.layer.shadowColor = UIColor.black.cgColor
+        box.layer.shadowOpacity = 0.15
+        box.layer.shadowRadius = 6
+        box.layer.shadowOffset = CGSize(width: 0, height: 2)
+        for (index, row) in emojiRows.enumerated() {
+            let button = UIButton(type: .custom)
+            button.frame = CGRect(x: 4, y: 4 + CGFloat(index) * Self.emojiRowHeight, width: Self.emojiListWidth - 8, height: Self.emojiRowHeight)
+            var configuration = UIButton.Configuration.plain()
+            configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 6)
+            configuration.baseForegroundColor = .black
+            configuration.title = "\(row.emoji)  :\(row.name):"
+            configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+                var attributes = attributes
+                attributes.font = UIFont.systemFont(ofSize: 15)
+                return attributes
+            }
+            button.configuration = configuration
+            button.contentHorizontalAlignment = .leading
+            button.layer.cornerRadius = 5
+            let selected = index == emojiHighlight
+            button.backgroundColor = selected ? UIColor.tintColor.withAlphaComponent(0.2) : .clear
+            button.isSelected = selected
+            if selected { button.accessibilityTraits.insert(.selected) }
+            button.accessibilityIdentifier = "emojiSuggestion"
+            button.accessibilityLabel = "\(row.emoji) :\(row.name):"
+            button.addAction(UIAction { [weak self] _ in self?.acceptEmoji(row) }, for: .primaryActionTriggered)
+            box.addSubview(button)
+        }
+        canvas.addSubview(box)
+        emojiList = box
+        placeEmojiList()
+    }
+
+    private static let emojiRowHeight: CGFloat = 28
+    private static let emojiListWidth: CGFloat = 230
+
+    /// Puts the list under the box (above it when the page has no room below), in canvas points
+    /// (the list is not zoomed).
+    private func placeEmojiList() {
+        guard let box = emojiList, let tv = textView, let canvas else { return }
+        let height = CGFloat(emojiRows.count) * Self.emojiRowHeight + 8
+        let frame = tv.frame
+        var x = frame.minX
+        let room = canvas.contentSize.width
+        if room > Self.emojiListWidth { x = min(max(0, x), room - Self.emojiListWidth) }
+        var y = frame.maxY + 4
+        if canvas.contentSize.height > 0, y + height > canvas.contentSize.height, frame.minY - height - 4 >= 0 {
+            y = frame.minY - height - 4
+        }
+        box.frame = CGRect(x: x, y: y, width: Self.emojiListWidth, height: height)
+        canvas.bringSubviewToFront(box)
+    }
+
+    /// Replaces the `:query` before the caret by the row's emoji, through the text input (one undo step).
+    private func acceptEmoji(_ row: EmojiCompletion.Suggestion) {
+        guard let tv = textView, let caret = emojiCaret,
+              let edit = TextBoxEmoji.accepting(row.emoji, in: tv.text ?? "", caret: caret) else { return }
+        replaceEmoji(in: edit.range, with: row.emoji, caret: edit.caret)
+        hideEmoji()
+        tv.becomeFirstResponder()
+    }
+
+    /// A closed `:name:` just typed at the caret becomes its emoji.
+    private func closeShortcodeAtCaret() {
+        guard let caret = emojiCaret, let tv = textView,
+              let edit = TextBoxEmoji.closing(in: tv.text ?? "", caret: caret) else { return }
+        replaceEmoji(in: edit.range, with: edit.emoji, caret: edit.caret)
+    }
+
+    private func replaceEmoji(in range: NSRange, with emoji: String, caret: Int) {
+        guard let tv = textView,
+              let from = tv.position(from: tv.beginningOfDocument, offset: range.location),
+              let to = tv.position(from: from, offset: range.length),
+              let textRange = tv.textRange(from: from, to: to) else { return }
+        applyingEmoji = true
+        defer { applyingEmoji = false }
+        tv.replace(textRange, withText: emoji)
+        session?.dirty = true
+        if let at = tv.position(from: tv.beginningOfDocument, offset: caret) { tv.selectedTextRange = tv.textRange(from: at, to: at) }
+        layoutTextView()
+        onTextChanged()
+    }
+
+    /// A key press in the text view while the list is open: ↑ ↓ move, Return or Tab insert,
+    /// Escape closes the list. True when handled (the text view does not see the key).
+    func emojiKey(_ code: UIKeyboardHIDUsage, modifiers: UIKeyModifierFlags = []) -> Bool {
+        guard !emojiRows.isEmpty, modifiers.intersection([.command, .control, .alternate]).isEmpty else { return false }
+        switch code {
+        case .keyboardDownArrow: emojiHighlight = (emojiHighlight + 1) % emojiRows.count
+        case .keyboardUpArrow: emojiHighlight = (emojiHighlight - 1 + emojiRows.count) % emojiRows.count
+        case .keyboardReturnOrEnter, .keypadEnter, .keyboardTab:
+            acceptEmoji(emojiRows[min(emojiHighlight, emojiRows.count - 1)])
+            return true
+        case .keyboardEscape:
+            emojiDismissed = emojiQuery
+            hideEmoji(keepQuery: true)
+            onTextChanged()
+            return true
+        default: return false
+        }
+        rebuildEmojiList()
+        onTextChanged()
+        return true
     }
 
     // MARK: Style bar
@@ -550,6 +727,16 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
         ]
         bar.sizeToFit()
         return bar
+    }
+}
+
+/// The box's text view: hands key presses to the emoji list first (↑ ↓ Return Tab Escape).
+final class CompletingTextView: UITextView {
+    var onKey: ((UIKey) -> Bool)?
+
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        if let key = presses.first?.key, onKey?(key) == true { return }
+        super.pressesBegan(presses, with: event)
     }
 }
 
