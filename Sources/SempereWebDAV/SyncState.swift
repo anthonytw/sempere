@@ -80,6 +80,17 @@ struct SyncState: Codable, Equatable {
     var lastFullListing: Date?
     /// The server's journal while it may be in flight; nil otherwise.
     var inFlightJournal: InFlightJournal?
+    /// Whether the server answers `PROPFIND` `Depth: infinity` on `notes/`
+    /// in full (`TreeListing.swift`); nil until a run checked.
+    var treeListing: TreeListingRecord?
+
+    /// What a run found about `Depth: infinity` listings.
+    struct TreeListingRecord: Codable, Equatable {
+        /// False once the server refused one (for good, until the state is deleted).
+        var supported: Bool
+        /// When a run last found the tree equal to the one-by-one listings.
+        var verifiedAt: Date?
+    }
 
     /// A note folder's recorded ETag.
     struct NoteStamp: Codable, Equatable {

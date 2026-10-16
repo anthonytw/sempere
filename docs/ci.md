@@ -78,7 +78,7 @@ PRs never edit `CHANGELOG.md` (every PR conflicted there). Each adds `changelog.
 
 ## Sync stress
 
-WebDAV sync is stressed at three levels; all three share a two-device harness
+WebDAV sync is stressed at three levels (and timed at a fourth); all three share a two-device harness
 (`Tests/SempereWebDAVTests/SyncDevices.swift`: `SyncDevice` is one device with its own vault
 folder, key, device clock (`device.json`, with an optional wall-clock skew) and sync state;
 `SyncDevices` makes two or more on one remote, the first creating the vault with every device's
@@ -90,8 +90,9 @@ was lost, nothing is left in flight, every device reads the same notes).
 | `TwoDeviceStressTests` | every `swift test` (6 seeds; `SEMPERE_STRESS_SEEDS=N` for more) | devices on the in-memory `MockDAV`, each through a `FaultyTransport` (seeded: requests dropped, answered 503, applied with the answer lost, downloads cut midway), interleaving notes, renames, tags, blobs, shared settings, two-way runs, pushes and simultaneous runs; request counts of idle and catching-up runs; label-only `vault.json` changes; per-device summaries; merge-copy round trips |
 | `SyncFaultProxyTests` | `scripts/test-webdav.sh` (CI's `webdav` job) | real sockets: wsgidav behind `scripts/dav-fault-proxy.py`; a reset mid-download resumes with `Range`, a reset mid-upload leaves no partial blob, random 5xx and resets converge, a stalled request ends at the idle timeout, a dripping download ends at the run's time bound, request counts over latency and a bandwidth cap |
 | `SyncStressTests` | `scripts/sync-stress.sh` only (about five minutes) | the seeded 640-note vault the CLI builds (`scripts/make-stress-vault.sh`: notebooks, tags, text boxes, edits from a second device, small and 3 MB images), uploaded and pulled through faults, 240 concurrent edits from both devices, idle request counts, a fresh pull canceled at random points, a merge-copy round trip; prints `STRESS` lines (times, requests by method, faults) |
+| `SyncTimingTests` | `scripts/sync-stress.sh` only | the same vault without faults at `SEMPERE_STRESS_LATENCIES` ms per request (default `0,20`): first upload, first pull, two idle runs (the first checks the deep listing, the second uses it), the app's push after one edit; prints `TIMING` lines (wall time, requests by method, client connections) for before/after numbers in performance PRs |
 
-`scripts/sync-stress.sh` runs all three (60 seeds) against a local wsgidav and the proxy, building
+`scripts/sync-stress.sh` runs all four (60 seeds) against a local wsgidav and the proxy, building
 the vault once per seed and size in `build/sync-stress/` (`SEMPERE_STRESS_SEED`,
 `SEMPERE_STRESS_NOTES`). Run it after a change to `Sources/SempereWebDAV`; it is not part of CI or
 the PR gate, so list it under `## Tests run`.
@@ -101,7 +102,8 @@ and, as each test configures it (`POST /__proxy__/config`, Swift: `FaultProxy`),
 caps bandwidth, resets the connection (TCP RST) after N bytes of a request or response body,
 answers 5xx at random or by rule, stalls, or drips a response; rules match a method and a path
 pattern, can skip the first matches and fire a number of times with a probability, all from a
-seeded generator. `GET /__proxy__/stats` is the request log (method, path, status, fault, `Range`).
+seeded generator. `GET /__proxy__/stats` is the request log (method, path, status, fault, `Range`)
+and the number of client connections that carried a request (keep-alive reuse shows as fewer).
 Its configuration is global, so tests that use it never run in parallel.
 
 ## Launch smoke tests

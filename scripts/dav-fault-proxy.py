@@ -8,7 +8,7 @@ add latency, cap bandwidth, reset the connection in the middle of a request or r
 5xx at random or by rule, stall, or drip a response; it counts every request. Standard library only.
 
 Control (never forwarded), JSON in and out:
-    GET  /__proxy__/stats    {"total", "byMethod", "faults", "requests": [[method, path, status, fault, range], ...]}
+    GET  /__proxy__/stats    {"total", "connections", "byMethod", "faults", "requests": [[method, path, status, fault, range], ...]}
                              (status -1: reset before an answer, -2: stalled; range: the Range header or null)
     POST /__proxy__/config   replaces the configuration (below); keeps the counters
     POST /__proxy__/reset    clears the counters and the configuration
@@ -52,6 +52,7 @@ class State:
             self.rules = []
             self.rng = random.Random(seed)
             self.total = 0
+            self.connections = 0
             self.by_method = {}
             self.faults = 0
             self.requests = []
@@ -101,7 +102,7 @@ class State:
 
     def stats(self):
         with self.lock:
-            return {"total": self.total, "byMethod": dict(self.by_method), "faults": self.faults,
+            return {"total": self.total, "connections": self.connections, "byMethod": dict(self.by_method), "faults": self.faults,
                     "requests": [list(r) for r in self.requests]}
 
 
@@ -239,6 +240,11 @@ def make_handler(state, upstream):
             path = urllib.parse.urlsplit(self.path).path
             if path.startswith("/__proxy__/"):
                 return self.control()
+            if not getattr(self, "counted", False):
+                # Client connections that carried a proxied request (keep-alive reuse shows as fewer).
+                self.counted = True
+                with state.lock:
+                    state.connections += 1
             rule, index = state.count(self.command, urllib.parse.unquote(path), self.headers.get("Range"))
             config = state.config
             latency = config.get("latencyMs", 0)

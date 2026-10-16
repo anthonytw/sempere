@@ -68,6 +68,13 @@ public struct WebDAVSyncOptions: Sendable {
     /// with a weak or missing ETag, and with a run that lists every note at
     /// least every `fullListingInterval`. A note's `att/` is still listed.
     public var skipUnchangedNotes = false
+    /// List every note folder and its `att/` with one `PROPFIND` (`Depth:
+    /// infinity` on `notes/`) instead of one each, on a server seen to answer
+    /// it in full: a run checks it against the one-by-one listings first,
+    /// and again every `fullListingInterval`; a server that refuses it is
+    /// remembered (`TreeListing.swift`, docs/io.md "One listing for every
+    /// note folder"). Only with 8 to 5 000 note folders.
+    public var deepListing = true
     /// With `skipUnchangedNotes`: the longest time between two runs that list every note.
     public var fullListingInterval: TimeInterval = 24 * 3600
 
@@ -78,10 +85,11 @@ public struct WebDAVSyncOptions: Sendable {
     public var blobRetention: TimeInterval = CompactionPlanner.defaultRetention
 
     /// Transfers at once, `1...TransferPool.maxWidth` (`sempere sync webdav
-    /// --jobs`): the listings of note folders and their `att/`, and the
+    /// --jobs`): the listings of note folders and their `att/`, the
     /// downloads of the files the vault lacks (each still checked and
     /// quarantined as one at a time would be; a note's blobs before its
-    /// revisions). Uploads, deletions and mutable files stay one at a time.
+    /// revisions) and the uploads of the files the server lacks (`Preupload.swift`;
+    /// a note's blobs before its revisions). Deletions and mutable files stay one at a time.
     public var concurrency = TransferPool.defaultWidth
     /// Called as the run moves on (`WebDAVSyncProgress`): from the run's
     /// threads, one call at a time, so it must return quickly.
@@ -139,7 +147,14 @@ public final class WebDAVSync {
     let options: WebDAVSyncOptions
     var state = SyncState()
     var report: SyncReport
+    /// Collections known to exist on the server (listed, or made this run).
+    /// Under `collections` once uploads run on the pool's threads.
     private var madeCollections = Set<[String]>()
+    /// Collections a thread is making right now: another thread that needs
+    /// one waits for it instead of sending a second MKCOL (two at once make
+    /// some servers answer 500, wsgidav among them).
+    private var makingCollections = Set<[String]>()
+    private let collections = NSCondition()
     /// What the server holds after this run, per note (revision file names):
     /// the listing a server-side `sempere-index.json` must show.
     var remoteRevisions: [String: [String]] = [:]
@@ -168,6 +183,12 @@ public final class WebDAVSync {
     /// Whether this run lists only the notes whose folder ETag changed
     /// (`WebDAVSyncOptions.skipUnchangedNotes`); decided once `notes/` is listed.
     var skipsUnchangedNotes = false
+    /// How this run lists the note folders (`TreeListing.swift`), and the
+    /// tree it got when it asked for one.
+    var treeMode = TreeMode.none
+    var notesTree: [[String]: [RemoteEntry]]?
+    /// The note folders this run listed one by one, as listed (a `verify` run compares them with the tree).
+    var listedOneByOne: [String: [RemoteEntry]] = [:]
     /// Notes whose listing this run skipped.
     var notesNotListed = 0
     /// Note folders on the server whose listing failed this run: nothing is
@@ -200,8 +221,12 @@ public final class WebDAVSync {
     var attListings: [String: Result<[RemoteEntry]?, Error>] = [:]
     /// Keys of the downloads the prefetch made (whatever the outcome): the note loop does not repeat them.
     var prefetched = Set<String>()
-    /// Notes whose prefetched downloads reported anything: their folder ETag is not recorded this run.
+    /// Notes whose prefetched downloads or pre-uploads reported anything: their folder ETag is not recorded this run.
     var prefetchTroubled = Set<String>()
+    /// Keys of the uploads the pre-upload pass tried (`preuploadNewFiles`), whatever the outcome.
+    var preuploadTried = Set<String>()
+    /// The keys it uploaded, per note: the note loop counts them as its own uploads.
+    var preuploaded: [String: Set<String>] = [:]
 
     /// - Parameters:
     ///   - directory: the local vault; it may be missing or empty for a first pull.
@@ -311,7 +336,9 @@ public final class WebDAVSync {
             let all = Set(remoteNotes.keys).union(localNotes).subtracting(notesNotReadable)
             notesListed = notesNotReadable.isEmpty
             try listAttachments(remoteNotes)
+            if treeMode == .verify, let tree = notesTree { settleTreeCheck(tree, listed: listedOneByOne) }
             if !options.dryRun && !options.pushOnly { try prefetchDownloads(remoteNotes) }
+            if !options.dryRun { try preuploadNewFiles(remoteNotes, localNotes: localNotes) }
             updateProgress { $0.stage = .syncingNotes; $0.notesTotal = all.count }
             for id in all.sorted() {
                 // Recorded again below only if the note ends unchanged and in step on both sides.
@@ -667,12 +694,21 @@ public final class WebDAVSync {
         guard rootEntries.contains(where: { $0.name == Vault.notesName && $0.isCollection }),
               let dirs = try client.list([Vault.notesName]) else { return [:] }
         try budget.list(dirs.count)
+        madeCollections.formUnion([[], [Vault.notesName]])
         let noteDirs = dirs.filter { $0.isCollection && Vault.isNoteDirectoryName($0.name) }.count
         if noteDirs > options.limits.maxNotes {
             throw WebDAVError.limitExceeded("the server lists \(noteDirs) notes, more than \(options.limits.maxNotes) (--max-notes)")
         }
         checkNoteStamps(dirs)
         updateProgress { $0.notesTotal = noteDirs }
+        // `Depth: infinity` where the server was seen to answer it in full (`TreeListing.swift`).
+        var mode = treeMode(noteDirs: noteDirs)
+        if mode != .none {
+            notesTree = try fetchNotesTree(dirs: dirs.filter { $0.isCollection && Vault.isNoteDirectoryName($0.name) }.map(\.name))
+            if notesTree == nil { mode = .none }
+        }
+        treeMode = mode
+        if mode == .use { skipsUnchangedNotes = false }
         // Collections the listings show need no MKCOL before an upload into them (one request
         // per note uploaded to, every run, otherwise).
         func exists(_ name: String, _ entries: [RemoteEntry]) {
@@ -697,12 +733,25 @@ public final class WebDAVSync {
             }
             toList.append(d.name)
         }
+        if mode == .use, let tree = notesTree {
+            for name in toList {
+                let entries = tree[[name]] ?? []
+                out[name] = entries
+                exists(name, entries)
+                if entries.contains(where: { $0.name == Vault.attachmentsName && $0.isCollection }) {
+                    attListings[name] = .success(tree[[name, Vault.attachmentsName]] ?? [])
+                }
+            }
+            updateProgress { $0.notesListed += toList.count }
+            return out
+        }
         // One PROPFIND per folder, `concurrency` at a time.
         let listed = try listConcurrently(toList.map { [Vault.notesName, $0] }, notes: true)
         for (name, result) in zip(toList, listed) {
             switch result {
             case .success(let entries):
                 out[name] = entries ?? []
+                listedOneByOne[name] = entries ?? []
                 if let entries { exists(name, entries) }
             case .failure(let error):
                 report.errors.append(.init(path: "notes/\(name)", message: Self.describe(error)))
@@ -769,7 +818,14 @@ public final class WebDAVSync {
         for n in newRemote.sorted() where !prefetched.contains(key(id, n)) {
             try attempt(n) { if try download(id, n, entry: entries[n]) { L.insert(n) } }
         }
-        for n in newLocal.sorted() { try attempt(n) { try upload(id, n); R.insert(n) } }
+        for n in newLocal.sorted() {
+            // The pre-upload pass may have made it already (`preuploadNewFiles`), or tried and reported it.
+            switch preuploadOutcome(id, key(id, n)) {
+            case .uploaded: R.insert(n)
+            case .failed: break
+            case .notTried: try attempt(n) { try upload(id, n); R.insert(n) }
+            }
+        }
 
         // Read (decrypted, decoded) only when a deletion is judged or a shared
         // snapshot's coverage is not recorded yet; once, after the transfers
@@ -939,16 +995,18 @@ public final class WebDAVSync {
         return data
     }
 
+    /// Uploads a revision (`If-None-Match: *`). Safe on the pool's threads
+    /// (`preuploadNewFiles`): what it shares with the run is under `mutex`.
     func upload(_ id: String, _ n: RevisionName) throws {
         defer { updateProgress { $0.uploaded = report.uploaded.count } }
         let path = "notes/\(key(id, n))"
-        guard !options.dryRun else { report.uploaded.append(path); return }
+        guard !options.dryRun else { locked { report.uploaded.append(path) }; return }
         let data = try BoundedRead.contents(of: root.appendingPathComponent("notes/\(id)/\(n.filename)"),
                                             maxBytes: options.maxFileBytes)
         try ensureCollection([Vault.notesName, id])
         // A 412 means the server already has it: write-once, so it is the same file.
         try client.put([Vault.notesName, id, n.filename], data, condition: .create)
-        report.uploaded.append(path)
+        locked { report.uploaded.append(path) }
     }
 
     /// Downloads a revision, checks it (format.md §9.1) and places it.
@@ -1003,8 +1061,28 @@ public final class WebDAVSync {
         return true
     }
 
+    /// Makes sure a collection exists (MKCOL). A note folder or `att/` whose
+    /// parent the `notes/` listing did not show is made after its parent;
+    /// otherwise a 409 makes the parents first. Safe on the pool's threads:
+    /// one MKCOL per collection at a time, the others wait for its outcome.
     func ensureCollection(_ path: [String]) throws {
-        guard !madeCollections.contains(path) else { return }
+        collections.lock()
+        while makingCollections.contains(path) { collections.wait() }
+        if madeCollections.contains(path) { collections.unlock(); return }
+        makingCollections.insert(path)
+        // The listing showed `notes/`, so a parent it did not show is missing: make it first.
+        let parentFirst = path.count >= 3 && madeCollections.contains([Vault.notesName])
+            && !madeCollections.contains(Array(path.dropLast()))
+        collections.unlock()
+        var made = false
+        defer {
+            collections.lock()
+            makingCollections.remove(path)
+            if made { madeCollections.insert(path) }
+            collections.broadcast()
+            collections.unlock()
+        }
+        if parentFirst { try ensureCollection(Array(path.dropLast())) }
         switch try client.mkcol(path) {
         case .created, .exists: break
         case .missingParent:
@@ -1015,7 +1093,7 @@ public final class WebDAVSync {
             try ensureCollection(Array(path.dropLast()))
             _ = try client.mkcol(path)
         }
-        madeCollections.insert(path)
+        made = true
     }
 }
 

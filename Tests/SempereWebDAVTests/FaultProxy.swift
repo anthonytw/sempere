@@ -81,6 +81,14 @@ struct FaultProxy: @unchecked Sendable {
     /// Clears the configuration and the counters.
     func reset(seed: Int = 1) throws { try post("reset", ["seed": seed]) }
 
+    /// Client connections that carried a proxied request since the last reset.
+    func connections() throws -> Int {
+        let r = try transport.send(WebDAVRequest(method: "GET", url: base.appendingPathComponent("__proxy__/stats")))
+        guard r.status == 200, let json = try JSONSerialization.jsonObject(with: r.body) as? [String: Any],
+              let n = json["connections"] as? NSNumber else { throw WebDAVError.malformedResponse("proxy stats") }
+        return n.intValue
+    }
+
     /// Every request since the last reset, in order.
     func requests() throws -> [Request] {
         let r = try transport.send(WebDAVRequest(method: "GET", url: base.appendingPathComponent("__proxy__/stats")))

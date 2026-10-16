@@ -82,7 +82,9 @@ extension WebDAVSync {
     func recordNoteStamp(_ id: String, remoteEntries: [RemoteEntry]?, since mark: NoteMark) {
         guard !options.dryRun, let etag = noteETags[id] else { return }
         let prefix = "notes/\(id)/", attPrefix = "notes/\(id)/\(Vault.attachmentsName)/"
+        // Uploads the pre-upload pass made for this note count as the note's own.
         let uploads = report.uploaded[mark.uploaded...].filter { $0.hasPrefix(prefix) }
+            + (preuploaded[id] ?? []).sorted().map { "notes/\($0)" }
         let deletes = report.deleted[mark.deleted...].filter { $0.side == "remote" && $0.path.hasPrefix(prefix) }
         let clean = NoteMark.issues(report) == mark.issues
         // Only a revision upload that went through is a write the folder's ETag must show:

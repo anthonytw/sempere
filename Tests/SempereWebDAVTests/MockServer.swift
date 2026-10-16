@@ -59,6 +59,21 @@ final class MockDAV: WebDAVTransport, @unchecked Sendable {
         case weak
     }
     var collectionETags = CollectionETags.none
+
+    /// How `PROPFIND` with `Depth: infinity` is answered, as servers differ.
+    enum DepthInfinity {
+        /// Only the collection itself (the default: the mock's old behavior).
+        case depthZero
+        /// Everything below it (wsgidav, rclone, Nextcloud with infinite depth on).
+        case full
+        /// As `Depth: 1` (Sabre with infinite depth off).
+        case depthOne
+        /// 403 `propfind-finite-depth` (Apache's default).
+        case forbidden
+        /// Everything below it except files whose name ends with this.
+        case omitting(String)
+    }
+    var depthInfinity = DepthInfinity.depthZero
     /// Give files weak ETags (`W/"…"`) in listings and GETs. `If-Match`
     /// compares strongly (RFC 9110 §13.1.1), so a weak tag never matches.
     var weakFileETags = false
@@ -139,7 +154,26 @@ final class MockDAV: WebDAVTransport, @unchecked Sendable {
             let depth = r.headers["Depth"] ?? "1"
             if collections.contains(key) {
                 var xml = entry(key + "/", etag: collectionETag(key), collection: true, size: nil)
-                if depth == "1" {
+                if depth == "infinity" {
+                    switch depthInfinity {
+                    case .depthZero: return multistatus(xml)
+                    case .forbidden:
+                        return WebDAVResponse(status: 403, body: Data("<d:error xmlns:d=\"DAV:\"><d:propfind-finite-depth/></d:error>".utf8))
+                    case .depthOne: break
+                    case .full, .omitting:
+                        var omit: String?
+                        if case .omitting(let s) = depthInfinity { omit = s }
+                        for c in collections.sorted() where c.hasPrefix(key + "/") {
+                            xml += entry(c + "/", etag: collectionETag(c), collection: true, size: nil)
+                        }
+                        for (f, s) in files.sorted(by: { $0.key < $1.key }) where f.hasPrefix(key + "/") {
+                            if let omit, f.hasSuffix(omit) { continue }
+                            xml += entry(f, etag: fileETag(s), collection: false, size: s.size)
+                        }
+                        return multistatus(xml)
+                    }
+                }
+                if depth == "1" || depth == "infinity" {
                     var kids = Set<String>()
                     for c in collections where c != key && parent(c) == key { kids.insert(c) }
                     for c in kids.sorted() { xml += entry(c + "/", etag: collectionETag(c), collection: true, size: nil) }
