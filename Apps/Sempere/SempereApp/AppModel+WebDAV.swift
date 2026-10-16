@@ -271,6 +271,7 @@ extension AppModel {
             }
         }
         webdav = nil
+        webdavRemote.releaseConnections()
     }
 
     // MARK: - Downloading
