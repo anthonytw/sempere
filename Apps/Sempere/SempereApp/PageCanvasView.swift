@@ -612,6 +612,7 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         #if DEBUG
         itemSelection.debugTyping = { [weak self] in self?.textEditor.textView?.text }
         itemSelection.debugStrokes = { [weak self] in self?.canvas.drawing.strokes.count ?? 0 }
+        itemSelection.debugEmoji = { [weak self] in self?.textEditor.emojiSummary ?? "0,0" }
         itemSelection.debugPalette = { [weak self] in
             guard let self else { return false }
             return self.canvas.isFirstResponder && self.toolPicker.isVisible

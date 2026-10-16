@@ -52,6 +52,18 @@ PRs never edit `CHANGELOG.md` (every PR conflicted there). Each adds `changelog.
 `[Unreleased]` and deletes them: run it on `main` before a TestFlight build and in the release PR
 ([releasing.md](releasing.md)). Tested by `scripts/test-changelog-collect.sh` (CI `release` job).
 
+## Real-mouse UI tests
+
+`MacRealMouseUITests` (in `test-mac-ui`) posts HID-level mouse events (`HIDMouse`, `CGEventPost` to
+`.cghidEventTap`) instead of XCUITest's synthesized ones: an item dragged and resized with the lasso as the
+palette's last tool, a click into a new text box followed by typing, and the New Notebook sheet's Create button
+clicked for real. It skips itself (with the reason) when the test runner may not post events
+(`CGPreflightPostEventAccess()`: Accessibility for the runner's responsible process). Every Mac UI test also
+needs Automation Mode, which on a Mac that "requires user authentication" (`automationmodetool`) is enabled by a
+person approving the prompt once in the desktop session that owns the screen. AutoFill's Strong Password in the
+New Vault sheet stays a hand check: it needs the signed app and a signed-in Passwords/iCloud Keychain, and its
+popover belongs to another process that XCUITest cannot see.
+
 ## What runs when
 
 - **Draft pull requests run nothing.** Mark a pull request ready (`gh pr ready`) to run CI;

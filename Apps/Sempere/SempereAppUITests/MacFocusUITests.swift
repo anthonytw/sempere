@@ -115,6 +115,95 @@ final class MacFocusUITests: XCTestCase {
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
     }
 
+    /// `:name` emoji completion in a text box on the canvas, as in the naming fields: the list opens
+    /// after two letters (the canvas report's `emoji=rows,highlighted`), ↑ ↓ move the highlight, Return
+    /// or Tab put the emoji in, Escape closes the list and not the box, and a closed `:name:` turns
+    /// into its emoji.
+    @MainActor
+    func testATextBoxCompletesEmojiShortcodes() throws {
+        let app = launch()
+        defer { app.terminate() }
+        ready(app)
+        app.typeKey("5", modifierFlags: [.command, .option])   // Tools > Lasso
+        app.typeKey("6", modifierFlags: [.command, .option])   // Tools > Text
+        Thread.sleep(forTimeInterval: 1)
+        let window = app.windows.firstMatch
+        var area: CGRect?
+        for element in app.descendants(matching: .any).matching(identifier: "pageCanvas").allElementsBoundByIndex {
+            let part = element.frame.intersection(window.frame)
+            if !part.isNull, part.width > 100, part.height > 100 { area = part; break }
+        }
+        guard let area else { dump(app, "emoji-box"); XCTFail("no page canvas on screen"); return }
+        let origin = window.coordinate(withNormalizedOffset: .zero)
+        origin.withOffset(CGVector(dx: area.minX - window.frame.minX + area.width * 0.3,
+                                   dy: area.minY - window.frame.minY + area.height * 0.7)).click()
+        if typing(app, timeout: 10) == nil { dump(app, "emoji-editor") }
+        XCTAssertNotNil(typing(app, timeout: 1), "a text box is being edited")
+        Thread.sleep(forTimeInterval: 1)
+
+        app.typeText(":smile")
+        XCTAssertTrue(waitEmoji(app) { $0.rows > 0 }, "suggestions under the box: \(emoji(app))")
+        XCTAssertEqual(emoji(app).highlighted, 0, "the first row is highlighted")
+        app.typeKey(XCUIKeyboardKey.downArrow.rawValue, modifierFlags: [])
+        XCTAssertTrue(waitEmoji(app) { $0.highlighted == 1 }, "↓ highlights the second row: \(emoji(app))")
+        app.typeKey(XCUIKeyboardKey.upArrow.rawValue, modifierFlags: [])
+        XCTAssertTrue(waitEmoji(app) { $0.highlighted == 0 }, "↑ goes back: \(emoji(app))")
+        app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
+        XCTAssertTrue(waitEmoji(app) { $0.rows == 0 }, "Return closes the list")
+        XCTAssertEqual(typing(app, timeout: 3), "😄", "Return takes the first row, and not a new line")
+
+        app.typeText(" :smile")
+        XCTAssertTrue(waitEmoji(app) { $0.rows > 0 })
+        app.typeKey(XCUIKeyboardKey.downArrow.rawValue, modifierFlags: [])
+        app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
+        XCTAssertTrue(waitEmoji(app) { $0.rows == 0 })
+        let second = typing(app, timeout: 3) ?? ""
+        XCTAssertTrue(second.hasPrefix("😄 ") && second != "😄 😄" && !second.contains(":"), "↓ then Return takes the second row: \(second)")
+
+        app.typeText(" :rocket")
+        XCTAssertTrue(waitEmoji(app) { $0.rows > 0 })
+        app.typeKey(XCUIKeyboardKey.tab.rawValue, modifierFlags: [])
+        XCTAssertTrue(waitEmoji(app) { $0.rows == 0 })
+        XCTAssertTrue((typing(app, timeout: 3) ?? "").hasSuffix(" 🚀"), "Tab takes the row too: \(typing(app, timeout: 1) ?? "")")
+
+        app.typeText(" :boo")
+        XCTAssertTrue(waitEmoji(app) { $0.rows > 0 })
+        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+        XCTAssertTrue(waitEmoji(app) { $0.rows == 0 }, "Escape closes the list")
+        XCTAssertNotNil(typing(app, timeout: 2), "and not the box")
+
+        app.typeText("ks: :bulb:")
+        var text = typing(app, timeout: 1) ?? ""
+        for _ in 0..<10 where !text.hasSuffix(" 📚 💡") {
+            Thread.sleep(forTimeInterval: 0.5)
+            text = typing(app, timeout: 1) ?? ""
+        }
+        XCTAssertTrue(text.hasSuffix(" 📚 💡"), "closed shortcodes turn into emoji: \(text)")
+        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+    }
+
+    /// The emoji list's state from a canvas's debug report: `emoji=rows,highlighted`.
+    @MainActor
+    private func emoji(_ app: XCUIApplication) -> (rows: Int, highlighted: Int) {
+        for c in app.descendants(matching: .any).matching(identifier: "pageCanvas").allElementsBoundByIndex {
+            guard let v = c.value as? String, let r = v.range(of: ";emoji=") else { continue }
+            let rest = v[r.upperBound...].prefix { $0 != ";" }
+            let n = rest.split(separator: ",").compactMap { Int($0) }
+            if n.count == 2 { return (n[0], n[1]) }
+        }
+        return (0, 0)
+    }
+
+    @MainActor
+    private func waitEmoji(_ app: XCUIApplication, timeout: TimeInterval = 8, _ ok: ((rows: Int, highlighted: Int)) -> Bool) -> Bool {
+        let end = Date().addingTimeInterval(timeout)
+        repeat {
+            if ok(emoji(app)) { return true }
+            Thread.sleep(forTimeInterval: 0.25)
+        } while Date() < end
+        return false
+    }
+
     /// The text of the box being typed in, from a canvas's debug report (`SEMPERE_DEMO_ITEMS`);
     /// nil while no box is being edited.
     @MainActor
