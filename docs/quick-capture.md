@@ -127,7 +127,7 @@ transcription on. That transcript goes through the normal path: a blob, then
 | --- | --- |
 | Siri, Shortcuts | `StartVoiceNoteIntent` (an `AudioRecordingIntent`) and `StopVoiceNoteIntent`, phrases in `VoiceNoteShortcuts` |
 | Action button | Any of the above, or the control |
-| Control Center | `VoiceNoteControl` (`ControlWidget`, iOS 18+): records when ready, stops while recording, opens the setup otherwise |
+| Control Center | `VoiceNoteControl` (`ControlWidget`): records when ready, stops while recording, opens the setup otherwise |
 | Lock Screen, Home Screen | `VoiceNoteWidget` (circular, rectangular, small): the same three actions |
 | While recording | `VoiceNoteLiveActivity`: pulsing record dot, elapsed time and a large Stop, on the Lock Screen and in the Dynamic Island (required for `AudioRecordingIntent`); paused by an interruption (a call, a headset unplugged), "Paused" with the time standing still; then where the voice note went, with the length of the audio |
 | In the app | `VoiceNoteBanner`: a red bar with the time and Stop at the top of the window (library and note windows, and the unlock and Settings sheets; on a Mac too) while recording, then where the voice note went |
@@ -162,8 +162,8 @@ Activity): no key, no vault, no note.
 
 The control has one action, `VoiceNoteControlIntent` (a control's template
 cannot switch on its value): it decides when tapped, from the app's live
-state, whether to record, stop, or continue in the app (iOS 26
-`continueInForeground`). The widgets switch their button per state.
+state, whether to record, stop, or continue in the app
+(`continueInForeground`). The widgets switch their button per state.
 
 | Phase | Shows | A tap |
 | --- | --- | --- |
@@ -172,6 +172,11 @@ state, whether to record, stop, or continue in the app (iOS 26
 | Ready | mic | records (`StartVoiceNoteIntent`) |
 | Recording | stop, the length of the audio (standing still while paused) | stops and saves (`StopVoiceNoteIntent`) |
 | Saving | "Saving Voice Note" | opens the app at the banner |
+
+Settings ▸ Quick Voice Notes also says, with a button to Sempere's page in the system Settings, when Live
+Activities or the microphone are off for Sempere (`VoiceNoteBlocker`): either stops a voice note from the
+Lock Screen, Control Center, the Action button or a widget from recording, whether or not quick voice
+notes are set up yet.
 
 The file is protected until the first unlock after boot. Before it, the
 extension cannot read it (and nothing can record: the capture profile is a

@@ -94,6 +94,7 @@ the Insert menu's entry does. Imports file new notes under the sidebar's noteboo
 | File | Close Vault | ⇧⌘W |
 | File | Import PDF as New Note… | ⇧⌘I |
 | File | Import from Notability… | (none) |
+| File | Last Import Report… (shows, and saves, the report of the last import; enabled once an import has run) | (none) |
 | File | Insert PDF Pages… | (none) |
 | File | Insert Photo… | ⌥⌘I |
 | File | Export… | ⇧⌘E |
@@ -396,7 +397,7 @@ nothing (`ExportEpoch`). The file is plaintext, written under
 `$TMPDIR/SempereExport/<model id>/<random id>/<title>.pdf`; the folder is
 emptied when the vault closes and at launch, and files older than ten minutes
 are removed on the next export. Many notes at once go through File ▸ Export
-Notes… (`MenuCommand.bulkExport`, `BulkExportSheet`): on a Mac it writes into
+to Folder or Zip… (`MenuCommand.bulkExport`, `BulkExportSheet`): on a Mac it writes into
 a folder chosen in the open panel (security-scoped for the run, resumable: a
 re-run skips notes already there unchanged), or a zip saved with the save
 panel. It is enabled in a library window with an unlocked vault.

@@ -106,8 +106,8 @@ rotation but never forge one (`format.md` §2.1).
 
 A vault is a folder. The app reads and writes files; sync is whatever moves
 the folder: on-device, a Files-app provider (iCloud Drive, SMB, Nextcloud,
-Dropbox, ...), the built-in WebDAV client (the app edits a local copy and
-pushes it, push-only, to a server the user runs; `docs/io.md`), or a zip through the
+Dropbox, ...), the built-in WebDAV client (the app downloads a local copy when the vault is opened,
+edits it, and pushes changes back to a server the user runs; the pushes are push-only; `docs/io.md`), or a zip through the
 share sheet. Providers see UUID file names, keyed-hash blob names with their
 kind (image, pdf, audio, …), sizes (blobs padded to a size class) and times,
 nothing else.
@@ -115,8 +115,9 @@ nothing else.
 ## Network
 
 The app's only connections go to a WebDAV server the user sets up and opens
-a vault from (`docs/io.md`, "WebDAV vaults in the app"): it uploads the
-already encrypted vault there, push-only. Otherwise files move through the
+a vault from (`docs/io.md`, "WebDAV vaults in the app"): it downloads the
+vault's already encrypted files from there when the vault is opened and uploads
+its changes, push-only, over HTTPS (plain http is accepted only for localhost). Otherwise files move through the
 system's Files and iCloud services, and on-device speech models are the
 system's downloads. Network code lives in `Sources/SempereWebDAV` (the CLI's
 `sync webdav` and the app's WebDAV vaults, through

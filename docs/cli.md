@@ -128,7 +128,7 @@ sempere keys paper --out KIT.pdf [--identity FILE] [--vault V] [--passphrase [--
   another device. `--recipient` is needed only if the vault stores several.
 - `paper` writes a two-page printable PDF recovery kit (mode 0600, refuses to
   overwrite). Page 1: the key as a QR code (byte mode, error correction Q,
-  version 6 for an `AGE-SECRET-KEY-1…` line), the key as text in numbered
+  version 7 for the `AGE-SECRET-KEY-PQ-1…` line), the key as text in numbered
   lines grouped by 5 with a 4-digit checksum per line, the public key, and with
   `--vault` the vault name, id and creation date; a boxed warning that **the
   sheet is the key**. Page 2: recovery step by step with stock tools
@@ -205,8 +205,8 @@ the share sheet closes, when the sheet goes away, and at the next launch.
 ### Vault
 
 ```
-sempere vault init PATH --recipient age1... [--recipient ...] [--label TEXT ...] [--vault-label TEXT]
-                         [--store-key FILE [--passphrase-env VAR] [--work-factor 15...18]]
+sempere vault init PATH --recipient age1pq1... [--recipient ...] [--label TEXT ...] [--vault-label TEXT]
+                         [--store-key FILE [--passphrase-env VAR] [--work-factor 15...18] [--allow-weak-passphrase]]
 sempere vault info
 sempere vault label [TEXT | --clear] [--json]
 sempere vault recipients add age1pq1... [--label TEXT] [--rewrap header|reencrypt] [--store-key FILE [--store-passphrase-env VAR] [--work-factor 15...18]]
@@ -376,7 +376,8 @@ sempere vault merge-copy FROM [--dry-run] [--json]
 - `verify` decrypts, tag-checks and decodes every file and prints
   `status  path` per file plus counts, and a `RECIPIENTS` line (the device
   list, as in `info`). Exit 0 only if the vault is healthy, 6 when the device
-  list does not check, else 3. `-q` lists only problem files. `--json` emits
+  list does not check, else 3. `-q` lists only files whose status is not `ok` (so the healthy
+  `unreferenced` and `unknownFile` too). `--json` emits
   `healthy`, `manifestProblems`, `rewrapPending`, `journalProblem`, `counts`,
   `files` and `recipientsAuth` (as in `info`).
   Attachment blobs are decrypted and hashed in full: `ok`, `unreferenced`
@@ -402,7 +403,7 @@ sempere vault merge-copy FROM [--dry-run] [--json]
   notebook, favorite and deleted flags, created and modified dates, page count
   and each page's searchable text, with the revision file names it was made
   from; notes with an unreadable revision get no entry. Sealed with AES-256-GCM
-  under a key derived from the vault secret, so it needs the key (exit 3
+  under a key derived from the vault secret, so it needs the key (exit 4
   without it) and only the vault's keys open it. Entries of an existing file
   whose notes did not change are reused (others go through the summary cache
   unless `--no-cache`), so a rerun reads only changed notes. Once it exists it
@@ -546,10 +547,10 @@ them (`--page` defaults to 1); coordinates are points from the page's top-left.
 Standard output is the new item's (or recording's) id, one per line, so
 `ID=$(sempere attach image …)` works; the confirmation goes to standard error
 (`-q` silences it). `--json` prints `{note, file, dryRun, blob, items,
-recording, pagesAdded}`: `file` is the delta written (`null` with `--dry-run`),
+recording, pagesAdded}`: `file` is the delta written (absent with `--dry-run`),
 `blob` the reference stored (`sha256`, `size`, `type`), `items` the added items
 as `notes show --json` prints them (`{page, pageId, item}`), `recording` the
-recording added or changed. `--dry-run` checks the file and the placement and
+recording added or changed; `pdf` adds `pagesWithText` and `textEngine`. `--dry-run` checks the file and the placement and
 says what would be added; it writes neither the blob nor a delta. A blob
 stored before a failing delta is unreferenced; `blobs gc` collects it. Nothing
 is stored when the file or the placement is refused (exit 1; bad options are
@@ -601,7 +602,9 @@ exit 2).
   page, in the content layer; `--pages` must then select exactly one. Encrypted
   PDFs, files that are not PDFs, PDFs with more than 2 000 pages or a page
   without a usable size are refused. Annotations and form fields are not drawn
-  (`format.md` §8.2.6).
+  (`format.md` §8.2.6). `--pdf-text` (default `auto`) stores each PDF page's text
+  for search: `pdftotext` when installed (`$SEMPERE_PDFTOTEXT`), else the built-in
+  reader; `builtin`, `poppler` force one, `none` stores none.
 - `text` adds a text box. The text is the argument, or `--file` (`-` is standard
   input), at most 65 536 bytes of UTF-8, stored as NFC with `\n` line breaks in
   one style (one trailing newline of a file is dropped). Without a frame the box
@@ -654,7 +657,7 @@ exit 2).
   card (narrower on a narrow page), centered across the page a margin from its
   top and below any item it would cover (as for `image`), above the page's other items; standard output is then the item's id,
   then the recording's, and `--json` lists the item in `items`. `recordings
-  place` places one later. `--rec ID` on `image` and `text` links an item to a
+  place` places one later. `--rec ID` on `image`, `text`, `math` and `video` links an item to a
   recording (id, id prefix of 4+ characters or exact title) at `--rec-at` seconds
   (`format.md` §8.3.3).
 - `transcript` sets a recording's transcript from a `sempere-transcript/1` JSON
@@ -804,7 +807,8 @@ for `--prune` and for a full `verify`.
   then shows what `DIR` holds, read without a key: `notes`, `revisions`,
   `attachments`, `keyFiles`, `bytes`, `newestRevision` (the newest revision
   file's clock, so a device whose clock ran ahead can put it in the future),
-  `isBackup` and `backupUpdated`. `--json` emits those fields with `source` and `vaultId`.
+  `isBackup` and `backupUpdated`. `--json` emits those fields with `source` and `vaultId`. A real restore's
+  `--json` emits `vault`, `restored`, `alreadyPresent`, `errors`, `problems`, `healthy` and `decrypted`.
 
 #### Scheduling backups
 
@@ -813,8 +817,10 @@ run it often. Use absolute paths; no key is needed (do not put one in a
 scheduled job unless you use `--prune`).
 
 cron (Linux, macOS), every hour, plus a weekly check and a daily reminder
-when no run has completed for a week (cron mails what a job prints, so only
-an overdue backup produces mail):
+when no run has completed for a week (cron mails what a job prints: a quiet
+`backup` prints nothing when all is well and the reminder only when a backup is
+overdue, but `backup verify -q` also lists healthy `unreferenced` blobs, so
+expect an occasional mail from it):
 
 ```cron
 0 * * * *  /usr/local/bin/sempere backup /home/me/Sync/notes.sempere --to /mnt/backup/notes -q
@@ -915,6 +921,9 @@ sempere notes rename ID|TITLE NEW-TITLE
 sempere notes tag ID|TITLE [--add T]... [--remove T]... [--no-cache]
 sempere notes move ID|TITLE (NOTEBOOK | --none)
 sempere notes paper ID|TITLE [KIND] [--page N] [PAPER OPTIONS]
+sempere notes language ID|TITLE [TAG | --none]
+sempere notes markers ID|TITLE behind|above
+sempere notes favorite ID|TITLE [--off]
 sempere notes search QUERY [--notebook PATH] [--tag T] [--deleted] [--no-cache]
 sempere notes delete ID|TITLE
 sempere notes undelete ID|TITLE
@@ -1117,7 +1126,7 @@ format's limits is a usage error (exit 2), not clamped:
 
 ```
 sempere notes new "Week 3" --notebook School/Physics --tag physics --paper grid --spacing 18
-sempere notes paper "Week 3" cornell --page 2
+sempere notes paper "Week 3" cornell --page 2      # needs a second page: sempere pages add "Week 3" first
 sempere notes tag "Week 3" --add exam --remove draft
 sempere notes language "Week 3" es-ES
 sempere notes markers "Week 3" behind
@@ -1247,11 +1256,11 @@ paper and recognized text right after it under new ids.
 `scribble` writes synthetic handwriting, for test fixtures, stress tests and
 benchmarks (the app's dense-page tests use the same generator, `SyntheticInk`):
 `--strokes` (1–200 000, default 1000) word-sized pen loops of `--points`
-control points (default 24) in rows `--row-height` apart (default 24) from
-`--top` down (default 48), between the page margins, as `addStroke` ops on page
+control points (2–500, default 24) in rows `--row-height` apart (4–200, default 24) from
+`--top` down (0–1 000 000, default 48), between the page margins, as `addStroke` ops on page
 `--page` (default 1). `--per-revision` writes them that many to a delta (default:
 all in one), so `--strokes 300 --per-revision 1` makes a note of 300 revisions;
-the note is read once for all of them. The same `--seed` gives the same
+the note is read once for all of them. The same `--seed` (default 1) gives the same
 geometry; stroke ids are new each run. `--recording` links every stroke to a
 recording of the note (`rec`, format.md §5.6), spread evenly over its length,
 as ink written while it ran. `--json` gives `note`, `page` (its id), `strokes`
@@ -1482,7 +1491,7 @@ rotation); later pages of another size are fitted and centered; paper is blank.
 The whole note is one delta. The title is `--title` (one file only) or the file
 name without `.pdf`; `--notebook` and `--tag` as for `notes new`; `--pages`
 imports a subset. Encrypted PDFs (remove the password first, e.g. `qpdf
---decrypt`), non-PDFs and PDFs with more than 2 000 pages are refused. Prints
+--decrypt`), non-PDFs, files over 1 GiB and PDFs with more than 2 000 pages are refused. Prints
 each new note's id (`-q`: only the ids); a file that fails does not stop the
 others and the exit code is 1. `--dry-run` checks the files and writes nothing.
 `--json` emits `{dryRun, imported, failed, notes}`, one entry per file:
@@ -1508,7 +1517,7 @@ stores no text. A page with no extractable text (a scan) stores nothing.
 ### Search
 
 ```
-sempere search TERM [--transcripts]
+sempere search TERM [--transcripts] [--show-boxes]
 ```
 
 (To find notes rather than every occurrence, ranked as in the app, use
@@ -1697,7 +1706,7 @@ sempere inbox import [CAPTURE...] [--dry-run] [--retry]          (needs the key)
 ```
 
 Voice notes without the key (`format.md` §11, `docs/quick-capture.md`), the
-same path as the app's widgets, Control Center control and Siri. `enable`
+same path as the app's widgets, Control Center control, Action button, Mac menu-bar item and Siri. `enable`
 writes this machine's **capture profile** (the vault's public recipients and
 the device capture key of the key it was unlocked with, which can only add
 captures and never reads anything) to
@@ -1887,8 +1896,10 @@ except that a single note's pdf/json goes to the file when `--out` ends in
 named explicitly is exported with a warning. One note that fails to
 reconstruct does not stop the others; the exit code is then 1. Every file
 written is printed. With `--json`, each entry has `note`, `files` and, when
-some items were drawn as placeholders, `placeholders` (their number), and
-`recordings` (the number embedded) with `--recordings attach`.
+some items were drawn as placeholders, `placeholders` (their number),
+`recordings` and `videos` (the numbers embedded) with `--recordings attach` and `--videos attach`, and in a bulk
+export (below) `skipped` (`true` for a note left as an earlier run wrote it); the Markdown and HTML exports
+add `changed` (see "Re-export").
 
 #### Media export
 
@@ -1981,7 +1992,7 @@ note's attachments, verified (`docs/format.md` §8.1.4), and drawn under the ink
 - Poppler runs as a separate process on a private temporary copy of the
   verified PDF (deleted afterwards), started with an argument vector (never a
   shell) and under resource limits: `--pdf-timeout` seconds of wall-clock time
-  per page (default 30; then SIGTERM, then SIGKILL), as much CPU time, 3 GiB
+  per page (default 30, more than 0 and at most 3600; then SIGTERM, then SIGKILL), as much CPU time, 3 GiB
   of address space where the OS enforces it, an output file no larger than the
   requested pixels need, no core dumps. A PDF that makes Poppler hang, crash
   or write garbage costs at most one timeout and becomes a placeholder.
@@ -2295,7 +2306,10 @@ in `$XDG_STATE_HOME/sempere/sync/`); a change on one side is copied over, a
 change on both keeps both copies (`vault.conflict-<device>-<time>.json` next to
 the local file; `--device` names this machine, default the host name) and exits
 3; a `vault.json` that differs only in its label (the vault renamed on both
-sides) is the same vault and is taken from the server. Deletions follow only compaction: a file removed on one side is removed on
+sides) is the same vault and is taken from the server. `settings.age` changed on both sides is merged per key with the
+vault unlocked and the result written to both sides (listed in `merged`; `docs/settings-sync.md` §8); locked, both
+copies are kept and a conflict is reported, as for `vault.json`. The notebook records (`notebooks/`, `format.md` §14)
+are write-once, so both sides end with the union. Deletions follow only compaction: a file removed on one side is removed on
 the other only if the compaction rules (`docs/format.md` §5.3) allow it with
 the revisions held locally, which needs the vault unlocked (`--identity`, or
 `--passphrase-env`/`$SEMPERE_PASSPHRASE` for the stored key file); otherwise
@@ -2411,7 +2425,7 @@ is pulled in steps instead of all at once.
 - An ordinary run (none of these flags) completes a partial copy too.
 
 These flags do not go with `--push-only`, `--dry-run`, `--delete-extraneous`,
-`--keep-server-changes`, `--web-viewer` or `--skip-unchanged` (exit 2). While a
+`--keep-server-changes`, `--web-viewer`, `--skip-unchanged` or `--no-deep-listing` (exit 2). While a
 copy is partial: nothing is written to a note not downloaded yet (`notes
 show`, edits and other per-note commands fail with "not completely downloaded";
 `notes list` shows such notes with that problem); commands that must see every
@@ -2487,7 +2501,7 @@ Output: one line per action, then
 lines, `-v` adds skipped and ignored entries). `--json` prints the report:
 `dryRun`, `uploaded`, `downloaded`, `deleted` (`{side, path}`), `conflicts`
 (`{path, remoteCopy, detail}`), `errors` and `skipped` (`{path, message}`) and
-`ignored` (remote names that are not vault files), `rejected`, `quarantined`
+`ignored` (remote names that are not vault files), `merged` (`settings.age` when it was merged, below), `rejected`, `quarantined`
 (`{path, message}`), `stoppedEarly` (only when a run bound or a cancellation stopped it), `progress` (above), `partial` (only on a partial copy, above), and with `--push-only` also `extraneous` and `overwritten` (these arrays are always present). One failing file does not stop the
 run. Exit 0 ok, 1 errors or quarantined files, 2 usage (including a refused URL), 3 conflicts, 6 a
 rejected `vault.json`.

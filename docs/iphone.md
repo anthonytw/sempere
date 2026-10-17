@@ -62,6 +62,13 @@ Read-first:
   On, Tags, Paper, and the object-eraser size while annotating. The title in the bar renames the
   note on tap or long press.
 
+## Quick voice notes
+
+The iPhone records voice notes without opening the app: from the Lock Screen and Home Screen
+widgets, Control Center, the Action button and Siri, with a Live Activity while recording
+(`docs/quick-capture.md`). Settings ▸ Quick Voice Notes turns it on and says when Live
+Activities or the microphone are off for Sempere.
+
 ## Search, export, history, keys
 
 All of them are the shared views and model code: handwriting search over the recognized text
@@ -85,6 +92,9 @@ The folder picker shows whatever locations Files shows; the app cannot hide iClo
 - `LSSupportsOpeningDocumentsInPlace` is YES (`SempereInfo.plist`), so picked items are opened in
   place, not copied. `UIFileSharingEnabled` is not set: it would only show the app's own Documents
   folder ("On My iPhone › Sempere") in Files, and has no effect on iCloud Drive.
+
+A vault in iCloud Drive is a plain folder (not a package), so iCloud syncs its files one by one and
+the app merges iCloud's conflict versions of the vault's own files itself.
 
 When iCloud Drive is missing, the device hides it: iCloud Drive syncs per device (Settings ▸ your
 name ▸ iCloud ▸ iCloud Drive ▸ "Sync this iPhone", which can be off even with iCloud on), and Files

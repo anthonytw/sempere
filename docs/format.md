@@ -1385,7 +1385,7 @@ snapshot holding it, at op index equal to its position.
   altitude in radians. Writers round to at most 3 decimals.
 - `w,h` are not `PKStrokePoint.size`: PencilKit draws a pen of size `s`
   `2s − 4` wide (nothing below 2), so a PencilKit reader or writer converts
-  per ink (the app's `NibSize`, measured on iPadOS 26 and 27).
+  per ink (the app's `NibSize`, measured on the iPadOS simulator and Mac Catalyst; on an iPad the drawn width may also depend on the ink).
 - `transform` is an optional affine matrix `[a b c d tx ty]`; identity when
   absent.
 - `parent` optionally names the stroke this one was sliced from.
@@ -3099,7 +3099,7 @@ where the table says how they degrade.
 | `seq`, `included` `upTo` / `extra` | 1 … 2^53 − 1 | `RevisionName.maxSeq` |
 | age header | 2 MiB, 1024 stanzas | Age `HeaderCodec` |
 | scrypt work factor (identity files) | 2^20 by default (1 GiB), at most 2^22 | `IdentityFile` |
-| WebDAV response | 256 MiB for a revision, 16 MiB otherwise; PROPFIND bodies must be UTF-8 with no DTD or processing instruction | `WebDAVClient` |
+| WebDAV response | 256 MiB for a revision, 16 MiB otherwise; a blob is fetched in 2 MiB segments, up to the blob file limit above; PROPFIND bodies must be UTF-8 with no DTD or processing instruction | `WebDAVClient` |
 | WebDAV sync run (§9.1) | 100 000 note folders, 10⁶ listed entries, 64 GiB downloaded, 12 hours; the run stops there with an error and the next one continues | `SyncLimits` |
 | zip entry (import) | 1 GiB uncompressed, CRC and size checked; a stored entry's two sizes equal, a deflated one at most its size + 0.1 % + 64 bytes; no two entries of one name, and no two whose header and data overlap (else the archive is refused); all reads of one archive, repeated and failed ones included, at most 32 × its size and at least 2 GiB uncompressed (an unzipped package: 4 GiB read); a read that failed is not repeated; thumbnails: 8, 16 MiB each | `ZipArchive`, `NotePackage` |
 | binary plist (import) | 64 levels; no cycles; each object parsed once; keyed archives must be binary | `BinaryPlist` |

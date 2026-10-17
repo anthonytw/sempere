@@ -46,6 +46,8 @@ iPadOS/iOS 27 and macOS 27 (Mac Catalyst). Open `Apps/Sempere/Sempere.xcodeproj`
 | `Sources/Sempere` | Vault layout, note log, merge, keys |
 | `Sources/SempereRender`, `Sources/SemperePDF` | Stroke geometry; PDF, SVG and PNG writers; PDF reader |
 | `Sources/SempereImport`, `Sources/SempereNotability` | Importers (Notability backups) |
+| `Sources/SempereSpeech` | On-device transcription of recordings (Apple Speech; an error elsewhere) |
+| `Sources/SempereFonts` | The bundled Noto fonts for text in exports |
 | `Sources/SempereWebDAV` | WebDAV vault access and sync |
 | `Sources/SempereCLI` | The `sempere` command-line tool |
 | `Apps/Sempere` | iPad, iPhone and Mac (Catalyst) app |
