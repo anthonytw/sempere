@@ -202,6 +202,7 @@ struct EditorView: View {
                               generation: editor.canvasGeneration,
                               itemSource: model.itemLayerSource, itemCommands: itemCommands,
                               selectingItems: modes.selectingItems, onSelectingItemsEnded: { modes.selectingItems = false },
+                              onHandToolPicked: { modes.selectingItems = true },
                               addingText: modes.addingText, onAddingTextEnded: { modes.textToolEnded($0) },
                               onDrop: editor.isReadOnly ? nil : { providers, page, point in
                                   EditorInsert.add(providers, to: editor, page: page, at: point, model: model, ui: ui, state: insert)
@@ -215,6 +216,7 @@ struct EditorView: View {
                                generation: editor.canvasGeneration,
                                itemSource: model.itemLayerSource, itemCommands: itemCommands,
                                selectingItems: modes.selectingItems, onSelectingItemsEnded: { modes.selectingItems = false },
+                              onHandToolPicked: { modes.selectingItems = true },
                                addingText: modes.addingText, onAddingTextEnded: { modes.textToolEnded($0) },
                                onDrop: editor.isReadOnly ? nil : { providers, page, point in
                                    EditorInsert.add(providers, to: editor, page: page, at: point, model: model, ui: ui, state: insert)

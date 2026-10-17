@@ -28,6 +28,7 @@ struct PageStackView: UIViewRepresentable {
     var itemCommands = ItemCommands()
     var selectingItems = false
     var onSelectingItemsEnded: () -> Void = {}
+    var onHandToolPicked: () -> Void = {}
     /// The text tool (`PageCanvasContent.addingText`).
     var addingText = false
     var onAddingTextEnded: (CanvasModes.TextToolEnd) -> Void = { _ in }
@@ -44,7 +45,7 @@ struct PageStackView: UIViewRepresentable {
             editor: editor, pageIDs: pageIDs, pageSize: pageSize, pageJump: pageJump, generation: generation,
             paletteVisible: paletteVisible, paletteCompact: paletteCompact, drawingSuspended: drawingSuspended,
             itemSource: itemSource, itemCommands: itemCommands, selectingItems: selectingItems,
-            onSelectingItemsEnded: onSelectingItemsEnded, addingText: addingText, onAddingTextEnded: onAddingTextEnded,
+            onSelectingItemsEnded: onSelectingItemsEnded, onHandToolPicked: onHandToolPicked, addingText: addingText, onAddingTextEnded: onAddingTextEnded,
             onDrop: onDrop))
     }
 
@@ -78,6 +79,7 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         var itemCommands = ItemCommands()
         var selectingItems = false
         var onSelectingItemsEnded: () -> Void = {}
+        var onHandToolPicked: () -> Void = {}
         var addingText = false
         var onAddingTextEnded: (CanvasModes.TextToolEnd) -> Void = { _ in }
         var onDrop: ((_ providers: [NSItemProvider], _ pageID: UUID, _ point: CGPoint) -> Void)?
@@ -356,6 +358,7 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
                                        itemSource: configuration.itemSource, itemCommands: configuration.itemCommands,
                                        selectingItems: configuration.selectingItems,
                                        onSelectingItemsEnded: configuration.onSelectingItemsEnded,
+                                       onHandToolPicked: configuration.onHandToolPicked,
                                        onDrop: configuration.onDrop, addingText: configuration.addingText,
                                        onAddingTextEnded: configuration.onAddingTextEnded),
             to: slot.host)

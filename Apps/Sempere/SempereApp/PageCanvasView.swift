@@ -28,6 +28,8 @@ struct PageCanvasView: UIViewRepresentable {
     var selectingItems = false
     /// Called when selection mode ends from the canvas (a tool was picked).
     var onSelectingItemsEnded: () -> Void = {}
+    /// Called when the palette's Hand tool is picked (an iPhone): selection mode on.
+    var onHandToolPicked: () -> Void = {}
     /// The text tool: taps edit text boxes or start new ones.
     var addingText = false
     /// Called when the text tool ends from the canvas (a tool was picked).
@@ -66,6 +68,7 @@ struct PageCanvasView: UIViewRepresentable {
                                            drawingSuspended: drawingSuspended, itemSource: itemSource,
                                            itemCommands: itemCommands, selectingItems: selectingItems,
                                            onSelectingItemsEnded: onSelectingItemsEnded,
+                                           onHandToolPicked: onHandToolPicked,
                                            onDrop: onDrop, addingText: addingText,
                                            onAddingTextEnded: onAddingTextEnded),
                 to: host)
@@ -141,7 +144,9 @@ struct PageCanvasView: UIViewRepresentable {
                 p.recording.map { AudioPlayState(recording: $0.id, isPlaying: p.isPlaying) }
             }
             host.onItemSelectionEnded = content.onSelectingItemsEnded
+            host.onHandToolPicked = content.onHandToolPicked
             host.itemSelectionActive = content.selectingItems && !editor.isReadOnly && !content.drawingSuspended
+            host.syncHandTool()
             if let onDrop = content.onDrop {
                 host.dropHandler = { providers, point in onDrop(providers, pageID, point) }
             } else {
@@ -313,6 +318,7 @@ struct PageCanvasContent {
     var itemCommands = ItemCommands()
     var selectingItems = false
     var onSelectingItemsEnded: () -> Void = {}
+    var onHandToolPicked: () -> Void = {}
     /// Images and PDFs dropped on the page, with the page point (nil: drops refused).
     var onDrop: ((_ providers: [NSItemProvider], _ pageID: UUID, _ point: CGPoint) -> Void)?
     /// The text tool: taps edit text boxes or start new ones.
@@ -333,6 +339,10 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
     let itemSelection = ItemSelectionController()
     /// Called when picking a tool ends selection mode.
     var onItemSelectionEnded: (() -> Void)?
+    /// Called when the palette's Hand tool is picked: the note view turns selection mode on.
+    var onHandToolPicked: (() -> Void)?
+    /// The last palette tool that draws (the Hand tool is not one), to go back to when selection mode ends.
+    private var lastDrawingToolID: String?
     /// Typing in text boxes (the text tool, and "Edit Text" in selection mode).
     let textEditor = TextBoxEditorController()
     /// Called when picking a tool ends the text tool, or it placed its one box.
@@ -814,12 +824,34 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         if let eraser = toolPicker.selectedToolItem as? PKToolPickerEraserItem {
             EraserPreference.save(eraser.eraserTool.eraserType)
         }
-        if itemSelectionActive { onItemSelectionEnded?() }   // picking a tool is picking drawing
+        let hand = toolPicker.selectedToolItemIdentifier == ToolPalette.handIdentifier
+        if hand {
+            // The Hand tool: one finger scrolls and taps select (selection mode), as the Select toggle does.
+            if !itemSelectionActive { onHandToolPicked?() }
+        } else {
+            lastDrawingToolID = toolPicker.selectedToolItemIdentifier
+            if itemSelectionActive { onItemSelectionEnded?() }   // picking a tool is picking drawing
+        }
         if textToolActive { onTextToolEnded?(.toolPicked) }
         if mathLassoHandler != nil { onMathLassoEnded?() }
         endTransientSelection()
         updateEraser()
         cursorInteraction?.invalidate()
+    }
+
+    /// Keeps the palette's Hand tool in step with selection mode (the iPhone's Select toggle in the
+    /// overflow menu turns it on too; a new note turns it off): in selection mode the Hand shows as
+    /// picked, and once selection ends with the Hand still picked the last drawing tool comes back.
+    func syncHandTool() {
+        guard toolPicker.toolItems.contains(where: { $0.identifier == ToolPalette.handIdentifier }) else { return }
+        let picked = toolPicker.selectedToolItemIdentifier
+        if itemSelectionActive {
+            if picked != ToolPalette.handIdentifier { toolPicker.selectedToolItemIdentifier = ToolPalette.handIdentifier }
+        } else if picked == ToolPalette.handIdentifier {
+            let back = toolPicker.toolItems.first { $0.identifier == lastDrawingToolID }
+                ?? toolPicker.toolItems.first { $0.identifier != ToolPalette.handIdentifier }
+            if let back { toolPicker.selectedToolItemIdentifier = back.identifier }
+        }
     }
 
     @objc private func inkTapped(_ g: UITapGestureRecognizer) {

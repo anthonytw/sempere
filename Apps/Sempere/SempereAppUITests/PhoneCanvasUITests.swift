@@ -204,4 +204,48 @@ final class PhoneCanvasUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 1)
         XCTAssertEqual(freshReport(app)?.strokes ?? r0.strokes, r0.strokes, "reading: a finger draws nothing")
     }
+
+    // MARK: The Hand tool
+
+    /// Picks the palette's Hand tool.
+    @MainActor
+    private func pickHand(_ app: XCUIApplication) {
+        let hand = app.buttons["Hand"].firstMatch
+        XCTAssertTrue(hand.waitForExistence(timeout: 8), "the palette has a Hand: \(app.debugDescription.prefix(1500))")
+        hand.tap()
+        Thread.sleep(forTimeInterval: 1)
+    }
+
+    /// With the Hand: a finger draws nothing, a tap selects, a hold shows the menu; a drawing tool draws again.
+    @MainActor
+    func testTheHandToolSelectsAndAPenDrawsAgain() throws {
+        let app = launch()
+        defer { app.terminate() }
+        guard let canvas = canvas(app) else { return XCTFail("no canvas reports the demo items") }
+        annotate(app)
+        pickHand(app)
+        guard let r0 = report(canvas), let image = middle(of: "image", on: canvas, app: app) else { return XCTFail("no image") }
+        point(Self.emptySpot, on: canvas, r0, app: app)
+            .press(forDuration: 0.05, thenDragTo: point(CGPoint(x: Self.emptySpot.x + 80, y: Self.emptySpot.y + 20), on: canvas, r0, app: app))
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertEqual(freshReport(app)?.strokes ?? r0.strokes, r0.strokes, "the Hand draws nothing")
+        image.tap()
+        waitReport(canvas, "a tap selects with the Hand") { $0.selected == "image" && $0.bar }
+        point(Self.emptySpot, on: canvas, r0, app: app).tap()
+        waitReport(canvas, "a tap beside drops it") { $0.selected == "none" }
+        image.press(forDuration: 1.0)
+        waitReport(canvas, "a hold shows the menu") { $0.selected == "image" && $0.menu }
+        point(Self.emptySpot, on: canvas, r0, app: app).tap()
+        waitReport(canvas, "dropped") { $0.selected == "none" }
+
+        // A pen again: a finger draws.
+        let pen = app.buttons["Pen"].firstMatch
+        XCTAssertTrue(pen.waitForExistence(timeout: 5), "the palette has a Pen")
+        pen.tap()
+        Thread.sleep(forTimeInterval: 1)
+        guard let r1 = freshReport(app) else { return XCTFail("no report") }
+        point(Self.emptySpot, on: canvas, r1, app: app)
+            .press(forDuration: 0.05, thenDragTo: point(CGPoint(x: Self.emptySpot.x + 80, y: Self.emptySpot.y + 20), on: canvas, r1, app: app))
+        waitReport(canvas, "a pen draws after the Hand") { $0.strokes == r1.strokes + 1 }
+    }
 }
