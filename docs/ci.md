@@ -134,3 +134,24 @@ crashing thread and, on the iPad, the simulator's log of the app's faults and ha
   cache a `main` run saved; pull requests never save. The key is the checkout path, the
   toolchain version and `Package.resolved`, so changing any of them starts a fresh cache. If a
   build fails in a way a clean build would not, run `gh cache delete --all` and re-run.
+
+## Device checks in process
+
+The owner's device checks that only need the app's own paths run as Mac Catalyst unit tests
+in the gate (`test-mac`), named after their check (`c4…`, `c54…`):
+
+| Suite | Checks |
+| --- | --- |
+| `InkDeviceCheckTests` (and `EraserPreferenceTests.c5…`) | c4 edited strokes on two vault copies, c5 eraser mode across notes, c11 pen-up and edits on a 20 000-stroke page, c12 and c50 the object eraser, c52 the ink's extent |
+| `LoadDeviceCheckTests` | c14 playback highlights and Tap Ink to Play, c20 summary-cache saves while recognizing, c21 a 120-page note to PDF on every path, c42 PDF export right after drawing, c54 browser actions and Version History on 400 revisions |
+| `SearchDeviceCheckTests` (and `TranscriptSearchAppTests.c15…`) | c15 stepping on a large note, typing during Recognize All and sync, 600 transcripts |
+| `ViewDeviceCheckTests` (and `AttachmentPersistenceTests.c16…`) | c13 page-strip thumbnails, c16 many items and text after a font or OS change, c40 and c41 pages loading while another device writes |
+
+They drive ink through `InkInjector` (`Apps/Sempere/SempereAppTests/InkInjector.swift`): a
+`PageCanvasHost` in a window with its real coordinator as the canvas delegate, each edit set as
+PencilKit leaves the drawing (pen-up, lasso move, resize, recolor, pixel erase) with its undo
+step, and the app's own object-eraser controller. Fixtures come from `SyntheticInk`, the
+generator behind `sempere pages scribble` (`InkFixture`). Timing bounds are generous (they
+catch a return to the whole-drawing paths, not device speed) and the measured numbers print as
+`PERF-REPORT` lines; the `ink.change` and `index.save` signposts give the same phases on a
+device.

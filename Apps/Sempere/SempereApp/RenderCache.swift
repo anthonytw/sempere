@@ -83,7 +83,8 @@ final class RenderCache: @unchecked Sendable {
 
     /// The cache of `vault` (unlocked) under `root`; nil `root`: memory only.
     /// Cheap: the folder is made, and other vaults' folders deleted, on the first write.
-    init(root: URL?, vault: Vault, capBytes: Int = RenderCache.configuredCapBytes) {
+    init(root: URL?, vault: Vault, capBytes: Int = RenderCache.configuredCapBytes, salt: String = RenderCache.nativeSalt) {
+        self.salt = salt
         let key = root == nil ? nil : try? LocalCacheKey(vault: vault, purpose: "render-cache", magic: Self.magic)
         self.key = key
         directory = key.flatMap { k in root?.appendingPathComponent(k.name, isDirectory: true) }
@@ -95,6 +96,10 @@ final class RenderCache: @unchecked Sendable {
         }
     }
 
+    /// What CoreText's drawing depends on (`nativeSalt`: the system and its fonts at launch); tests stand
+    /// in an OS update or a font install by giving another (check c16).
+    let salt: String
+
     deinit {
         if let memoryWarning { NotificationCenter.default.removeObserver(memoryWarning) }
     }
@@ -105,7 +110,7 @@ final class RenderCache: @unchecked Sendable {
     /// cached (PDF pages: previews; Markdown boxes). Text boxes and equations
     /// not yet typeset are drawn by CoreText here, so their label also names
     /// the system and its fonts (`nativeSalt`).
-    static func pictureLabel(_ key: ItemRenderKey) -> String? {
+    static func pictureLabel(_ key: ItemRenderKey, salt: String = RenderCache.nativeSalt) -> String? {
         let native = (key.item.kind == .text && key.item.text.map { !$0.isMarkdown } == true)
             || (key.item.kind == .math && key.item.math.map { $0.render == nil } == true)
         guard key.item.blob != nil || native, key.item.kind != .pdfPage else { return nil }
@@ -118,7 +123,7 @@ final class RenderCache: @unchecked Sendable {
         encoder.outputFormatting = [.sortedKeys]
         guard let itemJSON = try? encoder.encode(item) else { return nil }
         let paperJSON = key.paper.flatMap { try? encoder.encode($0) } ?? Data()
-        let kind = native ? "txt|\(nativeSalt)" : "pic"
+        let kind = native ? "txt|\(salt)" : "pic"
         return "\(kind)|\(schemaVersion)|\(String(decoding: itemJSON, as: UTF8.self))|\(key.scale)|\(String(decoding: paperJSON, as: UTF8.self))"
     }
 
@@ -129,6 +134,9 @@ final class RenderCache: @unchecked Sendable {
         let digest = SHA256.hash(data: families).prefix(8).map { String(format: "%02x", $0) }.joined()
         return ProcessInfo.processInfo.operatingSystemVersionString + "|" + digest
     }()
+
+    /// `pictureLabel` with this cache's system-and-fonts salt (`salt`).
+    func label(for key: ItemRenderKey) -> String? { Self.pictureLabel(key, salt: salt) }
 
     /// What the preview of PDF page item `item` at `scale` depends on.
     static func previewLabel(_ item: Item, scale: Double) -> String? {

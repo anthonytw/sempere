@@ -223,8 +223,8 @@ final class ItemLayerView: UIView {
             let recording = item.kind == .audio ? shown.recording(shownBy: item) : nil
             let key = ItemRenderKey(item, scale: step, paper: paper, recording: recording)
             wanted.insert(key)
-            if pictures[key] == nil, let label = RenderCache.pictureLabel(key),
-               let hit = source.renders?.pictureInMemory(label) {
+            if pictures[key] == nil, let renders = source.renders, let label = renders.label(for: key),
+               let hit = renders.pictureInMemory(label) {
                 pictures[key] = .image(hit.image, bounds: hit.bounds)   // drawn before in this session
             }
             if let picture = pictures[key] {
