@@ -60,8 +60,16 @@ Read-first:
   item selects it and shows the item's menu when it lifts. The eraser tools keep their taps. Reading mode
   (Annotate off) selects nothing: a stray touch only scrolls, and nothing can be moved by accident; turn
   Annotate on to select. Tap beside the selection to drop it; drawing comes back.
-- **Scrolling while annotating** takes two fingers (one draws, as on PencilKit's own canvas);
-  reading mode scrolls with one.
+- **Scrolling while annotating** takes two fingers in every tool (one draws, as on PencilKit's own
+  canvas); reading mode scrolls with one.
+- **The Hand tool** (the last item of the palette, `ToolPalette.handItem`): picking it turns selection
+  mode on (the same mode as the overflow menu's Select, `CanvasModes.selectingItems`), so one finger
+  scrolls, a tap selects an item, a hold shows its menu and a drag on a selected item moves it; nothing
+  draws. Picking a pen, marker, eraser or lasso returns to drawing. The palette follows the mode: the
+  Select toggle or a new note moves the highlight to the Hand or back to the last drawing tool
+  (`PageCanvasHost.syncHandTool`). Two fingers scroll in every tool. Only the iPhone's palette has it:
+  a finger already scrolls on the iPad and the Mac has a pointer, so nothing is added there. Reading mode
+  still selects nothing (the palette is hidden); turn Annotate on and pick the Hand.
 - **Page actions** are in the overflow menu's Pages submenu, with or without the pencil: Add Page
   After This One, Add Page at End, Insert PDF Pages at this page, Duplicate, Delete, Undo Delete,
   Show/Hide Pages (the thumbnails, a sheet at phone width that closes when a page is picked) and the
@@ -129,6 +137,10 @@ that is a bug.
 - `PhoneCanvasInteractionTests` (app tests, any destination): the tap/stroke decision
   (`FingerTapTracker`), where a finger tap may start, that only PencilKit's drawing waits for it,
   selection and drawing coming back, the bar at phone width, two-finger scrolling.
+- `HandToolTests` (app tests, any destination): the Hand is the palette's last item on the phone only, picking it
+  and any drawing tool switches selection mode, the palette follows the Select toggle. (PencilKit's compact
+  palette exposes only its first item to UI automation, so no UI test taps the Hand itself; selection mode's
+  touches are the iPad's `IPadCanvasUITests`.)
 - `PhoneCanvasUITests` (iPhone simulator UI tests, `scripts/app.sh test-phone-ui`, in
   `scripts/local-ci.sh --release`): a tap selects a picture and the other kinds without a dot, a
   hold shows the item's menu, strokes from the empty page and from an item still draw, a tap on the

@@ -7181,6 +7181,18 @@
         }
       }
     },
+    "Hand" : {
+      "comment" : "Palette tool on the iPhone: scroll with one finger and tap to select items instead of drawing",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mano"
+          }
+        }
+      }
+    },
     "Handwriting" : {
       "comment" : "Toolbar menu: handwriting recognition",
       "extractionState" : "manual",

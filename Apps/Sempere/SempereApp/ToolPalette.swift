@@ -1,5 +1,6 @@
 import Foundation
 import PencilKit
+import UIKit
 
 /// The user's tool palette choices: shown or hidden, full or compact.
 ///
@@ -34,12 +35,34 @@ enum ToolPalette {
         return kept.isEmpty ? items : kept   // never an empty picker (PencilKit needs one item)
     }
 
+    /// The iPhone's Hand tool (`makePicker(hand:)`): selection mode from the palette.
+    static let handIdentifier = "io.github.anthonytw.sempere.tool.hand"
+
+    /// The Hand tool's palette item: one finger scrolls and taps select items (hold for the item's
+    /// menu), where the drawing tools make a finger draw (two fingers scroll then).
+    @MainActor
+    static func handItem() -> PKToolPickerCustomItem {
+        var configuration = PKToolPickerCustomItem.Configuration(
+            identifier: handIdentifier,
+            name: String(localized: "Hand", comment: "Palette tool on the iPhone: scroll with one finger and tap to select items instead of drawing"))
+        configuration.imageProvider = { _ in
+            let symbol = UIImage.SymbolConfiguration(pointSize: 60, weight: .regular)
+            let image = UIImage(systemName: "hand.point.up.left", withConfiguration: symbol) ?? UIImage()
+            image.accessibilityLabel = String(localized: "Hand", comment: "Palette tool on the iPhone: scroll with one finger and tap to select items instead of drawing")
+            return image
+        }
+        configuration.allowsColorSelection = false
+        return PKToolPickerCustomItem(configuration: configuration)
+    }
+
     /// A tool picker for the chosen size, with the eraser mode of `EraserPreference`.
     @MainActor
-    static func makePicker(compact: Bool, eraser: PKEraserTool.EraserType = EraserPreference.load()) -> PKToolPicker {
+    static func makePicker(compact: Bool, eraser: PKEraserTool.EraserType = EraserPreference.load(),
+                           hand: Bool = Platform.isPhone) -> PKToolPicker {
         let full = EraserPreference.makeToolPicker(eraser: eraser)
-        guard compact else { return full }
-        let picker = PKToolPicker(toolItems: compactItems(from: full.toolItems))
+        guard compact || hand else { return full }
+        let items = compact ? compactItems(from: full.toolItems) : full.toolItems
+        let picker = PKToolPicker(toolItems: hand ? items + [handItem()] : items)
         picker.showsDrawingPolicyControls = false
         return picker
     }
