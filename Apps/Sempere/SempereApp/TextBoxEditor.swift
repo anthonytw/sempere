@@ -146,6 +146,8 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
         Self.editing = self
         let tv = CompletingTextView(usingTextLayoutManager: false)
         tv.onKey = { [weak self] key in self?.emojiKey(key.keyCode, modifiers: key.modifierFlags) ?? false }
+        tv.listIsOpen = { [weak self] in self?.emojiRows.isEmpty == false }
+        tv.onEscape = { [weak self] in _ = self?.emojiKey(.keyboardEscape) }
         tv.accessibilityIdentifier = "textBoxEditor"
         tv.backgroundColor = UIColor.white.withAlphaComponent(0.85)
         tv.layer.borderColor = UIColor.tintColor.cgColor
@@ -733,6 +735,22 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
 /// The box's text view: hands key presses to the emoji list first (↑ ↓ Return Tab Escape).
 final class CompletingTextView: UITextView {
     var onKey: ((UIKey) -> Bool)?
+    /// True while the emoji list is open: Escape then belongs to the list.
+    var listIsOpen: () -> Bool = { false }
+    var onEscape: (() -> Void)?
+
+    /// On Mac Catalyst the system takes Escape before `pressesBegan` (the list stayed open and typing
+    /// stopped landing), so while the list is open Escape is a key command with priority over it.
+    override var keyCommands: [UIKeyCommand]? {
+        guard listIsOpen() else { return super.keyCommands }
+        let escape = UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(closeEmojiList))
+        escape.wantsPriorityOverSystemBehavior = true
+        return [escape] + (super.keyCommands ?? [])
+    }
+
+    @objc private func closeEmojiList() {
+        onEscape?()
+    }
 
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         if let key = presses.first?.key, onKey?(key) == true { return }
