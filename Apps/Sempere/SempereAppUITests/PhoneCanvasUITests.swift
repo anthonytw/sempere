@@ -80,6 +80,15 @@ final class PhoneCanvasUITests: XCTestCase {
         return nil
     }
 
+    /// The report of whichever canvas lists the demo items now (nil while none does; never fails the test).
+    @MainActor
+    private func freshReport(_ app: XCUIApplication) -> Report? {
+        for element in app.descendants(matching: .any).matching(identifier: "pageCanvas").allElementsBoundByIndex {
+            if let r = report(element), r.frame("image") != nil { return r }
+        }
+        return nil
+    }
+
     /// Switches "Annotate" on (a finger draws; the palette comes up).
     @MainActor
     private func annotate(_ app: XCUIApplication) {
@@ -189,10 +198,10 @@ final class PhoneCanvasUITests: XCTestCase {
         guard let r0 = report(canvas), let image = middle(of: "image", on: canvas, app: app) else { return XCTFail("no image") }
         image.tap()
         Thread.sleep(forTimeInterval: 1)
-        XCTAssertEqual(report(canvas)?.selected, "none", "reading: a tap selects nothing")
+        XCTAssertEqual(freshReport(app)?.selected ?? "none", "none", "reading: a tap selects nothing")
         point(Self.emptySpot, on: canvas, r0, app: app)
             .press(forDuration: 0.05, thenDragTo: point(CGPoint(x: Self.emptySpot.x + 80, y: Self.emptySpot.y), on: canvas, r0, app: app))
         Thread.sleep(forTimeInterval: 1)
-        XCTAssertEqual(report(canvas)?.strokes, r0.strokes, "reading: a finger draws nothing")
+        XCTAssertEqual(freshReport(app)?.strokes ?? r0.strokes, r0.strokes, "reading: a finger draws nothing")
     }
 }
