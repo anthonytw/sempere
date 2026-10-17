@@ -279,6 +279,18 @@ final class CLIExportStressTests: CLITestCase {
                       none.out + none.err)
     }
 
+    func testAResumedBulkExportSweepsPartialFilesAKilledRunLeft() throws {
+        let (_, ids) = try bulkVault(count: 3)
+        let out = path("killed")
+        try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+        try Data("half".utf8).write(to: URL(fileURLWithPath: out + "/lost-12345678.pdf.partial"))
+        let r = try cli(["export", "--all", "--format", "pdf", "--out", out] + args)
+        XCTAssertEqual(r.status, 0, r.err)
+        let all = FileTree.regularFiles(under: URL(fileURLWithPath: out), skipHidden: true)
+        XCTAssertEqual(all.count, ids.count)
+        XCTAssertTrue(all.allSatisfy { $0.hasSuffix(".pdf") }, "\(all)")
+    }
+
     func testAnInterruptedBulkExportLeavesNoHalfFilesAndResumes() throws {
         let (_, ids) = try bulkVault(count: 60)
         let out = path("interrupted")
@@ -293,9 +305,12 @@ final class CLIExportStressTests: CLITestCase {
         p.standardError = FileHandle.nullDevice
         try p.run()
         let deadline = Date().addingTimeInterval(60)
+        // Interrupt while a note is being streamed (its `.partial` exists): the window that once left the file
+        // behind. Falls back to five finished files if the export is too fast to catch one.
+        func files() -> [String] { FileTree.regularFiles(under: URL(fileURLWithPath: out), skipHidden: true) }
         while p.isRunning, Date() < deadline,
-              FileTree.regularFiles(under: URL(fileURLWithPath: out), skipHidden: true).count < 5 {
-            Thread.sleep(forTimeInterval: 0.01)
+              !(files().count >= 2 && files().contains { $0.hasSuffix(".partial") }), files().count < 5 {
+            Thread.sleep(forTimeInterval: 0.002)
         }
         p.interrupt()
         p.waitUntilExit()

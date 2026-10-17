@@ -412,6 +412,7 @@ public final class BulkExportSession: @unchecked Sendable {
             do { try FileIO.createPrivateDirectory(root) } catch {
                 throw BulkExportError.cannotWrite(path: root.path, reason: error.localizedDescription)
             }
+            Self.removeStalePartials(under: root)
             if let data = try? BoundedRead.contents(of: root.appendingPathComponent(BulkExportManifest.fileName),
                                                     maxBytes: BulkExportManifest.maxBytes),
                let old = try? JSONDecoder().decode(BulkExportManifest.self, from: data), old.version == 1 {
@@ -432,6 +433,18 @@ public final class BulkExportSession: @unchecked Sendable {
                 throw BulkExportError.cannotWrite(path: staging.path, reason: error.localizedDescription)
             }
         }
+    }
+
+    /// Removes the `.pdf.partial` / `.png.partial` files a run that was killed mid-note left in `root`
+    /// (a note is streamed to such a name and renamed when complete, so one is never a finished export).
+    static func removeStalePartials(under root: URL) {
+        let fm = FileManager.default
+        guard let walker = fm.enumerator(atPath: root.path) else { return }
+        var stale: [String] = []
+        while let rel = walker.nextObject() as? String {
+            if rel.hasSuffix(".pdf.partial") || rel.hasSuffix(".png.partial") { stale.append(rel) }
+        }
+        for rel in stale { try? fm.removeItem(at: root.appendingPathComponent(rel)) }
     }
 
     deinit {

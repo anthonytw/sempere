@@ -1,5 +1,6 @@
 import Foundation
 import SempereFonts
+import SempereImport
 import SempereRender
 import Sempere
 
@@ -34,7 +35,17 @@ extension ExportCommand {
             throw CLIError.failure("\(error)")
         }
         let errorText: (Error) -> String = { CLIError.from($0).message }
+        // Ctrl-C stops after the note being written, so no half-written `.partial` is left behind (a second
+        // Ctrl-C ends the process at once; the next run sweeps what that leaves).
+        let cancellation = ImporterCancellation()
+        let interrupt = ImportInterrupt(cancellation)
+        defer { interrupt.stop() }
         for job in jobs {
+            if cancellation.isCancelled {
+                let result = try? session.finish(cancelled: true)
+                throw CLIError.failure("interrupted: \(result?.exported.count ?? 0) note(s) exported into \(out); "
+                                       + "run the same command again to resume")
+            }
             let id = job.noteId
             let short = String(id.uuidString.lowercased().prefix(8))
             do {
