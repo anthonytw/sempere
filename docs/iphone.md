@@ -138,7 +138,9 @@ that is a bug.
   (`FingerTapTracker`), where a finger tap may start, that only PencilKit's drawing waits for it,
   selection and drawing coming back, the bar at phone width, two-finger scrolling.
 - `HandToolTests` (app tests, any destination): the Hand is the palette's last item on the phone only, picking it
-  and any drawing tool switches selection mode, the palette follows the Select toggle.
+  and any drawing tool switches selection mode, the palette follows the Select toggle. (PencilKit's compact
+  palette exposes only its first item to UI automation, so no UI test taps the Hand itself; selection mode's
+  touches are the iPad's `IPadCanvasUITests`.)
 - `PhoneCanvasUITests` (iPhone simulator UI tests, `scripts/app.sh test-phone-ui`, in
   `scripts/local-ci.sh --release`): a tap selects a picture and the other kinds without a dot, a
   hold shows the item's menu, strokes from the empty page and from an item still draw, a tap on the
