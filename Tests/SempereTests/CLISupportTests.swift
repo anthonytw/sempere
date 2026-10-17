@@ -100,6 +100,18 @@ final class CLISupportTests: XCTestCase {
         XCTAssertTrue("\(VaultError.invalidVaultName("notes"))".contains("must end in .sempere"))
         XCTAssertFalse("\(RevisionReadError.undecryptable("x"))".contains("undecryptable("))
         XCTAssertFalse("\(AgeError.noMatchingIdentity)".contains("noMatchingIdentity"))
+        // No error a command can print shows as a Swift enum case (`damaged("x")`, `tooLarge(limit: 5)`).
+        let errors: [any Error] = [GzipError.inflate(-3), GzipError.deflate(-2), GzipError.tooLarge(limit: 5),
+                                   PublishedSummariesError.damaged("x"), LocalCacheError.damaged("x"),
+                                   SummaryCacheError.damaged("x"), NotebookRecordError.tooLarge,
+                                   NotebookRecordError.invalid("x"), SharedSettingsError.tooLarge,
+                                   SharedSettingsError.invalid("x"), CompactionError.stateWouldChange,
+                                   CompactionError.unreadableRevision("x"), ItemChangeError.immutableField("x"),
+                                   ItemEditError.invalidItem("x"), ItemEditError.duplicateID(UUID())]
+        for e in errors {
+            let text = "\(e)"
+            XCTAssertFalse(text.contains("(\"") || text.contains("(limit:") || !text.contains(" "), "\(type(of: e)): \(text)")
+        }
     }
 
     func testRecoveryAllowMismatchPolicy() throws {

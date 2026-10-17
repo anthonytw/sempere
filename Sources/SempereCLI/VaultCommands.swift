@@ -691,7 +691,7 @@ struct VaultVerify: ParsableCommand {
             print("RECIPIENTS \(RecipientsStatusOutput(vault).text)")
             if let j = report.journalProblem { print("JOURNAL    rewrap-journal.json: \(j)") }
             if report.rewrapPending { print("PENDING    a recipient change is unfinished (`sempere vault rewrap-resume`)") }
-            let shown = output.quiet ? report.files.filter { $0.status != .ok } : report.files
+            let shown = output.quiet ? report.files.filter { $0.status.isProblem } : report.files
             let rows = shown.map { [$0.status.rawValue, $0.path + ($0.detail.map { "  (\($0))" } ?? "")] }
             if !rows.isEmpty { print(Format.table(rows)) }
             let counts = VerifyReport.Status.allCases.compactMap { s in

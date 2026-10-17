@@ -156,14 +156,14 @@
         },
         "quickCapture.notebook" : {
           "default" : "Inbox",
-          "description" : "Notebook of quick voice notes. Used by: ipad, iphone.",
+          "description" : "Notebook of quick voice notes.",
           "maxLength" : 300,
           "minLength" : 1,
           "type" : "string"
         },
         "quickCapture.transcribe" : {
           "default" : true,
-          "description" : "Transcribe quick voice notes. Used by: ipad, iphone.",
+          "description" : "Transcribe quick voice notes.",
           "type" : "boolean"
         },
         "recording.bitRate" : {

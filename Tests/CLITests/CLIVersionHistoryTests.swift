@@ -12,6 +12,16 @@ final class CLIVersionHistoryTests: CLITestCase {
         try FileManager.default.contentsOfDirectory(atPath: vault + "/notes/\(note)").filter { $0.hasSuffix(".age") }.sorted()
     }
 
+    /// `compact --help` describes `--thin-all` as it behaves: no session ends are kept (format.md §5.8.4).
+    func testThinAllHelpDoesNotPromiseSessionEnds() throws {
+        let help = try cli(["compact", "--help"])
+        XCTAssertEqual(help.status, 0, help.err)
+        let flat = help.out.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        XCTAssertFalse(flat.contains("each session's newest save"), help.out)
+        XCTAssertFalse(flat.contains("each editing session's newest save"), help.out)
+        XCTAssertTrue(flat.contains("no session ends"), help.out)
+    }
+
     func testCheckpointIsListedAndGrouped() throws {
         _ = try makeVault()
         let args = ["--vault", path("mine.sempere"), "--identity", path("mine.sempere.key")]
@@ -31,6 +41,9 @@ final class CLIVersionHistoryTests: CLITestCase {
         let points = try XCTUnwrap(history.json as? [[String: Any]])
         XCTAssertEqual(points.map { $0["checkpoint"] as? Bool }, [false, false, true, true])
         XCTAssertEqual(points[2]["name"] as? String, "Before the exam")
+        // A delta the CLI wrote is stamped with the CLI's own version (`--version`), not a stale constant.
+        let version = try cli(["--version"]).out.split(separator: "\n").first.map { $0.replacingOccurrences(of: "sempere ", with: "") }
+        XCTAssertEqual(points[2]["app"] as? String, "sempere-cli/\(try XCTUnwrap(version))")
         XCTAssertNil(points[3]["name"])
         XCTAssertEqual(points.map { $0["group"] as? Int }, [0, 0, 1, 2])
         XCTAssertTrue(points.allSatisfy { $0["complete"] as? Bool == true })

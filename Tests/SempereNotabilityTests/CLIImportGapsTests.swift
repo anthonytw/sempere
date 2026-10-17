@@ -14,6 +14,15 @@ final class CLIImportGapsTests: CLITestCase {
     static var gapsNote: String { fixtureDir.appendingPathComponent("synthetic-gaps.note").path }
     static var gapsBundle: String { fixtureDir.appendingPathComponent("synthetic-gaps.ntb").path }
 
+    /// A missing file is an ordinary one-line error, not the Swift error case (`io("no such file: …")`).
+    func testImportOfAMissingFileSaysSoPlainly() throws {
+        let missing = path("nonexistent.note")
+        let r = try cli(["import", "notability", missing] + vaultArgs(try copyFixtureVault()))
+        XCTAssertEqual(r.status, 1, r.out + r.err)
+        XCTAssertTrue(r.err.contains("no such file: \(missing)"), r.err)
+        XCTAssertFalse(r.err.contains("io("), r.err)
+    }
+
     func vaultArgs(_ vault: String) -> [String] { ["--vault", vault, "--identity", Self.fixtureKey] }
 
     /// A one-page-per-text PDF with Helvetica text, written to the temp dir.

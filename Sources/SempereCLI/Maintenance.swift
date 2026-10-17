@@ -2,7 +2,8 @@ import ArgumentParser
 import Foundation
 import Sempere
 
-let appName = "sempere-cli/0.4"
+/// The `app` stamped into every delta the CLI writes: "sempere-cli/" plus the CLI's one version constant.
+let appName = "sempere-cli/\(sempereVersion)"
 
 struct CompactCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
@@ -13,8 +14,8 @@ struct CompactCommand: ParsableCommand {
             covers (format.md §5.3), writing a snapshot first when needed. With --thin-older-than:
             in revisions older than that, keeps every checkpoint and the newest autosave of each
             editing session and deletes the rest (format.md §5.8.4). With --thin-all: the same with no
-            age window, so every autosave goes except each session's newest save (imports are
-            checkpoints and stay). Thinning prints the rule it applies first. Either way checkpoints are never
+            age window and no session ends, so every autosave goes, however recent, except the
+            note's newest revision (imports are checkpoints and stay). Thinning prints the rule it applies first. Either way checkpoints are never
             deleted, and every checkpoint (and when thinning, every kept autosave and every newer
             revision) stays a restore point with the same content: positioned snapshots are written
             for them first. Device id and clock as for `sempere snapshot`. With --dry-run nothing is
@@ -36,7 +37,7 @@ struct CompactCommand: ParsableCommand {
     var thinOlderThan: String?
 
     @Flag(name: .customLong("thin-all"),
-          help: "Thin everything except checkpoints: ignore the age window, keep every checkpoint and each editing session's newest save.")
+          help: "Thin everything except checkpoints: ignore the age window; keep every checkpoint and the note's newest revision, no session ends.")
     var thinAll = false
 
     @Flag(name: .customLong("dry-run"), help: "Only list what would be written and deleted.")

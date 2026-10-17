@@ -28,8 +28,10 @@ public enum AgeFile {
     ///   - allowMixedPostQuantum: permit `mlkem768x25519` stanzas next to
     ///     classic ones. The spec says a file SHOULD NOT mix them (the
     ///     classic stanza voids the post-quantum protection) and `age`
-    ///     refuses; a vault opts in only while it moves between key types
-    ///     (format.md §3.3). `age` decrypts such files.
+    ///     refuses. Nothing in Sempere sets this: a vault lists post-quantum keys
+    ///     only (a classic X25519 key is refused, format.md §2). The option
+    ///     only exists so the library can write such a file for `age`
+    ///     interoperability checks; `age` decrypts it.
     /// - Throws: `AgeError.noRecipients` for an empty list,
     ///   `AgeError.scryptNotAlone` if a scrypt recipient is mixed with any
     ///   other recipient, `AgeError.incompatibleRecipients` for a

@@ -161,8 +161,8 @@ public enum SharedSettingsCatalog {
         .init("editor.keepScreenOn", types: touch, .bool, default: .bool(false), "Keep the screen on while a note is open"),
         .init("mouse.smoothing", types: [.mac], .choice(["off", "light", "strong"]), default: .string("light"),
               "Smooth mouse and trackpad strokes"),
-        .init("quickCapture.notebook", types: touch, .notebook, default: .string("Inbox"), "Notebook of quick voice notes"),
-        .init("quickCapture.transcribe", types: touch, .bool, default: .bool(true), "Transcribe quick voice notes"),
+        .init("quickCapture.notebook", .notebook, default: .string("Inbox"), "Notebook of quick voice notes"),
+        .init("quickCapture.transcribe", .bool, default: .bool(true), "Transcribe quick voice notes"),
         .init("appearance.icon", types: touch, .choice(["keyholeNib", "cemeteryDoor", "shadowS", "inkWind"]),
               default: .string("keyholeNib"), "Home-screen icon"),
     ]

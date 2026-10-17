@@ -149,7 +149,7 @@ struct ExportCommand: ParsableCommand {
 
     @Option(name: .long, help: ArgumentHelp("pdf only: none (default) or attach: embed each note's video clips as PDF file attachments.",
                                             valueName: "none|attach"))
-    var videos: RecordingsMode = .none
+    var videos: VideosMode = .none
 
     @Flag(name: .long, help: "pdf only: embed recordings (with transcripts) and video clips: the app's \"PDF + attachments\".")
     var attachments = false
@@ -183,7 +183,6 @@ struct ExportCommand: ParsableCommand {
         if images != .none && format != .markdown { throw ValidationError("--images only applies to --format markdown") }
         if assets != nil && format != .svg { throw ValidationError("--assets only applies to --format svg") }
         if recordings != .none && format != .pdf { throw ValidationError("--recordings \(recordings.rawValue) only applies to --format pdf") }
-        if videos == .list || videos == .listAttach { throw ValidationError("--videos takes none or attach (--recordings list lists the clips too)") }
         if videos != .none && format != .pdf { throw ValidationError("--videos attach only applies to --format pdf") }
         if attachments && format != .pdf { throw ValidationError("--attachments only applies to --format pdf") }
         if clean && !tree { throw ValidationError("--clean only applies to --format markdown or html") }
@@ -267,6 +266,13 @@ struct ExportCommand: ParsableCommand {
         case listAttach = "list,attach"
 
         var embeds: Bool { self == .attach || self == .listAttach }
+    }
+
+    /// `--videos`: the clips are only ever embedded or not (`--recordings list` lists them too).
+    enum VideosMode: String, ExpressibleByArgument, CaseIterable {
+        case none, attach
+
+        var embeds: Bool { self == .attach }
     }
 
     /// Recordings are embedded (`--recordings attach`, `--attachments`).
@@ -433,7 +439,15 @@ struct ExportCommand: ParsableCommand {
                                    videos: items.videosAttached > 0 ? items.videosAttached : nil))
             output.info("Wrote \(out) (\(states.count) note(s))")
         } else {
+            let outExisted = fm.fileExists(atPath: out)
             if !singleFile { try mkdir(out) } else { try mkdir(URL(fileURLWithPath: out).deletingLastPathComponent().path) }
+            defer {
+                // A media export of notes without media writes nothing: do not leave the empty folder it made.
+                if format == .media, !singleFile, !outExisted,
+                   (try? fm.contentsOfDirectory(atPath: out))?.isEmpty == true {
+                    try? fm.removeItem(atPath: out)
+                }
+            }
             for (s, state) in states {
                 let stem = ExportName.stem(title: state.meta.title, noteId: s.id)
                 func path(_ name: String) -> String { URL(fileURLWithPath: out).appendingPathComponent(name).path }
@@ -458,7 +472,7 @@ struct ExportCommand: ParsableCommand {
                                                       to: URL(fileURLWithPath: folder), keepMetadata: keepImageMetadata,
                                                       report: &items)
                         if r.files.isEmpty {
-                            items.warnings.append("no recordings, videos, images or PDFs to export")
+                            items.warnings.append("no media: no recordings, videos, images or PDFs to export")
                         }
                         report(s, r.files.map { URL(fileURLWithPath: folder).appendingPathComponent($0).path }, items)
                     case .svg, .png:

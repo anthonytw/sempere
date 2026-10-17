@@ -42,6 +42,12 @@ public enum DefaultTitle {
         "V": "ww", "G": "YYYY",
     ]
 
+    /// Every strftime directive `pattern` accepts, as `%Y %y …` (from the translation table, plus
+    /// `%%`, `%n` and `%t`), for error messages.
+    public static var knownDirectives: String {
+        (Array(strftime.keys) + ["n", "t"]).sorted().map { "%\($0)" }.joined(separator: " ") + " %%"
+    }
+
     /// Why a format cannot be used.
     public enum Problem: Error, Hashable, Sendable, CustomStringConvertible {
         case tooLong(Int)
@@ -59,7 +65,7 @@ public enum DefaultTitle {
             case .tooLong(let n): return "The format is \(n) characters long; at most \(DefaultTitle.maxFormatLength)."
             case .unclosedQuote: return "A quote (') opens text that is never closed. Put literal text in single quotes, and write '' for a quote."
             case .unknownLetter(let c): return "“\(c)” is not a date field. Put literal text in single quotes, e.g. 'Lecture' d MMM."
-            case .unknownDirective(let d): return "“\(d)” is not a strftime directive. Known: %Y %y %m %B %b %d %e %j %A %a %H %I %M %S %p %F %R %T %Z %z %%."
+            case .unknownDirective(let d): return "“\(d)” is not a strftime directive. Known: \(knownDirectives)."
             case .blank: return "The format gives no text."
             }
         }
