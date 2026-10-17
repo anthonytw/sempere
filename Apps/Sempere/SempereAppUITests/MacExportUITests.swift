@@ -177,7 +177,7 @@ final class MacExportUITests: XCTestCase {
 
     /// Device check c9: the Export menu in a note window's toolbar (not the File menu): PDF… opens the export sheet
     /// for that note, To Folder or Zip… the bulk export sheet, and the app survives both being dismissed.
-    /// (Written without a screen to run it on: the toolbar's element type under XCUITest is found by label.)
+    /// (On Catalyst the Export item sits in the toolbar's "More" overflow menu, so the test falls back to it.)
     @MainActor
     func testNoteWindowExportToolbarMenu() throws {
         let app = launch()
@@ -187,12 +187,23 @@ final class MacExportUITests: XCTestCase {
         XCTAssertTrue(window.waitForExistence(timeout: 30), "a note window opened")
 
         func chooseFromExportMenu(_ item: String, opens identifier: String) {
-            let toolbarMenu = window.descendants(matching: .any).matching(NSPredicate(format: "label == %@ OR title == %@", "Export", "Export"))
+            let exportMatch = NSPredicate(format: "label == %@ OR title == %@", "Export", "Export")
+            let toolbarMenu = window.descendants(matching: .any).matching(exportMatch)
                 .matching(NSPredicate(format: "elementType IN %@", [XCUIElement.ElementType.popUpButton.rawValue,
                                                                   XCUIElement.ElementType.menuButton.rawValue,
                                                                   XCUIElement.ElementType.button.rawValue])).firstMatch
-            XCTAssertTrue(toolbarMenu.waitForExistence(timeout: 20), "the note window's toolbar has an Export menu")
-            toolbarMenu.click()
+            if toolbarMenu.waitForExistence(timeout: 5) {
+                toolbarMenu.click()
+            } else {
+                // The Catalyst toolbar collapses secondary items into the "More" overflow menu (window dump,
+                // 2026-10-17: only an `OverflowBarButtonItem` labelled "More" holds Export).
+                let more = window.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@", "OverflowBarButtonItem", "More")).firstMatch
+                XCTAssertTrue(more.waitForExistence(timeout: 20), "the note window's toolbar has an Export menu or a More overflow")
+                more.click()
+                let overflowExport = app.menuItems["Export"].firstMatch
+                XCTAssertTrue(overflowExport.waitForExistence(timeout: 10), "Export is in the More overflow menu")
+                overflowExport.click()
+            }
             let entry = app.menuItems[item].firstMatch
             XCTAssertTrue(entry.waitForExistence(timeout: 10), "\(item) is in the Export menu")
             entry.click()
