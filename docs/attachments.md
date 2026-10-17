@@ -229,9 +229,9 @@ Why the split:
   breakable; with the same file key it would open the new, post-quantum
   protected file as well (`docs/post-quantum.md`).
 
-**Settings** (§15): two choices expose these cases, *When adding a device*
+**Settings** (§15): two choices expose these cases, *When Adding a Device*
 (default: rewrite headers only; alternative: re-encrypt everything) and *When
-removing a device or upgrading to post-quantum keys* (default: re-encrypt
+Removing or Replacing a Device*, which also governs an upgrade to post-quantum keys (default: re-encrypt
 everything; alternative: rewrite headers only, with a warning that old copies
 of the files stay readable to the removed key). The method in force goes into
 `rewrap-journal.json` as `rekeyBlobs`, so another device that finishes an
@@ -574,8 +574,8 @@ The survey of models is in §14, G1 part 2.
   (below); WebP, GIF, TIFF and CMYK JPEG are always converted (the app via
   ImageIO: JPEG quality 0.9 for photos, PNG when the source has alpha or is a
   screenshot). Linux importers that meet another format report it dropped.
-- **Privacy setting (on by default).** One setting, *Remove location and
-  camera data from photos and convert HEIC to JPEG* (§15). On: writers strip
+- **Privacy setting (on by default).** One setting, *Remove Location and
+  Camera Data* (§15; it also converts HEIC to JPEG). On: writers strip
   EXIF/XMP/GPS (APPn/COM segments, ancillary PNG chunks, HEIC `Exif`/XMP
   items: `format.md` §8.2.5; lossless, segment removal without re-encoding)
   and convert HEIC to JPEG. Off: the photo is stored as picked, metadata and
@@ -666,7 +666,7 @@ reader can play, i.e. inside `audio/mp4` (`format.md` §8.3.1):
 
 | Setting | Choices | Default |
 | --- | --- | --- |
-| Codec | AAC-LC; HE-AAC (better at 24–48 kbit/s); Apple Lossless (ALAC, ~4–6× larger) | AAC-LC |
+| Format | AAC-LC; HE-AAC (better at 24–48 kbit/s); Apple Lossless (ALAC, ~4–6× larger) | AAC-LC |
 | Quality (AAC bit rate) | 24, 32, 48, 64, 96, 128 kbit/s (HE-AAC: 24 to 64) | 64 kbit/s |
 | Sample rate | 48 kHz, 44.1 kHz, 32 kHz, 22.05 kHz, 16 kHz (HE-AAC offers 32 kHz and up; a lower rate becomes 48 kHz) | 48 kHz |
 | Channels | mono, stereo (only with a stereo input) | mono |
@@ -742,7 +742,7 @@ gives time ranges and confidence per run, so both are available;
 SFSpeechRecognizer gives them per segment (its "segments" are words), which
 maps to words as well.
 
-Transcription is on device only and opt-in (per recording or per vault).
+Transcription is on device only and opt-in (a per-device setting, off by default).
 
 ### Ink and audio sync (`rec` on strokes and items)
 
@@ -967,7 +967,7 @@ so a 12 MP photo in a small frame never decodes at full size.
 What the Notability importer (`Sources/SempereNotability`) maps to
 attachments. The file format and the full mapping are in
 `docs/import-notability.md`; this section lists the targets. All mappings keep
-the importer's geometry (document units × `612 / W`, the 18.8-unit x inset,
+the importer's geometry (document units × `612 / W`, the `W / 38.4` x inset,
 one infinite page with `breakHeight`).
 
 ### PDF backgrounds
@@ -996,8 +996,8 @@ one infinite page with `breakHeight`).
 `richText.mediaObjects` entries of class `ImageMediaObject` → `image` items in
 the content layer (`100`). Bytes from `Images/` or `Assets/`; JPEG and PNG are
 stored (metadata stripped by default, as for the app's photo setting); HEIC is
-stored as is when the CLI cannot convert it (the app's import path converts
-it); other formats are reported dropped. Frame, rotation and crop come from
+stored as is (with a warning); a GIF or a baseline TIFF is decoded and stored
+as PNG; WebP, BMP, AVIF and other TIFFs are reported dropped. Frame, rotation and crop come from
 the media object's fields, in the same document coordinates as ink, then
 scaled.
 
@@ -1035,7 +1035,7 @@ Findings go into `docs/import-notability.md`, never the data itself.
 
 1. `ImageMediaObject` (and other `mediaObjects` classes): field names for
    frame, rotation, crop, z-order, file reference; whether they are in
-   document units with the 18.8 inset.
+   document units with the `W / 38.4` inset.
 2. Text: where text boxes live (`mediaObjects` class vs `attributedString`);
    text margins and default font.
 3. `kPageLayoutPDFPageNumberKey`: 0- or 1-based (1-based is assumed; 0-based
@@ -1055,8 +1055,9 @@ Findings go into `docs/import-notability.md`, never the data itself.
    formats 8–9.
 8. Whether any PDF in a backup is encrypted, and whether any has annotations
    drawn in the source app (would need flattening).
-9. `NBPDFIndex/`: the source's PDF text index (could seed search of PDF text;
-   not imported).
+9. `NBPDFIndex/` and `ios/PDFIndex.fb`: the source's PDF text index. It seeds
+   the search text of PDF pages when it can be tied to pages, else the text is
+   extracted from the PDF (`import-notability.md` "PDF text"); its layout is unconfirmed.
 
 ## 12. Compatibility and versioning
 
@@ -1142,7 +1143,7 @@ for its note (§4).
 - `DictationTranscriber` (same `SpeechAnalyzer` API, the dictation model,
   broader device support, less accurate for long-form) is not used; the chain
   is `SpeechTranscriber`, then `SFSpeechRecognizer` on device.
-- Opt-in per recording or per vault; show progress; write the transcript blob
+- Opt-in (Settings ▸ Transcription, per device, off by default); show progress; write the transcript blob
   (segments, words with timings and confidence, language, engine), then
   `setRecording(transcript:)`. `engine` e.g. `apple-speechtranscriber-27.0`,
   `apple-sfspeech-27.0`.
@@ -1427,9 +1428,9 @@ on add, full re-encryption on removal by default; `rekeyBlobs` in the journal;
 rename on removal; journal fallback lookup; resumable), `features` in
 `vault.json`, per-note inventory and collection per `format.md` §8.1.6 with
 device-local state (`$XDG_STATE_HOME/sempere/blobs/<vaultId>.json`; the app
-keeps its own in Application Support). CLI: `sempere blobs list [NOTE] | verify
-| extract NOTE SHA256 [--out] | unused [NOTE] | gc [--dry-run] [NOTE…] |
-repair`, `vault recipients add|remove … [--rewrap header|reencrypt]`, `recover`
+keeps its own in Application Support). CLI: `sempere blobs list [NOTE…] | verify
+| extract NOTE SHA256 [--out] | add | copy | unused [NOTE…] | gc [--dry-run] [--file NAME…] [--retention DAYS] [NOTE…] |
+repair [NOTE…]`, `vault recipients add|remove … [--rewrap header|reencrypt]`, `recover`
 extracting a note's attachments with the stock framing.
 *Code:* `Sources/Sempere/Blob.swift` (names, framing, Padmé, streaming
 checker), `BlobStore.swift` (write, read, copy, `withBlobFile`, `BlobSource`),
@@ -1680,7 +1681,7 @@ recording and they ascend; else reported with their range, `dropped.recLinks`).
   highlights (teal boxes on the strokes written in the last 3 s, through the
   search-highlight layer). UI: a Record/Recordings toolbar menu (tap records or
   stops; hold for the list: play, transcribe, transcript, rename, delete), a
-  recording bar and a player bar above the canvas, Recording settings (codec,
+  recording bar and a player bar above the canvas, Recording settings (format,
   quality, sample rate, channels, size per hour) in Settings. Plaintext audio
   stays in Application Support/Sempere/Recordings (not backed up,
   `completeUnlessOpen`) until its blob is written (and transcribed), then is
@@ -1713,9 +1714,9 @@ recording and they ascend; else reported with their range, `dropped.recLinks`).
   (`AppModel.storeTranscript`), so it finishes if the note is closed, and an
   open editor takes the result. `TranscriptView`: segments with times, the
   playing word highlighted, words under 0.5 confidence gray and dotted, tap a
-  word or time to play from it. Settings lists each engine's availability for
-  the device language (`SpeechTranscription.availability`; the CLI's `transcribe
-  --check`). Settings ▸ Transcription has a download button that runs
+  word or time to play from it. Settings ▸ Transcription has one Preferred Language
+  control (Automatic by default) and says which engine the app chose for it
+  (`SpeechTranscription.availability`; the CLI's `transcribe --check` lists both). Settings ▸ Transcription has a download button that runs
   `SpeechTranscription.downloadModel` (`AssetInventory`, Apple's asset service)
   when SpeechTranscriber's model is missing; `sempere transcribe
   --download-model` does the same. Transcripts are searched in the app: a
@@ -1729,11 +1730,12 @@ recording and they ascend; else reported with their range, `dropped.recLinks`).
   *Not done:* the availability matrix on a physical iPad (run Settings or
   `sempere transcribe --check` there and record it here).
 - **E6 — Settings panel:** one Settings screen (sheet from the library) with
-  the sections of §15: recording (codec, quality, sample rate, channels, size
-  per hour), photos (privacy and HEIC), transcription (opt-in, locale), device
-  keys (rewrap method when adding; when removing or upgrading, with the
+  the sections of §15: recording (format, quality, sample rate, channels, size
+  per hour), photos (privacy and HEIC), transcription (opt-in, preferred language),
+  device keys (rewrap method when adding; when removing or replacing, with the
   warning), storage (unused attachments, from E7). Stored in `UserDefaults`
-  (`@AppStorage`) per device; nothing in the vault. *Done when:* every setting
+  (`@AppStorage`) per device; with Sync Settings on, most are also kept in the
+  vault's encrypted `settings.age` (`docs/settings-sync.md`). *Done when:* every setting
   has a unit-tested model and is read by the feature it controls; defaults
   match §15; the PQ/removal "headers only" choice needs a confirmation.
 - **E7 — attachment index and unused-attachments UI:** the device-local index
@@ -1883,35 +1885,42 @@ C3 + E2 ──► G1;  E4 ──► G2;  L independent
 
 ## 15. Settings
 
-All settings are per device (`UserDefaults`), never stored in the vault, and
-live in one Settings panel (task E6). Defaults are the chosen policy.
+Settings live in one Settings panel (task E6) and are kept per device in `UserDefaults`. With
+Sync Settings on, most of them are also kept in the vault's encrypted `settings.age` and follow the
+vault to its other devices (`docs/settings-sync.md`); device state (keys, caches, bookmarks) never is.
+Defaults are the chosen policy.
 
 | Section | Setting | Default | Notes |
 | --- | --- | --- | --- |
-| Recording | Codec | AAC-LC | AAC-LC, HE-AAC, Apple Lossless (§9) |
-| | Quality | 64 kbit/s | choices 24, 32, 48, 64, 96, 128 kbit/s; HE-AAC offers up to 64; Apple Lossless has no rate (size is an estimate for speech); shows size per hour |
+| Recording | Format | AAC-LC | AAC-LC, HE-AAC, Apple Lossless (§9) |
+| | Quality | 64 kbit/s | choices 24, 32, 48, 64, 96, 128 kbit/s; HE-AAC offers up to 64; Apple Lossless has no rate (size is an estimate for speech); the "Size" row shows size per hour |
 | | Sample rate | 48 kHz | 16, 22.05, 32, 44.1, 48 kHz (HE-AAC from 32 kHz) |
 | | Channels | mono | stereo only with a stereo input |
-| Transcription | Transcribe recordings on this device | off (opt-in) | model download status |
-| | Language | same as the device | model status (`TranscriptionSettings.statusProvider`) and, when SpeechTranscriber's model is missing, a "Download Language Model" button (`.downloader` → `SpeechTranscription.downloadModel`, Apple's asset service; also `sempere transcribe --download-model`); "Not available" where no engine supports the language; below it "Engine in Use" and one line per engine (SpeechTranscriber, SFSpeechRecognizer; DictationTranscriber is not offered) with what it reports for the chosen language (`TranscriptionPreference.engineLines`: the first available one is in use, as `SpeechTranscription.transcribe` tries them) |
-| Photos | Remove location and camera data, convert HEIC to JPEG | on | §7; exports strip location regardless |
-| Device keys | When adding a device | rewrite headers only | alternative: re-encrypt everything (§3) |
-| | When removing a device or upgrading to post-quantum keys | re-encrypt everything | alternative: rewrite headers only, with a warning and a confirmation |
+| Transcription | Transcribe Recordings on This Device | off (opt-in) | the rows below appear once it is on |
+| | Preferred Language | Automatic (the note's language, else the device's) | one control for both engines: the app picks SpeechTranscriber, or SFSpeechRecognizer for a language the first lacks, and a line under the picker says which ("Engine: SpeechTranscriber (on device)", `TranscriptionSettings.engineNoteProvider`; "No speech engine on this device can transcribe this language." when neither can); a "Download Language Model" button when SpeechTranscriber's model is missing (`.downloader` → `SpeechTranscription.downloadModel`, Apple's asset service; also `sempere transcribe --download-model`); DictationTranscriber is not offered |
+| Photos | Remove Location and Camera Data (also converts HEIC to JPEG) | on | §7; exports strip location regardless |
+| Device keys | When Adding a Device | rewrite headers only | alternative: re-encrypt everything (§3) |
+| | When Removing or Replacing a Device | re-encrypt everything | alternative: rewrite headers only, with a warning and a confirmation |
 | | Save Key… | — | an action, not a setting: this device's key after Face ID (Touch ID, or the passcode only on a device without biometrics, never after a Face ID lockout) to Files or the share sheet, plus its paper kit; New Key… makes a key for another device, encrypts the vault to it and offers the same (`docs/cli.md` "Keys", app and CLI). New Key…, adding a pasted public key and the key window's Recovery Kit ask for the same owner check first: each lets someone else read the vault |
-| New notes | Title when left empty | date and time | also "Date" and "Untitled" |
-| | Default paper | ruled | `PaperPreference` |
+| New notes | Title | date and time | Date and Time, Date, Year-Month-Day Time, Weekday and Date, Custom (a date pattern) or Untitled; the title a note gets when left empty |
+| | Paper | ruled | `PaperPreference` |
+| | Layout | Pages – Letter | Pages – Letter or A4, Pageless – Letter or A4 width (`NewNoteLayout`) |
 | | (Quick voice notes' notebook) | Inbox | not a New Notes setting: it is Settings ▸ Quick Voice Notes ▸ Notebook, the capture profile's `notebook`, the only place capture reads |
 | General | Keep Screen On | off | |
+| | App Language | the system's | a button to Sempere's page in the system Settings; the app has no language override of its own |
 | | Recognize Handwriting | on | |
-| | Smooth Mouse Strokes (Mac only) | Light | Off, Light, Strong (`MouseSmoothing`, `docs/mac.md` "Mouse and trackpad"); pointer input only, nothing in the vault or the CLI |
-| History | Thin autosaves older than | 30 days (or never) | "Thin Now…" with a preview |
+| | Smooth Mouse Strokes (Mac only) | Light | Off, Light, Strong (`MouseSmoothing`, `docs/mac.md` "Mouse and trackpad"); pointer input only, nothing in the vault's notes or the CLI |
+| | Show in Menu Bar (Mac only) | on | the system menu-bar item (`docs/mac.md` "Menu-bar item") |
+| Editor | Eraser, Object Eraser Size, Compact Palette, Search Recording Transcripts | object eraser, 8 pt, full palette, off | the editor's own menus change the first three too |
+| Quick Voice Notes | Quick Voice Notes, Transcribe Voice Notes, Notebook | off, on, Inbox | `docs/quick-capture.md` |
+| History | Thin Autosaves Older Than | 30 days | 7, 14, 30, 90 or 365 days, or never | "Thin Now…" with a preview |
 | Storage | Unused attachments: N items, X MB | — | from the per-note index (E7, §4): count and size, a list by note with previews, the date each became unused, Delete from 30 days on and "Delete All Eligible" (through `collectBlobs`), and "Held by History"; `sempere blobs unused` shows the same |
 | | Drawing and attachment cache sizes, Clear Caches | — | clearing keeps the vault, the list's summary cache and every setting |
 
 Per device means per install: the keys are `Sempere.*` in `UserDefaults`
 (`DeviceSettings.swift`). A stored value outside its choices reads as the
-nearest valid one or the default. The CLI never reads them; each has flags
-instead: `sempere compact --thin DAYS`, `sempere attach recording --codec …
+nearest valid one or the default. The CLI never reads them (it edits only the vault's shared `settings.age`, with `sempere settings`); each has flags
+instead: `sempere compact --thin-older-than 30d` (or `--thin-all`), `sempere attach recording --codec …
 --sample-rate … --channels … --bit-rate …`, `sempere vault recipients …
 --rewrap header|reencrypt`, `sempere blobs unused|gc`.
 

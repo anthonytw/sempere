@@ -701,6 +701,11 @@ describing what the server holds, rewriting them only when that changed;
 without `--identity` the summaries are left as they are (stale entries only
 mean more decryption in the viewer).
 
+Uploads go `--jobs` at a time (default 6). Where the server answers a
+`Depth: infinity` `PROPFIND` of `notes/` in full, an idle run lists the whole share
+with a handful of requests instead of one per note (`--no-deep-listing` turns that
+off; `docs/io.md` "One listing for every note folder").
+
 A Caddy site for viewer and share (Caddy's `webdav` module):
 
 ```caddyfile

@@ -75,9 +75,13 @@ Your storage provider, and anyone with a copy of the files, can see:
 - that a vault exists, how many notes it has, and roughly how big each note and
   attachment is (attachments are padded to size classes);
 - when files were written, and by which device (file names carry random ids,
-  device ids and counters, never titles);
-- the public keys of the vault's devices and the names you gave them (in
-  `vault.json`).
+  device ids, counters and a timestamp, never titles);
+- what kind each attachment is (image, PDF, audio, video or transcript: the
+  kind is part of the file name), and whether voice notes are waiting in the
+  inbox or notebook records exist;
+- the public keys of the vault's devices, the names you gave them, the
+  vault's own display name if you set one, its id and when it was created (all
+  in `vault.json`, which is not encrypted).
 
 They cannot see titles, text, ink, tags, notebooks, attachments or transcripts.
 

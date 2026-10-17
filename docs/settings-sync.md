@@ -241,7 +241,7 @@ which devices use it. Any key may also appear in a type block.
 | `history.thinAfterDays` | Version History ▸ Thin Autosaves Older Than | 7, 14, 30, 90, 365, 0 (never) | 30 |
 | `search.transcripts` | Search Recording Transcripts (the search field) | `true`, `false` | `false` |
 | `rewrap.onAdd` | Device Keys ▸ When Adding a Device | `header`, `reencrypt` | `header` |
-| `rewrap.onRemove` | Device Keys ▸ When Removing a Device or Upgrading | `header`, `reencrypt` | `reencrypt` |
+| `rewrap.onRemove` | Device Keys ▸ When Removing or Replacing a Device | `header`, `reencrypt` | `reencrypt` |
 | `backup.reminderDays` | Backups ▸ Remind Me (once the device has a backup folder) | 0 (off), 1, 3, 7, 14, 30 | 0 |
 
 Recognition and transcription still run on each device: one without the language model
@@ -373,7 +373,7 @@ sempere settings schema
 - A file whose `$minReaderVersion` is newer than the CLI is refused (exit 7), never
   rewritten.
 - `validate` checks the file against the schema: unknown keys and blocks are
-  information, invalid values of known keys are errors (exit 1).
+  information, invalid values of known keys are errors (exit 3).
 - `$meta` is never shown. **The CLI has no device overrides**: it is not a device that
   applies settings, it edits the shared file that devices with sync on follow (their
   local overrides still win on them). Writes record no device type and follow the merge

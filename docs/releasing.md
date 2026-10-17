@@ -27,7 +27,7 @@ A release is a git tag `vX.Y.Z`. `.github/workflows/release.yml` does the rest.
      `swift:6.4-noble`) and **macos** (`swift build --arch arm64 --arch x86_64`): build, check
      that the binary is static (Linux) or universal (macOS) and prints the tag's version, and
      package `sempere-X.Y.Z-<platform>.tar.gz` (binary, LICENSE, LICENSE-EXCEPTION, README, CHANGELOG,
-     `docs/cli.md`; `scripts/package-cli.sh`);
+     `docs/cli.md`, `fonts/` with the Noto fonts and their OFL license; `scripts/package-cli.sh`);
    - **publish**: `SHA256SUMS`, build provenance attestations for the tarballs and
      `SHA256SUMS` (`actions/attest-build-provenance`), then `gh release create` with the
      CHANGELOG section as notes (a tag with a `-suffix` is a prerelease).

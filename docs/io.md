@@ -68,7 +68,7 @@ ubiquitous (`FileManager.isUbiquitousItem(at:)`):
    placeholder is local, showing "Downloading from iCloud… n/m files" with a
    Cancel button. Files that are local but out of date are requested and
    not waited for. A download error fails the open with the file name; 90 s
-   without any file completing fails it with a "check that this iPad is
+   without any file completing fails it with a "check that this device is
    online" message. Cancel stops the wait (`CancellationError`, no alert);
 4. reads (`Vault.open`, `summaries`, `summary`, `identityFiles`, the
    note an editor opens) inside an `NSFileCoordinator` coordinated read of
@@ -852,7 +852,7 @@ the journal, removed). Revisions are copied first and `vault.json` last, so a
 run cut short never leaves a manifest newer than its notes; `restore` writes
 `vault.json` last for the same reason, behind a `.sempere-restore.json`
 marker that lets the same command resume. `backup.json` is saved every 100
-files and at the end; a file on disk that it does not list is hashed against
+files (every twentieth of the index once it holds more than 2 000 entries) and at the end; a file on disk that it does not list is hashed against
 the source before it is trusted. `--prune` uses `CompactionPlanner` with
 retention 0 over snapshots present in both the source and the backup (a
 pruned snapshot's own coverage is read from the backup's copy), as WebDAV sync
@@ -1038,7 +1038,7 @@ entry a status.
 
 The one target with network code. It talks to a plain WebDAV collection that
 holds a copy of the vault folder (same layout, `vault.json` at the collection
-root) using PROPFIND (Depth 1), GET (with `Range` for blobs), PUT, MKCOL, MOVE and DELETE, so any server
+root) using PROPFIND (Depth 1; one `Depth: infinity` listing of `notes/` where the server is seen to answer it in full, "One listing for every note folder" below), GET (with `Range` for blobs), PUT, MKCOL, MOVE and DELETE, so any server
 works (Nextcloud, Apache `mod_dav`, nginx dav, rclone serve webdav,
 wsgidav). Everything is behind `WebDAVTransport`; `URLSessionTransport` is
 the real one (it never follows redirects, so credentials cannot be forwarded
@@ -1639,7 +1639,7 @@ for a WebDAV vault (`WebDAVStatusBar`): uploading, up to date, the number of
 changes the server has not confirmed (`WebDAVLocalCopy.unconfirmedChanges`),
 or the problem and what to do, with the last successful push time and a menu
 (Sync Now, Download Again…, Server Settings… to change the password or the
-certificate pin). Offline is not an error: "Offline. Changes are kept on this iPad
+certificate pin). Offline is not an error: "Offline. Changes are kept on this device
 and uploaded when the server can be reached." Wrong password, a changed
 certificate and the problems below are shown with what to do.
 

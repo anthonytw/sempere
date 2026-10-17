@@ -217,8 +217,8 @@ tooling. The differences from the app:
   which measures both in the same points, passes); its sideways check still holds. In the real
   double-length language the catalog's plural strings show as `%#@value@`, which is not a layout
   problem (the in-process check doubles them properly instead).
-- `LocalizationCatalogTests` also fails if a Spanish string is more than twice as long as its English
-  source for short strings (under 40 characters) — the budget the double-length check proves the
+- `LocalizationCatalogTests` also fails if a Spanish string is longer than the larger of twice its English
+  source and the source plus 12 characters, for short strings (under 40 characters) — the budget the double-length check proves the
   layouts can take.
 - When a view clips in Spanish, fix the layout (`.fixedSize(horizontal: false, vertical: true)`,
   `lineLimit(nil)`, `ViewThatFits`, a flexible `Spacer`), not the translation.
