@@ -182,6 +182,21 @@ final class BulkExportTests: XCTestCase {
         XCTAssertFalse(session.skip(job, version: "v1"))
     }
 
+    /// A run killed mid-note leaves `<name>.pdf.partial`; the next session into the folder sweeps it (and only
+    /// such files), so a resumed export never keeps one.
+    func testANewSessionSweepsPartialFilesAKilledRunLeft() throws {
+        let root = try scratch()
+        let fm = FileManager.default
+        try fm.createDirectory(at: root.appendingPathComponent("Nb/pages"), withIntermediateDirectories: true)
+        let stale = ["One.pdf.partial", "Nb/Two.pdf.partial", "Nb/pages/p1.png.partial"]
+        let kept = ["Keep.pdf", "Nb/notes.txt.partial"]
+        for rel in stale + kept { try Data("x".utf8).write(to: root.appendingPathComponent(rel)) }
+        let session = try BulkExportSession(destination: .folder(root), options: BulkExportOptions(format: .pdf), jobs: [])
+        _ = try session.finish(cancelled: false)
+        for rel in stale { XCTAssertFalse(fm.fileExists(atPath: root.appendingPathComponent(rel).path), rel) }
+        for rel in kept { XCTAssertTrue(fm.fileExists(atPath: root.appendingPathComponent(rel).path), rel) }
+    }
+
     /// A path the manifest gave one note, written for another, moves to the
     /// other (the per-note index follows the manifest).
     func testManifestPathTakenOverByAnotherNote() throws {
