@@ -31,8 +31,9 @@ struct VoiceNoteEntry: TimelineEntry {
     let status: VoiceNoteStatus
 }
 
-/// One entry, never refreshed on a schedule: the app reloads the timeline
-/// when the status changes. Reads only the small status file (no Keychain,
+/// One entry; the app reloads the timeline when the status changes and each
+/// time it launches or becomes active, and the system refreshes it every half
+/// hour as a backstop (a missed reload, a status written while the widget was not loaded). Reads only the small status file (no Keychain,
 /// no vault, no asset catalog).
 struct VoiceNoteProvider: TimelineProvider {
     func placeholder(in context: Context) -> VoiceNoteEntry { VoiceNoteEntry(date: Date(), status: .unknown) }
@@ -40,7 +41,7 @@ struct VoiceNoteProvider: TimelineProvider {
         completion(VoiceNoteEntry(date: Date(), status: context.isPreview ? .unknown : .current()))
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<VoiceNoteEntry>) -> Void) {
-        completion(Timeline(entries: [VoiceNoteEntry(date: Date(), status: .current())], policy: .never))
+        completion(Timeline(entries: [VoiceNoteEntry(date: Date(), status: .current())], policy: .after(Date().addingTimeInterval(VoiceNoteStatus.refreshInterval))))
     }
 }
 
@@ -70,14 +71,10 @@ struct VoiceNoteWidgetView: View {
     }
 
     @ViewBuilder private var content: some View {
-        switch status.action {
-        case .start:
-            Button(intent: StartVoiceNoteIntent()) { label }.buttonStyle(.plain)
-        case .stop:
-            Button(intent: StopVoiceNoteIntent()) { label }.buttonStyle(.plain)
-        case .open(let link):
-            label.widgetURL(link.url)
-        }
+        // One intent for every phase, as the control (never `widgetURL`, which only opens
+        // the app): the app decides when tapped, from its live state, whether to record,
+        // stop or continue in the app, so a stale status cannot make a tap do nothing.
+        Button(intent: status.tapIntent) { label }.buttonStyle(.plain)
     }
 
     @ViewBuilder private var label: some View {

@@ -611,6 +611,7 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         textEditor.onEditingChanged = { [weak self] editing in self?.textEditingChanged(editing) }
         #if DEBUG
         itemSelection.debugTyping = { [weak self] in self?.textEditor.textView?.text }
+        itemSelection.debugStrokes = { [weak self] in self?.canvas.drawing.strokes.count ?? 0 }
         itemSelection.debugPalette = { [weak self] in
             guard let self else { return false }
             return self.canvas.isFirstResponder && self.toolPicker.isVisible
@@ -621,6 +622,7 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         itemSelection.lassoSelected = { [weak self] in self?.canvas.tool is PKLassoTool }
         textEditor.penColour = { [weak self] in (self?.canvas.tool as? PKInkingTool).map { Sempere.Color($0.color) } }
         itemSelection.canPick = { [weak self] in self?.drawingEditable ?? false }
+        itemSelection.canFingerPick = { [weak self] in !(self?.toolPicker.selectedToolItem is PKToolPickerEraserItem) }
         itemSelection.onPick = { [weak self] in self?.transientSelection = true }
         itemSelection.onCleared = { [weak self] in
             guard let self, self.transientSelection, !self.textEditor.isEditing else { return }
@@ -1037,6 +1039,7 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
     func inkDidChange(measured: CGRect? = nil) {
         #if DEBUG
         if measured == nil { boundsMeasured &+= 1 }
+        itemSelection.debugRefreshReport()   // the report's stroke count
         #endif
         inkMaxY = Self.inkBottom(measured ?? canvas.drawing.bounds)
         zoomChanged()

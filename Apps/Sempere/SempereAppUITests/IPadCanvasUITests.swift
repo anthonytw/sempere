@@ -31,6 +31,8 @@ final class IPadCanvasUITests: XCTestCase {
         var barFrame = CGRect.zero
         var menus = 0
         var palette = false
+        /// How many strokes the page's ink has.
+        var strokes = 0
         var typing: String?
         var items: [(kind: String, frame: CGRect)] = []
 
@@ -59,6 +61,7 @@ final class IPadCanvasUITests: XCTestCase {
                     let c = v.split(separator: ",").compactMap { Double($0) }
                     if c.count == 4 { barFrame = CGRect(x: c[0], y: c[1], width: c[2], height: c[3]) }
                 case "palette": palette = v == "1"
+                case "strokes": strokes = Int(v) ?? 0
                 case "items":
                     items = v.split(separator: "|").compactMap { entry in
                         let parts = entry.split(separator: ":", maxSplits: 1)
