@@ -49,6 +49,19 @@ Read-first:
   (`drawingPolicy = .anyInput`), and the bottom bar gives way to a Pages menu so it does not sit on
   the palette. Annotation turns off again on the next note. Edits are ordinary deltas through
   `NoteWriter`, exactly as on the iPad. Read-only notes (deleted, unreadable revisions, or written by a newer version) never draw.
+- **Tap selects an item, a hold shows its menu.** With Annotate on, a finger draws, so a tap on a
+  placed item (a picture, text box, equation, clip or card) is told apart from a stroke before ink
+  starts (`FingerItemTapRecognizer`, `ItemSelectionController.fingersPick`): one finger that lifts
+  within 0.4 s and 8 points of where it landed, on an item, selects it (outline, handles, the bar with
+  the item menu and Delete) and leaves no dot. PencilKit's drawing waits for that recognizer to fail,
+  which it does at once for a touch that lands off every item (ink is not delayed) and as soon as the
+  finger moves, rests or is joined by a second one. A stroke that starts on an item draws (annotating a
+  picture or PDF page is the point of Annotate); only a tap or a hold selects. A finger held 0.45 s on an
+  item selects it and shows the item's menu when it lifts. The eraser tools keep their taps. Reading mode
+  (Annotate off) selects nothing: a stray touch only scrolls, and nothing can be moved by accident; turn
+  Annotate on to select. Tap beside the selection to drop it; drawing comes back.
+- **Scrolling while annotating** takes two fingers (one draws, as on PencilKit's own canvas);
+  reading mode scrolls with one.
 - **Page actions** are in the overflow menu's Pages submenu, with or without the pencil: Add Page
   After This One, Add Page at End, Insert PDF Pages at this page, Duplicate, Delete, Undo Delete,
   Show/Hide Pages (the thumbnails, a sheet at phone width that closes when a page is picked) and the
@@ -113,6 +126,15 @@ that is a bug.
   `PhoneRootTests` (the root view hosted at an iPhone width, on the welcome screen and with an
   unlocked vault and a note open). They run on the iPad destination
   as well (the idiom-dependent expectations follow the destination).
+- `PhoneCanvasInteractionTests` (app tests, any destination): the tap/stroke decision
+  (`FingerTapTracker`), where a finger tap may start, that only PencilKit's drawing waits for it,
+  selection and drawing coming back, the bar at phone width, two-finger scrolling.
+- `PhoneCanvasUITests` (iPhone simulator UI tests, `scripts/app.sh test-phone-ui`, in
+  `scripts/local-ci.sh --release`): a tap selects a picture and the other kinds without a dot, a
+  hold shows the item's menu, strokes from the empty page and from an item still draw, a tap on the
+  empty page draws its dot, reading mode draws and selects nothing. They need the simulator's UI
+  automation (macOS Automation Mode). XCTest cannot synthesize a two-finger drag, so two-finger
+  scrolling is checked on the stack.
 - CI runs them on an iPhone simulator after the iPad run on `main` (`scripts/app.sh test-phone`;
   the build products are shared, so it adds a boot and a few seconds), and so does
   `scripts/local-ci.sh --release`. A PR that changes an iPhone layout runs it and lists it under
@@ -122,7 +144,7 @@ that is a bug.
 
 ## Not done
 
-- Not tried on a physical iPhone: the layouts, the Face ID prompt and finger annotation are
+- Not tried on a physical iPhone: the layouts, the Face ID prompt, finger annotation and tap/hold item selection are
   covered by simulator tests and by reading the code only.
 - Swipe-to-turn on a pageless note that has several pages (rare); the one-page canvas has no swipe.
 - Not tried on a physical iPhone either: the swipe against the system back gesture, the thumbnails sheet, the paper

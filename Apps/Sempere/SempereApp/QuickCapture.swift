@@ -237,7 +237,7 @@ final class QuickCapture {
         let launched = Date()
         Task { await endActivities(startedBefore: launched) }
         // A status left by a process that died while recording would offer a Stop that stops nothing.
-        QuickCapture.shared.publishStatus()
+        QuickCapture.shared.publishStatus(forceReload: true)
         #if os(iOS) && !targetEnvironment(macCatalyst)
         Task {
             for await _ in ActivityAuthorizationInfo().activityEnablementUpdates {
@@ -265,10 +265,15 @@ final class QuickCapture {
     /// the control when it changed. Called on every state change, when the
     /// profile is turned on, off or changed, and when the app becomes active
     /// (Live Activities may have been switched in Settings meanwhile).
-    func publishStatus() {
+    ///
+    /// `forceReload` reloads even when the file is unchanged: at launch and on
+    /// activation, because a widget can show a status older than the file (a
+    /// reload lost while the app was in the background) and would then send a
+    /// tap to Settings instead of recording.
+    func publishStatus(forceReload: Bool = false) {
         guard let statusStore else { return }
         do {
-            if try statusStore.write(status) { reloadSurfaces() }
+            if try statusStore.write(status) || forceReload { reloadSurfaces() }
         } catch {
             // The widgets keep their last status; the next change writes again.
         }

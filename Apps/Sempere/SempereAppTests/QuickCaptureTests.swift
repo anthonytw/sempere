@@ -266,6 +266,31 @@ struct QuickCaptureTests {
         #expect(statusStore.read()?.action == .open(.settings))
     }
 
+    /// The widgets are reloaded when the status changes, and also, unchanged, each time the
+    /// app launches or becomes active: a widget can show an older status than the file.
+    @Test func widgetsReloadOnChangeAndOnEveryActivation() async throws {
+        let (_, _, _, qc, _) = try Self.setUp(transcribe: false)
+        let reloads = ReloadCounter()
+        qc.statusStore = VoiceNoteStatusStore(directory: Self.temp("qc-status"))
+        qc.activitiesEnabled = { true }
+        qc.reloadSurfaces = { reloads.count += 1 }
+        qc.publishStatus()
+        #expect(reloads.count == 1)
+        qc.publishStatus()
+        #expect(reloads.count == 1)
+        qc.publishStatus(forceReload: true)
+        #expect(reloads.count == 2, "activation reloads although the file is the same")
+        let model = AppModel(deviceStateURL: TS.deviceStateURL())
+        model.quickCapture = qc
+        await model.quickCaptureBecameActive().value
+        #expect(reloads.count == 3)
+        // Turning quick voice notes off and on changes the status: reloaded each time.
+        try qc.store.delete()
+        qc.publishStatus()
+        #expect(reloads.count == 4)
+        #expect(VoiceNoteStatus.refreshInterval > 0 && VoiceNoteStatus.refreshInterval <= 3600)
+    }
+
     /// The status widget's timer follows a pause as the Live Activity's does
     /// (B41): it stands still at the audio's length while paused, and runs
     /// again from a start moved later by the pause.

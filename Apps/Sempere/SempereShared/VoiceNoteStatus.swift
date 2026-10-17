@@ -118,6 +118,9 @@ struct VoiceNoteStatus: Codable, Equatable, Sendable {
     /// Whether the control shows as "on" (tinted).
     var isActive: Bool { phase == .recording || phase == .saving }
 
+    /// How often the system may refresh the widget on its own (a backstop; the app reloads on changes).
+    static let refreshInterval: TimeInterval = 30 * 60
+
     /// Widget and control kinds, for reloads.
     static let widgetKind = "io.github.anthonytw.sempere.voice-note"
     static let controlKind = "io.github.anthonytw.sempere.voice-note-control"
