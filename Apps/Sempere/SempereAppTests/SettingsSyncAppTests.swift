@@ -66,8 +66,10 @@ struct SettingsSyncAppTests {
         #expect(some["quickCapture.notebook"] == .string("Inbox/Voice"))
         #expect(some["quickCapture.transcribe"] == .bool(false))
         #expect(some["backup.reminderDays"] == .number(7))
-        #expect(SettingsSyncBridge.values(for: .mac, defaults: scratch.defaults, extras: extras)["quickCapture.notebook"] == nil,
-                "a Mac does not use quick capture")
+        #expect(SettingsSyncBridge.values(for: .mac, defaults: scratch.defaults, extras: extras)["quickCapture.notebook"]
+                == .string("Inbox/Voice"), "a Mac has Quick Voice Notes too")
+        #expect(SettingsSyncBridge.values(for: .mac, defaults: scratch.defaults, extras: extras)["editor.keepScreenOn"] == nil,
+                "a Mac has no Keep Screen On")
         let forModel = SettingsSyncBridge.apply(["handwriting.recognize": .bool(false), "eraser.mode": .string("pixel")],
                                                 defaults: scratch.defaults)
         #expect(forModel == ["handwriting.recognize": .bool(false)])
