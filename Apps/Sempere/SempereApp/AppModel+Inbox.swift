@@ -57,7 +57,7 @@ extension AppModel {
     /// the sweep (tests wait for it); sweeps never overlap.
     @discardableResult
     func quickCaptureBecameActive() -> Task<Void, Never> {
-        quickCapture.publishStatus()
+        quickCapture.publishStatus(forceReload: true)
         do { try quickCapture.flushStoredQueue() } catch {
             // They stay queued; unlocking the vault moves them too.
             inboxLog.error("voice notes stay queued: \(String(describing: error), privacy: .public)")

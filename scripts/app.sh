@@ -3,6 +3,7 @@
 #
 #   scripts/app.sh test       # xcodebuild test on an iPad simulator
 #   scripts/app.sh test-phone # the iPhone suites (PhoneLayoutTests) on an iPhone simulator
+#   scripts/app.sh test-phone-ui # the iPhone canvas UI tests (PhoneCanvasUITests: tap selects, hold menu, finger draws) on an iPhone simulator
 #   scripts/app.sh build-ios  # compile only: the app, its unit tests and its UI tests for an iOS simulator (runs nothing)
 #   scripts/app.sh catalyst   # Mac Catalyst build, unsigned
 #   scripts/app.sh pseudo     # UI-test layout check in the double-length, right-to-left and Spanish languages, iPad
@@ -133,10 +134,24 @@ case "${1:-}" in
       -only-testing:SempereAppTests/PhoneCanvasTests -only-testing:SempereAppTests/PhoneRootTests \
       -only-testing:SempereAppTests/ZoomStepsTests -only-testing:SempereAppTests/PhoneStackTests \
       -only-testing:SempereAppTests/PhoneInsertTests -only-testing:SempereAppTests/InsertOptionsTests \
-      -only-testing:SempereAppTests/PhoneToolbarTests -only-testing:SempereAppTests/PhonePagelessTests
+      -only-testing:SempereAppTests/PhoneToolbarTests -only-testing:SempereAppTests/PhonePagelessTests \
+      -only-testing:SempereAppTests/PhoneCanvasInteractionTests
     xcb test "${lang[@]}" -project "$project" -scheme "$scheme" -derivedDataPath "$derived" \
       -destination "platform=iOS Simulator,id=$sim" CODE_SIGNING_ALLOWED=NO \
       ${only[@]+"${only[@]}"} ${extra[@]+"${extra[@]}"} \
+      || { status=$?; shutdown_simulators "$sim"; exit $status; }
+    shutdown_simulators "$sim"
+    ;;
+  test-phone-ui)
+    # The iPhone's canvas with a finger (SempereScreenshots scheme, which owns the UI tests): tap selects,
+    # hold shows the item's menu, strokes draw, reading mode draws nothing. Needs the iOS Simulator's
+    # automation (macOS Automation Mode); the iPad runs of these tests skip.
+    sim=$(pick_simulator iPhone)
+    settle_simulator "$sim"
+    suites -only-testing:SempereAppUITests/PhoneCanvasUITests
+    xcb test "${lang[@]}" -project "$project" -scheme SempereScreenshots -derivedDataPath "$derived" \
+      -destination "platform=iOS Simulator,id=$sim" ${only[@]+"${only[@]}"} \
+      -parallel-testing-enabled NO ${ui_retry[@]+"${ui_retry[@]}"} CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"} \
       || { status=$?; shutdown_simulators "$sim"; exit $status; }
     shutdown_simulators "$sim"
     ;;
@@ -233,7 +248,7 @@ case "${1:-}" in
       -parallel-testing-enabled NO ${ui_retry[@]+"${ui_retry[@]}"} CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"}
     ;;
   *)
-    echo "usage: $0 test|test-phone|test-ui|build-ios|pseudo|pseudo-mac|catalyst|test-mac|test-mac-ui|test-mac-smoke|simulator" >&2
+    echo "usage: $0 test|test-phone|test-phone-ui|test-ui|build-ios|pseudo|pseudo-mac|catalyst|test-mac|test-mac-ui|test-mac-smoke|simulator" >&2
     exit 2
     ;;
 esac

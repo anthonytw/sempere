@@ -35,6 +35,11 @@ struct StartVoiceNoteIntent: AudioRecordingIntent, LiveActivityIntent {
     static var description: IntentDescription? {
         IntentDescription("Records a voice note into your Sempere vault's inbox, encrypted on this device, without unlocking the vault.")
     }
+    /// Recording needs no unlock and no Face ID (docs/quick-capture.md "Threat model"),
+    /// so the Lock Screen must not ask for one before running it.
+    static var authenticationPolicy: IntentAuthenticationPolicy { .alwaysAllowed }
+    /// Never brings the app forward: the Live Activity is the only thing shown.
+    static var supportedModes: IntentModes { [.background] }
 
     @MainActor
     func perform() async throws -> some IntentResult {
@@ -50,6 +55,8 @@ struct StopVoiceNoteIntent: LiveActivityIntent {
     static var description: IntentDescription? {
         IntentDescription("Stops the voice note being recorded and saves it, encrypted, to the inbox.")
     }
+    static var authenticationPolicy: IntentAuthenticationPolicy { .alwaysAllowed }
+    static var supportedModes: IntentModes { [.background] }
 
     @MainActor
     func perform() async throws -> some IntentResult {
@@ -59,19 +66,27 @@ struct StopVoiceNoteIntent: LiveActivityIntent {
     }
 }
 
-/// The Control Center control's one action (a control cannot change its
+/// The Control Center control's and the widgets' one action (a control cannot change its
 /// action with its state: `ControlWidgetTemplateBuilder` has no `if`): records
 /// when ready, stops while recording, and otherwise (not set up, Live
 /// Activities off, still saving) continues in the app at Settings ▸ Quick
 /// Voice Notes or the recording banner, instead of failing silently (build 7).
 /// What to do is decided here, in the app's process, from its live state
 /// (`VoiceNoteActions.status`), not from the status file the control drew.
+///
+/// The Lock Screen and Home Screen widgets use it too, for every phase: a widget that
+/// drew `Button(StartVoiceNoteIntent)` or `.widgetURL(link)` from a status file that
+/// had gone stale (not reloaded after quick voice notes were turned on) used to open
+/// the app without recording (build 2, iPhone). Now the tap is always decided live.
 struct VoiceNoteControlIntent: AudioRecordingIntent, LiveActivityIntent {
     static let title: LocalizedStringResource = "Record or Stop a Voice Note"
     static var description: IntentDescription? {
         IntentDescription("Records a voice note into your Sempere vault's inbox, or stops the one being recorded.")
     }
     static let isDiscoverable = false
+    static var authenticationPolicy: IntentAuthenticationPolicy { .alwaysAllowed }
+    /// Background unless `perform` asks to continue in the app (setup needed): starting and
+    /// stopping never bring the app forward.
     static var supportedModes: IntentModes { [.background, .foreground(.dynamic)] }
 
     /// The phase the control showed when tapped (`VoiceNoteStatus.Phase` raw value).
@@ -100,4 +115,11 @@ struct VoiceNoteControlIntent: AudioRecordingIntent, LiveActivityIntent {
         }
         return .result()
     }
+}
+
+extension VoiceNoteStatus {
+    /// The action behind a tap on a widget or the control showing this status:
+    /// the same intent for every phase (`VoiceNoteControlIntent` decides from the
+    /// app's live state, so a stale status cannot turn a tap into "open the app").
+    var tapIntent: VoiceNoteControlIntent { VoiceNoteControlIntent(shown: phase) }
 }

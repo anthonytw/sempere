@@ -6,7 +6,7 @@
 #                                     # posts `local/app-tests` (the `main` ruleset requires it)
 #   scripts/local-ci.sh --testflight  # the gate, then every Mac UI test and the Mac launch smoke tests;
 #                                     # posts `local/testflight-suite`
-#   scripts/local-ci.sh --release     # all of --testflight, then the iPad and iPhone suites, the iPad UI
+#   scripts/local-ci.sh --release     # all of --testflight, then the iPad and iPhone suites, the iPhone canvas UI tests, the iPad UI
 #                                     # tests and the pseudo-language UI test on the iPad; posts `local/release-sweep`
 #   scripts/local-ci.sh --no-status   # with any mode: run, but post nothing to GitHub
 #   scripts/local-ci.sh --list        # with any mode: print its steps and status, run nothing
@@ -46,7 +46,7 @@ steps=("${gate_steps[@]}")
 case "$mode" in
   gate)       context=$gate_context ;;
   testflight) context=local/testflight-suite; steps+=(mac-ui mac-smoke) ;;
-  release)    context=local/release-sweep;    steps+=(mac-ui mac-smoke ipad iphone ipad-ui pseudo) ;;
+  release)    context=local/release-sweep;    steps+=(mac-ui mac-smoke ipad iphone iphone-ui ipad-ui pseudo) ;;
 esac
 
 describe() {   # step: what it runs
@@ -58,6 +58,7 @@ describe() {   # step: what it runs
     mac-smoke)  echo "scripts/app.sh test-mac-smoke  (Mac launch smoke tests; screen)" ;;
     ipad)       echo "scripts/app.sh test            (iPad simulator unit tests)" ;;
     iphone)     echo "scripts/app.sh test-phone      (iPhone simulator suites)" ;;
+    iphone-ui)  echo "scripts/app.sh test-phone-ui   (iPhone simulator canvas UI tests: tap, hold, draw)" ;;
     ipad-ui)    echo "scripts/app.sh test-ui         (iPad simulator UI tests)" ;;
     pseudo)     echo "scripts/app.sh pseudo          (pseudo-languages on the iPad simulator)" ;;
   esac
@@ -101,6 +102,7 @@ run_step() {
     mac-smoke)  scripts/app.sh test-mac-smoke ;;
     ipad)       scripts/app.sh test ;;
     iphone)     scripts/app.sh test-phone ;;
+    iphone-ui)  scripts/app.sh test-phone-ui ;;
     ipad-ui)    scripts/app.sh test-ui ;;
     pseudo)     scripts/app.sh pseudo ;;
   esac

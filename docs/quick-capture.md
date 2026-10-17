@@ -160,10 +160,28 @@ status holds only the phase and the timer of a recording in progress (its
 start, moved later by the pauses so far, and when it paused, as on the Live
 Activity): no key, no vault, no note.
 
-The control has one action, `VoiceNoteControlIntent` (a control's template
-cannot switch on its value): it decides when tapped, from the app's live
-state, whether to record, stop, or continue in the app (iOS 26
-`continueInForeground`). The widgets switch their button per state.
+The control and the widgets have one action, `VoiceNoteControlIntent` (a control's
+template cannot switch on its value; the widgets copy it on purpose): it decides when
+tapped, from the app's live state, whether to record, stop, or continue in the app (iOS 26
+`continueInForeground`). The widgets used to switch their button per drawn state
+(`Button(StartVoiceNoteIntent)`, `Button(StopVoiceNoteIntent)`, or a `widgetURL` that only
+opens the app): a Lock Screen widget still drawn "Set Up Voice Notes" or "Live Activities Off"
+from a status the system had not reloaded then opened the app and recorded nothing (TestFlight
+1.0.0 (2)), while the control, deciding live, recorded. Now a tap on either decides live;
+a stale label can no longer turn a tap into "open the app". The status reaches the widgets
+three ways: a reload on every change, a forced reload at launch and each time the app becomes
+active, and the system's half-hourly refresh (`VoiceNoteStatus.refreshInterval`).
+
+What iOS requires of a recording intent: `AudioRecordingIntent` runs in the app's process
+and may start the microphone from the background, but only with a Live Activity (hence the
+"Live Activities Off" state); it does not need the app in front. `StartVoiceNoteIntent` and
+`StopVoiceNoteIntent` are `supportedModes = [.background]` and the control's intent
+`[.background, .foreground(.dynamic)]`: it goes forward only when it calls
+`continueInForeground` (setup needed, still saving), never to record or stop. All three set
+`authenticationPolicy = .alwaysAllowed`: the threat model above ("the intents need no
+authentication") needs the system not to ask for a passcode or Face ID before running them
+from a locked Lock Screen. What the owner sees on a record tap: the Live Activity (Lock
+Screen banner, Dynamic Island) and the recording indicator, and the app stays where it was.
 
 | Phase | Shows | A tap |
 | --- | --- | --- |

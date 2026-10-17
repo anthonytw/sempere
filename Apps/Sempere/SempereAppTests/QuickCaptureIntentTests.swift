@@ -104,6 +104,40 @@ struct QuickCaptureIntentTests {
         #expect(VoiceNoteControlIntent.isDiscoverable == false)
     }
 
+    /// The Lock Screen / Home Screen widget draws `status.tapIntent` for every phase
+    /// (build 2: a stale status made it a plain "open the app" link that never recorded).
+    /// Whatever phase it was drawn with, the tap is decided from the live state, as the control's.
+    @Test func everyWidgetPhaseTapsTheSameLiveIntent() async throws {
+        let calls = Calls()
+        calls.install()
+        defer { Self.reset() }
+        for phase in [VoiceNoteStatus.Phase.ready, .recording, .saving, .notSetUp, .liveActivitiesOff] {
+            #expect(VoiceNoteStatus(phase: phase).tapIntent.shown == phase.rawValue)
+        }
+        // A widget still drawn "Set Up Voice Notes" or "Live Activities Off" after the setup was
+        // done records instead of opening Settings.
+        calls.live = VoiceNoteStatus(phase: .ready)
+        for stale in [VoiceNoteStatus.Phase.notSetUp, .liveActivitiesOff, .saving] {
+            _ = try await VoiceNoteStatus(phase: stale).tapIntent.perform()
+        }
+        #expect(calls.started == 3 && calls.stopped == 0 && calls.opened.isEmpty)
+        // A widget still drawn "Voice Note" while recording stops it.
+        calls.live = VoiceNoteStatus(phase: .recording, started: Date(timeIntervalSince1970: 1_000))
+        _ = try await VoiceNoteStatus(phase: .ready).tapIntent.perform()
+        #expect(calls.started == 3 && calls.stopped == 1)
+    }
+
+    /// Siri, the widgets and the control all run without unlocking the device and without
+    /// bringing the app forward unless the setup needs it.
+    @Test func intentsNeedNoUnlockAndStartAndStopStayInTheBackground() {
+        #expect(StartVoiceNoteIntent.authenticationPolicy == .alwaysAllowed)
+        #expect(StopVoiceNoteIntent.authenticationPolicy == .alwaysAllowed)
+        #expect(VoiceNoteControlIntent.authenticationPolicy == .alwaysAllowed)
+        #expect(StartVoiceNoteIntent.supportedModes == [.background])
+        #expect(StopVoiceNoteIntent.supportedModes == [.background])
+        #expect(VoiceNoteControlIntent.supportedModes == [.background, .foreground(.dynamic)])
+    }
+
     /// The hooks `register()` installs hand the intent's errors on: Shortcuts and
     /// the widgets show them (`QuickCaptureError.localizedStringResource`).
     @Test func startIntentThroughTheRecorderReportsItsRefusalsAndRecords() async throws {

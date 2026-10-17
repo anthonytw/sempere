@@ -273,6 +273,88 @@ enum ItemMenu {
     }
 }
 
+/// Whether a finger touch is a tap, decided from where and when it began, moved and ended
+/// (`FingerItemTapRecognizer`; pure, tested). A tap is one finger that stays within `slop`
+/// points of where it landed and lifts before `maxDuration`: longer is a hold
+/// (`ItemSelectionController.hold`, 0.45 s), farther is a stroke or a scroll.
+struct FingerTapTracker: Equatable {
+    static let slop: CGFloat = 8
+    static let maxDuration: TimeInterval = 0.4
+
+    private(set) var start: CGPoint
+    private(set) var began: TimeInterval
+    private(set) var failed = false
+
+    init(at point: CGPoint, time: TimeInterval) {
+        start = point
+        began = time
+    }
+
+    /// The finger moved to `point` (or a second finger came: `touches > 1`).
+    mutating func moved(to point: CGPoint, touches: Int = 1) {
+        if touches > 1 || hypot(point.x - start.x, point.y - start.y) > Self.slop { failed = true }
+    }
+
+    /// The finger lifted at `point`, `time`: whether it was a tap.
+    func isTap(endingAt point: CGPoint, time: TimeInterval) -> Bool {
+        var end = self
+        end.moved(to: point)
+        return !end.failed && time - began < Self.maxDuration
+    }
+}
+
+/// A finger tap that begins on a placed item, for a canvas where fingers draw (an iPhone). PencilKit
+/// draws a dot for a tap and a stroke for a drag, so the tap is told apart from the stroke before
+/// ink starts: this recognizer fails at once for a touch that lands off every item (ink is not
+/// delayed), and for a touch that moves, holds or is joined by a second finger (the stroke or
+/// scroll then goes on as before). While it is still a possible tap, PencilKit's drawing waits
+/// (`ItemSelectionController.gestureRecognizer(_:shouldBeRequiredToFailBy:)`), so a tap on an item
+/// selects it and leaves no dot. A stroke that starts on an item draws (annotating a picture or a
+/// PDF page); only a tap selects.
+final class FingerItemTapRecognizer: UIGestureRecognizer {
+    /// Whether a tap may start at this point of the view (an item is there, and picking is allowed now).
+    var startsAt: ((CGPoint) -> Bool)?
+    private var tracker: FingerTapTracker?
+    private var timeout: DispatchWorkItem?
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        guard tracker == nil, numberOfTouches == 1, let touch = touches.first, touch.type == .direct, let view,
+              startsAt?(touch.location(in: view)) == true else {
+            state = .failed
+            return
+        }
+        tracker = FingerTapTracker(at: touch.location(in: view), time: touch.timestamp)
+        // A held finger is the hold recognizer's, and PencilKit's drawing may go on from there.
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.state == .possible else { return }
+            self.state = .failed
+        }
+        timeout = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + FingerTapTracker.maxDuration, execute: work)
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        guard state == .possible, let touch = touches.first, let view else { return }
+        tracker?.moved(to: touch.location(in: view), touches: numberOfTouches)
+        if tracker?.failed == true { state = .failed }
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        guard state == .possible, let touch = touches.first, let view, let tracker else { state = .failed; return }
+        state = tracker.isTap(endingAt: touch.location(in: view), time: touch.timestamp) ? .recognized : .failed
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        if state == .possible { state = .failed }
+    }
+
+    override func reset() {
+        timeout?.cancel()
+        timeout = nil
+        tracker = nil
+    }
+}
+
 /// Selecting, moving, resizing and deleting items on the canvas
 /// (docs/attachments.md §13 "Selecting items"). Ways in, one model
 /// (`ItemSelectionModel`) for all of them:
@@ -306,6 +388,22 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
     /// While drawing: a finger tap on an item selects it, when fingers do not draw (a tap selects,
     /// as a click does on a Mac; only a clip's or a card's own button plays it).
     private let itemTap = UITapGestureRecognizer()
+    /// The same for a canvas where fingers draw (an iPhone, `fingersPick`): a tap that begins on an
+    /// item, told apart from a stroke before PencilKit draws a dot (`FingerItemTapRecognizer`).
+    let fingerTap = FingerItemTapRecognizer()
+    /// Whether a finger tap or hold picks an item although fingers draw (an iPhone: it has no Pencil
+    /// and finger drawing is the one way to write). A stroke still draws, wherever it starts; only
+    /// a tap (up before 0.4 s, within 8 points) or a hold (0.45 s) on an item picks it. The iPad
+    /// leaves a finger that draws to PencilKit: its taps pick only with a paired Pencil.
+    /// Whether the tool in hand lets a finger pick now (not an eraser: a tap erases there).
+    var canFingerPick: () -> Bool = { true }
+    var fingersPick = Platform.isPhone {
+        didSet { applyFingerMode() }
+    }
+    private func applyFingerMode() {
+        fingerTap.isEnabled = fingersPick
+        itemTap.isEnabled = !fingersPick
+    }
     /// The play/pause buttons of the page's audio cards (format.md §8.2.9).
     private let audioControls = AudioCardControls()
     /// The play buttons of the page's videos (format.md §8.2.7).
@@ -377,6 +475,10 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         }
         itemTap.addTarget(self, action: #selector(itemTapped(_:)))
         itemTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        fingerTap.addTarget(self, action: #selector(itemTapped(_:)))
+        fingerTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        fingerTap.startsAt = { [weak self] p in self?.fingerTapMayStart(at: p) ?? false }
+        applyFingerMode()
         lassoTap.addTarget(self, action: #selector(lassoTapped(_:)))
         hold.addTarget(self, action: #selector(held(_:)))
         hold.allowedTouchTypes = [UITouch.TouchType.direct, .pencil].map { NSNumber(value: $0.rawValue) }
@@ -386,7 +488,7 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         // A mouse or trackpad only: on the iPad simulator (and so perhaps on a device) a finger tap
         // also passed the button mask, so every tap showed the menu.
         secondaryClick.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
-        for g in [itemTap, lassoTap, hold, secondaryClick] as [UIGestureRecognizer] {
+        for g in [itemTap, fingerTap, lassoTap, hold, secondaryClick] as [UIGestureRecognizer] {
             g.cancelsTouchesInView = false
             g.delegate = self
             canvas.addGestureRecognizer(g)
@@ -546,7 +648,7 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
             + "\(n(Double(canvas.contentOffset.y)));width=\(n(Double(canvas.bounds.width)))"
             + ";edits=\(editor?.itemRevisions[pageID] ?? 0);selected=\(selected);menu=\(menuShown ? 1 : 0)"
             + ";menus=\(menusShown);trace=\(debugTrace.joined(separator: ","));bar=\(bar.isHidden ? 0 : 1);barFrame=\(n(Double(bar.frame.minX))),\(n(Double(bar.frame.minY))),"
-            + "\(n(Double(bar.frame.width))),\(n(Double(bar.frame.height)));palette=\(debugPalette() ? 1 : 0);items="
+            + "\(n(Double(bar.frame.width))),\(n(Double(bar.frame.height)));palette=\(debugPalette() ? 1 : 0);strokes=\(debugStrokes());items="
             + list.joined(separator: "|") + (debugTyping().map { ";typing=" + $0 } ?? "")
     }
 
@@ -556,6 +658,9 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
     /// Whether this canvas has the focus with its palette up (`debugReport`).
     var debugPalette: () -> Bool = { false }
 
+    /// How many strokes the page's ink has (`debugReport`: an iPhone test checks that a tap leaves no dot).
+    var debugStrokes: () -> Int = { 0 }
+
     /// Writes the report again (the text being typed changed).
     func debugRefreshReport() { debugReport() }
     #endif
@@ -564,6 +669,7 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
 
     func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
         if g === itemTap { return !isActive && canPick() && !fingersDraw && itemHit(g) != nil }
+        if g === fingerTap { return fingerTapMayStart(at: g.location(in: canvas)) }
         if g === lassoTap { return !isActive && lassoSelected() && canPick() && itemHit(g) != nil }
         if g === hold { return holdTarget(g) != nil }
         if g === secondaryClick { return editor != nil && (isActive || canPick()) }
@@ -587,7 +693,7 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
 
     func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
         // Picking while drawing never stops PencilKit's own gestures (the lasso still lassoes ink).
-        g === itemTap || g === lassoTap || g === hold || g === secondaryClick || g === rotate
+        g === itemTap || g === fingerTap || g === lassoTap || g === hold || g === secondaryClick || g === rotate
     }
 
     /// On a Mac a pointer drag on an item is the item's: the page's scroll (the canvas's own, or
@@ -599,8 +705,28 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
     /// up instead of the item's menu) waits for the hold to fail, which it does at once off an item.
     func gestureRecognizer(_ g: UIGestureRecognizer, shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
         if g === hold { return Self.isSystemLongPress(other, ours: self) }
+        // A finger tap on an item is not a dot: PencilKit's drawing waits for it to fail (at once off
+        // an item, or when the finger moves, holds or is joined by another), so a tap leaves no ink.
+        if g === fingerTap { return Self.isDrawingRecognizer(other, of: canvas) }
         guard Platform.isMac, g === pan else { return false }
         return other === canvas?.panGestureRecognizer || other === scroller?.panGestureRecognizer
+    }
+
+    /// PencilKit's recognizers that draw: the public one and the inner view's second one
+    /// (`PageCanvasHost.pencilKitGestures`).
+    static func isDrawingRecognizer(_ g: UIGestureRecognizer, of canvas: UIScrollView?) -> Bool {
+        guard let canvas = canvas as? PKCanvasView else { return false }
+        let drawing = canvas.drawingGestureRecognizer
+        return g === drawing || g.isKind(of: type(of: drawing))
+    }
+
+    /// Whether a finger tap may begin at `point` (canvas coordinates): picking is allowed, nothing
+    /// is selected yet (the selection's own tap handles taps then) and an item is there.
+    func fingerTapMayStart(at point: CGPoint) -> Bool {
+        guard fingersPick, !isActive, canPick(), canFingerPick() else { return false }
+        let z = zoom
+        return ItemSelectionModel.hit(ItemFrames.Point(x: Double(point.x / z), y: Double(point.y / z)),
+                                      items: items, zoom: Double(zoom)) != nil
     }
 
     /// A long press that shows a menu (PencilKit's own, on the canvas or its inner views): one
@@ -634,11 +760,11 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
             }
             return scope == .all && commands.canPaste() && editor?.canEditItems == true ? .page : nil
         }
-        guard canPick(), !fingersDraw, let hit = itemHit(g) else { return nil }
+        guard canPick(), !fingersDraw || (fingersPick && canFingerPick()), let hit = itemHit(g) else { return nil }
         return .item(hit.id)
     }
 
-    @objc private func itemTapped(_ g: UITapGestureRecognizer) {
+    @objc private func itemTapped(_ g: UIGestureRecognizer) {
         guard !isActive, let hit = itemHit(g) else { return }
         pick(hit.id, menu: false)
     }
