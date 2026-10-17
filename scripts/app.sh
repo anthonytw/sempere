@@ -3,7 +3,7 @@
 #
 #   scripts/app.sh test       # xcodebuild test on an iPad simulator
 #   scripts/app.sh test-phone # the iPhone suites (PhoneLayoutTests) on an iPhone simulator
-#   scripts/app.sh test-phone-ui # the iPhone canvas UI tests (PhoneCanvasUITests: tap selects, hold menu, finger draws) on an iPhone simulator
+#   scripts/app.sh test-phone-ui # the iPhone canvas UI tests (PhoneCanvasUITests: tap selects, hold menu, finger draws; PhoneParityUITests: stack, new note, Settings, import, search, unlock) on an iPhone simulator
 #   scripts/app.sh build-ios  # compile only: the app, its unit tests and its UI tests for an iOS simulator (runs nothing)
 #   scripts/app.sh catalyst   # Mac Catalyst build, unsigned
 #   scripts/app.sh pseudo     # UI-test layout check in the double-length, right-to-left and Spanish languages, iPad
@@ -148,7 +148,7 @@ case "${1:-}" in
     # automation (macOS Automation Mode); the iPad runs of these tests skip.
     sim=$(pick_simulator iPhone)
     settle_simulator "$sim"
-    suites -only-testing:SempereAppUITests/PhoneCanvasUITests
+    suites -only-testing:SempereAppUITests/PhoneCanvasUITests -only-testing:SempereAppUITests/PhoneParityUITests
     xcb test "${lang[@]}" -project "$project" -scheme SempereScreenshots -derivedDataPath "$derived" \
       -destination "platform=iOS Simulator,id=$sim" ${only[@]+"${only[@]}"} \
       -parallel-testing-enabled NO ${ui_retry[@]+"${ui_retry[@]}"} CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"} \
