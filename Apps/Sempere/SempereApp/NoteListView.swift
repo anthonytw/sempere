@@ -694,6 +694,7 @@ private struct TranscriptHitRow: View {
                 Text(verbatim: title).font(.caption).foregroundStyle(.secondary)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
     }
 
@@ -760,6 +761,9 @@ private struct SearchRow: View {
             .font(.caption)
             .foregroundStyle(.secondary)
         }
+        // The whole row is the button: a shape as wide as the text left the rest of the row dead
+        // (a tap right of a short title opened nothing).
+        .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
     }
 

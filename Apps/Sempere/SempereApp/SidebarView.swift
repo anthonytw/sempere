@@ -42,6 +42,11 @@ struct SidebarView: View {
         return model.canDeleteNotebook(path) ? actions : actions.filter { !$0.destructive }
     }
 
+    private func notebookLabel(_ node: NotebookNode) -> some View {
+        Label(node.name, systemImage: node.children.isEmpty ? "book.closed" : "books.vertical")
+            .accessibilityIdentifier("sidebar-notebook-\(node.path)")
+    }
+
     var body: some View {
         @Bindable var model = model
         List(selection: $model.sidebarSelection) {
@@ -70,16 +75,31 @@ struct SidebarView: View {
             let tree = model.notebookTree
             if !tree.isEmpty {
                 Section("Notebooks") {
-                    OutlineGroup(tree, children: \.childrenOrNil) { node in
-                        Label(node.name, systemImage: node.children.isEmpty ? "book.closed" : "books.vertical")
-                            .tag(SidebarItem.notebook(node.path))
-                            .accessibilityIdentifier("sidebar-notebook-\(node.path)")
-                            .sidebarDropTarget(.notebook(node.path))
-                            // The drag and the context menu come from one UIKit view (`NotebookDragSource`).
-                            .notebookDragSource(node.path, hasChildren: !node.children.isEmpty, menu: menu(for: node.path))
-                            .swipeActions {
-                                Button("Rename", systemImage: "pencil") { newName = node.path; renaming = node.path }
-                            }
+                    if Platform.isPhone {
+                        // An outline row's tap only folds it on an iPhone's stack and never selects it,
+                        // so a notebook holding sub-notebooks could not open its own notes. The phone
+                        // lists every notebook, indented, with no folding: a tap always opens one.
+                        ForEach(PhoneNotebookRows.rows(tree)) { row in
+                            notebookLabel(row.node)
+                                .padding(.leading, CGFloat(row.depth) * 20)
+                                .tag(SidebarItem.notebook(row.node.path))
+                                .sidebarDropTarget(.notebook(row.node.path))
+                                .notebookDragSource(row.node.path, hasChildren: !row.node.children.isEmpty, menu: menu(for: row.node.path))
+                                .swipeActions {
+                                    Button("Rename", systemImage: "pencil") { newName = row.node.path; renaming = row.node.path }
+                                }
+                        }
+                    } else {
+                        OutlineGroup(tree, children: \.childrenOrNil) { node in
+                            notebookLabel(node)
+                                .tag(SidebarItem.notebook(node.path))
+                                .sidebarDropTarget(.notebook(node.path))
+                                // The drag and the context menu come from one UIKit view (`NotebookDragSource`).
+                                .notebookDragSource(node.path, hasChildren: !node.children.isEmpty, menu: menu(for: node.path))
+                                .swipeActions {
+                                    Button("Rename", systemImage: "pencil") { newName = node.path; renaming = node.path }
+                                }
+                        }
                     }
                 }
             }
@@ -189,5 +209,18 @@ struct SidebarView: View {
         } message: {
             Text("Applies to every note in “\(renaming ?? "")” and its sub-notebooks. Use / for levels, e.g. School/Math. An empty name takes the notes out of the notebook and lifts its sub-notebooks to the top.")
         }
+    }
+}
+
+/// The sidebar's notebook rows on an iPhone: the whole tree flattened in order with each row's depth.
+enum PhoneNotebookRows {
+    struct Row: Identifiable {
+        let node: NotebookNode
+        let depth: Int
+        var id: String { node.path }
+    }
+
+    static func rows(_ tree: [NotebookNode], depth: Int = 0) -> [Row] {
+        tree.flatMap { [Row(node: $0, depth: depth)] + rows($0.children, depth: depth + 1) }
     }
 }
