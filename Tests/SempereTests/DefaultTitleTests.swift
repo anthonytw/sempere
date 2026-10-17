@@ -88,4 +88,15 @@ final class DefaultTitleValidationTests: XCTestCase {
         }
         XCTAssertTrue(DefaultTitle.Problem.unknownLetter("t").description.contains("single quotes"))
     }
+
+    /// The unknown-directive message lists exactly what the translator accepts (it once left out
+    /// `%u %k %l %D` and others).
+    func testUnknownDirectiveMessageListsEveryAcceptedDirective() {
+        let message = DefaultTitle.Problem.unknownDirective("%Q").description
+        for d in DefaultTitle.strftime.keys {
+            XCTAssertTrue(message.contains("%\(d) ") || message.contains("%\(d)."), "%\(d) missing from: \(message)")
+            XCTAssertNoThrow(try DefaultTitle.pattern("%\(d)").get(), "%\(d)")
+        }
+        for d in ["u", "k", "l", "D", "n", "t"] { XCTAssertTrue(message.contains("%\(d)"), "%\(d)") }
+    }
 }

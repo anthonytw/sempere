@@ -75,7 +75,7 @@ enum TranscriptionPreference {
 
     /// The speech engines the app can choose between.
     enum Engine: Equatable, Sendable {
-        /// The newer on-device engine (iOS and macOS 26): more languages, better accuracy.
+        /// The newer on-device engine (`SpeechTranscriber`, always there on iOS 27): more languages, better accuracy.
         case speechTranscriber
         /// The older on-device `SFSpeechRecognizer`: the fallback for a language the newer one lacks.
         case sfSpeech

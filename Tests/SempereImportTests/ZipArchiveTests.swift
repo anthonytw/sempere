@@ -201,4 +201,11 @@ final class ZipArchiveTests: TempDirTestCase {
                                                      .init(path: "b", data: payload)]))
         for p in ["a", "b"] { XCTAssertEqual(try ok.read(XCTUnwrap(ok.entry(p))), payload) }
     }
+
+    func testImportErrorsReadAsSentencesNotEnumCases() {
+        XCTAssertEqual("\(ImportError.io("no such file: /x"))", "no such file: /x")
+        for e in [ImportError.zip("a"), .archive("a"), .package("a")] {
+            XCTAssertFalse("\(e)".contains("(\""), "\(e)")
+        }
+    }
 }

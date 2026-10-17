@@ -248,7 +248,52 @@ final class SharedSettingsTests: VaultTestCase {
         }
         XCTAssertTrue(SharedSettingsCatalog.specs(for: .mac).contains { $0.name == "mouse.smoothing" })
         XCTAssertFalse(SharedSettingsCatalog.specs(for: .ipad).contains { $0.name == "mouse.smoothing" })
-        XCTAssertFalse(SharedSettingsCatalog.specs(for: .mac).contains { $0.name == "quickCapture.notebook" })
+        // The Mac has Quick Voice Notes too; Keep Screen On is a touch-only setting.
+        for key in ["quickCapture.notebook", "quickCapture.transcribe"] {
+            for type in SettingsDeviceType.allCases {
+                XCTAssertTrue(SharedSettingsCatalog.specs(for: type).contains { $0.name == key }, "\(key) on \(type)")
+            }
+        }
+        XCTAssertFalse(SharedSettingsCatalog.specs(for: .mac).contains { $0.name == "editor.keepScreenOn" })
+        XCTAssertTrue(SharedSettingsCatalog.specs(for: .ipad).contains { $0.name == "editor.keepScreenOn" })
+    }
+
+    /// The catalog's device types match where the app shows each setting: every key the settings
+    /// screens bind with `.syncedSetting("…")` is in the catalog, every catalog key is bound somewhere,
+    /// and a setting that is not used on every device sits behind a platform check in its view.
+    func testCatalogMatchesWhereTheAppShowsEachSetting() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let folder = root.appendingPathComponent("Apps/Sempere/SempereApp")
+        let files = try FileManager.default.contentsOfDirectory(atPath: folder.path).filter { $0.hasSuffix(".swift") }
+        var shown: [String: [(file: String, lines: [Substring], index: Int)]] = [:]
+        for file in files {
+            let text = try String(contentsOf: folder.appendingPathComponent(file), encoding: .utf8)
+            let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+            for (i, line) in lines.enumerated() {
+                guard let r = line.range(of: ".syncedSetting(\""), !line.contains("func ") else { continue }
+                let key = line[r.upperBound...].prefix { $0 != "\"" }
+                shown[String(key), default: []].append((file, lines, i))
+            }
+        }
+        let catalog = SharedSettingsCatalog.allKeyNames
+        // Settings with no row of their own in these views: the eraser and palette are bound in the editor.
+        XCTAssertEqual(Set(shown.keys).subtracting(catalog), [], "bound in the app but not in the catalog")
+        XCTAssertEqual(catalog.subtracting(shown.keys), [], "in the catalog but shown nowhere")
+        for spec in SharedSettingsCatalog.specs {
+            guard let types = spec.types else { continue }
+            // Within the 8 lines before the row there is a platform check naming the same side.
+            for place in shown[spec.name] ?? [] {
+                let window = place.lines[max(0, place.index - 14)...place.index].joined(separator: "\n")
+                let guardsMac = window.contains("!Platform.isMac")
+                let macOnly = window.contains("Platform.isMac") && !guardsMac
+                let guardsIcons = window.contains("isSupported")
+                if !types.contains(.mac) {
+                    XCTAssertTrue(guardsMac || guardsIcons, "\(spec.name) is not for the Mac but \(place.file) shows it there")
+                } else if types == [.mac] {
+                    XCTAssertTrue(macOnly, "\(spec.name) is Mac-only but \(place.file) shows it everywhere")
+                }
+            }
+        }
     }
 
     /// docs/settings.schema.json is generated from the registry; regenerate

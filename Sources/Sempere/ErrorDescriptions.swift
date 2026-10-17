@@ -188,3 +188,94 @@ extension RecipientsProblem: CustomStringConvertible {
         key.count > 80 ? "\(key.prefix(16))…\(key.suffix(8))" : key
     }
 }
+
+extension GzipError: CustomStringConvertible {
+    /// A human sentence for each case.
+    public var description: String {
+        switch self {
+        case .deflate(let code): return "compression failed (zlib error \(code))"
+        case .inflate: return "not a valid gzip stream"
+        case .tooLarge(let limit): return "the decompressed data is larger than the limit of \(limit) bytes"
+        }
+    }
+}
+
+extension PublishedSummariesError: CustomStringConvertible {
+    /// A human sentence for each case.
+    public var description: String {
+        switch self { case .damaged(let why): return "the published summaries file is damaged: \(why)" }
+    }
+}
+
+extension LocalCacheError: CustomStringConvertible {
+    /// A human sentence for each case.
+    public var description: String {
+        switch self { case .damaged(let why): return "the local cache is damaged: \(why)" }
+    }
+}
+
+extension SummaryCacheError: CustomStringConvertible {
+    /// A human sentence for each case.
+    public var description: String {
+        switch self { case .damaged(let why): return "the summary cache is damaged: \(why)" }
+    }
+}
+
+extension NotebookRecordError: CustomStringConvertible {
+    /// A human sentence for each case.
+    public var description: String {
+        switch self {
+        case .tooLarge: return "the notebook records file is too large"
+        case .undecryptable(let why): return "the notebook records file cannot be decrypted: \(why)"
+        case .framing(let e): return "the notebook records file does not check: \(e)"
+        case .invalid(let why): return "the notebook records file is not valid: \(why)"
+        }
+    }
+}
+
+extension SharedSettingsError: CustomStringConvertible {
+    /// A human sentence for each case.
+    public var description: String {
+        switch self {
+        case .tooLarge: return "the settings file is too large"
+        case .invalid(let why): return "the settings file is not valid: \(why)"
+        case .undecryptable(let why): return "the settings file cannot be decrypted: \(why)"
+        case .framing(let e): return "the settings file does not check: \(e)"
+        case .clockExhausted(let key): return "the setting \(key) cannot be written: its time would pass the largest the format allows"
+        case .needsNewerReader(let min): return "the settings need a newer reader (settings reader \(min) or later)"
+        }
+    }
+}
+
+extension CompactionError: CustomStringConvertible {
+    /// A human sentence for each case.
+    public var description: String {
+        switch self {
+        case .unreadableRevision(let why): return "a revision cannot be read, so nothing was deleted: \(why)"
+        case .cannotProtect(let why): return "a restore point could not be protected, so nothing was written: \(why)"
+        case .stateWouldChange: return "the plan would change the note's state, so nothing was done"
+        case .versionWouldChange(let name): return "the plan would change the kept version \(name), so nothing was done"
+        }
+    }
+}
+
+extension ItemChangeError: CustomStringConvertible {
+    /// A human sentence for each case.
+    public var description: String {
+        switch self {
+        case .immutableField(let f): return "the field \(f) is set once and cannot be changed"
+        case .nullNotAllowed(let f): return "the field \(f) cannot be cleared"
+        case .invalidValue(let why): return "invalid value: \(why)"
+        }
+    }
+}
+
+extension ItemEditError: CustomStringConvertible {
+    /// A human sentence for each case.
+    public var description: String {
+        switch self {
+        case .invalidItem(let why): return "invalid item: \(why)"
+        case .duplicateID(let id): return "the page already has an item \(id.uuidString.lowercased())"
+        }
+    }
+}

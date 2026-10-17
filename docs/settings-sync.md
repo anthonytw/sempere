@@ -242,6 +242,8 @@ which devices use it. Any key may also appear in a type block.
 | `search.transcripts` | Search Recording Transcripts (the search field) | `true`, `false` | `false` |
 | `rewrap.onAdd` | Device Keys ▸ When Adding a Device | `header`, `reencrypt` | `header` |
 | `rewrap.onRemove` | Device Keys ▸ When Removing or Replacing a Device | `header`, `reencrypt` | `reencrypt` |
+| `quickCapture.notebook` | Quick Voice Notes ▸ Notebook | a notebook path | `Inbox` |
+| `quickCapture.transcribe` | Quick Voice Notes ▸ Transcribe Voice Notes | `true`, `false` | `true` |
 | `backup.reminderDays` | Backups ▸ Remind Me (once the device has a backup folder) | 0 (off), 1, 3, 7, 14, 30 | 0 |
 
 Recognition and transcription still run on each device: one without the language model
@@ -253,10 +255,8 @@ the other devices follow it.
 
 | Key | Setting | Types | Values | Default |
 | --- | --- | --- | --- | --- |
-| `editor.keepScreenOn` | General ▸ Keep Screen On | `ipad`, `iphone` | `true`, `false` | `false` |
+| `editor.keepScreenOn` | General ▸ Keep Screen On (not shown on a Mac) | `ipad`, `iphone` | `true`, `false` | `false` |
 | `mouse.smoothing` | General ▸ Smooth Mouse Strokes | `mac` | `off`, `light`, `strong` | `light` |
-| `quickCapture.notebook` | Quick Voice Notes ▸ Notebook | `ipad`, `iphone` | a notebook path | `Inbox` |
-| `quickCapture.transcribe` | Quick Voice Notes ▸ Transcribe Voice Notes | `ipad`, `iphone` | `true`, `false` | `true` |
 | `appearance.icon` | App Icon (where iOS offers alternate icons) | `ipad`, `iphone` | `keyholeNib`, `cemeteryDoor`, `shadowS`, `inkWind` | `keyholeNib` |
 
 The quick-capture settings apply while quick capture is on for the vault on that device;

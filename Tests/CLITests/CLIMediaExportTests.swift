@@ -127,9 +127,14 @@ final class CLIMediaExportTests: CLITestCase {
         let args = ["--vault", vaultPath, "--identity", keyPath]
         let r = try cli(["export", groceries, "--format", "media", "--out", path("media"), "--json"] + args)
         XCTAssertEqual(r.status, 0, r.err)
-        XCTAssertTrue(r.err.contains("no recordings, videos, images or PDFs to export"), r.err)
+        XCTAssertTrue(r.err.contains("no media: no recordings, videos, images or PDFs to export"), r.err)
         XCTAssertEqual(((r.json as? [[String: Any]])?.first)?["files"] as? [String], [])
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: path("media")), [])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path("media")), "no empty --out folder is left")
+        // An --out folder that was there before stays.
+        try FileManager.default.createDirectory(atPath: path("existing"), withIntermediateDirectories: false)
+        let again = try cli(["export", groceries, "--format", "media", "--out", path("existing")] + args)
+        XCTAssertEqual(again.status, 0, again.err)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path("existing")))
     }
 
     func testMediaOptionsAreValidated() throws {

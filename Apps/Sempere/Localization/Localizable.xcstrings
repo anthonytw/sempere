@@ -8246,13 +8246,24 @@
         }
       }
     },
-    "Keep Screen On stops the screen from locking while a note is open. Handwriting recognition makes handwriting searchable; it runs on this device and nothing leaves it." : {
+    "Keep Screen On stops the screen from locking while a note is open." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "«Pantalla siempre activa» impide que la pantalla se bloquee mientras haya una nota abierta. El reconocimiento de escritura a mano permite buscar en lo escrito a mano; se hace en este dispositivo y nada sale de él."
+            "value" : "«Pantalla siempre activa» impide que la pantalla se bloquee mientras haya una nota abierta."
+          }
+        }
+      }
+    },
+    "Handwriting recognition makes handwriting searchable; it runs on this device and nothing leaves it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El reconocimiento de escritura a mano permite buscar en lo escrito a mano; se hace en este dispositivo y nada sale de él."
           }
         }
       }

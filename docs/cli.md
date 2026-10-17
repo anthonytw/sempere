@@ -376,8 +376,8 @@ sempere vault merge-copy FROM [--dry-run] [--json]
 - `verify` decrypts, tag-checks and decodes every file and prints
   `status  path` per file plus counts, and a `RECIPIENTS` line (the device
   list, as in `info`). Exit 0 only if the vault is healthy, 6 when the device
-  list does not check, else 3. `-q` lists only files whose status is not `ok` (so the healthy
-  `unreferenced` and `unknownFile` too). `--json` emits
+  list does not check, else 3. `-q` lists only the problem files (the healthy `unreferenced`,
+  `unknownFile`, `notChecked` and `newer` are not listed). `--json` emits
   `healthy`, `manifestProblems`, `rewrapPending`, `journalProblem`, `counts`,
   `files` and `recipientsAuth` (as in `info`).
   Attachment blobs are decrypted and hashed in full: `ok`, `unreferenced`
@@ -819,8 +819,7 @@ scheduled job unless you use `--prune`).
 cron (Linux, macOS), every hour, plus a weekly check and a daily reminder
 when no run has completed for a week (cron mails what a job prints: a quiet
 `backup` prints nothing when all is well and the reminder only when a backup is
-overdue, but `backup verify -q` also lists healthy `unreferenced` blobs, so
-expect an occasional mail from it):
+overdue, and `backup verify -q` prints nothing for a healthy backup):
 
 ```cron
 0 * * * *  /usr/local/bin/sempere backup /home/me/Sync/notes.sempere --to /mnt/backup/notes -q
@@ -1923,8 +1922,8 @@ Recordings come first in their order, then clips, images and PDFs in page order.
 missing or not downloaded, a transcript that cannot be read, and a JPEG or PNG that cannot be parsed
 to remove its metadata are left out with a warning; other images (a HEIC kept as taken) and JPEG/PNG
 over 64 MiB are written as stored, metadata included, with a warning; a blob that fails
-verification fails the note (exit 1, nothing of it left behind). A note without media writes nothing and warns "no recordings, videos,
-images or PDFs to export" (exit 0). With `--json`, `files` lists the files written, `media.json`
+verification fails the note (exit 1, nothing of it left behind). A note without media writes nothing and warns "no media: no recordings, videos,
+images or PDFs to export" (exit 0, and an `--out` folder the command would have created is not left behind). With `--json`, `files` lists the files written, `media.json`
 last. `--no-paper`, `--breaks`, `--merge`, `--images` and `--recordings` do not apply (exit 2).
 With `--all` it is a bulk export (below): `--layout`, `--zip` and resuming apply, and notes whose
 summary names no audio, video, image or PDF are skipped without being read.

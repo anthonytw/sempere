@@ -469,3 +469,14 @@ struct CharacterMap: Sendable {
         return out
     }
 }
+
+extension FontError: CustomStringConvertible {
+    /// A human sentence for each case.
+    public var description: String {
+        switch self {
+        case .notAFont: return "not an OpenType, TrueType or TrueType Collection font file"
+        case .malformed(let d): return "damaged font file: \(d)"
+        case .unsupported(let d): return "unsupported font: \(d)"
+        }
+    }
+}

@@ -132,7 +132,7 @@ struct BackupVerify: ParsableCommand {
         if !identities.isEmpty, hasManifest { _ = try Vault.open(at: url, identities: identities) }
         let report = Backup.verify(at: url, identities: identities)
         let problems = report.files.filter { $0.status != .ok && $0.status != .unindexed }
-        let vaultProblems = (report.vault?.files ?? []).filter { ![.ok, .unknownFile, .notChecked].contains($0.status) }
+        let vaultProblems = (report.vault?.files ?? []).filter { $0.status.isProblem }
 
         if output.json {
             struct File: Encodable { var path: String; var status: String; var detail: String? }

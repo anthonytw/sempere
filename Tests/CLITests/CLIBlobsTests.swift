@@ -70,6 +70,31 @@ final class CLIBlobsTests: CLITestCase {
         XCTAssertEqual(left, ["clip.jpg"], "no temporary file left")
     }
 
+    /// A healthy vault with an unreferenced blob: `-q` prints no file row, and `backup verify` counts
+    /// no problem (the weekly cron job must not mail on a healthy backup).
+    func testQuietVerifyIgnoresHealthyUnreferencedBlobs() throws {
+        let (vault, _, key) = try makeVault()
+        let used = try add(vault, key, note: n1, content: Data("synthetic used".utf8), type: "image/jpeg")
+        _ = try add(vault, key, note: n1, content: Data("synthetic spare".utf8), type: "application/pdf")
+        try reference(vault, note: n1, used, seq: 1)
+        let plain = try cli(["vault", "verify"] + access(vault, key))
+        XCTAssertTrue(plain.out.contains("unreferenced  "), plain.out)
+        var r = try cli(["vault", "verify", "-q"] + access(vault, key))
+        XCTAssertEqual(r.status, 0, r.out + r.err)
+        XCTAssertFalse(r.out.contains("unreferenced  "), r.out)
+        let dir = path("backup")
+        r = try cli(["backup", "--to", dir] + access(vault, key))
+        XCTAssertEqual(r.status, 0, r.err)
+        r = try cli(["backup", "verify", dir, "--identity", key, "-q"])
+        XCTAssertEqual(r.status, 0, r.out + r.err)
+        XCTAssertEqual(r.out, "", "quiet and healthy: nothing to mail")
+        r = try cli(["backup", "verify", dir, "--identity", key])
+        XCTAssertEqual(r.status, 0, r.out + r.err)
+        XCTAssertTrue(r.out.contains(", 0 problem(s)"), r.out)
+        XCTAssertFalse(r.out.contains("unreferenced"), r.out)
+        XCTAssertTrue(r.out.contains("Backup is healthy."), r.out)
+    }
+
     func testBlobsWorkflow() throws {
         let (vault, _, key) = try makeVault()
         let photo = Data((0..<90_000).map { UInt8(truncatingIfNeeded: $0 &* 31) })

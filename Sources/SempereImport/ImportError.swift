@@ -16,3 +16,15 @@ public enum ImportError: Error, Hashable, Sendable {
     /// A filesystem read or write failed.
     case io(String)
 }
+
+extension ImportError: CustomStringConvertible {
+    /// A human sentence for each case: the detail alone for an I/O failure ("no such file: …").
+    public var description: String {
+        switch self {
+        case .zip(let d): return "not a readable zip file: \(d)"
+        case .archive(let d): return "unreadable archive: \(d)"
+        case .package(let d): return "unreadable package: \(d)"
+        case .io(let d): return d
+        }
+    }
+}

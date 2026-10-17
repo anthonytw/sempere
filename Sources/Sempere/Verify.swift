@@ -42,6 +42,16 @@ public struct VerifyReport: Hashable, Sendable {
         /// leniently (the detail says what was skipped), or not readable by
         /// this version at all. Healthy; the vault is read-only.
         case newer
+
+        /// True for a status that makes the vault unhealthy. `ok`, `unknownFile`,
+        /// `notChecked`, `unreferenced` and `newer` are healthy.
+        public var isProblem: Bool {
+            switch self {
+            case .ok, .unknownFile, .notChecked, .unreferenced, .newer: return false
+            case .tagMismatch, .undecryptable, .corruptBody, .undecodable, .staleRecipients, .unlistable,
+                 .missing, .invalid: return true
+            }
+        }
     }
 
     /// One file or directory.
@@ -79,7 +89,7 @@ public struct VerifyReport: Hashable, Sendable {
     /// read) `notChecked`.
     public var isHealthy: Bool {
         manifestOK && journalProblem == nil
-            && files.allSatisfy { [.ok, .unknownFile, .notChecked, .unreferenced, .newer].contains($0.status) }
+            && files.allSatisfy { !$0.status.isProblem }
     }
 }
 

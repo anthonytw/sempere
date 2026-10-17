@@ -184,7 +184,7 @@ public struct BackupVerifyReport: Hashable, Sendable {
         }
         out += files.filter { $0.status != .ok && $0.status != .unindexed }
             .map { line($0.status.rawValue, $0.path, $0.detail) }
-        out += (vault?.files ?? []).filter { ![.ok, .unknownFile, .notChecked, .unreferenced, .newer].contains($0.status) }
+        out += (vault?.files ?? []).filter { $0.status.isProblem }
             .map { line($0.status.rawValue, $0.path, $0.detail) }
         return out
     }
