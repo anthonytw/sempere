@@ -101,6 +101,15 @@ final class PhoneCanvasUITests: XCTestCase {
         XCTFail("no Annotate button: \(app.debugDescription.prefix(2000))")
     }
 
+    /// Taps the top bar's Hand button (Annotate and select mode on in one tap).
+    @MainActor
+    private func tapHand(_ app: XCUIApplication) {
+        let hand = app.descendants(matching: .any).matching(identifier: "handButton").firstMatch
+        XCTAssertTrue(hand.waitForExistence(timeout: 10), "no Hand button in the top bar: \(app.debugDescription.prefix(2000))")
+        hand.tap()
+        Thread.sleep(forTimeInterval: 1.5)
+    }
+
     /// An empty spot of the page, left of the equation and under the text box.
     private static let emptySpot = CGPoint(x: 120, y: 600)
 
@@ -203,5 +212,48 @@ final class PhoneCanvasUITests: XCTestCase {
             .press(forDuration: 0.05, thenDragTo: point(CGPoint(x: Self.emptySpot.x + 80, y: Self.emptySpot.y), on: canvas, r0, app: app))
         Thread.sleep(forTimeInterval: 1)
         XCTAssertEqual(freshReport(app)?.strokes ?? r0.strokes, r0.strokes, "reading: a finger draws nothing")
+    }
+
+    /// The top bar's Hand button, from reading mode: one tap selects an item and draws nothing; the Hand
+    /// button reads as selected; a second tap leaves select mode (a tap selects nothing again, Annotate stays on).
+    @MainActor
+    func testTheTopBarHandButtonSelectsAnItem() throws {
+        let app = launch()
+        defer { app.terminate() }
+        guard let canvas = canvas(app) else { return XCTFail("no canvas reports the demo items") }
+        tapHand(app)
+        let hand = app.descendants(matching: .any).matching(identifier: "handButton").firstMatch
+        XCTAssertTrue(hand.isSelected || (hand.value as? String) == "1", "the Hand button reads as selected: \(String(describing: hand.value))")
+        guard let before = report(canvas), let image = middle(of: "image", on: canvas, app: app) else { return XCTFail("no image") }
+        image.tap()
+        let selected = waitReport(canvas, "a tap selects the picture") { $0.selected == "image" && $0.bar }
+        XCTAssertEqual(selected?.strokes, before.strokes, "the tap left no dot")
+        tapHand(app)   // off again: back to the drawing tool, still annotating
+        let after = freshReport(app)
+        XCTAssertEqual(after?.selected ?? "none", "none", "leaving the Hand drops the selection")
+    }
+
+    /// With the Hand on, one finger scrolls a two-page note and draws nothing.
+    @MainActor
+    func testTheHandScrollsWithOneFinger() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"]
+        app.launchEnvironment = ["SEMPERE_DEMO": "1", "SEMPERE_DEMO_NOTE": "lisbon", "TZ": "UTC"]
+        XCUIDevice.shared.orientation = .portrait
+        app.launch()
+        defer { app.terminate() }
+        let canvases = app.descendants(matching: .any).matching(identifier: "pageCanvas")
+        XCTAssertTrue(canvases.firstMatch.waitForExistence(timeout: 60))
+        Thread.sleep(forTimeInterval: 1.5)
+        tapHand(app)
+        let top: () -> CGFloat? = { canvases.allElementsBoundByIndex.map(\.frame.minY).min() }
+        guard let top0 = top() else { return XCTFail("no page canvas") }
+        let window = app.windows.firstMatch
+        window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
+            .press(forDuration: 0.1, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)),
+                   withVelocity: .slow, thenHoldForDuration: 0.3)
+        Thread.sleep(forTimeInterval: 1)
+        guard let top1 = top() else { return XCTFail("no page canvas after the drag") }
+        XCTAssertLessThan(top1, top0 - 40, "one finger scrolls with the Hand (top \(top0) -> \(top1))")
     }
 }

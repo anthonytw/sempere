@@ -159,6 +159,32 @@ struct PhoneCanvasTests {
         window.isHidden = true
     }
 
+    /// TestFlight build 4: PencilKit's `.anyInput` makes the canvas's own scroll take two fingers
+    /// even with its drawing off, so a pageless note did not scroll with one finger while reading.
+    /// On the phone one finger scrolls whenever no finger draws (reading, the Hand, a read-only
+    /// note) and two while annotating; the iPad keeps PencilKit's own rule.
+    @Test func oneFingerScrollsTheOnePageCanvasWhileNoFingerDraws() {
+        let (window, host) = Self.host(size: Self.sizes[1], pageSize: PageSize(width: 612, height: 792, infinite: true,
+                                                                               breakHeight: 792))
+        defer { window.isHidden = true }
+        let pan = host.canvas.panGestureRecognizer
+        host.drawingSuspended = true
+        guard Platform.isPhone else { return }
+        #expect(pan.minimumNumberOfTouches == 1, "reading")
+        host.drawingSuspended = false
+        #expect(pan.minimumNumberOfTouches == 2, "annotating: one finger draws")
+        host.itemSelectionActive = true
+        #expect(pan.minimumNumberOfTouches == 1, "the Hand")
+        host.itemSelectionActive = false
+        #expect(pan.minimumNumberOfTouches == 2)
+        host.isReadOnly = true
+        #expect(pan.minimumNumberOfTouches == 1, "read-only")
+        host.isReadOnly = false
+        host.drawingSuspended = true
+        #expect(pan.minimumNumberOfTouches == 1, "reading again")
+        #expect(PageCanvasHost.phonePanTouches(fingerDraws: true) == 2)
+    }
+
     @Test func annotatingTurnsFingerDrawingBackOn() {
         let (window, host) = Self.host(size: Self.sizes[1])
         host.drawingSuspended = true
