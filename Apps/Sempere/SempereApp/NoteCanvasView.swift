@@ -316,6 +316,25 @@ struct EditorView: View {
                            hasPage: editor.currentPage != nil, pageEntries: !phonePageEntries.isEmpty)
     }
 
+    /// The top bar's Hand button (iPhone): selection mode from reading mode in one tap. On, it turns
+    /// Annotate on with select mode on (the palette highlights the Hand); it reads as selected while
+    /// both are on. Tapping it again leaves select mode and stays annotating, so the palette goes back
+    /// to the last drawing tool; the pencil beside it is the way back to reading.
+    private var handToggle: some View {
+        let on = PhoneToolbar.handIsOn(annotating: annotating, selecting: modes.selectingItems)
+        return Toggle("Hand", systemImage: on ? "hand.point.up.left.fill" : "hand.point.up.left",
+                      isOn: Binding(
+                          get: { on },
+                          set: { tapped in
+                              let next = PhoneToolbar.afterHandTap(on: tapped)
+                              annotating = next.annotating ?? annotating
+                              modes.selectingItems = next.selecting
+                          }))
+            .toggleStyle(.button)
+            .accessibilityIdentifier("handButton")
+            .help("Hand: scroll with one finger, tap an item to select it, hold for its menu")
+    }
+
     /// The iPhone's toolbar: one pencil button for light annotation, page
     /// controls in the bottom bar (in a menu while annotating, so the bar does
     /// not sit on the palette), the rest in the overflow menu (`PhoneToolbar`).
@@ -328,6 +347,9 @@ struct EditorView: View {
                     .toggleStyle(.button)
                     .help("Draw on the page with a finger")
             }
+            if phoneItems.handButton {
+                ToolbarItem(placement: .primaryAction) { handToggle }
+            }
             ToolbarItem(placement: .secondaryAction) {
                 Button("Paper…", systemImage: "square.grid.3x3") { ui.choosingPaper = true }
                     .disabled(editor.currentPage == nil)
@@ -335,23 +357,26 @@ struct EditorView: View {
             }
             ToolbarItem(placement: .secondaryAction) { favoriteButton }
             ToolbarItem(placement: .secondaryAction) { insertMenu }
+        }
+        // The page actions (layout, add, duplicate, delete, undo, PDF at this page, thumbnails)
+        // are in this menu whether or not the pencil is on; while annotating it also turns pages,
+        // since the bottom bar gives way to the palette then. Right after Insert, high enough to
+        // be seen without scrolling the overflow menu.
+        if phoneItems.pagesMenu {
+            ToolbarItem(placement: .secondaryAction) {
+                Menu("Pages", systemImage: "doc.on.doc") { pageButtons }
+                    .help("Go to another page, add, duplicate or delete one, or show the thumbnails")
+            }
+        }
+        if phoneItems.writes {
+            // The Recordings submenu ends with "All Recordings…" once the note has recordings.
             ToolbarItem(placement: .secondaryAction) { recordingsMenu }
-            ToolbarItem(placement: .secondaryAction) { recordingsListButton }
             if phoneItems.writingTools {
                 ToolbarItem(placement: .secondaryAction) { textToolToggle }
                 ToolbarItem(placement: .secondaryAction) { eraserSizeMenu }
                 if phoneItems.selectToggle {
                     ToolbarItem(placement: .secondaryAction) { itemSelectionToggle }
                 }
-            }
-        }
-        // The page actions (layout, add, duplicate, delete, undo, PDF at this page, thumbnails)
-        // are in this menu whether or not the pencil is on; while annotating it also turns pages,
-        // since the bottom bar gives way to the palette then.
-        if phoneItems.pagesMenu {
-            ToolbarItem(placement: .secondaryAction) {
-                Menu("Pages", systemImage: "doc.on.doc") { pageButtons }
-                    .help("Go to another page, add, duplicate or delete one, or show the thumbnails")
             }
         }
         if phoneItems.pageBar {
@@ -398,11 +423,6 @@ struct EditorView: View {
         let transcript = $showingTranscript
         commands.showTranscript = { id in transcript.wrappedValue = editor.recording(id) }
         return commands
-    }
-
-    private var recordingsListButton: some View {
-        Button("Recordings…", systemImage: "waveform") { ui.showingRecordings = true }
-            .help("List this note's recordings")
     }
 
     private var recordingsMenu: some View {
@@ -570,8 +590,6 @@ struct EditorView: View {
             if !editor.isReadOnly || !editor.recordings.isEmpty {
                 ToolbarItem(placement: .primaryAction) { recordingsMenu }
             }
-            // The note's menu ("…"): every recording, whether or not it is on a page.
-            ToolbarItem(placement: .secondaryAction) { recordingsListButton }
             if showsItemSelection {
                 ToolbarItem(placement: .primaryAction) { itemSelectionToggle }
             }

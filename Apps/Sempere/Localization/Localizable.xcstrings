@@ -7218,13 +7218,25 @@
       }
     },
     "Hand" : {
-      "comment" : "Palette tool on the iPhone: scroll with one finger and tap to select items instead of drawing",
+      "comment" : "Palette tool and top-bar button on the iPhone: scroll with one finger and tap to select items instead of drawing",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mano"
+          }
+        }
+      }
+    },
+    "Hand: scroll with one finger, tap an item to select it, hold for its menu" : {
+      "comment" : "Tooltip of the iPhone top bar's Hand button",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mano: desplaza con un dedo, toca un elemento para seleccionarlo, mantén pulsado para ver su menú"
           }
         }
       }
@@ -8843,18 +8855,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lista"
-          }
-        }
-      }
-    },
-    "List this note's recordings" : {
-      "comment" : "Tooltip of the note toolbar's Recordings… button",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ver las grabaciones de esta nota"
           }
         }
       }

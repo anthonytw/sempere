@@ -43,6 +43,24 @@ struct PhoneToolbarTests {
 
     // MARK: Toolbar
 
+    @Test func theHandButtonIsOfferedForAWritableNoteWithAPage() {
+        #expect(PhoneToolbar.items(readOnly: false, annotating: false, pageCount: 1, hasPage: true).handButton, "in reading mode too")
+        #expect(PhoneToolbar.items(readOnly: false, annotating: true, pageCount: 1, hasPage: true).handButton)
+        #expect(!PhoneToolbar.items(readOnly: true, annotating: false, pageCount: 1, hasPage: true).handButton, "read-only: none")
+        #expect(!PhoneToolbar.items(readOnly: true, annotating: true, pageCount: 3, hasPage: true).handButton)
+        #expect(!PhoneToolbar.items(readOnly: false, annotating: false, pageCount: 0, hasPage: false).handButton, "no page to select on")
+    }
+
+    @Test func theHandButtonTurnsAnnotateAndSelectModeOnTogether() {
+        let on = PhoneToolbar.afterHandTap(on: true)
+        #expect(on.annotating == true && on.selecting)
+        let off = PhoneToolbar.afterHandTap(on: false)
+        #expect(off.annotating == nil && !off.selecting, "off leaves select mode and keeps Annotate as it is")
+        #expect(PhoneToolbar.handIsOn(annotating: true, selecting: true))
+        #expect(!PhoneToolbar.handIsOn(annotating: false, selecting: true), "select mode without Annotate is not the Hand")
+        #expect(!PhoneToolbar.handIsOn(annotating: true, selecting: false))
+    }
+
     @Test func readingANoteOffersNoWritingEntries() {
         let single = PhoneToolbar.items(readOnly: false, annotating: false, pageCount: 1, hasPage: true)
         #expect(single.writes, "Annotate, Paper, Insert and Recordings are in the toolbar and its overflow menu")
