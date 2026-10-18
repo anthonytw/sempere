@@ -41,6 +41,7 @@ struct QuickCaptureIntentTests {
         VoiceNoteActions.stop = nil
         VoiceNoteActions.open = nil
         VoiceNoteActions.status = nil
+        VoiceNoteActions.worksInForeground = nil
     }
 
     @Test func intentsDoNothingUntilTheAppHasRegisteredItsHooks() async throws {
@@ -128,14 +129,28 @@ struct QuickCaptureIntentTests {
     }
 
     /// Siri, the widgets and the control all run without unlocking the device and without
-    /// bringing the app forward unless the setup needs it.
+    /// bringing the app forward unless the setup needs it or iOS refuses the microphone in the background.
     @Test func intentsNeedNoUnlockAndStartAndStopStayInTheBackground() {
         #expect(StartVoiceNoteIntent.authenticationPolicy == .alwaysAllowed)
         #expect(StopVoiceNoteIntent.authenticationPolicy == .alwaysAllowed)
         #expect(VoiceNoteControlIntent.authenticationPolicy == .alwaysAllowed)
-        #expect(StartVoiceNoteIntent.supportedModes == [.background])
+        #expect(StartVoiceNoteIntent.supportedModes == [.background, .foreground(.dynamic)])
         #expect(StopVoiceNoteIntent.supportedModes == [.background])
         #expect(VoiceNoteControlIntent.supportedModes == [.background, .foreground(.dynamic)])
+    }
+
+    /// TestFlight 1.0.0 (3): every background start failed with `cannotRecord`, shown in Shortcuts as
+    /// "SempereApp.RecordingError 0". The text is readable now, and only that refusal sends the
+    /// intent on into the app (`startOrContinueInApp`); every other error is reported as it is.
+    @Test func aBackgroundMicrophoneRefusalContinuesInTheAppAndSaysWhy() {
+        let refused = RecordingError.cannotRecord("the audio session could not start")
+        #expect(QuickCapture.worksInForeground(refused))
+        for other: Error in [RecordingError.microphoneDenied, QuickCaptureError.notSetUp, QuickCaptureError.liveActivitiesOff] {
+            #expect(!QuickCapture.worksInForeground(other))
+        }
+        let shown = String(localized: refused.localizedStringResource)
+        #expect(shown.contains("the audio session could not start"))
+        #expect(!shown.contains("RecordingError"))
     }
 
     /// The hooks `register()` installs hand the intent's errors on: Shortcuts and

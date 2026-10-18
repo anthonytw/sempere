@@ -225,9 +225,16 @@ final class QuickCapture {
     /// Also ends Live Activities left by an earlier process (killed, crashed or
     /// rebooted while recording): nothing of theirs is recording any more, and
     /// their Stop button would reach a process that knows nothing of them.
+    /// Whether a failed start may work with the app in front: only the audio system's refusal,
+    /// which iOS can give a background start (`VoiceNoteActions.startOrContinueInApp`).
+    static func worksInForeground(_ error: Error) -> Bool {
+        (error as? RecordingError)?.isCannotRecord == true
+    }
+
     static func register() {
         VoiceNoteActions.open = { QuickCapture.shared.pendingLink = $0 }
         VoiceNoteActions.status = { QuickCapture.shared.status }
+        VoiceNoteActions.worksInForeground = { worksInForeground($0) }
         VoiceNoteActions.start = { try await QuickCapture.shared.start() }
         VoiceNoteActions.stop = {
             do { _ = try await QuickCapture.shared.stop() } catch QuickCaptureError.notRecording {
@@ -344,11 +351,20 @@ final class QuickCapture {
             guard let self, let s, self.session === s else { return }
             Task { _ = try? await self.finish(s) }
         }
-        try s.start()
+        // The Live Activity comes first: iOS lets an `AudioRecordingIntent` start the microphone
+        // from the background only while the app shows one (TestFlight 1.0.0 (3): started after the
+        // recorder, every Lock Screen, Control Center and Shortcuts start failed with `cannotRecord`).
+        startActivity(started: Date())
+        do {
+            try s.start()
+        } catch {
+            endActivity(.init(started: Date(), result: .failed, ended: Date()), after: 0)
+            throw error
+        }
         session = s
         state = .recording
         started = true
-        startActivity(started: s.timeline.started ?? Date())
+        if let begun = s.timeline.started { updateActivity(.init(started: begun)) }
         followPauses(of: s, paused: false)
     }
 

@@ -13,6 +13,21 @@ enum VoiceNoteActions {
     static var open: (@MainActor (VoiceNoteLink) -> Void)?
     /// The live status (`QuickCapture.status`): what the control's tap does.
     static var status: (@MainActor () -> VoiceNoteStatus)?
+    /// Whether a start that failed this way may work with the app in front (the audio
+    /// system refused the microphone in the background): the intent then continues in the app.
+    static var worksInForeground: (@MainActor (Error) -> Bool)?
+
+    /// Starts recording; a start the audio system refused in the background is tried once more
+    /// with the app in front, so a tap records (as in TestFlight 1.0.0 (2)) rather than failing.
+    static func startOrContinueInApp(_ intent: some AppIntent) async throws {
+        guard let start else { throw VoiceNoteIntentError.unavailable }
+        do {
+            try await start()
+        } catch where worksInForeground?(error) == true {
+            try await intent.continueInForeground(alwaysConfirm: false)
+            try await start()
+        }
+    }
 }
 
 /// Why a voice note intent did nothing.
@@ -38,13 +53,13 @@ struct StartVoiceNoteIntent: AudioRecordingIntent, LiveActivityIntent {
     /// Recording needs no unlock and no Face ID (docs/quick-capture.md "Threat model"),
     /// so the Lock Screen must not ask for one before running it.
     static var authenticationPolicy: IntentAuthenticationPolicy { .alwaysAllowed }
-    /// Never brings the app forward: the Live Activity is the only thing shown.
-    static var supportedModes: IntentModes { [.background] }
+    /// Records in the background with the Live Activity; comes forward only when iOS refuses
+    /// the microphone there (`VoiceNoteActions.startOrContinueInApp`).
+    static var supportedModes: IntentModes { [.background, .foreground(.dynamic)] }
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        guard let start = VoiceNoteActions.start else { throw VoiceNoteIntentError.unavailable }
-        try await start()
+        try await VoiceNoteActions.startOrContinueInApp(self)
         return .result()
     }
 }
@@ -85,8 +100,8 @@ struct VoiceNoteControlIntent: AudioRecordingIntent, LiveActivityIntent {
     }
     static let isDiscoverable = false
     static var authenticationPolicy: IntentAuthenticationPolicy { .alwaysAllowed }
-    /// Background unless `perform` asks to continue in the app (setup needed): starting and
-    /// stopping never bring the app forward.
+    /// Background unless `perform` asks to continue in the app (setup needed, or iOS refused
+    /// the microphone in the background): starting and stopping otherwise stay in the background.
     static var supportedModes: IntentModes { [.background, .foreground(.dynamic)] }
 
     /// The phase the control showed when tapped (`VoiceNoteStatus.Phase` raw value).
@@ -101,12 +116,12 @@ struct VoiceNoteControlIntent: AudioRecordingIntent, LiveActivityIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        guard let status = VoiceNoteActions.status, let start = VoiceNoteActions.start, let stop = VoiceNoteActions.stop else {
+        guard let status = VoiceNoteActions.status, VoiceNoteActions.start != nil, let stop = VoiceNoteActions.stop else {
             throw VoiceNoteIntentError.unavailable
         }
         switch VoiceNoteStatus.controlAction(shown: shown.flatMap(VoiceNoteStatus.Phase.init(rawValue:)), live: status()) {
         case .start:
-            try await start()
+            try await VoiceNoteActions.startOrContinueInApp(self)
         case .stop:
             try await stop()
         case .open(let link):
