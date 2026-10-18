@@ -303,6 +303,36 @@ struct FingerTapTracker: Equatable {
     }
 }
 
+/// The pan of an item drag. UIKit's `translation` starts where the recognizer began, which on a
+/// Mac (a mouse drag) is after the pointer has moved past the slop (and, when the page's scroll or
+/// PencilKit's recognizers held it back, later still): `translation(in:)` read 0 at `.began`, so an
+/// item trailed the pointer by that first stretch (about ten points) and a handle was looked for
+/// where the pointer had got to, not where it went down. This one keeps where the press began.
+final class ItemPanRecognizer: UIPanGestureRecognizer {
+    /// Where the press that this pan follows went down, in the coordinates of `view`.
+    private(set) var downLocation: CGPoint?
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        if downLocation == nil, let touch = touches.first, let view {
+            downLocation = touch.location(in: view)
+        }
+        super.touchesBegan(touches, with: event)
+    }
+
+    override func reset() {
+        super.reset()
+        downLocation = nil
+    }
+
+    /// How far the pointer has gone since the press (the same as `translation(in: view)` where the
+    /// recognizer began with the press).
+    func travel(in view: UIView) -> CGPoint {
+        let here = location(in: view)
+        guard let down = downLocation else { return translation(in: view) }
+        return CGPoint(x: here.x - down.x, y: here.y - down.y)
+    }
+}
+
 /// A finger tap that begins on a placed item, for a canvas where fingers draw (an iPhone). PencilKit
 /// draws a dot for a tap and a stroke for a drag, so the tap is told apart from the stroke before
 /// ink starts: this recognizer fails at once for a touch that lands off every item (ink is not
@@ -380,7 +410,7 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
     private weak var itemLayer: ItemLayerView?
     let overlay = ItemSelectionView()
     private let tap = UITapGestureRecognizer()
-    private let pan = UIPanGestureRecognizer()
+    private let pan = ItemPanRecognizer()
     /// Two fingers on the selected item turn it (`rotated`), alongside the canvas's own pinch.
     private let rotate = UIRotationGestureRecognizer()
     /// The item a two-finger turn is turning, and the turn so far (degrees clockwise).
@@ -533,8 +563,9 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
 
     private var zoom: CGFloat { max(canvas?.zoomScale ?? 1, 0.01) }
 
-    private func pagePoint(_ g: UIGestureRecognizer) -> ItemFrames.Point {
-        let p = g.location(in: canvas)
+    /// Where `g` is on the page; with `down`, where its press went down (an item drag's pan).
+    private func pagePoint(_ g: UIGestureRecognizer, down: Bool = false) -> ItemFrames.Point {
+        let p = (down ? (g as? ItemPanRecognizer)?.downLocation : nil) ?? g.location(in: canvas)
         return ItemFrames.Point(x: Double(p.x / zoom), y: Double(p.y / zoom))
     }
 
@@ -680,7 +711,7 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         guard g === pan else { return true }
         // Only a drag on an item (or a handle) is ours; any other scrolls.
         guard editor?.canEditItems == true else { return false }
-        return model.drag(at: pagePoint(g), items: items, zoom: Double(zoom)) != nil
+        return model.drag(at: pagePoint(g, down: true), items: items, zoom: Double(zoom)) != nil
     }
 
     /// While drawing, a held Pencil is ink: only a finger holds an item then. A touch on a
@@ -849,13 +880,15 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         }
     }
 
+    private func travel(_ g: UIPanGestureRecognizer) -> CGPoint {
+        guard let canvas else { return .zero }
+        return (g as? ItemPanRecognizer)?.travel(in: canvas) ?? g.translation(in: canvas)
+    }
+
     @objc private func panned(_ g: UIPanGestureRecognizer) {
         switch g.state {
         case .began:
-            let start = pagePoint(g)
-            let translation = g.translation(in: canvas)
-            let origin = ItemFrames.Point(x: start.x - Double(translation.x / zoom), y: start.y - Double(translation.y / zoom))
-            guard let d = model.drag(at: origin, items: items, zoom: Double(zoom)) else { return }
+            guard let d = model.drag(at: pagePoint(g, down: true), items: items, zoom: Double(zoom)) else { return }
             let id: UUID
             switch d { case .move(let i), .resize(let i, _): id = i }
             guard let item = items.first(where: { $0.id == id }) else { return }
@@ -873,14 +906,14 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         case .changed:
             guard let current = drag else { return }
             let (d, item) = current
-            let t = g.translation(in: canvas)
+            let t = travel(g)
             let frame = ItemSelectionModel.frame(for: d, item: item, dx: Double(t.x / zoom), dy: Double(t.y / zoom))
             itemLayer?.preview(item.id, frame: frame)
             refresh()
         case .ended:
             guard let current = drag, let pageID else { return cancelDrag() }
             let (d, item) = current
-            let t = g.translation(in: canvas)
+            let t = travel(g)
             let frame = ItemSelectionModel.frame(for: d, item: item, dx: Double(t.x / zoom), dy: Double(t.y / zoom))
             drag = nil
             itemLayer?.preview(item.id, frame: nil)

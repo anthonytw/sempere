@@ -56,12 +56,16 @@ final class MacItemUITests: XCTestCase {
         func frame(_ kind: String) -> CGRect? { items.first { $0.kind == kind }?.frame }
     }
 
+    /// The window is narrow on purpose: the drag checks allow 6 page points, and a drag that fell short
+    /// of the pointer by the pan's slop (about 10 screen points) was inside that at the 1100-wide window's
+    /// zoom (1.8) and outside it at 900 (1.5), so whether it failed depended on the window the
+    /// run happened to get (the full sweep's, 920 wide).
     @MainActor
     private func launch(note: String = "thoughts", extra: [String: String] = [:]) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"]
         app.launchEnvironment = ["SEMPERE_DEMO": "1", "SEMPERE_DEBUG_COLUMNS": "detailOnly", "SEMPERE_DEMO_NOTE": note,
-                                 "SEMPERE_DEMO_MAC_WINDOW": "1100x900", "SEMPERE_DEMO_ITEMS": "1", "TZ": "UTC"]
+                                 "SEMPERE_DEMO_MAC_WINDOW": "900x900", "SEMPERE_DEMO_ITEMS": "1", "TZ": "UTC"]
             .merging(extra) { _, new in new }
         app.launch()
         return app
