@@ -124,6 +124,8 @@ enum PhoneToolbar {
         var writes = false
         /// Text and the eraser size: only while annotating.
         var writingTools = false
+        /// The Hand button beside Annotate: a writable note with a page to select on.
+        var handButton = false
         /// Select (items on the page): while annotating, with a page on the canvas.
         var selectToggle = false
         /// Pages, in the overflow menu.
@@ -138,11 +140,21 @@ enum PhoneToolbar {
                       pageEntries: Bool = false) -> Items {
         var items = Items()
         items.writes = !readOnly
+        items.handButton = !readOnly && hasPage
         items.writingTools = !readOnly && annotating
         items.selectToggle = items.writingTools && hasPage
         items.pagesMenu = annotating && (pageCount > 1 || !readOnly) || pageEntries
         items.pageBar = !annotating && pageCount > 1
         return items
+    }
+
+    /// The top-bar Hand button reads as selected while Annotate and select mode are both on.
+    static func handIsOn(annotating: Bool, selecting: Bool) -> Bool { annotating && selecting }
+
+    /// What a tap on the Hand button sets: on turns Annotate on (`true`) with select mode on; off leaves
+    /// select mode and leaves Annotate as it is (`nil`), so the palette returns to the last drawing tool.
+    static func afterHandTap(on: Bool) -> (annotating: Bool?, selecting: Bool) {
+        on ? (true, true) : (nil, false)
     }
 }
 

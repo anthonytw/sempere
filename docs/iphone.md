@@ -65,6 +65,14 @@ Read-first:
   fingers whenever its drawing policy lets a finger draw (`.anyInput`), even with drawing off, so the
   one-page canvas of a pageless note sets one finger itself whenever no finger draws (reading, the
   Hand, a read-only note; `PageCanvasHost.phonePanTouches`), as the paged stack does.
+- **The Hand button** (top bar, beside the pencil; `PhoneToolbar.handButton`, `EditorView.handToggle`,
+  identifier `handButton`): one tap from reading mode turns Annotate on with selection mode on
+  (`annotating = true; modes.selectingItems = true`), so the palette comes up with the Hand highlighted. It
+  reads as selected (filled icon) while both are on. Tapping it again leaves selection mode and stays
+  annotating, so the palette returns to the last drawing tool; the pencil is the way back to reading (it
+  mirrors the pencil: a toggle for a mode, not a jump out of Annotate). Hidden for read-only notes and
+  notes with no page, as Annotate is. The top bar is title + two buttons + the overflow menu: it fits an
+  iPhone SE (375 pt) without truncating the title badly (the title shrinks, the buttons do not).
 - **The Hand tool** (the last item of the palette, `ToolPalette.handItem`): picking it turns selection
   mode on (the same mode as the overflow menu's Select, `CanvasModes.selectingItems`), so one finger
   scrolls, a tap selects an item, a hold shows its menu and a drag on a selected item moves it; nothing
@@ -82,6 +90,9 @@ Read-first:
   zoomed, where a swipe draws or pans).
 - **Search hits** are highlighted on the page and stepped through exactly as on the iPad (the
   same canvas code; `PhonePageSwipeStackTests`).
+- **The overflow menu's order**: Paper, Favorite, Insert, Pages, Recordings (one submenu, ending with
+  "All Recordings…" once the note has recordings; there is no separate "Recordings…" entry), then the
+  drawing aids while annotating. Pages is high so it is visible without scrolling in a long (Spanish) menu.
 - **The rest** is in the overflow menu: Rename, Export (PDF, PNG, text), Version History, Keep Screen
   On, Tags, Paper, and the object-eraser size while annotating. The title in the bar renames the
   note on tap or long press.
@@ -140,6 +151,8 @@ that is a bug.
 - `PhoneCanvasInteractionTests` (app tests, any destination): the tap/stroke decision
   (`FingerTapTracker`), where a finger tap may start, that only PencilKit's drawing waits for it,
   selection and drawing coming back, the bar at phone width, two-finger scrolling.
+- `PhoneToolbarTests` also cover the Hand button's visibility and what a tap sets; `PhoneCanvasUITests` taps it (tap selects an
+  item, a second tap leaves) and drags with it on (one finger scrolls, nothing draws).
 - `HandToolTests` (app tests, any destination): the Hand is the palette's last item on the phone only, picking it
   and any drawing tool switches selection mode, the palette follows the Select toggle. (PencilKit's compact
   palette exposes only its first item to UI automation, so no UI test taps the Hand itself; selection mode's
