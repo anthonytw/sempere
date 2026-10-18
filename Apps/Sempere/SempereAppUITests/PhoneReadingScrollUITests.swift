@@ -88,7 +88,9 @@ final class PhoneReadingScrollUITests: XCTestCase {
         let app = launch(note: "lisbon")
         defer { app.terminate() }
         let stack = stack(app)
+        #if !targetEnvironment(macCatalyst)   // no pinch in Catalyst's XCTest (the test skips on a Mac anyway)
         stack.pinch(withScale: 2, velocity: 1)
+        #endif
         Thread.sleep(forTimeInterval: 1.5)   // the pinch ends and the scale is baked in
         guard let before = topOfPages(app) else { return XCTFail("no page canvas") }
         slowDrag(stack, from: CGVector(dx: 0.5, dy: 0.75), to: CGVector(dx: 0.5, dy: 0.3))
