@@ -61,7 +61,10 @@ Read-first:
   (Annotate off) selects nothing: a stray touch only scrolls, and nothing can be moved by accident; turn
   Annotate on to select. Tap beside the selection to drop it; drawing comes back.
 - **Scrolling while annotating** takes two fingers in every tool (one draws, as on PencilKit's own
-  canvas); reading mode scrolls with one.
+  canvas); reading mode scrolls with one, paged or pageless. PencilKit makes its own scroll take two
+  fingers whenever its drawing policy lets a finger draw (`.anyInput`), even with drawing off, so the
+  one-page canvas of a pageless note sets one finger itself whenever no finger draws (reading, the
+  Hand, a read-only note; `PageCanvasHost.phonePanTouches`), as the paged stack does.
 - **The Hand tool** (the last item of the palette, `ToolPalette.handItem`): picking it turns selection
   mode on (the same mode as the overflow menu's Select, `CanvasModes.selectingItems`), so one finger
   scrolls, a tap selects an item, a hold shows its menu and a drag on a selected item moves it; nothing
@@ -144,7 +147,9 @@ that is a bug.
 - `PhoneCanvasUITests` (iPhone simulator UI tests, `scripts/app.sh test-phone-ui`, in
   `scripts/local-ci.sh --release`): a tap selects a picture and the other kinds without a dot, a
   hold shows the item's menu, strokes from the empty page and from an item still draw, a tap on the
-  empty page draws its dot, reading mode draws and selects nothing. They need the simulator's UI
+  empty page draws its dot, reading mode draws and selects nothing. `PhoneReadingScrollUITests` (same
+  command): a slow one-finger drag scrolls a paged note at the fitted width and zoomed in and a pageless
+  note in reading mode, and a quick sideways swipe still turns the page. They need the simulator's UI
   automation (macOS Automation Mode). XCTest cannot synthesize a two-finger drag, so two-finger
   scrolling is checked on the stack.
 - CI runs them on an iPhone simulator after the iPad run on `main` (`scripts/app.sh test-phone`;
