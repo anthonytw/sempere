@@ -44,84 +44,105 @@ struct PhoneToolbarTests {
     // MARK: Toolbar
 
     @Test func theHandButtonIsOfferedForAWritableNoteWithAPage() {
-        #expect(PhoneToolbar.items(readOnly: false, annotating: false, pageCount: 1, hasPage: true).handButton, "in reading mode too")
-        #expect(PhoneToolbar.items(readOnly: false, annotating: true, pageCount: 1, hasPage: true).handButton)
-        #expect(!PhoneToolbar.items(readOnly: true, annotating: false, pageCount: 1, hasPage: true).handButton, "read-only: none")
-        #expect(!PhoneToolbar.items(readOnly: true, annotating: true, pageCount: 3, hasPage: true).handButton)
-        #expect(!PhoneToolbar.items(readOnly: false, annotating: false, pageCount: 0, hasPage: false).handButton, "no page to select on")
+        for mode in PhoneCanvasMode.allCases {
+            #expect(PhoneToolbar.items(readOnly: false, mode: mode, pageCount: 1, hasPage: true).handButton, "\(mode)")
+            #expect(!PhoneToolbar.items(readOnly: true, mode: mode, pageCount: 3, hasPage: true).handButton, "read-only: none")
+            #expect(!PhoneToolbar.items(readOnly: false, mode: mode, pageCount: 0, hasPage: false).handButton, "no page to select on")
+        }
     }
 
-    @Test func theHandButtonTurnsAnnotateAndSelectModeOnTogether() {
-        let on = PhoneToolbar.afterHandTap(on: true)
-        #expect(on.annotating == true && on.selecting)
-        let off = PhoneToolbar.afterHandTap(on: false)
-        #expect(off.annotating == nil && !off.selecting, "off leaves select mode and keeps Annotate as it is")
-        #expect(PhoneToolbar.handIsOn(annotating: true, selecting: true))
-        #expect(!PhoneToolbar.handIsOn(annotating: false, selecting: true), "select mode without Annotate is not the Hand")
-        #expect(!PhoneToolbar.handIsOn(annotating: true, selecting: false))
+    /// The two buttons and the three modes (TestFlight build 5: the Hand turned Annotate on too, so both had to be
+    /// tapped to read again, and the pencil turned off with the Hand on left a finger drawing): a tap on the lit
+    /// button goes back to reading, a tap on the other one switches straight to its mode.
+    @Test func theTwoButtonsSwitchBetweenThreeModes() {
+        #expect(PhoneCanvasMode.reading.tapping(.annotate) == .annotating)
+        #expect(PhoneCanvasMode.reading.tapping(.hand) == .hand)
+        #expect(PhoneCanvasMode.annotating.tapping(.annotate) == .reading)
+        #expect(PhoneCanvasMode.annotating.tapping(.hand) == .hand)
+        #expect(PhoneCanvasMode.hand.tapping(.hand) == .reading)
+        #expect(PhoneCanvasMode.hand.tapping(.annotate) == .annotating)
+        for mode in PhoneCanvasMode.allCases {
+            let lit = PhoneCanvasMode.Button.allCases.filter { mode.lights($0) }
+            #expect(lit.count == (mode == .reading ? 0 : 1), "at most one button is lit: \(mode)")
+            for button in PhoneCanvasMode.Button.allCases {
+                #expect(mode.tapping(button).lights(button) == !mode.lights(button), "a tap toggles the tapped button")
+                if !mode.lights(button) { #expect(mode.tapping(button).tapping(button) == .reading, "on, then off: reading") }
+            }
+        }
+    }
+
+    /// What each mode lets a finger do, derived from the one value.
+    @Test func eachModeSaysWhatAFingerDoes() {
+        #expect(!PhoneCanvasMode.reading.fingersDraw && !PhoneCanvasMode.reading.selectingItems && !PhoneCanvasMode.reading.showsPalette)
+        #expect(!PhoneCanvasMode.hand.fingersDraw && PhoneCanvasMode.hand.selectingItems && !PhoneCanvasMode.hand.showsPalette)
+        #expect(PhoneCanvasMode.annotating.fingersDraw && !PhoneCanvasMode.annotating.selectingItems && PhoneCanvasMode.annotating.showsPalette)
+    }
+
+    /// The palette's Hand item (only reachable while annotating) is Hand mode; the canvas re-picking it to
+    /// keep the palette in step changes nothing in the other modes.
+    @Test func thePalettesHandItemMovesToHandMode() {
+        #expect(PhoneCanvasMode.annotating.handToolPicked() == .hand)
+        #expect(PhoneCanvasMode.hand.handToolPicked() == .hand)
+        #expect(PhoneCanvasMode.reading.handToolPicked() == .reading)
     }
 
     @Test func readingANoteOffersNoWritingEntries() {
-        let single = PhoneToolbar.items(readOnly: false, annotating: false, pageCount: 1, hasPage: true)
-        #expect(single.writes, "Annotate, Paper, Insert and Recordings are in the toolbar and its overflow menu")
-        #expect(!single.writingTools && !single.selectToggle, "the drawing aids wait for Annotate")
-        #expect(!single.pagesMenu && !single.pageBar, "one page needs no page controls")
-
-        let deleted = PhoneToolbar.items(readOnly: true, annotating: false, pageCount: 1, hasPage: true)
+        for mode in [PhoneCanvasMode.reading, .hand] {
+            let single = PhoneToolbar.items(readOnly: false, mode: mode, pageCount: 1, hasPage: true)
+            #expect(single.writes, "Annotate, Paper, Insert and Recordings are in the toolbar and its overflow menu")
+            #expect(!single.writingTools, "the drawing aids wait for Annotate")
+            #expect(!single.pagesMenu && !single.pageBar, "one page needs no page controls")
+        }
+        let deleted = PhoneToolbar.items(readOnly: true, mode: .reading, pageCount: 1, hasPage: true)
         #expect(deleted == PhoneToolbar.Items(), "a read-only note has no Annotate button and no overflow entries")
     }
 
     @Test func pagesAreInTheBottomBarWhileReadingAndInTheMenuWhileAnnotating() {
-        let reading = PhoneToolbar.items(readOnly: false, annotating: false, pageCount: 3, hasPage: true)
+        let reading = PhoneToolbar.items(readOnly: false, mode: .reading, pageCount: 3, hasPage: true)
         #expect(reading.pageBar && !reading.pagesMenu)
-        let annotating = PhoneToolbar.items(readOnly: false, annotating: true, pageCount: 3, hasPage: true)
+        let hand = PhoneToolbar.items(readOnly: false, mode: .hand, pageCount: 3, hasPage: true)
+        #expect(hand.pageBar && !hand.pagesMenu, "no palette in Hand mode: the bar stays")
+        let annotating = PhoneToolbar.items(readOnly: false, mode: .annotating, pageCount: 3, hasPage: true)
         #expect(annotating.pagesMenu && !annotating.pageBar, "the bar would sit on the palette")
-        let readOnly = PhoneToolbar.items(readOnly: true, annotating: false, pageCount: 3, hasPage: true)
+        let readOnly = PhoneToolbar.items(readOnly: true, mode: .reading, pageCount: 3, hasPage: true)
         #expect(readOnly.pageBar && !readOnly.writes, "a read-only note can still page")
-        // Annotate is not offered for a read-only note, but a stale toggle adds no writing aids.
-        let readOnlyAnnotating = PhoneToolbar.items(readOnly: true, annotating: true, pageCount: 3, hasPage: true)
-        #expect(readOnlyAnnotating.pagesMenu && !readOnlyAnnotating.writingTools)
+        // A note that became read-only while annotating is read: the page bar, no writing aids.
+        let readOnlyAnnotating = PhoneToolbar.items(readOnly: true, mode: .annotating, pageCount: 3, hasPage: true)
+        #expect(readOnlyAnnotating.pageBar && !readOnlyAnnotating.writingTools)
     }
 
     @Test func annotatingAddsTheDrawingAidsAndAPagesMenuEvenForOnePage() {
-        let items = PhoneToolbar.items(readOnly: false, annotating: true, pageCount: 1, hasPage: true)
-        #expect(items.writes && items.writingTools && items.selectToggle)
+        let items = PhoneToolbar.items(readOnly: false, mode: .annotating, pageCount: 1, hasPage: true)
+        #expect(items.writes && items.writingTools)
         #expect(items.pagesMenu, "the menu holds Add Page, so a one-page note has it too")
         #expect(!items.pageBar)
-        let single = PhoneToolbar.items(readOnly: true, annotating: true, pageCount: 1, hasPage: true)
+        let single = PhoneToolbar.items(readOnly: true, mode: .annotating, pageCount: 1, hasPage: true)
         #expect(!single.pagesMenu, "read-only with one page: nothing to go to or add")
     }
 
-    @Test func selectNeedsAPageOnTheCanvas() {
-        let none = PhoneToolbar.items(readOnly: false, annotating: true, pageCount: 0, hasPage: false)
-        #expect(none.writingTools && !none.selectToggle)
-        let some = PhoneToolbar.items(readOnly: false, annotating: true, pageCount: 2, hasPage: true)
-        #expect(some.selectToggle)
-    }
-
     @Test func pageEntriesKeepThePagesMenuWhileReading() {
-        let reading = PhoneToolbar.items(readOnly: false, annotating: false, pageCount: 3, hasPage: true, pageEntries: true)
+        let reading = PhoneToolbar.items(readOnly: false, mode: .reading, pageCount: 3, hasPage: true, pageEntries: true)
         #expect(reading.pagesMenu && reading.pageBar, "the menu holds the page actions, the bar turns pages")
     }
 
-    /// Every combination: the page bar is only for reading, the aids follow Annotate.
+    /// Every combination: the page bar is only for when the palette is away, the aids follow Annotate.
     @Test func pageBarIsOnlyForReading() {
         for readOnly in [false, true] {
-            for annotating in [false, true] {
+            for mode in PhoneCanvasMode.allCases {
                 for count in 0...3 {
-                    let items = PhoneToolbar.items(readOnly: readOnly, annotating: annotating, pageCount: count, hasPage: count > 0)
-                    #expect(!(annotating && items.pageBar), "\(readOnly) \(annotating) \(count)")
+                    let items = PhoneToolbar.items(readOnly: readOnly, mode: mode, pageCount: count, hasPage: count > 0)
+                    #expect(!(mode == .annotating && !readOnly && items.pageBar), "\(readOnly) \(mode) \(count)")
                     #expect(!items.writingTools || items.writes)
-                    #expect(!items.selectToggle || items.writingTools)
+                    #expect(items.writingTools == (mode == .annotating && !readOnly))
                 }
             }
         }
     }
 
-    /// Annotate is what turns finger drawing on (`PhoneReading`): the toolbar toggle and the canvas agree.
+    /// Annotate is what turns finger drawing on (`PhoneReading`): the toolbar's mode and the canvas agree.
     @Test func theAnnotateToggleDecidesWhetherTheCanvasDraws() {
-        #expect(PhoneReading.drawingSuspended(isPhone: true, annotating: PhoneReading.annotatingAfterNoteChange()))
-        #expect(!PhoneReading.drawingSuspended(isPhone: true, annotating: true))
+        #expect(PhoneReading.drawingSuspended(isPhone: true, mode: PhoneReading.modeAfterNoteChange()))
+        #expect(!PhoneReading.drawingSuspended(isPhone: true, mode: .annotating))
     }
 }
 

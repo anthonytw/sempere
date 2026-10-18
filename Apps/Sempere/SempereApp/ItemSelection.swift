@@ -680,7 +680,7 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
             + ";edits=\(editor?.itemRevisions[pageID] ?? 0);selected=\(selected);menu=\(menuShown ? 1 : 0)"
             + ";menus=\(menusShown);trace=\(debugTrace.joined(separator: ","));bar=\(bar.isHidden ? 0 : 1);barFrame=\(n(Double(bar.frame.minX))),\(n(Double(bar.frame.minY))),"
             + "\(n(Double(bar.frame.width))),\(n(Double(bar.frame.height)));palette=\(debugPalette() ? 1 : 0);strokes=\(debugStrokes());items="
-            + list.joined(separator: "|") + ";emoji=\(debugEmoji())" + (debugTyping().map { ";typing=" + $0 } ?? "")
+            + list.joined(separator: "|") + ";emoji=\(debugEmoji());\(debugInput())" + (debugTyping().map { ";typing=" + $0 } ?? "")
     }
 
     /// The text of the box being typed in on this page, if any (`debugReport`).
@@ -694,6 +694,10 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
 
     /// How many strokes the page's ink has (`debugReport`: an iPhone test checks that a tap leaves no dot).
     var debugStrokes: () -> Int = { 0 }
+
+    /// What a finger does on the canvas now (`debugReport`, the iPhone's mode tests): `pan=` the fingers its
+    /// own scroll takes, `ink=` whether PencilKit's drawing is on, `select=` whether selection mode is.
+    var debugInput: () -> String = { "" }
 
     /// Writes the report again (the text being typed changed).
     func debugRefreshReport() { debugReport() }

@@ -470,6 +470,9 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
 
     /// Whether a finger draws on the pages (their drawing policy, `ObjectEraserController.fingersDraw`).
     private var fingersDraw: Bool {
+        // The phone's page canvases switch their policy with the mode (`PageCanvasHost.applyPhoneDrawingPolicy`):
+        // a finger draws whenever drawing is on.
+        if Platform.isPhone { return true }
         if let slot = slots.values.first ?? spares.first { return ObjectEraserController.fingersDraw(slot.host.canvas) }
         return Platform.isMac || Platform.isPhone || !UIPencilInteraction.prefersPencilOnlyDrawing
     }

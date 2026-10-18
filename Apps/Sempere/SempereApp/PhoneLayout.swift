@@ -49,13 +49,72 @@ extension AppModel {
     }
 }
 
+/// The note view's three modes on an iPhone, shown by the two top-bar buttons (pencil and Hand). One
+/// value, so a combination the buttons cannot show (the Hand lit with fingers drawing, both lit) cannot
+/// exist (TestFlight build 5: the Hand turned Annotate on, and turning the pencil off with the Hand on
+/// left both buttons off while a finger still drew). Everything the canvas does follows from it
+/// (`drawingSuspended`, `selectingItems`, `showsPalette`); the iPad and the Mac never use it.
+///
+/// | mode       | pencil | Hand | one finger                         | palette |
+/// |------------|--------|------|------------------------------------|---------|
+/// | reading    | off    | off  | scrolls; draws and selects nothing | hidden  |
+/// | hand       | off    | on   | scrolls; tap selects, hold menu, drag moves a selected item | hidden |
+/// | annotating | on     | off  | draws (two fingers scroll)         | shown   |
+enum PhoneCanvasMode: Equatable, Sendable, CaseIterable {
+    case reading, hand, annotating
+
+    /// The top bar's two buttons.
+    enum Button: Equatable, Sendable, CaseIterable {
+        case annotate, hand
+
+        var mode: PhoneCanvasMode { self == .annotate ? .annotating : .hand }
+    }
+
+    /// A note opens in reading mode (and the next note does too).
+    static let initial = PhoneCanvasMode.reading
+
+    /// A tap on `button`: the lit one goes back to reading, the other switches straight to its mode.
+    func tapping(_ button: Button) -> PhoneCanvasMode {
+        self == button.mode ? .reading : button.mode
+    }
+
+    /// Whether `button` reads as on (lit).
+    func lights(_ button: Button) -> Bool { self == button.mode }
+
+    /// The palette's Hand item was picked. Only the user can do that while annotating (the palette is
+    /// hidden otherwise), and it means Hand mode: the top-bar Hand lights, the pencil goes off and the
+    /// palette hides, so there is one Hand, not two. Anywhere else it is the canvas keeping the palette
+    /// in step (`PageCanvasHost.syncHandTool`), never a mode change.
+    func handToolPicked() -> PhoneCanvasMode { self == .annotating ? .hand : self }
+
+    /// The canvas takes drawing (PencilKit's tools) only while annotating; Hand mode keeps it
+    /// un-suspended so selection mode can run, but nothing draws there (`selectingItems`).
+    var drawingSuspended: Bool { self == .reading }
+    /// Selection mode (`CanvasModes.selectingItems` on the iPad): the Hand.
+    var selectingItems: Bool { self == .hand }
+    /// The drawing palette: only while annotating.
+    var showsPalette: Bool { self == .annotating }
+    /// A finger draws (and scrolling takes two).
+    var fingersDraw: Bool { self == .annotating }
+}
+
 /// Reading mode of the note view on an iPhone: panning, zooming and page
 /// navigation first; the pencil button turns on annotation with a finger.
 enum PhoneReading {
-    /// Whether the canvas takes drawing: always off on a phone until the user
-    /// switches annotation on; the iPad and the Mac never suspend it.
-    static func drawingSuspended(isPhone: Bool, annotating: Bool) -> Bool {
-        isPhone && !annotating
+    /// Whether the canvas takes drawing: off on a phone in reading mode (`PhoneCanvasMode`);
+    /// the iPad and the Mac never suspend it.
+    static func drawingSuspended(isPhone: Bool, mode: PhoneCanvasMode) -> Bool {
+        isPhone && mode.drawingSuspended
+    }
+
+    /// Selection mode: on a phone the Hand (`PhoneCanvasMode.hand`); elsewhere the Select toggle.
+    static func selectingItems(isPhone: Bool, mode: PhoneCanvasMode, selectToggle: Bool) -> Bool {
+        isPhone ? mode.selectingItems : selectToggle
+    }
+
+    /// Whether the palette may show: on a phone only while annotating; elsewhere as the toolbar says.
+    static func paletteVisible(isPhone: Bool, mode: PhoneCanvasMode, stored: Bool) -> Bool {
+        stored && (!isPhone || mode.showsPalette)
     }
 
     /// The palette is always the short one on a phone (pen, marker, eraser, lasso).
@@ -63,8 +122,8 @@ enum PhoneReading {
         isPhone || stored
     }
 
-    /// Back in the note list, annotating starts off for the next note.
-    static func annotatingAfterNoteChange() -> Bool { false }
+    /// Back in the note list, the next note opens in reading mode.
+    static func modeAfterNoteChange() -> PhoneCanvasMode { .initial }
 
     /// The button below a finite page (`PageExtent.Footer`): Next Page on any
     /// page but the last; Add Page on the last only when the note can be written
@@ -124,10 +183,9 @@ enum PhoneToolbar {
         var writes = false
         /// Text and the eraser size: only while annotating.
         var writingTools = false
-        /// The Hand button beside Annotate: a writable note with a page to select on.
+        /// The Hand button beside Annotate: a writable note with a page to select on. (It replaces the
+        /// overflow menu's Select toggle on the phone.)
         var handButton = false
-        /// Select (items on the page): while annotating, with a page on the canvas.
-        var selectToggle = false
         /// Pages, in the overflow menu.
         var pagesMenu = false
         /// Previous / counter / Next in the bottom bar.
@@ -136,25 +194,18 @@ enum PhoneToolbar {
 
     /// `pageEntries`: the Pages menu has entries besides turning pages (`PhonePageMenu.entries`),
     /// which keep it in the overflow menu whether or not the pencil is on.
-    static func items(readOnly: Bool, annotating: Bool, pageCount: Int, hasPage: Bool,
+    /// The bottom page bar gives way to the palette, so it shows whenever the palette does not
+    /// (reading and Hand), and the Pages menu turns pages while annotating.
+    static func items(readOnly: Bool, mode: PhoneCanvasMode, pageCount: Int, hasPage: Bool,
                       pageEntries: Bool = false) -> Items {
+        let annotating = mode == .annotating && !readOnly
         var items = Items()
         items.writes = !readOnly
         items.handButton = !readOnly && hasPage
-        items.writingTools = !readOnly && annotating
-        items.selectToggle = items.writingTools && hasPage
+        items.writingTools = annotating
         items.pagesMenu = annotating && (pageCount > 1 || !readOnly) || pageEntries
         items.pageBar = !annotating && pageCount > 1
         return items
-    }
-
-    /// The top-bar Hand button reads as selected while Annotate and select mode are both on.
-    static func handIsOn(annotating: Bool, selecting: Bool) -> Bool { annotating && selecting }
-
-    /// What a tap on the Hand button sets: on turns Annotate on (`true`) with select mode on; off leaves
-    /// select mode and leaves Annotate as it is (`nil`), so the palette returns to the last drawing tool.
-    static func afterHandTap(on: Bool) -> (annotating: Bool?, selecting: Bool) {
-        on ? (true, true) : (nil, false)
     }
 }
 

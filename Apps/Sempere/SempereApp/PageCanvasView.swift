@@ -625,6 +625,11 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         #if DEBUG
         itemSelection.debugTyping = { [weak self] in self?.textEditor.textView?.text }
         itemSelection.debugStrokes = { [weak self] in self?.canvas.drawing.strokes.count ?? 0 }
+        itemSelection.debugInput = { [weak self] in
+            guard let self else { return "" }
+            return "pan=\(self.canvas.panGestureRecognizer.minimumNumberOfTouches);ink=\(self.canvas.drawingGestureRecognizer.isEnabled ? 1 : 0)"
+                + ";select=\(self.itemSelectionActive ? 1 : 0)"
+        }
         itemSelection.debugEmoji = { [weak self] in self?.textEditor.emojiSummary ?? "0,0" }
         itemSelection.debugPalette = { [weak self] in
             guard let self else { return false }
@@ -917,6 +922,8 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
     /// every other tool (pixel eraser included) is PencilKit's. On a Mac with
     /// "Smooth Mouse Strokes" on, the app draws the ink tools' pointer strokes.
     private func updateEraser() {
+        // First: the eraser and the item selection read the policy (`ObjectEraserController.fingersDraw`).
+        if Platform.isPhone { applyPhoneDrawingPolicy() }
         let editable = drawingEditable
         let ours = editable && objectEraserSelected
         objectEraser.setActive(ours)
@@ -930,18 +937,38 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         let draws = editable && !ours && !pointer
         canvas.drawingGestureRecognizer.isEnabled = draws
         setPencilKitGestures(enabled: draws)
-        // PencilKit makes its own scroll take two fingers whenever the drawing policy lets a finger
-        // draw (`.anyInput`, the iPhone's), whether or not its drawing recognizer is on: a pageless
-        // note in reading mode did not scroll with one finger (TestFlight build 4). One finger
-        // scrolls while none draws, as in the paged stack (`PageStackHost.minimumPanTouches`); the
-        // object eraser and the math lasso keep their own two-finger rule while they hold the finger.
+        // The one-page canvas's scroll on an iPhone: one finger, two while annotating (where one
+        // draws), as in the paged stack (`PageStackHost.minimumPanTouches`). PencilKit sets the same
+        // count itself from the drawing policy (`applyPhoneDrawingPolicy`) whenever it likes, so the
+        // two always agree; the object eraser and the math lasso take two while they hold the finger.
         if Platform.isPhone, !isEmbedded, !ours, !lasso {
-            canvas.panGestureRecognizer.minimumNumberOfTouches = Self.phonePanTouches(fingerDraws: draws)
+            canvas.panGestureRecognizer.minimumNumberOfTouches = Self.phonePanTouches(fingerDraws: phoneFingersDraw)
         }
     }
 
     /// The fingers the one-page canvas's scroll takes on an iPhone: two while a finger draws, else one.
     static func phonePanTouches(fingerDraws: Bool) -> Int { fingerDraws ? 2 : 1 }
+
+    /// iPhone: a finger is ink on this canvas, the note's mode being Annotate (`PhoneCanvasMode`): an
+    /// editable note, not suspended (reading) and not in selection mode (the Hand). Taken from the mode,
+    /// not from what draws this instant (a text box being typed in, a finger-picked item, a page being
+    /// prepared), so the scroll's finger count changes only with the mode.
+    var phoneFingersDraw: Bool { !isReadOnly && !drawingSuspended && !itemSelectionActive }
+
+    /// The iPhone's drawing policy follows the mode: `.anyInput` while a finger is ink, else `.pencilOnly`
+    /// (no iPhone has a Pencil, so nothing draws).
+    ///
+    /// PencilKit sets its scroll's `minimumNumberOfTouches` itself, to 2 whenever the policy lets a finger
+    /// draw (`-[PKTiledView updateForAllowedDrawingInput]`), and runs that again on its own: when its tiled
+    /// view moves to a window, and when the tool picker's visibility changes
+    /// (`-[PKTiledView _updateForToolPickerVisibilityChange:]`, a notification that arrives with the
+    /// palette's hide animation, about 0.8 s after Annotate goes off). With `.anyInput` kept in reading
+    /// mode, that put the pageless note's one-finger scroll back to two fingers a moment after leaving
+    /// Annotate (TestFlight build 5). With the policy matching the mode, PencilKit's own count is ours.
+    private func applyPhoneDrawingPolicy() {
+        let policy: PKCanvasViewDrawingPolicy = phoneFingersDraw ? .anyInput : .pencilOnly
+        if canvas.drawingPolicy != policy { canvas.drawingPolicy = policy }
+    }
 
     /// PencilKit's recognizers the app turned off along with `drawingGestureRecognizer`
     /// (`setPencilKitGestures`), to turn back on with it.
