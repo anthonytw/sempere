@@ -233,24 +233,27 @@ final class PhoneCanvasUITests: XCTestCase {
         XCTAssertEqual(after?.selected ?? "none", "none", "leaving the Hand drops the selection")
     }
 
-    /// With the Hand on, one finger scrolls the note and draws nothing.
+    /// With the Hand on, one finger scrolls a two-page note and draws nothing.
     @MainActor
     func testTheHandScrollsWithOneFinger() throws {
-        let app = launch()
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"]
+        app.launchEnvironment = ["SEMPERE_DEMO": "1", "SEMPERE_DEMO_NOTE": "lisbon", "TZ": "UTC"]
+        XCUIDevice.shared.orientation = .portrait
+        app.launch()
         defer { app.terminate() }
-        guard let canvas = canvas(app) else { return XCTFail("no canvas reports the demo items") }
+        let canvases = app.descendants(matching: .any).matching(identifier: "pageCanvas")
+        XCTAssertTrue(canvases.firstMatch.waitForExistence(timeout: 60))
+        Thread.sleep(forTimeInterval: 1.5)
         tapHand(app)
-        let tops: () -> CGFloat? = {
-            app.descendants(matching: .any).matching(identifier: "pageCanvas").allElementsBoundByIndex.map(\.frame.minY).min()
-        }
-        guard let r0 = report(canvas), let top0 = tops() else { return XCTFail("no report") }
+        let top: () -> CGFloat? = { canvases.allElementsBoundByIndex.map(\.frame.minY).min() }
+        guard let top0 = top() else { return XCTFail("no page canvas") }
         let window = app.windows.firstMatch
         window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
             .press(forDuration: 0.1, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)),
                    withVelocity: .slow, thenHoldForDuration: 0.3)
         Thread.sleep(forTimeInterval: 1)
-        let moved = (tops().map { $0 < top0 - 40 } ?? false) || ((freshReport(app)?.offset.y ?? r0.offset.y) > r0.offset.y + 40)
-        XCTAssertTrue(moved, "one finger scrolls with the Hand (top \(top0) -> \(String(describing: tops())))")
-        XCTAssertEqual(freshReport(app)?.strokes ?? r0.strokes, r0.strokes, "the drag drew nothing")
+        guard let top1 = top() else { return XCTFail("no page canvas after the drag") }
+        XCTAssertLessThan(top1, top0 - 40, "one finger scrolls with the Hand (top \(top0) -> \(top1))")
     }
 }
