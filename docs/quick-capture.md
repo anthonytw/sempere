@@ -233,7 +233,7 @@ did (started, its error, or why it was not asked), the error of the background t
 text; the audio system's code is named, for example `'!rec' cannotStartRecording`, with the step that failed:
 `setCategory`, `setActive` or `AVAudioRecorder`), whether the app became active and after how long, the retry's
 error, and the outcome. No note content, no keys, no vault name. Settings ▸ Quick Voice Notes ▸ Recent Starts
-shows them, with Copy All and Clear.
+shows them (selectable text), with Clear.
 
 | Phase | Shows | A tap |
 | --- | --- | --- |

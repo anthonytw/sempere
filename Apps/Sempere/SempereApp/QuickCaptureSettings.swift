@@ -171,7 +171,7 @@ enum VoiceNoteBlocker: Hashable {
 }
 
 /// Settings ▸ Quick Voice Notes ▸ Recent Starts: the last few voice-note starts on this device
-/// (`QuickCapture.recentStarts`, `VoiceNoteStartLog`), for the owner to read or copy when a widget,
+/// (`QuickCapture.recentStarts`, `VoiceNoteStartLog`; the lines are selectable), for the owner to read when a widget,
 /// the control, Siri or Shortcuts did not record. Where each came from, the app's state, what the
 /// Live Activity request and the audio system answered, and how it ended; nothing personal.
 struct RecentStartsView: View {
@@ -197,7 +197,6 @@ struct RecentStartsView: View {
                 }
                 .accessibilityElement(children: .combine)
             }
-            Button("Copy All") { UIPasteboard.general.string = Self.report(attempts) }
             Button("Clear Recent Starts", role: .destructive, action: clear)
         } label: {
             LabeledContent("Recent Starts", value: attempts.first.map { Self.outcomeTitle($0.outcome) } ?? "")
@@ -236,13 +235,5 @@ struct RecentStartsView: View {
                               comment: "Settings ▸ Quick Voice Notes ▸ Recent Starts: technical details of the try with the app in front"))
         }
         return out
-    }
-
-    /// Plain text of every attempt, for "Copy All" (to paste into a bug report).
-    static func report(_ attempts: [VoiceNoteStartAttempt]) -> String {
-        attempts.map { a in
-            ([ "\(a.date.ISO8601Format()) \(a.source.rawValue) mode=\(a.intentMode ?? "-") \(a.outcome.rawValue)" ] + lines(a))   // l10n:ignore
-                .joined(separator: "\n  ")
-        }.joined(separator: "\n")
     }
 }

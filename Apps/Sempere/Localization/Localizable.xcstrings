@@ -4739,18 +4739,6 @@
         }
       }
     },
-    "Copy All" : {
-      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: copies the details as text",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copiar todo"
-          }
-        }
-      }
-    },
     "Copy Key" : {
       "comment" : "Button: copy the secret key",
       "extractionState" : "manual",
