@@ -95,6 +95,13 @@ enum QuickCaptureError: Error, Equatable, CustomStringConvertible, CustomLocaliz
     case liveActivitiesOff
     case alreadyRecording
     case notRecording
+    /// iOS did not start the recording's Live Activity (`Activity.request` threw) while the app was
+    /// not in front: an `AudioRecordingIntent` records in the background only while one shows, so the
+    /// recorder is not started there (the intent continues in the app instead).
+    case liveActivityRefused(String)
+    /// The intent could not continue in the app (`continueInForeground` threw: iOS refused, or the
+    /// device was not unlocked) after a refused background start.
+    case couldNotOpenApp(String)
 
     var description: String {
         switch self {
@@ -104,6 +111,10 @@ enum QuickCaptureError: Error, Equatable, CustomStringConvertible, CustomLocaliz
         case .liveActivitiesOff: return String(localized: "Live Activities are off for Sempere, and iOS needs one to record a voice note: turn them on in the Settings app ▸ Sempere ▸ Live Activities.")
         case .alreadyRecording: return String(localized: "A voice note is already being recorded.")
         case .notRecording: return String(localized: "No voice note is being recorded.")
+        case .liveActivityRefused(let why):
+            return String(localized: "iOS did not start the voice note's Live Activity, which it needs to record in the background: \(why)")
+        case .couldNotOpenApp(let why):
+            return String(localized: "iOS would not record in the background and did not open Sempere to record there: \(why)")
         }
     }
 
@@ -166,6 +177,10 @@ final class QuickCapture {
         var result: VoiceNoteResult
         /// Why it failed (`Outcome.error`).
         var error: String?
+        /// Shown instead of `result.title` (a start that failed: nothing was recorded to save).
+        var title: String?
+        /// Stays until dismissed rather than for `result.shownFor`.
+        var persists = false
         var id = UUID()
     }
 
@@ -202,6 +217,20 @@ final class QuickCapture {
     @ObservationIgnored var activitiesEnabled: @MainActor () -> Bool = QuickCapture.systemActivitiesEnabled
     /// Reloads the widgets and the control after the status changed.
     @ObservationIgnored var reloadSurfaces: @MainActor () -> Void = QuickCapture.reloadSystemSurfaces
+    /// The app's state, for the start diagnostics and the decision to wait (tests set it).
+    @ObservationIgnored var applicationState: @MainActor () -> UIApplication.State = { UIApplication.shared.applicationState }
+    /// How long a start that continued in the app waits for the app to be active before trying again.
+    @ObservationIgnored var foregroundWait: Duration = .seconds(12)
+    /// Waits, at most the given time, for the app to become active (`AppActivation.wait`; tests send their own signal).
+    @ObservationIgnored var waitUntilActive: @MainActor (Duration) async -> Bool = { timeout in
+        await AppActivation.wait(timeout: timeout) { UIApplication.shared.applicationState == .active }
+    }
+    /// Asks for the Live Activity instead of ActivityKit (tests: a request that fails); nil uses ActivityKit.
+    @ObservationIgnored var requestActivity: (@MainActor (Date) throws -> Void)?
+    /// The last voice-note starts, kept for Settings (`VoiceNoteStartLog`); memory only until `register()`.
+    @ObservationIgnored var startLog = VoiceNoteStartLog(url: nil)
+    /// `startLog`'s attempts, newest first, for Settings ▸ Quick Voice Notes ▸ Recent Starts (observed through the log).
+    var recentStarts: [VoiceNoteStartAttempt] { startLog.attempts }
     /// Called with the capture id as each seal begins (tests).
     @ObservationIgnored var willSeal: (@MainActor (UUID) -> Void)?
     #if os(iOS) && !targetEnvironment(macCatalyst)
@@ -221,21 +250,24 @@ final class QuickCapture {
     nonisolated static var defaultRoot: URL { AppSupport.folder("QuickCapture") }
     nonisolated static var defaultQueueRoot: URL { AppSupport.folder("CaptureQueue") }
 
+    /// Whether a failed start may work with the app in front: the audio system's refusal, which iOS
+    /// can give a background start, and a Live Activity iOS would not start in the background
+    /// (`start(_:)` then continues in the app).
+    static func worksInForeground(_ error: Error) -> Bool {
+        if (error as? RecordingError)?.isCannotRecord == true { return true }
+        if case .liveActivityRefused = error as? QuickCaptureError { return true }
+        return false
+    }
+
     /// Hooks the intents (Siri, Shortcuts, widgets, Control Center) up to the shared instance.
     /// Also ends Live Activities left by an earlier process (killed, crashed or
     /// rebooted while recording): nothing of theirs is recording any more, and
     /// their Stop button would reach a process that knows nothing of them.
-    /// Whether a failed start may work with the app in front: only the audio system's refusal,
-    /// which iOS can give a background start (`VoiceNoteActions.startOrContinueInApp`).
-    static func worksInForeground(_ error: Error) -> Bool {
-        (error as? RecordingError)?.isCannotRecord == true
-    }
-
     static func register() {
+        QuickCapture.shared.startLog = VoiceNoteStartLog(url: VoiceNoteStartLog.defaultURL)
         VoiceNoteActions.open = { QuickCapture.shared.pendingLink = $0 }
         VoiceNoteActions.status = { QuickCapture.shared.status }
-        VoiceNoteActions.worksInForeground = { worksInForeground($0) }
-        VoiceNoteActions.start = { try await QuickCapture.shared.start() }
+        VoiceNoteActions.start = { try await QuickCapture.shared.start($0) }
         VoiceNoteActions.stop = {
             do { _ = try await QuickCapture.shared.stop() } catch QuickCaptureError.notRecording {
                 // Stop on an orphaned Live Activity: it is gone now (stop ended it); nothing to report.
@@ -327,8 +359,85 @@ final class QuickCapture {
 
     // MARK: - Recording
 
-    /// Starts a voice note. Needs only the stored profile: no vault, no key.
+    /// Starts a voice note from the app (File ▸ Start Voice Note, the menu-bar item). Needs only the
+    /// stored profile: no vault, no key.
     func start() async throws {
+        try await start(VoiceNoteStartRequest(source: .app))
+    }
+
+    /// Starts a voice note for `request` and keeps what happened in `startLog`.
+    ///
+    /// An intent's start runs in the background. When iOS refuses it there (the audio system's
+    /// `cannotRecord`, or no Live Activity: `worksInForeground`), the intent continues in the app
+    /// (`request.continueInApp`), this waits until the app is actually active (`waitUntilActive`, at
+    /// most `foregroundWait`: from the Lock Screen that is after the unlock) and tries once more. If
+    /// that fails too, the banner says so (`announceStartFailure`) and the error goes to the intent.
+    /// The retry runs in a task of its own, so it is not cancelled with the intent's.
+    func start(_ request: VoiceNoteStartRequest) async throws {
+        var attempt = VoiceNoteStartAttempt(date: Date(), source: request.source, intentMode: request.intentMode,
+                                            first: VoiceNoteStartTry(appState: applicationState().diagnosticName))
+        let continueInApp: @MainActor () async throws -> Void
+        do {
+            try await startRecorder(&attempt.first)
+            attempt.outcome = .recording
+            startLog.append(attempt)
+            return
+        } catch {
+            guard let resume = request.continueInApp, Self.worksInForeground(error) else {
+                startLog.append(attempt)
+                throw error
+            }
+            continueInApp = resume
+        }
+        let work = Task { @MainActor [self, attempt] () async throws -> Void in
+            var attempt = attempt
+            var foreground = VoiceNoteStartAttempt.Foreground()
+            let clock = ContinuousClock(), asked = clock.now
+            do {
+                try await continueInApp()
+            } catch {
+                foreground.error = VoiceNoteErrorInfo(error)
+            }
+            if foreground.error != nil, applicationState() != .active {
+                // iOS would not bring the app forward (or the user did not unlock): nothing to wait for.
+                attempt.foreground = foreground
+                startLog.append(attempt)
+                let error = QuickCaptureError.couldNotOpenApp(foreground.error?.description ?? "")
+                announceStartFailure(error)
+                throw error
+            }
+            foreground.becameActive = await waitUntilActive(foregroundWait)
+            let waited = clock.now - asked
+            foreground.waited = Double(waited.components.seconds) + Double(waited.components.attoseconds) / 1e18
+            attempt.foreground = foreground
+            var retry = VoiceNoteStartTry(appState: applicationState().diagnosticName)
+            do {
+                try await startRecorder(&retry)
+                attempt.retry = retry
+                attempt.outcome = .recordingInApp
+                startLog.append(attempt)
+            } catch {
+                attempt.retry = retry
+                startLog.append(attempt)
+                announceStartFailure(error)
+                throw error
+            }
+        }
+        try await work.value
+    }
+
+    /// One try at starting the recorder; `trace` gets what the Live Activity request and the
+    /// recorder answered.
+    private func startRecorder(_ trace: inout VoiceNoteStartTry) async throws {
+        do {
+            try await startRecorderOnce(&trace)
+        } catch {
+            trace.error = VoiceNoteErrorInfo(error)
+            throw error
+        }
+    }
+
+    private func startRecorderOnce(_ trace: inout VoiceNoteStartTry) async throws {
         guard state == .idle else { throw QuickCaptureError.alreadyRecording }
         // Claimed before the first suspension: a second tap (widget and Control Center at
         // once) used to pass the idle check too and start a second, unstoppable recording.
@@ -351,10 +460,16 @@ final class QuickCapture {
             guard let self, let s, self.session === s else { return }
             Task { _ = try? await self.finish(s) }
         }
-        // The Live Activity comes first: iOS lets an `AudioRecordingIntent` start the microphone
-        // from the background only while the app shows one (TestFlight 1.0.0 (3): started after the
-        // recorder, every Lock Screen, Control Center and Shortcuts start failed with `cannotRecord`).
-        startActivity(started: Date())
+        // The Live Activity comes first. `AudioRecordingIntent`: "you must start a Live Activity when you
+        // begin the audio recording … If you don't start a Live Activity, the audio recording stops", and
+        // only a `LiveActivityIntent` may start one from the background (`Activity.request`). Its result
+        // goes to the start diagnostics; with the app in the background a failed request ends the try here.
+        let request = startActivity(started: Date())
+        trace.activity = request
+        if case .failed(let why) = request, applicationState() != .active {
+            // No Live Activity, no background recording (`AudioRecordingIntent`): the app continues in front.
+            throw QuickCaptureError.liveActivityRefused(why.summary)
+        }
         do {
             try s.start()
         } catch {
@@ -454,6 +569,14 @@ final class QuickCapture {
         case .queued: return .savedOnDevice
         case nil: return .failed
         }
+    }
+
+    /// Says in the app's banner that a voice note did not start (`start(_:)` after continuing in
+    /// the app): kept until it is dismissed, since the app may come to the front only later.
+    func announceStartFailure(_ error: Error) {
+        notice = Notice(result: .failed, error: "\(error)",
+                        title: String(localized: "Voice Note Not Recorded", comment: "Banner title: a quick voice note could not start"),
+                        persists: true)
     }
 
     /// Hides the banner's notice (tapped away).
@@ -780,11 +903,29 @@ final class QuickCapture {
 
     // MARK: - Live Activity
 
-    private func startActivity(started: Date) {
+    /// Asks for the recording's Live Activity and says what came of it (the start diagnostics):
+    /// the error is kept, never swallowed (TestFlight 1.0.0 (3) and (4) dropped it with `try?`).
+    private func startActivity(started: Date) -> VoiceNoteActivityRequest {
+        guard showsActivity else { return .notRequested("turned off") }
+        if let requestActivity {
+            do {
+                try requestActivity(started)
+                return .started
+            } catch {
+                return .failed(VoiceNoteErrorInfo(error))
+            }
+        }
         #if os(iOS) && !targetEnvironment(macCatalyst)
-        guard showsActivity, ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        activity = try? Activity.request(attributes: VoiceNoteAttributes(),
-                                         content: .init(state: .init(started: started), staleDate: nil))
+        guard activitiesEnabled() else { return .notRequested("Live Activities are off") }
+        do {
+            activity = try Activity.request(attributes: VoiceNoteAttributes(),
+                                            content: .init(state: .init(started: started), staleDate: nil))
+            return .started
+        } catch {
+            return .failed(VoiceNoteErrorInfo(error))
+        }
+        #else
+        return .notRequested("no Live Activities on this platform")
         #endif
     }
 

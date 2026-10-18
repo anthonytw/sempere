@@ -1,32 +1,48 @@
 import AppIntents
 import Foundation
 
+/// Where a voice-note start came from (Settings ▸ Quick Voice Notes ▸ Recent Starts).
+enum VoiceNoteStartSource: String, Codable, Sendable {
+    /// `StartVoiceNoteIntent`: Siri, Shortcuts, the Action button set to the shortcut.
+    case shortcut
+    /// `VoiceNoteControlIntent`: the Control Center control (and the Action button set to it),
+    /// the Lock Screen and Home Screen widgets. The system does not say which of them.
+    case widgetOrControl
+    /// The app itself: File ▸ Start Voice Note, the Mac menu-bar item.
+    case app
+}
+
+/// One start an intent asks the app for.
+struct VoiceNoteStartRequest {
+    var source: VoiceNoteStartSource
+    /// `systemContext.currentMode` as the intent saw it (nil in the app).
+    var intentMode: String?
+    /// Brings the app to the front (`AppIntent.continueInForeground`); nil in the app.
+    var continueInApp: (@MainActor () async throws -> Void)?
+}
+
 /// What the app does when a voice note intent runs. The app sets these at
 /// launch (`QuickCapture.register`); the widget extension compiles the same
 /// intents for its buttons but never performs them: `AudioRecordingIntent`
 /// and `LiveActivityIntent` run in the app's process.
 @MainActor
 enum VoiceNoteActions {
-    static var start: (@MainActor () async throws -> Void)?
+    /// Starts a voice note (`QuickCapture.start(_:)`): in the background, and, when the audio
+    /// system refuses the microphone there, with the app in front once it is active.
+    static var start: (@MainActor (VoiceNoteStartRequest) async throws -> Void)?
     static var stop: (@MainActor () async throws -> Void)?
     /// Shows a place in the app (`VoiceNoteControlIntent`).
     static var open: (@MainActor (VoiceNoteLink) -> Void)?
     /// The live status (`QuickCapture.status`): what the control's tap does.
     static var status: (@MainActor () -> VoiceNoteStatus)?
-    /// Whether a start that failed this way may work with the app in front (the audio
-    /// system refused the microphone in the background): the intent then continues in the app.
-    static var worksInForeground: (@MainActor (Error) -> Bool)?
 
-    /// Starts recording; a start the audio system refused in the background is tried once more
-    /// with the app in front, so a tap records (as in TestFlight 1.0.0 (2)) rather than failing.
-    static func startOrContinueInApp(_ intent: some AppIntent) async throws {
+    /// Starts recording for `intent`; a start the audio system refused in the background is tried
+    /// once more with the app in front (`QuickCapture.start(_:)` waits for it to be active), so a
+    /// tap records rather than failing.
+    static func startOrContinueInApp<I: AppIntent>(_ intent: I, source: VoiceNoteStartSource) async throws {
         guard let start else { throw VoiceNoteIntentError.unavailable }
-        do {
-            try await start()
-        } catch where worksInForeground?(error) == true {
-            try await intent.continueInForeground(alwaysConfirm: false)
-            try await start()
-        }
+        try await start(VoiceNoteStartRequest(source: source, intentMode: intent.systemContext.currentMode.debugDescription,
+                                              continueInApp: { try await intent.continueInForeground(alwaysConfirm: false) }))
     }
 }
 
@@ -59,7 +75,7 @@ struct StartVoiceNoteIntent: AudioRecordingIntent, LiveActivityIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        try await VoiceNoteActions.startOrContinueInApp(self)
+        try await VoiceNoteActions.startOrContinueInApp(self, source: .shortcut)
         return .result()
     }
 }
@@ -121,7 +137,7 @@ struct VoiceNoteControlIntent: AudioRecordingIntent, LiveActivityIntent {
         }
         switch VoiceNoteStatus.controlAction(shown: shown.flatMap(VoiceNoteStatus.Phase.init(rawValue:)), live: status()) {
         case .start:
-            try await VoiceNoteActions.startOrContinueInApp(self)
+            try await VoiceNoteActions.startOrContinueInApp(self, source: .widgetOrControl)
         case .stop:
             try await stop()
         case .open(let link):

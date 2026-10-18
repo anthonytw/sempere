@@ -29,7 +29,7 @@ struct QuickCaptureIntentTests {
         var live = VoiceNoteStatus(phase: .ready)
 
         func install() {
-            VoiceNoteActions.start = { [self] in started += 1 }
+            VoiceNoteActions.start = { [self] _ in started += 1 }
             VoiceNoteActions.stop = { [self] in stopped += 1 }
             VoiceNoteActions.open = { [self] in opened.append($0) }
             VoiceNoteActions.status = { [self] in live }
@@ -41,7 +41,6 @@ struct QuickCaptureIntentTests {
         VoiceNoteActions.stop = nil
         VoiceNoteActions.open = nil
         VoiceNoteActions.status = nil
-        VoiceNoteActions.worksInForeground = nil
     }
 
     @Test func intentsDoNothingUntilTheAppHasRegisteredItsHooks() async throws {
@@ -157,7 +156,7 @@ struct QuickCaptureIntentTests {
     /// the widgets show them (`QuickCaptureError.localizedStringResource`).
     @Test func startIntentThroughTheRecorderReportsItsRefusalsAndRecords() async throws {
         let (url, _, _, qc, _) = try QuickCaptureTests.setUp(transcribe: false)
-        VoiceNoteActions.start = { try await qc.start() }
+        VoiceNoteActions.start = { try await qc.start($0) }
         VoiceNoteActions.stop = { _ = try await qc.stop() }
         defer { Self.reset() }
 
@@ -182,7 +181,7 @@ struct QuickCaptureIntentTests {
     @Test func siriBeforeTheFirstUnlockSaysItCannotReadItsSettings() async throws {
         let (url, _, _, qc, _) = try QuickCaptureTests.setUp(transcribe: false)
         let readable = qc.store
-        VoiceNoteActions.start = { try await qc.start() }
+        VoiceNoteActions.start = { try await qc.start($0) }
         VoiceNoteActions.stop = { _ = try await qc.stop() }
         defer { Self.reset() }
 

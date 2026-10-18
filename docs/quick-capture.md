@@ -171,22 +171,69 @@ a stale label can no longer turn a tap into "open the app". The status reaches t
 three ways: a reload on every change, a forced reload at launch and each time the app becomes
 active, and the system's half-hourly refresh (`VoiceNoteStatus.refreshInterval`).
 
-What iOS requires of a recording intent: `AudioRecordingIntent` runs in the app's process
-and may start the microphone from the background, but only with a Live Activity (hence the
-"Live Activities Off" state); it does not need the app in front. `StartVoiceNoteIntent` and
-`StopVoiceNoteIntent` is `supportedModes = [.background]`; `StartVoiceNoteIntent` and the control's
-intent are `[.background, .foreground(.dynamic)]`: they go forward only when they call
-`continueInForeground` (setup needed, still saving, or a background start the audio system refused),
-never to stop. The Live Activity is requested before the recorder starts: iOS lets a recording intent
-start the microphone from the background only while the app shows one. TestFlight 1.0.0 (3) started
-the recorder first, and every Lock Screen, Control Center and Shortcuts start failed with
-`RecordingError.cannotRecord` (shown as "SempereApp.RecordingError 0"; its text now reaches
-Shortcuts). If iOS still refuses in the background, `VoiceNoteActions.startOrContinueInApp` brings
-the app forward and records there, as TestFlight 1.0.0 (2) did, rather than failing. All three set
-`authenticationPolicy = .alwaysAllowed`: the threat model above ("the intents need no
-authentication") needs the system not to ask for a passcode or Face ID before running them
-from a locked Lock Screen. What the owner sees on a record tap: the Live Activity (Lock
-Screen banner, Dynamic Island) and the recording indicator, and the app stays where it was.
+What iOS requires of a recording intent:
+
+- `AudioRecordingIntent`: "you must start a Live Activity when you begin the audio recording and keep it
+  active as long as you record audio. If you don't start a Live Activity, the audio recording stops"
+  ([AudioRecordingIntent](https://developer.apple.com/documentation/appintents/audiorecordingintent)).
+  Apple documents no ordering against the audio session; we request the activity first.
+- Only a `LiveActivityIntent` may start a Live Activity with the app in the background: "your app needs to be in
+  the foreground to start a Live Activity. However, you can use a `LiveActivityIntent` and start the Live Activity
+  in its `perform()` method" ([LiveActivityIntent](https://developer.apple.com/documentation/appintents/liveactivityintent));
+  otherwise `Activity.request` throws `ActivityAuthorizationError.visibility`. `NSSupportsLiveActivities` is set.
+- Where `perform()` runs: a widget's button runs its intent in the widget extension unless it conforms to
+  `LiveActivityIntent` (or `AudioPlaybackIntent`, `ForegroundContinuableIntent`, …) or opens the app; then it runs
+  in the app's process, and the intent must be in the app target
+  ([Adding interactivity to widgets](https://developer.apple.com/documentation/widgetkit/adding-interactivity-to-widgets-and-live-activities)).
+  `AudioRecordingIntent` alone is not on that list: both recording intents are also `LiveActivityIntent`s and
+  are compiled into the app (`SempereShared/`).
+- The audio session (`AudioSessionTypes.h`, iOS 27 SDK): `cannotInterruptOthers` ('!int') is "non-mixable and
+  trying to go active while in the background", allowed only for the Now Playing app; `cannotStartRecording`
+  ('!rec') is "usually because it is starting a mixable recording from the background"; `cannotStartPlaying`
+  ('!pla') usually means no `audio` background mode. The session is `.playAndRecord`, not mixable, and the app
+  has `UIBackgroundModes` `audio`. The intent exemption from those background rules is not documented further.
+- `supportedModes`: `[.background, .foreground(.dynamic)]` runs in the background and may move forward;
+  `continueInForeground` "attempts to transition the app to the foreground … If … it's not possible …, the
+  system throws a `notAllowed` error" ([continueInForeground](https://developer.apple.com/documentation/appintents/appintent/continueinforeground(_:alwaysconfirm:))).
+  Apple does not say whether it returns before the app is active.
+
+`StopVoiceNoteIntent` is `supportedModes = [.background]`; `StartVoiceNoteIntent` and the control's intent are
+`[.background, .foreground(.dynamic)]`: they go forward only when they call `continueInForeground` (setup needed,
+still saving, or a background start iOS refused), never to stop. All three set
+`authenticationPolicy = .alwaysAllowed`: the threat model above ("the intents need no authentication") needs the
+system not to ask for a passcode or Face ID before running them from a locked Lock Screen. What the owner sees on
+a record tap: the Live Activity (Lock Screen banner, Dynamic Island) and the recording indicator, and the app stays
+where it was.
+
+### When iOS refuses a background start
+
+TestFlight 1.0.0 (3) started the recorder before the Live Activity, and every Lock Screen, Control Center and
+Shortcuts start failed with `RecordingError.cannotRecord` ("SempereApp.RecordingError 0"). Build (4) asks for the
+activity first and, when iOS still refuses, continues in the app; on an iPhone the control then recorded in the
+app, but the Lock Screen widget opened the app and recorded nothing: the retry ran right after
+`continueInForeground` returned, before the unlock made the app active, failed again, and its error went to an
+intent whose surface shows none. Now (`QuickCapture.start(_:)`):
+
+1. The background try asks for the Live Activity and keeps the answer. If `Activity.request` throws while the app is
+   not active, the recorder is not started (no activity, no background recording): `liveActivityRefused`.
+2. On that or `cannotRecord`, the intent continues in the app; if iOS refuses that too and the app is not in front,
+   the start fails at once (`couldNotOpenApp`).
+3. Otherwise it waits for the app to become active (`UIApplication.didBecomeActiveNotification`, at most 12 s,
+   `foregroundWait`; `AppActivation.wait`) and tries once more. The wait and the retry run in an app-owned task, so
+   cancelling the intent does not cancel them.
+4. If that try fails, the banner says "Voice Note Not Recorded" with the reason and stays until dismissed.
+
+### Recent starts (diagnostics)
+
+Each start (intent or app) is kept in `Application Support/Sempere/QuickCaptureDiagnostics/recent-starts.json`
+(the last 8, `VoiceNoteStartLog`, protected until the first unlock) and written to the unified log (subsystem
+`io.github.anthonytw.sempere`, category `quick-capture`, every field public). For each: the source (Siri or
+Shortcuts, widget or Control Center, the app), the intent's `currentMode`, the app's state, what `Activity.request`
+did (started, its error, or why it was not asked), the error of the background try (Swift type, domain, code and
+text; the audio system's code is named, for example `'!rec' cannotStartRecording`, with the step that failed:
+`setCategory`, `setActive` or `AVAudioRecorder`), whether the app became active and after how long, the retry's
+error, and the outcome. No note content, no keys, no vault name. Settings ▸ Quick Voice Notes ▸ Recent Starts
+shows them, with Copy All and Clear.
 
 | Phase | Shows | A tap |
 | --- | --- | --- |
@@ -225,6 +272,8 @@ for a vault.
 
 ## Not verified yet
 
+- On a device: which refusal iOS gives a background start (Settings ▸ Quick Voice Notes ▸ Recent Starts), and
+  whether the Lock Screen widget now records after the unlock.
 - On a device: the Lock Screen path (intent launch while locked, Keychain
   after first unlock, writing to an iCloud Drive folder while locked, the
   Live Activity).
