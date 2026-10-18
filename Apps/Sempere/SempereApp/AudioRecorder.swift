@@ -20,7 +20,9 @@ protocol AudioCaptureBackend: AnyObject {
 }
 
 /// Why recording could not start or go on.
-enum RecordingError: Error, Equatable, CustomStringConvertible {
+/// Its text reaches Shortcuts, Siri and the widgets through `localizedStringResource`
+/// (without it they showed "SempereApp.RecordingError 0", TestFlight 1.0.0 (3)).
+enum RecordingError: Error, Equatable, CustomStringConvertible, CustomLocalizedStringResourceConvertible {
     /// The microphone is not allowed (Settings ▸ Privacy ▸ Microphone).
     case microphoneDenied
     /// Another note is recording.
@@ -41,6 +43,12 @@ enum RecordingError: Error, Equatable, CustomStringConvertible {
         case .cannotAssemble(let why): return String(localized: "Could not save the recording: \(why)")
         }
     }
+
+    var localizedStringResource: LocalizedStringResource { LocalizedStringResource(stringLiteral: description) }
+
+    /// The audio system refused to start: from the background, iOS may refuse the microphone
+    /// where the app in front would get it (`VoiceNoteIntents` then continues in the app).
+    var isCannotRecord: Bool { if case .cannotRecord = self { true } else { false } }
 }
 
 /// `AudioCaptureBackend` with `AVAudioRecorder` and the shared audio

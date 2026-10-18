@@ -174,9 +174,15 @@ active, and the system's half-hourly refresh (`VoiceNoteStatus.refreshInterval`)
 What iOS requires of a recording intent: `AudioRecordingIntent` runs in the app's process
 and may start the microphone from the background, but only with a Live Activity (hence the
 "Live Activities Off" state); it does not need the app in front. `StartVoiceNoteIntent` and
-`StopVoiceNoteIntent` are `supportedModes = [.background]` and the control's intent
-`[.background, .foreground(.dynamic)]`: it goes forward only when it calls
-`continueInForeground` (setup needed, still saving), never to record or stop. All three set
+`StopVoiceNoteIntent` is `supportedModes = [.background]`; `StartVoiceNoteIntent` and the control's
+intent are `[.background, .foreground(.dynamic)]`: they go forward only when they call
+`continueInForeground` (setup needed, still saving, or a background start the audio system refused),
+never to stop. The Live Activity is requested before the recorder starts: iOS lets a recording intent
+start the microphone from the background only while the app shows one. TestFlight 1.0.0 (3) started
+the recorder first, and every Lock Screen, Control Center and Shortcuts start failed with
+`RecordingError.cannotRecord` (shown as "SempereApp.RecordingError 0"; its text now reaches
+Shortcuts). If iOS still refuses in the background, `VoiceNoteActions.startOrContinueInApp` brings
+the app forward and records there, as TestFlight 1.0.0 (2) did, rather than failing. All three set
 `authenticationPolicy = .alwaysAllowed`: the threat model above ("the intents need no
 authentication") needs the system not to ask for a passcode or Face ID before running them
 from a locked Lock Screen. What the owner sees on a record tap: the Live Activity (Lock
