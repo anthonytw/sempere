@@ -4512,6 +4512,18 @@
         }
       }
     },
+    "Clear Recent Starts" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: deletes the list",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Borrar inicios recientes"
+          }
+        }
+      }
+    },
     "Close" : {
       "comment" : "Button: close the sheet",
       "extractionState" : "manual",
@@ -5571,6 +5583,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dispositivos que conservar"
+          }
+        }
+      }
+    },
+    "Did not record" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: the start failed",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se grabó"
           }
         }
       }
@@ -6837,6 +6861,18 @@
         }
       }
     },
+    "First try: %@" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: technical details of the first try",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Primer intento: %@"
+          }
+        }
+      }
+    },
     "Fit Page Width" : {
       "comment" : "View menu: zoom so the page fills the width",
       "extractionState" : "manual",
@@ -7320,6 +7356,17 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "Handwriting recognition makes handwriting searchable; it runs on this device and nothing leaves it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El reconocimiento de escritura a mano permite buscar en lo escrito a mano; se hace en este dispositivo y nada sale de él."
           }
         }
       }
@@ -7911,6 +7958,18 @@
         }
       }
     },
+    "In Sempere" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: where a voice note was started",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En Sempere"
+          }
+        }
+      }
+    },
     "In Use" : {
       "comment" : "Settings ▸ Handwritten Math: this model reads handwriting",
       "extractionState" : "manual",
@@ -8265,17 +8324,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "«Pantalla siempre activa» impide que la pantalla se bloquee mientras haya una nota abierta."
-          }
-        }
-      }
-    },
-    "Handwriting recognition makes handwriting searchable; it runs on this device and nothing leaves it." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El reconocimiento de escritura a mano permite buscar en lo escrito a mano; se hace en este dispositivo y nada sale de él."
           }
         }
       }
@@ -10937,6 +10985,18 @@
         }
       }
     },
+    "Opened Sempere: active %@ after %@ s%@" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: technical details of continuing in the app (true/false, seconds, an error)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sempere abierto: activa %@ tras %@ s%@"
+          }
+        }
+      }
+    },
     "Opening the vault…" : {
       "comment" : "Progress",
       "extractionState" : "manual",
@@ -12492,6 +12552,18 @@
         }
       }
     },
+    "Recent Starts" : {
+      "comment" : "Settings ▸ Quick Voice Notes: the last few voice-note starts, with technical details",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicios recientes"
+          }
+        }
+      }
+    },
     "Recently Deleted" : {
       "comment" : "Sidebar row: deleted notes",
       "extractionState" : "manual",
@@ -12750,6 +12822,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Graba con el botón del micrófono de la barra de herramientas."
+          }
+        }
+      }
+    },
+    "Recorded" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: the start worked",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grabada"
+          }
+        }
+      }
+    },
+    "Recorded after opening Sempere" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: refused in the background, recorded with the app in front",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grabada tras abrir Sempere"
           }
         }
       }
@@ -14317,6 +14413,18 @@
         }
       }
     },
+    "Second try: %@" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: technical details of the try with the app in front",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Segundo intento: %@"
+          }
+        }
+      }
+    },
     "Secret key for “%@”" : {
       "comment" : "Section header; the value is a device label",
       "extractionState" : "manual",
@@ -15064,6 +15172,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Se muestra una sola vez: aquí no se podrá volver a ver. Pégala en el otro dispositivo cuando pida la clave o guárdala abajo. El portapapeles se vacía a los tres minutos."
+          }
+        }
+      }
+    },
+    "Siri or Shortcuts" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: where a voice note was started",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Siri o Atajos"
           }
         }
       }
@@ -19391,6 +19511,18 @@
         }
       }
     },
+    "Voice Note Not Recorded" : {
+      "comment" : "Banner title: a quick voice note could not start",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nota de voz no grabada"
+          }
+        }
+      }
+    },
     "Voice note" : {
       "comment" : "Live Activity label while a voice note records",
       "extractionState" : "manual",
@@ -19618,6 +19750,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Blanco"
+          }
+        }
+      }
+    },
+    "Widget or Control Center" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: where a voice note was started",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Widget o Centro de control"
           }
         }
       }
@@ -20007,6 +20151,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "iCloud Drive tiene dos versiones de «%@» que Sempere no puede combinar (los dos dispositivos cambiaron las claves de la bóveda). Se usa la versión de este dispositivo."
+          }
+        }
+      }
+    },
+    "iOS did not start the voice note's Live Activity, which it needs to record in the background: %@" : {
+      "comment" : "Error: the Live Activity request failed; followed by the system's reason",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iOS no inició la actividad en directo de la nota de voz, que necesita para grabar en segundo plano: %@"
+          }
+        }
+      }
+    },
+    "iOS would not record in the background and did not open Sempere to record there: %@" : {
+      "comment" : "Error: a quick voice note could not start; followed by the system's reason",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iOS no permitió grabar en segundo plano ni abrió Sempere para grabar allí: %@"
           }
         }
       }

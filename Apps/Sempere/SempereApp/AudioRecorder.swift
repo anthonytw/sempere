@@ -79,13 +79,49 @@ final class AVAudioCaptureBackend: AudioCaptureBackend {
         return s
     }
 
+    /// Not mixable (no `.mixWithOthers`): the audio system refuses a *mixable* recording started
+    /// from the background ("`cannotStartRecording` … usually because it is starting a mixable
+    /// recording from the background", AudioSessionTypes.h).
     private func activate() throws {
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothHFP])
+        } catch {
+            throw RecordingError.cannotRecord(Self.explain(error, step: "setCategory"))
+        }
+        do {
             try session.setActive(true)
         } catch {
-            throw RecordingError.cannotRecord(error.localizedDescription)
+            throw RecordingError.cannotRecord(Self.explain(error, step: "setActive"))
+        }
+    }
+
+    /// The audio system's refusal with its step, domain and code (and the code's name when it is an
+    /// `AVAudioSession.ErrorCode`), so the start diagnostics say which refusal it was.
+    nonisolated static func explain(_ error: Error, step: String) -> String {
+        let ns = error as NSError
+        var code = "\(ns.domain) \(ns.code)"
+        if let name = sessionErrorName(ns.code) { code += " \(name)" }
+        return "\(ns.localizedDescription) (\(step): \(code))"
+    }
+
+    /// The four-character code and name of an `AVAudioSession.ErrorCode` (AudioSessionTypes.h).
+    nonisolated static func sessionErrorName(_ code: Int) -> String? {
+        switch code {
+        case 560_557_684: return "'!int' cannotInterruptOthers"
+        case 561_145_187: return "'!rec' cannotStartRecording"
+        case 561_015_905: return "'!pla' cannotStartPlaying"
+        case 561_017_449: return "'!pri' insufficientPriority"
+        case 560_030_580: return "'!act' isBusy"
+        case 560_161_140: return "'!cat' incompatibleCategory"
+        case 1_701_737_535: return "'ent?' missingEntitlement"
+        case 1_936_290_409: return "'siri' siriIsRecording"
+        case 561_145_203: return "'!res' resourceNotAvailable"
+        case 1_768_841_571: return "'inac' sessionNotActive"
+        case 561_210_739: return "'!ses' expiredSession"
+        case 1_836_282_486: return "'msrv' mediaServicesFailed"
+        case 2_003_329_396: return "'what' unspecified"
+        default: return nil
         }
     }
 
@@ -94,7 +130,7 @@ final class AVAudioCaptureBackend: AudioCaptureBackend {
         let channels = AVAudioSession.sharedInstance().inputNumberOfChannels
         let r: AVAudioRecorder
         do { r = try AVAudioRecorder(url: url, settings: Self.settings(format, inputChannels: channels)) } catch {
-            throw RecordingError.cannotRecord(error.localizedDescription)
+            throw RecordingError.cannotRecord(Self.explain(error, step: "AVAudioRecorder"))
         }
         guard r.record() else { throw RecordingError.cannotRecord("the recorder did not start") }
         recorder = r

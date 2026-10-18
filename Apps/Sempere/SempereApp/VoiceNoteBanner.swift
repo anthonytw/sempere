@@ -28,7 +28,7 @@ struct VoiceNoteBanner: View {
                 bar(tint: notice.result == .failed ? .orange : .green) {
                     Image(systemName: notice.result.symbol).font(.title2)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(notice.result.title).font(.headline)
+                        Text(notice.title ?? notice.result.title).font(.headline)
                         Text(notice.error ?? notice.result.detail).font(.footnote).opacity(0.9)
                     }
                     Spacer(minLength: 0)

@@ -59,6 +59,9 @@ struct QuickCaptureSettingsSection: View {
             if let problem { Text(problem).font(.footnote).foregroundStyle(.orange) }
             // Why the Lock Screen / Control Center / Action button / widget shortcuts cannot record,
             // whether or not Quick Voice Notes is set up yet, with the way to the system Settings.
+            if !model.quickCapture.recentStarts.isEmpty {
+                RecentStartsView(attempts: model.quickCapture.recentStarts) { model.quickCapture.startLog.clear() }
+            }
             ForEach(blockers, id: \.self) { blocker in
                 VStack(alignment: .leading, spacing: 4) {
                     Label(blocker.title, systemImage: "exclamationmark.triangle.fill")
@@ -164,5 +167,73 @@ enum VoiceNoteBlocker: Hashable {
             return String(localized: "Voice notes cannot record without the microphone. Open Sempere's Settings and turn on Microphone.",
                           comment: "Settings ▸ Quick Voice Notes: why voice notes cannot record, and what to do")
         }
+    }
+}
+
+/// Settings ▸ Quick Voice Notes ▸ Recent Starts: the last few voice-note starts on this device
+/// (`QuickCapture.recentStarts`, `VoiceNoteStartLog`; the lines are selectable), for the owner to read when a widget,
+/// the control, Siri or Shortcuts did not record. Where each came from, the app's state, what the
+/// Live Activity request and the audio system answered, and how it ended; nothing personal.
+struct RecentStartsView: View {
+    let attempts: [VoiceNoteStartAttempt]
+    let clear: () -> Void
+
+    var body: some View {
+        DisclosureGroup {
+            ForEach(attempts) { a in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(Self.sourceTitle(a.source)).font(.subheadline.weight(.semibold))
+                        Spacer(minLength: 8)
+                        Text(a.date, format: .dateTime.month(.abbreviated).day().hour().minute().second())
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Label(Self.outcomeTitle(a.outcome), systemImage: a.outcome == .failed ? "xmark.circle" : "checkmark.circle")
+                        .font(.footnote)
+                        .foregroundStyle(a.outcome == .failed ? .orange : .green)
+                    ForEach(Array(Self.lines(a).enumerated()), id: \.offset) { _, line in
+                        Text(line).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+            }
+            Button("Clear Recent Starts", role: .destructive, action: clear)
+        } label: {
+            LabeledContent("Recent Starts", value: attempts.first.map { Self.outcomeTitle($0.outcome) } ?? "")
+        }
+    }
+
+    static func sourceTitle(_ source: VoiceNoteStartSource) -> String {
+        switch source {
+        case .shortcut: return String(localized: "Siri or Shortcuts", comment: "Settings ▸ Quick Voice Notes ▸ Recent Starts: where a voice note was started")
+        case .widgetOrControl: return String(localized: "Widget or Control Center", comment: "Settings ▸ Quick Voice Notes ▸ Recent Starts: where a voice note was started")
+        case .app: return String(localized: "In Sempere", comment: "Settings ▸ Quick Voice Notes ▸ Recent Starts: where a voice note was started")
+        }
+    }
+
+    static func outcomeTitle(_ outcome: VoiceNoteStartAttempt.Outcome) -> String {
+        switch outcome {
+        case .recording: return String(localized: "Recorded", comment: "Settings ▸ Quick Voice Notes ▸ Recent Starts: the start worked")
+        case .recordingInApp: return String(localized: "Recorded after opening Sempere", comment: "Settings ▸ Quick Voice Notes ▸ Recent Starts: refused in the background, recorded with the app in front")
+        case .failed: return String(localized: "Did not record", comment: "Settings ▸ Quick Voice Notes ▸ Recent Starts: the start failed")
+        }
+    }
+
+    /// One line per step: the first try, the move to the app, the retry. Technical values (states,
+    /// error domains and codes) stay as the system gives them, untranslated.
+    static func lines(_ a: VoiceNoteStartAttempt) -> [String] {
+        var out = [String(localized: "First try: \(VoiceNoteStartLog.describe(a.first))",
+                          comment: "Settings ▸ Quick Voice Notes ▸ Recent Starts: technical details of the first try")]
+        if let f = a.foreground {
+            let waited = String(format: "%.1f", f.waited)
+            let error = f.error.map { " \($0.type) \($0.summary)" } ?? ""
+            out.append(String(localized: "Opened Sempere: active \(String(f.becameActive)) after \(waited) s\(error)",
+                              comment: "Settings ▸ Quick Voice Notes ▸ Recent Starts: technical details of continuing in the app"))
+        }
+        if let r = a.retry {
+            out.append(String(localized: "Second try: \(VoiceNoteStartLog.describe(r))",
+                              comment: "Settings ▸ Quick Voice Notes ▸ Recent Starts: technical details of the try with the app in front"))
+        }
+        return out
     }
 }
