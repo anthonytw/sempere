@@ -288,6 +288,9 @@ struct PageCanvasView: UIViewRepresentable {
         /// The user scrolls: the item's menu goes (layout and focus changes that move the offset do not count).
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
             if scrollView.isDragging || scrollView.isDecelerating { host?.itemSelection.viewMoved() }
+            #if DEBUG
+            host?.itemSelection.debugRefreshReport()   // the report's offset (`PhoneReadingScrollUITests`)
+            #endif
         }
 
         /// A pinch ended: the fitted width is a detent (`ZoomDetent`).
@@ -922,11 +925,23 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
             isMac: Platform.isMac, level: smoothingLevel, editable: editable,
             inkingTool: toolPicker.selectedToolItem is PKToolPickerInkingItem, rulerActive: canvas.isRulerActive)
         mouseInk.setActive(pointer)
-        mathLasso.setActive(mathLassoHandler != nil && !isReadOnly && !isPreparing && !drawingSuspended)
+        let lasso = mathLassoHandler != nil && !isReadOnly && !isPreparing && !drawingSuspended
+        mathLasso.setActive(lasso)
         let draws = editable && !ours && !pointer
         canvas.drawingGestureRecognizer.isEnabled = draws
         setPencilKitGestures(enabled: draws)
+        // PencilKit makes its own scroll take two fingers whenever the drawing policy lets a finger
+        // draw (`.anyInput`, the iPhone's), whether or not its drawing recognizer is on: a pageless
+        // note in reading mode did not scroll with one finger (TestFlight build 4). One finger
+        // scrolls while none draws, as in the paged stack (`PageStackHost.minimumPanTouches`); the
+        // object eraser and the math lasso keep their own two-finger rule while they hold the finger.
+        if Platform.isPhone, !isEmbedded, !ours, !lasso {
+            canvas.panGestureRecognizer.minimumNumberOfTouches = Self.phonePanTouches(fingerDraws: draws)
+        }
     }
+
+    /// The fingers the one-page canvas's scroll takes on an iPhone: two while a finger draws, else one.
+    static func phonePanTouches(fingerDraws: Bool) -> Int { fingerDraws ? 2 : 1 }
 
     /// PencilKit's recognizers the app turned off along with `drawingGestureRecognizer`
     /// (`setPencilKitGestures`), to turn back on with it.
