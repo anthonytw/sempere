@@ -235,6 +235,39 @@ text; the audio system's code is named, for example `'!rec' cannotStartRecording
 error, and the outcome. No note content, no keys, no vault name. Settings ▸ Quick Voice Notes ▸ Recent Starts
 shows them (selectable text), with Clear.
 
+Every tap that reaches Sempere is kept too (`VoiceNoteTap`, `SempereShared/VoiceNoteTapLog.swift`), whatever it
+was decided to do, in `VoiceNoteTaps.json` in the App Group container (the last 12, protected until the first
+unlock, so the widget extension could add to it as well) and in the unified log (`voice note tap …`): which
+intent ran (`VoiceNoteControlIntent`, `StartVoiceNoteIntent`, `StopVoiceNoteIntent`) or that a widget opened the
+app (below), in which process, the phase the widget or control was drawn with and the app's live phase, the
+decision (start, stop, open Settings, open the banner, or `unavailable`: the app's hooks were missing), the
+intent's `currentMode` when `perform()` began, the app's state, and what failed after the decision
+(`continueInForeground` refused, a Stop that threw). Settings ▸ Quick Voice Notes ▸ Recent Starts lists taps and
+starts together by time; Clear clears both. Build 6 kept only starts, so a tap that went on into the app or
+never reached an intent left nothing.
+
+### Widget taps that open the app
+
+TestFlight 1.0.0 (6), iPhone: a tap on the Lock Screen widget opened the app, recorded nothing and left no
+Recent Starts entry, so `perform()` never ran. The widget's `Button(intent:)` used `.buttonStyle(.plain)`
+around its label: a plain button takes taps only where its label draws, and on the rectangular widget that
+was the glyph and the two lines of text. Any other point of the widget is the widget's own tap, which opens
+the app (with its `widgetURL`, or with none), and there was nothing else. Now:
+
+- the label fills the widget and `contentShape(Rectangle())` makes every point of it the button's;
+- the widget has a `widgetURL` of its own (`VoiceNoteLink.widgetTapURL`, `sempere://quick-voice/widget`): a
+  tap that still opens the app (iOS deciding so, for example) arrives there, is kept as `widgetOpenedApp`, and
+  the app does what the button would have done from its live state (`QuickCapture.widgetOpenedApp`): record
+  (in front, so no background permission is needed), stop, or show the setup or the banner. Anyone can open
+  that URL; it does nothing a tap on the widget, the control or Siri could not do (see "Threat model").
+
+Apple: "On a locked device, buttons and toggles are inactive and the system doesn't perform actions unless a
+person authenticates and unlocks their device"
+([Adding interactivity to widgets](https://developer.apple.com/documentation/widgetkit/adding-interactivity-to-widgets-and-live-activities)).
+So a tap on the Lock Screen widget of a locked iPhone first asks for Face ID (or the passcode) even though
+the intents set `authenticationPolicy = .alwaysAllowed`. Apple does not say whether the button's intent then
+runs or the app opens; the tap log says which (a `controlIntent` tap, or a `widgetOpenedApp` one).
+
 | Phase | Shows | A tap |
 | --- | --- | --- |
 | Not set up | mic slashed, "Set Up Voice Notes" | opens the app at Settings ▸ Quick Voice Notes (`sempere://quick-voice/settings`; the control's `VoiceNoteControlIntent` continues in the app). Only when no profile is stored: a profile the Keychain will not hand over now shows as Ready, and a start says that the settings could not be read |
@@ -266,7 +299,8 @@ the sealed file is in the inbox (before any transcript), "Saved to Inbox"
 ("Saved on This Device" when it went to the queue, "Not Saved" on failure),
 and is dismissed 5 seconds later (12 for a failure). The app's banner says
 the same when the app is open. Opening the app from the Live Activity
-(`sempere://quick-voice/recording`) lands on the banner. Any other `sempere:` URL is
+(`sempere://quick-voice/recording`) lands on the banner; the widget's own
+`sempere://quick-voice/widget` is a widget tap ("Widget taps that open the app"). Any other `sempere:` URL is
 ignored (`VoiceNoteLink.route`): anyone can open one, and it is never taken
 for a vault.
 
@@ -274,6 +308,13 @@ for a vault.
 
 - On a device: which refusal iOS gives a background start (Settings ▸ Quick Voice Notes ▸ Recent Starts), and
   whether the Lock Screen widget now records after the unlock.
+- On a device (build 7): a Lock Screen widget tap is kept as a `controlIntent` tap (the button ran) or a
+  `widgetOpenedApp` one (iOS opened the app instead); none at all means the tap never reached Sempere.
+- On a device: why a mic tap (control or widget) brings the app forward. The tap's `mode` says whether iOS
+  had already put the app in front when `perform()` began; a decision `openSettings` or `openRecording` means
+  the live state needed the app; a start whose outcome is "Recorded after opening Sempere" has the background
+  refusal on its "First try" line (`activity=failed …` is ActivityKit's, `error=… '!rec'/'!int'/'!pla'` the
+  audio system's).
 - On a device: the Lock Screen path (intent launch while locked, Keychain
   after first unlock, writing to an iCloud Drive folder while locked, the
   Live Activity).

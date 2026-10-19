@@ -10314,6 +10314,18 @@
         }
       }
     },
+    "Nothing: Sempere's actions were not ready" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: the tap ran where the app had not set up its actions",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nada: las acciones de Sempere no estaban listas"
+          }
+        }
+      }
+    },
     "Notifications are off for Sempere, so the reminder shows here only; allow them in the system Settings ▸ Notifications." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10759,6 +10771,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abrir Sempere"
+          }
+        }
+      }
+    },
+    "Open Sempere at its settings" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: what a tap was decided to do",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir Sempere en sus ajustes"
+          }
+        }
+      }
+    },
+    "Open Sempere at the recording" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: what a tap was decided to do",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir Sempere en la grabación"
           }
         }
       }
@@ -15521,6 +15557,18 @@
         }
       }
     },
+    "Start recording" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: what a tap was decided to do",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empezar a grabar"
+          }
+        }
+      }
+    },
     "Stereo" : {
       "comment" : "Recording channels: two channels (Settings picker)",
       "extractionState" : "manual",
@@ -15658,6 +15706,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Detener y guardar la nota de voz"
+          }
+        }
+      }
+    },
+    "Stop recording" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: what a tap was decided to do",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dejar de grabar"
           }
         }
       }
@@ -16192,6 +16252,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Toca para grabar"
+          }
+        }
+      }
+    },
+    "Tap: Siri or Shortcuts" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: Siri or a shortcut asked for a voice note",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toque: Siri o Atajos"
+          }
+        }
+      }
+    },
+    "Tap: Stop" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: the Live Activity's Stop reached Sempere",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toque: Detener"
+          }
+        }
+      }
+    },
+    "Tap: Widget opened Sempere" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: a widget tap opened the app instead of running its action",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toque: el widget abrió Sempere"
+          }
+        }
+      }
+    },
+    "Tap: Widget or Control Center" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: a tap on a widget or the control reached Sempere",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toque: widget o Centro de control"
           }
         }
       }

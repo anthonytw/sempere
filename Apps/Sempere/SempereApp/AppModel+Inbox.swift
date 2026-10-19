@@ -58,6 +58,7 @@ extension AppModel {
     @discardableResult
     func quickCaptureBecameActive() -> Task<Void, Never> {
         quickCapture.publishStatus(forceReload: true)
+        quickCapture.refreshTaps()   // the widget extension may have kept a tap meanwhile
         do { try quickCapture.flushStoredQueue() } catch {
             // They stay queued; unlocking the vault moves them too.
             inboxLog.error("voice notes stay queued: \(String(describing: error), privacy: .public)")

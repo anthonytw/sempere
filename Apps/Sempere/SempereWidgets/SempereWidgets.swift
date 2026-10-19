@@ -63,6 +63,10 @@ struct VoiceNoteWidgetView: View {
 
     var body: some View {
         content
+            // A tap that does not reach the button (or that iOS turns into opening the app) opens
+            // the app with this link: the app keeps it in Recent Starts and does what the button
+            // would have done. Without it such a tap opened the app with nothing at all.
+            .widgetURL(VoiceNoteLink.widgetTapURL)
             // The placeholder (shown before the device's first unlock, when nothing can
             // run or be read yet) is redacted by default: gray boxes instead of the mic.
             .unredacted()
@@ -74,7 +78,18 @@ struct VoiceNoteWidgetView: View {
         // One intent for every phase, as the control (never `widgetURL`, which only opens
         // the app): the app decides when tapped, from its live state, whether to record,
         // stop or continue in the app, so a stale status cannot make a tap do nothing.
-        Button(intent: status.tapIntent) { label }.buttonStyle(.plain)
+        //
+        // The button fills the whole widget and every point of it takes the tap. A `.plain`
+        // button is hit only where its label draws: on the rectangular Lock Screen widget that was
+        // the glyph and the two lines of text, and a tap anywhere else in the widget fell through
+        // to the widget's default action, opening the app without running the intent (TestFlight
+        // 1.0.0 (6): "opens the app, records nothing", no Recent Starts entry).
+        Button(intent: status.tapIntent) {
+            label
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder private var label: some View {

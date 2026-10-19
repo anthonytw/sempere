@@ -142,10 +142,20 @@ enum VoiceNoteLink: String, CaseIterable, Equatable, Sendable {
         URL(string: "\(Self.scheme)://\(Self.host)/\(rawValue)") ?? URL(fileURLWithPath: "/")
     }
 
+    /// The widget's own URL (`widgetURL`): what a tap on the widget that does not run its button's
+    /// intent opens (a tap beside the button, or iOS opening the app instead). The app keeps it in
+    /// Recent Starts and then does what the button would have done (`QuickCapture.widgetOpenedApp`).
+    static var widgetTapURL: URL {
+        URL(string: "\(scheme)://\(host)/\(widgetTapPath)") ?? URL(fileURLWithPath: "/")
+    }
+    static let widgetTapPath = "widget"
+
     /// What the app does with a URL it is opened with (`RootView.onOpenURL`).
     enum Route: Equatable {
         /// A quick voice link.
         case link(VoiceNoteLink)
+        /// `widgetTapURL`: a widget tap reached the app instead of the widget's intent.
+        case widgetTap
         /// Another `sempere:` URL (a link from a newer version, or typed or
         /// sent by anyone): ignored, never opened as a vault.
         case ignore
@@ -155,6 +165,10 @@ enum VoiceNoteLink: String, CaseIterable, Equatable, Sendable {
 
     static func route(_ url: URL) -> Route {
         if let link = VoiceNoteLink(url: url) { return .link(link) }
+        if url.scheme?.lowercased() == scheme, url.host?.lowercased() == host,
+           url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")) == widgetTapPath {
+            return .widgetTap
+        }
         return url.scheme?.lowercased() == scheme ? .ignore : .file
     }
 
