@@ -182,8 +182,14 @@ final class DrawingPaletteUITests: XCTestCase {
         #if targetEnvironment(macCatalyst)
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
         #else
-        // A tap outside the popover dismisses it (the top of the window, the navigation bar's middle).
-        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.03)).tap()
+        // A tap outside the popover dismisses it: on the button that opened it (a full palette's inline choices
+        // have no such button: the selected tool's button then).
+        let choices = element(app, "palette.choices")
+        if choices.exists, choices.isHittable {
+            choices.tap()
+        } else {
+            palette(app).buttons.matching(NSPredicate(format: "selected == true")).firstMatch.tap()
+        }
         #endif
         XCTAssertTrue(panel.waitForNonExistence(timeout: 5), "the choices went away")
     }

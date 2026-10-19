@@ -40,15 +40,25 @@ final class PaletteButtonUITests: XCTestCase {
         app.descendants(matching: .any).matching(identifier: "annotateButton").firstMatch
     }
 
+    /// A tap (a click on a Mac: a toolbar toggle there takes no synthesized tap).
+    @MainActor
+    private func press(_ element: XCUIElement) {
+        #if targetEnvironment(macCatalyst)
+        element.click()
+        #else
+        element.tap()
+        #endif
+    }
+
     /// Annotate, reading, Annotate, reading: the palette follows each tap.
     @MainActor
     private func checkToggles(_ app: XCUIApplication, _ what: String) {
         XCTAssertTrue(annotate(app).waitForExistence(timeout: 10), "the Annotate button")
         XCTAssertFalse(palette(app).exists, "\(what): no palette while reading (a note opens in reading)")
         for round in 1...2 {
-            annotate(app).tap()
+            press(annotate(app))
             XCTAssertTrue(palette(app).waitForExistence(timeout: 10), "\(what) \(round): Annotate brought the palette up")
-            annotate(app).tap()
+            press(annotate(app))
             XCTAssertTrue(palette(app).waitForNonExistence(timeout: 10), "\(what) \(round): reading put the palette away")
         }
     }

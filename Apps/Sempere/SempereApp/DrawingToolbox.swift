@@ -17,7 +17,20 @@ import UIKit
 @Observable
 final class DrawingToolbox {
     /// The app's tool state.
-    static let shared = DrawingToolbox()
+    static let shared = DrawingToolbox(defaults: launchDefaults)
+
+    /// `UserDefaults.standard`; in a demo-vault launch (`SEMPERE_DEMO`, the UI tests and the App Store
+    /// screenshots) a defaults suite emptied at launch, so every such launch starts with the black pen and
+    /// the object eraser whatever an earlier test picked.
+    private static var launchDefaults: UserDefaults {
+        #if DEBUG
+        if DebugLaunch.environment["SEMPERE_DEMO"] != nil, let suite = UserDefaults(suiteName: "sempere-demo-tools") {
+            suite.removePersistentDomain(forName: "sempere-demo-tools")
+            return suite
+        }
+        #endif
+        return .standard
+    }
     static let defaultsKey = "Sempere.drawingTools"
     /// Posted (object: the toolbox) whenever the state changed.
     static let didChange = Notification.Name("SempereDrawingToolsDidChange")
