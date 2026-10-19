@@ -260,6 +260,7 @@ private struct AddDeviceKeyView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(LocalizedStringKey(generated == nil ? "Cancel" : "Done")) { dismiss() }
+                        .help("Close this window")
                 }
                 if generated == nil {
                     ToolbarItem(placement: .confirmationAction) {
@@ -267,6 +268,7 @@ private struct AddDeviceKeyView: View {
                             if replacing == nil { Task { await add() } } else { confirmingReplace = true }
                         }
                         .disabled(mode == .paste && recipient.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .help("Add this device's key to the vault")
                     }
                 }
             }

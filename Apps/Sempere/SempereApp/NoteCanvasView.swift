@@ -584,6 +584,7 @@ struct EditorView: View {
                         Label("Page Layout", systemImage: "rectangle.split.1x2")
                     }
                     .pickerStyle(.menu)
+                    .help("Switch between pages and one endless page")
                 }
                 ToolbarItem(placement: .primaryAction) {
                     // Tap: show or hide the palette. Press and hold: compact palette.

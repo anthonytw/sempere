@@ -51,6 +51,7 @@ struct ExportSheet: View {
                     } label: {
                         if job.isRunning { Text("Stop", comment: "Button: stop a running export") } else { Text("Close") }
                     }
+                        .help("Export this note")
                 }
             }
         }

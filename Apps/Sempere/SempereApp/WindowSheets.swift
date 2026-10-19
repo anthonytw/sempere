@@ -206,10 +206,12 @@ struct OpenedPDFsView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { model.discardOpenedPDFs() }
+                        .help("Discard the opened PDFs without importing them")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Import") { runImport() }
                         .disabled(importing || model.openedPDFStage != .ready)
+                        .help("Import the opened PDFs as notes")
                 }
             }
         }

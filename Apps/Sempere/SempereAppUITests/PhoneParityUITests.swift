@@ -108,8 +108,11 @@ final class PhoneParityUITests: XCTestCase {
     func testSettingsSheetOpensAndFitsTheScreen() throws {
         let app = launch()
         defer { app.terminate() }
+        let more = app.buttons["sidebar-more"].firstMatch
+        require(more, "the More menu on the sidebar's bar", in: app)
+        more.tap()
         let settings = app.buttons["Settings"].firstMatch
-        require(settings, "the Settings button on the sidebar's bar", in: app)
+        require(settings, "Settings in the More menu", in: app)
         settings.tap()
         let form = app.descendants(matching: .any)["settingsForm"].firstMatch
         require(form, "the Settings form", in: app)
@@ -120,7 +123,7 @@ final class PhoneParityUITests: XCTestCase {
         require(done, "Settings' Done button", in: app)
         done.tap()
         XCTAssertTrue(form.waitForNonExistence(timeout: 10), "Settings closed")
-        require(app.buttons["Settings"].firstMatch, "the sidebar again", in: app)
+        require(app.buttons["sidebar-more"].firstMatch, "the sidebar again", in: app)
     }
 
     /// The import entries are in the note list's overflow menu, and the system picker opens from them.

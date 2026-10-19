@@ -51,6 +51,7 @@ struct NewNotebookView: View {
                     Button("Create", action: create)
                         .disabled(path == nil || model.isEditing)
                         .accessibilityIdentifier("new-notebook-create")
+                        .help("Create the notebook")
                 }
             }
             .onAppear { focused = true }

@@ -143,6 +143,7 @@ struct MoveNoteView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Move") { move(to: notebook) }
                         .disabled(NotebookPath.canonical(notebook) == nil)
+                        .help("Move to this notebook")
                 }
             }
         }
@@ -202,6 +203,7 @@ struct MoveNotebookView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Move") { move(into: parent) }
                         .disabled(Self.result(of: path, into: parent) == nil)
+                        .help("Move into this notebook")
                 }
             }
         }

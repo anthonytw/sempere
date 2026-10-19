@@ -58,6 +58,7 @@ struct NewVaultView: View {
                         Button("Create") { create() }
                             .disabled(!canCreate)
                             .accessibilityIdentifier("newVault.create")
+                            .help("Create the vault")
                     }
                 }
             }
@@ -376,6 +377,7 @@ private struct KeyReceipt: View {
                     SecretPasteboard.copy(created.secretKey ?? "")
                     copied = true
                 }
+                    .help("Copy the secret key to the clipboard")
                 // The share sheet without its Copy (`SecretSharing`), never a ShareLink.
                 Button("Share…", systemImage: "square.and.arrow.up") { sharing = true }
             }

@@ -250,6 +250,7 @@ final class SidebarDropUITests: XCTestCase {
         #if targetEnvironment(macCatalyst)
         app.typeKey("n", modifierFlags: [.command, .control])
         #else
+        app.buttons["sidebar-more"].firstMatch.tap()
         app.buttons["sidebar-new-notebook"].firstMatch.tap()
         #endif
         let field = app.textFields["new-notebook-name"].firstMatch

@@ -876,6 +876,7 @@ struct ThinningPreviewView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: cancel) }
                 ToolbarItem(placement: .destructiveAction) {
                     Button("Thin", role: .destructive, action: thin).disabled(report.isEmpty)
+                        .help("Thin the old versions listed above")
                 }
             }
         }

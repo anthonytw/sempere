@@ -61,6 +61,7 @@ struct UnlockView: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Close Vault") { model.close() }
+                    .help("Close the vault (⇧⌘W)")
             }
         }
         .disabled(model.isBusy || keys.isUnlocking)
@@ -139,6 +140,7 @@ private struct RememberKeyView: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Not Now") { answer(nil) }
+                    .help("Do not save the key on this device")
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") { answer(remember ? (sync ? .iCloudKeychain : .thisDevice) : nil) }

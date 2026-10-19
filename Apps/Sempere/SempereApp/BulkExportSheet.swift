@@ -64,6 +64,7 @@ struct BulkExportSheet: View {
                     Button(run.isRunning ? "Stop" : "Close") {
                         if run.isRunning { run.cancel() } else { dismiss() }
                     }
+                        .help("Stop the export, or close this window when it is done")
                 }
             }
         }
