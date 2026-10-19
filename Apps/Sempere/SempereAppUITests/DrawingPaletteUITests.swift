@@ -72,7 +72,8 @@ final class DrawingPaletteUITests: XCTestCase {
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES",
                                "-Sempere.paletteCompact", compact ? "YES" : "NO"]
         var env = ["SEMPERE_DEMO": "1", "SEMPERE_DEBUG_COLUMNS": "detailOnly", "SEMPERE_DEMO_NOTE": "thoughts",
-                   "SEMPERE_DEMO_ITEMS": "1", "SEMPERE_DEMO_MAC_WINDOW": "1000x900", "TZ": "UTC"]
+                   "SEMPERE_DEMO_ITEMS": "1", "SEMPERE_DEMO_MAC_WINDOW": "1000x900", "SEMPERE_DEBUG_FINGERS_DRAW": "1",
+                   "TZ": "UTC"]
         if annotating { env["SEMPERE_DEBUG_NOTE_MODE"] = "annotate" }
         app.launchEnvironment = env
         #if !targetEnvironment(macCatalyst)

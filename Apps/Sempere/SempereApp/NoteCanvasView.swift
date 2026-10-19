@@ -780,3 +780,4 @@ enum NoteTitle {
         return t.isEmpty ? String(localized: "Untitled", comment: "Shown for a note without a title") : t
     }
 }
+

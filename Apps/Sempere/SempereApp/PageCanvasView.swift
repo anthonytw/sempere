@@ -45,6 +45,10 @@ struct PageCanvasView: UIViewRepresentable {
     }
 
     func updateUIView(_ host: PageCanvasHost, context: Context) {
+        CanvasFocus.updating { update(host, context: context) }
+    }
+
+    private func update(_ host: PageCanvasHost, context: Context) {
         let c = context.coordinator
         editor.canvasTarget = host
         let index = editor.pages.firstIndex { $0.id == pageID }
@@ -633,7 +637,8 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
         // An iPhone has no Pencil: a finger draws (once annotating is switched on).
         // The policy follows the mode from here on (`applyDrawingPolicy`).
         canvas.drawingPolicy = Self.drawingPolicy(device: NoteDevice.current, phoneFingersDraw: false,
-                                                  pencilAnnotates: false, pencilOnlyDefault: Self.debugPencilOnly)
+                                                  pencilAnnotates: false, pencilOnlyDefault: Self.debugPencilOnly,
+                                                  fingersDefault: Self.debugFingersDraw)
         canvas.alwaysBounceVertical = true
         canvas.contentInsetAdjustmentBehavior = .never
         canvas.insertSubview(paperView, at: 0)
@@ -802,10 +807,23 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
     /// through with the arrow keys (`CanvasFocus`). For focus the canvas takes
     /// by itself (opening, layout, an edit ending), never the user's.
     func focusUnlessKeyboardElsewhere(container: UIView? = nil) {
-        guard window != nil, !canvas.isFirstResponder,
-              !CanvasFocus.keyboardIsElsewhere(than: container ?? self) else { return }
+        guard window != nil, !canvas.isFirstResponder else { return }
+        // Never in the middle of SwiftUI's update of the canvas (`CanvasFocus.isUpdating`): right after it.
+        if CanvasFocus.isUpdating {
+            guard !focusScheduled else { return }
+            focusScheduled = true
+            DispatchQueue.main.async { [weak self, weak container] in
+                guard let self else { return }
+                self.focusScheduled = false
+                self.focusUnlessKeyboardElsewhere(container: container)
+            }
+            return
+        }
+        guard !CanvasFocus.keyboardIsElsewhere(than: container ?? self) else { return }
         focus()
     }
+
+    private var focusScheduled = false
 
     /// The paged stack this page belongs to (embedded only).
     private var enclosingStack: UIView? {
@@ -1021,7 +1039,8 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
         let drawing = canvas.drawingGestureRecognizer.state
         if inkInProgress, drawing == .began || drawing == .changed || objectEraser.isErasing { return }
         let policy = Self.drawingPolicy(device: NoteDevice.current, phoneFingersDraw: phoneFingersDraw,
-                                        pencilAnnotates: pencilAnnotates, pencilOnlyDefault: Self.debugPencilOnly)
+                                        pencilAnnotates: pencilAnnotates, pencilOnlyDefault: Self.debugPencilOnly,
+                                        fingersDefault: Self.debugFingersDraw)
         if canvas.drawingPolicy != policy { canvas.drawingPolicy = policy }
     }
 
@@ -1030,11 +1049,11 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
     /// iPad draws with the Pencil only while reading or in Hand mode (its touch switches to annotating), and
     /// as the system says while annotating (the Pencil; a finger too when no Pencil is used).
     static func drawingPolicy(device: NoteDevice, phoneFingersDraw: Bool, pencilAnnotates: Bool,
-                              pencilOnlyDefault: Bool = false) -> PKCanvasViewDrawingPolicy {
+                              pencilOnlyDefault: Bool = false, fingersDefault: Bool = false) -> PKCanvasViewDrawingPolicy {
         switch device {
         case .phone: return phoneFingersDraw ? .anyInput : .pencilOnly
         case .mac: return .anyInput
-        case .pad: return pencilAnnotates || pencilOnlyDefault ? .pencilOnly : .default
+        case .pad: return pencilAnnotates || pencilOnlyDefault ? .pencilOnly : fingersDefault ? .anyInput : .default
         }
     }
 
@@ -1044,6 +1063,16 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
     static var debugPencilOnly: Bool {
         #if DEBUG
         DebugLaunch.environment["SEMPERE_DEBUG_PENCIL_ONLY"] != nil
+        #else
+        false
+        #endif
+    }
+
+    /// UI tests on the iPad simulator (`DrawingPaletteUITests`, `SEMPERE_DEBUG_FINGERS_DRAW`): a finger draws while
+    /// annotating, whatever the simulator's "Only Draw with Apple Pencil" says.
+    static var debugFingersDraw: Bool {
+        #if DEBUG
+        DebugLaunch.environment["SEMPERE_DEBUG_FINGERS_DRAW"] != nil
         #else
         false
         #endif

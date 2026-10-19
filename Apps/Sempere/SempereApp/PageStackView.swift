@@ -40,6 +40,10 @@ struct PageStackView: UIViewRepresentable {
     }
 
     func updateUIView(_ stack: PageStackHost, context: Context) {
+        CanvasFocus.updating { update(stack) }
+    }
+
+    private func update(_ stack: PageStackHost) {
         editor.canvasTarget = stack
         stack.update(PageStackHost.Configuration(
             editor: editor, pageIDs: pageIDs, pageSize: pageSize, pageJump: pageJump, generation: generation,
@@ -119,6 +123,7 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
     /// A reveal waits for the jump to the match's page, the first layout or the end of a pinch.
     private(set) var pendingReveal = false
     private var baking = false
+    private var focusScheduled = false
 
     override convenience init(frame: CGRect) {
         self.init(frame: frame, toolbox: .shared)
@@ -398,6 +403,16 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
     /// unless the user drew on another.
     private func ensureFocus() {
         guard window != nil else { return }
+        // Never in the middle of SwiftUI's update of the stack (`CanvasFocus.isUpdating`): right after it.
+        if CanvasFocus.isUpdating {
+            guard !focusScheduled else { return }
+            focusScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                self?.focusScheduled = false
+                self?.ensureFocus()
+            }
+            return
+        }
         // A page being drawn on, or a text box being typed in, already has it.
         if slots.values.contains(where: { $0.host.canvas.isFirstResponder || $0.host.textEditor.isEditing }) { return }
         guard let id = editor?.currentPage?.id, let slot = slots[id] else { return }
