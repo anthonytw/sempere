@@ -1732,7 +1732,8 @@ A capture sealed by a device that is no longer in the vault never verifies,
 also while the rewrap of its removal is unfinished: it is reported and kept.
 `import` adopts each capture as a note in the capture's notebook ("Inbox"),
 titled from its date: the audio and transcript as blobs, then one delta as this
-machine (the recording records who captured it, `captured`, `format.md`
+machine (the note's page shows the recording's card, where its transcript reads, as a recording made
+in a note does) (the recording records who captured it, `captured`, `format.md`
 §8.3.1), then the inbox files are deleted. The note, page and recording ids
 derive from the capture id, so importing on two machines gives one note. A
 capture that does not verify is reported (exit 1) and kept. Each file's tag
@@ -1748,7 +1749,8 @@ now. `--json`:
 duration, device, recipient, capturedBy, error}]` (`recipient` is the
 fingerprint of the key the capture is attributed to, `capturedBy` its label);
 `import` gives `{dryRun, captures: [{capture, note, title, created,
-transcript, file, removed, error, captured, capturedBy}]}`.
+transcript, card, file, removed, error, captured, capturedBy}]}` (`card`: the new note shows the
+recording's card on its page).
 
 ### Shared settings
 

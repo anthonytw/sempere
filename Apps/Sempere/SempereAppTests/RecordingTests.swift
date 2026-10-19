@@ -16,11 +16,27 @@ final class FakeCapture: AudioCaptureBackend {
     var files: [URL] = []
     var failResume = false
     var failBegin = false
+    /// Refuses a non-mixable activation as iOS refuses one from the background once the intent's
+    /// fake-foreground assertion is gone ('!int' cannotInterruptOthers).
+    var failNonMixableActivation = false
+    /// Refuses a mixable one too.
+    var failMixableActivation = false
+    /// Called at each activation (tests check what had happened by then).
+    var onActivate: (@MainActor (Bool) -> Void)?
+
+    func activateSession(mixable: Bool) async throws {
+        log.append(mixable ? "activate-mixable" : "activate")
+        onActivate?(mixable)
+        if mixable ? failMixableActivation : failNonMixableActivation {
+            throw RecordingError.cannotRecord("Operation denied (setActive\(mixable ? " (mixable)" : ""): NSOSStatusErrorDomain 560557684 '!int' cannotInterruptOthers)")
+        }
+    }
 
     func begin(file url: URL, format: RecordingFormat) throws {
         log.append("begin")
         if failBegin { throw RecordingError.cannotRecord("test") }
-        try FileManager.default.copyItem(at: RecordingTests.tone, to: url)
+        // Quick voice notes record ADTS (`QuickCapture.segmentExtension`), in-note recordings MPEG-4.
+        try FileManager.default.copyItem(at: url.pathExtension == "aac" ? try TestAudio.adtsTone() : RecordingTests.tone, to: url)
         files.append(url)
     }
     func pause() { log.append("pause") }

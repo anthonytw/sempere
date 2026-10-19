@@ -127,7 +127,8 @@ struct VoiceNoteStartTests {
         #expect(why.type.hasSuffix("Refused"))
         #expect(a.first.error?.type.hasSuffix("QuickCaptureError") == true)
         #expect(a.first.error?.description.hasPrefix("iOS did not start the voice note's Live Activity") == true)
-        #expect(phone.backends.first?.log.isEmpty == true, "the background try never reached the recorder")
+        #expect(phone.backends.first?.log == ["activate", "deactivate"],
+                "the background try activated the session, then released it, and never reached the recorder")
         if case .failed = a.retry?.activity {} else { Issue.record("the retry's request is kept too") }
         #expect(a.outcome == .recordingInApp)
         _ = try await phone.capture.stop()

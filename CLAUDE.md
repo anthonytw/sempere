@@ -750,7 +750,10 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   background time leaves it for `sweep()` rather than losing the note. A recipient change rewraps and re-tags
   `inbox/` too (`Vault.rewrapInbox`; in iCloud `downloadEverything` fetches it first) and the app refreshes the
   profile after it. A note "exists" for adoption once it has a revision (a folder holding only `att/` is still
-  new), and a waiting transcript writes nothing.
+  new), and a waiting transcript writes nothing. Quick-capture segments are ADTS (`QuickCapture.segmentExtension`:
+  an MPEG-4 segment cut off by a restart or force quit does not decode at all), and a start activates the audio
+  session BEFORE requesting the Live Activity (iOS ends the intent's fake-foreground assertion when the activity
+  begins, and a non-mixable activation after that is refused '!int'; docs/quick-capture.md "Start order").
 - Video items (`format.md` §8.2.7, task G2): a container is read only by
   `VideoProbe` (pure Swift, bounded reads, fuzzed); location metadata is
   removed in place by `ByteEdit`s applied while the file streams into the blob

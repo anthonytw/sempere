@@ -52,6 +52,13 @@ struct VoiceNoteStartTry: Codable, Equatable, Sendable {
     var appState: String
     /// Nil when the try ended before the Live Activity was asked for (not set up, no microphone).
     var activity: VoiceNoteActivityRequest?
+    /// The microphone permission as the try read it (`granted`, `denied`, `undetermined`; nil before build 7).
+    var microphone: String?
+    /// Whether protected data was available (false before the first unlock after a restart; nil before build 7).
+    var protectedData: Bool?
+    /// How the audio session was made active, before the Live Activity was asked for (`not mixable`,
+    /// `mixable after a refusal`); nil when the try did not get that far.
+    var session: String?
     /// Nil when the recorder started.
     var error: VoiceNoteErrorInfo?
 }
@@ -128,8 +135,20 @@ final class VoiceNoteStartLog {
         return Array(((try? decoder.decode([VoiceNoteStartAttempt].self, from: data)) ?? []).prefix(capacity))
     }
 
+    /// Reads the file again and keeps this launch's starts too (protected data became available).
+    func reload() {
+        var known = Set(attempts.map(\.id))
+        let onDisk = Self.read(url).filter { known.insert($0.id).inserted }
+        attempts = Array((attempts + onDisk).sorted { $0.date > $1.date }.prefix(Self.capacity))
+    }
+
     func append(_ attempt: VoiceNoteStartAttempt) {
-        attempts = Array(([attempt] + attempts).prefix(Self.capacity))
+        // The file may hold starts this launch could not read (it began before the first unlock after a
+        // restart): merged, never overwritten with only this launch's.
+        var known = Set(attempts.map(\.id))
+        let onDisk = Self.read(url).filter { known.insert($0.id).inserted }
+        let merged = (attempts + onDisk).sorted { $0.date > $1.date }
+        attempts = Array(([attempt] + merged).prefix(Self.capacity))
         Self.log(attempt)
         if let url {
             let encoder = JSONEncoder()
@@ -171,7 +190,11 @@ final class VoiceNoteStartLog {
         case .notRequested(let why): activity = "not requested (\(why))"
         case nil: activity = "-"
         }
-        return "app=\(t.appState) activity=\(activity) error=\(t.error.map { "\($0.type) \($0.summary)" } ?? "none")"
+        var extra = ""
+        if let m = t.microphone { extra += " mic=\(m)" }
+        if let p = t.protectedData { extra += " protectedData=\(p)" }
+        if let s = t.session { extra += " session=\(s)" }
+        return "app=\(t.appState)\(extra) activity=\(activity) error=\(t.error.map { "\($0.type) \($0.summary)" } ?? "none")"
     }
 }
 

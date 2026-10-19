@@ -64,7 +64,11 @@ extension AppModel {
             inboxLog.error("voice notes stay queued: \(String(describing: error), privacy: .public)")
         }
         let capture = quickCapture
-        return Task { await capture.sweep() }
+        return Task {
+            await capture.sweep()
+            // A Live Activity left by a process that was force quit while recording (TestFlight 1.0.0 (6)).
+            await capture.endOrphanedActivities()
+        }
     }
 
     /// Turns quick voice notes on for the open vault: voice notes then go to

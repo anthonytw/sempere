@@ -6,8 +6,9 @@ Shortcuts ("Record a Sempere voice note"). Stopping it seals the audio into
 the vault's inbox, encrypted. The vault is not unlocked and Face ID is not
 asked; the device may even be locked. The next time the vault is unlocked on
 any device, each voice note becomes a note in the inbox notebook ("Inbox",
-configurable), titled with its date and time, holding the recording and,
-when it is ready, its transcript. Format: `format.md` §11. Code: core
+configurable), titled with its date and time, holding the recording on its
+page (the card a recording made in a note gets, `format.md` §11.3) and, when
+it is ready, its transcript in that card. Format: `format.md` §11. Code: core
 `Sources/Sempere/CaptureInbox.swift`, CLI `sempere inbox`, app
 `QuickCapture.swift`, `AppModel+Inbox.swift`, `SempereShared/` (intents) and
 `SempereWidgets/` (widget extension).
@@ -72,7 +73,7 @@ vault, and the vault's integrity.
   the inbox or the queue, or when no segment holds any audio (not a byte, or
   only finished files of no length): a voice note whose audio was not sealed
   into an inbox file is never deleted. Every
-  `segment-NNN.m4a` in the folder is sealed, also one the recording's
+  `segment-NNN.aac` (`segment-NNN.m4a` from build 6 and earlier) in the folder is sealed, also one the recording's
   manifest does not name yet (begun just before the app died), and a folder
   whose manifest is missing or does not decode is sealed from its segment
   files under the id it is named by. Kept, and the "Not Saved" message says
@@ -97,6 +98,21 @@ seconds it takes to seal and transcribe it, except after a crash or a
 termination before sealing finished: then until the app next starts or
 becomes active and can read it. Audio that cannot be sealed at all (nothing
 in it decodes) stays, protected, until quick voice notes are turned off.
+
+### Restarts, force quits and crashes
+
+Segments are AAC in ADTS (`segment-NNN.aac`, `QuickCapture.segmentExtension`), merged into one MPEG-4
+file when the voice note is sealed. ADTS frames each stand alone, so a segment the recorder never
+finished (the iPhone restarted, the app was force quit or crashed) is readable up to its last frame.
+Build 6 recorded MPEG-4 segments of up to ten minutes, whose index is written only when the recorder
+finishes the file: a voice note cut off by a restart did not decode at all, was kept "for later" and
+never became a note, and nothing said so (TestFlight 1.0.0 (6), iPhone). Apple Lossless, which ADTS
+cannot carry, records as AAC for quick voice notes.
+
+The sweep that saves such a recording runs at launch, each time the app becomes active, when protected
+data becomes available (the first unlock after a restart, in a process Siri launched before it), and when
+Stop is pressed on a Live Activity whose recording the process does not have. The banner says
+"Interrupted Voice Note Saved", or "Interrupted Voice Note Not Saved Yet" (once per launch) when it is kept.
 
 ## Delivery and queueing
 
@@ -140,10 +156,19 @@ the widget extension compile. They always run in the app's process
 buttons.
 
 The Live Activity belongs to the process that started it, but iOS keeps it
-across app restarts and reboots. A new process cannot reach the old
-recording, so it ends every voice note Live Activity that started before it
-launched. Stop on an activity it does not know also ends it, without an
-error. `start()` claims the recorder before its first suspension, so two
+across app restarts (a force quit does not end it). A new process cannot reach
+the old recording, so it ends every voice note Live Activity that is not its
+own recording's (`endOrphanedActivities`: at launch, each time the app becomes
+active, when protected data becomes available, and for any the system reports
+later through `activityUpdates` that started before the launch), and saves what
+that recording left (`sweep`). Stop on an activity it does not know also ends it,
+without an error, and runs the sweep. While recording, the app sends the activity
+its state every 45 seconds with a stale date 2 minutes on; when the app dies the
+updates stop, the activity turns stale and shows "Voice note interrupted ▸ Open
+Sempere to save it" instead of a Stop that would reach nothing (TestFlight 1.0.0
+(6): after a force quit the activity kept running and Stop did nothing). Whether
+iOS launches a force-quit app for a Live Activity's button is not documented; the
+stale state's tap opens the app, which always works. `start()` claims the recorder before its first suspension, so two
 intents firing together cannot start two recordings. With Live Activities
 off, iOS ends an intent's recording, so `start()` refuses with an
 explanation (also shown in Settings).
@@ -222,6 +247,38 @@ intent whose surface shows none. Now (`QuickCapture.start(_:)`):
    `foregroundWait`; `AppActivation.wait`) and tries once more. The wait and the retry run in an app-owned task, so
    cancelling the intent does not cancel them.
 4. If that try fails, the banner says "Voice Note Not Recorded" with the reason and stays until dismissed.
+
+### Start order: the audio session before the Live Activity
+
+TestFlight 1.0.0 (6), iPhone, iOS 27.0.1, from the unified log of a Control Center tap: chronod ran
+`VoiceNoteControlIntent` through BackgroundShortcutRunner, liveactivitiesd gave the app a
+fake-foreground assertion, the app (launched in the background) requested the Live Activity, which
+began, and liveactivitiesd invalidated the assertion at once ("reason: activityBegun"). Nine
+milliseconds later `setActive` on the non-mixable `.playAndRecord` session failed in audiomxd with
+"Cannot interrupt others" (-12985, '!int'), with no other audio playing, and the start continued in
+the app. So a start (`QuickCapture.startRecorderOnce`) now:
+
+1. makes the session active first, off the main thread (`AudioCaptureBackend.activateSession`), while the
+   assertion holds; not mixable;
+2. if iOS refuses that with the app not in front, activates it mixable (`.mixWithOthers`, which interrupts
+   no one), and Recent Starts says so (`session=mixable after a refusal (…)`); a refusal of both continues
+   in the app as before;
+3. asks for the Live Activity;
+4. starts the recorder on the active session (`begin` does not activate it again).
+
+Build 3 started the recorder before the Live Activity and failed with `cannotRecord`; that try activated
+the session and started the recorder in one step, and its error text was lost (`RecordingError 0`), so
+which step failed is not known. Whether a mixable recording from the background is refused ('!rec',
+"usually because it is starting a mixable recording from the background", AudioSessionTypes.h) once the
+session is already active is not documented either: the Recent Starts line of a start that needed it says.
+
+The microphone permission read in a process an intent launched in the background (Siri after a restart:
+"Sempere is not allowed to use the microphone", TestFlight 1.0.0 (6)) is not taken as the user's answer:
+a refusal there continues in the app (`microphoneUnconfirmed`), where the answer is fresh and the prompt
+can show; in front, a refusal is `microphoneDenied`. A start before the first unlock after a restart says
+to unlock once (`beforeFirstUnlock`). Recent Starts keeps the permission read (`mic=`) and whether protected
+data was available (`protectedData=`) for each try; a start log written by a launch that could not read
+the file is merged with it, not written over it.
 
 ### Recent starts (diagnostics)
 
@@ -305,6 +362,18 @@ ignored (`VoiceNoteLink.route`): anyone can open one, and it is never taken
 for a vault.
 
 ## Not verified yet
+
+- On an iPhone (build 7): a Control Center, Action button or Siri start records in the background, with
+  Recent Starts showing `session=not mixable` (the order fixed it) or `session=mixable after a refusal`
+  (the fallback did), and the recording is audible with music playing in another app in the mixable case.
+- On an iPhone: restart during a voice note, unlock, open Sempere (or just unlock and wait): the banner
+  says "Interrupted Voice Note Saved" and the note has the audio up to the restart. Force quit during one:
+  within 2 minutes the Live Activity says "Voice note interrupted"; tapping it opens Sempere, which ends it
+  and saves the note. Whether Stop on that activity launches the force-quit app at all.
+- On an iPhone: `AVAudioRecorder` writing ADTS for a `.aac` URL (the simulator tests write ADTS with
+  `AVAudioFile`; the unit tests use a fake recorder).
+- On an iPhone: Siri after a restart and one unlock: a start records (in the background, or after opening
+  Sempere); Recent Starts shows the `mic=` value that build 6 took for a refusal.
 
 - On a device: which refusal iOS gives a background start (Settings ▸ Quick Voice Notes ▸ Recent Starts), and
   whether the Lock Screen widget now records after the unlock.
