@@ -430,6 +430,25 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
     var fingersPick = Platform.isPhone {
         didSet { applyFingerMode() }
     }
+    /// The Pencil draws while selection mode is on (an iPad in Hand mode, `NoteModeInput.pencilAnnotates`):
+    /// the selection's taps, drags, turns and holds take fingers and the pointer only, so a Pencil touch
+    /// reaches PencilKit's drawing (which switches the note to annotating).
+    var pencilDraws = false {
+        didSet {
+            guard pencilDraws != oldValue else { return }
+            let types = Self.selectionTouchTypes(pencilDraws: pencilDraws)
+            for g in [tap, pan, rotate] as [UIGestureRecognizer] { g.allowedTouchTypes = types }
+            hold.allowedTouchTypes = pencilDraws ? [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+                : [UITouch.TouchType.direct, .pencil].map { NSNumber(value: $0.rawValue) }
+        }
+    }
+
+    /// The touches selection mode takes: all of them, or all but the Pencil while it draws (`pencilDraws`).
+    static func selectionTouchTypes(pencilDraws: Bool) -> [NSNumber] {
+        var types: [UITouch.TouchType] = [.direct, .indirect, .indirectPointer]
+        if !pencilDraws { types.append(.pencil) }
+        return types.map { NSNumber(value: $0.rawValue) }
+    }
     private func applyFingerMode() {
         fingerTap.isEnabled = fingersPick
         itemTap.isEnabled = !fingersPick

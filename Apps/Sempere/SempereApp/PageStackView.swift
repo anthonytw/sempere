@@ -21,14 +21,15 @@ struct PageStackView: UIViewRepresentable {
     var pageJump = 0
     var paletteVisible = true
     var paletteCompact = false
-    var drawingSuspended = false
+    /// What the note's mode lets the pages do (`NoteModeInput`).
+    var input = NoteModeInput()
     /// `NoteEditor.canvasGeneration`: a change reloads every page's ink.
     var generation = 0
     var itemSource = ItemLayerSource()
     var itemCommands = ItemCommands()
     var selectingItems = false
     var onSelectingItemsEnded: () -> Void = {}
-    var onHandToolPicked: () -> Void = {}
+    var onPencilAnnotate: () -> Void = {}
     /// The text tool (`PageCanvasContent.addingText`).
     var addingText = false
     var onAddingTextEnded: (CanvasModes.TextToolEnd) -> Void = { _ in }
@@ -43,9 +44,9 @@ struct PageStackView: UIViewRepresentable {
         editor.canvasTarget = stack
         stack.update(PageStackHost.Configuration(
             editor: editor, pageIDs: pageIDs, pageSize: pageSize, pageJump: pageJump, generation: generation,
-            paletteVisible: paletteVisible, paletteCompact: paletteCompact, drawingSuspended: drawingSuspended,
+            paletteVisible: paletteVisible, paletteCompact: paletteCompact, input: input,
             itemSource: itemSource, itemCommands: itemCommands, selectingItems: selectingItems,
-            onSelectingItemsEnded: onSelectingItemsEnded, onHandToolPicked: onHandToolPicked, addingText: addingText, onAddingTextEnded: onAddingTextEnded,
+            onSelectingItemsEnded: onSelectingItemsEnded, onPencilAnnotate: onPencilAnnotate, addingText: addingText, onAddingTextEnded: onAddingTextEnded,
             onDrop: onDrop))
     }
 
@@ -74,12 +75,12 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         var generation = 0
         var paletteVisible = true
         var paletteCompact = false
-        var drawingSuspended = false
+        var input = NoteModeInput()
         var itemSource = ItemLayerSource()
         var itemCommands = ItemCommands()
         var selectingItems = false
         var onSelectingItemsEnded: () -> Void = {}
-        var onHandToolPicked: () -> Void = {}
+        var onPencilAnnotate: () -> Void = {}
         var addingText = false
         var onAddingTextEnded: (CanvasModes.TextToolEnd) -> Void = { _ in }
         var onDrop: ((_ providers: [NSItemProvider], _ pageID: UUID, _ point: CGPoint) -> Void)?
@@ -135,7 +136,7 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         content.accessibilityIdentifier = "pageStack.content"
         scroller.addSubview(content)
         addSubview(scroller)
-        // A swipe to the left or right turns the page while an iPhone is only reading
+        // A swipe to the left or right turns the page while an iPhone is reading
         // (`PhoneReading.swipeTurnsPages`); the recognizers do nothing otherwise.
         for direction in [UISwipeGestureRecognizer.Direction.left, .right] {
             let swipe = UISwipeGestureRecognizer(target: self, action: #selector(swiped(_:)))
@@ -174,6 +175,8 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
     func update(_ configuration: Configuration) {
         let editor = configuration.editor
         let newEditor = self.editor !== editor
+        // Annotate went on (the user's button or menu): the current page takes the focus, so the palette shows.
+        let paletteTurnedOn = configuration.paletteVisible && self.configuration?.paletteVisible == false && !newEditor
         self.configuration = configuration
         self.editor = editor
         if configuration.paletteCompact != paletteCompact {
@@ -183,7 +186,7 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
             for slot in Array(slots.values) + spares { slot.host.adopt(picker) }
         }
         let size = PageCanvasHost.displayable(configuration.pageSize)
-        let footer = !editor.isReadOnly && !configuration.drawingSuspended
+        let footer = !editor.isReadOnly && !configuration.input.reading   // a tap while reading never writes
         layout = PageStackLayout(pageWidth: size.width, pageHeight: size.height, count: configuration.pageIDs.count,
                                  footerScreenHeight: footer ? Double(PageExtent.footerScreenHeight) : 0)
         footerButton.isHidden = !footer
@@ -214,6 +217,7 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         if pendingReveal { performReveal() }
         updateSlots()
         updateGestures()
+        if paletteTurnedOn, let id = editor.currentPage?.id, let slot = slots[id] { slot.host.annotateStarted() }
     }
 
     /// The stack goes away: every load stops and every canvas is dropped.
@@ -354,11 +358,11 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
             editor: editor, pageID: pageID,
             content: PageCanvasContent(paper: editor.displayedPaper(of: page), pageSize: configuration.pageSize,
                                        generation: configuration.generation,
-                                       drawingSuspended: configuration.drawingSuspended,
+                                       input: configuration.input,
                                        itemSource: configuration.itemSource, itemCommands: configuration.itemCommands,
                                        selectingItems: configuration.selectingItems,
                                        onSelectingItemsEnded: configuration.onSelectingItemsEnded,
-                                       onHandToolPicked: configuration.onHandToolPicked,
+                                       onPencilAnnotate: configuration.onPencilAnnotate,
                                        onDrop: configuration.onDrop, addingText: configuration.addingText,
                                        onAddingTextEnded: configuration.onAddingTextEnded),
             to: slot.host)
@@ -406,8 +410,9 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
     /// draw too, scrolling takes two (as on PencilKit's own canvas).
     private func updateGestures() {
         guard let editor, let configuration else { return }
-        let drawing = !editor.isReadOnly && !configuration.drawingSuspended && !configuration.selectingItems
-            && !configuration.addingText
+        // An iPad reading or in Hand mode: the Pencil draws (`pencilAnnotates`), so it never scrolls.
+        let drawing = !editor.isReadOnly && !configuration.input.drawingSuspended && !configuration.addingText
+            && (!configuration.selectingItems || configuration.input.pencilAnnotates)
         let pan = scroller.panGestureRecognizer
         pan.allowedTouchTypes = Self.panTouchTypes(drawing: drawing, isMac: Platform.isMac)
         pan.minimumNumberOfTouches = Self.minimumPanTouches(drawing: drawing, fingersDraw: fingersDraw)
@@ -417,7 +422,7 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
 
     /// Whether a swipe turns the page now.
     var swipeTurnsPages: Bool {
-        PhoneReading.swipeTurnsPages(isPhone: Platform.isPhone, drawingSuspended: configuration?.drawingSuspended ?? false,
+        PhoneReading.swipeTurnsPages(isPhone: Platform.isPhone, reading: configuration?.input.reading ?? false,
                                      zoomed: scroller.zoomScale > 1.001 || !fitted, pageCount: configuration?.pageIDs.count ?? 0)
     }
 
@@ -470,9 +475,11 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
 
     /// Whether a finger draws on the pages (their drawing policy, `ObjectEraserController.fingersDraw`).
     private var fingersDraw: Bool {
-        // The phone's page canvases switch their policy with the mode (`PageCanvasHost.applyPhoneDrawingPolicy`):
+        // The phone's page canvases switch their policy with the mode (`PageCanvasHost.applyDrawingPolicy`):
         // a finger draws whenever drawing is on.
         if Platform.isPhone { return true }
+        // An iPad reading or in Hand mode: only the Pencil draws (`PageCanvasHost.drawingPolicy`).
+        if configuration?.input.pencilAnnotates == true { return false }
         if let slot = slots.values.first ?? spares.first { return ObjectEraserController.fingersDraw(slot.host.canvas) }
         return Platform.isMac || Platform.isPhone || !UIPencilInteraction.prefersPencilOnlyDrawing
     }

@@ -55,13 +55,13 @@ final class ScreenshotTests: XCTestCase {
 
     /// The iPad's and the Mac's shots.
     static var deviceShots: [Shot] {
-        // "Hide Tool Palette" / "Show Tool Palette" is in the toolbar whenever an editable note is open; the
-        // note's own title is not (a crowded toolbar drops it).
-        let respiration = "Tool Palette"
-        let atlas = "Tool Palette"
+        // "Annotate" (the pencil) is in the toolbar whenever an editable note is open; the note's own title is
+        // not (a crowded toolbar drops it). The shots open their notes annotating, the palette up.
+        let respiration = "Annotate"
+        let atlas = "Annotate"
         let all = isMac ? "all" : "detailOnly"
         func env(_ columns: String, _ extra: [String: String]) -> [String: String] {
-            var e = ["SEMPERE_DEMO": "1", "SEMPERE_DEBUG_COLUMNS": columns]
+            var e = ["SEMPERE_DEMO": "1", "SEMPERE_DEBUG_COLUMNS": columns, "SEMPERE_DEBUG_NOTE_MODE": "annotate"]
             if isMac { e["SEMPERE_DEMO_MAC_WINDOW"] = "1280x800" }
             for (k, v) in extra { e[k] = v }
             return e

@@ -72,11 +72,36 @@ final class PhoneParityUITests: XCTestCase {
         seen.append("School -> \(titleShown("School"))")
         XCTAssertTrue(seen.last?.hasSuffix("true") == true, "tapping School opens its note list; \(seen)")
         goBack(app)
-        // Its sub-notebooks are listed under it, each opening its own list.
+        // Its sub-notebooks are listed under it once it is unfolded, each opening its own list.
+        let fold = app.descendants(matching: .any).matching(identifier: "sidebar-fold-School").firstMatch
+        require(fold, "School's chevron", in: app)
+        fold.tap()
         let child = app.descendants(matching: .any).matching(identifier: "sidebar-notebook-School/Biology").firstMatch
         require(child, "Biology listed under School", in: app, timeout: 10)
         child.tap()
         XCTAssertTrue(titleShown("Biology"), "tapping Biology opens its note list")
+    }
+
+    /// Notebooks fold on the iPhone as on the iPad (owner, 2026-10-19): folded at first, the chevron at the end of
+    /// a row unfolds its sub-notebooks without opening the notebook, and folds them again.
+    @MainActor
+    func testNotebooksFoldAndUnfold() throws {
+        let app = launch()
+        defer { app.terminate() }
+        let parent = app.descendants(matching: .any).matching(identifier: "sidebar-notebook-School").firstMatch
+        require(parent, "the sidebar's School notebook", in: app)
+        let child = app.descendants(matching: .any).matching(identifier: "sidebar-notebook-School/Biology").firstMatch
+        XCTAssertFalse(child.exists, "folded at first: Biology is not listed")
+        let fold = app.descendants(matching: .any).matching(identifier: "sidebar-fold-School").firstMatch
+        require(fold, "School's chevron", in: app)
+        XCTAssertEqual(fold.label, "Unfold School")
+        fold.tap()
+        require(child, "unfolded: Biology is listed", in: app, timeout: 10)
+        XCTAssertTrue(parent.exists, "the chevron did not open School (the sidebar is still shown)")
+        XCTAssertEqual(fold.label, "Fold School")
+        fold.tap()
+        XCTAssertTrue(child.waitForNonExistence(timeout: 10), "folded again: Biology is hidden")
+        XCTAssertFalse(app.navigationBars.matching(identifier: "School").firstMatch.exists, "School's list never opened")
     }
 
     /// New Note in the list's bar creates a note and opens it.

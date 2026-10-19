@@ -73,7 +73,7 @@ final class MacRealMouseUITests: XCTestCase {
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"]
         app.launchEnvironment = ["SEMPERE_DEMO": "1", "SEMPERE_DEBUG_COLUMNS": columns, "SEMPERE_DEMO_NOTE": note,
                                  "SEMPERE_DEMO_SIDEBAR": "all", "SEMPERE_DEMO_MAC_WINDOW": "1100x900",
-                                 "SEMPERE_DEMO_ITEMS": "1", "TZ": "UTC"].merging(extra) { _, new in new }
+                                 "SEMPERE_DEMO_ITEMS": "1", "SEMPERE_DEBUG_NOTE_MODE": "annotate", "TZ": "UTC"].merging(extra) { _, new in new }
         app.launch()
         return app
     }

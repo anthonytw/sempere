@@ -65,7 +65,7 @@ final class MacItemUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"]
         app.launchEnvironment = ["SEMPERE_DEMO": "1", "SEMPERE_DEBUG_COLUMNS": "detailOnly", "SEMPERE_DEMO_NOTE": note,
-                                 "SEMPERE_DEMO_MAC_WINDOW": "900x900", "SEMPERE_DEMO_ITEMS": "1", "TZ": "UTC"]
+                                 "SEMPERE_DEMO_MAC_WINDOW": "900x900", "SEMPERE_DEMO_ITEMS": "1", "SEMPERE_DEBUG_NOTE_MODE": "annotate", "TZ": "UTC"]
             .merging(extra) { _, new in new }
         app.launch()
         return app

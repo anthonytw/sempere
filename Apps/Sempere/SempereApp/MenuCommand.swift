@@ -24,8 +24,10 @@ enum MenuCommand: String, CaseIterable, Sendable {
     // Edit
     case find, undo, redo
     // Tools
-    case toolPen, toolMarker, toolPencil, toolEraser, toolLasso, toggleRuler, togglePalette
-    case toolText, toolSelect, eraserSmaller, eraserLarger, toggleCompactPalette
+    /// The note's modes (`NoteMode`): the top bar's pencil and Hand.
+    case toggleAnnotate, toggleHand
+    case toolPen, toolMarker, toolPencil, toolEraser, toolLasso, toggleRuler
+    case toolText, eraserSmaller, eraserLarger, toggleCompactPalette
     // View
     case zoomIn, zoomOut, fitWidth, actualSize, toggleNoteList, togglePageStrip
     // Window
@@ -88,10 +90,13 @@ enum MenuCommand: String, CaseIterable, Sendable {
 
     /// The menu item's title in `context` (nil: no window state known). Commands that
     /// switch something on and off say what they do next; the others are `title`.
-    func title(in context: Context?, paletteVisible: Bool = true) -> String {
+    func title(in context: Context?) -> String {
         switch self {
-        case .togglePalette:
-            return paletteVisible ? String(localized: "Hide Tool Palette") : title
+        // As the top bar's buttons: the lit one goes back to reading.
+        case .toggleAnnotate:
+            return context?.noteMode == .annotating ? Self.backToReading : title
+        case .toggleHand:
+            return context?.noteMode == .hand ? Self.backToReading : title
         case .toggleCompactPalette:
             return context?.paletteCompact == true ? String(localized: "Use Full Palette") : title
         case .togglePageStrip:
@@ -107,6 +112,11 @@ enum MenuCommand: String, CaseIterable, Sendable {
         default:
             return title
         }
+    }
+
+    /// The mode commands' title while their mode is on.
+    static var backToReading: String {
+        String(localized: "Back to Reading", comment: "Tools menu: leave Annotate or Hand mode for reading")
     }
 
     var title: String {
@@ -159,9 +169,9 @@ enum MenuCommand: String, CaseIterable, Sendable {
         case .toolEraser: return String(localized: "Eraser", comment: "Tools menu: select the eraser")
         case .toolLasso: return String(localized: "Lasso", comment: "Tools menu: select the lasso")
         case .toggleRuler: return String(localized: "Ruler", comment: "Tools menu: show or hide the ruler")
-        case .togglePalette: return String(localized: "Show Tool Palette")
+        case .toggleAnnotate: return String(localized: "Annotate", comment: "Tools menu: draw on the page (Annotate mode, the palette)")
+        case .toggleHand: return String(localized: "Hand", comment: "Tools menu: Hand mode (select, move and resize items; nothing draws)")
         case .toolText: return String(localized: "Text", comment: "Tools menu: type text boxes on the page")
-        case .toolSelect: return String(localized: "Select", comment: "Tools menu: select images, text boxes and PDF pages")
         case .eraserSmaller: return String(localized: "Smaller Object Eraser", comment: "Tools menu")
         case .eraserLarger: return String(localized: "Larger Object Eraser", comment: "Tools menu")
         case .toggleCompactPalette: return String(localized: "Use Compact Palette", comment: "Tools menu: the short tool palette")
@@ -241,9 +251,9 @@ enum MenuCommand: String, CaseIterable, Sendable {
         case .toolEraser: return Shortcut("4", option)
         case .toolLasso: return Shortcut("5", option)
         case .toggleRuler: return Shortcut("r", option)
-        case .togglePalette: return Shortcut("p", shift)
+        case .toggleAnnotate: return Shortcut("p", shift)
         case .toolText: return Shortcut("6", option)
-        case .toolSelect: return Shortcut("7", option)
+        case .toggleHand: return Shortcut("7", option)
         case .eraserSmaller: return Shortcut("[", option)
         case .eraserLarger: return Shortcut("]", option)
         case .toggleCompactPalette: return Shortcut("p", shiftOption)
@@ -288,6 +298,8 @@ enum MenuCommand: String, CaseIterable, Sendable {
         var hasDeletedPages = false
         /// The compact tool palette is chosen (`ToolPalette.compactKey`).
         var paletteCompact = false
+        /// The open note's mode (`NoteMode`): reading, Hand or annotating.
+        var noteMode = NoteMode.initial
         /// The page thumbnails are shown beside the canvas (`PageStrip.visibleKey`).
         var pageStripVisible = false
         /// The library window shows the canvas alone (`ColumnLayout` `detailOnly`).
@@ -364,10 +376,11 @@ enum MenuCommand: String, CaseIterable, Sendable {
         case .nextPage: return context.hasPage && context.pageIndex + 1 < context.pageCount
         case .find, .toggleNoteList: return unlocked && context.hasNoteList
         case .undo, .redo: return context.canEditNote
-        case .toolPen, .toolMarker, .toolPencil, .toolEraser, .toolLasso, .toggleRuler, .togglePalette,
+        case .toolPen, .toolMarker, .toolPencil, .toolEraser, .toolLasso, .toggleRuler,
              .eraserSmaller, .eraserLarger, .toggleCompactPalette:
             return context.canEditNote
-        case .toolText, .toolSelect: return context.canEditNote && context.hasPage
+        // As the top bar's buttons (`NoteToolbar`): an editable note with a page.
+        case .toggleAnnotate, .toggleHand, .toolText: return context.canEditNote && context.hasPage
         case .zoomIn, .zoomOut, .fitWidth, .actualSize: return context.hasPage
         case .showLibrary: return !context.libraryWindowOpen
         case .showKeys: return unlocked
@@ -402,10 +415,11 @@ enum MenuLayout {
         [.deleteNote, .restoreNote],
     ]
     static let tools: [[MenuCommand]] = [
+        [.toggleAnnotate, .toggleHand],
         [.toolPen, .toolMarker, .toolPencil, .toolEraser, .toolLasso],
-        [.toolText, .toolSelect],
+        [.toolText],
         [.eraserSmaller, .eraserLarger],
-        [.toggleRuler, .togglePalette, .toggleCompactPalette],
+        [.toggleRuler, .toggleCompactPalette],
     ]
     static let view: [[MenuCommand]] = [
         [.zoomIn, .zoomOut, .fitWidth, .actualSize],
