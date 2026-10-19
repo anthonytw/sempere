@@ -45,6 +45,9 @@ extension SyncEngine {
         case use
     }
 
+    /// The bound of the tree's answer (16 MiB, the bound of any listing).
+    static let maxTreeBytes = 16 << 20
+
     /// Note folder counts for which the tree is used (or checked).
     static let deepListingNotes = 8...5_000
 
@@ -68,7 +71,7 @@ extension SyncEngine {
         try checkCancelled()
         try budget.checkTime()
         do {
-            switch try transport.listTree([Vault.notesName]) {
+            switch try transport.listTree([Vault.notesName], maxBytes: Self.maxTreeBytes) {
             case .listed(let tree)?:
                 try budget.list(tree.values.reduce(0) { $0 + $1.count })
                 let top = Set((tree[[]] ?? []).filter(\.isCollection).map(\.name))

@@ -18,7 +18,8 @@ public struct WebDAVSyncRemote: SyncRemote {
     /// listings and folder ETags are trusted only where seen to work
     /// (`TreeListing.swift`, `NoteStamps.swift`), weak ETags never back a condition.
     public var capabilities: RemoteCapabilities {
-        [.strongStamps, .rangeReads, .deepListing, .folderStampsTrackChildren, .createViaTemporaryName]
+        RemoteCapabilities(strongStamps: true, rangeReads: true, deepListing: true, folderStampsTrackChildren: true,
+                           atomicCreate: false, maxObjectBytes: nil)
     }
 
     public var interrupt: (@Sendable () -> (any Error)?)? {
@@ -28,8 +29,8 @@ public struct WebDAVSyncRemote: SyncRemote {
 
     public func list(_ path: [String]) throws -> [RemoteEntry]? { try client.list(path) }
 
-    public func listTree(_ path: [String]) throws -> RemoteTree? {
-        switch try client.listTree(path) {
+    public func listTree(_ path: [String], maxBytes: Int) throws -> RemoteTree? {
+        switch try client.listTree(path, maxBytes: maxBytes) {
         case .listed(let tree)?: return .listed(tree)
         case .refused?: return .refused
         case nil: return nil
@@ -47,7 +48,7 @@ public struct WebDAVSyncRemote: SyncRemote {
     /// not fit the remote one) gets the whole file again, from byte 0.
     @discardableResult
     public func download(_ path: [String], to file: URL, resumeFrom: Int, ifETag: String?, maxBytes: Int,
-                         segmentBytes: Int, progress: ((Int) throws -> Void)?) throws -> RemoteDownload {
+                         segmentBytes: Int, progress: ((Int) throws -> Void)?) throws -> DownloadResult {
         let got: WebDAVClient.Download
         do {
             got = try client.download(path, to: file, resumeFrom: resumeFrom, ifRange: ifETag, maxBytes: maxBytes,
@@ -57,7 +58,7 @@ public struct WebDAVSyncRemote: SyncRemote {
             try? FileManager.default.removeItem(at: file)
             got = try client.download(path, to: file, maxBytes: maxBytes, segmentBytes: segmentBytes, progress: progress)
         }
-        return RemoteDownload(resumed: got.resumed, etag: got.etag)
+        return DownloadResult(resumed: got.resumed, etag: got.etag)
     }
 
     @discardableResult

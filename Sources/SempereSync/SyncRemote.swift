@@ -49,10 +49,16 @@ public struct RemoteEntry: Hashable, Sendable {
     /// The modification time as the remote reports it (an opaque string), if any.
     public var lastModified: String?
     public var size: Int?
+    /// Whether the file's bytes can be read now. Always `.available` except
+    /// on stores that evict files: a listed file that is not available still
+    /// exists (it is never taken as dropped or missing).
+    public var availability: RemoteAvailability
 
-    public init(name: String, isCollection: Bool, etag: String? = nil, lastModified: String? = nil, size: Int? = nil) {
+    public init(name: String, isCollection: Bool, etag: String? = nil, lastModified: String? = nil, size: Int? = nil,
+                availability: RemoteAvailability = .available) {
         self.name = name; self.isCollection = isCollection
         self.etag = etag; self.lastModified = lastModified; self.size = size
+        self.availability = availability
     }
 
     /// What identifies this version of the file: the ETag, else the modification time.
@@ -89,7 +95,7 @@ public enum RemoteTree: Sendable, Equatable {
 }
 
 /// What `SyncRemote.download` received.
-public struct RemoteDownload: Sendable, Equatable {
+public struct DownloadResult: Sendable, Equatable {
     /// True when the bytes already in the file were kept and only the rest
     /// was fetched; false when the file now holds a fresh copy.
     public var resumed: Bool
@@ -109,22 +115,30 @@ public enum CollectionResult: Sendable, Equatable {
 
 /// What a remote can promise. The engine learns WebDAV's behavior by probing
 /// (`TreeListing.swift`, `NoteStamps.swift`), so these are declarations a
-/// transport makes up front; the engine reads them as later transports need.
-public struct RemoteCapabilities: OptionSet, Sendable, Hashable {
-    public let rawValue: Int
-    public init(rawValue: Int) { self.rawValue = rawValue }
-
-    /// Version tokens are strong (see the contract above) for files.
-    public static let strongStamps = RemoteCapabilities(rawValue: 1 << 0)
+/// transport makes up front, for the engine to branch on as later
+/// transports need it (nothing reads them yet).
+public struct RemoteCapabilities: Sendable, Hashable {
+    /// Version tokens of files are strong (see the contract above).
+    public var strongStamps: Bool
     /// `download` can resume at an offset.
-    public static let rangeReads = RemoteCapabilities(rawValue: 1 << 1)
+    public var rangeReads: Bool
     /// `listTree` may answer (it is still checked against per-collection listings).
-    public static let deepListing = RemoteCapabilities(rawValue: 1 << 2)
+    public var deepListing: Bool
     /// A collection's version token changes when a child is written (`skipUnchangedNotes`; still checked).
-    public static let folderStampsTrackChildren = RemoteCapabilities(rawValue: 1 << 3)
-    /// A large file must be written under a temporary name and moved into
-    /// place (`moveNoOverwrite`), because a create-only write of it is not atomic.
-    public static let createViaTemporaryName = RemoteCapabilities(rawValue: 1 << 4)
+    public var folderStampsTrackChildren: Bool
+    /// A create-only write of a large file appears whole or not at all.
+    /// Otherwise the engine writes it under a temporary name and moves it
+    /// into place (`moveNoOverwrite`), as it does for WebDAV blobs.
+    public var atomicCreate: Bool
+    /// The largest file the remote stores, if it has a limit.
+    public var maxObjectBytes: Int?
+
+    public init(strongStamps: Bool = false, rangeReads: Bool = false, deepListing: Bool = false,
+                folderStampsTrackChildren: Bool = false, atomicCreate: Bool = false, maxObjectBytes: Int? = nil) {
+        self.strongStamps = strongStamps; self.rangeReads = rangeReads; self.deepListing = deepListing
+        self.folderStampsTrackChildren = folderStampsTrackChildren; self.atomicCreate = atomicCreate
+        self.maxObjectBytes = maxObjectBytes
+    }
 }
 
 /// Whether a listed file's bytes can be read now (stores that evict files).
@@ -187,8 +201,9 @@ public protocol SyncRemote: Sendable {
     func list(_ path: [String]) throws -> [RemoteEntry]?
 
     /// Everything below a collection at once; nil when it does not exist,
-    /// `.refused` when the remote cannot (the engine then uses `list`).
-    func listTree(_ path: [String]) throws -> RemoteTree?
+    /// `.refused` when the remote cannot (the engine then uses `list`). An
+    /// answer over `maxBytes` is an error (the engine then lists one by one).
+    func listTree(_ path: [String], maxBytes: Int) throws -> RemoteTree?
 
     /// Metadata of one file; nil when it does not exist.
     func stat(_ path: [String]) throws -> RemoteEntry?
@@ -206,7 +221,7 @@ public protocol SyncRemote: Sendable {
     /// What was written before a failure stays in `file`.
     @discardableResult
     func download(_ path: [String], to file: URL, resumeFrom: Int, ifETag: String?, maxBytes: Int,
-                  segmentBytes: Int, progress: ((Int) throws -> Void)?) throws -> RemoteDownload
+                  segmentBytes: Int, progress: ((Int) throws -> Void)?) throws -> DownloadResult
 
     /// Writes one file under `condition`; false when the precondition failed
     /// (the file exists, or is not the version expected).
@@ -233,9 +248,7 @@ public protocol SyncRemote: Sendable {
     func missingCollectionError(_ path: [String]) -> any Error
 
     // MARK: Hooks for stores that evict files or fork versions (defaults: nothing to do)
-
-    /// Whether a listed file's bytes are readable now. Default: `.available`.
-    func availability(_ path: [String]) -> RemoteAvailability
+    // (Whether a listed file is readable now is its entry's `availability`.)
 
     /// Asks the store to bring these files' bytes here. Default: nothing.
     func requestDownload(_ paths: [[String]]) throws
@@ -251,7 +264,6 @@ public protocol SyncRemote: Sendable {
 }
 
 extension SyncRemote {
-    public func availability(_ path: [String]) -> RemoteAvailability { .available }
     public func requestDownload(_ paths: [[String]]) throws {}
     public func conflictVersions(_ path: [String]) -> [RemoteVersion] { [] }
     public func resolveConflicts(_ path: [String], _ versions: [RemoteVersion]) throws {}
