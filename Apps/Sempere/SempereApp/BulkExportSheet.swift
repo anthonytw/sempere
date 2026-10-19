@@ -69,7 +69,8 @@ struct BulkExportSheet: View {
         }
         .interactiveDismissDisabled(run.isRunning)
         .onDisappear { run.discard() }
-        .fileImporter(isPresented: $pickingFolder, allowedContentTypes: [.folder]) { picked in
+        // A folder picker with New Folder (`FolderPicker`).
+        .folderPicker(isPresented: $pickingFolder) { picked in
             if case .success(let url) = picked {
                 run.start(model: model, request: request, options: options, target: .folder(url, scoped: true))
             }

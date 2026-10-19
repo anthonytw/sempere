@@ -219,7 +219,8 @@ case "${1:-}" in
       -only-testing:SempereAppUITests/SidebarDropUITests -only-testing:SempereAppUITests/MacFocusUITests \
       -only-testing:SempereAppUITests/KeyShareMacUITests -only-testing:SempereAppUITests/QuitPurgeMacUITests \
       -only-testing:SempereAppUITests/NewVaultSheetUITests -only-testing:SempereAppUITests/MacImportUITests \
-      -only-testing:SempereAppUITests/MacExportUITests -only-testing:SempereAppUITests/MacRealMouseUITests
+      -only-testing:SempereAppUITests/MacExportUITests -only-testing:SempereAppUITests/MacRealMouseUITests \
+      -only-testing:SempereAppUITests/FolderPickerUITests
     xcb test -project "$project" -scheme SempereScreenshots -derivedDataPath "$derived" \
       -destination 'platform=macOS,variant=Mac Catalyst' ${only[@]+"${only[@]}"} \
       "${mac_ui_signing[@]}" ${ui_retry[@]+"${ui_retry[@]}"} ${extra[@]+"${extra[@]}"}
@@ -243,7 +244,7 @@ case "${1:-}" in
       -only-testing:SempereAppUITests/LaunchSmokeUITests/testFreshLaunchDoubleColumn \
       -only-testing:SempereAppUITests/LaunchSmokeUITests/testFirstUnlockShowsKeyNoticeThenTour \
       -only-testing:SempereAppUITests/NewVaultSheetUITests -only-testing:SempereAppUITests/MacImportUITests \
-      -only-testing:SempereAppUITests/MacExportUITests
+      -only-testing:SempereAppUITests/MacExportUITests -only-testing:SempereAppUITests/FolderPickerUITests
     xcb test -project "$project" -scheme SempereScreenshots -derivedDataPath "$derived" \
       -destination "platform=iOS Simulator,id=$sim" ${only[@]+"${only[@]}"} \
       -parallel-testing-enabled NO ${ui_retry[@]+"${ui_retry[@]}"} CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"}

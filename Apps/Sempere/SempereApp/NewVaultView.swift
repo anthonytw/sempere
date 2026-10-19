@@ -64,7 +64,8 @@ struct NewVaultView: View {
         }
         .interactiveDismissDisabled(created != nil || working)
         .holdsOnboarding()
-        .fileImporter(isPresented: $pickingFolder, allowedContentTypes: [.folder]) { result in
+        // A folder picker with New Folder (`FolderPicker`).
+        .folderPicker(isPresented: $pickingFolder) { result in
             switch result {
             case .success(let url):
                 folder = url
@@ -116,13 +117,14 @@ struct NewVaultView: View {
                 Text("On This Device").tag(Location.onDevice)
                 Text("Choose Folder…").tag(Location.folder)
             }
+            .accessibilityIdentifier("newVault.location")
             .onChange(of: location) { _, new in
                 if new == .folder { pickingFolder = true }
             }
             if location == .folder, let folder {
                 LabeledContent("Folder", value: subfolder.map { "\(folder.lastPathComponent) / \($0)" } ?? folder.lastPathComponent)
                     .accessibilityIdentifier("newVault.folder")
-                // The system folder picker on a Mac opens with New Folder off, and UIKit has no switch for it.
+                // The folder picker has New Folder too; this names one inside the chosen folder, made with the vault.
                 Button(subfolder == nil ? String(localized: "New Folder…", comment: "Button: put the vault into a new folder")
                                         : String(localized: "Rename New Folder…", comment: "Button: rename the new folder for the vault"),
                        systemImage: "folder.badge.plus") {
@@ -295,10 +297,12 @@ struct NewVaultView: View {
             Toggle("Also store the key under a passphrase", isOn: $wrap)
                 .accessibilityIdentifier("newVault.storeKey")
             if wrap {
-                PassphraseField(placeholder: String(localized: "Passphrase", comment: "Placeholder of the new passphrase field"),
-                                text: $passphrase, revealed: $revealed, identifier: "newVault.passphrase")
-                PassphraseField(placeholder: String(localized: "Repeat passphrase", comment: "Placeholder of the passphrase confirmation"),
-                                text: $confirmation, revealed: $revealed, identifier: "newVault.confirmation")
+                // One row: AutoFill's Strong Password fills both fields only when they sit together (iPad).
+                PassphrasePairField(placeholder: String(localized: "Passphrase", comment: "Placeholder of the new passphrase field"),
+                                    confirmationPlaceholder: String(localized: "Repeat passphrase",
+                                                                    comment: "Placeholder of the passphrase confirmation"),
+                                    passphrase: $passphrase, confirmation: $confirmation, revealed: $revealed,
+                                    identifier: "newVault.passphrase", confirmationIdentifier: "newVault.confirmation")
                 PassphraseRequirementsView(passphrase: passphrase, confirmation: confirmation)
             }
         } footer: {

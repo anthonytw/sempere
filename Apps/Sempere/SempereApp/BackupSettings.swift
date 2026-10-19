@@ -315,6 +315,17 @@ enum BackupText {
         return s
     }
 
+    /// The most problem lines Verify Backup lists (`BackupProblemList`); the rest are counted.
+    static let problemLimit = 100
+    /// The height of the problem list's scrolling box, in points.
+    static let problemListHeight: CGFloat = 180
+
+    /// The lines Verify Backup lists, and how many more there are.
+    static func problemList(_ lines: [String], limit: Int = problemLimit) -> (shown: [String], more: Int) {
+        let shown = Array(lines.prefix(max(0, limit)))
+        return (shown, lines.count - shown.count)
+    }
+
     /// What one Verify Backup found; `problemLines` are listed separately.
     static func verify(_ r: BackupVerifyReport) -> String {
         if r.isHealthy {
