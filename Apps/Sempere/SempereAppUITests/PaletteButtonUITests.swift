@@ -1,19 +1,16 @@
 import XCTest
 
-/// The palette on the iPad comes with Annotate (TestFlight 1.0.0 (6), the owner's iPad: "the annotation
-/// button doesn't seem to do anything"). The palette shows only for the canvas that is the first
-/// responder; once the note list (or the sidebar, or a field) had taken the focus, the old palette button
-/// flipped its icon on every tap but nothing came up, because turning the palette on never gave the canvas
-/// the focus back. Annotate (the pencil, which replaced that button) now brings the palette up wherever the
-/// focus was, and a second tap (back to reading) puts it away. The demo vault's "thoughts" note is paged
-/// (the page stack). Run by `scripts/app.sh test-ui -only-testing:SempereAppUITests/PaletteButtonUITests`.
-/// Skipped on a Mac: PencilKit never shows its tool picker in a Mac Catalyst app (Apple's `PKToolPicker`
-/// docs), and on a phone `PhoneCanvasModeUITests` covers the same.
+/// The palette comes with Annotate (TestFlight 1.0.0 (6), the owner's iPad: "the annotation button doesn't
+/// seem to do anything"). PencilKit's palette showed only for the canvas that was the first responder, so once
+/// the note list (or the sidebar, or a field) had taken the focus the button flipped its icon and nothing came
+/// up. Sempere's own palette (`DrawingPaletteView`) is a view of the note and needs no focus: Annotate brings it
+/// up wherever the focus is, and a second tap (back to reading) puts it away, on the iPad and on the Mac (where
+/// PencilKit's never showed at all). The demo vault's "thoughts" note is paged (the page stack). Run by
+/// `scripts/app.sh test-ui|test-mac-ui -only-testing:SempereAppUITests/PaletteButtonUITests`. On a phone
+/// `PhoneCanvasModeUITests` covers the same.
 final class PaletteButtonUITests: XCTestCase {
     override func setUpWithError() throws {
-        #if targetEnvironment(macCatalyst)
-        throw XCTSkip("PencilKit shows no tool picker on Mac Catalyst")
-        #else
+        #if !targetEnvironment(macCatalyst)
         if UIDevice.current.userInterfaceIdiom == .phone { throw XCTSkip("the iPhone: PhoneCanvasModeUITests") }
         #endif
         continueAfterFailure = false
@@ -32,7 +29,7 @@ final class PaletteButtonUITests: XCTestCase {
         return app
     }
 
-    /// PencilKit's palette (its accessibility identifier).
+    /// The palette (`DrawingPaletteView`'s accessibility identifier, the one PencilKit's had).
     @MainActor
     private func palette(_ app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: "Drawing-Palette").firstMatch

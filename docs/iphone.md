@@ -86,10 +86,10 @@ Read-first:
   canvas's drawing policy follows the mode too: `.anyInput` in Annotate, `.pencilOnly` otherwise
   (`PageCanvasHost.applyDrawingPolicy`). PencilKit sets its own scroll's `minimumNumberOfTouches`
   from that policy (2 whenever a finger may draw, `-[PKTiledView updateForAllowedDrawingInput]`) and re-runs it
-  by itself: when its view moves to a window and when the palette's visibility changes
-  (`_updateForToolPickerVisibilityChange:`, which arrives with the palette's hide animation, about 0.8 s after
-  Annotate goes off). With `.anyInput` kept in Reading (builds 4 and 5), that put a pageless note back to two
-  fingers a moment after leaving Annotate; with the policy matching the mode PencilKit's count is the app's
+  by itself: when its view moves to a window and, while PencilKit's `PKToolPicker` was the palette, when its
+  visibility changed (`_updateForToolPickerVisibilityChange:`, which arrived with the palette's hide animation,
+  about 0.8 s after Annotate went off). With `.anyInput` kept in Reading (builds 4 and 5), that put a pageless
+  note back to two fingers a moment after leaving Annotate; with the policy matching the mode PencilKit's count is the app's
   (`PageCanvasHost.phonePanTouches`). The paged stack's scroll is the app's own scroll view, set from the
   configuration (`PageStackHost.updateGestures`), which PencilKit does not touch.
 - **Page actions** are in the overflow menu's Pages submenu, with or without the pencil: Add Page
@@ -123,7 +123,7 @@ lets the canvas do per device is one table (`NoteModeInput`, `NoteModeTests`):
 |--------|---------|------|----------|
 | iPhone | one finger scrolls; nothing draws or selects | one finger scrolls; a tap selects, a hold shows the menu, a drag moves the selected item | a finger draws (two scroll); the palette |
 | iPad | fingers scroll; nothing selects; **a Pencil touch switches to Annotate and draws** | fingers scroll and select (tap, hold, drag); **a Pencil touch switches to Annotate and draws** | as the system says (the Pencil draws; a finger too when no Pencil is used); the palette |
-| Mac | the wheel and trackpad scroll; a click or drag draws and selects nothing | a click selects, a drag moves or resizes | the mouse draws; Drawing Tools picks the tool (PencilKit shows no palette in Mac Catalyst) |
+| Mac | the wheel and trackpad scroll; a click or drag draws and selects nothing | a click selects, a drag moves or resizes | the mouse draws; the palette (and Drawing Tools, the Tools menu) |
 
 The iPad's Pencil: in Reading and Hand the canvas keeps PencilKit's drawing on with the policy `.pencilOnly`
 (`NoteModeInput.pencilAnnotates`, `PageCanvasHost.drawingPolicy`), so a Pencil stroke is drawn whole, and its
@@ -134,7 +134,8 @@ Pencil reaches PencilKit. Fingers follow the mode. Text and a tool picked from a
 switch to Annotate too. The palette shows only in Annotate: the iPad's Show/Hide Tool Palette button is now
 the Annotate button (one control per mode), whose press-and-hold menu keeps Compact Palette; the Mac's (which
 fix/palette-button had turned into Drawing Tools, since PencilKit shows no palette there) is the Annotate
-button too, with Drawing Tools beside it while annotating. The Mac's Tools menu has Annotate (⇧⌘P) and Hand (⌥⌘7), docs/mac.md
+button too, with Drawing Tools beside it while annotating. The palette itself is Sempere's own on every device
+("The drawing palette" below). The Mac's Tools menu has Annotate (⇧⌘P) and Hand (⌥⌘7), docs/mac.md
 "Reading, Hand and Annotate". Debug launches can open notes in another mode (`SEMPERE_DEBUG_NOTE_MODE`:
 `annotate`, `hand`), which the drawing UI tests use.
 
@@ -179,7 +180,7 @@ first, then the overflow menu's.
 |---|------|--------|------|-----|--------------|
 | 1 | Annotate (pencil) | bar | bar (hold: Compact Palette) | bar | writable note with a page |
 | 2 | Hand | bar | bar | bar | writable note with a page |
-| 2a | Drawing Tools (pen, marker, pencil, eraser, lasso, ruler) | — | — | bar | annotating |
+| 2a | Drawing Tools (pen, marker, pencil, eraser, lasso, ruler; the same tool state as the palette) | — | — | bar | annotating |
 | 3 | Text | ⋯ | bar | bar | annotating |
 | 4 | Object Eraser Size | ⋯ | bar | bar | annotating |
 | 5 | Insert | ⋯ | bar | bar | writable |
@@ -207,11 +208,62 @@ Where a device differs, and why:
 - **iPhone, page navigation in the bottom bar, away while annotating**: the top bar has no room, and the palette
   sits at the bottom while annotating (Pages turns pages then).
 - **iPhone, no Add Page or Show Pages button**: no room; the same actions are in Pages.
-- **iPad, Compact Palette in the pencil's menu**: the iPhone's palette is always the compact one, and a Mac
-  has no palette.
-- **Mac, Drawing Tools**: PencilKit shows no tool palette in a Mac Catalyst app, so the tools are a menu.
+- **iPad, Compact Palette in the pencil's menu**: the iPhone's palette is always the compact one; a Mac picks it
+  in the Tools menu (Use Compact Palette) and every device in Settings.
+- **Mac, Drawing Tools**: the tools as a menu beside the palette, for the pointer and the keyboard (it came first,
+  when PencilKit's palette showed nothing on a Mac).
 - **Mac note windows, no Keep Screen On**: the idle timer follows the library window's note (`RootView.applyIdleTimer`).
 - **Mac, its menu bar too**: Tools > Annotate, Hand, Text; Note > Recordings… (⌃⌘R) — the same actions by keyboard.
+
+### The drawing palette
+
+PencilKit's `PKToolPicker` never shows in a Mac Catalyst app (Apple's documentation; `isVisible` stays false on
+macOS 27), so the Mac had no ink color or width. The owner (2026-10-19): "If we're going to make a palette for Mac,
+why not share the palette across all devices for consistency?" So every device draws with Sempere's own palette
+(`DrawingPaletteView`), and no `PKToolPicker` is made anywhere.
+
+- **One tool state** (`DrawingToolbox.shared`, the pure `DrawingToolState` in `Sources/Sempere/DrawingTools.swift`,
+  tested on Linux): the tool, the tool before it, each ink's color, width and opacity, the eraser's mode and the
+  pixel eraser's width, the ruler. Every canvas (the one-page canvas and each page of the stack) sets
+  `PKCanvasView.tool` from it and follows its changes (`DrawingToolbox.didChange`); the palette, the Mac's Tools
+  menu (⌥⌘1–5, Ruler ⌥⌘R) and Drawing Tools, and the Apple Pencil all change it. Picking a tool goes through the
+  note's canvas (`CanvasCommandTarget.select(drawingTool:)`), which ends the Hand, the text tool and the math
+  lasso there. The ruler shows on one canvas: the one-page canvas, or the stack's page with the focus.
+- **Tools**: pen, monoline, fountain pen, marker, pencil, watercolor, crayon (PencilKit's inks, as the system
+  palette offered them), the eraser (the app's sized object eraser or PencilKit's pixel eraser:
+  `EraserPreference`, `ObjectEraserSize`), the lasso and the ruler. No Hand (the top bar's is the only one) and no
+  text tool (Text stays in the toolbar).
+- **Per tool**: eight swatches (black, gray, blue, red, green, orange, purple, yellow) and any color (the system
+  color picker, `ColorPicker`), five widths (inside each ink's `validWidthRange`), the opacity (every ink, as the
+  system palette had it); the eraser's mode (object or pixel) and its sizes. A tap on the selected tool shows its
+  choices, as PencilKit's did. Remembered across launches: `Sempere.drawingTools` (JSON, damaged values start
+  fresh), the eraser mode under `Sempere.eraserType` and the object eraser's size under
+  `Sempere.objectEraserRadius`, as before (settings sync writes those two). PencilKit's own saved palette
+  (`PKPaletteNamedDefaults`) is no longer read.
+- **Colors** are stored as drawn on light paper (`PageCanvasHost+Appearance`): with Note Pages ▸ Dark the
+  swatches, the tools' color marks and the color picker show each color as the page shows the ink
+  (`PKInkingTool.convertColor` light → dark), and a color picked there is stored back as the light one.
+- **Layout**: docked at the bottom of the note, over the canvas, only while annotating (Reading and Hand have
+  none). Full (iPad, Mac): every tool, the choices inline where the window is wide enough, else behind the color
+  button, and the ruler; a window too narrow for every tool gets the compact one. Compact (always on an iPhone;
+  Compact Palette elsewhere): pen, marker, eraser and lasso (plus a tool picked elsewhere, so the tool in use always
+  shows), the choices in a popover; the iPhone's also has Undo and Redo. Pointer-friendly on a Mac: 36-point
+  targets, hover highlights and a tooltip on every control.
+- **Apple Pencil**: double-tap and squeeze (`UIPencilInteraction`, while annotating) do what the user set in
+  Settings ▸ Apple Pencil: switch to the eraser and back, switch to the previous tool, or show the color and width
+  choices (`PencilPreferredAction`). PencilKit draws the tool's hover preview on the canvas by itself.
+- **Focus**: the palette is a view of the note and needs no first responder, so Annotate no longer gives the canvas
+  the focus (PR #41's "the palette takes the focus" is gone); the `CanvasFocus` rules for the keyboard stay, and a
+  touch on the canvas still takes the focus back for undo and the keys.
+- **Not reproduced from PencilKit's palette**: dragging it to any edge or corner and minimizing it (it docks at the
+  bottom); the "Draw with Finger" switch (`showsDrawingPolicyControls`: the system's Settings ▸ Apple Pencil ▸ Only
+  Draw with Apple Pencil still decides); a continuous width slider (five presets); the reed ink (stored as the
+  fountain pen anyway); the squeeze's palette at the Pencil's hover position (it toggles the docked palette's choices).
+
+Tests: `DrawingToolsTests` (Linux: per-tool settings, storage, the Pencil's actions), `DrawingToolboxTests`,
+`EraserPreferenceTests` (PencilKit tools, the canvases following the state), `DrawingPaletteUITests` (iPad,
+iPhone, Mac: the palette with the modes, a color and a width reaching the stroke, the erasers and the lasso,
+compact and full).
 
 ## Quick voice notes
 

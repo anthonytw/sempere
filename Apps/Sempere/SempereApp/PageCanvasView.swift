@@ -678,7 +678,7 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
         itemSelection.debugInput = { [weak self] in
             guard let self else { return "" }
             return "pan=\(self.canvas.panGestureRecognizer.minimumNumberOfTouches);ink=\(self.canvas.drawingGestureRecognizer.isEnabled ? 1 : 0)"
-                + ";select=\(self.itemSelectionActive ? 1 : 0)" + self.pageAppearanceReport
+                + ";select=\(self.itemSelectionActive ? 1 : 0)" + self.pageAppearanceReport + self.debugToolReport
         }
         itemSelection.debugEmoji = { [weak self] in self?.textEditor.emojiSummary ?? "0,0" }
         itemSelection.debugPalette = { [weak self] in
@@ -827,7 +827,29 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
         if canvas.isRulerActive != ruler { canvas.isRulerActive = ruler }
         updateEraser()
         cursorInteraction?.invalidate()
+        #if DEBUG
+        itemSelection.debugRefreshReport()   // the report's tool
+        #endif
     }
+
+    #if DEBUG
+    /// `;tool=…;lastInk=…;ruler=0|1` for the canvas's debug report (`SEMPERE_DEMO_ITEMS`): PencilKit's tool
+    /// (`pen:#RRGGBBAA:width`, `eraser.object`, `eraser.pixel:width`, `lasso`) and the last stroke's ink
+    /// (`pen:#RRGGBBAA`), so the palette's UI tests check what a stroke is drawn with.
+    var debugToolReport: String {
+        func f(_ v: CGFloat) -> String { String(format: "%.1f", Double(v)) }
+        let tool: String
+        switch canvas.tool {
+        case let ink as PKInkingTool: tool = "\(InkTool(ink.inkType).rawValue):\(Sempere.Color(ink.color).hex):\(f(ink.width))"
+        case let eraser as PKEraserTool:
+            tool = eraser.eraserType == .vector ? "eraser.object" : "eraser.pixel:\(f(eraser.width))"
+        case is PKLassoTool: tool = "lasso"
+        default: tool = "other"
+        }
+        let last = canvas.drawing.strokes.last.map { "\(InkTool($0.ink.inkType).rawValue):\(Sempere.Color($0.ink.color).hex)" } ?? "none"
+        return ";tool=\(tool);lastInk=\(last);ruler=\(canvas.isRulerActive ? 1 : 0)"
+    }
+    #endif
 
     /// A tool was picked (the palette, a menu, the Pencil) for drawing on this canvas: selection mode,
     /// the text tool, the math lasso and a selection picked while drawing end.

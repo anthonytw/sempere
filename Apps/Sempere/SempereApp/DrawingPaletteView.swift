@@ -7,9 +7,9 @@ import UIKit
 /// `PKToolPicker` never shows in a Mac Catalyst app, so the iPad, the iPhone and the Mac share this one
 /// instead. Shown only while annotating (`NoteMode.showsPalette`), docked at the bottom of the note.
 ///
-/// - Full (iPad and Mac): every tool, the selected tool's choices inline (an ink's swatches, any color,
-///   widths and opacity; the eraser's mode and size), the ruler. A window too narrow for it gets the
-///   compact palette.
+/// - Full (iPad and Mac): every tool, the selected tool's choices (an ink's swatches, any color, widths and
+///   opacity; the eraser's mode and size: inline where the window is wide enough, else in a popover from
+///   the color button), the ruler. A window too narrow for it gets the compact palette.
 /// - Compact (always on an iPhone; Compact Palette elsewhere): pen, marker, eraser, lasso (and a tool picked
 ///   elsewhere), the choices in a popover from the color button; on an iPhone, undo and redo.
 ///
@@ -30,9 +30,11 @@ struct DrawingPaletteView: View {
             if compact {
                 compactBar
             } else {
-                // A window too narrow for every tool gets the compact bar.
+                // The choices inline where they fit (a wide window), else behind the color button; a window too
+                // narrow for every tool gets the compact bar.
                 ViewThatFits(in: .horizontal) {
-                    fullBar
+                    fullBar(inline: true)
+                    fullBar(inline: false)
                     compactBar
                 }
             }
@@ -43,12 +45,20 @@ struct DrawingPaletteView: View {
 
     // MARK: The bars
 
-    private var fullBar: some View {
-        HStack(spacing: 6) {
+    private func fullBar(inline: Bool) -> some View {
+        HStack(spacing: 4) {
             ForEach(DrawingToolState.fullTools, id: \.self) { toolButton($0) }
-            separator
-            HStack(spacing: 6) { inlineChoices }
-                .popover(isPresented: attributesShown) { choicesPanel }
+            if inline {
+                if state.tool != .lasso {
+                    separator
+                    HStack(spacing: 4) { inlineChoices }
+                        .popover(isPresented: attributesShown) { choicesPanel }
+                }
+            } else if state.tool != .lasso {
+                separator
+                choicesButton
+                    .popover(isPresented: attributesShown) { choicesPanel }
+            }
             separator
             rulerButton
         }
