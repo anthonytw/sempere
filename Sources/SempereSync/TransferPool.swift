@@ -11,9 +11,9 @@ public struct TransferGroup<Item: Sendable>: Sendable {
     public init(first: [Item] = [], then: [Item] = []) { self.first = first; self.then = then }
 }
 
-/// Runs blocking transfers (`WebDAVClient` requests) on at most `width`
+/// Runs blocking transfers (`SyncRemote` requests) on at most `width`
 /// threads at once, so that on a high-latency link the round trips of
-/// several requests overlap (`WebDAVSyncOptions.concurrency`).
+/// several requests overlap (`SyncOptions.concurrency`).
 ///
 /// Items start in the order given (a group's `then` items join the queue
 /// when its `first` items are done). The first error an item throws stops the

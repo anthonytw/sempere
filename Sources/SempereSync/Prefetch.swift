@@ -1,7 +1,7 @@
 import Foundation
 import Sempere
 
-// MARK: - Concurrent listings and downloads (`WebDAVSyncOptions.concurrency`)
+// MARK: - Concurrent listings and downloads (`SyncOptions.concurrency`)
 //
 // A run used to make one request at a time, so on a high-latency link the
 // round trips dominated: a first download of ~800 files paid ~2 000 of them
@@ -25,7 +25,7 @@ import Sempere
 // sorted by path where the prefetch added to them, so a run's report does
 // not depend on thread timing.
 
-extension WebDAVSync {
+extension SyncEngine {
     /// One download of the prefetch.
     struct PrefetchItem: Sendable {
         var note: String
@@ -47,13 +47,13 @@ extension WebDAVSync {
 
     var pool: TransferPool { TransferPool(width: options.concurrency) }
 
-    /// Throws `WebDAVError.cancelled` once `options.isCancelled` says so.
+    /// Throws `SyncError.cancelled` once `options.isCancelled` says so.
     func checkCancelled() throws {
-        if options.isCancelled?() == true { throw WebDAVError.cancelled }
+        if options.isCancelled?() == true { throw SyncError.cancelled }
     }
 
     /// Changes `progress` and hands it to `options.progress`.
-    func updateProgress(_ change: (inout WebDAVSyncProgress) -> Void) {
+    func updateProgress(_ change: (inout SyncProgress) -> Void) {
         locked {
             change(&progress)
             options.progress?(progress)
@@ -123,7 +123,7 @@ extension WebDAVSync {
             try sync.locked { try sync.budget.checkTime() }
             let result: Result<[RemoteEntry]?, Error>
             do {
-                let entries = try sync.client.list(paths[i])
+                let entries = try sync.transport.list(paths[i])
                 try sync.locked { try sync.budget.list(entries?.count ?? 0) }
                 result = .success(entries)
             } catch {

@@ -1,4 +1,5 @@
 import Foundation
+import SempereSync
 import SempereWebDAV
 import Testing
 @testable import SempereApp

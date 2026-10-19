@@ -5,7 +5,7 @@ import Sempere
 /// They follow the vault's own write contract (`FileIO`): temporary names
 /// every listing ignores, `fsync` of the file and of its directory, and the
 /// rename fallback where the file system has no hard links.
-enum LocalFS {
+package enum LocalFS {
     /// Writes `data` to a temporary file next to `url`, flushes it, and moves it
     /// into place. With `replacing` false an existing file is never touched
     /// (`FileIO.placeNew`) and the result is false.
@@ -33,7 +33,7 @@ enum LocalFS {
             try h.synchronize()
             try h.close()
         } catch {
-            throw WebDAVError.io("flush \(tmp.path): \(error.localizedDescription)")
+            throw SyncError.io("flush \(tmp.path): \(error.localizedDescription)")
         }
         return try vault { try placeNew(flushed: tmp, at: url) }
     }
@@ -43,14 +43,14 @@ enum LocalFS {
         return true
     }
 
-    /// Runs a `FileIO` step, reporting its `VaultError` as `WebDAVError.io`
+    /// Runs a `FileIO` step, reporting its `VaultError` as `SyncError.io`
     /// with the same sentence.
     private static func vault<T>(_ body: () throws -> T) throws -> T {
-        do { return try body() } catch let e as VaultError { throw WebDAVError.io("\(e)") }
+        do { return try body() } catch let e as VaultError { throw SyncError.io("\(e)") }
     }
 
     /// Size of a regular file; nil when missing or not a regular file.
-    static func regularFileSize(_ url: URL) -> Int? {
+    package static func regularFileSize(_ url: URL) -> Int? {
         guard let a = try? FileManager.default.attributesOfItem(atPath: url.path),
               (a[.type] as? FileAttributeType) == .typeRegular else { return nil }
         return (a[.size] as? NSNumber)?.intValue
@@ -63,7 +63,7 @@ enum LocalFS {
             defer { try? h.close() }
             return try h.read(upToCount: count) ?? Data()
         } catch {
-            throw WebDAVError.io("read \(url.path): \(error.localizedDescription)")
+            throw SyncError.io("read \(url.path): \(error.localizedDescription)")
         }
     }
 
@@ -75,7 +75,7 @@ enum LocalFS {
     static func entries(_ dir: URL) throws -> [String] {
         guard FileManager.default.fileExists(atPath: dir.path) else { return [] }
         do { return try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted() } catch {
-            throw WebDAVError.io("list \(dir.path): \(error.localizedDescription)")
+            throw SyncError.io("list \(dir.path): \(error.localizedDescription)")
         }
     }
 }

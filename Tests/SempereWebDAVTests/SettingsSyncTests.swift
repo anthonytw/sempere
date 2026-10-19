@@ -2,6 +2,7 @@ import Age
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// `settings.age` over WebDAV (docs/settings-sync.md §8): merged per key when
@@ -59,11 +60,11 @@ final class SettingsSyncTests: SyncTestCase {
     }
 
     private func pushKeeping(_ name: String, _ server: MockDAV, locked: Bool = false) throws -> SyncReport {
-        var o = WebDAVSyncOptions(deviceLabel: name)
+        var o = SyncOptions(deviceLabel: name)
         o.pushOnly = true
         o.keepServerChanges = true
         let vault = locked ? try Vault.open(at: dir(name)) : try openVault(name)
-        return try WebDAVSync(directory: dir(name), vault: vault, client: try client(server),
+        return try SyncEngine(directory: dir(name), vault: vault, client: try client(server),
                               stateURL: tmp.appendingPathComponent("state-\(name).json"), options: o).run()
     }
 

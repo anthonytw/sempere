@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// Review of PR #165 (W1): progress must stay monotone and within its total when
@@ -25,7 +26,7 @@ extension ConcurrentTransferTests {
         XCTAssertEqual(fp.filesDone, placed, "a cancelled run's filesDone counts only files that finished")
 
         server.honoursRange = false
-        let seen = Recorder<WebDAVSyncProgress>()
+        let seen = Recorder<SyncProgress>()
         let second = try pull("B", server) {
             $0.concurrency = 6
             $0.blobSegmentBytes = 16_384

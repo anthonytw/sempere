@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// Runs against a real WebDAV server. Skipped unless SEMPERE_WEBDAV_TEST_URL
@@ -23,9 +24,9 @@ final class WebDAVIntegrationTests: SyncTestCase {
         if let vault { v = vault } else {
             v = FileManager.default.fileExists(atPath: dir(name).appendingPathComponent("vault.json").path) ? try openVault(name) : nil
         }
-        return try WebDAVSync(directory: dir(name), vault: v, client: client,
+        return try SyncEngine(directory: dir(name), vault: v, client: client,
                               stateURL: tmp.appendingPathComponent("state-\(name).json"),
-                              options: WebDAVSyncOptions(dryRun: dryRun, deviceLabel: name)).run()
+                              options: SyncOptions(dryRun: dryRun, deviceLabel: name)).run()
     }
 
     /// `skipUnchangedNotes` over real HTTP: whatever the server does with
@@ -37,10 +38,10 @@ final class WebDAVIntegrationTests: SyncTestCase {
         let other = UUID()
         _ = try delta(a, device: devA, t: 0, title: "one")
         _ = try delta(a, device: devA, t: 1, title: "two", note: other)
-        func runA() throws -> (SyncReport, WebDAVSync) {
-            var o = WebDAVSyncOptions(deviceLabel: "A")
+        func runA() throws -> (SyncReport, SyncEngine) {
+            var o = SyncOptions(deviceLabel: "A")
             o.skipUnchangedNotes = true
-            let s = WebDAVSync(directory: dir("A"), vault: try openVault("A"), client: c,
+            let s = SyncEngine(directory: dir("A"), vault: try openVault("A"), client: c,
                                stateURL: tmp.appendingPathComponent("state-A.json"), options: o)
             let r = try s.run()
             XCTAssertTrue(r.errors.isEmpty, "\(r)")
@@ -72,9 +73,9 @@ final class WebDAVIntegrationTests: SyncTestCase {
         let c = try parent.descendant(["Notes.sempere"])
         let a = try makeVault("A")
         _ = try delta(a, device: devA, t: 0, title: "from the CLI")
-        var o = WebDAVSyncOptions(deviceLabel: "A")
+        var o = SyncOptions(deviceLabel: "A")
         o.pushOnly = true
-        XCTAssertTrue(try WebDAVSync(directory: dir("A"), vault: a, client: c,
+        XCTAssertTrue(try SyncEngine(directory: dir("A"), vault: a, client: c,
                                      stateURL: tmp.appendingPathComponent("state-A.json"), options: o).run().errors.isEmpty)
 
         let found = try WebDAVConnection.check(parent)
@@ -82,7 +83,7 @@ final class WebDAVIntegrationTests: SyncTestCase {
         XCTAssertEqual(found.vaults.map(\.name), ["Notes"])
         let vaultClient = try parent.descendant(found.vaults[0].path)
 
-        let ipad = WebDAVLocalCopy(directory: tmp.appendingPathComponent("loc-ipad"), folderName: "Notes.sempere")
+        let ipad = LocalCopy(directory: tmp.appendingPathComponent("loc-ipad"), folderName: "Notes.sempere")
         let down = try ipad.download(client: vaultClient)
         XCTAssertTrue(down.errors.isEmpty && down.uploaded.isEmpty, "\(down)")
         let v = try Vault.open(at: ipad.folder, identities: [identity])
@@ -96,7 +97,7 @@ final class WebDAVIntegrationTests: SyncTestCase {
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: try vaultJSON("A")) as? [String: Any])
         json["x-test"] = "changed on the CLI device"   // an unknown key, ignored by readers
         try JSONSerialization.data(withJSONObject: json).write(to: dir("A").appendingPathComponent("vault.json"))
-        _ = try WebDAVSync(directory: dir("A"), vault: try openVault("A"), client: c,
+        _ = try SyncEngine(directory: dir("A"), vault: try openVault("A"), client: c,
                            stateURL: tmp.appendingPathComponent("state-A.json"), options: o).run()
         let kept = try ipad.push(client: vaultClient, vault: v)
         XCTAssertEqual(kept.conflicts.map(\.path), ["vault.json"], "\(kept)")
@@ -213,11 +214,11 @@ final class WebDAVIntegrationTests: SyncTestCase {
                              body: .delta(ops: [.addPage(Page(id: page, order: "a")),
                                                 .addItem(page: page, item: .image(blob: ref, pixelSize: Size(w: 4, h: 3),
                                                                                   frame: Rect(x: 0, y: 0, w: 4, h: 3), z: "a"))])))
-        var o = WebDAVSyncOptions(deviceLabel: "A")
+        var o = SyncOptions(deviceLabel: "A")
         o.pushOnly = true
         o.publishForWebViewer = true
         func mirrorA() throws {
-            let r = try WebDAVSync(directory: dir("A"), vault: try openVault("A"), client: c,
+            let r = try SyncEngine(directory: dir("A"), vault: try openVault("A"), client: c,
                                    stateURL: tmp.appendingPathComponent("state-A.json"), options: o).run()
             XCTAssertTrue(r.errors.isEmpty, "\(r)")
         }
@@ -232,17 +233,17 @@ final class WebDAVIntegrationTests: SyncTestCase {
         }
         let all = try serverFiles()
 
-        let copy = WebDAVLocalCopy(directory: tmp.appendingPathComponent("loc"), folderName: "V.sempere")
+        let copy = LocalCopy(directory: tmp.appendingPathComponent("loc"), folderName: "V.sempere")
         let meta = try copy.downloadMetadata(client: c)
         XCTAssertTrue(meta.errors.isEmpty && meta.uploaded.isEmpty, "\(meta)")
         XCTAssertTrue(copy.isUsable)
         XCTAssertEqual(meta.partial?.incompleteNotes, notes.count)
         let v = try Vault.open(at: copy.folder, identities: [identity])
-        let entries = try v.openPublishedSummaries(try Data(contentsOf: WebDAVPartialCopy.summariesURL(copy.folder)))
+        let entries = try v.openPublishedSummaries(try Data(contentsOf: PartialCopyState.summariesURL(copy.folder)))
         XCTAssertEqual(entries.count, notes.count, "the list fills from the summaries")
 
         // The selected note first, then an edit, then a push: the server keeps everything.
-        XCTAssertTrue(try copy.fetch(client: c, vault: v, scope: WebDAVFetchScope(notes: [notes[3]], blobs: .none)).errors.isEmpty)
+        XCTAssertTrue(try copy.fetch(client: c, vault: v, scope: FetchScope(notes: [notes[3]], blobs: .none)).errors.isEmpty)
         _ = try delta(v, device: devB, t: 100, title: "edited on the iPad", note: notes[3])
         let push = try copy.push(client: c, vault: v)
         XCTAssertTrue(push.errors.isEmpty && push.deleted.isEmpty && push.extraneous.isEmpty, "\(push)")
@@ -251,7 +252,7 @@ final class WebDAVIntegrationTests: SyncTestCase {
         // Another device writes meanwhile; the rest is fetched concurrently, blobs on demand last.
         _ = try delta(a, device: devA, t: 200, title: "later", note: notes[5])
         try mirrorA()
-        let rest = try copy.fetch(client: c, vault: v, scope: WebDAVFetchScope(blobs: .none))
+        let rest = try copy.fetch(client: c, vault: v, scope: FetchScope(blobs: .none))
         XCTAssertTrue(rest.errors.isEmpty, "\(rest)")
         XCTAssertEqual(try v.reconstruct(noteId: notes[5]).meta.title, "later")
         XCTAssertTrue(copy.isPartial, "the blob is still pending")

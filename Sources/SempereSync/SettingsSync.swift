@@ -15,7 +15,7 @@ import Sempere
 // locked, they upload the local copy. A file that needs a newer reader
 // (`$minReaderVersion`) is left alone on both sides.
 
-extension WebDAVSync {
+extension SyncEngine {
     func syncSharedSettings(remote: RemoteEntry?) throws {
         let name = SharedSettings.fileName
         guard let vault, vault.canRead, !options.pushOnly || vault.keysMatchManifestOnDisk() else {
@@ -34,7 +34,7 @@ extension WebDAVSync {
         var remoteData: Data?
         var etag: String?
         if remote != nil {
-            let got = try client.get([name], maxBytes: SharedSettings.maxFileBytes)
+            let got = try transport.read([name], maxBytes: SharedSettings.maxFileBytes)
             try budget.downloaded(got.data.count)
             remoteData = got.data
             etag = remote?.etag ?? got.etag

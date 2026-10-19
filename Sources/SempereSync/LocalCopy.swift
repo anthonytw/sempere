@@ -2,8 +2,8 @@ import Age
 import Foundation
 import Sempere
 
-/// A vault kept on a WebDAV server and edited through a local copy: the
-/// app's WebDAV vault locations (docs/io.md, "WebDAV vaults in the app").
+/// A vault kept on a remote (`SyncRemote`) and edited through a local copy:
+/// the app's WebDAV vault locations (docs/io.md, "WebDAV vaults in the app").
 ///
 /// The copy is downloaded once (`download`), edited like any vault folder,
 /// and pushed to the server with push-only runs (`push`) that never take
@@ -15,7 +15,7 @@ import Sempere
 /// - `sync-state.json` and `sync-state.quarantine/`: the sync state;
 /// - `<folderName>.download/` and `sync-state.download.json`: a re-download
 ///   in progress (removed when it is swapped in or abandoned).
-public struct WebDAVLocalCopy: Sendable {
+public struct LocalCopy: Sendable {
     /// The location's own folder.
     public let directory: URL
     /// The vault copy.
@@ -45,7 +45,7 @@ public struct WebDAVLocalCopy: Sendable {
     }
 
     /// Options every run of a copy uses: the caller's, with the state's quarantine folder.
-    private func runOptions(_ base: WebDAVSyncOptions) -> WebDAVSyncOptions {
+    private func runOptions(_ base: SyncOptions) -> SyncOptions {
         var o = base
         o.dryRun = false
         o.deleteExtraneous = false
@@ -63,16 +63,16 @@ public struct WebDAVLocalCopy: Sendable {
     /// The copy is complete once a run returns a report without `errors` and
     /// without `stoppedEarly`; until then the caller must not open it.
     ///
-    /// - Throws: `WebDAVError.io` when the server holds no `vault.json`
+    /// - Throws: `SyncError.io` when the server holds no `vault.json`
     ///   (nothing is created then), `.vaultMismatch` when the copy holds
     ///   another vault, and what listing the server throws.
-    public func download(client: WebDAVClient, options: WebDAVSyncOptions = WebDAVSyncOptions()) throws -> SyncReport {
-        try requireRemoteVault(client)
+    public func download(remote: any SyncRemote, options: SyncOptions = SyncOptions()) throws -> SyncReport {
+        try requireRemoteVault(remote)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         var o = runOptions(options)
         o.pushOnly = false
         // The copy is not opened yet: a continued download checks under the vault.json it has (`checker`).
-        let sync = WebDAVSync(directory: folder, vault: nil, client: client, stateURL: stateURL, options: o)
+        let sync = SyncEngine(directory: folder, vault: nil, remote: remote, stateURL: stateURL, options: o)
         return try sync.run()
     }
 
@@ -85,11 +85,11 @@ public struct WebDAVLocalCopy: Sendable {
     /// True when the copy can be opened: a complete vault, or a partial copy
     /// whose note list is complete.
     public var isUsable: Bool {
-        exists && (!isPartial || WebDAVPartialCopy.isUsable(folder))
+        exists && (!isPartial || PartialCopyState.isUsable(folder))
     }
 
     /// What the copy still lacks; nil when it is complete.
-    public var partialStatus: SyncReport.PartialStatus? { WebDAVPartialCopy.status(folder) }
+    public var partialStatus: SyncReport.PartialStatus? { PartialCopyState.status(folder) }
 
     /// Makes the copy a partial copy of the server's vault, or continues one:
     /// the root files (checked as a locked first pull checks them), the
@@ -100,8 +100,8 @@ public struct WebDAVLocalCopy: Sendable {
     /// A copy left by an unfinished full download (a `vault.json`, no
     /// partial marker) becomes a partial copy: what it holds is kept, and
     /// every note is fetched again from the server's listing.
-    public func downloadMetadata(client: WebDAVClient, options: WebDAVSyncOptions = WebDAVSyncOptions()) throws -> SyncReport {
-        try requireRemoteVault(client)
+    public func downloadMetadata(remote: any SyncRemote, options: SyncOptions = SyncOptions()) throws -> SyncReport {
+        try requireRemoteVault(remote)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         if exists && !isPartial {
             try FileManager.default.createDirectory(at: folder.appendingPathComponent(PartialCopy.folderName),
@@ -110,23 +110,23 @@ public struct WebDAVLocalCopy: Sendable {
         var o = runOptions(options)
         o.pushOnly = false
         o.partial = .metadata
-        let sync = WebDAVSync(directory: folder, vault: nil, client: client, stateURL: stateURL, options: o)
+        let sync = SyncEngine(directory: folder, vault: nil, remote: remote, stateURL: stateURL, options: o)
         return try sync.run()
     }
 
-    /// Fetches what the partial copy lacks within `scope` (`WebDAVFetchScope`):
+    /// Fetches what the partial copy lacks within `scope` (`FetchScope`):
     /// never uploads, never deletes anything on the server and never changes
     /// a root file or a complete note's revisions, so it may run while the
     /// copy is open and edited. Each received file is checked before it is
     /// placed (format.md §9.1): fully with `vault` unlocked, else for its age
     /// structure. A no-op on a complete copy.
-    public func fetch(client: WebDAVClient, vault: Vault?, scope: WebDAVFetchScope = WebDAVFetchScope(),
-                      options: WebDAVSyncOptions = WebDAVSyncOptions()) throws -> SyncReport {
-        guard exists else { throw WebDAVError.io("no local copy of the vault to fill") }
+    public func fetch(remote: any SyncRemote, vault: Vault?, scope: FetchScope = FetchScope(),
+                      options: SyncOptions = SyncOptions()) throws -> SyncReport {
+        guard exists else { throw SyncError.io("no local copy of the vault to fill") }
         var o = runOptions(options)
         o.pushOnly = false
         o.partial = .fetch(scope)
-        let sync = WebDAVSync(directory: folder, vault: vault, client: client, stateURL: stateURL, options: o)
+        let sync = SyncEngine(directory: folder, vault: vault, remote: remote, stateURL: stateURL, options: o)
         return try sync.run()
     }
 
@@ -134,20 +134,20 @@ public struct WebDAVLocalCopy: Sendable {
 
     /// Uploads what the server lacks and removes there what local
     /// compaction or blob collection explains; never changes the copy
-    /// (`WebDAVSyncOptions.pushOnly`). A `vault.json` or rewrap journal the
+    /// (`SyncOptions.pushOnly`). A `vault.json` or rewrap journal the
     /// server got from someone else since this copy's last sync is kept and
     /// reported in `conflicts` (`keepServerChanges`).
     ///
     /// - Parameter vault: the copy, unlocked (deletions are checked against
     ///   its revisions); a locked vault pushes but deletes nothing.
-    public func push(client: WebDAVClient, vault: Vault?, options: WebDAVSyncOptions = WebDAVSyncOptions()) throws -> SyncReport {
-        guard exists else { throw WebDAVError.io("no local copy of the vault to push") }
+    public func push(remote: any SyncRemote, vault: Vault?, options: SyncOptions = SyncOptions()) throws -> SyncReport {
+        guard exists else { throw SyncError.io("no local copy of the vault to push") }
         var o = runOptions(options)
         o.pushOnly = true
         o.keepServerChanges = true
         // The app pushes after every write and every few minutes: list only the notes that changed.
         o.skipUnchangedNotes = true
-        let sync = WebDAVSync(directory: folder, vault: vault, client: client, stateURL: stateURL, options: o)
+        let sync = SyncEngine(directory: folder, vault: vault, remote: remote, stateURL: stateURL, options: o)
         return try sync.run()
     }
 
@@ -173,7 +173,7 @@ public struct WebDAVLocalCopy: Sendable {
                 if let n = RevisionName(f), n.filename == f, state?.files["\(id)/\(f)"] == nil { count += 1 }
             }
             for f in (try? LocalFS.entries(dir.appendingPathComponent(Vault.attachmentsName))) ?? []
-            where WebDAVSync.isBlobName(f) && state?.files["\(id)/\(Vault.attachmentsName)/\(f)"] == nil {
+            where SyncEngine.isBlobName(f) && state?.files["\(id)/\(Vault.attachmentsName)/\(f)"] == nil {
                 count += 1
             }
         }
@@ -203,17 +203,17 @@ public struct WebDAVLocalCopy: Sendable {
     /// new copy and its state are in place.
     ///
     /// - Returns: the download's report; `replaced` tells whether the copy changed.
-    public func redownload(client: WebDAVClient, identities: [any AgeIdentity], partial: Bool = false,
-                           options: WebDAVSyncOptions = WebDAVSyncOptions()) throws -> (report: SyncReport, replaced: Bool) {
+    public func redownload(remote: any SyncRemote, identities: [any AgeIdentity], partial: Bool = false,
+                           options: SyncOptions = SyncOptions()) throws -> (report: SyncReport, replaced: Bool) {
         try SyncRunLock.shared.withLock(stateURL) {
-            try redownloadLocked(client: client, identities: identities, partial: partial, options: options)
+            try redownloadLocked(remote: remote, identities: identities, partial: partial, options: options)
         }
     }
 
-    private func redownloadLocked(client: WebDAVClient, identities: [any AgeIdentity], partial: Bool,
-                                  options: WebDAVSyncOptions) throws -> (report: SyncReport, replaced: Bool) {
-        guard exists else { throw WebDAVError.io("no local copy of the vault to replace") }
-        try requireRemoteVault(client)
+    private func redownloadLocked(remote: any SyncRemote, identities: [any AgeIdentity], partial: Bool,
+                                  options: SyncOptions) throws -> (report: SyncReport, replaced: Bool) {
+        guard exists else { throw SyncError.io("no local copy of the vault to replace") }
+        try requireRemoteVault(remote)
         let fm = FileManager.default
         try? fm.removeItem(at: stagingFolder)
         try? fm.removeItem(at: stagingStateURL)
@@ -230,7 +230,7 @@ public struct WebDAVLocalCopy: Sendable {
         o.firstPullIdentities = identities
         o.quarantineDirectory = stateURL.deletingPathExtension().appendingPathExtension("quarantine")
         if partial { o.partial = .metadata }
-        let sync = WebDAVSync(directory: stagingFolder, vault: nil, client: client, stateURL: stagingStateURL, options: o)
+        let sync = SyncEngine(directory: stagingFolder, vault: nil, remote: remote, stateURL: stagingStateURL, options: o)
         var report = try sync.run()
         guard report.errors.isEmpty, report.stoppedEarly == nil, report.conflicts.isEmpty,
               fm.fileExists(atPath: stagingFolder.appendingPathComponent(Vault.manifestName).path) else {
@@ -309,7 +309,7 @@ public struct WebDAVLocalCopy: Sendable {
             try fm.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
             do { try fm.linkItem(at: from, to: to) } catch { try fm.copyItem(at: from, to: to) }
         }
-        // A conflict copy (`<name>.conflict-…`, `WebDAVSync.conflict`) is this device's only record of
+        // A conflict copy (`<name>.conflict-…`, `SyncEngine.conflict`) is this device's only record of
         // what the server held when both sides changed; it never goes to the server.
         let mutableBases = [Vault.manifestName, Vault.journalName, SharedSettings.fileName]
             .map { ($0 as NSString).deletingPathExtension + ".conflict-" }
@@ -332,7 +332,7 @@ public struct WebDAVLocalCopy: Sendable {
                 }
             }
             let att = dir.appendingPathComponent(Vault.attachmentsName)
-            for f in (try? LocalFS.entries(att)) ?? [] where WebDAVSync.isBlobName(f) {
+            for f in (try? LocalFS.entries(att)) ?? [] where SyncEngine.isBlobName(f) {
                 try place(att.appendingPathComponent(f), out.appendingPathComponent(Vault.attachmentsName).appendingPathComponent(f))
             }
         }
@@ -348,7 +348,7 @@ public struct WebDAVLocalCopy: Sendable {
             try fm.moveItem(at: stagingFolder, to: folder)
         } catch {
             try? fm.moveItem(at: old, to: folder)
-            throw WebDAVError.io("cannot put the downloaded copy in place: \(error.localizedDescription)")
+            throw SyncError.io("cannot put the downloaded copy in place: \(error.localizedDescription)")
         }
         try? fm.removeItem(at: stateURL)
         SyncState.removeTransfers(stateURL)
@@ -365,10 +365,10 @@ public struct WebDAVLocalCopy: Sendable {
         try FileManager.default.removeItem(at: directory)
     }
 
-    private func requireRemoteVault(_ client: WebDAVClient) throws {
-        guard let root = try client.list([]) else { throw WebDAVError.http(method: "PROPFIND", path: "", status: 404) }
+    private func requireRemoteVault(_ remote: any SyncRemote) throws {
+        guard let root = try remote.list([]) else { throw remote.missingCollectionError([]) }
         guard root.contains(where: { $0.name == Vault.manifestName && !$0.isCollection }) else {
-            throw WebDAVError.io("there is no vault at \(SyncReport.printable(client.baseURL.absoluteString)) (no vault.json)")
+            throw SyncError.io("there is no vault at \(SyncReport.printable(remote.location)) (no vault.json)")
         }
     }
 }

@@ -27,7 +27,7 @@ struct SyncState: Codable, Equatable {
 
     /// A rewrap journal on the server that this device refuses but that may
     /// be step 1 of a recipient change whose `vault.json` has not reached
-    /// the server yet (`WebDAVSync.holdInFlightJournal`).
+    /// the server yet (`SyncEngine.holdInFlightJournal`).
     struct InFlightJournal: Codable, Equatable {
         /// SHA-256 (hex) of its bytes.
         var hash: String
@@ -153,7 +153,7 @@ struct SyncState: Codable, Equatable {
         let data = try BoundedRead.contents(of: url, maxBytes: BoundedRead.maxRevisionBytes)
         // The version first: a newer layout is refused as such, whatever its fields.
         let version = try JSONDecoder().decode(Version.self, from: data).version
-        guard version == 1 else { throw WebDAVError.io("sync state \(url.path) has version \(version)") }
+        guard version == 1 else { throw SyncError.io("sync state \(url.path) has version \(version)") }
         return try JSONDecoder().decode(SyncState.self, from: data)
     }
 

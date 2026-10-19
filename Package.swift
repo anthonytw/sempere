@@ -16,6 +16,7 @@ let package = Package(
         .library(name: "SempereRender", targets: ["SempereRender"]),
         .library(name: "SempereImport", targets: ["SempereImport"]),
         .library(name: "SemperePDF", targets: ["SemperePDF"]),
+        .library(name: "SempereSync", targets: ["SempereSync"]),
         .library(name: "SempereWebDAV", targets: ["SempereWebDAV"]),
         .library(name: "SempereSpeech", targets: ["SempereSpeech"]),
         .executable(name: "sempere", targets: ["SempereCLI"]),
@@ -61,10 +62,16 @@ let package = Package(
             name: "SempereImport",
             dependencies: ["Sempere", "SemperePDF", "SempereRender", "CZlib", .product(name: "Crypto", package: "swift-crypto")]
         ),
-        // The only target allowed network code (CLAUDE.md).
+        // The two-way sync engine over the `SyncRemote` protocol (docs/io.md "Sync engine and
+        // transports"): Foundation and swift-crypto only, no network code; transports live elsewhere.
+        .target(
+            name: "SempereSync",
+            dependencies: ["Sempere", .product(name: "Crypto", package: "swift-crypto")]
+        ),
+        // The WebDAV transport (`WebDAVSyncRemote`); the only target allowed network code (CLAUDE.md).
         .target(
             name: "SempereWebDAV",
-            dependencies: ["Sempere", .product(name: "Crypto", package: "swift-crypto")]
+            dependencies: ["Sempere", "SempereSync", .product(name: "Crypto", package: "swift-crypto")]
         ),
         // On-device transcription (Speech framework where it exists; empty elsewhere).
         .target(name: "SempereSpeech", dependencies: ["Sempere"]),
@@ -73,7 +80,7 @@ let package = Package(
         .executableTarget(
             name: "SempereCLI",
             dependencies: [
-                "Age", "Sempere", "SemperePDF", "SempereRender", "SempereImport", "SempereWebDAV", "SempereFonts", "SempereSpeech",
+                "Age", "Sempere", "SemperePDF", "SempereRender", "SempereImport", "SempereSync", "SempereWebDAV", "SempereFonts", "SempereSpeech",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ] + (hasNotability ? ["SempereNotability"] : [])
         ),
@@ -97,7 +104,7 @@ let package = Package(
                     exclude: ["generate_fixtures.py"], resources: [.copy("Fixtures")]),
         .testTarget(name: "SempereImportTests",
                     dependencies: ["SempereImport", "Sempere", "SempereRender", "Age", "CZlib", "FuzzSupport", "TempDirSupport", "ImportTestSupport"]),
-        .testTarget(name: "SempereWebDAVTests", dependencies: ["SempereWebDAV", "Sempere", "Age", "FuzzSupport", "TempDirSupport"]),
+        .testTarget(name: "SempereWebDAVTests", dependencies: ["SempereWebDAV", "SempereSync", "Sempere", "Age", "FuzzSupport", "TempDirSupport"]),
         .testTarget(name: "CLITests", dependencies: ["Age", "Sempere", "CLITestSupport", "FuzzSupport"]),
     ] + (hasNotability ? [
         // The Notability importer (docs/import-notability.md "Structure"). Optional: delete this directory

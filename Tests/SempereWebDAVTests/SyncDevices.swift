@@ -2,6 +2,7 @@ import Age
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// One device of a multi-device sync test (docs/ci.md "Sync stress"): its own
@@ -18,7 +19,7 @@ final class SyncDevice: @unchecked Sendable {
     /// Added to the real time for this device's writes and sync runs.
     var skew: TimeInterval = 0
     /// Applied to the options of every run (concurrency, limits, ...).
-    var tune: (inout WebDAVSyncOptions) -> Void = { _ in }
+    var tune: (inout SyncOptions) -> Void = { _ in }
 
     init(name: String, root: URL, identity: NativeIdentity, client: WebDAVClient, device: DeviceID? = nil) throws {
         self.name = name
@@ -76,8 +77,8 @@ final class SyncDevice: @unchecked Sendable {
 
     // MARK: Sync
 
-    func options(_ edit: (inout WebDAVSyncOptions) -> Void = { _ in }) -> WebDAVSyncOptions {
-        var o = WebDAVSyncOptions(deviceLabel: name, now: now)
+    func options(_ edit: (inout SyncOptions) -> Void = { _ in }) -> SyncOptions {
+        var o = SyncOptions(deviceLabel: name, now: now)
         if !hasVault { o.firstPullIdentities = [identity] }
         tune(&o)
         edit(&o)
@@ -86,9 +87,9 @@ final class SyncDevice: @unchecked Sendable {
 
     /// A two-way run (the CLI's `sync webdav`).
     @discardableResult
-    func sync(_ edit: (inout WebDAVSyncOptions) -> Void = { _ in }) throws -> SyncReport {
+    func sync(_ edit: (inout SyncOptions) -> Void = { _ in }) throws -> SyncReport {
         let v = hasVault ? try vault() : nil
-        return try WebDAVSync(directory: folder, vault: v, client: client, stateURL: stateURL, options: options(edit)).run()
+        return try SyncEngine(directory: folder, vault: v, client: client, stateURL: stateURL, options: options(edit)).run()
     }
 
     /// The app's push (push-only, keeping what another device changed on the server).

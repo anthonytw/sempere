@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// P64: every note folder and `att/` from one `PROPFIND` (`Depth: infinity`)
@@ -34,13 +35,13 @@ final class TreeListingTests: BlobSyncTestCase {
     }
 
     func run(_ name: String, _ server: MockDAV, now: Date = Date(), pushOnly: Bool = false,
-             configure: (inout WebDAVSyncOptions) -> Void = { _ in }) throws -> SyncReport {
+             configure: (inout SyncOptions) -> Void = { _ in }) throws -> SyncReport {
         let exists = FileManager.default.fileExists(atPath: dir(name).appendingPathComponent("vault.json").path)
-        var o = WebDAVSyncOptions(deviceLabel: name, now: now)
+        var o = SyncOptions(deviceLabel: name, now: now)
         o.pushOnly = pushOnly
         if !exists { o.firstPullIdentities = [identity] }
         configure(&o)
-        return try WebDAVSync(directory: dir(name), vault: exists ? try openVault(name) : nil, client: try client(server),
+        return try SyncEngine(directory: dir(name), vault: exists ? try openVault(name) : nil, client: try client(server),
                               stateURL: tmp.appendingPathComponent("state-\(name).json"), options: o).run()
     }
 

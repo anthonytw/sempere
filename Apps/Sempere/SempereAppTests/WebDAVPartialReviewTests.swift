@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereSync
 import SempereWebDAV
 import Testing
 @testable import SempereApp
@@ -17,7 +18,7 @@ struct WebDAVPartialReviewTests {
     /// once, about 1300 times a second while the vault was open.
     @Test func aNoteThatNeverCompletesIsNotFetchedInATightLoop() async throws {
         let s = try WebDAVAppTests.setup()
-        let c = WebDAVLocalCopy(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+        let c = LocalCopy(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
                                 folderName: "Notes.sempere")
         defer { try? c.remove() }
         #expect(try c.downloadMetadata(client: s.remote.folderClient()).errors.isEmpty)
@@ -41,7 +42,7 @@ struct WebDAVPartialReviewTests {
     /// was): the other notes are fetched all the same.
     @Test func aStuckNoteAskedForDoesNotStarveTheOthers() async throws {
         let s = try WebDAVAppTests.setup()
-        let c = WebDAVLocalCopy(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+        let c = LocalCopy(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
                                 folderName: "Notes.sempere")
         defer { try? c.remove() }
         #expect(try c.downloadMetadata(client: s.remote.folderClient()).errors.isEmpty)
@@ -57,8 +58,8 @@ struct WebDAVPartialReviewTests {
         fetcher.want(note: first)
         fetcher.start()
         let other = second.uuidString.lowercased()
-        #expect(await TS.waitUntil(timeout: .seconds(10)) { !WebDAVPartialCopy.incompleteNotes(c.folder).contains(other) })
-        #expect(WebDAVPartialCopy.incompleteNotes(c.folder) == [first.uuidString.lowercased()])
+        #expect(await TS.waitUntil(timeout: .seconds(10)) { !PartialCopyState.incompleteNotes(c.folder).contains(other) })
+        #expect(PartialCopyState.incompleteNotes(c.folder) == [first.uuidString.lowercased()])
         fetcher.stop()
         #expect(recorded.scopes.count <= 5, "\(recorded.scopes.count) fetch runs")
     }

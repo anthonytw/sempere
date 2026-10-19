@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// `sync webdav` keeps a server-side `sempere-index.json` current
@@ -101,8 +102,8 @@ final class WebIndexSyncTests: SyncTestCase {
         var state = try XCTUnwrap(try SyncState.load(url))
         let record = try XCTUnwrap(state.webIndex)
         XCTAssertFalse(SyncState.WebIndexRecord(hash: record.hash, etag: "W/" + record.etag) == record)
-        XCTAssertFalse(WebDAVSync.isStrong("W/\"x\""))
-        XCTAssertTrue(WebDAVSync.isStrong("\"x\""))
+        XCTAssertFalse(SyncEngine.isStrong("W/\"x\""))
+        XCTAssertTrue(SyncEngine.isStrong("\"x\""))
         // A record whose ETag does not match the listing (here: the weak form) is fetched again.
         state.webIndex = .init(hash: record.hash, etag: "W/" + record.etag)
         try state.save(url)

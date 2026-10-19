@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereSync
 import SempereWebDAV
 
 /// Fills a partial WebDAV copy while it is open (docs/io.md "WebDAV vaults
@@ -14,16 +15,16 @@ import SempereWebDAV
 /// priority fetch, so `ProgressiveLoad`, `downloadNote`, `requireLocal`,
 /// `CloudBlobs` and `downloadEverything` work on it unchanged.
 ///
-/// Each fetch is one library run (`WebDAVLocalCopy.fetch`): it never
+/// Each fetch is one library run (`LocalCopy.fetch`): it never
 /// uploads, never deletes anything on the server, never writes a root file
 /// and never touches a complete note, so it runs while the copy is edited
 /// and pushed (runs take turns on the copy's sync state).
 final class WebDAVFetcher: @unchecked Sendable {
     /// Runs one fetch of `scope`, checked under `vault` when it is unlocked
     /// (the model supplies it: remote, endpoint, copy).
-    typealias Fetch = @Sendable (_ scope: WebDAVFetchScope, _ vault: Vault?) async throws -> SyncReport
+    typealias Fetch = @Sendable (_ scope: FetchScope, _ vault: Vault?) async throws -> SyncReport
 
-    let copy: WebDAVLocalCopy
+    let copy: LocalCopy
     /// The server's host, for the texts of the download machinery (`CloudSource`).
     let serverName: String
     private let fetch: Fetch
@@ -67,7 +68,7 @@ final class WebDAVFetcher: @unchecked Sendable {
     /// The longest pause of a parked note.
     var maxParkDelay = Duration.seconds(600)
 
-    init(copy: WebDAVLocalCopy, serverName: String, fillsBlobs: Bool, fetch: @escaping Fetch,
+    init(copy: LocalCopy, serverName: String, fillsBlobs: Bool, fetch: @escaping Fetch,
          changed: @escaping @MainActor @Sendable (WebDAVFetcher, Set<UUID>, Bool) -> Void) {
         self.copy = copy
         self.rootPath = copy.folder.standardizedFileURL.resolvingSymlinksInPath().path
@@ -165,7 +166,7 @@ final class WebDAVFetcher: @unchecked Sendable {
 
     /// What the next run fetches; nil when nothing is to be fetched now. Parked
     /// notes are left out; `wake` is then when the first of them may run again.
-    private func nextScope() -> (scope: WebDAVFetchScope?, wake: Duration?) {
+    private func nextScope() -> (scope: FetchScope?, wake: Duration?) {
         let now = clock.now
         lock.lock()
         let blobs = wantedBlobs
@@ -180,13 +181,13 @@ final class WebDAVFetcher: @unchecked Sendable {
         if !blobs.isEmpty {
             // Blobs asked for, with their notes' revisions if those are still missing.
             let ids = Array(Set(blobs.compactMap { UUID(uuidString: String($0.prefix(36))) }))
-            return (WebDAVFetchScope(notes: ids, revisions: true, blobs: .only(Set(blobs)), maxNotes: ids.count), nil)
+            return (FetchScope(notes: ids, revisions: true, blobs: .only(Set(blobs)), maxNotes: ids.count), nil)
         }
-        let incomplete = Set(WebDAVPartialCopy.incompleteNotes(root)).subtracting(parked)
+        let incomplete = Set(PartialCopyState.incompleteNotes(root)).subtracting(parked)
         let asked = notes.filter { incomplete.contains($0.uuidString.lowercased()) }
         if !asked.isEmpty {
-            return (WebDAVFetchScope(notes: Array(asked.prefix(WebDAVFetchScope.defaultConcurrency)), blobs: .none,
-                                     maxNotes: WebDAVFetchScope.defaultConcurrency), nil)
+            return (FetchScope(notes: Array(asked.prefix(FetchScope.defaultConcurrency)), blobs: .none,
+                                     maxNotes: FetchScope.defaultConcurrency), nil)
         }
         if !incomplete.isEmpty {
             // Failed notes go last, so they cannot hold the rest back; they are still retried.
@@ -194,14 +195,14 @@ final class WebDAVFetcher: @unchecked Sendable {
             let failed = Set(failures.keys)
             lock.unlock()
             let order = incomplete.sorted().filter { !failed.contains($0) } + incomplete.sorted().filter { failed.contains($0) }
-            return (WebDAVFetchScope(notes: order.prefix(Self.batch).compactMap(UUID.init(uuidString:)), blobs: .none,
+            return (FetchScope(notes: order.prefix(Self.batch).compactMap(UUID.init(uuidString:)), blobs: .none,
                                      maxNotes: Self.batch), nil)
         }
         if fills {
-            let ids = WebDAVPartialCopy.pendingBlobsByNote(root).keys.filter { !parkedBlobs.contains($0) && !parked.contains($0) }
-                .sorted().prefix(WebDAVFetchScope.defaultConcurrency).compactMap(UUID.init(uuidString:))
+            let ids = PartialCopyState.pendingBlobsByNote(root).keys.filter { !parkedBlobs.contains($0) && !parked.contains($0) }
+                .sorted().prefix(FetchScope.defaultConcurrency).compactMap(UUID.init(uuidString:))
             if !ids.isEmpty {
-                return (WebDAVFetchScope(notes: ids, revisions: false, blobs: .all, maxNotes: ids.count), nil)
+                return (FetchScope(notes: ids, revisions: false, blobs: .all, maxNotes: ids.count), nil)
             }
         }
         return (nil, wake)
@@ -243,7 +244,7 @@ final class WebDAVFetcher: @unchecked Sendable {
     }
 
     /// Every note and blob a run that failed as a whole asked for reports `reason`.
-    private func fail(_ scope: WebDAVFetchScope, _ reason: String) {
+    private func fail(_ scope: FetchScope, _ reason: String) {
         lock.lock(); defer { lock.unlock() }
         for id in scope.notes ?? [] { failures[id.uuidString.lowercased()] = reason }
         if case .only(let keys) = scope.blobs { for k in keys { failures[k] = reason } }
@@ -255,10 +256,10 @@ final class WebDAVFetcher: @unchecked Sendable {
     /// Takes in a run's report: what was asked for and is done is no longer
     /// asked for; what failed is remembered (`hooks` reports it). Returns the
     /// notes the run looked at.
-    private func record(_ report: SyncReport, scope: WebDAVFetchScope) -> Set<UUID> {
+    private func record(_ report: SyncReport, scope: FetchScope) -> Set<UUID> {
         let root = copy.folder
-        let incomplete = Set(WebDAVPartialCopy.incompleteNotes(root))
-        let pendingBlobs = WebDAVPartialCopy.pendingBlobsByNote(root)
+        let incomplete = Set(PartialCopyState.incompleteNotes(root))
+        let pendingBlobs = PartialCopyState.pendingBlobsByNote(root)
         var failed: [String: String] = [:]
         for e in report.errors + report.quarantined {
             // `notes/<id>/…`: the note (or the blob, for `att/`) it concerns.

@@ -15,6 +15,7 @@
 		A1000000000000000000B008 /* SempereImport in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D006 /* SempereImport */; };
 		A1000000000000000000B009 /* SempereNotability in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D007 /* SempereNotability */; };
 		A1000000000000000000B00D /* SempereWebDAV in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D008 /* SempereWebDAV */; };
+		A1000000000000000000B05C /* SempereSync in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000D05C /* SempereSync */; };
 		A1000000000000000000B003 /* Fixtures in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F003 /* Fixtures */; };
 		A1000000000000000000B00B /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F007 /* LICENSE */; };
 		A1000000000000000000B00C /* LICENSE-EXCEPTION in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000F008 /* LICENSE-EXCEPTION */; };
@@ -145,6 +146,7 @@
 				A1000000000000000000B008 /* SempereImport in Frameworks */,
 				A1000000000000000000B009 /* SempereNotability in Frameworks */,
 				A1000000000000000000B00D /* SempereWebDAV in Frameworks */,
+				A1000000000000000000B05C /* SempereSync in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -260,6 +262,7 @@
 				A1000000000000000000D006 /* SempereImport */,
 				A1000000000000000000D007 /* SempereNotability */,
 				A1000000000000000000D008 /* SempereWebDAV */,
+				A1000000000000000000D05C /* SempereSync */,
 			);
 			productName = SempereApp;
 			productReference = A1000000000000000000F001 /* Sempere.app */;
@@ -914,6 +917,10 @@
 		A1000000000000000000D008 /* SempereWebDAV */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = SempereWebDAV;
+		};
+		A1000000000000000000D05C /* SempereSync */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SempereSync;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

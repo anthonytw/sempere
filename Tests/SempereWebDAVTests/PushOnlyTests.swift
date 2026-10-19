@@ -2,6 +2,7 @@ import Foundation
 import FuzzSupport
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// `--push-only`: a mirror to a server that is not trusted to write back.
@@ -14,11 +15,11 @@ final class PushOnlyTests: BlobSyncTestCase {
     @discardableResult
     func push(_ name: String, _ server: MockDAV, vault: Vault?? = nil, dryRun: Bool = false,
               deleteExtraneous: Bool = false) throws -> SyncReport {
-        var o = WebDAVSyncOptions(dryRun: dryRun, deviceLabel: name)
+        var o = SyncOptions(dryRun: dryRun, deviceLabel: name)
         o.pushOnly = true
         o.deleteExtraneous = deleteExtraneous
         let v: Vault? = vault ?? (try? openVault(name))
-        return try WebDAVSync(directory: dir(name), vault: v, client: try client(server),
+        return try SyncEngine(directory: dir(name), vault: v, client: try client(server),
                               stateURL: tmp.appendingPathComponent("state-\(name).json"), options: o).run()
     }
 
@@ -99,7 +100,7 @@ final class PushOnlyTests: BlobSyncTestCase {
         try push("B", server)
         let log = server.requestLog.count
         XCTAssertThrowsError(try push("A", server)) {
-            guard case WebDAVError.vaultMismatch = $0 else { return XCTFail("\($0)") }
+            guard case SyncError.vaultMismatch = $0 else { return XCTFail("\($0)") }
         }
         XCTAssertFalse(server.requestLog.dropFirst(log).contains { $0.method == "PUT" || $0.method == "DELETE" })
     }

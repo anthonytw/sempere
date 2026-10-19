@@ -2,6 +2,7 @@ import Age
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// Thread-safe recorder for callbacks made on the pool's threads.
@@ -59,11 +60,11 @@ final class ConcurrentTransferTests: BlobSyncTestCase {
         return a
     }
 
-    func pull(_ name: String, _ server: MockDAV, configure: (inout WebDAVSyncOptions) -> Void = { _ in }) throws -> SyncReport {
-        var o = WebDAVSyncOptions(deviceLabel: name)
+    func pull(_ name: String, _ server: MockDAV, configure: (inout SyncOptions) -> Void = { _ in }) throws -> SyncReport {
+        var o = SyncOptions(deviceLabel: name)
         o.firstPullIdentities = [identity]
         configure(&o)
-        return try WebDAVSync(directory: dir(name), vault: nil, client: try client(server),
+        return try SyncEngine(directory: dir(name), vault: nil, client: try client(server),
                               stateURL: tmp.appendingPathComponent("state-\(name).json"), options: o).run()
     }
 
@@ -89,7 +90,7 @@ final class ConcurrentTransferTests: BlobSyncTestCase {
         var out: [URL] = []
         for id in (try? FileManager.default.contentsOfDirectory(atPath: notesDir.path)) ?? [] {
             let att = notesDir.appendingPathComponent(id).appendingPathComponent("att")
-            for f in (try? FileManager.default.contentsOfDirectory(atPath: att.path)) ?? [] where f.hasPrefix(WebDAVSync.partialPrefix) {
+            for f in (try? FileManager.default.contentsOfDirectory(atPath: att.path)) ?? [] where f.hasPrefix(SyncEngine.partialPrefix) {
                 out.append(att.appendingPathComponent(f))
             }
         }
@@ -194,7 +195,7 @@ final class ConcurrentTransferTests: BlobSyncTestCase {
     func testProgressCountsFilesAndBytes() throws {
         let server = MockDAV()
         try serverVault(server)
-        let seen = Recorder<WebDAVSyncProgress>()
+        let seen = Recorder<SyncProgress>()
         let r = try pull("B", server) {
             $0.concurrency = 4
             $0.blobSegmentBytes = 8_192
@@ -216,7 +217,7 @@ final class ConcurrentTransferTests: BlobSyncTestCase {
 
         let updates = seen.all
         XCTAssertGreaterThan(updates.count, fileCount, "blobs report their segments")
-        let order: [WebDAVSyncProgress.Stage] = [.listing, .downloading, .syncingNotes, .done]
+        let order: [SyncProgress.Stage] = [.listing, .downloading, .syncingNotes, .done]
         let stages = updates.map { order.firstIndex(of: $0.stage) ?? -1 }
         XCTAssertEqual(stages, stages.sorted(), "stages only move forward")
         XCTAssertEqual(Set(updates.map(\.stage)), Set(order))
@@ -224,14 +225,14 @@ final class ConcurrentTransferTests: BlobSyncTestCase {
         XCTAssertTrue(updates.allSatisfy { $0.bytesDone <= $0.bytesTotal || $0.stage == .listing })
         XCTAssertTrue(updates.contains { $0.stage == .downloading && $0.filesTotal == fileCount && $0.filesDone < fileCount })
         XCTAssertEqual(final.line, "downloading \(fileCount) of \(fileCount) files · "
-                       + "\(WebDAVSyncProgress.megabytes(size)) of \(WebDAVSyncProgress.megabytes(size)) MB")
+                       + "\(SyncProgress.megabytes(size)) of \(SyncProgress.megabytes(size)) MB")
 
         // A push counts its uploads.
         let v = try openVault("B")
         _ = try delta(v, device: devB, t: 900, title: "edited", note: notes[0])
-        var o = WebDAVSyncOptions(deviceLabel: "B")
+        var o = SyncOptions(deviceLabel: "B")
         o.pushOnly = true
-        let push = try WebDAVSync(directory: dir("B"), vault: v, client: try client(server),
+        let push = try SyncEngine(directory: dir("B"), vault: v, client: try client(server),
                                   stateURL: tmp.appendingPathComponent("state-B.json"), options: o).run()
         XCTAssertEqual(push.progress?.uploaded, 1)
         XCTAssertEqual(push.progress?.filesTotal, 0)
@@ -257,7 +258,7 @@ final class ConcurrentTransferTests: BlobSyncTestCase {
         let cut = partials("B")
         XCTAssertFalse(cut.isEmpty, "blobs cut short are kept to continue")
         let sizes = Dictionary(uniqueKeysWithValues: cut.map {
-            (String($0.lastPathComponent.dropFirst(WebDAVSync.partialPrefix.count)), (try? Data(contentsOf: $0).count) ?? 0)
+            (String($0.lastPathComponent.dropFirst(SyncEngine.partialPrefix.count)), (try? Data(contentsOf: $0).count) ?? 0)
         })
 
         let before = server.headers.count
@@ -337,16 +338,16 @@ final class ConcurrentTransferTests: BlobSyncTestCase {
         XCTAssertEqual(contents("B"), all)
     }
 
-    /// `WebDAVLocalCopy.download` passes the options through: progress and cancellation.
+    /// `LocalCopy.download` passes the options through: progress and cancellation.
     func testLocalCopyDownloadReportsProgressAndCancels() throws {
         let server = MockDAV()
         try serverVault(server)
-        let copy = WebDAVLocalCopy(directory: tmp.appendingPathComponent("loc"), folderName: "V.sempere")
-        var o = WebDAVSyncOptions()
+        let copy = LocalCopy(directory: tmp.appendingPathComponent("loc"), folderName: "V.sempere")
+        var o = SyncOptions()
         o.isCancelled = { true }
         let stopped = try copy.download(client: try client(server), options: o)
         XCTAssertEqual(stopped.stoppedEarly, "sync run canceled")
-        let seen = Recorder<WebDAVSyncProgress>()
+        let seen = Recorder<SyncProgress>()
         o.isCancelled = nil
         o.progress = { seen.append($0) }
         let done = try copy.download(client: try client(server), options: o)

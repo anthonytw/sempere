@@ -21,7 +21,7 @@ import Sempere
 //   found it collectable for `blobRetention` (rule 4 as this device sees it:
 //   the server cannot prove the collector waited); until then it is kept.
 
-extension WebDAVSync {
+extension SyncEngine {
     /// Prefix of an interrupted download's partial file in `att/`. Starts
     /// with the vault's temporary-file prefix, so every listing ignores it,
     /// and is never a vault writer's own temporary name (those continue
@@ -81,7 +81,7 @@ extension WebDAVSync {
                 if let made = attListings.removeValue(forKey: id) {
                     listed = try made.get()   // listed ahead (`listAttachments`), and counted then
                 } else {
-                    listed = try client.list([Vault.notesName, id, Vault.attachmentsName])
+                    listed = try transport.list([Vault.notesName, id, Vault.attachmentsName])
                     if let listed { try budget.list(listed.count) }
                 }
                 if let entries = listed {
@@ -172,7 +172,7 @@ extension WebDAVSync {
         // A partial copy: blobs it has not fetched (stand-ins), and every blob of a note
         // not fetched in full, are pending: never extraneous, never deleted (format.md §1.2).
         let incomplete = PartialCopy.isIncomplete(noteFolder: attURL(id).deletingLastPathComponent())
-        let standIns = Set(WebDAVPartialCopy.pendingBlobs(root, id))
+        let standIns = Set(PartialCopyState.pendingBlobs(root, id))
         let localDeleted = incomplete ? [] : remote.intersection(set.recorded).subtracting(local)
         if options.pushOnly {
             // Never synced and not local: not ours, unless the copy has not fetched it yet.
@@ -230,7 +230,7 @@ extension WebDAVSync {
                         return
                     }
                     if set.localListed && allowed(name) {
-                        if !options.dryRun { try client.delete([Vault.notesName, id, Vault.attachmentsName, name]) }
+                        if !options.dryRun { try transport.delete([Vault.notesName, id, Vault.attachmentsName, name]) }
                         report.deleted.append(.init(side: "remote", path: blobPath(id, name)))
                         set.remote[name] = nil
                     } else if options.pushOnly {
@@ -315,8 +315,8 @@ extension WebDAVSync {
     func uploadBlob(_ id: String, _ name: String) throws {
         let path = blobPath(id, name)
         let file = attURL(id).appendingPathComponent(name)
-        guard let size = LocalFS.regularFileSize(file) else { throw WebDAVError.io("\(path) is not a regular file") }
-        if size > options.maxBlobBytes { throw WebDAVError.io("\(path) is \(size) bytes, over the blob limit; not uploaded") }
+        guard let size = LocalFS.regularFileSize(file) else { throw SyncError.io("\(path) is not a regular file") }
+        if size > options.maxBlobBytes { throw SyncError.io("\(path) is \(size) bytes, over the blob limit; not uploaded") }
         guard !options.dryRun else { locked { report.uploaded.append(path) }; return }
         try ensureCollection([Vault.notesName, id, Vault.attachmentsName])
         let tempName = FileIO.tempPrefix + UUID().uuidString.lowercased()
@@ -327,12 +327,12 @@ extension WebDAVSync {
         var moved = false
         defer {
             // Gone after a MOVE; otherwise removed now, or by the next run if that fails.
-            if moved || (try? client.delete(temp)) != nil { locked { state.remoteTemps.removeAll { $0 == tempRel } } }
+            if moved || (try? transport.delete(temp)) != nil { locked { state.remoteTemps.removeAll { $0 == tempRel } } }
         }
-        guard try client.put(temp, fromFile: file, condition: .create) else {
-            throw WebDAVError.io("\(path): the temporary upload name already exists on the server")
+        guard try transport.write(temp, .file(file), condition: .create) else {
+            throw SyncError.io("\(path): the temporary upload name already exists on the server")
         }
-        moved = try client.move(temp, to: [Vault.notesName, id, Vault.attachmentsName, name], overwrite: false)
+        moved = try transport.moveNoOverwrite(temp, to: [Vault.notesName, id, Vault.attachmentsName, name])
         locked { report.uploaded.append(path) }
         updateProgress { $0.uploaded = report.uploaded.count }
     }
@@ -344,7 +344,7 @@ extension WebDAVSync {
         try requireLocalWrite("download \(blobPath(id, name))")
         let path = blobPath(id, name)
         let limit = options.maxBlobBytes
-        if let size = entry?.size, size > limit { throw WebDAVError.responseTooLarge(path: path, limit: limit) }
+        if let size = entry?.size, size > limit { throw SyncError.responseTooLarge(path: path, limit: limit) }
         if skipQuarantined(blobKey(id, name), path: path, entry: entry) { return nil }
         let reserved = try locked { try budget.willDownload(entry?.size) }
         var settled = false
@@ -353,14 +353,14 @@ extension WebDAVSync {
         let att = attURL(id)
         do { try FileManager.default.createDirectory(at: att, withIntermediateDirectories: true) } catch {
             // Another download of the same note may have created it meanwhile.
-            guard FileIO.isDirectory(att) else { throw WebDAVError.io("create \(att.path): \(error.localizedDescription)") }
+            guard FileIO.isDirectory(att) else { throw SyncError.io("create \(att.path): \(error.localizedDescription)") }
         }
         let key = blobKey(id, name)
         let part = att.appendingPathComponent(Self.partialPrefix + name)
         let remote = [Vault.notesName, id, Vault.attachmentsName, name]
         // Only a strong ETag can back `If-Range` (RFC 9110 §13.1.5): with a weak or
         // missing one a cut download is not resumed, it starts over.
-        let etag = entry?.etag.flatMap { WebDAVSync.isStrong($0) ? $0 : nil }
+        let etag = entry?.etag.flatMap { SyncEngine.isStrong($0) ? $0 : nil }
         var offset = 0
         var fetched = 0
         if let etag, locked({ state.partials[key]?.etag == etag }), let have = LocalFS.regularFileSize(part) {
@@ -390,38 +390,28 @@ extension WebDAVSync {
                 fetched = max((LocalFS.regularFileSize(part) ?? offset) - offset, 0)
             }
             do {
-                do {
-                    try client.download(remote, to: part, resumeFrom: offset, ifRange: etag, maxBytes: limit,
-                                        segmentBytes: options.blobSegmentBytes, progress: segmentDone)
-                } catch WebDAVError.http(_, _, 416) where offset > 0 {
-                    // The partial file does not fit the remote one: start over.
-                    try? FileManager.default.removeItem(at: part)
-                    try client.download(remote, to: part, maxBytes: limit, segmentBytes: options.blobSegmentBytes,
-                                        progress: segmentDone)
-                }
-            } catch let e as WebDAVError {
-                // A dropped connection or a timeout (`.offline` from
-                // URLSessionTransport), a cancellation or the run's time bound keeps the partial file
+                // A partial file that does not fit the remote one starts over (`SyncRemote.download`).
+                try transport.download(remote, to: part, resumeFrom: offset, ifETag: etag, maxBytes: limit,
+                                       segmentBytes: options.blobSegmentBytes, progress: segmentDone)
+            } catch {
+                // A dropped connection or a timeout (a `TransientRemoteError`, e.g. WebDAV's
+                // `.offline`), a cancellation or the run's time bound keeps the partial file
                 // for the next run.
-                switch e {
-                case .transport, .offline, .cancelled, .limitExceeded:
+                if (error as? SyncError)?.isRunLimit == true || (error as? any TransientRemoteError)?.isTransient == true {
                     if etag == nil || LocalFS.regularFileSize(part) == nil { discard() }
-                default:
+                } else {
                     discard()
                 }
-                throw e
-            } catch {
-                discard()
                 throw error
             }
         }
         settled = true
         do { try locked { try budget.downloaded(fetched, reserved: reserved) } } catch { discard(); throw error }
-        guard let size = LocalFS.regularFileSize(part) else { discard(); throw WebDAVError.io("\(path): nothing was downloaded") }
-        guard size <= limit else { discard(); throw WebDAVError.responseTooLarge(path: path, limit: limit) }
+        guard let size = LocalFS.regularFileSize(part) else { discard(); throw SyncError.io("\(path): nothing was downloaded") }
+        guard size <= limit else { discard(); throw SyncError.responseTooLarge(path: path, limit: limit) }
         if let listed = entry?.size, listed != size {
             discard()
-            throw WebDAVError.malformedResponse("\(path) is \(size) bytes, the listing said \(listed); not written")
+            throw SyncError.malformedResponse("\(path) is \(size) bytes, the listing said \(listed); not written")
         }
         // Checked before it is placed (format.md §9.1): a failure is
         // quarantined, never placed and never silently dropped.
@@ -449,7 +439,7 @@ extension WebDAVSync {
         state.remoteTemps = state.remoteTemps.filter { rel in
             let comps = rel.split(separator: "/").map(String.init)
             guard comps.last?.hasPrefix(FileIO.tempPrefix) == true else { return false }
-            return (try? client.delete(comps)) == nil
+            return (try? transport.delete(comps)) == nil
         }
     }
 }

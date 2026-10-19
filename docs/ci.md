@@ -106,7 +106,7 @@ was lost, nothing is left in flight, every device reads the same notes).
 
 `scripts/sync-stress.sh` runs all four (60 seeds) against a local wsgidav and the proxy, building
 the vault once per seed and size in `build/sync-stress/` (`SEMPERE_STRESS_SEED`,
-`SEMPERE_STRESS_NOTES`). Run it after a change to `Sources/SempereWebDAV`; it is not part of CI or
+`SEMPERE_STRESS_NOTES`). Run it after a change to `Sources/SempereSync` or `Sources/SempereWebDAV`; it is not part of CI or
 the PR gate, so list it under `## Tests run`.
 
 **The fault proxy** (`scripts/dav-fault-proxy.py`, standard library only) forwards to the server

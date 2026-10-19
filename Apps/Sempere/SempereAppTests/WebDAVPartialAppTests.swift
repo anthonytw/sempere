@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import Sempere
+import SempereSync
 import SempereWebDAV
 import Testing
 @testable import SempereApp
@@ -79,7 +80,7 @@ struct WebDAVPartialAppTests {
     let first = UUID(uuidString: "11111111-1111-4111-8111-111111111111")!
     let second = UUID(uuidString: "22222222-2222-4222-8222-222222222222")!
 
-    func copy(_ s: WebDAVAppTests.Setup, _ id: UUID) throws -> WebDAVLocalCopy {
+    func copy(_ s: WebDAVAppTests.Setup, _ id: UUID) throws -> LocalCopy {
         s.model.webdavLocations.copy(of: try #require(s.model.webdavLocations.location(id)))
     }
 
@@ -90,7 +91,7 @@ struct WebDAVPartialAppTests {
         let c = try copy(s, id)
         #expect(c.isPartial && c.isUsable)
         #expect(s.remote.downloads == 1, "one metadata pull")
-        #expect(Set(WebDAVPartialCopy.incompleteNotes(c.folder)) == [first.uuidString.lowercased(), second.uuidString.lowercased()])
+        #expect(Set(PartialCopyState.incompleteNotes(c.folder)) == [first.uuidString.lowercased(), second.uuidString.lowercased()])
         #expect(s.model.isCloudVault, "the iCloud machinery runs the copy")
         #expect(s.model.cloudSource == .server("dav.example.org"))
         #expect(s.model.cloudHooks.source == .server("dav.example.org"))
@@ -129,7 +130,7 @@ struct WebDAVPartialAppTests {
 
     @Test func aNoteOpenedFirstIsFetchedFirst() async throws {
         let s = try WebDAVAppTests.setup()
-        let c = WebDAVLocalCopy(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+        let c = LocalCopy(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
                                 folderName: "Notes.sempere")
         #expect(try c.downloadMetadata(client: s.remote.folderClient()).errors.isEmpty)
         // Asked for the second note before it starts: that note is the first fetch.
@@ -166,7 +167,7 @@ struct WebDAVPartialAppTests {
         #expect(CloudPlaceholder.realName(of: ".abc.pdf.age.sempere-pending") == "abc.pdf.age")
         #expect(CloudPlaceholder.realName(of: PartialCopy.noteMarkerName) == nil)
         s.remote.openFetchGate()
-        #expect(await TS.waitUntil(timeout: .seconds(10)) { WebDAVPartialCopy.incompleteNotes(c.folder).isEmpty })
+        #expect(await TS.waitUntil(timeout: .seconds(10)) { PartialCopyState.incompleteNotes(c.folder).isEmpty })
         #expect(throws: Never.self) { try CloudVault.requireLocal(note: first, vault: c.folder, hooks: hooks) }
         s.model.close()
     }
@@ -181,13 +182,13 @@ struct WebDAVPartialAppTests {
         let id = try await s.model.connectWebDAV(s.listing, user: nil, password: "", pin: nil, library: s.library)
         let c = try copy(s, id)
         try await s.model.unlock(identityText: s.key)
-        #expect(await TS.waitUntil(timeout: .seconds(10)) { WebDAVPartialCopy.incompleteNotes(c.folder).isEmpty })
-        let pending = WebDAVPartialCopy.pendingBlobsByNote(c.folder)
+        #expect(await TS.waitUntil(timeout: .seconds(10)) { PartialCopyState.incompleteNotes(c.folder).isEmpty })
+        let pending = PartialCopyState.pendingBlobsByNote(c.folder)
         let (noteDir, names) = try #require(pending.first, "the fixture has an attachment")
         let note = try #require(UUID(uuidString: noteDir))
         let name = try #require(names.first)
         try await Task.sleep(for: .milliseconds(200))
-        #expect(WebDAVPartialCopy.pendingBlobsByNote(c.folder)[noteDir]?.contains(name) == true, "not fetched in the background")
+        #expect(PartialCopyState.pendingBlobsByNote(c.folder)[noteDir]?.contains(name) == true, "not fetched in the background")
         try await CloudVault.downloadBlob(note: note, fileName: name, vault: c.folder, hooks: s.model.cloudHooks,
                                           stallTimeout: .seconds(10), pollInterval: .milliseconds(20))
         #expect(FileManager.default.fileExists(atPath: c.folder.appendingPathComponent("notes/\(noteDir)/att/\(name)").path))
@@ -211,7 +212,7 @@ struct WebDAVPartialAppTests {
         s.remote.set { $0.fetchError = nil }
         s.model.cloudStallTimeout = .seconds(10)
         try await s.model.downloadNote(first)
-        #expect(!WebDAVPartialCopy.incompleteNotes(c.folder).contains(first.uuidString.lowercased()))
+        #expect(!PartialCopyState.incompleteNotes(c.folder).contains(first.uuidString.lowercased()))
         s.model.close()
     }
 
@@ -234,7 +235,7 @@ struct WebDAVPartialAppTests {
 /// The scopes a fetcher asked for.
 final class ScopeLog: @unchecked Sendable {
     private let lock = NSLock()
-    private var stored: [WebDAVFetchScope] = []
-    var scopes: [WebDAVFetchScope] { lock.lock(); defer { lock.unlock() }; return stored }
-    func append(_ s: WebDAVFetchScope) { lock.lock(); stored.append(s); lock.unlock() }
+    private var stored: [FetchScope] = []
+    var scopes: [FetchScope] { lock.lock(); defer { lock.unlock() }; return stored }
+    func append(_ s: FetchScope) { lock.lock(); stored.append(s); lock.unlock() }
 }

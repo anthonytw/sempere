@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import Sempere
+import SempereSync
 import SempereWebDAV
 
 /// The push-only sync of the open WebDAV vault (docs/io.md, "WebDAV vaults

@@ -2,6 +2,7 @@ import Foundation
 import TempDirSupport
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// Sync over real HTTP through `scripts/dav-fault-proxy.py` in front of

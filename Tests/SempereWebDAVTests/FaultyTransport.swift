@@ -1,4 +1,5 @@
 import Foundation
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// Wraps a transport and injects faults, chosen by a seeded generator, so a

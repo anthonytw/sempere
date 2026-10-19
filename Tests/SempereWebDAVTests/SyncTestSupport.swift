@@ -3,6 +3,7 @@ import Foundation
 import TempDirSupport
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// A fresh post-quantum identity (vaults take no other kind).
@@ -33,9 +34,9 @@ class SyncTestCase: TempDirTestCase {
         let exists = FileManager.default.fileExists(atPath: dir(name).appendingPathComponent("vault.json").path)
         let v: Vault?
         if let vault { v = vault } else { v = exists ? try openVault(name) : nil }
-        let s = WebDAVSync(directory: dir(name), vault: v, client: try client(server),
+        let s = SyncEngine(directory: dir(name), vault: v, client: try client(server),
                            stateURL: tmp.appendingPathComponent("state-\(name).json"),
-                           options: WebDAVSyncOptions(dryRun: dryRun, deviceLabel: label ?? name, now: now))
+                           options: SyncOptions(dryRun: dryRun, deviceLabel: label ?? name, now: now))
         return try s.run()
     }
 

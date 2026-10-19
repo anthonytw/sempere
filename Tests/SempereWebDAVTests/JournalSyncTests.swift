@@ -2,6 +2,7 @@ import Age
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// Security review 2026-10, stage 4 (S9, S4): two-way sync and
@@ -142,9 +143,9 @@ final class JournalSyncTests: SyncTestCase {
         server.putDirect("rewrap-journal.json", step1)   // the journal reached the server, vault.json not yet
 
         let t0 = Date()
-        let held = WebDAVSync(directory: dir("B"), vault: try openVault("B"), client: try client(server),
+        let held = SyncEngine(directory: dir("B"), vault: try openVault("B"), client: try client(server),
                               stateURL: tmp.appendingPathComponent("state-B.json"),
-                              options: WebDAVSyncOptions(deviceLabel: "B", now: t0))
+                              options: SyncOptions(deviceLabel: "B", now: t0))
         let report = try held.run()
         XCTAssertTrue(report.rejected.isEmpty && report.downloaded.isEmpty, "\(report)")
         XCTAssertEqual(report.skipped.map(\.path), ["rewrap-journal.json"], "\(report)")
@@ -171,9 +172,9 @@ final class JournalSyncTests: SyncTestCase {
         let t0 = Date()
         XCTAssertTrue(try sync("B", server, now: t0).rejected.isEmpty)
         XCTAssertTrue(try sync("B", server, now: t0.addingTimeInterval(Vault.inFlightJournalWindow - 60)).rejected.isEmpty)
-        let late = WebDAVSync(directory: dir("B"), vault: try openVault("B"), client: try client(server),
+        let late = SyncEngine(directory: dir("B"), vault: try openVault("B"), client: try client(server),
                               stateURL: tmp.appendingPathComponent("state-B.json"),
-                              options: WebDAVSyncOptions(deviceLabel: "B", now: t0.addingTimeInterval(Vault.inFlightJournalWindow)))
+                              options: SyncOptions(deviceLabel: "B", now: t0.addingTimeInterval(Vault.inFlightJournalWindow)))
         let report = try late.run()
         XCTAssertEqual(report.rejected.map(\.path), ["rewrap-journal.json"], "\(report)")
         XCTAssertFalse(late.remoteJournal)
@@ -189,9 +190,9 @@ final class JournalSyncTests: SyncTestCase {
         try sync("A", server)
         server.putDirect("rewrap-journal.json", Data("{\"format\":\"sempere/1\"}".utf8))
         func pull() throws -> SyncReport {
-            var o = WebDAVSyncOptions(deviceLabel: "B")
+            var o = SyncOptions(deviceLabel: "B")
             o.firstPullIdentities = [identity]
-            return try WebDAVSync(directory: dir("B"), vault: nil, client: try client(server),
+            return try SyncEngine(directory: dir("B"), vault: nil, client: try client(server),
                                   stateURL: tmp.appendingPathComponent("state-B.json"), options: o).run()
         }
         server.interceptor = { r in

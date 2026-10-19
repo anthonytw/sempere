@@ -1,7 +1,7 @@
 import Foundation
 import Sempere
 
-// MARK: - Unchanged notes (`WebDAVSyncOptions.skipUnchangedNotes`)
+// MARK: - Unchanged notes (`SyncOptions.skipUnchangedNotes`)
 //
 // A run lists every note folder on the server (one PROPFIND each). The
 // `notes/` listing already gives each folder's ETag, so a folder whose ETag
@@ -20,7 +20,7 @@ import Sempere
 // a file on one side only, a write) clears the note's record, so its next
 // run lists it.
 
-extension WebDAVSync {
+extension SyncEngine {
     /// How far the report had grown when a note's sync started.
     struct NoteMark {
         var uploaded, deleted, issues: Int

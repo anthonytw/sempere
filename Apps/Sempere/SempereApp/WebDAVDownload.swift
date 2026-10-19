@@ -1,4 +1,5 @@
 import Foundation
+import SempereSync
 import SempereWebDAV
 
 /// A WebDAV vault being downloaded (the first download, or Download Again),
@@ -6,8 +7,8 @@ import SempereWebDAV
 struct WebDAVDownloadStatus: Equatable, Sendable {
     /// The vault's name in the list.
     var name: String
-    /// The run's progress (`WebDAVSyncOptions.progress`).
-    var progress = WebDAVSyncProgress()
+    /// The run's progress (`SyncOptions.progress`).
+    var progress = SyncProgress()
     /// Cancel was pressed: the run stops after the transfers in flight.
     var cancelling = false
 
@@ -63,15 +64,15 @@ struct WebDAVDownloadStatus: Equatable, Sendable {
 /// nothing after `close` (a later download's status is never overwritten).
 final class WebDAVProgressRelay: @unchecked Sendable {
     private let lock = NSLock()
-    private var latest: WebDAVSyncProgress?
+    private var latest: SyncProgress?
     private var scheduled = false
     private var closed = false
-    private let deliver: @MainActor @Sendable (WebDAVSyncProgress) -> Void
+    private let deliver: @MainActor @Sendable (SyncProgress) -> Void
 
-    init(_ deliver: @escaping @MainActor @Sendable (WebDAVSyncProgress) -> Void) { self.deliver = deliver }
+    init(_ deliver: @escaping @MainActor @Sendable (SyncProgress) -> Void) { self.deliver = deliver }
 
     /// From any thread.
-    func send(_ progress: WebDAVSyncProgress) {
+    func send(_ progress: SyncProgress) {
         lock.lock()
         defer { lock.unlock() }
         guard !closed else { return }
@@ -96,7 +97,7 @@ final class WebDAVProgressRelay: @unchecked Sendable {
     }
 }
 
-/// The Cancel of a WebDAV download, read by the sync's threads (`WebDAVSyncOptions.isCancelled`).
+/// The Cancel of a WebDAV download, read by the sync's threads (`SyncOptions.isCancelled`).
 final class WebDAVCancelFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var set = false

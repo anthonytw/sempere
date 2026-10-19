@@ -4,6 +4,7 @@ import XCTest
 import FoundationNetworking
 #endif
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// "Test Connection" and the vault list (`WebDAVConnection`, `sempere webdav check`).
@@ -14,10 +15,10 @@ final class ConnectionTests: SyncTestCase {
 
     /// Pushes vault `name` to the server folder `/dav/<folder>`.
     func publish(_ name: String, to folder: String, _ server: MockDAV) throws {
-        var o = WebDAVSyncOptions(deviceLabel: name)
+        var o = SyncOptions(deviceLabel: name)
         o.pushOnly = true
         let c = try client(server, path: "/dav/\(folder)/")
-        _ = try WebDAVSync(directory: dir(name), vault: try openVault(name), client: c,
+        _ = try SyncEngine(directory: dir(name), vault: try openVault(name), client: c,
                            stateURL: tmp.appendingPathComponent("state-\(name)-\(folder).json"), options: o).run()
     }
 
@@ -61,7 +62,7 @@ final class ConnectionTests: SyncTestCase {
         XCTAssertEqual(hostile.vaults.first?.name, "]0;pwned Notes")
 
         // The app's local copy reads it without the key.
-        let copy = WebDAVLocalCopy(directory: tmp.appendingPathComponent("loc"), folderName: "V.sempere")
+        let copy = LocalCopy(directory: tmp.appendingPathComponent("loc"), folderName: "V.sempere")
         XCTAssertNil(copy.label)
         _ = try copy.download(client: try client(server, path: "/dav/Work.sempere/"))
         XCTAssertNil(copy.label)
