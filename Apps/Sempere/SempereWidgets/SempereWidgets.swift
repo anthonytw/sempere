@@ -84,21 +84,39 @@ struct VoiceNoteWidgetView: View {
         // the glyph and the two lines of text, and a tap anywhere else in the widget fell through
         // to the widget's default action, opening the app without running the intent (TestFlight
         // 1.0.0 (6): "opens the app, records nothing", no Recent Starts entry).
-        Button(intent: status.tapIntent) {
-            label
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
+        //
+        // The circular Lock Screen widget (iPhone, build 6, unlocked): every tap logged "Launching with no
+        // widgetURL" in WidgetRenderer and no intent ran, while the rectangular one ran it. Its label was
+        // `AccessoryWidgetBackground()` under a small glyph: the system background is not the button's
+        // hit area, so only the glyph was. Now the background sits behind the button, outside it, and the
+        // button's label is a clear square filling the widget with the glyph on it, all of it hit-testable.
+        if family == .accessoryCircular {
+            ZStack {
+                AccessoryWidgetBackground()
+                Button(intent: status.tapIntent) {
+                    ZStack {
+                        Color.clear
+                        Image(systemName: status.symbol).font(.title2).widgetAccentable()
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        } else {
+            Button(intent: status.tapIntent) {
+                label
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
     }
 
     @ViewBuilder private var label: some View {
         switch family {
         case .accessoryCircular:
-            ZStack {
-                AccessoryWidgetBackground()
-                Image(systemName: status.symbol).font(.title2).widgetAccentable()
-            }
+            Image(systemName: status.symbol).font(.title2).widgetAccentable()
         case .accessoryRectangular:
             HStack(spacing: 6) {
                 Image(systemName: status.symbol).font(.title3).widgetAccentable()
@@ -163,16 +181,20 @@ struct VoiceNoteControl: ControlWidget {
 struct VoiceNoteLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: VoiceNoteAttributes.self) { context in
-            VoiceNoteActivityView(state: context.state)
+            VoiceNoteActivityView(state: context.state, interrupted: context.isStale && context.state.isRecording)
                 .padding()
                 .activityBackgroundTint(Color.black.opacity(0.75))
                 .activitySystemActionForegroundColor(.white)
                 .widgetURL(VoiceNoteLink.recording.url)
         } dynamicIsland: { context in
             let state = context.state
+            // The app stopped refreshing it while recording: it was force quit or crashed (`keepActivityFresh`).
+            let interrupted = context.isStale && state.isRecording
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    if let result = state.result {
+                    if interrupted {
+                        Label("Interrupted", systemImage: "exclamationmark.triangle.fill").font(.headline)
+                    } else if let result = state.result {
                         Label(result.title, systemImage: result.symbol).font(.headline)
                     } else {
                         HStack(spacing: 6) {
@@ -185,7 +207,9 @@ struct VoiceNoteLiveActivity: Widget {
                     ElapsedTime(state: state).font(.title2.weight(.semibold))
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    if state.isRecording {
+                    if interrupted {
+                        Text("Open Sempere to save the voice note.").font(.footnote).foregroundStyle(.secondary)
+                    } else if state.isRecording {
                         StopButton()
                     } else if let result = state.result {
                         Text(result.detail).font(.footnote).foregroundStyle(.secondary)
@@ -215,9 +239,21 @@ struct VoiceNoteLiveActivity: Widget {
 /// The Lock Screen (and banner) presentation of the Live Activity.
 struct VoiceNoteActivityView: View {
     let state: VoiceNoteAttributes.ContentState
+    /// Stale while recording: the app was force quit or crashed, so Stop would reach nothing. A tap
+    /// opens the app, which ends this activity and saves what was recorded.
+    var interrupted = false
 
     var body: some View {
-        if let result = state.result {
+        if interrupted {
+            HStack(spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill").font(.largeTitle).foregroundStyle(Color.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Voice note interrupted").font(.headline).foregroundStyle(.white)
+                    Text("Open Sempere to save it.").font(.footnote).foregroundStyle(.white.opacity(0.8))
+                }
+                Spacer(minLength: 0)
+            }
+        } else if let result = state.result {
             HStack(spacing: 12) {
                 Image(systemName: result.symbol).font(.largeTitle)
                     .foregroundStyle(result == .failed ? Color.orange : Color.green)

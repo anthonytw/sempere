@@ -64,6 +64,11 @@ final class CLIInboxTests: CLITestCase {
         XCTAssertEqual(try reader.readBlob(note: UUID(uuidString: note)!, rec.blob, maxBytes: 1 << 24),
                        try Data(contentsOf: URL(fileURLWithPath: Self.tone)))
         XCTAssertNotNil(rec.transcript)
+        // The recording's card on the page, where the transcript shows, as for a recording made in a note.
+        XCTAssertEqual(result["card"] as? Bool, true)
+        let card = try XCTUnwrap(state.pages.first?.items.first)
+        XCTAssertEqual(card.kind, .audio)
+        XCTAssertEqual(card.recording, rec.id)
         XCTAssertEqual((try cli(["inbox", "list", "--json"] + locked).json as? [[String: Any]])?.count, 0)
         // The note is an ordinary note now.
         let shown = try cli(["notes", "show", note, "--json"] + unlocked)

@@ -555,6 +555,13 @@ public enum CaptureAdoption {
         return (UUID.derived(from: base + " note"), UUID.derived(from: base + " page"), UUID.derived(from: base + " recording"))
     }
 
+    /// The id of the `audio` item (the recording's card, format.md §8.2.9) a new note adopted
+    /// from capture `id` shows on its page: derived like `ids(for:)`, so concurrent adoptions
+    /// write the same card.
+    public static func cardID(for id: UUID) -> UUID {
+        UUID.derived(from: "sempere-capture/1 " + id.uuidString.lowercased() + " card")
+    }
+
     /// The inbox files of `pending` that may be deleted once its note is
     /// `after` (nil: no note): the capture once the note exists; the
     /// transcript once the recording has one (or is gone: removed by the user).
@@ -572,8 +579,8 @@ public enum CaptureAdoption {
 
     /// The ops that adopt `pending` into its note, whose current state is
     /// `current` (nil: no revision yet). A new note gets its title, notebook,
-    /// one page, the recording (`audio` is its blob) and the transcript when
-    /// there is one, in one delta. A note that exists only gets the
+    /// one page, the recording (`audio` is its blob), the transcript when
+    /// there is one and the recording's card on the page (`cardID(for:)`), in one delta. A note that exists only gets the
     /// transcript, if its recording is there without one. Nothing when there
     /// is nothing to add (a transcript whose capture has not arrived yet waits).
     /// A transcript is only added to the recording whose audio it is bound to
@@ -629,6 +636,14 @@ public enum CaptureAdoption {
         // Who captured it (format.md §8.3.1, §11.3): the adopter writes the delta.
         recording.captured = CaptureAttribution(device: m.device, recipient: m.recipient)
         ops.append(.addRecording(recording))
+        // The recording's card on the page (format.md §8.2.9), as a recording made in a note gets one:
+        // it shows the title, the length and, once there is one, the transcript. Placed by the
+        // default rule on the new, empty page, under a derived id, so every adopter writes the same card.
+        if let page = ops.lazy.compactMap({ op -> Page? in if case .addPage(let p) = op { return p } else { return nil } }).first,
+           let card = try? NoteOps.placeRecording(ids.recording, recordings: [recording], on: page, pageSize: pageSize,
+                                                  id: cardID(for: pending.id)) {
+            ops += card.ops
+        }
         return ops
     }
 }
@@ -830,6 +845,8 @@ extension Vault {
         /// The note was created by this adoption.
         public var created: Bool
         public var transcript: Bool
+        /// The new note shows the recording's card on its page (format.md §11.3).
+        public var card: Bool = false
         /// The delta written (a file name in the note's folder); nil when none was needed.
         public var file: String?
         /// The inbox files deleted.
@@ -868,6 +885,8 @@ extension Vault {
                                               transcript: pending.transcriptContent.map { BlobRef(content: $0, type: BlobRef.transcriptType) },
                                               current: current)
             result.created = !exists && pending.manifest != nil
+            result.card = planned.contains { if case .addItem(_, let item) = $0 { return item.kind == .audio }
+                                             return false }
             result.transcript = planned.contains { if case .setRecording = $0 { return true }
                                                    if case .addRecording(let r) = $0 { return r.transcript != nil }
                                                    return false }

@@ -8161,6 +8161,42 @@
         }
       }
     },
+    "Interrupted" : {
+      "comment" : "Dynamic Island: the app recording a voice note was force quit or crashed",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Interrumpida"
+          }
+        }
+      }
+    },
+    "Interrupted Voice Note Not Saved Yet" : {
+      "comment" : "Banner title: a voice note cut off by a restart is kept on the device for now",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nota de voz interrumpida aún sin guardar"
+          }
+        }
+      }
+    },
+    "Interrupted Voice Note Saved" : {
+      "comment" : "Banner title: a voice note cut off by a restart or a force quit was saved",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nota de voz interrumpida guardada"
+          }
+        }
+      }
+    },
     "Into notebook (blank: top level)" : {
       "comment" : "Notebook field placeholder when moving a notebook",
       "extractionState" : "manual",
@@ -10806,6 +10842,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abre Sempere para ver los detalles."
+          }
+        }
+      }
+    },
+    "Open Sempere to save it." : {
+      "comment" : "Live Activity detail under \"Voice note interrupted\"",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre Sempere para guardarla."
+          }
+        }
+      }
+    },
+    "Open Sempere to save the voice note." : {
+      "comment" : "Dynamic Island: a voice note was interrupted; opening the app saves it",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre Sempere para guardar la nota de voz."
           }
         }
       }
@@ -14593,6 +14653,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sempere no ha podido confirmar que eres tú, así que no se ha mostrado la clave."
+          }
+        }
+      }
+    },
+    "Sempere could not confirm it may use the microphone without opening. Open Sempere to record." : {
+      "comment" : "Error of a voice note start in the background whose microphone permission could not be confirmed",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sempere no pudo confirmar que puede usar el micrófono sin abrirse. Abre Sempere para grabar."
           }
         }
       }
@@ -19110,6 +19182,18 @@
         }
       }
     },
+    "Unlock this device once after it restarts: until then Sempere cannot record voice notes." : {
+      "comment" : "Error a voice note start gives (Siri, a widget) before the first unlock after a restart",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desbloquea este dispositivo una vez después de reiniciarlo: hasta entonces Sempere no puede grabar notas de voz."
+          }
+        }
+      }
+    },
     "Unlock with Key" : {
       "comment" : "Button: unlock with the pasted secret key",
       "extractionState" : "manual",
@@ -19675,6 +19759,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nota de voz de un dispositivo que ya no está en esta bóveda"
+          }
+        }
+      }
+    },
+    "Voice note interrupted" : {
+      "comment" : "Live Activity title: the app recording a voice note was force quit or crashed",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nota de voz interrumpida"
           }
         }
       }

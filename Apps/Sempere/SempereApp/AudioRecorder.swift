@@ -8,7 +8,12 @@ import Sempere
 /// playable.
 @MainActor
 protocol AudioCaptureBackend: AnyObject {
-    /// Starts writing a new file at `url` in `format`.
+    /// Makes the audio session active for recording before anything else of the start (quick voice
+    /// notes: before the Live Activity is requested, docs/quick-capture.md "Start order"). `mixable`
+    /// lets other apps' audio go on, which needs no interruption. `begin` then uses the active session.
+    func activateSession(mixable: Bool) async throws
+    /// Starts writing a new file at `url` in `format` (activating the session first unless
+    /// `activateSession` did).
     func begin(file url: URL, format: RecordingFormat) throws
     /// Stops writing for now (an interruption); `resume` appends to the same file.
     func pause()
@@ -58,6 +63,10 @@ enum RecordingError: Error, Equatable, CustomStringConvertible, CustomLocalizedS
 @MainActor
 final class AVAudioCaptureBackend: AudioCaptureBackend {
     private var recorder: AVAudioRecorder?
+    /// `activateSession` (or `begin`) made the session active, and nothing deactivated it since.
+    private var sessionActive = false
+    /// The session was activated mixable (`resume` keeps it so).
+    private var mixable = false
 
     /// `AVAudioRecorder` settings for `format` (docs/attachments.md §13).
     static func settings(_ format: RecordingFormat, inputChannels: Int) -> [String: Any] {
@@ -82,18 +91,32 @@ final class AVAudioCaptureBackend: AudioCaptureBackend {
     /// Not mixable (no `.mixWithOthers`): the audio system refuses a *mixable* recording started
     /// from the background ("`cannotStartRecording` … usually because it is starting a mixable
     /// recording from the background", AudioSessionTypes.h).
-    private func activate() throws {
+    ///
+    /// Not mixable by default, but a background start whose fake-foreground assertion is already gone
+    /// cannot activate a non-mixable session ('!int' cannotInterruptOthers, iPhone, iOS 27.0.1, TestFlight
+    /// 1.0.0 (6)): `QuickCapture` activates before the Live Activity, and tries `mixable` only after that refusal.
+    nonisolated static func activate(mixable: Bool) throws {
         let session = AVAudioSession.sharedInstance()
+        var options: AVAudioSession.CategoryOptions = [.defaultToSpeaker, .allowBluetoothHFP]
+        if mixable { options.insert(.mixWithOthers) }
+        let step = mixable ? " (mixable)" : ""
         do {
-            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothHFP])
+            try session.setCategory(.playAndRecord, mode: .default, options: options)
         } catch {
-            throw RecordingError.cannotRecord(Self.explain(error, step: "setCategory"))
+            throw RecordingError.cannotRecord(Self.explain(error, step: "setCategory" + step))
         }
         do {
             try session.setActive(true)
         } catch {
-            throw RecordingError.cannotRecord(Self.explain(error, step: "setActive"))
+            throw RecordingError.cannotRecord(Self.explain(error, step: "setActive" + step))
         }
+    }
+
+    /// Off the main thread: activation can block for a while (audiomxd warns of a hang on the main thread).
+    func activateSession(mixable: Bool) async throws {
+        try await Task.detached(priority: .userInitiated) { try Self.activate(mixable: mixable) }.value
+        sessionActive = true
+        self.mixable = mixable
     }
 
     /// The audio system's refusal with its step, domain and code (and the code's name when it is an
@@ -126,7 +149,10 @@ final class AVAudioCaptureBackend: AudioCaptureBackend {
     }
 
     func begin(file url: URL, format: RecordingFormat) throws {
-        try activate()
+        if !sessionActive {
+            try Self.activate(mixable: mixable)
+            sessionActive = true
+        }
         let channels = AVAudioSession.sharedInstance().inputNumberOfChannels
         let r: AVAudioRecorder
         do { r = try AVAudioRecorder(url: url, settings: Self.settings(format, inputChannels: channels)) } catch {
@@ -139,7 +165,8 @@ final class AVAudioCaptureBackend: AudioCaptureBackend {
     func pause() { recorder?.pause() }
 
     func resume() throws {
-        try activate()
+        try Self.activate(mixable: mixable)
+        sessionActive = true
         guard recorder?.record() == true else { throw RecordingError.cannotRecord("the recorder did not resume") }
     }
 
@@ -149,6 +176,7 @@ final class AVAudioCaptureBackend: AudioCaptureBackend {
     }
 
     func deactivate() {
+        sessionActive = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
@@ -225,6 +253,11 @@ final class RecordingSession {
     @ObservationIgnored private let center: NotificationCenter
     /// A new segment starts after this many seconds of audio.
     @ObservationIgnored var segmentSeconds: Double = 600
+    /// The segment files' extension, which picks their container (`AVAudioRecorder` goes by it):
+    /// `m4a` (MPEG-4, unreadable if the app dies before the file is finished), or `aac` (ADTS, AAC
+    /// only: every frame stands alone, so a file cut off by a crash, a force quit or a restart is
+    /// readable up to its last frame). Quick voice notes use `aac` (`QuickCapture.segmentExtension`).
+    let segmentExtension: String
     /// Called when the session stops by itself (the media server was reset,
     /// or no new segment file could be started): its owner saves what was
     /// recorded, as after `stop`.
@@ -243,10 +276,11 @@ final class RecordingSession {
     let protection: FileProtectionType
 
     init(noteID: UUID, format: RecordingFormat, root: URL = RecordingSession.root,
-         protection: FileProtectionType = .completeUnlessOpen,
+         protection: FileProtectionType = .completeUnlessOpen, segmentExtension: String = "m4a",
          backend: AudioCaptureBackend? = nil, center: NotificationCenter = .default, now: @escaping () -> Date = { Date() }) {
         id = UUID()
         self.protection = protection
+        self.segmentExtension = segmentExtension
         self.noteID = noteID
         self.format = format.normalized()
         folder = root.appendingPathComponent(id.uuidString.lowercased(), isDirectory: true)
@@ -280,7 +314,7 @@ final class RecordingSession {
     }
 
     private func beginSegment() throws {
-        let url = folder.appendingPathComponent(String(format: "segment-%03d.m4a", segments.count + 1))
+        let url = folder.appendingPathComponent(String(format: "segment-%03d.", segments.count + 1) + segmentExtension)
         try backend.begin(file: url, format: format)
         segments.append(url)
         segmentStartAudio = timeline.audioLength(at: now())
@@ -468,10 +502,11 @@ enum RecordingAssembly {
     /// The audio of `segments` in order as one file at `out` (passthrough,
     /// else re-encoded as AAC). One segment is copied as it is. Segments that
     /// cannot be read (a file left unfinished by a crash) are skipped; throws
-    /// when none can.
+    /// when none can. Segments in another container than MPEG-4 (ADTS `.aac`) are
+    /// always rewritten into one, also alone.
     nonisolated static func merge(_ segments: [URL], into out: URL) async throws {
         try? FileManager.default.removeItem(at: out)
-        if segments.count == 1 {
+        if segments.count == 1, segments[0].pathExtension.lowercased() == "m4a" {
             try FileManager.default.copyItem(at: segments[0], to: out)
             return
         }
