@@ -117,15 +117,15 @@ final class SettingsUITests: XCTestCase {
         if isMac {
             app.typeKey(",", modifierFlags: .command)
         } else {
-            let button = app.buttons["Settings"].firstMatch
-            // In portrait the sidebar is tucked away: bring it in first.
+            // Settings is in the sidebar bar's More menu. In portrait the sidebar is tucked away:
+            // bring it in first.
+            let more = app.buttons["sidebar-more"].firstMatch
             let showSidebar = app.buttons["Show Sidebar"].firstMatch
-            if !button.waitForExistence(timeout: 5), showSidebar.exists { showSidebar.tap() }
-            // A narrow sidebar puts the gear in its bar's overflow menu.
-            let sidebarBar = app.navigationBars.containing(.button, identifier: "sidebar-new-notebook").firstMatch
-            let more = sidebarBar.buttons["OverflowBarButtonItem"].firstMatch
-            if !button.waitForExistence(timeout: 5), more.exists { more.tap() }
-            require(button, "the sidebar's Settings button", in: app)
+            if !more.waitForExistence(timeout: 5), showSidebar.exists { showSidebar.tap() }
+            require(more, "the More menu on the sidebar's bar", in: app)
+            more.tap()
+            let button = app.buttons["Settings"].firstMatch
+            require(button, "Settings in the More menu", in: app)
             button.tap()
         }
         require(app.descendants(matching: .any)["settingsForm"].firstMatch, "Settings", in: app)
