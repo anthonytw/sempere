@@ -231,6 +231,9 @@ final class QuickCapture {
     @ObservationIgnored var startLog = VoiceNoteStartLog(url: nil)
     /// `startLog`'s attempts, newest first, for Settings ▸ Quick Voice Notes ▸ Recent Starts (observed through the log).
     var recentStarts: [VoiceNoteStartAttempt] { startLog.attempts }
+    /// The last taps on a widget, the control or a voice note shortcut, from the app and the widget
+    /// extension (`VoiceNoteTapLog`), newest first; read again by `refreshTaps()`.
+    private(set) var recentTaps: [VoiceNoteTap] = []
     /// Called with the capture id as each seal begins (tests).
     @ObservationIgnored var willSeal: (@MainActor (UUID) -> Void)?
     #if os(iOS) && !targetEnvironment(macCatalyst)
@@ -267,6 +270,9 @@ final class QuickCapture {
         QuickCapture.shared.startLog = VoiceNoteStartLog(url: VoiceNoteStartLog.defaultURL)
         VoiceNoteActions.open = { QuickCapture.shared.pendingLink = $0 }
         VoiceNoteActions.status = { QuickCapture.shared.status }
+        VoiceNoteActions.appState = { QuickCapture.shared.applicationState().diagnosticName }
+        VoiceNoteActions.tapRecorded = { _ in QuickCapture.shared.refreshTaps() }
+        QuickCapture.shared.refreshTaps()
         VoiceNoteActions.start = { try await QuickCapture.shared.start($0) }
         VoiceNoteActions.stop = {
             do { _ = try await QuickCapture.shared.stop() } catch QuickCaptureError.notRecording {
@@ -354,6 +360,57 @@ final class QuickCapture {
             return false
         } catch {
             return true
+        }
+    }
+
+    // MARK: - Taps (diagnostics)
+
+    /// Reads the tap log again (`VoiceNoteActions.tapLog`): after a tap in this process, and when the
+    /// app becomes active (the widget extension may have added one).
+    func refreshTaps() {
+        recentTaps = VoiceNoteActions.tapLog?.read() ?? []
+    }
+
+    /// Clears Recent Starts: the starts and the taps.
+    func clearDiagnostics() {
+        startLog.clear()
+        VoiceNoteActions.tapLog?.clear()
+        refreshTaps()
+    }
+
+    /// The app was opened by the widget's own URL (`VoiceNoteLink.widgetTapURL`): a widget tap that
+    /// did not run the widget's intent. Kept in Recent Starts, then done here as the intent would
+    /// have done it, from the live state: record, stop, or show the setup or the banner. The app is
+    /// in front, so a start needs no background permission.
+    ///
+    /// Anyone can open the URL; it does nothing a tap on the widget, the control or Siri could not
+    /// do on this device (docs/quick-capture.md "Threat model": a voice note is sealed to the vault's
+    /// keys, and recording shows the banner, the Live Activity and the system's microphone indicator).
+    @discardableResult
+    func widgetOpenedApp() -> Task<Void, Never> {
+        let action = status.action
+        let decision: VoiceNoteTap.Decision
+        switch action {
+        case .start: decision = .start
+        case .stop: decision = .stop
+        case .open(let link): decision = link == .settings ? .openSettings : .openRecording
+        }
+        VoiceNoteActions.recordTap(.widgetOpenedApp, decision: decision)
+        return Task { @MainActor in
+            switch action {
+            case .start:
+                do {
+                    try await start(VoiceNoteStartRequest(source: .widgetOrControl, intentMode: "opened by the widget's link"))
+                } catch {
+                    announceStartFailure(error)
+                }
+            case .stop:
+                do { _ = try await stop() } catch {
+                    // Already stopped (a second tap): nothing to report.
+                }
+            case .open(let link):
+                pendingLink = link
+            }
         }
     }
 

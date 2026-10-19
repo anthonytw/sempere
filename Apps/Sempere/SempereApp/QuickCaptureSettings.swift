@@ -59,8 +59,10 @@ struct QuickCaptureSettingsSection: View {
             if let problem { Text(problem).font(.footnote).foregroundStyle(.orange) }
             // Why the Lock Screen / Control Center / Action button / widget shortcuts cannot record,
             // whether or not Quick Voice Notes is set up yet, with the way to the system Settings.
-            if !model.quickCapture.recentStarts.isEmpty {
-                RecentStartsView(attempts: model.quickCapture.recentStarts) { model.quickCapture.startLog.clear() }
+            if !model.quickCapture.recentStarts.isEmpty || !model.quickCapture.recentTaps.isEmpty {
+                RecentStartsView(attempts: model.quickCapture.recentStarts, taps: model.quickCapture.recentTaps) {
+                    model.quickCapture.clearDiagnostics()
+                }
             }
             ForEach(blockers, id: \.self) { blocker in
                 VStack(alignment: .leading, spacing: 4) {
@@ -176,30 +178,109 @@ enum VoiceNoteBlocker: Hashable {
 /// Live Activity request and the audio system answered, and how it ended; nothing personal.
 struct RecentStartsView: View {
     let attempts: [VoiceNoteStartAttempt]
+    /// Every tap that reached the app or the widget extension (`VoiceNoteTapLog`), also those that
+    /// started nothing; shown among the starts by time.
+    var taps: [VoiceNoteTap] = []
     let clear: () -> Void
 
+    /// A start or a tap, newest first.
+    enum Row: Identifiable {
+        case start(VoiceNoteStartAttempt)
+        case tap(VoiceNoteTap)
+
+        var id: UUID {
+            switch self {
+            case .start(let a): return a.id
+            case .tap(let t): return t.id
+            }
+        }
+
+        var date: Date {
+            switch self {
+            case .start(let a): return a.date
+            case .tap(let t): return t.date
+            }
+        }
+    }
+
+    /// Starts and taps together, newest first.
+    static func rows(attempts: [VoiceNoteStartAttempt], taps: [VoiceNoteTap]) -> [Row] {
+        (attempts.map(Row.start) + taps.map(Row.tap)).sorted { $0.date > $1.date }
+    }
+
     var body: some View {
+        let rows = Self.rows(attempts: attempts, taps: taps)
         DisclosureGroup {
-            ForEach(attempts) { a in
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(Self.sourceTitle(a.source)).font(.subheadline.weight(.semibold))
-                        Spacer(minLength: 8)
-                        Text(a.date, format: .dateTime.month(.abbreviated).day().hour().minute().second())
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    Label(Self.outcomeTitle(a.outcome), systemImage: a.outcome == .failed ? "xmark.circle" : "checkmark.circle")
-                        .font(.footnote)
-                        .foregroundStyle(a.outcome == .failed ? .orange : .green)
-                    ForEach(Array(Self.lines(a).enumerated()), id: \.offset) { _, line in
-                        Text(line).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
-                    }
+            ForEach(rows) { row in
+                switch row {
+                case .start(let a): startRow(a)
+                case .tap(let t): tapRow(t)
                 }
-                .accessibilityElement(children: .combine)
             }
             Button("Clear Recent Starts", role: .destructive, action: clear)
         } label: {
-            LabeledContent("Recent Starts", value: attempts.first.map { Self.outcomeTitle($0.outcome) } ?? "")
+            LabeledContent("Recent Starts", value: rows.first.map(Self.rowTitle) ?? "")
+        }
+    }
+
+    private func startRow(_ a: VoiceNoteStartAttempt) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(Self.sourceTitle(a.source)).font(.subheadline.weight(.semibold))
+                Spacer(minLength: 8)
+                Text(a.date, format: .dateTime.month(.abbreviated).day().hour().minute().second())
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Label(Self.outcomeTitle(a.outcome), systemImage: a.outcome == .failed ? "xmark.circle" : "checkmark.circle")
+                .font(.footnote)
+                .foregroundStyle(a.outcome == .failed ? .orange : .green)
+            ForEach(Array(Self.lines(a).enumerated()), id: \.offset) { _, line in
+                Text(line).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func tapRow(_ t: VoiceNoteTap) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(Self.tapTitle(t)).font(.subheadline.weight(.semibold))
+                Spacer(minLength: 8)
+                Text(t.date, format: .dateTime.month(.abbreviated).day().hour().minute().second())
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Label(Self.decisionTitle(t.decision), systemImage: "hand.tap")
+                .font(.footnote)
+                .foregroundStyle(t.decision == .unavailable || t.error != nil ? .orange : .secondary)
+            Text(t.summary).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The newest row's outcome, for the collapsed line.
+    static func rowTitle(_ row: Row) -> String {
+        switch row {
+        case .start(let a): return outcomeTitle(a.outcome)
+        case .tap(let t): return decisionTitle(t.decision)
+        }
+    }
+
+    static func tapTitle(_ t: VoiceNoteTap) -> String {
+        switch t.entry {
+        case .controlIntent: return String(localized: "Tap: Widget or Control Center", comment: "Settings ▸ Quick Voice Notes ▸ Recent Starts: a tap on a widget or the control reached Sempere")
+        case .startIntent: return String(localized: "Tap: Siri or Shortcuts", comment: "Settings ▸ Quick Voice Notes ▸ Recent Starts: Siri or a shortcut asked for a voice note")
+        case .stopIntent: return String(localized: "Tap: Stop", comment: "Settings ▸ Quick Voice Notes ▸ Recent Starts: the Live Activity's Stop reached Sempere")
+        case .widgetOpenedApp: return String(localized: "Tap: Widget opened Sempere", comment: "Settings ▸ Quick Voice Notes ▸ Recent Starts: a widget tap opened the app instead of running its action")
+        }
+    }
+
+    static func decisionTitle(_ d: VoiceNoteTap.Decision) -> String {
+        switch d {
+        case .start: return String(localized: "Start recording", comment: "Settings ▸ Quick Voice Notes ▸ Recent Starts: what a tap was decided to do")
+        case .stop: return String(localized: "Stop recording", comment: "Settings ▸ Quick Voice Notes ▸ Recent Starts: what a tap was decided to do")
+        case .openSettings: return String(localized: "Open Sempere at its settings", comment: "Settings ▸ Quick Voice Notes ▸ Recent Starts: what a tap was decided to do")
+        case .openRecording: return String(localized: "Open Sempere at the recording", comment: "Settings ▸ Quick Voice Notes ▸ Recent Starts: what a tap was decided to do")
+        case .unavailable: return String(localized: "Nothing: Sempere's actions were not ready", comment: "Settings ▸ Quick Voice Notes ▸ Recent Starts: the tap ran where the app had not set up its actions")
         }
     }
 

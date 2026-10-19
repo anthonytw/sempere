@@ -87,6 +87,7 @@ struct NoteWindowView: View {
         .onOpenURL { url in
             switch VoiceNoteLink.route(url) {
             case .link(let link): model.quickCapture.pendingLink = link
+            case .widgetTap: model.quickCapture.widgetOpenedApp()
             case .ignore: break
             case .file:
                 Task { if let confirm = await model.handleOpened(url, library: library) { openedVaultToConfirm = confirm } }

@@ -119,6 +119,9 @@ struct RootView: View {
             case .link(let link):
                 // A widget, the control or the Live Activity (`sempere://quick-voice/…`).
                 model.quickCapture.pendingLink = link
+            case .widgetTap:
+                // A widget tap that opened the app instead of running its intent: kept, then done here.
+                model.quickCapture.widgetOpenedApp()
             case .ignore:
                 break   // another `sempere:` link: not a vault
             case .file:

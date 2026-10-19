@@ -27,8 +27,13 @@ struct QuickCaptureIntentTests {
         var stopped = 0
         var opened: [VoiceNoteLink] = []
         var live = VoiceNoteStatus(phase: .ready)
+        /// Where the intents keep their taps in this test (never the App Group).
+        let taps = VoiceNoteTapLog(directory: FileManager.default.temporaryDirectory
+            .appendingPathComponent("taps-\(UUID().uuidString)", isDirectory: true))
 
         func install() {
+            VoiceNoteActions.tapLog = taps
+            VoiceNoteActions.appState = { "background" }
             VoiceNoteActions.start = { [self] _ in started += 1 }
             VoiceNoteActions.stop = { [self] in stopped += 1 }
             VoiceNoteActions.open = { [self] in opened.append($0) }
@@ -41,6 +46,9 @@ struct QuickCaptureIntentTests {
         VoiceNoteActions.stop = nil
         VoiceNoteActions.open = nil
         VoiceNoteActions.status = nil
+        VoiceNoteActions.appState = nil
+        VoiceNoteActions.tapRecorded = nil
+        VoiceNoteActions.tapLog = nil
     }
 
     @Test func intentsDoNothingUntilTheAppHasRegisteredItsHooks() async throws {
