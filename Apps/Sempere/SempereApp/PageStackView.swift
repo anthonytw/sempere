@@ -528,6 +528,16 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         }
     }
 
+    /// A scroll or a pinch of the pages starts: every menu on them goes at once
+    /// (`ItemSelectionController.gestureStarted`).
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        for slot in slots.values { slot.host.itemSelection.gestureStarted() }
+    }
+
+    func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) {
+        for slot in slots.values { slot.host.itemSelection.gestureStarted() }
+    }
+
     func viewForZooming(in scrollView: UIScrollView) -> UIView? {
         content
     }

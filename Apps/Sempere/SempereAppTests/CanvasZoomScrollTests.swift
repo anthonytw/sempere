@@ -76,7 +76,8 @@ struct CanvasZoomScrollTests {
         canvas.setZoomScale(fit * 0.93, animated: false)
         host.zoomEnded()
         #expect(await TS.waitUntil(timeout: .seconds(5)) { abs(canvas.zoomScale - fit) < 0.001 }, "snaps to the fit")
-        #expect(canvas.contentInset.left == 0)
+        #expect(await TS.waitUntil(timeout: .seconds(5)) { canvas.contentInset.left == 0 },
+                "the margins go: inset \(canvas.contentInset.left), content \(canvas.contentSize.width), view \(host.bounds.width), zoom \(canvas.zoomScale)")
     }
 
     /// A SwiftUI update in the middle of a pinch that passes the fit put the zoom back on the fit
@@ -184,8 +185,37 @@ struct CanvasZoomScrollTests {
                 }
                 paint.append(Self.ms(since: t0))
             }
+            // The same render of an empty layer: the bitmap's own cost, to subtract.
+            let empty = CALayer()
+            empty.frame = paperView.layer.bounds
+            var base: [Double] = []
+            for _ in 0..<40 {
+                let t0 = DispatchTime.now().uptimeNanoseconds
+                _ = renderer.image { ctx in empty.render(in: ctx.cgContext) }
+                base.append(Self.ms(since: t0))
+            }
+            print("PERF-REPORT canvas empty-layer render (baseline): \(Self.summary(base))")
         }
         print("PERF-REPORT canvas paper per screen on a \(Int(canvas.contentSize.height)) pt page: \(Self.summary(paint))")
+        // What Core Animation holds for the ruling while one screen shows: shape layers, their path
+        // elements and their area; and the same for one layer per look spanning the note (before).
+        func elements(_ path: CGPath?) -> Int {
+            var n = 0
+            path?.applyWithBlock { _ in n += 1 }
+            return n
+        }
+        let (_, shown) = Self.paperShapeLayers(i.host)
+        let z = canvas.zoomScale
+        let shownElements = shown.reduce(0) { $0 + elements($1.path) }
+        let shownArea = shown.reduce(0.0) { $0 + Double($1.bounds.width * $1.bounds.height) }
+        let pageSize = i.editor.pageSize
+        let paperHeight = canvas.contentSize.height / z
+        let whole = PaperView.groups(paper: Self.ruled, size: CGSize(width: CGFloat(pageSize.width), height: paperHeight),
+                                     sheetHeight: 792)
+        let wholeElements = whole.reduce(0) { $0 + elements($1.path) }
+        let wholeArea = Double(whole.count) * Double(CGFloat(pageSize.width) * z * paperHeight * z)
+        print(String(format: "PERF-REPORT canvas paper layers: %d shape layers, %d path elements, %.2f Mpt² (one layer per look for the note: %d layers, %d elements, %.2f Mpt²)",
+                     shown.count, shownElements, shownArea / 1e6, whole.count, wholeElements, wholeArea / 1e6))
         print("PERF-REPORT canvas scroll on \(i.strokes.count) strokes, ruled: \(Self.summary(scroll))")
         print("PERF-REPORT canvas pinch on \(i.strokes.count) strokes, ruled: \(Self.summary(zoom))")
         #expect((scroll.max() ?? 0) < 2_000 && (zoom.max() ?? 0) < 2_000)

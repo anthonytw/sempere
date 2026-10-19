@@ -391,7 +391,11 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   log page and stroke counts only). Read the log with `devicectl device
   process launch --console`. Never put note titles or content in logs.
 - Infinite pages scroll one screen beyond both their ink and their stored
-  height (`PageExtent.scrollHeight`). "Keep Screen On" (`KeepScreenOn`) disables the
+  height (`PageExtent.scrollHeight`). Their paper is drawn in bands near the screen
+  (`PaperView.setVisible`, fed by the canvas's scroll): never one layer the height of the note.
+  The one-page canvas zooms out to half the fit, centered with `contentInset` (an iPhone stops at
+  the fit, `ZoomDetent.minimumFactor`); `fitWidth` sets the zoom only when the fit itself changes,
+  never on a SwiftUI update or during a pinch. "Keep Screen On" (`KeepScreenOn`) disables the
   idle timer only while a note is open and the scene is active.
 - Paged notes scroll through all pages in one view (`PageStackView` /
   `PageStackHost`, layout math in `PageStackLayout`, Linux-testable): one

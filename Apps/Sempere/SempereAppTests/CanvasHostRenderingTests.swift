@@ -131,7 +131,7 @@ struct CanvasHostRenderingTests {
         let strokes = R.importedPage(top: 9_000 / R.k)
         let (window, host) = Self.host(strokes, height: 10_000)
         defer { window.isHidden = true }
-        host.canvas.zoomScale = host.canvas.minimumZoomScale * 2.5
+        host.canvas.zoomScale = host.fitScale * 2.5
         host.zoomChanged()
         try await Self.expectBandMatches(host, strokes, top: 9_000 - 20, "zoom 2.5x")
     }
