@@ -123,7 +123,7 @@ lets the canvas do per device is one table (`NoteModeInput`, `NoteModeTests`):
 |--------|---------|------|----------|
 | iPhone | one finger scrolls; nothing draws or selects | one finger scrolls; a tap selects, a hold shows the menu, a drag moves the selected item | a finger draws (two scroll); the palette |
 | iPad | fingers scroll; nothing selects; **a Pencil touch switches to Annotate and draws** | fingers scroll and select (tap, hold, drag); **a Pencil touch switches to Annotate and draws** | as the system says (the Pencil draws; a finger too when no Pencil is used); the palette |
-| Mac | the wheel and trackpad scroll; a click or drag draws and selects nothing | a click selects, a drag moves or resizes | the mouse draws; the palette |
+| Mac | the wheel and trackpad scroll; a click or drag draws and selects nothing | a click selects, a drag moves or resizes | the mouse draws; Drawing Tools picks the tool (PencilKit shows no palette in Mac Catalyst) |
 
 The iPad's Pencil: in Reading and Hand the canvas keeps PencilKit's drawing on with the policy `.pencilOnly`
 (`NoteModeInput.pencilAnnotates`, `PageCanvasHost.drawingPolicy`), so a Pencil stroke is drawn whole, and its
@@ -131,9 +131,10 @@ start (`canvasViewDidBeginUsingTool`, or the object eraser's first touch) switch
 (`NoteMode.pencilTouched`); the policy change waits for the stroke to end (`PageCanvasHost.inkInProgress`).
 Hand mode's selection takes fingers and the pointer only there (`ItemSelectionController.pencilDraws`), so the
 Pencil reaches PencilKit. Fingers follow the mode. Text and a tool picked from a menu (the Mac's Tools menu)
-switch to Annotate too. The palette shows only in Annotate on every device: the iPad's and the Mac's
-Show/Hide Tool Palette button is now the Annotate button (one control per mode), whose press-and-hold (or
-secondary-click) menu keeps Compact Palette. The Mac's Tools menu has Annotate (⇧⌘P) and Hand (⌥⌘7), docs/mac.md
+switch to Annotate too. The palette shows only in Annotate: the iPad's Show/Hide Tool Palette button is now
+the Annotate button (one control per mode), whose press-and-hold menu keeps Compact Palette; the Mac's (which
+fix/palette-button had turned into Drawing Tools, since PencilKit shows no palette there) is the Annotate
+button too, with Drawing Tools beside it while annotating. The Mac's Tools menu has Annotate (⇧⌘P) and Hand (⌥⌘7), docs/mac.md
 "Reading, Hand and Annotate". Debug launches can open notes in another mode (`SEMPERE_DEBUG_NOTE_MODE`:
 `annotate`, `hand`), which the drawing UI tests use.
 
@@ -176,8 +177,9 @@ first, then the overflow menu's.
 
 | # | Item | iPhone | iPad | Mac | Offered when |
 |---|------|--------|------|-----|--------------|
-| 1 | Annotate (pencil) | bar | bar (hold: Compact Palette) | bar (hold or secondary click: Compact Palette) | writable note with a page |
+| 1 | Annotate (pencil) | bar | bar (hold: Compact Palette) | bar | writable note with a page |
 | 2 | Hand | bar | bar | bar | writable note with a page |
+| 2a | Drawing Tools (pen, marker, pencil, eraser, lasso, ruler) | — | — | bar | annotating |
 | 3 | Text | ⋯ | bar | bar | annotating |
 | 4 | Object Eraser Size | ⋯ | bar | bar | annotating |
 | 5 | Insert | ⋯ | bar | bar | writable |
@@ -205,7 +207,9 @@ Where a device differs, and why:
 - **iPhone, page navigation in the bottom bar, away while annotating**: the top bar has no room, and the palette
   sits at the bottom while annotating (Pages turns pages then).
 - **iPhone, no Add Page or Show Pages button**: no room; the same actions are in Pages.
-- **iPad and Mac, Compact Palette in the pencil's menu**: the iPhone's palette is always the compact one.
+- **iPad, Compact Palette in the pencil's menu**: the iPhone's palette is always the compact one, and a Mac
+  has no palette.
+- **Mac, Drawing Tools**: PencilKit shows no tool palette in a Mac Catalyst app, so the tools are a menu.
 - **Mac note windows, no Keep Screen On**: the idle timer follows the library window's note (`RootView.applyIdleTimer`).
 - **Mac, its menu bar too**: Tools > Annotate, Hand, Text; Note > Recordings… (⌃⌘R) — the same actions by keyboard.
 

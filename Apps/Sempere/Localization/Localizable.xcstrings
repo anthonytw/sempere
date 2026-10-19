@@ -3308,6 +3308,18 @@
         }
       }
     },
+    "Annotate: draw on the page with the mouse; Drawing Tools picks the tool" : {
+      "comment" : "Tooltip of the Annotate button on the Mac",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anotar: dibuja en la página con el ratón; Herramientas de dibujo elige la herramienta"
+          }
+        }
+      }
+    },
     "Annotate: draw on the page with the tool palette; press and hold for the compact palette" : {
       "comment" : "Tooltip of the Annotate button on the iPad and the Mac",
       "extractionState" : "manual",
@@ -6106,6 +6118,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Caché de dibujos"
+          }
+        }
+      }
+    },
+    "Drawing Tools" : {
+      "comment" : "Mac toolbar: menu of the drawing tools (pen, marker, pencil, eraser, lasso, ruler)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Herramientas de dibujo"
           }
         }
       }
@@ -11889,6 +11913,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Elige en Archivos la carpeta de un modelo, o un zip de ella. Se comprueba con su manifiesto y se guarda en este dispositivo."
+          }
+        }
+      }
+    },
+    "Pick the pen, marker, pencil, eraser or lasso (also in the Tools menu)" : {
+      "comment" : "Mac toolbar tooltip of the Drawing Tools menu",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige el bolígrafo, el rotulador, el lápiz, el borrador o el lazo (también en el menú Herramientas)"
           }
         }
       }

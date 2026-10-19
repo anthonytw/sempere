@@ -183,6 +183,15 @@ struct MenuCommandTests {
         #expect(ToolChoice(.zoomIn) == nil)
         let mapped = MenuCommand.allCases.compactMap { ToolChoice($0) }
         #expect(Set(mapped) == Set(ToolChoice.allCases))
+        // The Mac toolbar's Drawing Tools menu names each tool by its Tools menu command.
+        for tool in ToolChoice.allCases { #expect(ToolChoice(tool.command) == tool) }
+    }
+
+    /// Turning the palette on gives the canvas the focus (the palette shows only for the first
+    /// responder), except on a phone, whose palette follows the Annotate mode.
+    @Test func turningThePaletteOnTakesTheFocusExceptOnAPhone() {
+        #expect(PageCanvasHost.paletteTakesFocus(isPhone: false))
+        #expect(!PageCanvasHost.paletteTakesFocus(isPhone: true))
     }
 }
 

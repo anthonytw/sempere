@@ -141,6 +141,13 @@ canvas's range. Tool commands select the tool in the system palette
 (`PageCanvasHost.select(tool:)`); the compact palette has no pencil, so that
 command does nothing there.
 
+**No tool palette on a Mac.** PencilKit never shows its tool palette (`PKToolPicker`) in a Mac
+Catalyst app: Apple's documentation says so, and a bare `PKCanvasView` that is the first responder
+with `setVisible(true, forFirstResponder:)` shows none on macOS 27 either (`isVisible` stays false).
+The picker still holds the selected tool, which the Tools menu and the toolbar's Drawing Tools menu
+(`EditorView.macToolsMenu`, beside Annotate while annotating: `NoteToolbar.Item.drawingTools`) change.
+Ink color and width have no control on a Mac yet.
+
 **Settings….** UIKit also builds the app menu's Settings… (⌘,), which would
 open a pane Catalyst generates (touch alternatives and system items only).
 Settings… is one of the `nativeOnMac` commands: `MacMenus` replaces UIKit's
@@ -165,11 +172,11 @@ menu (Pen, Marker…, Text) switches to Annotate.
 |------|------------------------|---------|
 | Reading | the wheel and a two-finger swipe scroll (a click-drag scrolls the pages); nothing draws, a click selects nothing, the pointer is the system arrow | hidden |
 | Hand | a click selects an item (secondary click: its menu), a drag moves or resizes it; nothing draws | hidden |
-| Annotate | draws with the palette's tool | shown |
+| Annotate | draws with the chosen tool | none on a Mac: the toolbar's Drawing Tools menu and the Tools menu pick the tool |
 
-The pencil's menu (press and hold, or a secondary click) has Compact Palette, as the old palette button
-did; the Show/Hide Tool Palette button and its command are gone (Annotate is the palette). The palette
-has no Hand on any device. `MacNoteModeUITests` drives the three modes with the mouse.
+The Show/Hide Tool Palette button and its command are gone (Annotate is the palette on the iPad;
+PencilKit shows none on a Mac, below). The palette has no Hand on any device. `MacNoteModeUITests` drives
+the three modes with the mouse.
 
 Placed items (images, text boxes, PDF pages, videos, recordings' cards): while annotating the mouse
 draws, so a right-click (or two-finger click) on an item selects it and shows its
@@ -337,7 +344,10 @@ is the first responder, the window's keyboard focus is not on a list row, and th
 window is key); a stroke on a canvas always takes it. So a field keeps the keyboard
 until the user leaves it, the arrow keys keep moving the sidebar or list that has the
 keyboard focus, and the palette appears when the note opens with nothing else typed in,
-or at the first stroke. A note window updating in the background takes nothing; it gives
+or at the first stroke. Turning the palette on (Annotate) gives the
+current page's canvas the focus too: the user asked for the palette, which shows only for the
+first responder, so on an iPad with the note list holding the focus the button used to flip its
+icon and show nothing (TestFlight 1.0.0 (6); `PaletteButtonUITests`). A note window updating in the background takes nothing; it gives
 its canvas the focus when it becomes key. Tests: `CanvasFocusTests` (hosted, iPad and
 Catalyst) and `MacFocusUITests` (typing in the running app, `scripts/app.sh test-mac-ui`).
 

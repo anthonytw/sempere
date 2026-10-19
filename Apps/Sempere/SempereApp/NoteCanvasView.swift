@@ -378,15 +378,15 @@ struct EditorView: View {
     private var note: NoteSummary? { model.notesByID[editor.noteID] }
 
     /// One of the top bar's two mode buttons: lit in its own mode; a tap on the lit one goes back to reading,
-    /// on the other one switches straight to that mode (`NoteMode.tapping`). The pencil of an iPad or a Mac
-    /// keeps the compact palette in its menu (press and hold, or a secondary click); an iPhone's palette is
-    /// always the compact one.
+    /// on the other one switches straight to that mode (`NoteMode.tapping`). The iPad's pencil keeps the
+    /// compact palette in its menu (press and hold); an iPhone's palette is always the compact one, and a
+    /// Mac has no palette (Drawing Tools, `macToolsMenu`).
     @ViewBuilder
     private func modeButton(_ button: NoteMode.Button) -> some View {
         let on = ui.noteMode.lights(button)
         let binding = Binding(get: { ui.noteMode.lights(button) }, set: { _ in ui.noteMode = ui.noteMode.tapping(button) })
         switch button {
-        case .annotate where !Platform.isPhone:
+        case .annotate where !Platform.isPhone && !Platform.isMac:
             Menu {
                 Toggle("Compact Palette", systemImage: "rectangle.compress.vertical", isOn: $paletteCompact)
             } label: {
@@ -402,7 +402,8 @@ struct EditorView: View {
             Toggle("Annotate", systemImage: on ? "pencil.tip.crop.circle.fill" : "pencil.tip.crop.circle", isOn: binding)
                 .toggleStyle(.button)
                 .accessibilityIdentifier("annotateButton")
-                .help("Annotate: draw on the page with a finger")
+                .help(Platform.isMac ? "Annotate: draw on the page with the mouse; Drawing Tools picks the tool"
+                                     : "Annotate: draw on the page with a finger")
         case .hand:
             Toggle("Hand", systemImage: on ? "hand.point.up.left.fill" : "hand.point.up.left", isOn: binding)
                 .toggleStyle(.button)
@@ -449,6 +450,7 @@ struct EditorView: View {
         switch item {
         case .annotate: modeButton(.annotate)
         case .hand: modeButton(.hand)
+        case .drawingTools: macToolsMenu
         case .text: textToolToggle
         case .eraserSize: eraserSizeMenu
         case .insert: insertMenu
@@ -659,6 +661,23 @@ struct EditorView: View {
             Label("Object Eraser Size", systemImage: "eraser.line.dashed")
         }
         .help("Size of the object eraser; the pixel eraser's size is in the tool palette")
+    }
+
+    /// The Mac's tool button. PencilKit never shows its tool palette in a Mac Catalyst app (Apple's
+    /// `PKToolPicker` documentation), so the iPad's palette button showed nothing there however often it
+    /// was clicked (TestFlight 1.0.0 (6)). The Mac picks its tools from this menu instead: the Tools
+    /// menu's tools (`MenuCommand.toolPen` …, ⌥⌘1–5) and the ruler.
+    private var macToolsMenu: some View {
+        Menu {
+            ForEach(ToolChoice.allCases, id: \.self) { tool in
+                Button(tool.command.title) { editor.canvasTarget?.select(tool: tool) }
+            }
+            Divider()
+            Button(MenuCommand.toggleRuler.title) { editor.canvasTarget?.toggleRuler() }
+        } label: {
+            Label("Drawing Tools", systemImage: "paintbrush.pointed")
+        }
+        .help("Pick the pen, marker, pencil, eraser or lasso (also in the Tools menu)")
     }
 }
 

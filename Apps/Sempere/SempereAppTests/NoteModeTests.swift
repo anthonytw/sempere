@@ -167,14 +167,17 @@ struct NoteToolbarTests {
     }
 
     /// The same set on every device: an item offered on one device in a state is offered on the others, besides
-    /// the listed differences (the iPhone's Add Page and thumbnails live in its Pages menu; a Mac note window's
-    /// idle timer follows the library window).
+    /// the listed differences (the iPhone's Add Page and thumbnails live in its Pages menu; the Mac's Drawing
+    /// Tools stand in for the palette PencilKit does not show there; a Mac note window's idle timer follows the
+    /// library window).
     @Test func everyDeviceOffersTheSameSet() {
         for mode in NoteMode.allCases {
             for readOnly in [false, true] {
                 for pages in [1, 3] {
                     let pad = Set(NoteToolbar.items(in: state(.pad, mode, readOnly: readOnly, pages: pages)).map(\.item))
-                    let mac = Set(NoteToolbar.items(in: state(.mac, mode, readOnly: readOnly, pages: pages)).map(\.item))
+                    var mac = Set(NoteToolbar.items(in: state(.mac, mode, readOnly: readOnly, pages: pages)).map(\.item))
+                    #expect(mac.contains(.drawingTools) == (mode == .annotating && !readOnly), "\(mode) \(readOnly)")
+                    mac.remove(.drawingTools)
                     let phone = Set(NoteToolbar.items(in: state(.phone, mode, readOnly: readOnly, pages: pages)).map(\.item))
                     #expect(pad == mac, "\(mode) \(readOnly) \(pages)")
                     // The phone's page navigation gives way to the palette while annotating (its Pages menu turns pages).
@@ -216,6 +219,7 @@ struct NoteToolbarTests {
                 == [.annotate, .hand, .text, .eraserSize, .insert, .recordings, .favorite, .tags, .pageNavigation, .addPage, .thumbnails])
         #expect(NoteToolbar.items(.bar, in: state(.pad, .reading))
                 == [.annotate, .hand, .insert, .recordings, .favorite, .tags, .pageNavigation, .addPage, .thumbnails])
+        #expect(NoteToolbar.items(.bar, in: state(.mac, .annotating)).prefix(3) == [.annotate, .hand, .drawingTools])
     }
 
     /// Text and the object eraser's size are Annotate's tools on every device; there is no Select toggle (the

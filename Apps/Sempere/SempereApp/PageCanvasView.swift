@@ -517,13 +517,27 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         didSet {
             guard paletteVisible != oldValue else { return }
             updateToolPicker()
-            // Annotate went on (the stack does this for its current page itself). After this update: the
-            // mode's other flags (`drawingSuspended`) are applied after the palette's.
-            if paletteVisible, !isEmbedded {
-                DispatchQueue.main.async { [weak self] in self?.annotateStarted() }
+            // The stack gives the focus to one of its pages itself (`PageStackHost.paletteTurnedOn`).
+            if paletteVisible, !isEmbedded, Self.paletteTakesFocus(isPhone: Platform.isPhone) {
+                if !CanvasFocus.typingElsewhere(than: self) { reclaimFocus() }
+                // Annotate's other flags (`drawingSuspended`, a Mac reading) arrive after the palette's: again then.
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.paletteVisible, !self.canvas.isFirstResponder,
+                          !CanvasFocus.typingElsewhere(than: self) else { return }
+                    self.reclaimFocus()
+                }
             }
         }
     }
+
+    /// Whether turning the palette on gives the canvas the first responder. PencilKit shows the palette
+    /// only for the first responder, and a canvas never takes it by itself from a list or a field
+    /// (`CanvasFocus`): with the note list holding the focus, the toolbar button flipped its icon and
+    /// nothing came up (TestFlight 1.0.0 (6), the owner's iPad). The user asked for the palette, so the
+    /// canvas takes the focus from a list or the sidebar, as a touch on it does (`reclaimFocus`); a field
+    /// being typed in keeps it (`CanvasFocus.typingElsewhere`). The iPhone's palette follows its
+    /// Annotate mode, which already focuses the canvas (`PhoneCanvasMode`), so it is left alone.
+    nonisolated static func paletteTakesFocus(isPhone: Bool) -> Bool { !isPhone }
 
     /// The palette is the short one: pen, marker, eraser, lasso.
     var paletteCompact = ToolPalette.isCompact() {
@@ -789,16 +803,6 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         itemSelection.trace("r")
         itemSelection.debugRefreshReport()
         #endif
-    }
-
-    /// The user switched to Annotate (the pencil, Tools > Annotate): the canvas takes the focus (its palette
-    /// is shown for the first responder; undo acts on it), even from a toolbar button or a list row that held
-    /// the window's focus, but never from a field being typed in (`CanvasFocus`).
-    func annotateStarted() {
-        guard window != nil, !isReadOnly, !drawingSuspended, !textEditor.isEditing else { return }
-        if let responder = CanvasFocus.firstResponder(), CanvasFocus.holdsTyping(responder),
-           !CanvasFocus.isInside(responder, self) { return }
-        reclaimFocus()
     }
 
     /// `focus()` unless something outside `container` (the stack for a page

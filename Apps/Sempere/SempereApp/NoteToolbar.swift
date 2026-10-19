@@ -8,8 +8,8 @@ enum NoteToolbar {
     enum Item: Hashable, Sendable, CaseIterable {
         // The modes.
         case annotate, hand
-        // Annotate's tools.
-        case text, eraserSize
+        // Annotate's tools. `drawingTools` is the Mac's palette (PencilKit shows none in Mac Catalyst).
+        case drawingTools, text, eraserSize
         // Adding to the note.
         case insert, recordings
         // About the note.
@@ -53,11 +53,14 @@ enum NoteToolbar {
     /// Where `item` goes on `device`. The iPhone's bar holds the two mode buttons and the overflow menu
     /// only (it must fit the title on an iPhone SE, 375 pt), so its other bar items are in the overflow
     /// menu, in the same order; its page navigation is in the bottom bar (the top bar has no room), and
-    /// Add Page and the thumbnails are in the Pages menu only.
+    /// Add Page and the thumbnails are in the Pages menu only. Only the Mac has Drawing Tools: PencilKit
+    /// shows no tool palette in a Mac Catalyst app, so its tools are picked from that menu.
     static func placement(of item: Item, on device: NoteDevice) -> Placement? {
         switch item {
         case .annotate, .hand:
             return .bar
+        case .drawingTools:
+            return device == .mac ? .bar : nil
         case .text, .eraserSize, .insert, .recordings, .favorite, .tags:
             return device == .phone ? .overflow : .bar
         case .pageNavigation:
@@ -76,7 +79,7 @@ enum NoteToolbar {
         // Read-only notes draw and select nothing; a mode needs a page to act on.
         case .annotate, .hand: return writable && s.hasPage
         // Annotate's tools: only while annotating.
-        case .text, .eraserSize: return writable && s.hasPage && s.mode == .annotating
+        case .drawingTools, .text, .eraserSize: return writable && s.hasPage && s.mode == .annotating
         case .insert, .paper: return writable
         // Recording needs a writable note; a read-only one can still play its recordings.
         case .recordings: return writable || s.hasRecordings
