@@ -45,6 +45,7 @@ struct WelcomeView: View {
                     Section("On This Device") {
                         ForEach(onDevice, id: \.self) { url in
                             Button(VaultLibrary.displayName(of: url), systemImage: "ipad") { openURL(url) }
+                                .help("Open this vault")
                         }
                     }
                 }

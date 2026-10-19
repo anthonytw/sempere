@@ -19,6 +19,7 @@ struct FinishKeyChangeView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close Vault") { model.close() }
                         .disabled(model.keyChangeResume?.isRunning ?? false)
+                        .help("Close the vault (⇧⌘W)")
                 }
             }
         }

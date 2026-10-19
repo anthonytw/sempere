@@ -268,6 +268,7 @@ struct RenameRecordingSheet: View {
                         Task { await editor.renameRecording(recording.id, to: t) }
                         dismiss()
                     }
+                        .help("Save the new name")
                 }
             }
         }

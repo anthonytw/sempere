@@ -50,6 +50,7 @@ struct TagEditorView: View {
                     }
                     ForEach(suggestions.prefix(8), id: \.self) { tag in
                         Button(tag, systemImage: "tag") { run { try await model.addTag(tag, to: noteID) } }
+                            .help("Add this tag to the note")
                     }
                 }
             }

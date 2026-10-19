@@ -199,10 +199,12 @@ struct NewKeyView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(key == nil ? "Cancel" : "Done") { dismiss() }
+                        .help("Close this window")
                 }
                 if key == nil {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Create") { Task { await create() } }
+                            .help("Create the key file")
                     }
                 }
             }

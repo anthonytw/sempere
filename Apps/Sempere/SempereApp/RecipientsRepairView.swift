@@ -54,6 +54,7 @@ struct RecipientsRepairView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Repair…") { confirming = true }
                         .disabled(choice.problem(with: selected) != nil)
+                        .help("Repair the list of keys that can open this vault")
                 }
             }
         }

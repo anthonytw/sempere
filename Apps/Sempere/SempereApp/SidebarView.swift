@@ -127,20 +127,19 @@ struct SidebarView: View {
         .navigationTitle(model.vaultName ?? "Sempere")
         .toolbar {
             ToolbarItem {
-                Button("Close Vault", systemImage: "xmark.circle") { model.close() }
-                    .help("Close the vault (⇧⌘W)")
-            }
-            ToolbarItem {
-                Button("New Notebook", systemImage: "folder.badge.plus") {
-                    newNotebook = NewNotebookRequest(parent: model.selectedNotebook)
+                // New Notebook and Settings live here, Close Vault always last (TestFlight 1.0.0 (6) feedback).
+                Menu("More", systemImage: "ellipsis.circle") {
+                    Button("New Notebook", systemImage: "folder.badge.plus") {
+                        newNotebook = NewNotebookRequest(parent: model.selectedNotebook)
+                    }
+                    .disabled(model.phase != .unlocked || model.isVaultReadOnly)
+                    .accessibilityIdentifier("sidebar-new-notebook")
+                    Button("Settings", systemImage: "gearshape") { showingSettings = true }
+                    Divider()
+                    Button("Close Vault", systemImage: "xmark.circle") { model.close() }
                 }
-                .help("New notebook (⌃⌘N)")
-                .disabled(model.phase != .unlocked || model.isVaultReadOnly)
-                .accessibilityIdentifier("sidebar-new-notebook")
-            }
-            ToolbarItem {
-                Button("Settings", systemImage: "gearshape") { showingSettings = true }
-                    .help("Settings for this device")
+                .help("New notebook, settings and closing the vault")
+                .accessibilityIdentifier("sidebar-more")
             }
             ToolbarItem {
                 Menu("Vault Key", systemImage: "key") {

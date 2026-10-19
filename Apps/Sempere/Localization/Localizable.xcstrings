@@ -3116,6 +3116,18 @@
         }
       }
     },
+    "Add this device's key to the vault" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir la clave de este dispositivo a la bóveda"
+          }
+        }
+      }
+    },
     "Add this note to Favorites" : {
       "comment" : "Tooltip of the favorite button",
       "extractionState" : "manual",
@@ -3124,6 +3136,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Añadir esta nota a Favoritas"
+          }
+        }
+      }
+    },
+    "Add this tag to the note" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir esta etiqueta a la nota"
           }
         }
       }
@@ -4584,6 +4608,18 @@
         }
       }
     },
+    "Close the tour" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar la visita guiada"
+          }
+        }
+      }
+    },
     "Close the vault (⇧⌘W)" : {
       "comment" : "Help tag in the sidebar",
       "extractionState" : "manual",
@@ -4604,6 +4640,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cerrar esta bóveda; los PDF esperan hasta que abras y desbloquees otra"
+          }
+        }
+      }
+    },
+    "Close this window" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar esta ventana"
           }
         }
       }
@@ -4759,6 +4807,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copiar clave pública"
+          }
+        }
+      }
+    },
+    "Copy the secret key to the clipboard" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar la clave secreta al portapapeles"
           }
         }
       }
@@ -5230,6 +5290,54 @@
         }
       }
     },
+    "Create the key file" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crear el archivo de clave"
+          }
+        }
+      }
+    },
+    "Create the note" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crear la nota"
+          }
+        }
+      }
+    },
+    "Create the notebook" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crear el cuaderno"
+          }
+        }
+      }
+    },
+    "Create the vault" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crear la bóveda"
+          }
+        }
+      }
+    },
     "Creates a new key, adds it to this vault's keys and re-encrypts every note to it, which can take a while. Then save or print it for the other device. From a terminal: sempere keys generate, then sempere vault recipients add." : {
       "comment" : "Footer of New Key; commands are not translated",
       "extractionState" : "manual",
@@ -5262,6 +5370,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Recortar"
+          }
+        }
+      }
+    },
+    "Crop to the whole image again" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a recortar a la imagen completa"
           }
         }
       }
@@ -5623,6 +5743,18 @@
         }
       }
     },
+    "Discard the opened PDFs without importing them" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descartar los PDF abiertos sin importarlos"
+          }
+        }
+      }
+    },
     "Dismiss" : {
       "comment" : "Button: hide a recording error message",
       "extractionState" : "manual",
@@ -5667,6 +5799,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ecuación en bloque"
+          }
+        }
+      }
+    },
+    "Do not save the key on this device" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No guardar la clave en este dispositivo"
           }
         }
       }
@@ -6633,6 +6777,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Exporta notas como PDF, imágenes o Markdown, de una en una o todas a la vez."
+          }
+        }
+      }
+    },
+    "Export this note" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exportar esta nota"
           }
         }
       }
@@ -7874,6 +8030,30 @@
         }
       }
     },
+    "Import the chosen files" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importar los archivos elegidos"
+          }
+        }
+      }
+    },
+    "Import the opened PDFs as notes" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importar los PDF abiertos como notas"
+          }
+        }
+      }
+    },
     "Imported" : {
       "comment" : "Notability import report: section of what was imported",
       "extractionState" : "manual",
@@ -8991,6 +9171,18 @@
         }
       }
     },
+    "Make this version the note's current one" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hacer de esta versión la actual de la nota"
+          }
+        }
+      }
+    },
     "Margin color" : {
       "comment" : "Paper picker",
       "extractionState" : "manual",
@@ -9147,6 +9339,18 @@
         }
       }
     },
+    "More" : {
+      "comment" : "Sidebar toolbar: menu with New Notebook, Settings and Close Vault",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Más"
+          }
+        }
+      }
+    },
     "More Colors" : {
       "comment" : "VoiceOver: opens the system color picker",
       "extractionState" : "manual",
@@ -9219,6 +9423,18 @@
         }
       }
     },
+    "Move into this notebook" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover dentro de este cuaderno"
+          }
+        }
+      }
+    },
     "Move to Notebook" : {
       "comment" : "Sheet title: move a note",
       "extractionState" : "manual",
@@ -9263,6 +9479,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mover al nivel superior"
+          }
+        }
+      }
+    },
+    "Move to this notebook" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover a este cuaderno"
           }
         }
       }
@@ -9537,6 +9765,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nuevo cuaderno «%@»"
+          }
+        }
+      }
+    },
+    "New notebook, settings and closing the vault" : {
+      "comment" : "Help tag of the sidebar's More menu",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuevo cuaderno, ajustes y cerrar la bóveda"
           }
         }
       }
@@ -11053,6 +11293,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abre la app Ajustes ▸ tu nombre ▸ iCloud ▸ iCloud Drive y activa «Sincronizar este %@». (En versiones anteriores, el interruptor se llama iCloud Drive.)"
+          }
+        }
+      }
+    },
+    "Open this vault" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir esta bóveda"
           }
         }
       }
@@ -13558,6 +13810,18 @@
         }
       }
     },
+    "Repair the list of keys that can open this vault" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reparar la lista de claves que pueden abrir esta bóveda"
+          }
+        }
+      }
+    },
     "Repairing the device list and re-encrypting every note…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13861,6 +14125,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Restaurar desde copia…"
+          }
+        }
+      }
+    },
+    "Restore the vault from this backup" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restaurar la bóveda desde esta copia de seguridad"
           }
         }
       }
@@ -14294,6 +14570,18 @@
         }
       }
     },
+    "Save the equation" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar la ecuación"
+          }
+        }
+      }
+    },
     "Save the key of “%@”" : {
       "comment" : "Face ID prompt reason; %@ is the vault's name",
       "extractionState" : "manual",
@@ -14302,6 +14590,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Guardar la clave de «%@»"
+          }
+        }
+      }
+    },
+    "Save the new name" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar el nombre nuevo"
           }
         }
       }
@@ -14589,6 +14889,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Seleccionar imágenes, cuadros de texto, páginas PDF y vídeos para moverlos, redimensionarlos, recortarlos, sustituirlos o eliminarlos. Mientras dibujas: toca uno con un dedo o con el lazo, mantén un dedo sobre él para ver su menú o haz clic secundario en él"
+          }
+        }
+      }
+    },
+    "Select several notes to act on them together" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seleccionar varias notas para actuar sobre ellas a la vez"
           }
         }
       }
@@ -15806,6 +16118,18 @@
         }
       }
     },
+    "Stop the export, or close this window when it is done" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detener la exportación, o cerrar esta ventana cuando termine"
+          }
+        }
+      }
+    },
     "Stopped early" : {
       "comment" : "Recognize All was stopped before the end",
       "extractionState" : "manual",
@@ -16003,6 +16327,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Área de resumen"
+          }
+        }
+      }
+    },
+    "Switch between pages and one endless page" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alternar entre páginas y una sola página sin fin"
           }
         }
       }
@@ -17806,6 +18142,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reducir todo salvo los puntos de control…"
+          }
+        }
+      }
+    },
+    "Thin the old versions listed above" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reducir las versiones antiguas indicadas arriba"
           }
         }
       }

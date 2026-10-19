@@ -66,6 +66,7 @@ struct NewNoteView: View {
                         }
                     }
                     .disabled(model.isEditing)
+                    .help("Create the note")
                 }
             }
         }

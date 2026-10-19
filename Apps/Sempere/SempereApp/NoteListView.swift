@@ -77,6 +77,7 @@ struct NoteListView: View {
             ToolbarItem(placement: secondary) {
                 Button(model.isSelectingNotes ? "Done" : "Select") { setSelecting(!model.isSelectingNotes) }
                     .disabled(model.phase != .unlocked)
+                    .help("Select several notes to act on them together")
             }
             ToolbarItem(placement: secondary) {
                 Menu("Sort", systemImage: "arrow.up.arrow.down") {

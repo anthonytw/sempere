@@ -85,6 +85,7 @@ struct ImportOptionsSheet: View {
                         dismiss()
                     }
                     .disabled(importer == nil)
+                    .help("Import the chosen files")
                 }
             }
         }

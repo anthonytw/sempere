@@ -34,12 +34,18 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_PATHS = [os.path.join(ROOT, "Apps/Sempere/SempereApp"), os.path.join(ROOT, "Apps/Sempere/SempereShared")]
 
-CONTROLS = ("Button", "Menu", "Toggle", "ShareLink", "PhotosPicker")
+CONTROLS = ("Button", "Menu", "Toggle", "ShareLink", "PhotosPicker", "Picker")
 # Blocks whose controls SwiftUI shows with their titles (menus, lists, forms, dialogs).
 TITLED = {"Menu", "contextMenu", "menu", "swipeActions", "Picker", "confirmationDialog", "alert",
           "searchSuggestions", "Form", "List", "Section", "menuItems"}
 TITLED_MARK = "help-lint: titled"
 ICON = re.compile(r"systemImage\s*:|Image\s*\(\s*systemName\s*:")
+# A toolbar shows no titles on a Mac (and a text button there is no clearer about what it does), so
+# every control in one needs a tooltip, titled or not. A Picker counts too (a menu-style one is a button).
+TOOLBAR = {"toolbar", "ToolbarItem", "ToolbarItemGroup"}
+MENUS = {"Menu", "contextMenu", "menu", "menuItems"}
+# Where a title shows: a control there is still icon-only when its label is only an `Image`.
+LISTY = {"swipeActions", "Picker", "confirmationDialog", "alert", "searchSuggestions", "Form", "List", "Section"}
 
 
 def blank(src):
@@ -259,8 +265,26 @@ def check(path):
         if name == "ShareLink" and not any(l == "label" for l, _ in closures) and not (closures and closures[0][0] is None):
             has_icon = True
         icon_only = style == ".iconOnly"
+        around = set(enclosing(code, heads, m.start()))
+        label = label_text(name, args, closures)
+        titled = args.lstrip().startswith('"') or re.search(r"\bText\s*\(|\bLabel\s*\(", label)
+        if name == "Picker":
+            # Only a picker in a toolbar needs one (elsewhere its title is its label).
+            if TOOLBAR & around and not (MENUS & around) and "help" not in mods:
+                failures.append((line, name, lines[line - 1].strip()))
+            continue
         if not icon_only and has_icon and style not in (".titleAndIcon", ".titleOnly"):
-            icon_only = not (TITLED & set(enclosing(code, heads, m.start())))
+            icon_only = not (TITLED & around)
+            # A list row's or form's control that shows only an icon (no title anywhere in its label).
+            if not icon_only and not titled and not (MENUS & around) and (LISTY & around):
+                icon_only = True
+        # A toolbar control with a title still gets a tooltip saying what it does. A sheet's
+        # Cancel / Done / Close says it all (and the system supplies the shortcut hint).
+        if not icon_only and TOOLBAR & around and not (MENUS & around):
+            line_text = lines[line - 1]
+            plain = re.search(r'Button\(\s*"(Cancel|Done|Close)"', line_text) or \
+                re.search(r"placement:\s*\.(cancellationAction|confirmationAction)", line_text)
+            icon_only = not plain
         # A bordered button shows its title next to the icon.
         if mods.get("buttonStyle", "").replace(" ", "") in (".bordered", ".borderedProminent") and style != ".iconOnly":
             icon_only = False
@@ -283,6 +307,13 @@ SELF_TEST = [
     ('HStack {\n    Button("Go", systemImage: "go") { d() }   // help-lint: ignore (row)\n}', []),
     ('// help-lint: titled\nvar items: some View {\n    Button("Go", systemImage: "go") { d() }\n}', []),
     ('Text("Button(\\"x\\", systemImage: \\"y\\")")', []),
+    ('ToolbarItem {\n    Button("Sort") { s() }\n}', [2]),
+    ('ToolbarItem {\n    Button("Sort") { s() }\n        .help("Choose the order")\n}', []),
+    ('ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }', []),
+    ('ToolbarItem {\n    Menu("M") {\n        Button("A") { a() }\n    }\n    .help("Menu")\n}', []),
+    ('ToolbarItem {\n    Picker("Order", selection: $o) { Text("A") }\n}', [2]),
+    ('List {\n    Button { go() } label: {\n        Image(systemName: "x")\n    }\n}', [2]),
+    ('List {\n    Button("Go") { go() }\n}', []),
     ('ToolbarItem {\n    Toggle("Text", systemImage: "t", isOn: $on)\n        .toggleStyle(.button)\n}', [2]),
 ]
 
@@ -317,11 +348,11 @@ def main(argv):
     for path in sorted(files):
         for line, name, text in check(path):
             bad += 1
-            print(f"{os.path.relpath(path, ROOT)}:{line}: icon-only {name} without .help: {text}")
+            print(f"{os.path.relpath(path, ROOT)}:{line}: {name} without .help: {text}")
     if bad:
-        print(f"\n{bad} icon-only control(s) without a tooltip: add .help(\"…\") (or `// help-lint: ignore (why)`).")
+        print(f"\n{bad} control(s) without a tooltip: add .help(\"…\") (or `// help-lint: ignore (why)`).")
         return 1
-    print(f"check-help: {len(files)} files, every icon-only control has .help")
+    print(f"check-help: {len(files)} files, every toolbar and icon-only control has .help")
     return 0
 
 

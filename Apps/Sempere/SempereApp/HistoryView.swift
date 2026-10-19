@@ -180,6 +180,7 @@ private struct HistoryPreviewView: View {
             ToolbarItem(placement: .bottomBar) {
                 Button("Restore This Version") { confirming = true }
                     .disabled(preview == nil || working || entry.isLatest)
+                    .help("Make this version the note's current one")
             }
         }
         .confirmationDialog("Restore this version?", isPresented: $confirming, titleVisibility: .visible) {

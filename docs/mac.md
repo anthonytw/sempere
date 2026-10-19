@@ -324,15 +324,28 @@ Catalyst) and `MacFocusUITests` (typing in the running app, `scripts/app.sh test
 
 ## Tooltips
 
-Toolbar buttons show no title on a Mac, so every icon-only control has a
-`.help("…")` tooltip. `scripts/check-help.py` (run by the
-`app` CI job, with `--self-test` for its own cases) fails on a `Button`,
-`Menu`, `Toggle`, `ShareLink` or `PhotosPicker` that shows an icon outside a
-menu, list, form, picker or dialog and has no `.help`. A view builder whose
-controls only appear in menus is marked `// help-lint: titled`; a deliberate
-exception carries `// help-lint: ignore (why)`. The scan cannot see a
+Toolbar buttons show no title on a Mac, so every control in a toolbar and every
+icon-only control has a `.help("…")` tooltip saying what it does.
+`scripts/check-help.py` (a step of the PR gate and the `app` CI job, with
+`--self-test` for its own cases) fails on:
+
+- a `Button`, `Menu`, `Toggle`, `ShareLink` or `PhotosPicker` that shows an icon
+  outside a menu, list, form, picker or dialog and has no `.help`;
+- one in a list or form whose label is only an icon (no title);
+- any control, titled or not, inside a `.toolbar` / `ToolbarItem` (outside a menu)
+  and any `Picker` there, except a sheet's Cancel / Done / Close and the
+  `.cancellationAction` / `.confirmationAction` items.
+
+A source scan was chosen over a UI test: a Mac UI test needs the screen, runs only
+for TestFlight, and cannot read a tooltip reliably under XCUITest, while the scan
+runs in seconds on every PR and sees every view, not only the ones a test opens.
+A view builder whose controls only appear in menus is marked `// help-lint: titled`;
+a deliberate exception carries `// help-lint: ignore (why)`. The scan cannot see a
 `.labelStyle(.iconOnly)` set on a container, so give those buttons `.help` by
 hand (the recording bar's do).
+
+The sidebar's toolbar is the key button plus a More menu (`ellipsis.circle`) holding
+New Notebook, Settings and, last, Close Vault; the iPad and iPhone use the same bar.
 
 ## Opening PDFs from the Finder
 

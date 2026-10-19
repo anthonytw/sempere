@@ -199,10 +199,12 @@ struct RestoreBackupView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(outcome == nil ? LocalizedStringKey("Cancel") : LocalizedStringKey("Done")) { dismiss() }
+                        .help("Close this window")
                 }
                 if outcome == nil {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Restore") { restore() }.disabled(!canRestore)
+                            .help("Restore the vault from this backup")
                     }
                 }
             }
