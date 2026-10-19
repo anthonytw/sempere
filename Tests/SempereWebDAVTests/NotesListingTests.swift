@@ -17,11 +17,11 @@ final class NotesListingTests: SyncTestCase {
         return a
     }
 
-    private func run(_ name: String, _ server: MockDAV, _ edit: (inout WebDAVSyncOptions) -> Void = { _ in }) throws -> SyncReport {
-        var o = WebDAVSyncOptions(deviceLabel: name)
+    private func run(_ name: String, _ server: MockDAV, _ edit: (inout SyncOptions) -> Void = { _ in }) throws -> SyncReport {
+        var o = SyncOptions(deviceLabel: name)
         edit(&o)
         let exists = FileManager.default.fileExists(atPath: dir(name).appendingPathComponent("vault.json").path)
-        return try WebDAVSync(directory: dir(name), vault: exists ? try openVault(name) : nil, client: try client(server),
+        return try SyncEngine(directory: dir(name), vault: exists ? try openVault(name) : nil, client: try client(server),
                               stateURL: tmp.appendingPathComponent("state-\(name).json"), options: o).run()
     }
 

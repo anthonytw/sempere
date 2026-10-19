@@ -11,7 +11,7 @@ import Sempere
 // change; the listing it was last written for is kept in the sync state when
 // every note there got an entry, so an unchanged server then costs no request.
 
-extension WebDAVSync {
+extension SyncEngine {
     func refreshRemoteSummaries(exists: Bool) {
         let name = PublishedSummaries.fileName
         guard exists || options.publishForWebViewer else { return }

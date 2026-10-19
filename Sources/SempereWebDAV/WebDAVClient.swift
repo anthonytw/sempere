@@ -229,13 +229,13 @@ public struct WebDAVClient: Sendable {
     }
 
     /// The default size of one `Range` request in `download` (2 MiB, the
-    /// sync's `WebDAVSyncOptions.defaultSegmentBytes`). On Linux, URLSession
+    /// sync's `SyncOptions.defaultSegmentBytes`). On Linux, URLSession
     /// queues every 16 KiB delivery for its delegate with no flow control, so
     /// a server faster than the disk piles up to one response in memory;
     /// measured against a local server, 2 MiB segments kept resident memory
     /// flat (about 20 MiB) for blobs of 300 MB to 1 GB at about 5 % more time
     /// than 8 MiB ones, which grew to 85 MiB.
-    public static let defaultSegmentBytes = WebDAVSyncOptions.defaultSegmentBytes
+    public static let defaultSegmentBytes = SyncOptions.defaultSegmentBytes
 
     /// Downloads one file into `file` in `Range` requests of at most
     /// `segmentBytes`, each streamed to the file, so memory stays bounded by
@@ -263,7 +263,7 @@ public struct WebDAVClient: Sendable {
                          maxBytes: Int, segmentBytes: Int = defaultSegmentBytes,
                          progress: ((Int) throws -> Void)? = nil) throws -> Download {
         let shown = "/" + path.joined(separator: "/")
-        var offset = ifRange.map(WebDAVSync.isStrong) == true ? max(resumeFrom, 0) : 0
+        var offset = ifRange.map(SyncEngine.isStrong) == true ? max(resumeFrom, 0) : 0
         try Self.truncate(file, to: offset)
         let segment = max(segmentBytes, 1)
         var resumed = offset > 0
@@ -272,7 +272,7 @@ public struct WebDAVClient: Sendable {
             var h = ["Accept-Encoding": "identity", "Range": "bytes=\(offset)-\(offset + segment - 1)"]
             // A weak ETag is never sent in If-Range (RFC 9110 §13.1.5); the segments
             // are then unvalidated, as with a server that sends no ETag.
-            if let validator = ifRange ?? etag, WebDAVSync.isStrong(validator) { h["If-Range"] = validator }
+            if let validator = ifRange ?? etag, SyncEngine.isStrong(validator) { h["If-Range"] = validator }
             let r = try send("GET", path, collection: false, headers: h, maxResponseBytes: maxBytes, responseFile: file)
             etag = etag ?? r.headers["etag"]
             switch r.status {

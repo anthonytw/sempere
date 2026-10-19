@@ -21,19 +21,19 @@ import Sempere
 //   blobs named for it). When nothing is pending any more, the copy is complete.
 // - Push-only runs leave everything the copy lacks alone (`PushOnlySync`).
 
-/// A partial pull (`WebDAVSyncOptions.partial`). The metadata pull marks
+/// A partial pull (`SyncOptions.partial`). The metadata pull marks
 /// every note the server lists until the copy's note list is complete
 /// (`isUsable`), and afterwards only notes it has no folder for.
-public enum WebDAVPartialRun: Sendable, Hashable {
+public enum PartialRun: Sendable, Hashable {
     /// Make a partial copy in a new folder, or continue one (its root files
     /// and note list); never a complete vault.
     case metadata
     /// Fetch what a partial copy lacks.
-    case fetch(WebDAVFetchScope)
+    case fetch(FetchScope)
 }
 
 /// What a fetch run fetches.
-public struct WebDAVFetchScope: Sendable, Hashable {
+public struct FetchScope: Sendable, Hashable {
     /// Which blobs.
     public enum Blobs: Sendable, Hashable {
         /// None: each fetched note's blobs only get stand-ins.
@@ -57,7 +57,7 @@ public struct WebDAVFetchScope: Sendable, Hashable {
     public var concurrency: Int
 
     public init(notes: [UUID]? = nil, revisions: Bool = true, blobs: Blobs = .all, maxNotes: Int? = nil,
-                concurrency: Int = WebDAVFetchScope.defaultConcurrency) {
+                concurrency: Int = FetchScope.defaultConcurrency) {
         self.notes = notes; self.revisions = revisions; self.blobs = blobs
         self.maxNotes = maxNotes; self.concurrency = concurrency
     }
@@ -69,7 +69,7 @@ public struct WebDAVFetchScope: Sendable, Hashable {
 }
 
 /// Reading the local state of a partial copy (format.md §1.2).
-public enum WebDAVPartialCopy {
+public enum PartialCopyState {
     /// The server's `sempere-summaries.sealed` as the metadata pull fetched it.
     public static func summariesURL(_ root: URL) -> URL {
         root.appendingPathComponent(PartialCopy.folderName).appendingPathComponent(PublishedSummaries.fileName)
@@ -114,7 +114,7 @@ public enum WebDAVPartialCopy {
     static func pendingBlobs(_ root: URL, _ id: String) -> [String] {
         let att = root.appendingPathComponent(Vault.notesName).appendingPathComponent(id)
             .appendingPathComponent(Vault.attachmentsName)
-        return PartialCopy.pending(in: (try? LocalFS.entries(att)) ?? [], accept: WebDAVSync.isBlobName)
+        return PartialCopy.pending(in: (try? LocalFS.entries(att)) ?? [], accept: SyncEngine.isBlobName)
     }
 
     /// Notes with at least one blob stand-in, with their pending blob names.
@@ -150,14 +150,14 @@ public enum WebDAVPartialCopy {
     }
 }
 
-extension WebDAVSync {
-    func runPartial(_ run: WebDAVPartialRun) throws -> SyncReport {
+extension SyncEngine {
+    func runPartial(_ run: PartialRun) throws -> SyncReport {
         guard !options.dryRun else { throw SyncError.io("a partial pull has no dry run") }
         switch run {
         case .metadata: try runMetadata()
         case .fetch(let scope): try runFetch(scope)
         }
-        if report.partial?.completed != true { report.partial = WebDAVPartialCopy.status(root) }
+        if report.partial?.completed != true { report.partial = PartialCopyState.status(root) }
         report.progress = locked { var p = progress; p.stage = .done; return p }
         do {
             try state.save(stateURL)
@@ -188,8 +188,8 @@ extension WebDAVSync {
         // Marked partial before anything else arrives, so an interrupted pull never looks complete.
         try FileManager.default.createDirectory(at: root.appendingPathComponent(PartialCopy.folderName),
                                                 withIntermediateDirectories: true)
-        var record = WebDAVPartialCopy.readRecord(root) ?? .init()
-        if WebDAVPartialCopy.readRecord(root) == nil { try WebDAVPartialCopy.writeRecord(record, root) }
+        var record = PartialCopyState.readRecord(root) ?? .init()
+        if PartialCopyState.readRecord(root) == nil { try PartialCopyState.writeRecord(record, root) }
         checkerBaseManifest = manifestHash()
         remoteJournal = remoteRoot[Vault.journalName] != nil
         if !remoteJournal { state.inFlightJournal = nil }
@@ -239,8 +239,8 @@ extension WebDAVSync {
             try markIncomplete(d.name)
         }
         record.listed = true
-        try WebDAVPartialCopy.writeRecord(record, root)
-        if WebDAVPartialCopy.finishIfComplete(root) { report.partial = .init(completed: true) }
+        try PartialCopyState.writeRecord(record, root)
+        if PartialCopyState.finishIfComplete(root) { report.partial = .init(completed: true) }
     }
 
     /// The server's sealed summaries (format.md §12) into `.sempere-partial/`:
@@ -248,7 +248,7 @@ extension WebDAVSync {
     /// arrive. Opened (authenticated) only by the reader, with the key; an
     /// unreadable one is only a slower listing. A server without one leaves none.
     private func fetchPublishedSummaries(_ remote: RemoteEntry?) {
-        let target = WebDAVPartialCopy.summariesURL(root)
+        let target = PartialCopyState.summariesURL(root)
         guard let remote, !remote.isCollection else {
             try? FileManager.default.removeItem(at: target)
             return
@@ -296,12 +296,12 @@ extension WebDAVSync {
         var error: String?
     }
 
-    private func runFetch(_ scope: WebDAVFetchScope) throws {
+    private func runFetch(_ scope: FetchScope) throws {
         guard PartialCopy.isPartial(root) else { return }   // complete: nothing to fetch
         guard FileManager.default.fileExists(atPath: root.appendingPathComponent(Vault.manifestName).path) else {
             throw SyncError.io("no \(Vault.manifestName) in \(root.path): run a metadata pull first (--metadata-only)")
         }
-        guard WebDAVPartialCopy.readRecord(root)?.listed == true else {
+        guard PartialCopyState.readRecord(root)?.listed == true else {
             throw SyncError.io("the partial copy's note list is not complete: run a metadata pull again (--metadata-only)")
         }
         checkerBaseManifest = manifestHash()
@@ -359,7 +359,7 @@ extension WebDAVSync {
             let have = localRevisionNames(w.id) ?? []
             for e in entries where !e.isCollection {
                 guard let n = RevisionName(e.name), n.filename == e.name, !have.contains(e.name),
-                      let size = e.size, size >= 0, size <= WebDAVFetchScope.concurrentRevisionBytes, size <= options.maxFileBytes,
+                      let size = e.size, size >= 0, size <= FetchScope.concurrentRevisionBytes, size <= options.maxFileBytes,
                       state.quarantined?[key(w.id, n)] == nil else { continue }
                 small.append((w.id, n, e))
             }
@@ -372,7 +372,7 @@ extension WebDAVSync {
                 let (total, overflow) = sum.addingReportingOverflow(max(0, job.entry.size ?? 0))
                 return overflow ? Int.max : total
             }))
-            let maxBytes = WebDAVFetchScope.concurrentRevisionBytes
+            let maxBytes = FetchScope.concurrentRevisionBytes
             let fetched = Parallel.map(small.map { [Vault.notesName, $0.id, $0.name.filename] }, width: width) { path in
                 try? transport.read(path, maxBytes: maxBytes).data
             }
@@ -408,13 +408,13 @@ extension WebDAVSync {
             report.stoppedEarly = Self.describe(e)
             report.errors.append(.init(path: Vault.notesName, message: Self.describe(e)))
         }
-        if WebDAVPartialCopy.finishIfComplete(root) { report.partial = .init(completed: true) }
+        if PartialCopyState.finishIfComplete(root) { report.partial = .init(completed: true) }
     }
 
     /// The notes a fetch run looks at, in order.
-    private func fetchWork(_ scope: WebDAVFetchScope) -> [NoteWork] {
-        let incomplete = Set(WebDAVPartialCopy.incompleteNotes(root))
-        let withStandIns = scope.blobs == .none ? [:] : WebDAVPartialCopy.pendingBlobsByNote(root)
+    private func fetchWork(_ scope: FetchScope) -> [NoteWork] {
+        let incomplete = Set(PartialCopyState.incompleteNotes(root))
+        let withStandIns = scope.blobs == .none ? [:] : PartialCopyState.pendingBlobsByNote(root)
         var only: [String: Set<String>] = [:]
         if case .only(let keys) = scope.blobs {
             for k in keys {
@@ -556,7 +556,7 @@ extension WebDAVSync {
                 }
             }
         }
-        for name in WebDAVPartialCopy.pendingBlobs(root, w.id) where remoteBlobs[name] == nil || placedBlobs.contains(name)
+        for name in PartialCopyState.pendingBlobs(root, w.id) where remoteBlobs[name] == nil || placedBlobs.contains(name)
             || localBlobs.contains(name) {
             try? LocalFS.remove(att.appendingPathComponent(PartialCopy.standInName(for: name)))
         }
@@ -608,7 +608,7 @@ extension WebDAVSync {
         }
         guard let remoteBlobs else { return }
         let localBlobs = localBlobNames(id) ?? []
-        for name in WebDAVPartialCopy.pendingBlobs(root, id)
+        for name in PartialCopyState.pendingBlobs(root, id)
         where localBlobs.contains(name) || !remoteBlobs.contains(name) || isQuarantined(blobKey(id, name)) {
             try? LocalFS.remove(attURL(id).appendingPathComponent(PartialCopy.standInName(for: name)))
         }

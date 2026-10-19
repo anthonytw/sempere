@@ -3,7 +3,7 @@ import Foundation
 import Sempere
 
 /// Knobs for one sync run.
-public struct WebDAVSyncOptions: Sendable {
+public struct SyncOptions: Sendable {
     /// Plan only: no request that changes the server, no local write.
     public var dryRun = false
     /// Names this device in `vault.conflict-<device>-<time>.json`.
@@ -17,13 +17,13 @@ public struct WebDAVSyncOptions: Sendable {
     /// downloaded, and is reported. The default fits the largest blob the
     /// format allows (1 GiB of content, format.md §8.4) with its padding and
     /// encryption overhead.
-    public var maxBlobBytes = WebDAVSyncOptions.defaultMaxBlobBytes
+    public var maxBlobBytes = SyncOptions.defaultMaxBlobBytes
 
     /// One-way mirror (`sempere sync webdav --push-only`): upload what the
     /// server lacks, replace its `vault.json` / `rewrap-journal.json` with the
     /// local copy and propagate compaction and GC deletions to it, but never
     /// download, never write or delete anything in the local vault. See
-    /// `WebDAVSync` and docs/io.md.
+    /// `SyncEngine` and docs/io.md.
     public var pushOnly = false
     /// Push-only: also remove from the server what the local vault does not
     /// have and nothing explains (reported in `SyncReport.extraneous` either way).
@@ -45,7 +45,7 @@ public struct WebDAVSyncOptions: Sendable {
 
     /// Blob downloads are made of pieces of this size (`Range` requests on
     /// WebDAV), so memory stays bounded by one of them however fast the server is.
-    public var blobSegmentBytes = WebDAVSyncOptions.defaultSegmentBytes
+    public var blobSegmentBytes = SyncOptions.defaultSegmentBytes
 
     /// Where downloads that fail the checks before placing are kept
     /// (format.md §9.1); nil: `<state file>.quarantine/` next to the sync state.
@@ -91,9 +91,9 @@ public struct WebDAVSyncOptions: Sendable {
     /// revisions) and the uploads of the files the server lacks (`Preupload.swift`;
     /// a note's blobs before its revisions). Deletions and mutable files stay one at a time.
     public var concurrency = TransferPool.defaultWidth
-    /// Called as the run moves on (`WebDAVSyncProgress`): from the run's
+    /// Called as the run moves on (`SyncProgress`): from the run's
     /// threads, one call at a time, so it must return quickly.
-    public var progress: (@Sendable (WebDAVSyncProgress) -> Void)?
+    public var progress: (@Sendable (SyncProgress) -> Void)?
     /// Asked before each listing, note and download, and between the
     /// segments of a blob download: true stops the run as a run bound does
     /// (`SyncError.cancelled` in `errors` and `stoppedEarly`). What was
@@ -103,7 +103,7 @@ public struct WebDAVSyncOptions: Sendable {
     /// A partial pull instead of a sync (format.md §1.2, docs/io.md "Partial
     /// copies"): `.metadata` makes or continues a partial copy, `.fetch`
     /// fetches what one lacks. Nil: an ordinary run.
-    public var partial: WebDAVPartialRun?
+    public var partial: PartialRun?
 
     /// The largest blob file a reader opens (`BoundedRead.maxBlobFileBytes`,
     /// 1 GiB + 64 MiB).
@@ -114,15 +114,17 @@ public struct WebDAVSyncOptions: Sendable {
     public static let defaultSegmentBytes = 2 << 20
 
     public init(dryRun: Bool = false, deviceLabel: String = "device", now: Date = Date(), maxFileBytes: Int = 256 << 20,
-                maxBlobBytes: Int = WebDAVSyncOptions.defaultMaxBlobBytes,
-                blobSegmentBytes: Int = WebDAVSyncOptions.defaultSegmentBytes) {
+                maxBlobBytes: Int = SyncOptions.defaultMaxBlobBytes,
+                blobSegmentBytes: Int = SyncOptions.defaultSegmentBytes) {
         self.dryRun = dryRun; self.deviceLabel = deviceLabel; self.now = now; self.maxFileBytes = maxFileBytes
         self.maxBlobBytes = maxBlobBytes; self.blobSegmentBytes = blobSegmentBytes
     }
 }
 
-/// Mirrors a vault directory to a WebDAV collection and back; the server
-/// only stores files (docs/io.md, "WebDAV sync").
+/// Mirrors a vault directory to a remote and back (docs/io.md, "WebDAV
+/// sync", "Sync engine and transports"). The remote only stores files and is
+/// reached through a `SyncRemote` (a WebDAV collection: `WebDAVSyncRemote`);
+/// "the server" below is that remote.
 ///
 /// - Revision files under `notes/` are write-once: a file missing on one side
 ///   is copied there, an existing one is never overwritten on either side.
@@ -140,7 +142,7 @@ public struct WebDAVSyncOptions: Sendable {
 ///   is restored.
 ///
 /// A run keeps going after a per-file failure and lists it in `errors`.
-public final class WebDAVSync {
+public final class SyncEngine {
     static let ageMagic = Data("age-encryption.org/v1\n".utf8)
     /// The bound of a mutable file read with no bound of its own (16 MiB, the WebDAV client's listing bound).
     static let maxMutableReadBytes = 16 << 20
@@ -150,7 +152,7 @@ public final class WebDAVSync {
     /// The run's remote: `interrupt` set to the run's bound and cancellation (`runLocked`).
     private(set) var transport: any SyncRemote
     let stateURL: URL
-    let options: WebDAVSyncOptions
+    let options: SyncOptions
     var state = SyncState()
     var report: SyncReport
     /// Collections known to exist on the server (listed, or made this run).
@@ -187,7 +189,7 @@ public final class WebDAVSync {
     /// Strong ETags of the note folders in this run's `notes/` listing.
     var noteETags: [String: String] = [:]
     /// Whether this run lists only the notes whose folder ETag changed
-    /// (`WebDAVSyncOptions.skipUnchangedNotes`); decided once `notes/` is listed.
+    /// (`SyncOptions.skipUnchangedNotes`); decided once `notes/` is listed.
     var skipsUnchangedNotes = false
     /// How this run lists the note folders (`TreeListing.swift`), and the
     /// tree it got when it asked for one.
@@ -218,7 +220,7 @@ public final class WebDAVSync {
     /// prefetch records. Recursive, so a locked helper may call another.
     let mutex = NSRecursiveLock()
     /// What `options.progress` was last given.
-    var progress = WebDAVSyncProgress()
+    var progress = SyncProgress()
     /// Bytes credited so far to each prefetched download running (by key).
     var credited: [String: Int64] = [:]
     /// The listed size of each prefetched download running that has one (`credit` caps at it).
@@ -240,7 +242,7 @@ public final class WebDAVSync {
     ///     against the compaction rules; nil or locked means no deletion is propagated.
     ///   - stateURL: the sync-state file (outside `notes/`); see `defaultStateURL`.
     public init(directory: URL, vault: Vault?, remote: any SyncRemote, stateURL: URL,
-                options: WebDAVSyncOptions = WebDAVSyncOptions()) {
+                options: SyncOptions = SyncOptions()) {
         self.root = directory
         self.vault = (vault?.canRead == true) ? vault : nil
         self.transport = remote
@@ -382,7 +384,7 @@ public final class WebDAVSync {
                 report.errors.append(.init(path: WebIndex.fileName, message: Self.describe(error)))
             }
         }
-        let incompleteNotes = WebDAVPartialCopy.incompleteNotes(root)
+        let incompleteNotes = PartialCopyState.incompleteNotes(root)
         if !options.dryRun, notesListed, !incompleteNotes.isEmpty, hasSummaries || options.publishForWebViewer {
             // Entries come from the local notes: the ones not fetched yet would be dropped (format.md §1.2).
             report.skipped.append(.init(path: PublishedSummaries.fileName,
@@ -392,9 +394,9 @@ public final class WebDAVSync {
         }
         if PartialCopy.isPartial(root) || pendingKept > 0 {
             if !options.dryRun, !options.pushOnly, notesListed, report.stoppedEarly == nil {
-                WebDAVPartialCopy.finishIfComplete(root)
+                PartialCopyState.finishIfComplete(root)
             }
-            var status = WebDAVPartialCopy.status(root) ?? .init(completed: true)
+            var status = PartialCopyState.status(root) ?? .init(completed: true)
             status.keptOnServer = pendingKept
             report.partial = status
         }

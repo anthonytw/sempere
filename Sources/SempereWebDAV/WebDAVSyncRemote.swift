@@ -95,39 +95,39 @@ public struct WebDAVSyncRemote: SyncRemote {
 
 // MARK: - The engine over a WebDAV client
 
-extension WebDAVSync {
+extension SyncEngine {
     /// A sync of `directory` with the WebDAV collection of `client` (`WebDAVSyncRemote`).
     public convenience init(directory: URL, vault: Vault?, client: WebDAVClient, stateURL: URL,
-                            options: WebDAVSyncOptions = WebDAVSyncOptions()) {
+                            options: SyncOptions = SyncOptions()) {
         self.init(directory: directory, vault: vault, remote: WebDAVSyncRemote(client), stateURL: stateURL, options: options)
     }
 }
 
-extension WebDAVLocalCopy {
+extension LocalCopy {
     /// `download(remote:options:)` from a WebDAV collection.
-    public func download(client: WebDAVClient, options: WebDAVSyncOptions = WebDAVSyncOptions()) throws -> SyncReport {
+    public func download(client: WebDAVClient, options: SyncOptions = SyncOptions()) throws -> SyncReport {
         try download(remote: WebDAVSyncRemote(client), options: options)
     }
 
     /// `downloadMetadata(remote:options:)` from a WebDAV collection.
-    public func downloadMetadata(client: WebDAVClient, options: WebDAVSyncOptions = WebDAVSyncOptions()) throws -> SyncReport {
+    public func downloadMetadata(client: WebDAVClient, options: SyncOptions = SyncOptions()) throws -> SyncReport {
         try downloadMetadata(remote: WebDAVSyncRemote(client), options: options)
     }
 
     /// `fetch(remote:vault:scope:options:)` from a WebDAV collection.
-    public func fetch(client: WebDAVClient, vault: Vault?, scope: WebDAVFetchScope = WebDAVFetchScope(),
-                      options: WebDAVSyncOptions = WebDAVSyncOptions()) throws -> SyncReport {
+    public func fetch(client: WebDAVClient, vault: Vault?, scope: FetchScope = FetchScope(),
+                      options: SyncOptions = SyncOptions()) throws -> SyncReport {
         try fetch(remote: WebDAVSyncRemote(client), vault: vault, scope: scope, options: options)
     }
 
     /// `push(remote:vault:options:)` to a WebDAV collection.
-    public func push(client: WebDAVClient, vault: Vault?, options: WebDAVSyncOptions = WebDAVSyncOptions()) throws -> SyncReport {
+    public func push(client: WebDAVClient, vault: Vault?, options: SyncOptions = SyncOptions()) throws -> SyncReport {
         try push(remote: WebDAVSyncRemote(client), vault: vault, options: options)
     }
 
     /// `redownload(remote:identities:partial:options:)` from a WebDAV collection.
     public func redownload(client: WebDAVClient, identities: [any AgeIdentity], partial: Bool = false,
-                           options: WebDAVSyncOptions = WebDAVSyncOptions()) throws -> (report: SyncReport, replaced: Bool) {
+                           options: SyncOptions = SyncOptions()) throws -> (report: SyncReport, replaced: Bool) {
         try redownload(remote: WebDAVSyncRemote(client), identities: identities, partial: partial, options: options)
     }
 }

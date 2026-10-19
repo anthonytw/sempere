@@ -11,17 +11,17 @@ extension PartialCopyTests {
         let server = MockDAV()
         try serverVault(server)
         let c = localCopy()
-        var o = WebDAVSyncOptions()
-        let meta = Recorder<WebDAVSyncProgress>()
+        var o = SyncOptions()
+        let meta = Recorder<SyncProgress>()
         o.progress = { meta.append($0) }
         let pulled = try c.downloadMetadata(client: try client(server), options: o)
         XCTAssertTrue(pulled.errors.isEmpty, "\(pulled)")
         XCTAssertEqual(pulled.progress?.notesTotal, 3)
         XCTAssertEqual(pulled.progress?.stage, .done)
 
-        let seen = Recorder<WebDAVSyncProgress>()
+        let seen = Recorder<SyncProgress>()
         o.progress = { seen.append($0) }
-        let r = try c.fetch(client: try client(server), vault: nil, scope: WebDAVFetchScope(), options: o)
+        let r = try c.fetch(client: try client(server), vault: nil, scope: FetchScope(), options: o)
         XCTAssertTrue(r.errors.isEmpty, "\(r)")
         let placed = r.downloaded.filter { $0.hasPrefix("notes/") }
         let size = placed.reduce(Int64(0)) { $0 + Int64(server.size($1) ?? -1_000_000) }
@@ -43,9 +43,9 @@ extension PartialCopyTests {
         try serverVault(server)
         let c = localCopy()
         _ = try c.downloadMetadata(client: try client(server))
-        var o = WebDAVSyncOptions()
+        var o = SyncOptions()
         o.isCancelled = { true }
-        let stopped = try c.fetch(client: try client(server), vault: nil, scope: WebDAVFetchScope(), options: o)
+        let stopped = try c.fetch(client: try client(server), vault: nil, scope: FetchScope(), options: o)
         XCTAssertEqual(stopped.stoppedEarly, "sync run canceled", "\(stopped)")
         XCTAssertEqual(stopped.progress?.filesDone, 0)
         XCTAssertTrue(c.isPartial)

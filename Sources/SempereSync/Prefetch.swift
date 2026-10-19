@@ -1,7 +1,7 @@
 import Foundation
 import Sempere
 
-// MARK: - Concurrent listings and downloads (`WebDAVSyncOptions.concurrency`)
+// MARK: - Concurrent listings and downloads (`SyncOptions.concurrency`)
 //
 // A run used to make one request at a time, so on a high-latency link the
 // round trips dominated: a first download of ~800 files paid ~2 000 of them
@@ -25,7 +25,7 @@ import Sempere
 // sorted by path where the prefetch added to them, so a run's report does
 // not depend on thread timing.
 
-extension WebDAVSync {
+extension SyncEngine {
     /// One download of the prefetch.
     struct PrefetchItem: Sendable {
         var note: String
@@ -53,7 +53,7 @@ extension WebDAVSync {
     }
 
     /// Changes `progress` and hands it to `options.progress`.
-    func updateProgress(_ change: (inout WebDAVSyncProgress) -> Void) {
+    func updateProgress(_ change: (inout SyncProgress) -> Void) {
         locked {
             change(&progress)
             options.progress?(progress)

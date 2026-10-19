@@ -443,7 +443,7 @@ final class AppModel {
     /// write it pushes (`WebDAVPushSchedule.writeDelay`); tests shorten both.
     @ObservationIgnored var webdavTick = Duration.seconds(1)
     @ObservationIgnored var webdavWriteDelay: TimeInterval = 10
-    /// Listings and downloads at once in a WebDAV download (`WebDAVSyncOptions.concurrency`).
+    /// Listings and downloads at once in a WebDAV download (`SyncOptions.concurrency`).
     @ObservationIgnored var webdavConcurrency = TransferPool.defaultWidth
     /// The running Back Up Now, Verify Backup or restore (`AppModel+Backup`),
     /// nil when none runs.

@@ -14,19 +14,19 @@ final class PartialCopyTests: BlobSyncTestCase {
     let n2 = UUID(uuidString: "22222222-0000-4000-8000-000000000002")!
     let n3 = UUID(uuidString: "33333333-0000-4000-8000-000000000003")!
 
-    func localCopy(_ name: String = "iPad") -> WebDAVLocalCopy {
-        WebDAVLocalCopy(directory: tmp.appendingPathComponent("loc-\(name)"), folderName: "V.sempere")
+    func localCopy(_ name: String = "iPad") -> LocalCopy {
+        LocalCopy(directory: tmp.appendingPathComponent("loc-\(name)"), folderName: "V.sempere")
     }
 
-    func openCopy(_ c: WebDAVLocalCopy) throws -> Vault { try Vault.open(at: c.folder, identities: [identity]) }
+    func openCopy(_ c: LocalCopy) throws -> Vault { try Vault.open(at: c.folder, identities: [identity]) }
 
     /// Pushes vault `name` push-only (with the server's summaries), as the CLI's mirror does.
     @discardableResult
     func mirror(_ name: String, _ server: MockDAV, publish: Bool = true) throws -> SyncReport {
-        var o = WebDAVSyncOptions(deviceLabel: name)
+        var o = SyncOptions(deviceLabel: name)
         o.pushOnly = true
         o.publishForWebViewer = publish
-        let r = try WebDAVSync(directory: dir(name), vault: try openVault(name), client: try client(server),
+        let r = try SyncEngine(directory: dir(name), vault: try openVault(name), client: try client(server),
                                stateURL: tmp.appendingPathComponent("state-\(name).json"), options: o).run()
         XCTAssertTrue(r.errors.isEmpty, "\(r)")
         return r
@@ -100,7 +100,7 @@ final class PartialCopyTests: BlobSyncTestCase {
         return out
     }
 
-    func fetch(_ c: WebDAVLocalCopy, _ server: MockDAV, vault: Vault? = nil, _ scope: WebDAVFetchScope = WebDAVFetchScope()) throws -> SyncReport {
+    func fetch(_ c: LocalCopy, _ server: MockDAV, vault: Vault? = nil, _ scope: FetchScope = FetchScope()) throws -> SyncReport {
         try c.fetch(client: try client(server), vault: vault, scope: scope)
     }
 
@@ -119,13 +119,13 @@ final class PartialCopyTests: BlobSyncTestCase {
         XCTAssertLessThanOrEqual(requests.filter { $0.method == "PROPFIND" }.count, 3, "the root, notes/ (and the check): not one per note")
         XCTAssertTrue(c.isPartial && c.isUsable)
         XCTAssertEqual(r.partial, SyncReport.PartialStatus(incompleteNotes: 3))
-        XCTAssertEqual(Set(WebDAVPartialCopy.incompleteNotes(c.folder)), [idOf(n1), idOf(n2), idOf(n3)])
+        XCTAssertEqual(Set(PartialCopyState.incompleteNotes(c.folder)), [idOf(n1), idOf(n2), idOf(n3)])
         XCTAssertTrue(localFiles(c.folder).isEmpty)
-        XCTAssertNotNil(try? Data(contentsOf: WebDAVPartialCopy.summariesURL(c.folder)), "the sealed summaries came along")
+        XCTAssertNotNil(try? Data(contentsOf: PartialCopyState.summariesURL(c.folder)), "the sealed summaries came along")
 
         // Unlocked, the summaries list every note before any revision arrived.
         let v = try openCopy(c)
-        let entries = try v.openPublishedSummaries(try Data(contentsOf: WebDAVPartialCopy.summariesURL(c.folder)))
+        let entries = try v.openPublishedSummaries(try Data(contentsOf: PartialCopyState.summariesURL(c.folder)))
         XCTAssertEqual(entries[n2]?.title, "Second")
         XCTAssertEqual(Set(entries.keys), [n1, n2, n3])
         XCTAssertTrue(v.isPartialCopy && v.isNoteIncomplete(n1))
@@ -134,9 +134,9 @@ final class PartialCopyTests: BlobSyncTestCase {
     func testMetadataPullRefusesACompleteVault() throws {
         let server = MockDAV()
         try serverVault(server)
-        var o = WebDAVSyncOptions()
+        var o = SyncOptions()
         o.partial = .metadata
-        XCTAssertThrowsError(try WebDAVSync(directory: dir("A"), vault: nil, client: try client(server),
+        XCTAssertThrowsError(try SyncEngine(directory: dir("A"), vault: nil, client: try client(server),
                                             stateURL: tmp.appendingPathComponent("s.json"), options: o).run())
         XCTAssertFalse(PartialCopy.isPartial(dir("A")))
     }
@@ -156,7 +156,7 @@ final class PartialCopyTests: BlobSyncTestCase {
         let r = try c.downloadMetadata(client: try client(server))
         XCTAssertTrue(r.errors.isEmpty, "\(r)")
         XCTAssertTrue(c.isUsable)
-        XCTAssertEqual(WebDAVPartialCopy.incompleteNotes(c.folder).count, 3)
+        XCTAssertEqual(PartialCopyState.incompleteNotes(c.folder).count, 3)
     }
 
     // MARK: - Fetching
@@ -166,24 +166,24 @@ final class PartialCopyTests: BlobSyncTestCase {
         let (a, image, _) = try serverVault(server)
         let c = localCopy()
         _ = try c.downloadMetadata(client: try client(server))
-        let r = try fetch(c, server, WebDAVFetchScope(notes: [n2], blobs: .none, maxNotes: 1))
+        let r = try fetch(c, server, FetchScope(notes: [n2], blobs: .none, maxNotes: 1))
         XCTAssertTrue(r.errors.isEmpty && r.uploaded.isEmpty && r.deleted.isEmpty, "\(r)")
-        XCTAssertEqual(Set(WebDAVPartialCopy.incompleteNotes(c.folder)), [idOf(n1), idOf(n3)])
+        XCTAssertEqual(Set(PartialCopyState.incompleteNotes(c.folder)), [idOf(n1), idOf(n3)])
         let v = try openCopy(c)
         XCTAssertEqual(try v.reconstruct(noteId: n2).meta.title, "Second")
         XCTAssertEqual(try v.pendingBlobNames(of: n2).count, 1, "its blob has a stand-in")
         XCTAssertEqual(r.partial, SyncReport.PartialStatus(incompleteNotes: 2, pendingBlobs: 1))
 
         // The rest, revisions only: every note complete, blobs pending.
-        let rest = try fetch(c, server, vault: v, WebDAVFetchScope(blobs: .none))
+        let rest = try fetch(c, server, vault: v, FetchScope(blobs: .none))
         XCTAssertTrue(rest.errors.isEmpty, "\(rest)")
-        XCTAssertTrue(WebDAVPartialCopy.incompleteNotes(c.folder).isEmpty)
+        XCTAssertTrue(PartialCopyState.incompleteNotes(c.folder).isEmpty)
         XCTAssertTrue(c.isPartial, "still partial: two blobs are pending")
         XCTAssertEqual(try v.pendingBlobNames(of: n1), [image])
         XCTAssertEqual(try v.reconstruct(noteId: n1).meta.title, try a.reconstruct(noteId: n1).meta.title)
 
         // One blob on demand, then the rest: the copy is complete and equals the server's.
-        let one = try fetch(c, server, vault: v, WebDAVFetchScope(notes: [n1], revisions: false, blobs: .only(["\(idOf(n1))/\(image)"])))
+        let one = try fetch(c, server, vault: v, FetchScope(notes: [n1], revisions: false, blobs: .only(["\(idOf(n1))/\(image)"])))
         XCTAssertEqual(one.downloaded, ["notes/\(idOf(n1))/att/\(image)"], "\(one)")
         XCTAssertTrue(try v.pendingBlobNames(of: n1).isEmpty)
         let last = try fetch(c, server, vault: v)
@@ -203,7 +203,7 @@ final class PartialCopyTests: BlobSyncTestCase {
         // A revision of another note put under n3's folder: decrypts, but names the wrong note.
         let n1Rev = try XCTUnwrap(server.names(under: "notes/\(idOf(n1))").first { $0.hasSuffix(".age") })
         server.putDirect("notes/\(idOf(n3))/\(n1Rev)", try XCTUnwrap(server.file("notes/\(idOf(n1))/\(n1Rev)")))
-        let r = try fetch(c, server, vault: try openCopy(c), WebDAVFetchScope(notes: [n3], blobs: .none))
+        let r = try fetch(c, server, vault: try openCopy(c), FetchScope(notes: [n3], blobs: .none))
         XCTAssertEqual(r.quarantined.count, 1, "\(r)")
         // Quarantined and reported; settled as a full download leaves it out (format.md §1.2).
         XCTAssertFalse(try openCopy(c).isNoteIncomplete(n3), "a refused file does not hold the note back")
@@ -216,7 +216,7 @@ final class PartialCopyTests: BlobSyncTestCase {
         let c = localCopy()
         _ = try c.downloadMetadata(client: try client(server))
         server.removeCollection("notes/\(idOf(n3))")
-        let r = try fetch(c, server, WebDAVFetchScope(blobs: .none))
+        let r = try fetch(c, server, FetchScope(blobs: .none))
         XCTAssertTrue(r.errors.isEmpty, "\(r)")
         XCTAssertFalse(FileManager.default.fileExists(atPath: c.folder.appendingPathComponent("notes/\(idOf(n3))").path))
         XCTAssertFalse(try openCopy(c).noteIDs().contains(n3))
@@ -229,7 +229,7 @@ final class PartialCopyTests: BlobSyncTestCase {
         try serverVault(server)
         let c = localCopy()
         _ = try c.downloadMetadata(client: try client(server))
-        _ = try fetch(c, server, WebDAVFetchScope(notes: [n1], blobs: .none))
+        _ = try fetch(c, server, FetchScope(notes: [n1], blobs: .none))
         let v = try openCopy(c)
         XCTAssertThrowsError(try delta(v, device: devB, t: 50, title: "too early", note: n2)) {
             XCTAssertEqual($0 as? VaultError, .noteIncomplete(idOf(n2)))
@@ -258,7 +258,7 @@ final class PartialCopyTests: BlobSyncTestCase {
         try serverVault(server)
         let c = localCopy()
         _ = try c.downloadMetadata(client: try client(server))
-        _ = try fetch(c, server, WebDAVFetchScope(notes: [n1], blobs: .none))
+        _ = try fetch(c, server, FetchScope(notes: [n1], blobs: .none))
         let before = serverFiles(server)
         let summaries = server.file(PublishedSummaries.fileName)
         let v = try openCopy(c)
@@ -276,10 +276,10 @@ final class PartialCopyTests: BlobSyncTestCase {
         XCTAssertTrue(r.skipped.contains { $0.path == PublishedSummaries.fileName })
         // Again (the app pushes every few minutes), and with --delete-extraneous refused outright.
         XCTAssertTrue(try c.push(client: try client(server), vault: v).deleted.isEmpty)
-        var o = WebDAVSyncOptions()
+        var o = SyncOptions()
         o.pushOnly = true
         o.deleteExtraneous = true
-        XCTAssertThrowsError(try WebDAVSync(directory: c.folder, vault: v, client: try client(server),
+        XCTAssertThrowsError(try SyncEngine(directory: c.folder, vault: v, client: try client(server),
                                             stateURL: c.stateURL, options: o).run())
         XCTAssertTrue(serverFiles(server).isSuperset(of: before))
     }
@@ -292,7 +292,7 @@ final class PartialCopyTests: BlobSyncTestCase {
         let (_, image, large) = try serverVault(server)
         let c = localCopy()
         _ = try c.downloadMetadata(client: try client(server))
-        _ = try fetch(c, server, WebDAVFetchScope(blobs: .none))
+        _ = try fetch(c, server, FetchScope(blobs: .none))
         let v = try openCopy(c)
         XCTAssertEqual(try v.pendingBlobNames(of: n1), [image])
         let r = try c.push(client: try client(server), vault: v)
@@ -317,7 +317,7 @@ final class PartialCopyTests: BlobSyncTestCase {
             guard r.method == "GET", r.url.path.contains(folder), r.url.path.hasSuffix(".age") else { return nil }
             return gets.next() >= 2 ? WebDAVResponse(status: 503) : nil
         }
-        let first = try fetch(c, server, WebDAVFetchScope(notes: [n1], blobs: .none))
+        let first = try fetch(c, server, FetchScope(notes: [n1], blobs: .none))
         XCTAssertFalse(first.errors.isEmpty)
         XCTAssertTrue(try openCopy(c).isNoteIncomplete(n1), "one revision arrived, the note is still incomplete")
         // A push meanwhile changes nothing on the server.
@@ -326,7 +326,7 @@ final class PartialCopyTests: BlobSyncTestCase {
         XCTAssertTrue(p.deleted.isEmpty && p.extraneous.isEmpty, "\(p)")
         XCTAssertEqual(serverFiles(server), before)
         server.interceptor = nil
-        let second = try fetch(c, server, WebDAVFetchScope(notes: [n1], blobs: .none))
+        let second = try fetch(c, server, FetchScope(notes: [n1], blobs: .none))
         XCTAssertTrue(second.errors.isEmpty, "\(second)")
         XCTAssertFalse(try openCopy(c).isNoteIncomplete(n1))
         XCTAssertEqual(second.downloaded.count, 1, "only what was missing")
@@ -337,15 +337,15 @@ final class PartialCopyTests: BlobSyncTestCase {
         let (_, _, large) = try serverVault(server)
         let c = localCopy()
         _ = try c.downloadMetadata(client: try client(server))
-        _ = try fetch(c, server, WebDAVFetchScope(blobs: .none))
+        _ = try fetch(c, server, FetchScope(blobs: .none))
         server.cutGET[large] = 100_000
         let key = "\(idOf(n2))/\(large)"
-        let first = try fetch(c, server, WebDAVFetchScope(notes: [n2], revisions: false, blobs: .only([key])))
+        let first = try fetch(c, server, FetchScope(notes: [n2], revisions: false, blobs: .only([key])))
         XCTAssertFalse(first.errors.isEmpty)
         XCTAssertEqual(try openCopy(c).pendingBlobNames(of: n2), [large])
         server.cutGET = [:]
         let log = server.headers.count
-        let second = try fetch(c, server, WebDAVFetchScope(notes: [n2], revisions: false, blobs: .only([key])))
+        let second = try fetch(c, server, FetchScope(notes: [n2], revisions: false, blobs: .only([key])))
         XCTAssertTrue(second.errors.isEmpty, "\(second)")
         let ranged = server.headers.dropFirst(log).first { $0.method == "GET" && $0.path.hasSuffix(large) }
         XCTAssertEqual(ranged?.headers["Range"]?.hasPrefix("bytes=100000-"), true, "resumed, not started over")
@@ -359,7 +359,7 @@ final class PartialCopyTests: BlobSyncTestCase {
         let (a, _, _) = try serverVault(server)
         let c = localCopy()
         _ = try c.downloadMetadata(client: try client(server))
-        _ = try fetch(c, server, WebDAVFetchScope(notes: [n3], blobs: .none))
+        _ = try fetch(c, server, FetchScope(notes: [n3], blobs: .none))
         // A: a new revision in n1 (not fetched yet) and in n3 (fetched), a compaction of n2, a new note.
         let late1 = try delta(a, device: devA, t: 100, title: "First, later", note: n1)
         let late3 = try delta(a, device: devA, t: 101, title: "Third, later", note: n3)
@@ -370,7 +370,7 @@ final class PartialCopyTests: BlobSyncTestCase {
         try mirror("A", server)
 
         let v = try openCopy(c)
-        let r = try fetch(c, server, vault: v, WebDAVFetchScope(blobs: .none))
+        let r = try fetch(c, server, vault: v, FetchScope(blobs: .none))
         XCTAssertTrue(r.errors.isEmpty, "\(r)")
         XCTAssertEqual(try v.reconstruct(noteId: n1).meta.title, "First, later", "a note not fetched yet comes as it is now")
         XCTAssertEqual(Set(try fileNames(v, n2)), Set(try fileNames(a, n2)), "the compacted note as the server holds it")
@@ -392,9 +392,9 @@ final class PartialCopyTests: BlobSyncTestCase {
         try serverVault(server)
         let c = localCopy()
         _ = try c.downloadMetadata(client: try client(server))
-        _ = try fetch(c, server, WebDAVFetchScope(notes: [n1], blobs: .none))
-        let r = try WebDAVSync(directory: c.folder, vault: try openCopy(c), client: try client(server),
-                               stateURL: c.stateURL, options: WebDAVSyncOptions()).run()
+        _ = try fetch(c, server, FetchScope(notes: [n1], blobs: .none))
+        let r = try SyncEngine(directory: c.folder, vault: try openCopy(c), client: try client(server),
+                               stateURL: c.stateURL, options: SyncOptions()).run()
         XCTAssertTrue(r.errors.isEmpty && r.deleted.isEmpty, "\(r)")
         XCTAssertEqual(r.partial?.completed, true, "\(r)")
         XCTAssertFalse(c.isPartial)
@@ -406,7 +406,7 @@ final class PartialCopyTests: BlobSyncTestCase {
         let (a, _, _) = try serverVault(server)
         let c = localCopy()
         _ = try c.downloadMetadata(client: try client(server))
-        _ = try fetch(c, server, WebDAVFetchScope(blobs: .none))
+        _ = try fetch(c, server, FetchScope(blobs: .none))
         let elsewhere = UUID()
         _ = try newNote(a, elsewhere, title: "Elsewhere", t: 200)
         let late = try delta(a, device: devA, t: 201, title: "First, later", note: n1)
@@ -417,7 +417,7 @@ final class PartialCopyTests: BlobSyncTestCase {
         XCTAssertTrue(replaced, "\(report)")
         XCTAssertFalse(server.requestLog.dropFirst(log).contains { $0.method == "GET" && $0.path.contains("/notes/") },
                        "only the root files and the note list")
-        XCTAssertEqual(WebDAVPartialCopy.incompleteNotes(c.folder).count, 4, "every note, to take what changed")
+        XCTAssertEqual(PartialCopyState.incompleteNotes(c.folder).count, 4, "every note, to take what changed")
         let v = try openCopy(c)
         let filled = try fetch(c, server, vault: v)
         XCTAssertTrue(filled.errors.isEmpty, "\(filled)")
@@ -438,7 +438,7 @@ final class PartialCopyTests: BlobSyncTestCase {
         server.interceptor = nil
         let r = try c.downloadMetadata(client: try client(server))
         XCTAssertTrue(r.errors.isEmpty, "\(r)")
-        XCTAssertEqual(WebDAVPartialCopy.incompleteNotes(c.folder).count, 3, "every note is checked again")
+        XCTAssertEqual(PartialCopyState.incompleteNotes(c.folder).count, 3, "every note is checked again")
         XCTAssertTrue(try fetch(c, server).errors.isEmpty)
         XCTAssertFalse(c.isPartial)
         XCTAssertEqual(localFiles(c.folder), serverFiles(server))
@@ -476,7 +476,7 @@ final class PartialCopyTests: BlobSyncTestCase {
             case 0:
                 let notes = [n1, n2, n3].shuffled(using: &rng).prefix(Int.random(in: 1...2, using: &rng))
                 _ = try? fetch(c, server, vault: Bool.random(using: &rng) ? v : nil,
-                               WebDAVFetchScope(notes: Array(notes), blobs: Bool.random(using: &rng) ? .all : .none, maxNotes: 1))
+                               FetchScope(notes: Array(notes), blobs: Bool.random(using: &rng) ? .all : .none, maxNotes: 1))
             case 1:
                 // An injected failure may stop the run (vault.json unreadable); it must still delete nothing.
                 if let r = try? c.push(client: try client(server), vault: v) {
@@ -491,7 +491,7 @@ final class PartialCopyTests: BlobSyncTestCase {
                 _ = try delta(a, device: devA, t: t, title: "remote \(t)", note: [n1, n2, n3].randomElement(using: &rng))
                 try mirror(name, server)
             default:
-                _ = try? fetch(c, server, vault: v, WebDAVFetchScope(blobs: .none, maxNotes: 1))
+                _ = try? fetch(c, server, vault: v, FetchScope(blobs: .none, maxNotes: 1))
             }
             let now = serverFiles(server)
             XCTAssertTrue(now.isSuperset(of: everOnServer), "seed \(seed): the server lost \(everOnServer.subtracting(now))")

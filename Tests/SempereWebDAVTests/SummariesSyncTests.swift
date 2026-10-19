@@ -11,11 +11,11 @@ final class SummariesSyncTests: SyncTestCase {
     @discardableResult
     func syncSummaries(_ name: String, _ server: MockDAV, publish: Bool = false, locked: Bool = false,
                        pushOnly: Bool = false) throws -> SyncReport {
-        var options = WebDAVSyncOptions(deviceLabel: name)
+        var options = SyncOptions(deviceLabel: name)
         options.publishForWebViewer = publish
         options.pushOnly = pushOnly
         let vault = locked ? try Vault.open(at: dir(name)) : try openVault(name)
-        let s = WebDAVSync(directory: dir(name), vault: vault, client: try client(server),
+        let s = SyncEngine(directory: dir(name), vault: vault, client: try client(server),
                            stateURL: tmp.appendingPathComponent("state-\(name).json"), options: options)
         return try s.run()
     }

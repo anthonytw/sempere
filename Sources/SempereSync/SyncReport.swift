@@ -68,9 +68,9 @@ public struct SyncReport: Codable, Hashable, Sendable {
     /// Set when a bound of the run (`SyncLimits`) stopped it early: what was
     /// reached. Also listed in `errors`; the next run continues.
     public var stoppedEarly: String?
-    /// How far the run got (`WebDAVSyncProgress`, stage `done`): notes listed
+    /// How far the run got (`SyncProgress`, stage `done`): notes listed
     /// and synced, files and bytes downloaded of those it found to download, uploads.
-    public var progress: WebDAVSyncProgress?
+    public var progress: SyncProgress?
     /// Set when the local folder is a partial copy (format.md §1.2): what it
     /// still lacks after the run, and what a push-only run left on the server
     /// because the copy has not fetched it yet.

@@ -119,7 +119,7 @@ public enum WebDAVConnection {
 
     /// `vaultId` (a UUID, lowercased) and `format` of a manifest; nil if it is not one.
     static func manifestFields(_ data: Data) -> (vaultId: String, format: String?)? {
-        WebDAVSync.manifestFields(data)
+        SyncEngine.manifestFields(data)
     }
 
     /// A server-chosen name made safe to show: no `.sempere`, control

@@ -1,7 +1,7 @@
 import Foundation
 import Sempere
 
-// MARK: - Concurrent uploads (`WebDAVSyncOptions.concurrency`)
+// MARK: - Concurrent uploads (`SyncOptions.concurrency`)
 //
 // The note loop goes through the notes one at a time, so a run that uploads
 // many files (a first upload, a push after an import) paid one round trip
@@ -25,7 +25,7 @@ import Sempere
 // it would be had the loop made it), one that failed is reported once and
 // not tried again in the same run, and everything else (deletions, restores,
 // records) is decided there exactly as before. Revisions larger than
-// `WebDAVFetchScope.concurrentRevisionBytes` are read whole to upload, so
+// `FetchScope.concurrentRevisionBytes` are read whole to upload, so
 // they are left to the note loop, one at a time.
 //
 // A note whose `att/` listing failed uploads nothing here (the note loop
@@ -34,7 +34,7 @@ import Sempere
 // cancellation are checked before each upload, a request in flight is cut
 // by `SyncRemote.interrupt`, and the first bound reached stops the pool.
 
-extension WebDAVSync {
+extension SyncEngine {
     /// One upload of the pre-upload pass.
     struct PreuploadItem: Sendable {
         var note: String
@@ -65,7 +65,7 @@ extension WebDAVSync {
                 .filter { n in
                     // Read whole to upload: only small ones here, so memory stays bounded.
                     guard let size = LocalFS.regularFileSize(dir.appendingPathComponent(n.filename)) else { return false }
-                    return size <= WebDAVFetchScope.concurrentRevisionBytes
+                    return size <= FetchScope.concurrentRevisionBytes
                 }
                 .map { PreuploadItem(note: id, blob: nil, revision: $0, key: key(id, $0)) }
             var blobs: [PreuploadItem] = []

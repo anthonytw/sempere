@@ -21,7 +21,7 @@ import Sempere
 //   found it collectable for `blobRetention` (rule 4 as this device sees it:
 //   the server cannot prove the collector waited); until then it is kept.
 
-extension WebDAVSync {
+extension SyncEngine {
     /// Prefix of an interrupted download's partial file in `att/`. Starts
     /// with the vault's temporary-file prefix, so every listing ignores it,
     /// and is never a vault writer's own temporary name (those continue
@@ -172,7 +172,7 @@ extension WebDAVSync {
         // A partial copy: blobs it has not fetched (stand-ins), and every blob of a note
         // not fetched in full, are pending: never extraneous, never deleted (format.md §1.2).
         let incomplete = PartialCopy.isIncomplete(noteFolder: attURL(id).deletingLastPathComponent())
-        let standIns = Set(WebDAVPartialCopy.pendingBlobs(root, id))
+        let standIns = Set(PartialCopyState.pendingBlobs(root, id))
         let localDeleted = incomplete ? [] : remote.intersection(set.recorded).subtracting(local)
         if options.pushOnly {
             // Never synced and not local: not ours, unless the copy has not fetched it yet.
@@ -360,7 +360,7 @@ extension WebDAVSync {
         let remote = [Vault.notesName, id, Vault.attachmentsName, name]
         // Only a strong ETag can back `If-Range` (RFC 9110 §13.1.5): with a weak or
         // missing one a cut download is not resumed, it starts over.
-        let etag = entry?.etag.flatMap { WebDAVSync.isStrong($0) ? $0 : nil }
+        let etag = entry?.etag.flatMap { SyncEngine.isStrong($0) ? $0 : nil }
         var offset = 0
         var fetched = 0
         if let etag, locked({ state.partials[key]?.etag == etag }), let have = LocalFS.regularFileSize(part) {

@@ -31,15 +31,15 @@ final class SyncPerfTests: BlobSyncTestCase {
         Double(peakResidentBytes()) / 1_048_576
     }
 
-    func options(pushOnly: Bool, skip: Bool) -> WebDAVSyncOptions {
-        var o = WebDAVSyncOptions(deviceLabel: "A")
+    func options(pushOnly: Bool, skip: Bool) -> SyncOptions {
+        var o = SyncOptions(deviceLabel: "A")
         o.pushOnly = pushOnly
         o.skipUnchangedNotes = skip
         return o
     }
 
     func run(_ server: MockDAV, vault: Vault, pushOnly: Bool, skip: Bool = false) throws -> (SyncReport, Double) {
-        let s = WebDAVSync(directory: dir("A"), vault: vault, client: try client(server),
+        let s = SyncEngine(directory: dir("A"), vault: vault, client: try client(server),
                            stateURL: tmp.appendingPathComponent("state-A.json"), options: options(pushOnly: pushOnly, skip: skip))
         let t0 = Date()
         let r = try s.run()

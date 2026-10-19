@@ -87,9 +87,9 @@ final class BlobResumeTests: BlobSyncTestCase {
         let (_, ref, name) = try serverWithBlob(server)
         let segment = 16 << 10
         func run() throws -> SyncReport {
-            try WebDAVSync(directory: dir("B"), vault: try? openVault("B"), client: try client(server),
+            try SyncEngine(directory: dir("B"), vault: try? openVault("B"), client: try client(server),
                            stateURL: tmp.appendingPathComponent("state-B.json"),
-                           options: WebDAVSyncOptions(deviceLabel: "B", blobSegmentBytes: segment)).run()
+                           options: SyncOptions(deviceLabel: "B", blobSegmentBytes: segment)).run()
         }
         server.cutNthGET = (name, 8, 5000)   // 5000 bytes into the 8th segment
         try FileManager.default.createDirectory(at: dir("B"), withIntermediateDirectories: true)

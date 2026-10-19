@@ -34,7 +34,7 @@ struct WebDAVLocation: Codable, Identifiable, Hashable, Sendable {
 
 /// The WebDAV locations of this device: `Application Support/Sempere/webdav.json`
 /// for the list and `Application Support/Sempere/WebDAV/<id>/` for each local
-/// copy (`WebDAVLocalCopy`).
+/// copy (`LocalCopy`).
 @MainActor
 @Observable
 final class WebDAVLocationStore {
@@ -56,8 +56,8 @@ final class WebDAVLocationStore {
     static var defaultRoot: URL { AppSupport.folder("WebDAV") }
 
     /// The local copy of `location`.
-    nonisolated func copy(of location: WebDAVLocation) -> WebDAVLocalCopy {
-        WebDAVLocalCopy(directory: root.appendingPathComponent(location.id.uuidString.lowercased(), isDirectory: true),
+    nonisolated func copy(of location: WebDAVLocation) -> LocalCopy {
+        LocalCopy(directory: root.appendingPathComponent(location.id.uuidString.lowercased(), isDirectory: true),
                         folderName: location.folderName)
     }
 

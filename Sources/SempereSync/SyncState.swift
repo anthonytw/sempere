@@ -27,7 +27,7 @@ struct SyncState: Codable, Equatable {
 
     /// A rewrap journal on the server that this device refuses but that may
     /// be step 1 of a recipient change whose `vault.json` has not reached
-    /// the server yet (`WebDAVSync.holdInFlightJournal`).
+    /// the server yet (`SyncEngine.holdInFlightJournal`).
     struct InFlightJournal: Codable, Equatable {
         /// SHA-256 (hex) of its bytes.
         var hash: String

@@ -23,12 +23,12 @@ final class IncomingCheckSyncTests: SyncTestCase {
         return (name, try AgeFile.encrypt(body, to: [identity.recipient]))
     }
 
-    func run(_ name: String, _ server: MockDAV, vault: Vault?, configure: (inout WebDAVSyncOptions) -> Void = { _ in })
+    func run(_ name: String, _ server: MockDAV, vault: Vault?, configure: (inout SyncOptions) -> Void = { _ in })
         throws -> SyncReport {
-        var options = WebDAVSyncOptions(deviceLabel: name)
+        var options = SyncOptions(deviceLabel: name)
         options.firstPullIdentities = [identity]
         configure(&options)
-        return try WebDAVSync(directory: dir(name), vault: vault, client: try client(server),
+        return try SyncEngine(directory: dir(name), vault: vault, client: try client(server),
                               stateURL: tmp.appendingPathComponent("state-\(name).json"), options: options).run()
     }
 

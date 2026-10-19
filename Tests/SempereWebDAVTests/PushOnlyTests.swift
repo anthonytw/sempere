@@ -15,11 +15,11 @@ final class PushOnlyTests: BlobSyncTestCase {
     @discardableResult
     func push(_ name: String, _ server: MockDAV, vault: Vault?? = nil, dryRun: Bool = false,
               deleteExtraneous: Bool = false) throws -> SyncReport {
-        var o = WebDAVSyncOptions(dryRun: dryRun, deviceLabel: name)
+        var o = SyncOptions(dryRun: dryRun, deviceLabel: name)
         o.pushOnly = true
         o.deleteExtraneous = deleteExtraneous
         let v: Vault? = vault ?? (try? openVault(name))
-        return try WebDAVSync(directory: dir(name), vault: v, client: try client(server),
+        return try SyncEngine(directory: dir(name), vault: v, client: try client(server),
                               stateURL: tmp.appendingPathComponent("state-\(name).json"), options: o).run()
     }
 

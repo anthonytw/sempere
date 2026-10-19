@@ -1,7 +1,7 @@
 import Foundation
 import Sempere
 
-// MARK: - One listing for every note folder (`WebDAVSyncOptions.deepListing`)
+// MARK: - One listing for every note folder (`SyncOptions.deepListing`)
 //
 // A run lists every note folder on the server, and each `att/`, one PROPFIND
 // (`Depth: 1`) each: ~685 requests for a vault of 640 notes, every run, even
@@ -34,7 +34,7 @@ import Sempere
 // uploaded again, or, for a revision, deleted here only when a snapshot the
 // server lists covers it and compaction allows it).
 
-extension WebDAVSync {
+extension SyncEngine {
     /// How a run lists the note folders.
     enum TreeMode: Equatable {
         /// One by one (`Depth: 1`).

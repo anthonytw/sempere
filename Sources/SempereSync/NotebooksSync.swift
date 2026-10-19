@@ -9,7 +9,7 @@ import Sempere
 // ever deleted. With the vault unlocked a downloaded record must open (decrypt,
 // verify, decode) before it is placed; one that does not is skipped and reported.
 
-extension WebDAVSync {
+extension SyncEngine {
     func syncNotebookRecords(remoteRoot: [String: RemoteEntry]) throws {
         let folder = NotebookRecords.folderName
         let localDir = root.appendingPathComponent(folder, isDirectory: true)

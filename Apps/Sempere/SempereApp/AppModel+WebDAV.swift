@@ -178,7 +178,7 @@ extension AppModel {
 
     /// The fetcher of a partial copy: fetches run off the main actor with the
     /// location as stored at that moment (an edited password or pin applies at once).
-    private func makeFetcher(_ location: WebDAVLocation, copy: WebDAVLocalCopy) -> WebDAVFetcher {
+    private func makeFetcher(_ location: WebDAVLocation, copy: LocalCopy) -> WebDAVFetcher {
         let remote = webdavRemote, passwords = webdavPasswords, store = webdavLocations, id = location.id
         return WebDAVFetcher(copy: copy, serverName: location.host, fillsBlobs: webdavFillsBlobs, fetch: { scope, vault in
             let current = await MainActor.run { store.location(id) }
@@ -206,7 +206,7 @@ extension AppModel {
         guard let fetcher = webdavFetcher, let vault, vault.canRead else { return }
         fetcher.setVault(vault)
         let gen = generation
-        let url = WebDAVPartialCopy.summariesURL(fetcher.copy.folder)
+        let url = PartialCopyState.summariesURL(fetcher.copy.folder)
         let rows = await Task.detached(priority: .userInitiated) { () -> [UUID: NoteSummary] in
             guard let data = try? BoundedRead.contents(of: url, maxBytes: PublishedSummaries.maxFileBytes),
                   let entries = try? vault.openPublishedSummaries(data) else { return [:] }
@@ -229,7 +229,7 @@ extension AppModel {
     }
 
     /// The session of the copy just opened (`openVault` closed the last one).
-    private func startWebDAVSession(_ location: WebDAVLocation, copy: WebDAVLocalCopy) {
+    private func startWebDAVSession(_ location: WebDAVLocation, copy: LocalCopy) {
         let remote = webdavRemote, passwords = webdavPasswords, cacheDirectory = summaryCacheDirectory
         let id = location.id
         let store = webdavLocations
@@ -240,7 +240,7 @@ extension AppModel {
                 let (current, vault) = await MainActor.run { (store.location(id), self?.vault) }
                 guard let current else { throw WebDAVVaultError.noSuchLocation }
                 return try await Task.detached(priority: .utility) { () throws -> SyncReport in
-                    var options = WebDAVSyncOptions(deviceLabel: "app")
+                    var options = SyncOptions(deviceLabel: "app")
                     options.summaryCacheDirectory = cacheDirectory
                     return try remote.push(try Self.endpoint(current, passwords: passwords), copy: copy,
                                            vault: vault, options: options)
@@ -285,7 +285,7 @@ extension AppModel {
     ///   kept; a first download continues when the vault is opened again),
     ///   else what `work` throws.
     func withWebDAVDownload<T: Sendable>(name: String,
-                                         _ work: @escaping @Sendable (WebDAVSyncOptions) throws -> T) async throws -> T {
+                                         _ work: @escaping @Sendable (SyncOptions) throws -> T) async throws -> T {
         let flag = WebDAVCancelFlag()
         let relay = WebDAVProgressRelay { [weak self] progress in self?.webdavDownload?.progress = progress }
         webdavDownload = WebDAVDownloadStatus(name: name)
@@ -297,7 +297,7 @@ extension AppModel {
                 webdavDownloadCancel = nil
             }
         }
-        var options = WebDAVSyncOptions(deviceLabel: "app")
+        var options = SyncOptions(deviceLabel: "app")
         options.concurrency = webdavConcurrency
         options.progress = { relay.send($0) }
         options.isCancelled = { flag.isSet }
@@ -345,7 +345,7 @@ extension AppModel {
         await stoppingWebDAV[location.id]?.value   // and the session's push still running has ended
         do {
             let pushed = try await offMain { () throws -> SyncReport in
-                var options = WebDAVSyncOptions(deviceLabel: "app")
+                var options = SyncOptions(deviceLabel: "app")
                 options.summaryCacheDirectory = cacheDirectory
                 return try remote.push(try Self.endpoint(location, passwords: passwords), copy: copy, vault: vault,
                                        options: options)

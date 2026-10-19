@@ -104,7 +104,7 @@ func rethrowRunLimit(_ error: Error) throws {
 
 // MARK: - Quarantine (format.md §9.1, security review 2026-10, W2)
 
-extension WebDAVSync {
+extension SyncEngine {
     /// Where quarantined files go: `quarantineDirectory`, else next to the
     /// sync state (`<state>.quarantine/`), outside the vault, so nothing
     /// there is ever read as part of it.

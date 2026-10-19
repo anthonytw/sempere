@@ -421,9 +421,9 @@ final class BlobSyncTests: BlobSyncTestCase {
         let big = try a.writeBlob(note: noteID, syntheticBlob(20_000), type: "image/png")
         let small = try a.writeBlob(note: noteID, syntheticBlob(10, seed: 2), type: "image/png")
         func run(_ name: String, limit: Int) throws -> SyncReport {
-            try WebDAVSync(directory: dir(name), vault: try? openVault(name), client: try client(server),
+            try SyncEngine(directory: dir(name), vault: try? openVault(name), client: try client(server),
                            stateURL: tmp.appendingPathComponent("state-\(name).json"),
-                           options: WebDAVSyncOptions(deviceLabel: name, maxBlobBytes: limit)).run()
+                           options: SyncOptions(deviceLabel: name, maxBlobBytes: limit)).run()
         }
         let up = try run("A", limit: 10_000)
         XCTAssertEqual(up.errors.map(\.path), ["notes/\(id)/att/\(try blobFile(a, big))"], "\(up)")

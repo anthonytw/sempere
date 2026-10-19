@@ -133,14 +133,14 @@ public enum WebDAVSyncProblem: Hashable, Sendable {
     /// The problem for a run that threw.
     public static func from(error: Error) -> WebDAVSyncProblem {
         if case SyncError.vaultMismatch? = error as? SyncError { return .otherVault }
-        guard let e = error as? WebDAVError else { return .failed(WebDAVSync.describe(error)) }
+        guard let e = error as? WebDAVError else { return .failed(SyncEngine.describe(error)) }
         switch e {
         case .offline: return .offline
         case .untrustedCertificate(let m): return .certificate(SyncReport.printable(m))
         case .redirect(_, let location): return .redirect(SyncReport.printable(location))
         case .http(_, _, let status) where status == 401 || status == 403: return .unauthorized
         case .http(_, _, let status) where status == 404: return .notFound
-        default: return .failed(WebDAVSync.describe(e))
+        default: return .failed(SyncEngine.describe(e))
         }
     }
 

@@ -43,16 +43,16 @@ enum WebDAVProbe: Sendable {
 /// main actor). `LiveWebDAVRemote` is the network; tests use a fake.
 protocol WebDAVRemote: Sendable {
     func check(_ endpoint: WebDAVEndpoint) -> WebDAVProbe
-    func download(_ endpoint: WebDAVEndpoint, into copy: WebDAVLocalCopy) throws -> SyncReport
+    func download(_ endpoint: WebDAVEndpoint, into copy: LocalCopy) throws -> SyncReport
     /// The root files, sealed summaries and note list into a partial copy (format.md §1.2). `options`
     /// carry the progress callback and the Cancel (`AppModel.withWebDAVDownload`).
-    func downloadMetadata(_ endpoint: WebDAVEndpoint, into copy: WebDAVLocalCopy, options: WebDAVSyncOptions) throws -> SyncReport
+    func downloadMetadata(_ endpoint: WebDAVEndpoint, into copy: LocalCopy, options: SyncOptions) throws -> SyncReport
     /// Fetches what the partial copy lacks within `scope`; never uploads or deletes.
-    func fetch(_ endpoint: WebDAVEndpoint, copy: WebDAVLocalCopy, vault: Vault?, scope: WebDAVFetchScope) throws -> SyncReport
-    func push(_ endpoint: WebDAVEndpoint, copy: WebDAVLocalCopy, vault: Vault?, options: WebDAVSyncOptions) throws -> SyncReport
+    func fetch(_ endpoint: WebDAVEndpoint, copy: LocalCopy, vault: Vault?, scope: FetchScope) throws -> SyncReport
+    func push(_ endpoint: WebDAVEndpoint, copy: LocalCopy, vault: Vault?, options: SyncOptions) throws -> SyncReport
     /// With `partial`, the new copy is a partial copy filled by `fetch` afterwards.
-    func redownload(_ endpoint: WebDAVEndpoint, copy: WebDAVLocalCopy, identities: [any AgeIdentity],
-                    partial: Bool, options: WebDAVSyncOptions) throws -> (report: SyncReport, replaced: Bool)
+    func redownload(_ endpoint: WebDAVEndpoint, copy: LocalCopy, identities: [any AgeIdentity],
+                    partial: Bool, options: SyncOptions) throws -> (report: SyncReport, replaced: Bool)
     /// The open vault closed: drop any connections kept for it.
     func releaseConnections()
 }
@@ -98,24 +98,24 @@ struct LiveWebDAVRemote: WebDAVRemote {
         }
     }
 
-    func download(_ endpoint: WebDAVEndpoint, into copy: WebDAVLocalCopy) throws -> SyncReport {
+    func download(_ endpoint: WebDAVEndpoint, into copy: LocalCopy) throws -> SyncReport {
         try copy.download(client: try client(endpoint))
     }
 
-    func downloadMetadata(_ endpoint: WebDAVEndpoint, into copy: WebDAVLocalCopy, options: WebDAVSyncOptions) throws -> SyncReport {
+    func downloadMetadata(_ endpoint: WebDAVEndpoint, into copy: LocalCopy, options: SyncOptions) throws -> SyncReport {
         try copy.downloadMetadata(client: try client(endpoint), options: options)
     }
 
-    func fetch(_ endpoint: WebDAVEndpoint, copy: WebDAVLocalCopy, vault: Vault?, scope: WebDAVFetchScope) throws -> SyncReport {
+    func fetch(_ endpoint: WebDAVEndpoint, copy: LocalCopy, vault: Vault?, scope: FetchScope) throws -> SyncReport {
         try copy.fetch(client: try client(endpoint), vault: vault, scope: scope)
     }
 
-    func push(_ endpoint: WebDAVEndpoint, copy: WebDAVLocalCopy, vault: Vault?, options: WebDAVSyncOptions) throws -> SyncReport {
+    func push(_ endpoint: WebDAVEndpoint, copy: LocalCopy, vault: Vault?, options: SyncOptions) throws -> SyncReport {
         try copy.push(client: try client(endpoint), vault: vault, options: options)
     }
 
-    func redownload(_ endpoint: WebDAVEndpoint, copy: WebDAVLocalCopy, identities: [any AgeIdentity],
-                    partial: Bool, options: WebDAVSyncOptions) throws -> (report: SyncReport, replaced: Bool) {
+    func redownload(_ endpoint: WebDAVEndpoint, copy: LocalCopy, identities: [any AgeIdentity],
+                    partial: Bool, options: SyncOptions) throws -> (report: SyncReport, replaced: Bool) {
         try copy.redownload(client: try client(endpoint), identities: identities, partial: partial, options: options)
     }
 }

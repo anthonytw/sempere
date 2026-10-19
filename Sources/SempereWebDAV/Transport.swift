@@ -27,7 +27,7 @@ public struct WebDAVRequest: Sendable {
     /// it returns cancels the request, and `send` throws that error. What a
     /// streamed response wrote to `responseFile` stays there. The sync passes
     /// its run bound and cancellation (`SyncLimits.maxDuration`,
-    /// `WebDAVSyncOptions.isCancelled`), so a server that keeps a request
+    /// `SyncOptions.isCancelled`), so a server that keeps a request
     /// alive with a trickle of bytes, never idle long enough for the idle
     /// timeout, cannot hold a run past them. Transports that answer at once
     /// may ignore it.
