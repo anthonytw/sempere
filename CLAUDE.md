@@ -110,9 +110,12 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
 
 - Changelog: add a fragment `changelog.d/<topic>.md` ([format](changelog.d/README.md)); never edit
   `CHANGELOG.md` (`scripts/changelog-collect.py` folds fragments at release time, docs/ci.md).
-- At most two agents at once may run anything that needs the screen (Mac UI tests, Catalyst XCUITest).
 - Run all Xcode work (`xcodebuild`, `scripts/app.sh`, `scripts/local-ci.sh`) through the build lock your
-  environment provides (the agent harness's `xc-lock`); never start a second Xcode build beside it.
+  environment provides (the agent harness's `xc-lock`); never start Xcode work outside it. It admits a few
+  jobs at once in arrival order: Catalyst runs (`test-mac*`, `catalyst`, any `local-ci.sh`) one at a time,
+  since they share the app's container and the UI tests drive the real screen; simulator runs side by side,
+  each on its own throwaway simulator clone (`SEMPERE_SIM_ID`); builds and package tests in any free slot.
+- A test that depends on a simulator's leftover state is a bug: every run may start on a fresh clone.
 - Cancel only your own processes, by PID; never `pkill -f` or `killall` patterns (they kill other agents' runs).
 - Temp files go in your own scratch directory, never shared names (`/tmp/out.log`).
 
