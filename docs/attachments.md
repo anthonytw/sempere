@@ -1458,7 +1458,7 @@ side; remote names validated (`<64 hex>.<kind>.age`).
 *Done when:* mock-server tests for each row of the write-once table with blobs,
 a dropped-but-referenced blob is copied back, a hostile name is ignored, a
 300 MB blob syncs with bounded memory; wsgidav integration test.
-*Code:* `Sources/SempereWebDAV/BlobSync.swift` (listing, transfers, deletion
+*Code:* `Sources/SempereSync/BlobSync.swift` (listing, transfers, deletion
 rules), `WebDAVClient` (`put(fromFile:)`, segmented `download` with
 `Range`/`If-Range`, `MOVE`), `URLSessionTransport` (`bodyFile`,
 `responseFile`); CLI `--max-blob-mib`; `docs/io.md` "Attachment blobs".

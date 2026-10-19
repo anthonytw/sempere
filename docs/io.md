@@ -1034,9 +1034,44 @@ deleted and never counts as coverage. `verify()` never throws: it re-checks
 `vault.json` (format, recipients, the secret's stanza count) and gives every
 entry a status.
 
+## Sync engine and transports (`Sources/SempereSync`)
+
+The two-way sync described under "WebDAV sync" below is one engine, `SyncEngine` in the
+`SempereSync` target (Foundation and swift-crypto only, no network code, Linux-tested). Every rule
+lives there: what is copied, checked before it is placed (format.md §9.1), quarantined, deleted
+and recorded (`SyncState`), the run bounds (`SyncLimits`), partial copies (`PartialRun`,
+`FetchScope`, `PartialCopyState`), push-only mirrors and the app's local copies (`LocalCopy`).
+It reaches the other side only through the `SyncRemote` protocol (`SyncRemote.swift`), whose
+operations are the ones the engine makes, with transport-neutral names:
+
+| `SyncRemote` | What it does | WebDAV (`WebDAVSyncRemote`) |
+| --- | --- | --- |
+| `list`, `listTree`, `stat` | children of a collection, everything below one at once (or `.refused`), one file's metadata; nil when absent | PROPFIND `Depth: 1`, `Depth: infinity`, `Depth: 0` |
+| `read(_:maxBytes:)` | a bounded file and its version token (`etag`) | GET |
+| `download(_:to:resumeFrom:ifETag:…)` | a file streamed to disk in pieces, resumed when its strong version token still matches; one that cannot resume starts over | GET with `Range` / `If-Range`; a 416 starts over |
+| `write(_:_:condition:)` | data or a file, `PutCondition` `.create` / `.replace(etag:)` / `.unconditional`; false when the precondition failed | PUT with `If-None-Match: *` / `If-Match` |
+| `moveNoOverwrite`, `makeCollection`, `createBase`, `delete(_:ifETag:)` | rename without replacing, make a collection (or report its missing parent), make the base, delete (only that version) | MOVE `Overwrite: F`, MKCOL, MKCOL of each ancestor, DELETE with `If-Match` |
+| `interrupt`, `location`, `missingCollectionError` | the run's bound and cancellation reach a request in flight; where the remote is, for messages; the transport's own "not there" error | `WebDAVClient.interrupt`, the URL, a PROPFIND 404 |
+| `capabilities`, `availability`, `requestDownload`, `conflictVersions`, `resolveConflicts`, `changes` | what the remote promises, and hooks for stores that evict files, fork conflict versions or announce changes; defaults: available, nothing to do, no versions, no hints | the defaults (WebDAV evicts nothing and has no push channel) |
+
+Engine failures are `SyncError` (`vaultMismatch`, `limitExceeded`, `cancelled`, ...); a transport's
+own failures are its own error type and pass through unchanged (`WebDAVError`). A transport marks
+the ones a later run may not see (no network, a cut connection) as `TransientRemoteError`, so the
+engine keeps a partial download for the next run.
+
+**Adding a transport.** Conform a type to `SyncRemote` in its own target; one that talks to a
+network goes beside `SempereWebDAV` and needs the network allowances (`scripts/check-portability.sh`,
+the `NETWORK_ALLOWED` list in `scripts/release-check.sh`, the privacy policy), and `SempereSync`
+stays network-free. Map paths (component lists below the remote's base, built from validated vault
+names) and version tokens (they change whenever the bytes do; a strong one, not `W/"…"`, backs
+conditions and resumes), bound what is read, and keep the hooks' defaults unless the store needs
+them. The planned ones are a folder transport for iCloud Drive and other providers, and possibly
+first-class S3-compatible or Dropbox adapters (docs/design/device-first-sync.md §3).
+
 ## WebDAV sync (`Sources/SempereWebDAV`)
 
-The one target with network code. It talks to a plain WebDAV collection that
+The one target with network code: the WebDAV client and transport, and `WebDAVSyncRemote`, the
+engine's WebDAV adapter (the engine itself is in `SempereSync`, above). It talks to a plain WebDAV collection that
 holds a copy of the vault folder (same layout, `vault.json` at the collection
 root) using PROPFIND (Depth 1; one `Depth: infinity` listing of `notes/` where the server is seen to answer it in full, "One listing for every note folder" below), GET (with `Range` for blobs), PUT, MKCOL, MOVE and DELETE, so any server
 works (Nextcloud, Apache `mod_dav`, nginx dav, rclone serve webdav,
@@ -1235,7 +1270,7 @@ replay a finished change's journal). Otherwise it is listed in
 `rejected`, the local file stays and the sync state is not updated, so the
 next run reports it again.
 
-**Push-only mirror** (`--push-only`, `WebDAVSyncOptions.pushOnly`). A two-way
+**Push-only mirror** (`--push-only`, `SyncOptions.pushOnly`). A two-way
 sync rejects a `vault.json` whose recipients changed without a valid tag
 (format.md §2.1, above), but it still takes whatever else the server holds:
 new revisions and blobs, deletions it can explain, journals. For a server that
@@ -1300,7 +1335,7 @@ both sides by the next run.
 **Concurrent transfers and progress** (`TransferPool`, `Prefetch.swift`).
 On a high-latency link round trips dominate (a first pull of ~800 files
 makes ~2 000 requests), so the note folders, then their `att/`, are listed `concurrency` at a time
-(`WebDAVSyncOptions.concurrency`, `--jobs`, default 6, 1 to 16), and a
+(`SyncOptions.concurrency`, `--jobs`, default 6, 1 to 16), and a
 two-way run downloads what the note loop would download as new on the
 server (each note's revisions and blobs that neither the vault holds nor the
 last sync recorded) the same number at a time, before the note loop: a
@@ -1329,15 +1364,15 @@ the prefetch or the uploads added to them, so they do not depend on thread
 timing. Deletions and the mutable files stay one at a time. The transport
 keeps one connection per transfer alive between requests
 (`httpMaximumConnectionsPerHost` 16, the most `--jobs` allows; URLSession's
-default of 6 queued the rest). `WebDAVSyncOptions.progress` gets a
-`WebDAVSyncProgress` (stage; notes listed and synced; files and bytes
+default of 6 queued the rest). `SyncOptions.progress` gets a
+`SyncProgress` (stage; notes listed and synced; files and bytes
 downloaded of the total, known once every note folder was listed; uploads)
 from the run's threads, one call at a time; the final value is in the
 report's `progress`. Counts only grow: a file counts as done once it is
 placed (one that failed, was quarantined or was cut short does not), and its
 bytes never more than its listed size, even when a server answers a resumed
 request with the whole file. Partial pulls ("Partial copies") have their
-own concurrency (`WebDAVFetchScope.concurrency`) and report the same
+own concurrency (`FetchScope.concurrency`) and report the same
 progress: the metadata pull its note count, a fetch the files and bytes it
 fetches and the notes it went through; a fetch stops between notes on a
 cancellation.
@@ -1389,7 +1424,7 @@ root (its `record.json` says whether the note list is complete; the server's
 `sempere-summaries.sealed` is kept there as `summaries.sealed`), a
 `.sempere-pending` marker in each note folder whose revisions have not all
 arrived, and `att/.<blob>.sempere-pending` for each blob not fetched. Three
-kinds of run (`WebDAVSyncOptions.partial`, `WebDAVLocalCopy`):
+kinds of run (`SyncOptions.partial`, `LocalCopy`):
 
 - *Metadata pull* (`.metadata`, `downloadMetadata`, `sempere sync webdav
   --metadata-only`): marks the folder partial first (so an interrupted pull
@@ -1406,7 +1441,7 @@ kinds of run (`WebDAVSyncOptions.partial`, `WebDAVLocalCopy`):
   unfinished full download) are only a head start; a later metadata pull marks
   only notes it has no folder for. It refuses a complete vault (marking its
   notes would block edits to them).
-- *Fetch* (`.fetch(WebDAVFetchScope)`, `fetch`, `--fetch [--note ID]
+- *Fetch* (`.fetch(FetchScope)`, `fetch`, `--fetch [--note ID]
   [--no-blobs]`): for each note in scope (the ones asked for first; every
   incomplete note by default; `maxNotes` per run so a push never waits long for
   the sync state), lists its folder and `att/` on the server *as they are now*
@@ -1490,7 +1525,7 @@ a regression the Linux job cannot.
 
 For people with no Mac and no iCloud, the app keeps a vault on a WebDAV
 server it talks to itself (`Open Vault ▸ WebDAV…`). It wraps the same
-`SempereWebDAV` library as `sempere sync webdav`; nothing about the server
+`SempereSync` engine and `SempereWebDAV` transport as `sempere sync webdav`; nothing about the server
 side changes, and any server the CLI works with works here.
 
 **One transport per connection.** `LiveWebDAVRemote` keeps a single `URLSessionTransport` in a
@@ -1506,7 +1541,7 @@ copy in the app's container (`Application Support/Sempere/WebDAV/<location
 id>/<name>.sempere`, sync state and quarantine beside it). Every read and
 write goes to that copy through the usual plain-folder paths (no iCloud
 code runs for it), so the app works offline exactly as with a vault on the
-device. The server is updated by a **push-only** run (`WebDAVSyncOptions.pushOnly`,
+device. The server is updated by a **push-only** run (`SyncOptions.pushOnly`,
 "Push-only mirror" above): it uploads what the server lacks, removes there
 what local compaction or blob collection explains, and never downloads,
 writes or deletes anything in the local copy. A server can therefore never
@@ -1557,11 +1592,11 @@ and the note list (a few requests, whatever the size of the vault: a
 ~1 GB, ~800-file vault opens in seconds), and the copy opens
 locked with the usual unlock sheet. It is opened only once a metadata pull
 finished without errors and listed every note (`WebDAVLocation.downloaded`,
-`WebDAVLocalCopy.isUsable`); one that stopped continues when the vault is
+`LocalCopy.isUsable`); one that stopped continues when the vault is
 opened again. While the pull runs (and while
 Download Again pulls), an overlay shows a bar with the stage and counts
 ("Connecting to the server…", then "Listing the server: n of n notes")
-(`WebDAVDownloadStatus`, from the run's `WebDAVSyncProgress` through
+(`WebDAVDownloadStatus`, from the run's `SyncProgress` through
 `WebDAVProgressRelay`) and a Cancel: the run stops after the requests in
 flight, nothing is reported as an error, and opening the vault again
 continues; a canceled Download Again leaves the copy as it was. The fill
@@ -1578,7 +1613,7 @@ every revision of a note marked incomplete is `missing` (even those already
 there: the note is read only once all are), a blob with a stand-in is
 `missing`, a fetch that failed is `failed` (with the server's error); a
 download request asks the fetcher for that note or blob first. The fetcher
-runs library fetches (`WebDAVLocalCopy.fetch`) in a background loop: notes
+runs library fetches (`LocalCopy.fetch`) in a background loop: notes
 asked for (the one opened or selected, the ones a pass looks at) first, then
 every incomplete note in batches of 12 (each run lists its notes and fetches
 their small revisions four at a time), then, with "Download Attachments in
@@ -1630,13 +1665,13 @@ Never while locked (deletions need the vault unlocked), no background task
 or scheduled refresh, at most one run at a time; a write during a run
 schedules another. Closing the vault lets a run in progress finish, and the
 copy is not synced, downloaded again or removed until it has (runs on one
-sync-state file also take turns in `WebDAVSync`). After a failure the next automatic try waits 30 s,
+sync-state file also take turns in `SyncEngine`). After a failure the next automatic try waits 30 s,
 doubling up to 15 minutes; "Sync Now" (and unlocking or the app becoming
 active) retries at once, and a write still runs 10 s after the last write.
 
 **Status** (`WebDAVSession`, `WebDAVSyncProblem`): the note list shows a bar
 for a WebDAV vault (`WebDAVStatusBar`): uploading, up to date, the number of
-changes the server has not confirmed (`WebDAVLocalCopy.unconfirmedChanges`),
+changes the server has not confirmed (`LocalCopy.unconfirmedChanges`),
 or the problem and what to do, with the last successful push time and a menu
 (Sync Now, Download Again…, Server Settings… to change the password or the
 certificate pin). Offline is not an error: "Offline. Changes are kept on this device
@@ -1649,7 +1684,7 @@ the server, so the cases are:
 | On the server | What the app does |
 | --- | --- |
 | another vault (`vaultId` differs) | stops before any change (`vaultMismatch`) and says so; nothing is uploaded |
-| `vault.json` or `rewrap-journal.json` changed since this device's last sync (another device or the CLI wrote it) | kept, not overwritten (`WebDAVSyncOptions.keepServerChanges`, CLI `--keep-server-changes`), reported as a conflict: "The vault's device list on the server was changed elsewhere." Notes still upload |
+| `vault.json` or `rewrap-journal.json` changed since this device's last sync (another device or the CLI wrote it) | kept, not overwritten (`SyncOptions.keepServerChanges`, CLI `--keep-server-changes`), reported as a conflict: "The vault's device list on the server was changed elsewhere." Notes still upload |
 | `vault.json` differs but was not changed since the last sync (only this device changed it) | replaced by the local copy, as any push-only run |
 | `settings.age` changed by another device | merged per key with this device's copy and the merge uploaded (nothing written locally); not a conflict |
 | revisions or blobs this device never had (another writer) | kept and listed (`extraneous`); never deleted by the app (`deleteExtraneous` is off) |

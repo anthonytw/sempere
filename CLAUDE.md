@@ -39,7 +39,9 @@ Do not use features newer than Swift 6.0 in `Sources/`.
   scrypt and PBKDF2 are the only primitives implemented locally
   (swift-crypto lacks them); they must have RFC test vectors.
 - No network code in `Sources/` except the `SempereWebDAV` target (`URLSession`, via
-  `FoundationNetworking` on Linux). `scripts/check-portability.sh` enforces it.
+  `FoundationNetworking` on Linux). `scripts/check-portability.sh` enforces it. The sync engine is
+  `SempereSync` (network-free, Foundation only); transports reach it through `SyncRemote`
+  (docs/io.md "Sync engine and transports"), and WebDAV's is `WebDAVSyncRemote`.
 - `sempere/1` is the first released format and must stay stable: do not change what an existing field,
   op or file means. A change that older readers cannot handle needs a new `features` marker or format
   major, so they open the vault read-only (`format.md` §7).
@@ -805,8 +807,8 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   gets a `Screen` case there. `scripts/app.sh pseudo` (iPad, in `local-ci.sh --release`) and
   `pseudo-mac` (by hand) run the UI-test version.
 - WebDAV vaults in the app (`AppModel+WebDAV`, `WebDAVSession`, docs/io.md "WebDAV vaults in the
-  app"): a local copy in Application Support (`WebDAVLocalCopy`, `WebDAVLocationStore`) opened like any
-  folder, and a push-only sync (`WebDAVLocalCopy.push`: `pushOnly` + `keepServerChanges`) scheduled by
+  app"): a local copy in Application Support (`LocalCopy` in `SempereSync`, `WebDAVLocationStore`) opened like any
+  folder, and a push-only sync (`LocalCopy.push`: `pushOnly` + `keepServerChanges`) scheduled by
   `WebDAVPushSchedule`; never take anything from the server except through a download into a new copy
   (`download`, `redownload`). The password is only in the Keychain (`KeychainWebDAVPasswordStore`);
   certificate pins are checked by `PinnedServerTrust` (Security, app only) behind the library's

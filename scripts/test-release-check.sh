@@ -15,7 +15,7 @@ pass=0 fail=0
 fresh() {
   rm -rf "$tmp/root" && mkdir -p "$tmp/root/Apps" "$tmp/root/Sources" "$tmp/root/docs/appstore" "$tmp/root/docs/privacy"
   cp -R "$here/Apps/Sempere" "$tmp/root/Apps/"
-  for t in Age Sempere SempereRender SemperePDF SempereSpeech SempereWebDAV CZlib; do cp -R "$here/Sources/$t" "$tmp/root/Sources/"; done
+  for t in Age Sempere SempereRender SemperePDF SempereSpeech SempereSync SempereWebDAV CZlib; do cp -R "$here/Sources/$t" "$tmp/root/Sources/"; done
   cp "$here/docs/appstore/privacy-policy.md" "$tmp/root/docs/appstore/"
   cp "$here/docs/privacy/index.html" "$tmp/root/docs/privacy/"
 }
