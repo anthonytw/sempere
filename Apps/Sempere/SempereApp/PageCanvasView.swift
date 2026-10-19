@@ -513,8 +513,21 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
 
     /// The palette is shown (the toolbar button) unless the note is read-only.
     var paletteVisible = true {
-        didSet { if paletteVisible != oldValue { updateToolPicker() } }
+        didSet {
+            guard paletteVisible != oldValue else { return }
+            updateToolPicker()
+            // The stack gives the focus to one of its pages itself (`PageStackHost.paletteTurnedOn`).
+            if paletteVisible, !isEmbedded, Self.paletteTakesFocus(isPhone: Platform.isPhone) { reclaimFocus() }
+        }
     }
+
+    /// Whether turning the palette on gives the canvas the first responder. PencilKit shows the palette
+    /// only for the first responder, and a canvas never takes it by itself from a list or a field
+    /// (`CanvasFocus`): with the note list holding the focus, the toolbar button flipped its icon and
+    /// nothing came up (TestFlight 1.0.0 (6), the owner's iPad). The user asked for the palette, so the
+    /// canvas takes the focus, as a touch on it does (`reclaimFocus`). The iPhone's palette follows its
+    /// Annotate mode, which already focuses the canvas (`PhoneCanvasMode`), so it is left alone.
+    nonisolated static func paletteTakesFocus(isPhone: Bool) -> Bool { !isPhone }
 
     /// The palette is the short one: pen, marker, eraser, lasso.
     var paletteCompact = ToolPalette.isCompact() {

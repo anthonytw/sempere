@@ -564,6 +564,36 @@ struct EditorView: View {
         .help("Size of the object eraser; the pixel eraser's size is in the tool palette")
     }
 
+    /// The palette button (iPad). Tap: show or hide the palette. Press and hold: compact palette.
+    private var paletteToggle: some View {
+        Menu {
+            Toggle("Compact Palette", systemImage: "rectangle.compress.vertical", isOn: $paletteCompact)
+        } label: {
+            Label(LocalizedStringKey(paletteVisible ? "Hide Tool Palette" : "Show Tool Palette"),
+                  systemImage: paletteVisible ? "pencil.tip.crop.circle.fill" : "pencil.tip.crop.circle")
+        } primaryAction: {
+            paletteVisible.toggle()
+        }
+        .help("Show or hide the tool palette; press and hold for the compact palette")
+    }
+
+    /// The Mac's tool button. PencilKit never shows its tool palette in a Mac Catalyst app (Apple's
+    /// `PKToolPicker` documentation), so the iPad's palette button showed nothing there however often it
+    /// was clicked (TestFlight 1.0.0 (6)). The Mac picks its tools from this menu instead: the Tools
+    /// menu's tools (`MenuCommand.toolPen` …, ⌥⌘1–5) and the ruler.
+    private var macToolsMenu: some View {
+        Menu {
+            ForEach(ToolChoice.allCases, id: \.self) { tool in
+                Button(tool.command.title) { editor.canvasTarget?.select(tool: tool) }
+            }
+            Divider()
+            Button(MenuCommand.toggleRuler.title) { editor.canvasTarget?.toggleRuler() }
+        } label: {
+            Label("Drawing Tools", systemImage: "pencil.tip.crop.circle")
+        }
+        .help("Pick the pen, marker, pencil, eraser or lasso (also in the Tools menu)")
+    }
+
     /// The iPad's and the Mac's toolbar.
     @ToolbarContentBuilder
     private var fullToolbar: some ToolbarContent {
@@ -586,16 +616,11 @@ struct EditorView: View {
                     .pickerStyle(.menu)
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    // Tap: show or hide the palette. Press and hold: compact palette.
-                    Menu {
-                        Toggle("Compact Palette", systemImage: "rectangle.compress.vertical", isOn: $paletteCompact)
-                    } label: {
-                        Label(LocalizedStringKey(paletteVisible ? "Hide Tool Palette" : "Show Tool Palette"),
-                              systemImage: paletteVisible ? "pencil.tip.crop.circle.fill" : "pencil.tip.crop.circle")
-                    } primaryAction: {
-                        paletteVisible.toggle()
+                    if Platform.isMac {
+                        macToolsMenu
+                    } else {
+                        paletteToggle
                     }
-                    .help("Show or hide the tool palette; press and hold for the compact palette")
                 }
             }
             ToolbarItem(placement: .primaryAction) { favoriteButton }
