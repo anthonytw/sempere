@@ -134,6 +134,47 @@ transcription on. That transcript goes through the normal path: a blob, then
 | Mac | Menu-bar item (`StatusItemHost`, an AppKit bundle: Quick Voice Note, New Note, Open Sempere; Settings ▸ General ▸ Show in Menu Bar), File ▸ Start / Stop Voice Note (⇧⌘M, `VoiceNoteMenu`), Shortcuts and Siri; no widgets or Live Activity in the Catalyst build. Quick voice notes without unlocking work as on the iPad: sealed with the capture profile, the vault stays locked. |
 | CLI | `sempere inbox enable`, `capture`, `transcript`, `list`, `import` (`docs/cli.md`) |
 
+### Siri phrases
+
+Say "Sempere" in the phrase: Apple requires the app's name in every App
+Shortcut phrase, and a phrase without it ("record a voice note") goes to
+Apple's own apps. The Sempere phrases also have to be allowed: Siri on, Sempere's
+options on in Settings ▸ Apps ▸ Sempere ▸ Siri, and Siri left on for Sempere's
+shortcuts in the Shortcuts app (its Sempere entry, ⓘ). The exact toggle names
+change between iOS versions; check them on a device. The phrases are in `VoiceNoteShortcuts`; each English phrase has one Spanish
+phrase in `AppShortcuts.xcstrings` (`LocalizationCatalogTests` checks that every
+phrase has its Spanish one and that no two read the same).
+
+| Start (English) | Start (Spanish) |
+| --- | --- |
+| Record a Sempere voice note | Graba una nota de voz en Sempere |
+| New Sempere voice note | Nueva nota de voz en Sempere |
+| Start a Sempere voice note | Empieza una nota de voz en Sempere |
+| Sempere voice note | Nota de voz de Sempere |
+| Record in Sempere | Graba en Sempere |
+| Record with Sempere | Graba con Sempere |
+| Record voice in Sempere | Grabar voz en Sempere |
+| Record a voice note in Sempere | Grabar una nota de voz en Sempere |
+| Record a voice note with Sempere | Grabar nota de voz con Sempere |
+| Take a voice note in Sempere | Toma una nota de voz en Sempere |
+| Voice note in Sempere | Nota de voz en Sempere |
+| Start recording in Sempere | Empezar a grabar en Sempere |
+| Dictate in Sempere | Dictar en Sempere |
+| Dictate a note in Sempere | Dicta una nota en Sempere |
+
+| Stop (English) | Stop (Spanish) |
+| --- | --- |
+| Stop the Sempere voice note | Detén la nota de voz de Sempere |
+| Stop the voice note in Sempere | Para la nota de voz de Sempere |
+| Stop recording in Sempere | Detener la grabación en Sempere |
+| Stop dictating in Sempere | Dejar de dictar en Sempere |
+| Finish the Sempere voice note | Terminar la nota de voz de Sempere |
+| End the Sempere voice note | Termina la nota de voz de Sempere |
+| Stop Sempere recording | Deja de grabar en Sempere |
+
+Siri matches what it heard against these phrases with some freedom, but not
+against arbitrary wording: a phrase that is not listed may not work.
+
 The intents live in `Apps/Sempere/SempereShared/`, which both the app and
 the widget extension compile. They always run in the app's process
 (`AudioRecordingIntent`, `LiveActivityIntent`); the extension only shows
