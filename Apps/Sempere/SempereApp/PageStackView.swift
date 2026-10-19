@@ -404,10 +404,11 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
     }
 
     /// The palette was turned on (the toolbar button, Tools > Show Tool Palette): the current page's
-    /// canvas takes the first responder so the palette shows, even from a list or a field that held the
-    /// focus (`PageCanvasHost.paletteTakesFocus`). A text box being typed in keeps the keyboard.
+    /// canvas takes the first responder so the palette shows, even from a list or the sidebar that held
+    /// the focus (`PageCanvasHost.paletteTakesFocus`). A text box or a field being typed in keeps the keyboard.
     private func paletteTurnedOn() {
-        guard PageCanvasHost.paletteTakesFocus(isPhone: Platform.isPhone), window != nil else { return }
+        guard PageCanvasHost.paletteTakesFocus(isPhone: Platform.isPhone), window != nil,
+              !CanvasFocus.typingElsewhere(than: self) else { return }
         if slots.values.contains(where: { $0.host.textEditor.isEditing }) { return }
         let focused = slots.values.first { $0.host.canvas.isFirstResponder }
         guard let slot = focused ?? editor?.currentPage.flatMap({ slots[$0.id] }) else { return }

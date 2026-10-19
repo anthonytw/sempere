@@ -517,7 +517,10 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
             guard paletteVisible != oldValue else { return }
             updateToolPicker()
             // The stack gives the focus to one of its pages itself (`PageStackHost.paletteTurnedOn`).
-            if paletteVisible, !isEmbedded, Self.paletteTakesFocus(isPhone: Platform.isPhone) { reclaimFocus() }
+            if paletteVisible, !isEmbedded, Self.paletteTakesFocus(isPhone: Platform.isPhone),
+               !CanvasFocus.typingElsewhere(than: self) {
+                reclaimFocus()
+            }
         }
     }
 
@@ -525,7 +528,8 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
     /// only for the first responder, and a canvas never takes it by itself from a list or a field
     /// (`CanvasFocus`): with the note list holding the focus, the toolbar button flipped its icon and
     /// nothing came up (TestFlight 1.0.0 (6), the owner's iPad). The user asked for the palette, so the
-    /// canvas takes the focus, as a touch on it does (`reclaimFocus`). The iPhone's palette follows its
+    /// canvas takes the focus from a list or the sidebar, as a touch on it does (`reclaimFocus`); a field
+    /// being typed in keeps it (`CanvasFocus.typingElsewhere`). The iPhone's palette follows its
     /// Annotate mode, which already focuses the canvas (`PhoneCanvasMode`), so it is left alone.
     nonisolated static func paletteTakesFocus(isPhone: Bool) -> Bool { !isPhone }
 
