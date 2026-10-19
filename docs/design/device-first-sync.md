@@ -352,6 +352,19 @@ retention has passed.
 - **New:** an inbox file deleted on one side is deleted on the other only when adoption explains it.
   The derived note must exist with the recording (for a capture) or with its transcript (for a
   transcript), checked unlocked. Otherwise the file is copied back.
+- **Which vault (owner, 2026-10-19).** Voice notes from the widget, Control Center, the Action button
+  and Siri go to one chosen vault, not to the last-opened one: "last opened" would land a note in
+  whichever vault was viewed last, and works only for vaults with a capture profile on the device.
+  Settings ▸ Quick Voice Notes shows "Voice notes go to: [vault]". The default is the first vault
+  quick capture was turned on for, and the user can change it any time; changing it makes a profile
+  for the new vault at its next unlock. The Shortcuts action may take an optional vault parameter (one
+  shortcut per vault). Siri phrases and the widgets use the default.
+- **When that fails.** Delivery is a write to the in-app copy, so it only fails if the vault was
+  removed from the device or its profile is gone (a key change not yet seen here). Then the capture
+  stays in the encrypted local queue (`CaptureQueue/<vaultId>/`, as today), is never dropped, and the app
+  shows a notice: "Voice notes for <vault> are waiting. Choose where they go." The user picks another
+  vault, the queue is re-sealed to it at that vault's next unlock, or the queue is exported. Tests: the
+  default vault removed while captures are queued, and a key change between capture and delivery.
 
 ### 5.4 Deletions and thinning
 
