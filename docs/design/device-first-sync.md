@@ -18,19 +18,28 @@ Owner's decision (2026-10-19):
 > If I open a directory mounted in iCloud or wherever, that should be fine. If I also back up to
 > iCloud, so what? No restrictions on where you place your vault.
 
+Why local-first: the owner has repeatedly opened Notability to a blank screen. Here a vault always
+opens with everything it had, on any device, online or not.
+
 ## 0. Summary
 
-1. **The app reads and writes only a complete working copy** of each vault, kept in the app's own
-   container (hidden, on iOS, iPadOS and the Mac). Everything works offline, always. There are no
-   coordination calls, placeholders or download waits anywhere in the app's read and write paths.
-2. **A vault can be placed anywhere.** A folder the user picks or creates (in iCloud Drive, another
-   File Provider, a USB drive, a network share, or `~/Documents`) is a **sync target** of the working
-   copy. This is how placement works with no restrictions: the provider-specific hardening lives in the
-   folder transport, not in the app.
+1. **The app reads and writes only a complete in-app copy** of each vault, kept in the app's own
+   container (hidden) on every platform, **the Mac included**. Everything works offline, always.
+   There are no coordination calls, placeholders or download waits anywhere in the app's read and
+   write paths. **With no target, the in-app copy is the only copy**: there is no duplicate anywhere
+   unless the user adds a sync target ("Mac should have no duplicate unless you explicitly back it up
+   somewhere").
+2. **Outside folders are optional sync targets, with no restrictions on where.** A target can be a
+   folder in iCloud Drive, another File Provider, a USB drive, a network share or `~/Documents`, or a
+   WebDAV server. The provider-specific hardening lives in the folder transport, not in the app.
+   **Opening an existing vault copies it into the app** (a join), with a choice to keep syncing with
+   the folder or server it came from.
 3. **Targets are provider-neutral, and a vault can have several.** Kinds: folder (iCloud Drive, other
    providers, plain folders) and WebDAV. Every target gets the same two-way sync, status, scheduling,
    conflict handling and join flow. "Multiple backups is great": several targets per vault are
    supported from day one, and a device with two targets bridges them.
+   Several in-app vaults on one device all stay current, each with its own targets, schedule,
+   credentials, staging and status (§4.2).
 4. **One engine.** The two-way engine that `SempereWebDAV` already has moves to a new network-free
    target, `SempereSync`, and runs over an extensible `SyncRemote` protocol. WebDAV becomes one
    adapter. A folder adapter (Linux-portable, with Darwin hooks for coordination, downloads and
@@ -39,13 +48,15 @@ Owner's decision (2026-10-19):
 5. **The engine gains what parity needs**: sync of `inbox/`, `keys/` and `summaries/<device>.sealed`;
    **rewrap-replace**, so key changes propagate through any target; and a **key-change claim**, a
    device-local **secret keyring** and **late-file handling**, so that no key-change failure loses data
-   (§6).
+   (§6). A key change is routine (late files accepted for a window chosen at change time, 7 days by
+   default) or "my key may be compromised" (0 days, pushed first). New writes use the new key at once
+   in both modes.
 6. **Arrivals reuse what exists**: the engine reports changed notes into `noteFoldersChanged`, which
    drives reconcile and then `AppModel+RemoteMerge`.
 7. **iCloud and other providers get the WebDAV guarantees**: every received file is checked before it is
    placed (format.md §9.1), bad files are quarantined, and no version picker ever reaches a vault file.
 8. **No migration.** There is no version 1 yet; the owner re-imports. An existing vault folder in iCloud
-   Drive simply opens through the normal "Open Folder…" join.
+   Drive is copied in through "Open Vault…", optionally keeping that folder as a target.
 9. **Removal, revised honestly.** The app loses about 1,400 lines outright. About 900 lines of today's
    iCloud hardening are **kept and moved** into the folder transport, because placed vaults need them
    (§7). App tests: about 1,000 lines are deleted and about 800 are ported to Linux-run transport tests.
@@ -106,24 +117,28 @@ Device
      └─ per-target sync state, quarantine, staging       (outside the vault)
 ```
 
-- **Working copy.** It lives at
+- **In-app copy (the working copy).** It lives at
   `<App Group container>/Library/Application Support/Sempere/Vaults/<vaultId>/<name>.sempere`, hidden,
   on every platform. The App Group (`group.io.github.anthonytw.sempere`, already entitled) lets
   quick capture and widgets write to the inbox. Data Protection is
   `completeUntilFirstUserAuthentication` (the files are age-encrypted anyway).
-- **Placing a vault** means adding a folder target. "New Vault in Folder…", "Open Folder…" and "Add
-  Sync Target…" all create one. There are no restrictions on where the folder is. Even a plain local
-  folder on the Mac goes through a target rather than being opened in place, for two reasons. The
-  app then has one read and write path. And folders that other tools sync (Dropbox's classic folder,
-  Syncthing, an SMB share) cannot surprise the open vault.
+- **Outside copies exist only as targets.** "Keep a copy in…" when creating a vault, "Keep syncing
+  with this folder" when opening one, and "Add Sync Target…" each create a target. There are no
+  restrictions on where the folder is. The app never edits an outside folder in place, not even a
+  plain local folder on the Mac, for two reasons. The app then has one read and write path. And
+  folders that other tools sync (Dropbox's classic folder, Syncthing, an SMB share) cannot surprise
+  the open vault.
 - **Always complete.** After a join finishes, the working copy holds every revision and every blob.
   Partial-copy markers (format.md §1.2) exist only while a join is in progress (§8.2).
-- **The cost** is two copies on a device whose target is a local folder, or an iCloud folder that
-  stays downloaded. The owner accepts this ("takes up so little space").
+- **Copies on this device.** With no target there is exactly one copy, the in-app one. A second copy
+  on the device appears only if the user adds a target that is itself local: a local folder, or an
+  iCloud folder that stays downloaded. That is the backup the user asked for.
 - **CLI interop on the Mac.** The CLI keeps working directly on the placed folder. The app sees CLI
   writes through the folder target within one run (FSEvents or the presenter wakes it; §4).
-- **Format.** There is no on-disk format change. format.md gains normative text for rewrap-replace
-  (§5.2), inbox deletes (§5.3) and late files (§6). §3.3's "do them from one device while others are
+- **Format.** One additive change: the rewrap journal records the key-change mode and the late-file
+  window (§6.5). The journal is authenticated by `vault.json`'s `rewrapPending` HMAC over its bytes,
+  so a target cannot alter the policy. format.md also gains normative text for rewrap-replace (§5.2),
+  inbox deletes (§5.3) and late files (§6). §3.3's "do them from one device while others are
   idle" stays as advice, and the claim (§6.1) enforces it where targets allow.
 
 ## 3. One sync engine, many transports
@@ -252,6 +267,44 @@ the app's own writes. A cross-process `flock` covers the CLI on the same working
   unverified file.
 - Mutable files, deletions, blob GC and rewrap-replace wait for an unlocked run.
 
+### 4.2 Several vaults on one device
+
+Several in-app vaults must keep working, and **every one of them stays current**, not just the one
+that is open. Today only the open vault syncs, and a background task that finds no unlocked vault
+ends at once (docs/io.md "Background sync"). The design therefore moves scheduling out of the
+open-vault model:
+
+- **`SyncCoordinator`** (one per app) owns one `SyncSession` per (vault, target) for every in-app vault.
+  `AppModel` only tells it which vault is open, and receives that vault's arrival reports.
+- **Isolation per vault.** Everything below is keyed by the vault id, or by (vault id, target id), and
+  never shared:
+  - the sync state, quarantine and locked staging folder:
+    `<App Group>/Library/Application Support/Sempere/Sync/<vaultId>/<targetId>/`;
+  - credentials: Keychain items keyed by target id, which belongs to exactly one vault;
+  - the `VaultFileLock`, the sync lock, the backoff and the status;
+  - the secret keyring entries (§6.3) and capture profiles (already per vault).
+- **Closed and locked vaults sync too.** Without the key, their runs are locked (§4.1): local changes
+  are uploaded (for example quick captures recorded into a closed vault), and downloads are staged
+  and placed at that vault's next unlock. The library shows each vault's status ("Synced 2 min ago",
+  "12 changes waiting for unlock", or a problem).
+- **Foreground budget.** The open vault's targets run first. The other vaults run at the idle pace,
+  with at most 2 runs at once across the app and at most 1 per vault. WebDAV transports are pooled per
+  (host, credentials, pin), never shared across credentials.
+- **Background budget.** A `BGAppRefreshTask` (about 30 s) is shared out as follows:
+  - Order: vaults with local changes no target has confirmed come first, then the open vault, then
+    the vault whose last successful run is oldest.
+  - Each run gets `maxDuration = remaining time / remaining runs`, at least 5 s, and runs that do not
+    fit wait for the next task.
+  - The coordinator rotates its starting point so that no vault starves.
+  - A `BGProcessingTask` runs full passes over every vault and target in the same order until iOS
+    takes the time back. Runs are cancellable between files (`isCancelled`), so expiry stops cleanly.
+- **Failure isolation.** A run's errors, bounds and backoff belong to its (vault, target). One vault's
+  hung server, wrong password, full disk or quarantined files never delays or fails another vault.
+  Runs are bounded by `maxDuration`, and a run that throws unexpectedly only marks its own session
+  failed.
+- **Quick capture** keeps choosing its vault through the capture profile, and writes into that vault's
+  in-app inbox whether or not the vault is open.
+
 ## 5. Conflicts and safety
 
 ### 5.1 Every file
@@ -340,10 +393,10 @@ On device A, which makes the change (format.md §3.3.1, plus the new steps C0, C
 
 | Step | What happens |
 | --- | --- |
-| C0 | Preconditions. The working copy is complete; the list verifies; no journal is pending; every target synced cleanly within the last minute; A's keyring stores the current secret. |
-| C1 | **Claim** (new). Write `rewrap-journal.json` create-only (`If-None-Match: *`, or `link(2)`) to **every** target. If any target already has a journal (another device's change in flight), abort, delete A's own claims (with `If-Match`) and report. If a target is unreachable, refuse; the user can override for one target, and is warned. |
-| K1 | Write the journal locally. It holds the outgoing secret, encrypted to the new set, when the secret rotates. |
-| K2 | Write `vault.json` locally (new list, secret, tags, `secretLink`, `rewrapPending`). |
+| C0 | Preconditions. The working copy is complete; the list verifies; no journal is pending; A's keyring stores the current secret. The user has chosen the mode and the late-file window (§6.5). In **routine** mode every target must have synced cleanly within the last minute. In **compromised** mode this is not required. |
+| C1 | **Claim** (new). Write `rewrap-journal.json` create-only (`If-None-Match: *`, or `link(2)`) to **every** target. If any target already has a journal (another device's change in flight), abort, delete A's own claims (with `If-Match`) and report. If a target is unreachable, routine mode refuses (the user can override for one target, and is warned). Compromised mode proceeds, and claims that target when it comes back. |
+| K1 | Write the journal locally. It holds the outgoing secret, encrypted to the new set, when the secret rotates, plus the **mode** and the **late-file window** in days (§6.5). |
+| K2 | Write `vault.json` locally (new list, secret, tags, `secretLink`, `rewrapPending`). **From this moment every new write on A (notes, blobs, captures, settings) is encrypted to the new list and tagged under the new secret, in both modes.** |
 | K3 | Rewrap every file locally (revisions, blobs, inbox, `settings.age`, notebook records, summaries). On a removal, blobs move to new names and the old names go only when K4 completes. |
 | K4 | Clear `rewrapPending` locally and delete the local journal (only when every file is complete). |
 | C5 | **Propagate** (new ordering). Per target: (a) the journal (already there from C1) and the K2 `vault.json` with `rewrapPending`; (b) the rewritten files by rewrap-replace and the new blob names; (c) the K4 `vault.json`; (d) delete the remote journal with `If-Match`, only when A's sync state shows every file on that target is the current copy. Old blob names go later, by GC. |
@@ -369,13 +422,16 @@ On device B, which receives the change:
 | F6 | A uploads the files before `vault.json` (a bug, or a transport that reorders) | B holds the old list and sees remote copies current under a list it does not hold. Under rule 1, nothing is replaced because the `vault.json` versions differ once A's arrives; before that, B judges remote copies "not current" and does **not** push its own over them, since replacement needs exactly one current copy under a shared list | rule 1 plus rule 4: a stale list never overwrites | `filesBeforeManifest` |
 | F7 | Two devices change keys at once, and one target is unreachable at C1 | Without the override, the change is refused (C1). With it, both changes complete locally. Then `vault.json` conflicts on the shared target: a conflict copy plus a report, and **no file is replaced** (rule 1). The user picks "Keep the other change" on one device, which rewraps that device's files from its own list to the other list using its keyring (it knows both secrets), then redoes its change | a device never discards a secret it has written files under until those files are verified current under the adopted list | `concurrentChangesWithOverride` |
 | F8 | A stale device returns after the change finished (journal gone everywhere) | R1: B's keyring keeps its old secret before taking the new `vault.json` (B can confirm the rotation through `secretLink`). R3: B rewraps its own late files and uploads them. Others' stale copies on B are replaced by the current remote copies | late files are never dropped: they are rewrapped by their writer, or held (F9) | `staleDeviceReturns(days:)` |
-| F9 | Files under the old secret that A never saw arrive on a target after the change finished (written by C, offline) | If the receiving device's keyring verifies them **and** they arrive within the late-file window (7 days after the change, from the receiver's first sighting of the new `vault.json`), they are rewrapped and uploaded. Later ones are **quarantined as late files**, never deleted, and shown in "Changes from before a key change" with "Adopt" and "Export". The window exists because a removed device also knows the old secret | old-secret files are never placed silently after the window, and never deleted | `lateFilesWithinWindow`, `lateFilesAfterWindowQuarantined` |
+| F9 | Files under the old secret that A never saw arrive on a target after the change finished (written by C, offline) | If the receiving device's keyring verifies them **and** they arrive within the late-file window **recorded in the journal** (counted from the receiver's first sighting of the new `vault.json`), they are rewrapped and uploaded. The window is 7 days by default, and 0 days in compromised mode. Later ones are **quarantined as late files**, never deleted, and shown in "Changes from before a key change" with "Adopt" and "Export". The window exists because a removed device also knows the old secret | old-secret files are never placed silently after the window, and never deleted | `lateFilesWithinWindow`, `lateFilesAfterWindowQuarantined` |
 | F10 | A removed device keeps writing | It cannot tag under the new secret, so its new files either fail verification (quarantined at once) or carry the old secret's tag (late files: F9's window and quarantine). Its own working copy keeps its notes, and its UI says "This device was removed. N changes were not uploaded", with Export | a removed device's local data stays readable to it; it never reaches others silently | `removedDeviceWrites` |
 | F11 | A partial upload of one file (a cut connection) | WebDAV uploads go to a temporary name and then `MOVE` (blobs), or a conditional PUT (revisions). Folder writes use a temporary file then rename. A receiver either sees the old file or the complete new one | atomic replace on every transport; rewrap-replace re-checks both copies every run | `cutDuringReplace` (fault proxy and Memory faults) |
 | F12 | A receiver crashes while replacing a local file | `LocalFS` atomic replace leaves the old or the new complete file. The candidate is judged again next run | the same | `crashDuringLocalReplace` |
 | F13 | The vault is locked on a receiver | rewrap-replace waits; staged downloads wait; the status says "Waiting for unlock" | nothing is replaced without the key | `lockedReceiver` |
 | F14 | Blob rename on removal is interrupted | Both names exist. Lookups try the current name, then the previous one (existing). The old name is collected only by GC after the journal is gone on both sides and the retention has passed | a blob is never deleted while any copy of its note could still reference the old name | `blobRenameInterrupted` |
 | F15 | A hostile or broken target serves an older copy (an old recipient set, or a removed stanza re-added) | not current under the shared list, so it is never taken; a copy that fails verification is quarantined | rule 4; §9.1 | `hostileDowngrade`, `hostileStanzaReadd` |
+| F17 | Compromised mode: the old key (or a device holding it) is in an attacker's hands | The window is 0 days, so every file sealed or tagged under the old secret or the old capture key that arrives after the receiver sees the change is quarantined at once: never placed, never deleted, offered with Adopt and Export. The change uploads ahead of all other sync work, to every target, as targets become reachable (C1, C5 first in every run; claims retried on reachability). Old copies on a target stay readable to the old key until rewrap-replace replaces them, which the UI states | the owner keeps every byte (quarantine), the attacker's later writes never enter the vault silently, and new writes use the new key from K2 | `compromisedQuarantinesAtOnce`, `compromisedPushesFirst`, `compromisedWithTargetOffline` |
+| F18 | A stale device returns after the journal is gone everywhere, so it never saw the recorded window | It falls back to the **strictest** policy (0 days) for other devices' late files: quarantine, Adopt or Export. Its own late files are still rewrapped (R3) | an unknown policy never widens acceptance | `policyUnknownDefaultsStrict` |
+| F19 | Devices see the journal at different times and so start their windows differently | Decisions may differ by device, but a file accepted anywhere is rewrapped and uploaded as current, and current copies are taken everywhere (§5.2). A file quarantined on one device and accepted on another converges to the current copy. The quarantined original stays until Adopt or Export | acceptance is monotone (a current copy wins) and quarantine never deletes | `windowDecisionsConverge` |
 | F16 | A provider forks `vault.json` (iCloud conflict versions) during a change | the transport presents both versions; the engine treats it as a `vault.json` conflict (F7) unless the versions differ only in label | no blind pick, ever | `providerForksManifest` (EvictingFolderRemote) |
 
 ### 6.3 New mechanisms this requires
@@ -388,7 +444,8 @@ On device B, which receives the change:
 - **Claims** (C1), with create-only writes on every target.
 - **No upload of refused journals** (F2), and **remote journal delete only when the target is
   confirmed current** (C5(d)).
-- **The late-file window** and the quarantine view (F9).
+- **The late-file window and the mode**, recorded in the journal and copied into each device's keyring
+  entry when it first sees the change, plus the quarantine view (F9, F17 to F19).
 - **The app guard against forgetting the outgoing identity** while a replace is pending (F4).
 
 ### 6.4 Fault injection (the P4a gate)
@@ -396,7 +453,7 @@ On device B, which receives the change:
 - **`RewrapFaults`** (core, test-only injection): it fails or crashes (simulated by abandoning the
   `Vault` mid-operation) after C1, after K1, after K2, after file n of K3, and before K4. The engine
   gets the same hooks for C5(a) to C5(d) and for local replaces.
-- **`KeyChangeScenarioTests`**: one test per row F1 to F16 above, over `MemoryRemote` and the
+- **`KeyChangeScenarioTests`**: one test per row F1 to F19 above, over `MemoryRemote` and the
   WebDAV mock. F11 also runs against wsgidav behind `dav-fault-proxy.py` (rules that cut the `MOVE` and
   PUT bodies). F16 runs over `EvictingFolderRemote`.
 - **`KeyChangeInterleavingTests`** (property test, seeded, in `scripts/sync-stress.sh`): 3 devices and
@@ -411,8 +468,32 @@ On device B, which receives the change:
   - **I4, revocation.** After convergence and GC retention, no file in any working copy or target
     (excluding provider version history and the quarantine) has a stanza for a removed recipient.
   - **I5, liveness.** Every pending journal is finished or reported within a bounded number of runs.
+  - **I6, policy.** No file tagged under an old secret is placed by a device after that device's
+    recorded window has passed (0 in compromised mode), and none is ever deleted from quarantine
+    without Adopt or Export.
 - **Gate:** P4 and P10 merge only when these suites are green, the sync-stress run passes with 60 or
   more seeds, and a security review of §5.2 and §6 has signed off.
+
+### 6.5 Key-change modes and the late-file window
+
+The user picks the mode in the key-change sheet:
+
+| | Routine (default) | My key may be compromised |
+| --- | --- | --- |
+| Late-file window | chosen in the sheet, **7 days** by default | **0 days**: applied immediately |
+| Preconditions | every target synced within the last minute; an unreachable target refuses (override per target) | none; unreachable targets are claimed and updated when they come back |
+| Late files from other devices | rewrapped and uploaded within the window, quarantined after it | quarantined at once (never deleted; Adopt or Export) |
+| Propagation | normal scheduling | ahead of all other sync work, on every target, retried on reachability |
+| New writes on this device | under the new key from K2 | under the new key from K2 |
+| Suggested change | add, remove or replace a device | remove or replace the suspect device's key (rotation) |
+
+- The journal records `mode` and `lateFileWindowDays`. They are bound by `rewrapPending`, so every
+  device applies the same policy and a target cannot change it.
+- Each device copies the policy into its keyring entry when it first sees the change, so the policy
+  survives the journal's deletion on that device. A device that never saw it uses 0 (F18).
+- format.md §3.3.1 gains the two journal fields, with absent meaning routine and 7 days. This is an
+  additive field; pre-1.0, so no compatibility concern.
+
 
 ## 7. What gets deleted, what stays (revised for placed vaults)
 
@@ -455,8 +536,15 @@ they are not.
 
 - **New Vault**: a name, then "Keep a copy in: None / iCloud Drive / A Folder… / WebDAV Server…".
   iCloud Drive defaults to `iCloud Drive/Sempere/<name>.sempere`.
-- **Open Folder…** and **Connect to WebDAV…** (welcome screen): join a vault that already exists (§8.2).
-  An existing iCloud vault from earlier builds opens this way; there is no migration.
+- **Open Vault…** (welcome screen and File menu) **copies an existing vault into the app**. The user
+  picks a vault folder (an export, a backup, a folder in iCloud Drive or another provider, a USB
+  drive) or connects to a WebDAV server. The sheet says "Sempere will copy this vault onto this
+  device" and offers **"Keep syncing with this folder"** (or "with this server"):
+  - On, the default for iCloud Drive, provider folders and WebDAV: the source becomes a target, and
+    the copy is a join (§8.2).
+  - Off, the default for local folders such as an export or a backup: a one-time import. The source is
+    never written, and the in-app copy is the only copy from then on.
+  An existing iCloud vault from earlier builds is opened this way; there is no migration.
 - **Vault ▸ Sync Targets…**: lists every target with its status. "Add Target…" accepts any number of
   targets; adding one to a vault with content uploads it (a union, which is also how islands merge).
   "Remove" never deletes anything remote.
@@ -500,10 +588,11 @@ The menu has Sync Now, Show Details (per target: the last report), Sync Targets�
 | Engine over every transport | today's sync suites, parameterized over Memory, the WebDAV mock and Evicting-folder | `swift test` |
 | Placed vaults | the §3.3 hazards over `EvictingFolderRemote`: eviction mid-run, unlisted folders, orphans, forks of every mutable file, a foreign writer, stale bookmarks | `swift test` |
 | New rules | rewrap-replace, inbox deletes, `keys/` and `summaries/`, and fuzz targets for the new readers | `swift test` |
-| Key changes | §6.4: `RewrapFaults`, `KeyChangeScenarioTests` (F1 to F16), `KeyChangeInterleavingTests` | `swift test`, sync-stress |
+| Key changes | §6.4: `RewrapFaults`, `KeyChangeScenarioTests` (F1 to F19), `KeyChangeInterleavingTests` | `swift test`, sync-stress |
 | Multi-device | `TwoDeviceStressTests` generalized to N devices and mixed and multiple targets (bridges included) | `swift test`, `scripts/sync-stress.sh` |
 | Real server | wsgidav + `dav-fault-proxy.py`, `SyncFaultProxyTests`, `SyncTimingTests`, two-way app-shaped runs | CI `webdav` job, sync-stress |
 | App | `SyncSession` scheduling with a fake clock; RemoteMerge fed by engine reports; two working copies through one remote; the outgoing-identity guard (F4) | Mac Catalyst unit tests (PR gate) |
+| Several vaults | `MultiVaultSyncTests`: two vaults with different targets (folder and WebDAV mock) synced in one background run; one vault's failing target (a 503 loop, a wrong password, a hung server bounded by `maxDuration`) does not delay or fail the other; budget fairness over N vaults (no starvation across rotating tasks); credentials and pins never cross vaults; locked staging per vault, placed only at that vault's unlock; per-vault status. Arrival reports reach only the open vault's model | Mac Catalyst unit tests, plus the coordinator logic on Linux |
 | Darwin hooks | `UbiquitousFolderHooks` on a local folder (coordination as a no-op) and `NSFileVersion` on a local file | `swift test` on macOS |
 
 **Device checks that remain for the owner:**
@@ -513,7 +602,9 @@ The menu has Sync Now, Show Details (per target: the last report), Sync Targets�
 3. Background refresh timing.
 4. A Lock Screen capture adopted on another device.
 5. WebDAV on cellular, as a second target of the same vault (the bridge).
-6. A device key change with one device offline that comes back a day later.
+6. A device key change with one device offline that comes back a day later, in both modes.
+7. Two vaults on one iPad with different targets: change both on other devices, lock the iPad, and
+   check that both are current after background time.
 
 ## 10. Phased plan
 
@@ -524,14 +615,14 @@ Sizes: S < 300 changed lines, M 300 to 1,000, L > 1,000 (moved lines count once)
 | P1 | `SempereSync`: move the engine, add `SyncRemote` and the WebDAV adapter, renames; no behavior change | L (moves) | — | a hidden behavior change. Mitigation: the move and rename commits are separate | **next build** (invisible) |
 | P2 | `MemoryRemote`, the conformance suite, engine suites over transports, N-device stress | M | P1 | — | **next build** (tests) |
 | P3 | `FolderRemote` + `EvictingFolderRemote` + eviction tolerance + `UbiquitousFolderHooks` (moving `CloudScan`, `CloudConflicts`, `CloudChanges`, `StorageLocation` logic) + `sempere sync folder` | L | P2 | eviction misjudged as absence. Mitigation: availability is checked before every judgment; property tests | **next build** (CLI only) |
-| P4a | **Key-change safety gate**: `RewrapFaults`, keyring, claims, journal-upload rule, late-file window and quarantine, and the §6.4 suites (written first, against P4's rules) | L | P2 | — | — |
+| P4a | **Key-change safety gate**: `RewrapFaults`, keyring, claims, journal-upload rule, the two modes with the window recorded in the journal (format.md §3.3.1), late-file quarantine, and the §6.4 suites (written first, against P4's rules) | L | P2 | — | — |
 | P4 | Engine parity: `keys/`, `inbox/`, `summaries/<device>`, rewrap-replace; format.md text; security review | L | P1, P4a | security-sensitive. Mitigation: the gate | after the gate |
-| P5 | App: working copy store + `SyncSession` + two-way WebDAV (no push-only; Download Again becomes Sync Now; the status model; arrivals into RemoteMerge; settings merged locally). Old WebDAV copies are not carried over | M to L | P1, P4 | first two-way writes into an open vault. Mitigation: `VaultFileLock`, two-device app tests | the build after next |
-| P6 | App: folder targets (iCloud Drive and any folder), multiple targets per vault, New Vault / Open Folder / Add Target, the App Group root, quick capture to the local inbox | M | P3, P5 | provider behavior. Mitigation: owner checks 1, 2 and 5 | — |
+| P5 | App: in-app vault store + `SyncCoordinator` (every in-app vault, isolated per vault, §4.2) + `SyncSession` + two-way WebDAV (no push-only; Download Again becomes Sync Now; the status model; arrivals into RemoteMerge; settings merged locally). Old WebDAV copies are not carried over | M to L | P1, P4 | first two-way writes into an open vault. Mitigation: `VaultFileLock`, two-device app tests | the build after next |
+| P6 | App: folder targets (iCloud Drive and any folder), multiple targets per vault, New Vault / Open Vault… (copy in, optionally keep syncing) / Add Target, the App Group root, quick capture to the local inbox | M | P3, P5 | provider behavior. Mitigation: owner checks 1, 2 and 5 | — |
 | P7 | Delete in-place reading and `WebDAVFetcher` and their tests; port the hazard tests; rewrite docs/io.md and the CLAUDE.md gotchas | M (mostly deletions) | P6 | removing a path still used. Mitigation: `isCloudVault` reaching zero | — |
-| P8 | BGAppRefresh and BGProcessing for every target, reachability, locked staging | M | P5 | iOS timing. Mitigation: owner check 3 | — |
+| P8 | BGAppRefresh and BGProcessing for every vault and target with the shared budget (§4.2), reachability, locked staging per vault | M | P5 | iOS timing. Mitigation: owner check 3 | — |
 | P9 | UI: details, Storage, Repair (including late files), the devices-per-target view | M | P5, P6 | — | — |
-| P10 | Key changes for synced vaults in the app; delete `requireLocalKeyChanges`; outgoing-identity guard | S to M | P4a, P4, P5 | covered by the gate | — |
+| P10 | Key changes for synced vaults in the app (mode and window in the sheet, Adopt or Export for late files); delete `requireLocalKeyChanges`; outgoing-identity guard | S to M | P4a, P4, P5 | covered by the gate | — |
 
 Critical path: P1 → P2 → P4a → P4 → P5 → P6 → P7. P3 runs alongside P4a. P8, P9 and P10 can run in
 parallel after P5. Removing migration made P5 and P6 smaller (about 1 session less); the gate adds about
@@ -541,18 +632,19 @@ parallel after P5. Removing migration made P5 and P6 smaller (about 1 session le
 
 | # | Question | Decision or recommendation |
 | --- | --- | --- |
-| Q1 | Where does the vault live on iOS? | **Decided:** hidden in the app's container; folders are sync targets ("least friction") |
+| Q1 | Where does the vault live? | **Decided:** hidden in the app's container on every platform, the Mac included. Outside folders are optional sync targets; with none, the in-app copy is the only copy |
 | Q2 | Several targets per vault? | **Decided:** yes, in the engine, model and UI ("multiple backups is great") |
 | Q3 | Download every attachment? | **Decided:** yes, always |
 | Q4 | Locked background downloads: place or stage? | Recommended: **stage** until unlock (§4.1) |
-| Q5 | Migrate existing vaults? | **Decided:** no migration. The owner re-imports, and old in-place vaults are not supported. An existing vault folder opens as a target through Open Folder… |
+| Q5 | Migrate existing vaults? | **Decided:** no migration. The owner re-imports, and old in-place vaults are not supported. "Open Vault…" copies any existing vault folder in, optionally keeping it as a target |
 | Q6 | Restrictions on where a vault is placed? | **Decided:** none. Any folder works; provider correctness is the folder transport's job (§3.3) |
 | Q7 | Evict a provider folder's copy after upload to save space? | Recommended: no for now; measure first |
 | Q8 | Record each device's targets in the vault to detect islands? | Recommended: no format change; show devices per target |
 | Q9 | A push-only mirror target in the app? | Recommended: the CLI only, until the web viewer ships |
 | Q10 | Key changes while other devices are offline? | **Decided:** allowed, subject to the §6 review and its gate (P4a) |
 | Q11 | Other providers? | **Decided:** "Other Folder…" for now, with the protocol extensible (§3.4) |
-| Q12 (new) | How long is the late-file window (§6.2 F9)? | Recommended: **7 days**, then quarantine with Adopt and Export (never delete) |
+| Q12 | How long is the late-file window? | **Decided:** chosen at key-change time, 7 days by default, recorded in the journal. "My key may be compromised" means 0 days and priority propagation (§6.5). Late files are quarantined, never deleted |
+| Q13 | Several vaults on one device? | **Decided:** all of them stay current, each isolated (§4.2) |
 
 ## 12. Alternatives considered
 
