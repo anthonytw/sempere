@@ -464,11 +464,13 @@ struct EditorView: View {
                 Button("Previous Page", systemImage: "chevron.up") { editor.selectPage(editor.pageIndex - 1) }
                     .disabled(editor.pageIndex == 0)
                     .help("Previous page (⌘[)")
-                pageCounter
+                // Never squeezed: a narrow window's toolbar truncated "1 / 1" (PseudoLanguageLayoutTests).
+                pageCounter.fixedSize()
                 Button("Next Page", systemImage: "chevron.down") { editor.selectPage(editor.pageIndex + 1) }
                     .disabled(editor.pageIndex + 1 >= editor.pages.count)
                     .help("Next page (⌘])")
             }
+            .fixedSize()
         case .addPage:
             // Tap: a page after this one. Press and hold: the other page actions.
             Menu {

@@ -270,14 +270,14 @@ struct PencilAnnotatesTests {
         host.onPencilAnnotate = { annotate += 1 }
         host.paletteVisible = false
         host.pencilAnnotates = true
-        #expect(host.canvas.drawingGestureRecognizer.isEnabled, "the Pencil can start a stroke while reading")
+        #expect(host.drawsInk, "the Pencil can start a stroke while reading")
         #expect(!host.itemSelection.canPick(), "reading: a tap or hold on an item picks nothing")
         if NoteDevice.current == .pad { #expect(host.canvas.drawingPolicy == .pencilOnly, "only the Pencil: a finger scrolls") }
         host.inkBegan()   // PencilKit: canvasViewDidBeginUsingTool
         #expect(annotate == 1, "the stroke's start asks for Annotate")
         host.pencilAnnotates = false   // the note is annotating now
         host.paletteVisible = true
-        #expect(host.canvas.drawingGestureRecognizer.isEnabled, "the stroke goes on: drawing never went off")
+        #expect(host.drawsInk, "the stroke goes on: drawing never went off")
         #expect(host.itemSelection.canPick(), "annotating: items can be picked while drawing")
         host.inkEnded()
         if NoteDevice.current == .pad { #expect(host.canvas.drawingPolicy != .pencilOnly || PageCanvasHost.debugPencilOnly) }
@@ -294,7 +294,7 @@ struct PencilAnnotatesTests {
         host.pencilAnnotates = true
         host.itemSelectionActive = true
         #expect(host.itemSelection.isActive, "fingers select")
-        #expect(host.canvas.drawingGestureRecognizer.isEnabled, "the Pencil draws")
+        #expect(host.drawsInk, "the Pencil draws")
         #expect(!ItemSelectionController.selectionTouchTypes(pencilDraws: true).contains(NSNumber(value: UITouch.TouchType.pencil.rawValue)))
         #expect(ItemSelectionController.selectionTouchTypes(pencilDraws: false).contains(NSNumber(value: UITouch.TouchType.pencil.rawValue)))
         #expect(host.itemSelection.pencilDraws)
@@ -303,7 +303,7 @@ struct PencilAnnotatesTests {
         host.inkEnded()
         // The iPhone's and the Mac's Hand: nothing draws.
         host.pencilAnnotates = false
-        #expect(!host.canvas.drawingGestureRecognizer.isEnabled)
+        #expect(!host.drawsInk)
         #expect(!host.itemSelection.pencilDraws)
         host.itemSelectionActive = false
     }
@@ -315,7 +315,7 @@ struct PencilAnnotatesTests {
         host.onPencilAnnotate = { annotate += 1 }
         host.isReadOnly = true
         host.pencilAnnotates = true
-        #expect(!host.canvas.drawingGestureRecognizer.isEnabled)
+        #expect(!host.drawsInk)
         host.inkBegan()
         #expect(annotate == 0)
         host.inkEnded()
