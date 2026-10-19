@@ -2,7 +2,10 @@
   "schemaVersion": 1,
   "keys": [
     "appearance.icon",
+    "appearance.notePages",
+    "appearance.theme",
     "backup.reminderDays",
+    "drag.format",
     "editor.compactPalette",
     "editor.defaultLayout",
     "editor.defaultPaper",
