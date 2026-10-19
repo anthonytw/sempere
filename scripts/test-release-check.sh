@@ -41,7 +41,9 @@ expect() {
 }
 
 fresh; expect "the committed tree passes" ok "release-check: ok"
-"$check" --root "$tmp/root" --list | grep -q $'^FileTimestamp\tSources/Sempere/FileIO.swift:' \
+# Captured first: `grep -q` stops reading at the first match, and the check then dies of a broken pipe.
+listing="$("$check" --root "$tmp/root" --list)"
+grep -q $'^FileTimestamp\tSources/Sempere/FileIO.swift:' <<<"$listing" \
   && { pass=$((pass + 1)); echo "ok   --list names file:line"; } \
   || { fail=$((fail + 1)); echo "FAIL --list names file:line"; }
 
