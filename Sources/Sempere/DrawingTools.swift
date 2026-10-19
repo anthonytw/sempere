@@ -202,7 +202,8 @@ public struct DrawingToolState: Hashable, Sendable {
         Self.nearestIndex(of: settings(for: ink).width, in: Self.widthPresets(for: ink))
     }
 
-    static func nearestIndex(of value: Double, in presets: [Double]) -> Int {
+    /// The index of the preset nearest to `value` (0 for no presets).
+    public static func nearestIndex(of value: Double, in presets: [Double]) -> Int {
         presets.indices.min { abs(presets[$0] - value) < abs(presets[$1] - value) } ?? 0
     }
 

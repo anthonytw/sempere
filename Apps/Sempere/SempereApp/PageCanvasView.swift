@@ -4,16 +4,15 @@ import PencilKit
 import SwiftUI
 import UIKit
 
-/// One page of a note on a `PKCanvasView`, with the system tool picker and
-/// the paper underneath. Fits the page width; pinch zooms up to 4x.
+/// One page of a note on a `PKCanvasView`, drawing with the palette's tool
+/// (`DrawingToolbox`), with the paper underneath. Fits the page width; pinch zooms up to 4x.
 struct PageCanvasView: UIViewRepresentable {
     let editor: NoteEditor
     let pageID: UUID
     let paper: Paper
     let pageSize: PageSize
-    /// The tool palette's shown/compact state (`ToolPalette`).
+    /// The palette is up (Annotate): the canvas's debug report says so.
     var paletteVisible = true
-    var paletteCompact = false
     /// What the note's mode lets the canvas do on this device (`NoteModeInput`).
     var input = NoteModeInput()
     /// `NoteEditor.canvasGeneration`: a change reloads the drawing even when
@@ -61,7 +60,6 @@ struct PageCanvasView: UIViewRepresentable {
             case .none: break
             }
         }
-        host.paletteCompact = paletteCompact
         host.paletteVisible = paletteVisible
         c.apply(editor: editor, pageID: pageID,
                 content: PageCanvasContent(paper: paper, pageSize: pageSize, generation: generation,
@@ -268,7 +266,6 @@ struct PageCanvasView: UIViewRepresentable {
         }
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
-            if let type = EraserPreference.eraserType(of: canvasView.tool) { EraserPreference.save(type) }
             guard !isLoading, let editor, let pageID else { return }
             let interval = Perf.begin(.inkChange)
             let change = editor.drawingDidChange(pageID: pageID, drawing: canvasView.drawing, tool: canvasView.tool)
@@ -312,8 +309,7 @@ struct PageCanvasView: UIViewRepresentable {
 
         /// A stroke starts: the canvas (a page of the stack, or the one-page
         /// canvas, which takes the focus by itself only when nothing else holds
-        /// the keyboard, `CanvasFocus`) takes the focus, so undo and the
-        /// palette act on it.
+        /// the keyboard, `CanvasFocus`) takes the focus, so undo acts on it.
         func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) {
             usingTool = true
             host?.itemSelection.gestureStarted(stroke: true)   // writing on the page: no menu stays over it
@@ -345,7 +341,7 @@ struct PageCanvasContent {
 }
 
 /// UIKit side of `PageCanvasView`.
-final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDelegate, UIDropInteractionDelegate {
+final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteractionDelegate {
     let canvas = PKCanvasView()
     /// The paper; drawn dark with Note Pages ▸ Dark (`PageCanvasHost+Appearance`).
     let paperView = PaperView()
@@ -491,12 +487,12 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
     private let highlightView = UIView()
     private(set) var highlights: [HighlightBox] = []
     private var pendingReveal: Recognition.Box?
-    /// Starts with the last-used eraser mode, the object eraser by default.
-    /// A page of the paged stack shares the stack's picker (`init(frame:sharedPicker:)`).
-    private(set) var toolPicker: PKToolPicker
+    /// The palette's tool state, shared by every canvas (`DrawingToolbox.shared`; tests pass their own):
+    /// the canvas draws with its `pkTool` and follows its changes.
+    let toolbox: DrawingToolbox
     /// One page of a paged note's stack (`PageStackHost`): the stack scrolls
     /// and zooms, this canvas shows the whole page at the stack's scale and
-    /// never scrolls itself; it has its own undo, and the stack's picker.
+    /// never scrolls itself; it has its own undo.
     let isEmbedded: Bool
     /// The page's undo steps (embedded only): pages of the stack never undo each other's ink.
     private let pageUndo = UndoManager()
@@ -525,36 +521,20 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
     }
     var footerAction: (() -> Void)?
 
-    /// The palette is shown (the toolbar button) unless the note is read-only.
+    /// The palette is up (Annotate, `DrawingPaletteView`). The palette is a view of the note, not
+    /// PencilKit's, so it needs no first responder: only the debug report reads this.
     var paletteVisible = true {
         didSet {
-            guard paletteVisible != oldValue else { return }
-            updateToolPicker()
-            // The stack gives the focus to one of its pages itself (`PageStackHost.paletteTurnedOn`).
-            if paletteVisible, !isEmbedded, Self.paletteTakesFocus(isPhone: Platform.isPhone) {
-                if !CanvasFocus.typingElsewhere(than: self) { reclaimFocus() }
-                // Annotate's other flags (`drawingSuspended`, a Mac reading) arrive after the palette's: again then.
-                DispatchQueue.main.async { [weak self] in
-                    guard let self, self.paletteVisible, !self.canvas.isFirstResponder,
-                          !CanvasFocus.typingElsewhere(than: self) else { return }
-                    self.reclaimFocus()
-                }
-            }
+            #if DEBUG
+            if paletteVisible != oldValue { itemSelection.debugRefreshReport() }
+            #endif
         }
     }
 
-    /// Whether turning the palette on gives the canvas the first responder. PencilKit shows the palette
-    /// only for the first responder, and a canvas never takes it by itself from a list or a field
-    /// (`CanvasFocus`): with the note list holding the focus, the toolbar button flipped its icon and
-    /// nothing came up (TestFlight 1.0.0 (6), the owner's iPad). The user asked for the palette, so the
-    /// canvas takes the focus from a list or the sidebar, as a touch on it does (`reclaimFocus`); a field
-    /// being typed in keeps it (`CanvasFocus.typingElsewhere`). The iPhone's palette follows its
-    /// Annotate mode, which already focuses the canvas (`PhoneCanvasMode`), so it is left alone.
-    nonisolated static func paletteTakesFocus(isPhone: Bool) -> Bool { !isPhone }
-
-    /// The palette is the short one: pen, marker, eraser, lasso.
-    var paletteCompact = ToolPalette.isCompact() {
-        didSet { if paletteCompact != oldValue { rebuildToolPicker() } }
+    /// PencilKit's ruler may show on this canvas when the palette's ruler is on: the one-page canvas,
+    /// and of a paged stack only the page with the focus (`PageStackHost.placeRuler`), never one per page.
+    var rulerHere = true {
+        didSet { if rulerHere != oldValue { applyTool() } }
     }
 
     /// Nothing draws (an iPhone or a Mac reading, `NoteModeInput.drawingSuspended`): fingers and the
@@ -562,8 +542,7 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
     var drawingSuspended = false {
         didSet {
             guard drawingSuspended != oldValue else { return }
-            updateEraser()
-            updateToolPicker()
+            refreshInput()
         }
     }
 
@@ -598,8 +577,7 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
     var isReadOnly = false {
         didSet {
             guard isReadOnly != oldValue else { return }
-            updateEraser()
-            updateToolPicker()
+            refreshInput()
         }
     }
 
@@ -630,17 +608,14 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         paperView.setVisible(canvas.bounds)
     }
 
-    override init(frame: CGRect) {
-        toolPicker = ToolPalette.makePicker(compact: ToolPalette.isCompact())
-        isEmbedded = false
-        super.init(frame: frame)
-        setUp()
+    override convenience init(frame: CGRect) {
+        self.init(frame: frame, embedded: false)
     }
 
-    /// A page of the paged stack, with the stack's tool picker.
-    init(frame: CGRect, sharedPicker: PKToolPicker) {
-        toolPicker = sharedPicker
-        isEmbedded = true
+    /// `embedded`: a page of the paged stack.
+    init(frame: CGRect, embedded: Bool, toolbox: DrawingToolbox = .shared) {
+        self.toolbox = toolbox
+        isEmbedded = embedded
         super.init(frame: frame)
         setUp()
     }
@@ -678,9 +653,10 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         addSubview(spinner)
         NSLayoutConstraint.activate([spinner.centerXAnchor.constraint(equalTo: centerXAnchor),
                                      spinner.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 16)])
-        toolPicker.addObserver(canvas)
-        toolPicker.addObserver(self)
-        toolPicker.colorUserInterfaceStyle = .light
+        // The palette's tool, now and whenever it changes (`DrawingToolbox`).
+        canvas.tool = toolbox.pkTool
+        NotificationCenter.default.addObserver(self, selector: #selector(toolsChanged(_:)),
+                                               name: DrawingToolbox.didChange, object: toolbox)
         observePageAppearance()
         objectEraser.attach(to: self, canvas: canvas)
         objectEraser.onBegin = { [weak self] in self?.inkBegan() }
@@ -707,7 +683,7 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         itemSelection.debugEmoji = { [weak self] in self?.textEditor.emojiSummary ?? "0,0" }
         itemSelection.debugPalette = { [weak self] in
             guard let self else { return false }
-            return self.canvas.isFirstResponder && self.toolPicker.isVisible
+            return self.canvas.isFirstResponder && self.paletteVisible && !self.drawingSuspended && !self.isReadOnly
         }
         textEditor.onTextChanged = { [weak self] in self?.itemSelection.debugRefreshReport() }
         #endif
@@ -721,7 +697,7 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
             guard let self else { return false }
             return self.drawingEditable && !self.pencilAnnotates
         }
-        itemSelection.canFingerPick = { [weak self] in !(self?.toolPicker.selectedToolItem is PKToolPickerEraserItem) }
+        itemSelection.canFingerPick = { [weak self] in self?.toolbox.state.tool != .eraser }
         itemSelection.onPick = { [weak self] in self?.transientSelection = true }
         itemSelection.onCleared = { [weak self] in
             guard let self, self.transientSelection, !self.textEditor.isEditing else { return }
@@ -782,24 +758,23 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         canvas.becomeFirstResponder()
     }
 
-    /// A touch on the canvas (a stroke, a tap, a click) brings its palette
-    /// back: once something else took the first responder (the sidebar, a
-    /// list, a field), drawing or tapping the page must restore the tools
-    /// (TestFlight 1.0.0: the palette went when the sidebar took the focus,
-    /// and drawing did not bring it back). The user touched the canvas, so
+    /// A touch on the canvas (a stroke, a tap, a click) takes the focus back
+    /// (its undo, its keys): once something else took the first responder
+    /// (the sidebar, a list, a field), drawing or tapping the page must
+    /// restore it (TestFlight 1.0.0: PencilKit's palette went when the sidebar
+    /// took the focus, and drawing did not bring it back). The user touched the canvas, so
     /// this is the user's focus, not the canvas taking it by itself
     /// (`CanvasFocus`); a text box being typed in keeps the keyboard.
     ///
     /// Also, while PencilKit's drawing is off, a recognizer of its own made or turned on since
-    /// (PencilKit sets up its selection views when the canvas's tool becomes the lasso, which the
-    /// picker may tell it after `updateEraser` ran) is turned off before the press is handed to the
+    /// (PencilKit sets up its selection views when the canvas's tool becomes the lasso) is turned off before the press is handed to the
     /// recognizers.
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         let hit = super.hitTest(point, with: event)
         if hit != nil, event?.type == .touches, !canvas.drawingGestureRecognizer.isEnabled {
             setPencilKitGestures(enabled: false)
         }
-        if hit != nil, event?.type == .touches, !reclaimScheduled, !paletteShowing {
+        if hit != nil, event?.type == .touches, !reclaimScheduled, !canvas.isFirstResponder {
             reclaimScheduled = true
             // After the touch is delivered: becoming first responder in the middle of hit-testing is not safe.
             DispatchQueue.main.async { [weak self] in
@@ -812,15 +787,9 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
 
     private var reclaimScheduled = false
 
-    /// Whether this canvas has the focus and its palette is up (or the palette is meant to be hidden).
-    var paletteShowing: Bool {
-        canvas.isFirstResponder && (toolPicker.isVisible || !paletteVisible)
-    }
-
-    /// Takes the first responder and shows the palette for it (a touch on the canvas).
+    /// Takes the first responder (a touch on the canvas).
     func reclaimFocus() {
         guard window != nil, !isReadOnly, !drawingSuspended, !textEditor.isEditing else { return }
-        toolPicker.setVisible(paletteVisible, forFirstResponder: canvas)
         if !canvas.isFirstResponder { canvas.becomeFirstResponder() }
         #if DEBUG
         itemSelection.trace("r")
@@ -845,11 +814,29 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         return view
     }
 
-    /// The selected tool changed outside the picker's own UI (a menu command):
-    /// the object eraser and the pointer follow it.
-    func toolDidChange() {
+    /// The palette's state changed (`DrawingToolbox.didChange`): the canvas draws with its tool.
+    @objc private func toolsChanged(_ note: Notification) {
+        applyTool()
+    }
+
+    /// Sets PencilKit's tool and ruler from the palette; the object eraser, the pointer ink and the
+    /// pointer's shape follow.
+    func applyTool() {
+        canvas.tool = toolbox.pkTool
+        let ruler = toolbox.state.rulerActive && rulerHere && !isReadOnly
+        if canvas.isRulerActive != ruler { canvas.isRulerActive = ruler }
         updateEraser()
         cursorInteraction?.invalidate()
+    }
+
+    /// A tool was picked (the palette, a menu, the Pencil) for drawing on this canvas: selection mode,
+    /// the text tool, the math lasso and a selection picked while drawing end.
+    func toolPicked() {
+        if itemSelectionActive { onItemSelectionEnded?() }   // picking a tool is picking drawing
+        if textToolActive { onTextToolEnded?(.toolPicked) }
+        if mathLassoHandler != nil { onMathLassoEnded?() }
+        endTransientSelection()
+        applyTool()
     }
     /// A circle the size of the ink tool's stroke at the current zoom, so the
     /// pointer shows where a mouse stroke lands. The object eraser draws its
@@ -906,20 +893,6 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         dropHandler?(session.items.map(\.itemProvider), CGPoint(x: p.x / z, y: p.y / z))
     }
 
-    /// Remembers the eraser mode the user picks, for the next canvas, and
-    /// hands the object eraser to `ObjectEraserController`.
-    func toolPickerSelectedToolItemDidChange(_ toolPicker: PKToolPicker) {
-        if let eraser = toolPicker.selectedToolItem as? PKToolPickerEraserItem {
-            EraserPreference.save(eraser.eraserTool.eraserType)
-        }
-        if itemSelectionActive { onItemSelectionEnded?() }   // picking a tool is picking drawing
-        if textToolActive { onTextToolEnded?(.toolPicked) }
-        if mathLassoHandler != nil { onMathLassoEnded?() }
-        endTransientSelection()
-        updateEraser()
-        cursorInteraction?.invalidate()
-    }
-
     @objc private func inkTapped(_ g: UITapGestureRecognizer) {
         let z = max(canvas.zoomScale, 0.01)
         let p = g.location(in: canvas)
@@ -960,14 +933,9 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         }
     }
 
-    /// PencilKit's ruler snaps only its own strokes: while it shows, PencilKit draws the pointer.
-    func toolPickerIsRulerActiveDidChange(_ toolPicker: PKToolPicker) {
-        updateEraser()
-    }
-
-    /// Whether the picker's selected tool is the object eraser.
+    /// Whether the palette's tool is the object eraser.
     var objectEraserSelected: Bool {
-        (toolPicker.selectedToolItem as? PKToolPickerEraserItem)?.eraserTool.eraserType == .vector
+        toolbox.state.tool == .eraser && toolbox.state.eraserMode == .object
     }
 
     /// Whether the canvas draws now: nothing selects, types or plays, and the note can be edited.
@@ -989,7 +957,7 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         if Platform.isMac { smoothingLevel = MouseSmoothing.load() }
         let pointer = !ours && MouseSmoothing.takesPointer(
             isMac: Platform.isMac, level: smoothingLevel, editable: editable,
-            inkingTool: toolPicker.selectedToolItem is PKToolPickerInkingItem, rulerActive: canvas.isRulerActive)
+            inkingTool: toolbox.state.tool.isInk, rulerActive: canvas.isRulerActive)
         mouseInk.setActive(pointer)
         let lasso = mathLassoHandler != nil && !isReadOnly && !isPreparing && !drawingSuspended
         mathLasso.setActive(lasso)
@@ -1022,11 +990,10 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
     ///
     /// PencilKit sets its scroll's `minimumNumberOfTouches` itself, to 2 whenever the policy lets a finger
     /// draw (`-[PKTiledView updateForAllowedDrawingInput]`), and runs that again on its own: when its tiled
-    /// view moves to a window, and when the tool picker's visibility changes
-    /// (`-[PKTiledView _updateForToolPickerVisibilityChange:]`, a notification that arrives with the
-    /// palette's hide animation, about 0.8 s after Annotate goes off). With `.anyInput` kept in reading
-    /// mode, that put the pageless note's one-finger scroll back to two fingers a moment after leaving
-    /// Annotate (TestFlight build 5). With the policy matching the mode, PencilKit's own count is ours.
+    /// view moves to a window, and (while PencilKit's tool picker was used) when the picker's visibility
+    /// changed. With `.anyInput` kept in reading mode, that put the pageless note's one-finger scroll back
+    /// to two fingers a moment after leaving Annotate (TestFlight build 5). With the policy matching the
+    /// mode, PencilKit's own count is ours.
     private func applyDrawingPolicy() {
         // Only while a gesture really runs: a stroke whose end never came (its canvas was recycled) holds nothing.
         let drawing = canvas.drawingGestureRecognizer.state
@@ -1110,7 +1077,7 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
     }
 
     /// Typing in a text box started or ended: nothing draws or selects
-    /// meanwhile; afterwards the palette comes back.
+    /// meanwhile; afterwards the canvas takes the focus back.
     private func textEditingChanged(_ editing: Bool) {
         updateSelectionMode()
         guard !editing else { return }
@@ -1119,8 +1086,8 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
             placingTextBox = false
             if textToolActive { onTextToolEnded?(.placed) }
         }
-        updateToolPicker()
-        // A page of the stack takes the palette back itself, unless the edit ended because
+        refreshInput()
+        // A page of the stack takes the focus back itself, unless the edit ended because
         // the user went to a field elsewhere (`CanvasFocus`).
         if isEmbedded { focusUnlessKeyboardElsewhere(container: enclosingStack) }
     }
@@ -1130,47 +1097,18 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        updateToolPicker()
+        refreshInput()
     }
 
-    private func updateToolPicker() {
+    /// The note's input changed (read-only, reading, a box typed in ended, a window): what draws follows,
+    /// and the one-page canvas takes the focus unless something holds the keyboard.
+    private func refreshInput() {
         guard window != nil else { return }
         defer { updateEraser() }
-        let show = !isReadOnly && !drawingSuspended && paletteVisible
-        toolPicker.setVisible(show, forFirstResponder: canvas)
+        if canvas.isRulerActive, isReadOnly { canvas.isRulerActive = false }
         // The stack decides which of its pages has the focus (`focus()`); a text box being typed in keeps the keyboard.
         // Never from a field or list that holds the keyboard (`CanvasFocus`).
         if !isEmbedded { focusUnlessKeyboardElsewhere() }
-    }
-
-    /// Swaps in a picker of the other size, keeping the selected tool when the
-    /// new picker has it.
-    private func rebuildToolPicker() {
-        guard !isEmbedded else { return }   // the stack swaps its picker for all its pages
-        adopt(Self.makePicker(compact: paletteCompact, replacing: toolPicker))
-    }
-
-    /// A picker of the given size that keeps `old`'s selected tool when it has it.
-    static func makePicker(compact: Bool, replacing old: PKToolPicker?) -> PKToolPicker {
-        let new = ToolPalette.makePicker(compact: compact)
-        if let old, new.toolItems.contains(where: { $0.identifier == old.selectedToolItemIdentifier }) {
-            new.selectedToolItemIdentifier = old.selectedToolItemIdentifier
-        }
-        new.colorUserInterfaceStyle = .light
-        return new
-    }
-
-    /// Uses `new` as this canvas's tool picker (a rebuilt one, or the stack's).
-    func adopt(_ new: PKToolPicker) {
-        let old = toolPicker
-        guard new !== old else { return }
-        old.setVisible(false, forFirstResponder: canvas)
-        old.removeObserver(canvas)
-        old.removeObserver(self)
-        new.addObserver(canvas)
-        new.addObserver(self)
-        toolPicker = new
-        updateToolPicker()
     }
 
     override func layoutSubviews() {
@@ -1461,13 +1399,21 @@ enum PageExtent {
 
 extension PageCanvasHost: CanvasCommandTarget {
     @discardableResult
-    func select(tool choice: ToolChoice) -> Bool {
-        guard !isReadOnly, let item = toolPicker.toolItems.first(where: { choice.matches($0) }) else { return false }
-        toolPicker.selectedToolItemIdentifier = item.identifier
-        endTransientSelection()
-        updateEraser()
-        cursorInteraction?.invalidate()
+    func select(drawingTool tool: DrawingTool) -> Bool {
+        guard !isReadOnly else { return false }
+        toolbox.select(tool)
+        toolPicked()
         return true
+    }
+
+    func undo() {
+        guard !isReadOnly, let undo = canvas.undoManager, undo.canUndo else { return }
+        undo.undo()
+    }
+
+    func redo() {
+        guard !isReadOnly, let undo = canvas.undoManager, undo.canRedo else { return }
+        undo.redo()
     }
 
     func zoom(in zoomingIn: Bool) {
@@ -1488,8 +1434,7 @@ extension PageCanvasHost: CanvasCommandTarget {
 
     func toggleRuler() {
         guard !isReadOnly else { return }
-        canvas.isRulerActive.toggle()
-        updateEraser()
+        toolbox.toggleRuler()
     }
 
     @discardableResult
