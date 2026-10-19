@@ -76,7 +76,7 @@ struct MenuHandlerTests {
         router.openRecent(id)
         #expect(performed == [.reopenVault])
         #expect(opened == [id])
-        #expect(router.paletteVisible && router.exportIDs.isEmpty && router.windowID == nil)
+        #expect(router.exportIDs.isEmpty && router.windowID == nil)
     }
 
     @Test func reopeningARecentVaultOpensItLocked() async throws {
@@ -284,6 +284,8 @@ struct MenuHandlerTests {
             #expect(EditorCommands.perform(command, editor: editor, ui: ui))
         }
         #expect(canvas.tools == [.pen, .marker, .pencil, .eraser, .lasso])
+        #expect(ui.toolRequest == .draw, "a tool picked from the menu is for drawing: Annotate")
+        ui.toolRequest = nil
         EditorCommands.perform(.toggleRuler, editor: editor, ui: ui)
         #expect(canvas.rulers == 1)
         EditorCommands.perform(.zoomIn, editor: editor, ui: ui)
@@ -303,18 +305,23 @@ struct MenuHandlerTests {
         model.close()
     }
 
-    @Test func showToolPaletteFlipsTheStoredVisibility() {
-        let defaults = UserDefaults.standard
-        let saved = defaults.object(forKey: ToolPalette.visibleKey)
-        defer {
-            if let saved { defaults.set(saved, forKey: ToolPalette.visibleKey) } else { defaults.removeObject(forKey: ToolPalette.visibleKey) }
-        }
+    /// Tools > Annotate and Hand are the top bar's buttons: they ask the window's editor (`ToolRequest`), and
+    /// do nothing without one.
+    @Test func annotateAndHandAskTheWindowsEditor() async throws {
         let ui = WindowUI()
-        defaults.set(true, forKey: ToolPalette.visibleKey)
-        #expect(EditorCommands.perform(.togglePalette, editor: nil, ui: ui))
-        #expect(!ToolPalette.isVisible())
-        EditorCommands.perform(.togglePalette, editor: nil, ui: ui)
-        #expect(ToolPalette.isVisible())
+        #expect(EditorCommands.perform(.toggleAnnotate, editor: nil, ui: ui))
+        #expect(EditorCommands.perform(.toggleHand, editor: nil, ui: ui))
+        #expect(ui.toolRequest == nil, "no note open: nothing to switch")
+        let (model, _) = try await NoteWindowTests.unlockedModel()
+        model.selectedNoteID = Self.lecture
+        await model.showSelectedNote()
+        let editor = try #require(model.editor)
+        EditorCommands.perform(.toggleAnnotate, editor: editor, ui: ui)
+        #expect(ui.toolRequest == .annotate)
+        EditorCommands.perform(.toggleHand, editor: editor, ui: ui)
+        #expect(ui.toolRequest == .hand)
+        #expect(ui.noteMode == .reading, "the editor's view switches the mode; the request alone changes nothing")
+        model.close()
     }
 
     // MARK: Scene restoration gating

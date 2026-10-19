@@ -23,8 +23,9 @@ extension AppModel {
     /// Reopens a recent vault from its bookmark.
     ///
     /// - Throws: `VaultLibrary.LibraryError.cannotResolve` when the bookmark
-    ///   is dead (the entry is dropped); otherwise whatever opening throws,
-    ///   with the entry kept.
+    ///   does not resolve; otherwise whatever opening throws. The entry is
+    ///   kept either way (iCloud may still be starting up: `LibraryCommands.reopen`
+    ///   waits for a vault the library reports as waiting).
     func open(recent entry: RecentVault, library: VaultLibrary) async throws {
         if let location = entry.webdav {
             guard webdavLocations.location(location) != nil else {
@@ -33,7 +34,7 @@ extension AppModel {
             }
             return try await openWebDAV(location, library: library)
         }
-        let url = try library.resolve(entry)
+        let url = try await library.resolved(entry)
         try await openVault(at: url)
         remember(in: library)
     }

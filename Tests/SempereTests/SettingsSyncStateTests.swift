@@ -43,9 +43,9 @@ final class SettingsSyncStateTests: XCTestCase {
         var state = SettingsSyncState()
         let pass = try state.enable(.useVault, local: mine, file: file, type: .mac, now: now())
         XCTAssertEqual(pass.apply, [:])
-        // Only what the Mac adds (mouse smoothing, which the iPad does not use) is written.
+        // Only what the Mac adds (mouse smoothing and the drag format, which the iPad does not use) is written.
         let added = try XCTUnwrap(pass.write).slots.filter { file.slots[$0.key] == nil }.map(\.key.key)
-        XCTAssertEqual(added, ["mouse.smoothing"])
+        XCTAssertEqual(Set(added), ["drag.format", "mouse.smoothing"])
     }
 
     func testFirstEnableUseTheVaultsSettings() throws {

@@ -18,6 +18,17 @@ enum ToolChoice: String, CaseIterable, Sendable {
         }
     }
 
+    /// The Tools menu's command for this tool (its title and shortcut).
+    var command: MenuCommand {
+        switch self {
+        case .pen: return .toolPen
+        case .marker: return .toolMarker
+        case .pencil: return .toolPencil
+        case .eraser: return .toolEraser
+        case .lasso: return .toolLasso
+        }
+    }
+
     /// The tool a menu command selects.
     init?(_ command: MenuCommand) {
         switch command {

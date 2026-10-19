@@ -14,9 +14,8 @@ struct PageCanvasView: UIViewRepresentable {
     /// The tool palette's shown/compact state (`ToolPalette`).
     var paletteVisible = true
     var paletteCompact = false
-    /// Reading on an iPhone: the canvas only pans and zooms, the palette is hidden
-    /// (`PhoneReading`).
-    var drawingSuspended = false
+    /// What the note's mode lets the canvas do on this device (`NoteModeInput`).
+    var input = NoteModeInput()
     /// `NoteEditor.canvasGeneration`: a change reloads the drawing even when
     /// the page id stays the same.
     var generation = 0
@@ -28,8 +27,9 @@ struct PageCanvasView: UIViewRepresentable {
     var selectingItems = false
     /// Called when selection mode ends from the canvas (a tool was picked).
     var onSelectingItemsEnded: () -> Void = {}
-    /// Called when the palette's Hand tool is picked (an iPhone): selection mode on.
-    var onHandToolPicked: () -> Void = {}
+    /// Called when a Pencil starts drawing while the mode lets only the Pencil draw (an iPad reading or in
+    /// Hand mode, `NoteModeInput.pencilAnnotates`): the note switches to annotating.
+    var onPencilAnnotate: () -> Void = {}
     /// The text tool: taps edit text boxes or start new ones.
     var addingText = false
     /// Called when the text tool ends from the canvas (a tool was picked).
@@ -51,7 +51,7 @@ struct PageCanvasView: UIViewRepresentable {
         let index = editor.pages.firstIndex { $0.id == pageID }
         let isLast = index == editor.pages.count - 1
         let footer = PhoneReading.footer(infinite: pageSize.infinite, isLast: isLast, readOnly: editor.isReadOnly,
-                                         drawingSuspended: drawingSuspended)
+                                         reading: input.reading)
         host.footer = footer
         host.footerAction = { [weak editor] in
             guard let editor else { return }
@@ -65,10 +65,10 @@ struct PageCanvasView: UIViewRepresentable {
         host.paletteVisible = paletteVisible
         c.apply(editor: editor, pageID: pageID,
                 content: PageCanvasContent(paper: paper, pageSize: pageSize, generation: generation,
-                                           drawingSuspended: drawingSuspended, itemSource: itemSource,
+                                           input: input, itemSource: itemSource,
                                            itemCommands: itemCommands, selectingItems: selectingItems,
                                            onSelectingItemsEnded: onSelectingItemsEnded,
-                                           onHandToolPicked: onHandToolPicked,
+                                           onPencilAnnotate: onPencilAnnotate,
                                            onDrop: onDrop, addingText: addingText,
                                            onAddingTextEnded: onAddingTextEnded),
                 to: host)
@@ -127,7 +127,8 @@ struct PageCanvasView: UIViewRepresentable {
                 load(editor: editor, pageID: pageID, host: host, keepScroll: samePage)
             }
             host.isReadOnly = editor.isReadOnly
-            host.drawingSuspended = content.drawingSuspended
+            host.drawingSuspended = content.input.drawingSuspended
+            host.pencilAnnotates = content.input.pencilAnnotates
             host.apply(paper: content.paper, pageSize: content.pageSize)
             let pageItems = editor.items(on: pageID)
             // Audio items show the note's recordings (format.md §8.2.9).
@@ -144,9 +145,8 @@ struct PageCanvasView: UIViewRepresentable {
                 p.recording.map { AudioPlayState(recording: $0.id, isPlaying: p.isPlaying) }
             }
             host.onItemSelectionEnded = content.onSelectingItemsEnded
-            host.onHandToolPicked = content.onHandToolPicked
-            host.itemSelectionActive = content.selectingItems && !editor.isReadOnly && !content.drawingSuspended
-            host.syncHandTool()
+            host.onPencilAnnotate = content.onPencilAnnotate
+            host.itemSelectionActive = content.selectingItems && !editor.isReadOnly && !content.input.drawingSuspended
             if let onDrop = content.onDrop {
                 host.dropHandler = { providers, point in onDrop(providers, pageID, point) }
             } else {
@@ -155,7 +155,7 @@ struct PageCanvasView: UIViewRepresentable {
             host.itemSelection.refresh()
             host.textEditor.reset(editor: editor, pageID: pageID)
             host.onTextToolEnded = content.onAddingTextEnded
-            host.textToolActive = content.addingText && !editor.isReadOnly && !content.drawingSuspended
+            host.textToolActive = content.addingText && !editor.isReadOnly && !content.input.drawingSuspended
             host.setHighlights(editor.highlightBoxes(onPage: pageID))
             if editor.listeningToInk {
                 host.inkTapHandler = { [weak editor] p in editor?.inkTapped(pageID: pageID, x: Double(p.x), y: Double(p.y)) }
@@ -278,6 +278,7 @@ struct PageCanvasView: UIViewRepresentable {
 
         func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
             usingTool = false
+            host?.inkEnded()
         }
 
         func scrollViewDidZoom(_ scrollView: UIScrollView) {
@@ -287,10 +288,21 @@ struct PageCanvasView: UIViewRepresentable {
 
         /// The user scrolls: the item's menu goes (layout and focus changes that move the offset do not count).
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            host?.visibleAreaChanged()
             if scrollView.isDragging || scrollView.isDecelerating { host?.itemSelection.viewMoved() }
             #if DEBUG
             host?.itemSelection.debugRefreshReport()   // the report's offset (`PhoneReadingScrollUITests`)
             #endif
+        }
+
+        /// A scroll or a pinch starts: every menu on the canvas goes at once, the item's and
+        /// PencilKit's (`ItemSelectionController.gestureStarted`).
+        func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+            host?.itemSelection.gestureStarted()
+        }
+
+        func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) {
+            host?.itemSelection.gestureStarted()
         }
 
         /// A pinch ended: the fitted width is a detent (`ZoomDetent`).
@@ -304,6 +316,8 @@ struct PageCanvasView: UIViewRepresentable {
         /// palette act on it.
         func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) {
             usingTool = true
+            host?.itemSelection.gestureStarted(stroke: true)   // writing on the page: no menu stays over it
+            host?.inkBegan()
             guard let host, !canvasView.isFirstResponder else { return }
             host.focus()
         }
@@ -316,12 +330,13 @@ struct PageCanvasContent {
     var pageSize: PageSize
     /// `NoteEditor.canvasGeneration`: a change reloads the ink.
     var generation = 0
-    var drawingSuspended = false
+    /// What the note's mode lets the canvas do (`NoteModeInput`).
+    var input = NoteModeInput()
     var itemSource = ItemLayerSource()
     var itemCommands = ItemCommands()
     var selectingItems = false
     var onSelectingItemsEnded: () -> Void = {}
-    var onHandToolPicked: () -> Void = {}
+    var onPencilAnnotate: () -> Void = {}
     /// Images and PDFs dropped on the page, with the page point (nil: drops refused).
     var onDrop: ((_ providers: [NSItemProvider], _ pageID: UUID, _ point: CGPoint) -> Void)?
     /// The text tool: taps edit text boxes or start new ones.
@@ -332,7 +347,8 @@ struct PageCanvasContent {
 /// UIKit side of `PageCanvasView`.
 final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDelegate, UIDropInteractionDelegate {
     let canvas = PKCanvasView()
-    private let paperView = PaperView()
+    /// The paper; drawn dark with Note Pages ▸ Dark (`PageCanvasHost+Appearance`).
+    let paperView = PaperView()
     /// The page's placed items, between the paper and the ink.
     let itemLayer = ItemLayerView()
     /// Text boxes drawn again above the ink, multiplied, on a note with
@@ -342,10 +358,8 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
     let itemSelection = ItemSelectionController()
     /// Called when picking a tool ends selection mode.
     var onItemSelectionEnded: (() -> Void)?
-    /// Called when the palette's Hand tool is picked: the note view turns selection mode on.
-    var onHandToolPicked: (() -> Void)?
-    /// The last palette tool that draws (the Hand tool is not one), to go back to when selection mode ends.
-    private var lastDrawingToolID: String?
+    /// Called when a Pencil starts drawing while `pencilAnnotates`: the note view switches to annotating.
+    var onPencilAnnotate: (() -> Void)?
     /// Typing in text boxes (the text tool, and "Edit Text" in selection mode).
     let textEditor = TextBoxEditorController()
     /// Called when picking a tool ends the text tool, or it placed its one box.
@@ -513,21 +527,72 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
 
     /// The palette is shown (the toolbar button) unless the note is read-only.
     var paletteVisible = true {
-        didSet { if paletteVisible != oldValue { updateToolPicker() } }
+        didSet {
+            guard paletteVisible != oldValue else { return }
+            updateToolPicker()
+            // The stack gives the focus to one of its pages itself (`PageStackHost.paletteTurnedOn`).
+            if paletteVisible, !isEmbedded, Self.paletteTakesFocus(isPhone: Platform.isPhone) {
+                if !CanvasFocus.typingElsewhere(than: self) { reclaimFocus() }
+                // Annotate's other flags (`drawingSuspended`, a Mac reading) arrive after the palette's: again then.
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.paletteVisible, !self.canvas.isFirstResponder,
+                          !CanvasFocus.typingElsewhere(than: self) else { return }
+                    self.reclaimFocus()
+                }
+            }
+        }
     }
+
+    /// Whether turning the palette on gives the canvas the first responder. PencilKit shows the palette
+    /// only for the first responder, and a canvas never takes it by itself from a list or a field
+    /// (`CanvasFocus`): with the note list holding the focus, the toolbar button flipped its icon and
+    /// nothing came up (TestFlight 1.0.0 (6), the owner's iPad). The user asked for the palette, so the
+    /// canvas takes the focus from a list or the sidebar, as a touch on it does (`reclaimFocus`); a field
+    /// being typed in keeps it (`CanvasFocus.typingElsewhere`). The iPhone's palette follows its
+    /// Annotate mode, which already focuses the canvas (`PhoneCanvasMode`), so it is left alone.
+    nonisolated static func paletteTakesFocus(isPhone: Bool) -> Bool { !isPhone }
 
     /// The palette is the short one: pen, marker, eraser, lasso.
     var paletteCompact = ToolPalette.isCompact() {
         didSet { if paletteCompact != oldValue { rebuildToolPicker() } }
     }
 
-    /// Reading mode (iPhone): fingers scroll and zoom, nothing draws, no palette.
+    /// Nothing draws (an iPhone or a Mac reading, `NoteModeInput.drawingSuspended`): fingers and the
+    /// pointer scroll and zoom, no palette.
     var drawingSuspended = false {
         didSet {
             guard drawingSuspended != oldValue else { return }
             updateEraser()
             updateToolPicker()
         }
+    }
+
+    /// Only a Pencil draws, and its first touch switches the note to annotating (an iPad reading or in Hand
+    /// mode, `NoteModeInput.pencilAnnotates`). PencilKit's drawing stays on (`.pencilOnly`), so the stroke
+    /// that started it is drawn whole; the item selection of Hand mode leaves the Pencil alone.
+    var pencilAnnotates = false {
+        didSet {
+            guard pencilAnnotates != oldValue else { return }
+            itemSelection.pencilDraws = pencilAnnotates
+            updateEraser()
+        }
+    }
+
+    /// A Pencil stroke or an object-eraser gesture is under way (`inkBegan` to `inkEnded`): the drawing
+    /// policy waits for its end, so a mode change in the middle of it never cuts the stroke.
+    private(set) var inkInProgress = false
+
+    /// PencilKit's tool, or the object eraser, began: with `pencilAnnotates` the note switches to annotating.
+    func inkBegan() {
+        inkInProgress = true
+        if pencilAnnotates, !isReadOnly { onPencilAnnotate?() }
+    }
+
+    /// The stroke or erase ended: a drawing policy that waited for it is applied now.
+    func inkEnded() {
+        guard inkInProgress else { return }
+        inkInProgress = false
+        updateEraser()
     }
 
     var isReadOnly = false {
@@ -553,8 +618,16 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
     var visiblePageRect: CGRect? {
         let z = canvas.zoomScale
         guard z > 0, bounds.width > 0, bounds.height > 0 else { return nil }
-        return CGRect(x: canvas.contentOffset.x / z, y: canvas.contentOffset.y / z,
-                      width: bounds.width / z, height: bounds.height / z)
+        let rect = CGRect(x: canvas.contentOffset.x / z, y: canvas.contentOffset.y / z,
+                          width: bounds.width / z, height: bounds.height / z)
+        // Zoomed out below the fit: the margins beside the page are not on it.
+        guard canvas.contentInset.left > 0 else { return rect }
+        return rect.intersection(CGRect(x: 0, y: rect.minY, width: CGFloat(pageSize.width), height: rect.height))
+    }
+
+    /// The canvas scrolled: the paper builds the bands coming into view (`PaperView.setVisible`).
+    func visibleAreaChanged() {
+        paperView.setVisible(canvas.bounds)
     }
 
     override init(frame: CGRect) {
@@ -576,18 +649,16 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         backgroundColor = .secondarySystemBackground
         canvas.backgroundColor = .clear
         canvas.isOpaque = false
-        // Ink colors are stored as drawn on light paper; never invert them.
+        // Ink colors are stored as drawn on light paper: the canvas is light, unless Note Pages
+        // is Dark, where PencilKit only shows them inverted (`PageCanvasHost+Appearance`).
         canvas.overrideUserInterfaceStyle = .light
         canvas.accessibilityIdentifier = "pageCanvas"   // UI tests draw on it
         // A Mac has no Pencil: the mouse and trackpad always draw, whatever
         // the system's Pencil preference says (`.default` follows it).
         // An iPhone has no Pencil: a finger draws (once annotating is switched on).
-        canvas.drawingPolicy = Platform.isMac || Platform.isPhone ? .anyInput : .default
-        #if DEBUG
-        // UI tests on the iPad simulator (`IPadCanvasUITests`): a paired Pencil's default, where a finger
-        // taps, holds and scrolls instead of drawing (the simulator's fingers draw otherwise).
-        if DebugLaunch.environment["SEMPERE_DEBUG_PENCIL_ONLY"] != nil { canvas.drawingPolicy = .pencilOnly }
-        #endif
+        // The policy follows the mode from here on (`applyDrawingPolicy`).
+        canvas.drawingPolicy = Self.drawingPolicy(device: NoteDevice.current, phoneFingersDraw: false,
+                                                  pencilAnnotates: false, pencilOnlyDefault: Self.debugPencilOnly)
         canvas.alwaysBounceVertical = true
         canvas.contentInsetAdjustmentBehavior = .never
         canvas.insertSubview(paperView, at: 0)
@@ -610,7 +681,10 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         toolPicker.addObserver(canvas)
         toolPicker.addObserver(self)
         toolPicker.colorUserInterfaceStyle = .light
+        observePageAppearance()
         objectEraser.attach(to: self, canvas: canvas)
+        objectEraser.onBegin = { [weak self] in self?.inkBegan() }
+        objectEraser.onEnd = { [weak self] in self?.inkEnded() }
         mouseInk.attach(to: canvas)
         mouseInk.onBegin = { [weak self] in
             // As `canvasViewDidBeginUsingTool`: the canvas drawn on takes the focus.
@@ -628,7 +702,7 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         itemSelection.debugInput = { [weak self] in
             guard let self else { return "" }
             return "pan=\(self.canvas.panGestureRecognizer.minimumNumberOfTouches);ink=\(self.canvas.drawingGestureRecognizer.isEnabled ? 1 : 0)"
-                + ";select=\(self.itemSelectionActive ? 1 : 0)"
+                + ";select=\(self.itemSelectionActive ? 1 : 0)" + self.pageAppearanceReport
         }
         itemSelection.debugEmoji = { [weak self] in self?.textEditor.emojiSummary ?? "0,0" }
         itemSelection.debugPalette = { [weak self] in
@@ -640,7 +714,13 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         itemSelection.onEditText = { [weak self] item in self?.textEditor.begin(item) }
         itemSelection.lassoSelected = { [weak self] in self?.canvas.tool is PKLassoTool }
         textEditor.penColour = { [weak self] in (self?.canvas.tool as? PKInkingTool).map { Sempere.Color($0.color) } }
-        itemSelection.canPick = { [weak self] in self?.drawingEditable ?? false }
+        // Picking while drawing (a finger tap or hold, the lasso, a secondary click): Annotate only. An iPad reading
+        // keeps the Pencil drawing (`pencilAnnotates`) but a tap there selects nothing; in Hand mode the
+        // selection itself picks.
+        itemSelection.canPick = { [weak self] in
+            guard let self else { return false }
+            return self.drawingEditable && !self.pencilAnnotates
+        }
         itemSelection.canFingerPick = { [weak self] in !(self?.toolPicker.selectedToolItem is PKToolPickerEraserItem) }
         itemSelection.onPick = { [weak self] in self?.transientSelection = true }
         itemSelection.onCleared = { [weak self] in
@@ -789,7 +869,7 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
     }
 
     func pointerInteraction(_ interaction: UIPointerInteraction, styleFor region: UIPointerRegion) -> UIPointerStyle? {
-        guard !isReadOnly else { return nil }
+        guard !isReadOnly, !drawingSuspended else { return nil }   // reading: the system arrow
         if itemSelection.isActive {
             guard let zone = itemSelection.pointer(at: convert(CGPoint(x: region.rect.midX, y: region.rect.midY), to: canvas))
             else { return UIPointerStyle.system() }
@@ -832,34 +912,12 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         if let eraser = toolPicker.selectedToolItem as? PKToolPickerEraserItem {
             EraserPreference.save(eraser.eraserTool.eraserType)
         }
-        let hand = toolPicker.selectedToolItemIdentifier == ToolPalette.handIdentifier
-        if hand {
-            // The Hand tool: one finger scrolls and taps select (selection mode), as the Select toggle does.
-            if !itemSelectionActive { onHandToolPicked?() }
-        } else {
-            lastDrawingToolID = toolPicker.selectedToolItemIdentifier
-            if itemSelectionActive { onItemSelectionEnded?() }   // picking a tool is picking drawing
-        }
+        if itemSelectionActive { onItemSelectionEnded?() }   // picking a tool is picking drawing
         if textToolActive { onTextToolEnded?(.toolPicked) }
         if mathLassoHandler != nil { onMathLassoEnded?() }
         endTransientSelection()
         updateEraser()
         cursorInteraction?.invalidate()
-    }
-
-    /// Keeps the palette's Hand tool in step with selection mode (the iPhone's Select toggle in the
-    /// overflow menu turns it on too; a new note turns it off): in selection mode the Hand shows as
-    /// picked, and once selection ends with the Hand still picked the last drawing tool comes back.
-    func syncHandTool() {
-        guard toolPicker.toolItems.contains(where: { $0.identifier == ToolPalette.handIdentifier }) else { return }
-        let picked = toolPicker.selectedToolItemIdentifier
-        if itemSelectionActive {
-            if picked != ToolPalette.handIdentifier { toolPicker.selectedToolItemIdentifier = ToolPalette.handIdentifier }
-        } else if picked == ToolPalette.handIdentifier {
-            let back = toolPicker.toolItems.first { $0.identifier == lastDrawingToolID }
-                ?? toolPicker.toolItems.first { $0.identifier != ToolPalette.handIdentifier }
-            if let back { toolPicker.selectedToolItemIdentifier = back.identifier }
-        }
     }
 
     @objc private func inkTapped(_ g: UITapGestureRecognizer) {
@@ -914,8 +972,9 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
 
     /// Whether the canvas draws now: nothing selects, types or plays, and the note can be edited.
     var drawingEditable: Bool {
-        !isReadOnly && !isPreparing && !drawingSuspended && !itemSelectionActive && !textToolActive && !transientSelection
-            && !textEditor.isEditing && inkTapHandler == nil && mathLassoHandler == nil
+        // Hand mode on an iPad leaves the Pencil drawing (`pencilAnnotates`); the selection takes the fingers.
+        !isReadOnly && !isPreparing && !drawingSuspended && (!itemSelectionActive || pencilAnnotates) && !textToolActive
+            && !transientSelection && !textEditor.isEditing && inkTapHandler == nil && mathLassoHandler == nil
     }
 
     /// The app's sized object eraser stands in for PencilKit's `.vector` one;
@@ -923,7 +982,7 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
     /// "Smooth Mouse Strokes" on, the app draws the ink tools' pointer strokes.
     private func updateEraser() {
         // First: the eraser and the item selection read the policy (`ObjectEraserController.fingersDraw`).
-        if Platform.isPhone { applyPhoneDrawingPolicy() }
+        applyDrawingPolicy()
         let editable = drawingEditable
         let ours = editable && objectEraserSelected
         objectEraser.setActive(ours)
@@ -939,7 +998,7 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         setPencilKitGestures(enabled: draws)
         // The one-page canvas's scroll on an iPhone: one finger, two while annotating (where one
         // draws), as in the paged stack (`PageStackHost.minimumPanTouches`). PencilKit sets the same
-        // count itself from the drawing policy (`applyPhoneDrawingPolicy`) whenever it likes, so the
+        // count itself from the drawing policy (`applyDrawingPolicy`) whenever it likes, so the
         // two always agree; the object eraser and the math lasso take two while they hold the finger.
         if Platform.isPhone, !isEmbedded, !ours, !lasso {
             canvas.panGestureRecognizer.minimumNumberOfTouches = Self.phonePanTouches(fingerDraws: phoneFingersDraw)
@@ -949,14 +1008,17 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
     /// The fingers the one-page canvas's scroll takes on an iPhone: two while a finger draws, else one.
     static func phonePanTouches(fingerDraws: Bool) -> Int { fingerDraws ? 2 : 1 }
 
-    /// iPhone: a finger is ink on this canvas, the note's mode being Annotate (`PhoneCanvasMode`): an
+    /// iPhone: a finger is ink on this canvas, the note's mode being Annotate (`NoteMode`): an
     /// editable note, not suspended (reading) and not in selection mode (the Hand). Taken from the mode,
     /// not from what draws this instant (a text box being typed in, a finger-picked item, a page being
     /// prepared), so the scroll's finger count changes only with the mode.
     var phoneFingersDraw: Bool { !isReadOnly && !drawingSuspended && !itemSelectionActive }
 
-    /// The iPhone's drawing policy follows the mode: `.anyInput` while a finger is ink, else `.pencilOnly`
-    /// (no iPhone has a Pencil, so nothing draws).
+    /// The drawing policy follows the mode (`drawingPolicy(device:…)`), never in the middle of a stroke
+    /// (`inkInProgress`: it is applied when the stroke ends).
+    ///
+    /// On an iPhone: `.anyInput` while a finger is ink, else `.pencilOnly` (no iPhone has a Pencil, so
+    /// nothing draws).
     ///
     /// PencilKit sets its scroll's `minimumNumberOfTouches` itself, to 2 whenever the policy lets a finger
     /// draw (`-[PKTiledView updateForAllowedDrawingInput]`), and runs that again on its own: when its tiled
@@ -965,9 +1027,37 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
     /// palette's hide animation, about 0.8 s after Annotate goes off). With `.anyInput` kept in reading
     /// mode, that put the pageless note's one-finger scroll back to two fingers a moment after leaving
     /// Annotate (TestFlight build 5). With the policy matching the mode, PencilKit's own count is ours.
-    private func applyPhoneDrawingPolicy() {
-        let policy: PKCanvasViewDrawingPolicy = phoneFingersDraw ? .anyInput : .pencilOnly
+    private func applyDrawingPolicy() {
+        // Only while a gesture really runs: a stroke whose end never came (its canvas was recycled) holds nothing.
+        let drawing = canvas.drawingGestureRecognizer.state
+        if inkInProgress, drawing == .began || drawing == .changed || objectEraser.isErasing { return }
+        let policy = Self.drawingPolicy(device: NoteDevice.current, phoneFingersDraw: phoneFingersDraw,
+                                        pencilAnnotates: pencilAnnotates, pencilOnlyDefault: Self.debugPencilOnly)
         if canvas.drawingPolicy != policy { canvas.drawingPolicy = policy }
+    }
+
+    /// The canvas's drawing policy: an iPhone's follows its mode (above); a Mac's mouse and trackpad always
+    /// draw while drawing is on, whatever the system's Pencil preference says (`.default` follows it); an
+    /// iPad draws with the Pencil only while reading or in Hand mode (its touch switches to annotating), and
+    /// as the system says while annotating (the Pencil; a finger too when no Pencil is used).
+    static func drawingPolicy(device: NoteDevice, phoneFingersDraw: Bool, pencilAnnotates: Bool,
+                              pencilOnlyDefault: Bool = false) -> PKCanvasViewDrawingPolicy {
+        switch device {
+        case .phone: return phoneFingersDraw ? .anyInput : .pencilOnly
+        case .mac: return .anyInput
+        case .pad: return pencilAnnotates || pencilOnlyDefault ? .pencilOnly : .default
+        }
+    }
+
+    /// UI tests on the iPad simulator (`IPadCanvasUITests`, `SEMPERE_DEBUG_PENCIL_ONLY`): a paired Pencil's
+    /// default while annotating, where a finger taps, holds and scrolls instead of drawing (the simulator's
+    /// fingers draw otherwise).
+    static var debugPencilOnly: Bool {
+        #if DEBUG
+        DebugLaunch.environment["SEMPERE_DEBUG_PENCIL_ONLY"] != nil
+        #else
+        false
+        #endif
     }
 
     /// PencilKit's recognizers the app turned off along with `drawingGestureRecognizer`
@@ -1172,31 +1262,55 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         canvas.setContentOffset(.zero, animated: false)
     }
 
-    /// Zoom range: page width fills the view at minimum, 4x at maximum (a
-    /// page of the stack: its frame is the page at the stack's scale, so the
-    /// fit is that scale).
+    /// The scale at which the page fills the width (0 before layout); the zoom range is
+    /// `ZoomDetent.minimum` (half of it, a phone: the fit) to 4x of it.
+    var fitScale: CGFloat { fittedWidth }
+
+    /// Zoom range: from `ZoomDetent.minimum` of the fitted width (half of it; the fit on an
+    /// iPhone) to 4x (a page of the stack: its frame is the page at the stack's scale, so the
+    /// fit is that scale, and it never zooms itself).
+    ///
+    /// The zoom is set only when the fit itself changed (the first layout, a rotation, a split
+    /// view, another page size): `force` (every SwiftUI update, `apply(paper:pageSize:)`) only
+    /// renews the range. It used to put a canvas within 0.1 % of the fit back on the fit at every
+    /// update, and an update in the middle of a pinch that passed the fit snapped the zoom
+    /// under the fingers (TestFlight 1.0.0 (6): "the zoom jostles around a bit").
     private func fitWidth(force: Bool = false) {
         guard bounds.width > 0, pageSize.width > 0 else { return }
         let fit = bounds.width / CGFloat(pageSize.width)
         if fit != fittedWidth || force {
-            let wasFitted = fittedWidth == 0 || abs(canvas.zoomScale - fittedWidth) < 0.001
+            let refit = fit != fittedWidth
+            let wasFitted = fittedWidth == 0 || abs(canvas.zoomScale - fittedWidth) < fittedWidth * 0.001
             fittedWidth = fit
-            canvas.minimumZoomScale = fit
+            let minimum = isEmbedded ? fit : CGFloat(ZoomDetent.minimum(fit: Double(fit), paged: false, isPhone: Platform.isPhone))
             // A page of the stack is zoomed by the stack: its own scale is pinned to the fit.
-            canvas.maximumZoomScale = isEmbedded ? fit : fit * 4
-            if wasFitted || canvas.zoomScale < fit { canvas.zoomScale = fit }
+            let maximum = isEmbedded ? fit : fit * CGFloat(ZoomSteps.maxFactor)
+            canvas.minimumZoomScale = minimum
+            canvas.maximumZoomScale = maximum
+            if isEmbedded {
+                // Its own pinch must never take the fingers from the stack's (`PageStackHost`).
+                canvas.pinchGestureRecognizer?.isEnabled = false
+                if canvas.zoomScale != fit { canvas.zoomScale = fit }
+            } else if !canvas.isZooming, !canvas.isZoomBouncing {
+                if refit && wasFitted {
+                    canvas.zoomScale = fit
+                } else if canvas.zoomScale < minimum || canvas.zoomScale > maximum {
+                    canvas.zoomScale = min(max(canvas.zoomScale, minimum), maximum)
+                }
+            }
         }
         zoomChanged()
     }
 
     /// A pinch on the one-page canvas ended: within `ZoomDetent.snapBand` of
-    /// the fitted width it settles exactly there (a pageless note does not
-    /// zoom out below it: the scroll view bounces back). The stack settles its
-    /// own pinches (`PageStackHost.bake`).
+    /// the fitted width it settles exactly there; below it the page zooms out
+    /// to half the fit, centered (an iPhone stops at the fit). The stack
+    /// settles its own pinches (`PageStackHost.bake`).
     func zoomEnded() {
         guard !isEmbedded, fittedWidth > 0 else { return }
+        zoomChanged()   // the last frame's extent and margins (an animated settle ends here too)
         let z = Double(canvas.zoomScale), fit = Double(fittedWidth)
-        let target = ZoomDetent.settle(z, fit: fit, paged: false)
+        let target = ZoomDetent.settle(z, fit: fit, paged: false, isPhone: Platform.isPhone)
         guard abs(target - z) > fit * 0.001 else { return }
         canvas.setZoomScale(CGFloat(target), animated: true)
         if ZoomDetent.isFit(target, fit: fit) { Self.snapFeedback() }
@@ -1220,9 +1334,20 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
                                              footerHeight: footer == .none ? 0 : Double(PageExtent.footerScreenHeight / z))
         let paperHeight = pageSize.infinite ? height : pageSize.height
         let size = CGSize(width: CGFloat(pageSize.width), height: CGFloat(paperHeight))
+        paperView.setVisible(canvas.bounds)   // only the bands on screen are built
         paperView.configure(paper: paper, size: size, sheetHeight: PaperRenderer.sheetHeight(for: pageSize))
         paperView.setZoom(z)
         canvas.contentSize = CGSize(width: size.width * z, height: CGFloat(height) * z)
+        if !isEmbedded {
+            // Zoomed out below the fit: the page stands in the middle.
+            // (Under half a point is rounding at the fit, not a margin: no sideways scroll there.)
+            let margin = PageStackHost.sideMargin(contentWidth: canvas.contentSize.width, viewWidth: bounds.width)
+            let side = margin < 0.5 ? 0 : margin
+            if canvas.contentInset.left != side || canvas.contentInset.right != side {
+                canvas.contentInset.left = side
+                canvas.contentInset.right = side
+            }
+        }
         itemLayer.frame = CGRect(origin: .zero, size: canvas.contentSize)
         itemLayer.setZoom(z)
         textOverlay.frame = itemLayer.frame

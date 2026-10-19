@@ -2,61 +2,175 @@ import Sempere
 import SwiftUI
 import UIKit
 
-/// The Settings panel (docs/attachments.md §15): one screen, a sheet from the
-/// sidebar's gear button on iPad and iPhone and a window (Settings…, ⌘,) on
-/// the Mac. Every setting is kept on the device (`UserDefaults`, see
-/// `DeviceSettings`); with Sync Settings with This Vault on, the open vault's
-/// shared settings are applied to them (docs/settings-sync.md, `SettingsSyncSection`). Settings of a feature that is not in this
-/// build yet (recording, transcription) are stored all the same and read by
-/// that feature when it lands.
+/// The Settings panel (docs/attachments.md §15): a list of groups
+/// (`SettingsGroup`), each a page of its own. A sheet from the sidebar's gear
+/// button on iPad and iPhone, where a group opens by drilling in, and a window
+/// (Settings…, ⌘,) on the Mac, with the groups in a sidebar. Every setting is
+/// kept on the device (`UserDefaults`, see `DeviceSettings`); with Sync
+/// Settings with This Vault on, the open vault's shared settings are applied to
+/// them (docs/settings-sync.md, `SettingsSyncSection`). Settings of a feature
+/// that is not in this build yet are stored all the same and read by that
+/// feature when it lands.
 struct SettingsView: View {
-    @AppModelEnvironment private var model
-    @Environment(\.dismiss) private var dismiss
     /// False in the Mac window, which has its own close button.
     var showsDone = true
-    /// A section to scroll to when the panel opens (`QuickCaptureSettingsSection.anchor`).
+    /// A section to open the panel at (`QuickCaptureSettingsSection.anchor`): its group's
+    /// page opens (`SettingsGroup.containing`) and scrolls to it.
     var scrollTo: String?
+    /// The group shown (Mac sidebar).
+    @State private var selection: SettingsGroup?
+    /// The pages drilled into (iPad, iPhone).
+    @State private var path: [SettingsGroup]
+    /// The sheet's own dismiss: on a pushed page, that page's would only go back.
+    @Environment(\.dismiss) private var dismiss
+
+    /// - Parameter group: a page to open at first (the layout checks), when `scrollTo` names none.
+    init(showsDone: Bool = true, scrollTo: String? = nil, group: SettingsGroup? = nil) {
+        self.showsDone = showsDone
+        self.scrollTo = scrollTo
+        let opened = SettingsGroup.containing(anchor: scrollTo) ?? group
+        _selection = State(initialValue: opened ?? .general)
+        _path = State(initialValue: opened.map { [$0] } ?? [])
+    }
+
+    /// The narrowest Mac window that shows the groups beside a page; a narrower one drills in, as the iPad does.
+    static let splitWidth: CGFloat = 720
+
+    var body: some View {
+        GeometryReader { geometry in
+            if Platform.isMac && geometry.size.width >= Self.splitWidth {
+                split
+            } else {
+                stack
+            }
+        }
+    }
+
+    /// The Mac: the groups in a sidebar, the chosen one's page beside them.
+    private var split: some View {
+        NavigationSplitView {
+            List(SettingsGroup.allCases, selection: $selection) { group in
+                Label(group.title, systemImage: group.systemImage)
+                    .tag(group)
+                    .accessibilityIdentifier(group.accessibilityID)
+            }
+            .navigationSplitViewColumnWidth(min: 190, ideal: 220)
+            .toolbar(removing: .sidebarToggle)
+        } detail: {
+            NavigationStack {
+                SettingsGroupPage(group: selection ?? .general, scrollTo: scrollTo, close: close)
+                    .id(selection ?? .general)
+            }
+        }
+        .accessibilityIdentifier("settingsForm")
+        .voiceNoteBanner()
+    }
+
+    /// iPad, iPhone (and a narrow Mac window): the groups as a list, each page drilled into.
+    private var stack: some View {
+        NavigationStack(path: $path) {
+            List {
+                ForEach(SettingsGroup.allCases) { group in
+                    NavigationLink(value: group) {
+                        Label(group.title, systemImage: group.systemImage)
+                    }
+                    .accessibilityIdentifier(group.accessibilityID)
+                }
+            }
+            .navigationDestination(for: SettingsGroup.self) { group in
+                SettingsGroupPage(group: group, scrollTo: scrollTo, close: close)
+            }
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { DoneButton(close: close) }
+        }
+        .accessibilityIdentifier("settingsForm")
+        .voiceNoteBanner()
+    }
+}
+
+extension SettingsView {
+    /// Closes the sheet (nil in the Mac window, which has its own close button).
+    fileprivate var close: (() -> Void)? {
+        guard showsDone else { return nil }
+        let dismiss = dismiss
+        return { dismiss() }
+    }
+}
+
+/// The sheet's Done button, on the list and on every page.
+private struct DoneButton: ToolbarContent {
+    let close: (() -> Void)?
+
+    var body: some ToolbarContent {
+        if let close {
+            ToolbarItem(placement: .confirmationAction) { Button("Done", action: close) }
+        }
+    }
+}
+
+/// One group's page: its sections in a form, scrolled to `scrollTo` when that
+/// section is here.
+struct SettingsGroupPage: View {
+    @AppModelEnvironment private var model
+    let group: SettingsGroup
+    var scrollTo: String?
+    /// Closes the Settings sheet (`SettingsView.close`); nil: no Done button.
+    var close: (() -> Void)?
     /// Settings ▸ Backups ▸ Restore from Backup… (`BackupSettingsSection`).
     @State private var restoringBackup = false
 
     var body: some View {
-        NavigationStack {
-            ScrollViewReader { proxy in
-                Form {
-                    SettingsSyncSection()
-                    GeneralSettings()
-                    AppIconSettingsSection().id(model.settingsAppliedRevision)
-                    // Sections that hold copies of their values reload them when values arrive from the vault.
-                    NewNoteSettingsSection().id(model.settingsAppliedRevision)
-                    RecordingSettingsSection().id(model.settingsAppliedRevision)
-                    TranscriptionSettingsSection().id(model.settingsAppliedRevision)
-                    EditorSettingsSection()
-                    MathRecognitionSettingsSection()
-                    QuickCaptureSettingsSection()
-                    PhotoSettingsSection()
-                    HistorySettingsSection()
-                    BackupSettingsSection(restoring: $restoringBackup).id(model.settingsAppliedRevision)
-                    DeviceKeySettingsSection().id(model.settingsAppliedRevision)
-                    StorageSettingsSection()
-                    AboutSettingsSection()
-                }
-                .sheet(isPresented: $restoringBackup) { RestoreBackupView() }
-                .task {
-                    guard let scrollTo else { return }
-                    // After the first layout, or the Form has no rows to scroll to yet.
-                    try? await Task.sleep(for: .milliseconds(150))
-                    withAnimation { proxy.scrollTo(scrollTo, anchor: .top) }
-                }
+        ScrollViewReader { proxy in
+            Form {
+                sections
             }
-            .accessibilityIdentifier("settingsForm")
-            .voiceNoteBanner()
-            .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if showsDone {
-                    ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
-                }
+            .formStyle(.grouped)
+            .sheet(isPresented: $restoringBackup) { RestoreBackupView() }
+            .task {
+                guard let scrollTo, SettingsGroup.containing(anchor: scrollTo) == group else { return }
+                // After the first layout, or the Form has no rows to scroll to yet.
+                try? await Task.sleep(for: .milliseconds(150))
+                withAnimation { proxy.scrollTo(scrollTo, anchor: .top) }
             }
+        }
+        .accessibilityIdentifier(group.pageAccessibilityID)
+        .navigationTitle(group.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { DoneButton(close: close) }
+    }
+
+    // Sections that hold copies of their values reload them when values arrive from the vault
+    // (`.id(model.settingsAppliedRevision)`).
+    @ViewBuilder private var sections: some View {
+        switch group {
+        case .general:
+            AppearanceSettingsSection().id(model.settingsAppliedRevision)
+            GeneralSettings()
+            AppIconSettingsSection().id(model.settingsAppliedRevision)
+            if Platform.isMac {
+                DragToFinderSettingsSection().id(model.settingsAppliedRevision)
+            }
+        case .writing:
+            EditorSettingsSection()
+            NewNoteSettingsSection().id(model.settingsAppliedRevision)
+            HandwritingSettingsSection()
+            MathRecognitionSettingsSection()
+            PhotoSettingsSection()
+        case .audio:
+            RecordingSettingsSection().id(model.settingsAppliedRevision)
+            TranscriptionSettingsSection().id(model.settingsAppliedRevision)
+            QuickCaptureSettingsSection()
+            TranscriptSearchSettingsSection()
+        case .sync:
+            SettingsSyncSection()
+            DeviceKeySettingsSection().id(model.settingsAppliedRevision)
+        case .backups:
+            BackupSettingsSection(restoring: $restoringBackup).id(model.settingsAppliedRevision)
+            HistorySettingsSection()
+            StorageSettingsSection()
+        case .about:
+            AboutSettingsSection()
         }
     }
 }
@@ -64,19 +178,11 @@ struct SettingsView: View {
 // MARK: - General
 
 private struct GeneralSettings: View {
-    @AppModelEnvironment private var model
     @AppStorage(KeepScreenOn.key) private var keepScreenOn = KeepScreenOn.defaultValue
-    @AppStorage(RecognitionPreference.key) private var recognize = RecognitionPreference.defaultValue
-    @AppStorage(MouseSmoothing.key) private var mouseSmoothing = MouseSmoothing.defaultLevel
     @AppStorage(StatusItemPreference.key) private var showMenuBarItem = StatusItemPreference.defaultValue
 
     var body: some View {
         Section {
-            // The Mac has no idle timer to hold off (the catalog lists the setting for iPad and iPhone only).
-            if !Platform.isMac {
-                Toggle("Keep Screen On", isOn: $keepScreenOn)
-                    .syncedSetting("editor.keepScreenOn")
-            }
             // No in-app override: iOS keeps one language per app in the system Settings (Settings ▸
             // Sempere ▸ Language; on a Mac, System Settings ▸ General ▸ Language & Region ▸ Applications),
             // and the app, its widgets and its Siri phrases all follow it. Overriding AppleLanguages in
@@ -86,18 +192,12 @@ private struct GeneralSettings: View {
                     if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                 }
             }
-            Toggle("Recognize Handwriting", isOn: Binding(
-                get: { recognize },
-                set: { recognize = $0; model.setHandwritingRecognition($0) }))
-                .syncedSetting("handwriting.recognize")
+            // The Mac has no idle timer to hold off (the catalog lists the setting for iPad and iPhone only).
+            if !Platform.isMac {
+                Toggle("Keep Screen On", isOn: $keepScreenOn)
+                    .syncedSetting("editor.keepScreenOn")
+            }
             if Platform.isMac {
-                Picker("Smooth Mouse Strokes", selection: $mouseSmoothing) {
-                    Text("Off").tag(StrokeSmoothing.Level.off)
-                    Text("Light", comment: "Smooth Mouse Strokes setting").tag(StrokeSmoothing.Level.light)
-                    Text("Strong", comment: "Smooth Mouse Strokes setting").tag(StrokeSmoothing.Level.strong)
-                }
-                .accessibilityIdentifier("mouseSmoothing")
-                .syncedSetting("mouse.smoothing")
                 Toggle("Show in Menu Bar", isOn: $showMenuBarItem)
                     .accessibilityIdentifier("showMenuBarItem")
             }
@@ -109,9 +209,7 @@ private struct GeneralSettings: View {
                 if !Platform.isMac {
                     Text("Keep Screen On stops the screen from locking while a note is open.")
                 }
-                Text("Handwriting recognition makes handwriting searchable; it runs on this device and nothing leaves it.")
                 if Platform.isMac {
-                    Text("Smooth Mouse Strokes evens out lines drawn with a mouse or trackpad; Strong rounds them more. Strokes drawn with the ruler are not smoothed.")
                     Text("Show in Menu Bar puts a Sempere icon in the menu bar with Quick Voice Note and New Note, while Sempere is running.")
                 }
             }
@@ -124,10 +222,10 @@ private struct GeneralSettings: View {
 /// Tool choices the editor also changes (its eraser and palette menus), here so
 /// that each can be kept on this device when settings sync (docs/settings-sync.md §5).
 private struct EditorSettingsSection: View {
-    @AppModelEnvironment private var model
     @AppStorage(EraserPreference.defaultsKey) private var eraserName = "object"
     @AppStorage(ObjectEraserSize.defaultsKey) private var eraserRadius = ObjectEraserSize.defaultRadius
     @AppStorage(ToolPalette.compactKey) private var paletteCompact = false
+    @AppStorage(MouseSmoothing.key) private var mouseSmoothing = MouseSmoothing.defaultLevel
 
     var body: some View {
         Section {
@@ -144,13 +242,62 @@ private struct EditorSettingsSection: View {
             .syncedSetting("eraser.objectRadius")
             Toggle("Compact Palette", isOn: $paletteCompact)
                 .syncedSetting("editor.compactPalette")
+            if Platform.isMac {
+                Picker("Smooth Mouse Strokes", selection: $mouseSmoothing) {
+                    Text("Off").tag(StrokeSmoothing.Level.off)
+                    Text("Light", comment: "Smooth Mouse Strokes setting").tag(StrokeSmoothing.Level.light)
+                    Text("Strong", comment: "Smooth Mouse Strokes setting").tag(StrokeSmoothing.Level.strong)
+                }
+                .accessibilityIdentifier("mouseSmoothing")
+                .syncedSetting("mouse.smoothing")
+            }
+        } header: {
+            Text("Editor", comment: "Settings section: tools of the note editor")
+        } footer: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("The editor's own menus change these too.")
+                if Platform.isMac {
+                    Text("Smooth Mouse Strokes evens out lines drawn with a mouse or trackpad; Strong rounds them more. Strokes drawn with the ruler are not smoothed.")
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Handwriting
+
+private struct HandwritingSettingsSection: View {
+    @AppModelEnvironment private var model
+    @AppStorage(RecognitionPreference.key) private var recognize = RecognitionPreference.defaultValue
+
+    var body: some View {
+        Section {
+            Toggle("Recognize Handwriting", isOn: Binding(
+                get: { recognize },
+                set: { recognize = $0; model.setHandwritingRecognition($0) }))
+                .syncedSetting("handwriting.recognize")
+        } header: {
+            Text("Handwriting Recognition")
+        } footer: {
+            Text("Handwriting recognition makes handwriting searchable; it runs on this device and nothing leaves it.")
+        }
+    }
+}
+
+// MARK: - Transcript search
+
+private struct TranscriptSearchSettingsSection: View {
+    @AppModelEnvironment private var model
+
+    var body: some View {
+        Section {
             Toggle("Search Recording Transcripts", isOn: Binding(get: { model.searchTranscripts },
                                                                  set: { model.setSearchTranscripts($0) }))
                 .syncedSetting("search.transcripts")
         } header: {
-            Text("Editor", comment: "Settings section: tools of the note editor")
+            Text("Search", comment: "Settings ▸ Audio & Transcription: section of the transcript search switch")
         } footer: {
-            Text("The editor's own menus change these too. Searching recording transcripts reads and decrypts every transcript of the notes searched, on this device.")
+            Text("Searching recording transcripts reads and decrypts every transcript of the notes searched, on this device.")
         }
     }
 }
@@ -876,6 +1023,7 @@ struct ThinningPreviewView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: cancel) }
                 ToolbarItem(placement: .destructiveAction) {
                     Button("Thin", role: .destructive, action: thin).disabled(report.isEmpty)
+                        .help("Thin the old versions listed above")
                 }
             }
         }

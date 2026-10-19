@@ -41,7 +41,7 @@ for arg in "$@"; do
   esac
 done
 
-gate_steps=(package mac ios-build)
+gate_steps=(help package mac ios-build)
 steps=("${gate_steps[@]}")
 case "$mode" in
   gate)       context=$gate_context ;;
@@ -51,6 +51,7 @@ esac
 
 describe() {   # step: what it runs
   case "$1" in
+    help)       echo "scripts/check-help.py          (every toolbar and icon-only control has a .help tooltip)" ;;
     package)    echo "swift build --build-tests && swift test --parallel" ;;
     mac)        echo "scripts/app.sh test-mac        (Mac Catalyst unit tests, pseudo-language layouts included)" ;;
     ios-build)  echo "scripts/app.sh build-ios       (iOS simulator compile check, no tests)" ;;
@@ -95,6 +96,7 @@ status() {   # context, state, description
 
 run_step() {
   case "$1" in
+    help)       scripts/check-help.py --self-test && scripts/check-help.py ;;
     package)    swift build --build-tests && swift test --parallel ;;
     mac)        scripts/app.sh test-mac ;;
     ios-build)  scripts/app.sh build-ios ;;

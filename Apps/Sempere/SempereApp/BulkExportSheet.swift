@@ -64,12 +64,14 @@ struct BulkExportSheet: View {
                     Button(run.isRunning ? "Stop" : "Close") {
                         if run.isRunning { run.cancel() } else { dismiss() }
                     }
+                        .help("Stop the export, or close this window when it is done")
                 }
             }
         }
         .interactiveDismissDisabled(run.isRunning)
         .onDisappear { run.discard() }
-        .fileImporter(isPresented: $pickingFolder, allowedContentTypes: [.folder]) { picked in
+        // A folder picker with New Folder (`FolderPicker`).
+        .folderPicker(isPresented: $pickingFolder) { picked in
             if case .success(let url) = picked {
                 run.start(model: model, request: request, options: options, target: .folder(url, scoped: true))
             }

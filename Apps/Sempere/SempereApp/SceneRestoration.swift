@@ -90,6 +90,7 @@ struct AppEnvironment: ViewModifier {
             .environment(model)
             .environment(library)
             .environment(keys)
+            .modifier(AppThemeModifier())   // Settings ▸ Appearance, on every window
     }
 }
 

@@ -176,8 +176,8 @@ struct RecordingsMenu: View {
                         }
                     }
                 }
-                Divider()
-                Button("All Recordings…", systemImage: "list.bullet") { ui.showingRecordings = true }
+                // The list of every recording is the overflow menu's "All Recordings…" on every device
+                // (`NoteToolbar.Item.allRecordings`): here it was behind a press and hold on an iPad.
             }
         } label: {
             Label("Recordings", systemImage: editor.recordingSession?.isActive == true ? "mic.fill" : "mic")
@@ -268,6 +268,7 @@ struct RenameRecordingSheet: View {
                         Task { await editor.renameRecording(recording.id, to: t) }
                         dismiss()
                     }
+                        .help("Save the new name")
                 }
             }
         }

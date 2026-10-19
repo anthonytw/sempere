@@ -239,6 +239,56 @@ final class CaptureInboxTests: VaultTestCase {
         let state = try vault.reconstruct(noteId: CaptureAdoption.ids(for: id).note)
         XCTAssertEqual(state.recordings.count, 1)
         XCTAssertEqual(state.pages.count, 1)
+        XCTAssertEqual(state.pages[0].items.filter { $0.kind == .audio }.count, 1, "one card, the same id on both devices")
+    }
+
+    /// An adopted voice note shows its recording on the page as a card (format.md §8.2.9, §11.3), as
+    /// a recording made in a note does: the card the transcript shows in. TestFlight 1.0.0 (6): a quick
+    /// voice note became a blank page with the recording only in the Recordings list.
+    func testAdoptedVoiceNoteShowsItsCardWithTheTranscript() throws {
+        let (identity, profile, locked) = try setUp()
+        let writer = try CaptureWriter(profile: profile)
+        let id = UUID()
+        try CaptureWriter.store(try writer.seal(audio: audio, started: started, id: id), in: locked.inboxURL)
+        try CaptureWriter.store(try writer.seal(transcript: transcript(id), capture: id, audio: audioRef), in: locked.inboxURL)
+        let vault = try Vault.open(at: locked.url, identities: [identity])
+        let r = vault.adoptCapture(id, deviceState: deviceState(), app: "test/1")
+        XCTAssertNil(r.error)
+        XCTAssertTrue(r.card)
+        XCTAssertTrue(r.transcript)
+        let ids = CaptureAdoption.ids(for: id)
+        let state = try vault.reconstruct(noteId: ids.note)
+        XCTAssertEqual(try vault.loadNote(ids.note).revisions.count, 1, "the card is in the adoption's one delta")
+        let page = try XCTUnwrap(state.pages.first)
+        let card = try XCTUnwrap(page.items.first)
+        XCTAssertEqual(page.items.count, 1)
+        XCTAssertEqual(card.kind, .audio)
+        XCTAssertEqual(card.id, CaptureAdoption.cardID(for: id))
+        XCTAssertEqual(card.recording, ids.recording)
+        XCTAssertEqual(state.recording(shownBy: card)?.transcript, state.recordings.first?.transcript)
+        XCTAssertNotNil(state.recording(shownBy: card)?.transcript)
+        // Placed as `NoteOps.placeRecording` places a card on an empty page: the default size, centered.
+        XCTAssertEqual(card.frame.w, NoteOps.audioItemSize.w)
+        XCTAssertEqual(card.frame.h, NoteOps.audioItemSize.h)
+        XCTAssertEqual(card.frame.x + card.frame.w / 2, PageSize.letter.width / 2, accuracy: 0.01)
+    }
+
+    /// A transcript that arrives after the note was adopted fills the card's recording; no second card.
+    func testLateTranscriptKeepsOneCard() throws {
+        let (identity, profile, locked) = try setUp()
+        let writer = try CaptureWriter(profile: profile)
+        let id = UUID()
+        try CaptureWriter.store(try writer.seal(audio: audio, started: started, id: id), in: locked.inboxURL)
+        let vault = try Vault.open(at: locked.url, identities: [identity])
+        XCTAssertTrue(vault.adoptCapture(id, deviceState: deviceState(), app: "test/1").card)
+        try CaptureWriter.store(try writer.seal(transcript: transcript(id), capture: id, audio: audioRef), in: locked.inboxURL)
+        let later = vault.adoptCapture(id, deviceState: deviceState(), app: "test/1")
+        XCTAssertNil(later.error)
+        XCTAssertTrue(later.transcript)
+        XCTAssertFalse(later.card)
+        let state = try vault.reconstruct(noteId: CaptureAdoption.ids(for: id).note)
+        XCTAssertEqual(state.pages[0].items.map(\.id), [CaptureAdoption.cardID(for: id)])
+        XCTAssertNotNil(state.recordings.first?.transcript)
     }
 
     /// Anyone can encrypt to the public recipients; without the capture key

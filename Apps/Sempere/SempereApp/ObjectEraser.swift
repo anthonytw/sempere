@@ -55,6 +55,11 @@ final class ObjectEraserController: NSObject, UIGestureRecognizerDelegate {
     private(set) var isActive = false
     /// A gesture is erasing now (between its first touch and its end).
     var isErasing: Bool { before != nil }
+    /// A gesture began (the host switches an iPad to annotating when only the Pencil draws, and holds
+    /// drawing-policy changes until `onEnd`).
+    var onBegin: (() -> Void)?
+    /// The gesture ended or was canceled.
+    var onEnd: (() -> Void)?
 
     func attach(to host: UIView, canvas: PKCanvasView) {
         self.host = host
@@ -145,9 +150,13 @@ final class ObjectEraserController: NSObject, UIGestureRecognizerDelegate {
         let p = pagePoint(g.location(in: canvas))
         showCursor(at: g.location(in: host))
         switch g.state {
-        case .began: begin(at: p)
+        case .began:
+            begin(at: p)
+            onBegin?()
         case .changed: move(to: p)
-        case .ended, .cancelled, .failed: end(at: p)
+        case .ended, .cancelled, .failed:
+            end(at: p)
+            onEnd?()
         default: break
         }
     }

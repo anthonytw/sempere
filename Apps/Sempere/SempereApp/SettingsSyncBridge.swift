@@ -87,6 +87,9 @@ enum SettingsSyncBridge {
         case "quickCapture.notebook": return extras.quickCapture.map { .string($0.notebook) }
         case "quickCapture.transcribe": return extras.quickCapture.map { .bool($0.transcribe) }
         case "appearance.icon": return extras.appIcon.map { .string($0) }
+        case "appearance.theme": return .string(AppTheme.load(from: d).rawValue)
+        case "appearance.notePages": return .string(NotePagesAppearance.load(from: d).rawValue)
+        case "drag.format": return .string(DragExportFormat.load(from: d).rawValue)
         default: return nil
         }
     }
@@ -129,6 +132,10 @@ enum SettingsSyncBridge {
             case ("rewrap.onRemove", .string(let s)): if let m = RewrapMethod(rawValue: s) { RewrapSettings.setOnRemove(m, in: d) }
             case ("editor.keepScreenOn", .bool(let b)): d.set(b, forKey: KeepScreenOn.key)
             case ("mouse.smoothing", .string(let s)): d.set(s, forKey: MouseSmoothing.key)
+            case ("appearance.theme", .string(let s)): if let t = AppTheme(rawValue: s) { AppTheme.save(t, to: d) }
+            case ("appearance.notePages", .string(let s)):
+                if let p = NotePagesAppearance(rawValue: s) { NotePagesAppearance.save(p, to: d) }
+            case ("drag.format", .string(let s)): if let f = DragExportFormat(rawValue: s) { DragExportFormat.save(f, to: d) }
             default: break
             }
         }

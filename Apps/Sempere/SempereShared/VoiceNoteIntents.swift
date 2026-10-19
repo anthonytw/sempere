@@ -35,6 +35,28 @@ enum VoiceNoteActions {
     static var open: (@MainActor (VoiceNoteLink) -> Void)?
     /// The live status (`QuickCapture.status`): what the control's tap does.
     static var status: (@MainActor () -> VoiceNoteStatus)?
+    /// The app's state as the diagnostics name it ("active", "background"; `QuickCapture.register`).
+    /// Nil in the widget extension, which has no `UIApplication`.
+    static var appState: (@MainActor () -> String)?
+    /// Where every tap is kept (`VoiceNoteTapLog`, the App Group: the extension writes there too).
+    static var tapLog: VoiceNoteTapLog? = VoiceNoteTapLog.shared
+    /// Called after a tap was kept (the app refreshes Settings ▸ Quick Voice Notes ▸ Recent Starts).
+    static var tapRecorded: (@MainActor (VoiceNoteTap) -> Void)?
+
+    /// Keeps one tap (`VoiceNoteTapLog`) and writes it to the unified log, in whichever process it ran.
+    static func recordTap(_ entry: VoiceNoteTap.Entry, decision: VoiceNoteTap.Decision, shown: String? = nil,
+                          mode: String? = nil, error: Error? = nil) {
+        let text = error.map { e -> String in
+            let ns = e as NSError
+            return String("\(ns.domain) \(ns.code): \(String(describing: e))".prefix(VoiceNoteTap.maxError))
+        }
+        let tap = VoiceNoteTap(date: Date(), entry: entry, process: VoiceNoteTap.processName, shown: shown,
+                               live: status?().phase.rawValue, decision: decision, mode: mode, appState: appState?(),
+                               error: text)
+        VoiceNoteTapLog.log(tap)
+        tapLog?.append(tap)
+        tapRecorded?(tap)
+    }
 
     /// Starts recording for `intent`; a start the audio system refused in the background is tried
     /// once more with the app in front (`QuickCapture.start(_:)` waits for it to be active), so a
@@ -75,6 +97,12 @@ struct StartVoiceNoteIntent: AudioRecordingIntent, LiveActivityIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        let mode = systemContext.currentMode.debugDescription
+        guard VoiceNoteActions.start != nil else {
+            VoiceNoteActions.recordTap(.startIntent, decision: .unavailable, mode: mode)
+            throw VoiceNoteIntentError.unavailable
+        }
+        VoiceNoteActions.recordTap(.startIntent, decision: .start, mode: mode)
         try await VoiceNoteActions.startOrContinueInApp(self, source: .shortcut)
         return .result()
     }
@@ -91,8 +119,18 @@ struct StopVoiceNoteIntent: LiveActivityIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        guard let stop = VoiceNoteActions.stop else { throw VoiceNoteIntentError.unavailable }
-        try await stop()
+        let mode = systemContext.currentMode.debugDescription
+        guard let stop = VoiceNoteActions.stop else {
+            VoiceNoteActions.recordTap(.stopIntent, decision: .unavailable, mode: mode)
+            throw VoiceNoteIntentError.unavailable
+        }
+        do {
+            try await stop()
+            VoiceNoteActions.recordTap(.stopIntent, decision: .stop, mode: mode)
+        } catch {
+            VoiceNoteActions.recordTap(.stopIntent, decision: .stop, mode: mode, error: error)
+            throw error
+        }
         return .result()
     }
 }
@@ -132,16 +170,34 @@ struct VoiceNoteControlIntent: AudioRecordingIntent, LiveActivityIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        // Every tap is kept first (Recent Starts), also one that only goes on into the app or runs
+        // where the app's hooks are missing: build 6's Lock Screen widget taps left no trace.
+        let mode = systemContext.currentMode.debugDescription
         guard let status = VoiceNoteActions.status, VoiceNoteActions.start != nil, let stop = VoiceNoteActions.stop else {
+            VoiceNoteActions.recordTap(.controlIntent, decision: .unavailable, shown: shown, mode: mode)
             throw VoiceNoteIntentError.unavailable
         }
         switch VoiceNoteStatus.controlAction(shown: shown.flatMap(VoiceNoteStatus.Phase.init(rawValue:)), live: status()) {
         case .start:
+            VoiceNoteActions.recordTap(.controlIntent, decision: .start, shown: shown, mode: mode)
             try await VoiceNoteActions.startOrContinueInApp(self, source: .widgetOrControl)
         case .stop:
-            try await stop()
+            do {
+                try await stop()
+                VoiceNoteActions.recordTap(.controlIntent, decision: .stop, shown: shown, mode: mode)
+            } catch {
+                VoiceNoteActions.recordTap(.controlIntent, decision: .stop, shown: shown, mode: mode, error: error)
+                throw error
+            }
         case .open(let link):
-            try await continueInForeground(alwaysConfirm: false)
+            let decision: VoiceNoteTap.Decision = link == .settings ? .openSettings : .openRecording
+            do {
+                try await continueInForeground(alwaysConfirm: false)
+                VoiceNoteActions.recordTap(.controlIntent, decision: decision, shown: shown, mode: mode)
+            } catch {
+                VoiceNoteActions.recordTap(.controlIntent, decision: decision, shown: shown, mode: mode, error: error)
+                throw error
+            }
             VoiceNoteActions.open?(link)
         }
         return .result()

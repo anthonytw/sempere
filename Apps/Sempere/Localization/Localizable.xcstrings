@@ -2573,6 +2573,17 @@
         }
       }
     },
+    "A note dragged from the note list to the Finder or another app becomes a file in this format, made from the note as it is now. The file is not encrypted." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una nota arrastrada desde la lista al Finder o a otra app se convierte en un archivo en este formato, hecho a partir de la nota tal como está ahora. El archivo no está cifrado."
+          }
+        }
+      }
+    },
     "A notebook cannot be moved into itself or into a notebook inside it." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3116,6 +3127,18 @@
         }
       }
     },
+    "Add this device's key to the vault" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir la clave de este dispositivo a la bóveda"
+          }
+        }
+      }
+    },
     "Add this note to Favorites" : {
       "comment" : "Tooltip of the favorite button",
       "extractionState" : "manual",
@@ -3124,6 +3147,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Añadir esta nota a Favoritas"
+          }
+        }
+      }
+    },
+    "Add this tag to the note" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir esta etiqueta a la nota"
           }
         }
       }
@@ -3296,6 +3331,42 @@
         }
       }
     },
+    "Annotate: draw on the page with a finger" : {
+      "comment" : "Tooltip of the Annotate button on the iPhone",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anotar: dibuja en la página con el dedo"
+          }
+        }
+      }
+    },
+    "Annotate: draw on the page with the mouse; Drawing Tools picks the tool" : {
+      "comment" : "Tooltip of the Annotate button on the Mac",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anotar: dibuja en la página con el ratón; Herramientas de dibujo elige la herramienta"
+          }
+        }
+      }
+    },
+    "Annotate: draw on the page with the tool palette; press and hold for the compact palette" : {
+      "comment" : "Tooltip of the Annotate button on the iPad and the Mac",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anotar: dibuja en la página con la paleta de herramientas; mantén pulsado para la paleta compacta"
+          }
+        }
+      }
+    },
     "Another Vault Is Open" : {
       "comment" : "Note window: its vault is not the open one",
       "extractionState" : "manual",
@@ -3410,6 +3481,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Idioma de la app abre la página de Sempere en los ajustes del sistema: Sempere usa el idioma que elijas allí, así que sus widgets, atajos y diálogos del sistema coinciden con él."
+          }
+        }
+      }
+    },
+    "Appearance" : {
+      "comment" : "Settings section header: app theme and note pages",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apariencia"
           }
         }
       }
@@ -3530,6 +3613,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Audio"
+          }
+        }
+      }
+    },
+    "Audio & Transcription" : {
+      "comment" : "Settings group",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Audio y transcripción"
           }
         }
       }
@@ -3659,6 +3754,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hacer copia ahora"
+          }
+        }
+      }
+    },
+    "Back to Reading" : {
+      "comment" : "Tools menu: leave Annotate or Hand mode for reading",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a lectura"
           }
         }
       }
@@ -3806,6 +3913,18 @@
         }
       }
     },
+    "Backup Failed" : {
+      "comment" : "Alert title: Back Up Now or Verify Backup failed",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Error en la copia"
+          }
+        }
+      }
+    },
     "Backup Settings…" : {
       "comment" : "About Your Key: button to Settings ▸ Backups",
       "extractionState" : "manual",
@@ -3826,6 +3945,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copias de seguridad"
+          }
+        }
+      }
+    },
+    "Backups & History" : {
+      "comment" : "Settings group: backups, version history, storage",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copias e historial"
           }
         }
       }
@@ -3969,6 +4100,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lista con viñetas"
+          }
+        }
+      }
+    },
+    "Can't be reached: iCloud Drive may be off or signed out, or the vault was moved or deleted." : {
+      "comment" : "Recent vault row after waiting several minutes for iCloud.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede acceder: puede que iCloud Drive esté desactivado o sin sesión iniciada, o que la bóveda se moviera o eliminara."
+          }
+        }
+      }
+    },
+    "Can't be reached: its storage provider is unavailable, or the vault was moved or deleted." : {
+      "comment" : "Recent vault row after waiting several minutes for another app's cloud storage.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede acceder: su proveedor de almacenamiento no está disponible, o la bóveda se movió o eliminó."
           }
         }
       }
@@ -4254,6 +4409,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Comprobando el modelo…"
+          }
+        }
+      }
+    },
+    "Choose" : {
+      "comment" : "Button of the Mac's folder panel",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elegir"
+          }
+        }
+      }
+    },
+    "Choose Another Backup Folder" : {
+      "comment" : "Alert title: the picked backup folder cannot be used",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige otra carpeta de copia de seguridad"
           }
         }
       }
@@ -4584,6 +4763,18 @@
         }
       }
     },
+    "Close the tour" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar la visita guiada"
+          }
+        }
+      }
+    },
     "Close the vault (⇧⌘W)" : {
       "comment" : "Help tag in the sidebar",
       "extractionState" : "manual",
@@ -4604,6 +4795,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cerrar esta bóveda; los PDF esperan hasta que abras y desbloquees otra"
+          }
+        }
+      }
+    },
+    "Close this window" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar esta ventana"
           }
         }
       }
@@ -4759,6 +4962,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copiar clave pública"
+          }
+        }
+      }
+    },
+    "Copy the secret key to the clipboard" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar la clave secreta al portapapeles"
           }
         }
       }
@@ -5230,6 +5445,54 @@
         }
       }
     },
+    "Create the key file" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crear el archivo de clave"
+          }
+        }
+      }
+    },
+    "Create the note" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crear la nota"
+          }
+        }
+      }
+    },
+    "Create the notebook" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crear el cuaderno"
+          }
+        }
+      }
+    },
+    "Create the vault" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crear la bóveda"
+          }
+        }
+      }
+    },
     "Creates a new key, adds it to this vault's keys and re-encrypts every note to it, which can take a while. Then save or print it for the other device. From a terminal: sempere keys generate, then sempere vault recipients add." : {
       "comment" : "Footer of New Key; commands are not translated",
       "extractionState" : "manual",
@@ -5262,6 +5525,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Recortar"
+          }
+        }
+      }
+    },
+    "Crop to the whole image again" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a recortar a la imagen completa"
           }
         }
       }
@@ -5334,6 +5609,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Oscuro"
+          }
+        }
+      }
+    },
+    "Dark note pages show the paper dark and ink, text and equations with their lightness inverted, keeping their colors; pictures, PDFs and videos are shown as they are. Notes are stored and exported as on light paper." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Con páginas oscuras, el papel se ve oscuro y la tinta, el texto y las ecuaciones con la luminosidad invertida, conservando sus colores; las imágenes, los PDF y los vídeos se ven como son. Las notas se guardan y se exportan como en papel claro."
           }
         }
       }
@@ -5623,6 +5909,18 @@
         }
       }
     },
+    "Discard the opened PDFs without importing them" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descartar los PDF abiertos sin importarlos"
+          }
+        }
+      }
+    },
     "Dismiss" : {
       "comment" : "Button: hide a recording error message",
       "extractionState" : "manual",
@@ -5667,6 +5965,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ecuación en bloque"
+          }
+        }
+      }
+    },
+    "Do not save the key on this device" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No guardar la clave en este dispositivo"
           }
         }
       }
@@ -6038,6 +6348,18 @@
         }
       }
     },
+    "Drag to Finder" : {
+      "comment" : "Settings section header (Mac): the format of a note dragged out",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrastrar al Finder"
+          }
+        }
+      }
+    },
     "Draw" : {
       "comment" : "Undo action name (Edit menu: Undo …) for a mouse stroke",
       "extractionState" : "manual",
@@ -6070,6 +6392,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Caché de dibujos"
+          }
+        }
+      }
+    },
+    "Drawing Tools" : {
+      "comment" : "Mac toolbar: menu of the drawing tools (pen, marker, pencil, eraser, lasso, ruler)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Herramientas de dibujo"
+          }
+        }
+      }
+    },
+    "Drop a notebook here to move it to the top level" : {
+      "comment" : "Tooltip of the sidebar's Notebooks header",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suelta aquí un cuaderno para moverlo al nivel superior"
           }
         }
       }
@@ -6637,6 +6983,18 @@
         }
       }
     },
+    "Export this note" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exportar esta nota"
+          }
+        }
+      }
+    },
     "Export to Folder or Zip…" : {
       "comment" : "File menu: bulk export to a folder or zip",
       "extractionState" : "manual",
@@ -6668,6 +7026,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Exportando la nota %lld de %lld…"
+          }
+        }
+      }
+    },
+    "Exports As" : {
+      "comment" : "Settings ▸ Drag to Finder: the format picker",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exportar como"
           }
         }
       }
@@ -6881,6 +7251,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ajustar al ancho de página"
+          }
+        }
+      }
+    },
+    "Fold %@" : {
+      "comment" : "Sidebar on an iPhone: hide a notebook's sub-notebooks (the notebook's name)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plegar %@"
           }
         }
       }
@@ -7157,6 +7539,18 @@
         }
       }
     },
+    "Go to another page, add, duplicate or delete one, show the thumbnails, or switch the layout" : {
+      "comment" : "Tooltip of the Pages menu in the note's overflow menu",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ve a otra página, añade, duplica o elimina una, muestra las miniaturas o cambia la disposición"
+          }
+        }
+      }
+    },
     "Go to another page, or add one" : {
       "comment" : "Help tag of the Pages menu (iPhone)",
       "extractionState" : "manual",
@@ -7229,6 +7623,18 @@
         }
       }
     },
+    "Hand: click an item to select it, drag to move or resize it; nothing draws" : {
+      "comment" : "Tooltip of the Hand button on the Mac",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mano: haz clic en un elemento para seleccionarlo, arrástralo para moverlo o cambiar su tamaño; no se dibuja nada"
+          }
+        }
+      }
+    },
     "Hand: scroll with one finger, tap an item to select it, hold for its menu, drag to move it" : {
       "comment" : "Tooltip of the iPhone top bar's Hand button",
       "extractionState" : "manual",
@@ -7249,6 +7655,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Escritura a mano"
+          }
+        }
+      }
+    },
+    "Handwriting Recognition" : {
+      "comment" : "Settings section header",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reconocimiento de escritura"
           }
         }
       }
@@ -7535,6 +7953,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ocultar la lista de notas para ver el lienzo a todo el ancho"
+          }
+        }
+      }
+    },
+    "Hide the sub-notebooks" : {
+      "comment" : "Tooltip of a notebook's chevron in the iPhone's sidebar",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ocultar los subcuadernos"
           }
         }
       }
@@ -7874,6 +8304,30 @@
         }
       }
     },
+    "Import the chosen files" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importar los archivos elegidos"
+          }
+        }
+      }
+    },
+    "Import the opened PDFs as notes" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importar los PDF abiertos como notas"
+          }
+        }
+      }
+    },
     "Imported" : {
       "comment" : "Notability import report: section of what was imported",
       "extractionState" : "manual",
@@ -8157,6 +8611,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Instalado"
+          }
+        }
+      }
+    },
+    "Interrupted" : {
+      "comment" : "Dynamic Island: the app recording a voice note was force quit or crashed",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Interrumpida"
+          }
+        }
+      }
+    },
+    "Interrupted Voice Note Not Saved Yet" : {
+      "comment" : "Banner title: a voice note cut off by a restart is kept on the device for now",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nota de voz interrumpida aún sin guardar"
+          }
+        }
+      }
+    },
+    "Interrupted Voice Note Saved" : {
+      "comment" : "Banner title: a voice note cut off by a restart or a force quit was saved",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nota de voz interrumpida guardada"
           }
         }
       }
@@ -8799,6 +9289,24 @@
         }
       }
     },
+    "Light Appearance" : {
+      "comment" : "Settings ▸ Appearance: light theme (not the “Light” of mouse smoothing)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Light"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claro"
+          }
+        }
+      }
+    },
     "Line color" : {
       "comment" : "Paper picker: color of the ruling",
       "extractionState" : "manual",
@@ -8855,6 +9363,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lista"
+          }
+        }
+      }
+    },
+    "List this note's recordings: play, transcribe, rename or delete them" : {
+      "comment" : "Tooltip of All Recordings… in the note's overflow menu",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lista las grabaciones de esta nota: reprodúcelas, transcríbelas, cámbiales el nombre o elimínalas"
           }
         }
       }
@@ -8955,6 +9475,18 @@
         }
       }
     },
+    "Make this version the note's current one" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hacer de esta versión la actual de la nota"
+          }
+        }
+      }
+    },
     "Margin color" : {
       "comment" : "Paper picker",
       "extractionState" : "manual",
@@ -8967,6 +9499,18 @@
         }
       }
     },
+    "Markdown" : {
+      "comment" : "Settings ▸ Drag to Finder: export format",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Markdown"
+          }
+        }
+      }
+    },
     "Marker" : {
       "comment" : "Tools menu: select the marker",
       "extractionState" : "manual",
@@ -8975,6 +9519,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rotulador"
+          }
+        }
+      }
+    },
+    "Match App" : {
+      "comment" : "Settings ▸ Appearance ▸ Note Pages: dark when the app is dark",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Como la app"
           }
         }
       }
@@ -9111,6 +9667,18 @@
         }
       }
     },
+    "More" : {
+      "comment" : "Sidebar toolbar: menu with New Notebook, Settings and Close Vault",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Más"
+          }
+        }
+      }
+    },
     "More Colors" : {
       "comment" : "VoiceOver: opens the system color picker",
       "extractionState" : "manual",
@@ -9183,6 +9751,18 @@
         }
       }
     },
+    "Move into this notebook" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover dentro de este cuaderno"
+          }
+        }
+      }
+    },
     "Move to Notebook" : {
       "comment" : "Sheet title: move a note",
       "extractionState" : "manual",
@@ -9227,6 +9807,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mover al nivel superior"
+          }
+        }
+      }
+    },
+    "Move to this notebook" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover a este cuaderno"
           }
         }
       }
@@ -9501,6 +10093,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nuevo cuaderno «%@»"
+          }
+        }
+      }
+    },
+    "New notebook, settings and closing the vault" : {
+      "comment" : "Help tag of the sidebar's More menu",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuevo cuaderno, ajustes y cerrar la bóveda"
           }
         }
       }
@@ -10034,6 +10638,18 @@
         }
       }
     },
+    "Not found: it was moved or deleted. Choose it again, or remove it." : {
+      "comment" : "Recent vault row: the vault's folder is gone from where it was. 'la' refers to the vault (bóveda).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se encuentra: se movió o se eliminó. Vuelve a elegirla o quítala."
+          }
+        }
+      }
+    },
     "Not on a page" : {
       "comment" : "Recordings list: no card shows the recording",
       "extractionState" : "manual",
@@ -10078,6 +10694,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nota no encontrada"
+          }
+        }
+      }
+    },
+    "Note Pages" : {
+      "comment" : "Settings ▸ Appearance: how note pages are shown (light, dark, match app)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Páginas"
           }
         }
       }
@@ -10310,6 +10938,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nada que eliminar: ningún guardado automático es lo bastante antiguo para reducirlo."
+          }
+        }
+      }
+    },
+    "Nothing: Sempere's actions were not ready" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: the tap ran where the app had not set up its actions",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nada: las acciones de Sempere no estaban listas"
           }
         }
       }
@@ -10763,6 +11403,30 @@
         }
       }
     },
+    "Open Sempere at its settings" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: what a tap was decided to do",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir Sempere en sus ajustes"
+          }
+        }
+      }
+    },
+    "Open Sempere at the recording" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: what a tap was decided to do",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir Sempere en la grabación"
+          }
+        }
+      }
+    },
     "Open Sempere for details." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10770,6 +11434,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abre Sempere para ver los detalles."
+          }
+        }
+      }
+    },
+    "Open Sempere to save it." : {
+      "comment" : "Live Activity detail under \"Voice note interrupted\"",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre Sempere para guardarla."
+          }
+        }
+      }
+    },
+    "Open Sempere to save the voice note." : {
+      "comment" : "Dynamic Island: a voice note was interrupted; opening the app saves it",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre Sempere para guardar la nota de voz."
           }
         }
       }
@@ -10961,6 +11649,18 @@
         }
       }
     },
+    "Open this vault" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir esta bóveda"
+          }
+        }
+      }
+    },
     "Open “%@”" : {
       "comment" : "Restore from Backup: open the restored vault; %@ is its name",
       "extractionState" : "manual",
@@ -11041,6 +11741,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abriendo…"
+          }
+        }
+      }
+    },
+    "Opens as soon as it is available." : {
+      "comment" : "Recent vault row, under 'Waiting for iCloud…': the app opens this vault by itself when it arrives.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se abrirá en cuanto esté disponible."
           }
         }
       }
@@ -11793,6 +12505,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Elige en Archivos la carpeta de un modelo, o un zip de ella. Se comprueba con su manifiesto y se guarda en este dispositivo."
+          }
+        }
+      }
+    },
+    "Pick the pen, marker, pencil, eraser or lasso (also in the Tools menu)" : {
+      "comment" : "Mac toolbar tooltip of the Drawing Tools menu",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige el bolígrafo, el rotulador, el lápiz, el borrador o el lazo (también en el menú Herramientas)"
           }
         }
       }
@@ -13462,6 +14186,18 @@
         }
       }
     },
+    "Repair the list of keys that can open this vault" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reparar la lista de claves que pueden abrir esta bóveda"
+          }
+        }
+      }
+    },
     "Repairing the device list and re-encrypting every note…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13765,6 +14501,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Restaurar desde copia…"
+          }
+        }
+      }
+    },
+    "Restore the vault from this backup" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restaurar la bóveda desde esta copia de seguridad"
           }
         }
       }
@@ -14198,6 +14946,18 @@
         }
       }
     },
+    "Save the equation" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar la ecuación"
+          }
+        }
+      }
+    },
     "Save the key of “%@”" : {
       "comment" : "Face ID prompt reason; %@ is the vault's name",
       "extractionState" : "manual",
@@ -14206,6 +14966,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Guardar la clave de «%@»"
+          }
+        }
+      }
+    },
+    "Save the new name" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar el nombre nuevo"
           }
         }
       }
@@ -14377,6 +15149,18 @@
         }
       }
     },
+    "Search" : {
+      "comment" : "Settings ▸ Audio & Transcription: section of the transcript search switch",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Búsqueda"
+          }
+        }
+      }
+    },
     "Search Recording Transcripts" : {
       "comment" : "Toggle above the search results: also search what was said in recordings",
       "extractionState" : "manual",
@@ -14409,6 +15193,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Buscar en notas y escritura a mano"
+          }
+        }
+      }
+    },
+    "Searching recording transcripts reads and decrypts every transcript of the notes searched, on this device." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscar en las transcripciones lee y descifra cada transcripción de las notas en las que se busca, en este dispositivo."
           }
         }
       }
@@ -14497,6 +15292,18 @@
         }
       }
     },
+    "Select several notes to act on them together" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seleccionar varias notas para actuar sobre ellas a la vez"
+          }
+        }
+      }
+    },
     "Select, move, resize and delete images, text boxes and PDF pages" : {
       "comment" : "Tooltip",
       "extractionState" : "manual",
@@ -14557,6 +15364,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sempere no ha podido confirmar que eres tú, así que no se ha mostrado la clave."
+          }
+        }
+      }
+    },
+    "Sempere could not confirm it may use the microphone without opening. Open Sempere to record." : {
+      "comment" : "Error of a voice note start in the background whose microphone permission could not be confirmed",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sempere no pudo confirmar que puede usar el micrófono sin abrirse. Abre Sempere para grabar."
           }
         }
       }
@@ -15129,6 +15948,18 @@
         }
       }
     },
+    "Show the sub-notebooks" : {
+      "comment" : "Tooltip of a notebook's chevron in the iPhone's sidebar",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar los subcuadernos"
+          }
+        }
+      }
+    },
     "Shown in Another Window" : {
       "comment" : "Detail pane: another library window shows the note's canvas",
       "extractionState" : "manual",
@@ -15521,6 +16352,18 @@
         }
       }
     },
+    "Start recording" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: what a tap was decided to do",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empezar a grabar"
+          }
+        }
+      }
+    },
     "Stereo" : {
       "comment" : "Recording channels: two channels (Settings picker)",
       "extractionState" : "manual",
@@ -15662,6 +16505,18 @@
         }
       }
     },
+    "Stop recording" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: what a tap was decided to do",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dejar de grabar"
+          }
+        }
+      }
+    },
     "Stop the Voice Note" : {
       "comment" : "App Intent title",
       "extractionState" : "manual",
@@ -15670,6 +16525,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Detener la nota de voz"
+          }
+        }
+      }
+    },
+    "Stop the export, or close this window when it is done" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detener la exportación, o cerrar esta ventana cuando termine"
           }
         }
       }
@@ -15875,6 +16742,18 @@
         }
       }
     },
+    "Switch between pages and one endless page" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alternar entre páginas y una sola página sin fin"
+          }
+        }
+      }
+    },
     "Switch to Paged Layout" : {
       "comment" : "Note menu: make a pageless note into pages",
       "extractionState" : "manual",
@@ -15923,6 +16802,18 @@
         }
       }
     },
+    "Sync & Devices" : {
+      "comment" : "Settings group: settings sync and device keys",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronización y claves"
+          }
+        }
+      }
+    },
     "Sync Now" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -15953,6 +16844,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sincronizar ajustes con esta bóveda"
+          }
+        }
+      }
+    },
+    "System" : {
+      "comment" : "Settings ▸ Appearance: follow the system's light or dark mode",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sistema"
           }
         }
       }
@@ -16192,6 +17095,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Toca para grabar"
+          }
+        }
+      }
+    },
+    "Tap: Siri or Shortcuts" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: Siri or a shortcut asked for a voice note",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toque: Siri o Atajos"
+          }
+        }
+      }
+    },
+    "Tap: Stop" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: the Live Activity's Stop reached Sempere",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toque: Detener"
+          }
+        }
+      }
+    },
+    "Tap: Widget opened Sempere" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: a widget tap opened the app instead of running its action",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toque: el widget abrió Sempere"
+          }
+        }
+      }
+    },
+    "Tap: Widget or Control Center" : {
+      "comment" : "Settings ▸ Quick Voice Notes ▸ Recent Starts: a tap on a widget or the control reached Sempere",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toque: widget o Centro de control"
           }
         }
       }
@@ -16829,6 +17780,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Se borran la copia de este dispositivo y la contraseña guardada. La bóveda del servidor no cambia."
+          }
+        }
+      }
+    },
+    "The editor's own menus change these too." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los menús del editor también los cambian."
           }
         }
       }
@@ -17626,6 +18588,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reducir todo salvo los puntos de control…"
+          }
+        }
+      }
+    },
+    "Thin the old versions listed above" : {
+      "comment" : "Help tag",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reducir las versiones antiguas indicadas arriba"
           }
         }
       }
@@ -18873,6 +19847,18 @@
         }
       }
     },
+    "Unfold %@" : {
+      "comment" : "Sidebar on an iPhone: show a notebook's sub-notebooks (the notebook's name)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desplegar %@"
+          }
+        }
+      }
+    },
     "Unlock" : {
       "comment" : "Button: unlock the vault",
       "extractionState" : "manual",
@@ -18998,6 +19984,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Desbloquear la bóveda con su clave guardada"
+          }
+        }
+      }
+    },
+    "Unlock this device once after it restarts: until then Sempere cannot record voice notes." : {
+      "comment" : "Error a voice note start gives (Siri, a widget) before the first unlock after a restart",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desbloquea este dispositivo una vez después de reiniciarlo: hasta entonces Sempere no puede grabar notas de voz."
           }
         }
       }
@@ -19571,6 +20569,18 @@
         }
       }
     },
+    "Voice note interrupted" : {
+      "comment" : "Live Activity title: the app recording a voice note was force quit or crashed",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nota de voz interrumpida"
+          }
+        }
+      }
+    },
     "Voice note paused" : {
       "comment" : "In-app banner and Live Activity while a voice note is paused by an interruption (a call)",
       "extractionState" : "manual",
@@ -19626,6 +20636,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Las vulnerabilidades se comunican de forma privada en GitHub, como describe la política de seguridad (SECURITY.md)."
+          }
+        }
+      }
+    },
+    "Waiting for iCloud…" : {
+      "comment" : "Recent vault row: the vault is in iCloud Drive, which has not made it available yet (for example right after a restart).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esperando a iCloud…"
+          }
+        }
+      }
+    },
+    "Waiting for its storage provider…" : {
+      "comment" : "Recent vault row: the vault is in another app's cloud storage, which has not made it available yet.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esperando a su proveedor de almacenamiento…"
           }
         }
       }
@@ -19798,6 +20832,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Escribe con el Apple Pencil y elige plumas, rotuladores y gomas en la paleta, en páginas o en una sola página larga."
+          }
+        }
+      }
+    },
+    "Writing" : {
+      "comment" : "Settings group: editor, new notes, recognition, photos",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escritura"
           }
         }
       }

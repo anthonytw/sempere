@@ -1,21 +1,23 @@
 import XCTest
 
-/// The iPhone note view's three modes (`PhoneCanvasMode`, docs/iphone.md "Reading, Hand and Annotate"): reading
+/// The note view's three modes on the iPhone and the iPad (`NoteMode`, docs/iphone.md "The note view"): reading
 /// (both top-bar buttons off), Hand (the Hand lit) and Annotate (the pencil lit). Every transition, checked by what
 /// the canvas then does, not only by the buttons: a slow one-finger drag scrolls or draws (the canvas report's
 /// offset and stroke count, `ItemSelectionController.debugReport`), a tap on a picture selects it or not, the
 /// palette is up or not. TestFlight build 5 (the owner's iPhone): the Hand turned Annotate on too, the pencil
 /// turned off with the Hand on left both buttons off with a finger still drawing, and a moment after Annotate
 /// went off a pageless note needed two fingers again (PencilKit's own recount when the palette finished hiding).
-/// Run by `scripts/app.sh test-phone-ui`; skipped on an iPad and on a Mac.
+/// The iPad runs the same checks since its notes open in reading too (owner, 2026-10-19): the simulator has no
+/// Pencil, so its finger draws while annotating as a phone's does, and scrolls and selects in the other modes.
+/// (A Pencil touch switching an iPad to Annotate cannot be synthesized: `PencilAnnotatesTests`.)
+/// Run by `scripts/app.sh test-phone-ui` on an iPhone and `scripts/app.sh test-ui` on an iPad; skipped on a Mac
+/// (`MacNoteModeUITests`).
 final class PhoneCanvasModeUITests: XCTestCase {
     typealias Report = IPadCanvasUITests.Report
 
     override func setUpWithError() throws {
         #if targetEnvironment(macCatalyst)
-        throw XCTSkip("iPhone only")
-        #else
-        guard UIDevice.current.userInterfaceIdiom == .phone else { throw XCTSkip("iPhone only") }
+        throw XCTSkip("iPhone and iPad")
         #endif
         continueAfterFailure = false
     }
@@ -32,7 +34,9 @@ final class PhoneCanvasModeUITests: XCTestCase {
     private func launch(note: String = "thoughts") -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"]
-        app.launchEnvironment = ["SEMPERE_DEMO": "1", "SEMPERE_DEMO_NOTE": note, "SEMPERE_DEMO_ITEMS": "1", "TZ": "UTC"]
+        // The iPad shows the canvas alone (the phone's stack shows only it anyway).
+        app.launchEnvironment = ["SEMPERE_DEMO": "1", "SEMPERE_DEMO_NOTE": note, "SEMPERE_DEMO_ITEMS": "1", "TZ": "UTC",
+                                 "SEMPERE_DEBUG_COLUMNS": "detailOnly"]
         #if !targetEnvironment(macCatalyst)
         XCUIDevice.shared.orientation = .portrait
         #endif
@@ -132,7 +136,9 @@ final class PhoneCanvasModeUITests: XCTestCase {
     // MARK: The buttons
 
     @MainActor
-    private func annotateButton(_ app: XCUIApplication) -> XCUIElement { app.buttons["Annotate"].firstMatch }
+    private func annotateButton(_ app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any).matching(identifier: "annotateButton").firstMatch
+    }
 
     @MainActor
     private func handButton(_ app: XCUIApplication) -> XCUIElement {
@@ -156,7 +162,11 @@ final class PhoneCanvasModeUITests: XCTestCase {
     @MainActor
     private func expect(_ mode: Mode, _ app: XCUIApplication, _ canvas: XCUIElement, after step: String) {
         let what = "\(step) → \(mode.rawValue)"
-        XCTAssertEqual(lit(annotateButton(app)), mode == .annotating, "\(what): the pencil reads \(lit(annotateButton(app)) ? "on" : "off")")
+        // The iPad's pencil is a menu button (its menu holds Compact Palette) whose on state (a filled icon) does not
+        // reach XCTest; the palette below says whether it is on.
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            XCTAssertEqual(lit(annotateButton(app)), mode == .annotating, "\(what): the pencil reads \(lit(annotateButton(app)) ? "on" : "off")")
+        }
         XCTAssertEqual(lit(handButton(app)), mode == .hand, "\(what): the Hand reads \(lit(handButton(app)) ? "on" : "off")")
         let palette = app.descendants(matching: .any).matching(identifier: "Drawing-Palette").firstMatch
         if mode == .annotating {
@@ -238,8 +248,8 @@ final class PhoneCanvasModeUITests: XCTestCase {
 
     // MARK: Tests
 
-    /// Picks `tool` in the palette ("Pen", "Marker", "Object Eraser", "Lasso", "Hand"): a tap on the palette
-    /// first, which opens the phone's collapsed one so its items can be tapped.
+    /// Picks `tool` in the palette ("Pen", "Marker", "Object Eraser", "Lasso"): a tap on the palette first, which
+    /// opens the phone's collapsed one so its items can be tapped.
     @MainActor
     private func pick(_ tool: String, _ app: XCUIApplication) {
         let palette = app.descendants(matching: .any).matching(identifier: "Drawing-Palette").firstMatch
@@ -306,22 +316,29 @@ final class PhoneCanvasModeUITests: XCTestCase {
         XCTAssertLessThan(top1, top0 - 40, "one finger scrolls the pages after Annotate went off (top \(top0) -> \(top1))")
     }
 
-    /// The palette's Hand item (inside Annotate) is Hand mode: the top-bar Hand lights, the pencil goes off, the
-    /// palette hides; the pencil then brings a drawing tool back.
+    /// The palette has no Hand (owner, 2026-10-19: "It serves no purpose there"): the top bar's Hand is the only
+    /// one, and from Annotate it goes straight to Hand mode.
     @MainActor
-    func testThePalettesHandItemSwitchesToHandMode() throws {
+    func testThePaletteHasNoHand() throws {
         let app = launch()
         defer { app.terminate() }
         guard let canvas = pagelessCanvas(app) else { return XCTFail("no canvas reports the demo items") }
         tap(annotateButton(app))
-        pick("Hand", app)
-        expect(.hand, app, canvas, after: "annotating, palette's Hand")
-        tap(annotateButton(app))
-        expect(.annotating, app, canvas, after: "palette's Hand, pencil")
-        pick("Hand", app)
+        let palette = app.descendants(matching: .any).matching(identifier: "Drawing-Palette").firstMatch
+        XCTAssertTrue(palette.waitForExistence(timeout: 5), "the palette")
+        // The phone's collapsed palette opens with a tap; the iPad's lists its tools already (a tap there could
+        // open a tool's options, which would take the next tap).
+        if !palette.buttons["Pen"].firstMatch.isHittable {
+            palette.tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        XCTAssertTrue(palette.buttons["Pen"].firstMatch.exists, "the palette's tools are listed: \(palette.debugDescription.prefix(2000))")
+        XCTAssertFalse(palette.buttons["Hand"].exists, "no Hand in the palette: \(palette.debugDescription.prefix(2000))")
+        tap(handButton(app))
+        expect(.hand, app, canvas, after: "annotating, Hand")
         tap(handButton(app))
         Thread.sleep(forTimeInterval: 3)
-        expect(.reading, app, canvas, after: "palette's Hand, Hand")
+        expect(.reading, app, canvas, after: "hand, Hand")
     }
 
     /// Bug 2 after each tool: Annotate with the pen, marker, object eraser or lasso picked, then off; after a

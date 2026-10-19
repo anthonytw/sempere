@@ -281,15 +281,23 @@ final class LocalizationCatalogTests: XCTestCase {
         let scan = SwiftScan(try String(contentsOf: file, encoding: .utf8))
         let phrases = scan.literals.map(\.body).filter { $0.contains("\\(.applicationName)") }
         XCTAssertGreaterThanOrEqual(phrases.count, 4)
-        for phrase in phrases {
-            let key = phrase.replacingOccurrences(of: "\\(.applicationName)", with: "${applicationName}")
+        let keys = phrases.map { $0.replacingOccurrences(of: "\\(.applicationName)", with: "${applicationName}") }
+        var spanish: [String] = []
+        for key in keys {
             guard let entry = c.entries[key] else { XCTFail("AppShortcuts.xcstrings has no “\(key)”"); continue }
             if case .plain(let es)? = entry.value("es") {
                 XCTAssertTrue(es.contains("${applicationName}"), "“\(key)”: the Spanish phrase needs the app name")
+                spanish.append(es)
             } else {
                 XCTFail("“\(key)” has no Spanish phrase")
             }
         }
+        // Two phrases that read the same (ignoring case) would be one phrase for two intents, or a waste.
+        func folded(_ list: [String]) -> [String] { list.map { $0.lowercased() } }
+        XCTAssertEqual(Set(folded(keys)).count, keys.count, "an English Siri phrase is listed twice")
+        XCTAssertEqual(Set(folded(spanish)).count, spanish.count, "two English phrases share one Spanish phrase")
+        // Every catalog phrase is one the app offers (a phrase removed from the code goes from the catalog too).
+        XCTAssertEqual(Set(c.entries.keys), Set(keys), "AppShortcuts.xcstrings and VoiceNoteShortcuts disagree")
     }
 
     // MARK: - Normal form

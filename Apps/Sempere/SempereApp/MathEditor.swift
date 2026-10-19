@@ -120,6 +120,7 @@ struct MathEditorView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(request.conversion != nil ? "Convert" : request.item == nil ? "Add" : "Done") { save() }
                         .disabled(isEmpty || problem != nil || saving || reading)
+                        .help("Save the equation")
                 }
             }
             .interactiveDismissDisabled(saving)

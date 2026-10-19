@@ -62,14 +62,16 @@ struct QuickCaptureTests {
         #expect(qc.state == .idle)
         #expect(Self.inbox(url) == [CaptureFile.name(outcome.id, .capture), CaptureFile.name(outcome.id, .transcript)].sorted())
         #expect(Self.leftovers(qc.root).isEmpty, "no plaintext audio is kept")
-        // Encrypted on disk: the tone's bytes are not there.
-        let tone = try Data(contentsOf: RecordingTests.tone)
+        // Encrypted on disk: the recorded (ADTS) tone's bytes are not there.
+        let tone = try Data(contentsOf: try TestAudio.adtsTone())
         let sealed = try Data(contentsOf: url.appendingPathComponent("inbox/\(CaptureFile.name(outcome.id, .capture))"))
         #expect(sealed.range(of: tone.prefix(256)) == nil)
-        // Readable later with the key.
+        // Readable later with the key: the ADTS segment rewritten as MPEG-4 audio (`audio/mp4`).
         let vault = try Vault.open(at: url, identities: [identity])
         let pending = try vault.readCapture(outcome.id)
-        #expect(pending.audio == tone)
+        let audio = try #require(pending.audio)
+        #expect(audio.dropFirst(4).prefix(4) == Data("ftyp".utf8))
+        #expect(pending.manifest?.audio.type == "audio/mp4")
         #expect(pending.manifest?.notebook == "Inbox")
         #expect(pending.manifest?.title.hasPrefix("Voice note ") == true)
         #expect(pending.transcript?.segments.first?.words?.map(\.t) == ["Linear", "maps."])

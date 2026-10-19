@@ -285,6 +285,7 @@ struct QuickTourView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button { dismiss() } label: { isLast ? Text("Done") : Text("Skip") }
                         .accessibilityIdentifier("quickTourSkip")
+                        .help("Close the tour")
                 }
             }
         }

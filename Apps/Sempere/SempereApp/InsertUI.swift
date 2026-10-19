@@ -565,6 +565,7 @@ struct CropView: View {
                 }
                 ToolbarItem(placement: .bottomBar) {
                     Button("Reset") { crop = bounds }.disabled(crop == bounds)
+                        .help("Crop to the whole image again")
                 }
             }
             .task { await load() }

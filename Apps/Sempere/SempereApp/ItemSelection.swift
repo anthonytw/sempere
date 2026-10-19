@@ -303,6 +303,18 @@ struct FingerTapTracker: Equatable {
     }
 }
 
+/// Sees every touch that lands on the canvas and recognizes nothing: a new touch, finger or
+/// Pencil, dismisses an item menu that is up (`ItemSelectionController.touchedDown`), whatever
+/// the other recognizers make of it (ink, a scroll, a tap that PencilKit keeps).
+final class TouchDownRecognizer: UIGestureRecognizer {
+    var onTouchDown: (() -> Void)?
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        onTouchDown?()
+        state = .failed
+    }
+}
+
 /// The pan of an item drag. UIKit's `translation` starts where the recognizer began, which on a
 /// Mac (a mouse drag) is after the pointer has moved past the slop (and, when the page's scroll or
 /// PencilKit's recognizers held it back, later still): `translation(in:)` read 0 at `.began`, so an
@@ -430,6 +442,25 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
     var fingersPick = Platform.isPhone {
         didSet { applyFingerMode() }
     }
+    /// The Pencil draws while selection mode is on (an iPad in Hand mode, `NoteModeInput.pencilAnnotates`):
+    /// the selection's taps, drags, turns and holds take fingers and the pointer only, so a Pencil touch
+    /// reaches PencilKit's drawing (which switches the note to annotating).
+    var pencilDraws = false {
+        didSet {
+            guard pencilDraws != oldValue else { return }
+            let types = Self.selectionTouchTypes(pencilDraws: pencilDraws)
+            for g in [tap, pan, rotate] as [UIGestureRecognizer] { g.allowedTouchTypes = types }
+            hold.allowedTouchTypes = pencilDraws ? [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+                : [UITouch.TouchType.direct, .pencil].map { NSNumber(value: $0.rawValue) }
+        }
+    }
+
+    /// The touches selection mode takes: all of them, or all but the Pencil while it draws (`pencilDraws`).
+    static func selectionTouchTypes(pencilDraws: Bool) -> [NSNumber] {
+        var types: [UITouch.TouchType] = [.direct, .indirect, .indirectPointer]
+        if !pencilDraws { types.append(.pencil) }
+        return types.map { NSNumber(value: $0.rawValue) }
+    }
     private func applyFingerMode() {
         fingerTap.isEnabled = fingersPick
         itemTap.isEnabled = !fingersPick
@@ -452,6 +483,8 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
     private let hold = UILongPressGestureRecognizer()
     /// Any time: a secondary click (right button, two-finger click) on an item picks it and shows its menu.
     private let secondaryClick = UITapGestureRecognizer()
+    /// Any new touch on the canvas dismisses a menu that is up (`touchedDown`).
+    private let touchDown = TouchDownRecognizer()
     private var menu: UIEditMenuInteraction?
     private var model = ItemSelectionModel()
     private var drag: (ItemSelectionModel.Drag, Item)?
@@ -518,7 +551,8 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         // A mouse or trackpad only: on the iPad simulator (and so perhaps on a device) a finger tap
         // also passed the button mask, so every tap showed the menu.
         secondaryClick.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
-        for g in [itemTap, fingerTap, lassoTap, hold, secondaryClick] as [UIGestureRecognizer] {
+        touchDown.onTouchDown = { [weak self] in self?.touchedDown() }
+        for g in [itemTap, fingerTap, lassoTap, hold, secondaryClick, touchDown] as [UIGestureRecognizer] {
             g.cancelsTouchesInView = false
             g.delegate = self
             canvas.addGestureRecognizer(g)
@@ -590,10 +624,56 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
     }
 
     /// The page scrolled or zoomed under the selection: its menu goes (it would float over
-    /// another part of the page).
+    /// another part of the page), and so does one a hold under way would show at its lift.
     func viewMoved() {
         guard drag == nil, turning == nil else { return }
+        heldTarget = nil
         dismissMenu()
+    }
+
+    /// A scroll, a pinch or a stroke starts on this canvas (TestFlight 1.0.0 (6): on a dense
+    /// page the hold menu "gets stuck … and doesn't go away"). Every edit menu goes at once:
+    /// the one shown on any canvas (`menuOwner`: a page of the stack shows it, another is
+    /// scrolled or written on), PencilKit's own ("Select All", "Insert Space") and a text box's,
+    /// and a hold under way or just lifted shows none (`gestureEpoch`), nor is a dismissed menu
+    /// put back (`menuKeep`).
+    /// `stroke`: PencilKit began a stroke. Where fingers draw (an iPhone) a held finger's stroke
+    /// may begin around the hold itself, so a stroke only dismisses the menus shown and leaves a
+    /// hold under way alone.
+    func gestureStarted(stroke: Bool = false) {
+        guard drag == nil, turning == nil else { return }
+        if !(stroke && holding) {
+            gestureEpoch &+= 1
+            heldTarget = nil
+        }
+        if let owner = Self.menuOwner, owner !== self { owner.dismissMenu() }
+        dismissMenu()
+        dismissOtherMenus()
+    }
+
+    /// Bumped by every scroll, pinch and stroke start: a hold's menu that was waiting for its lift
+    /// (`held`) is not shown after one.
+    private(set) var gestureEpoch = 0
+
+    /// The controller whose menu was presented last (any canvas, any page of the stack).
+    private static weak var menuOwner: ItemSelectionController?
+
+    /// Dismisses the edit menus of the canvas's other interactions (PencilKit's, a text view's).
+    private func dismissOtherMenus() {
+        guard let canvas else { return }
+        var views: [UIView] = [canvas]
+        while let view = views.popLast() {
+            for case let other as UIEditMenuInteraction in view.interactions where other !== menu { other.dismissMenu() }
+            views.append(contentsOf: view.subviews)
+        }
+    }
+
+    /// Whether the page under this canvas is being scrolled or zoomed now.
+    private var pageMoving: Bool {
+        [scroller, canvas].contains { s in
+            guard let s else { return false }
+            return s.isDragging || s.isDecelerating || s.isZooming || s.isZoomBouncing
+        }
     }
 
     /// The recording audio item `item` shows (format.md §8.2.9: by id, else a restored copy), if the note has it.
@@ -732,6 +812,16 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
     func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
         // Picking while drawing never stops PencilKit's own gestures (the lasso still lassoes ink).
         g === itemTap || g === fingerTap || g === lassoTap || g === hold || g === secondaryClick || g === rotate
+            || g === touchDown
+    }
+
+    /// A finger or the Pencil came down on the canvas: an item menu that is up (on any page)
+    /// goes, and is not put back. A touch on the selection bar or a card's button is theirs
+    /// (`shouldReceive`), and the menu itself is not in the canvas.
+    func touchedDown() {
+        menuKeep = nil
+        // Even when no "will dismiss" came for it: a menu UIKit still shows must not outlive a touch.
+        Self.menuOwner?.dismissMenu()
     }
 
     /// On a Mac a pointer drag on an item is the item's: the page's scroll (the canvas's own, or
@@ -814,7 +904,8 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
     /// A hold is under way, or just ended: the tap the same touch may still end as is not a tap.
     private var holding = false
     /// What the hold under way picked, and where (its menu comes when the finger lifts).
-    private var heldTarget: (target: HoldTarget, point: CGPoint)?
+    /// `point` in the canvas's content, `screen` in the window's (the page may scroll under the finger).
+    private var heldTarget: (target: HoldTarget, point: CGPoint, screen: CGPoint)?
 
     /// A hold selects the item at once and shows its menu when the finger lifts, as UIKit's own
     /// edit menus do: a menu shown while the finger is still down went away at the lift (iPad
@@ -824,19 +915,30 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         case .began:
             holding = true
             guard let target = holdTarget(g) else { return }
-            heldTarget = (target, g.location(in: canvas))
+            heldTarget = (target, g.location(in: canvas), g.location(in: nil))
             switch target {
             case .item(let id): pick(id, menu: false)
             case .page: select(nil)
             }
+        case .changed:
+            // The held finger went on to scroll or drag: that is not a hold for a menu.
+            if let current = heldTarget, Self.travelled(from: current.screen, to: g.location(in: nil)) {
+                heldTarget = nil
+            }
         case .ended:
             DispatchQueue.main.async { [weak self] in self?.holding = false }   // after a tap at the same lift
-            guard let current = heldTarget else { return }
+            guard let current = heldTarget, !Self.travelled(from: current.screen, to: g.location(in: nil)) else {
+                heldTarget = nil
+                return
+            }
             heldTarget = nil
+            let epoch = gestureEpoch
             // A moment after the lift: the touch's other recognizers (PencilKit's, which end after this
-            // one while drawing) dismiss an edit menu that is already up.
+            // one while drawing) dismiss an edit menu that is already up. Not when a scroll, a pinch or
+            // a stroke started meanwhile, or the page still moves: a menu presented while its
+            // canvas scrolls stayed up after the page stopped (TestFlight 1.0.0 (6)).
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
-                guard let self, self.drag == nil else { return }
+                guard let self, self.drag == nil, self.gestureEpoch == epoch, !self.pageMoving else { return }
                 switch current.target {
                 case .item(let id):
                     guard self.model.selected == id else { return }
@@ -851,6 +953,12 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         default:
             break
         }
+    }
+
+    /// Whether a held finger moved far enough from where the hold began to be a scroll or a drag
+    /// (UIKit's long press goes on however far the finger moves once it has begun).
+    static func travelled(from a: CGPoint, to b: CGPoint) -> Bool {
+        hypot(b.x - a.x, b.y - a.y) > FingerTapTracker.slop * 2
     }
 
     @objc private func secondaryClicked(_ g: UITapGestureRecognizer) {
@@ -998,6 +1106,8 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         #endif
         let id = UUID()
         shownMenu = id
+        if let owner = Self.menuOwner, owner !== self { owner.dismissMenu() }   // one menu at a time, on any page
+        Self.menuOwner = self
         menu?.presentEditMenu(with: UIEditMenuConfiguration(identifier: id as NSUUID, sourcePoint: source))
     }
 
@@ -1046,6 +1156,7 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
         let dismissed = (configuration.identifier as? NSUUID).map { $0 as UUID }
         guard dismissed == shownMenu else { return }
         menuShown = false
+        if Self.menuOwner === self { Self.menuOwner = nil }
         if let keep = menuKeep, keep.menu == dismissed, Date() < keep.until {
             menuKeep = nil
             #if DEBUG

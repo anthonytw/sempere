@@ -110,9 +110,12 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
 
 - Changelog: add a fragment `changelog.d/<topic>.md` ([format](changelog.d/README.md)); never edit
   `CHANGELOG.md` (`scripts/changelog-collect.py` folds fragments at release time, docs/ci.md).
-- At most two agents at once may run anything that needs the screen (Mac UI tests, Catalyst XCUITest).
 - Run all Xcode work (`xcodebuild`, `scripts/app.sh`, `scripts/local-ci.sh`) through the build lock your
-  environment provides (the agent harness's `xc-lock`); never start a second Xcode build beside it.
+  environment provides (the agent harness's `xc-lock`); never start Xcode work outside it. It admits a few
+  jobs at once in arrival order: Catalyst runs (`test-mac*`, `catalyst`, any `local-ci.sh`) one at a time,
+  since they share the app's container and the UI tests drive the real screen; simulator runs side by side,
+  each on its own throwaway simulator clone (`SEMPERE_SIM_ID`); builds and package tests in any free slot.
+- A test that depends on a simulator's leftover state is a bug: every run may start on a fresh clone.
 - Cancel only your own processes, by PID; never `pkill -f` or `killall` patterns (they kill other agents' runs).
 - Temp files go in your own scratch directory, never shared names (`/tmp/out.log`).
 
@@ -279,7 +282,10 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   builds it); CI runs it only by dispatch (`-f screenshots=true`). Never put
   real notes in a demo.
 - `PKCanvasView` inverts ink colors in dark mode; the canvas forces
-  `.light` because ink colors are stored as drawn on (light) paper.
+  `.light` because ink colors are stored as drawn on (light) paper. Only Settings ▸ Appearance ▸
+  Note Pages ▸ Dark turns it `.dark` (`PageCanvasHost+Appearance`): display only, the picker stays
+  `.light` so stored colors do not change; the paper and the app-drawn items go through
+  `PageColorInversion` (never pictures, PDF pages, video), and exports never do.
 - Vaults are plain folders: `SempereInfo.plist` (referenced by `INFOPLIST_FILE`,
   outside the synchronized group so it is not copied as a resource) exports the
   `.sempere` UTType as `public.folder`, NEVER `com.apple.package`: iCloud Drive syncs a
@@ -391,7 +397,11 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   log page and stroke counts only). Read the log with `devicectl device
   process launch --console`. Never put note titles or content in logs.
 - Infinite pages scroll one screen beyond both their ink and their stored
-  height (`PageExtent.scrollHeight`). "Keep Screen On" (`KeepScreenOn`) disables the
+  height (`PageExtent.scrollHeight`). Their paper is drawn in bands near the screen
+  (`PaperView.setVisible`, fed by the canvas's scroll): never one layer the height of the note.
+  The one-page canvas zooms out to half the fit, centered with `contentInset` (an iPhone stops at
+  the fit, `ZoomDetent.minimumFactor`); `fitWidth` sets the zoom only when the fit itself changes,
+  never on a SwiftUI update or during a pinch. "Keep Screen On" (`KeepScreenOn`) disables the
   idle timer only while a note is open and the scene is active.
 - Paged notes scroll through all pages in one view (`PageStackView` /
   `PageStackHost`, layout math in `PageStackLayout`, Linux-testable): one
@@ -750,7 +760,10 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   background time leaves it for `sweep()` rather than losing the note. A recipient change rewraps and re-tags
   `inbox/` too (`Vault.rewrapInbox`; in iCloud `downloadEverything` fetches it first) and the app refreshes the
   profile after it. A note "exists" for adoption once it has a revision (a folder holding only `att/` is still
-  new), and a waiting transcript writes nothing.
+  new), and a waiting transcript writes nothing. Quick-capture segments are ADTS (`QuickCapture.segmentExtension`:
+  an MPEG-4 segment cut off by a restart or force quit does not decode at all), and a start activates the audio
+  session BEFORE requesting the Live Activity (iOS ends the intent's fake-foreground assertion when the activity
+  begins, and a non-mixable activation after that is refused '!int'; docs/quick-capture.md "Start order").
 - Video items (`format.md` §8.2.7, task G2): a container is read only by
   `VideoProbe` (pure Swift, bounded reads, fuzzed); location metadata is
   removed in place by `ByteEdit`s applied while the file streams into the blob

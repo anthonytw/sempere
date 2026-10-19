@@ -2,7 +2,8 @@ import Foundation
 import UniformTypeIdentifiers
 
 /// A note dragged out of the app to the Finder (or any app that takes files)
-/// as a PDF (Mac, docs/mac.md "Drag a note out as PDF").
+/// as a PDF, or as Markdown or HTML when Settings ▸ General ▸ Drag to Finder
+/// says so (`DragExportFormat`; Mac, docs/mac.md "Drag a note out as PDF").
 ///
 /// On a Mac the drop becomes a file promise, and the system may ask for the
 /// file while the main thread waits for it. So the main-actor part (saving
@@ -16,19 +17,30 @@ enum NoteFileDrag {
         Task { try await model.prepareExport(noteID: noteID) }
     }
 
-    /// The name the dropped file gets, without its extension (the system adds `.pdf`).
+    /// The name the dropped file gets, without its extension (the system adds `.pdf`, `.md`, `.html`).
     static func suggestedName(title: String) -> String {
         let name = ExportFileName.pdf(title: title)
         return String(name.dropLast(".pdf".count))
     }
 
-    /// Registers the note's PDF on `provider`: rendered when a drop asks for
-    /// it, from `prepare`, on a background task.
-    static func register(on provider: NSItemProvider, title: String, prepare: Task<PreparedExport, any Error>) {
+    /// Registers the note's file in `format` (the setting's, by default) on
+    /// `provider`: rendered when a drop asks for it, from `prepare`, on a
+    /// background task.
+    static func register(on provider: NSItemProvider, title: String, format: DragExportFormat = .load(),
+                         prepare: Task<PreparedExport, any Error>) {
         provider.suggestedName = suggestedName(title: title)
-        provider.registerFileRepresentation(forTypeIdentifier: UTType.pdf.identifier, fileOptions: [],
+        provider.registerFileRepresentation(forTypeIdentifier: fileType(for: format).identifier, fileOptions: [],
                                             visibility: .all) { completion in
-            load(prepare) { completion($0, false, $1) }
+            load(prepare, format: format) { completion($0, false, $1) }
+        }
+    }
+
+    /// The type a drag offers `format`'s file as: the system's type for its extension.
+    static func fileType(for format: DragExportFormat) -> UTType {
+        switch format {
+        case .pdf: return .pdf
+        case .html: return .html
+        case .markdown: return UTType(filenameExtension: format.fileExtension, conformingTo: .plainText) ?? .plainText
         }
     }
 
@@ -45,20 +57,21 @@ enum NoteFileDrag {
     static let prepareTimeout: Duration = .seconds(20)
 
     /// What a drop's request for the file runs: waits for `prepare`, renders
-    /// and writes the PDF on a background task and hands its URL (or the
+    /// and writes the file (`format`) on a background task and hands its URL (or the
     /// error) to `completion`, on that task. Never needs the main thread.
     /// `prepare` is main-actor work: if the system holds the main thread for
     /// the file before it ends, it never could, so the request fails with
     /// `DragError.timedOut` after `timeout` instead of freezing the app.
     @discardableResult
-    static func load(_ prepare: Task<PreparedExport, any Error>, timeout: Duration = prepareTimeout,
+    static func load(_ prepare: Task<PreparedExport, any Error>, format: DragExportFormat = .pdf,
+                     timeout: Duration = prepareTimeout,
                      completion: @escaping @Sendable (URL?, (any Error)?) -> Void) -> Progress {
         let progress = Progress(totalUnitCount: 1)
         Task.detached(priority: .userInitiated) {
             do {
                 let prepared = try await firstOf(prepare, timeout: timeout)
                 try Task.checkCancellation()
-                completion(try prepared.write(), nil)
+                completion(try prepared.write(format: format), nil)
             } catch {
                 completion(nil, error)
             }

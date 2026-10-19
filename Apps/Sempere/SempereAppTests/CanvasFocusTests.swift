@@ -172,6 +172,29 @@ struct CanvasFocusTests {
         #expect(host.canvas.isFirstResponder, "with no field typed in, the canvas has the focus")
     }
 
+    /// Turning the palette on (the toolbar button) gives the one-page canvas the focus back from a
+    /// responder that is not typing (a list row, the sidebar), so the palette shows (TestFlight 1.0.0 (6),
+    /// the owner's iPad: the button flipped and nothing came up); on a phone the mode does that instead.
+    @Test func turningThePaletteOnTakesTheFocusFromAList() async throws {
+        let window = try await Self.keyWindow()
+        defer { window.isHidden = true }
+        let host = PageCanvasHost(frame: CGRect(x: 220, y: 0, width: 800, height: 1000))
+        window.addSubview(host)
+        let list = FocusableView(frame: CGRect(x: 0, y: 0, width: 200, height: 300))
+        window.addSubview(list)
+        #expect(list.becomeFirstResponder())
+        host.paletteVisible = false
+        host.paletteVisible = true
+        #expect(host.canvas.isFirstResponder == PageCanvasHost.paletteTakesFocus(isPhone: Platform.isPhone))
+        list.removeFromSuperview()
+        host.removeFromSuperview()
+    }
+
+    /// A responder that takes no typing (a list, the sidebar).
+    final class FocusableView: UIView {
+        override var canBecomeFirstResponder: Bool { true }
+    }
+
     /// A note window updating in the background never takes the keyboard
     /// from the key window's search field; it gives its canvas the focus once
     /// it becomes key.

@@ -6,8 +6,9 @@ Shortcuts ("Record a Sempere voice note"). Stopping it seals the audio into
 the vault's inbox, encrypted. The vault is not unlocked and Face ID is not
 asked; the device may even be locked. The next time the vault is unlocked on
 any device, each voice note becomes a note in the inbox notebook ("Inbox",
-configurable), titled with its date and time, holding the recording and,
-when it is ready, its transcript. Format: `format.md` §11. Code: core
+configurable), titled with its date and time, holding the recording on its
+page (the card a recording made in a note gets, `format.md` §11.3) and, when
+it is ready, its transcript in that card. Format: `format.md` §11. Code: core
 `Sources/Sempere/CaptureInbox.swift`, CLI `sempere inbox`, app
 `QuickCapture.swift`, `AppModel+Inbox.swift`, `SempereShared/` (intents) and
 `SempereWidgets/` (widget extension).
@@ -72,7 +73,7 @@ vault, and the vault's integrity.
   the inbox or the queue, or when no segment holds any audio (not a byte, or
   only finished files of no length): a voice note whose audio was not sealed
   into an inbox file is never deleted. Every
-  `segment-NNN.m4a` in the folder is sealed, also one the recording's
+  `segment-NNN.aac` (`segment-NNN.m4a` from build 6 and earlier) in the folder is sealed, also one the recording's
   manifest does not name yet (begun just before the app died), and a folder
   whose manifest is missing or does not decode is sealed from its segment
   files under the id it is named by. Kept, and the "Not Saved" message says
@@ -97,6 +98,21 @@ seconds it takes to seal and transcribe it, except after a crash or a
 termination before sealing finished: then until the app next starts or
 becomes active and can read it. Audio that cannot be sealed at all (nothing
 in it decodes) stays, protected, until quick voice notes are turned off.
+
+### Restarts, force quits and crashes
+
+Segments are AAC in ADTS (`segment-NNN.aac`, `QuickCapture.segmentExtension`), merged into one MPEG-4
+file when the voice note is sealed. ADTS frames each stand alone, so a segment the recorder never
+finished (the iPhone restarted, the app was force quit or crashed) is readable up to its last frame.
+Build 6 recorded MPEG-4 segments of up to ten minutes, whose index is written only when the recorder
+finishes the file: a voice note cut off by a restart did not decode at all, was kept "for later" and
+never became a note, and nothing said so (TestFlight 1.0.0 (6), iPhone). Apple Lossless, which ADTS
+cannot carry, records as AAC for quick voice notes.
+
+The sweep that saves such a recording runs at launch, each time the app becomes active, when protected
+data becomes available (the first unlock after a restart, in a process Siri launched before it), and when
+Stop is pressed on a Live Activity whose recording the process does not have. The banner says
+"Interrupted Voice Note Saved", or "Interrupted Voice Note Not Saved Yet" (once per launch) when it is kept.
 
 ## Delivery and queueing
 
@@ -134,16 +150,66 @@ transcription on. That transcript goes through the normal path: a blob, then
 | Mac | Menu-bar item (`StatusItemHost`, an AppKit bundle: Quick Voice Note, New Note, Open Sempere; Settings ▸ General ▸ Show in Menu Bar), File ▸ Start / Stop Voice Note (⇧⌘M, `VoiceNoteMenu`), Shortcuts and Siri; no widgets or Live Activity in the Catalyst build. Quick voice notes without unlocking work as on the iPad: sealed with the capture profile, the vault stays locked. |
 | CLI | `sempere inbox enable`, `capture`, `transcript`, `list`, `import` (`docs/cli.md`) |
 
+### Siri phrases
+
+Say "Sempere" in the phrase: Apple requires the app's name in every App
+Shortcut phrase, and a phrase without it ("record a voice note") goes to
+Apple's own apps. The Sempere phrases also have to be allowed: Siri on, Sempere's
+options on in Settings ▸ Apps ▸ Sempere ▸ Siri, and Siri left on for Sempere's
+shortcuts in the Shortcuts app (its Sempere entry, ⓘ). The exact toggle names
+change between iOS versions; check them on a device. The phrases are in `VoiceNoteShortcuts`; each English phrase has one Spanish
+phrase in `AppShortcuts.xcstrings` (`LocalizationCatalogTests` checks that every
+phrase has its Spanish one and that no two read the same).
+
+| Start (English) | Start (Spanish) |
+| --- | --- |
+| Record a Sempere voice note | Graba una nota de voz en Sempere |
+| New Sempere voice note | Nueva nota de voz en Sempere |
+| Start a Sempere voice note | Empieza una nota de voz en Sempere |
+| Sempere voice note | Nota de voz de Sempere |
+| Record in Sempere | Graba en Sempere |
+| Record with Sempere | Graba con Sempere |
+| Record voice in Sempere | Grabar voz en Sempere |
+| Record a voice note in Sempere | Grabar una nota de voz en Sempere |
+| Record a voice note with Sempere | Grabar nota de voz con Sempere |
+| Take a voice note in Sempere | Toma una nota de voz en Sempere |
+| Voice note in Sempere | Nota de voz en Sempere |
+| Start recording in Sempere | Empezar a grabar en Sempere |
+| Dictate in Sempere | Dictar en Sempere |
+| Dictate a note in Sempere | Dicta una nota en Sempere |
+
+| Stop (English) | Stop (Spanish) |
+| --- | --- |
+| Stop the Sempere voice note | Detén la nota de voz de Sempere |
+| Stop the voice note in Sempere | Para la nota de voz de Sempere |
+| Stop recording in Sempere | Detener la grabación en Sempere |
+| Stop dictating in Sempere | Dejar de dictar en Sempere |
+| Finish the Sempere voice note | Terminar la nota de voz de Sempere |
+| End the Sempere voice note | Termina la nota de voz de Sempere |
+| Stop Sempere recording | Deja de grabar en Sempere |
+
+Siri matches what it heard against these phrases with some freedom, but not
+against arbitrary wording: a phrase that is not listed may not work.
+
 The intents live in `Apps/Sempere/SempereShared/`, which both the app and
 the widget extension compile. They always run in the app's process
 (`AudioRecordingIntent`, `LiveActivityIntent`); the extension only shows
 buttons.
 
 The Live Activity belongs to the process that started it, but iOS keeps it
-across app restarts and reboots. A new process cannot reach the old
-recording, so it ends every voice note Live Activity that started before it
-launched. Stop on an activity it does not know also ends it, without an
-error. `start()` claims the recorder before its first suspension, so two
+across app restarts (a force quit does not end it). A new process cannot reach
+the old recording, so it ends every voice note Live Activity that is not its
+own recording's (`endOrphanedActivities`: at launch, each time the app becomes
+active, when protected data becomes available, and for any the system reports
+later through `activityUpdates` that started before the launch), and saves what
+that recording left (`sweep`). Stop on an activity it does not know also ends it,
+without an error, and runs the sweep. While recording, the app sends the activity
+its state every 45 seconds with a stale date 2 minutes on; when the app dies the
+updates stop, the activity turns stale and shows "Voice note interrupted ▸ Open
+Sempere to save it" instead of a Stop that would reach nothing (TestFlight 1.0.0
+(6): after a force quit the activity kept running and Stop did nothing). Whether
+iOS launches a force-quit app for a Live Activity's button is not documented; the
+stale state's tap opens the app, which always works. `start()` claims the recorder before its first suspension, so two
 intents firing together cannot start two recordings. With Live Activities
 off, iOS ends an intent's recording, so `start()` refuses with an
 explanation (also shown in Settings).
@@ -223,6 +289,38 @@ intent whose surface shows none. Now (`QuickCapture.start(_:)`):
    cancelling the intent does not cancel them.
 4. If that try fails, the banner says "Voice Note Not Recorded" with the reason and stays until dismissed.
 
+### Start order: the audio session before the Live Activity
+
+TestFlight 1.0.0 (6), iPhone, iOS 27.0.1, from the unified log of a Control Center tap: chronod ran
+`VoiceNoteControlIntent` through BackgroundShortcutRunner, liveactivitiesd gave the app a
+fake-foreground assertion, the app (launched in the background) requested the Live Activity, which
+began, and liveactivitiesd invalidated the assertion at once ("reason: activityBegun"). Nine
+milliseconds later `setActive` on the non-mixable `.playAndRecord` session failed in audiomxd with
+"Cannot interrupt others" (-12985, '!int'), with no other audio playing, and the start continued in
+the app. So a start (`QuickCapture.startRecorderOnce`) now:
+
+1. makes the session active first, off the main thread (`AudioCaptureBackend.activateSession`), while the
+   assertion holds; not mixable;
+2. if iOS refuses that with the app not in front, activates it mixable (`.mixWithOthers`, which interrupts
+   no one), and Recent Starts says so (`session=mixable after a refusal (…)`); a refusal of both continues
+   in the app as before;
+3. asks for the Live Activity;
+4. starts the recorder on the active session (`begin` does not activate it again).
+
+Build 3 started the recorder before the Live Activity and failed with `cannotRecord`; that try activated
+the session and started the recorder in one step, and its error text was lost (`RecordingError 0`), so
+which step failed is not known. Whether a mixable recording from the background is refused ('!rec',
+"usually because it is starting a mixable recording from the background", AudioSessionTypes.h) once the
+session is already active is not documented either: the Recent Starts line of a start that needed it says.
+
+The microphone permission read in a process an intent launched in the background (Siri after a restart:
+"Sempere is not allowed to use the microphone", TestFlight 1.0.0 (6)) is not taken as the user's answer:
+a refusal there continues in the app (`microphoneUnconfirmed`), where the answer is fresh and the prompt
+can show; in front, a refusal is `microphoneDenied`. A start before the first unlock after a restart says
+to unlock once (`beforeFirstUnlock`). Recent Starts keeps the permission read (`mic=`) and whether protected
+data was available (`protectedData=`) for each try; a start log written by a launch that could not read
+the file is merged with it, not written over it.
+
 ### Recent starts (diagnostics)
 
 Each start (intent or app) is kept in `Application Support/Sempere/QuickCaptureDiagnostics/recent-starts.json`
@@ -234,6 +332,39 @@ text; the audio system's code is named, for example `'!rec' cannotStartRecording
 `setCategory`, `setActive` or `AVAudioRecorder`), whether the app became active and after how long, the retry's
 error, and the outcome. No note content, no keys, no vault name. Settings ▸ Quick Voice Notes ▸ Recent Starts
 shows them (selectable text), with Clear.
+
+Every tap that reaches Sempere is kept too (`VoiceNoteTap`, `SempereShared/VoiceNoteTapLog.swift`), whatever it
+was decided to do, in `VoiceNoteTaps.json` in the App Group container (the last 12, protected until the first
+unlock, so the widget extension could add to it as well) and in the unified log (`voice note tap …`): which
+intent ran (`VoiceNoteControlIntent`, `StartVoiceNoteIntent`, `StopVoiceNoteIntent`) or that a widget opened the
+app (below), in which process, the phase the widget or control was drawn with and the app's live phase, the
+decision (start, stop, open Settings, open the banner, or `unavailable`: the app's hooks were missing), the
+intent's `currentMode` when `perform()` began, the app's state, and what failed after the decision
+(`continueInForeground` refused, a Stop that threw). Settings ▸ Quick Voice Notes ▸ Recent Starts lists taps and
+starts together by time; Clear clears both. Build 6 kept only starts, so a tap that went on into the app or
+never reached an intent left nothing.
+
+### Widget taps that open the app
+
+TestFlight 1.0.0 (6), iPhone: a tap on the Lock Screen widget opened the app, recorded nothing and left no
+Recent Starts entry, so `perform()` never ran. The widget's `Button(intent:)` used `.buttonStyle(.plain)`
+around its label: a plain button takes taps only where its label draws, and on the rectangular widget that
+was the glyph and the two lines of text. Any other point of the widget is the widget's own tap, which opens
+the app (with its `widgetURL`, or with none), and there was nothing else. Now:
+
+- the label fills the widget and `contentShape(Rectangle())` makes every point of it the button's;
+- the widget has a `widgetURL` of its own (`VoiceNoteLink.widgetTapURL`, `sempere://quick-voice/widget`): a
+  tap that still opens the app (iOS deciding so, for example) arrives there, is kept as `widgetOpenedApp`, and
+  the app does what the button would have done from its live state (`QuickCapture.widgetOpenedApp`): record
+  (in front, so no background permission is needed), stop, or show the setup or the banner. Anyone can open
+  that URL; it does nothing a tap on the widget, the control or Siri could not do (see "Threat model").
+
+Apple: "On a locked device, buttons and toggles are inactive and the system doesn't perform actions unless a
+person authenticates and unlocks their device"
+([Adding interactivity to widgets](https://developer.apple.com/documentation/widgetkit/adding-interactivity-to-widgets-and-live-activities)).
+So a tap on the Lock Screen widget of a locked iPhone first asks for Face ID (or the passcode) even though
+the intents set `authenticationPolicy = .alwaysAllowed`. Apple does not say whether the button's intent then
+runs or the app opens; the tap log says which (a `controlIntent` tap, or a `widgetOpenedApp` one).
 
 | Phase | Shows | A tap |
 | --- | --- | --- |
@@ -266,14 +397,34 @@ the sealed file is in the inbox (before any transcript), "Saved to Inbox"
 ("Saved on This Device" when it went to the queue, "Not Saved" on failure),
 and is dismissed 5 seconds later (12 for a failure). The app's banner says
 the same when the app is open. Opening the app from the Live Activity
-(`sempere://quick-voice/recording`) lands on the banner. Any other `sempere:` URL is
+(`sempere://quick-voice/recording`) lands on the banner; the widget's own
+`sempere://quick-voice/widget` is a widget tap ("Widget taps that open the app"). Any other `sempere:` URL is
 ignored (`VoiceNoteLink.route`): anyone can open one, and it is never taken
 for a vault.
 
 ## Not verified yet
 
+- On an iPhone (build 7): a Control Center, Action button or Siri start records in the background, with
+  Recent Starts showing `session=not mixable` (the order fixed it) or `session=mixable after a refusal`
+  (the fallback did), and the recording is audible with music playing in another app in the mixable case.
+- On an iPhone: restart during a voice note, unlock, open Sempere (or just unlock and wait): the banner
+  says "Interrupted Voice Note Saved" and the note has the audio up to the restart. Force quit during one:
+  within 2 minutes the Live Activity says "Voice note interrupted"; tapping it opens Sempere, which ends it
+  and saves the note. Whether Stop on that activity launches the force-quit app at all.
+- On an iPhone: `AVAudioRecorder` writing ADTS for a `.aac` URL (the simulator tests write ADTS with
+  `AVAudioFile`; the unit tests use a fake recorder).
+- On an iPhone: Siri after a restart and one unlock: a start records (in the background, or after opening
+  Sempere); Recent Starts shows the `mic=` value that build 6 took for a refusal.
+
 - On a device: which refusal iOS gives a background start (Settings ▸ Quick Voice Notes ▸ Recent Starts), and
   whether the Lock Screen widget now records after the unlock.
+- On a device (build 7): a Lock Screen widget tap is kept as a `controlIntent` tap (the button ran) or a
+  `widgetOpenedApp` one (iOS opened the app instead); none at all means the tap never reached Sempere.
+- On a device: why a mic tap (control or widget) brings the app forward. The tap's `mode` says whether iOS
+  had already put the app in front when `perform()` began; a decision `openSettings` or `openRecording` means
+  the live state needed the app; a start whose outcome is "Recorded after opening Sempere" has the background
+  refusal on its "First try" line (`activity=failed …` is ActivityKit's, `error=… '!rec'/'!int'/'!pla'` the
+  audio system's).
 - On a device: the Lock Screen path (intent launch while locked, Keychain
   after first unlock, writing to an iCloud Drive folder while locked, the
   Live Activity).

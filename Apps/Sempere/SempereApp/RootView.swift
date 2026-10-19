@@ -19,7 +19,6 @@ struct RootView: View {
     @State private var triedAutoOpen = false
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(KeepScreenOn.key) private var keepScreenOn = KeepScreenOn.defaultValue
-    @AppStorage(ToolPalette.visibleKey) private var paletteVisible = true
     // Read by the menus' titles (Use Full Palette, Hide Pages): the router is rebuilt when they change.
     @AppStorage(ToolPalette.compactKey) private var paletteCompact = false
     @AppStorage(PageStrip.visibleKey) private var pageStripVisible = false
@@ -119,6 +118,9 @@ struct RootView: View {
             case .link(let link):
                 // A widget, the control or the Live Activity (`sempere://quick-voice/…`).
                 model.quickCapture.pendingLink = link
+            case .widgetTap:
+                // A widget tap that opened the app instead of running its intent: kept, then done here.
+                model.quickCapture.widgetOpenedApp()
             case .ignore:
                 break   // another `sempere:` link: not a vault
             case .file:
@@ -150,6 +152,8 @@ struct RootView: View {
             if phase == .active { model.enterForeground() }
             if phase == .active { model.scheduleSettingsSync() }   // another device may have changed the vault's settings
             if phase == .active, model.isCloudVault { model.startCloudSync() }
+            // A recent vault iCloud had not delivered yet (after a restart) may be there now.
+            if phase == .active { library.refreshRecents() }
             if phase == .active {
                 // The widgets' status, queued voice notes, and recordings no seal could finish yet.
                 model.quickCaptureBecameActive()
@@ -239,9 +243,22 @@ struct RootView: View {
         } message: {
             Text(model.recipientsAlert?.message ?? "")
         }
+        // A recent vault waited for (the launch reopen or a tap found it waiting for iCloud) arrived.
+        .onChange(of: library.states) {
+            guard model.phase == .noVault, let entry = library.takeReadyPendingOpen() else { return }
+            Task { await reopen(entry, pickOnFailure: false) }
+        }
+        .onChange(of: model.phase) { _, phase in
+            if phase != .noVault { library.cancelPendingOpen() }   // another vault opened meanwhile
+        }
         .task {
-            // Reopen the last vault on launch; a failure leaves the welcome screen.
-            guard !triedAutoOpen, model.phase == .noVault, let last = library.recents.first else { return }
+            library.watchICloudAccount()
+            // Reopen the last vault on launch; a failure leaves the welcome screen. A vault iCloud has
+            // not delivered yet (after a restart) is listed as waiting and opens when it arrives.
+            guard !triedAutoOpen, model.phase == .noVault, let last = library.recents.first else {
+                await library.checkRecents()
+                return
+            }
             #if DEBUG
             if DebugLaunch.isActive { return }   // the launch environment names the vault
             #endif
@@ -336,10 +353,11 @@ struct RootView: View {
         let exportIDs = model.exportTargetIDs
         WindowCommands.fill(&context, model: model, exportIDs: exportIDs)
         context.paletteCompact = paletteCompact
+        context.noteMode = ui.noteMode
         context.pageStripVisible = pageStripVisible
         context.noteListHidden = ColumnLayout.visibility(from: storedColumns) == .detailOnly
         return CommandRouter(context: context, recents: library.recents.map { RecentItem(id: $0.id, name: $0.name) },
-                             paletteVisible: paletteVisible, exportIDs: exportIDs, windowID: ui.id,
+                             exportIDs: exportIDs, windowID: ui.id,
                              perform: { command in perform(command, editor: shown, exportIDs: exportIDs) },
                              openRecent: { id in
                                  if let entry = LibraryCommands.recent(withID: id, in: library.recents) { Task { await reopen(entry) } }

@@ -3461,6 +3461,7 @@ the UUID version set to 8 and the variant to `10` (RFC 9562):
 note      = derived("sempere-capture/1 <captureId> note")
 page      = derived("sempere-capture/1 <captureId> page")
 recording = derived("sempere-capture/1 <captureId> recording")
+card      = derived("sempere-capture/1 <captureId> card")
 ```
 
 so devices that adopt the same capture concurrently write the same note, and
@@ -3474,7 +3475,13 @@ itself (its own device id and clock):
   `addRecording` (the derived recording id, the blob, `started`, the
   informational fields, and `captured`: the manifest's `device` and the
   recipient the file is attributed to, §8.3.1), with `transcript` set when a
-  transcript file attributed like it is there;
+  transcript file attributed like it is there; writers should also add, in
+  the same delta, the recording's `audio` item (§8.2.9) on that page with the
+  derived `card` id, placed as a new card is on an empty page (300 × 96
+  points, narrower on a narrow page, centered across the page a margin from
+  its top; `z` the first key), so the note shows the recording and its
+  transcript as a recording made in a note does. Readers accept an adopted
+  note with or without the card;
 - a note that exists gets only `setRecording(transcript)`, and only when the
   recording is there without a transcript, its blob is the audio the
   transcript is bound to, and the transcript is attributed like the

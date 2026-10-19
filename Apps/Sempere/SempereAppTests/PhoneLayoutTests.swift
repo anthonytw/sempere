@@ -85,28 +85,17 @@ struct CompactBackTests {
 
 struct PhoneReadingTests {
     @Test func aPhoneReadsUntilAnnotationIsOn() {
-        #expect(PhoneReading.drawingSuspended(isPhone: true, mode: .reading))
-        #expect(!PhoneReading.drawingSuspended(isPhone: true, mode: .annotating))
+        #expect(NoteModeInput.of(.reading, on: .phone).drawingSuspended)
+        #expect(!NoteModeInput.of(.annotating, on: .phone).drawingSuspended)
         // The Hand keeps the canvas un-suspended so selection mode runs; nothing draws there (selection mode).
-        #expect(!PhoneReading.drawingSuspended(isPhone: true, mode: .hand))
-        #expect(PhoneReading.selectingItems(isPhone: true, mode: .hand, selectToggle: false))
-    }
-
-    @Test func theIPadAndTheMacNeverSuspendDrawing() {
-        for mode in PhoneCanvasMode.allCases {
-            #expect(!PhoneReading.drawingSuspended(isPhone: false, mode: mode))
-            // Their selection mode is the Select toggle, their palette the toolbar's.
-            #expect(PhoneReading.selectingItems(isPhone: false, mode: mode, selectToggle: true))
-            #expect(!PhoneReading.selectingItems(isPhone: false, mode: mode, selectToggle: false))
-            #expect(PhoneReading.paletteVisible(isPhone: false, mode: mode, stored: true))
-        }
+        #expect(!NoteModeInput.of(.hand, on: .phone).drawingSuspended)
+        #expect(NoteModeInput.of(.hand, on: .phone).selectingItems)
     }
 
     @Test func thePhonePaletteShowsOnlyWhileAnnotating() {
-        #expect(PhoneReading.paletteVisible(isPhone: true, mode: .annotating, stored: true))
-        #expect(!PhoneReading.paletteVisible(isPhone: true, mode: .hand, stored: true), "the Hand needs no palette")
-        #expect(!PhoneReading.paletteVisible(isPhone: true, mode: .reading, stored: true))
-        #expect(!PhoneReading.paletteVisible(isPhone: true, mode: .annotating, stored: false), "hidden by the toolbar or a notice")
+        #expect(NoteModeInput.of(.annotating, on: .phone).showsPalette)
+        #expect(!NoteModeInput.of(.hand, on: .phone).showsPalette, "the Hand needs no palette")
+        #expect(!NoteModeInput.of(.reading, on: .phone).showsPalette)
     }
 
     @Test func thePhonePaletteIsAlwaysTheShortOne() {
@@ -116,17 +105,16 @@ struct PhoneReadingTests {
     }
 
     @Test func theNextNoteOpensInReadingMode() {
-        #expect(PhoneReading.modeAfterNoteChange() == .reading)
-        #expect(PhoneCanvasMode.initial == .reading)
+        #expect(NoteMode.initial == .reading)
     }
 
     /// The footer below a finite page never writes while an iPhone is reading.
     @Test func theFooterAddsAPageOnlyWhenTheNoteIsBeingWritten() {
-        #expect(PhoneReading.footer(infinite: false, isLast: true, readOnly: false, drawingSuspended: false) == .addPage)
-        #expect(PhoneReading.footer(infinite: false, isLast: true, readOnly: false, drawingSuspended: true) == .none)
-        #expect(PhoneReading.footer(infinite: false, isLast: true, readOnly: true, drawingSuspended: false) == .none)
-        #expect(PhoneReading.footer(infinite: false, isLast: false, readOnly: false, drawingSuspended: true) == .nextPage)
-        #expect(PhoneReading.footer(infinite: true, isLast: false, readOnly: false, drawingSuspended: false) == .none)
+        #expect(PhoneReading.footer(infinite: false, isLast: true, readOnly: false, reading: false) == .addPage)
+        #expect(PhoneReading.footer(infinite: false, isLast: true, readOnly: false, reading: true) == .none)
+        #expect(PhoneReading.footer(infinite: false, isLast: true, readOnly: true, reading: false) == .none)
+        #expect(PhoneReading.footer(infinite: false, isLast: false, readOnly: false, reading: true) == .nextPage)
+        #expect(PhoneReading.footer(infinite: true, isLast: false, readOnly: false, reading: false) == .none)
     }
 
     @Test func deviceNamesInTheKeyTexts() {
@@ -159,8 +147,10 @@ struct PhoneCanvasTests {
         for size in Self.sizes {
             let (window, host) = Self.host(size: size)
             #expect(abs(host.canvas.zoomScale - size.width / 612) < 0.0005, "\(size)")
-            #expect(host.canvas.minimumZoomScale == host.canvas.zoomScale)
-            #expect(abs(host.canvas.maximumZoomScale - host.canvas.minimumZoomScale * 4) < 0.0005)
+            #expect(host.fitScale == host.canvas.zoomScale)
+            // An iPhone stops at the fit; an iPad (this suite runs there too) zooms out to half of it.
+            #expect(abs(host.canvas.minimumZoomScale - host.fitScale * (Platform.isPhone ? 1 : 0.5)) < 0.0005)
+            #expect(abs(host.canvas.maximumZoomScale - host.fitScale * 4) < 0.0005)
             window.isHidden = true
         }
     }
@@ -219,7 +209,7 @@ struct PhoneCanvasTests {
         defer { window.isHidden = true }
         guard Platform.isPhone else { return }
         let pan = host.canvas.panGestureRecognizer
-        let tools = host.toolPicker.toolItems.filter { $0.identifier != ToolPalette.handIdentifier }
+        let tools = host.toolPicker.toolItems
         #expect(!tools.isEmpty)
         for tool in tools {
             host.drawingSuspended = false

@@ -517,6 +517,42 @@ Details hold counts and 8-hex-digit note id prefixes only. `SEMPERE_PERF_LOG=0`
 turns the debug log off; `SEMPERE_DEBUG_DRAWING_CACHE=0` runs without the
 drawing cache, for comparisons.
 
+## Recent vaults after a restart
+
+Right after a device restarts, iCloud Drive (and other providers) can take a
+while to come up: a recent vault's bookmark does not resolve yet, or it
+resolves to a folder iCloud has not listed. Before this was handled, the launch
+reopen took the failed resolve for a dead bookmark and dropped the entry, so
+the vault vanished from the welcome list until it was chosen again.
+
+Now (`RecentVaultAvailability.swift`, `VaultLibrary.states`):
+
+* A recent vault is never dropped by a failed resolve or open; only Remove
+  (swipe, or the row's context menu) takes it off the list.
+* Each entry keeps the path where it was last reached (`RecentVault.path`), so
+  the list knows it is in iCloud Drive or another provider without resolving.
+* The library checks every entry off the main actor (`checkRecents`:
+  bookmark resolution and a look for `vault.json` or its `.icloud` stand-in,
+  under the bookmark's scope). A vault that may be in a cloud provider and is
+  not reachable is **waiting** ("Waiting for iCloud…") for
+  `RecentVaultCheck.patience` (3 minutes), then **missing** (the bookmark still
+  resolves, the folder is gone and its parent is there) or **unreachable**
+  (iCloud Drive off or signed out, or the vault went with its folder). A vault
+  on this device has nothing to wait for and is reported at once.
+* Checks repeat with a backoff (1, 2, 4, 8, 16, then every 30 s; once a minute
+  for ten minutes when only gone vaults are left), and start over when the scene becomes active
+  or the iCloud account changes (`NSUbiquityIdentityDidChange`).
+* The launch reopen, File ▸ Reopen Last Vault and a tap on a waiting row do not
+  show an error: the vault opens by itself as soon as a check finds it
+  (`openWhenAvailable`, `takeReadyPendingOpen`), unless another vault was opened
+  meanwhile.
+
+The app has no iCloud container entitlement (free personal-team builds cannot
+have one; vaults are folders the user picks), so there is no ubiquity container
+to look up and no `NSMetadataQuery` over iCloud scopes: the bookmark and the
+folder are what is checked. Tests fake the iCloud side with `FakeVaultCloud`
+(`RecentVaultWaitTests`).
+
 ## Saved folder access (sandboxed Mac)
 
 The app opens a vault folder through the system picker and remembers it as a
@@ -544,8 +580,8 @@ What the code does so that either answer is safe:
   (`FolderAccess.check`). When the system refuses (`EPERM`/`EACCES`, Cocoa
   257/513, also as an underlying error) it throws `FolderAccess.Problem.noAccess`
   naming the vault folder, instead of a file error from inside `Vault.open`.
-* `RootView.reopen` already turns any failure of a recent vault into a message
-  and the folder picker, so a lost permission ends with the user choosing the
+* `RootView.reopen` already turns any failure of a recent vault (other than
+  waiting for iCloud, above) into a message and the folder picker, so a lost permission ends with the user choosing the
   folder again, and `remember` saves a fresh bookmark from that scope.
   At launch (`pickOnFailure: false`) only the message shows.
 * A stale bookmark is re-saved while its scope is held (`VaultBookmark.resolve`).
@@ -902,7 +938,9 @@ maps each control to its command.
   replaced, not skipped for having the right size.
 - **Verify Backup** is `Backup.verify` with the unlocked key (every revision
   decrypted and checked), or hashes only when the vault is locked; the
-  problems are listed (`BackupVerifyReport.problemLines`).
+  problems are listed (`BackupVerifyReport.problemLines`; at most
+  `BackupText.problemLimit` in a box that scrolls, then "…and N more."). A folder
+  that cannot take the backup and a failed run or check are alerts.
 - **Reminder.** "Remind me after N days without a backup" schedules one local
   notification per vault (`UNUserNotificationCenter`, identifier
   `Sempere.backupReminder.<vault id>`), due N days after the last backup, or

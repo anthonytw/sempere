@@ -40,6 +40,13 @@ enum CanvasFocus {
         return false
     }
 
+    /// Whether a text field, text view or search field outside `view` is being typed in. Turning the
+    /// palette on gives the canvas the focus from a list (`PageCanvasHost.paletteTakesFocus`), never from these.
+    static func typingElsewhere(than view: UIView) -> Bool {
+        guard let responder = firstResponder() else { return false }
+        return holdsTyping(responder) && !isInside(responder, view)
+    }
+
     /// A responder that takes typed text: a text field, a text view, a search field.
     static func holdsTyping(_ responder: UIResponder) -> Bool {
         responder is UIKeyInput

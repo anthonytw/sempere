@@ -196,6 +196,9 @@ enum SettingsSyncText {
         case "quickCapture.notebook": return String(localized: "Notebook")
         case "quickCapture.transcribe": return String(localized: "Transcribe Voice Notes")
         case "appearance.icon": return String(localized: "App Icon")
+        case "appearance.theme": return String(localized: "Appearance")
+        case "appearance.notePages": return String(localized: "Note Pages")
+        case "drag.format": return String(localized: "Drag to Finder")
         default: return key
         }
     }

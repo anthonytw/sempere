@@ -67,9 +67,19 @@ enum LibraryCommands {
     }
 
     /// Reopens a recent vault; on failure explains and says whether the folder
-    /// picker should follow the alert (`pickOnFailure`). Nil when it opened or
-    /// the user stopped an iCloud download.
+    /// picker should follow the alert (`pickOnFailure`). Nil when it opened,
+    /// the user stopped an iCloud download, or the vault is waiting for iCloud:
+    /// then it opens by itself once it arrives (`VaultLibrary.openWhenAvailable`),
+    /// and its row says "Waiting for iCloud…" meanwhile.
     static func reopen(_ entry: RecentVault, pickOnFailure: Bool, model: AppModel, library: VaultLibrary) async -> Bool? {
+        if entry.webdav == nil {
+            if library.state(of: entry) != .available { await library.checkRecents() }
+            if library.state(of: entry) == .waiting {
+                library.openWhenAvailable(entry)
+                return nil
+            }
+        }
+        library.cancelPendingOpen()
         do {
             try await model.open(recent: entry, library: library)
             return nil

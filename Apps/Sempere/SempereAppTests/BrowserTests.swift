@@ -152,14 +152,18 @@ struct BrowserTests {
         #expect(url.lastPathComponent == "v5.sempere")
     }
 
-    @Test func deadBookmarkIsDroppedWithAClearError() throws {
+    /// A bookmark that does not resolve (iCloud Drive not ready after a restart, or a deleted folder)
+    /// gives a clear error and the entry stays: it is the user who removes it (RecentVaultWaitTests).
+    @Test func deadBookmarkIsKeptWithAClearError() throws {
         let store = try Self.tempDir().appendingPathComponent("recents.json")
         let dead = RecentVault(id: UUID(), name: "Gone", bookmark: Data([1, 2, 3]), lastOpened: Date())
         try JSONEncoder().encode([dead]).write(to: store)
         let library = VaultLibrary(storeURL: store)
         #expect(library.recents == [dead])
         #expect(throws: VaultLibrary.LibraryError.cannotResolve(name: "Gone")) { try library.resolve(dead) }
-        #expect(library.recents.isEmpty)
+        #expect(library.recents == [dead])
+        #expect(VaultLibrary(storeURL: store).recents == [dead])
+        library.forget(dead)
         #expect(VaultLibrary(storeURL: store).recents.isEmpty)
     }
 
