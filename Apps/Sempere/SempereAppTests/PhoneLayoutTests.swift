@@ -159,8 +159,10 @@ struct PhoneCanvasTests {
         for size in Self.sizes {
             let (window, host) = Self.host(size: size)
             #expect(abs(host.canvas.zoomScale - size.width / 612) < 0.0005, "\(size)")
-            #expect(host.canvas.minimumZoomScale == host.canvas.zoomScale)
-            #expect(abs(host.canvas.maximumZoomScale - host.canvas.minimumZoomScale * 4) < 0.0005)
+            #expect(host.fitScale == host.canvas.zoomScale)
+            // An iPhone stops at the fit; an iPad (this suite runs there too) zooms out to half of it.
+            #expect(abs(host.canvas.minimumZoomScale - host.fitScale * (Platform.isPhone ? 1 : 0.5)) < 0.0005)
+            #expect(abs(host.canvas.maximumZoomScale - host.fitScale * 4) < 0.0005)
             window.isHidden = true
         }
     }

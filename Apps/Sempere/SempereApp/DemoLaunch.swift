@@ -19,6 +19,8 @@ import UIKit
 /// - `SEMPERE_DEMO_ITEMS`: place an image, a text box, an equation and an audio card on the
 ///   "thoughts" note (`DemoVault.itemOps`), and report the canvas's items to UI tests
 ///   (`ItemSelectionController.debugReport`, `MacItemUITests`).
+/// - `SEMPERE_DEMO_DENSE`: a stroke count; also builds the pageless note `dense` with that many
+///   synthetic strokes (`DemoVault.denseOps`; with `SEMPERE_DEMO_ITEMS` it gets the items too).
 /// - `SEMPERE_DEMO_PDF`: also import a synthetic PDF as a new note and open it (Mac UI tests).
 /// - `SEMPERE_DEMO_MAC_WINDOW`: `WIDTHxHEIGHT` in points, Mac Catalyst only.
 /// - `SEMPERE_DEBUG_COLUMNS`: `all`, `doubleColumn`, `detailOnly`, or `stored` to keep the
@@ -49,7 +51,10 @@ enum DemoLaunch {
         await model.report {
             let dir = directory
             let png = env["SEMPERE_DEMO_ITEMS"] != nil ? demoImage() : nil
-            let built = try await Task.detached { try await DemoVault.build(in: dir, passphrase: passphrase, itemsImage: png) }.value
+            let dense = env["SEMPERE_DEMO_DENSE"].flatMap { Int($0) }
+            let built = try await Task.detached {
+                try await DemoVault.build(in: dir, passphrase: passphrase, itemsImage: png, denseStrokes: dense)
+            }.value
             try await model.openVault(at: built.url)
             if passphrase != nil {
                 // Unlocked by the test through the unlock sheet; then the choices below.

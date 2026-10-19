@@ -280,7 +280,7 @@ enum DebugLaunch {
             guard let host else { return }
             let canvas = host.canvas
             if let z = env["SEMPERE_DEBUG_ZOOM"].flatMap(Double.init) {
-                canvas.zoomScale = canvas.minimumZoomScale * CGFloat(z)
+                canvas.zoomScale = host.fitScale * CGFloat(z)
             }
             canvas.setContentOffset(CGPoint(x: 0, y: CGFloat(scrollY ?? 0) * canvas.zoomScale), animated: false)
             NSLog("SempereDebug zoom=%f contentSize=%@ offset=%@ bounds=%@", canvas.zoomScale,

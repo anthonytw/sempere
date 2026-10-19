@@ -67,8 +67,12 @@ enum DemoVault {
     ///
     /// `itemsImage` (UI tests, `SEMPERE_DEMO_ITEMS`): PNG bytes; the "thoughts"
     /// note then also gets one item of each kind a user places (`itemOps`).
+    ///
+    /// `denseStrokes` (UI tests, `SEMPERE_DEMO_DENSE`): also a pageless ruled note "dense"
+    /// holding that many synthetic strokes (`SyntheticInk`), like a long note imported from
+    /// Notability, for zoom, scroll and menu checks on a dense page (`IPadZoomScrollUITests`).
     static func build(in directory: URL, specs: [Spec] = DemoVault.specs, passphrase: String? = nil,
-                      itemsImage: Data? = nil) async throws -> Built {
+                      itemsImage: Data? = nil, denseStrokes: Int? = nil) async throws -> Built {
         let fm = FileManager.default
         if fm.fileExists(atPath: directory.path) { try fm.removeItem(at: directory) }
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -94,7 +98,35 @@ enum DemoVault {
                                             wall: anchor.addingTimeInterval(-spec.daysAgo * 86_400 + 60))
             }
         }
+        if let count = denseStrokes, count > 0 {
+            let id = noteID(denseNote)
+            ids[denseNote] = id
+            var ops = denseOps(strokes: count)
+            if let png = itemsImage {
+                ops += try itemOps(vault: vault, note: id, png: png, page: densePage)
+            }
+            try await NoteWriter.append(ops, to: id, vault: vault, clock: clock, wall: anchor.addingTimeInterval(-0.1 * 86_400))
+        }
         return Built(url: vaultURL, identityText: text, notes: ids)
+    }
+
+    /// The pageless dense note's key (`denseStrokes`).
+    static let denseNote = "dense"
+    static var densePage: UUID {
+        var rng = DemoRandom(seed: seed("page/" + denseNote))
+        return rng.uuid()
+    }
+
+    /// A pageless ruled note of `strokes` synthetic strokes, rows 24 points apart, its stored
+    /// height the ink's (as an import writes it).
+    static func denseOps(strokes: Int) -> [Op] {
+        var ink = SyntheticInk(seed: seed("ink/" + denseNote), options: .init(pointsPerStroke: 16, rowHeight: 24, top: 40))
+        let all = ink.strokes(strokes)
+        let height = max(792, (ink.nextBaseline + 48).rounded(.up))
+        return NoteOps.newNote(title: "Dense lecture", paper: ruled,
+                               pageSize: PageSize(width: 612, height: height, infinite: true, breakHeight: 792),
+                               pageId: densePage)
+            + all.map { .addStroke(page: densePage, stroke: $0) }
     }
 
     /// The note `itemsImage` places items on.
@@ -102,9 +134,9 @@ enum DemoVault {
 
     /// A text box, an image (`png`, 4 × 3 pixels, stored first), an equation and a
     /// recording's card on the first page of note `note`, clear of its ink.
-    static func itemOps(vault: Vault, note: UUID, png: Data) throws -> [Op] {
+    static func itemOps(vault: Vault, note: UUID, png: Data, page: UUID? = nil) throws -> [Op] {
         var rng = DemoRandom(seed: seed("page/" + itemsNote))
-        let page = rng.uuid()
+        let page = page ?? rng.uuid()
         let blob = try vault.writeBlob(note: note, png, type: "image/png")
         let items: [Item] = [
             .text(try NoteOps.text("Drag me"), frame: Rect(x: 60, y: 260, w: 200, h: 44), z: "a"),

@@ -53,7 +53,7 @@ struct PhoneInsertTests {
         let (vault, _) = try TS.unlockedFixture()
         let (editor, clock) = try await NoteEditorTests.open(vault, debounce: .seconds(60))
         let (window, host) = PhoneCanvasTests.host(size: CGSize(width: 402, height: 874))
-        host.canvas.setZoomScale(host.canvas.minimumZoomScale * 2, animated: false)
+        host.canvas.setZoomScale(host.fitScale * 2, animated: false)
         host.canvas.setContentOffset(CGPoint(x: 300, y: 500), animated: false)
         let visible = try #require(host.visiblePageRect)
         let model = AppModel(deviceStateURL: TS.deviceStateURL())

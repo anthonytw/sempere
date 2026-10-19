@@ -287,10 +287,21 @@ struct PageCanvasView: UIViewRepresentable {
 
         /// The user scrolls: the item's menu goes (layout and focus changes that move the offset do not count).
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            host?.visibleAreaChanged()
             if scrollView.isDragging || scrollView.isDecelerating { host?.itemSelection.viewMoved() }
             #if DEBUG
             host?.itemSelection.debugRefreshReport()   // the report's offset (`PhoneReadingScrollUITests`)
             #endif
+        }
+
+        /// A scroll or a pinch starts: every menu on the canvas goes at once, the item's and
+        /// PencilKit's (`ItemSelectionController.gestureStarted`).
+        func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+            host?.itemSelection.gestureStarted()
+        }
+
+        func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) {
+            host?.itemSelection.gestureStarted()
         }
 
         /// A pinch ended: the fitted width is a detent (`ZoomDetent`).
@@ -304,6 +315,7 @@ struct PageCanvasView: UIViewRepresentable {
         /// palette act on it.
         func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) {
             usingTool = true
+            host?.itemSelection.gestureStarted(stroke: true)   // writing on the page: no menu stays over it
             guard let host, !canvasView.isFirstResponder else { return }
             host.focus()
         }
@@ -553,8 +565,16 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
     var visiblePageRect: CGRect? {
         let z = canvas.zoomScale
         guard z > 0, bounds.width > 0, bounds.height > 0 else { return nil }
-        return CGRect(x: canvas.contentOffset.x / z, y: canvas.contentOffset.y / z,
-                      width: bounds.width / z, height: bounds.height / z)
+        let rect = CGRect(x: canvas.contentOffset.x / z, y: canvas.contentOffset.y / z,
+                          width: bounds.width / z, height: bounds.height / z)
+        // Zoomed out below the fit: the margins beside the page are not on it.
+        guard canvas.contentInset.left > 0 else { return rect }
+        return rect.intersection(CGRect(x: 0, y: rect.minY, width: CGFloat(pageSize.width), height: rect.height))
+    }
+
+    /// The canvas scrolled: the paper builds the bands coming into view (`PaperView.setVisible`).
+    func visibleAreaChanged() {
+        paperView.setVisible(canvas.bounds)
     }
 
     override init(frame: CGRect) {
@@ -1172,31 +1192,55 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         canvas.setContentOffset(.zero, animated: false)
     }
 
-    /// Zoom range: page width fills the view at minimum, 4x at maximum (a
-    /// page of the stack: its frame is the page at the stack's scale, so the
-    /// fit is that scale).
+    /// The scale at which the page fills the width (0 before layout); the zoom range is
+    /// `ZoomDetent.minimum` (half of it, a phone: the fit) to 4x of it.
+    var fitScale: CGFloat { fittedWidth }
+
+    /// Zoom range: from `ZoomDetent.minimum` of the fitted width (half of it; the fit on an
+    /// iPhone) to 4x (a page of the stack: its frame is the page at the stack's scale, so the
+    /// fit is that scale, and it never zooms itself).
+    ///
+    /// The zoom is set only when the fit itself changed (the first layout, a rotation, a split
+    /// view, another page size): `force` (every SwiftUI update, `apply(paper:pageSize:)`) only
+    /// renews the range. It used to put a canvas within 0.1 % of the fit back on the fit at every
+    /// update, and an update in the middle of a pinch that passed the fit snapped the zoom
+    /// under the fingers (TestFlight 1.0.0 (6): "the zoom jostles around a bit").
     private func fitWidth(force: Bool = false) {
         guard bounds.width > 0, pageSize.width > 0 else { return }
         let fit = bounds.width / CGFloat(pageSize.width)
         if fit != fittedWidth || force {
-            let wasFitted = fittedWidth == 0 || abs(canvas.zoomScale - fittedWidth) < 0.001
+            let refit = fit != fittedWidth
+            let wasFitted = fittedWidth == 0 || abs(canvas.zoomScale - fittedWidth) < fittedWidth * 0.001
             fittedWidth = fit
-            canvas.minimumZoomScale = fit
+            let minimum = isEmbedded ? fit : CGFloat(ZoomDetent.minimum(fit: Double(fit), paged: false, isPhone: Platform.isPhone))
             // A page of the stack is zoomed by the stack: its own scale is pinned to the fit.
-            canvas.maximumZoomScale = isEmbedded ? fit : fit * 4
-            if wasFitted || canvas.zoomScale < fit { canvas.zoomScale = fit }
+            let maximum = isEmbedded ? fit : fit * CGFloat(ZoomSteps.maxFactor)
+            canvas.minimumZoomScale = minimum
+            canvas.maximumZoomScale = maximum
+            if isEmbedded {
+                // Its own pinch must never take the fingers from the stack's (`PageStackHost`).
+                canvas.pinchGestureRecognizer?.isEnabled = false
+                if canvas.zoomScale != fit { canvas.zoomScale = fit }
+            } else if !canvas.isZooming, !canvas.isZoomBouncing {
+                if refit && wasFitted {
+                    canvas.zoomScale = fit
+                } else if canvas.zoomScale < minimum || canvas.zoomScale > maximum {
+                    canvas.zoomScale = min(max(canvas.zoomScale, minimum), maximum)
+                }
+            }
         }
         zoomChanged()
     }
 
     /// A pinch on the one-page canvas ended: within `ZoomDetent.snapBand` of
-    /// the fitted width it settles exactly there (a pageless note does not
-    /// zoom out below it: the scroll view bounces back). The stack settles its
-    /// own pinches (`PageStackHost.bake`).
+    /// the fitted width it settles exactly there; below it the page zooms out
+    /// to half the fit, centered (an iPhone stops at the fit). The stack
+    /// settles its own pinches (`PageStackHost.bake`).
     func zoomEnded() {
         guard !isEmbedded, fittedWidth > 0 else { return }
+        zoomChanged()   // the last frame's extent and margins (an animated settle ends here too)
         let z = Double(canvas.zoomScale), fit = Double(fittedWidth)
-        let target = ZoomDetent.settle(z, fit: fit, paged: false)
+        let target = ZoomDetent.settle(z, fit: fit, paged: false, isPhone: Platform.isPhone)
         guard abs(target - z) > fit * 0.001 else { return }
         canvas.setZoomScale(CGFloat(target), animated: true)
         if ZoomDetent.isFit(target, fit: fit) { Self.snapFeedback() }
@@ -1220,9 +1264,20 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
                                              footerHeight: footer == .none ? 0 : Double(PageExtent.footerScreenHeight / z))
         let paperHeight = pageSize.infinite ? height : pageSize.height
         let size = CGSize(width: CGFloat(pageSize.width), height: CGFloat(paperHeight))
+        paperView.setVisible(canvas.bounds)   // only the bands on screen are built
         paperView.configure(paper: paper, size: size, sheetHeight: PaperRenderer.sheetHeight(for: pageSize))
         paperView.setZoom(z)
         canvas.contentSize = CGSize(width: size.width * z, height: CGFloat(height) * z)
+        if !isEmbedded {
+            // Zoomed out below the fit: the page stands in the middle.
+            // (Under half a point is rounding at the fit, not a margin: no sideways scroll there.)
+            let margin = PageStackHost.sideMargin(contentWidth: canvas.contentSize.width, viewWidth: bounds.width)
+            let side = margin < 0.5 ? 0 : margin
+            if canvas.contentInset.left != side || canvas.contentInset.right != side {
+                canvas.contentInset.left = side
+                canvas.contentInset.right = side
+            }
+        }
         itemLayer.frame = CGRect(origin: .zero, size: canvas.contentSize)
         itemLayer.setZoom(z)
         textOverlay.frame = itemLayer.frame
