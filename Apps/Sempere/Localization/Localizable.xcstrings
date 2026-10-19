@@ -7229,14 +7229,14 @@
         }
       }
     },
-    "Hand: scroll with one finger, tap an item to select it, hold for its menu" : {
+    "Hand: scroll with one finger, tap an item to select it, hold for its menu, drag to move it" : {
       "comment" : "Tooltip of the iPhone top bar's Hand button",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mano: desplaza con un dedo, toca un elemento para seleccionarlo, mantén pulsado para ver su menú"
+            "value" : "Mano: desplaza con un dedo, toca un elemento para seleccionarlo, mantén pulsado para ver su menú, arrástralo para moverlo"
           }
         }
       }

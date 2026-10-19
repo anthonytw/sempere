@@ -101,7 +101,7 @@ final class PhoneCanvasUITests: XCTestCase {
         XCTFail("no Annotate button: \(app.debugDescription.prefix(2000))")
     }
 
-    /// Taps the top bar's Hand button (Annotate and select mode on in one tap).
+    /// Taps the top bar's Hand button (Hand mode on, or back to reading).
     @MainActor
     private func tapHand(_ app: XCUIApplication) {
         let hand = app.descendants(matching: .any).matching(identifier: "handButton").firstMatch
@@ -214,8 +214,9 @@ final class PhoneCanvasUITests: XCTestCase {
         XCTAssertEqual(freshReport(app)?.strokes ?? r0.strokes, r0.strokes, "reading: a finger draws nothing")
     }
 
-    /// The top bar's Hand button, from reading mode: one tap selects an item and draws nothing; the Hand
-    /// button reads as selected; a second tap leaves select mode (a tap selects nothing again, Annotate stays on).
+    /// The top bar's Hand button, from reading mode: one tap selects an item and draws nothing, without
+    /// Annotate; the Hand button reads as selected and the pencil does not; a second tap goes back to reading
+    /// (a tap selects nothing). Every transition is `PhoneCanvasModeUITests`.
     @MainActor
     func testTheTopBarHandButtonSelectsAnItem() throws {
         let app = launch()
@@ -224,13 +225,20 @@ final class PhoneCanvasUITests: XCTestCase {
         tapHand(app)
         let hand = app.descendants(matching: .any).matching(identifier: "handButton").firstMatch
         XCTAssertTrue(hand.isSelected || (hand.value as? String) == "1", "the Hand button reads as selected: \(String(describing: hand.value))")
+        let pencil = app.buttons["Annotate"].firstMatch
+        XCTAssertFalse(pencil.isSelected, "the Hand is not Annotate")
         guard let before = report(canvas), let image = middle(of: "image", on: canvas, app: app) else { return XCTFail("no image") }
         image.tap()
         let selected = waitReport(canvas, "a tap selects the picture") { $0.selected == "image" && $0.bar }
         XCTAssertEqual(selected?.strokes, before.strokes, "the tap left no dot")
-        tapHand(app)   // off again: back to the drawing tool, still annotating
+        tapHand(app)   // off again: reading
         let after = freshReport(app)
         XCTAssertEqual(after?.selected ?? "none", "none", "leaving the Hand drops the selection")
+        guard let r = report(canvas), let again = middle(of: "image", on: canvas, app: app) else { return }
+        again.tap()
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertEqual(freshReport(app)?.selected ?? "none", "none", "reading: a tap selects nothing")
+        XCTAssertEqual(freshReport(app)?.strokes ?? r.strokes, r.strokes)
     }
 
     /// With the Hand on, one finger scrolls a two-page note and draws nothing.

@@ -85,13 +85,28 @@ struct CompactBackTests {
 
 struct PhoneReadingTests {
     @Test func aPhoneReadsUntilAnnotationIsOn() {
-        #expect(PhoneReading.drawingSuspended(isPhone: true, annotating: false))
-        #expect(!PhoneReading.drawingSuspended(isPhone: true, annotating: true))
+        #expect(PhoneReading.drawingSuspended(isPhone: true, mode: .reading))
+        #expect(!PhoneReading.drawingSuspended(isPhone: true, mode: .annotating))
+        // The Hand keeps the canvas un-suspended so selection mode runs; nothing draws there (selection mode).
+        #expect(!PhoneReading.drawingSuspended(isPhone: true, mode: .hand))
+        #expect(PhoneReading.selectingItems(isPhone: true, mode: .hand, selectToggle: false))
     }
 
     @Test func theIPadAndTheMacNeverSuspendDrawing() {
-        #expect(!PhoneReading.drawingSuspended(isPhone: false, annotating: false))
-        #expect(!PhoneReading.drawingSuspended(isPhone: false, annotating: true))
+        for mode in PhoneCanvasMode.allCases {
+            #expect(!PhoneReading.drawingSuspended(isPhone: false, mode: mode))
+            // Their selection mode is the Select toggle, their palette the toolbar's.
+            #expect(PhoneReading.selectingItems(isPhone: false, mode: mode, selectToggle: true))
+            #expect(!PhoneReading.selectingItems(isPhone: false, mode: mode, selectToggle: false))
+            #expect(PhoneReading.paletteVisible(isPhone: false, mode: mode, stored: true))
+        }
+    }
+
+    @Test func thePhonePaletteShowsOnlyWhileAnnotating() {
+        #expect(PhoneReading.paletteVisible(isPhone: true, mode: .annotating, stored: true))
+        #expect(!PhoneReading.paletteVisible(isPhone: true, mode: .hand, stored: true), "the Hand needs no palette")
+        #expect(!PhoneReading.paletteVisible(isPhone: true, mode: .reading, stored: true))
+        #expect(!PhoneReading.paletteVisible(isPhone: true, mode: .annotating, stored: false), "hidden by the toolbar or a notice")
     }
 
     @Test func thePhonePaletteIsAlwaysTheShortOne() {
@@ -100,8 +115,9 @@ struct PhoneReadingTests {
         #expect(PhoneReading.paletteCompact(isPhone: false, stored: true))
     }
 
-    @Test func annotationStartsOffForTheNextNote() {
-        #expect(!PhoneReading.annotatingAfterNoteChange())
+    @Test func theNextNoteOpensInReadingMode() {
+        #expect(PhoneReading.modeAfterNoteChange() == .reading)
+        #expect(PhoneCanvasMode.initial == .reading)
     }
 
     /// The footer below a finite page never writes while an iPhone is reading.
@@ -170,19 +186,74 @@ struct PhoneCanvasTests {
         let pan = host.canvas.panGestureRecognizer
         host.drawingSuspended = true
         guard Platform.isPhone else { return }
-        #expect(pan.minimumNumberOfTouches == 1, "reading")
+        // After each change PencilKit recounts the fingers itself (as it does when the palette's
+        // visibility changes or its view moves to a window): the count must survive it.
+        func expectTouches(_ n: Int, _ what: Comment) {
+            #expect(pan.minimumNumberOfTouches == n, what)
+            #expect(Self.pencilKitRecount(host.canvas), "PencilKit's tiled view")
+            #expect(pan.minimumNumberOfTouches == n, "after PencilKit's own recount: \(what)")
+        }
+        expectTouches(1, "reading")
         host.drawingSuspended = false
-        #expect(pan.minimumNumberOfTouches == 2, "annotating: one finger draws")
+        expectTouches(2, "annotating: one finger draws")
         host.itemSelectionActive = true
-        #expect(pan.minimumNumberOfTouches == 1, "the Hand")
+        expectTouches(1, "the Hand")
         host.itemSelectionActive = false
-        #expect(pan.minimumNumberOfTouches == 2)
+        expectTouches(2, "annotating again")
         host.isReadOnly = true
-        #expect(pan.minimumNumberOfTouches == 1, "read-only")
+        expectTouches(1, "read-only")
         host.isReadOnly = false
         host.drawingSuspended = true
-        #expect(pan.minimumNumberOfTouches == 1, "reading again")
+        expectTouches(1, "reading again")
         #expect(PageCanvasHost.phonePanTouches(fingerDraws: true) == 2)
+    }
+
+    /// TestFlight build 5: a moment after Annotate went off, a pageless note needed two fingers again.
+    /// PencilKit had set its scroll back to two fingers when the palette finished hiding
+    /// (`-[PKTiledView _updateForToolPickerVisibilityChange:]` → `updateForAllowedDrawingInput`), because
+    /// the drawing policy still let a finger draw. Each tool and mode, then PencilKit's recount: reading
+    /// and the Hand keep one finger.
+    @Test func pencilKitsOwnRecountKeepsReadingAtOneFinger() {
+        let (window, host) = Self.host(size: Self.sizes[1], pageSize: PageSize(width: 612, height: 792, infinite: true,
+                                                                               breakHeight: 792))
+        defer { window.isHidden = true }
+        guard Platform.isPhone else { return }
+        let pan = host.canvas.panGestureRecognizer
+        let tools = host.toolPicker.toolItems.filter { $0.identifier != ToolPalette.handIdentifier }
+        #expect(!tools.isEmpty)
+        for tool in tools {
+            host.drawingSuspended = false
+            host.toolPicker.selectedToolItemIdentifier = tool.identifier   // pen, marker, eraser (object), lasso
+            #expect(pan.minimumNumberOfTouches == 2, "annotating with \(tool.identifier)")
+            host.drawingSuspended = true
+            #expect(host.canvas.drawingPolicy == .pencilOnly, "reading: no finger draws")
+            _ = Self.pencilKitRecount(host.canvas)
+            // Also what a move to a window does (`-[PKTiledView didMoveToWindow]`).
+            host.removeFromSuperview()
+            window.addSubview(host)
+            #expect(pan.minimumNumberOfTouches == 1, "reading after \(tool.identifier), after PencilKit's recount")
+            host.drawingSuspended = false
+            host.itemSelectionActive = true
+            _ = Self.pencilKitRecount(host.canvas)
+            #expect(pan.minimumNumberOfTouches == 1, "the Hand after \(tool.identifier)")
+            host.itemSelectionActive = false
+        }
+    }
+
+    /// Runs PencilKit's own finger count (`-[PKTiledView updateForAllowedDrawingInput]`, private) on the
+    /// canvas's tiled view, as PencilKit does by itself; false if there is no such view.
+    static func pencilKitRecount(_ canvas: PKCanvasView) -> Bool {
+        let selector = NSSelectorFromString("updateForAllowedDrawingInput")
+        var views: [UIView] = [canvas]
+        var found = false
+        while let view = views.popLast() {
+            if NSStringFromClass(type(of: view)).contains("PKTiledView"), view.responds(to: selector) {
+                view.perform(selector)
+                found = true
+            }
+            views.append(contentsOf: view.subviews)
+        }
+        return found
     }
 
     @Test func annotatingTurnsFingerDrawingBackOn() {
@@ -206,7 +277,14 @@ struct PhoneCanvasTests {
     @Test func theDrawingPolicyFollowsTheDevice() {
         let (window, host) = Self.host(size: Self.sizes[0])
         switch UIDevice.current.userInterfaceIdiom {
-        case .phone: #expect(host.canvas.drawingPolicy == .anyInput)
+        case .phone:
+            #expect(host.canvas.drawingPolicy == .anyInput, "annotating")
+            host.drawingSuspended = true
+            #expect(host.canvas.drawingPolicy == .pencilOnly, "reading: no finger draws (and PencilKit's scroll takes one)")
+            host.drawingSuspended = false
+            host.itemSelectionActive = true
+            #expect(host.canvas.drawingPolicy == .pencilOnly, "the Hand")
+            host.itemSelectionActive = false
         case .pad where !ProcessInfo.processInfo.isMacCatalystApp: #expect(host.canvas.drawingPolicy == .default)
         default: #expect(host.canvas.drawingPolicy == .anyInput)
         }

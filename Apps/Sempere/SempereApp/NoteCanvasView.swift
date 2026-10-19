@@ -149,8 +149,9 @@ struct EditorView: View {
     @AppStorage(ToolPalette.visibleKey) private var paletteVisible = true
     @AppStorage(ToolPalette.compactKey) private var paletteCompact = false
     @AppStorage(ObjectEraserSize.defaultsKey) private var eraserRadius = ObjectEraserSize.defaultRadius
-    /// iPhone only: finger annotation is off until the pencil button turns it on.
-    @State private var annotating = false
+    /// iPhone only: reading, Hand or annotating (`PhoneCanvasMode`, the top bar's pencil and Hand).
+    /// A note opens in reading mode. The iPad and the Mac ignore it.
+    @State private var phoneMode = PhoneCanvasMode.initial
     @AppStorage(PageStrip.visibleKey) private var stripVisible = false
     /// Deleted pages the undo banner has already been shown for.
     @State private var undoBannerFor = 0
@@ -196,13 +197,13 @@ struct EditorView: View {
                 // Paged: every page in one scroll (lazy canvases), the current page follows it.
                 PageStackView(editor: editor, pageIDs: editor.pages.map(\.id), pageSize: editor.pageSize,
                               pageJump: editor.pageJump,
-                              paletteVisible: paletteVisible && ui.expectations == nil,
+                              paletteVisible: canvasPaletteVisible,
                               paletteCompact: PhoneReading.paletteCompact(isPhone: Platform.isPhone, stored: paletteCompact),
-                              drawingSuspended: PhoneReading.drawingSuspended(isPhone: Platform.isPhone, annotating: annotating),
+                              drawingSuspended: PhoneReading.drawingSuspended(isPhone: Platform.isPhone, mode: phoneMode),
                               generation: editor.canvasGeneration,
                               itemSource: model.itemLayerSource, itemCommands: itemCommands,
-                              selectingItems: modes.selectingItems, onSelectingItemsEnded: { modes.selectingItems = false },
-                              onHandToolPicked: { modes.selectingItems = true },
+                              selectingItems: canvasSelectingItems, onSelectingItemsEnded: selectingItemsEnded,
+                              onHandToolPicked: handToolPicked,
                               addingText: modes.addingText, onAddingTextEnded: { modes.textToolEnded($0) },
                               onDrop: editor.isReadOnly ? nil : { providers, page, point in
                                   EditorInsert.add(providers, to: editor, page: page, at: point, model: model, ui: ui, state: insert)
@@ -210,13 +211,13 @@ struct EditorView: View {
                     .ignoresSafeArea(.container, edges: .bottom)
             } else if let page = editor.currentPage {
                 PageCanvasView(editor: editor, pageID: page.id, paper: editor.displayedPaper(of: page), pageSize: editor.pageSize,
-                               paletteVisible: paletteVisible && ui.expectations == nil,
+                               paletteVisible: canvasPaletteVisible,
                                paletteCompact: PhoneReading.paletteCompact(isPhone: Platform.isPhone, stored: paletteCompact),
-                               drawingSuspended: PhoneReading.drawingSuspended(isPhone: Platform.isPhone, annotating: annotating),
+                               drawingSuspended: PhoneReading.drawingSuspended(isPhone: Platform.isPhone, mode: phoneMode),
                                generation: editor.canvasGeneration,
                                itemSource: model.itemLayerSource, itemCommands: itemCommands,
-                               selectingItems: modes.selectingItems, onSelectingItemsEnded: { modes.selectingItems = false },
-                              onHandToolPicked: { modes.selectingItems = true },
+                               selectingItems: canvasSelectingItems, onSelectingItemsEnded: selectingItemsEnded,
+                               onHandToolPicked: handToolPicked,
                                addingText: modes.addingText, onAddingTextEnded: { modes.textToolEnded($0) },
                                onDrop: editor.isReadOnly ? nil : { providers, page, point in
                                    EditorInsert.add(providers, to: editor, page: page, at: point, model: model, ui: ui, state: insert)
@@ -281,7 +282,7 @@ struct EditorView: View {
             }
         }
         .onChange(of: editor.noteID) {
-            annotating = PhoneReading.annotatingAfterNoteChange()
+            phoneMode = PhoneReading.modeAfterNoteChange()
             modes.reset()
             showingTranscript = nil
             remoteNoticeFor = 0
@@ -292,7 +293,9 @@ struct EditorView: View {
             ui.toolRequest = nil
             switch request {
             case .text: if !editor.isReadOnly, editor.currentPage != nil { modes.addingText.toggle() }
-            case .select: if showsItemSelection { modes.selectingItems.toggle() }
+            case .select:
+                guard showsItemSelection else { break }
+                if Platform.isPhone { phoneMode = phoneMode.tapping(.hand) } else { modes.selectingItems.toggle() }
             }
         }
         .sheet(item: $showingTranscript) { TranscriptView(editor: editor, recording: $0) }
@@ -312,27 +315,50 @@ struct EditorView: View {
     }
 
     private var phoneItems: PhoneToolbar.Items {
-        PhoneToolbar.items(readOnly: editor.isReadOnly, annotating: annotating, pageCount: editor.pages.count,
+        PhoneToolbar.items(readOnly: editor.isReadOnly, mode: phoneMode, pageCount: editor.pages.count,
                            hasPage: editor.currentPage != nil, pageEntries: !phonePageEntries.isEmpty)
     }
 
-    /// The top bar's Hand button (iPhone): selection mode from reading mode in one tap. On, it turns
-    /// Annotate on with select mode on (the palette highlights the Hand); it reads as selected while
-    /// both are on. Tapping it again leaves select mode and stays annotating, so the palette goes back
-    /// to the last drawing tool; the pencil beside it is the way back to reading.
-    private var handToggle: some View {
-        let on = PhoneToolbar.handIsOn(annotating: annotating, selecting: modes.selectingItems)
-        return Toggle("Hand", systemImage: on ? "hand.point.up.left.fill" : "hand.point.up.left",
-                      isOn: Binding(
-                          get: { on },
-                          set: { tapped in
-                              let next = PhoneToolbar.afterHandTap(on: tapped)
-                              annotating = next.annotating ?? annotating
-                              modes.selectingItems = next.selecting
-                          }))
-            .toggleStyle(.button)
-            .accessibilityIdentifier("handButton")
-            .help("Hand: scroll with one finger, tap an item to select it, hold for its menu")
+    /// The palette: the toolbar's setting, hidden under a notice or the tour, and on a phone only while annotating.
+    private var canvasPaletteVisible: Bool {
+        PhoneReading.paletteVisible(isPhone: Platform.isPhone, mode: phoneMode, stored: paletteVisible && ui.expectations == nil)
+    }
+
+    /// Selection mode for the canvas: the Hand on a phone (not while the text tool is armed), the Select toggle elsewhere.
+    private var canvasSelectingItems: Bool {
+        PhoneReading.selectingItems(isPhone: Platform.isPhone, mode: phoneMode, selectToggle: modes.selectingItems)
+            && !modes.addingText
+    }
+
+    /// The canvas ended selection mode (a drawing tool was picked in the palette). On a phone the palette is
+    /// hidden in Hand mode, so this is only the canvas keeping the palette in step: the mode stays.
+    private func selectingItemsEnded() {
+        if !Platform.isPhone { modes.selectingItems = false }
+    }
+
+    /// The palette's Hand item was picked: selection mode (iPad: the Select toggle; iPhone: Hand mode,
+    /// `PhoneCanvasMode.handToolPicked`).
+    private func handToolPicked() {
+        if Platform.isPhone { phoneMode = phoneMode.handToolPicked() } else { modes.selectingItems = true }
+    }
+
+    /// One of the top bar's two mode buttons (iPhone): lit in its own mode; a tap on the lit one goes back
+    /// to reading, on the other one switches straight to that mode (`PhoneCanvasMode.tapping`).
+    private func modeToggle(_ button: PhoneCanvasMode.Button) -> some View {
+        let on = phoneMode.lights(button)
+        let binding = Binding(get: { phoneMode.lights(button) }, set: { _ in phoneMode = phoneMode.tapping(button) })
+        return Group {
+            switch button {
+            case .annotate:
+                Toggle("Annotate", systemImage: on ? "pencil.tip.crop.circle.fill" : "pencil.tip.crop.circle", isOn: binding)
+                    .help("Draw on the page with a finger")
+            case .hand:
+                Toggle("Hand", systemImage: on ? "hand.point.up.left.fill" : "hand.point.up.left", isOn: binding)
+                    .accessibilityIdentifier("handButton")
+                    .help("Hand: scroll with one finger, tap an item to select it, hold for its menu, drag to move it")
+            }
+        }
+        .toggleStyle(.button)
     }
 
     /// The iPhone's toolbar: one pencil button for light annotation, page
@@ -341,14 +367,9 @@ struct EditorView: View {
     @ToolbarContentBuilder
     private var phoneToolbar: some ToolbarContent {
         if phoneItems.writes {
-            ToolbarItem(placement: .primaryAction) {
-                Toggle("Annotate", systemImage: annotating ? "pencil.tip.crop.circle.fill" : "pencil.tip.crop.circle",
-                       isOn: $annotating)
-                    .toggleStyle(.button)
-                    .help("Draw on the page with a finger")
-            }
+            ToolbarItem(placement: .primaryAction) { modeToggle(.annotate) }
             if phoneItems.handButton {
-                ToolbarItem(placement: .primaryAction) { handToggle }
+                ToolbarItem(placement: .primaryAction) { modeToggle(.hand) }
             }
             ToolbarItem(placement: .secondaryAction) {
                 Button("Paper…", systemImage: "square.grid.3x3") { ui.choosingPaper = true }
@@ -374,9 +395,6 @@ struct EditorView: View {
             if phoneItems.writingTools {
                 ToolbarItem(placement: .secondaryAction) { textToolToggle }
                 ToolbarItem(placement: .secondaryAction) { eraserSizeMenu }
-                if phoneItems.selectToggle {
-                    ToolbarItem(placement: .secondaryAction) { itemSelectionToggle }
-                }
             }
         }
         if phoneItems.pageBar {

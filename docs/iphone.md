@@ -38,56 +38,64 @@ Read-first:
   settles on it. A paged note also zooms out to half the fitted width (several pages at once); a
   pageless note stops at the fit.
   Paged notes scroll from one page to the next (`PageStackView`), with a gap and a shadow between
-  pages; the counter follows the scroll. The end of the note shows "Add Page" only while annotating:
-  a tap while reading never writes. Pageless notes scroll one screen past the ink.
+  pages; the counter follows the scroll. The end of the note shows "Add Page" in Annotate and Hand, never in
+  Reading: a tap while reading never writes. Pageless notes scroll one screen past the ink.
 - **Page navigation** in the bottom bar (previous, "n / N", next) for notes with several pages
   scrolls to the page.
-- **Light annotation.** The pencil button ("Annotate") switches finger drawing on. Until then the
-  canvas draws nothing and the palette is hidden (`PhoneReading.drawingSuspended`,
-  `PageCanvasHost.drawingSuspended`), so a stray finger only scrolls. Annotating shows the short
-  palette (pen, marker, eraser, lasso; `PhoneReading.paletteCompact`), fingers draw
-  (`drawingPolicy = .anyInput`), and the bottom bar gives way to a Pages menu so it does not sit on
-  the palette. Annotation turns off again on the next note. Edits are ordinary deltas through
-  `NoteWriter`, exactly as on the iPad. Read-only notes (deleted, unreadable revisions, or written by a newer version) never draw.
-- **Tap selects an item, a hold shows its menu.** With Annotate on, a finger draws, so a tap on a
-  placed item (a picture, text box, equation, clip or card) is told apart from a stroke before ink
-  starts (`FingerItemTapRecognizer`, `ItemSelectionController.fingersPick`): one finger that lifts
-  within 0.4 s and 8 points of where it landed, on an item, selects it (outline, handles, the bar with
-  the item menu and Delete) and leaves no dot. PencilKit's drawing waits for that recognizer to fail,
-  which it does at once for a touch that lands off every item (ink is not delayed) and as soon as the
-  finger moves, rests or is joined by a second one. A stroke that starts on an item draws (annotating a
-  picture or PDF page is the point of Annotate); only a tap or a hold selects. A finger held 0.45 s on an
-  item selects it and shows the item's menu when it lifts. The eraser tools keep their taps. Reading mode
-  (Annotate off) selects nothing: a stray touch only scrolls, and nothing can be moved by accident; turn
-  Annotate on to select. Tap beside the selection to drop it; drawing comes back.
-- **Scrolling while annotating** takes two fingers in every tool (one draws, as on PencilKit's own
-  canvas); reading mode scrolls with one, paged or pageless. PencilKit makes its own scroll take two
-  fingers whenever its drawing policy lets a finger draw (`.anyInput`), even with drawing off, so the
-  one-page canvas of a pageless note sets one finger itself whenever no finger draws (reading, the
-  Hand, a read-only note; `PageCanvasHost.phonePanTouches`), as the paged stack does.
-- **The Hand button** (top bar, beside the pencil; `PhoneToolbar.handButton`, `EditorView.handToggle`,
-  identifier `handButton`): one tap from reading mode turns Annotate on with selection mode on
-  (`annotating = true; modes.selectingItems = true`), so the palette comes up with the Hand highlighted. It
-  reads as selected (filled icon) while both are on. Tapping it again leaves selection mode and stays
-  annotating, so the palette returns to the last drawing tool; the pencil is the way back to reading (it
-  mirrors the pencil: a toggle for a mode, not a jump out of Annotate). Hidden for read-only notes and
-  notes with no page, as Annotate is. The top bar is title + two buttons + the overflow menu: it fits an
-  iPhone SE (375 pt) without truncating the title badly (the title shrinks, the buttons do not).
-- **The Hand tool** (the last item of the palette, `ToolPalette.handItem`): picking it turns selection
-  mode on (the same mode as the overflow menu's Select, `CanvasModes.selectingItems`), so one finger
-  scrolls, a tap selects an item, a hold shows its menu and a drag on a selected item moves it; nothing
-  draws. Picking a pen, marker, eraser or lasso returns to drawing. The palette follows the mode: the
-  Select toggle or a new note moves the highlight to the Hand or back to the last drawing tool
-  (`PageCanvasHost.syncHandTool`). Two fingers scroll in every tool. Only the iPhone's palette has it:
-  a finger already scrolls on the iPad and the Mac has a pointer, so nothing is added there. Reading mode
-  still selects nothing (the palette is hidden); turn Annotate on and pick the Hand.
+- **Three modes: Reading, Hand, Annotate** (`PhoneCanvasMode`, one value in `EditorView`, so the buttons and
+  the canvas cannot disagree). The top bar shows them with two buttons, the pencil ("Annotate") and the Hand
+  (`handButton`), at most one lit:
+
+  | Mode | Pencil | Hand | One finger | Tap / hold on an item | Palette |
+  |------|--------|------|------------|-----------------------|---------|
+  | Reading | off | off | scrolls; draws nothing | nothing | hidden |
+  | Hand | off | on | scrolls; drags a selected item (moves, resizes) | selects / its menu | hidden |
+  | Annotate | on | off | draws (two fingers scroll) | selects / its menu (below) | shown |
+
+  A tap on the lit button goes back to Reading; a tap on the other button switches straight to its mode (Hand
+  to Annotate is one tap on the pencil, never both off). A note, and the next one, opens in Reading
+  (`PhoneReading.modeAfterNoteChange`). Everything follows from the mode: `drawingSuspended` (Reading),
+  `selectingItems` (Hand), the palette (Annotate only, `PhoneReading.paletteVisible`), the bottom page bar
+  (whenever the palette is away), the drawing aids in the overflow menu (Annotate). The overflow menu has no
+  Select toggle on the phone: the Hand is selection mode (a Select command request toggles the Hand). Both buttons
+  are hidden for read-only notes (which draw and select nothing) and notes with no page. The top bar is title +
+  two buttons + the overflow menu: it fits an iPhone SE (375 pt) without truncating the title badly.
+  Edits are ordinary deltas through `NoteWriter`, exactly as on the iPad.
+  (TestFlight build 5: the Hand turned Annotate on too, so going back to reading took both buttons, and turning
+  the pencil off with the Hand on left both buttons off while a finger still drew.)
+- **The palette's Hand item** (the last item of the phone's palette, `ToolPalette.handItem`): picking it inside
+  Annotate switches to Hand mode, exactly as the top-bar Hand does (the Hand lights, the pencil goes off, the
+  palette hides): one Hand, not a fourth "annotating and selecting" state (`PhoneCanvasMode.handToolPicked`).
+  The palette follows the mode: in Hand mode the canvas keeps the palette's Hand picked, and back in Annotate the
+  last drawing tool returns (`PageCanvasHost.syncHandTool`); those programmatic picks never change the mode. Only
+  the iPhone's palette has it: a finger already scrolls on the iPad and the Mac has a pointer.
+- **Annotate: tap selects an item, a hold shows its menu.** A finger draws, so a tap on a placed item (a
+  picture, text box, equation, clip or card) is told apart from a stroke before ink starts
+  (`FingerItemTapRecognizer`, `ItemSelectionController.fingersPick`): one finger that lifts within 0.4 s and
+  8 points of where it landed, on an item, selects it (outline, handles, the bar with the item menu and Delete)
+  and leaves no dot. PencilKit's drawing waits for that recognizer to fail, which it does at once for a touch that
+  lands off every item (ink is not delayed) and as soon as the finger moves, rests or is joined by a second one.
+  A stroke that starts on an item draws (annotating a picture or PDF page is the point of Annotate); only a tap
+  or a hold selects. A finger held 0.45 s on an item selects it and shows the item's menu when it lifts. The
+  eraser tools keep their taps. Tap beside the selection to drop it; drawing comes back.
+- **The fingers a scroll takes follow the mode**: one in Reading and Hand (and on a read-only note), two in
+  Annotate in every tool (one draws, as on PencilKit's own canvas), paged or pageless. On the phone the
+  canvas's drawing policy follows the mode too: `.anyInput` in Annotate, `.pencilOnly` otherwise
+  (`PageCanvasHost.applyPhoneDrawingPolicy`). PencilKit sets its own scroll's `minimumNumberOfTouches`
+  from that policy (2 whenever a finger may draw, `-[PKTiledView updateForAllowedDrawingInput]`) and re-runs it
+  by itself: when its view moves to a window and when the palette's visibility changes
+  (`_updateForToolPickerVisibilityChange:`, which arrives with the palette's hide animation, about 0.8 s after
+  Annotate goes off). With `.anyInput` kept in Reading (builds 4 and 5), that put a pageless note back to two
+  fingers a moment after leaving Annotate; with the policy matching the mode PencilKit's count is the app's
+  (`PageCanvasHost.phonePanTouches`). The paged stack's scroll is the app's own scroll view, set from the
+  configuration (`PageStackHost.updateGestures`), which PencilKit does not touch.
 - **Page actions** are in the overflow menu's Pages submenu, with or without the pencil: Add Page
   After This One, Add Page at End, Insert PDF Pages at this page, Duplicate, Delete, Undo Delete,
   Show/Hide Pages (the thumbnails, a sheet at phone width that closes when a page is picked) and the
   Pages/Pageless switch (`PhonePageMenu`). Read-only notes get the thumbnails only.
-- **Swipe to turn pages.** In reading mode, on a paged note that fits the width, a swipe left goes to
-  the next page and right to the previous (`PhoneReading.swipeTurnsPages`; off while annotating or
-  zoomed, where a swipe draws or pans).
+- **Swipe to turn pages.** In Reading, on a paged note that fits the width, a swipe left goes to
+  the next page and right to the previous (`PhoneReading.swipeTurnsPages`; off in Hand mode, where a
+  drag may move an item, while annotating or zoomed, where a swipe draws or pans).
 - **Search hits** are highlighted on the page and stepped through exactly as on the iPad (the
   same canvas code; `PhonePageSwipeStackTests`).
 - **The overflow menu's order**: Paper, Favorite, Insert, Pages, Recordings (one submenu, ending with
@@ -151,12 +159,18 @@ that is a bug.
 - `PhoneCanvasInteractionTests` (app tests, any destination): the tap/stroke decision
   (`FingerTapTracker`), where a finger tap may start, that only PencilKit's drawing waits for it,
   selection and drawing coming back, the bar at phone width, two-finger scrolling.
-- `PhoneToolbarTests` also cover the Hand button's visibility and what a tap sets; `PhoneCanvasUITests` taps it (tap selects an
-  item, a second tap leaves) and drags with it on (one finger scrolls, nothing draws).
+- `PhoneToolbarTests` cover the modes (`PhoneCanvasMode`: every button tap from every mode, at most one button
+  lit, what each mode lets a finger do, the palette's Hand) and the toolbar per mode. `PhoneCanvasTests` check
+  the one-page canvas's finger count and drawing policy per state, and that they survive PencilKit's own
+  recount (`pencilKitsOwnRecountKeepsReadingAtOneFinger`, after each palette tool, and a move to a window).
 - `HandToolTests` (app tests, any destination): the Hand is the palette's last item on the phone only, picking it
-  and any drawing tool switches selection mode, the palette follows the Select toggle. (PencilKit's compact
-  palette exposes only its first item to UI automation, so no UI test taps the Hand itself; selection mode's
-  touches are the iPad's `IPadCanvasUITests`.)
+  and any drawing tool switches selection mode, the palette follows the Select toggle.
+- `PhoneCanvasModeUITests` (iPhone simulator, `scripts/app.sh test-phone-ui`): every transition between the three
+  modes, in each order and through the palette's Hand, on a pageless note, checked by what the canvas does (a slow
+  one-finger drag scrolls or draws one stroke, a tap on the picture selects it or not, the palette is up or not,
+  which button is lit); leaving Annotate from each tool (pen, marker, object eraser, lasso) and waiting 3 s still
+  scrolls with one finger; the same on a paged note. The phone's collapsed palette opens with a tap, after which
+  its items (Pen, Marker, Object Eraser, Lasso, Hand) can be tapped by label.
 - `PhoneCanvasUITests` (iPhone simulator UI tests, `scripts/app.sh test-phone-ui`, in
   `scripts/local-ci.sh --release`): a tap selects a picture and the other kinds without a dot, a
   hold shows the item's menu, strokes from the empty page and from an item still draw, a tap on the
@@ -175,7 +189,8 @@ that is a bug.
 ## Not done
 
 - Not tried on a physical iPhone: the layouts, the Face ID prompt, finger annotation and tap/hold item selection are
-  covered by simulator tests and by reading the code only.
+  covered by simulator tests and by reading the code only. The mode fix (Reading, Hand, Annotate and the scroll's
+  finger count) was traced and tested on the iOS 27 simulator; a real finger has not checked it yet.
 - Swipe-to-turn on a pageless note that has several pages (rare); the one-page canvas has no swipe.
 - Not tried on a physical iPhone either: the swipe against the system back gesture, the thumbnails sheet, the paper
   picker at half height (`PaperPickerLayout`: one strip of kinds, a capped preview, "Use as Default"
