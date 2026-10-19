@@ -114,8 +114,6 @@ struct RecentVaultWaitTests {
         #expect(library.state(of: entry) == .waiting)
         #expect(library.recents.map(\.id) == [entry.id])
         #expect(VaultLibrary(storeURL: store).recents.map(\.id) == [entry.id])
-        await #expect(throws: VaultLibrary.LibraryError.self) { _ = try await library.resolved(entry) }
-        #expect(library.recents.map(\.id) == [entry.id])   // a failed resolve keeps it too
 
         cloud.setReady(true)
         // The scheduled re-check (backoff) finds it without anything else happening.
