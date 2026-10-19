@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// Review of W2 (#166): partial-copy cases the PR's own tests do not cover.

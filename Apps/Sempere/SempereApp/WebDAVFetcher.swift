@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereSync
 import SempereWebDAV
 
 /// Fills a partial WebDAV copy while it is open (docs/io.md "WebDAV vaults

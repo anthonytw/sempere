@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// A note folder whose listing fails, or a run that stops while listing

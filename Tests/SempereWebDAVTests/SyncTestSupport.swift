@@ -3,6 +3,7 @@ import Foundation
 import TempDirSupport
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// A fresh post-quantum identity (vaults take no other kind).

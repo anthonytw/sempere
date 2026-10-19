@@ -2,6 +2,7 @@ import Foundation
 import FuzzSupport
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// `--push-only`: a mirror to a server that is not trusted to write back.
@@ -99,7 +100,7 @@ final class PushOnlyTests: BlobSyncTestCase {
         try push("B", server)
         let log = server.requestLog.count
         XCTAssertThrowsError(try push("A", server)) {
-            guard case WebDAVError.vaultMismatch = $0 else { return XCTFail("\($0)") }
+            guard case SyncError.vaultMismatch = $0 else { return XCTFail("\($0)") }
         }
         XCTAssertFalse(server.requestLog.dropFirst(log).contains { $0.method == "PUT" || $0.method == "DELETE" })
     }

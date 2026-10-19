@@ -4,6 +4,7 @@ import XCTest
 import FoundationNetworking
 #endif
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// "Test Connection" and the vault list (`WebDAVConnection`, `sempere webdav check`).

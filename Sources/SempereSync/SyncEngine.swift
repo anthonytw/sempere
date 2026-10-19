@@ -43,9 +43,9 @@ public struct WebDAVSyncOptions: Sendable {
     /// (format.md §10); nil reads every changed note.
     public var summaryCacheDirectory: URL?
 
-    /// Blob downloads are made of `Range` requests of this size, so memory
-    /// stays bounded by one of them however fast the server is.
-    public var blobSegmentBytes = WebDAVClient.defaultSegmentBytes
+    /// Blob downloads are made of pieces of this size (`Range` requests on
+    /// WebDAV), so memory stays bounded by one of them however fast the server is.
+    public var blobSegmentBytes = WebDAVSyncOptions.defaultSegmentBytes
 
     /// Where downloads that fail the checks before placing are kept
     /// (format.md §9.1); nil: `<state file>.quarantine/` next to the sync state.
@@ -96,7 +96,7 @@ public struct WebDAVSyncOptions: Sendable {
     public var progress: (@Sendable (WebDAVSyncProgress) -> Void)?
     /// Asked before each listing, note and download, and between the
     /// segments of a blob download: true stops the run as a run bound does
-    /// (`WebDAVError.cancelled` in `errors` and `stoppedEarly`). What was
+    /// (`SyncError.cancelled` in `errors` and `stoppedEarly`). What was
     /// done is kept, a blob cut short continues on the next run.
     public var isCancelled: (@Sendable () -> Bool)?
 
@@ -109,9 +109,13 @@ public struct WebDAVSyncOptions: Sendable {
     /// 1 GiB + 64 MiB).
     public static let defaultMaxBlobBytes = BoundedRead.maxBlobFileBytes
 
+    /// The default piece of a blob download (2 MiB): measured over WebDAV to
+    /// keep memory flat for the largest blobs (`WebDAVClient.defaultSegmentBytes` says why).
+    public static let defaultSegmentBytes = 2 << 20
+
     public init(dryRun: Bool = false, deviceLabel: String = "device", now: Date = Date(), maxFileBytes: Int = 256 << 20,
                 maxBlobBytes: Int = WebDAVSyncOptions.defaultMaxBlobBytes,
-                blobSegmentBytes: Int = WebDAVClient.defaultSegmentBytes) {
+                blobSegmentBytes: Int = WebDAVSyncOptions.defaultSegmentBytes) {
         self.dryRun = dryRun; self.deviceLabel = deviceLabel; self.now = now; self.maxFileBytes = maxFileBytes
         self.maxBlobBytes = maxBlobBytes; self.blobSegmentBytes = blobSegmentBytes
     }
@@ -138,11 +142,13 @@ public struct WebDAVSyncOptions: Sendable {
 /// A run keeps going after a per-file failure and lists it in `errors`.
 public final class WebDAVSync {
     static let ageMagic = Data("age-encryption.org/v1\n".utf8)
+    /// The bound of a mutable file read with no bound of its own (16 MiB, the WebDAV client's listing bound).
+    static let maxMutableReadBytes = 16 << 20
 
     let root: URL
     let vault: Vault?
-    /// The run's client: `interrupt` set to the run's bound and cancellation (`runLocked`).
-    private(set) var client: WebDAVClient
+    /// The run's remote: `interrupt` set to the run's bound and cancellation (`runLocked`).
+    private(set) var transport: any SyncRemote
     let stateURL: URL
     let options: WebDAVSyncOptions
     var state = SyncState()
@@ -233,11 +239,11 @@ public final class WebDAVSync {
     ///   - vault: the vault opened with identities, so deletions can be checked
     ///     against the compaction rules; nil or locked means no deletion is propagated.
     ///   - stateURL: the sync-state file (outside `notes/`); see `defaultStateURL`.
-    public init(directory: URL, vault: Vault?, client: WebDAVClient, stateURL: URL,
+    public init(directory: URL, vault: Vault?, remote: any SyncRemote, stateURL: URL,
                 options: WebDAVSyncOptions = WebDAVSyncOptions()) {
         self.root = directory
         self.vault = (vault?.canRead == true) ? vault : nil
-        self.client = client
+        self.transport = remote
         self.stateURL = stateURL
         self.options = options
         self.report = SyncReport(dryRun: options.dryRun)
@@ -253,9 +259,9 @@ public final class WebDAVSync {
     /// Runs one sync. Runs on the same state file in this process take
     /// turns (`SyncRunLock`): this one waits for one already running.
     ///
-    /// - Throws: `WebDAVError.vaultMismatch` before touching anything when the
-    ///   two sides are different vaults; `.http`/`.transport` when the server's
-    ///   root cannot be listed. Anything per file lands in the report.
+    /// - Throws: `SyncError.vaultMismatch` before touching anything when the
+    ///   two sides are different vaults; the transport's error (`WebDAVError.http`,
+    ///   `.transport`, …) when the remote's root cannot be listed. Anything per file lands in the report.
     public func run() throws -> SyncReport {
         try SyncRunLock.shared.withLock(stateURL) { try runLocked() }
     }
@@ -264,8 +270,8 @@ public final class WebDAVSync {
         // A request in flight stops at the run's time bound or a cancellation, not only between requests.
         let limits = options.limits, cancelled = options.isCancelled
         let deadline = Date().addingTimeInterval(limits.maxDuration)
-        client.interrupt = {
-            if cancelled?() == true { return .cancelled }
+        transport.interrupt = {
+            if cancelled?() == true { return SyncError.cancelled }
             if Date() > deadline { return RunBudget.timeExceeded(limits) }
             return nil
         }
@@ -285,19 +291,19 @@ public final class WebDAVSync {
         }
         if options.pushOnly && !FileManager.default.fileExists(atPath: root.appendingPathComponent(Vault.manifestName).path) {
             // A mirror of nothing would list (and could delete) the whole server.
-            throw WebDAVError.io("push-only sync needs a local vault (no \(Vault.manifestName) in \(root.path))")
+            throw SyncError.io("push-only sync needs a local vault (no \(Vault.manifestName) in \(root.path))")
         }
         if let partial = options.partial {
-            guard !options.pushOnly else { throw WebDAVError.io("a partial pull (--metadata-only, --fetch) cannot be push-only") }
+            guard !options.pushOnly else { throw SyncError.io("a partial pull (--metadata-only, --fetch) cannot be push-only") }
             return try runPartial(partial)
         }
         if options.pushOnly, options.deleteExtraneous, PartialCopy.isPartial(root) {
             // What the copy has not fetched yet looks extraneous to a mirror (format.md §1.2).
-            throw WebDAVError.io("--delete-extraneous refused: \(root.path) is a partial copy; fetch the rest first (--fetch)")
+            throw SyncError.io("--delete-extraneous refused: \(root.path) is a partial copy; fetch the rest first (--fetch)")
         }
         checkerBaseManifest = manifestHash()
         budget = RunBudget(options.limits)
-        let rootEntries = try client.list([]) ?? []
+        let rootEntries = try transport.list([]) ?? []
         try budget.list(rootEntries.count)
         let remoteRoot = Dictionary(rootEntries.map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })
         try checkSameVault(remoteRoot)
@@ -356,7 +362,7 @@ public final class WebDAVSync {
                 updateProgress { $0.notesSynced += 1 }
             }
             finishNoteStamps(notes: all.union(notesNotReadable))
-        } catch let e as WebDAVError where e.isRunLimit {
+        } catch let e as SyncError where e.isRunLimit {
             // Stop here: what was done is recorded below, the next run continues.
             report.stoppedEarly = Self.describe(e)
             report.errors.append(.init(path: Vault.notesName, message: Self.describe(e)))
@@ -407,29 +413,38 @@ public final class WebDAVSync {
 
     /// Every local write goes through this first: a push-only run never makes one.
     func requireLocalWrite(_ what: String) throws {
-        if options.pushOnly { throw WebDAVError.io("push-only run refused to \(what) locally") }
+        if options.pushOnly { throw SyncError.io("push-only run refused to \(what) locally") }
     }
 
-    static func describe(_ error: Error) -> String {
+    /// One line for a failure, as a report shows it (control characters escaped).
+    public static func describe(_ error: Error) -> String {
         let text = (error as? LocalizedError)?.errorDescription ?? "\(error)"
         return SyncReport.printable(text.split(whereSeparator: \.isNewline).joined(separator: " "))
     }
 
     // MARK: - Same vault?
 
+    /// `vaultId` (a UUID, lowercased) and `format` of a manifest; nil if it is not one.
+    public static func manifestFields(_ data: Data) -> (vaultId: String, format: String?)? {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let id = obj["vaultId"] as? String, let uuid = UUID(uuidString: id) else { return nil }
+        let format = (obj["format"] as? String).map { SyncReport.printable(String($0.prefix(64))) }
+        return (uuid.uuidString.lowercased(), format)
+    }
+
     func checkSameVault(_ remoteRoot: [String: RemoteEntry]) throws {
         guard remoteRoot[Vault.manifestName] != nil,
               let local = try? localMutable(Vault.manifestName),
-              let localId = WebDAVConnection.manifestFields(local)?.vaultId else { return }
-        let fetched = try client.get([Vault.manifestName], maxBytes: BoundedRead.maxManifestBytes)
+              let localId = Self.manifestFields(local)?.vaultId else { return }
+        let fetched = try transport.read([Vault.manifestName], maxBytes: BoundedRead.maxManifestBytes)
         fetchedManifest = fetched
         let remote = fetched.data
-        guard let remoteId = WebDAVConnection.manifestFields(remote)?.vaultId else {
+        guard let remoteId = Self.manifestFields(remote)?.vaultId else {
             // A mirror is repaired from the local manifest; a two-way sync has nothing to compare.
             if options.pushOnly { return }
-            throw WebDAVError.malformedResponse("remote vault.json is not a vault manifest")
+            throw SyncError.malformedResponse("remote vault.json is not a vault manifest")
         }
-        if localId != remoteId { throw WebDAVError.vaultMismatch(local: localId, remote: remoteId) }
+        if localId != remoteId { throw SyncError.vaultMismatch(local: localId, remote: remoteId) }
     }
 
     // MARK: - Mutable files
@@ -516,7 +531,7 @@ public final class WebDAVSync {
             fetchedManifest = nil
             return fetched
         }
-        return try client.get([name])
+        return try transport.read([name], maxBytes: Self.maxMutableReadBytes)
     }
 
     private func pullMutable(_ name: String, remote: RemoteEntry) throws {
@@ -603,7 +618,7 @@ public final class WebDAVSync {
             report.skipped.append(.init(path: name, message: "removed locally; left on the server (\(why))"))
         }
         guard vault != nil else { return leave("the vault is locked: it cannot be judged") }
-        let (data, getETag) = try client.get([name], maxBytes: BoundedRead.maxManifestBytes)
+        let (data, getETag) = try transport.read([name], maxBytes: BoundedRead.maxManifestBytes)
         try budget.downloaded(data.count)
         let manifest = try? localMutable(Vault.manifestName)
         guard case .refused(let why)? = Vault.incomingJournalProblem(data, local: nil, manifest: manifest, vault: vault) else {
@@ -618,7 +633,7 @@ public final class WebDAVSync {
         }
         if !options.dryRun {
             let etag = (remote.etag ?? getETag).flatMap { Self.isStrong($0) ? $0 : nil }
-            guard try client.delete([name], ifMatch: etag) else {
+            guard try transport.delete([name], ifETag: etag) else {
                 return leave("it changed on the server while being removed")
             }
             state.mutable[name] = nil
@@ -639,14 +654,14 @@ public final class WebDAVSync {
     func push(_ name: String, _ data: Data, condition: PutCondition) throws -> Bool {
         if options.dryRun { report.uploaded.append(name); return true }
         try ensureCollection([])
-        guard try client.put([name], data, condition: condition) else { return false }
+        guard try transport.write([name], .data(data), condition: condition) else { return false }
         report.uploaded.append(name)
         return true
     }
 
     func recordMutable(_ name: String, hash: String) throws {
         guard !options.dryRun else { return }
-        let entry = try client.stat([name])
+        let entry = try transport.stat([name])
         state.mutable[name] = .init(hash: hash, stamp: entry?.stamp)
     }
 
@@ -692,12 +707,12 @@ public final class WebDAVSync {
 
     private func listRemoteNotes(_ rootEntries: [RemoteEntry]) throws -> [String: [RemoteEntry]] {
         guard rootEntries.contains(where: { $0.name == Vault.notesName && $0.isCollection }),
-              let dirs = try client.list([Vault.notesName]) else { return [:] }
+              let dirs = try transport.list([Vault.notesName]) else { return [:] }
         try budget.list(dirs.count)
         madeCollections.formUnion([[], [Vault.notesName]])
         let noteDirs = dirs.filter { $0.isCollection && Vault.isNoteDirectoryName($0.name) }.count
         if noteDirs > options.limits.maxNotes {
-            throw WebDAVError.limitExceeded("the server lists \(noteDirs) notes, more than \(options.limits.maxNotes) (--max-notes)")
+            throw SyncError.limitExceeded("the server lists \(noteDirs) notes, more than \(options.limits.maxNotes) (--max-notes)")
         }
         checkNoteStamps(dirs)
         updateProgress { $0.notesTotal = noteDirs }
@@ -904,7 +919,7 @@ public final class WebDAVSync {
                     let ok = CompactionPlanner.deletable(names: [n], wall: [n: epoch], snapshots: snaps, retention: 0,
                                                          now: options.now).contains(n)
                     if ok {
-                        if !options.dryRun { try client.delete([Vault.notesName, id, n.filename]) }
+                        if !options.dryRun { try transport.delete([Vault.notesName, id, n.filename]) }
                         report.deleted.append(.init(side: "remote", path: "notes/\(key(id, n))"))
                         R.remove(n)
                     } else if try download(id, n, entry: entries[n]) {
@@ -968,23 +983,24 @@ public final class WebDAVSync {
            record.hash == hash, remote?.size.map({ $0 == data.count }) ?? true {
             return
         }
-        let current = try? client.get([WebIndex.fileName], maxBytes: WebIndex.maxBytes).data
+        let current = try? transport.read([WebIndex.fileName], maxBytes: WebIndex.maxBytes).data
         if current == data {
             state.webIndex = remote?.etag.flatMap { Self.isStrong($0) ? .init(hash: hash, etag: $0) : nil }
             return
         }
         state.webIndex = nil
-        guard try client.put([WebIndex.fileName], data, condition: .unconditional) else { return }
+        guard try transport.write([WebIndex.fileName], .data(data), condition: .unconditional) else { return }
         report.uploaded.append(WebIndex.fileName)
         // The ETag of what was just written (a PUT need not return one); the next run compares it.
-        if let etag = (try? client.stat([WebIndex.fileName]))??.etag, Self.isStrong(etag) {
+        if let etag = (try? transport.stat([WebIndex.fileName]))??.etag, Self.isStrong(etag) {
             state.webIndex = .init(hash: hash, etag: etag)
         }
     }
 
     /// An ETag that changes whenever the bytes do (RFC 9110 §8.8.1); a weak
-    /// one (`W/"…"`) need not.
-    static func isStrong(_ etag: String) -> Bool { !etag.hasPrefix("W/") && !etag.isEmpty }
+    /// one (`W/"…"`) need not. The same rule for every remote's version
+    /// tokens (`SyncRemote.swift`).
+    public static func isStrong(_ etag: String) -> Bool { !etag.hasPrefix("W/") && !etag.isEmpty }
 
     /// `WebIndex.encode(remoteRevisions)`, encoded once per run: the web
     /// index and the published summaries both use it after the notes loop.
@@ -1005,7 +1021,7 @@ public final class WebDAVSync {
                                             maxBytes: options.maxFileBytes)
         try ensureCollection([Vault.notesName, id])
         // A 412 means the server already has it: write-once, so it is the same file.
-        try client.put([Vault.notesName, id, n.filename], data, condition: .create)
+        try transport.write([Vault.notesName, id, n.filename], .data(data), condition: .create)
         locked { report.uploaded.append(path) }
     }
 
@@ -1017,7 +1033,7 @@ public final class WebDAVSync {
         try requireLocalWrite("download notes/\(key(id, n))")
         let path = "notes/\(key(id, n))"
         let size = entry?.size
-        if let size, size > options.maxFileBytes { throw WebDAVError.responseTooLarge(path: path, limit: options.maxFileBytes) }
+        if let size, size > options.maxFileBytes { throw SyncError.responseTooLarge(path: path, limit: options.maxFileBytes) }
         if skipQuarantined(key(id, n), path: path, entry: entry) { return false }
         let reserved = try locked { try budget.willDownload(size) }
         guard !options.dryRun else {
@@ -1026,7 +1042,7 @@ public final class WebDAVSync {
         }
         let data: Data
         do {
-            data = try client.get([Vault.notesName, id, n.filename], maxBytes: options.maxFileBytes).data
+            data = try transport.read([Vault.notesName, id, n.filename], maxBytes: options.maxFileBytes).data
         } catch {
             locked { budget.release(reserved) }
             throw error
@@ -1040,7 +1056,7 @@ public final class WebDAVSync {
     func placeRevision(_ id: String, _ n: RevisionName, entry: RemoteEntry?, data: Data) throws -> Bool {
         let path = "notes/\(key(id, n))"
         guard data.count <= options.maxFileBytes else {
-            throw WebDAVError.responseTooLarge(path: path, limit: options.maxFileBytes)
+            throw SyncError.responseTooLarge(path: path, limit: options.maxFileBytes)
         }
         var problem: String?
         if !data.starts(with: Self.ageMagic) {
@@ -1083,15 +1099,15 @@ public final class WebDAVSync {
             collections.unlock()
         }
         if parentFirst { try ensureCollection(Array(path.dropLast())) }
-        switch try client.mkcol(path) {
+        switch try transport.makeCollection(path) {
         case .created, .exists: break
         case .missingParent:
             guard !path.isEmpty else {
-                try client.createBase()
+                try transport.createBase()
                 break
             }
             try ensureCollection(Array(path.dropLast()))
-            _ = try client.mkcol(path)
+            _ = try transport.makeCollection(path)
         }
         made = true
     }

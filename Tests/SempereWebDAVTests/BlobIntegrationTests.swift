@@ -2,6 +2,7 @@ import FuzzSupport
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// Blob sync against a real WebDAV server through `URLSessionTransport`

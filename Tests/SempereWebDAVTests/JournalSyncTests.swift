@@ -2,6 +2,7 @@ import Age
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// Security review 2026-10, stage 4 (S9, S4): two-way sync and

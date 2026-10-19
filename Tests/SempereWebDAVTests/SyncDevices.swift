@@ -2,6 +2,7 @@ import Age
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// One device of a multi-device sync test (docs/ci.md "Sync stress"): its own

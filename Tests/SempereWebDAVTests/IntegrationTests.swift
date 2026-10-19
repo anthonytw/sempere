@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// Runs against a real WebDAV server. Skipped unless SEMPERE_WEBDAV_TEST_URL

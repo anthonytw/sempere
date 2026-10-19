@@ -162,7 +162,7 @@ extension WebDAVSync {
                     report.skipped.append(.init(path: path, message: "missing locally and not explained by compaction, kept on the server"))
                     return
                 }
-                if !options.dryRun { try client.delete([Vault.notesName, id, n.filename]) }
+                if !options.dryRun { try transport.delete([Vault.notesName, id, n.filename]) }
                 report.deleted.append(.init(side: "remote", path: path))
                 R.remove(n)
             }
@@ -201,7 +201,7 @@ extension WebDAVSync {
         }
         report.deleted.append(.init(side: "remote", path: SyncReport.printable(path)))
         if !options.dryRun {
-            do { try client.delete(components) } catch {
+            do { try transport.delete(components) } catch {
                 report.deleted.removeLast()
                 report.errors.append(.init(path: SyncReport.printable(path), message: Self.describe(error)))
                 return false

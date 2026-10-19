@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 final class SyncTests: SyncTestCase {
@@ -166,7 +167,7 @@ final class SyncTests: SyncTestCase {
         try sync("A", server)
         server.putDirect("vault.json", Data(#"{"vaultId":"0123abcd"}"#.utf8))
         XCTAssertThrowsError(try sync("A", server)) {
-            guard case WebDAVError.malformedResponse = $0 else { return XCTFail("\($0)") }
+            guard case SyncError.malformedResponse = $0 else { return XCTFail("\($0)") }
         }
     }
 
@@ -177,7 +178,7 @@ final class SyncTests: SyncTestCase {
         _ = try makeVault("B")
         _ = try delta(try openVault("B"), device: devB, t: 0, title: "x")
         XCTAssertThrowsError(try sync("B", server)) {
-            guard case WebDAVError.vaultMismatch = $0 else { return XCTFail("\($0)") }
+            guard case SyncError.vaultMismatch = $0 else { return XCTFail("\($0)") }
         }
         XCTAssertTrue(server.names(under: "notes").isEmpty)
     }

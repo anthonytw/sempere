@@ -47,9 +47,9 @@ extension WebDAVSync {
 
     var pool: TransferPool { TransferPool(width: options.concurrency) }
 
-    /// Throws `WebDAVError.cancelled` once `options.isCancelled` says so.
+    /// Throws `SyncError.cancelled` once `options.isCancelled` says so.
     func checkCancelled() throws {
-        if options.isCancelled?() == true { throw WebDAVError.cancelled }
+        if options.isCancelled?() == true { throw SyncError.cancelled }
     }
 
     /// Changes `progress` and hands it to `options.progress`.
@@ -123,7 +123,7 @@ extension WebDAVSync {
             try sync.locked { try sync.budget.checkTime() }
             let result: Result<[RemoteEntry]?, Error>
             do {
-                let entries = try sync.client.list(paths[i])
+                let entries = try sync.transport.list(paths[i])
                 try sync.locked { try sync.budget.list(entries?.count ?? 0) }
                 result = .success(entries)
             } catch {

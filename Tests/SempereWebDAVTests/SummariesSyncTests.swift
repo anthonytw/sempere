@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// `sync webdav` keeps the server's `sempere-summaries.sealed` (format.md §12)

@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import Sempere
+import SempereSync
 import SempereWebDAV
 
 struct SyncCommand: ParsableCommand {

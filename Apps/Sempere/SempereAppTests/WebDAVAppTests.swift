@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import Sempere
+import SempereSync
 import SempereWebDAV
 import Testing
 @testable import SempereApp
@@ -76,7 +77,7 @@ final class FakeWebDAVRemote: WebDAVRemote, @unchecked Sendable {
             while gate.wait(timeout: .now() + .milliseconds(10)) == .timedOut {
                 if options.isCancelled?() == true {
                     var stopped = report
-                    stopped.stoppedEarly = WebDAVError.cancelled.errorDescription
+                    stopped.stoppedEarly = SyncError.cancelled.errorDescription
                     return stopped
                 }
             }

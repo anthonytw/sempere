@@ -7,6 +7,7 @@ import Foundation
 import FuzzSupport
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// Timings of a sync run at a realistic size. Skipped unless `SEMPERE_PERF=1`

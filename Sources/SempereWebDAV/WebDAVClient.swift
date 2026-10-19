@@ -1,4 +1,5 @@
 import Foundation
+import SempereSync
 #if canImport(FoundationXML)
 import FoundationXML
 #endif
@@ -9,33 +10,6 @@ public struct WebDAVCredentials: Sendable {
     public var password: String
 
     public init(user: String, password: String) { self.user = user; self.password = password }
-}
-
-/// One child of a collection, from PROPFIND.
-public struct RemoteEntry: Hashable, Sendable {
-    public var name: String
-    public var isCollection: Bool
-    public var etag: String?
-    public var lastModified: String?
-    public var size: Int?
-
-    public init(name: String, isCollection: Bool, etag: String? = nil, lastModified: String? = nil, size: Int? = nil) {
-        self.name = name; self.isCollection = isCollection
-        self.etag = etag; self.lastModified = lastModified; self.size = size
-    }
-
-    /// What identifies this version of the file: the ETag, else the modification time.
-    public var stamp: String? { etag ?? lastModified }
-}
-
-/// How a PUT is made conditional.
-public enum PutCondition: Sendable, Equatable {
-    /// `If-None-Match: *`: only create, never replace.
-    case create
-    /// `If-Match: <etag>`: replace only that version.
-    case replace(etag: String)
-    /// No precondition (the server gave no ETag).
-    case unconditional
 }
 
 /// The minimal WebDAV verbs the sync needs: PROPFIND (Depth 1), GET, PUT,
@@ -50,7 +24,7 @@ public struct WebDAVClient: Sendable {
     /// Passed with every request (`WebDAVRequest.interrupt`): an error it
     /// returns cancels the request in flight. The sync sets it to its run
     /// bound and cancellation.
-    public var interrupt: (@Sendable () -> WebDAVError?)?
+    public var interrupt: (@Sendable () -> (any Error)?)?
 
     /// Largest response body read for listings, manifests and status replies (16 MiB).
     public static let defaultMaxResponseBytes = 16 << 20
@@ -254,13 +228,14 @@ public struct WebDAVClient: Sendable {
         public var etag: String?
     }
 
-    /// The default size of one `Range` request in `download` (2 MiB). On
-    /// Linux, URLSession queues every 16 KiB delivery for its delegate with
-    /// no flow control, so a server faster than the disk piles up to one
-    /// response in memory; measured against a local server, 2 MiB segments
-    /// kept resident memory flat (about 20 MiB) for blobs of 300 MB to 1 GB
-    /// at about 5 % more time than 8 MiB ones, which grew to 85 MiB.
-    public static let defaultSegmentBytes = 2 << 20
+    /// The default size of one `Range` request in `download` (2 MiB, the
+    /// sync's `WebDAVSyncOptions.defaultSegmentBytes`). On Linux, URLSession
+    /// queues every 16 KiB delivery for its delegate with no flow control, so
+    /// a server faster than the disk piles up to one response in memory;
+    /// measured against a local server, 2 MiB segments kept resident memory
+    /// flat (about 20 MiB) for blobs of 300 MB to 1 GB at about 5 % more time
+    /// than 8 MiB ones, which grew to 85 MiB.
+    public static let defaultSegmentBytes = WebDAVSyncOptions.defaultSegmentBytes
 
     /// Downloads one file into `file` in `Range` requests of at most
     /// `segmentBytes`, each streamed to the file, so memory stays bounded by

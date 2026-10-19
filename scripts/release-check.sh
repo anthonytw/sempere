@@ -127,7 +127,9 @@ PRODUCT_SOURCES = {
     "SempereImport": ["SempereImport", "Sempere", "SemperePDF", "SempereRender", "Age", "CZlib"],
     "SempereNotability": ["SempereNotability", "SempereImport", "Sempere", "SemperePDF", "SempereRender", "Age", "CZlib"],
     # WebDAV vaults (`AppModel+WebDAV`, docs/io.md "WebDAV vaults in the app").
-    "SempereWebDAV": ["SempereWebDAV", "Sempere", "Age", "CZlib"],
+    "SempereWebDAV": ["SempereWebDAV", "SempereSync", "Sempere", "Age", "CZlib"],
+    # The sync engine (docs/io.md "Sync engine and transports"), linked by the app directly too.
+    "SempereSync": ["SempereSync", "Sempere", "Age", "CZlib"],
     # Third-party (app only, never in Sources/): ships its own manifest if it needs one;
     # check the archive's privacy report.
     "SwiftMath": [],

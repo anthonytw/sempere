@@ -2,6 +2,7 @@ import Age
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// A server cannot hand a device a recipients list nobody with the key

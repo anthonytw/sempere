@@ -152,7 +152,7 @@ public enum WebDAVPartialCopy {
 
 extension WebDAVSync {
     func runPartial(_ run: WebDAVPartialRun) throws -> SyncReport {
-        guard !options.dryRun else { throw WebDAVError.io("a partial pull has no dry run") }
+        guard !options.dryRun else { throw SyncError.io("a partial pull has no dry run") }
         switch run {
         case .metadata: try runMetadata()
         case .fetch(let scope): try runFetch(scope)
@@ -174,15 +174,15 @@ extension WebDAVSync {
         let manifestURL = root.appendingPathComponent(Vault.manifestName)
         if FileManager.default.fileExists(atPath: manifestURL.path) && !PartialCopy.isPartial(root) {
             // Marking a complete vault's notes would block edits to them until fetched again.
-            throw WebDAVError.io("\(root.path) holds a complete vault; a metadata pull only makes or continues a partial copy "
+            throw SyncError.io("\(root.path) holds a complete vault; a metadata pull only makes or continues a partial copy "
                                  + "(run an ordinary sync instead)")
         }
         try checkCancelled()
-        let rootEntries = try client.list([]) ?? []
+        let rootEntries = try transport.list([]) ?? []
         try budget.list(rootEntries.count)
         let remoteRoot = Dictionary(rootEntries.map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })
         guard let manifest = remoteRoot[Vault.manifestName], !manifest.isCollection else {
-            throw WebDAVError.io("there is no vault at \(SyncReport.printable(client.baseURL.absoluteString)) (no vault.json)")
+            throw SyncError.io("there is no vault at \(SyncReport.printable(transport.location)) (no vault.json)")
         }
         try checkSameVault(remoteRoot)
         // Marked partial before anything else arrives, so an interrupted pull never looks complete.
@@ -219,13 +219,13 @@ extension WebDAVSync {
         try checkCancelled()
         var dirs: [RemoteEntry] = []
         if rootEntries.contains(where: { $0.name == Vault.notesName && $0.isCollection }) {
-            dirs = try client.list([Vault.notesName]) ?? []
+            dirs = try transport.list([Vault.notesName]) ?? []
             try budget.list(dirs.count)
         }
         let notes = dirs.filter { $0.isCollection && Vault.isNoteDirectoryName($0.name) }
         updateProgress { $0.notesTotal = notes.count; $0.notesListed = notes.count }
         if notes.count > options.limits.maxNotes {
-            throw WebDAVError.limitExceeded("the server lists \(notes.count) notes, more than \(options.limits.maxNotes) (--max-notes)")
+            throw SyncError.limitExceeded("the server lists \(notes.count) notes, more than \(options.limits.maxNotes) (--max-notes)")
         }
         for d in dirs where !(d.isCollection && Vault.isNoteDirectoryName(d.name)) {
             report.ignored.append(SyncReport.printable("notes/\(d.name)"))
@@ -255,10 +255,10 @@ extension WebDAVSync {
         }
         do {
             if let size = remote.size, size > PublishedSummaries.maxFileBytes {
-                throw WebDAVError.responseTooLarge(path: PublishedSummaries.fileName, limit: PublishedSummaries.maxFileBytes)
+                throw SyncError.responseTooLarge(path: PublishedSummaries.fileName, limit: PublishedSummaries.maxFileBytes)
             }
             budget.release(try budget.willDownload(remote.size))   // a check: counted below
-            let data = try client.get([PublishedSummaries.fileName], maxBytes: PublishedSummaries.maxFileBytes).data
+            let data = try transport.read([PublishedSummaries.fileName], maxBytes: PublishedSummaries.maxFileBytes).data
             try budget.downloaded(data.count)
             try LocalFS.write(data, to: target, replacing: true)
             report.downloaded.append(PublishedSummaries.fileName)
@@ -299,10 +299,10 @@ extension WebDAVSync {
     private func runFetch(_ scope: WebDAVFetchScope) throws {
         guard PartialCopy.isPartial(root) else { return }   // complete: nothing to fetch
         guard FileManager.default.fileExists(atPath: root.appendingPathComponent(Vault.manifestName).path) else {
-            throw WebDAVError.io("no \(Vault.manifestName) in \(root.path): run a metadata pull first (--metadata-only)")
+            throw SyncError.io("no \(Vault.manifestName) in \(root.path): run a metadata pull first (--metadata-only)")
         }
         guard WebDAVPartialCopy.readRecord(root)?.listed == true else {
-            throw WebDAVError.io("the partial copy's note list is not complete: run a metadata pull again (--metadata-only)")
+            throw SyncError.io("the partial copy's note list is not complete: run a metadata pull again (--metadata-only)")
         }
         checkerBaseManifest = manifestHash()
         recordedFiles = state.fileNamesByNote()
@@ -310,13 +310,13 @@ extension WebDAVSync {
         let width = max(1, scope.concurrency)
 
         // 1. Listings, concurrently (network only).
-        let client = self.client
+        let transport = self.transport
         let listings = Parallel.map(work, width: width) { w -> NoteListing in
             do {
-                guard let entries = try client.list([Vault.notesName, w.id]) else { return NoteListing() }
+                guard let entries = try transport.list([Vault.notesName, w.id]) else { return NoteListing() }
                 var listing = NoteListing(entries: entries)
                 if entries.contains(where: { $0.name == Vault.attachmentsName && $0.isCollection }) {
-                    listing.att = try client.list([Vault.notesName, w.id, Vault.attachmentsName]) ?? []
+                    listing.att = try transport.list([Vault.notesName, w.id, Vault.attachmentsName]) ?? []
                 }
                 return listing
             } catch {
@@ -374,7 +374,7 @@ extension WebDAVSync {
             }))
             let maxBytes = WebDAVFetchScope.concurrentRevisionBytes
             let fetched = Parallel.map(small.map { [Vault.notesName, $0.id, $0.name.filename] }, width: width) { path in
-                try? client.get(path, maxBytes: maxBytes).data
+                try? transport.read(path, maxBytes: maxBytes).data
             }
             for (job, data) in zip(small, fetched) {
                 guard let data else { continue }   // downloaded again below, where an error is reported
@@ -386,7 +386,7 @@ extension WebDAVSync {
         // listing confirms it (a server's passing 404 must not drop a note from this copy).
         var serverNotes: Set<String>?
         if zip(work, listings).contains(where: { $0.1.entries == nil && $0.1.error == nil }) {
-            if let dirs = try? client.list([Vault.notesName]) {
+            if let dirs = try? transport.list([Vault.notesName]) {
                 serverNotes = Set(dirs.filter(\.isCollection).map(\.name))
             }
         }
@@ -404,7 +404,7 @@ extension WebDAVSync {
                 }
                 updateProgress { $0.notesSynced += 1 }
             }
-        } catch let e as WebDAVError where e.isRunLimit {
+        } catch let e as SyncError where e.isRunLimit {
             report.stoppedEarly = Self.describe(e)
             report.errors.append(.init(path: Vault.notesName, message: Self.describe(e)))
         }
@@ -453,7 +453,7 @@ extension WebDAVSync {
     /// are accounted for. Records what both sides now share.
     private func fetchNote(_ w: NoteWork, listing: NoteListing, serverNotes: Set<String>?,
                            bodies: inout [String: Data]) throws {
-        if let error = listing.error { throw WebDAVError.io(error) }
+        if let error = listing.error { throw SyncError.io(error) }
         let dir = root.appendingPathComponent(Vault.notesName).appendingPathComponent(w.id)
         guard let entries = listing.entries else {
             // The note folder answered 404. Gone from the server only if `notes/` no longer lists

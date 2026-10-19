@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import Sempere
+import SempereSync
 import SempereWebDAV
 
 /// Why a WebDAV vault could not be opened or changed.

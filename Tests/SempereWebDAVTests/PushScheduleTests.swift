@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// When the app pushes a WebDAV vault (`WebDAVPushSchedule`).

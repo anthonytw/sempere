@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereSync
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -30,11 +31,11 @@ public struct WebDAVRequest: Sendable {
     /// alive with a trickle of bytes, never idle long enough for the idle
     /// timeout, cannot hold a run past them. Transports that answer at once
     /// may ignore it.
-    public var interrupt: (@Sendable () -> WebDAVError?)?
+    public var interrupt: (@Sendable () -> (any Error)?)?
 
     public init(method: String, url: URL, headers: [String: String] = [:], body: Data? = nil,
                 maxResponseBytes: Int? = nil, bodyFile: URL? = nil, responseFile: URL? = nil,
-                interrupt: (@Sendable () -> WebDAVError?)? = nil) {
+                interrupt: (@Sendable () -> (any Error)?)? = nil) {
         self.method = method; self.url = url; self.headers = headers; self.body = body
         self.maxResponseBytes = maxResponseBytes
         self.bodyFile = bodyFile; self.responseFile = responseFile

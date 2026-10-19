@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// W1 review: a partial copy's metadata pull and fetch report progress (what `sync webdav

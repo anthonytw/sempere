@@ -2,6 +2,7 @@ import Age
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// Partial copies (format.md §1.2, docs/io.md "Partial copies"): a WebDAV

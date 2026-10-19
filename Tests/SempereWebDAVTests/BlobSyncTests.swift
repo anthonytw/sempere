@@ -2,6 +2,7 @@ import Age
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// Synthetic attachment content (never real data).

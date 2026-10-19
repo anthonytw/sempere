@@ -1,4 +1,5 @@
 import Foundation
+import SempereSync
 import SempereWebDAV
 
 /// A WebDAV vault being downloaded (the first download, or Download Again),

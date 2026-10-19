@@ -15,7 +15,7 @@ extension WebDAVSync {
         let localDir = root.appendingPathComponent(folder, isDirectory: true)
         let local = Set(try LocalFS.entries(localDir).filter { NotebookRecords.id(ofFileName: $0) != nil })
         var remote: Set<String> = []
-        if remoteRoot[folder]?.isCollection == true, let entries = try client.list([folder]) {
+        if remoteRoot[folder]?.isCollection == true, let entries = try transport.list([folder]) {
             try budget.list(entries.count)
             remote = Set(entries.filter { !$0.isCollection && NotebookRecords.id(ofFileName: $0.name) != nil }.map(\.name))
         }
@@ -24,12 +24,12 @@ extension WebDAVSync {
             let data = try BoundedRead.contents(of: localDir.appendingPathComponent(name), maxBytes: NotebookRecords.maxFileBytes)
             if options.dryRun { report.uploaded.append(path); continue }
             try ensureCollection([folder])
-            if try client.put([folder, name], data, condition: .create) { report.uploaded.append(path) }
+            if try transport.write([folder, name], .data(data), condition: .create) { report.uploaded.append(path) }
         }
         guard !options.pushOnly else { return }
         for name in remote.subtracting(local).sorted() {
             let path = "\(folder)/\(name)"
-            let got = try client.get([folder, name], maxBytes: NotebookRecords.maxFileBytes)
+            let got = try transport.read([folder, name], maxBytes: NotebookRecords.maxFileBytes)
             try budget.downloaded(got.data.count)
             if let vault, vault.canRead {
                 do { _ = try vault.openNotebookRecord(got.data, fileName: name) } catch {

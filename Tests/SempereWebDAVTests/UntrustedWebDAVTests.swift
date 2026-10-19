@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// Regression tests for hostile WebDAV responses (see `WebDAVFuzzTests`).

@@ -68,7 +68,7 @@ extension WebDAVSync {
         try checkCancelled()
         try budget.checkTime()
         do {
-            switch try client.listTree([Vault.notesName]) {
+            switch try transport.listTree([Vault.notesName]) {
             case .listed(let tree)?:
                 try budget.list(tree.values.reduce(0) { $0 + $1.count })
                 let top = Set((tree[[]] ?? []).filter(\.isCollection).map(\.name))

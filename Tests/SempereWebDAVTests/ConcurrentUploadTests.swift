@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// P83: uploads `concurrency` at a time (`preuploadNewFiles`), keeping every

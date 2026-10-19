@@ -1,4 +1,5 @@
 import Foundation
+import SempereSync
 import SempereWebDAV
 
 /// What identifies one vault connection: operations with an equal key may share a transport (and so its

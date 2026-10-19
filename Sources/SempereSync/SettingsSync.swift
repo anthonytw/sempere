@@ -34,7 +34,7 @@ extension WebDAVSync {
         var remoteData: Data?
         var etag: String?
         if remote != nil {
-            let got = try client.get([name], maxBytes: SharedSettings.maxFileBytes)
+            let got = try transport.read([name], maxBytes: SharedSettings.maxFileBytes)
             try budget.downloaded(got.data.count)
             remoteData = got.data
             etag = remote?.etag ?? got.etag

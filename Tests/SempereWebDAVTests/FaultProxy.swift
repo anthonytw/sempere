@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// The control side of `scripts/dav-fault-proxy.py` (docs/ci.md "Sync

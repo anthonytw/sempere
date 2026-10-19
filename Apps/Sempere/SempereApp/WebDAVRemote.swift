@@ -3,6 +3,7 @@ import CryptoKit
 import Foundation
 import Security
 import Sempere
+import SempereSync
 import SempereWebDAV
 
 /// Where and as whom to reach a WebDAV vault.

@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereSync
 
 /// A vault found on a WebDAV server (`WebDAVConnection.check`).
 public struct WebDAVVaultListing: Codable, Hashable, Sendable {
@@ -118,10 +119,7 @@ public enum WebDAVConnection {
 
     /// `vaultId` (a UUID, lowercased) and `format` of a manifest; nil if it is not one.
     static func manifestFields(_ data: Data) -> (vaultId: String, format: String?)? {
-        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let id = obj["vaultId"] as? String, let uuid = UUID(uuidString: id) else { return nil }
-        let format = (obj["format"] as? String).map { SyncReport.printable(String($0.prefix(64))) }
-        return (uuid.uuidString.lowercased(), format)
+        WebDAVSync.manifestFields(data)
     }
 
     /// A server-chosen name made safe to show: no `.sempere`, control

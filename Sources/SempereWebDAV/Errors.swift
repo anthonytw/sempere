@@ -1,6 +1,8 @@
 import Foundation
+import SempereSync
 
-/// Errors from the WebDAV layer. Messages never contain credentials.
+/// Errors from the WebDAV transport (`WebDAVClient`, `URLSessionTransport`).
+/// The sync engine's own errors are `SyncError`. Messages never contain credentials.
 public enum WebDAVError: Error, Hashable, Sendable {
     /// Plain `http` to anything but localhost, or credentials in the URL.
     case insecureURL(String)
@@ -20,18 +22,10 @@ public enum WebDAVError: Error, Hashable, Sendable {
     case untrustedCertificate(String)
     /// The response could not be understood.
     case malformedResponse(String)
-    /// The local vault and the remote one have different `vaultId`s.
-    case vaultMismatch(local: String, remote: String)
-    /// A local filesystem operation failed.
+    /// A local filesystem operation failed (a streamed body or response file).
     case io(String)
     /// The response body exceeded the limit for this request; reading stopped there.
     case responseTooLarge(path: String, limit: Int)
-    /// A bound of the whole run (`SyncLimits`) was reached; the run stopped
-    /// there (security review 2026-10, W5).
-    case limitExceeded(String)
-    /// The caller canceled the run (`WebDAVSyncOptions.isCancelled`); it
-    /// stopped like a run bound does, and the next run continues.
-    case cancelled
 }
 
 extension WebDAVError {
@@ -50,6 +44,16 @@ extension WebDAVError {
     }
 }
 
+extension WebDAVError: TransientRemoteError {
+    /// A dropped connection or a timeout: the sync keeps a partial download for the next run.
+    public var isTransient: Bool {
+        switch self {
+        case .transport, .offline: return true
+        default: return false
+        }
+    }
+}
+
 extension WebDAVError: LocalizedError {
     public var errorDescription: String? {
         switch self {
@@ -64,13 +68,9 @@ extension WebDAVError: LocalizedError {
         case .offline(let m): return "server not reachable: \(m)"
         case .untrustedCertificate(let m): return "the server's certificate is not trusted: \(m)"
         case .malformedResponse(let m): return "malformed server response: \(SyncReport.printable(m))"
-        case .vaultMismatch(let l, let r):
-            return "the remote holds vault \(r) but the local vault is \(l); refusing to mix them"
         case .io(let m): return m
         case .responseTooLarge(let path, let limit):
             return "the response for \(SyncReport.printable(path)) is over \(limit) bytes; not read"
-        case .limitExceeded(let m): return "sync run stopped: \(m)"
-        case .cancelled: return "sync run canceled"
         }
     }
 }

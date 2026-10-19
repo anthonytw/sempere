@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import Security
+import SempereSync
 import SempereWebDAV
 
 /// A vault on a WebDAV server that this device keeps a local copy of

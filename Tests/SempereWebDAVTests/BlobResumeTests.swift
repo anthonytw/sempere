@@ -2,6 +2,7 @@ import FuzzSupport
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// Interrupted blob transfers and runs (docs/attachments.md §14 B3): a cut

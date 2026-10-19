@@ -5,7 +5,7 @@ import Sempere
 /// bounded on its own (`maxFileBytes`, `maxBlobBytes`, listing sizes); these
 /// bound the run as a whole, so a server cannot make it list, download or
 /// last without end. Reaching one stops the run with
-/// `WebDAVError.limitExceeded` in `errors` and `stoppedEarly`; what was done
+/// `SyncError.limitExceeded` in `errors` and `stoppedEarly`; what was done
 /// so far is kept and recorded, and the next run continues.
 public struct SyncLimits: Sendable, Hashable {
     /// Note folders the server may list.
@@ -52,14 +52,14 @@ struct RunBudget {
     }
 
     /// The error of a run past `limits.maxDuration`.
-    static func timeExceeded(_ limits: SyncLimits) -> WebDAVError {
+    static func timeExceeded(_ limits: SyncLimits) -> SyncError {
         .limitExceeded("it ran for more than \(Int(limits.maxDuration / 60)) minutes (--max-minutes)")
     }
 
     mutating func list(_ count: Int) throws {
         entries += count
         if entries > limits.maxEntries {
-            throw WebDAVError.limitExceeded("the server listed more than \(limits.maxEntries) entries (--max-entries)")
+            throw SyncError.limitExceeded("the server listed more than \(limits.maxEntries) entries (--max-entries)")
         }
     }
 
@@ -72,7 +72,7 @@ struct RunBudget {
         let (held, overflowHeld) = downloadedBytes.addingReportingOverflow(reservedBytes)
         let (total, overflow) = held.addingReportingOverflow(wanted)
         if overflowHeld || overflow || total > limits.maxDownloadBytes {
-            throw WebDAVError.limitExceeded("more than \(limits.maxDownloadBytes >> 20) MiB would be downloaded (--max-download-mib)")
+            throw SyncError.limitExceeded("more than \(limits.maxDownloadBytes >> 20) MiB would be downloaded (--max-download-mib)")
         }
         reservedBytes += wanted
         return wanted
@@ -92,24 +92,14 @@ struct RunBudget {
     mutating func downloaded(_ size: Int) throws {
         downloadedBytes += Int64(max(size, 0))
         if downloadedBytes > limits.maxDownloadBytes {
-            throw WebDAVError.limitExceeded("more than \(limits.maxDownloadBytes >> 20) MiB were downloaded (--max-download-mib)")
-        }
-    }
-}
-
-extension WebDAVError {
-    /// True for a bound of the whole run, or a cancellation: it stops the run, not one file.
-    var isRunLimit: Bool {
-        switch self {
-        case .limitExceeded, .cancelled: return true
-        default: return false
+            throw SyncError.limitExceeded("more than \(limits.maxDownloadBytes >> 20) MiB were downloaded (--max-download-mib)")
         }
     }
 }
 
 /// Stops the run on a run limit; any other error is the file's own.
 func rethrowRunLimit(_ error: Error) throws {
-    if let e = error as? WebDAVError, e.isRunLimit { throw e }
+    if let e = error as? SyncError, e.isRunLimit { throw e }
 }
 
 // MARK: - Quarantine (format.md §9.1, security review 2026-10, W2)

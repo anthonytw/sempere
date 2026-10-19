@@ -4,6 +4,7 @@ import FuzzSupport
 import XCTest
 
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// A server that answers every request through `inner` and then mutates the
@@ -139,7 +140,7 @@ final class WebDAVFuzzTests: SyncTestCase {
                 try input.write(to: url)
                 _ = try SyncState.load(url)
             } catch is DecodingError {
-            } catch is WebDAVError {
+            } catch is SyncError {
             } catch { return "untyped error \(type(of: error)): \(error)" }
             return nil
         })

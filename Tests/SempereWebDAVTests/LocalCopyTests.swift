@@ -2,6 +2,7 @@ import Age
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// The app's WebDAV vaults: a local copy downloaded once, pushed with
@@ -136,7 +137,7 @@ final class LocalCopyTests: BlobSyncTestCase {
         let server = MockDAV()
         let c = copy("iPad")
         XCTAssertThrowsError(try c.download(client: try client(server))) {
-            guard case WebDAVError.io = $0 else { return XCTFail("\($0)") }
+            guard case SyncError.io = $0 else { return XCTFail("\($0)") }
         }
         XCTAssertFalse(FileManager.default.fileExists(atPath: c.folder.path), "nothing is created")
         XCTAssertFalse(server.requestLog.contains { $0.method != "PROPFIND" })

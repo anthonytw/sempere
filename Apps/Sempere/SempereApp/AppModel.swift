@@ -2,6 +2,7 @@ import Age
 import Foundation
 import Sempere
 import SempereImport
+import SempereSync
 import SempereWebDAV
 import Observation
 

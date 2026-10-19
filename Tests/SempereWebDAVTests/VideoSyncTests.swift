@@ -3,6 +3,7 @@ import FuzzSupport
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// A video clip's blob (kind `video`, format.md §8.2.7) through WebDAV sync

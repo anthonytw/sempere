@@ -32,7 +32,7 @@ import Sempere
 // transfers no blob for it either), and notes whose server folder could not
 // be listed are not touched. Run bounds hold as for the downloads: time and
 // cancellation are checked before each upload, a request in flight is cut
-// by `WebDAVClient.interrupt`, and the first bound reached stops the pool.
+// by `SyncRemote.interrupt`, and the first bound reached stops the pool.
 
 extension WebDAVSync {
     /// One upload of the pre-upload pass.

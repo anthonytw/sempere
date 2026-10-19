@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// P64: every note folder and `att/` from one `PROPFIND` (`Depth: infinity`)
