@@ -6218,6 +6218,18 @@
         }
       }
     },
+    "Drawing Tools" : {
+      "comment" : "Mac toolbar: menu of the drawing tools (pen, marker, pencil, eraser, lasso, ruler)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Herramientas de dibujo"
+          }
+        }
+      }
+    },
     "Duplicate" : {
       "comment" : "Undo action name (Edit ▸ Undo …) or item menu command",
       "extractionState" : "manual",
@@ -12141,6 +12153,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Elige en Archivos la carpeta de un modelo, o un zip de ella. Se comprueba con su manifiesto y se guarda en este dispositivo."
+          }
+        }
+      }
+    },
+    "Pick the pen, marker, pencil, eraser or lasso (also in the Tools menu)" : {
+      "comment" : "Mac toolbar tooltip of the Drawing Tools menu",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige el bolígrafo, el rotulador, el lápiz, el borrador o el lazo (también en el menú Herramientas)"
           }
         }
       }

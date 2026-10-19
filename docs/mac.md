@@ -141,6 +141,13 @@ canvas's range. Tool commands select the tool in the system palette
 (`PageCanvasHost.select(tool:)`); the compact palette has no pencil, so that
 command does nothing there.
 
+**No tool palette on a Mac.** PencilKit never shows its tool palette (`PKToolPicker`) in a Mac
+Catalyst app: Apple's documentation says so, and a bare `PKCanvasView` that is the first responder
+with `setVisible(true, forFirstResponder:)` shows none on macOS 27 either (`isVisible` stays false).
+The picker still holds the selected tool, which the Tools menu and the toolbar's Drawing Tools menu
+(the iPad's palette button, `EditorView.macToolsMenu`) change. Ink color and width have no control on
+a Mac yet; Show/Hide Tool Palette only changes the setting the iPad reads.
+
 **Settings….** UIKit also builds the app menu's Settings… (⌘,), which would
 open a pane Catalyst generates (touch alternatives and system items only).
 Settings… is one of the `nativeOnMac` commands: `MacMenus` replaces UIKit's
@@ -318,7 +325,10 @@ is the first responder, the window's keyboard focus is not on a list row, and th
 window is key); a stroke on a canvas always takes it. So a field keeps the keyboard
 until the user leaves it, the arrow keys keep moving the sidebar or list that has the
 keyboard focus, and the palette appears when the note opens with nothing else typed in,
-or at the first stroke. A note window updating in the background takes nothing; it gives
+or at the first stroke. Turning the palette on (the toolbar button, Show Tool Palette) gives the
+current page's canvas the focus too: the user asked for the palette, which shows only for the
+first responder, so on an iPad with the note list holding the focus the button used to flip its
+icon and show nothing (TestFlight 1.0.0 (6); `PaletteButtonUITests`). A note window updating in the background takes nothing; it gives
 its canvas the focus when it becomes key. Tests: `CanvasFocusTests` (hosted, iPad and
 Catalyst) and `MacFocusUITests` (typing in the running app, `scripts/app.sh test-mac-ui`).
 

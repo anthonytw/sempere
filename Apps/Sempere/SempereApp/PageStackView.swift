@@ -174,6 +174,8 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
     func update(_ configuration: Configuration) {
         let editor = configuration.editor
         let newEditor = self.editor !== editor
+        let turnedOn = configuration.paletteVisible && self.configuration?.paletteVisible == false
+        defer { if turnedOn, !newEditor { paletteTurnedOn() } }
         self.configuration = configuration
         self.editor = editor
         if configuration.paletteCompact != paletteCompact {
@@ -399,6 +401,18 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         // Runs on every layout: never take the keyboard from a search or text field, or from a
         // list moved through with the arrow keys (TestFlight 1.0.0, `CanvasFocus`).
         slot.host.focusUnlessKeyboardElsewhere(container: self)
+    }
+
+    /// The palette was turned on (the toolbar button, Tools > Show Tool Palette): the current page's
+    /// canvas takes the first responder so the palette shows, even from a list or the sidebar that held
+    /// the focus (`PageCanvasHost.paletteTakesFocus`). A text box or a field being typed in keeps the keyboard.
+    private func paletteTurnedOn() {
+        guard PageCanvasHost.paletteTakesFocus(isPhone: Platform.isPhone), window != nil,
+              !CanvasFocus.typingElsewhere(than: self) else { return }
+        if slots.values.contains(where: { $0.host.textEditor.isEditing }) { return }
+        let focused = slots.values.first { $0.host.canvas.isFirstResponder }
+        guard let slot = focused ?? editor?.currentPage.flatMap({ slots[$0.id] }) else { return }
+        slot.host.reclaimFocus()
     }
 
     /// Fingers and the Pencil: while the pages can be drawn on, the Pencil
