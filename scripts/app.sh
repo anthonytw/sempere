@@ -149,7 +149,8 @@ case "${1:-}" in
     sim=$(pick_simulator iPhone)
     settle_simulator "$sim"
     suites -only-testing:SempereAppUITests/PhoneCanvasUITests -only-testing:SempereAppUITests/PhoneParityUITests \
-      -only-testing:SempereAppUITests/PhoneReadingScrollUITests -only-testing:SempereAppUITests/PhoneCanvasModeUITests
+      -only-testing:SempereAppUITests/PhoneReadingScrollUITests -only-testing:SempereAppUITests/PhoneCanvasModeUITests \
+      -only-testing:SempereAppUITests/NoteToolbarUITests
     xcb test "${lang[@]}" -project "$project" -scheme SempereScreenshots -derivedDataPath "$derived" \
       -destination "platform=iOS Simulator,id=$sim" ${only[@]+"${only[@]}"} \
       -parallel-testing-enabled NO ${ui_retry[@]+"${ui_retry[@]}"} CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"} \
@@ -220,7 +221,8 @@ case "${1:-}" in
       -only-testing:SempereAppUITests/KeyShareMacUITests -only-testing:SempereAppUITests/QuitPurgeMacUITests \
       -only-testing:SempereAppUITests/NewVaultSheetUITests -only-testing:SempereAppUITests/MacImportUITests \
       -only-testing:SempereAppUITests/MacExportUITests -only-testing:SempereAppUITests/MacRealMouseUITests \
-      -only-testing:SempereAppUITests/FolderPickerUITests
+      -only-testing:SempereAppUITests/FolderPickerUITests \
+      -only-testing:SempereAppUITests/MacNoteModeUITests -only-testing:SempereAppUITests/NoteToolbarUITests
     xcb test -project "$project" -scheme SempereScreenshots -derivedDataPath "$derived" \
       -destination 'platform=macOS,variant=Mac Catalyst' ${only[@]+"${only[@]}"} \
       "${mac_ui_signing[@]}" ${ui_retry[@]+"${ui_retry[@]}"} ${extra[@]+"${extra[@]}"}
@@ -245,7 +247,8 @@ case "${1:-}" in
       -only-testing:SempereAppUITests/LaunchSmokeUITests/testFreshLaunchDoubleColumn \
       -only-testing:SempereAppUITests/LaunchSmokeUITests/testFirstUnlockShowsKeyNoticeThenTour \
       -only-testing:SempereAppUITests/NewVaultSheetUITests -only-testing:SempereAppUITests/MacImportUITests \
-      -only-testing:SempereAppUITests/MacExportUITests -only-testing:SempereAppUITests/FolderPickerUITests
+      -only-testing:SempereAppUITests/MacExportUITests -only-testing:SempereAppUITests/FolderPickerUITests \
+      -only-testing:SempereAppUITests/PhoneCanvasModeUITests -only-testing:SempereAppUITests/NoteToolbarUITests
     xcb test -project "$project" -scheme SempereScreenshots -derivedDataPath "$derived" \
       -destination "platform=iOS Simulator,id=$sim" ${only[@]+"${only[@]}"} \
       -parallel-testing-enabled NO ${ui_retry[@]+"${ui_retry[@]}"} CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"}

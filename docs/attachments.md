@@ -1215,9 +1215,11 @@ videos, math and kinds this version does not know), whichever way the item is
 picked (`ItemSelection.swift`; pure logic in `ItemSelectionModel`, `ItemMenu`
 and `ItemFrames` in `Sources/Sempere/ItemOps.swift`):
 
-- **Ways in.** *Select* in the editor toolbar (always shown on an editable
-  note) turns selection mode on: a tap selects the topmost item, content before
-  backgrounds. While drawing, an item is picked without changing tools by a
+- **Ways in.** The *Hand* in the note's top bar (Hand mode, `NoteMode`, on every
+  device; always shown on an editable note with a page) turns selection mode on: a
+  tap or click selects the topmost item, content before backgrounds (an iPad's
+  Pencil still draws there, and switches the note to Annotate). While annotating,
+  an item is picked without changing tools by a
   **finger tap** on it when fingers do not draw (with the Pencil, the default on
   an iPad), a tap with PencilKit's **lasso** (the lasso still lassoes ink), by
   **holding a finger** on it (its menu too), or by a **secondary click**

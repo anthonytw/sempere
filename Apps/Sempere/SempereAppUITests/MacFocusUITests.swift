@@ -22,7 +22,7 @@ final class MacFocusUITests: XCTestCase {
         app.launchEnvironment = ["SEMPERE_DEMO": "1", "SEMPERE_DEBUG_COLUMNS": "all", "SEMPERE_DEMO_NOTE": "respiration",
                                  "SEMPERE_DEMO_SIDEBAR": "all", "SEMPERE_DEMO_MAC_WINDOW": "1100x760", "TZ": "UTC",
                                  // The canvases report their state, the text being typed included (`typing`).
-                                 "SEMPERE_DEMO_ITEMS": "1"]
+                                 "SEMPERE_DEMO_ITEMS": "1", "SEMPERE_DEBUG_NOTE_MODE": "annotate"]
         app.launch()
         return app
     }

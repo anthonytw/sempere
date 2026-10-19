@@ -19,11 +19,13 @@ enum StackTS {
         return editor
     }
 
+    /// `drawingSuspended`: reading on an iPhone or a Mac (`NoteModeInput`); `input` overrides it.
     static func configuration(_ editor: NoteEditor, drawingSuspended: Bool = false,
-                              selectingItems: Bool = false) -> PageStackHost.Configuration {
+                              selectingItems: Bool = false, input: NoteModeInput? = nil) -> PageStackHost.Configuration {
         PageStackHost.Configuration(editor: editor, pageIDs: editor.pages.map(\.id), pageSize: editor.pageSize,
                                     pageJump: editor.pageJump, generation: editor.canvasGeneration,
-                                    drawingSuspended: drawingSuspended, selectingItems: selectingItems)
+                                    input: input ?? NoteModeInput(drawingSuspended: drawingSuspended, reading: drawingSuspended),
+                                    selectingItems: selectingItems)
     }
 
     /// A new paged note of `pages` pages written to the vault before it is

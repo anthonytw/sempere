@@ -3,8 +3,10 @@
 The iPhone app is the iPad app's target with the iPhone device family added
 (`TARGETED_DEVICE_FAMILY = "1,2"`): one target, one bundle id, one code base. It is a
 **reader**: browsing, searching, opening, exporting and unlocking work as on the iPad; writing
-is possible but not emphasized. iPad and Mac behavior does not change: everything phone-only
-is gated on `Platform.isPhone` (`UIDevice` idiom `.phone`) or lives in `PhoneLayout.swift`.
+is possible but not emphasized. Everything phone-only is gated on `Platform.isPhone` (`UIDevice` idiom
+`.phone`) or lives in `PhoneLayout.swift`. The note view's modes and toolbar are shared by every device
+(`NoteModes.swift`, `NoteToolbar.swift`; "The note view on every device" below) and differ only where a
+device needs it.
 
 ## Layout
 
@@ -12,7 +14,12 @@ is gated on `Platform.isPhone` (`UIDevice` idiom `.phone`) or lives in `PhoneLay
 column at a time:
 
 1. the vault (`SidebarView`: All Notes, notebooks, tags, Recently Deleted; the close-vault and
-   key buttons),
+   key buttons). Notebooks fold as on the iPad: a notebook with sub-notebooks has a chevron at the end
+   of its row that folds or unfolds them (folded at first), and a tap on the row opens the notebook.
+   The phone draws these rows itself (`PhoneNotebookRows`): an outline row's tap only folds it on the
+   phone's stack and never selects it, so a notebook holding sub-notebooks could not be opened
+   (PR #27 listed the whole tree unfolded for that). A notebook chosen elsewhere is listed, its parents
+   unfolded,
 2. the note list (`NoteListView`, search field with scopes; New Note stays in the bar, Select, Sort
    and Handwriting move into the overflow menu),
 3. the note (`NoteCanvasView`).
@@ -42,9 +49,9 @@ Read-first:
   Reading: a tap while reading never writes. Pageless notes scroll one screen past the ink.
 - **Page navigation** in the bottom bar (previous, "n / N", next) for notes with several pages
   scrolls to the page.
-- **Three modes: Reading, Hand, Annotate** (`PhoneCanvasMode`, one value in `EditorView`, so the buttons and
-  the canvas cannot disagree). The top bar shows them with two buttons, the pencil ("Annotate") and the Hand
-  (`handButton`), at most one lit:
+- **Three modes: Reading, Hand, Annotate** (`NoteMode`, the same on every device: "The note view on every
+  device"; one value per window, `WindowUI.noteMode`, so the buttons and the canvas cannot disagree). The top
+  bar shows them with two buttons, the pencil ("Annotate") and the Hand (`handButton`), at most one lit:
 
   | Mode | Pencil | Hand | One finger | Tap / hold on an item | Palette |
   |------|--------|------|------------|-----------------------|---------|
@@ -53,22 +60,18 @@ Read-first:
   | Annotate | on | off | draws (two fingers scroll) | selects / its menu (below) | shown |
 
   A tap on the lit button goes back to Reading; a tap on the other button switches straight to its mode (Hand
-  to Annotate is one tap on the pencil, never both off). A note, and the next one, opens in Reading
-  (`PhoneReading.modeAfterNoteChange`). Everything follows from the mode: `drawingSuspended` (Reading),
-  `selectingItems` (Hand), the palette (Annotate only, `PhoneReading.paletteVisible`), the bottom page bar
-  (whenever the palette is away), the drawing aids in the overflow menu (Annotate). The overflow menu has no
-  Select toggle on the phone: the Hand is selection mode (a Select command request toggles the Hand). Both buttons
-  are hidden for read-only notes (which draw and select nothing) and notes with no page. The top bar is title +
-  two buttons + the overflow menu: it fits an iPhone SE (375 pt) without truncating the title badly.
-  Edits are ordinary deltas through `NoteWriter`, exactly as on the iPad.
+  to Annotate is one tap on the pencil, never both off). A note, and the next one, opens in Reading. Everything
+  follows from the mode (`NoteModeInput.of(_:on: .phone)`): `drawingSuspended` (Reading), `selectingItems`
+  (Hand), the palette (Annotate only), the bottom page bar (whenever the palette is away), the drawing aids in
+  the overflow menu (Annotate). There is no Select toggle: the Hand is selection mode (a Select command request
+  toggles the Hand). Both buttons are hidden for read-only notes (which draw and select nothing) and notes with
+  no page. The top bar is title + two buttons + the overflow menu: it fits an iPhone SE (375 pt) without
+  truncating the title badly. Edits are ordinary deltas through `NoteWriter`, exactly as on the iPad.
   (TestFlight build 5: the Hand turned Annotate on too, so going back to reading took both buttons, and turning
   the pencil off with the Hand on left both buttons off while a finger still drew.)
-- **The palette's Hand item** (the last item of the phone's palette, `ToolPalette.handItem`): picking it inside
-  Annotate switches to Hand mode, exactly as the top-bar Hand does (the Hand lights, the pencil goes off, the
-  palette hides): one Hand, not a fourth "annotating and selecting" state (`PhoneCanvasMode.handToolPicked`).
-  The palette follows the mode: in Hand mode the canvas keeps the palette's Hand picked, and back in Annotate the
-  last drawing tool returns (`PageCanvasHost.syncHandTool`); those programmatic picks never change the mode. Only
-  the iPhone's palette has it: a finger already scrolls on the iPad and the Mac has a pointer.
+- **The palette has no Hand** (owner, 2026-10-19: "It serves no purpose there"), on any device: the top bar's Hand
+  is the only one. (Build 5's palette Hand item, `ToolPalette.handItem`, is gone, and with it the canvas keeping
+  the palette's pick in step with the mode.)
 - **Annotate: tap selects an item, a hold shows its menu.** A finger draws, so a tap on a placed item (a
   picture, text box, equation, clip or card) is told apart from a stroke before ink starts
   (`FingerItemTapRecognizer`, `ItemSelectionController.fingersPick`): one finger that lifts within 0.4 s and
@@ -81,7 +84,7 @@ Read-first:
 - **The fingers a scroll takes follow the mode**: one in Reading and Hand (and on a read-only note), two in
   Annotate in every tool (one draws, as on PencilKit's own canvas), paged or pageless. On the phone the
   canvas's drawing policy follows the mode too: `.anyInput` in Annotate, `.pencilOnly` otherwise
-  (`PageCanvasHost.applyPhoneDrawingPolicy`). PencilKit sets its own scroll's `minimumNumberOfTouches`
+  (`PageCanvasHost.applyDrawingPolicy`). PencilKit sets its own scroll's `minimumNumberOfTouches`
   from that policy (2 whenever a finger may draw, `-[PKTiledView updateForAllowedDrawingInput]`) and re-runs it
   by itself: when its view moves to a window and when the palette's visibility changes
   (`_updateForToolPickerVisibilityChange:`, which arrives with the palette's hide animation, about 0.8 s after
@@ -92,18 +95,123 @@ Read-first:
 - **Page actions** are in the overflow menu's Pages submenu, with or without the pencil: Add Page
   After This One, Add Page at End, Insert PDF Pages at this page, Duplicate, Delete, Undo Delete,
   Show/Hide Pages (the thumbnails, a sheet at phone width that closes when a page is picked) and the
-  Pages/Pageless switch (`PhonePageMenu`). Read-only notes get the thumbnails only.
+  Pages/Pageless switch (`PageMenu`, every device). Read-only notes get the thumbnails only.
 - **Swipe to turn pages.** In Reading, on a paged note that fits the width, a swipe left goes to
   the next page and right to the previous (`PhoneReading.swipeTurnsPages`; off in Hand mode, where a
   drag may move an item, while annotating or zoomed, where a swipe draws or pans).
 - **Search hits** are highlighted on the page and stepped through exactly as on the iPad (the
   same canvas code; `PhonePageSwipeStackTests`).
-- **The overflow menu's order**: Paper, Favorite, Insert, Pages, Recordings (one submenu, ending with
-  "All Recordings…" once the note has recordings; there is no separate "Recordings…" entry), then the
-  drawing aids while annotating. Pages is high so it is visible without scrolling in a long (Spanish) menu.
-- **The rest** is in the overflow menu: Rename, Export (PDF, PNG, text), Version History, Keep Screen
-  On, Tags, Paper, and the object-eraser size while annotating. The title in the bar renames the
-  note on tap or long press.
+- **The overflow menu** is the shared one ("The note view on every device"): Text and Object Eraser Size while
+  annotating, Insert, Recordings (one submenu: record, and each recording), Favorite and Tags (the bar items
+  that do not fit the phone's top bar, in the shared order), then Pages, Paper, All Recordings…, Rename, Export
+  (PDF, PNG, text), Save Version, Version History and Keep Screen On, as on the iPad and the Mac. Pages is the
+  sixth entry while reading, so it is visible without scrolling in a long (Spanish) menu. The title in the bar
+  renames the note on tap or long press.
+
+## The note view on every device
+
+The owner (2026-10-19): "I don't like the menu inconsistencies between the devices. Make them inconsistent only
+where it makes sense." The note view's modes and toolbar are one design on the iPhone, the iPad and the Mac.
+
+### Reading, Hand and Annotate everywhere
+
+Every device has the iPhone's three modes (`NoteMode`), shown by the same two top-bar buttons, and every note
+opens in **Reading** ("It's actually kinda nice to open a note in a more-or-less read-only mode"). What each mode
+lets the canvas do per device is one table (`NoteModeInput`, `NoteModeTests`):
+
+| Device | Reading | Hand | Annotate |
+|--------|---------|------|----------|
+| iPhone | one finger scrolls; nothing draws or selects | one finger scrolls; a tap selects, a hold shows the menu, a drag moves the selected item | a finger draws (two scroll); the palette |
+| iPad | fingers scroll; nothing selects; **a Pencil touch switches to Annotate and draws** | fingers scroll and select (tap, hold, drag); **a Pencil touch switches to Annotate and draws** | as the system says (the Pencil draws; a finger too when no Pencil is used); the palette |
+| Mac | the wheel and trackpad scroll; a click or drag draws and selects nothing | a click selects, a drag moves or resizes | the mouse draws; Drawing Tools picks the tool (PencilKit shows no palette in Mac Catalyst) |
+
+The iPad's Pencil: in Reading and Hand the canvas keeps PencilKit's drawing on with the policy `.pencilOnly`
+(`NoteModeInput.pencilAnnotates`, `PageCanvasHost.drawingPolicy`), so a Pencil stroke is drawn whole, and its
+start (`canvasViewDidBeginUsingTool`, or the object eraser's first touch) switches the note to Annotate
+(`NoteMode.pencilTouched`); the policy change waits for the stroke to end (`PageCanvasHost.inkInProgress`).
+Hand mode's selection takes fingers and the pointer only there (`ItemSelectionController.pencilDraws`), so the
+Pencil reaches PencilKit. Fingers follow the mode. Text and a tool picked from a menu (the Mac's Tools menu)
+switch to Annotate too. The palette shows only in Annotate: the iPad's Show/Hide Tool Palette button is now
+the Annotate button (one control per mode), whose press-and-hold menu keeps Compact Palette; the Mac's (which
+fix/palette-button had turned into Drawing Tools, since PencilKit shows no palette there) is the Annotate
+button too, with Drawing Tools beside it while annotating. The Mac's Tools menu has Annotate (⇧⌘P) and Hand (⌥⌘7), docs/mac.md
+"Reading, Hand and Annotate". Debug launches can open notes in another mode (`SEMPERE_DEBUG_NOTE_MODE`:
+`annotate`, `hand`), which the drawing UI tests use.
+
+### The toolbar: before
+
+As of PR #34 (`main` at 5097395). "⋯" is the overflow menu ("More"); "bar" the top bar's trailing items.
+
+| Item | iPhone | iPad | Mac (library window) | Mac note window |
+|------|--------|------|----------------------|-----------------|
+| Annotate / Hand | bar (modes) | no modes: a note opened drawing | as the iPad | as the iPad |
+| Show/Hide Tool Palette (hold: Compact) | none (palette = Annotate) | bar, 1st | bar, 1st | bar, 1st |
+| Favorite | ⋯ 2nd | bar | bar | bar |
+| Text | ⋯ (Annotate only) | bar (always) | bar | bar |
+| Insert | ⋯ 3rd | bar | bar | bar |
+| Recordings (record; per-recording submenu) | ⋯ | bar (tap records; hold: submenu) | bar | bar |
+| All Recordings… | in the Recordings submenu, only once the note had recordings | only by holding Recordings, only with recordings (**the iPad's list button was gone**, PR #31) | as the iPad, plus Note > Recordings… | as the iPad |
+| Select | none (the Hand) | bar toggle | bar toggle | bar toggle |
+| Object Eraser Size | ⋯ (Annotate only) | bar (always) | bar | bar |
+| Page navigation | bottom bar (not while annotating) | bar | bar | bar |
+| Add Page (hold: page actions), Show Pages | in ⋯ Pages | bar | bar | bar |
+| Pages submenu (actions, thumbnails, layout) | ⋯ 4th | none | none | none |
+| Page Layout picker | in Pages | ⋯ 2nd | ⋯ | ⋯ |
+| Paper… | ⋯ 1st | ⋯ 1st | ⋯ 1st | ⋯ 1st |
+| Tags | ⋯ last | bar (from the outer view) | bar | bar |
+| Rename…, Export, Save Version…, Version History… | ⋯ after the editor's items | ⋯ | ⋯ | ⋯ |
+| Keep Screen On | ⋯ | ⋯ | ⋯ | none |
+| Palette's Hand | last palette item | none | none | none |
+
+Orders differed (the phone's overflow started with Paper, Favorite, Insert; the iPad's with Paper, Layout), the
+same action had different homes (layout, page actions, Favorite, Tags), Text and the eraser size were always on
+the iPad but Annotate-only on the phone, and the iPad and the Mac could reach a note's recordings list only by
+holding Recordings once the note had some.
+
+### The toolbar: after (one order, one set)
+
+`NoteToolbar` lists every item once, in one order (`NoteToolbar.order`), with one availability rule
+(`isAvailable`) and a placement per device (`placement(of:on:)`); `EditorView.noteToolbar` draws exactly what
+`NoteToolbar.items(in:)` returns, in the library window and the Mac's note windows alike. The bar items come
+first, then the overflow menu's.
+
+| # | Item | iPhone | iPad | Mac | Offered when |
+|---|------|--------|------|-----|--------------|
+| 1 | Annotate (pencil) | bar | bar (hold: Compact Palette) | bar | writable note with a page |
+| 2 | Hand | bar | bar | bar | writable note with a page |
+| 2a | Drawing Tools (pen, marker, pencil, eraser, lasso, ruler) | — | — | bar | annotating |
+| 3 | Text | ⋯ | bar | bar | annotating |
+| 4 | Object Eraser Size | ⋯ | bar | bar | annotating |
+| 5 | Insert | ⋯ | bar | bar | writable |
+| 6 | Recordings (record or stop; each recording) | ⋯ | bar (tap records) | bar (tap records) | writable, or has recordings |
+| 7 | Favorite | ⋯ | bar | bar | always |
+| 8 | Tags | ⋯ | bar | bar | always |
+| 9 | Previous, n / N, Next | bottom bar, not while annotating | bar | bar | several pages, or a writable paged note |
+| 10 | Add Page (hold: page actions) | in Pages | bar | bar | writable, paged |
+| 11 | Show / Hide Pages | in Pages | bar | bar | paged |
+| 12 | Pages (go to, add, insert PDF, duplicate, delete, undo, thumbnails, layout) | ⋯ | ⋯ | ⋯ | it has entries, or several pages |
+| 13 | Paper… | ⋯ | ⋯ | ⋯ | writable |
+| 14 | All Recordings… | ⋯ | ⋯ | ⋯ | always (read-only notes too) |
+| 15 | Rename… | ⋯ | ⋯ | ⋯ | always |
+| 16 | Export | ⋯ | ⋯ | ⋯ | always |
+| 17 | Save Version… | ⋯ | ⋯ | ⋯ | always (off for a deleted note) |
+| 18 | Version History… | ⋯ | ⋯ | ⋯ | always |
+| 19 | Keep Screen On | ⋯ | ⋯ | ⋯ (not in a note window) | always |
+
+Left of the title, the iPad and the Mac keep Show / Hide Note List (the iPhone's back button is its way to the
+list); the title renames the note on every device. The palette has no Hand anywhere.
+
+Where a device differs, and why:
+
+- **iPhone, items 3–8 in ⋯**: its top bar must fit the title, the two mode buttons and ⋯ on an iPhone SE (375 pt).
+- **iPhone, page navigation in the bottom bar, away while annotating**: the top bar has no room, and the palette
+  sits at the bottom while annotating (Pages turns pages then).
+- **iPhone, no Add Page or Show Pages button**: no room; the same actions are in Pages.
+- **iPad, Compact Palette in the pencil's menu**: the iPhone's palette is always the compact one, and a Mac
+  has no palette.
+- **Mac, Drawing Tools**: PencilKit shows no tool palette in a Mac Catalyst app, so the tools are a menu.
+- **Mac note windows, no Keep Screen On**: the idle timer follows the library window's note (`RootView.applyIdleTimer`).
+- **Mac, its menu bar too**: Tools > Annotate, Hand, Text; Note > Recordings… (⌃⌘R) — the same actions by keyboard.
 
 ## Quick voice notes
 
@@ -159,18 +267,28 @@ that is a bug.
 - `PhoneCanvasInteractionTests` (app tests, any destination): the tap/stroke decision
   (`FingerTapTracker`), where a finger tap may start, that only PencilKit's drawing waits for it,
   selection and drawing coming back, the bar at phone width, two-finger scrolling.
-- `PhoneToolbarTests` cover the modes (`PhoneCanvasMode`: every button tap from every mode, at most one button
-  lit, what each mode lets a finger do, the palette's Hand) and the toolbar per mode. `PhoneCanvasTests` check
+- `PhoneToolbarTests` cover the phone's side of the toolbar (`NoteToolbar` with `.phone`: the two buttons, the
+  bottom page bar only while the palette is away, the drawing aids only while annotating). `PhoneCanvasTests` check
   the one-page canvas's finger count and drawing policy per state, and that they survive PencilKit's own
   recount (`pencilKitsOwnRecountKeepsReadingAtOneFinger`, after each palette tool, and a move to a window).
-- `HandToolTests` (app tests, any destination): the Hand is the palette's last item on the phone only, picking it
-  and any drawing tool switches selection mode, the palette follows the Select toggle.
-- `PhoneCanvasModeUITests` (iPhone simulator, `scripts/app.sh test-phone-ui`): every transition between the three
-  modes, in each order and through the palette's Hand, on a pageless note, checked by what the canvas does (a slow
+- `NoteModeTests` and `NoteToolbarTests` (app tests, any destination): every button tap from every mode, what each
+  mode lets the canvas do on each device, the drawing policy per device and mode, the Mac's Tools commands; the
+  toolbar's one order on every device in every state, the same set (besides the listed differences), the same
+  overflow menu, All Recordings… reachable on every device. `PencilAnnotatesTests`: an iPad's Pencil in Reading
+  or Hand draws with PencilKit's own gesture, a stroke's start asks for Annotate, Hand's selection leaves the
+  Pencil alone, a read-only note never switches; no palette has a Hand. (XCUITest cannot touch with a Pencil.)
+- `PhoneSidebarTests`: the notebook rows, folded and unfolded, and a chosen notebook's parents unfolded.
+- `PhoneCanvasModeUITests` (iPhone simulator, `scripts/app.sh test-phone-ui`; the iPad too, `scripts/app.sh
+  test-ui`): every transition between the three modes, in each order, on a pageless note, checked by what the canvas does (a slow
   one-finger drag scrolls or draws one stroke, a tap on the picture selects it or not, the palette is up or not,
   which button is lit); leaving Annotate from each tool (pen, marker, object eraser, lasso) and waiting 3 s still
   scrolls with one finger; the same on a paged note. The phone's collapsed palette opens with a tap, after which
-  its items (Pen, Marker, Object Eraser, Lasso, Hand) can be tapped by label.
+  its items (Pen, Marker, Object Eraser, Lasso; no Hand: `testThePaletteHasNoHand`) can be tapped by label.
+- `NoteToolbarUITests` (iPhone, iPad and Mac: `test-phone-ui`, `test-ui`, `test-mac-ui`): All Recordings… in the
+  overflow menu opens the recordings list; a note opens in Reading with both mode buttons off.
+  `MacNoteModeUITests` (`test-mac-ui`): Reading, Hand and Annotate with the mouse, by the buttons and the Tools keys.
+- `PhoneParityUITests.testNotebooksFoldAndUnfold`: the sidebar's chevron folds and unfolds a notebook's
+  sub-notebooks without opening it.
 - `PhoneCanvasUITests` (iPhone simulator UI tests, `scripts/app.sh test-phone-ui`, in
   `scripts/local-ci.sh --release`): a tap selects a picture and the other kinds without a dot, a
   hold shows the item's menu, strokes from the empty page and from an item still draw, a tap on the

@@ -89,7 +89,7 @@ struct MenuCommandTests {
 
     @Test func canvasCommandsNeedAnEditableCanvas() {
         var c = MenuCommand.Context(window: .note, vault: .unlocked, hasNote: true)
-        for command in [MenuCommand.toolPen, .toolEraser, .toggleRuler, .togglePalette, .addPage, .changePaper] {
+        for command in [MenuCommand.toolPen, .toolEraser, .toggleRuler, .toggleAnnotate, .toggleHand, .addPage, .changePaper] {
             #expect(!command.isEnabled(in: c), "\(command)")
         }
         c.hasPage = true
@@ -98,8 +98,8 @@ struct MenuCommandTests {
         #expect(MenuCommand.zoomIn.isEnabled(in: c))
         #expect(!MenuCommand.toolPen.isEnabled(in: c), "read-only: zoom works, tools do not")
         c.canEditNote = true
-        for command in [MenuCommand.toolPen, .toolMarker, .toolPencil, .toolEraser, .toolLasso, .toggleRuler, .togglePalette,
-                        .addPage, .changePaper, .undo, .redo] {
+        for command in [MenuCommand.toolPen, .toolMarker, .toolPencil, .toolEraser, .toolLasso, .toggleRuler, .toggleAnnotate,
+                        .toggleHand, .addPage, .changePaper, .undo, .redo] {
             #expect(command.isEnabled(in: c), "\(command)")
         }
         #expect(!MenuCommand.previousPage.isEnabled(in: c))
@@ -209,7 +209,7 @@ struct MenuParityTests {
 
     @Test func everyToolbarOnlyCommandIsInAMenu() {
         let added: [MenuCommand] = [.versionHistory, .addPage, .addPageAtEnd, .duplicatePage, .deletePage, .undoDeletePage,
-                                    .toggleLayout, .togglePageStrip, .toolText, .toolSelect, .eraserSmaller, .eraserLarger,
+                                    .toggleLayout, .togglePageStrip, .toolText, .toggleHand, .toggleAnnotate, .eraserSmaller, .eraserLarger,
                                     .toggleCompactPalette, .toggleVoiceNote]
         for command in added {
             #expect(MenuLayout.all.contains(command), "\(command)")
@@ -249,11 +249,11 @@ struct MenuParityTests {
         #expect(MenuCommand.undoDeletePage.isEnabled(in: c))
     }
 
-    @Test func textAndSelectNeedAPageToPutThingsOn() {
+    @Test func textAndTheModesNeedAPageToPutThingsOn() {
         var c = Self.editable()
-        #expect(MenuCommand.toolText.isEnabled(in: c) && MenuCommand.toolSelect.isEnabled(in: c))
+        #expect(MenuCommand.toolText.isEnabled(in: c) && MenuCommand.toggleHand.isEnabled(in: c) && MenuCommand.toggleAnnotate.isEnabled(in: c))
         c.hasPage = false
-        #expect(!MenuCommand.toolText.isEnabled(in: c) && !MenuCommand.toolSelect.isEnabled(in: c))
+        #expect(!MenuCommand.toolText.isEnabled(in: c) && !MenuCommand.toggleHand.isEnabled(in: c) && !MenuCommand.toggleAnnotate.isEnabled(in: c))
         #expect(MenuCommand.eraserLarger.isEnabled(in: c) && MenuCommand.toggleCompactPalette.isEnabled(in: c))
     }
 
@@ -282,7 +282,9 @@ struct MenuParityTests {
         #expect(MenuCommand.toggleCompactPalette.title(in: c) == MenuCommand.toggleCompactPalette.title)
         c.paletteCompact = true
         #expect(MenuCommand.toggleCompactPalette.title(in: c) != MenuCommand.toggleCompactPalette.title)
-        #expect(MenuCommand.togglePalette.title(in: c, paletteVisible: true) != MenuCommand.togglePalette.title(in: c, paletteVisible: false))
+        c.noteMode = .annotating
+        #expect(MenuCommand.toggleAnnotate.title(in: c) != MenuCommand.toggleAnnotate.title)
+        c.noteMode = .reading
         #expect(MenuCommand.toggleVoiceNote.title(in: c) == MenuCommand.toggleVoiceNote.title)
         c.voiceNote = .recording
         #expect(MenuCommand.toggleVoiceNote.title(in: c) != MenuCommand.toggleVoiceNote.title)

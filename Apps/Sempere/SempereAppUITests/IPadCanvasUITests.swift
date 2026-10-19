@@ -85,6 +85,8 @@ final class IPadCanvasUITests: XCTestCase {
         var env = ["SEMPERE_DEMO": "1", "SEMPERE_DEBUG_COLUMNS": columns, "SEMPERE_DEMO_NOTE": "thoughts",
                    "SEMPERE_DEMO_ITEMS": "1", "TZ": "UTC"]
         if pencilOnly { env["SEMPERE_DEBUG_PENCIL_ONLY"] = "1" }
+        // Notes open in reading (`NoteMode`); these tests are about Annotate and Hand, so they start annotating.
+        env["SEMPERE_DEBUG_NOTE_MODE"] = "annotate"
         app.launchEnvironment = env
         // Portrait: the page is narrower, so every demo item is on screen at the fitted width.
         #if !targetEnvironment(macCatalyst)
@@ -150,7 +152,15 @@ final class IPadCanvasUITests: XCTestCase {
         return nil
     }
 
-    /// The toolbar toggle titled `title` (Select, Text).
+    /// The top bar's Hand (selection mode, `NoteMode.hand`).
+    @MainActor
+    private func handButton(_ app: XCUIApplication) -> XCUIElement {
+        let hand = app.descendants(matching: .any).matching(identifier: "handButton").firstMatch
+        XCTAssertTrue(hand.waitForExistence(timeout: 10), "the Hand button")
+        return hand
+    }
+
+    /// The toolbar toggle titled `title` (Text).
     @MainActor
     private func toolbarToggle(_ app: XCUIApplication, _ title: String) -> XCUIElement {
         let candidates = [app.buttons[title], app.switches[title], app.toggles[title]]
@@ -174,14 +184,14 @@ final class IPadCanvasUITests: XCTestCase {
 
     // MARK: Tests
 
-    /// Selection mode: a tap selects with no menu and shows the bar; a held finger shows the
+    /// Selection mode (the Hand): a tap selects with no menu and shows the bar; a held finger shows the
     /// item's menu (with Delete) and not PencilKit's; a tap on the empty page dismisses it.
     @MainActor
     func testATapSelectsAndAHoldShowsTheItemMenu() throws {
         let app = launch()
         defer { app.terminate() }
         guard let canvas = canvas(app) else { return XCTFail("no canvas reports the demo items") }
-        toolbarToggle(app, "Select").tap()
+        handButton(app).tap()
         Thread.sleep(forTimeInterval: 1)
         guard let image = middle(of: "image", on: canvas, app: app) else { return XCTFail("no image") }
         image.tap()
@@ -229,7 +239,7 @@ final class IPadCanvasUITests: XCTestCase {
         let app = launch()
         defer { app.terminate() }
         guard let canvas = canvas(app) else { return XCTFail("no canvas reports the demo items") }
-        toolbarToggle(app, "Select").tap()
+        handButton(app).tap()
         Thread.sleep(forTimeInterval: 1)
         middle(of: "math", on: canvas, app: app)?.tap()
         guard let r1 = waitReport(canvas, "the equation is selected", { $0.selected == "math" && $0.bar }) else { return }

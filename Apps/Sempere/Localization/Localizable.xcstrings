@@ -3331,6 +3331,42 @@
         }
       }
     },
+    "Annotate: draw on the page with a finger" : {
+      "comment" : "Tooltip of the Annotate button on the iPhone",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anotar: dibuja en la página con el dedo"
+          }
+        }
+      }
+    },
+    "Annotate: draw on the page with the mouse; Drawing Tools picks the tool" : {
+      "comment" : "Tooltip of the Annotate button on the Mac",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anotar: dibuja en la página con el ratón; Herramientas de dibujo elige la herramienta"
+          }
+        }
+      }
+    },
+    "Annotate: draw on the page with the tool palette; press and hold for the compact palette" : {
+      "comment" : "Tooltip of the Annotate button on the iPad and the Mac",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anotar: dibuja en la página con la paleta de herramientas; mantén pulsado para la paleta compacta"
+          }
+        }
+      }
+    },
     "Another Vault Is Open" : {
       "comment" : "Note window: its vault is not the open one",
       "extractionState" : "manual",
@@ -3718,6 +3754,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hacer copia ahora"
+          }
+        }
+      }
+    },
+    "Back to Reading" : {
+      "comment" : "Tools menu: leave Annotate or Hand mode for reading",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a lectura"
           }
         }
       }
@@ -7207,6 +7255,18 @@
         }
       }
     },
+    "Fold %@" : {
+      "comment" : "Sidebar on an iPhone: hide a notebook's sub-notebooks (the notebook's name)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plegar %@"
+          }
+        }
+      }
+    },
     "Folder" : {
       "comment" : "New vault form: the chosen folder",
       "extractionState" : "manual",
@@ -7479,6 +7539,18 @@
         }
       }
     },
+    "Go to another page, add, duplicate or delete one, show the thumbnails, or switch the layout" : {
+      "comment" : "Tooltip of the Pages menu in the note's overflow menu",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ve a otra página, añade, duplica o elimina una, muestra las miniaturas o cambia la disposición"
+          }
+        }
+      }
+    },
     "Go to another page, or add one" : {
       "comment" : "Help tag of the Pages menu (iPhone)",
       "extractionState" : "manual",
@@ -7547,6 +7619,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mano"
+          }
+        }
+      }
+    },
+    "Hand: click an item to select it, drag to move or resize it; nothing draws" : {
+      "comment" : "Tooltip of the Hand button on the Mac",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mano: haz clic en un elemento para seleccionarlo, arrástralo para moverlo o cambiar su tamaño; no se dibuja nada"
           }
         }
       }
@@ -7869,6 +7953,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ocultar la lista de notas para ver el lienzo a todo el ancho"
+          }
+        }
+      }
+    },
+    "Hide the sub-notebooks" : {
+      "comment" : "Tooltip of a notebook's chevron in the iPhone's sidebar",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ocultar los subcuadernos"
           }
         }
       }
@@ -9267,6 +9363,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lista"
+          }
+        }
+      }
+    },
+    "List this note's recordings: play, transcribe, rename or delete them" : {
+      "comment" : "Tooltip of All Recordings… in the note's overflow menu",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lista las grabaciones de esta nota: reprodúcelas, transcríbelas, cámbiales el nombre o elimínalas"
           }
         }
       }
@@ -15840,6 +15948,18 @@
         }
       }
     },
+    "Show the sub-notebooks" : {
+      "comment" : "Tooltip of a notebook's chevron in the iPhone's sidebar",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar los subcuadernos"
+          }
+        }
+      }
+    },
     "Shown in Another Window" : {
       "comment" : "Detail pane: another library window shows the note's canvas",
       "extractionState" : "manual",
@@ -19723,6 +19843,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Deshacer eliminar página"
+          }
+        }
+      }
+    },
+    "Unfold %@" : {
+      "comment" : "Sidebar on an iPhone: show a notebook's sub-notebooks (the notebook's name)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desplegar %@"
           }
         }
       }

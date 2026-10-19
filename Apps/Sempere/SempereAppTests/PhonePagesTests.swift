@@ -10,36 +10,36 @@ import Sempere
 /// at phone size and the paper picker's compact layout. The rules are plain values and run on
 /// every destination; the view checks follow the destination's idiom (`Platform.isPhone`), so the
 /// iPhone simulator run exercises the phone side.
-struct PhonePageMenuTests {
+struct PageMenuTests {
     @Test func aPagedEditableNoteOffersEveryPageAction() {
-        let entries = PhonePageMenu.entries(readOnly: false, pageless: false, pageCount: 3, hasDeletedPages: false)
+        let entries = PageMenu.entries(readOnly: false, pageless: false, pageCount: 3, hasDeletedPages: false)
         #expect(entries == [.addAfter, .addAtEnd, .insertPDF, .duplicate, .delete, .thumbnails, .layout])
     }
 
     @Test func undoDeleteAppearsOnlyAfterADeletion() {
-        let entries = PhonePageMenu.entries(readOnly: false, pageless: false, pageCount: 3, hasDeletedPages: true)
+        let entries = PageMenu.entries(readOnly: false, pageless: false, pageCount: 3, hasDeletedPages: true)
         #expect(entries.contains(.undoDelete))
         #expect(entries.firstIndex(of: .undoDelete)! > entries.firstIndex(of: .delete)!)
     }
 
     @Test func aPagelessNoteOnlyOffersTheWayBackToPages() {
-        #expect(PhonePageMenu.entries(readOnly: false, pageless: true, pageCount: 1, hasDeletedPages: true) == [.layout])
-        #expect(PhonePageMenu.entries(readOnly: true, pageless: true, pageCount: 1, hasDeletedPages: false).isEmpty)
+        #expect(PageMenu.entries(readOnly: false, pageless: true, pageCount: 1, hasDeletedPages: true) == [.layout])
+        #expect(PageMenu.entries(readOnly: true, pageless: true, pageCount: 1, hasDeletedPages: false).isEmpty)
     }
 
     @Test func aReadOnlyNoteMayShowThumbnailsButChangesNothing() {
-        #expect(PhonePageMenu.entries(readOnly: true, pageless: false, pageCount: 4, hasDeletedPages: true) == [.thumbnails])
-        #expect(PhonePageMenu.entries(readOnly: true, pageless: false, pageCount: 1, hasDeletedPages: false).isEmpty)
+        #expect(PageMenu.entries(readOnly: true, pageless: false, pageCount: 4, hasDeletedPages: true) == [.thumbnails])
+        #expect(PageMenu.entries(readOnly: true, pageless: false, pageCount: 1, hasDeletedPages: false).isEmpty)
     }
 }
 
 struct PhoneSwipeTests {
     @Test func aSwipeTurnsPagesOnlyWhileReadingAFittedPagedNote() {
-        #expect(PhoneReading.swipeTurnsPages(isPhone: true, drawingSuspended: true, zoomed: false, pageCount: 3))
-        #expect(!PhoneReading.swipeTurnsPages(isPhone: true, drawingSuspended: false, zoomed: false, pageCount: 3), "annotating")
-        #expect(!PhoneReading.swipeTurnsPages(isPhone: true, drawingSuspended: true, zoomed: true, pageCount: 3), "zoomed: pans")
-        #expect(!PhoneReading.swipeTurnsPages(isPhone: true, drawingSuspended: true, zoomed: false, pageCount: 1), "one page")
-        #expect(!PhoneReading.swipeTurnsPages(isPhone: false, drawingSuspended: true, zoomed: false, pageCount: 3), "iPad and Mac")
+        #expect(PhoneReading.swipeTurnsPages(isPhone: true, reading: true, zoomed: false, pageCount: 3))
+        #expect(!PhoneReading.swipeTurnsPages(isPhone: true, reading: false, zoomed: false, pageCount: 3), "annotating")
+        #expect(!PhoneReading.swipeTurnsPages(isPhone: true, reading: true, zoomed: true, pageCount: 3), "zoomed: pans")
+        #expect(!PhoneReading.swipeTurnsPages(isPhone: true, reading: true, zoomed: false, pageCount: 1), "one page")
+        #expect(!PhoneReading.swipeTurnsPages(isPhone: false, reading: true, zoomed: false, pageCount: 3), "iPad and Mac")
     }
 
     @Test func leftIsForwardRightIsBackAndTheEndsStay() {

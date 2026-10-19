@@ -120,12 +120,12 @@ the Insert menu's entry does. Imports file new notes under the sidebar's noteboo
 | Note | Duplicate Item, Bring Item to Front, Delete Item (the item selected on the canvas; off while nothing is selected, the note is read-only, and Delete Item also while a text field may have focus) | ⌘D, ⌥⇧⌘F, ⌃⌘⌫ |
 | Note | Move to Recently Deleted | ⌘⌫ |
 | Note | Restore Note | (none) |
-| Tools | Pen, Marker, Pencil, Eraser, Lasso | ⌥⌘1 … ⌥⌘5 |
-| Tools | Text, Select (flip the toolbar toggles) | ⌥⌘6, ⌥⌘7 |
+| Tools | Annotate, Hand (the top bar's mode buttons; "Back to Reading" while that mode is on) | ⇧⌘P, ⌥⌘7 |
+| Tools | Pen, Marker, Pencil, Eraser, Lasso (switch to Annotate) | ⌥⌘1 … ⌥⌘5 |
+| Tools | Text (the toolbar's toggle; switches to Annotate) | ⌥⌘6 |
 | Tools | Smaller / Larger Object Eraser (steps through the presets) | ⌥⌘[, ⌥⌘] |
 | Tools | Ruler (straight lines with a mouse) | ⌥⌘R |
 | Tools | Use Compact / Full Palette | ⌥⇧⌘P |
-| Tools | Show or Hide Tool Palette | ⇧⌘P |
 | View | Show or Hide Pages (thumbnails) | ⌃⌘T |
 | View | Zoom In, Zoom Out | ⌘=, ⌘- |
 | View | Fit Page Width, Actual Size | ⌘0, ⌘1 |
@@ -145,8 +145,8 @@ command does nothing there.
 Catalyst app: Apple's documentation says so, and a bare `PKCanvasView` that is the first responder
 with `setVisible(true, forFirstResponder:)` shows none on macOS 27 either (`isVisible` stays false).
 The picker still holds the selected tool, which the Tools menu and the toolbar's Drawing Tools menu
-(the iPad's palette button, `EditorView.macToolsMenu`) change. Ink color and width have no control on
-a Mac yet; Show/Hide Tool Palette only changes the setting the iPad reads.
+(`EditorView.macToolsMenu`, beside Annotate while annotating: `NoteToolbar.Item.drawingTools`) change.
+Ink color and width have no control on a Mac yet.
 
 **Settings….** UIKit also builds the app menu's Settings… (⌘,), which would
 open a pane Catalyst generates (touch alternatives and system items only).
@@ -159,11 +159,30 @@ checks the built menu bar (one Settings… on ⌘,, no `orderFrontPreferencesPan
 and `MacWindowUITests.testCommandCommaOpensTheAppsSettings` presses ⌘, in the
 running app.
 
-Placed items (images, text boxes, PDF pages, videos, recordings' cards): the mouse always draws,
-so a right-click (or two-finger click) on an item selects it and shows its
+## Reading, Hand and Annotate
+
+A note opens in **reading** mode on the Mac as on the iPad and the iPhone (`NoteMode`, one value per
+window in `WindowUI.noteMode`; docs/iphone.md "The note view" has the table for every device). The top
+bar's pencil ("Annotate") and Hand show it, at most one lit; a click on the lit one goes back to reading,
+on the other one switches straight to its mode. Tools > Annotate (⇧⌘P) and Tools > Hand (⌥⌘7) are the
+same buttons (their title says "Back to Reading" while their mode is on); a tool picked from the Tools
+menu (Pen, Marker…, Text) switches to Annotate.
+
+| Mode | The mouse and trackpad | Palette |
+|------|------------------------|---------|
+| Reading | the wheel and a two-finger swipe scroll (a click-drag scrolls the pages); nothing draws, a click selects nothing, the pointer is the system arrow | hidden |
+| Hand | a click selects an item (secondary click: its menu), a drag moves or resizes it; nothing draws | hidden |
+| Annotate | draws with the chosen tool | none on a Mac: the toolbar's Drawing Tools menu and the Tools menu pick the tool |
+
+The Show/Hide Tool Palette button and its command are gone (Annotate is the palette on the iPad;
+PencilKit shows none on a Mac, below). The palette has no Hand on any device. `MacNoteModeUITests` drives
+the three modes with the mouse.
+
+Placed items (images, text boxes, PDF pages, videos, recordings' cards): while annotating the mouse
+draws, so a right-click (or two-finger click) on an item selects it and shows its
 menu (Crop…, Replace Image, Delete…) without leaving the drawing tool; a click
-with the lasso selects it (without the menu, as every click), and Select in the
-toolbar turns selection mode on (`docs/attachments.md` §13 "Selecting items").
+with the lasso selects it (without the menu, as every click), and the Hand
+turns selection mode on (`docs/attachments.md` §13 "Selecting items").
 
 With an item selection on, the mouse and trackpad work the items:
 
@@ -214,7 +233,7 @@ A recording that stops is placed on the page as a card (`format.md` §8.2.9)
 whose play/pause button is a real `UIButton` in the canvas
 (`AudioCardControls`), like the page footer's, so a mouse click plays it
 without drawing. The note's recordings are listed by Note > Recordings… (⌃⌘R),
-the note's "…" menu and the Recordings menu (`RecordingsListView`): play or
+and the overflow menu's All Recordings… (`RecordingsListView`, on every device): play or
 pause, place on this page, transcript, transcribe, rename, delete.
 
 Export hands its file to the system through `ExportHandOff`. On a Mac the share
@@ -234,8 +253,8 @@ note with a recording and calls the callbacks off the main thread.
   and one note on the canvas, as on the iPad.
 * **Note windows** (`WindowGroup(for: NoteWindowValue.self)`): one note each,
   opened from the note's context menu or File > Open Note in New Window (⌥⌘N).
-  Its toolbar has the library canvas's note actions (Rename…, Export, Save
-  Version…, Version History…, Tags). UIKit's New Window is removed (see
+  Its toolbar is the library canvas's (`NoteToolbar`, the same order and set),
+  without Keep Screen On (the idle timer follows the library window's note). UIKit's New Window is removed (see
   "UIKit's own items"). `MacWindowUITests` opens a note window both ways on
   Catalyst and checks that no second library window appears.
   `NoteWindowValue` is `Codable` (vault id and note id, no path), so SwiftUI
@@ -325,7 +344,7 @@ is the first responder, the window's keyboard focus is not on a list row, and th
 window is key); a stroke on a canvas always takes it. So a field keeps the keyboard
 until the user leaves it, the arrow keys keep moving the sidebar or list that has the
 keyboard focus, and the palette appears when the note opens with nothing else typed in,
-or at the first stroke. Turning the palette on (the toolbar button, Show Tool Palette) gives the
+or at the first stroke. Turning the palette on (Annotate) gives the
 current page's canvas the focus too: the user asked for the palette, which shows only for the
 first responder, so on an iPad with the note list holding the focus the button used to flip its
 icon and show nothing (TestFlight 1.0.0 (6); `PaletteButtonUITests`). A note window updating in the background takes nothing; it gives

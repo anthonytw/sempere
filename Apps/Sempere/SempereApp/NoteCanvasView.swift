@@ -9,7 +9,6 @@ struct NoteCanvasView: View {
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(ColumnLayout.key) private var storedColumns = "all"
     @Environment(WindowUI.self) private var ui
-    @AppStorage(KeepScreenOn.key) private var keepScreenOn = KeepScreenOn.defaultValue
 
     var body: some View {
         Group {
@@ -71,29 +70,21 @@ struct NoteCanvasView: View {
                     .accessibilityHint("Renames the note")
                     .help("Rename the note (or press and hold)")
                 }
-                ToolbarItem(placement: .secondaryAction) {
-                    Button("Rename…", systemImage: "pencil") { startRename(note) }
-                        .help("Rename the note")
-                }
-                ToolbarItem(placement: .secondaryAction) {
-                    ExportMenu(ids: [note.id])
-                }
-                ToolbarItem(placement: .secondaryAction) {
-                    Button("Save Version…", systemImage: "bookmark") { ui.saveVersionNoteID = note.id }
-                        .disabled(note.deleted)
-                        .help("Save this version of the note under a name; saved versions are never thinned")
-                }
-                ToolbarItem(placement: .secondaryAction) {
-                    Button("Version History…", systemImage: "clock.arrow.circlepath") { ui.historyNoteID = note.id }
-                        .help("Browse earlier versions of the note and restore one")
-                }
-                ToolbarItem(placement: .secondaryAction) {
-                    Toggle("Keep Screen On", systemImage: "sun.max", isOn: $keepScreenOn)
-                        .help("Keep the screen awake while this note is open")
-                }
-                ToolbarItem(placement: Platform.isPhone ? .secondaryAction : .primaryAction) {
-                    Button("Tags", systemImage: note.tags.isEmpty ? "tag" : "tag.fill") { ui.tagsNoteID = note.id }
-                        .help("Edit the note's tags")
+                // With the note open, these are in the editor's toolbar (`NoteToolbar`: one order on every
+                // device); here only while it is not (opening, downloading, could not open: its history is
+                // still there to restore from).
+                if !showsEditor(note) {
+                    ToolbarItem(placement: .secondaryAction) {
+                        Button("Rename…", systemImage: "pencil") { startRename(note) }
+                            .help("Rename the note")
+                    }
+                    ToolbarItem(placement: .secondaryAction) {
+                        ExportMenu(ids: [note.id])
+                    }
+                    ToolbarItem(placement: .secondaryAction) {
+                        Button("Version History…", systemImage: "clock.arrow.circlepath") { ui.historyNoteID = note.id }
+                            .help("Browse earlier versions of the note and restore one")
+                    }
                 }
             }
             if !Platform.isPhone {   // the stack's back button is the way to the list
@@ -128,6 +119,11 @@ struct NoteCanvasView: View {
         var epoch: Int
     }
 
+    /// Whether the detail pane shows `note`'s editor (whose toolbar then has the note's actions).
+    private func showsEditor(_ note: NoteSummary) -> Bool {
+        !model.windowClaims.contains(note.id) && model.canvasWindow == ui.id && model.editor?.noteID == note.id
+    }
+
     /// Opens the rename alert (`AppModel.renameNote`, one `setMeta(.title)` delta).
     private func startRename(_ note: NoteSummary) {
         guard ui.renameNoteID == nil else { return }
@@ -145,13 +141,9 @@ struct EditorView: View {
     /// text tool (a tap edits a text box or starts a new one, once:
     /// `TextBoxEditorController`, `CanvasModes`), or drawing.
     @State private var modes = CanvasModes()
-    /// PencilKit's palette floats above sheets; it hides while a notice or the tour is up.
-    @AppStorage(ToolPalette.visibleKey) private var paletteVisible = true
     @AppStorage(ToolPalette.compactKey) private var paletteCompact = false
     @AppStorage(ObjectEraserSize.defaultsKey) private var eraserRadius = ObjectEraserSize.defaultRadius
-    /// iPhone only: reading, Hand or annotating (`PhoneCanvasMode`, the top bar's pencil and Hand).
-    /// A note opens in reading mode. The iPad and the Mac ignore it.
-    @State private var phoneMode = PhoneCanvasMode.initial
+    @AppStorage(KeepScreenOn.key) private var keepScreenOn = KeepScreenOn.defaultValue
     @AppStorage(PageStrip.visibleKey) private var stripVisible = false
     /// Deleted pages the undo banner has already been shown for.
     @State private var undoBannerFor = 0
@@ -199,11 +191,11 @@ struct EditorView: View {
                               pageJump: editor.pageJump,
                               paletteVisible: canvasPaletteVisible,
                               paletteCompact: PhoneReading.paletteCompact(isPhone: Platform.isPhone, stored: paletteCompact),
-                              drawingSuspended: PhoneReading.drawingSuspended(isPhone: Platform.isPhone, mode: phoneMode),
+                              input: modeInput,
                               generation: editor.canvasGeneration,
                               itemSource: model.itemLayerSource, itemCommands: itemCommands,
                               selectingItems: canvasSelectingItems, onSelectingItemsEnded: selectingItemsEnded,
-                              onHandToolPicked: handToolPicked,
+                              onPencilAnnotate: pencilTouched,
                               addingText: modes.addingText, onAddingTextEnded: { modes.textToolEnded($0) },
                               onDrop: editor.isReadOnly ? nil : { providers, page, point in
                                   EditorInsert.add(providers, to: editor, page: page, at: point, model: model, ui: ui, state: insert)
@@ -213,11 +205,11 @@ struct EditorView: View {
                 PageCanvasView(editor: editor, pageID: page.id, paper: editor.displayedPaper(of: page), pageSize: editor.pageSize,
                                paletteVisible: canvasPaletteVisible,
                                paletteCompact: PhoneReading.paletteCompact(isPhone: Platform.isPhone, stored: paletteCompact),
-                               drawingSuspended: PhoneReading.drawingSuspended(isPhone: Platform.isPhone, mode: phoneMode),
+                               input: modeInput,
                                generation: editor.canvasGeneration,
                                itemSource: model.itemLayerSource, itemCommands: itemCommands,
                                selectingItems: canvasSelectingItems, onSelectingItemsEnded: selectingItemsEnded,
-                               onHandToolPicked: handToolPicked,
+                               onPencilAnnotate: pencilTouched,
                                addingText: modes.addingText, onAddingTextEnded: { modes.textToolEnded($0) },
                                onDrop: editor.isReadOnly ? nil : { providers, page, point in
                                    EditorInsert.add(providers, to: editor, page: page, at: point, model: model, ui: ui, state: insert)
@@ -281,21 +273,31 @@ struct EditorView: View {
                                 onChoose: { paper, choice in editor.setPaper(paper, allPages: choice == .allPages) })
             }
         }
+        // Every note opens in reading mode (on every device), the next one too; a view rebuilt for the same
+        // editor (a column layout change) keeps the mode.
+        .onAppear { startModeIfNewEditor() }
+        .onChange(of: ObjectIdentifier(editor)) { startModeIfNewEditor() }
         .onChange(of: editor.noteID) {
-            phoneMode = PhoneReading.modeAfterNoteChange()
+            ui.noteMode = Self.openingMode
+            ui.noteModeEditor = ObjectIdentifier(editor)
             modes.reset()
             showingTranscript = nil
             remoteNoticeFor = 0
         }
-        // Tools > Text and Select (Mac menu): the toolbar toggles of the same name.
+        // The text tool is one of Annotate's: leaving Annotate puts it down.
+        .onChange(of: ui.noteMode) { _, mode in
+            if mode != .annotating, modes.addingText { modes.reset() }
+        }
+        // Tools > Annotate, Hand and Text (Mac menu, keyboard): the toolbar buttons of the same name.
         .onChange(of: ui.toolRequest) { _, request in
             guard let request else { return }
             ui.toolRequest = nil
+            guard showsModeButtons else { return }
             switch request {
-            case .text: if !editor.isReadOnly, editor.currentPage != nil { modes.addingText.toggle() }
-            case .select:
-                guard showsItemSelection else { break }
-                if Platform.isPhone { phoneMode = phoneMode.tapping(.hand) } else { modes.selectingItems.toggle() }
+            case .annotate: ui.noteMode = ui.noteMode.tapping(.annotate)
+            case .hand: ui.noteMode = ui.noteMode.tapping(.hand)
+            case .draw: ui.noteMode = ui.noteMode.toolPicked()
+            case .text: toggleTextTool()
             }
         }
         .sheet(item: $showingTranscript) { TranscriptView(editor: editor, recording: $0) }
@@ -309,95 +311,125 @@ struct EditorView: View {
             }
         }
         .sheet(item: $renamingRecording) { RenameRecordingSheet(editor: editor, recording: $0) }
-        .toolbar {
-            if Platform.isPhone { phoneToolbar } else { fullToolbar }
-        }
+        .toolbar { noteToolbar }
     }
 
-    private var phoneItems: PhoneToolbar.Items {
-        PhoneToolbar.items(readOnly: editor.isReadOnly, mode: phoneMode, pageCount: editor.pages.count,
-                           hasPage: editor.currentPage != nil, pageEntries: !phonePageEntries.isEmpty)
+    /// The mode a note opens in: reading (`NoteMode.initial`), or a debug launch's (`SEMPERE_DEBUG_NOTE_MODE`).
+    static var openingMode: NoteMode {
+        #if DEBUG
+        if let mode = NoteMode.debugInitial(DebugLaunch.environment["SEMPERE_DEBUG_NOTE_MODE"]) { return mode }
+        #endif
+        return .initial
     }
 
-    /// The palette: the toolbar's setting, hidden under a notice or the tour, and on a phone only while annotating.
+    /// A note just opened in this window (a new editor): reading mode.
+    private func startModeIfNewEditor() {
+        let id = ObjectIdentifier(editor)
+        guard ui.noteModeEditor != id else { return }
+        ui.noteModeEditor = id
+        ui.noteMode = Self.openingMode
+        modes.reset()
+    }
+
+    /// What the mode lets the canvas do on this device.
+    private var modeInput: NoteModeInput { .of(ui.noteMode, on: .current) }
+
+    /// The palette: Annotate only, and hidden under a notice or the tour.
     private var canvasPaletteVisible: Bool {
-        PhoneReading.paletteVisible(isPhone: Platform.isPhone, mode: phoneMode, stored: paletteVisible && ui.expectations == nil)
+        modeInput.showsPalette && ui.expectations == nil
     }
 
-    /// Selection mode for the canvas: the Hand on a phone (not while the text tool is armed), the Select toggle elsewhere.
+    /// Selection mode for the canvas: the Hand (not while the text tool is armed).
     private var canvasSelectingItems: Bool {
-        PhoneReading.selectingItems(isPhone: Platform.isPhone, mode: phoneMode, selectToggle: modes.selectingItems)
-            && !modes.addingText
+        modeInput.selectingItems && !modes.addingText
     }
 
-    /// The canvas ended selection mode (a drawing tool was picked in the palette). On a phone the palette is
-    /// hidden in Hand mode, so this is only the canvas keeping the palette in step: the mode stays.
+    /// The canvas ended selection mode: a tool was picked (the Mac's Tools menu). Picking a tool is drawing.
     private func selectingItemsEnded() {
-        if !Platform.isPhone { modes.selectingItems = false }
+        if ui.noteMode == .hand { ui.noteMode = ui.noteMode.toolPicked() }
     }
 
-    /// The palette's Hand item was picked: selection mode (iPad: the Select toggle; iPhone: Hand mode,
-    /// `PhoneCanvasMode.handToolPicked`).
-    private func handToolPicked() {
-        if Platform.isPhone { phoneMode = phoneMode.handToolPicked() } else { modes.selectingItems = true }
+    /// A Pencil started drawing while reading or in Hand mode (an iPad): annotating, with that stroke.
+    private func pencilTouched() {
+        ui.noteMode = ui.noteMode.pencilTouched()
     }
 
-    /// One of the top bar's two mode buttons (iPhone): lit in its own mode; a tap on the lit one goes back
-    /// to reading, on the other one switches straight to that mode (`PhoneCanvasMode.tapping`).
-    private func modeToggle(_ button: PhoneCanvasMode.Button) -> some View {
-        let on = phoneMode.lights(button)
-        let binding = Binding(get: { phoneMode.lights(button) }, set: { _ in phoneMode = phoneMode.tapping(button) })
-        return Group {
-            switch button {
-            case .annotate:
-                Toggle("Annotate", systemImage: on ? "pencil.tip.crop.circle.fill" : "pencil.tip.crop.circle", isOn: binding)
-                    .help("Draw on the page with a finger")
-            case .hand:
-                Toggle("Hand", systemImage: on ? "hand.point.up.left.fill" : "hand.point.up.left", isOn: binding)
-                    .accessibilityIdentifier("handButton")
-                    .help("Hand: scroll with one finger, tap an item to select it, hold for its menu, drag to move it")
-            }
+    /// Arms or puts down the text tool; arming it from reading or Hand switches to Annotate (it is one of
+    /// Annotate's tools).
+    private func toggleTextTool() {
+        guard !editor.isReadOnly, editor.currentPage != nil else { return }
+        if ui.noteMode != .annotating {
+            ui.noteMode = ui.noteMode.toolPicked()
+            modes.addingText = true
+        } else {
+            modes.addingText.toggle()
         }
-        .toggleStyle(.button)
     }
 
-    /// The iPhone's toolbar: one pencil button for light annotation, page
-    /// controls in the bottom bar (in a menu while annotating, so the bar does
-    /// not sit on the palette), the rest in the overflow menu (`PhoneToolbar`).
+    /// What the toolbar is built from (`NoteToolbar`).
+    private var toolbarState: NoteToolbar.State {
+        NoteToolbar.State(device: .current, mode: ui.noteMode, readOnly: editor.isReadOnly,
+                          hasPage: editor.currentPage != nil, pageCount: editor.pages.count, pageless: editor.isPageless,
+                          hasRecordings: !editor.recordings.isEmpty, pageEntries: !pageEntries.isEmpty,
+                          noteWindow: model.windowEditors[editor.noteID] === editor)
+    }
+
+    /// The note: its summary in the list (title, tags, favorite, deleted).
+    private var note: NoteSummary? { model.notesByID[editor.noteID] }
+
+    /// One of the top bar's two mode buttons: lit in its own mode; a tap on the lit one goes back to reading,
+    /// on the other one switches straight to that mode (`NoteMode.tapping`). The iPad's pencil keeps the
+    /// compact palette in its menu (press and hold); an iPhone's palette is always the compact one, and a
+    /// Mac has no palette (Drawing Tools, `macToolsMenu`).
+    @ViewBuilder
+    private func modeButton(_ button: NoteMode.Button) -> some View {
+        let on = ui.noteMode.lights(button)
+        let binding = Binding(get: { ui.noteMode.lights(button) }, set: { _ in ui.noteMode = ui.noteMode.tapping(button) })
+        switch button {
+        case .annotate where !Platform.isPhone && !Platform.isMac:
+            Menu {
+                Toggle("Compact Palette", systemImage: "rectangle.compress.vertical", isOn: $paletteCompact)
+            } label: {
+                Label("Annotate", systemImage: on ? "pencil.tip.crop.circle.fill" : "pencil.tip.crop.circle")
+            } primaryAction: {
+                ui.noteMode = ui.noteMode.tapping(.annotate)
+            }
+            .accessibilityIdentifier("annotateButton")
+            .accessibilityValue(Text(verbatim: on ? "1" : "0"))
+            .accessibilityAddTraits(on ? .isSelected : [])
+            .help("Annotate: draw on the page with the tool palette; press and hold for the compact palette")
+        case .annotate:
+            Toggle("Annotate", systemImage: on ? "pencil.tip.crop.circle.fill" : "pencil.tip.crop.circle", isOn: binding)
+                .toggleStyle(.button)
+                .accessibilityIdentifier("annotateButton")
+                .help(Platform.isMac ? "Annotate: draw on the page with the mouse; Drawing Tools picks the tool"
+                                     : "Annotate: draw on the page with a finger")
+        case .hand:
+            Toggle("Hand", systemImage: on ? "hand.point.up.left.fill" : "hand.point.up.left", isOn: binding)
+                .toggleStyle(.button)
+                .accessibilityIdentifier("handButton")
+                .help(Platform.isMac ? "Hand: click an item to select it, drag to move or resize it; nothing draws"
+                                     : "Hand: scroll with one finger, tap an item to select it, hold for its menu, drag to move it")
+        }
+    }
+
+    /// Whether the mode buttons are offered (`NoteToolbar`: an editable note with a page).
+    private var showsModeButtons: Bool {
+        NoteToolbar.isAvailable(.annotate, in: toolbarState)
+    }
+
+    /// The note view's toolbar on every device (`NoteToolbar`): the top bar's items, then the overflow
+    /// menu's, in one order; the iPhone's page navigation in the bottom bar.
     @ToolbarContentBuilder
-    private var phoneToolbar: some ToolbarContent {
-        if phoneItems.writes {
-            ToolbarItem(placement: .primaryAction) { modeToggle(.annotate) }
-            if phoneItems.handButton {
-                ToolbarItem(placement: .primaryAction) { modeToggle(.hand) }
-            }
-            ToolbarItem(placement: .secondaryAction) {
-                Button("Paper…", systemImage: "square.grid.3x3") { ui.choosingPaper = true }
-                    .disabled(editor.currentPage == nil)
-                    .help("Choose the paper (ruling, color) of this page or all pages")
-            }
-            ToolbarItem(placement: .secondaryAction) { favoriteButton }
-            ToolbarItem(placement: .secondaryAction) { insertMenu }
+    private var noteToolbar: some ToolbarContent {
+        let state = toolbarState
+        ForEach(NoteToolbar.items(.bar, in: state), id: \.self) { item in
+            ToolbarItem(placement: .primaryAction) { toolbarView(item) }
         }
-        // The page actions (layout, add, duplicate, delete, undo, PDF at this page, thumbnails)
-        // are in this menu whether or not the pencil is on; while annotating it also turns pages,
-        // since the bottom bar gives way to the palette then. Right after Insert, high enough to
-        // be seen without scrolling the overflow menu.
-        if phoneItems.pagesMenu {
-            ToolbarItem(placement: .secondaryAction) {
-                Menu("Pages", systemImage: "doc.on.doc") { pageButtons }
-                    .help("Go to another page, add, duplicate or delete one, or show the thumbnails")
-            }
+        ForEach(NoteToolbar.items(.overflow, in: state), id: \.self) { item in
+            ToolbarItem(placement: .secondaryAction) { toolbarView(item) }
         }
-        if phoneItems.writes {
-            // The Recordings submenu ends with "All Recordings…" once the note has recordings.
-            ToolbarItem(placement: .secondaryAction) { recordingsMenu }
-            if phoneItems.writingTools {
-                ToolbarItem(placement: .secondaryAction) { textToolToggle }
-                ToolbarItem(placement: .secondaryAction) { eraserSizeMenu }
-            }
-        }
-        if phoneItems.pageBar {
+        if NoteToolbar.items(.bottomBar, in: state).contains(.pageNavigation) {
             ToolbarItemGroup(placement: .bottomBar) {
                 Button("Previous Page", systemImage: "chevron.left") { editor.selectPage(editor.pageIndex - 1) }
                     .disabled(editor.pageIndex == 0)
@@ -409,6 +441,77 @@ struct EditorView: View {
                     .disabled(editor.pageIndex + 1 >= editor.pages.count)
                     .help("Next page")
             }
+        }
+    }
+
+    /// One toolbar item (`NoteToolbar.Item`), wherever it is placed.
+    @ViewBuilder
+    private func toolbarView(_ item: NoteToolbar.Item) -> some View {
+        switch item {
+        case .annotate: modeButton(.annotate)
+        case .hand: modeButton(.hand)
+        case .drawingTools: macToolsMenu
+        case .text: textToolToggle
+        case .eraserSize: eraserSizeMenu
+        case .insert: insertMenu
+        case .recordings: recordingsMenu
+        case .favorite: favoriteButton
+        case .tags:
+            Button("Tags", systemImage: note?.tags.isEmpty == false ? "tag.fill" : "tag") { ui.tagsNoteID = editor.noteID }
+                .help("Edit the note's tags")
+        case .pageNavigation:
+            HStack {
+                Button("Previous Page", systemImage: "chevron.up") { editor.selectPage(editor.pageIndex - 1) }
+                    .disabled(editor.pageIndex == 0)
+                    .help("Previous page (⌘[)")
+                // Never squeezed: a narrow window's toolbar truncated "1 / 1" (PseudoLanguageLayoutTests).
+                pageCounter.fixedSize()
+                Button("Next Page", systemImage: "chevron.down") { editor.selectPage(editor.pageIndex + 1) }
+                    .disabled(editor.pageIndex + 1 >= editor.pages.count)
+                    .help("Next page (⌘])")
+            }
+            .fixedSize()
+        case .addPage:
+            // Tap: a page after this one. Press and hold: the other page actions.
+            Menu {
+                pageActionButtons
+            } label: {
+                Label("Add Page", systemImage: "doc.badge.plus")
+            } primaryAction: {
+                editor.addPageAfterCurrent()
+            }
+            .help("Add a page after this one; press and hold to duplicate, delete or add at the end")
+        case .thumbnails:
+            Button(LocalizedStringKey(stripVisible ? "Hide Pages" : "Show Pages"), systemImage: "sidebar.right") {
+                stripVisible.toggle()
+            }
+            .help("Page thumbnails: tap to go to a page, drag to reorder")
+        case .pages:
+            Menu("Pages", systemImage: "doc.on.doc") { pageButtons }
+                .help("Go to another page, add, duplicate or delete one, show the thumbnails, or switch the layout")
+        case .paper:
+            Button("Paper…", systemImage: "square.grid.3x3") { ui.choosingPaper = true }
+                .disabled(editor.currentPage == nil)
+                .help("Choose the paper (ruling, color) of this page or all pages")
+        case .allRecordings:
+            Button("All Recordings…", systemImage: "list.bullet") { ui.showingRecordings = true }
+                .accessibilityIdentifier("allRecordings")
+                .help("List this note's recordings: play, transcribe, rename or delete them")
+        case .rename:
+            Button("Rename…", systemImage: "pencil") { ui.renameNoteID = editor.noteID }
+                .help("Rename the note")
+        case .export:
+            ExportMenu(ids: [editor.noteID])
+        case .saveVersion:
+            Button("Save Version…", systemImage: "bookmark") { ui.saveVersionNoteID = editor.noteID }
+                .disabled(note?.deleted ?? false)
+                .help("Save this version of the note under a name; saved versions are never thinned")
+        case .versionHistory:
+            Button("Version History…", systemImage: "clock.arrow.circlepath") { ui.historyNoteID = editor.noteID }
+                .help("Browse earlier versions of the note and restore one")
+        case .keepScreenOn:
+            Toggle("Keep Screen On", systemImage: "sun.max", isOn: $keepScreenOn)
+                .help("Keep the screen awake while this note is open")
         }
     }
 
@@ -448,17 +551,12 @@ struct EditorView: View {
     }
 
     private var insertMenu: some View {
-        InsertMenu(editor: editor, state: insert, onAddText: { modes.addingText = true }) { providers in
+        InsertMenu(editor: editor, state: insert, onAddText: {
+            if ui.noteMode != .annotating { ui.noteMode = ui.noteMode.toolPicked() }
+            modes.addingText = true
+        }) { providers in
             EditorInsert.add(providers, to: editor, page: editor.currentPage?.id, at: nil, model: model, ui: ui, state: insert)
         }
-    }
-
-    /// Whether the Select toggle is offered: whenever the note can be edited
-    /// (always in the same place: a toggle that comes and goes with the
-    /// current page's items cannot be found; on a paged note the current page
-    /// is the one at the top of the screen, not the one with the photo).
-    private var showsItemSelection: Bool {
-        !editor.isReadOnly && editor.currentPage != nil
     }
 
     private var textToolToggle: some View {
@@ -467,24 +565,27 @@ struct EditorView: View {
             .help("Type text: tap the page for a new text box, or a text box to edit it")
     }
 
-    private var itemSelectionToggle: some View {
-        Toggle("Select", systemImage: "cursorarrow.rays", isOn: $modes.selectingItems)
-            .toggleStyle(.button)
-            .help("Select images, text boxes, PDF pages and videos to move, resize, crop, replace or delete them. While drawing: tap one with a finger or the lasso, hold a finger on it for its menu, or right-click it")
-    }
-
     private var pageCounter: some View {
         Text(verbatim: editor.pages.isEmpty ? "–" : "\(editor.pageIndex + 1) / \(editor.pages.count)")
             .monospacedDigit()
     }
 
-    /// What the iPhone's Pages menu offers besides turning pages.
-    private var phonePageEntries: [PhonePageMenu.Entry] {
-        PhonePageMenu.entries(readOnly: editor.isReadOnly, pageless: editor.isPageless,
-                              pageCount: editor.pages.count, hasDeletedPages: !editor.deletedPages.isEmpty)
+    /// What the Pages menu offers besides turning pages (`PageMenu`, every device).
+    private var pageEntries: [PageMenu.Entry] {
+        PageMenu.entries(readOnly: editor.isReadOnly, pageless: editor.isPageless,
+                         pageCount: editor.pages.count, hasDeletedPages: !editor.deletedPages.isEmpty)
     }
 
-    /// The iPhone's Pages menu (titles shown).
+    /// Add Page's menu (iPad and Mac, press and hold): the page actions besides the thumbnails and the layout.
+    @ViewBuilder
+    // help-lint: titled
+    private var pageActionButtons: some View {
+        ForEach(pageEntries.filter { $0 != .thumbnails && $0 != .layout }, id: \.self) { entry in
+            pageButton(entry)
+        }
+    }
+
+    /// The Pages menu (the overflow menu's, every device; titles shown).
     @ViewBuilder
     // help-lint: titled
     private var pageButtons: some View {
@@ -494,8 +595,8 @@ struct EditorView: View {
             Button("Next Page", systemImage: "chevron.down") { editor.selectPage(editor.pageIndex + 1) }
                 .disabled(editor.pageIndex + 1 >= editor.pages.count)
         }
-        ForEach(phonePageEntries, id: \.self) { entry in
-            phonePageButton(entry)
+        ForEach(pageEntries, id: \.self) { entry in
+            pageButton(entry)
         }
         Text(editor.pages.isEmpty ? "No pages" : "Page \(editor.pageIndex + 1) of \(editor.pages.count)")
     }
@@ -513,7 +614,7 @@ struct EditorView: View {
 
     @ViewBuilder
     // help-lint: titled
-    private func phonePageButton(_ entry: PhonePageMenu.Entry) -> some View {
+    private func pageButton(_ entry: PageMenu.Entry) -> some View {
         switch entry {
         case .addAfter:
             Button("Add Page After This One", systemImage: "doc.badge.plus") { editor.addPageAfterCurrent() }
@@ -564,19 +665,6 @@ struct EditorView: View {
         .help("Size of the object eraser; the pixel eraser's size is in the tool palette")
     }
 
-    /// The palette button (iPad). Tap: show or hide the palette. Press and hold: compact palette.
-    private var paletteToggle: some View {
-        Menu {
-            Toggle("Compact Palette", systemImage: "rectangle.compress.vertical", isOn: $paletteCompact)
-        } label: {
-            Label(LocalizedStringKey(paletteVisible ? "Hide Tool Palette" : "Show Tool Palette"),
-                  systemImage: paletteVisible ? "pencil.tip.crop.circle.fill" : "pencil.tip.crop.circle")
-        } primaryAction: {
-            paletteVisible.toggle()
-        }
-        .help("Show or hide the tool palette; press and hold for the compact palette")
-    }
-
     /// The Mac's tool button. PencilKit never shows its tool palette in a Mac Catalyst app (Apple's
     /// `PKToolPicker` documentation), so the iPad's palette button showed nothing there however often it
     /// was clicked (TestFlight 1.0.0 (6)). The Mac picks its tools from this menu instead: the Tools
@@ -589,115 +677,9 @@ struct EditorView: View {
             Divider()
             Button(MenuCommand.toggleRuler.title) { editor.canvasTarget?.toggleRuler() }
         } label: {
-            Label("Drawing Tools", systemImage: "pencil.tip.crop.circle")
+            Label("Drawing Tools", systemImage: "paintbrush.pointed")
         }
         .help("Pick the pen, marker, pencil, eraser or lasso (also in the Tools menu)")
-    }
-
-    /// The iPad's and the Mac's toolbar.
-    @ToolbarContentBuilder
-    private var fullToolbar: some ToolbarContent {
-            if !editor.isReadOnly {
-                ToolbarItem(placement: .secondaryAction) {
-                    Button("Paper…", systemImage: "square.grid.3x3") { ui.choosingPaper = true }
-                        .disabled(editor.currentPage == nil)
-                        .help("Choose the paper (ruling, color) of this page or all pages")
-                }
-                ToolbarItem(placement: .secondaryAction) {
-                    // Switching never deletes ink (format.md §5.4.3); it is one delta.
-                    Picker(selection: Binding(
-                        get: { editor.isPageless },
-                        set: { pageless in Task { await editor.setLayout(pageless: pageless) } })) {
-                        Label("Pages", systemImage: "doc.on.doc").tag(false)
-                        Label("Pageless", systemImage: "scroll").tag(true)
-                    } label: {
-                        Label("Page Layout", systemImage: "rectangle.split.1x2")
-                    }
-                    .pickerStyle(.menu)
-                    .help("Switch between pages and one endless page")
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    if Platform.isMac {
-                        macToolsMenu
-                    } else {
-                        paletteToggle
-                    }
-                }
-            }
-            ToolbarItem(placement: .primaryAction) { favoriteButton }
-            if !editor.isReadOnly, editor.currentPage != nil {
-                ToolbarItem(placement: .primaryAction) { textToolToggle }
-            }
-            if !editor.isReadOnly {
-                ToolbarItem(placement: .primaryAction) { insertMenu }
-            }
-            if !editor.isReadOnly || !editor.recordings.isEmpty {
-                ToolbarItem(placement: .primaryAction) { recordingsMenu }
-            }
-            if showsItemSelection {
-                ToolbarItem(placement: .primaryAction) { itemSelectionToggle }
-            }
-            if !editor.isReadOnly {
-                ToolbarItem(placement: .primaryAction) {
-                    // PencilKit's object eraser has no size; the app's does (ObjectEraser.swift).
-                    Menu {
-                        Picker("Object Eraser Size", selection: $eraserRadius) {
-                            ForEach(ObjectEraserSize.radii, id: \.self) { r in
-                                Text("\(ObjectEraserSize.name(of: r)) – \(Int(r)) pt").tag(r)
-                            }
-                        }
-                        .pickerStyle(.inline)
-                    } label: {
-                        Label("Object Eraser Size", systemImage: "eraser.line.dashed")
-                    }
-                    .help("Size of the object eraser; the pixel eraser's size is in the tool palette")
-                }
-            }
-            // A pageless note may hold several pages after concurrent edits (format.md §5.4.3): they can be browsed.
-            if editor.pages.count > 1 || (!editor.isReadOnly && !editor.isPageless) {
-                ToolbarItemGroup(placement: .primaryAction) {
-                    Button("Previous Page", systemImage: "chevron.up") { editor.selectPage(editor.pageIndex - 1) }
-                        .disabled(editor.pageIndex == 0)
-                        .help("Previous page (⌘[)")
-                    Text(verbatim: editor.pages.isEmpty ? "–" : "\(editor.pageIndex + 1) / \(editor.pages.count)")
-                        .monospacedDigit()
-                    Button("Next Page", systemImage: "chevron.down") { editor.selectPage(editor.pageIndex + 1) }
-                        .disabled(editor.pageIndex + 1 >= editor.pages.count)
-                        .help("Next page (⌘])")
-                    if !editor.isReadOnly && !editor.isPageless {
-                        // Tap: a page after this one. Press and hold: the other page actions.
-                        Menu {
-                            Button("Add Page After This One", systemImage: "doc.badge.plus") { editor.addPageAfterCurrent() }
-                            Button("Add Page at End", systemImage: "arrow.down.to.line") { editor.addPage() }
-                            Button(InsertOptions.pdfPagesTitle(pageless: false, pageIndex: editor.pageIndex,
-                                                               pageCount: editor.pages.count),
-                                   systemImage: "doc.richtext") {
-                                insert.fileImport = .pdf
-                                insert.pickingFile = true
-                            }
-                            if let page = editor.currentPage {
-                                Button("Duplicate Page", systemImage: "plus.square.on.square") { editor.duplicatePage(page.id) }
-                                Button("Delete Page", systemImage: "trash", role: .destructive) { editor.deletePage(page.id) }
-                                    .disabled(!editor.canDeletePage)
-                            }
-                            if !editor.deletedPages.isEmpty {
-                                Button("Undo Delete Page", systemImage: "arrow.uturn.backward") { editor.undoDeletePage() }
-                            }
-                        } label: {
-                            Label("Add Page", systemImage: "doc.badge.plus")
-                        } primaryAction: {
-                            editor.addPageAfterCurrent()
-                        }
-                        .help("Add a page after this one; press and hold to duplicate, delete or add at the end")
-                    }
-                    if !editor.isPageless {
-                        Button(LocalizedStringKey(stripVisible ? "Hide Pages" : "Show Pages"), systemImage: "sidebar.right") {
-                            stripVisible.toggle()
-                        }
-                        .help("Page thumbnails: tap to go to a page, drag to reorder")
-                    }
-                }
-            }
     }
 }
 

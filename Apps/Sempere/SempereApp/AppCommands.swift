@@ -12,7 +12,6 @@ struct RecentItem: Identifiable, Hashable {
 struct CommandRouter {
     var context: MenuCommand.Context
     var recents: [RecentItem] = []
-    var paletteVisible = true
     /// The notes File > Export acts on: the list's selection in a library
     /// window, the window's note in a note window.
     var exportIDs: [UUID] = []
@@ -102,7 +101,7 @@ struct AppCommands: Commands {
     @ViewBuilder
     private func item(_ command: MenuCommand) -> some View {
         let enabled = router.map { command.isEnabled(in: $0.context) } ?? (command == .showLibrary || command == .showSettings)
-        let title = command.title(in: router?.context, paletteVisible: router?.paletteVisible == true)
+        let title = command.title(in: router?.context)
         let button = Button(title) { run(command) }.disabled(!enabled)
         if let shortcut = command.shortcut {
             button.keyboardShortcut(shortcut.key == MenuCommand.Shortcut.backspace ? KeyEquivalent.delete : KeyEquivalent(shortcut.key),
@@ -162,8 +161,10 @@ enum EditorCommands {
             if let editor { Task { await editor.setLayout(pageless: !editor.isPageless) } }
         case .toolText:
             if editor != nil { ui.toolRequest = .text }
-        case .toolSelect:
-            if editor != nil { ui.toolRequest = .select }
+        case .toggleAnnotate:
+            if editor != nil { ui.toolRequest = .annotate }
+        case .toggleHand:
+            if editor != nil { ui.toolRequest = .hand }
         case .eraserSmaller, .eraserLarger:
             ObjectEraserSize.save(ObjectEraserSize.step(ObjectEraserSize.load(), larger: command == .eraserLarger))
         case .toggleCompactPalette:
@@ -171,11 +172,12 @@ enum EditorCommands {
         case .togglePageStrip:
             UserDefaults.standard.set(!PageStrip.isVisible(), forKey: PageStrip.visibleKey)
         case .toolPen, .toolMarker, .toolPencil, .toolEraser, .toolLasso:
-            if let tool = ToolChoice(command) { editor?.canvasTarget?.select(tool: tool) }
+            // A tool is for drawing: the note goes to Annotate (`NoteMode.toolPicked`) if it is not there.
+            if let tool = ToolChoice(command), let editor, editor.canvasTarget?.select(tool: tool) == true {
+                ui.toolRequest = .draw
+            }
         case .toggleRuler:
             editor?.canvasTarget?.toggleRuler()
-        case .togglePalette:
-            UserDefaults.standard.set(!ToolPalette.isVisible(), forKey: ToolPalette.visibleKey)
         case .zoomIn:
             editor?.canvasTarget?.zoom(in: true)
         case .zoomOut:
@@ -286,6 +288,11 @@ final class WindowUI {
     var expectations: ExpectationsSheet?
     /// A menu command for the editor's toolbar toggles (`ToolRequest`), taken by the window's editor.
     var toolRequest: ToolRequest?
+    /// The open note's mode in this window (`NoteMode`, the top bar's pencil and Hand): the menu bar
+    /// reads it for its titles. `EditorView` sets it back to `NoteMode.initial` for every note it opens.
+    var noteMode = NoteMode.initial
+    /// The editor `noteMode` belongs to: a new one (a note opened) starts in `NoteMode.initial`.
+    var noteModeEditor: ObjectIdentifier?
     /// The note whose Version History sheet is open (`WindowSheets`).
     var historyNoteID: UUID?
 }
@@ -296,8 +303,8 @@ enum InsertRequest: Equatable {
     case photos, pdfPages
 }
 
-/// Tools > Text and Select: the editor flips the toolbar toggle of the same name,
-/// then clears the request.
+/// Tools > Annotate, Hand and Text: the editor flips the toolbar button of the same name; a tool
+/// picked from the menu (Pen, Marker…) switches to Annotate (`draw`). The editor then clears the request.
 enum ToolRequest: Equatable {
-    case text, select
+    case text, annotate, hand, draw
 }

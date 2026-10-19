@@ -12,7 +12,6 @@ struct NoteWindowView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
     @Environment(\.scenePhase) private var scenePhase
-    @AppStorage(ToolPalette.visibleKey) private var paletteVisible = true
     @AppStorage(ToolPalette.compactKey) private var paletteCompact = false
     @AppStorage(PageStrip.visibleKey) private var pageStripVisible = false
     @State private var ui = WindowUI()
@@ -50,7 +49,9 @@ struct NoteWindowView: View {
                 .navigationTitle((ready ? note : nil).map { NoteTitle.display($0.title) }
                                  ?? String(localized: "Note", comment: "Window title while its note is not loaded"))
                 .toolbar {
-                    if let note {
+                    // With the note open, its actions are the editor's toolbar (`NoteToolbar`, one order on every
+                    // device); these stay for a note that is not open (opening, failed).
+                    if let note, !(ready && editor != nil) {
                         ToolbarItem(placement: .secondaryAction) {
                             Button("Rename…", systemImage: "pencil") { ui.renameNoteID = note.id }
                                 .help("Rename the note")
@@ -177,9 +178,10 @@ struct NoteWindowView: View {
         let exportIDs = note.map { [$0.id] } ?? []
         WindowCommands.fill(&context, model: model, exportIDs: exportIDs)
         context.paletteCompact = paletteCompact
+        context.noteMode = ui.noteMode
         context.pageStripVisible = pageStripVisible
         return CommandRouter(context: context, recents: library.recents.map { RecentItem(id: $0.id, name: $0.name) },
-                             paletteVisible: paletteVisible, exportIDs: exportIDs, windowID: ui.id) { command in
+                             exportIDs: exportIDs, windowID: ui.id) { command in
             guard !EditorCommands.perform(command, editor: editor, ui: ui) else { return }
             guard !WindowCommands.perform(command, model: model, ui: ui, exportIDs: exportIDs) else { return }
             switch command {
