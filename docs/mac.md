@@ -383,6 +383,12 @@ colons or control characters, at most 120 bytes, "Untitled" when empty). The
 item provider offers the PDF first, before the in-app note payload, with that
 name as its suggested name (`NoteFileDrag`).
 
+Settings ▸ General ▸ Drag to Finder ▸ Exports As (`DragExportFormat`, synced as `drag.format`)
+makes it Markdown or HTML instead: the one-note file the share exporter writes for Share ▸ Text
+(Markdown) and Share ▸ HTML (`ShareExport`, through `PreparedExport.write(format:)`), named after
+the title with `.md` or `.html`, in the same plaintext folder. Only formats that exporter writes
+as one file per note are offered.
+
 On a Mac the drop is a file promise, and the system may ask for the file while
 the main thread waits for it, so the export cannot run on the main actor. The
 main-actor part (the

@@ -57,6 +57,12 @@ final class ItemLayerView: UIView {
     private var previewTasks: [String: Task<Void, Never>] = [:]
     /// Previews not in the render cache: drawn once their document is open.
     private var previewMisses: Set<String> = []
+    /// Note Pages ▸ Dark (`setDark`): text, equations and recording cards show with their
+    /// lightness inverted (`PageColorInversion`); pictures, PDF pages and videos as they are.
+    private(set) var isDark = false
+    /// Inverted pictures for a dark page, by the light picture's key.
+    private var darkPictures: [ItemRenderKey: CGImage] = [:]
+    private var darkTasks: [ItemRenderKey: Task<Void, Never>] = [:]
 
     private struct OpenDocument {
         var box: PDFDocumentBox
@@ -103,6 +109,9 @@ final class ItemLayerView: UIView {
             previewTasks = [:]
             pagePreviews = [:]
             previewMisses = []
+            for task in darkTasks.values { task.cancel() }
+            darkTasks = [:]
+            darkPictures = [:]
             closeDocuments()
         }
         noteID = note
@@ -228,7 +237,7 @@ final class ItemLayerView: UIView {
                 pictures[key] = .image(hit.image, bounds: hit.bounds)   // drawn before in this session
             }
             if let picture = pictures[key] {
-                sub.show(picture, item: item)
+                sub.show(displayed(picture, key: key), item: item)
             } else if sub.item?.id != item.id || sub.picture == nil {
                 sub.show(.placeholder(.loading), item: item)
             }
@@ -244,6 +253,10 @@ final class ItemLayerView: UIView {
             task.cancel()
             tasks[key] = nil
         }
+        for (key, task) in darkTasks where !wanted.contains(key) || !isDark {
+            task.cancel()
+            darkTasks[key] = nil
+        }
         closeDocuments(except: wantedDocuments)
         for (label, task) in previewTasks where !wantedPreviews.contains(label) {
             task.cancel()
@@ -254,6 +267,37 @@ final class ItemLayerView: UIView {
         if pictures.count > wanted.count + 16 {
             for key in pictures.keys where !wanted.contains(key) { pictures[key] = nil }
         }
+        if !isDark {
+            darkPictures = [:]
+        } else if darkPictures.count > wanted.count + 16 {
+            for key in darkPictures.keys where !wanted.contains(key) { darkPictures[key] = nil }
+        }
+    }
+
+    /// Shows pages dark or light (Settings ▸ Appearance ▸ Note Pages).
+    func setDark(_ dark: Bool) {
+        guard dark != isDark else { return }
+        isDark = dark
+        if noteID != nil { layout() }
+    }
+
+    /// `picture` as a dark page shows it: inverted for the kinds `PageColorInversion` converts.
+    /// The inversion runs off the main actor; the light picture shows until it is done.
+    private func displayed(_ picture: ItemPicture, key: ItemRenderKey) -> ItemPicture {
+        guard isDark, PageColorInversion.converts(kind: key.item.kind), case .image(let image, let bounds) = picture else {
+            return picture
+        }
+        if let dark = darkPictures[key] { return .image(dark, bounds: bounds) }
+        if darkTasks[key] == nil {
+            darkTasks[key] = Task { @MainActor [weak self] in
+                let inverted = await Task.detached(priority: .userInitiated) { PageColorInversion.invertedImage(image) }.value
+                guard let self, !Task.isCancelled, self.isDark else { return }
+                self.darkTasks[key] = nil
+                self.darkPictures[key] = inverted ?? image   // one that cannot be read stays as drawn
+                self.layout()
+            }
+        }
+        return picture
     }
 
     private func draw(_ key: ItemRenderKey) {
@@ -288,7 +332,7 @@ final class ItemLayerView: UIView {
     }
 
     /// Whether every item shown has its final picture (tests).
-    var isSettled: Bool { tasks.isEmpty && documentTasks.isEmpty && previewTasks.isEmpty }
+    var isSettled: Bool { tasks.isEmpty && documentTasks.isEmpty && previewTasks.isEmpty && darkTasks.isEmpty }
 
     /// PDF page items whose preview is shown (tests).
     var previewedItemIDs: Set<UUID> {

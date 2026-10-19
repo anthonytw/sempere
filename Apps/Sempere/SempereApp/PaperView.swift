@@ -24,6 +24,9 @@ final class PaperView: UIView {
     private var size: CGSize = .zero
     private var sheetHeight: Double?
     private var zoom: CGFloat = 1
+    /// Drawn for a dark page (Settings ▸ Appearance ▸ Note Pages): every color
+    /// through `PageColorInversion`. Display only; exports keep the paper's colors.
+    private(set) var isDark = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -40,18 +43,39 @@ final class PaperView: UIView {
         self.paper = paper
         self.size = size
         self.sheetHeight = sheetHeight
-        backgroundColor = paper.background.uiColor
         groups = Self.groups(paper: paper, size: size, sheetHeight: sheetHeight)
         layers.forEach { $0.removeFromSuperlayer() }
-        layers = groups.map { group in
+        layers = groups.map { _ in
             let layer = CAShapeLayer()
-            layer.strokeColor = group.stroke.map(Self.cgColor)
-            layer.fillColor = group.fill.map(Self.cgColor)
             self.layer.addSublayer(layer)
             return layer
         }
+        paint()
         apply()
     }
+
+    /// Shows the paper light (as stored and exported) or dark.
+    func setDark(_ dark: Bool) {
+        guard dark != isDark else { return }
+        isDark = dark
+        paint()
+    }
+
+    /// The background color shown (tests: Note Pages ▸ Dark changes it).
+    var shownBackground: Paint? { paper.map { shown(Paint($0.background)) } }
+
+    private func paint() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        backgroundColor = shownBackground.map { UIColor(cgColor: Self.cgColor($0)) }
+        for (group, layer) in zip(groups, layers) {
+            layer.strokeColor = group.stroke.map { Self.cgColor(shown($0)) }
+            layer.fillColor = group.fill.map { Self.cgColor(shown($0)) }
+        }
+        CATransaction.commit()
+    }
+
+    private func shown(_ p: Paint) -> Paint { isDark ? PageColorInversion.invert(p) : p }
 
     private static func cgColor(_ p: Paint) -> CGColor {
         UIColor(red: CGFloat(p.r) / 255, green: CGFloat(p.g) / 255, blue: CGFloat(p.b) / 255, alpha: CGFloat(p.alpha)).cgColor

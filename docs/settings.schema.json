@@ -31,6 +31,24 @@
             "inkWind"
           ]
         },
+        "appearance.notePages" : {
+          "default" : "light",
+          "description" : "How note pages are shown (dark: inverted on screen only).",
+          "enum" : [
+            "light",
+            "dark",
+            "matchApp"
+          ]
+        },
+        "appearance.theme" : {
+          "default" : "system",
+          "description" : "App theme (system: the device's light or dark mode).",
+          "enum" : [
+            "system",
+            "light",
+            "dark"
+          ]
+        },
         "backup.reminderDays" : {
           "default" : 0,
           "description" : "Backup reminder after this many days (0: off).",
@@ -41,6 +59,15 @@
             7,
             14,
             30
+          ]
+        },
+        "drag.format" : {
+          "default" : "pdf",
+          "description" : "File a note dragged out of the note list becomes. Used by: mac.",
+          "enum" : [
+            "pdf",
+            "markdown",
+            "html"
           ]
         },
         "editor.compactPalette" : {

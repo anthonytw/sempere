@@ -279,7 +279,10 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   builds it); CI runs it only by dispatch (`-f screenshots=true`). Never put
   real notes in a demo.
 - `PKCanvasView` inverts ink colors in dark mode; the canvas forces
-  `.light` because ink colors are stored as drawn on (light) paper.
+  `.light` because ink colors are stored as drawn on (light) paper. Only Settings ▸ Appearance ▸
+  Note Pages ▸ Dark turns it `.dark` (`PageCanvasHost+Appearance`): display only, the picker stays
+  `.light` so stored colors do not change; the paper and the app-drawn items go through
+  `PageColorInversion` (never pictures, PDF pages, video), and exports never do.
 - Vaults are plain folders: `SempereInfo.plist` (referenced by `INFOPLIST_FILE`,
   outside the synchronized group so it is not copied as a resource) exports the
   `.sempere` UTType as `public.folder`, NEVER `com.apple.package`: iCloud Drive syncs a

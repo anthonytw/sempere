@@ -75,7 +75,8 @@ struct PseudoLanguageLayoutTests {
         switch screen {
         case .settings:
             view = AnyView(root.sheet(isPresented: .constant(true)) {
-                SettingsView().appEnvironment(model: model, library: library, keys: keys).defaultAppStorage(storage)
+                // The General page (Appearance and its pictures): pushed in a narrow window, beside the groups in a wide one.
+                SettingsView(group: .general).appEnvironment(model: model, library: library, keys: keys).defaultAppStorage(storage)
             })
         case .paper:
             let editor = try #require(model.editor, "the paper picker's note is open")

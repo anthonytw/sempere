@@ -86,16 +86,18 @@ final class LaunchSmokeUITests: XCTestCase {
         requireNoteList(app)
         requireNote(app)
 
-        // Settings (⌘,), then Restore from Backup… from it.
+        // Settings (⌘,), then Restore from Backup… from its Backups & History page.
         app.typeKey(",", modifierFlags: .command)
         let settings = app.descendants(matching: .any)["settingsForm"].firstMatch
         require(settings, "Settings window", in: app)
+        openSettingsGroup("backups", in: app)
         clickInSettings("Restore from Backup…", settings, in: app)
         requireSheet("restoreBackupSheet", titled: "Restore from Backup", "Restore from Backup sheet", in: app)
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
         requireRunning(app, "restore sheet")
-        // Save Key… (Device Keys), a sheet of a section further down (on the section, it
+        // Save Key… (Sync & Devices ▸ Device Keys), a sheet of a section's row (on the section, it
         // came and went at once on Catalyst 27, as Restore from Backup… did).
+        openSettingsGroup("sync", in: app)
         clickInSettings("Save Key…", settings, in: app)
         requireSheet("saveKeySheet", titled: "Save Key", "Save Key sheet", in: app)
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
@@ -347,6 +349,16 @@ final class LaunchSmokeUITests: XCTestCase {
     }
 
     /// Scrolls the Settings form to the button titled `title` and clicks it.
+    /// Selects the Settings window's group `name` in its sidebar (`SettingsGroup`) and waits for its page.
+    @MainActor
+    private func openSettingsGroup(_ name: String, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let row = app.descendants(matching: .any)["settingsGroup.\(name)"].firstMatch
+        require(row, "Settings group \(name)", in: app, file: file, line: line)
+        row.click()
+        require(app.descendants(matching: .any)["settingsPage.\(name)"].firstMatch, "Settings page \(name)", in: app,
+                file: file, line: line)
+    }
+
     /// The form is a lazy list: rows below the window are not built (and not in
     /// the accessibility tree) until scrolled to. Scroll-wheel steps, trying either
     /// sign, until the button is wholly inside the form: a row half below the

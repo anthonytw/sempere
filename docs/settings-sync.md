@@ -222,7 +222,7 @@ which devices use it. Any key may also appear in a type block.
 
 | Key | Setting (Settings ▸ section ▸ row) | Values | Default |
 | --- | --- | --- | --- |
-| `handwriting.recognize` | General ▸ Recognize Handwriting | `true`, `false` | `true` |
+| `handwriting.recognize` | Writing ▸ Handwriting Recognition ▸ Recognize Handwriting | `true`, `false` | `true` |
 | `newNote.titleFormat` | New Notes ▸ Title | `dateAndTime`, `dateOnly`, `isoDateTime`, `weekday`, `custom`, `blank` | `dateAndTime` |
 | `newNote.titlePattern` | New Notes ▸ Title ▸ Pattern (custom) | a pattern `notes new --title-format` accepts | `yyyy-MM-dd HH:mm` |
 | `editor.defaultPaper` | New Notes ▸ Paper | a paper object (`format.md` §5.4.2) | ruled |
@@ -239,12 +239,14 @@ which devices use it. Any key may also appear in a type block.
 | `math.recognize` | Convert Handwriting to Math | `true`, `false` | `false` |
 | `photos.removeMetadata` | Photos ▸ Remove Location and Camera Data | `true`, `false` | `true` |
 | `history.thinAfterDays` | Version History ▸ Thin Autosaves Older Than | 7, 14, 30, 90, 365, 0 (never) | 30 |
-| `search.transcripts` | Search Recording Transcripts (the search field) | `true`, `false` | `false` |
+| `search.transcripts` | Audio & Transcription ▸ Search Recording Transcripts (also the search field) | `true`, `false` | `false` |
 | `rewrap.onAdd` | Device Keys ▸ When Adding a Device | `header`, `reencrypt` | `header` |
 | `rewrap.onRemove` | Device Keys ▸ When Removing or Replacing a Device | `header`, `reencrypt` | `reencrypt` |
 | `quickCapture.notebook` | Quick Voice Notes ▸ Notebook | a notebook path | `Inbox` |
 | `quickCapture.transcribe` | Quick Voice Notes ▸ Transcribe Voice Notes | `true`, `false` | `true` |
 | `backup.reminderDays` | Backups ▸ Remind Me (once the device has a backup folder) | 0 (off), 1, 3, 7, 14, 30 | 0 |
+| `appearance.theme` | General ▸ Appearance (System, Light, Dark) | `system`, `light`, `dark` | `system` |
+| `appearance.notePages` | General ▸ Appearance ▸ Note Pages (dark: on screen only) | `light`, `dark`, `matchApp` | `light` |
 
 Recognition and transcription still run on each device: one without the language model
 does what it can. The rewrap modes are policies of the vault; choosing the
@@ -256,8 +258,9 @@ the other devices follow it.
 | Key | Setting | Types | Values | Default |
 | --- | --- | --- | --- | --- |
 | `editor.keepScreenOn` | General ▸ Keep Screen On (not shown on a Mac) | `ipad`, `iphone` | `true`, `false` | `false` |
-| `mouse.smoothing` | General ▸ Smooth Mouse Strokes | `mac` | `off`, `light`, `strong` | `light` |
-| `appearance.icon` | App Icon (where iOS offers alternate icons) | `ipad`, `iphone` | `keyholeNib`, `cemeteryDoor`, `shadowS`, `inkWind` | `keyholeNib` |
+| `mouse.smoothing` | Writing ▸ Editor ▸ Smooth Mouse Strokes | `mac` | `off`, `light`, `strong` | `light` |
+| `appearance.icon` | General ▸ App Icon (where iOS offers alternate icons) | `ipad`, `iphone` | `keyholeNib`, `cemeteryDoor`, `shadowS`, `inkWind` | `keyholeNib` |
+| `drag.format` | General ▸ Drag to Finder ▸ Exports As | `mac` | `pdf`, `markdown`, `html` | `pdf` |
 
 The quick-capture settings apply while quick capture is on for the vault on that device;
 switching it on or off is not a setting (it creates or deletes the device's capture key,
