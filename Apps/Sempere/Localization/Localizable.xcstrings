@@ -4056,6 +4056,30 @@
         }
       }
     },
+    "Can't be reached: iCloud Drive may be off or signed out, or the vault was moved or deleted." : {
+      "comment" : "Recent vault row after waiting several minutes for iCloud.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede acceder: puede que iCloud Drive esté desactivado o sin sesión iniciada, o que la bóveda se moviera o eliminara."
+          }
+        }
+      }
+    },
+    "Can't be reached: its storage provider is unavailable, or the vault was moved or deleted." : {
+      "comment" : "Recent vault row after waiting several minutes for another app's cloud storage.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede acceder: su proveedor de almacenamiento no está disponible, o la bóveda se movió o eliminó."
+          }
+        }
+      }
+    },
     "Cancel" : {
       "comment" : "Button: cancel",
       "extractionState" : "manual",
@@ -10506,6 +10530,18 @@
         }
       }
     },
+    "Not found: it was moved or deleted. Choose it again, or remove it." : {
+      "comment" : "Recent vault row: the vault's folder is gone from where it was. 'la' refers to the vault (bóveda).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se encuentra: se movió o se eliminó. Vuelve a elegirla o quítala."
+          }
+        }
+      }
+    },
     "Not on a page" : {
       "comment" : "Recordings list: no card shows the recording",
       "extractionState" : "manual",
@@ -11597,6 +11633,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abriendo…"
+          }
+        }
+      }
+    },
+    "Opens as soon as it is available." : {
+      "comment" : "Recent vault row, under 'Waiting for iCloud…': the app opens this vault by itself when it arrives.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se abrirá en cuanto esté disponible."
           }
         }
       }
@@ -20456,6 +20504,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Las vulnerabilidades se comunican de forma privada en GitHub, como describe la política de seguridad (SECURITY.md)."
+          }
+        }
+      }
+    },
+    "Waiting for iCloud…" : {
+      "comment" : "Recent vault row: the vault is in iCloud Drive, which has not made it available yet (for example right after a restart).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esperando a iCloud…"
+          }
+        }
+      }
+    },
+    "Waiting for its storage provider…" : {
+      "comment" : "Recent vault row: the vault is in another app's cloud storage, which has not made it available yet.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esperando a su proveedor de almacenamiento…"
           }
         }
       }
