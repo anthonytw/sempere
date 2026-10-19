@@ -36,6 +36,12 @@ final class DrawingToolbox {
     static let didChange = Notification.Name("SempereDrawingToolsDidChange")
 
     private(set) var state: DrawingToolState
+    /// iPad: whether a finger draws while annotating, set with the palette's Draw with Finger (PencilKit's
+    /// picker had this switch, `showsDrawingPolicyControls`); nil until the user sets it: the system's
+    /// "Only Draw with Apple Pencil" decides (`PKCanvasViewDrawingPolicy.default`).
+    private(set) var fingerDrawing: Bool?
+    static let fingerDrawingKey = "Sempere.fingerDrawing"
+
     /// The palette shows its color and width choices (a Pencil gesture set to "show palette" toggles them).
     var showingAttributes = false
     /// Bumped by a Pencil gesture that asks for the palette (`DrawingPaletteView` follows it).
@@ -48,6 +54,7 @@ final class DrawingToolbox {
         var state = DrawingToolState(decoding: defaults.data(forKey: Self.defaultsKey))
         state.eraserMode = Self.eraserMode(from: defaults)
         self.state = state
+        fingerDrawing = defaults.object(forKey: Self.fingerDrawingKey) as? Bool
         // Settings sync (or Settings) may change the eraser mode under us.
         observer = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: defaults,
                                                           queue: .main) { [weak self] _ in
@@ -91,6 +98,17 @@ final class DrawingToolbox {
     func setPixelEraserWidth(_ width: Double) {
         change { $0.setPixelEraserWidth(width) }
     }
+
+    /// iPad: a finger draws too (true), or only the Pencil (false).
+    func setFingerDrawing(_ on: Bool) {
+        guard fingerDrawing != on else { return }
+        fingerDrawing = on
+        defaults.set(on, forKey: Self.fingerDrawingKey)
+        NotificationCenter.default.post(name: Self.didChange, object: self)
+    }
+
+    /// Whether a finger draws on an iPad while annotating now: the palette's choice, else the system's.
+    var fingersDrawNow: Bool { fingerDrawing ?? !UIPencilInteraction.prefersPencilOnlyDrawing }
 
     /// Shows or hides PencilKit's ruler on every canvas.
     func toggleRuler() {

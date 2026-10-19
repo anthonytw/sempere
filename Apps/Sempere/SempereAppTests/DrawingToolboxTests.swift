@@ -90,6 +90,23 @@ struct DrawingToolboxTests {
         #expect(posts == 2)
     }
 
+    /// iPad: Draw with Finger decides the annotating policy once set; until then the system's setting does.
+    @Test func drawWithFingerSetsTheIPadsPolicy() {
+        #expect(PageCanvasHost.drawingPolicy(device: .pad, phoneFingersDraw: false, pencilAnnotates: false, padFingers: nil) == .default)
+        #expect(PageCanvasHost.drawingPolicy(device: .pad, phoneFingersDraw: false, pencilAnnotates: false, padFingers: true) == .anyInput)
+        #expect(PageCanvasHost.drawingPolicy(device: .pad, phoneFingersDraw: false, pencilAnnotates: false, padFingers: false) == .pencilOnly)
+        #expect(PageCanvasHost.drawingPolicy(device: .pad, phoneFingersDraw: false, pencilAnnotates: true, padFingers: true) == .pencilOnly,
+                "reading and Hand: only the Pencil, whatever the switch")
+        #expect(PageCanvasHost.drawingPolicy(device: .mac, phoneFingersDraw: false, pencilAnnotates: false, padFingers: false) == .anyInput)
+        let d = Self.scratchDefaults()
+        let toolbox = DrawingToolbox(defaults: d)
+        #expect(toolbox.fingerDrawing == nil)
+        toolbox.setFingerDrawing(true)
+        #expect(DrawingToolbox(defaults: d).fingerDrawing == true, "remembered")
+        toolbox.setFingerDrawing(false)
+        #expect(!toolbox.fingersDrawNow)
+    }
+
     /// The user's Apple Pencil preference (Settings ▸ Apple Pencil) as the palette's action.
     @Test func pencilPreferencesMapToActions() {
         #expect(DrawingToolbox.pencilAction(.ignore) == .ignore)

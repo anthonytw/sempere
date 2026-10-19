@@ -255,9 +255,12 @@ why not share the palette across all devices for consistency?" So every device d
 - **Focus**: the palette is a view of the note and needs no first responder, so Annotate no longer gives the canvas
   the focus (PR #41's "the palette takes the focus" is gone); the `CanvasFocus` rules for the keyboard stay, and a
   touch on the canvas still takes the focus back for undo and the keys.
+- **Draw with Finger** (iPad, as PencilKit's palette had it, `showsDrawingPolicyControls`): on, a finger draws too
+  while annotating (`.anyInput`); off, only the Pencil (`.pencilOnly`). Until the user sets it
+  (`Sempere.fingerDrawing`) the system's Settings ▸ Apple Pencil ▸ Only Draw with Apple Pencil decides (`.default`).
+  Without a picker, PencilKit's `.default` follows only that system setting.
 - **Not reproduced from PencilKit's palette**: dragging it to any edge or corner and minimizing it (it docks at the
-  bottom); the "Draw with Finger" switch (`showsDrawingPolicyControls`: the system's Settings ▸ Apple Pencil ▸ Only
-  Draw with Apple Pencil still decides); a continuous width slider (five presets); the reed ink (stored as the
+  bottom); a continuous width slider (five presets); the reed ink (stored as the
   fountain pen anyway); the squeeze's palette at the Pencil's hover position (it toggles the docked palette's choices).
 
 Tests: `DrawingToolsTests` (Linux: per-tool settings, storage, the Pencil's actions), `DrawingToolboxTests`,

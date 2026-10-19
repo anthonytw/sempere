@@ -638,7 +638,7 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
         // The policy follows the mode from here on (`applyDrawingPolicy`).
         canvas.drawingPolicy = Self.drawingPolicy(device: NoteDevice.current, phoneFingersDraw: false,
                                                   pencilAnnotates: false, pencilOnlyDefault: Self.debugPencilOnly,
-                                                  fingersDefault: Self.debugFingersDraw)
+                                                  padFingers: padFingers)
         canvas.alwaysBounceVertical = true
         canvas.contentInsetAdjustmentBehavior = .never
         canvas.insertSubview(paperView, at: 0)
@@ -1040,7 +1040,7 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
         if inkInProgress, drawing == .began || drawing == .changed || objectEraser.isErasing { return }
         let policy = Self.drawingPolicy(device: NoteDevice.current, phoneFingersDraw: phoneFingersDraw,
                                         pencilAnnotates: pencilAnnotates, pencilOnlyDefault: Self.debugPencilOnly,
-                                        fingersDefault: Self.debugFingersDraw)
+                                        padFingers: padFingers)
         if canvas.drawingPolicy != policy { canvas.drawingPolicy = policy }
     }
 
@@ -1049,11 +1049,18 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
     /// iPad draws with the Pencil only while reading or in Hand mode (its touch switches to annotating), and
     /// as the system says while annotating (the Pencil; a finger too when no Pencil is used).
     static func drawingPolicy(device: NoteDevice, phoneFingersDraw: Bool, pencilAnnotates: Bool,
-                              pencilOnlyDefault: Bool = false, fingersDefault: Bool = false) -> PKCanvasViewDrawingPolicy {
+                              pencilOnlyDefault: Bool = false, padFingers: Bool? = nil) -> PKCanvasViewDrawingPolicy {
         switch device {
         case .phone: return phoneFingersDraw ? .anyInput : .pencilOnly
         case .mac: return .anyInput
-        case .pad: return pencilAnnotates || pencilOnlyDefault ? .pencilOnly : fingersDefault ? .anyInput : .default
+        case .pad:
+            if pencilAnnotates || pencilOnlyDefault { return .pencilOnly }
+            // The palette's Draw with Finger (`DrawingToolbox.fingerDrawing`), else the system's setting.
+            switch padFingers {
+            case true?: return .anyInput
+            case false?: return .pencilOnly
+            case nil: return .default
+            }
         }
     }
 
@@ -1068,14 +1075,14 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
         #endif
     }
 
-    /// UI tests on the iPad simulator (`DrawingPaletteUITests`, `SEMPERE_DEBUG_FINGERS_DRAW`): a finger draws while
-    /// annotating, whatever the simulator's "Only Draw with Apple Pencil" says.
-    static var debugFingersDraw: Bool {
+    /// An iPad annotating: whether a finger draws, as the palette's Draw with Finger says (nil: as the
+    /// system's "Only Draw with Apple Pencil" says). UI tests on the simulator set it with
+    /// `SEMPERE_DEBUG_FINGERS_DRAW`.
+    var padFingers: Bool? {
         #if DEBUG
-        DebugLaunch.environment["SEMPERE_DEBUG_FINGERS_DRAW"] != nil
-        #else
-        false
+        if DebugLaunch.environment["SEMPERE_DEBUG_FINGERS_DRAW"] != nil { return true }
         #endif
+        return toolbox.fingerDrawing
     }
 
     /// PencilKit's recognizers the app turned off along with `drawingGestureRecognizer`

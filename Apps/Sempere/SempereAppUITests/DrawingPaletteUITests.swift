@@ -206,7 +206,8 @@ final class DrawingPaletteUITests: XCTestCase {
 
     @MainActor
     private func shoot(_ app: XCUIApplication, _ name: String) {
-        let shot = app.screenshot()
+        // On a Mac only the app's window (the screen shows whatever else is open).
+        let shot = Self.isMac ? app.windows.firstMatch.screenshot() : app.screenshot()
         let attachment = XCTAttachment(screenshot: shot)
         attachment.name = name
         attachment.lifetime = .keepAlways

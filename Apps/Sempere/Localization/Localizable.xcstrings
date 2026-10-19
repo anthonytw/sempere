@@ -6420,6 +6420,30 @@
         }
       }
     },
+    "Draw with Finger" : {
+      "comment" : "iPad drawing palette: a finger draws too, not only Apple Pencil",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dibujar con el dedo"
+          }
+        }
+      }
+    },
+    "Draw with a finger too, not only with Apple Pencil" : {
+      "comment" : "Tooltip of the iPad drawing palette's Draw with Finger",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dibuja también con el dedo, no solo con el Apple Pencil"
+          }
+        }
+      }
+    },
     "Draw with this tool; tap again for its color, width and opacity" : {
       "comment" : "Tooltip of a drawing palette's ink tool (pen, marker…)",
       "extractionState" : "manual",

@@ -61,6 +61,7 @@ struct DrawingPaletteView: View {
             }
             separator
             rulerButton
+            if NoteDevice.current == .pad { fingerButton }
         }
         .modifier(PaletteChrome())
     }
@@ -72,6 +73,10 @@ struct DrawingPaletteView: View {
                 separator
                 choicesButton
                     .popover(isPresented: attributesShown) { choicesPanel }
+            }
+            if NoteDevice.current == .pad {
+                separator
+                fingerButton
             }
             if Platform.isPhone {
                 separator
@@ -163,6 +168,16 @@ struct DrawingPaletteView: View {
             editor.canvasTarget?.toggleRuler()
         }
         .accessibilityIdentifier("palette.ruler")
+    }
+
+    /// iPad: Draw with Finger (PencilKit's palette had the switch): on, a finger draws too; off, only the Pencil.
+    private var fingerButton: some View {
+        let on = toolbox.fingersDrawNow
+        return PaletteButton(title: "Draw with Finger", systemImage: on ? "hand.draw.fill" : "hand.draw",
+                             help: "Draw with a finger too, not only with Apple Pencil", selected: on) {
+            toolbox.setFingerDrawing(!on)
+        }
+        .accessibilityIdentifier("palette.fingers")
     }
 
     // MARK: Choices

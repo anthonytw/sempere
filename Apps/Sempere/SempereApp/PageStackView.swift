@@ -162,9 +162,17 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         footerButton.configuration = config
         footerButton.addAction(UIAction { [weak self] _ in self?.editor?.addPage() }, for: .primaryActionTriggered)
         content.addSubview(footerButton)
+        // Draw with Finger changes the fingers a scroll takes (`updateGestures`).
+        NotificationCenter.default.addObserver(self, selector: #selector(toolsChanged), name: DrawingToolbox.didChange,
+                                               object: toolbox)
         // A note window that becomes key (opened, or clicked) gives its page the focus then.
         NotificationCenter.default.addObserver(self, selector: #selector(windowBecameKey(_:)),
                                                name: UIWindow.didBecomeKeyNotification, object: nil)
+    }
+
+    @objc private func toolsChanged() {
+        // After the pages applied the change (their drawing policy, which `fingersDraw` reads).
+        DispatchQueue.main.async { [weak self] in self?.updateGestures() }
     }
 
     @objc private func windowBecameKey(_ note: Notification) {

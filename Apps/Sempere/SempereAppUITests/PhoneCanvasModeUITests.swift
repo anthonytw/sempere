@@ -35,8 +35,10 @@ final class PhoneCanvasModeUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"]
         // The iPad shows the canvas alone (the phone's stack shows only it anyway).
+        // On the iPad a finger draws while annotating as the palette's Draw with Finger says (or the system's "Only Draw
+        // with Apple Pencil"): fixed on here, so a one-finger drag draws whatever the simulator's setting.
         app.launchEnvironment = ["SEMPERE_DEMO": "1", "SEMPERE_DEMO_NOTE": note, "SEMPERE_DEMO_ITEMS": "1", "TZ": "UTC",
-                                 "SEMPERE_DEBUG_COLUMNS": "detailOnly"]
+                                 "SEMPERE_DEBUG_COLUMNS": "detailOnly", "SEMPERE_DEBUG_FINGERS_DRAW": "1"]
         #if !targetEnvironment(macCatalyst)
         XCUIDevice.shared.orientation = .portrait
         #endif
