@@ -165,6 +165,12 @@ public enum SharedSettingsCatalog {
         .init("quickCapture.transcribe", .bool, default: .bool(true), "Transcribe quick voice notes"),
         .init("appearance.icon", types: touch, .choice(["keyholeNib", "cemeteryDoor", "shadowS", "inkWind"]),
               default: .string("keyholeNib"), "Home-screen icon"),
+        .init("appearance.theme", .choice(["system", "light", "dark"]), default: .string("system"),
+              "App theme (system: the device's light or dark mode)"),
+        .init("appearance.notePages", .choice(["light", "dark", "matchApp"]), default: .string("light"),
+              "How note pages are shown (dark: inverted on screen only)"),
+        .init("drag.format", types: [.mac], .choice(["pdf", "markdown", "html"]), default: .string("pdf"),
+              "File a note dragged out of the note list becomes"),
     ]
 
     /// The setting `name`; nil for a key this version does not know.

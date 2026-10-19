@@ -39,6 +39,9 @@ final class PaperView: UIView {
     private var bandLayers: [Int: CALayer] = [:]
     /// The zoom each shown band's paths were scaled for.
     private var bandZoom: [Int: CGFloat] = [:]
+    /// Drawn for a dark page (Settings ▸ Appearance ▸ Note Pages): every color
+    /// through `PageColorInversion`. Display only; exports keep the paper's colors.
+    private(set) var isDark = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -67,9 +70,41 @@ final class PaperView: UIView {
         self.paper = paper
         self.size = size
         self.sheetHeight = sheetHeight
-        backgroundColor = paper.background.uiColor
         apply()
+        paint()
     }
+
+    /// Shows the paper light (as stored and exported) or dark.
+    func setDark(_ dark: Bool) {
+        guard dark != isDark else { return }
+        isDark = dark
+        paint()
+    }
+
+    /// The background color shown (tests: Note Pages ▸ Dark changes it).
+    var shownBackground: Paint? { paper.map { shown(Paint($0.background)) } }
+
+    /// Colors the background and every shown band's layers (new bands color themselves).
+    private func paint() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        backgroundColor = shownBackground.map { UIColor(cgColor: Self.cgColor($0)) }
+        for (i, container) in bandLayers {
+            guard let groups = bandGroups[i] else { continue }
+            for (group, shape) in zip(groups, container.sublayers ?? []) {
+                guard let shape = shape as? CAShapeLayer else { continue }
+                color(shape, group)
+            }
+        }
+        CATransaction.commit()
+    }
+
+    private func color(_ shape: CAShapeLayer, _ group: Group) {
+        shape.strokeColor = group.stroke.map { Self.cgColor(shown($0)) }
+        shape.fillColor = group.fill.map { Self.cgColor(shown($0)) }
+    }
+
+    private func shown(_ p: Paint) -> Paint { isDark ? PageColorInversion.invert(p) : p }
 
     private static func cgColor(_ p: Paint) -> CGColor {
         UIColor(red: CGFloat(p.r) / 255, green: CGFloat(p.g) / 255, blue: CGFloat(p.b) / 255, alpha: CGFloat(p.alpha)).cgColor
@@ -120,8 +155,7 @@ final class PaperView: UIView {
                 container = CALayer()
                 for group in groups {
                     let shape = CAShapeLayer()
-                    shape.strokeColor = group.stroke.map(Self.cgColor)
-                    shape.fillColor = group.fill.map(Self.cgColor)
+                    color(shape, group)
                     container.addSublayer(shape)
                 }
                 layer.addSublayer(container)

@@ -314,7 +314,8 @@ struct NoteListView: View {
 /// Notes) it moves there, and so do the other ticked notes when it is one of
 /// several selected: its ids go as a payload that stays in this app
 /// (`DragPayload`). On the Mac it is also dragged out to the Finder (or any
-/// app) as a PDF (`NoteFileDrag`): prepared when the drag starts, rendered
+/// app) as a PDF, or the format Settings ▸ General ▸ Drag to Finder picks
+/// (`NoteFileDrag`): prepared when the drag starts, rendered
 /// when the drop asks for it.
 private struct NoteDragOut: ViewModifier {
     @AppModelEnvironment private var model

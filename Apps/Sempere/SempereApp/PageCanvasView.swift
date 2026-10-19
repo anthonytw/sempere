@@ -344,7 +344,8 @@ struct PageCanvasContent {
 /// UIKit side of `PageCanvasView`.
 final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDelegate, UIDropInteractionDelegate {
     let canvas = PKCanvasView()
-    private let paperView = PaperView()
+    /// The paper; drawn dark with Note Pages ▸ Dark (`PageCanvasHost+Appearance`).
+    let paperView = PaperView()
     /// The page's placed items, between the paper and the ink.
     let itemLayer = ItemLayerView()
     /// Text boxes drawn again above the ink, multiplied, on a note with
@@ -613,7 +614,8 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         backgroundColor = .secondarySystemBackground
         canvas.backgroundColor = .clear
         canvas.isOpaque = false
-        // Ink colors are stored as drawn on light paper; never invert them.
+        // Ink colors are stored as drawn on light paper: the canvas is light, unless Note Pages
+        // is Dark, where PencilKit only shows them inverted (`PageCanvasHost+Appearance`).
         canvas.overrideUserInterfaceStyle = .light
         canvas.accessibilityIdentifier = "pageCanvas"   // UI tests draw on it
         // A Mac has no Pencil: the mouse and trackpad always draw, whatever
@@ -647,6 +649,7 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         toolPicker.addObserver(canvas)
         toolPicker.addObserver(self)
         toolPicker.colorUserInterfaceStyle = .light
+        observePageAppearance()
         objectEraser.attach(to: self, canvas: canvas)
         mouseInk.attach(to: canvas)
         mouseInk.onBegin = { [weak self] in
@@ -665,7 +668,7 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         itemSelection.debugInput = { [weak self] in
             guard let self else { return "" }
             return "pan=\(self.canvas.panGestureRecognizer.minimumNumberOfTouches);ink=\(self.canvas.drawingGestureRecognizer.isEnabled ? 1 : 0)"
-                + ";select=\(self.itemSelectionActive ? 1 : 0)"
+                + ";select=\(self.itemSelectionActive ? 1 : 0)" + self.pageAppearanceReport
         }
         itemSelection.debugEmoji = { [weak self] in self?.textEditor.emojiSummary ?? "0,0" }
         itemSelection.debugPalette = { [weak self] in

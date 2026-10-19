@@ -2573,6 +2573,17 @@
         }
       }
     },
+    "A note dragged from the note list to the Finder or another app becomes a file in this format, made from the note as it is now. The file is not encrypted." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una nota arrastrada desde la lista al Finder o a otra app se convierte en un archivo en este formato, hecho a partir de la nota tal como está ahora. El archivo no está cifrado."
+          }
+        }
+      }
+    },
     "A notebook cannot be moved into itself or into a notebook inside it." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3438,6 +3449,18 @@
         }
       }
     },
+    "Appearance" : {
+      "comment" : "Settings section header: app theme and note pages",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apariencia"
+          }
+        }
+      }
+    },
     "Applies to every note in “%@” and its sub-notebooks. Use / for levels, e.g. School/Math. An empty name takes the notes out of the notebook and lifts its sub-notebooks to the top." : {
       "comment" : "%@ is the notebook's path",
       "extractionState" : "manual",
@@ -3554,6 +3577,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Audio"
+          }
+        }
+      }
+    },
+    "Audio & Transcription" : {
+      "comment" : "Settings group",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Audio y transcripción"
           }
         }
       }
@@ -3850,6 +3885,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copias de seguridad"
+          }
+        }
+      }
+    },
+    "Backups & History" : {
+      "comment" : "Settings group: backups, version history, storage",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copias e historial"
           }
         }
       }
@@ -5458,6 +5505,17 @@
         }
       }
     },
+    "Dark note pages show the paper dark and ink, text and equations with their lightness inverted, keeping their colors; pictures, PDFs and videos are shown as they are. Notes are stored and exported as on light paper." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Con páginas oscuras, el papel se ve oscuro y la tinta, el texto y las ecuaciones con la luminosidad invertida, conservando sus colores; las imágenes, los PDF y los vídeos se ven como son. Las notas se guardan y se exportan como en papel claro."
+          }
+        }
+      }
+    },
     "Dashed strokes (imported solid)" : {
       "comment" : "Notability import report: not imported",
       "extractionState" : "manual",
@@ -6182,6 +6240,18 @@
         }
       }
     },
+    "Drag to Finder" : {
+      "comment" : "Settings section header (Mac): the format of a note dragged out",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrastrar al Finder"
+          }
+        }
+      }
+    },
     "Draw" : {
       "comment" : "Undo action name (Edit menu: Undo …) for a mouse stroke",
       "extractionState" : "manual",
@@ -6840,6 +6910,18 @@
         }
       }
     },
+    "Exports As" : {
+      "comment" : "Settings ▸ Drag to Finder: the format picker",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exportar como"
+          }
+        }
+      }
+    },
     "Exports are not encrypted. Anyone who receives the files can read the notes." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7417,6 +7499,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Escritura a mano"
+          }
+        }
+      }
+    },
+    "Handwriting Recognition" : {
+      "comment" : "Settings section header",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reconocimiento de escritura"
           }
         }
       }
@@ -9027,6 +9121,24 @@
         }
       }
     },
+    "Light Appearance" : {
+      "comment" : "Settings ▸ Appearance: light theme (not the “Light” of mouse smoothing)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Light"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claro"
+          }
+        }
+      }
+    },
     "Line color" : {
       "comment" : "Paper picker: color of the ruling",
       "extractionState" : "manual",
@@ -9207,6 +9319,18 @@
         }
       }
     },
+    "Markdown" : {
+      "comment" : "Settings ▸ Drag to Finder: export format",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Markdown"
+          }
+        }
+      }
+    },
     "Marker" : {
       "comment" : "Tools menu: select the marker",
       "extractionState" : "manual",
@@ -9215,6 +9339,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rotulador"
+          }
+        }
+      }
+    },
+    "Match App" : {
+      "comment" : "Settings ▸ Appearance ▸ Note Pages: dark when the app is dark",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Como la app"
           }
         }
       }
@@ -10366,6 +10502,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nota no encontrada"
+          }
+        }
+      }
+    },
+    "Note Pages" : {
+      "comment" : "Settings ▸ Appearance: how note pages are shown (light, dark, match app)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Páginas"
           }
         }
       }
@@ -14797,6 +14945,18 @@
         }
       }
     },
+    "Search" : {
+      "comment" : "Settings ▸ Audio & Transcription: section of the transcript search switch",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Búsqueda"
+          }
+        }
+      }
+    },
     "Search Recording Transcripts" : {
       "comment" : "Toggle above the search results: also search what was said in recordings",
       "extractionState" : "manual",
@@ -14829,6 +14989,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Buscar en notas y escritura a mano"
+          }
+        }
+      }
+    },
+    "Searching recording transcripts reads and decrypts every transcript of the notes searched, on this device." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscar en las transcripciones lee y descifra cada transcripción de las notas en las que se busca, en este dispositivo."
           }
         }
       }
@@ -16415,6 +16586,18 @@
         }
       }
     },
+    "Sync & Devices" : {
+      "comment" : "Settings group: settings sync and device keys",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronización y claves"
+          }
+        }
+      }
+    },
     "Sync Now" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -16445,6 +16628,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sincronizar ajustes con esta bóveda"
+          }
+        }
+      }
+    },
+    "System" : {
+      "comment" : "Settings ▸ Appearance: follow the system's light or dark mode",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sistema"
           }
         }
       }
@@ -17369,6 +17564,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Se borran la copia de este dispositivo y la contraseña guardada. La bóveda del servidor no cambia."
+          }
+        }
+      }
+    },
+    "The editor's own menus change these too." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los menús del editor también los cambian."
           }
         }
       }
@@ -20374,6 +20580,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Escribe con el Apple Pencil y elige plumas, rotuladores y gomas en la paleta, en páginas o en una sola página larga."
+          }
+        }
+      }
+    },
+    "Writing" : {
+      "comment" : "Settings group: editor, new notes, recognition, photos",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escritura"
           }
         }
       }

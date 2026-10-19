@@ -1885,7 +1885,12 @@ C3 + E2 ──► G1;  E4 ──► G2;  L independent
 
 ## 15. Settings
 
-Settings live in one Settings panel (task E6) and are kept per device in `UserDefaults`. With
+Settings live in one Settings panel (task E6), a list of groups each opening its own page
+(`SettingsGroup`; a drill-in on iPad and iPhone, a sidebar in the Mac's Settings window): General
+(Appearance, App Language, App Icon, Keep Screen On, Show in Menu Bar, Drag to Finder), Writing (Editor,
+New Notes, Handwriting Recognition, math, Photos), Audio & Transcription (Recording, Transcription,
+Quick Voice Notes, transcript search), Sync & Devices (Sync Settings, Device Keys), Backups & History
+(Backups, Version History, Storage) and About. Settings are kept per device in `UserDefaults`. With
 Sync Settings on, most of them are also kept in the vault's encrypted `settings.age` and follow the
 vault to its other devices (`docs/settings-sync.md`); device state (keys, caches, bookmarks) never is.
 Defaults are the chosen policy.
@@ -1906,12 +1911,16 @@ Defaults are the chosen policy.
 | | Paper | ruled | `PaperPreference` |
 | | Layout | Pages – Letter | Pages – Letter or A4, Pageless – Letter or A4 width (`NewNoteLayout`) |
 | | (Quick voice notes' notebook) | Inbox | not a New Notes setting: it is Settings ▸ Quick Voice Notes ▸ Notebook, the capture profile's `notebook`, the only place capture reads |
-| General | Keep Screen On | off | |
+| General | Appearance | System | System, Light or Dark, as three pictures; every window's style (`AppTheme`) |
+| | Note Pages | Light | Light, Dark or Match App (dark while the app is): dark pages show the paper dark and ink, text boxes, equations and recording cards with their lightness inverted and hue kept (`PageColorInversion`; the ink through PencilKit's own dark-mode colors); pictures, PDFs and videos unchanged; display only, stored notes, thumbnails and exports stay as on light paper |
+| | Keep Screen On | off | |
 | | App Language | the system's | a button to Sempere's page in the system Settings; the app has no language override of its own |
-| | Recognize Handwriting | on | |
-| | Smooth Mouse Strokes (Mac only) | Light | Off, Light, Strong (`MouseSmoothing`, `docs/mac.md` "Mouse and trackpad"); pointer input only, nothing in the vault's notes or the CLI |
 | | Show in Menu Bar (Mac only) | on | the system menu-bar item (`docs/mac.md` "Menu-bar item") |
-| Editor | Eraser, Object Eraser Size, Compact Palette, Search Recording Transcripts | object eraser, 8 pt, full palette, off | the editor's own menus change the first three too |
+| | Drag to Finder ▸ Exports As (Mac only) | PDF | PDF, Markdown or HTML: what a note dragged out of the note list becomes (`docs/mac.md` "Drag a note out as PDF") |
+| Writing | Recognize Handwriting | on | Handwriting Recognition section |
+| | Smooth Mouse Strokes (Mac only) | Light | Off, Light, Strong (`MouseSmoothing`, `docs/mac.md` "Mouse and trackpad"); pointer input only, nothing in the vault's notes or the CLI |
+| Editor | Eraser, Object Eraser Size, Compact Palette | object eraser, 8 pt, full palette | the editor's own menus change them too |
+| Audio & Transcription | Search Recording Transcripts | off | |
 | Quick Voice Notes | Quick Voice Notes, Transcribe Voice Notes, Notebook | off, on, Inbox | `docs/quick-capture.md` |
 | History | Thin Autosaves Older Than | 30 days | 7, 14, 30, 90 or 365 days, or never | "Thin Now…" with a preview |
 | Storage | Unused attachments: N items, X MB | — | from the per-note index (E7, §4): count and size, a list by note with previews, the date each became unused, Delete from 30 days on and "Delete All Eligible" (through `collectBlobs`), and "Held by History"; `sempere blobs unused` shows the same |
