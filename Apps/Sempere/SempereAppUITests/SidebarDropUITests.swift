@@ -286,4 +286,103 @@ final class SidebarDropUITests: XCTestCase {
         #endif
         require(item, "context menu item Move Notebook To…", in: app, timeout: 10)
     }
+
+    /// Opens the context menu of the notebook row `path` and picks `title`.
+    @MainActor
+    private func pickFromMenu(_ app: XCUIApplication, row path: String, _ title: String) {
+        let row = sidebarRow(app, path)
+        require(row, "sidebar row \(path)", in: app)
+        sleep(1)
+        #if targetEnvironment(macCatalyst)
+        row.rightClick()
+        let item = app.menuItems[title].firstMatch
+        #else
+        row.press(forDuration: 1.5)
+        let item = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", title)).firstMatch
+        #endif
+        require(item, "context menu item \(title)", in: app, timeout: 10)
+        #if targetEnvironment(macCatalyst)
+        item.click()
+        #else
+        item.tap()
+        #endif
+    }
+
+    /// TestFlight 1.0.0 (6): "still not possible to un-nest". A nested notebook dropped on the
+    /// Notebooks header goes to the top level with its notes.
+    @MainActor
+    func testDroppingANestedNotebookOnTheNotebooksHeaderTakesItToTheTopLevel() throws {
+        let app = launch()
+        defer { app.terminate() }
+        require(noteRow(app, "Sync design sketch"), "note row", in: app, timeout: 90)
+        showSidebar(app)
+        expand(app, "Work", showing: "Work/Atlas")
+        let header = app.descendants(matching: .any).matching(identifier: "sidebar-notebooks-header").firstMatch
+        require(header, "the Notebooks header", in: app)
+        sleep(2)
+        drag(sidebarRow(app, "Work/Atlas"), onto: header)
+        let moved = waitForNotebook(app, note: "Sync design sketch", "Atlas")
+        trace(app, "nested notebook onto the Notebooks header")
+        XCTAssertTrue(moved, "Atlas is a top-level notebook")
+    }
+
+    /// A nested notebook's menu has Move to Top Level, which un-nests it with its notes; a top-level
+    /// notebook's menu does not offer it.
+    @MainActor
+    func testMoveToTopLevelFromTheMenuUnnestsANotebook() throws {
+        let app = launch()
+        defer { app.terminate() }
+        require(noteRow(app, "Sync design sketch"), "note row", in: app, timeout: 90)
+        showSidebar(app)
+        expand(app, "Work", showing: "Work/Atlas")
+        pickFromMenu(app, row: "Work/Atlas", "Move to Top Level")
+        XCTAssertTrue(waitForNotebook(app, note: "Sync design sketch", "Atlas"), "Atlas is a top-level notebook")
+        XCTAssertTrue(sidebarRow(app, "Atlas").waitForExistence(timeout: 10), "listed at the top level")
+        // A top-level notebook: no Move to Top Level.
+        let work = sidebarRow(app, "Work")
+        #if targetEnvironment(macCatalyst)
+        work.rightClick()
+        XCTAssertTrue(app.menuItems["Move Notebook To…"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.menuItems["Move to Top Level"].firstMatch.exists)
+        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+        #else
+        work.press(forDuration: 1.5)
+        let any = app.descendants(matching: .any)
+        XCTAssertTrue(any.matching(NSPredicate(format: "label == %@", "Move Notebook To…")).firstMatch.waitForExistence(timeout: 10))
+        XCTAssertFalse(any.matching(NSPredicate(format: "label == %@", "Move to Top Level")).firstMatch.exists)
+        #endif
+    }
+
+    /// TestFlight 1.0.0 (6): the Inbox (where quick voice notes land) is listed with All Notes and
+    /// Favorites, above the Notebooks header, not among the notebooks. A notebook renamed to "Inbox"
+    /// moves up there.
+    @MainActor
+    func testTheInboxIsListedWithTheSpecialLists() throws {
+        let app = launch()
+        defer { app.terminate() }
+        require(noteRow(app, "Sync design sketch"), "note row", in: app, timeout: 90)
+        showSidebar(app)
+        pickFromMenu(app, row: "Personal", "Rename or Move…")
+        // The alert's field (on a Mac the alert is a window of its own, not in `app.alerts`).
+        let field = app.textFields.matching(NSPredicate(format: "value == %@", "Personal")).firstMatch
+        require(field, "the rename field", in: app, timeout: 10)
+        // The field holds "Personal": delete it, type the new name.
+        sleep(1)
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 12) + "Inbox")
+        let rename = app.buttons.matching(NSPredicate(format: "label == %@", "Rename")).firstMatch
+        require(rename, "the alert's Rename", in: app, timeout: 10)
+        #if targetEnvironment(macCatalyst)
+        rename.click()
+        #else
+        rename.tap()
+        #endif
+        let inbox = sidebarRow(app, "Inbox")
+        require(inbox, "the Inbox row", in: app, timeout: 20)
+        let header = app.descendants(matching: .any).matching(identifier: "sidebar-notebooks-header").firstMatch
+        require(header, "the Notebooks header", in: app)
+        let favorites = app.cells.containing(NSPredicate(format: "label == %@", "Favorites")).firstMatch
+        require(favorites, "the Favorites row", in: app)
+        XCTAssertLessThan(inbox.frame.midY, favorites.frame.midY, "the Inbox is with the special lists")
+        XCTAssertLessThan(inbox.frame.midY, header.frame.midY, "above the Notebooks header")
+    }
 }

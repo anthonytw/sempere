@@ -902,7 +902,9 @@ maps each control to its command.
   replaced, not skipped for having the right size.
 - **Verify Backup** is `Backup.verify` with the unlocked key (every revision
   decrypted and checked), or hashes only when the vault is locked; the
-  problems are listed (`BackupVerifyReport.problemLines`).
+  problems are listed (`BackupVerifyReport.problemLines`; at most
+  `BackupText.problemLimit` in a box that scrolls, then "…and N more."). A folder
+  that cannot take the backup and a failed run or check are alerts.
 - **Reminder.** "Remind me after N days without a backup" schedules one local
   notification per vault (`UNUserNotificationCenter`, identifier
   `Sempere.backupReminder.<vault id>`), due N days after the last backup, or

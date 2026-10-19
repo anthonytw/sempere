@@ -612,6 +612,25 @@ Mac builds are `Apps/Sempere/Sempere.entitlements` (App Sandbox, user-selected
 files read/write, app-scope bookmarks), applied to Catalyst builds only
 (`CODE_SIGN_ENTITLEMENTS[sdk=macosx*]`).
 
+## Folder pickers with New Folder
+
+UIKit's folder picker on a Mac (`fileImporter` or `UIDocumentPickerViewController` for `.folder`) is
+AppKit's open panel with New Folder off, and neither API can turn it on. Every pick of a folder the app
+writes into goes through `.folderPicker` (`FolderPicker.swift`): on a Mac, `MacFolderPanel` makes an
+`NSOpenPanel` through the Objective-C runtime (the app cannot link AppKit) with `canCreateDirectories`
+on, shown as a sheet on the key window; elsewhere it is `fileImporter`, whose Files picker has New Folder.
+The panel's URL is used and bookmarked like a picked one (`FolderPickerUITests` creates a vault in a
+folder made with New Folder and reopens it after a relaunch). The picks:
+
+| Pick | Kind |
+| --- | --- |
+| New Vault ▸ Location (`NewVaultView`) | `.folderPicker` |
+| Settings ▸ Backups ▸ Choose Backup Folder… (`BackupSettingsSection`) | `.folderPicker` |
+| Restore from Backup ▸ Location (`RestoreBackupView`) | `.folderPicker` |
+| Export to Folder (`BulkExportSheet`) | `.folderPicker` |
+| Open Vault (`RootView`), Restore from Backup ▸ the backup, Import PDF, Import from another app (`WindowSheets`), a file on the canvas (`InsertUI`), a key file (`NewVaultView`), a math model (`MathSettings`) | `fileImporter`: only opens something that exists |
+| Save Key, the recovery kit (`KeyExportViews`, `KeysWindowView`), Save to Files and exports (`ExportSheet`) | `fileExporter` / the export picker: the save panel, which has New Folder |
+
 ## To try by hand on a Mac
 
 1. Open a vault from the open panel, quit, relaunch: does it reopen (sandboxed

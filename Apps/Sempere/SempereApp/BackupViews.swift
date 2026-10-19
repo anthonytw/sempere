@@ -18,6 +18,8 @@ struct BackupSettingsSection: View {
     @State private var picking = false
     @State private var message: String?
     @State private var problems: [String] = []
+    /// A failure shown as an alert (a line in the footer was easy to miss).
+    @State private var failure: BackupFailure?
     @State private var notificationsOff = false
     @State private var task: Task<Void, Never>?
 
@@ -29,15 +31,22 @@ struct BackupSettingsSection: View {
                 .disabled(busy || model.vault == nil)
                 // On the button, not the section: a section's modifier is on each of its rows,
                 // and several rows presenting at once can close it again on Mac Catalyst 27.
-                .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { result in
+                // A folder picker with New Folder (`FolderPicker`).
+                .folderPicker(isPresented: $picking) { result in
                     do {
                         try model.chooseBackupFolder(try result.get())
                         problems = []
                         message = nil
                     } catch {
-                        message = "\(error)"
+                        failure = BackupFailure(kind: .folder, message: "\(error)")
                     }
                     reload()
+                }
+                .alert(failure?.title ?? "", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } }),
+                       presenting: failure) { _ in
+                    Button("OK", role: .cancel) { failure = nil }
+                } message: { failure in
+                    Text(failure.message)
                 }
             if let path = record.displayPath {
                 LabeledContent("Folder", value: path)
@@ -67,8 +76,8 @@ struct BackupSettingsSection: View {
                             .foregroundStyle(healthy ? Color.secondary : Color.red)
                     }
                 }
-                ForEach(problems, id: \.self) { line in
-                    Text(line).font(.footnote.monospaced()).foregroundStyle(.red).lineLimit(2)
+                if !problems.isEmpty {
+                    BackupProblemList(lines: problems)
                 }
                 Picker("Remind Me", selection: Binding(get: { record.reminderDays }, set: { setReminder($0) })) {
                     ForEach(BackupReminder.choices, id: \.self) { Text(BackupReminder.label($0)).tag($0) }
@@ -120,7 +129,7 @@ struct BackupSettingsSection: View {
             do { try await body() } catch is CancellationError {
                 message = String(localized: "Stopped. The backup holds every file written so far; Back Up Now finishes it.")
             } catch {
-                message = "\(error)"
+                failure = BackupFailure(kind: .run, message: "\(error)")
             }
             reload()
         }
@@ -133,7 +142,7 @@ struct BackupSettingsSection: View {
 
     private func verify() async throws {
         let report = try await model.verifyBackup()
-        problems = Array(report.problemLines.prefix(20))
+        problems = report.problemLines
         message = BackupText.verify(report)
     }
 
@@ -142,6 +151,49 @@ struct BackupSettingsSection: View {
         Task {
             notificationsOff = !(await model.setBackupReminder(days: days))
             reload()
+        }
+    }
+}
+
+/// A backup failure for the alert: a folder that cannot take the backup (another vault's
+/// backup, a vault, the open vault), or a run or check that failed.
+struct BackupFailure: Identifiable, Equatable {
+    enum Kind { case folder, run }
+    var kind: Kind
+    var message: String
+    var id: String { message }
+
+    var title: String {
+        switch kind {
+        case .folder: return String(localized: "Choose Another Backup Folder", comment: "Alert title: the picked backup folder cannot be used")
+        case .run: return String(localized: "Backup Failed", comment: "Alert title: Back Up Now or Verify Backup failed")
+        }
+    }
+}
+
+/// Verify Backup's problems: at most `BackupText.problemLimit` lines in a box that scrolls,
+/// then "and N more" (a backup with thousands of missing files listed every one).
+struct BackupProblemList: View {
+    let lines: [String]
+
+    var body: some View {
+        let list = BackupText.problemList(lines)
+        VStack(alignment: .leading, spacing: 4) {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(list.shown.enumerated()), id: \.offset) { _, line in
+                        Text(verbatim: line).font(.footnote.monospaced()).foregroundStyle(.red).lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            .frame(maxHeight: BackupText.problemListHeight)
+            .accessibilityIdentifier("backup.problems")
+            if list.more > 0 {
+                Text("…and \(list.more) more.", comment: "Verify Backup: problems not listed [not-plural]")
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("backup.problems.more")
+            }
         }
     }
 }
@@ -158,8 +210,7 @@ struct RestoreBackupView: View {
     @State private var picked: URL?
     @State private var source: URL?
     @State private var preview: RestorePreview?
-    private enum Importing { case backup, folder }
-    @State private var importMode = Importing.backup
+    @State private var pickingFolder = false
     @State private var importerShown = false
     @State private var name = ""
     @State private var location = Location.onDevice
@@ -210,14 +261,14 @@ struct RestoreBackupView: View {
             }
         }
         .interactiveDismissDisabled(working)
-        // One importer for both picks: two on one view can hide each other.
-        // (The mode is kept apart from `isPresented`, which SwiftUI may reset
-        // before it calls the completion.)
-        .fileImporter(isPresented: $importerShown,
-                      allowedContentTypes: importMode == .backup ? [.folder, .sempere] : [.folder]) { result in
-            switch importMode {
-            case .backup: Task { await choose(result) }
-            case .folder:
+        // The backup is only opened: the system's file importer. The new vault's folder is written
+        // into: the folder picker with New Folder (`FolderPicker`), on a view of its own (two
+        // importers on one view can hide each other).
+        .fileImporter(isPresented: $importerShown, allowedContentTypes: [.folder, .sempere]) { result in
+            Task { await choose(result) }
+        }
+        .background {
+            SwiftUI.Color.clear.folderPicker(isPresented: $pickingFolder) { result in
                 folder = try? result.get()
                 if folder == nil { location = .onDevice }
             }
@@ -227,7 +278,6 @@ struct RestoreBackupView: View {
     @ViewBuilder private var chooser: some View {
         Section {
             Button(picked == nil ? LocalizedStringKey("Choose Backup Folder…") : LocalizedStringKey("Choose Another Backup…")) {
-                importMode = .backup
                 importerShown = true
             }
             if let source { LabeledContent("Backup", value: source.lastPathComponent) }
@@ -244,7 +294,7 @@ struct RestoreBackupView: View {
                     Text("On This Device").tag(Location.onDevice)
                     Text("Choose Folder…").tag(Location.folder)
                 }
-                .onChange(of: location) { _, new in if new == .folder { importMode = .folder; importerShown = true } }
+                .onChange(of: location) { _, new in if new == .folder { pickingFolder = true } }
                 if location == .folder, let folder { LabeledContent("Folder", value: folder.lastPathComponent) }
             } header: {
                 Text("Restore As a New Vault")

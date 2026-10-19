@@ -3865,6 +3865,18 @@
         }
       }
     },
+    "Backup Failed" : {
+      "comment" : "Alert title: Back Up Now or Verify Backup failed",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Error en la copia"
+          }
+        }
+      }
+    },
     "Backup Settings…" : {
       "comment" : "About Your Key: button to Settings ▸ Backups",
       "extractionState" : "manual",
@@ -4325,6 +4337,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Comprobando el modelo…"
+          }
+        }
+      }
+    },
+    "Choose" : {
+      "comment" : "Button of the Mac's folder panel",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elegir"
+          }
+        }
+      }
+    },
+    "Choose Another Backup Folder" : {
+      "comment" : "Alert title: the picked backup folder cannot be used",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige otra carpeta de copia de seguridad"
           }
         }
       }
@@ -6296,6 +6332,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Herramientas de dibujo"
+          }
+        }
+      }
+    },
+    "Drop a notebook here to move it to the top level" : {
+      "comment" : "Tooltip of the sidebar's Notebooks header",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suelta aquí un cuaderno para moverlo al nivel superior"
           }
         }
       }

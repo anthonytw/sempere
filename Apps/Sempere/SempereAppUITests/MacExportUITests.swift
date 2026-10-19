@@ -116,6 +116,11 @@ final class MacExportUITests: XCTestCase {
         exportOneNote(app)
         app.buttons["Save…"].firstMatch.click()
         if let panel = panelWindow(app) {
+            // The save panel makes folders (New Folder, also in its collapsed form's pop-up): the owner's
+            // "every picker can make a folder" (TestFlight 1.0.0 (6)). Printed, not required: a collapsed
+            // panel shows the button only once expanded.
+            let newFolder = panel.buttons["New Folder"].firstMatch.waitForExistence(timeout: 3)
+            print("SAVEPANEL New Folder button: \(newFolder)")
             panel.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
         } else {
             XCTFail("the save panel did not open")

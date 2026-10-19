@@ -63,16 +63,21 @@ struct NotebookRowAction: Identifiable, Sendable {
     var localizedTitle: String { String(localized: title) }
 
     /// A notebook row's menu: New Notebook Inside…, Rename or Move…, Move Notebook To…,
-    /// Export Notebook…, and Delete Notebook when `delete` is given (an empty notebook).
+    /// Move to Top Level when `moveToTop` is given (a notebook inside another), Export Notebook…,
+    /// and Delete Notebook when `delete` is given (an empty notebook).
     static func notebookMenu(newInside: @escaping @MainActor @Sendable () -> Void,
                              rename: @escaping @MainActor @Sendable () -> Void,
                              move: @escaping @MainActor @Sendable () -> Void,
+                             moveToTop: (@MainActor @Sendable () -> Void)? = nil,
                              export: @escaping @MainActor @Sendable () -> Void,
                              delete: (@MainActor @Sendable () -> Void)? = nil) -> [NotebookRowAction] {
         var actions = [NotebookRowAction(title: "New Notebook Inside…", systemImage: "folder.badge.plus", perform: newInside),
                        NotebookRowAction(title: "Rename or Move…", systemImage: "pencil", perform: rename),
-                       NotebookRowAction(title: "Move Notebook To…", systemImage: "folder", perform: move),
-                       NotebookRowAction(title: "Export Notebook…", systemImage: ExportCommand.menuImage, perform: export)]
+                       NotebookRowAction(title: "Move Notebook To…", systemImage: "folder", perform: move)]
+        if let moveToTop {
+            actions.append(NotebookRowAction(title: "Move to Top Level", systemImage: "arrow.up.to.line", perform: moveToTop))
+        }
+        actions.append(NotebookRowAction(title: "Export Notebook…", systemImage: ExportCommand.menuImage, perform: export))
         if let delete {
             actions.append(NotebookRowAction(title: "Delete Notebook", systemImage: "trash", destructive: true, perform: delete))
         }
@@ -314,5 +319,28 @@ final class UIKitSidebarDrop: NSObject, UIDropInteractionDelegate {
                                         carriesAppTypes: ours(session)) { type in
             providers.first { $0.hasItemConformingToTypeIdentifier(type.identifier) }
         }
+    }
+}
+
+/// A clear view that takes sidebar drops for `target` through a `UIDropInteraction`: on the iPad a
+/// list's section header never got a SwiftUI `onDrop`'s callbacks (the Notebooks header, which takes
+/// notebooks to the top level), as rows with a platform view inside do not (`UIKitDragHandle`).
+struct UIKitDropZone: UIViewRepresentable {
+    let model: AppModel
+    let target: DropTarget
+    let undoManager: UndoManager?
+
+    func makeCoordinator() -> UIKitSidebarDrop { UIKitSidebarDrop(model: model, target: target, undoManager: undoManager) }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .clear
+        view.addInteraction(UIDropInteraction(delegate: context.coordinator))
+        return view
+    }
+
+    func updateUIView(_ view: UIView, context: Context) {
+        context.coordinator.target = target
+        context.coordinator.undoManager = undoManager
     }
 }
