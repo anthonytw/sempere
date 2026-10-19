@@ -172,8 +172,13 @@ final class FolderPickerUITests: XCTestCase {
         defer { app.terminate() }
         require(app.staticTexts["Cellular Respiration"].firstMatch, "the demo vault", in: app, timeout: 90)
         app.typeKey(",", modifierFlags: .command)
-        let settings = element(app, "settingsForm")
-        require(settings, "Settings", in: app)
+        require(element(app, "settingsForm"), "Settings", in: app)
+        // Settings is grouped: backups are on the Backups & History page.
+        let group = element(app, "settingsGroup.backups")
+        require(group, "the Backups & History group", in: app)
+        group.click()
+        let settings = element(app, "settingsPage.backups")
+        require(settings, "the Backups & History page", in: app)
         clickInSettings("Choose Backup Folder…", settings, in: app)
         makeAndChoose("Backups \(UUID().uuidString.prefix(4))", app)
         clickInSettings("Back Up Now", settings, in: app)

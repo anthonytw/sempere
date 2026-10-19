@@ -1,5 +1,8 @@
 import XCTest
 
+// Pinches: XCUIElement has no `pinch` in the Mac UI test build, so this iPad suite is left out of it.
+#if !targetEnvironment(macCatalyst)
+
 /// The owner's iPad on TestFlight 1.0.0 (6), on a long pageless note like one imported from
 /// Notability (`SEMPERE_DEMO_DENSE`: the demo vault's "dense" note, ruled, with the demo items):
 /// a pinch zooms out below the fitted width on a pageless note and on a paged one; the item menu
@@ -175,3 +178,4 @@ final class IPadZoomScrollUITests: XCTestCase {
         XCTAssertEqual(after?.menu, false, "no menu after a hold that scrolled: \(String(describing: canvas.value))")
     }
 }
+#endif
