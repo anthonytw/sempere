@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// Asks for a key to the open vault: the remembered key (Face ID first), a
-/// stored key file's passphrase, or a pasted `AGE-SECRET-KEY-PQ-1…` identity.
-/// After a manual unlock it offers to remember
-/// the key (`RememberedKeys`).
+/// Asks for a key to the open vault: the remembered device key (Face ID
+/// first), a pasted device key file, or the recovery key (pasted, or its
+/// passphrase copy in the vault), which opens the vault read-only. After a
+/// manual unlock with a device key it offers to remember the key
+/// (`RememberedKeys`).
 struct UnlockView: View {
     @AppModelEnvironment private var model
     @AppEnvironmentObject private var keys: RememberedKeys
@@ -33,25 +34,34 @@ struct UnlockView: View {
                     }
                 } else {
                     Section {
-                        Text("A key for a vault with this id is saved on \(RememberedKeys.deviceName), but it is offered only where it opened this vault before: any folder can claim a vault's id. Unlock this one with the passphrase or the key; Sempere then offers to remember the key here too.")
+                        Text("A key for a vault with this id is saved on \(RememberedKeys.deviceName), but it is offered only where it opened this vault before: any folder can claim a vault's id. Unlock this one with this device's key file; Sempere then offers to remember the key here too.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
                 }
             }
-            Section("Passphrase of a stored key") {
-                SecureField("Passphrase", text: $passphrase)
-                    .onSubmit { unlock { try await keys.unlock(model, passphrase: passphrase) } }
-                Button("Unlock") { unlock { try await keys.unlock(model, passphrase: passphrase) } }
-                    .disabled(passphrase.isEmpty)
-            }
-            Section("Or paste a secret key") {
+            Section {
                 TextField("AGE-SECRET-KEY-PQ-1…", text: $identityText, axis: .vertical)
                     .font(.body.monospaced())
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
                 Button("Unlock with Key") { unlock { try await keys.unlock(model, identityText: identityText) } }
                     .disabled(identityText.isEmpty)
+            } header: {
+                Text("Paste a key")
+            } footer: {
+                Text("This device's key file opens the vault to read and write. The recovery key opens it read-only.")
+            }
+            Section {
+                SecureField("Passphrase", text: $passphrase)
+                    .onSubmit { unlock { try await keys.unlock(model, passphrase: passphrase) } }
+                Button("Unlock") { unlock { try await keys.unlock(model, passphrase: passphrase) } }
+                    .disabled(passphrase.isEmpty)
+            } header: {
+                Text("Or the recovery key's passphrase")
+            } footer: {
+                // TODO(KH5): join this device to the vault from here (a join request approved by home).
+                Text("The vault keeps a copy of its recovery key under a passphrase when one was chosen at its creation. It opens the vault read-only. To write from this device, it must join the vault; that is not available in the app yet.")
             }
             if let failure {
                 Text(failure).foregroundStyle(.red)
@@ -79,7 +89,7 @@ struct UnlockView: View {
     private func tryRememberedKey() async {
         failure = nil
         switch await keys.unlockWithRememberedKey(model) {
-        case .failed(let message): failure = String(localized: "\(message)\nUse the passphrase or paste the key instead.",
+        case .failed(let message): failure = String(localized: "\(message)\nPaste this device's key file instead, or read the vault with its recovery key.",
                                                     comment: "%@ is why the saved key could not be used")
         case .unlocked, .noKey, .notHere, .cancelled: break
         }

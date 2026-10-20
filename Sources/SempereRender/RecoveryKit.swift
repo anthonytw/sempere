@@ -1,8 +1,10 @@
 import Foundation
 import Sempere
 
-/// A printable recovery kit: the key as a QR code and as checked text, the
-/// vault it opens, and how to get notes back with stock tools. Two pages.
+/// A printable recovery kit (format.md §15.13): the vault's recovery key as a QR code and as checked
+/// text, the vault it opens with its root fingerprint (16 groups with line checksums and a second QR code,
+/// `sempere-root:<vaultId>:<hex>`), and the frozen script that gets notes back with stock tools. Two
+/// pages. The recovery key is shown once, when the vault is created: no device stores it.
 public struct RecoveryKit: Sendable {
     /// What the sheet holds.
     public enum Secret: Sendable {
@@ -18,16 +20,22 @@ public struct RecoveryKit: Sendable {
         public var name: String
         public var id: String
         public var created: Date
-        public var recipientCount: Int
+        /// The root fingerprint (32 bytes, format.md §15.2): every chain is checked from it.
+        public var root: Data
 
-        public init(name: String, id: String, created: Date, recipientCount: Int) {
-            self.name = name; self.id = id; self.created = created; self.recipientCount = recipientCount
+        public init(name: String, id: String, created: Date, root: Data) {
+            self.name = name; self.id = id; self.created = created; self.root = root
         }
 
-        /// `vault`'s id, creation date and recipient count, under `name`.
+        /// `vault`'s id, creation date and root, under `name`.
         public init(vault: Vault, name: String) {
-            self.init(name: name, id: vault.vaultId.uuidString.lowercased(), created: vault.manifest.created,
-                      recipientCount: vault.recipients.count)
+            self.init(name: name, id: vault.vaultId.uuidString.lowercased(), created: vault.created ?? Date(), root: vault.root)
+        }
+
+        /// The root's QR payload: `sempere-root:<vaultId>:<64 hex>`.
+        public var rootQR: String {
+            guard let uuid = UUID(uuidString: id) else { return "" }
+            return KitRecovery.rootQR(vaultId: uuid, root: root)
         }
     }
 
@@ -85,10 +93,16 @@ public struct RecoveryKit: Sendable {
         try QRCode.encode(text: qrPayload, correction: qrCorrection)
     }
 
+    /// The root's QR code (`VaultInfo.rootQR`), nil without a vault.
+    public func rootQRCode() throws -> QRCode? {
+        guard let vault, !vault.rootQR.isEmpty else { return nil }
+        return try QRCode.encode(text: vault.rootQR, correction: .quartile)
+    }
+
     /// Renders the kit as a PDF.
     public func pdf() throws -> Data {
         let code = try qrCode()
-        return try PDFDocument.render(pages: [try pageOne(code), pageTwo()], title: "Sempere recovery kit")
+        return try PDFDocument.render(pages: [try pageOne(code), try pageTwo()], title: "Sempere recovery kit")
     }
 
     // MARK: - Layout
@@ -148,15 +162,15 @@ public struct RecoveryKit: Sendable {
     private func pageOne(_ code: QRCode) throws -> PDFPage {
         var w = Writer(page: PDFPage(width: pageWidth, height: pageHeight), y: margin - 6, x: margin,
                        width: contentWidth)
-        w.line(isPlain ? "Sempere recovery kit: secret key" : "Sempere recovery kit: passphrase-locked key",
+        w.line(isPlain ? "Sempere recovery kit: recovery key" : "Sempere recovery kit: passphrase-locked recovery key",
                size: 18, font: .helveticaBold)
         w.space(4)
         if let v = vault {
             w.line("Vault:      \(v.name)")
             w.line("Vault id:   \(v.id)")
-            w.line("Created:    \(Self.utcDate(v.created)) (\(v.recipientCount) key(s) can open it)")
+            w.line("Created:    \(Self.utcDate(v.created))")
         } else {
-            w.line("Vault:      (not given; this key may open several vaults)")
+            w.line("Vault:      (not given)")
         }
         w.line("Printed:    \(Self.utcDate(printed))")
         w.line("Public key: \(publicKeyDescription)")
@@ -167,12 +181,12 @@ public struct RecoveryKit: Sendable {
         let warning: [String]
         if isPlain {
             warning = [
-                "THIS SHEET IS YOUR KEY.",
-                "Anyone who holds it, or a photo of it, can read every note in the vault.",
-                "Keep it offline and safe (with your passport, in a sealed envelope). Do not",
-                "photograph it, scan it to a cloud, email it or leave it in a shared printer.",
-                "Lose every copy of your key and your notes are gone for good: nobody, including",
-                "the Sempere authors, can recover them.",
+                "THIS SHEET IS YOUR VAULT'S RECOVERY KEY.",
+                "Anyone who holds it, or a photo of it, can read every note in the vault and take",
+                "over managing its devices. Keep it offline and safe (with your passport, in a",
+                "sealed envelope). Do not photograph it, scan it to a cloud, email it or leave it",
+                "in a shared printer. No device keeps a copy: it cannot be printed again. Lose",
+                "your devices and every copy of this key, and your notes are gone for good.",
             ]
         } else {
             warning = [
@@ -191,7 +205,7 @@ public struct RecoveryKit: Sendable {
         w.space(14)
 
         // QR code, quiet zone of 4 modules.
-        let qrSide = isPlain ? 150.0 : 230.0
+        let qrSide = isPlain ? 150.0 : 210.0
         let modulePt = qrSide / Double(code.size)
         let quiet = 4 * modulePt
         let qrTop = w.y + quiet
@@ -230,6 +244,18 @@ public struct RecoveryKit: Sendable {
         w.space(10)
         w.paragraph("Gray numbers on the right are line checksums, not part of the key. To find a mistyped "
                     + "line, check each one: printf '%s' 'LINE WITHOUT SPACES' | sha256sum | cut -c1-4", size: 8.5)
+        if let v = vault {
+            w.space(6)
+            w.line("The vault's root fingerprint (16 groups, each with its line checksum):", size: 9.5, font: .helveticaBold)
+            w.space(2)
+            let groups = KitRecovery.rootGroups(v.root)
+            for row in stride(from: 0, to: groups.count, by: 4) {
+                let cells = groups[row..<min(row + 4, groups.count)].map { "\($0.group) (\($0.checksum))" }
+                w.line(cells.joined(separator: "   "), size: 10, font: .courierBold, indent: 14)
+            }
+            w.paragraph("A device joining with this key checks the vault against this root (also the QR code on "
+                        + "page 2): a copy built around another key is refused.", size: 8.5)
+        }
         if isPlain {
             w.space(4)
             w.paragraph("The key has its own checksum too: an age key is Bech32, and its last 6 characters are "
@@ -247,7 +273,7 @@ public struct RecoveryKit: Sendable {
         w.line("# must print \(PaperKey.fingerprint(recipient)) (the SHA-256 on page 1)", indent: 14)
     }
 
-    private func pageTwo() -> PDFPage {
+    private func pageTwo() throws -> PDFPage {
         var w = Writer(page: PDFPage(width: pageWidth, height: pageHeight), y: margin - 6, x: margin,
                        width: contentWidth)
         w.line("How to get your notes back", size: 16, font: .helveticaBold)
@@ -271,32 +297,40 @@ public struct RecoveryKit: Sendable {
         w.paragraph("This is a post-quantum key: age 1.3 or newer is needed for every `age` command here "
                     + "(github.com/FiloSottile/age/releases; the version in Ubuntu's apt is older).", size: 8.5)
         w.space(6)
-        w.line("2a. With the sempere tool (github.com/anthonytw/sempere)", size: 11, font: .helveticaBold)
+        let rootHex = vault.map { Hex.encode($0.root) } ?? "ROOT"
+        w.line("2a. With the sempere tool (github.com/anthonytw/sempere), read-only", size: 11, font: .helveticaBold)
         w.line("V=~/restore/notes.sempere", indent: 14)
-        w.line("sempere restore BACKUP_DIR --to $V --identity key.txt   # from a backup", indent: 14)
-        w.line("sempere vault verify --vault $V --identity key.txt", indent: 14)
+        w.line("sempere vault verify --vault $V --recovery-key key.txt \\", indent: 14)
+        w.line("    --root \(rootHex.prefix(32))\\", indent: 14)
+        w.line("\(rootHex.dropFirst(32))", indent: 28)
         w.line("sempere export --all --format pdf --out ~/notes-pdf \\", indent: 14)
-        w.line("    --vault $V --identity key.txt", indent: 14)
+        w.line("    --vault $V --recovery-key key.txt --root <the same>", indent: 14)
         w.space(6)
-        w.line("2b. With nothing but stock tools (age, tail, gunzip, jq)", size: 11, font: .helveticaBold)
-        w.paragraph("Each note is a folder notes/<note id>/ of revision files. The newest *.snapshot.age "
-                    + "holds the whole note; later *.delta.age files hold edits since. Every file decrypts "
-                    + "to 37 header bytes (SMPR, version, tag) and then gzip-compressed JSON:")
-        w.line("age -d -i key.txt FILE.age | tail -c +38 | gunzip | jq .", indent: 14)
-        w.paragraph("To dump the newest snapshot of every note:")
-        w.line("for d in $V/notes/*/; do", indent: 14)
-        w.line("  f=$(ls \"$d\"*.snapshot.age 2>/dev/null | tail -n 1)", indent: 14)
-        w.line("  [ -n \"$f\" ] || f=$(ls \"$d\"*.age | tail -n 1)", indent: 14)
-        w.line("  age -d -i key.txt \"$f\" | tail -c +38 | gunzip > \"$(basename \"$d\").json\"", indent: 14)
-        w.line("done", indent: 14)
+        w.line("2b. With nothing but stock tools (age 1.3+, jq, tail, gunzip)", size: 11, font: .helveticaBold)
+        w.paragraph("Run this in the vault folder, with key.txt saved there as recovery.txt. It opens the vault "
+                    + "keys of every epoch into vault-keys.txt, then any note (every file decrypts to 37 header "
+                    + "bytes, then gzip-compressed JSON):", size: 8.5)
+        // The root's QR code sits beside the script (its lines end well before the right margin).
+        let scriptTop = w.y
+        for l in KitRecovery.script.split(separator: "\n", omittingEmptySubsequences: false) {
+            w.line(String(l), size: 7, indent: 14, gap: 1.3)
+        }
+        if let root = try rootQRCode() {
+            let side = 80.0, modulePt = side / Double(root.size + 8)
+            let left = pageWidth - margin - side
+            w.page.qrCode(root, x: left + 4 * modulePt, y: scriptTop + 4 * modulePt, module: modulePt)
+            var note = Writer(page: w.page, y: scriptTop + side, x: left, width: side)
+            note.paragraph("The root (sempere-root:id:root), for a joining device.", size: 6)
+            w.page = note.page
+            w.y = max(w.y, note.y)
+        }
         w.paragraph("Strokes are B-spline control points (docs/format.md in the repository); the JSON is "
-                    + "readable on its own and any later sempere release can render it.")
+                    + "readable on its own and any later sempere release can render it.", size: 8.5)
         w.space(6)
         w.line("3. Afterwards", size: 11, font: .helveticaBold)
-        w.paragraph("Delete key.txt (and key.age) from any computer you do not own. If this sheet was ever "
-                    + "out of your control, make a new key, add it to the vault and remove this one "
-                    + "(sempere vault recipients add / remove): removing a key does not undo what it "
-                    + "already decrypted, but it locks out everything written afterwards.")
+        w.paragraph("Delete key.txt and vault-keys.txt from any computer you do not own. If this sheet was ever "
+                    + "out of your control, whoever holds it can read the vault: replacing the recovery key comes "
+                    + "with a later version of Sempere; until then, create a new vault and move your notes.")
         w.space(10)
         w.page.hline(y: w.y, from: margin, to: pageWidth - margin)
         w.space(4)

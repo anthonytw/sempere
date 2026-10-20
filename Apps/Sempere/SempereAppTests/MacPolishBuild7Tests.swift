@@ -159,7 +159,6 @@ struct MacPolishBuild7Tests {
         #expect(OpenedFile.stage(waiting: 0, phase: .unlocked, busy: false, readOnly: false) == .none)
         #expect(OpenedFile.stage(waiting: 1, phase: .noVault, busy: false, readOnly: false) == .needsVault)
         #expect(OpenedFile.stage(waiting: 1, phase: .locked, busy: false, readOnly: false) == .needsUnlock)
-        #expect(OpenedFile.stage(waiting: 1, phase: .finishingKeyChange, busy: false, readOnly: false) == .needsUnlock)
         #expect(OpenedFile.stage(waiting: 2, phase: .unlocked, busy: true, readOnly: false) == .needsUnlock)
         #expect(OpenedFile.stage(waiting: 2, phase: .unlocked, busy: false, readOnly: true) == .readOnly)
         #expect(OpenedFile.stage(waiting: 2, phase: .unlocked, busy: false, readOnly: false) == .ready)

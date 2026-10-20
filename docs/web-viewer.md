@@ -21,13 +21,17 @@ What it does:
   (`sempere-summaries.sealed`, `format.md` §12) and the encrypted files are
   cached in the browser, so a later visit downloads and decrypts only what
   changed ("Opening fast").
-- **Unlock** with the `AGE-SECRET-KEY-PQ-1…` identity, pasted as the bare line
-  or the whole `age-keygen -pq` key file. Classic `AGE-SECRET-KEY-1…` keys are
-  refused (create a post-quantum key with `age-keygen -pq`), and a `vault.json`
-  that lists a classic X25519 recipient is invalid (`format.md` §3.1). Or with a
-  passphrase: the vault's own passphrase-wrapped key file, or a recovery
-  kit's passphrase-locked copy ("Unlocking with a passphrase"). Or, on a
-  device where you chose to, with one passkey prompt (below).
+- **Unlock** with a key `vault.json` lists (`format.md` §2): a device's key
+  file (`sempere vault init` or `device init` wrote it) or the recovery key
+  (the kit's `AGE-SECRET-KEY-PQ-1…` line, bare or as a key file). The entry
+  whose `key` matches holds the wrap that opens to the vault key `K_e`
+  (`parseEpochWrap` checks its vault id, epoch and identity). Classic
+  `AGE-SECRET-KEY-1…` keys are refused (create a post-quantum key with
+  `age-keygen -pq`), and a `vault.json` that lists a classic X25519 key is
+  invalid (`format.md` §3.1). Or with a passphrase: the vault's passphrase
+  copy of the recovery key, or a recovery kit's passphrase-locked copy
+  ("Unlocking with a passphrase"). Or, on a device where you chose to, with
+  one passkey prompt (below).
 - **Browse** notebooks (the `/` hierarchy of §5.4), tags (one spelling per tag
   key, §5.4.1), favorites and deleted notes; **search** titles, tags,
   notebooks and recognized handwriting (the same rules as the app's
@@ -95,7 +99,7 @@ How (`web/src/vault/passkey.ts`):
 
 **The location.** `vault.json` is not authenticated until a key has opened
 it, so any server can serve one with the id of a vault you remembered (and a
-secret of its own, encrypted to your public key). A record is therefore bound
+vault key of its own, wrapped to your public key). A record is therefore bound
 to where the vault was opened, not only to its id: the vault's normalized URL
 (`HTTPSource.label`: no query, fragment or credentials, a trailing slash; a
 different host, port or path is a different location), or `local:` for any
@@ -136,18 +140,18 @@ context: HTTPS, or `http://localhost`.
 
 ## Unlocking with a passphrase
 
-A vault may keep its key locked with a passphrase (`format.md` §3.2:
-`keys/<name>.key.age`, an age file with one scrypt recipient whose plaintext is
-the identity file), and `sempere keys paper --passphrase` prints a recovery
-kit whose QR code and text are the same kind of file, armored. The viewer opens
-both (`web/src/vault/keyfile.ts`, `web/src/ui/passphrase.ts`):
+A vault may keep a passphrase copy of its recovery key (`format.md` §3.2,
+§15.11: `keys/recovery-<fingerprint>.key.age`, an age file with one scrypt
+recipient whose plaintext is the identity file with the vault id and root),
+and `sempere keys paper --passphrase` prints a recovery kit whose QR code and
+text are the same kind of file, armored. The viewer opens both
+(`web/src/vault/keyfile.ts`, `web/src/ui/passphrase.ts`):
 
-- **The vault's stored key.** After `vault.json` is read, the viewer looks for
-  `keys/<name>.key.age` of each current recipient (the name computed as the
-  CLI does: `age1pq-` and the SHA-256 of the recipient string), as the CLI and
-  the app offer only current recipients' key files. When one is there, the
-  unlock screen shows "Unlock with your passphrase" (a choice of key when there
-  are several). A file that is not a passphrase file is not offered.
+- **The vault's passphrase copy.** After `vault.json` is read, the viewer looks
+  for `keys/recovery-<fingerprint>.key.age`, the name computed from the
+  recovery entry (`recoveryKeyFileName`). When it is there, the vault card
+  offers it with a passphrase field. A file that is not a passphrase file is
+  not offered.
 - **A recovery kit's locked copy, or a key file.** The paste field takes the
   armored text (`-----BEGIN AGE ENCRYPTED FILE-----`, from the kit's QR code or
   typed from its lines; surrounding spaces, blank lines and CRLF are tolerated,
@@ -155,12 +159,16 @@ both (`web/src/vault/keyfile.ts`, `web/src/ui/passphrase.ts`):
   key file…" takes a `.key.age` file (binary or armored) or a plain key file.
   A locked key shows a passphrase field.
 
+The recovery key opens the vault like any listed key; the viewer only reads
+in any case. It does not compare the root inside the passphrase copy with
+`vault.json`'s.
+
 The header is checked before any work: exactly one recipient, scrypt, work
 factor at most 20 (`format.md` §3.2 lets readers stop there; 2^20 needs
-1 GiB). Anything else is refused with its reason (a larger work factor points
-to `sempere keys export`). Then typage's scrypt identity decrypts the file in a
+1 GiB). Anything else is refused with its reason. Then typage's scrypt identity decrypts the file in a
 **worker** (`web/src/ui/keyworker.ts`), so the page stays responsive for the
-second or so it takes at the writers' work factors (15 to 18), and the
+seconds it takes at the writers' work factors (18 for a kit's copy, 20 for
+the vault's passphrase copy), and the
 worker is terminated afterwards, which frees scrypt's memory; a worker that
 dies (out of memory on a small device) is reported. The plaintext (at most
 16 KiB, strict UTF-8) must hold one post-quantum identity, parsed like a pasted
@@ -266,9 +274,9 @@ The code mirrors the Swift reader and is tested against it (see "Tests").
 
 | Step | Where | Swift counterpart |
 | --- | --- | --- |
-| `vault.json`: format, recipients (post-quantum only) | `web/src/vault/vault.ts` | `Vault.readManifest` |
+| `vault.json`: the epoch manifest of `format.md` §2 and §15.3 (structure, post-quantum keys only), this device's wrap, `listTag` and the other checks ("Security") | `web/src/vault/vault.ts`, `epoch.ts` | `EpochManifest.parse`, `Vault.open`, `VaultCheck.swift` |
 | age decryption (MLKEM768-X25519 stanzas) | [typage](https://github.com/FiloSottile/typage) `age-encryption` 0.3.1 | `Age` |
-| `SMPR` framing, HMAC-SHA256 tag under the vault secret (WebCrypto), previous secret during a rewrap | `vault.ts` | `BodyFraming`, `NoteStore.unframe` |
+| every file decrypted with the vault identity `V_e` derived from `K_e` (§15.2); `SMPR` framing, HMAC-SHA256 tag under `tagKey` (WebCrypto) | `vault.ts`, `epoch.ts` | `BodyFraming`, `VaultEpochKey` |
 | bounded gunzip (`DecompressionStream`), strict UTF-8, JSON | `web/src/vault/gzip.ts` | `Gzip.decompress` |
 | revision decoding with Swift's `Codable` rules; name and content must agree (§5) | `web/src/format/model.ts`, `ids.ts`, `rfc3339.ts`, `attachments.ts` | `Model.swift`, `Revision.swift`, `Attachments.swift` |
 | merge: snapshots, uncovered deltas, LWW registers, tombstones, orphans, tag OR-set, items and recordings | `web/src/format/reducer.ts`, `tags.ts`, `registers.ts` | `NoteReducer`, `AttachmentRegisters` |
@@ -285,8 +293,9 @@ The code mirrors the Swift reader and is tested against it (see "Tests").
 Typage 0.3.1 implements the age v1.3 hybrid recipient (`mlkem768x25519`,
 HPKE with X-Wing) with `@noble/post-quantum`; the viewer has no cryptography
 of its own beyond calling typage, WebCrypto (HMAC-SHA256, HKDF) and, for
-signed secret links (`format.md` §2.1), `@noble/curves` 2.4.0 (Ed25519) and
-`@noble/post-quantum` 0.7.1 (ML-DSA-65, `web/src/vault/link.ts`), both pinned
+the key hierarchy's signatures and links (`format.md` §15.1, §15.3: P-256
+ECDSA, Ed25519, ML-DSA-65), `@noble/curves` 2.4.0 and `@noble/post-quantum`
+0.7.1 (`web/src/vault/epoch.ts`, `link.ts`), both pinned
 and pure JavaScript, so the CSP needs no WebAssembly or `eval`.
 
 Unreadable revisions (wrong tag, undecryptable, undecodable) are reported in
@@ -303,7 +312,7 @@ takes seconds. Three things make a visit fast:
 1. **Published summaries** (`format.md` §12). `sempere-summaries.sealed` at
    the vault root holds each note's title, tags, notebook, flags, dates, page
    count and searchable text, with the names of the revision files it was made
-   from, sealed (AES-256-GCM) under a key derived from the vault secret. The
+   from, sealed (AES-256-GCM) under a key derived from the vault key `K_e`. The
    viewer reads it right after unlocking and shows the whole list at once,
    then checks the vault's listing: a note whose revision names equal its
    entry's is current (revision files are write-once, so the same names are
@@ -317,14 +326,13 @@ takes seconds. Three things make a visit fast:
    revisions replaces its entry.
 2. **A cache of ciphertext.** Revisions and blobs fetched over HTTP are kept
    in IndexedDB (`web/src/vault/cache.ts`), keyed by the vault's URL and id,
-   its **key state** (a hash of `vaultSecret` as sealed in `vault.json` and of
-   `rewrap-journal.json` when there is one) and the file's path, exactly as
-   the server sent them. A recipient change re-seals the secret and a rewrap
-   rewrites files in place under their names, so the key state changes with
-   either (and again when the rewrap finishes), and opening the vault deletes
-   every copy cached under an earlier one: a key removed from the vault never
-   opens a copy the browser kept from before (security review 2026-10, P4).
-   Within one key state they are write-once,
+   its **key state** (a hash of `vault.json`'s `epochId` and, while a
+   re-encryption is unfinished, `reencryptPending`; `cacheNamespace`) and the
+   file's path, exactly as the server sent them. A new epoch (a device
+   removed, key hierarchy KH3) or a re-encryption (KH6) changes the key state,
+   and opening the vault deletes every copy cached under an earlier one: a key
+   removed from the vault never opens a copy the browser kept from before
+   (security review 2026-10, P4). Within one key state they are write-once,
    so a cached file is never fetched again: a later visit requests only names
    it has not seen (plus `config.json`, `vault.json`, the summaries file and
    the listing, which change). After each listing, cached revisions the
@@ -332,8 +340,7 @@ takes seconds. Three things make a visit fast:
    the rest is bounded at 512 MiB (least recently used first; no file over
    64 MiB is cached). Everything read from the cache is decrypted and
    verified like a download (age, the body tag of §4, a blob's hash and keyed
-   name), and a cached file that fails (a recipient change rewrote it,
-   storage damage) is deleted and downloaded once more. "Clear cached data"
+   name), and a cached file that fails (storage damage) is deleted and downloaded once more. "Clear cached data"
    (on the open, unlock and main screens) deletes the cache of every vault.
    Where IndexedDB is unavailable (some private windows) the cache lives in
    memory for the tab. Local folders are not cached.
@@ -437,8 +444,7 @@ color), then the ink. Each item is one of:
 the viewport (a video's poster with it), audio and video clips only when
 played, transcripts when opened.
 Each is looked up at `notes/<id>/att/<name>.<kind>.age`, with `name` keyed from
-the reference's hash under the vault secret (and under the previous secret
-while a rewrap is unfinished, §8.1.5), decrypted as a stream (typage checks
+the reference's hash under `blobNameKey` (§8.1.2, §15.2), decrypted as a stream (typage checks
 each 64 KiB chunk), and checked as a whole before anything is used: magic and
 version, the header's hash and length equal to the reference's (which binds
 the file to its keyed name), zero padding, and the SHA-256 of the content.
@@ -468,7 +474,8 @@ words under 0.5 confidence are dotted-underlined.
 
 What the viewer protects, and against whom.
 
-**Assets:** the age identity, the vault secret, and decrypted note content.
+**Assets:** the key the user gives (a device key or the recovery key), the
+vault key `K_e` it unwraps, and decrypted note content.
 
 **Trusted:** the browser, the user's device, and the viewer's own files as
 served (`index.html` and its hashed `assets/`). Whoever can change those files
@@ -481,7 +488,7 @@ yourself (`npm ci && npm run build`).
 returns: file contents, listings (`sempere-index.json`, PROPFIND bodies),
 the summaries file, sizes and names; and the browser cache, which holds what
 the server sent. A hostile server can withhold, replay or reorder files, but
-cannot forge or alter a revision without the vault secret (the HMAC tag binds
+cannot forge or alter a revision without the vault key (the HMAC tag binds
 note id, file name and body, §4), and cannot make the viewer run code:
 
 - **No markup from data.** The UI builds DOM nodes and sets text; nothing
@@ -517,35 +524,39 @@ note id, file name and body, §4), and cannot make the viewer run code:
   renderer limits of `SempereRender` (extent 200 000 pt, samples per control
   point, outline points per page, ruling commands per band and page). Every
   failure is a typed error shown to the user; a seeded fuzz test checks that.
-- **Summaries** (`format.md` §12) are authenticated under the vault secret:
-  the server can withhold one or serve an older one (its entries then still
-  match unchanged notes, or are decrypted again), not forge one. A malicious
-  recipient can write entries that disagree with its revisions; a note opened
+- **Summaries** (`format.md` §12) are authenticated under a key derived from
+  the vault key: the server can withhold one or serve an older one (its
+  entries then still match unchanged notes, or are decrypted again), not
+  forge one. A malicious listed device can write entries that disagree with its revisions; a note opened
   shows its revisions. The file is bounded (64 MiB, 256 MiB after gunzip),
   each entry is checked (canonical sorted revision names, dates, counts, page
   numbers) and a bad entry is dropped alone; a fuzz test covers it.
-- **Device list and secret link** (`format.md` §2.1): the viewer keeps no
-  trust record and writes nothing, so it reports only what the recipients
-  tag says under the secret. It checks `secretLink` for one purpose: a
-  rewrap journal's previous secret (blob names and derived keys during an
-  unfinished rewrap) counts only when the link connects it to the current
-  secret, with both signatures (Ed25519 and ML-DSA-65) verifying under the
-  previous secret's derived public keys. A link with one valid signature, or
-  in any other form, is refused. The link stays in `vault.json` after
-  the rewrap, and a removed device holds the outgoing secret, so the journal
-  must also still be bound by `vault.json` (`rewrapPending`, `format.md`
-  §3.3.1); with no trust record, the viewer
-  cannot tell a `vault.json` put back from the rotation, which then still
-  binds the genuine journal (`journal.test.ts`). Shared test vectors with the Swift
-  code: `Tests/SempereTests/Fixtures/secret-link-vectors.json`.
+- **The device list** (`format.md` §2, §2.1, §15.3). The viewer reads only
+  the current epoch: files under an earlier epoch's key are unreadable, and
+  epoch records of earlier epochs and the re-encryption journal are not read.
+  It refuses the vault (`tamperedList`) when `listTag` does not verify under
+  `K_e` or the wrap's epoch id differs, after the structural checks Swift's
+  `EpochManifest.parse` makes. It warns (a banner; the vault stays readable)
+  when `markersTag` does not verify; when the epoch record is missing, does
+  not match `epochRecordHash`, does not open under `V_e`, fails its body tag
+  or disagrees with `vault.json`; when `root` is not the one epoch 1's link
+  keys give (at epoch 1); and when `epochLink`, `epochSig`, a takeover's
+  `recoverySig`, the `addSig` of an entry added in this epoch, or `authorSig`
+  does not verify. It keeps no trust record and writes nothing, so it cannot
+  see a rolled-back `vault.json`, and it does not walk the chain, check the
+  parent's home above epoch 1, apply the takeover and precedence rules, or
+  compare a passphrase copy's root with `vault.json`'s. Shared vectors with
+  the Swift code: `Tests/SempereTests/Fixtures/epoch-vectors.json` and the
+  chain and precedence vectors (`epoch.test.ts`).
 - **`config.json`** (deploy time, "Hosting") holds no secret and is only
   read: it names the vault's URL and listing and whether other vaults may be
   opened. One that exists but cannot be read or parsed stops the viewer
   (fail closed) rather than falling back to ad-hoc loading.
-- **Stored key files** (`keys/`, "Unlocking with a passphrase") come from the
-  server too. One the server swapped can only fail: without the passphrase it
-  cannot make a file that your passphrase decrypts, and a key it chose would
-  still have to be one of the vault's recipients to unlock anything. Its
+- **The passphrase copy** (`keys/`, "Unlocking with a passphrase") comes from
+  the server too. One the server swapped can only fail: without the passphrase
+  it cannot make a file that your passphrase decrypts, and a key it chose would
+  still have to be listed in `vault.json` with a wrap that opens to unlock
+  anything. Its
   header is checked first (one scrypt recipient, work factor at most 20, so at
   most 1 GiB in a worker that is then terminated), and its plaintext is
   bounded. Whoever holds the file (the server, a backup) can guess the
@@ -575,7 +586,7 @@ a browser profile without such extensions for sensitive vaults.
 IndexedDB under the viewer's origin: vault files exactly as downloaded, keyed
 by the vault's URL and id, its key state and the file's path, with a size and a last-use
 time; copies of an earlier key state are deleted when the vault is opened. **Nothing decrypted is persisted**: no note content, title, summary,
-vault secret or key, and no derived key (the summaries are decrypted into
+vault key or the user's key, and no derived key (the summaries are decrypted into
 memory on each visit). Someone with access to the browser profile learns
 what the server shows anyone who can list it (note ids, revision and blob
 names, sizes) and which vaults were opened there, and holds encrypted files
@@ -637,7 +648,10 @@ compromised browser or OS, shoulder surfing, and traffic analysis.
 ## Hosting
 
 The viewer is static files: `web/dist/` after `npm run build` (relative
-paths, so any sub-path works). The vault is any folder of its files. Put both
+paths, so any sub-path works). The vault is any folder of its files; on unlock
+the viewer fetches `vault.json`, the epoch record it names
+(`epochs/<e>-<16 hex>.epoch.age`) and, when it is there, the passphrase copy
+in `keys/` (offered on the vault card), so a mirror must hold those too. Put both
 on **one origin** (for example `https://notes.example.org/` for the viewer and
 `https://notes.example.org/vault/` for the vault): then `connect-src 'self'`
 covers it and no CORS is needed. To read a vault on another origin, build with
@@ -689,17 +703,21 @@ login cookie, prompted by the browser); the viewer sends credentials only to
 its own origin.
 
 ```bash
-# on the Mac, from the iCloud vault (docs/cli.md "Sync"); --identity lets it keep
-# the server's summaries current, --web-viewer creates them (and the index) the first time
+# on the Mac, from the iCloud vault (docs/cli.md "Sync"); this machine's device key
+# (docs/cli.md "Getting a key") lets it keep the server's summaries current,
+# --web-viewer creates them (and the index) the first time
 SEMPERE_WEBDAV_PASSWORD=… sempere sync webdav https://notes.example.org/vault/ \
   --vault ~/Library/Mobile\ Documents/com~apple~CloudDocs/Notes.sempere --user notes \
-  --identity ~/.config/sempere/identity.key --push-only --web-viewer
+  --push-only --web-viewer
 ```
 
 The run keeps `sempere-summaries.sealed` and `sempere-index.json` on the server
 describing what the server holds, rewriting them only when that changed;
-without `--identity` the summaries are left as they are (stale entries only
-mean more decryption in the viewer).
+without a key the summaries are left as they are (stale entries only
+mean more decryption in the viewer). `sync webdav` does not upload `epochs/`
+or `keys/` yet (key hierarchy KH4): copy them to the server once (they do not
+change in a vault of one epoch), or the viewer warns that the epoch record is
+missing (the vault stays readable).
 
 Uploads go `--jobs` at a time (default 6). Where the server answers a
 `Depth: infinity` `PROPFIND` of `notes/` in full, an idle run lists the whole share
@@ -786,9 +804,12 @@ are missing: download the vault first.
   times a tool factor), no pencil grain, watercolor bleed or nib angle; the
   same approximations as the CLI's PDF and SVG exports.
 - **Passphrase-wrapped keys** with a scrypt work factor over 20 are refused
-  (`format.md` §3.2 allows readers to stop there; writers use 15 to 18): use
-  `sempere keys export`. At 20 scrypt needs 1 GiB, which a phone's browser may
-  not give a worker; the viewer then says so.
+  (`format.md` §3.2 allows readers to stop there). The vault's passphrase copy
+  is written at 20, where scrypt needs 1 GiB, which a phone's browser may not
+  give a worker; the viewer then says so (use the printed kit's key).
+- **Only the current epoch** is read: files written under an earlier epoch's
+  key (after a removal, key hierarchy KH3) are unreadable here, and the chain,
+  takeovers and precedence are not checked ("Security").
 - **Transcript search** reads and decrypts every transcript of the vault the
   first time it is ticked in a tab (seconds for hundreds of notes; the
   encrypted files are cached, decryption is not), and keeps them in memory
@@ -830,7 +851,7 @@ scripts/golden.sh      # rewrite test/golden from the Swift CLI (builds it)
 # browser smoke tests, Playwright + Chromium (smoke.mjs needs sempere-index.json in the vault: `sempere vault index`):
 node scripts/smoke.mjs ../Tests/SempereTests/Fixtures/sample.sempere ../Tests/SempereTests/Fixtures/sample.key
 node scripts/smoke-attachments.mjs test/fixtures/render.sempere ../Tests/SempereTests/Fixtures/sample.key
-# passphrase-wrapped keys (stored key file, recovery kit copy, then a passkey) and transcript search (CI's web job)
+# passphrase-wrapped keys (the vault's passphrase copy, a recovery kit copy, then a passkey) and transcript search (CI's web job)
 node scripts/smoke-search-keys.mjs
 node scripts/make-search-fixture.ts   # rewrite test/fixtures/search.sempere (then scripts/golden.sh)
 # passkey: Chromium's virtual authenticator (CTAP2, UV, PRF), and one without PRF
@@ -855,14 +876,17 @@ Tests (`web/test/`, vitest, Node 22):
   `web/test/fixtures/render.sempere`, the TypeScript reconstruction must equal
   `sempere export --format json` and the TypeScript SVG must equal
   `sempere export --format svg` byte for byte. The render fixture is written
-  by `scripts/make-fixture.ts` (encrypted to the throwaway test key) and covers
-  every paper kind, every tool, transforms, dots, infinite pages, two devices
+  by `scripts/make-fixture.ts` (with `sample.sempere`'s `vault.json`, `epochs/`
+  and `keys/`, vault id `5a3b1e00-…-0001`, so the throwaway test keys open it)
+  and covers every paper kind, every tool, transforms, dots, infinite pages, two devices
   with a snapshot, removals, page order, recognition, per-tag
   tags, an orphan delta, attachments and unknown fields. CI's `web-golden`
   job regenerates `test/golden` with the CLI (SVG with `--pdf-renderer none`,
   so PDF pages are placeholders there and the goldens do not depend on a
   Poppler version) and fails on any difference, so the committed goldens are
-  always the Swift output.
+  always the Swift output. Regenerating needs a CLI with its fonts bundle next
+  to it. The render and search fixtures are unhealthy under `sempere vault
+  verify` on purpose (missing and forged blobs).
 - **Attachments against the CLI** (`items-crosscheck.test.ts`): three fixture
   notes with blobs (`test/fixtures/media/`: a synthetic JPEG with EXIF and a
   comment, a PNG with a text chunk, a hand-written two-page PDF with a
@@ -879,29 +903,32 @@ Tests (`web/test/`, vitest, Node 22):
   where it does not depend on glyph widths), each text box's rotation, and
   each video's play mark element for element.
 - Blobs (`blobs.test.ts`: the §8.1.3 test vector, Padmé, every framing
-  failure, missing, forged and cross-note blobs, the previous secret during a
-  rewrap), images, placement, text layout and transcripts
+  failure, missing, forged and cross-note blobs, names under `blobNameKey`
+  alone), images, placement, text layout and transcripts
   (`attachment-render.test.ts`), and pdf.js's effective page and crop mapping
   for each `/Rotate` (`pdf.test.ts`, rendered in Node with pdf.js's optional
   `@napi-rs/canvas`).
-- Signed secret links (`link.test.ts`): the seeds, public keys and message
-  of `Tests/SempereTests/Fixtures/secret-link-vectors.json`, the links made
-  by noble and by swift-crypto verifying, links with one valid signature
-  refused, strict parsing, and a journal secret accepted only through a
-  link whose two signatures verify.
+- The key hierarchy (`epoch.test.ts`): `Tests/SempereTests/Fixtures/epoch-vectors.json`
+  (key schedule, root, fingerprints, epoch links by noble and swift-crypto,
+  `listMessage`/`listTag`, wraps made by typage and by Swift, the three author
+  signatures, join codes) and the shared chain vectors. `vault.test.ts`:
+  opening with a device key or the recovery key to the same keys, keys not
+  listed, swapped wraps, a `vault.json` whose `listTag` does not verify
+  refused however it was changed, the warnings from its own signatures and
+  the epoch record, and the body tag's known answer.
 - Ports of the Swift merge, tag, clock, model, search and notebook tests,
   including §5.3's shuffled-order reconstruction and the multi-device tag
   convergence simulation.
 - Published summaries (`summaries.test.ts`): the §12.1 vector, the Swift
   goldens (`test/golden/*.summaries.json`, from `sempere vault summaries
   --plaintext`) equal to what the viewer computes from the revisions,
-  tampered, foreign-secret and wrong-vault files refused, malformed entries
+  tampered, foreign-key and wrong-vault files refused, malformed entries
   dropped alone. The listing (`listing.test.ts`): summaries shown first,
   only stale notes decrypted, gone notes dropped, a second visit with the
   cache downloading nothing, eviction. The cache (`cache.test.ts`: LRU,
   write-once paths only, a failing cached file evicted and fetched again,
   IndexedDB through `fake-indexeddb`) and `config.json` (`config.test.ts`).
-- Vault and source tests: classic-recipient refusal, wrong key, tag binding to note and
+- Vault and source tests: classic-key refusal, wrong key, tag binding to note and
   file name, unreadable revisions reported, bounded reads and gunzip, index
   and PROPFIND parsing with hostile names.
 - Transcript search against the CLI (`phrasesearch.test.ts`): for each term
@@ -915,8 +942,8 @@ Tests (`web/test/`, vitest, Node 22):
   is what Foundation's `range(of:)` and the CLI's snippet give for the cases
   of `test/fixtures/occurrence-cases.json` (`scripts/occurrence-vectors.swift`,
   run by `golden.sh`, so CI's `web-golden` job regenerates and diffs it).
-- Passphrase-wrapped keys (`keyfile.test.ts`): the sample vault's stored key
-  file and a recovery kit's armored copy, both written by the Swift CLI, a
+- Passphrase-wrapped keys (`keyfile.test.ts`): the sample vault's passphrase
+  copy of the recovery key and a recovery kit's armored copy, both written by the Swift CLI, a
   sloppy paste, wrong and empty passphrases, a damaged armor line, files that
   are not passphrase files, a work factor over 20 refused before any scrypt,
   and decrypted files that hold no post-quantum key.
@@ -935,7 +962,7 @@ SVG pixel diff). The fast ones run in CI's `web-smoke` job through `scripts/smok
 ones and WebKit are run by hand (below). Nothing here reads a real vault: the vault is synthetic.
 
 - **The vault** (`scripts/make-stress-fixture.ts OUT_DIR [--pages N] [--strokes N] [--dense N]
-  [--deep N]`, encrypted to the test key; written fresh into a temporary directory, never
+  [--deep N]`, reusing `sample.sempere`'s `vault.json`, `epochs/` and `keys/`; written fresh into a temporary directory, never
   committed): "Stress: N pages" (letter pages, 20 strokes each), "Stress: pageless N" (one pageless
   page, N strokes over 40 000 pt), "Stress: pageless dense" (strokes inside 3000 pt: hundreds per
   band, thousands in the window) and "Stress: N deep pages" (pageless pages of differing depth, so

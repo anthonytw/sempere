@@ -241,10 +241,6 @@ final class PartialCopyTests: BlobSyncTestCase {
         let gc = try v.collectBlobs(note: n2, records: &records, retention: 0)
         XCTAssertNotNil(gc.blocked, "rule 1 cannot hold for a note not fetched in full")
         XCTAssertNoThrow(try delta(v, device: devB, t: 51, title: "fine", note: n1), "a complete note is writable")
-        var changing = v
-        XCTAssertThrowsError(try changing.addRecipient(pqIdentity().recipient, label: "x")) {
-            XCTAssertEqual($0 as? VaultError, .partialCopy(c.folder.path))
-        }
     }
 
     // MARK: - Pushing from a partial copy

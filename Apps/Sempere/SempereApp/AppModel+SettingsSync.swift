@@ -264,13 +264,13 @@ extension AppModel {
             return
         }
         if isVaultReadOnly { settingsSyncProblem = .readOnly; return }
-        if recipientsAlert != nil || vault.recipientsStatus.problem != nil { settingsSyncProblem = .untrustedRecipients; return }
+        if listAlert != nil || vault.listStatus.problem != nil { settingsSyncProblem = .untrustedRecipients; return }
         do {
             try await offMain { try CloudVault.coordinatedWrite(coordinate) { try vault.writeSharedSettings(write) } }
             if (try? ensureCurrent(gen)) != nil { settingsSyncProblem = nil }
         } catch VaultError.readOnly {
             settingsSyncProblem = .readOnly
-        } catch VaultError.untrustedRecipients {
+        } catch VaultError.untrustedList {
             settingsSyncProblem = .untrustedRecipients
         } catch {
             settingsSyncProblem = .failed(String(describing: error))

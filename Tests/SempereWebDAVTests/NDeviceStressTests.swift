@@ -2,6 +2,7 @@ import Age
 import Foundation
 import TempDirSupport
 import XCTest
+import VaultTestSupport
 @testable import Sempere
 @testable import SempereSync
 @testable import SempereWebDAV
@@ -74,7 +75,7 @@ final class NDeviceStressTests: TempDirTestCase {
         let r1 = MemoryRemote(store: MemoryStore(name: "R1"), base: ["vault"])
         let a = try SyncDevice(name: "A", root: tmp.appendingPathComponent("A"), identity: pqIdentity(), remote: r0,
                                device: DeviceID("aaaaaaaa"))
-        _ = try Vault.create(at: a.folder, recipients: [a.identity.recipient], labels: ["A"], identities: [a.identity])
+        _ = try TestVaults.create(at: a.folder, identities: [a.identity], names: ["A"])
         let v = try a.vault()
         var s = SharedSettings()
         try s.set(SettingSlotKey("eraser.mode"), to: .string("pixel"), type: .mac, now: a.now)
@@ -110,7 +111,7 @@ final class NDeviceStressTests: TempDirTestCase {
         let start = Date(timeIntervalSince1970: 1_790_000_000)
         let tick = Locked(0)
         for d in [x, y] { d.clock = { start.addingTimeInterval(Double(tick.value * 60)) } }
-        _ = try Vault.create(at: x.folder, recipients: ids.map(\.recipient), labels: ["X", "Y"], identities: [x.identity])
+        _ = try TestVaults.create(at: x.folder, identities: ids, names: ["X", "Y"])
         let runs: [(SyncDevice, MemoryRemote, String)] = [(y, r0, "R0"), (y, r1, "R1"), (x, r0, "R0"), (x, r1, "R1")]
         func round() throws -> [String] {
             try runs.compactMap { d, r, name in
@@ -376,8 +377,7 @@ final class StressWorld {
 
     func run() throws {
         // The first device creates the vault (every device's key a recipient) and every device pulls it, without faults.
-        _ = try Vault.create(at: devices[0].folder, recipients: devices.map(\.identity.recipient),
-                             labels: devices.map(\.name), identities: [devices[0].identity])
+        _ = try TestVaults.create(at: devices[0].folder, identities: devices.map(\.identity), names: devices.map(\.name))
         for (i, d) in devices.enumerated() {
             for link in links[i] { for _ in 0..<3 { _ = sync(i, link) } }
             guard d.hasVault else { return fail("\(d.name) did not pull the vault") }

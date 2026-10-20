@@ -101,7 +101,7 @@ struct MenuHandlerTests {
         #expect(model.errorMessage == nil)
         #expect(model.phase == .locked)
         #expect(model.vaultName == "Menu")
-        try await model.unlock(identityText: try #require(created.secretKey))
+        try await model.unlock(identityText: try #require(created.unlockKey))
         #expect(model.phase == .unlocked)
         model.close()
     }

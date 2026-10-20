@@ -7,7 +7,7 @@ import Foundation
 // the checks that need no chain: the reader's own wrap, `listTag`,
 // `authorSig` and `epochSig` by the home device (a takeover's `recoverySig` by the
 // recovery key), every new entry's `addSig` by home, and the markers.
-// KH2 replaces format.md §2's `VaultManifest` with it; nothing reads it yet.
+// Since KH2 it is the vault's `vault.json` (format.md §2, §15.3).
 
 /// One entry of `keys` (design §3).
 public struct EpochKeyEntry: Hashable, Sendable {
@@ -137,10 +137,15 @@ public struct EpochManifest: Hashable, Sendable {
             throw EpochFileError.malformed("home is not a listed device, or not the author")
         }
         var seen: Set<String> = []
+        // A later major may list key types this version does not know; it is opened read-only (format.md
+        // §7.2, §7.3) with whatever entry this device's key opens.
+        let newer = SempereFormat.isNewer(m.format)
         for k in m.keys {
-            guard k.key.hasPrefix("age1pq1"), seen.insert(k.key).inserted else {
+            guard k.key.hasPrefix("age1pq1") || newer, seen.insert(k.key).inserted else {
                 throw EpochFileError.malformed("a key that is not post-quantum, or listed twice")
             }
+            // A key type a later major added: nothing more this version can check about it.
+            guard k.key.hasPrefix("age1pq1") else { continue }
             if k.role == .device {
                 guard k.claim != nil, k.addSig != nil, k.id == String(Hex.encode(k.fingerprint).prefix(8)) else {
                     throw EpochFileError.malformed("device entry \(k.id ?? "?")")
@@ -238,7 +243,7 @@ public struct EpochManifest: Hashable, Sendable {
                                   entries: keys.map(\.listEntry)) else { throw ProblemError(problem: .listTag) }
         let markers = Self.markersMessage(vaultId: vaultId, format: format, features: features)
         guard let given = Hex.decode(markersTag), let markers,
-              RecipientsAuth.constantTimeEqual(given, Data(HMAC<SHA256>.authenticationCode(
+              VaultAuth.constantTimeEqual(given, Data(HMAC<SHA256>.authenticationCode(
                   for: markers, using: SymmetricKey(data: key.markersKey)))) else {
             throw ProblemError(problem: .markersTag)
         }
@@ -325,7 +330,7 @@ public struct EpochManifest: Hashable, Sendable {
 
     /// format.md §2.1's markers message (unchanged), nil when a marker holds a NUL.
     static func markersMessage(vaultId: UUID, format: String, features: [String]) -> Data? {
-        RecipientsAuth.markersMessage(vaultId: vaultId, format: format, features: features)
+        VaultAuth.markersMessage(vaultId: vaultId, format: format, features: features)
     }
 
     /// `markersTag` under `key` (format.md §2.1 "Version markers", keyed by `markersKey` of `K_e`).
@@ -406,7 +411,9 @@ extension EpochManifest: Codable {
         author = try c.decode(String.self, forKey: .author)
         authorSig = try c.decode(AuthorSignature.self, forKey: .authorSig)
         features = try c.decodeIfPresent([String].self, forKey: .features) ?? []
-        label = try c.decodeIfPresent(String.self, forKey: .label)
+        // Informational and covered by nothing (format.md §2): anything but a string reads as absent, so a
+        // server cannot make the manifest unreadable through it.
+        label = (try? c.decodeIfPresent(String.self, forKey: .label)) ?? nil
         reencryptPending = try c.decodeIfPresent(String.self, forKey: .reencryptPending)
         parentList = try c.contains(.parentList) ? ChainEntry.fingerprints(c, .parentList) : []
         epochReason = try c.decode(String.self, forKey: .epochReason)

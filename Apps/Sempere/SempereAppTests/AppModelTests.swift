@@ -62,9 +62,11 @@ struct AppModelTests {
         #expect(model.selectedNote?.title == "Fixture lecture")
     }
 
-    @Test func unlocksWithStoredKeyPassphrase() async throws {
+    /// The recovery key's passphrase copy (format.md §15.11) opens the vault
+    /// read-only (design §4.3 step 4), checked against the root it carries.
+    @Test func unlocksReadOnlyWithTheRecoveryPassphraseCopy() async throws {
         let (url, _) = try Self.fixtureVault()
-        let model = AppModel()
+        let model = AppModel(trust: MemoryEpochTrustStore())
         try await model.openVault(at: url)
         await #expect(throws: AppModel.ModelError.passphraseMatchesNoKey) {
             try await model.unlock(passphrase: "wrong")
@@ -73,6 +75,42 @@ struct AppModelTests {
         try await model.unlock(passphrase: "sempere-test")
         #expect(model.phase == .unlocked)
         #expect(model.notes.count == 2)
+        #expect(model.isRecoveryOpen)
+        #expect(model.isVaultReadOnly)
+        #expect(model.listAlert == nil, "the copy's root confirms the list")
+        #expect(model.readOnlyBanner == AppModel.recoveryReadOnlyText)
+        #expect(throws: VaultError.recoveryKeyReadOnly) { try model.requireWritableVault() }
+        await #expect(throws: (any Error).self) {
+            try await model.createNote(title: "No", paper: Paper(kind: .ruled), notebook: nil)
+        }
+        #expect(model.notes.count == 2)
+    }
+
+    /// The recovery key itself, pasted: read-only too, and never offered to remember.
+    @Test func thePastedRecoveryKeyOpensReadOnly() async throws {
+        let (url, key) = try Self.fixtureVault()
+        let recovery = key.deletingLastPathComponent().appendingPathComponent("sample-recovery.key")
+        let model = AppModel()
+        try await model.openVault(at: url)
+        let device = try await model.unlock(identityText: try String(contentsOf: recovery, encoding: .utf8))
+        #expect(device == nil)
+        #expect(model.isRecoveryOpen)
+        #expect(model.isVaultReadOnly)
+        #expect(model.heldDeviceKey == nil)
+    }
+
+    /// The fixture's device key file unlocks with its signing keys: this device is listed (home).
+    @Test func theDeviceKeyFileUnlocksAsAListedDevice() async throws {
+        let (url, key) = try Self.fixtureVault()
+        let model = AppModel()
+        try await model.openVault(at: url)
+        let device = try #require(try await model.unlock(identityText: try String(contentsOf: key, encoding: .utf8)))
+        #expect(!model.isRecoveryOpen)
+        #expect(!model.isVaultReadOnly)
+        #expect(model.heldDeviceKey == device.key)
+        #expect(model.unlockKeys.signing != nil)
+        #expect(model.vaultDevices.contains { $0.isThisDevice && $0.deviceID == device.id })
+        #expect(model.vaultDevices.filter(\.isRecovery).count == 1)
     }
 
     @Test func rejectsGarbageAndForeignKeys() async throws {
@@ -83,8 +121,13 @@ struct AppModelTests {
             try await model.unlock(identityText: "not a key")
         }
         let stranger = IdentityFile.render(try NativeIdentity.generate(.postQuantum), created: Date())
-        await #expect(throws: VaultError.self) {
+        await #expect(throws: AppModel.ModelError.notJoined) {
             try await model.unlock(identityText: stranger)
+        }
+        // Another device's key file: "this device has not joined the vault".
+        let other = try DeviceKeys.generate().fileText(created: Date())
+        await #expect(throws: AppModel.ModelError.notJoined) {
+            try await model.unlock(identityText: other)
         }
         #expect(model.phase == .locked)
     }

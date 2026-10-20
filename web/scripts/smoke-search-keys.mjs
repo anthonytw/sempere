@@ -2,7 +2,7 @@
 // not part of `npm test`). Serves dist/ (with its CSP and Trusted Types) and
 // vaults over a minimal WebDAV on http://localhost and drives the viewer in
 // Chromium. Checks:
-// - the vault's stored key file: a wrong passphrase is refused, the right one
+// - the vault's passphrase copy of its recovery key: a wrong passphrase is refused, the right one
 //   unlocks (scrypt in the key worker, created through its Trusted Types policy);
 // - a recovery kit's armored passphrase copy pasted in the key field;
 // - remembering a passphrase-unlocked key with a passkey (virtual authenticator

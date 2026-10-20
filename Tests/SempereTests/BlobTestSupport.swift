@@ -68,9 +68,12 @@ extension VaultTestCase {
             + content + padding
     }
 
-    /// The plaintext of a blob file.
+    /// The plaintext of a blob file (`notes/<id>/att/<name>`): `id`, a device of its vault, opens the
+    /// vault's wrap, whose vault identity opens the file (format.md §15.2).
     func decryptBlob(_ url: URL, _ id: any AgeIdentity) throws -> Data {
-        try AgeFile.decrypt(Data(contentsOf: url), with: [id])
+        var root = url
+        for _ in 0..<4 { root.deleteLastPathComponent() }
+        return try AgeFile.decrypt(Data(contentsOf: url), with: try Vault.open(at: root, identities: [id]).identities)
     }
 
     func stanzaCount(_ url: URL) throws -> Int {

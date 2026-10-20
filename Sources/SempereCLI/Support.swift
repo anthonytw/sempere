@@ -21,7 +21,7 @@ enum ExitStatus {
     static let unhealthy: Int32 = 3
     static let cannotDecrypt: Int32 = 4
     // 5 is unused.
-    static let untrustedRecipients: Int32 = 6
+    static let untrustedList: Int32 = 6
     static let readOnly: Int32 = 7
 }
 
@@ -31,21 +31,22 @@ enum CLIError: Error {
     case failure(String)
     /// Exit 2: the command line is wrong.
     case usage(String)
-    /// Exit 3: unhealthy vault or incomplete rewrap.
+    /// Exit 3: unhealthy vault or backup.
     case unhealthy(String)
     /// Exit 4: wrong key or passphrase, or no key available.
     case cannotDecrypt(String)
-    /// Exit 6: vault.json's recipients list does not check (format.md §2.1):
-    /// nothing is written until it is repaired.
-    case untrustedRecipients(String)
+    /// Exit 6: vault.json does not check on this machine (design §4.3):
+    /// nothing is written to the vault.
+    case untrustedList(String)
     /// Exit 7: the vault holds content of a newer format version, so this
-    /// version may read it but not change it (format.md §7.3).
+    /// version may read it but not change it (format.md §7.3); or it was
+    /// opened with the recovery key, which never writes.
     case readOnly(String)
 
     var message: String {
         switch self {
         case .failure(let m), .usage(let m), .unhealthy(let m), .cannotDecrypt(let m),
-             .untrustedRecipients(let m), .readOnly(let m): return m
+             .untrustedList(let m), .readOnly(let m): return m
         }
     }
 
@@ -55,7 +56,7 @@ enum CLIError: Error {
         case .usage: return ExitStatus.usage
         case .unhealthy: return ExitStatus.unhealthy
         case .cannotDecrypt: return ExitStatus.cannotDecrypt
-        case .untrustedRecipients: return ExitStatus.untrustedRecipients
+        case .untrustedList: return ExitStatus.untrustedList
         case .readOnly: return ExitStatus.readOnly
         }
     }
@@ -66,25 +67,18 @@ enum CLIError: Error {
         let text = "\(error)".split(whereSeparator: \.isNewline).joined(separator: " ")
         switch error {
         case AgeError.noMatchingIdentity, AgeError.noIdentities,
-             VaultError.vaultSecretUndecryptable, VaultError.wrongPassphrase,
-             VaultError.locked, VaultError.noIdentities, VaultError.classicIdentity:
+             VaultError.keyNotListed, VaultError.wrongPassphrase,
+             VaultError.locked, VaultError.classicIdentity:
             return .cannotDecrypt(text)
         case VaultError.classicRecipient, VaultError.emptyPassphrase:
             return .usage(text)
-        case VaultError.untrustedRecipients:
-            return .untrustedRecipients(text)
-        case VaultError.readOnly:
+        case VaultError.untrustedList:
+            return .untrustedList(text)
+        case VaultError.readOnly, VaultError.recoveryKeyReadOnly:
             return .readOnly(text)
         case SharedSettingsError.needsNewerReader(let min):
             return .readOnly("the vault's settings need a newer sempere (settings reader \(min) or later; this is "
                 + "\(SharedSettingsMigrations.current)): they are neither read nor written")
-        case VaultError.rewrapIncomplete:
-            return .unhealthy(text + "; run `sempere vault rewrap-resume`")
-        case VaultError.rewrapJournalUnreadable:
-            // A journal this machine refuses blocks recipient changes until it goes (format.md §3.3.1, S19).
-            let described = (error as? LocalizedError)?.errorDescription ?? text
-            return .failure(described + "; `sempere vault info` says whether it is refused, and "
-                + "`sempere vault rewrap-discard` deletes a refused one")
         case let e as NoteSummary.LookupError:
             switch e {
             case .notFound(let q): return .failure("no note matches '\(q)'")
@@ -136,18 +130,30 @@ struct OutputOptions: ParsableArguments {
     }
 }
 
-/// `--vault`, `--identity`, `--passphrase-env`.
+/// `--vault`, `--identity`, `--recovery-key`, `--root`, `--passphrase-env`.
 struct AccessOptions: ParsableArguments {
     @Option(name: .long, help: ArgumentHelp("The vault directory (*.sempere).", discussion: "Default: $SEMPERE_VAULT.",
                                             valueName: "path"))
     var vault: String?
 
-    @Option(name: .long, help: ArgumentHelp("An age identity file (age-keygen style). Repeatable.",
-                                            discussion: "Default: $SEMPERE_IDENTITY.", valueName: "file"))
+    @Option(name: .long, help: ArgumentHelp("This device's key file (sempere device init), or any age identity file.",
+                                            discussion: "Default: $SEMPERE_IDENTITY, else this machine's device key for "
+                                                + "the vault ($XDG_STATE_HOME/sempere/devices/<vault id>/).",
+                                            valueName: "file"))
     var identity: [String] = []
 
+    @Option(name: .customLong("recovery-key"),
+            help: ArgumentHelp("Read the vault with its recovery key (the kit's identity file, or the vault's passphrase "
+                               + "copy keys/recovery-*.key.age): read-only.", valueName: "file"))
+    var recoveryKey: String?
+
+    @Option(name: .long, help: ArgumentHelp("The vault's root fingerprint (64 hex digits, or the kit's 16 groups) to check "
+                                            + "a --recovery-key read against.", valueName: "hex"))
+    var root: String?
+
     @Option(name: .customLong("passphrase-env"),
-            help: ArgumentHelp("Name of the environment variable holding the passphrase of the vault's key file.",
+            help: ArgumentHelp("Name of the environment variable holding the passphrase (a passphrase-wrapped device key, "
+                               + "or the recovery key's passphrase copy).",
                                discussion: "Without it $SEMPERE_PASSPHRASE is used, else the terminal is asked.",
                                valueName: "var"))
     var passphraseEnv: String?
@@ -275,21 +281,28 @@ func readIdentityFile(_ path: String) throws -> NativeIdentity {
     }
 }
 
-/// Reads the identity file given to `--store-key`: a post-quantum secret key
-/// (`KeyText`, as the app's New Vault "Use an existing key"), with an error
-/// naming what the file holds otherwise (a public key, a classic key, a
-/// passphrase-wrapped file).
-func readStoreKeyFile(_ path: String) throws -> NativeIdentity {
-    let data: Data
-    do { data = try BoundedRead.contents(of: URL(fileURLWithPath: path), maxBytes: KeyText.maximumBytes) } catch {
-        throw CLIError.failure("cannot read \(path): \(error)")
+/// An identity file given to `--identity`: a device key file (`DeviceKeys`, with its signing keys) or a
+/// plain age identity file.
+func readAccessKeyFile(_ path: String) throws -> (identity: NativeIdentity, signing: DeviceSigningKeys?) {
+    let text: String
+    do { text = try String(contentsOfFile: path, encoding: .utf8) } catch {
+        throw CLIError.failure("cannot read \(path): \(error.localizedDescription)")
     }
-    switch KeyText.classify(data) {
-    case .success(.identity(let id)): return id
-    case .success(.passphraseWrapped):
-        throw CLIError.failure("\(path) is a passphrase-wrapped key file; decrypt it first (sempere keys export, or age -d)")
-    case .failure(let problem): throw CLIError.failure("\(path): \(problem)")
+    if DeviceKeys.isDeviceKeyFile(text) {
+        do {
+            let keys = try DeviceKeys.parse(text)
+            return (keys.nativeIdentity, keys.signing)
+        } catch {
+            throw CLIError.failure("\(path) is not a valid device key file: \(error)")
+        }
     }
+    return (try readIdentityFile(path), nil)
+}
+
+/// Refuses a passphrase for the recovery key's passphrase copy that is easy to guess (design §8.2: about
+/// 70 bits, no override): whoever can read the vault's storage can try passphrases offline.
+func requireStoredKeyPassphrase(_ passphrase: String) throws {
+    if let problem = PassphraseStrength.storedKeyProblem(passphrase) { throw CLIError.usage(problem) }
 }
 
 // MARK: - Passphrase and vault access
@@ -342,27 +355,6 @@ private func readPassphrase(envName: String?, prompt: String, confirm: Bool,
     return first
 }
 
-/// A recipient given on the command line: the `age1...` / `age1pq1...`
-/// string itself, or the path of a file holding one: a recipients file as
-/// `age-keygen -y` writes it (the first line that is not blank or `#`), or
-/// an identity file's `# public key:` comment (only that line is used).
-/// Post-quantum recipients are 1959 characters, so a file is often handier.
-func parseRecipient(_ s: String) throws -> NativeRecipient {
-    if let r = try? NativeRecipient(string: s) { return r }
-    if !s.hasPrefix("age1"), let text = try? String(contentsOfFile: s, encoding: .utf8) {
-        let lines = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
-        let publicKey = "# public key:"
-        if let line = lines.first(where: { !$0.isEmpty && !$0.hasPrefix("#") }),
-            let r = try? NativeRecipient(string: line) { return r }
-        if let line = lines.first(where: { $0.hasPrefix(publicKey) }),
-            let r = try? NativeRecipient(string: line.dropFirst(publicKey.count).trimmingCharacters(in: .whitespaces)) {
-            return r
-        }
-        throw CLIError.usage("\(s) holds no age recipient (age1... or age1pq1...)")
-    }
-    throw CLIError.usage("not an age recipient (age1... or age1pq1...): \(RecipientsProblem.abbreviate(s))")
-}
-
 /// The element of `all` that `query` names: its whole id, or a unique
 /// prefix of 4 or more characters, case-insensitive. Items, recordings and
 /// strokes all resolve here, with the same messages. When no id matches,
@@ -401,24 +393,43 @@ extension AccessOptions {
         return URL(fileURLWithPath: path)
     }
 
-    /// `--identity` files plus `$SEMPERE_IDENTITY`.
-    func explicitIdentities() throws -> [NativeIdentity] {
+    /// `--identity` files plus `$SEMPERE_IDENTITY`, with the signing keys of device key files.
+    func explicitKeys() throws -> [(identity: NativeIdentity, signing: DeviceSigningKeys?)] {
         var paths = identity
         if paths.isEmpty, let env = Env.vars["SEMPERE_IDENTITY"], !env.isEmpty { paths = [env] }
-        return try paths.map(readIdentityFile)
+        return try paths.map(readAccessKeyFile)
     }
 
-    /// The identities stored passphrase-wrapped in the vault's `keys/`: every
-    /// one the passphrase opens, post-quantum first, with an unfinished
-    /// replacement's old key after the listed ones
-    /// (`Vault.identitiesFromKeyFiles`). Never empty.
-    func identitiesFromKeyFiles(of locked: Vault, recipient: NativeRecipient? = nil) throws -> [NativeIdentity] {
-        let candidates = try recipient.map { [$0] } ?? locked.identityFiles()
-        guard !candidates.isEmpty else {
-            throw CLIError.cannotDecrypt("no key: pass --identity FILE (the vault stores no passphrase-wrapped key)")
+    /// `--identity` files plus `$SEMPERE_IDENTITY`.
+    func explicitIdentities() throws -> [NativeIdentity] { try explicitKeys().map(\.identity) }
+
+    /// The keys that read vault `vaultId` (a backup's, a copy's): `--identity` files, `--recovery-key`,
+    /// else this machine's device key for it (a passphrase-wrapped one only when the passphrase is
+    /// scripted). Empty when there is none.
+    func readingIdentities(vaultId: UUID) throws -> [any AgeIdentity] {
+        var ids: [any AgeIdentity] = try explicitIdentities()
+        if let (recovery, _) = try recoveryIdentity() { ids.append(recovery) }
+        guard ids.isEmpty else { return ids }
+        let scripted = passphraseEnv != nil || Env.vars["SEMPERE_PASSPHRASE"] != nil
+        switch DeviceKeyStore.stored(vaultId: vaultId) {
+        case .none: return []
+        case .plain: return try DeviceKeyStore.load(vaultId: vaultId, passphraseEnv: passphraseEnv).map { [$0.nativeIdentity] } ?? []
+        case .wrapped:
+            guard scripted else { return [] }
+            return try DeviceKeyStore.load(vaultId: vaultId, passphraseEnv: passphraseEnv).map { [$0.nativeIdentity] } ?? []
         }
-        let pass = try obtainPassphrase(envName: passphraseEnv)
-        return try locked.identitiesFromKeyFiles(passphrase: pass, recipients: recipient.map { [$0] })
+    }
+
+    /// The root given with `--root`: 64 hex digits, spaces and the kit's line checksums in parentheses
+    /// ignored.
+    func givenRoot() throws -> Data? {
+        guard let root else { return nil }
+        let hex = root.replacingOccurrences(of: #"\([0-9a-fA-F]{4}\)"#, with: "", options: .regularExpression)
+            .filter { !$0.isWhitespace }.lowercased()
+        guard let data = Hex.decode(hex), data.count == 32 else {
+            throw CLIError.usage("--root is not 64 hex digits (the kit's 16 groups)")
+        }
+        return data
     }
 
     /// Opens the vault with the identities this invocation provides.
@@ -426,39 +437,77 @@ extension AccessOptions {
         try openVault(at: try vaultURL(), unlock)
     }
 
-    /// - Parameter trust: this machine's trust records (format.md §2.1); a
-    ///   dry run passes a copy so that it keeps nothing.
-    func openVault(at url: URL, _ unlock: Unlock,
-                   trust: (any RecipientsTrustStore)? = nil) throws -> Vault {
+    /// The identity of `--recovery-key` and the root that comes with it: a plain identity file, or the
+    /// vault's passphrase copy (the passphrase from `--passphrase-env`, `$SEMPERE_PASSPHRASE` or the
+    /// terminal), which carries the root.
+    func recoveryIdentity() throws -> (identity: NativeIdentity, root: Data?)? {
+        guard let recoveryKey else { return nil }
+        let url = URL(fileURLWithPath: recoveryKey)
+        let data: Data
+        do { data = try BoundedRead.contents(of: url, maxBytes: KeyText.maximumBytes) } catch {
+            throw CLIError.failure("cannot read \(recoveryKey): \(error)")
+        }
+        if case .success(.passphraseWrapped(let binary)) = KeyText.classify(data) {
+            let pass = try obtainPassphrase(envName: passphraseEnv, prompt: "Recovery passphrase: ")
+            let copy = try Vault.openPassphraseCopy(binary, passphrase: pass)
+            return (.mlkem768x25519(copy.identity), copy.root)
+        }
+        return (try readIdentityFile(recoveryKey), nil)
+    }
+
+    /// - Parameter trust: this machine's trust records; a dry run passes a copy so that it keeps nothing.
+    func openVault(at url: URL, _ unlock: Unlock, trust: (any EpochTrustStore)? = nil) throws -> Vault {
         let locked = try Vault.open(at: url)
         OpenedVaults.shared.record(url)
         ReadOnlyNotice.warnOnce(locked)
-        var ids: [any AgeIdentity] = try explicitIdentities()
-        if ids.isEmpty {
-            switch unlock {
-            case .ifPossible:
-                let scripted = passphraseEnv != nil || Env.vars["SEMPERE_PASSPHRASE"] != nil
-                guard scripted, !((try? locked.identityFiles()) ?? []).isEmpty else { return locked }
-                ids = try identitiesFromKeyFiles(of: locked)
-            case .required:
-                ids = try identitiesFromKeyFiles(of: locked)
+        let given = try givenRoot()
+        if let (recovery, copyRoot) = try recoveryIdentity() {
+            let root = given ?? copyRoot
+            if root == nil {
+                printStderr("sempere: warning: no --root: the vault is read without checking it against the kit's root")
+            }
+            // Read-only: no trust record is read or written; the root is the one given (design §4.3 step 4).
+            let vault = try Vault.open(at: url, identities: [recovery], root: root)
+            if let problem = vault.listStatus.problem, problem.reason != .rootUnconfirmed {
+                throw CLIError.untrustedList("vault.json does not check against the recovery key: \(problem)")
+            }
+            OpenedVaults.shared.recordUnlocked(vault)
+            return vault
+        }
+        var keys = try explicitKeys()
+        if keys.isEmpty {
+            let scripted = passphraseEnv != nil || Env.vars["SEMPERE_PASSPHRASE"] != nil
+            switch DeviceKeyStore.stored(vaultId: locked.vaultId) {
+            case .none:
+                guard unlock == .required else { return locked }
+                throw CLIError.cannotDecrypt("this machine has no device key for the vault: join it (sempere device init), "
+                    + "pass --identity FILE, or read it with --recovery-key FILE")
+            case .plain(let path):
+                let k = try readAccessKeyFile(path)
+                keys = [k]
+            case .wrapped:
+                guard unlock == .required || scripted else { return locked }
+                let pass = try obtainPassphrase(envName: passphraseEnv, prompt: "Device key passphrase: ")
+                let device = try DeviceKeyStore.unwrap(vaultId: locked.vaultId, passphrase: pass)
+                keys = [(device.nativeIdentity, device.signing)]
             }
         }
-        let vault = try Vault.open(at: url, identities: ids, trust: trust ?? trustStore())
+        let vault = try Vault.open(at: url, identities: keys.map(\.identity), signing: keys.compactMap(\.signing).first,
+                                   trust: trust ?? trustStore(), root: given)
         OpenedVaults.shared.recordUnlocked(vault)
         return vault
     }
 }
 
-/// This machine's trust records (format.md §2.1), next to `device.json`.
-func trustStore() -> FileRecipientsTrustStore {
-    FileRecipientsTrustStore(directory: FileRecipientsTrustStore.cliDirectory())
+/// This machine's trust records (format.md §15.10), next to `device.json`.
+func trustStore() -> FileEpochTrustStore {
+    FileEpochTrustStore(directory: FileEpochTrustStore.cliDirectory())
 }
 
 /// A copy in memory of this machine's record of `vault`, for dry runs: the
 /// same checks, and nothing kept.
-func scratchTrustStore(for vault: URL) -> MemoryRecipientsTrustStore {
-    let store = MemoryRecipientsTrustStore()
+func scratchTrustStore(for vault: URL) -> MemoryEpochTrustStore {
+    let store = MemoryEpochTrustStore()
     guard let id = (try? Vault.open(at: vault))?.vaultId else { return store }
     do {
         if let record = try trustStore().record(for: id) { try? store.save(record) }

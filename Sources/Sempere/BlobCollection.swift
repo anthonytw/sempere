@@ -235,7 +235,7 @@ public struct BlobCollectionReport: Hashable, Sendable {
 /// What `Vault.repairBlobs` did in one note.
 public struct BlobRepairReport: Hashable, Sendable {
     public var note: UUID
-    /// Why nothing was attempted (a pending recipient change), if so.
+    /// Why nothing was attempted, if so.
     public var blocked: String?
     /// Old file name → the file name(s) it was rewritten as.
     public var repaired: [String: [String]] = [:]
@@ -322,7 +322,7 @@ extension Vault {
     /// deleted only when
     ///
     /// 1. every revision of the note was listed, read and verified,
-    /// 2. no `rewrap-journal.json` exists,
+    /// 2. no re-encryption is unfinished (format.md §8.1.6 rule 2; re-encryption comes with KH6),
     /// 3. no revision of the note references its content hash (structurally,
     ///    in any kind or field, deleted notes included), and
     /// 4. this device found 1–3 true for it at least `retention` ago and
@@ -358,11 +358,6 @@ extension Vault {
                              dryRun: Bool = false) throws -> BlobCollectionReport {
         var report = BlobCollectionReport(note: note, dryRun: dryRun)
         if !dryRun { try requireWritable() }
-        guard !pendingRewrap else {
-            report.blocked = "rule 2: " + pendingRewrapAdvice
-            records = [:]
-            return report
-        }
         // Rule 1 needs every revision: a partial copy's missing ones may reference any blob (format.md §1.2).
         guard !isNoteIncomplete(note) else {
             report.blocked = "rule 1: the note's revisions are not all downloaded yet (partial copy)"
@@ -423,20 +418,15 @@ extension Vault {
     /// references (`docs/attachments.md` §3).
     ///
     /// Only blobs that are authentic are rewritten: either the name verifies
-    /// under the current secret, or the content hash in the decrypted header
+    /// under the vault's key, or the content hash in the decrypted header
     /// is referenced by a verified revision of the note (whose tag binds that
     /// exact content). Each is fully verified and re-encrypted under a new
-    /// file key to the current recipients, under the name and kind its
+    /// file key to the vault identity, under the name and kind its
     /// references expect, then the old file is deleted. Anything else is left
-    /// untouched and listed. Nothing happens while a recipient change is
-    /// pending (`rewrap-resume` handles that case).
+    /// untouched and listed.
     public func repairBlobs(note: UUID) throws -> BlobRepairReport {
         try requireWritable()
         var report = BlobRepairReport(note: note)
-        guard !pendingRewrap else {
-            report.blocked = pendingRewrapAdvice
-            return report
-        }
         let inv = try blobInventory(note: note)
         // The inventory may have found newer revisions (format.md §7.3): it
         // set the read-only latch, so nothing is renamed or deleted.

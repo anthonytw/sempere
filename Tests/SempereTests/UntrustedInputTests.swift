@@ -79,7 +79,7 @@ final class UntrustedInputTests: VaultTestCase {
         XCTAssertNil(RFC3339.parse(long))
         let json = #"{"format":"sempere/1","vaultId":"0d1c6a1e-9a44-4a6c-8a6b-0e2a0e9b1f3c","created":"\#(long)","#
             + #""recipients":[],"vaultSecret":""}"#
-        XCTAssertThrowsError(try VaultManifest.decode(Data(json.utf8))) { XCTAssertTrue($0 is DecodingError, "\($0)") }
+        XCTAssertThrowsError(try EpochManifest.parse(Data(json.utf8)))   // never reaches a date parser that traps
         for bad in ["2026-10-05T13:20:4.9e-324Z", "2026-10-05T13:20:255Z", "2026-02-30T00:00:00Z", "2026-10-04T24:00:00Z",
                     "2026-10-04T23:59:60Z", "0000-01-01T00:00:00Z", "2026-10-04 18:20:00Z", "2026-10-04T18:20:00",
                     "2026-10-04T18:20:00.Z", "2026-10-04T18:20:00.1234567890Z", "2026-10-04T18:20:00+24:00", ""] {

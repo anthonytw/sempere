@@ -94,7 +94,8 @@ struct OpenedVaultTests {
 
     @Test func onlyAListThisDeviceConfirmedBindsAPastedKeysLocation() {
         #expect(RememberedKeys.listIsConfirmed(.verified(.unchanged)))
-        #expect(RememberedKeys.listIsConfirmed(.verified(.rotated)))
+        #expect(RememberedKeys.listIsConfirmed(.verified(.added)))
+        #expect(RememberedKeys.listIsConfirmed(.verified(.renamed)))
         #expect(!RememberedKeys.listIsConfirmed(.verified(.firstUse)))
         #expect(!RememberedKeys.listIsConfirmed(.notChecked))
         #expect(!RememberedKeys.listIsConfirmed(nil))

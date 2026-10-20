@@ -154,10 +154,8 @@ enum CloudConflicts {
     /// differ only in the display label (format.md §2: covered by no tag).
     static func sameExceptLabel(_ a: Data?, _ b: Data?, manifest: Bool) -> Bool {
         if a == b { return true }
-        guard manifest, let a, let b, var x = try? VaultManifest.decode(a), var y = try? VaultManifest.decode(b) else { return false }
-        x.label = nil
-        y.label = nil
-        return x == y
+        guard manifest, let a, let b else { return false }
+        return EpochManifest.sameExceptLabel(a, b)
     }
 
     // MARK: - iCloud

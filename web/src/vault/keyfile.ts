@@ -1,11 +1,11 @@
-// Passphrase-wrapped keys (format.md §3.2): an age file with one scrypt
-// recipient whose plaintext is the identity, either the vault's stored key
-// file (`keys/<name>.key.age`) or the armored copy a paper kit prints
-// (`sempere keys paper --passphrase`). Decrypted with typage's scrypt
-// identity; the passphrase is used once and never stored (docs/web-viewer.md).
+// Passphrase-wrapped keys (format.md §15.11): an age file with one scrypt
+// recipient whose plaintext is the recovery identity (after `#` comment lines naming the vault and
+// root), either the vault's own passphrase copy (`keys/recovery-<fingerprint>.key.age`) or the
+// armored copy a paper kit prints. Decrypted with typage's scrypt identity; the passphrase is used
+// once and never stored (docs/web-viewer.md).
 
 import { Decrypter, armor } from "age-encryption";
-import { parseIdentity } from "./vault.ts";
+import { type VaultManifest, entryFingerprint, parseIdentity } from "./vault.ts";
 
 /** Largest key file read (a stored PQ key file is under 3 KiB). */
 export const maxKeyFileBytes = 64 * 1024;
@@ -120,9 +120,12 @@ export async function unwrapKey(file: Uint8Array, passphrase: string): Promise<s
   }
 }
 
-/** `keys/` file name of a recipient (format.md §3.2, Swift `IdentityFile.fileName`). */
-export async function keyFileName(recipient: string): Promise<string> {
-  if (!recipient.startsWith("age1pq1")) return `${recipient}.key.age`;
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(recipient)));
-  return `age1pq-${[...digest].map((b) => b.toString(16).padStart(2, "0")).join("")}.key.age`;
+/**
+ * `keys/` file name of the vault's passphrase copy of the recovery key (format.md §15.11):
+ * `recovery-<recovery fingerprint, 64 hex digits>.key.age`; undefined without a recovery entry.
+ */
+export function recoveryKeyFileName(m: VaultManifest): string | undefined {
+  const entry = m.keys.find((k) => k.role === "recovery");
+  const fingerprint = entry ? entryFingerprint(entry) : undefined;
+  return fingerprint ? `recovery-${fingerprint}.key.age` : undefined;
 }

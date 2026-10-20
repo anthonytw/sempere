@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import XCTest
+import VaultTestSupport
 @testable import Sempere
 
 /// The settings file (format.md §13): model, merge, resolution, schema,
@@ -278,7 +279,10 @@ final class SharedSettingsTests: VaultTestCase {
         let catalog = SharedSettingsCatalog.allKeyNames
         // Settings with no row of their own in these views: the eraser and palette are bound in the editor.
         XCTAssertEqual(Set(shown.keys).subtracting(catalog), [], "bound in the app but not in the catalog")
-        XCTAssertEqual(catalog.subtracting(shown.keys), [], "in the catalog but shown nowhere")
+        // `rewrap.*` (docs/settings-sync.md) have no effect since KH2 (no recipient changes); they stay in the
+        // catalog so that synced values round-trip, and come back with key changes (KH5).
+        XCTAssertEqual(catalog.subtracting(shown.keys).subtracting(["rewrap.onAdd", "rewrap.onRemove"]), [],
+                       "in the catalog but shown nowhere")
         for spec in SharedSettingsCatalog.specs {
             guard let types = spec.types else { continue }
             // Within the 8 lines before the row there is a platform check naming the same side.
@@ -405,7 +409,7 @@ final class SharedSettingsTests: VaultTestCase {
         try vault.writeSharedSettings(s)
         XCTAssertEqual(try vault.readSharedSettings(), s)
         // The body is the revision framing (format.md §4): `tail -c +38 | gunzip` reads it.
-        let plain = try AgeFile.decrypt(Data(contentsOf: vault.sharedSettingsURL), with: [id])
+        let plain = try AgeFile.decrypt(Data(contentsOf: vault.sharedSettingsURL), with: vault.identities)
         XCTAssertEqual(Array(plain.prefix(4)), Array("SMPR".utf8))
         let json = try Gzip.decompress(Data(plain.dropFirst(BodyFraming.headerSize)))
         XCTAssertTrue(String(decoding: json, as: UTF8.self).contains("\"photos.removeMetadata\" : false"))
@@ -416,15 +420,16 @@ final class SharedSettingsTests: VaultTestCase {
         let vault = try makeVault(id)
         let other = try makeVault(id, name: "Other")
         try other.writeSharedSettings(SharedSettings())
-        // Another vault's file (another secret), encrypted to this vault's key: refused.
-        try FileManager.default.copyItem(at: other.sharedSettingsURL, to: vault.sharedSettingsURL)
+        // Another vault's file (another key), re-encrypted to this vault's identity: refused by its tag.
+        let foreign = try AgeFile.decrypt(Data(contentsOf: other.sharedSettingsURL), with: other.identities)
+        try AgeFile.encrypt(foreign, to: [try vault.vaultRecipient()]).write(to: vault.sharedSettingsURL)
         XCTAssertThrowsError(try vault.readSharedSettings()) {
             XCTAssertEqual($0 as? SharedSettingsError, .framing(.tagMismatch))
         }
         // A file anyone could make from the public keys alone: refused.
         let forged = try BodyFraming.frame(json: Data("{}".utf8), noteId: "settings", filename: "settings.age",
-                                           secret: VaultSecret.random())
-        try Vault.encrypt(forged, to: [id.recipient]).write(to: vault.sharedSettingsURL)
+                                           secret: VaultEpochKey.random())
+        try Vault.encrypt(forged, to: [try vault.vaultRecipient()]).write(to: vault.sharedSettingsURL)
         XCTAssertThrowsError(try vault.readSharedSettings())
         // updateSharedSettings refuses to replace it unless asked.
         XCTAssertThrowsError(try vault.updateSharedSettings { _ in })
@@ -446,65 +451,37 @@ final class SharedSettingsTests: VaultTestCase {
         XCTAssertEqual(s.value(SettingSlotKey("c.d")), .number(2))
     }
 
-    func testRecipientChangesRewrapTheFile() throws {
+    /// An approved device reads the file as it is: it is sealed to the vault identity (format.md §15.2),
+    /// which the new device's wrap opens, so nothing is rewritten.
+    func testAnApprovedDeviceReadsTheFileUnchanged() throws {
         let id = pqIdentity(), second = pqIdentity()
         var vault = try makeVault(id)
         var s = SharedSettings()
         try s.set(SettingSlotKey("mouse.smoothing"), to: .string("off"), type: .mac, now: t0)
         try vault.writeSharedSettings(s)
-
-        let added = try vault.addRecipient(second.recipient, label: "second")
-        XCTAssertTrue(added.rewrapped.contains("settings.age"))
+        let before = try Data(contentsOf: vault.sharedSettingsURL)
+        try TestVaults.approve(second, into: &vault, name: "second")
+        XCTAssertEqual(try Data(contentsOf: vault.sharedSettingsURL), before)
         let asSecond = try Vault.open(at: vault.url, identities: [second])
-        XCTAssertEqual(try asSecond.readSharedSettings(), s, "readable by the added key")
-
-        let removed = try vault.removeRecipient(second.recipient)
-        XCTAssertTrue(removed.rewrapped.contains("settings.age"))
-        XCTAssertEqual(try vault.readSharedSettings(), s, "re-tagged under the rotated secret")
-        XCTAssertThrowsError(try AgeFile.decrypt(Data(contentsOf: vault.sharedSettingsURL), with: [second]))
+        XCTAssertEqual(try asSecond.readSharedSettings(), s, "readable by the added device")
+        XCTAssertThrowsError(try AgeFile.decrypt(before, with: [second]), "only the vault identity opens it")
     }
 
-    /// A device that stayed open while another one changed the keys sees the rotated file as
-    /// unverifiable; it must notice its keys are stale before replacing the file (the app's pass).
+    /// A value stays current through approvals (the key does not change); one whose vault.json on disk
+    /// names another epoch (a later key, KH3) must not replace the file (the app's pass).
     func testAStaleVaultValueKnowsItsKeysChangedOnDisk() throws {
         let id = pqIdentity(), second = pqIdentity()
         var vault = try makeVault(id)
-        let stale = vault   // the other device's open vault: in-memory secret and recipients
+        let stale = vault
         XCTAssertTrue(stale.keysMatchManifestOnDisk())
-        var s = SharedSettings()
-        try s.set(SettingSlotKey("mouse.smoothing"), to: .string("off"), type: .mac, now: t0)
-        try vault.writeSharedSettings(s)
-        _ = try vault.addRecipient(second.recipient, label: "second")
-        _ = try vault.removeRecipient(second.recipient)   // rotates the secret
-        XCTAssertTrue(vault.keysMatchManifestOnDisk(), "the device that changed the keys is current")
+        try TestVaults.approve(second, into: &vault, name: "second")
+        XCTAssertTrue(stale.keysMatchManifestOnDisk(), "an approval keeps the epoch's key")
+        // Another epoch's vault.json (here another vault's, which has another key) on disk.
+        let other = try makeVault(pqIdentity(), name: "Other")
+        try FileManager.default.removeItem(at: vault.url.appendingPathComponent("vault.json"))
+        try FileManager.default.copyItem(at: other.url.appendingPathComponent("vault.json"),
+                                         to: vault.url.appendingPathComponent("vault.json"))
         XCTAssertFalse(stale.keysMatchManifestOnDisk(), "the stale value must not replace the file")
-        XCTAssertThrowsError(try stale.readSharedSettings(), "the rotated file does not verify under the stale secret")
-        XCTAssertEqual(try vault.readSharedSettings(), s)
-        // Adding a device alone also makes an open value stale (its recipients lack the new key).
-        let before = vault
-        _ = try vault.addRecipient(second.recipient, label: "second")
-        XCTAssertFalse(before.keysMatchManifestOnDisk())
-    }
-
-    /// A file that cannot be read now (here: no permission) is a failure that
-    /// keeps the journal, unlike one that reads and does not verify (B22).
-    func testAFileThatCannotBeReadKeepsTheJournal() throws {
-        try XCTSkipIf(getuid() == 0, "root reads a file whatever its permissions")
-        let id = pqIdentity(), second = pqIdentity()
-        var vault = try Vault.create(at: vaultURL(), recipients: [id.recipient, second.recipient], identities: [id])
-        var s = SharedSettings()
-        try s.set(SettingSlotKey("mouse.smoothing"), to: .string("off"), type: .mac, now: t0)
-        try vault.writeSharedSettings(s)
-        let path = vault.sharedSettingsURL.path
-        XCTAssertEqual(chmod(path, 0), 0)
-        defer { chmod(path, 0o600) }
-        let report = try vault.removeRecipient(second.recipient)
-        XCTAssertFalse(report.isComplete)
-        XCTAssertNotNil(report.failures["settings.age"])
-        XCTAssertTrue(vault.pendingRewrap)
-        XCTAssertEqual(chmod(path, 0o600), 0)
-        XCTAssertTrue(try vault.resumeRewrap().isComplete)
-        XCTAssertEqual(try vault.readSharedSettings(), s)
     }
 
     /// `verify` checks settings.age as the format file it is (format.md §13),
@@ -521,32 +498,21 @@ final class SharedSettingsTests: VaultTestCase {
         XCTAssertEqual(status(try Vault.open(at: vault.url)), .notChecked, "locked")
 
         // Encrypted to a recipient set other than the listed one.
-        let body = try AgeFile.decrypt(Data(contentsOf: vault.sharedSettingsURL), with: [id])
-        try AgeFile.encrypt(body, to: [id.recipient, second.recipient]).write(to: vault.sharedSettingsURL)
-        XCTAssertEqual(status(vault), .staleRecipients)
+        let body = try AgeFile.decrypt(Data(contentsOf: vault.sharedSettingsURL), with: vault.identities)
+        try AgeFile.encrypt(body, to: [try vault.vaultRecipient(), second.recipient]).write(to: vault.sharedSettingsURL)
+        XCTAssertEqual(status(vault), .extraStanzas)
 
-        // Tagged under another secret.
+        // Tagged under another key (another vault's file, re-encrypted to this vault's identity).
         var other = try makeVault(id, name: "Other")
         try other.writeSharedSettings(s)
-        try FileManager.default.removeItem(at: vault.sharedSettingsURL)
-        try FileManager.default.copyItem(at: other.sharedSettingsURL, to: vault.sharedSettingsURL)
+        let foreign = try AgeFile.decrypt(Data(contentsOf: other.sharedSettingsURL), with: other.identities)
+        try AgeFile.encrypt(foreign, to: [try vault.vaultRecipient()]).write(to: vault.sharedSettingsURL)
         XCTAssertEqual(status(vault), .tagMismatch)
         XCTAssertFalse(vault.verify().isHealthy)
 
         try flipByte(vault.sharedSettingsURL, at: 10)
         XCTAssertEqual(status(vault), .undecryptable)
         _ = other
-    }
-
-    func testAFileThatDoesNotVerifyIsSkippedAndDoesNotKeepTheJournal() throws {
-        let id = pqIdentity(), second = pqIdentity()
-        var vault = try makeVault(id)
-        let junk = try BodyFraming.frame(json: Data("{}".utf8), noteId: "settings", filename: "settings.age", secret: .random())
-        try Vault.encrypt(junk, to: [id.recipient]).write(to: vault.sharedSettingsURL)
-        let report = try vault.addRecipient(second.recipient, label: "second")
-        XCTAssertEqual(report.settingsSkipped, ["settings.age"])
-        XCTAssertTrue(report.isComplete)
-        XCTAssertFalse(vault.pendingRewrap)
     }
 
     func testReadOnlyVaultsRefuseWrites() throws {

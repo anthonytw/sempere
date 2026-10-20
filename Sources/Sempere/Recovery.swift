@@ -5,10 +5,10 @@ import Foundation
 public struct RecoveredRevision: Hashable, Sendable {
     /// The revision JSON, exactly as `gunzip` prints it.
     public var json: Data
-    /// True when the inner HMAC tag was checked against the vault secret and
-    /// matched; false when no vault secret was available.
+    /// True when the inner HMAC tag was checked under the epoch's key and
+    /// matched; false when no key was available.
     public var verified: Bool
-    /// True when a vault secret was available and the tag did NOT match, and
+    /// True when the epoch's key was available and the tag did NOT match, and
     /// the caller asked to proceed anyway (`TagPolicy.allowMismatch`).
     public var tagMismatch = false
 }
@@ -31,8 +31,8 @@ public enum Recovery {
     ///   - noteId, filename: the note directory name and file name the tag
     ///     binds to (only used when `vault` is given).
     ///   - identities: age identities to try.
-    ///   - vault: when given and unlocked, the tag is verified (also under
-    ///     the previous secret during an unfinished rewrap).
+    ///   - vault: when given and unlocked, its vault identity opens the file
+    ///     and the tag is verified.
     ///   - onMismatch: what to do when the tag does not match.
     /// - Throws: `AgeError` if age decryption fails, `BodyFramingError` for
     ///   a bad frame or a tag mismatch, `VaultError`/`RevisionReadError` for
@@ -40,13 +40,13 @@ public enum Recovery {
     public static func decrypt(_ file: Data, noteId: String, filename: String,
                                identities: [any AgeIdentity], vault: Vault?,
                                onMismatch: TagPolicy = .fail) throws -> RecoveredRevision {
-        let plain = try AgeFile.decrypt(file, with: identities)
+        // Files are encrypted to the vault identity (format.md §15.2): an unlocked vault holds it.
+        let plain = try AgeFile.decrypt(file, with: identities + (vault?.identities ?? []))
         var unframed: BodyFraming.Unframed
         var mismatch = false
         if let vault, let secret = vault.secret {
             do {
-                unframed = try Vault.unframe(plain, note: noteId, filename: filename, secret: secret,
-                                             previous: vault.previousSecret)
+                unframed = try BodyFraming.unframe(plain, noteId: noteId, filename: filename, secret: secret)
             } catch BodyFramingError.tagMismatch where onMismatch == .allowMismatch {
                 unframed = try BodyFraming.unframe(plain, noteId: noteId, filename: filename, secret: nil)
                 mismatch = true
@@ -85,7 +85,8 @@ extension Recovery {
     public static func decryptBlob(at url: URL, identities: [any AgeIdentity], vault: Vault?,
                                    _ sink: (Data) throws -> Void) throws -> RecoveredBlob {
         let secrets = vault?.blobSecrets ?? []
-        let (header, matched) = try Vault.readBlobFile(url, identities: identities, secrets: secrets, expected: nil,
+        let (header, matched) = try Vault.readBlobFile(url, identities: identities + (vault?.identities ?? []),
+                                                       secrets: secrets, expected: nil,
                                                        maxContent: BlobRef.maxSize, sink: sink)
         return RecoveredBlob(header: header, nameVerified: matched != nil)
     }

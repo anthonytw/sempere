@@ -41,7 +41,7 @@ export class RecordingsPanel {
   private readonly players = new Map<string, { row: HTMLElement; play: () => void; jump: (seconds: number) => void }>();
 
   /**
-   * - Parameter recipients: the vault's recipients, to say which device captured a voice note
+   * - Parameter recipients: the vault's device entries (key and name), to say which device captured a voice note
    *   (format.md §8.3.1 `captured`); without them a capture's line stays empty.
    */
   constructor(recordings: JSONObject[], private readonly blobs?: NoteBlobs,

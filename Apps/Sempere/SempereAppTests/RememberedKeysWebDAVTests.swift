@@ -26,7 +26,8 @@ struct RememberedKeysWebDAVTests {
         let key: String
         let listing: WebDAVVaultListing
         let remote: FakeWebDAVRemote
-        let trust = MemoryRecipientsTrustStore()
+        // No trust records (KH2): a copy's list that checks under the key is a first use, never "confirmed".
+        let trust: (any EpochTrustStore)? = nil
         let store = FakeKeyStore()
         private(set) var model: AppModel?
 
@@ -46,7 +47,7 @@ struct RememberedKeysWebDAVTests {
         /// A new launch: a new model and `RememberedKeys` over the same stores.
         func launch() -> (AppModel, RememberedKeys) {
             model?.close()
-            let next = AppModel(deviceStateURL: scratch.appendingPathComponent("device.json"), recipientsTrust: trust,
+            let next = AppModel(deviceStateURL: scratch.appendingPathComponent("device.json"), trust: trust,
                                 webdavLocations: WebDAVLocationStore(storeURL: scratch.appendingPathComponent("webdav.json"),
                                                                      root: scratch.appendingPathComponent("WebDAV", isDirectory: true)))
             next.webdavRemote = remote
@@ -65,7 +66,10 @@ struct RememberedKeysWebDAVTests {
             try await model.open(recent: entry, library: library)
         }
 
-        func identity() throws -> String { try IdentityFile.parse(key).string }
+        /// The fixture's device key file text (what the Keychain holds).
+        func identity() throws -> String { key }
+        /// The public key of a stored key file, for comparisons (the stored text carries its own `# created:`).
+        static func publicKey(_ text: String?) -> String? { text.flatMap { try? DeviceKeys.parse($0).key } }
     }
 
     /// What the unlock sheet does when it appears (`UnlockView` `.task`), and,
@@ -114,9 +118,9 @@ struct RememberedKeysWebDAVTests {
 
         (model, keys) = device.launch()
         _ = try await model.connectWebDAV(device.listing, user: nil, password: "", pin: nil, library: library)
-        #expect(model.vault?.recipientsStatus == .notChecked)
+        #expect(model.vault?.listStatus == .notChecked)
         #expect(try await Self.unlockAsTheSheetDoes(model, keys, key: device.key) == .notHere)
-        #expect(model.vault?.recipientsStatus == .verified(.firstUse), "nothing confirms the copy's list yet")
+        #expect(model.vault?.listStatus == .verified(.firstUse), "nothing confirms the copy's list yet")
         #expect(await device.store.reads == 0, "no Face ID prompt for a folder the key never opened")
         let offer = try #require(keys.offer, "the remember sheet must come, or the key is needed at every launch")
         #expect(offer.replacing == .thisDevice)
@@ -190,7 +194,7 @@ struct RememberedKeysWebDAVTests {
         }
         let offer = try #require(keys.offer)
         try await keys.answer(offer, storage: .thisDevice)
-        #expect(await device.store.items[id]?.identity == (try device.identity()))
+        #expect(Device.publicKey(await device.store.items[id]?.identity) == Device.publicKey(device.key))
 
         (model, keys) = device.launch()
         try await device.openRecent(model, device.library)
@@ -240,26 +244,6 @@ struct RememberedKeysWebDAVTests {
         model.close()
     }
 
-    /// Key changes are refused for a WebDAV copy, and the refusal leaves the remembered key alone.
-    @Test func aRefusedKeyChangeKeepsTheRememberedKey() async throws {
-        let device = try Device()
-        var (model, keys) = device.launch()
-        let library = device.library
-        _ = try await model.connectWebDAV(device.listing, user: nil, password: "", pin: nil, library: library)
-        _ = try await Self.unlockAsTheSheetDoes(model, keys, key: device.key)
-        try await keys.answer(try #require(keys.offer), storage: .thisDevice)
-        let id = try #require(model.vault?.vaultId)
-        await #expect(throws: WebDAVVaultError.keyChangesUnavailable) {
-            try await model.generateDeviceKey(label: "Other", authenticator: PassingOwnerAuthenticator())
-        }
-        #expect(await device.store.items[id]?.identity == (try device.identity()))
-
-        (model, keys) = device.launch()
-        try await device.openRecent(model, device.library)
-        #expect(await keys.unlockWithRememberedKey(model) == .unlocked)
-        model.close()
-    }
-
     /// Two vaults with different keys (the WebDAV vault and a folder vault): each unlocks with its own.
     @Test func twoVaultsWithDifferentKeys() async throws {
         let device = try Device()
@@ -270,13 +254,12 @@ struct RememberedKeysWebDAVTests {
         try await keys.answer(try #require(keys.offer), storage: .thisDevice)
         let webdavID = try #require(model.vault?.vaultId)
 
-        let other = try NativeIdentity.generate(.postQuantum)
         let otherURL = device.scratch.appendingPathComponent("Other.sempere")
-        _ = try Vault.create(at: otherURL, recipients: [other.recipient])
+        let other = try TS.makeVault(at: otherURL).device
         try await model.openVault(at: otherURL)
         let otherID = try #require(model.vault?.vaultId)
         #expect(otherID != webdavID)
-        #expect(try await Self.unlockAsTheSheetDoes(model, keys, key: other.string) == .noKey)
+        #expect(try await Self.unlockAsTheSheetDoes(model, keys, key: other.fileText(created: Date())) == .noKey)
         try await keys.answer(try #require(keys.offer), storage: .iCloudKeychain)
 
         (model, keys) = device.launch()
@@ -286,7 +269,7 @@ struct RememberedKeysWebDAVTests {
         #expect(await keys.unlockWithRememberedKey(model) == .unlocked)
         #expect(await device.store.items[webdavID]?.storage == .thisDevice)
         #expect(await device.store.items[otherID]?.storage == .iCloudKeychain)
-        #expect(await device.store.items[otherID]?.identity == other.string)
+        #expect(Device.publicKey(await device.store.items[otherID]?.identity) == other.key)
         model.close()
     }
 

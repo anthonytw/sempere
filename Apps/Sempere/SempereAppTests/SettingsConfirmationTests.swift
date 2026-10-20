@@ -3,10 +3,7 @@ import Sempere
 import Testing
 @testable import SempereApp
 
-/// GA-64: Settings > Device Keys asks before "Rewrite headers only" is chosen for a
-/// removal or upgrade (`DeviceKeySettingsSection`), and Settings > Photos starts with
-/// the privacy setting on. The picker's choice goes through `RewrapSettings.removalStep`;
-/// the dialog's buttons store through `setOnRemove`.
+/// GA-64: Settings > Photos starts with the privacy setting on.
 @MainActor
 @Suite(.serialized)
 struct SettingsConfirmationTests {
@@ -16,69 +13,6 @@ struct SettingsConfirmationTests {
         let d = UserDefaults(suiteName: name)!
         d.removePersistentDomain(forName: name)
         return d
-    }
-
-    // MARK: Removal: headers only
-
-    @Test func choosingHeadersOnlyForARemovalWaitsForTheConfirmation() {
-        #expect(RewrapSettings.removalStep(choosing: .headerOnly, current: .reencrypt) == .confirm)
-    }
-
-    @Test func everyOtherChoiceIsAppliedAtOnce() {
-        #expect(RewrapSettings.removalStep(choosing: .reencrypt, current: .headerOnly) == .apply, "the safe way back needs no question")
-        #expect(RewrapSettings.removalStep(choosing: .reencrypt, current: .reencrypt) == .apply)
-        #expect(RewrapSettings.removalStep(choosing: .headerOnly, current: .headerOnly) == .apply,
-                "already confirmed once: picking it again does not ask again")
-    }
-
-    @Test func theDefaultIsTheSafeOneAndOnlyHeadersOnlyIsAsked() {
-        #expect(RewrapSettings.onRemove(scratch()) == .reencrypt)
-        for method in RewrapMethod.allCases {
-            #expect(RewrapSettings.needsConfirmation(forRemoval: method) == (method == .headerOnly), "\(method)")
-        }
-    }
-
-    /// The flow of the section: the picker asks, "Keep Re-encrypting Everything" (cancel) changes nothing,
-    /// "Rewrite Headers Only" stores the choice, and the policy the vault operations get follows.
-    @Test func theDialogsButtonsDecideWhatIsStored() {
-        let d = scratch()
-        var current = RewrapSettings.onRemove(d)
-
-        // Pick headers only: the dialog opens, nothing stored yet.
-        #expect(RewrapSettings.removalStep(choosing: .headerOnly, current: current) == .confirm)
-        #expect(RewrapSettings.onRemove(d) == .reencrypt)
-        #expect(RewrapSettings.policy(d).onRemove == .reencrypt)
-
-        // Cancel ("Keep Re-encrypting Everything"): the dialog's cancel action stores nothing.
-        #expect(RewrapSettings.onRemove(d) == .reencrypt)
-
-        // Confirm ("Rewrite Headers Only"): stored and used.
-        RewrapSettings.setOnRemove(.headerOnly, in: d)
-        current = RewrapSettings.onRemove(d)
-        #expect(current == .headerOnly)
-        #expect(RewrapSettings.policy(d).onRemove == .headerOnly)
-
-        // Back to re-encrypting: applied without a question.
-        #expect(RewrapSettings.removalStep(choosing: .reencrypt, current: current) == .apply)
-        RewrapSettings.setOnRemove(.reencrypt, in: d)
-        #expect(RewrapSettings.policy(d).onRemove == .reencrypt)
-    }
-
-    @Test func theAddChoiceIsIndependentOfTheRemovalChoice() {
-        let d = scratch()
-        RewrapSettings.setOnRemove(.headerOnly, in: d)
-        #expect(RewrapSettings.onAdd(d) == .headerOnly, "adding a device is header-only by default and asks nothing")
-        RewrapSettings.setOnAdd(.reencrypt, in: d)
-        #expect(RewrapSettings.onRemove(d) == .headerOnly)
-        #expect(RewrapSettings.policy(d) == RewrapPolicy(onAdd: .reencrypt, onRemove: .headerOnly))
-    }
-
-    @Test func aDamagedStoredRemovalChoiceFallsBackToReencrypting() {
-        let d = scratch()
-        d.set("header-ish", forKey: RewrapSettings.onRemoveKey)
-        #expect(RewrapSettings.onRemove(d) == .reencrypt, "never silently the weaker choice")
-        d.set(true, forKey: RewrapSettings.onRemoveKey)
-        #expect(RewrapSettings.onRemove(d) == .reencrypt)
     }
 
     // MARK: Photo privacy

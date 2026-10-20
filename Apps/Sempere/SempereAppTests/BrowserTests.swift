@@ -50,60 +50,50 @@ struct BrowserTests {
         #expect(model.phase == .unlocked)
         #expect(model.notes.isEmpty)
         #expect(library.recents.map(\.name) == ["Fresh"])
-        // No passphrase: nothing is stored in keys/.
-        #expect(try Vault.open(at: created.url).identityFiles().isEmpty)
+        // This device is the vault's home, unlocked with its new device key (it writes).
+        #expect(model.vault?.isHome == true)
+        #expect(!model.isRecoveryOpen)
+        #expect(model.vaultDevices.filter { !$0.isRecovery }.map(\.kind) == ["ipad"])
+        #expect(model.vaultDevices.first { $0.isThisDevice }?.name == "This device")
+        #expect(model.vault?.deviceEntry?.key == created.device.key)
+        // No passphrase: no copy of the recovery key in keys/.
+        #expect(try Vault.open(at: created.url).passphraseCopyNames().isEmpty)
     }
 
-    @Test func passphraseWrapsTheKeyIntoKeys() async throws {
+    static let strongPassphrase = "lunar-pickle-tundra-mosaic-quiver-banjo"
+
+    /// The passphrase copy of the recovery key (format.md §15.11): it opens the vault read-only.
+    @Test func passphraseWrapsTheRecoveryKeyIntoKeys() async throws {
         let parent = try Self.tempDir()
-        let created = try VaultLibrary.createVault(
-            NewVaultRequest(name: "Wrapped", keySource: .generate, passphrase: "hunter2"),
-            folder: "Wrapped.sempere", in: parent)
+        var request = NewVaultRequest(name: "Wrapped", keySource: .generate, passphrase: Self.strongPassphrase)
+        request.workFactor = 10
+        let created = try VaultLibrary.createVault(request, folder: "Wrapped.sempere", in: parent)
         let locked = try Vault.open(at: created.url)
-        let recipients = try locked.identityFiles()
-        #expect(recipients.count == 1)
-        let identity = try locked.readIdentityFile(recipient: recipients[0], passphrase: "hunter2", maxWorkFactor: 18)
-        #expect(identity.string == created.secretKey)
+        #expect(locked.passphraseCopyNames().count == 1)
+        let copy = try locked.openPassphraseCopy(passphrase: Self.strongPassphrase)
+        #expect(NativeIdentity.mlkem768x25519(copy.identity).string == created.secretKey)
+        #expect(copy.root == locked.root)
 
         let model = AppModel(deviceStateURL: try Self.tempDir().appendingPathComponent("device.json"))
         try await model.openVault(at: created.url)
-        try await model.unlock(passphrase: "hunter2")
+        try await model.unlock(passphrase: Self.strongPassphrase)
         #expect(model.phase == .unlocked)
+        #expect(model.isRecoveryOpen)
+        #expect(model.isVaultReadOnly)
     }
 
-    @Test func classicRecipientIsRefused() async throws {
+    /// The copy is on the vault's storage: a passphrase that is easy to guess is refused, nothing is created.
+    @Test func aWeakPassphraseIsRefused() async throws {
         let parent = try Self.tempDir()
-        let classic = X25519Identity().recipient.string
-        #expect(throws: VaultLibrary.LibraryError.classicRecipient) {
-            try VaultLibrary.createVault(NewVaultRequest(name: "Old", keySource: .recipient(classic), passphrase: nil),
-                                         folder: "Old.sempere", in: parent)
+        #expect(throws: VaultLibrary.LibraryError.self) {
+            try VaultLibrary.createVault(NewVaultRequest(name: "Weak", keySource: .generate, passphrase: "hunter2"),
+                                         folder: "Weak.sempere", in: parent)
         }
-        #expect(!FileManager.default.fileExists(atPath: parent.appendingPathComponent("Old.sempere").path))
+        #expect(!FileManager.default.fileExists(atPath: parent.appendingPathComponent("Weak.sempere").path))
     }
 
-    @Test func postQuantumRecipientOnlyVaultUnlocksWithPastedKey() async throws {
+    @Test func rejectsExistingVaults() async throws {
         let parent = try Self.tempDir()
-        let identity = try NativeIdentity.generate(.postQuantum)
-        let library = try Self.library()
-        let model = AppModel(deviceStateURL: try Self.tempDir().appendingPathComponent("device.json"))
-        let created = try await model.createVault(
-            NewVaultRequest(name: "PQ", keySource: .recipient(identity.recipient.string), passphrase: nil),
-            in: parent, library: library)
-        #expect(try Vault.open(at: created.url).recipients.map(\.key) == [identity.recipient.string])
-        #expect(model.phase == .locked)
-        await #expect(throws: VaultError.classicIdentity) {
-            try await model.unlock(identityText: IdentityFile.render(.x25519(X25519Identity()), created: Date()))
-        }
-        try await model.unlock(identityText: identity.string)
-        #expect(model.phase == .unlocked)
-    }
-
-    @Test func rejectsBadRecipientsAndExistingVaults() async throws {
-        let parent = try Self.tempDir()
-        #expect(throws: VaultLibrary.LibraryError.invalidRecipient) {
-            try VaultLibrary.createVault(NewVaultRequest(name: "A", keySource: .recipient("age1nope"), passphrase: nil),
-                                         folder: "A.sempere", in: parent)
-        }
         let ok = NewVaultRequest(name: "B", keySource: .generate, passphrase: nil)
         _ = try VaultLibrary.createVault(ok, folder: "B.sempere", in: parent)
         #expect(throws: VaultError.self) { try VaultLibrary.createVault(ok, folder: "B.sempere", in: parent) }
@@ -191,7 +181,7 @@ struct BrowserTests {
         try await second.open(recent: try #require(library.recents.first), library: library)
         #expect(second.phase == .locked)
         #expect(second.vaultName == "Again")
-        try await second.unlock(identityText: try #require(created.secretKey))
+        try await second.unlock(identityText: try #require(created.unlockKey))
         #expect(second.phase == .unlocked)
     }
 

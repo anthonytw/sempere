@@ -53,7 +53,7 @@ enum OpenedFile {
         guard waiting > 0 else { return .none }
         switch phase {
         case .noVault: return .needsVault
-        case .locked, .finishingKeyChange: return .needsUnlock
+        case .locked: return .needsUnlock
         case .unlocked:
             if busy { return .needsUnlock }
             return readOnly ? .readOnly : .ready

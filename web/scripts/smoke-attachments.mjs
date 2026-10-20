@@ -17,7 +17,7 @@ const requests = [];
 const browser = await launchBrowser();
 const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
 const problems = [];
-// 404s are expected: rewrap-journal.json, the index, and the fixture's missing blob.
+// 404s are expected: the index, and the fixture's missing blob.
 page.on("console", (m) => { if ((m.type() === "error" || m.type() === "warning") && !m.text().includes("404") && !engineNoise(m.text())) problems.push(m.text()); });
 page.on("pageerror", (e) => problems.push(String(e)));
 page.on("request", (r) => requests.push(r.url()));

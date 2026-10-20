@@ -113,7 +113,7 @@ public enum WebDAVConnection {
               let data = try? sub.get([Vault.manifestName], maxBytes: BoundedRead.maxManifestBytes).data,
               let manifest = manifestFields(data) else { return nil }
         let folder = display(name)
-        return WebDAVVaultListing(path: path, name: VaultManifest.peekLabel(data).map(display) ?? folder, vaultId: manifest.vaultId,
+        return WebDAVVaultListing(path: path, name: VaultLabelText.peekLabel(data).map(display) ?? folder, vaultId: manifest.vaultId,
                                   format: manifest.format, url: sub.baseURL.absoluteString, folder: folder)
     }
 

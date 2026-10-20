@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import XCTest
+import VaultTestSupport
 @testable import Sempere
 
 /// Notebook records (format.md §14): the observed-remove set, the file, merges and rewraps.
@@ -151,19 +152,6 @@ final class NotebookRecordsTests: VaultTestCase {
         XCTAssertEqual(report.added.filter { $0.hasPrefix("notebooks/") }.count, 2)
         XCTAssertEqual(try vault.readNotebookRecords().declared, ["Concurrent", "Theirs"])
         XCTAssertTrue(try vault.mergeCopy(from: copyURL).added.isEmpty, "idempotent")
-    }
-
-    func testRemovingARecipientRewrapsAndRetagsRecords() throws {
-        let a = pqIdentity(), b = pqIdentity()
-        var vault = try Vault.create(at: vaultURL(), recipients: [a.recipient, b.recipient], identities: [a])
-        let r = try XCTUnwrap(try vault.createNotebook("Kept"))
-        let report = try vault.removeRecipient(b.recipient)
-        XCTAssertTrue(report.isComplete)
-        XCTAssertTrue(report.rewrapped.contains("notebooks/\(r.fileName)"), "\(report.rewrapped)")
-        XCTAssertEqual(try vault.readNotebookRecords().declared, ["Kept"], "re-tagged under the new secret")
-        let data = try Data(contentsOf: vault.notebooksURL.appendingPathComponent(r.fileName))
-        XCTAssertEqual(try AgeFile.parseHeader(data).header.stanzas.count, 1)
-        XCTAssertTrue(vault.verify().isHealthy)
     }
 
     func testBackupListsRecords() throws {

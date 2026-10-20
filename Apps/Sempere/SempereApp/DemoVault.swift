@@ -28,8 +28,10 @@ enum DemoVault {
     /// What `build` made.
     struct Built: Sendable {
         let url: URL
-        /// The `age-keygen` style text of the vault's throwaway key.
+        /// The device key file (`DeviceKeys.fileText`) of the vault's throwaway home device.
         let identityText: String
+        /// The `age-keygen` style text of the vault's throwaway recovery key (opens it read-only).
+        let recoveryText: String
         /// Note ids by `Spec.key`.
         let notes: [String: UUID]
     }
@@ -59,11 +61,12 @@ enum DemoVault {
         return rng.uuid()
     }
 
-    /// Creates the vault in `directory` (replacing an older copy), with a
-    /// fresh post-quantum key, and writes every demo note. With a
-    /// `passphrase` the key is also stored in the vault's `keys/` (scrypt work
-    /// factor 15, the lowest a writer allows), so it unlocks the way a user
-    /// unlocks a real vault: the passphrase typed into the unlock sheet.
+    /// Creates the vault in `directory` (replacing an older copy), with fresh
+    /// throwaway device and recovery keys, and writes every demo note. With a
+    /// `passphrase` the recovery key is also stored in the vault's `keys/`
+    /// (format.md §15.11, scrypt work factor 15), so it unlocks the way a user
+    /// unlocks a real vault: the passphrase typed into the unlock sheet. That
+    /// opens it read-only (the recovery key never writes).
     ///
     /// `itemsImage` (UI tests, `SEMPERE_DEMO_ITEMS`): PNG bytes; the "thoughts"
     /// note then also gets one item of each kind a user places (`itemOps`).
@@ -74,20 +77,24 @@ enum DemoVault {
     ///
     /// `searchNotes` (UI tests, `SEMPERE_DEMO_SEARCH`): also two notes with recognized handwriting
     /// for the search highlights (`searchNoteOps`).
+    ///
+    /// `trust`: the trust records of the model that opens it (`AppModel.trust`): the vault's is saved
+    /// there, as for any vault this device creates, so its list checks when it is unlocked.
     static func build(in directory: URL, specs: [Spec] = DemoVault.specs, passphrase: String? = nil,
-                      itemsImage: Data? = nil, denseStrokes: Int? = nil, searchNotes: Bool = false) async throws -> Built {
+                      itemsImage: Data? = nil, denseStrokes: Int? = nil, searchNotes: Bool = false,
+                      trust: (any EpochTrustStore)? = nil) async throws -> Built {
         let fm = FileManager.default
         if fm.fileExists(atPath: directory.path) { try fm.removeItem(at: directory) }
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
-        let identity = try NativeIdentity.generate(.postQuantum)
+        let device = try DeviceKeys.generate()
+        let recovery = try MLKEM768X25519Identity()
+        let created = anchor.addingTimeInterval(-40 * 86_400)
         let vaultURL = directory.appendingPathComponent(folderName, isDirectory: true)
-        let vault = try Vault.create(at: vaultURL, recipients: [identity.recipient], labels: ["Demo key"],
-                                     identities: [identity], created: anchor.addingTimeInterval(-40 * 86_400))
-        let text = IdentityFile.render(identity, created: anchor.addingTimeInterval(-40 * 86_400))
-        if let passphrase {
-            try vault.writeIdentityFile(identity, passphrase: passphrase, workFactor: 15,
-                                        created: anchor.addingTimeInterval(-40 * 86_400))
-        }
+        let vault = try Vault.create(at: vaultURL, device: device, deviceName: "Demo iPad", kind: "ipad",
+                                     recovery: recovery, recoveryPassphrase: passphrase, workFactor: 15, created: created,
+                                     trust: trust)
+        let text = device.fileText(created: created)
+        let recoveryText = IdentityFile.render(.mlkem768x25519(recovery), created: created)
         let clock = try DeviceClock(url: directory.appendingPathComponent("device.json"))
         var ids: [String: UUID] = [:]
         for spec in specs {
@@ -117,7 +124,7 @@ enum DemoVault {
                 try await NoteWriter.append(note.ops, to: id, vault: vault, clock: clock, wall: anchor.addingTimeInterval(-0.2 * 86_400))
             }
         }
-        return Built(url: vaultURL, identityText: text, notes: ids)
+        return Built(url: vaultURL, identityText: text, recoveryText: recoveryText, notes: ids)
     }
 
     /// The pageless dense note's key (`denseStrokes`).

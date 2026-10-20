@@ -40,7 +40,8 @@ arbitrary file attachments, shapes, links, collaboration. The open item model
 (§12) lets some of these be added without a format change.
 
 Constraints from `DESIGN.md` and `CLAUDE.md`: everything at rest is
-age-encrypted to the vault recipients and HMAC-bound to the vault secret;
+age-encrypted to the vault identity and HMAC-bound to the vault key
+(`format.md` §15.2);
 files are write-once; sync tools see only new files; `Sources/` is pure Swift
 on Foundation, swift-crypto and zlib; a user can recover their data with stock
 tools. Any "smart" feature (handwriting to LaTeX, better transcription) runs
@@ -96,8 +97,8 @@ only when it is played; on WebDAV, sync small kinds first. The size class
 **Copying between notes.** Copy-paste of an image to another note, moving an
 item to another note, or duplicating a note copies the blob file into the
 target note's `att/` before writing the delta that references it. The name
-does not depend on the note and the file is encrypted to the vault's
-recipients, so a byte copy of the age file is valid; nothing is re-encrypted.
+does not depend on the note and the file is encrypted to the vault
+identity, so a byte copy of the age file is valid; nothing is re-encrypted.
 
 ### Framing and padding
 
@@ -107,7 +108,7 @@ content is stored raw, not gzipped: JPEG, PNG, PDF and AAC are already
 compressed, and raw bytes make stock-tool recovery a `tail | head`.
 
 The header carries the content hash so that a reader can check the blob's
-name, and a recipient change can check that a blob is complete, from the first
+name, and a rewrite can check that a blob is complete, from the first
 64 KiB STREAM chunk alone, without reading a 500 MB file. It carries the
 length so that padding can follow the content.
 
@@ -153,20 +154,18 @@ padded (their sizes say little about content and they are small).
 
 ## 3. Integrity and the blob name
 
-Requirement: attachment bytes are bound to the vault secret like revision
+Requirement: attachment bytes are bound to the vault key like revision
 bodies, so storage write access does not let anyone plant content.
 
 Revision bodies carry an HMAC tag inside the encrypted plaintext. Doing the
-same for blobs has one bad consequence: when a recipient is removed, the vault
-secret rotates and every tag must be recomputed, and a tag inside an age
-payload can only be changed by re-encrypting the whole payload. That is
-acceptable when the payload is re-encrypted anyway (the default on removal,
-below), but it would forbid a header-only rewrite on removal.
+same for blobs would tie a blob's payload to the key of its tag: a tag inside
+an age payload can only be changed by re-encrypting the whole payload.
 
-Instead, **the name is the tag.** `blobName = HMAC-SHA256(vaultSecret,
-"sempere/1" ‖ 0 ‖ "blob" ‖ 0 ‖ sha256(content))`. A blob is authentic when its
+Instead, **the name is the tag.** `blobName = HMAC-SHA256(blobNameKey,
+"sempere/1" ‖ 0 ‖ "blob" ‖ 0 ‖ sha256(content))`, with `blobNameKey` derived
+from the epoch's vault key (`format.md` §8.1.2, §15.2). A blob is authentic when its
 content hashes to the value in its header and the name derived from that hash
-under the vault secret is its file name; only a holder of the secret can
+under the vault key is its file name; only a holder of the key can
 produce that name. Read through a reference, the hash must also equal the
 `sha256` in the referencing revision, which is itself HMAC-tagged: a stronger
 binding than any tag (exactly this content, for exactly this item).
@@ -190,63 +189,30 @@ blob is only ever looked up from a revision of its own note (`format.md`
 §8.1.1), so a blob planted in another note's folder is just an unreferenced
 file there.
 
-### Recipient changes
+### Key changes
 
-**What "recipients" means.** A vault's recipients are its device keys: one age
-key per iPad, Mac or paper backup that may open the vault. "Adding a
-recipient" is setting up a new device; "removing a recipient" is locking out a
-lost, stolen or retired one. It is not sharing: Sempere has no sharing between
-people (`DESIGN.md` non-goals), and giving a note to someone else is an export
-(PDF, SVG, PNG), which leaves the vault's recipients alone.
+**What the vault's keys are.** A vault's listed keys are its devices' keys
+and one recovery key (`format.md` §2): one age key per iPad, Mac or CLI
+machine that may open the vault, plus the printed kit. Joining a device and
+removing a lost, stolen or retired one are key changes. They are not sharing:
+Sempere has no sharing between people (`DESIGN.md` non-goals), and giving a
+note to someone else is an export (PDF, SVG, PNG), which leaves the vault's
+keys alone.
 
-On a removal the vault secret rotates, so names change: the rewrap renames
-each blob within its note's `att/` (writes the new name, deletes the old),
-with lookups falling back to the previous secret's name while the journal
-exists (`format.md` §8.1.5).
+Under the key hierarchy (`docs/design/key-hierarchy.md`) every blob is
+encrypted to the vault identity, so **adding a device touches no blob**: it
+only wraps the vault key to the new device in `vault.json`. Removing a device
+starts a new epoch with a new vault key (KH3): blobs written before keep their
+names and file keys, and stay readable through the epoch records. Re-encrypting
+everything, including every blob under a new file key, is a separate and
+rarer operation (KH6, design §7). The earlier design, which rewrapped (header
+only, or fully re-encrypted) and renamed every blob at each recipient change,
+is gone.
 
-**How each blob is rewrapped: the policy is chosen automatically.**
-
-| Change | Default | Cost for 5 GB of attachments |
-| --- | --- | --- |
-| add a device key | **header-only rewrite**: new age header wrapping the same file key, nonce and payload copied | one header write and one file copy per blob |
-| remove a device key, or move from classic X25519 keys to post-quantum hybrid keys | **full re-encryption** under a new file key | decrypt and encrypt 5 GB |
-
-Why the split:
-
-- *Adding* gives a new device access; every device that could read a blob
-  still can, and nobody gains anything they did not have. Re-encrypting would
-  cost gigabytes of I/O for no security benefit.
-- *Removing*: every blob's file key is wrapped, in every old copy of its
-  header, to the removed key. Old copies exist outside our control: backups,
-  Time Machine, iCloud's version history, the lost device's own cache, an old
-  sync folder. If the current file kept the same file key, the removed key
-  plus *any* old copy of the header would open the current file and every
-  future copy of it. With a new file key, the current files are independent of
-  every old copy: the removed key can only read old copies that the attacker
-  actually holds in full.
-- *Post-quantum migration*: the same argument with "removed key" replaced by
-  "a future quantum computer": an old header's classic X25519 stanza stays
-  breakable; with the same file key it would open the new, post-quantum
-  protected file as well (`docs/post-quantum.md`).
-
-**Settings** (§15): two choices expose these cases, *When Adding a Device*
-(default: rewrite headers only; alternative: re-encrypt everything) and *When
-Removing or Replacing a Device*, which also governs an upgrade to post-quantum keys (default: re-encrypt
-everything; alternative: rewrite headers only, with a warning that old copies
-of the files stay readable to the removed key). The method in force goes into
-`rewrap-journal.json` as `rekeyBlobs`, so another device that finishes an
-interrupted change uses the same method (`format.md` §3.3.1). Revisions are
-small and are always fully re-encrypted.
-
-The header-only rewrite uses an Age API (B1) that unwraps the file key with an
-identity, re-wraps it to new recipients and emits a header. Full
-re-encryption streams the blob through decrypt and encrypt (B1's streaming
-APIs). Both are resumable through the journal.
-
-A blob left encrypted to an old set or named under an old secret (outside a
-pending recipient change, which `rewrap-resume` finishes) can be repaired,
-since a blob's header names its content hash: decrypt, re-derive the name,
-rename (`sempere blobs repair`).
+A blob encrypted with other stanzas than the one to the vault identity, or
+named under another key, can be repaired, since a blob's header names its
+content hash: decrypt, re-derive the name, re-encrypt, rename (`sempere
+blobs repair`).
 
 ## 4. Collection (GC), the unused-attachments index, history and sync
 
@@ -326,7 +292,7 @@ same numbers:
   listing of `att/`; only when it holds blobs, one listing of the revisions
   and a decryption of each revision not read before. It reads through an
   `AttachmentIndexSource` (`Vault`; tests count calls per note). A note with an
-  unreadable revision, an unfinished recipient change or (iCloud Drive) a
+  unreadable revision or (iCloud Drive) a
   revision not on this device (`local: false`, the app's
   `CloudVault.requireLocal`) decides nothing and loses its records, as
   collection's rule 1 does.
@@ -367,9 +333,8 @@ small kinds go first. Uploads go to a temporary name and are moved into place
 (`MOVE`, `Overwrite: F`); an interrupted download resumes with `Range`
 (`docs/io.md` "Attachment blobs").
 
-A recipient removal renames every blob, which sync sees as "all blobs dropped,
-all new blobs added". As for rewritten revisions, the documented procedure
-after a recipient change is a fresh sync from the device that did it.
+Key changes rename no blob: adding a device touches no file, and a removal
+(a new epoch, KH3) leaves existing blobs as they are.
 
 ### iCloud Drive
 
@@ -1409,6 +1374,10 @@ the blobs).
 
 ### B. Blob store, rewrap, collection, sync
 
+(History. The recipient-change parts of B1 and B2, `RewrapPolicy`, the rewrap
+journal and `vault recipients`, were removed with the key hierarchy's KH2: see
+§3 "Key changes". The streaming APIs stay.)
+
 **B1 — Age streaming and header rewrap** (`Sources/Age`). Streaming
 encrypt (input file or chunk sequence → output file), streaming decrypt (chunk
 iterator that releases only authenticated chunks),
@@ -1932,24 +1901,24 @@ Per device means per install: the keys are `Sempere.*` in `UserDefaults`
 (`DeviceSettings.swift`). A stored value outside its choices reads as the
 nearest valid one or the default. The CLI never reads them (it edits only the vault's shared `settings.age`, with `sempere settings`); each has flags
 instead: `sempere compact --thin-older-than 30d` (or `--thin-all`), `sempere attach recording --codec …
---sample-rate … --channels … --bit-rate …`, `sempere vault recipients …
---rewrap header|reencrypt`, `sempere blobs unused|gc`.
+--sample-rate … --channels … --bit-rate …`, `sempere blobs unused|gc`.
 
-The device-key settings explain in the panel that *devices* here are the
-vault's keys (this iPad, that Mac, the paper backup), not people: sharing a
-note means exporting it.
+The rewrap-method settings (When Adding a Device, When Removing or Replacing a
+Device) have no effect under the key hierarchy (§3 "Key changes"). *Devices*
+are the vault's keys (this iPad, that Mac, the recovery kit), not people:
+sharing a note means exporting it.
 
 ## 16. Decisions
 
 1. Per-note storage, `notes/<id>/att/<keyed-hash>.<kind>.age`; dedupe only
    within a note; copying an item to another note copies the blob; collection
    is per note.
-2. Keyed blob names, HMAC(vaultSecret, sha256(content)), double as the
-   integrity tag; no tag inside blobs.
-3. Rewrap policy chosen automatically: adding a device → header-only rewrite;
-   removing a device or migrating to post-quantum recipients → full
-   re-encryption with new file keys. Two settings expose the two cases.
-   Recipients are device keys, not sharing.
+2. Keyed blob names, HMAC(blobNameKey, sha256(content)) with `blobNameKey`
+   derived from the vault key, double as the integrity tag; no tag inside
+   blobs.
+3. (Superseded by the key hierarchy, KH2.) Blobs are encrypted to the vault
+   identity; adding a device rewraps nothing, and removing one starts a new
+   epoch. Devices are keys, not sharing.
 4. Padmé padding of blobs.
 5. Mutable items with LWW registers.
 6. Ink above all items; integer z-layers (background 0, content 100), open for

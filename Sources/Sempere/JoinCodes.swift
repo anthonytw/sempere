@@ -28,11 +28,19 @@ public struct JoinRequest: Hashable, Sendable {
 
     /// The commitment `c = SHA-256("sempere/1 join" ‖ lp(vaultId) ‖ lp(key) ‖ lp(sign.p256)
     /// ‖ lp(sign.mldsa65) ‖ lp(kind))`. The name is not covered: E shows it, the user judges it.
-    public var commitment: Data {
+    public var commitment: Data { Self.commitment(vaultId: vaultId, key: key, sign: sign, kind: kind) }
+
+    /// The commitment of a device's fields (a listed entry's, for the reply its device checks).
+    public static func commitment(vaultId: UUID, key: String, sign: DeviceSigningPublicKeys, kind: String) -> Data {
         var m = LPMessage("sempere/1 join")
         m.field(vaultId.uuidString.lowercased()); m.field(key); m.field(sign.p256Hex); m.field(sign.mldsa65Hex)
         m.field(kind)
         return Data(SHA256.hash(data: m.bytes))
+    }
+
+    /// A lowercase word of 1 to 32 letters `a`–`z` (design §3: `ipad`, `iphone`, `mac`, `cli`, …).
+    public static func isValidKind(_ kind: String) -> Bool {
+        (1...32).contains(kind.utf8.count) && kind.utf8.allSatisfy { (0x61...0x7a).contains($0) }
     }
 
     /// Parses an untrusted request (bounded). The name is returned as written; callers clean it
@@ -60,7 +68,7 @@ extension JoinRequest: Codable {
         name = try c.decode(String.self, forKey: .name)
         kind = try c.decode(String.self, forKey: .kind)
         // A lowercase word (design §3: ipad, iphone, mac, cli, …), at most 32 letters (review L5).
-        guard (1...32).contains(kind.utf8.count), kind.utf8.allSatisfy({ (0x61...0x7a).contains($0) }) else {
+        guard Self.isValidKind(kind) else {
             throw EpochFileError.malformed("kind is not a lowercase word")
         }
         created = try c.decode(String.self, forKey: .created)

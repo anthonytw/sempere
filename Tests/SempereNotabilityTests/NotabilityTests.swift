@@ -2,6 +2,7 @@ import Age
 import Foundation
 import ImportTestSupport
 import SempereRender
+import VaultTestSupport
 import Sempere
 import XCTest
 @testable import SempereImport
@@ -165,8 +166,7 @@ final class NotabilityTests: NotabilityTestCase {
         try Data("not a zip".utf8).write(to: noteDir.appendingPathComponent("Broken.note"))
 
         let identity = try NativeIdentity.generate(.postQuantum)
-        let vault = try Vault.create(at: tmp.appendingPathComponent("V.sempere"), recipients: [identity.recipient],
-                                     identities: [identity])
+        let vault = try TestVaults.create(at: tmp.appendingPathComponent("V.sempere"), identities: [identity])
         let device = DeviceID("0a0b0c0d")!
         var clock = HybridClock()
         let now = Date(timeIntervalSince1970: 1_790_000_000)
@@ -225,8 +225,7 @@ final class NotabilityTests: NotabilityTestCase {
         let url = tmp.appendingPathComponent("backup.zip")
         try backup.write(to: url)
         let identity = try NativeIdentity.generate(.postQuantum)
-        let vault = try Vault.create(at: tmp.appendingPathComponent("Z.sempere"), recipients: [identity.recipient],
-                                     identities: [identity])
+        let vault = try TestVaults.create(at: tmp.appendingPathComponent("Z.sempere"), identities: [identity])
         var clock = HybridClock()
         let report = try NotabilityImporter.import(paths: [url], into: vault, device: DeviceID("0a0b0c0d")!,
                                                    clock: &clock)
@@ -242,8 +241,7 @@ final class NotabilityTests: NotabilityTestCase {
         let notePath = tmp.appendingPathComponent("Synthetic.note")
         try SyntheticNote.package().write(to: notePath)
         let identity = try NativeIdentity.generate(.postQuantum)
-        let vault = try Vault.create(at: tmp.appendingPathComponent("T.sempere"), recipients: [identity.recipient],
-                                     identities: [identity])
+        let vault = try TestVaults.create(at: tmp.appendingPathComponent("T.sempere"), identities: [identity])
         let a = DeviceID("aaaaaaaa")!, b = DeviceID("bbbbbbbb")!
         var clock = HybridClock()
         var pageIds = Set<UUID>()
@@ -265,8 +263,7 @@ final class NotabilityTests: NotabilityTestCase {
         let notePath = tmp.appendingPathComponent("Synthetic.note")
         try SyntheticNote.package().write(to: notePath)
         let identity = try NativeIdentity.generate(.postQuantum)
-        let vault = try Vault.create(at: tmp.appendingPathComponent("R.sempere"), recipients: [identity.recipient],
-                                     identities: [identity])
+        let vault = try TestVaults.create(at: tmp.appendingPathComponent("R.sempere"), identities: [identity])
         let device = DeviceID("0a0b0c0d")!
         var clock = HybridClock()
         let t0 = Date()
@@ -300,8 +297,7 @@ final class NotabilityTests: NotabilityTestCase {
     /// An overwrite re-sets tags and notebook even when they are now empty.
     func testOverwriteClearsTagsAndNotebook() throws {
         let identity = try NativeIdentity.generate(.postQuantum)
-        let vault = try Vault.create(at: tmp.appendingPathComponent("C.sempere"), recipients: [identity.recipient],
-                                     identities: [identity])
+        let vault = try TestVaults.create(at: tmp.appendingPathComponent("C.sempere"), identities: [identity])
         var clock = HybridClock()
         let first = tmp.appendingPathComponent("one.note"), second = tmp.appendingPathComponent("two.note")
         try SyntheticNote.package().write(to: first)
@@ -322,8 +318,7 @@ final class NotabilityTests: NotabilityTestCase {
     /// replacing the other's whole array.
     func testImportedTagsMergeWithAConcurrentTagEdit() throws {
         let identity = try NativeIdentity.generate(.postQuantum)
-        let vault = try Vault.create(at: tmp.appendingPathComponent("M.sempere"), recipients: [identity.recipient],
-                                     identities: [identity])
+        let vault = try TestVaults.create(at: tmp.appendingPathComponent("M.sempere"), identities: [identity])
         let notePath = tmp.appendingPathComponent("Synthetic.note")
         try SyntheticNote.package(tags: "alpha, beta").write(to: notePath)
         let importer = DeviceID("0a0b0c0d")!, mac = tmp.appendingPathComponent("mac.json")
@@ -364,8 +359,7 @@ final class NotabilityTests: NotabilityTestCase {
     /// clock does not supersede it.
     func testOverwriteComesAfterWritesStampedAheadOfTheImporterClock() throws {
         let identity = try NativeIdentity.generate(.postQuantum)
-        let vault = try Vault.create(at: tmp.appendingPathComponent("L.sempere"), recipients: [identity.recipient],
-                                     identities: [identity])
+        let vault = try TestVaults.create(at: tmp.appendingPathComponent("L.sempere"), identities: [identity])
         let notePath = tmp.appendingPathComponent("Synthetic.note")
         try SyntheticNote.package(tags: "alpha").write(to: notePath)
         let importer = DeviceID("0a0b0c0d")!
@@ -394,8 +388,7 @@ final class NotabilityTests: NotabilityTestCase {
         XCTAssertEqual(note.curves.count, 4)
         XCTAssertEqual(note.recognition.count, 2)
         let identity = try NativeIdentity.generate(.postQuantum)
-        let vault = try Vault.create(at: tmp.appendingPathComponent("D.sempere"), recipients: [identity.recipient],
-                                     identities: [identity])
+        let vault = try TestVaults.create(at: tmp.appendingPathComponent("D.sempere"), identities: [identity])
         var clock = HybridClock()
         for input in [dir, tmp.appendingPathComponent("Notability")] {
             let r = try NotabilityImporter.import(paths: [input], into: vault, device: DeviceID("0a0b0c0d")!,
@@ -437,8 +430,7 @@ final class NotabilityTests: NotabilityTestCase {
         let path = tmp.appendingPathComponent("bad.note")
         try data.write(to: path)
         let identity = try NativeIdentity.generate(.postQuantum)
-        let vault = try Vault.create(at: tmp.appendingPathComponent("H.sempere"), recipients: [identity.recipient],
-                                     identities: [identity])
+        let vault = try TestVaults.create(at: tmp.appendingPathComponent("H.sempere"), identities: [identity])
         var clock = HybridClock()
         let r = try NotabilityImporter.import(paths: [path], into: vault, device: DeviceID("0a0b0c0d")!, clock: &clock)
         XCTAssertEqual(r.failed, 1)

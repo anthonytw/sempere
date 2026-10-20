@@ -2,6 +2,7 @@ import TempDirSupport
 import Age
 import FuzzSupport
 import Foundation
+import VaultTestSupport
 import Sempere
 import XCTest
 
@@ -26,7 +27,7 @@ final class LargeVideoExportTests: XCTestCase {
         try writeSparseMP4(fastStart: try Data(contentsOf: Self.video.appendingPathComponent("clip-h264-faststart.mp4")),
                            to: source, total: total)
         let id = try NativeIdentity.generate(.postQuantum)
-        let vault = try Vault.create(at: dir.appendingPathComponent("V.sempere"), recipients: [id.recipient], identities: [id])
+        let vault = try TestVaults.create(at: dir.appendingPathComponent("V.sempere"), identities: [id])
         let note = UUID()
 
         let sampler = ResidentSampler()

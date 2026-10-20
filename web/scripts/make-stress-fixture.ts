@@ -4,15 +4,14 @@
 //   note "Stress: pageless dense" a pageless page with 3000 strokes inside 3000 pt (hundreds per band)
 //   note "Stress: 100 deep pages"  100 pageless pages whose ink depth differs, so every page's exact
 //                                  height differs from the provisional one (the scroll-anchor check)
-// The vault is encrypted to the throwaway test key of Tests/SempereTests/Fixtures/sample.key.
+// The vault shares the skeleton and vault key of Tests/SempereTests/Fixtures/sample.sempere (device key sample.key).
 // Synthetic content only; nothing is committed (the output goes to a temporary directory).
 //
 // Usage: node scripts/make-stress-fixture.ts OUT_DIR [--pages N] [--strokes N] [--deep N] [--dense N]
 
-import { armor, identityToRecipient } from "age-encryption";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createVaultWriter, vaultTags } from "./fixture-lib.ts";
+import { createVaultWriter, installSkeleton } from "./fixture-lib.ts";
 
 const args = process.argv.slice(2);
 const outArg = args[0];
@@ -24,13 +23,8 @@ const opt = (name: string, dflt: number): number => {
 };
 const pageCount = opt("pages", 120), strokeCount = opt("strokes", 4000), deepCount = opt("deep", 100), denseCount = opt("dense", 3000);
 
-const web = join(import.meta.dirname, "..");
-const keyFile = join(web, "..", "Tests", "SempereTests", "Fixtures", "sample.key");
-const identity = readFileSync(keyFile, "utf8").split("\n").find((l) => l.startsWith("AGE-SECRET-KEY-PQ-"));
-if (!identity) throw new Error("no identity in sample.key");
-const recipient = await identityToRecipient(identity);
-const secret = new Uint8Array(32).map((_, i) => (i * 11 + 5) & 0xff);
-const { encrypt, frame } = createVaultWriter({ secret, out, recipient });
+// Encrypted to the vault key of sample.sempere (fixture-lib.ts), whose device key is sample.key.
+const { encrypt, frame } = await createVaultWriter({ out });
 
 const dev = "a1b2c3d4";
 const t0 = Date.UTC(2026, 9, 14, 12, 0, 0);
@@ -136,11 +130,6 @@ let strokeId = 0x1000;
   await write(note, ops);
 }
 
-const vaultId = "5e550000-1000-4000-8000-000000000001";
-writeFileSync(join(out, "vault.json"), JSON.stringify({
-  format: "sempere/1", vaultId, created: wall(0),
-  recipients: [{ key: recipient, label: "TEST-ONLY fixture key", added: wall(0) }],
-  vaultSecret: armor.encode(await encrypt(secret)),
-  ...vaultTags(vaultId, [recipient], secret),
-}, null, 2) + "\n");
+// vault.json, epochs/ and keys/ of the skeleton (sample.sempere: the same vault id and epoch key).
+installSkeleton(out);
 console.log(`wrote ${out}`);

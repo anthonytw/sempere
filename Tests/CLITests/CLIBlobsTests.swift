@@ -248,40 +248,23 @@ final class CLIBlobsTests: CLITestCase {
 
     func syntheticPicture(_ n: Int) -> Data { Data((0..<n).map { UInt8(truncatingIfNeeded: $0 &* 13) }) }
 
-    func testRecipientsRewrapOptionAndRecover() throws {
+    func testRecoverABlob() throws {
         let (vault, _, key) = try makeVault()
         let content = Data((0..<70_000).map { UInt8(truncatingIfNeeded: $0 &* 7) })
         let ref = try add(vault, key, note: n1, content: content, type: "audio/mp4")
         try reference(vault, note: n1, ref, seq: 1)
-        let other = try NativeIdentity.generate(.postQuantum)
-        let otherKey = path("other.key")
-        try IdentityFile.render(other, created: Date()).write(toFile: otherKey, atomically: true, encoding: .utf8)
-
-        var r = try cli(["vault", "recipients", "add", other.recipient.string, "--json"] + access(vault, key))
-        XCTAssertEqual(r.status, 0, r.err)
-        XCTAssertEqual((r.json as? [String: Any])?["blobs"] as? String, "header")
-        r = try cli(["vault", "recipients", "remove", other.recipient.string, "--rewrap", "header", "--json"]
-            + access(vault, key))
-        XCTAssertEqual(r.status, 0, r.err)
-        XCTAssertEqual((r.json as? [String: Any])?["blobs"] as? String, "header")
-        r = try cli(["vault", "recipients", "add", other.recipient.string, "--rewrap", "reencrypt", "--json"]
-            + access(vault, key))
-        XCTAssertEqual((r.json as? [String: Any])?["blobs"] as? String, "reencrypt")
-        r = try cli(["vault", "recipients", "remove", other.recipient.string, "--json"] + access(vault, key))
-        XCTAssertEqual((r.json as? [String: Any])?["blobs"] as? String, "reencrypt")
-        r = try cli(["vault", "recipients", "add", other.recipient.string, "--rewrap", "sideways"] + access(vault, key))
-        XCTAssertEqual(r.status, 2)
 
         // recover: the content, the name checked inside the vault
-        let reopened = try Vault.open(at: vault.url, identities: [try IdentityFile.parse(String(contentsOfFile: key, encoding: .utf8))])
-        let blob = vault.url.appendingPathComponent("notes/\(n1)/att/\(try reopened.blobFileName(for: ref))")
-        r = try cli(["recover", blob.path, "--identity", key, "-v"])
+        let blob = vault.url.appendingPathComponent("notes/\(n1)/att/\(try vault.blobFileName(for: ref))")
+        var r = try cli(["recover", blob.path, "--identity", key, "-v"])
         XCTAssertEqual(r.status, 0, r.err)
         XCTAssertEqual(r.outData, content)
         XCTAssertTrue(r.err.contains("name verified"), r.err)
+        // Away from the vault: the vault keys (the kit script's vault-keys.txt, format.md §15.13).
         let outside = tmp.appendingPathComponent(blob.lastPathComponent)
         try FileManager.default.copyItem(at: blob, to: outside)
-        r = try cli(["recover", outside.path, "--identity", key])
+        let vaultKeys = try vaultKeysFile(vault: vault.url.path, keyFile: key)
+        r = try cli(["recover", outside.path, "--identity", vaultKeys])
         XCTAssertEqual(r.status, 0, r.err)
         XCTAssertEqual(r.outData, content)
         XCTAssertTrue(r.err.contains("UNVERIFIED NAME"), r.err)

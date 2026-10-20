@@ -21,8 +21,7 @@ struct SyncWebDAVCommand: ParsableCommand {
             notes/ are write-once and never overwritten on either side. Each note's attachment blobs
             (notes/<id>/att/) are synced the same way, streamed from and to disk; an interrupted blob
             download continues on the next run. A blob dropped on one side is deleted on the other
-            only if no revision of its note references it there (format.md §8.1.6), else copied back. vault.json and
-            rewrap-journal.json are compared with the last sync; when both sides changed, both copies
+            only if no revision of its note references it there (format.md §8.1.6), else copied back. vault.json is compared with the last sync; when both sides changed, both copies
             are kept (vault.conflict-<device>-<time>.json) and the exit code is 3. A deletion
             follows only when compaction allows it, which needs the vault unlocked (--identity, or
             --passphrase-env). Only https is accepted, plus http to localhost. The password
@@ -39,12 +38,12 @@ struct SyncWebDAVCommand: ParsableCommand {
             list needs the key: pass --identity or --passphrase-env).
 
             --push-only makes it a one-way mirror for a server that is not trusted to write back:
-            it uploads what the server lacks, overwrites the server's vault.json and
-            rewrap-journal.json from the local copy, and deletes on the server what local compaction or
+            it uploads what the server lacks, overwrites the server's vault.json from the
+            local copy, and deletes on the server what local compaction or
             blob collection removed; it never downloads and never writes or deletes anything in the
             vault, so nothing the server holds can change it. Files only the server has, which
             no compaction explains, are listed as extraneous, and removed with --delete-extraneous.
-            With --keep-server-changes, a server vault.json or rewrap-journal.json that changed since this
+            With --keep-server-changes, a server vault.json that changed since this
             device's last sync (another writer, such as another device's key change) is kept and reported
             as a conflict (exit 3) instead of being replaced; revisions and blobs still upload. This is how
             the app pushes a WebDAV vault.
@@ -67,7 +66,7 @@ struct SyncWebDAVCommand: ParsableCommand {
             was done so far is kept, and the next run continues.
 
             Partial copies (format.md §1.2, docs/io.md "Partial copies") are pulled in steps. --metadata-only
-            makes one in a new folder (or continues one): vault.json, the rewrap journal, settings.age and the
+            makes one in a new folder (or continues one): vault.json, settings.age and the
             server's sealed summaries, plus one empty folder per note marked as not downloaded yet; a few
             requests whatever the size of the vault, nothing uploaded or deleted. --fetch then fetches what a
             partial copy lacks: every note not downloaded yet (or only those named with --note, an id or id
@@ -133,7 +132,7 @@ struct SyncWebDAVCommand: ParsableCommand {
     var deleteExtraneous = false
 
     @Flag(name: .customLong("keep-server-changes"),
-          help: "With --push-only: keep a server vault.json or rewrap-journal.json changed since this device's last sync (exit 3) instead of replacing it.")
+          help: "With --push-only: keep a server vault.json changed since this device's last sync (exit 3) instead of replacing it.")
     var keepServerChanges = false
 
     @Flag(name: .customLong("skip-unchanged"),
@@ -343,7 +342,7 @@ enum SyncCLI {
     /// Exit 1 for errors, quarantined files or files still arriving; 6 for a rejected vault.json; 3 for conflicts.
     static func exit(for report: SyncReport) throws {
         if !report.errors.isEmpty || !report.quarantined.isEmpty || !report.arriving.isEmpty { throw ExitCode(ExitStatus.failure) }
-        if !report.rejected.isEmpty { throw ExitCode(ExitStatus.untrustedRecipients) }
+        if !report.rejected.isEmpty { throw ExitCode(ExitStatus.untrustedList) }
         if !report.conflicts.isEmpty { throw ExitCode(ExitStatus.unhealthy) }
     }
 

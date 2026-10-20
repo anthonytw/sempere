@@ -87,20 +87,26 @@ ChaCha20-Poly1305, every chunk authenticated), no cipher negotiation, a
 tiny spec, several independent implementations, and a stock CLI that reads
 our files.
 
-Keys: an age identity is one line of text. The app imports and exports it
-freely. A vault lists one or more recipient public keys and every note is
-encrypted to all of them. The identity may additionally be stored in the
-vault passphrase-wrapped (`age -p` compatible) for convenience; on device it
-sits in the Keychain, optionally behind Face ID.
+Keys: a key hierarchy (`docs/design/key-hierarchy.md`, `format.md` §2, §15).
+A vault has a 32-byte vault key per epoch; an age identity derived from it,
+the vault identity, is what every file is encrypted to, in one stanza, so a
+file's header does not grow with the number of devices. `vault.json` wraps
+the vault key once for each device's own key (made on the device, never
+copied off it) and once for one recovery key, printed in the recovery kit and
+kept by no device. The recovery key may also be stored in the vault
+passphrase-wrapped (`age -p` compatible, scrypt work factor 20, a passphrase of
+at least about 70 bits). This version writes vaults of one epoch: adding a
+device wraps the key to it and touches no file; removing one starts a new
+epoch (planned, KH3).
 
 age does not sign. To stop someone with write access to the storage from
-planting a note that decrypts, every plaintext carries an HMAC keyed by a
-per-vault secret that only key holders can decrypt. The stock-CLI recovery
-path simply skips the tag. The device list in `vault.json` is tagged the same
-way, and when the secret rotates the new one is linked to the old by two
-signatures (Ed25519 and ML-DSA-65, keys derived from the old secret); each
-device remembers only the public keys, so what it stores can check a
-rotation but never forge one (`format.md` §2.1).
+planting a note that decrypts, every plaintext carries an HMAC keyed by a key
+derived from the vault key, which only key holders can unwrap. The stock-CLI
+recovery path simply skips the tag. The device list in `vault.json` is tagged
+the same way and signed (P-256 and ML-DSA-65) by the one device that changes
+it, the vault's home; each device remembers what it verified as public keys
+only, and checks every later `vault.json` against that and against the vault's
+root fingerprint, printed on the kit (`format.md` §2.1).
 
 ## Storage and sync
 
@@ -170,9 +176,10 @@ is lost, nobody can open the notes; the app says so when a vault is created or
 first unlocked on a device ("About Your Key"). Three things support the aim,
 none of which need us, a server or the app:
 
-- **The key on paper.** `sempere keys paper` prints a recovery kit: the age
-  identity as a QR code and as text, the public key, the vault id, and
-  recovery steps that need only the stock `age`, `tail`, `gunzip` and `jq`.
+- **The recovery key on paper.** `sempere keys paper` prints a recovery kit:
+  the vault's recovery key as a QR code and as text, the vault id and root
+  fingerprint, and recovery steps that need only the stock `age`, `tail`,
+  `gunzip` and `jq` (a frozen script, `format.md` §15.13).
   The QR encoder is our own (pure Swift, `Sources/SempereRender/QRCode.swift`, no
   imaging library) and is checked module for module against an independent
   implementation and by decoding with zbar. Text is typed back, so every line
@@ -180,13 +187,13 @@ none of which need us, a server or the app:
   `sha256sum`: the key's own Bech32 checksum already rejects a typo, but cannot
   say where it is. The plain sheet *is* the key and says so in a box at the
   top. The `--passphrase` variant prints the scrypt-wrapped key file instead
-  (the same one `keys/` may hold), for people who would rather keep a sheet
+  (wrapping only the secret key line), for people who would rather keep a sheet
   that is useless without a passphrase in a drawer than a bare key in a safe.
 - **Backups of the encrypted files.** A vault is a folder of write-once files,
   so a backup is a copy that only ever grows: `sempere backup --to DIR` copies
   new files (atomically, each read back and hash-checked), keeps every
-  previous version of the few files that do change (`vault.json`, keys, and
-  revisions rewritten by a recipient change) under `versions/`, and deletes
+  previous version of the few files that do change (`vault.json`,
+  `settings.age`) under `versions/`, and deletes
   nothing unless `--prune` proves with the compaction rules that a snapshot
   in the backup covers it. A backup folder is itself a vault, so every
   command, and the stock-tool path, works on it directly; `backup.json` records
@@ -205,15 +212,14 @@ none of which need us, a server or the app:
 ## Attachments
 
 Images, PDFs, audio and transcripts are immutable *blobs* in the note's own
-`att/` folder, named by an HMAC of their content hash under the vault secret
+`att/` folder, named by an HMAC of their content hash under a key derived from the vault key
 (no plaintext hashes on storage; the name is also the integrity tag),
 deduplicated within the note, and collected per note only when no surviving
 revision of that note references them. Text boxes (full Unicode), images and
 PDF pages are *placed items* on a page with LWW geometry and text, on integer
 z-layers, always drawn below the ink. Recordings belong to the note; strokes
-drawn while recording carry the recording time. A recipient (device key)
-change rewrites blob headers when a device is added and re-encrypts blobs
-when one is removed. Details and alternatives:
+drawn while recording carry the recording time. Adding a device touches no
+blob. Details and alternatives:
 `docs/attachments.md`; format: `format.md` §8.
 
 ## Export

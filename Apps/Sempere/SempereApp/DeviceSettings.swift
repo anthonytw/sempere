@@ -245,46 +245,22 @@ enum TranscriptionSettings {
 
 // MARK: - Device keys
 
-/// *Device keys*: how recipient changes rewrap attachments (format.md §8.1.5).
-enum RewrapSettings {
+/// The two `rewrap.*` shared settings (docs/settings-sync.md) of the old
+/// recipients format, which re-encrypted attachments on key changes. Key
+/// changes no longer rewrap (format.md §15), so nothing reads them; they are
+/// still in `SharedSettingsCatalog`, and are kept as plain strings so a
+/// synced value round-trips. TODO(KH5): drop them with the catalog's entries.
+enum LegacyRewrapSettings {
     static let onAddKey = "Sempere.rewrap.onAdd"
     static let onRemoveKey = "Sempere.rewrap.onRemove"
+    static let values: Set<String> = ["header", "reencrypt"]
 
-    static func onAdd(_ defaults: UserDefaults = .standard) -> RewrapMethod {
-        defaults.string(forKey: onAddKey).flatMap(RewrapMethod.init(rawValue:)) ?? RewrapPolicy().onAdd
+    static func onAdd(_ defaults: UserDefaults) -> String {
+        defaults.string(forKey: onAddKey).flatMap { values.contains($0) ? $0 : nil } ?? "header"
     }
 
-    static func onRemove(_ defaults: UserDefaults = .standard) -> RewrapMethod {
-        defaults.string(forKey: onRemoveKey).flatMap(RewrapMethod.init(rawValue:)) ?? RewrapPolicy().onRemove
-    }
-
-    static func setOnAdd(_ m: RewrapMethod, in defaults: UserDefaults = .standard) { defaults.set(m.rawValue, forKey: onAddKey) }
-    static func setOnRemove(_ m: RewrapMethod, in defaults: UserDefaults = .standard) {
-        defaults.set(m.rawValue, forKey: onRemoveKey)
-    }
-
-    /// What `Vault.addRecipient` / `removeRecipient` / `replaceRecipient` get.
-    static func policy(_ defaults: UserDefaults = .standard) -> RewrapPolicy {
-        RewrapPolicy(onAdd: onAdd(defaults), onRemove: onRemove(defaults))
-    }
-
-    /// Header-only after a removal leaves the removed key able to open old
-    /// copies of every attachment: choosing it needs a warning and a confirmation.
-    static func needsConfirmation(forRemoval method: RewrapMethod) -> Bool { method == .headerOnly }
-
-    /// What choosing `chosen` in the "When Removing or Replacing a Device" picker does
-    /// while `current` is set: header-only (when not already set) waits for the
-    /// confirmation dialog, anything else is applied and stored at once.
-    enum RemovalStep: Equatable { case confirm, apply }
-
-    static func removalStep(choosing chosen: RewrapMethod, current: RewrapMethod) -> RemovalStep {
-        needsConfirmation(forRemoval: chosen) && chosen != current ? .confirm : .apply
-    }
-
-    static func title(_ m: RewrapMethod) -> String {
-        m == .headerOnly
-            ? String(localized: "Rewrite headers only", comment: "Settings ▸ Device Keys: how attachments are rewrapped (picker choice)")
-            : String(localized: "Re-encrypt everything", comment: "Settings ▸ Device Keys: how attachments are rewrapped (picker choice)")
+    static func onRemove(_ defaults: UserDefaults) -> String {
+        defaults.string(forKey: onRemoveKey).flatMap { values.contains($0) ? $0 : nil } ?? "reencrypt"
     }
 }
 

@@ -32,9 +32,9 @@ Do not use features newer than Swift 6.0 in `Sources/`.
   AppKit, PencilKit, CoreGraphics, Compression, CommonCrypto, Security.
   Apple-only code goes under `Apps/`. Apple-only *tests* (e.g. comparing
   against PencilKit) are allowed behind `#if canImport(PencilKit)`.
-- Files under a vault's `notes/` (revisions and each note's `att/` blobs) are
-  write-once. Never add code that modifies them in place except the
-  recipient-change rewrap (and blob rename) in `format.md` §3.3 and §8.1.5.
+- Files under a vault's `notes/` (revisions and each note's `att/` blobs), `notebooks/` and `epochs/`
+  are write-once. Never add code that modifies them in place; re-encrypting everything (key hierarchy
+  KH6, `docs/design/key-hierarchy.md` §7) will be the one exception.
 - Crypto: use swift-crypto primitives; never hand-roll a cipher or MAC.
   scrypt and PBKDF2 are the only primitives implemented locally
   (swift-crypto lacks them); they must have RFC test vectors.
@@ -45,11 +45,11 @@ Do not use features newer than Swift 6.0 in `Sources/`.
 - `sempere/1` is the first released format and must stay stable: do not change what an existing field,
   op or file means. A change that older readers cannot handle needs a new `features` marker or format
   major, so they open the vault read-only (`format.md` §7).
-- Keep the stock-CLI recovery path working:
-  `age -d -i key FILE.age | tail -c +38 | gunzip | jq .` (with `age` 1.3+ for
-  post-quantum keys), and for blobs
-  `age -d -i key notes/ID/att/NAME.KIND.age | tail -c +46 | head -c LEN`
-  (`format.md` §8.1.7). Under the key hierarchy (KH2 on, `format.md` §15) the key is `vault-keys.txt`
+- Keep the stock-CLI recovery path working (`age` 1.3+). Files are encrypted to the vault identity,
+  so the path is the kit's frozen script (`format.md` §15.13, `KitRecovery.script`, byte for byte):
+  `jq -r '.keys[] | select(.role == "recovery") | .wrap' vault.json | age -d -i recovery.txt > vault-keys.txt`,
+  then `age -d -i vault-keys.txt FILE.age | tail -c +38 | gunzip | jq .`, and for blobs
+  `age -d -i vault-keys.txt notes/ID/att/NAME.KIND.age | tail -c +46 | head -c LEN` (§8.1.7). Under the key hierarchy (KH2 on, `format.md` §15) the key is `vault-keys.txt`
   from the kit's frozen script (`KitRecovery.script`, §15.13): never change it, the record and journal
   framing, the wrap or the passphrase copy without `EpochChainTests.testFrozenRecoveryScriptOpensEveryEpoch`
   and `testRecoveryScriptMatchesTheDocuments` passing. KH1's pure key-hierarchy code is
@@ -377,7 +377,7 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   earlier launch re-hashed before use; on a Mac, which has no data protection,
   deleted at quit and at launch instead: `blobCacheAcrossLaunches`, `purgeAtQuit`, `purgeAtLaunch`;
   audio, video and transcripts never stay: `isTransient`) and `RenderCache` (sealed image pictures
-  and PDF page previews, memory + disk). Both are per vault secret and go when
+  and PDF page previews, memory + disk). Both are per vault key and go when
   the vault closes (`dropAttachments`). Bump `RenderCache.schemaVersion` when
   `ItemRaster`, `PDFItemDrawing` or the preview drawing changes. Tests get a
   per-model blob folder and a memory-only render cache unless they pass
@@ -466,53 +466,48 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   Tags merge per tag (`format.md` §5.4.1): write `addTag` / `removeTag` via
   `NoteOps.addTag` / `removeTag` / `setTags` (a remove lists the instances it
   observed, so it needs the note's state), never `setMeta(.tags)` (read only).
-- Vaults are post-quantum only: new keys and recipients are MLKEM768-X25519
-  (`age1pq1…`); public `Vault` API throws `classicRecipient` for X25519.
-  `Vault.readManifest` refuses a `vault.json` listing any classic recipient
-  (`manifestCorrupt`), and `Vault.encrypt` / `ageRecipients()` refuse one
-  again, so nothing is read under or encrypted to a classic key. The app's
-  `FinishKeyChangeView` (`Phase.finishingKeyChange`) only finishes an interrupted key change.
-  CLI exit code 5 is unused. Keys are `NativeIdentity` /
-  `NativeRecipient` (Sources/Age/NativeKeys.swift). X-Wing comes from swift-crypto 4 (CryptoKit on Apple 26+,
-  BoringSSL on Linux); never implement ML-KEM here. `postQuantumAvailable` is
-  false on Apple OSes before 26 or SDKs before Xcode 26, so gate PQ tests
-  with it. PQ recipients are 1959 characters: abbreviate in UI, and PQ key
-  files are `keys/age1pq-<sha256 hex>.key.age` (`IdentityFile.fileName`);
-  `identityFiles()` lists only current recipients' key files (after a
-  replace the old key file stays and must not be offered). Vault writes use
-  `Vault.encrypt`, which refuses any classic recipient.
-  Interop tests need `age` ≥ 1.3 on PATH (the official release; Ubuntu ships
-  1.1); CI sets `SEMPERE_REQUIRE_AGE_PQ` so they fail instead of skipping.
-  See `docs/post-quantum.md`.
-- Authenticated recipients (`format.md` §2.1, `Sources/Sempere/RecipientsAuth.swift`):
-  `vault.json` carries `recipientsTag` (HMAC of vault id + keys under an HKDF
-  key of the secret) and, after a rotation, `secretLink` (Ed25519 + ML-DSA-65
-  signatures by keys derived from the outgoing secret, `SecretLink.swift`;
-  both must verify; trust records `sempere-trust/2` hold only the public
-  keys and the markers;
-  shared vectors `Fixtures/secret-link-vectors.json`, mirrored in
-  `web/src/vault/link.ts`); `Vault.open(…, trust:)`
-  classifies the list (`recipientsStatus`) against the device's trust record
-  (CLI `$XDG_STATE_HOME/sempere/trust/`, app `AppModel.defaultTrustDirectory`,
-  tests `MemoryRecipientsTrustStore`). `requireWritable` refuses a tampered list
-  (`VaultError.untrustedRecipients`, CLI exit 6) and saves the record: only
-  writers keep records, reads never write. A missing `recipientsTag` or
-  `markersTag` is tampering (`tagRemoved` / `markersRemoved`), never a
-  trust-on-first-use upgrade; `features` is empty in this version. Anything
-  that encrypts to the recipients outside `requireWritable` (capture
-  profiles) calls `requireTrustedRecipients`. Never copy a `vault.json` from
-  elsewhere without `Vault.incomingManifestProblem`. The committed fixtures
-  are tagged; copies share their vault id, so a copy with a tag stripped
-  reads as a downgrade.
-  `format` and `features` are authenticated too (`markersTag`, §2.1 "Version
-  markers", `MarkersAuth.swift`, mirrored in `web/src/vault/vault.ts`): every
-  `vault.json` write goes through `Vault.writeManifest(…, secret:)`, which tags
-  them; a test that edits `features` or `format` without re-tagging reads as
-  tampering (`markers*` reasons).
-  Capture profiles hold their device's capture key (`CaptureKey.derive(from:device:)`,
-  §11.1); `Vault.captureKeyRing` is what verifies inbox files, never one key alone.
-- Remembered vault keys (`VaultKeyStore.swift`, `RememberedKeys.swift`): the
-  age identity text is stored only in the Keychain, never logged, never in
+- Vaults are post-quantum only: every key is MLKEM768-X25519 (`age1pq1…`); public `Vault` API throws
+  `classicRecipient` for X25519, and `Vault.readManifest` refuses a `vault.json` listing a classic key
+  (`manifestCorrupt`). CLI exit code 5 is unused. Keys are `NativeIdentity` / `NativeRecipient`
+  (Sources/Age/NativeKeys.swift). X-Wing comes from swift-crypto 4 (CryptoKit on Apple 26+, BoringSSL
+  on Linux); never implement ML-KEM here. `postQuantumAvailable` is false on Apple OSes before 26 or
+  SDKs before Xcode 26, so gate PQ tests with it. PQ keys are 1959 characters: abbreviate in UI.
+  Interop tests need `age` ≥ 1.3 on PATH (the official release; Ubuntu ships 1.1); CI sets
+  `SEMPERE_REQUIRE_AGE_PQ` so they fail instead of skipping. See `docs/post-quantum.md`.
+- Key hierarchy (`format.md` §2, §15; `docs/design/key-hierarchy.md`; phase KH2: vaults of one epoch).
+  `vault.json` (`EpochManifest`) wraps the epoch key `K_e` (`VaultEpochKey`) once per listed key: one
+  entry per device and exactly one recovery entry. Every vault file is encrypted to the vault identity
+  `v_e` derived from `K_e`, in ONE stanza (`Vault.encrypt`); body tags use `tagKey`, blob names
+  `blobNameKey`, capture keys and the caches/summaries their own HKDF info with `K_e` as input. Device
+  keys (`DeviceKeys`: age key + P-256/ML-DSA-65 signing pair) never enter the vault (CLI:
+  `$XDG_STATE_HOME/sempere/devices/<vault id>/device.key`); `keys/` holds only the recovery key's
+  passphrase copy (`RecoveryPassphraseCopy`, work factor 20, `PassphraseStrength` ≥ about 70 bits, no
+  override). One writer: only the home device writes `vault.json` (approve, rename; signed with
+  `authorSig`, `Vault.seal`); any listed device may change only `label` (covered by nothing). Joining
+  is `Vault.writeJoinRequest` → home's `approveDevice` → `confirmJoin` with the reply words; until
+  then the device reads but never writes (`rootUnconfirmed`). The recovery key opens read-only
+  (`recoveryKeyReadOnly`, CLI exit 7). Removal, handoff, takeover and kit replacement are new epochs
+  (KH3, KH4): not implemented; there is no rewrap, no recipients list, no vault secret, no rewrap
+  journal, no migration from the old format. The app creates vaults (this device home, a recovery kit,
+  an optional passphrase copy) and unlocks with the remembered device key (`DeviceKeys.fileText` in the
+  Keychain); the recovery key and its passphrase copy open read-only. Its key management (adding,
+  removing, replacing keys, joining devices, list repair) is stubbed with `TODO(KH5)`.
+- `vault.json` is authenticated (`format.md` §2.1, `VaultCheck.swift`, `VaultTrust.swift`): `listTag`
+  and `markersTag` (HMACs under keys derived from `K_e`), `epochSig`, `authorSig`, `addSig` (home's
+  signatures). `Vault.open(…, trust:, root:)` classifies it (`listStatus`) against the device's trust
+  record (`sempere-trust/3`, §15.10; CLI `$XDG_STATE_HOME/sempere/trust/`, app
+  `AppModel.defaultTrustDirectory`, tests `MemoryEpochTrustStore`) and the given root.
+  `requireWritable` refuses a refused list (`VaultError.untrustedList`, CLI exit 6) and saves the
+  record: only writers keep records, reads never write. Anything that encrypts outside
+  `requireWritable` (capture profiles) calls `requireTrustedList`. Never copy a `vault.json` from
+  elsewhere without `Vault.incomingManifestProblem` (label-only differences are the same vault; a later
+  version by home is taken, `isLaterVersion`; anything else is a conflict, never merged). Tests that
+  change a manifest field re-seal it as home (`writeResealedManifest`), else it reads as tampering.
+  Capture profiles hold their device's capture key (`CaptureKey.derive(from:device:)`, §11.1, keyed by
+  `fingerprint(of:)` of the device's `age1pq1…` key, not the §15.4 fingerprint) and `v_e`;
+  `Vault.captureKeyRing` is what verifies inbox files, never one key alone.
+- Remembered vault keys (`VaultKeyStore.swift`, `RememberedKeys.swift`): a remembered key is the
+  secret text of an age identity (`AGE-SECRET-KEY-PQ-1…`) whose key `vault.json` lists; it is stored only in the Keychain, never logged, never in
   `UserDefaults` or files. Device-only items are
   `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` + `SecAccessControl`
   `.biometryCurrentSet` (`.userPresence` without enrolled biometrics; a new
@@ -629,8 +624,8 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   through a reference of the same note (`readBlob`, `streamBlob`, `withBlobFile`,
   `blobSource`), which check framing, padding, hash and keyed name; content a
   streaming read handed out is unusable if it then throws. Delete blobs only via
-  `collectBlobs` (rules 1–4, per note, device-local `BlobCollectorState`); recipient
-  changes rewrap them by `RewrapPolicy`. References are found structurally (any
+  `collectBlobs` (rules 1–4, per note, device-local `BlobCollectorState`); nothing rewraps or renames
+  them (adding a device touches no file). References are found structurally (any
   object with `sha256`) with `JSONSerialization`, whose `NSNumber` says `is Bool`
   for 0 and 1: test `objCType == "c"` for booleans instead.
 - Unused-attachments index (task E7, `docs/attachments.md` §4): per-note
@@ -768,20 +763,19 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   may call off the main thread (share completion, document picker delegate) are `@Sendable` and hop
   to the main actor; on a Mac the share picker and save panel are presented by UIKit from an anchor
   view, never hosted inside a SwiftUI sheet.
-- Quick capture (`format.md` §11, `docs/quick-capture.md`): voice notes are sealed WITHOUT the identity or the
-  vault secret, with a capture profile (public recipients + `CaptureKey`, HKDF of the secret, which can only
+- Quick capture (`format.md` §11, `docs/quick-capture.md`): voice notes are sealed WITHOUT the device key or the
+  vault key, with a capture profile (the vault identity's public `v_e` + `CaptureKey`, HKDF of `K_e`, which can only
   authenticate inbox files) into `inbox/<id>.capture.age`; adoption (`Vault.readCapture`, `CaptureAdoption`,
   `AppModel+Inbox`, `sempere inbox import`) turns them into ordinary revisions and blobs. Never store the vault
-  secret or an identity outside Face ID for capture. Note/page/recording ids derive from the capture id
+  key or an identity outside Face ID for capture. Note/page/recording ids derive from the capture id
   (concurrent adoption converges). Intents live in `Apps/Sempere/SempereShared/` (compiled by the app and the
   `SempereWidgets` extension, iOS only, `platformFilter = ios`) and run in the app's process; the profile is a
   Keychain item `AfterFirstUnlockThisDeviceOnly` (`KeychainCaptureProfileStore`, tests use
   `MemoryCaptureProfileStore`). Plaintext audio lives only in `QuickCapture.root`
   (`completeUntilFirstUserAuthentication`, `QuickCapture.protection`: Lock Screen notes are sealed from closed
   files before any unlock, which `completeUnlessOpen` forbids) until sealed and transcribed; running out of
-  background time leaves it for `sweep()` rather than losing the note. A recipient change rewraps and re-tags
-  `inbox/` too (`Vault.rewrapInbox`; in iCloud `downloadEverything` fetches it first) and the app refreshes the
-  profile after it. A note "exists" for adoption once it has a revision (a folder holding only `att/` is still
+  background time leaves it for `sweep()` rather than losing the note. Nothing rewrites `inbox/` files; a new
+  epoch (KH3) changes the capture key, and the profile must then be made again. A note "exists" for adoption once it has a revision (a folder holding only `att/` is still
   new), and a waiting transcript writes nothing. Quick-capture segments are ADTS (`QuickCapture.segmentExtension`:
   an MPEG-4 segment cut off by a restart or force quit does not decode at all), and a start activates the audio
   session BEFORE requesting the Live Activity (iOS ends the intent's fake-foreground assertion when the activity
@@ -845,8 +839,9 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   `WebDAVPushSchedule`; never take anything from the server except through a download into a new copy
   (`download`, `redownload`). The password is only in the Keychain (`KeychainWebDAVPasswordStore`);
   certificate pins are checked by `PinnedServerTrust` (Security, app only) behind the library's
-  `WebDAVServerTrust` hook, never by disabling evaluation. Key changes are refused for a WebDAV copy
-  (`requireLocalKeyChanges`): a rewrap in place never reaches the server. App tests use
+  `WebDAVServerTrust` hook, never by disabling evaluation. A push never takes `vault.json` from the server (a
+  changed one is kept there, `keepServerChanges`); `epochs/`, `joins/` and `keys/` are not synced until KH4.
+  App tests use
   `FakeWebDAVRemote` and `MemoryWebDAVPasswordStore`; the library's sync runs against wsgidav
   (`scripts/test-webdav.sh`). A recent WebDAV vault is a `RecentVault` with `webdav` set and no bookmark.
 - Vaults in another app's provider storage (`StorageLocation`) are coordinated like iCloud ones

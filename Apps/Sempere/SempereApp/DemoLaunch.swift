@@ -56,9 +56,10 @@ enum DemoLaunch {
             let png = env["SEMPERE_DEMO_ITEMS"] != nil ? demoImage() : nil
             let dense = env["SEMPERE_DEMO_DENSE"].flatMap { Int($0) }
             let search = env["SEMPERE_DEMO_SEARCH"] != nil
+            let trust = model.trust
             let built = try await Task.detached {
                 try await DemoVault.build(in: dir, passphrase: passphrase, itemsImage: png, denseStrokes: dense,
-                                          searchNotes: search)
+                                          searchNotes: search, trust: trust)
             }.value
             try await model.openVault(at: built.url)
             if passphrase != nil {

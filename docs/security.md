@@ -24,41 +24,40 @@ Sempere has no server and no account. The developer never receives your key,
 your notes or any information about them, and the app sends nothing about
 your use (no telemetry).
 
-## The key
+## The keys
 
-- **Only a key on the vault's list opens it.** A key is one line of text. You
-  can hold it on several devices, on paper (the recovery kit), in a password
-  manager, and, if you chose one, as a copy in the vault protected by a
-  passphrase. Each of those is a way in: protect them accordingly.
-- **A key copy in the vault is only as strong as its passphrase.** That copy
+- **Each device has its own key, and the vault has one recovery key.** A
+  device's key is made on that device and never leaves it. The vault's own key
+  is wrapped once for each listed device and once for the recovery key, which
+  is printed in the recovery kit when the vault is created and kept by no
+  device ([`format.md`](format.md) §2, §3). The kit is a way in: protect it
+  like the notes themselves.
+- **The recovery key reads; it does not write.** Opened with the kit, a vault
+  can be read and exported but not changed.
+- **A passphrase copy is only as strong as its passphrase.** If you chose one,
+  a copy of the recovery key sits in the vault, protected by a passphrase. It
   sits with the vault on its storage, so your storage provider, or anyone with
   a copy of the files, can try passphrases on it offline, as many as they
-  like. Sempere refuses a passphrase it estimates as easy to guess (below
-  about 60 bits; the estimate prices words as dictionary words and finds
-  keyboard walks, sequences, repeats and common passwords); use five or more
+  like. Sempere refuses a passphrase it estimates below about 70 bits (the
+  estimate prices words as dictionary words and finds keyboard walks,
+  sequences, repeats and common passwords), with no override; use six or more
   random words, a long random password, or one your password manager
-  generates (Apple's pass), and never one you use elsewhere. A copy with a weak passphrase gives away the key, which reads
-  and writes everything.
-- **If every copy of the key is lost, the notes cannot be opened.** Not by you,
-  not by the developer, not by anyone. There is no reset, no recovery service and
-  no back door. Print the recovery kit when you create a vault and keep it
-  somewhere apart from your devices.
-- **Anyone who has a copy of the key can read the vault.** Keep it out of
-  shared folders, email and chat.
-- **Removing a device's key does not take back what it already read.** It stops
-  that key from opening what is written afterwards. Old copies of the files
-  (backups, a provider's version history) still open with the old key
-  ([`cli.md`](cli.md), `vault recipients remove`).
-- **A removed device can still pass things off as authentic for a while.**
-  Removing a key changes the vault's secret, which tags notes as yours. Until
-  the change has re-encrypted every file, files still tagged with the old
-  secret are accepted, so a removed device that kept the old secret and can
-  still write to the storage could add notes, attachments, voice notes or
-  settings that pass as authentic. Once a device has seen the change finish,
-  it accepts nothing made with the old secret again, even if the old change's
-  records are put back on the storage ([`format.md`](format.md) §3.3.1). A
-  device that opens the vault for the first time, or lost its record of the
-  vault, trusts what the vault says about an unfinished change.
+  generates, and never one you use elsewhere. A copy with a weak passphrase
+  gives away the recovery key, which reads everything.
+- **If every device's key and every copy of the recovery key are lost, the
+  notes cannot be opened.** Not by you, not by the developer, not by anyone.
+  There is no reset, no recovery service and no back door. Print the recovery
+  kit when you create a vault and keep it somewhere apart from your devices.
+- **Only the vault's home device adds devices.** The device that created the
+  vault approves a new device after you type, on it, six words the new device
+  shows; the new device then checks six words the home device shows back. The
+  list of devices in `vault.json` is tagged under the vault's key and signed by
+  the home device, so storage cannot add a device or rename one in a way that
+  passes ([`format.md`](format.md) §2.1, §15.12).
+- **Removing a device, or replacing the recovery kit, is not in this version**
+  (it starts a new vault key, key hierarchy phase KH3). Removing a device will
+  not take back what it already read: old copies of the files (backups, a
+  provider's version history) still open with the keys of the time.
 
 ## Backups
 
@@ -79,9 +78,11 @@ Your storage provider, and anyone with a copy of the files, can see:
 - what kind each attachment is (image, PDF, audio, video or transcript: the
   kind is part of the file name), and whether voice notes are waiting in the
   inbox or notebook records exist;
-- the public keys of the vault's devices, the names you gave them, the
-  vault's own display name if you set one, its id and when it was created (all
-  in `vault.json`, which is not encrypted).
+- the public keys of the vault's devices and of its recovery key, the names
+  you gave the devices, which device manages the others, the vault's own
+  display name if you set one, its id and when it was created (all in
+  `vault.json`, which is not encrypted), and the requests of devices waiting
+  to join (`joins/`).
 
 They cannot see titles, text, ink, tags, notebooks, attachments or transcripts.
 
@@ -105,8 +106,8 @@ They cannot see titles, text, ink, tags, notebooks, attachments or transcripts.
   system's data protection where the platform has it (on a Mac, which has none,
   the attachment cache is deleted when the app quits, and after a crash at the
   next launch, before any vault opens). The caches of note
-  listings, drawings and attachment previews are encrypted under the vault's
-  secret ([`format.md`](format.md) §10). Details: [`io.md`](io.md),
+  listings, drawings and attachment previews are encrypted under keys derived
+  from the vault's key ([`format.md`](format.md) §10). Details: [`io.md`](io.md),
   [`quick-capture.md`](quick-capture.md).
 - **Exports.** A PDF, image or Markdown export is not encrypted. Where you send
   it is up to you.
@@ -121,8 +122,8 @@ They cannot see titles, text, ink, tags, notebooks, attachments or transcripts.
 
 ## Recovery without the app
 
-The files are standard age files. With the key, the stock `age` tool (1.3 or
-later) and common command-line tools can decrypt any note or attachment, as the
-recovery kit explains; the free `sempere` command-line tool for macOS and Linux
+The files are standard age files. With the recovery key, the stock `age` tool (1.3 or
+later) and `jq` take the vault's key out of `vault.json` and then decrypt any
+note or attachment, as the recovery kit explains; the free `sempere` command-line tool for macOS and Linux
 reads, exports and recovers whole vaults. Neither needs the app, the developer
 or a network.

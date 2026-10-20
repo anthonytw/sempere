@@ -166,25 +166,7 @@ final class CLIFlagTests: CLITestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: out))
     }
 
-    // MARK: recipients, blobs
-
-    func testStoredKeyIsWrappedWithTheStorePassphraseVariable() throws {
-        _ = try makeVault()
-        let newKey = path("second.key")
-        let pub = try cli(["keys", "generate", "--out", newKey, "-q"]).out.trimmingCharacters(in: .whitespacesAndNewlines)
-        let r = try cli(["vault", "recipients", "add", pub, "--store-key", newKey, "--store-passphrase-env", "SECOND_PASS",
-                         "--work-factor", "15", "--allow-weak-passphrase"] + key, env: ["SECOND_PASS": "second secret"])
-        XCTAssertEqual(r.status, 0, r.err)
-        let info = try XCTUnwrap(try cli(["vault", "info", "--vault", path("mine.sempere"), "--json"]).json as? [String: Any])
-        XCTAssertEqual(info["keyFiles"] as? [String], [pub])
-        // The stored file opens with that passphrase (and only that one), without an identity file.
-        let list = try cli(["notes", "list", "--vault", path("mine.sempere"), "--passphrase-env", "SECOND_PASS"],
-                           env: ["SECOND_PASS": "second secret"])
-        XCTAssertEqual(list.status, 0, list.err)
-        let wrong = try cli(["notes", "list", "--vault", path("mine.sempere"), "--passphrase-env", "SECOND_PASS"],
-                            env: ["SECOND_PASS": "not it"])
-        XCTAssertEqual(wrong.status, 4, wrong.err)
-    }
+    // MARK: blobs
 
     func testBlobsRepairFixesAWrongKindAndVerifyAgrees() throws {
         _ = try makeVault()
@@ -207,6 +189,7 @@ final class CLIFlagTests: CLITestCase {
     func testItemsFixtureThroughTheCLI() throws {
         let vault = path("items.sempere")
         try FileManager.default.copyItem(at: Self.fixtures.appendingPathComponent("items.sempere"), to: URL(fileURLWithPath: vault))
+        try trustFixtureCopy(vault)
         let args = ["--vault", vault, "--identity", Self.fixtureKey]
         let items = try XCTUnwrap(try cli(["items", "list", "Fixture items", "--json"] + args).json as? [[String: Any]])
         XCTAssertEqual(items.compactMap { $0["kind"] as? String }, ["text", "image", "math"])

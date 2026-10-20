@@ -413,10 +413,9 @@ struct VaultOpeningTests {
         model.sidebarSelection = .allNotes
 
         // A vault with no notes at all.
-        let identity = try IdentityFile.parse(key)
         let emptyURL = Self.tempDir().appendingPathComponent("Empty.sempere")
         try FileManager.default.createDirectory(at: emptyURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        _ = try Vault.create(at: emptyURL, recipients: [identity.recipient], labels: ["test"], identities: [identity])
+        try TS.makeVault(at: emptyURL, device: try DeviceKeys.parse(key))
         try await model.openVault(at: emptyURL)
         try await model.unlock(identityText: key)
         #expect(model.emptyListReason == .emptyVault)

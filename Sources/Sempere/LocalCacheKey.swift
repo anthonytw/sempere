@@ -32,7 +32,7 @@ public struct LocalCacheKey: Sendable {
         self.init(secret: try vault.requireSecret(), purpose: purpose, magic: magic)
     }
 
-    init(secret: VaultSecret, purpose: String, magic: [UInt8]) {
+    init(secret: VaultEpochKey, purpose: String, magic: [UInt8]) {
         // Purposes are constants of the caller: a reserved one is a bug, and
         // would hand a cache the key of a vault-wide use (format.md §10.1).
         precondition(Self.isUsablePurpose(purpose), "reserved or malformed cache purpose: \(purpose)")
@@ -42,10 +42,11 @@ public struct LocalCacheKey: Sendable {
         self.magic = magic
     }
 
-    /// Words whose `"sempere/1 <word> key"` (or `name`) is a vault-wide key
-    /// of format.md: the summary cache (§10), authenticated recipients (§2.1)
-    /// and captures (§11.1). No cache may use them.
-    static let reservedPurposes: Set<String> = ["summary-cache", "recipients", "capture"]
+    /// Words whose `"sempere/1 <word> key"` (or `entry`, `name`) is a vault-wide key of format.md: the
+    /// summary cache (§10), captures (§11.1), and the epoch key's own derivations (§15.2: `list key`,
+    /// `markers key`, `blob name`, whose first 16 bytes a cache's plaintext folder name would show), plus
+    /// `recipients` of format.md's first secret. No cache may use them.
+    static let reservedPurposes: Set<String> = ["summary-cache", "recipients", "capture", "list", "markers", "blob"]
 
     /// True when `purpose` is lowercase ASCII letters and digits in
     /// hyphen-separated words (so no info string of §2.1, which hold spaces,
@@ -58,7 +59,7 @@ public struct LocalCacheKey: Sendable {
         }
     }
 
-    static func derive(_ secret: VaultSecret, _ info: String, _ bytes: Int) -> Data {
+    static func derive(_ secret: VaultEpochKey, _ info: String, _ bytes: Int) -> Data {
         HKDF<SHA256>.deriveKey(inputKeyMaterial: secret.key, info: Data(info.utf8), outputByteCount: bytes)
             .withUnsafeBytes { Data($0) }
     }

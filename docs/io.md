@@ -6,17 +6,16 @@ top of it.
 
 ## Types
 
-- `VaultManifest`: `vault.json` (§2), InkJSON conventions, pretty-printed.
+- `EpochManifest`: `vault.json` (§2, §15.3), pretty-printed with sorted keys.
 - `BodyFraming`: `SMPR` ‖ `0x01` ‖ tag ‖ `gzip(JSON)` (§4). gzip comes from
   CZlib with `windowBits = 15 + 16`; the gzip header has mtime 0 and OS 255,
   so output does not depend on the platform. Unframing without the vault
-  secret returns the body marked `verified == false`.
+  key returns the body marked `verified == false`.
 - `Vault`: a `.sempere` directory plus the identities it was opened with.
   Opened without identities it is locked (`isLocked`) and only lists
-  names. Created with `identities: []` it is write-only: it holds the secret
-  and can write revisions, but `canRead` is false, read paths throw
-  `VaultError.noIdentities`, and `verify()` reports file contents as
-  `notChecked`. Note-store
+  names. Opened with a listed device's key it reads and writes; with the
+  recovery key it only reads (`isRecoveryOpen`, writes throw
+  `recoveryKeyReadOnly`). Note-store
   methods (`write`, `readRevision`, `reconstruct`, `snapshot`, `compact`,
   `history`, `nextSeq`, `verify`) and identity files (`keys/`, §3.2) are
   extensions on it.
@@ -389,7 +388,7 @@ SwiftUI `List`.
 - **Drawing cache** (`DrawingCache`, `format.md` §10.1): per note version
   (note id + sorted revision file names) a layout (the note without stroke
   geometry) and each page's PencilKit `dataRepresentation`, sealed under a
-  key derived from the vault secret, in `Library/Caches/Sempere/Drawings`.
+  key derived from the vault key, in `Library/Caches/Sempere/Drawings`.
   Opening a note lists its folder's names; when that version's layout is
   cached the editor opens from it at once (`NoteEditor.isPreparing`: shown,
   not editable) and the shown page's drawing comes from the cache, while the
@@ -407,9 +406,9 @@ SwiftUI `List`.
 - The cache is limited to 200 MB (`UserDefaults` key
   `Sempere.drawingCacheMegabytes`), least recently used files first. Opening
   it deletes every other vault's folder (and this vault's under an older
-  secret); closing the vault deletes its folder.
+  key); closing the vault deletes its folder.
 - **Attachments.** Three caches keep them across note opens and launches, each
-  per vault secret and deleted when the vault closes:
+  per vault key and deleted when the vault closes:
   - `BlobCache` (`Library/Caches/Sempere/Blobs`, 512 MB, `Sempere.blobCacheMegabytes`):
     the decrypted, verified blob files PDFKit and ImageIO read. File names are
     keyed (`format.md` §10.1); a file left by an earlier launch is hashed again
@@ -833,8 +832,8 @@ Tests fake versions with `FakeCloud.addConflict` (`CloudConflictTests`).
 
 ## Atomic writes
 
-Every file the library writes (revisions, `vault.json`, identity files, the
-rewrap journal) goes through one helper:
+Every file the library writes (revisions, `vault.json`, epoch records, join
+requests, the passphrase copy) goes through one helper:
 
 1. write the bytes to `.sempere-tmp-<uuid>` **in the destination directory**
    (same filesystem, so the rename cannot turn into a copy);
@@ -845,7 +844,7 @@ rewrap journal) goes through one helper:
 A reader or a sync client sees either no file (or the previous version) or
 the complete new one, never a partial file. Temp names start with a dot and
 lack the `.age` suffix, so every listing ignores them. Deletions (compaction,
-the journal) also fsync their directory. Filesystems that cannot fsync a
+an approved join request) also fsync their directory. Filesystems that cannot fsync a
 directory (`EINVAL`, `ENOTSUP`) are accepted (`verify` reports a
 leftover as `unknownFile`; nothing deletes it automatically).
 
@@ -857,8 +856,7 @@ name is unlinked and the directory `fsync`ed. On file systems without hard
 links (FAT, some network shares) it falls back to the existence check and
 `rename(2)` above. The only blob that is ever replaced is one whose first
 chunk does not decrypt to a valid header for its name (format.md §8.1.4
-step 2), or, during a recipient change, a blob rewritten in place or a
-damaged file under its new name (§8.1.5). Writers write the blob before the
+step 2), or one `blobs repair` re-encrypts or renames. Writers write the blob before the
 revision that references it, so a crash leaves an unreferenced blob, never
 a dangling reference. `withBlobFile` and `blobs extract --out` decrypt to a
 private file that appears (or is handed out) only once the whole content
@@ -877,15 +875,17 @@ would make readers drop the new delta).
 ## Backups
 
 `Backup` (`Sources/Sempere/Backup.swift`) copies a vault's format files
-(`vault.json`, `rewrap-journal.json`, `settings.age`, `keys/*.key.age`, `notebooks/*.notebook.age`,
+(`vault.json`, `reencrypt-journal.age` (KH6), `settings.age`, `keys/*.key.age` (the passphrase copy),
+`epochs/*.epoch.age`, `notebooks/*.notebook.age`,
 `notes/<id>/<revision>`, `notes/<id>/att/<blob>`;
 nothing else) with the same atomic-write helper, then reads each copy back
 and compares SHA-256. The backup folder is a vault plus `backup.json`
 (`format: sempere-backup/1`, `vaultId`, `created`, `updated`, `completed`,
 and `files`: path → `sha256`, `size`)
 and `versions/<UTC time>/` (previous copies of files a run replaced or, for
-the journal, removed). Revisions are copied first and `vault.json` last, so a
-run cut short never leaves a manifest newer than its notes; `restore` writes
+the journal, removed). Revisions are copied first, then the epoch record, and
+`vault.json` last, so a run cut short never leaves a manifest newer than its
+notes or naming a record the backup lacks; `restore` writes
 `vault.json` last for the same reason, behind a `.sempere-restore.json`
 marker that lets the same command resume. `backup.json` is saved every 100
 files (every twentieth of the index once it holds more than 2 000 entries) and at the end; a file on disk that it does not list is hashed against
@@ -972,7 +972,7 @@ maps each control to its command.
 
 A directory that does not exist lists as empty (sync tools drop empty
 directories). Any other listing failure throws `VaultError.io`
-(`noteIDs`, `revisionNames`, `identityFiles`, `nextSeq`, the rewrap) or, in
+(`noteIDs`, `revisionNames`, `nextSeq`) or, in
 `verify()`, becomes an `unlistable` entry that makes the report unhealthy.
 "Could not read" never looks like "nothing there".
 
@@ -980,85 +980,35 @@ directories). Any other listing failure throws `VaultError.io`
 since its coverage is unknown. Callers that already hold all revisions use
 `Vault.nextSeq(from:device:)`, which reads nothing (`snapshot()` does).
 
-## Recipient changes and resumability (§3.3)
+## Key changes (format.md §3.3)
 
-The only in-place rewrite. The procedure is the recommended one of
-`format.md` §3.3.1; this section explains the reasoning. Order of operations:
+There is no in-place rewrite. Under the key hierarchy (`format.md` §2, §15;
+`docs/design/key-hierarchy.md`) every file is encrypted to the vault identity,
+so the only list changes of this version touch `vault.json` alone, written by
+the home device (`Sources/Sempere/VaultDevices.swift`):
 
-1. Write `rewrap-journal.json` at the vault root; the atomic write fsyncs
-   the root directory, so the journal is durable before `vault.json` changes. When the secret rotates
-   (recipient removed) it holds the **outgoing** vault secret, age-encrypted
-   to the new recipient set.
-2. Write `vault.json` with the new recipients and `vaultSecret` (fresh on
-   removal), `recipientsTag` for them and, on removal, `secretLink` signed by the
-   outgoing secret's keys (format.md §2.1), in the same atomic write; then save this
-   device's trust record. Before step 1 the current list must check
-   (`requireWritable`): a planted list, or a planted journal next to one, is
-   never resumed or rewrapped to.
-3. For every revision file: decrypt with our identities, then
-   - **skip** it if its header has exactly one stanza of the matching type
-     (`mlkem768x25519`) per current recipient (and no other stanzas)
-     and its tag verifies under the current secret (already done);
-   - otherwise re-encrypt the same plaintext to the new set (on removal,
-     first re-tag the unchanged gzip bytes with the new secret, after
-     verifying the old tag with the outgoing secret) and replace the file
-     atomically.
-4. Remove `rewrapPending` from `vault.json` (step 2 wrote it: an HMAC under the
-   new secret over the journal's bytes), then delete the journal, but only if
-   every file completed. The binding goes first, so a journal left by a crash
-   between the two is refused, never accepted again; the device then marks its
-   trust record `rewrapFinished`. Any failure
-   (unreadable file, tag that verifies under neither secret, ...) keeps the
-   journal and with it the outgoing secret: deleting it would turn a
-   transient I/O error into a permanent tag failure. `pendingRewrap` stays
-   true, the report lists the failures, `resumeRewrap()` retries them, and
-   no new recipient change starts until it completes
-   (`VaultError.rewrapIncomplete`).
+- **Approve** (`approveDevice`): the request in `joins/` whose commitment the
+  typed words give is checked (this vault, a post-quantum key, a valid kind, a
+  key and id not listed, the addition bound), an entry with a wrap of `K_e`
+  and home's `addSig` is appended, `listTag`, `markersTag` and `authorSig` are
+  computed again, and `vault.json` is replaced in one atomic write; then the
+  trust record is saved and the request deleted. The write starts from the
+  `vault.json` on disk and stops (`manifestCorrupt`) if it is no longer the
+  version this value opened (`requireUnchangedOnDisk`), so a change another
+  copy made is never undone.
+- **Rename** (`renameDevice`): the same, for one entry's `name`.
+- **Label** (`setLabel`): any listed device whose list checks; the label is
+  covered by nothing, so the rest of `vault.json` is written back unchanged.
+- **Create** (`Vault.create`): the epoch record is durable under its final
+  name before `vault.json` names it; the passphrase copy, if any, before
+  `vault.json` too, so a crash leaves no vault rather than a vault without its
+  files.
 
-If the process dies anywhere, the journal is still there. `Vault.open`
-notices it (`pendingRewrap`) and, when it accepts it (format.md §3.3.1: linked by
-`secretLink`, bound by `vault.json`'s `rewrapPending`, and not a change this
-device saw finish), keeps the outgoing secret so files not yet
-rewrapped still verify (if the journal cannot be read, `open` records why in
-`journalProblem`; `verify()` reports it and such files fail as
-`tagMismatchJournalUnreadable` instead of a plain tag mismatch), and `resumeRewrap()` (or simply repeating the same
-`addRecipient` / `removeRecipient` / `replaceRecipient` call) finishes step 3 and 4. Files that
-are already current are skipped, so a run can be repeated any number of
-times.
-
-**Blobs in a recipient change** (`Sources/Sempere/BlobRewrap.swift`). After
-a note's revisions, each blob in its `att/` is checked from its first chunk
-only (stanza counts, and the name against the hash in its header): complete
-blobs are skipped. Others are rewritten by the method the journal records
-(`rekeyBlobs`, chosen by `RewrapPolicy`): header-only (`AgeFile.rewrapHeader`)
-or full re-encryption (`AgeFile.reencrypt`), streaming, with the whole
-plaintext checked on the way (framing, zero padding, hash), to a temporary
-file. A blob named under the current secret (an addition) replaces itself; one
-named under `previousVaultSecret` (a removal) goes to its new name and then the
-old name is deleted, and a run that finds a complete copy already under the new
-name (a crash between the two) only deletes the old one. A blob whose name
-verifies under neither secret, or whose content fails a check, is left as it is
-and reported, which keeps the journal. While the journal exists, lookups try
-the current name, then the previous one.
-
-Why a stanza count and not "the header lists all recipients":
-`mlkem768x25519` stanzas carry only an encapsulation, not
-the recipient, so a header cannot be matched against public keys. Within one
-change the counts differ (n−1 vs n on add, n+1 vs n on remove), and on
-removal or replacement the tag under the new secret also tells old from new
-(a replacement changes no count, so the rotated secret is what marks a file
-done).
-
-`replaceRecipient` (a key rotation) is a removal and an addition in one pass. Its pending files are encrypted only to
-the outgoing key, so unlike add and remove it cannot be finished by a device
-that holds only a key of the new set: resuming needs the old identity too.
-The CLI says so, and the old key must be kept until no rewrap is pending. The journal blocks any other recipient change until
-it is resolved, so counts from two changes never mix.
-
-A file that verifies under neither secret (tampered or planted) is never
-re-tagged: it is left untouched and listed in the report's `failures`, so a
-rewrap cannot launder a forged file into a valid one. `verify()` also flags
-files whose stanza count differs from the manifest as `staleRecipients`.
+A joining device (`writeJoinRequest`, `confirmJoin`) writes only its request,
+and its trust record once the reply words match. Removal, handoff, takeover
+and recovery-kit replacement are new epochs (KH3, KH4), and re-encrypting
+everything (KH6) brings back a resumable journal (`reencrypt-journal.age`,
+`format.md` §15.8); none is in this version.
 
 ## Reading and verification
 
@@ -1069,8 +1019,11 @@ refuse to proceed past an unreadable revision; `loadNote` returns what is
 readable plus the failures. `compact` deletes only names returned by
 `CompactionPlanner` over readable revisions, so an unreadable file is never
 deleted and never counts as coverage. `verify()` never throws: it re-checks
-`vault.json` (format, recipients, the secret's stanza count) and gives every
-entry a status.
+`vault.json` (format, each wrap one stanza, this device's wrap opening to the
+key in use, the list check of `format.md` §2.1), the epoch record, the join
+requests and the passphrase copy's name, and gives every entry a status; a
+file with other stanzas than the one to the vault identity is
+`extraStanzas`.
 
 ## Sync engine and transports (`Sources/SempereSync`)
 
@@ -1120,7 +1073,7 @@ targets later, design §8.1). What it promises:
 
 | | How |
 | --- | --- |
-| version tokens | `"<device>-<inode>-<size>-<mtime ns>-<ctime ns>"` from `lstat(2)`, plus 16 hex digits of the SHA-256 of a file at the base of at most 64 KiB (`vault.json`, `settings.age`, the journal: the files rewritten in place). Never the modification time alone: a replace through a new file changes the inode and the change time within one tick of a coarse clock (FAT: 2 s), and the digest catches a same-size rewrite in place where neither moves. Strong |
+| version tokens | `"<device>-<inode>-<size>-<mtime ns>-<ctime ns>"` from `lstat(2)`, plus 16 hex digits of the SHA-256 of a file at the base of at most 64 KiB (`vault.json`, `settings.age`: the files rewritten in place). Never the modification time alone: a replace through a new file changes the inode and the change time within one tick of a coarse clock (FAT: 2 s), and the digest catches a same-size rewrite in place where neither moves. Strong |
 | create only | a hidden temporary file in the same folder (`.sempere-tmp-<uuid>`), flushed, then `link(2)` (fails if the name exists); where the file system has no hard links (FAT, some shares), a check and `rename(2)` under the lock |
 | conditional replace and delete | the token compared and the file renamed (or unlinked) under the lock: an advisory `flock(2)` on `.sempere-lock` at the base (hidden from listings) in a plain folder, the coordinated write itself in a provider's |
 | reads | bounded (the size first, then never more than the bound), opened without following a link (`O_NOFOLLOW` at each folder); downloads resume at an offset when the token still matches |
@@ -1182,7 +1135,7 @@ lists availability:
   across runs and processes.
 - **Conflict versions** of the root's mutable files are settled before they are synced (format.md
   §1.3, §13.3; the app's `CloudConflicts` rules): a `vault.json` version that is the current file or
-  differs only in its label is dropped, any other `vault.json` or journal version is kept as a local
+  differs only in its label is dropped, any other `vault.json` version is kept as a local
   conflict copy and reported (exit 3); `settings.age` versions that verify are merged per key into
   the local copy (locked: left until an unlocked run), which the settings sync then merges with the
   remote's; the web viewer's summaries and index keep the current version. Then the versions are
@@ -1215,7 +1168,7 @@ server is already age-encrypted, except `vault.json` (public by design).
 A remote `vault.json` with another `vaultId` aborts the run before any
 change.
 
-**What is synced.** `vault.json`, `rewrap-journal.json`, `settings.age` (shared
+**What is synced.** `vault.json`, `settings.age` (shared
 settings, merged per key: below), the notebook records `notebooks/<uuid>.notebook.age`
 (format.md §14: write-once, so each side gets the other's; uploads only create, nothing is
 deleted, and an unlocked run places a downloaded record only once it opens),
@@ -1332,7 +1285,7 @@ revisions still sync, and readers draw a placeholder for it meanwhile
   there (the side that dropped it applied rule 4): every local revision of
   the note was read and verified and every revision the server holds is one
   of them (they are byte-identical copies, so both sides' sets were read);
-  no `rewrap-journal.json` on either side; and no revision read references a
+  and no revision read references a
   content hash whose keyed name is the blob's (any kind). Otherwise the blob
   is copied back. A blob the server dropped also needs rule 4 as this device
   sees it (security review 2026-10, S2 for blobs): the deletion is followed
@@ -1352,7 +1305,7 @@ revisions still sync, and readers draw a placeholder for it meanwhile
 not change it; the run still rewrites the server's copy to list the
 revisions the server holds afterwards.
 
-**Mutable files.** `vault.json` and `rewrap-journal.json` are compared by
+**Mutable files.** `vault.json` is compared by
 content hash (SHA-256) against the last-synced hash; the server ETag (or
 Last-Modified) is only recorded to send `If-Match` on upload. Local only
 changed: PUT with `If-Match` (without it when the server's ETag is weak,
@@ -1369,14 +1322,11 @@ identical to the server's is ever made. Two `vault.json` versions that differ on
 (a vault renamed on two devices) are the same vault (format.md §1.3), not a
 conflict: the server's copy, the one every device shares, is taken (as
 iCloud Drive's current version stays), and a push-only run keeps it on the
-server and lists it as skipped. `rewrap-journal.json` deleted locally is not restored
-locally. It is deleted on the server only when it is the copy this device
-synced (same ETag, same bytes), the vault is unlocked, this device now refuses
-it (format.md §3.3.1: its change finished, nothing binds it) and the server's
-`vault.json` is the local one; the DELETE carries `If-Match` with its strong
-ETag, so a journal changed meanwhile stays. Otherwise (locked, or an
-unfinished change this device still accepts) it is left there and listed as
-skipped; one this device refuses never holds its own blob collection back.
+server and lists it as skipped. When both sides changed `vault.json` and the
+vault is unlocked, the later version by the home device (`Vault.isLaterVersion`:
+the same epoch, every check passing, its list holding the other's; format.md
+§1.3) is kept on both sides (taken, or uploaded unconditionally) instead of a
+conflict copy.
 `settings.age` (format.md §13) is merged instead when both sides changed and
 the vault is unlocked: both copies are opened (tag verified), merged per key,
 and the result written locally and uploaded with `If-Match` (`merged` in the
@@ -1385,41 +1335,21 @@ replaces one that does, and is replaced by it. A copy that needs a newer reader
 (`$minReaderVersion`) is never opened: it is mirrored byte for byte over a copy
 this version can read; two such copies that differ follow the conflict rule
 above, as does the file while the vault is locked. A run that pulled a new `vault.json`
-(a key change elsewhere) leaves `settings.age` to the next run, which opens the
-vault with the new secret.
-`rewrap-journal.json` from the server never replaces a local one unless this
-device refuses the local one and accepts the server's (`Vault.incomingJournalProblem`,
-format.md §3.3.1 "Refused journals"; security review stage 4, S9): an unfinished
-local journal may be the only copy of the outgoing secret. Without the key the
-server's copy is kept as a conflict copy instead. With the key, a server journal
-this device refuses (planted, or put back after its change finished) is listed in
-`rejected` and not written, and does not hold blob collection back. A journal is
-judged under the local `vault.json` as this run left it: with none yet (a first
-pull whose `vault.json` did not arrive) it is not taken but waits for the next
-run, and a first pull with identities (`firstPullIdentities`) judges it under
-the pulled `vault.json` with them. A refused journal that may be step 1 of a
-recipient change whose `vault.json` has not reached the server yet
-(`Vault.incomingJournalMayBeInFlight`: the local `vault.json` has no
-`rewrapPending`, and the journal holds no outgoing secret, or one this device
-cannot decrypt, or the current one) is held for `Vault.inFlightJournalWindow`
-(a day) from this device's first sighting (`inFlightJournal` in the sync
-state): not taken, not rejected, listed as skipped, still holding blob
-collection back (rule 2), and judged again every run, so it is taken once its
-`vault.json` arrives. After the window it is rejected as above.
-Before a remote `vault.json` replaces the local one, its device list is
-checked (`Vault.incomingManifestProblem`, format.md §2.1): the same keys
-(still tagged) pass without a key; a changed list passes only when the vault
-is unlocked and the list verifies (tag under the secret it carries, that
-secret the local one or confirmed by `secretLink`), and, under the same secret and list,
-it never brings back or changes `rewrapPending` (a `vault.json` put back to
-replay a finished change's journal). Otherwise it is listed in
+leaves `settings.age` to the next run, which opens the vault with it.
+Before a remote `vault.json` replaces the local one, it is checked
+(`Vault.incomingManifestProblem`, format.md §1.3, §2.1): one that differs only in
+its label passes without a key; any other passes only when the vault is
+unlocked and it is a later version of the local one by the home device (the
+same vault, root, epoch and `epochId`, every tag and signature verifying, the
+local list's entries all still there). Another epoch (KH3), an older version or
+a list that does not hold the local one is never taken. Otherwise it is listed in
 `rejected`, the local file stays and the sync state is not updated, so the
 next run reports it again.
 
 **Push-only mirror** (`--push-only`, `SyncOptions.pushOnly`). A two-way
-sync rejects a `vault.json` whose recipients changed without a valid tag
+sync rejects a `vault.json` that is not a later version by the home device
 (format.md §2.1, above), but it still takes whatever else the server holds:
-new revisions and blobs, deletions it can explain, journals. For a server that
+new revisions and blobs, deletions it can explain. For a server that
 is only a copy (the web viewer's mirror) and is not trusted to write back, the
 run is one-way, and the server can be corrupted but can never feed anything
 back:
@@ -1428,8 +1358,8 @@ back:
   or deleted (every local write path refuses in this mode; only the sync-state
   file outside the vault changes);
 - a file the server lacks is uploaded, including one the last sync had;
-- `vault.json` and `rewrap-journal.json` on the server are replaced by the
-  local copy when they differ (reported in `overwritten`); a malformed server
+- `vault.json` on the server is replaced by the
+  local copy when it differs (reported in `overwritten`); a malformed server
   manifest is repaired the same way, one of another vault still aborts;
 - a file only the server has is deleted there if it was synced before and the
   compaction (`CompactionPlanner`) or blob collection (§8.1.6 rules 1–3) rules
@@ -1437,20 +1367,18 @@ back:
 - one synced before but not explained (or unjudgeable with the vault locked) is
   kept and listed as skipped: a local listing can miss files, notably evicted
   iCloud ones;
-- one never synced and not explained (injected revision or blob, a stray
-  journal, junk names) is `extraneous`: reported, and removed only with
+- one never synced and not explained (injected revision or blob, junk
+  names) is `extraneous`: reported, and removed only with
   `--delete-extraneous`, and only when sync state from an earlier run exists:
   on a first run every server file looks never synced, including those of a
   note the local listing missed, so they are only listed (as skipped). The
   flag can still delete a legitimate file another writer added since.
 
-**Limits.** A recipient change rewrites files under `notes/` in place
-(format.md §3.3), which sync never propagates: after one, pull into a fresh
-folder from a new collection (or upload the rewritten vault to a new one) and
-retire the old one. `rewrap-journal.json` left on the server by a finished
-change stays there; devices refuse it (`vault.json` no longer binds it, format.md
-§3.3.1), and `--push-only --delete-extraneous` removes it. Syncing during an unfinished rewrap can
-copy a mix of old and new files.
+**Limits.** The epoch records (`epochs/`), join requests (`joins/`) and the
+passphrase copy (`keys/`) are not synced yet (key hierarchy KH4): a vault of
+one epoch opens without its record, a join request reaches the home device through a
+shared folder or `vault merge-copy`, and a local copy made from another
+(`LocalCopy`) seeds `keys/` and `epochs/` from it.
 
 **Bounds per run** (`SyncLimits`, security review 2026-10, W5). Each
 request is bounded on its own; the run as a whole is bounded too: at most
@@ -1578,7 +1506,7 @@ kinds of run (`SyncOptions.partial`, `LocalCopy`):
 
 - *Metadata pull* (`.metadata`, `downloadMetadata`, `sempere sync webdav
   --metadata-only`): marks the folder partial first (so an interrupted pull
-  never looks complete), takes `vault.json`, the journal and `settings.age`
+  never looks complete), takes `vault.json` and `settings.age`
   as a two-way pull does (same checks), fetches the server's sealed summaries
   into `.sempere-partial/` (bounded at 64 MiB, opened only by a reader with the
   key, never trusted beyond that: a missing or unreadable one only means notes
@@ -1737,7 +1665,7 @@ editing.
 
 **Opening without downloading everything first** ("Partial copies"
 above). Choosing a vault from the list makes a partial copy: a metadata pull
-takes `vault.json`, the journal, `settings.age`, the server's sealed summaries
+takes `vault.json`, `settings.age`, the server's sealed summaries
 and the note list (a few requests, whatever the size of the vault: a
 ~1 GB, ~800-file vault opens in seconds), and the copy opens
 locked with the usual unlock sheet. It is opened only once a metadata pull
@@ -1834,7 +1762,7 @@ the server, so the cases are:
 | On the server | What the app does |
 | --- | --- |
 | another vault (`vaultId` differs) | stops before any change (`vaultMismatch`) and says so; nothing is uploaded |
-| `vault.json` or `rewrap-journal.json` changed since this device's last sync (another device or the CLI wrote it) | kept, not overwritten (`SyncOptions.keepServerChanges`, CLI `--keep-server-changes`), reported as a conflict: "The vault's device list on the server was changed elsewhere." Notes still upload |
+| `vault.json` changed since this device's last sync (another device or the CLI wrote it) | kept, not overwritten (`SyncOptions.keepServerChanges`, CLI `--keep-server-changes`), reported as a conflict: "The vault's device list on the server was changed elsewhere." Notes still upload |
 | `vault.json` differs but was not changed since the last sync (only this device changed it) | replaced by the local copy, as any push-only run |
 | `settings.age` changed by another device | merged per key with this device's copy and the merge uploaded (nothing written locally); not a conflict |
 | revisions or blobs this device never had (another writer) | kept and listed (`extraneous`); never deleted by the app (`deleteExtraneous` is off) |
@@ -1850,13 +1778,9 @@ fetched again, the old copy's files linked in as a head start, so it takes a
 few requests and the notes refill in the background, other devices' changes
 included), which replaces the old one only once its metadata pull finished
 without errors and only when its `vault.json` passes `Vault.incomingManifestProblem` against the
-old copy's under the vault's key (the same vault, a list and secret written
-with the vault's key: another device's key change passes, another vault or a
-secret the server chose does not). The server's `rewrap-journal.json` is
-judged the same way, under the new `vault.json` and the vault's key
-(`Vault.incomingJournalProblem`): one this device refuses is left out of the
-new copy, and the old copy's own journal is carried over unless this device
-accepts the server's in its place (format.md §3.3.1). Conflict copies
+old copy's under the vault's key (the same vault and epoch; a later version
+by the home device, which approved or renamed a device, passes; another vault,
+another epoch or a list the server wrote does not). Conflict copies
 (`vault.conflict-…`, above) are carried over too; they never go to the
 server. The device list of the new copy is also
 checked against this device's trust record when it is unlocked (format.md
@@ -1868,11 +1792,10 @@ holds nothing the server never confirmed; otherwise nothing changes and the
 app says how many changes would be lost (remove the location from the welcome
 screen first, whose confirmation says the same).
 
-**Not offered for a WebDAV vault in the app**: changing the vault's keys
-(adding, removing or replacing a device, finishing an interrupted change). A recipient change
-rewraps files in place (format.md §3.3), which sync never propagates, so the
-server would keep files a removed key can read. The app says to do it with
-the CLI on a folder copy and upload that to a new server folder.
+**Key changes for a WebDAV vault**: the app's key management is stubbed
+until key hierarchy KH5, and the sync does not carry `joins/`, `epochs/` or
+`keys/` until KH4, so joining a device to a WebDAV vault is not possible from
+the app in this version.
 
 **Removing** ("Remove from This Device", on the welcome screen) deletes the
 local copy, its sync state, the Keychain password and the recent entry. When

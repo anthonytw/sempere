@@ -81,8 +81,9 @@ struct RememberedKeysTests {
         let vaultID = try #require(model.vault?.vaultId)
         #expect(offer.vaultID == vaultID)
         #expect(offer.vaultName == "sample")
-        // The canonical key line only, not the file's comments.
-        #expect(offer.identity == (try IdentityFile.parse(key)).string)
+        // The device key file, signing keys included (`DeviceKeys.fileText`).
+        #expect(DeviceKeys.isDeviceKeyFile(offer.identity))
+        #expect(try DeviceKeys.parse(offer.identity).key == (try DeviceKeys.parse(key)).key)
         #expect(keys.holdsUnlockSheet(model))
 
         try await keys.answer(offer, storage: .thisDevice)
@@ -106,7 +107,7 @@ struct RememberedKeysTests {
         let (model, key) = try await Self.lockedModel()
         let store = FakeKeyStore()
         let vaultID = try #require(model.vault?.vaultId)
-        await store.put((try IdentityFile.parse(key)).string, for: vaultID, storage: .iCloudKeychain)
+        await store.put(key, for: vaultID, storage: .iCloudKeychain)
         let keys = RememberedKeys(store: store)
         #expect(await keys.unlockWithRememberedKey(model) == .unlocked)
         #expect(model.phase == .unlocked)
@@ -120,7 +121,7 @@ struct RememberedKeysTests {
         let (model, key) = try await Self.lockedModel()
         let store = FakeKeyStore()
         let vaultID = try #require(model.vault?.vaultId)
-        await store.put((try IdentityFile.parse(key)).string, for: vaultID)
+        await store.put(key, for: vaultID)
         await store.setAuthError(.cancelled)
         let keys = RememberedKeys(store: store)
         #expect(await keys.unlockWithRememberedKey(model) == .cancelled)
@@ -148,13 +149,32 @@ struct RememberedKeysTests {
         #expect(await store.items[vaultID]?.identity == offer.identity)
     }
 
-    @Test func passphraseUnlockOffersTheKeyItOpened() async throws {
-        // The fixture's key file holds its identity under `sempere-test` (Fixtures/README.md).
-        let (model, key) = try await Self.lockedModel()
-        let identity = try IdentityFile.parse(key)
+    /// The passphrase opens the recovery key's copy (`sempere-test`, Fixtures/README.md): read-only,
+    /// and the recovery key is never offered to remember (no device keeps it).
+    @Test func passphraseUnlockIsReadOnlyAndOffersNothing() async throws {
+        let (model, _) = try await Self.lockedModel()
         let keys = RememberedKeys(store: FakeKeyStore())
         try await keys.unlock(model, passphrase: "sempere-test")
-        #expect(keys.offer?.identity == identity.string)
+        #expect(model.phase == .unlocked)
+        #expect(model.isRecoveryOpen)
+        #expect(keys.offer == nil)
+        #expect(!keys.holdsUnlockSheet(model))
+    }
+
+    /// A vault this device creates: its device key goes into this device's Keychain at once (the only copy).
+    @Test func aCreatedVaultsKeyIsRememberedOnThisDevice() async throws {
+        let store = FakeKeyStore()
+        let keys = RememberedKeys(store: store, locations: RememberedKeyLocations(
+            url: TestTemp.root.appendingPathComponent("loc-\(UUID().uuidString).json"),
+            onDeviceFolder: TestTemp.root.appendingPathComponent("Documents-\(UUID().uuidString)", isDirectory: true)))
+        let device = try DeviceKeys.generate()
+        let id = UUID()
+        let folder = TestTemp.root.appendingPathComponent("Made-\(UUID().uuidString).sempere", isDirectory: true)
+        try await keys.rememberCreatedVaultKey(device, vaultID: id, vaultName: "Made", folder: folder)
+        let item = try #require(await store.items[id])
+        #expect(item.storage == .thisDevice)
+        #expect(try DeviceKeys.parse(item.identity).key == device.key)
+        #expect(keys.locations.locations(for: id).count == 1)
     }
 
     @Test func forgetDeletesAndAClosedVaultDropsTheOffer() async throws {
@@ -182,7 +202,7 @@ struct RememberedKeysTests {
         let (model, key) = try await Self.lockedModel()
         let store = FakeKeyStore()
         let vaultID = try #require(model.vault?.vaultId)
-        await store.put((try IdentityFile.parse(key)).string, for: vaultID)
+        await store.put(key, for: vaultID)
         await store.setGated(true)
         let keys = RememberedKeys(store: store)
         let attempt = Task { await keys.unlockWithRememberedKey(model) }
@@ -211,7 +231,7 @@ struct RememberedKeysTests {
         let (model, key) = try await Self.lockedModel()
         let store = FakeKeyStore()
         let vaultID = try #require(model.vault?.vaultId)
-        await store.put((try IdentityFile.parse(key)).string, for: vaultID, storage: .iCloudKeychain)
+        await store.put(key, for: vaultID, storage: .iCloudKeychain)
         await store.setAuthError(.authenticationFailed)
         let keys = RememberedKeys(store: store)
         guard case .failed(let message) = await keys.unlockWithRememberedKey(model) else {
@@ -228,7 +248,9 @@ struct RememberedKeysTests {
 
     @Test func onlyKeyErrorsMarkAKeyBroken() {
         #expect(RememberedKeys.isWrongKey(AppModel.ModelError.notAnIdentity))
-        #expect(RememberedKeys.isWrongKey(VaultError.vaultSecretUndecryptable("x")))
+        #expect(RememberedKeys.isWrongKey(AppModel.ModelError.notJoined))
+        #expect(RememberedKeys.isWrongKey(VaultError.keyNotListed("x")))
+        #expect(!RememberedKeys.isWrongKey(VaultError.manifestCorrupt("x")), "a tampered wrap says nothing about the key")
         #expect(!RememberedKeys.isWrongKey(VaultError.io("x")))
         #expect(!RememberedKeys.isWrongKey(CocoaError(.fileReadUnknown)))
     }

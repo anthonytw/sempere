@@ -9,8 +9,7 @@ struct SyncFolderCommand: ParsableCommand {
         abstract: "Sync a vault with a copy in a folder (iCloud Drive, another provider, a drive or a share).",
         discussion: """
             The same two-way sync as `sync webdav`, with a folder as the other side (docs/io.md "Folder targets"):
-            revisions and blobs are copied to the side that lacks them and never overwritten, vault.json and
-            rewrap-journal.json are compared with the last sync (a change on both sides keeps both copies, exit 3),
+            revisions and blobs are copied to the side that lacks them and never overwritten, vault.json is compared with the last sync (a change on both sides keeps both copies, exit 3),
             settings.age is merged per key with the vault unlocked, deletions follow only compaction and blob
             collection, and every file taken from the folder is checked before it is placed (format.md §9.1; one that
             fails is quarantined, exit 1). PATH may be missing or empty: the first run copies the vault into it. The
@@ -87,7 +86,7 @@ struct SyncFolderCommand: ParsableCommand {
     var deleteExtraneous = false
 
     @Flag(name: .customLong("keep-server-changes"),
-          help: "With --push-only: keep a vault.json or rewrap-journal.json in the folder changed since this device's last sync (exit 3).")
+          help: "With --push-only: keep a vault.json in the folder changed since this device's last sync (exit 3).")
     var keepServerChanges = false
 
     @Flag(name: .customLong("web-viewer"),

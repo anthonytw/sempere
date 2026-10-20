@@ -43,7 +43,7 @@ final class BodyFramingTests: VaultTestCase {
     }
 
     func testRoundTrip() throws {
-        let secret = VaultSecret.random()
+        let secret = VaultEpochKey.random()
         let framed = try BodyFraming.frame(json: json, noteId: note, filename: file, secret: secret)
         XCTAssertEqual(Array(framed.prefix(5)), Array("SMPR".utf8) + [1])
         let un = try BodyFraming.unframe(framed, noteId: note, filename: file, secret: secret)
@@ -55,16 +55,16 @@ final class BodyFramingTests: VaultTestCase {
     }
 
     /// Known answer computed with Python's `hmac` over the message layout of
-    /// format.md §4.
+    /// format.md §4, under `tagKey` = HKDF-SHA256(K, "sempere/1 body tag") (§15.2).
     func testTagKnownAnswer() throws {
-        let secret = try VaultSecret(bytes: Data(0..<32))
+        let secret = try VaultEpochKey(bytes: Data(0..<32))
         let tag = BodyFraming.tag(gzip: Data("gzip-bytes".utf8), noteId: note, filename: file, secret: secret)
         XCTAssertEqual(tag.map { String(format: "%02x", $0) }.joined(),
-                       "a3916b8445d2f161c500931a5565501b80780428843018f147291c3ebdc0a15f")
+                       "627b94a5b45b3fe4e8761174da0c5633331b4af76d4d4714a0baa6b5dbc718d1")
     }
 
     func testFlippedByteIsTagMismatch() throws {
-        let secret = VaultSecret.random()
+        let secret = VaultEpochKey.random()
         let framed = try BodyFraming.frame(json: json, noteId: note, filename: file, secret: secret)
         for i in [5, 20, 36, 40, framed.count - 1] {
             var bad = framed
@@ -79,7 +79,7 @@ final class BodyFramingTests: VaultTestCase {
     }
 
     func testBindingToNoteAndFileName() throws {
-        let secret = VaultSecret.random()
+        let secret = VaultEpochKey.random()
         let framed = try BodyFraming.frame(json: json, noteId: note, filename: file, secret: secret)
         let otherNote = "11111111-1111-4111-8111-111111111111"
         let otherFile = "17596320000000003-a1b2c3d4-13.delta.age"
@@ -91,7 +91,7 @@ final class BodyFramingTests: VaultTestCase {
     }
 
     func testHeaderErrors() throws {
-        let secret = VaultSecret.random()
+        let secret = VaultEpochKey.random()
         var framed = try BodyFraming.frame(json: json, noteId: note, filename: file, secret: secret)
         XCTAssertThrowsError(try BodyFraming.unframe(framed.prefix(36), noteId: note, filename: file, secret: secret)) {
             XCTAssertEqual($0 as? BodyFramingError, .tooShort)
@@ -104,7 +104,7 @@ final class BodyFramingTests: VaultTestCase {
         XCTAssertThrowsError(try BodyFraming.unframe(framed, noteId: note, filename: file, secret: nil)) {
             XCTAssertEqual($0 as? BodyFramingError, .badMagic)
         }
-        XCTAssertThrowsError(try VaultSecret(bytes: Data(count: 31)))
+        XCTAssertThrowsError(try VaultEpochKey(bytes: Data(count: 31)))
     }
 
     func testUnverifiedModeReturnsBodyFlagged() throws {

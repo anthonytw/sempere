@@ -12,8 +12,6 @@ enum WebDAVVaultError: Error, Equatable, CustomStringConvertible {
     case downloadIncomplete(String)
     /// "Download Again" needs a push that finished without errors first.
     case pushNotClean(String)
-    /// Key changes rewrap files in place, which sync never propagates.
-    case keyChangesUnavailable
     /// The server's re-download failed; the local copy is unchanged.
     case redownloadFailed(String)
     /// Another vault now lives at a location whose copy holds changes the server never confirmed.
@@ -29,8 +27,6 @@ enum WebDAVVaultError: Error, Equatable, CustomStringConvertible {
         case .pushNotClean(let detail):
             return String(localized: "This device's changes could not all be uploaded first, so the vault was not downloaded again (nothing would be lost, but nothing changed): \(detail)",
                           comment: "The value is the problem (English)")
-        case .keyChangesUnavailable:
-            return String(localized: "Device keys of a WebDAV vault cannot be changed in the app: the server would keep files a removed key can read. Change them with the sempere command-line tool on a folder copy and upload that to a new server folder.")
         case .redownloadFailed(let detail):
             return String(localized: "The vault could not be downloaded again; this device's copy is unchanged: \(detail)",
                           comment: "The value is the problem (English)")
@@ -337,7 +333,8 @@ extension AppModel {
     func downloadWebDAVAgain(library: VaultLibrary) async throws {
         guard let session = webdav, phase == .unlocked, let vault,
               let location = webdavLocations.location(session.locationID) else { throw ModelError.noVaultOpen }
-        let identities = unlockIdentities
+        let keys = unlockKeys
+        let identities = keys.identities
         let copy = webdavLocations.copy(of: location)
         let remote = webdavRemote, passwords = webdavPasswords, cacheDirectory = summaryCacheDirectory
         close()
@@ -362,12 +359,12 @@ extension AppModel {
         } catch {
             // The copy is as it was: open it again before reporting.
             try? await openWebDAV(location.id, library: library)
-            if phase == .locked { try? await unlock(with: identities) }
+            if phase == .locked { try? await unlock(with: keys) }
             if error is CancellationError || error is WebDAVVaultError { throw error }
             throw WebDAVVaultError.redownloadFailed(WebDAVErrorText.message(error))
         }
         try await openWebDAV(location.id, library: library)
-        try await unlock(with: identities)
+        try await unlock(with: keys)
     }
 
     /// Forgets a location: closes it if open, deletes its local copy, sync
@@ -391,11 +388,6 @@ extension AppModel {
         let copy = webdavLocations.copy(of: location)
         guard copy.exists else { return 0 }
         return await Task.detached(priority: .userInitiated) { copy.unconfirmedChanges() }.value
-    }
-
-    /// Throws when the open vault's keys must not be changed in the app (a WebDAV copy).
-    func requireLocalKeyChanges() throws {
-        if isWebDAVVault { throw WebDAVVaultError.keyChangesUnavailable }
     }
 
     nonisolated static func firstProblems(_ report: SyncReport) -> String {

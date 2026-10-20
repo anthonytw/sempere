@@ -165,17 +165,6 @@ final class BlobCollectionTests: VaultTestCase {
     }
 
     /// Rule 2: nothing is collected while a recipient change is unfinished.
-    func testRule2PendingRewrapBlocks() throws {
-        let (vault, id, _, unused, _, _) = try setUpNotes()
-        var state = BlobCollectorState()
-        _ = try vault.collectBlobs(note: testNote, state: &state, now: t0)
-        try Data(#"{"format":"sempere/1","rekeyBlobs":false}"#.utf8).write(to: vault.url.appendingPathComponent("rewrap-journal.json"))
-        let pending = try Vault.open(at: vault.url, identities: [id])
-        let r = try pending.collectBlobs(note: testNote, state: &state, now: t0.addingTimeInterval(60 * day))
-        XCTAssertTrue(r.blocked?.contains("rule 2") == true)
-        XCTAssertEqual(r.deleted, [])
-        XCTAssertTrue(FileManager.default.fileExists(atPath: try blobURL(vault, testNote, unused).path))
-    }
 
     /// Blobs that cannot be decrypted or verified are reported, never deleted.
     func testUnverifiableBlobIsNeverDeleted() throws {
@@ -241,7 +230,7 @@ final class BlobCollectionTests: VaultTestCase {
     /// unreferenced misnamed ones are left alone.
     func testRepairRenamesOnlyAuthenticBlobs() throws {
         let (vault, id, used, unused, _, _) = try setUpNotes()
-        let oldSecret = VaultSecret.random()
+        let oldSecret = VaultEpochKey.random()
         func rename(_ ref: BlobRef) throws -> String {
             let name = BlobName.fileName(name: BlobName.name(digest: try XCTUnwrap(ref.digest), secret: oldSecret), kind: ref.kind)
             try FileManager.default.moveItem(at: try blobURL(vault, testNote, ref),
@@ -275,13 +264,13 @@ final class BlobCollectionTests: VaultTestCase {
         let ref = try vault.writeBlob(note: testNote, content, type: "image/png")
         try vault.write(referencingDelta(&log, 0, refs: [ref]))
         let current = try blobURL(vault, testNote, ref)
-        let oldName = BlobName.fileName(name: BlobName.name(digest: try XCTUnwrap(ref.digest), secret: VaultSecret.random()),
+        let oldName = BlobName.fileName(name: BlobName.name(digest: try XCTUnwrap(ref.digest), secret: VaultEpochKey.random()),
                                         kind: ref.kind)
         try FileManager.default.copyItem(at: current, to: attDir(vault, testNote).appendingPathComponent(oldName))
         var bytes = try Data(contentsOf: current)
         bytes[bytes.count - 1] ^= 0x01
         try bytes.write(to: current)
-        XCTAssertNoThrow(try Vault.peekBlobFile(current, identities: [id]), "damage is past the first chunk")
+        XCTAssertNoThrow(try Vault.peekBlobFile(current, identities: vault.identities), "damage is past the first chunk")
 
         let r = try vault.repairBlobs(note: testNote)
         XCTAssertEqual(r.repaired, [oldName: [current.lastPathComponent]])
@@ -296,7 +285,7 @@ final class BlobCollectionTests: VaultTestCase {
         let (vault, id, used, _, _, _) = try setUpNotes()
         let url = try blobURL(vault, testNote, used)
         let extra = pqIdentity()
-        try AgeFile.encrypt(try decryptBlob(url, id), to: [id.recipient, extra.recipient]).write(to: url)
+        try AgeFile.encrypt(try decryptBlob(url, id), to: [try vault.vaultRecipient(), extra.recipient]).write(to: url)
         let wrongKind = url.deletingLastPathComponent()
             .appendingPathComponent(url.lastPathComponent.replacingOccurrences(of: ".image.", with: ".bin."))
         try FileManager.default.moveItem(at: url, to: wrongKind)

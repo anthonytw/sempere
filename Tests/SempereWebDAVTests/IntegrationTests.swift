@@ -162,7 +162,7 @@ final class WebDAVIntegrationTests: SyncTestCase {
         }
         XCTAssertEqual(try title(a2), "B4")
         XCTAssertEqual(try title(b2, fromA), "new on A")
-        let report = try a2.verify()
+        let report = a2.verify()
         XCTAssertTrue(report.isHealthy, "\(report)")
         XCTAssertTrue(try run("A", c).isEmpty)
         XCTAssertTrue(try run("B", c).isEmpty)
@@ -170,15 +170,15 @@ final class WebDAVIntegrationTests: SyncTestCase {
         // Manifest edit travels; a conflicting pair keeps both copies.
         let url = dir("A").appendingPathComponent("vault.json")
         var obj = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
-        var rec = obj["recipients"] as! [[String: Any]]
-        rec[0]["label"] = "edited"; obj["recipients"] = rec
+        obj["label"] = "edited"
         try JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]).write(to: url)
         XCTAssertEqual(try run("A", c).uploaded, ["vault.json"])
         XCTAssertEqual(try run("B", c).downloaded, ["vault.json"])
         XCTAssertEqual(try vaultJSON("A"), try vaultJSON("B"))
-        rec[0]["label"] = "A again"; obj["recipients"] = rec
+        // Label-only edits converge (format.md §1.3); a change to an authenticated field does not.
+        obj["listTag"] = String(repeating: "a", count: 64)
         try JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]).write(to: url)
-        rec[0]["label"] = "B again"; obj["recipients"] = rec
+        obj["listTag"] = String(repeating: "b", count: 64)
         try JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]).write(to: dir("B").appendingPathComponent("vault.json"))
         _ = try run("A", c)
         let conflict = try run("B", c)

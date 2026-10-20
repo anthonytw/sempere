@@ -18,7 +18,7 @@ let failures = 0;
 for (const mount of ["static", "dav"]) {
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
   const problems = [];
-  // 404s are expected: rewrap-journal.json, and the index on the WebDAV mount.
+  // 404s are expected: the index on the WebDAV mount.
   page.on("console", (m) => { if ((m.type() === "error" || m.type() === "warning") && !m.text().includes("404") && !engineNoise(m.text())) problems.push(m.text()); });
   page.on("pageerror", (e) => problems.push(String(e)));
   await page.goto(`${base}/`);

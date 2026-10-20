@@ -2,18 +2,15 @@ import Age
 import Crypto
 import Foundation
 
-// The signed secret link (format.md §2.1 "Secret link"; security review
-// 2026-10, R2).
+// The epoch link's signatures (format.md §15.3 `epochLink`; the secret link of security review
+// 2026-10, R2, kept for this one message).
 //
-// Two signing key pairs are derived from each vault secret: Ed25519
-// (RFC 8032) and ML-DSA-65 (FIPS 204), each from its own 32-byte HKDF seed.
-// A rotation's `secretLink` holds both signatures, made with the outgoing
-// secret's keys, over the link message; it verifies only when both do. A
-// device's trust record keeps the two public keys, which check a link but
-// cannot make one.
+// Two signing key pairs are derived from each epoch key: Ed25519 (RFC 8032) and ML-DSA-65 (FIPS 204),
+// each from its own 32-byte HKDF seed. A link holds both signatures, made with the parent epoch's keys,
+// over the link message; it verifies only when both do. A device's trust record keeps the two public
+// keys, which check a link but cannot make one.
 
-/// The verification keys of a vault secret's link signing keys (format.md
-/// §2.1): what a trust record holds.
+/// The verification keys of an epoch's link signing keys (format.md §15.3): what a trust record holds.
 public struct LinkPublicKeys: Hashable, Sendable {
     /// Ed25519 public key size (RFC 8032).
     public static let ed25519Size = 32
@@ -30,24 +27,16 @@ public struct LinkPublicKeys: Hashable, Sendable {
         guard ed25519.count == Self.ed25519Size, mldsa65.count == Self.mldsa65Size else { return nil }
         self.ed25519 = ed25519; self.mldsa65 = mldsa65
     }
-
-    /// The public keys of `secret`'s link signing keys.
-    ///
-    /// - Throws: `AgeError.postQuantumUnavailable` where the platform has no
-    ///   ML-DSA (Apple OSes before 26, SDKs before Xcode 26).
-    public init(secret: VaultSecret) throws {
-        self = try LinkSigningKeys(secret: secret).publicKeys()
-    }
 }
 
-/// `secretLink` as found in `vault.json` (format.md §2.1).
+/// A link as found in `vault.json` (`epochLink`, format.md §15.3) and in chain entries.
 public enum SecretLink: Hashable, Sendable {
     /// Ed25519 signature size (RFC 8032).
     public static let ed25519SignatureSize = 64
     /// ML-DSA-65 signature size (FIPS 204).
     public static let mldsa65SignatureSize = 3309
 
-    /// Both signatures, by the outgoing secret's keys.
+    /// Both signatures, by the parent epoch's link keys.
     case signed(ed25519: Data, mldsa65: Data)
     /// Present but not a signed link (any other JSON shape, a string
     /// included, or a signature of the wrong size): never verifies, and
@@ -75,26 +64,19 @@ extension SecretLink: Codable {
             try c.encode(Hex.encode(ed), forKey: .ed25519)
             try c.encode(Hex.encode(ml), forKey: .mldsa65)
         case .malformed:
-            // Writers drop a malformed link (VaultManifest.encode); encoding
-            // one alone writes null.
+            // Readers refuse a malformed link (EpochManifest); encoding one alone writes null.
             var c = encoder.singleValueContainer()
             try c.encodeNil()
         }
     }
 }
 
-/// The signing keys of a vault secret (never stored).
+/// The link signing keys of an epoch key (never stored).
 struct LinkSigningKeys {
     let ed25519: Curve25519.Signing.PrivateKey
     let mldsa65Seed: Data
 
-    init(secret: VaultSecret) throws {
-        try self.init(ed25519Seed: RecipientsAuth.bytes(RecipientsAuth.derive(secret, RecipientsAuth.linkEd25519Info)),
-                      mldsa65Seed: RecipientsAuth.bytes(RecipientsAuth.derive(secret, RecipientsAuth.linkMLDSA65Info)))
-    }
-
-    /// The pairs of two 32-byte seeds (a vault secret's, or a vault epoch
-    /// key's, key-hierarchy design §2.2).
+    /// The pairs of two 32-byte seeds (an epoch key's, key-hierarchy design §2.2).
     init(ed25519Seed: Data, mldsa65Seed: Data) throws {
         ed25519 = try Curve25519.Signing.PrivateKey(rawRepresentation: ed25519Seed)
         self.mldsa65Seed = mldsa65Seed
@@ -162,42 +144,5 @@ enum MLDSA65Bridge {
         }
         #endif
         return false
-    }
-}
-
-extension RecipientsAuth {
-    static let linkEd25519Info = "sempere/1 secret link ed25519 seed"
-    static let linkMLDSA65Info = "sempere/1 secret link ml-dsa-65 seed"
-
-    /// The link message: `"sempere/1" ‖ 0 ‖ "secret link" ‖ 0 ‖ vaultId ‖ 0 ‖ secretId(new)`.
-    static func linkMessage(to new: VaultSecret, vaultId: UUID) -> Data {
-        var m = Data("sempere/1".utf8)
-        m.append(0); m.append(contentsOf: "secret link".utf8)
-        m.append(0); m.append(contentsOf: vaultId.uuidString.lowercased().utf8)
-        m.append(0); m.append(secretId(new))
-        return m
-    }
-
-    /// `secretLink` from the outgoing secret to the new one: both signatures
-    /// by `old`'s link signing keys.
-    ///
-    /// - Throws: `AgeError.postQuantumUnavailable` where the platform has no ML-DSA.
-    public static func link(from old: VaultSecret, to new: VaultSecret, vaultId: UUID) throws -> SecretLink {
-        try LinkSigningKeys(secret: old).sign(linkMessage(to: new, vaultId: vaultId))
-    }
-
-    /// True when `link` is a signed link whose Ed25519 AND ML-DSA-65
-    /// signatures both verify under `keys` (a trust record's) over the link
-    /// to `new`.
-    public static func verifyLink(_ link: SecretLink?, keys: LinkPublicKeys, to new: VaultSecret, vaultId: UUID) -> Bool {
-        LinkSigningKeys.verify(link, keys: keys, message: linkMessage(to: new, vaultId: vaultId))
-    }
-
-    /// True when `link` is a signed link from `previous` to `current`, for a
-    /// reader that holds both secrets (a rewrap journal's previous secret,
-    /// format.md §3.3.1).
-    static func linkConnects(_ link: SecretLink?, from previous: VaultSecret, to current: VaultSecret, vaultId: UUID) -> Bool {
-        guard let keys = try? LinkPublicKeys(secret: previous) else { return false }
-        return verifyLink(link, keys: keys, to: current, vaultId: vaultId)
     }
 }

@@ -37,7 +37,6 @@ final class CountingIndexSource: AttachmentIndexSource, @unchecked Sendable {
     }
 
     func blobNames(sha256: String) -> [String] { vault.blobNames(sha256: sha256) }
-    var pendingRewrap: Bool { vault.pendingRewrap }
 }
 
 /// The device-local attachment index (docs/attachments.md §4): per-note
@@ -197,19 +196,6 @@ final class AttachmentIndexTests: VaultTestCase {
         e = AttachmentIndexer.update(note: testNote, previous: e, source: vault, current: nil, now: t0.addingTimeInterval(3 * day))
         XCTAssertTrue(e.isComplete)
         XCTAssertEqual(e.unusedSince[name], t0.addingTimeInterval(3 * day), "a new window")
-    }
-
-    func testPendingRewrapDecidesNothing() throws {
-        let id = pqIdentity()
-        let vault = try makeVault(id)
-        _ = try vault.writeBlob(note: testNote, Data("synthetic".utf8), type: "image/png")
-        var log = LogBuilder()
-        try vault.write(referencingDelta(&log, 0, refs: []))
-        try Data(#"{"format":"sempere/1","rekeyBlobs":false}"#.utf8).write(to: vault.url.appendingPathComponent("rewrap-journal.json"))
-        let pending = try Vault.open(at: vault.url, identities: [id])
-        let e = AttachmentIndexer.update(note: testNote, previous: nil, source: pending, current: nil, now: t0)
-        XCTAssertFalse(e.isComplete)
-        XCTAssertEqual(e.unusedSince, [:])
     }
 
     /// The CLI's fresh computation equals the app's incremental one.

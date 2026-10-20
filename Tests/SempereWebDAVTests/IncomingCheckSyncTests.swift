@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import XCTest
+import VaultTestSupport
 @testable import Sempere
 @testable import SempereSync
 @testable import SempereWebDAV
@@ -12,7 +13,7 @@ final class IncomingCheckSyncTests: SyncTestCase {
     var id: String { noteID.uuidString.lowercased() }
 
     /// A snapshot the server made with only the public keys: valid age to
-    /// the vault's recipient, framed under a secret of its own.
+    /// the vault identity, framed under a key of its own.
     func forgedSnapshot(_ vault: Vault, seq: Int = 1) throws -> (RevisionName, Data) {
         let name = RevisionName(hlc: HLC(millis: baseMillis + 50_000, counter: 0)!, device: DeviceID("cccccccc")!,
                                 seq: seq, kind: .snapshot)
@@ -20,7 +21,7 @@ final class IncomingCheckSyncTests: SyncTestCase {
                            body: .snapshot(included: Included([:]), state: try vault.reconstruct(noteId: noteID)))
         let body = try BodyFraming.frame(json: InkJSON.encoder().encode(rev), noteId: id, filename: name.filename,
                                          secret: .random())
-        return (name, try AgeFile.encrypt(body, to: [identity.recipient]))
+        return (name, try AgeFile.encrypt(body, to: [try vault.vaultRecipient()]))
     }
 
     func run(_ name: String, _ server: MockDAV, vault: Vault?, configure: (inout SyncOptions) -> Void = { _ in })
@@ -126,25 +127,6 @@ final class IncomingCheckSyncTests: SyncTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: att.path).sorted(), [real])
         XCTAssertTrue(FileManager.default.fileExists(
             atPath: tmp.appendingPathComponent("state-B.quarantine/notes/\(id)/att/\(planted)").path))
-    }
-
-    /// A rotation that arrives with `vault.json` in the same run: revisions
-    /// written under the new secret are checked under it, not quarantined.
-    func testRevisionsUnderARotatedSecretArrivingWithTheManifestAreKept() throws {
-        let server = MockDAV()
-        let other = pqIdentity()
-        var a = try Vault.create(at: dir("A"), recipients: [identity.recipient, other.recipient], labels: ["a", "o"],
-                                 identities: [identity])
-        _ = try delta(a, device: devA, t: 0, title: "one")
-        try sync("A", server, vault: a)
-        try sync("B", server)
-        try a.removeRecipient(other.recipient)
-        let r = try delta(a, device: devA, t: 100, title: "two")
-        try sync("A", server, vault: a)
-        let report = try sync("B", server)
-        XCTAssertTrue(report.downloaded.contains("vault.json"), "\(report)")
-        XCTAssertTrue(report.downloaded.contains("notes/\(id)/\(r.name.filename)"), "\(report)")
-        XCTAssertTrue(report.quarantined.isEmpty, "\(report)")
     }
 
     // MARK: W5

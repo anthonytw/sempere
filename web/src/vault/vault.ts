@@ -1,27 +1,41 @@
-// Opening a vault (format.md §2, §3.1) and reading one revision file (§4, §5):
-// age decryption with typage, the `SMPR` framing, the HMAC tag under the
-// vault secret, gunzip and JSON. Nothing here touches the network or the DOM.
+// Opening a vault (format.md §15.3, §15.2) and reading one revision file (§4, §5): vault.json of the
+// key hierarchy, the wrap a key the user supplies opens, the epoch key K_e and what derives from it,
+// age decryption with typage under the vault identity V_e, the `SMPR` framing, the HMAC tag under
+// `tagKey`, gunzip and JSON. Nothing here touches the network or the DOM.
+//
+// The viewer reads the CURRENT epoch only: files still encrypted under an earlier epoch's key (an
+// unfinished re-encryption, §15.8) do not open and are reported like any unreadable file. It keeps
+// no trust record and walks no chain, so it reports what vault.json says by itself (`ListStatus`).
 
 import { t } from "../i18n/index.ts";
 import { Decrypter, armor, identityToRecipient } from "age-encryption";
-import { DecodeError, arr, arrayOf, isObject, obj, opt, optWith, reqWith, str, uuid } from "../format/json.ts";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { DecodeError, arrayOf, int, isObject, obj, opt, optWith, reqWith, str, uuid } from "../format/json.ts";
 import { cmpUTF8, parseRevisionName, revisionFilename } from "../format/ids.ts";
 import { type Revision, decodeRevision } from "../format/model.ts";
 import { formatMajor, majorOf, manifestReadOnlyReasons, revisionMarkersNewer } from "../format/newer.ts";
 import { parseRFC3339 } from "../format/rfc3339.ts";
 import { concat } from "./bytes.ts";
+import {
+  type EpochKeys, deviceFingerprint, entryMessage, epochKeys, epochLinkPublicKeys, epochMessage, listTag, listTagMessage,
+  manifestMessage, parseEpochWrap, recoveryFingerprint, rootFingerprint, verifyAuthorSignature, verifyEpochLink,
+} from "./epoch.ts";
 import { gunzip } from "./gzip.ts";
-import { type SecretLink, linkConnects, parseSecretLink } from "./link.ts";
+import { type SecretLink, parseSecretLink, unhex } from "./link.ts";
 
 /** format.md §9 limits. */
 export const limits = {
   revisionBytes: 256 * 1024 * 1024,
   manifestBytes: 16 * 1024 * 1024,
+  /** An epoch record, file and gunzipped JSON (format.md §15.6). */
+  epochRecordBytes: 64 * 1024 * 1024,
+  /** One wrap (format.md §15.3). */
+  wrapBytes: 16 * 1024,
 };
 
 export type VaultErrorCode =
   | "manifestCorrupt" | "unsupportedFormat" | "badIdentity" | "classicIdentity" | "wrongKey"
-  | "invalidVaultSecret";
+  | "keyNotListed" | "invalidWrap" | "tamperedList";
 
 /** Why a vault cannot be opened or unlocked. */
 export class VaultError extends Error {
@@ -42,45 +56,118 @@ export class RevisionReadError extends Error {
   }
 }
 
-export interface ManifestRecipient {
-  key: string;
-  label: string;
+/** A pair of hex signatures or signing keys, as `vault.json` writes them. */
+export interface HexPair {
+  p256: string;
+  mldsa65: string;
 }
 
+/** One entry of `keys` (format.md §15.3). */
+export interface ManifestKey {
+  role: "device" | "recovery";
+  key: string;
+  /** Devices only. */
+  id?: string;
+  sign?: HexPair;
+  kind?: string;
+  added: string;
+  addedEpoch?: number;
+  addedBy?: string;
+  addSig?: HexPair;
+  /** The device's name (the recovery entry's is "Recovery kit"). */
+  name: string;
+  wrap: string;
+}
+
+/** `vault.json` of the key hierarchy (format.md §15.3). Hex values are lowercase text, as written. */
 export interface VaultManifest {
   format: string;
   vaultId: string;
-  recipients: ManifestRecipient[];
-  vaultSecret: string;
+  created: string;
+  root: string;
+  epoch: number;
+  epochId: string;
+  parent?: string;
+  epochRecord: string;
+  epochRecordHash: string;
+  keys: ManifestKey[];
+  listTag: string;
+  epochLink?: SecretLink;
+  epochAuthor: string;
+  epochSig: HexPair;
+  markersTag: string;
+  author: string;
+  authorSig: HexPair;
   features: string[];
-  /**
-   * `recipientsTag` (format.md §2.1): undefined when absent or null; a value
-   * that is not a string reads as "" (a tag that never verifies).
-   */
-  recipientsTag?: string;
-  /** `secretLink` (format.md §2.1): undefined when absent or null. */
-  secretLink?: SecretLink;
-  /** `markersTag` (format.md §2.1 "Version markers"): read like `recipientsTag`. */
-  markersTag?: string;
-  /** `rewrapPending` (format.md §3.3.1 "Binding the journal"): read like `recipientsTag`. */
-  rewrapPending?: string;
+  label?: string;
+  /** Binds an unfinished re-encryption journal (format.md §15.8); the viewer does not read the journal. */
+  reencryptPending?: string;
+  parentList: string[];
+  epochReason: string;
+  home: string;
+  recoverySig?: HexPair;
 }
 
+/** The epoch reasons of format.md §15.7. */
+const reasons = new Set(["create", "remove", "recovery", "reencrypt", "handoff", "takeover"]);
+const sizes = { p256Sig: 128, mldsaSig: 6618, p256Key: 130, mldsaKey: 3904 };
 const bech32 = /^[02-9ac-hj-np-z]+$/;
 
-/**
- * An age recipient's type by its Bech32 prefix, or undefined if malformed or
- * not post-quantum: vaults list only MLKEM768-X25519 keys (format.md §3.1), so
- * a classic X25519 `age1…` key is an invalid recipient.
- */
-export function recipientType(key: string): "mlkem768x25519" | undefined {
+/** True for a post-quantum age recipient (`age1pq1…`) that is well formed on its face. */
+export function isPQRecipient(key: string): boolean {
   const k = key.toLowerCase();
-  if (key !== k && key !== key.toUpperCase()) return undefined;
-  if (k.startsWith("age1pq1") && bech32.test(k.slice(7)) && k.length > 20) return "mlkem768x25519";
-  return undefined;
+  return key === k && k.startsWith("age1pq1") && bech32.test(k.slice(7)) && k.length > 20;
 }
 
-/** Parses and validates `vault.json` (format.md §2). */
+function hexField(v: unknown, path: string, bytes: number): string {
+  const s = str(v, path);
+  if (!unhex(s, bytes)) throw new DecodeError(`${path}: expected ${2 * bytes} lowercase hex digits`);
+  return s;
+}
+
+function pair(v: unknown, path: string, p: number, m: number): HexPair {
+  const o = obj(v, path);
+  return { p256: hexField(o.p256, `${path}.p256`, p / 2), mldsa65: hexField(o.mldsa65, `${path}.mldsa65`, m / 2) };
+}
+
+const sigPair = (v: unknown, path: string): HexPair => pair(v, path, sizes.p256Sig, sizes.mldsaSig);
+const keyPair = (v: unknown, path: string): HexPair => pair(v, path, sizes.p256Key, sizes.mldsaKey);
+
+function manifestKey(v: unknown, path: string): ManifestKey {
+  const o = obj(v, path);
+  const role = reqWith(o, "role", path, str);
+  if (role !== "device" && role !== "recovery") throw new DecodeError(`${path}.role: unknown role`);
+  const k: ManifestKey = {
+    role,
+    key: reqWith(o, "key", path, str),
+    added: reqWith(o, "added", path, str),
+    name: reqWith(o, "name", path, str),
+    wrap: reqWith(o, "wrap", path, str),
+  };
+  if (k.wrap.length > limits.wrapBytes) throw new DecodeError(`${path}.wrap: too large`);
+  const id = optWith(o, "id", path, str);
+  const sign = optWith(o, "sign", path, keyPair);
+  const kind = optWith(o, "kind", path, str);
+  const addedEpoch = optWith(o, "addedEpoch", path, int);
+  const addedBy = optWith(o, "addedBy", path, str);
+  const addSig = optWith(o, "addSig", path, sigPair);
+  if (id !== undefined) k.id = id;
+  if (sign) k.sign = sign;
+  if (kind !== undefined) k.kind = kind;
+  if (addedEpoch !== undefined) k.addedEpoch = addedEpoch;
+  if (addedBy !== undefined) k.addedBy = addedBy;
+  if (addSig) k.addSig = addSig;
+  return k;
+}
+
+/** The fingerprint of an entry (format.md §15.4), 64 hex digits; undefined without signing keys. */
+export function entryFingerprint(k: ManifestKey): string | undefined {
+  if (!k.sign) return undefined;
+  const f = k.role === "device" ? deviceFingerprint : recoveryFingerprint;
+  return hex(f(k.key, k.sign.p256, k.sign.mldsa65));
+}
+
+/** Parses and validates `vault.json`'s structure (format.md §15.3). Signatures and tags are checked by `checkManifest`. */
 export function parseManifest(bytes: Uint8Array): VaultManifest {
   if (bytes.length > limits.manifestBytes) throw new VaultError("manifestCorrupt", "vault.json is larger than 16 MiB");
   let json: unknown;
@@ -92,32 +179,45 @@ export function parseManifest(bytes: Uint8Array): VaultManifest {
   let m: VaultManifest;
   try {
     const o = obj(json, "$");
-    const recipients = reqWith(o, "recipients", "$", (v, p) => arr(v, p).map((r, i) => {
-      const ro = obj(r, `${p}[${i}]`);
-      const added = reqWith(ro, "added", `${p}[${i}]`, str);
-      if (parseRFC3339(added) === undefined) throw new DecodeError(`${p}[${i}].added: bad date`);
-      return { key: reqWith(ro, "key", `${p}[${i}]`, str), label: reqWith(ro, "label", `${p}[${i}]`, str) };
-    }));
     const created = reqWith(o, "created", "$", str);
     if (parseRFC3339(created) === undefined) throw new DecodeError("$.created: bad date");
-    const tag = opt(o, "recipientsTag");
-    const markersTag = opt(o, "markersTag");
-    const rewrapPending = opt(o, "rewrapPending");
+    const parent = optWith(o, "parent", "$", (v, p) => hexField(v, p, 32));
+    const link = opt(o, "epochLink");
+    const label = opt(o, "label");
+    const recoverySig = optWith(o, "recoverySig", "$", sigPair);
     m = {
       format: reqWith(o, "format", "$", str),
       vaultId: reqWith(o, "vaultId", "$", uuid),
-      recipients,
-      vaultSecret: reqWith(o, "vaultSecret", "$", str),
+      created,
+      root: reqWith(o, "root", "$", (v, p) => hexField(v, p, 32)),
+      epoch: reqWith(o, "epoch", "$", int),
+      epochId: reqWith(o, "epochId", "$", (v, p) => hexField(v, p, 32)),
+      epochRecord: reqWith(o, "epochRecord", "$", str),
+      epochRecordHash: reqWith(o, "epochRecordHash", "$", (v, p) => hexField(v, p, 32)),
+      keys: reqWith(o, "keys", "$", (v, p) => arrayOf(v, p, manifestKey)),
+      listTag: reqWith(o, "listTag", "$", str),
+      epochAuthor: reqWith(o, "epochAuthor", "$", str),
+      epochSig: reqWith(o, "epochSig", "$", sigPair),
+      markersTag: reqWith(o, "markersTag", "$", str),
+      author: reqWith(o, "author", "$", str),
+      authorSig: reqWith(o, "authorSig", "$", sigPair),
       // An array of strings (§2) or absent, as Swift's decodeIfPresent([String]).
       features: optWith(o, "features", "$", (v, p) => arrayOf(v, p, str)) ?? [],
+      parentList: optWith(o, "parentList", "$", (v, p) => arrayOf(v, p, (e, q) => hexField(e, q, 32))) ?? [],
+      epochReason: reqWith(o, "epochReason", "$", str),
+      home: reqWith(o, "home", "$", (v, p) => hexField(v, p, 32)),
     };
-    if (tag !== undefined && tag !== null) m.recipientsTag = typeof tag === "string" ? tag : "";
-    if (markersTag !== undefined && markersTag !== null) m.markersTag = typeof markersTag === "string" ? markersTag : "";
-    if (rewrapPending !== undefined && rewrapPending !== null) {
-      m.rewrapPending = typeof rewrapPending === "string" ? rewrapPending : "";
+    if (parent) m.parent = parent;
+    // Informational and covered by nothing (§2): anything but a string reads as absent.
+    if (typeof label === "string") m.label = label;
+    if (recoverySig) m.recoverySig = recoverySig;
+    const pending = optWith(o, "reencryptPending", "$", str);
+    if (pending !== undefined) m.reencryptPending = pending;
+    if (link !== undefined && link !== null) {
+      const parsed = parseSecretLink(link);
+      if (parsed?.kind !== "signed") throw new DecodeError("$.epochLink: not a signature pair");
+      m.epochLink = parsed;
     }
-    const link = parseSecretLink(opt(o, "secretLink"));
-    if (link) m.secretLink = link;
   } catch (e) {
     // A later major that does not decode cannot be opened even read-only (§7.2).
     if (isObject(json) && typeof json.format === "string" && (majorOf(json.format) ?? 0) > formatMajor) {
@@ -128,13 +228,38 @@ export function parseManifest(bytes: Uint8Array): VaultManifest {
   // A later major opens read-only, which the viewer always is (format.md §7.3).
   const major = majorOf(m.format);
   if (major === undefined) throw new VaultError("unsupportedFormat", `unsupported vault format ${m.format.slice(0, 64)}`);
-  if (m.recipients.length === 0) throw new VaultError("manifestCorrupt", "no recipients");
-  // A later major may list recipient types this viewer does not know.
-  for (const r of major <= formatMajor ? m.recipients : []) {
-    if (!recipientType(r.key)) throw new VaultError("manifestCorrupt", `invalid recipient ${r.key.slice(0, 24)}…`);
+  const bad = (why: string): never => {
+    throw new VaultError("manifestCorrupt", why);
+  };
+  if (m.epoch < 1) bad("epoch is below 1");
+  if ((m.epoch === 1) !== (m.parent === undefined) || (m.epoch === 1) !== (m.epochLink === undefined)) {
+    bad("epoch, parent and epochLink disagree");
   }
-  if (new Set(m.recipients.map((r) => r.key)).size !== m.recipients.length) {
-    throw new VaultError("manifestCorrupt", "duplicate recipient");
+  if (m.epochRecord !== `epochs/${m.epoch}-${m.epochId.slice(0, 16)}.epoch.age`) bad("epochRecord is not this epoch's record");
+  if (m.keys.filter((k) => k.role === "recovery").length !== 1) bad("not one recovery entry");
+  if (!m.keys.some((k) => k.role === "device")) bad("no device entry");
+  if (!reasons.has(m.epochReason) || (m.epoch === 1) !== (m.epochReason === "create")
+    || (m.epochReason === "takeover" && !m.recoverySig) || (m.recoverySig && !["takeover", "recovery", "reencrypt"].includes(m.epochReason))
+    || (m.epoch === 1) !== (m.parentList.length === 0)) bad("epochReason, recoverySig or parentList");
+  const homeEntry = m.keys.find((k) => k.role === "device" && entryFingerprint(k) === m.home);
+  const homeId = m.home.slice(0, 8);
+  if (!homeEntry || !(m.epochAuthor === homeId || m.epochReason === "handoff") || !(m.author === homeId || m.author === m.epochAuthor)) {
+    bad("home is not a listed device, or not the author");
+  }
+  const seen = new Set<string>();
+  for (const k of m.keys) {
+    // A later major may list key types this version does not know; it opens with the entry its key opens.
+    if (!(isPQRecipient(k.key) || major > formatMajor) || seen.has(k.key)) bad("a key that is not post-quantum, or listed twice");
+    seen.add(k.key);
+    if (!isPQRecipient(k.key)) continue;
+    if (k.role === "device") {
+      const f = entryFingerprint(k);
+      if (!f || k.kind === undefined || k.addedEpoch === undefined || k.addedBy === undefined || !k.addSig || k.id !== f.slice(0, 8)) {
+        bad(`device entry ${k.id ?? "?"}`);
+      }
+    } else if (!k.sign || k.id !== undefined || k.kind !== undefined || k.addedEpoch !== undefined || k.addedBy !== undefined || k.addSig) {
+      bad("recovery entry without its signing keys, or with device fields");
+    }
   }
   return m;
 }
@@ -147,8 +272,13 @@ export function readOnlyReasons(m: VaultManifest): string[] {
   return manifestReadOnlyReasons(m.format, m.features);
 }
 
+/** The device entries of the vault, as the capture attribution lists them (format.md §11.1). */
+export function deviceEntries(m: VaultManifest): { key: string; label: string }[] {
+  return m.keys.filter((k) => k.role === "device").map((k) => ({ key: k.key, label: k.name }));
+}
+
 /**
- * The identity in pasted text: an `age-keygen -pq` file or the bare
+ * The identity in pasted text: an `age-keygen -pq` file, a device key file, the recovery key or the bare
  * `AGE-SECRET-KEY-PQ-1…` line. Comments and blank lines are ignored.
  */
 export function parseIdentity(text: string): string {
@@ -166,7 +296,6 @@ export function parseIdentity(text: string): string {
 
 const encoder = new TextEncoder();
 
-
 const magic = [0x53, 0x4d, 0x50, 0x52];
 const headerSize = 37;
 
@@ -182,50 +311,6 @@ async function hkdfKey(secret: Uint8Array): Promise<CryptoKey> {
   return crypto.subtle.importKey("raw", buf(secret), "HKDF", false, ["deriveKey"]);
 }
 
-/**
- * How `vault.json`'s recipients list checked (format.md §2.1). The viewer
- * writes nothing and keeps no trust record, so it reports only what the tag
- * says: `verified` (the tag verifies under the vault secret), or `tampered`
- * (`tagMismatch`: the tag does not verify; `tagRemoved`: the tag every vault
- * carries is gone; `markersMismatch` / `markersRemoved`: the same for
- * `format` and `features`, "Version markers"). Without a trust record it
- * cannot see a rolled-back `vault.json`.
- */
-export type RecipientsStatus =
-  | { status: "verified" }
-  | { status: "tampered"; reason: "tagMismatch" | "tagRemoved" | "markersMismatch" | "markersRemoved" };
-
-async function hkdf(secret: Uint8Array, info: string): Promise<Uint8Array> {
-  const key = await crypto.subtle.importKey("raw", buf(secret), "HKDF", false, ["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits({ name: "HKDF", hash: "SHA-256", salt: new Uint8Array(0), info: encoder.encode(info) },
-    key, 256);
-  return new Uint8Array(bits);
-}
-
-/** `recipientsTag` (lowercase hex) of `keys`, in order, under the vault secret (format.md §2.1). */
-export async function recipientsTag(vaultId: string, keys: string[], secret: Uint8Array): Promise<string> {
-  const parts: Uint8Array[] = [encoder.encode("sempere/1"), Uint8Array.of(0), encoder.encode("recipients"), Uint8Array.of(0),
-    encoder.encode(vaultId.toLowerCase())];
-  for (const k of keys) parts.push(Uint8Array.of(0), encoder.encode(k));
-  const key = await hmacKey(await hkdf(secret, "sempere/1 recipients key"));
-  return hex(new Uint8Array(await crypto.subtle.sign("HMAC", key, buf(concat(parts)))));
-}
-
-function equalBytes(a: Uint8Array, b: Uint8Array): boolean {
-  let diff = a.length ^ b.length;
-  for (let i = 0; i < b.length; i++) diff |= (a[i] ?? 0) ^ (b[i] ?? 0);
-  return diff === 0;
-}
-
-/**
- * True when `link` (a `secretLink`, format.md §2.1) links the secret `previous`
- * to `current`: the rotation from `previous` was made by a holder of it.
- */
-export async function verifySecretLink(link: SecretLink | undefined, previous: Uint8Array, current: Uint8Array,
-  vaultId: string): Promise<boolean> {
-  return linkConnects(link, previous, current, vaultId);
-}
-
 function equalStrings(given: string, expected: string): boolean {
   let diff = given.length ^ expected.length;
   for (let i = 0; i < expected.length; i++) diff |= (given.charCodeAt(i) || 0) ^ expected.charCodeAt(i);
@@ -233,164 +318,251 @@ function equalStrings(given: string, expected: string): boolean {
 }
 
 /**
- * `markersTag` (lowercase hex) of `format` and `features` (format.md §2.1
- * "Version markers": the distinct features sorted by UTF-8 bytes); undefined
- * when a marker holds a NUL (never tagged).
+ * `markersTag` (lowercase hex) of `format` and `features` (format.md §2.1 "Version markers": the
+ * distinct features sorted by UTF-8 bytes) under `markersKey` of `K_e`; undefined when a marker
+ * holds a NUL (never tagged).
  */
-export async function markersTag(vaultId: string, format: string, features: string[], secret: Uint8Array): Promise<string | undefined> {
+export async function markersTag(vaultId: string, format: string, features: string[], markersKey: Uint8Array): Promise<string | undefined> {
   if (format.includes("\0") || features.some((f) => f.includes("\0"))) return undefined;
   // Code point order is UTF-8 byte order (as Swift sorts them).
   const sorted = [...new Set(features)].sort(cmpUTF8).map((f) => encoder.encode(f));
   const parts: Uint8Array[] = [encoder.encode("sempere/1"), Uint8Array.of(0), encoder.encode("markers"), Uint8Array.of(0),
     encoder.encode(vaultId.toLowerCase()), Uint8Array.of(0), encoder.encode(format)];
   for (const f of sorted) parts.push(Uint8Array.of(0), f);
-  const key = await hmacKey(await hkdf(secret, "sempere/1 markers key"));
+  const key = await hmacKey(markersKey);
   return hex(new Uint8Array(await crypto.subtle.sign("HMAC", key, buf(concat(parts)))));
 }
 
 /**
- * Why the version markers do not check (format.md §2.1 "Version markers", without a trust record),
- * or undefined when they do.
+ * What vault.json says about itself, checked without a trust record or a chain: `verified`, or `tampered`
+ * with the first check that failed. The viewer reports; the app or the CLI repairs.
+ * - `markersTag`: `format` and `features` do not verify under `markersKey`;
+ * - `root`: `root` is not the fingerprint of epoch 1's link keys (from `K_1`, or the epoch record's chain);
+ * - `epochRecord`: the record is missing, does not match `epochRecordHash`, does not open, or disagrees;
+ * - `epochLink`: the link into this epoch does not verify under the previous epoch's link keys (record);
+ * - `epochSig`, `recoverySig`: a signature does not verify under the signing keys vault.json lists;
+ * - `addSig`: an entry added in this epoch is not approved by home;
+ * - `authorSig`: vault.json is not signed by home (or by the epoch author who wrote a handoff).
+ * Not checked here (Swift's `EpochChain.verify` and the trust record do): the chain of earlier epochs, that the
+ * signer of an epoch above 1 is the PARENT's home, a takeover's recovery rule, and that the list is the one this
+ * device pinned. A viewer therefore cannot see a rolled-back or re-signed-by-a-stolen-home vault.json.
  */
-async function markersProblem(m: VaultManifest, secret: Uint8Array): Promise<"markersMismatch" | "markersRemoved" | undefined> {
-  if (m.markersTag === undefined) return "markersRemoved";
-  const expected = await markersTag(m.vaultId, m.format, m.features, secret);
-  return expected !== undefined && equalStrings(m.markersTag, expected) ? undefined : "markersMismatch";
-}
+export type ListProblem = "markersTag" | "root" | "epochRecord" | "epochLink" | "epochSig" | "recoverySig" | "addSig" | "authorSig";
 
-/** Classifies the manifest's recipients and version markers under the vault secret (format.md §2.1, without a trust record). */
-export async function checkRecipients(m: VaultManifest, secret: Uint8Array): Promise<RecipientsStatus> {
-  let status: RecipientsStatus;
-  if (m.recipientsTag === undefined) {
-    status = { status: "tampered", reason: "tagRemoved" };
-  } else {
-    const expected = await recipientsTag(m.vaultId, m.recipients.map((r) => r.key), secret);
-    status = equalStrings(m.recipientsTag, expected) ? { status: "verified" } : { status: "tampered", reason: "tagMismatch" };
-  }
-  if (status.status === "tampered") return status;
-  const markers = await markersProblem(m, secret);
-  return markers ? { status: "tampered", reason: markers } : status;
-}
+export type ListStatus = { status: "verified" } | { status: "tampered"; reason: ListProblem };
 
-/**
- * `rewrapPending` (lowercase hex) binding the journal's exact bytes to the vault under `secret`, the
- * secret the rotation moved to (format.md §3.3.1 "Binding the journal").
- */
-export async function rewrapPendingTag(vaultId: string, journal: Uint8Array, secret: Uint8Array): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", buf(journal)));
-  const message = concat([encoder.encode("sempere/1"), Uint8Array.of(0), encoder.encode("rewrap pending"), Uint8Array.of(0),
-    encoder.encode(vaultId.toLowerCase()), Uint8Array.of(0), digest]);
-  const key = await hmacKey(await hkdf(secret, "sempere/1 rewrap pending key"));
-  return hex(new Uint8Array(await crypto.subtle.sign("HMAC", key, buf(message))));
-}
-
-/**
- * Whether the journal's previous secret counts (format.md §3.3.1 "Accepting the journal"), for a
- * reader that keeps no trust record (rule 3 needs one): vault.json's `rewrapPending` binds these
- * exact bytes under the current secret, and the secret is the current one or `secretLink` links it.
- */
-export async function journalSecretAccepted(manifest: VaultManifest, journal: Uint8Array, previous: Uint8Array,
-  current: Uint8Array): Promise<boolean> {
-  if (manifest.rewrapPending === undefined
-    || !equalStrings(manifest.rewrapPending, await rewrapPendingTag(manifest.vaultId, journal, current))) return false;
-  return equalBytes(previous, current) || verifySecretLink(manifest.secretLink, previous, current, manifest.vaultId);
-}
-
-/**
- * What the viewer says about a list that does not check (format.md §2.1),
- * or undefined. The viewer only reads, so it reports; the app or
- * `sempere vault recipients repair` fixes it.
- */
-export function recipientsWarningText(status: RecipientsStatus | undefined): string | undefined {
+/** What the viewer says about a list that does not check, or undefined. */
+export function listWarningText(status: ListStatus | undefined): string | undefined {
   if (status?.status !== "tampered") return undefined;
-  if (status.reason === "markersMismatch" || status.reason === "markersRemoved") {
-    return status.reason === "markersRemoved"
-      ? t("This vault's format and features lost their authentication tag. Notes still read correctly here, but the Sempere app and CLI will not write to it until they are repaired (sempere vault markers repair).")
-      : t("This vault's format and features were changed without the vault's key. Notes still read correctly here, but the Sempere app and CLI will not write to it until they are repaired (sempere vault markers repair).");
+  switch (status.reason) {
+    case "markersTag":
+      return t("This vault's format and features do not match their authentication tag. Notes still read correctly here, but the Sempere app and CLI will not write to it until it is repaired (sempere vault markers repair).");
+    case "root":
+    case "epochRecord":
+    case "epochLink":
+      return t("This vault's key history does not check (its epoch record or root). Notes still read correctly here, but the Sempere app and CLI will not trust it until it is repaired (sempere vault verify).");
+    case "epochSig":
+    case "recoverySig":
+    case "addSig":
+    case "authorSig":
+      return t("This vault's device list was not signed by the vault's home device. Notes still read correctly here, but the Sempere app and CLI will not write to it until it is repaired (sempere vault verify).");
   }
-  const reason = status.reason === "tagRemoved" ? "tagRemoved" : "changed";
-  return reason === "tagRemoved"
-    ? t("This vault's device list lost its authentication tag. Notes still read correctly here, but the Sempere app and CLI will not write to it until it is repaired (sempere vault recipients repair).")
-    : t("This vault's device list was changed without the vault's key. Notes still read correctly here, but the Sempere app and CLI will not write to it until it is repaired (sempere vault recipients repair).");
 }
 
-/** An unlocked vault: the identity and the vault secret, in memory only. */
+function sigBytes(s: HexPair): { p256: Uint8Array; mldsa65: Uint8Array } {
+  return { p256: unhex(s.p256, s.p256.length / 2) ?? new Uint8Array(), mldsa65: unhex(s.mldsa65, s.mldsa65.length / 2) ?? new Uint8Array() };
+}
+
+function listEntries(m: VaultManifest) {
+  return m.keys.map((k) => ({
+    role: k.role, key: k.key, id: k.id ?? "", signP256: k.sign?.p256 ?? "", signMLDSA65: k.sign?.mldsa65 ?? "",
+    kind: k.kind ?? "", added: k.added, addedEpoch: k.addedEpoch === undefined ? "" : String(k.addedEpoch),
+    addedBy: k.addedBy ?? "", addSigP256: k.addSig?.p256 ?? "", addSigMLDSA65: k.addSig?.mldsa65 ?? "", name: k.name, wrap: k.wrap,
+  }));
+}
+
+/**
+ * The checks that need `K_e` only (format.md §15.3): `listTag`. A manifest that fails it was not written by a
+ * holder of the epoch key, so the vault is refused (`tamperedList`).
+ */
+export function checkListTag(m: VaultManifest, key: Uint8Array): boolean {
+  return equalStrings(m.listTag, listTag(key, m.vaultId, m.root, m.epoch, m.epochId, m.epochRecordHash, listEntries(m)));
+}
+
+interface ChainLinks {
+  rootKeys?: { ed25519: Uint8Array; mldsa65: Uint8Array };
+  previousKeys?: { ed25519: Uint8Array; mldsa65: Uint8Array };
+}
+
+/** The link public keys the record's chain gives for epoch 1 and epoch `epoch - 1`; undefined for a record that does not parse. */
+function chainLinks(record: unknown, epoch: number): ChainLinks | undefined {
+  if (!isObject(record) || !Array.isArray(record.chain)) return undefined;
+  const chain: unknown[] = record.chain;
+  const keysAt = (i: number): ChainLinks["rootKeys"] => {
+    const entry = chain[i];
+    if (!isObject(entry) || !isObject(entry.linkPublicKeys)) return undefined;
+    const ed = unhex(entry.linkPublicKeys.ed25519, 32), ml = unhex(entry.linkPublicKeys.mldsa65, 1952);
+    return ed && ml ? { ed25519: ed, mldsa65: ml } : undefined;
+  };
+  const out: ChainLinks = {};
+  const first = keysAt(0), previous = epoch > 1 ? keysAt(epoch - 2) : undefined;
+  if (first) out.rootKeys = first;
+  if (previous) out.previousKeys = previous;
+  return out;
+}
+
+/**
+ * The checks of `ListStatus` over a manifest whose `listTag` verified under `key` (`keys`, derived from it).
+ * `record` is the epoch record file (`m.epochRecord`) as stored, undefined when it could not be read.
+ */
+export async function checkManifest(m: VaultManifest, key: Uint8Array, keys: EpochKeys, record: Uint8Array | undefined,
+  decrypt: (data: Uint8Array) => Promise<Uint8Array>): Promise<ListStatus> {
+  const tampered = (reason: ListProblem): ListStatus => ({ status: "tampered", reason });
+  const expectedMarkers = await markersTag(m.vaultId, m.format, m.features, keys.markersKey);
+  if (expectedMarkers === undefined || !equalStrings(m.markersTag, expectedMarkers)) return tampered("markersTag");
+  // The epoch record: the file vault.json names, opened under V_e, whose chain gives the link keys.
+  let chain: ChainLinks | undefined;
+  if (!record || hex(sha256(record)) !== m.epochRecordHash) return tampered("epochRecord");
+  try {
+    const name = m.epochRecord.slice("epochs/".length);
+    const plain = await decrypt(record);
+    const gz = await openFrame(plain, "epochs", name, keys.tagKey);
+    const json: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(await gunzip(gz, limits.epochRecordBytes)));
+    if (!isObject(json) || json.vaultId !== m.vaultId || json.root !== m.root || json.epoch !== m.epoch || json.epochId !== m.epochId) {
+      return tampered("epochRecord");
+    }
+    chain = chainLinks(json, m.epoch);
+  } catch {
+    return tampered("epochRecord");
+  }
+  // root: SHA-256 of epoch 1's link keys (K_1's at epoch 1; the record's chain above).
+  const rootKeys = m.epoch === 1 ? epochLinkPublicKeys(key) : chain?.rootKeys;
+  if (!rootKeys || hex(rootFingerprint(m.vaultId, rootKeys)) !== m.root) return tampered("root");
+  if (m.epoch > 1) {
+    if (!chain?.previousKeys || !verifyEpochLink(m.epochLink, chain.previousKeys, m.epoch, unhex(m.epochId, 32) ?? new Uint8Array(), m.vaultId)) {
+      return tampered("epochLink");
+    }
+  }
+  // Signatures, under the signing keys the file lists.
+  const recoveryEntry = m.keys.find((k) => k.role === "recovery");
+  const recovery = recoveryEntry ? entryFingerprint(recoveryEntry) : undefined;
+  const homeEntry = m.keys.find((k) => k.role === "device" && entryFingerprint(k) === m.home);
+  if (!recovery || !recoveryEntry?.sign || !homeEntry?.sign) return tampered("epochSig");
+  const first = m.keys.filter((k) => k.role === "recovery" || (k.addedEpoch ?? 0) < m.epoch || entryFingerprint(k) === m.home)
+    .map((k) => entryFingerprint(k) ?? "");
+  const message = epochMessage(m.vaultId, m.root, m.epoch, m.epochId, m.parent ?? "", m.epochReason, recovery, m.home, first, m.parentList);
+  const epochSigner = m.keys.find((k) => k.role === "device" && k.id === m.epochAuthor);
+  if (!epochSigner?.sign || !verifyAuthorSignature(message, sigBytes(m.epochSig), sigBytes(epochSigner.sign))) return tampered("epochSig");
+  if (m.recoverySig && !verifyAuthorSignature(message, sigBytes(m.recoverySig), sigBytes(recoveryEntry.sign))) return tampered("recoverySig");
+  // An entry outside the first list is an addition of this epoch, approved by home.
+  const firstSet = new Set(first);
+  for (const k of m.keys) {
+    const f = entryFingerprint(k);
+    if (k.role !== "device" || !f || firstSet.has(f)) continue;
+    const claim = k.sign && k.kind !== undefined && k.addedEpoch !== undefined && k.addedBy !== undefined && k.addSig
+      ? { key: k.key, signP256: k.sign.p256, signMLDSA65: k.sign.mldsa65, kind: k.kind, added: k.added, addedEpoch: k.addedEpoch, addedBy: k.addedBy }
+      : undefined;
+    const approver = claim?.addedBy === "recovery" ? recoveryEntry.sign : homeEntry.id === claim?.addedBy ? homeEntry.sign : undefined;
+    if (!claim || !k.addSig || claim.addedEpoch !== m.epoch || !approver
+      || !verifyAuthorSignature(entryMessage(m.vaultId, claim), sigBytes(k.addSig), sigBytes(approver))) return tampered("addSig");
+  }
+  // authorSig: by home, or by the epoch author when it is `author` (the old home writing its handoff).
+  const writer = m.author === homeEntry.id ? homeEntry : m.author === epochSigner.id ? epochSigner : undefined;
+  const manifest = manifestMessage(m.vaultId, m.root, m.epoch, m.epochId, m.epochRecordHash,
+    listTagMessage(m.vaultId, m.root, m.epoch, m.epochId, m.epochRecordHash, listEntries(m)), m.format, m.features);
+  if (!writer?.sign || !verifyAuthorSignature(manifest, sigBytes(m.authorSig), sigBytes(writer.sign))) return tampered("authorSig");
+  return { status: "verified" };
+}
+
+/**
+ * Checks the framing of format.md §4 on a decrypted body and returns its gzip bytes: magic, version, then the
+ * HMAC tag under `tagKey` over `"sempere/1" ‖ 0 ‖ label ‖ 0 ‖ filename ‖ 0 ‖ gzip` (`label` is the note id, or
+ * `epochs` for an epoch record).
+ */
+async function openFrame(plain: Uint8Array, label: string, filename: string, tagKey: Uint8Array): Promise<Uint8Array> {
+  if (plain.length < headerSize) throw new RevisionReadError("corruptBody", "body shorter than its header");
+  if (!magic.every((b, i) => plain[i] === b)) throw new RevisionReadError("corruptBody", "body does not start with SMPR");
+  if ((plain[4] ?? 0) > 1) throw new RevisionReadError("newer", `written by a newer version (body version ${plain[4]})`);
+  if (plain[4] !== 1) throw new RevisionReadError("corruptBody", `unsupported body version ${plain[4]}`);
+  const tag = plain.subarray(5, headerSize);
+  const gz = plain.subarray(headerSize);
+  const message = concat([encoder.encode("sempere/1"), Uint8Array.of(0), encoder.encode(label), Uint8Array.of(0),
+    encoder.encode(filename), Uint8Array.of(0), gz]);
+  if (!await crypto.subtle.verify("HMAC", await hmacKey(tagKey), buf(tag), buf(message))) {
+    throw new RevisionReadError("tagMismatch", "authentication tag does not match (file altered, moved or renamed)");
+  }
+  return gz;
+}
+
+/** An unlocked vault: the epoch key's derived keys and identity, in memory only. */
 export class UnlockedVault {
   private constructor(
     readonly manifest: VaultManifest,
     private readonly decrypter: Decrypter,
-    private readonly secret: CryptoKey,
-    private readonly previous: CryptoKey | undefined,
-    /** The recipient of the pasted identity. */
+    private readonly tagKey: Uint8Array,
+    private readonly blobNameKey: CryptoKey,
+    /** The recipient of the key the user supplied (a device's, or the recovery key's). */
     readonly recipient: string,
-    /** How the recipients list checked (format.md §2.1); reported, the viewer never writes. */
-    readonly recipientsStatus: RecipientsStatus,
-    /** The vault secret (then the previous one) as HKDF input, for derived keys (format.md §12). */
-    private readonly derivation: CryptoKey[] = [],
+    /** Which entry opened the vault. */
+    readonly openedWith: ManifestKey["role"],
+    /** How vault.json checked (format.md §15.3); reported, the viewer never writes. */
+    readonly listStatus: ListStatus,
+    /** `K_e` as HKDF input, for the keys derived from it (format.md §10, §12). */
+    private readonly derivation: CryptoKey,
   ) {}
 
-  /**
-   * The keys derived for `info` (HKDF-SHA256, empty salt, format.md §10, §12)
-   * under the current secret and, during an unfinished rewrap, the previous one.
-   */
+  /** The key derived for `info` (HKDF-SHA256 of `K_e`, empty salt, format.md §15.2), as an array of one. */
   async derivedKeys(info: string, algorithm: AesKeyGenParams, usages: KeyUsage[]): Promise<CryptoKey[]> {
-    return Promise.all(this.derivation.map((k) => crypto.subtle.deriveKey(
-      { name: "HKDF", hash: "SHA-256", salt: new Uint8Array(0), info: encoder.encode(info) }, k, algorithm, false, usages)));
+    return [await crypto.subtle.deriveKey(
+      { name: "HKDF", hash: "SHA-256", salt: new Uint8Array(0), info: encoder.encode(info) }, this.derivation, algorithm, false, usages)];
   }
 
   /**
-   * Decrypts `vault.json`'s secret with `identity` (and, while a rewrap is
-   * unfinished, the journal's previous secret, §3.3.1).
+   * Opens the vault with `identity`: a device key, or the recovery key (also from its passphrase copy). The
+   * entry whose key is the identity's recipient has a wrap that opens to `K_e` (format.md §15.3); `listTag` must
+   * verify under it, else the vault is refused. `epochRecord` is the file `manifest.epochRecord` names, if it
+   * could be read (an absent one is reported in `listStatus`).
    */
-  static async unlock(manifest: VaultManifest, identity: string, journal?: Uint8Array): Promise<UnlockedVault> {
+  static async unlock(manifest: VaultManifest, identity: string, epochRecord?: Uint8Array): Promise<UnlockedVault> {
     let recipient: string;
-    const decrypter = new Decrypter();
     try {
       recipient = await identityToRecipient(identity);
-      decrypter.addIdentity(identity);
     } catch (e) {
       throw new VaultError("badIdentity", `the key is not a valid age identity: ${String(e)}`);
     }
-    const secretBytes = await decryptSecret(decrypter, manifest.vaultSecret);
-    const secret = await hmacKey(secretBytes);
-    const derivation = [await hkdfKey(secretBytes)];
-    const recipientsStatus = await checkRecipients(manifest, secretBytes);
-    let previous: CryptoKey | undefined;
-    if (journal) {
-      try {
-        const o = obj(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(journal)), "$");
-        const p = opt(o, "previousVaultSecret");
-        if (typeof p === "string") {
-          // Plaintext anyone who can write the folder can plant, with a secret
-          // anyone can encrypt to the public keys: it counts only when
-          // `secretLink` links it to the current secret (R4), and vault.json
-          // still binds it (a removed device keeps the outgoing secret and the
-          // link stays: S0), or it is the current one (Vault.judgeJournal in Swift).
-          const bytes = await decryptSecret(decrypter, p);
-          if (await journalSecretAccepted(manifest, journal, bytes, secretBytes)) {
-            previous = await hmacKey(bytes);
-            derivation.push(await hkdfKey(bytes));
-          }
-        }
-      } catch {
-        // An unreadable journal only matters for files not yet re-tagged; they
-        // then fail their tag check and are reported.
-      }
+    const entry = manifest.keys.find((k) => k.key === recipient);
+    if (!entry) {
+      throw new VaultError("keyNotListed", "none of the vault's keys is this key: this device has not joined the vault");
     }
-    return new UnlockedVault(manifest, decrypter, secret, previous, recipient, recipientsStatus, derivation);
+    const opener = new Decrypter();
+    opener.addIdentity(identity);
+    let wrapped: Uint8Array;
+    try {
+      wrapped = await opener.decrypt(armor.decode(entry.wrap));
+    } catch (e) {
+      throw new VaultError("wrongKey", `this key does not open the vault (${e instanceof Error ? e.message : String(e)})`);
+    }
+    const wrap = parseEpochWrap(wrapped, manifest.vaultId, manifest.epoch);
+    if ("problem" in wrap) throw new VaultError("invalidWrap", `this key's wrap is not one of this vault and epoch (${wrap.problem})`);
+    const key = wrap.key;
+    const keys = epochKeys(key);
+    if (hex(keys.epochId) !== manifest.epochId || !checkListTag(manifest, key)) {
+      throw new VaultError("tamperedList", "vault.json does not verify under the vault's epoch key (its key list was changed)");
+    }
+    const decrypter = new Decrypter();
+    decrypter.addIdentity(keys.identity);
+    const listStatus = await checkManifest(manifest, key, keys, epochRecord, (d) => decrypter.decrypt(d));
+    return new UnlockedVault(manifest, decrypter, keys.tagKey, await hmacKey(keys.blobNameKey), recipient, entry.role, listStatus,
+      await hkdfKey(key));
   }
 
   /**
-   * The keyed blob names (format.md §8.1.2) for a content hash (32 raw
-   * bytes): under the current vault secret, then, while a rewrap is
-   * unfinished, under the previous one (§8.1.5).
+   * The keyed blob names (format.md §8.1.2) for a content hash (32 raw bytes) under `blobNameKey`: an array of
+   * one, the epoch's (older epochs' names are not read).
    */
   async blobNames(sha256: Uint8Array): Promise<string[]> {
     const message = concat([encoder.encode("sempere/1"), Uint8Array.of(0), encoder.encode("blob"), Uint8Array.of(0), sha256]);
-    const keys = this.previous ? [this.secret, this.previous] : [this.secret];
-    const out: string[] = [];
-    for (const k of keys) out.push(hex(new Uint8Array(await crypto.subtle.sign("HMAC", k, buf(message)))));
-    return out;
+    return [hex(new Uint8Array(await crypto.subtle.sign("HMAC", this.blobNameKey, buf(message))))];
   }
 
   /** Decrypts an age file as a stream (blobs, format.md §8.1.3): authenticated chunk by chunk. */
@@ -412,17 +584,7 @@ export class UnlockedVault {
     } catch (e) {
       throw new RevisionReadError("undecryptable", e instanceof Error ? e.message : String(e));
     }
-    if (plain.length < headerSize) throw new RevisionReadError("corruptBody", "body shorter than its header");
-    if (!magic.every((b, i) => plain[i] === b)) throw new RevisionReadError("corruptBody", "body does not start with SMPR");
-    if ((plain[4] ?? 0) > 1) throw new RevisionReadError("newer", `written by a newer version (body version ${plain[4]})`);
-    if (plain[4] !== 1) throw new RevisionReadError("corruptBody", `unsupported body version ${plain[4]}`);
-    const tag = plain.subarray(5, headerSize);
-    const gz = plain.subarray(headerSize);
-    const message = concat([encoder.encode("sempere/1"), Uint8Array.of(0), encoder.encode(noteId), Uint8Array.of(0),
-      encoder.encode(filename), Uint8Array.of(0), gz]);
-    let ok = await crypto.subtle.verify("HMAC", this.secret, buf(tag), buf(message));
-    if (!ok && this.previous) ok = await crypto.subtle.verify("HMAC", this.previous, buf(tag), buf(message));
-    if (!ok) throw new RevisionReadError("tagMismatch", "authentication tag does not match (file altered, moved or renamed)");
+    const gz = await openFrame(plain, noteId, filename, this.tagKey);
     let json: unknown;
     try {
       const text = new TextDecoder("utf-8", { fatal: true }).decode(await gunzip(gz));
@@ -454,17 +616,6 @@ export class UnlockedVault {
 
 function hex(b: Uint8Array): string {
   return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
-}
-
-async function decryptSecret(decrypter: Decrypter, armored: string): Promise<Uint8Array> {
-  let bytes: Uint8Array;
-  try {
-    bytes = await decrypter.decrypt(armor.decode(armored));
-  } catch (e) {
-    throw new VaultError("wrongKey", `this key does not open the vault (${e instanceof Error ? e.message : String(e)})`);
-  }
-  if (bytes.length !== 32) throw new VaultError("invalidVaultSecret", "the vault secret is not 32 bytes");
-  return bytes;
 }
 
 /** True for JSON objects; re-exported for the sources. */

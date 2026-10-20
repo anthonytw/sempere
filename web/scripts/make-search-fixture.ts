@@ -1,5 +1,5 @@
-// Writes web/test/fixtures/search.sempere: a small vault, encrypted to the
-// throwaway test recipient of Tests/SempereTests/Fixtures/sample.key, whose
+// Writes web/test/fixtures/search.sempere: a small single-epoch vault (format.md §15) sharing the
+// skeleton and vault key of Tests/SempereTests/Fixtures/sample.sempere (device key sample.key), whose
 // text exercises `sempere search` and the viewer's port of it
 // (src/format/phrasesearch.ts): recognized handwriting with word boxes, text
 // boxes, an equation, PDF page text, and recording transcripts with accents,
@@ -11,22 +11,17 @@
 // randomized, so the ciphertext changes on every run; the decrypted JSON does
 // not. Then run scripts/golden.sh.
 
-import { armor, identityToRecipient } from "age-encryption";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createVaultWriter, vaultTags } from "./fixture-lib.ts";
+import { createVaultWriter, installSkeleton } from "./fixture-lib.ts";
 
 const web = join(import.meta.dirname, "..");
-const keyFile = join(web, "..", "Tests", "SempereTests", "Fixtures", "sample.key");
 const out = join(web, "test", "fixtures", "search.sempere");
 
-const identity = readFileSync(keyFile, "utf8").split("\n").find((l) => l.startsWith("AGE-SECRET-KEY-PQ-"));
-if (!identity) throw new Error("no identity in sample.key");
-const recipient = await identityToRecipient(identity);
-const secret = new Uint8Array(32).map((_, i) => (i * 11 + 5) & 0xff);
 const enc = new TextEncoder();
 
-const { encrypt, frame, writeBlob } = createVaultWriter({ secret, out, recipient });
+// Encrypted to the vault key of sample.sempere (fixture-lib.ts), whose device key is sample.key.
+const { encrypt, frame, writeBlob } = await createVaultWriter({ out });
 
 const dev = "5ea4c400";
 const t0 = Date.UTC(2026, 9, 8, 9, 0, 0);
@@ -169,15 +164,6 @@ function words(text: string, y: number): Json[] {
   ]);
 }
 
-const vaultId = "5a3b1e00-1000-4000-8000-000000000003";
-// Tagged as every writer tags vault.json (format.md §2.1); this version writes no `features`.
-const manifest = {
-  format: "sempere/1",
-  vaultId,
-  created: wall(0),
-  recipients: [{ key: recipient, label: "TEST-ONLY fixture key", added: wall(0) }],
-  vaultSecret: armor.encode(await encrypt(secret)),
-  ...vaultTags(vaultId, [recipient], secret),
-};
-writeFileSync(join(out, "vault.json"), JSON.stringify(manifest, null, 2) + "\n");
+// vault.json, epochs/ and keys/ of the skeleton (sample.sempere: the same vault id and epoch key).
+installSkeleton(out);
 console.log(`wrote ${out}`);

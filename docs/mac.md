@@ -270,7 +270,7 @@ note with a recording and calls the callbacks off the main thread.
   (`AppModel.restore`; a notebook, tag or note that is gone falls back to All
   Notes or no note). The system keeps scene storage in plaintext (Saved
   Application State), so a notebook or tag is saved as a digest keyed by the
-  vault secret (`RestorableSelection`, `LocalCacheKey` purpose `selection`),
+  vault key (`RestorableSelection`, `LocalCacheKey` purpose `selection`),
   never by name, and the saved selection is cleared when the vault closes. A note window shows its note's title
   only while the vault is unlocked; the titles of note windows open when the
   app quits can still be in the system's saved window state.
@@ -487,45 +487,14 @@ Catalyst.
 
 ## Key window
 
-View > Vault Keys (⌥⌘K) shows the keys the unlocked vault is encrypted to:
-label, abbreviated public key with its SHA-256 fingerprint, the date added, a
-mark on the key that unlocked the vault. From it:
-
-* **Add Device Key…** pastes another device's public key (`age1pq1…`) with a
-  label, or generates a post-quantum key for it, adds it, and shows the secret
-  once (copy: local only, cleared after three minutes; the text is not
-  selectable, so ⌘C cannot bypass that). The secret is shown whenever the
-  vault already lists the key, even if the rest of the change failed or the
-  vault was closed meanwhile. Classic X25519 keys are refused
-  (`docs/post-quantum.md`). The sheet and the Remove dialog act only on the
-  vault they were opened for (`KeyError.vaultChanged`). A generated key can
-  also be saved to a file, shared or printed as a kit there (`KeyFileActions`,
-  as in Settings ▸ Device Keys ▸ New Key…). Adding or generating a key first
-  asks the owner (Touch ID, or the password on a Mac without it), as Save
-  Key… does (`AppModel.requireOwner`); so does
-  Recovery Kit…, which prints the secret key.
-* **Remove Key…** drops a key. The key that unlocked the vault, and the last key,
-  cannot be removed. Removal rotates the vault secret and re-encrypts every
-  note (`Vault.removeRecipient`, `docs/io.md` "Recipient changes").
-* **Replace Key…** swaps another device's key for a pasted public key or a
-  generated one (shown once, as for Add) in one change: the vault secret
-  rotates and every note is re-encrypted once (`Vault.replaceRecipient`, the
-  CLI's `vault recipients replace`); an empty label keeps the old one. It
-  asks for confirmation and then the owner check, as Add does. The key that
-  unlocked the vault cannot be replaced here (`KeyError.replaceInUse`): add a
-  key for this device, unlock with it, then remove the old one.
-* **Recovery Kit…** is the paper kit (`sempere keys paper`): the unlocked key as
-  a QR code and checked text, to print (system print panel) or save as PDF. The
-  PDF holds the secret key, and the dialog says so.
-
-Adding and removing re-encrypt every file, which takes as long as the vault is
-large and needs every note local in iCloud Drive (`downloadEverything`).
-Open editors hold a copy of the vault with the old secret, so all of them are
-saved and closed first, the vault is replaced (`adoptRewrapped`), and
-`keyEpoch` makes every view open its note again. No editor opens while the
-change runs (`isChangingKeys`), and one whose open began before it is dropped.
-Edits from the note list wait on the edit gate meanwhile. If some files cannot be re-encrypted the change
-stays pending (`KeyError.incomplete`) and the next try finishes it.
+View > Vault Keys (⌥⌘K) lists the unlocked vault's devices and its recovery
+key (`format.md` §2), read-only (`KeysWindowView`). Under the key hierarchy
+(`docs/design/key-hierarchy.md`) only the vault's home device changes the
+list. The app's key management (adding, approving, renaming, removing and
+replacing devices, joining this device) is stubbed with `TODO(KH5)`; until
+then the window says to use the CLI from a terminal (`sempere device init`,
+`sempere devices approve|rename`, `docs/cli.md` "Devices"). Removing and
+replacing keys are new epochs (KH3, KH4) and not in this version.
 
 ## Mouse and trackpad
 

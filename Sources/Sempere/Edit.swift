@@ -187,7 +187,7 @@ extension Vault {
     @discardableResult
     public func apply(to noteId: UUID, deviceState: URL, app: String, wall: Date = Date(),
                       building build: (NoteState) throws -> [Op]) throws -> Revision? {
-        guard canRead else { throw isLocked ? VaultError.locked : VaultError.noIdentities }
+        guard canRead else { throw VaultError.locked }
         let loaded = try loadNote(noteId)
         let ops = try build(try reconstruct(loaded))
         guard !ops.isEmpty else { return nil }
@@ -207,7 +207,7 @@ extension Vault {
     @discardableResult
     public func apply(_ ops: [Op], to noteId: UUID, deviceState: URL, app: String,
                       wall: Date = Date()) throws -> Revision {
-        guard canRead else { throw isLocked ? VaultError.locked : VaultError.noIdentities }
+        guard canRead else { throw VaultError.locked }
         return try writeDelta(ops, to: noteId, loaded: try loadNote(noteId), deviceState: deviceState, app: app, wall: wall)
     }
 
@@ -216,7 +216,7 @@ extension Vault {
     /// cannot afford). Empty deltas are skipped. Fixtures and the CLI's `pages scribble`.
     public func applyInOrder(_ deltas: [[Op]], to noteId: UUID, deviceState: URL, app: String,
                              wall: Date = Date()) throws -> [Revision] {
-        guard canRead else { throw isLocked ? VaultError.locked : VaultError.noIdentities }
+        guard canRead else { throw VaultError.locked }
         var loaded = try loadNote(noteId)
         var written: [Revision] = []
         for ops in deltas where !ops.isEmpty {

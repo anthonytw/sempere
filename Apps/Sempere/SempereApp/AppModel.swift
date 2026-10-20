@@ -66,10 +66,6 @@ final class AppModel {
         case locked
         /// Notes are readable.
         case unlocked
-        /// Unlocked, but a key change was interrupted (format.md §3.3.1): only
-        /// the screen that finishes it is shown and no note is read until it
-        /// is done (`AppModel+KeyChangeResume`).
-        case finishingKeyChange
     }
 
     /// Errors the shell reports to the user.
@@ -78,6 +74,8 @@ final class AppModel {
         case notAnIdentity
         case noStoredKeys
         case passphraseMatchesNoKey
+        /// None of the given keys is listed in `vault.json`: this device has not joined the vault.
+        case notJoined
         case noteNotFound
         /// An iCloud note whose folder kept changing, or was never listed,
         /// while it was being downloaded.
@@ -100,9 +98,11 @@ final class AppModel {
         var description: String {
             switch self {
             case .noVaultOpen: return String(localized: "No vault is open.")
-            case .notAnIdentity: return String(localized: "That text holds no AGE-SECRET-KEY-PQ-1… identity.")
-            case .noStoredKeys: return String(localized: "This vault has no passphrase-protected key file.")
-            case .passphraseMatchesNoKey: return String(localized: "The passphrase opens none of this vault's key files.")
+            case .notAnIdentity: return String(localized: "That text holds no device key file and no AGE-SECRET-KEY-PQ-1… identity.")
+            case .noStoredKeys: return String(localized: "This vault has no passphrase copy of its recovery key.")
+            case .passphraseMatchesNoKey: return String(localized: "The passphrase does not open this vault's recovery key copy.")
+            case .notJoined:
+                return String(localized: "This device has not joined the vault: the key is neither one of its devices' keys nor its recovery key.")
             case .noteNotFound: return String(localized: "That note is no longer in the vault.")
             case .noteNotDownloaded:
                 return String(localized: "iCloud Drive has not delivered all of this note's files yet. Try again in a moment.")
@@ -614,21 +614,19 @@ final class AppModel {
     /// "New Note" was chosen in the Mac menu-bar item at this time and has not been carried out yet
     /// (`AppModel+MenuBar`).
     var menuBarNewNoteRequest: Date?
-    /// The interrupted key change being finished while `phase == .finishingKeyChange`.
-    var keyChangeResume: KeyChangeResume?
-    /// This device's trust records of vault recipients lists (format.md
-    /// §2.1). The app keeps them in Application Support (`defaultTrustDirectory`);
-    /// without one (tests) a store of this model alone.
-    let recipientsTrust: any RecipientsTrustStore
-    /// The open vault's recipients list did not check at unlock: the blocking
-    /// alert (`RecipientsAlertView`). Nothing is written to the vault meanwhile.
-    var recipientsAlert: RecipientsAlert?
-    /// The identities the vault was unlocked with, for reopening it after an
-    /// interrupted key change is finished (`AppModel+KeyChangeResume`).
-    var unlockIdentities: [any AgeIdentity] = []
-    /// A note about the last key change that is not an error (a refused
-    /// rewrap journal moved aside first); the key window shows it.
-    var keyChangeNote: String?
+    /// This device's trust records of the vaults' device lists (format.md
+    /// §15.10). The app keeps them in Application Support (`defaultTrustDirectory`);
+    /// without one (tests) none is kept, and a list that checks under the
+    /// vault's key is taken as it is (`ListStatus.Verification.firstUse`).
+    let trust: (any EpochTrustStore)?
+    /// The open vault's `vault.json` did not check at unlock (design §4.3): the
+    /// blocking alert (`ListAlert`). Nothing is written to the vault meanwhile.
+    var listAlert: ListAlert?
+    /// The keys the vault was unlocked with, for opening it again (a WebDAV
+    /// copy downloaded again, a backup check).
+    var unlockKeys = UnlockKeys()
+    /// The identities the vault was unlocked with.
+    var unlockIdentities: [any AgeIdentity] { unlockKeys.identities }
     private var scopedURL: URL?
     /// Bumped by `close()` (and so by every `openVault`): async work started
     /// under an older generation must not publish its result (the vault it
@@ -654,11 +652,11 @@ final class AppModel {
          blobCacheRoot: URL? = nil, renderCacheRoot: URL? = nil,
          attachmentIndexRoot: URL? = nil,
          automaticThinning: Bool = false,
-         recipientsTrust: (any RecipientsTrustStore)? = nil,
+         trust: (any EpochTrustStore)? = nil,
          backupNotifier: (any BackupNotifying)? = nil,
          webdavLocations: WebDAVLocationStore? = nil,
          afterIO: (@Sendable () async -> Void)? = nil) {
-        self.recipientsTrust = recipientsTrust ?? MemoryRecipientsTrustStore()
+        self.trust = trust
         // One private scratch folder for every default location below, removed when the model goes away: a model
         // built without explicit roots (tests, previews) would otherwise leave three folders per instance in tmp.
         let scratch = FileManager.default.temporaryDirectory
@@ -816,61 +814,61 @@ final class AppModel {
         try await unlock(with: identities)
     }
 
-    /// Unlocks the open vault with age identities and starts listing its
-    /// notes (`startLoadingNotes`): cached summaries at once, then the rest
-    /// as they are read. The listing belongs to the model, so a caller that
-    /// goes away (the unlock sheet) does not stop it.
+    /// Unlocks the open vault with age identities (a listed device's key
+    /// without its signing keys, or the recovery key: read-only).
+    func unlock(with identities: [any AgeIdentity], awaitNotes: Bool = true) async throws {
+        try await unlock(with: UnlockKeys(identities: identities), awaitNotes: awaitNotes)
+    }
+
+    /// Unlocks the open vault as the device `device` (its decryption key and
+    /// its signing keys, which home needs for list changes).
+    func unlock(device: DeviceKeys, awaitNotes: Bool = true) async throws {
+        try await unlock(with: UnlockKeys(identities: [device.nativeIdentity], signing: device.signing), awaitNotes: awaitNotes)
+    }
+
+    /// Unlocks the open vault and starts listing its notes
+    /// (`startLoadingNotes`): cached summaries at once, then the rest as they
+    /// are read. The listing belongs to the model, so a caller that goes away
+    /// (the unlock sheet) does not stop it.
+    ///
+    /// `vault.json` is checked against this device's trust record (design
+    /// §4.3); a list that does not check leaves the vault readable and
+    /// unwritten, with `listAlert` set. Opened with the recovery key, the
+    /// vault is read-only (`isRecoveryOpen`).
     ///
     /// - Parameter awaitNotes: wait for the listing (and throw its error)
     ///   before returning. The UI passes false, so the unlock sheet closes as
     ///   soon as the key is accepted; failures then go to `errorMessage`.
-    func unlock(with identities: [any AgeIdentity], awaitNotes: Bool = true) async throws {
+    func unlock(with keys: UnlockKeys, awaitNotes: Bool = true) async throws {
         guard let url = vaultURL else { throw ModelError.noVaultOpen }
         let gen = generation
         let coordinate = coordinationURL
-        let trust = recipientsTrust
-        var opened = try await offMain {
-            try CloudVault.coordinatedRead(coordinate) { try Vault.open(at: url, identities: identities, trust: trust) }
+        let trust = self.trust
+        let opened: Vault
+        do {
+            opened = try await offMain {
+                try CloudVault.coordinatedRead(coordinate) {
+                    // The recovery key reads without a trust record (design §4.3 step 4), checked against
+                    // the root when one came with it (the passphrase copy).
+                    try Vault.open(at: url, identities: keys.identities, signing: keys.signing,
+                                   trust: keys.root == nil ? trust : nil, root: keys.root)
+                }
+            }
+        } catch VaultError.keyNotListed {
+            throw ModelError.notJoined
         }
         try ensureCurrent(gen)
-        if opened.journalRefused {
-            // A rewrap journal this device refuses (format.md §3.3.1 "Refused
-            // journals": planted, or put back after its change finished) gives
-            // no secret; it only blocks key changes and would hold the vault in
-            // the finish-key-change screen. Moved aside quietly when the list checks; kept
-            // otherwise, and while it may be step 1 of another device's change
-            // whose vault.json has not synced in yet (`automatic`); the vault
-            // then opens normally, without it.
-            let start = opened
-            if let discarded = try? await Task.detached(priority: .userInitiated, operation: { () throws -> Vault in
-                try CloudVault.coordinatedWrite(coordinate) { () throws -> Vault in
-                    var v = start
-                    try v.discardRefusedJournal(automatic: true)
-                    return v
-                }
-            }).value {
-                try ensureCurrent(gen)
-                opened = discarded
-            }
-        }
         vault = opened
-        unlockIdentities = identities
-        recipientsAlert = opened.recipientsStatus.problem.map { RecipientsAlert(problem: $0, entries: opened.recipients) }
-        if opened.pendingRewrap && !opened.journalRefused {
-            // An interrupted key change (format.md §3.3.1): finished first, no note is listed or read.
-            keyChangeResume = KeyChangeResume()
-            phase = .finishingKeyChange
-            return
-        }
+        unlockKeys = keys
+        listAlert = ListAlert(vault: opened)
         phase = .unlocked
         try await didUnlock(awaitNotes: awaitNotes)
     }
 
-    /// What every unlock does once the vault is open (`unlock(with:)`, and
-    /// `finishUnlock` after an interrupted key change): lists the notes
+    /// What every unlock does once the vault is open: lists the notes
     /// (`startLoadingNotes`, then automatic thinning), refreshes the
-    /// quick-capture profile (a finished removal rotated the capture key),
-    /// adopts the inbox, reschedules the backup reminder and syncs settings.
+    /// quick-capture profile, adopts the inbox, reschedules the backup
+    /// reminder and syncs settings.
     private func didUnlock(awaitNotes: Bool) async throws {
         webdav?.vaultUnlocked()
         await webdavUnlocked()   // a partial copy's rows come from the server's summaries: before the listing
@@ -883,68 +881,44 @@ final class AppModel {
         startSettingsSync()
     }
 
-    /// The vault as a step of finishing a key change left it (`AppModel+KeyChangeResume`).
-    func replaceResumingVault(_ next: Vault) {
-        guard phase == .finishingKeyChange else { return }
-        vault = next
-    }
-
-    /// The vault after a recipient change made through the library
-    /// (`AppModel+Keys`); every editor was closed before it.
-    func adoptRewrapped(_ next: Vault) {
-        guard phase == .unlocked, next.vaultId == vault?.vaultId else { return }
-        vault = next
-        recipientsAlert = next.recipientsStatus.problem.map { RecipientsAlert(problem: $0, entries: next.recipients) }
-        saveActivity()   // under the new secret's key, if it changed
-        // A removed key rotated the capture key: voice notes sealed with the
-        // old one from now on would never be adopted (format.md §11.1).
-        refreshQuickCaptureProfile()
-        keyEpoch += 1
-        scheduleSettingsSync()   // re-encrypted with the vault; a pass checks it under the new keys
-    }
-
-    /// Makes `opened` the open vault and shows the notes (after an interrupted key change is finished).
-    func finishUnlock(_ opened: Vault, identities: [any AgeIdentity]) async throws {
-        vault = opened
-        unlockIdentities = identities
-        keyChangeResume = nil
-        phase = .unlocked
-        try await didUnlock(awaitNotes: true)
-    }
-
-    /// Unlocks with the text of an identity file (or a bare
-    /// `AGE-SECRET-KEY-PQ-1…` line). Returns the identity (`RememberedKeys`).
+    /// Unlocks with the text of a key: a device key file (`DeviceKeys`, with
+    /// its signing keys), or plain identity text (`AGE-SECRET-KEY-PQ-1…`,
+    /// for instance the recovery key, which opens the vault read-only).
+    /// Returns the device keys when it was a device key file
+    /// (`RememberedKeys` remembers only those).
     @discardableResult
-    func unlock(identityText: String, awaitNotes: Bool = true) async throws -> NativeIdentity {
+    func unlock(identityText: String, awaitNotes: Bool = true) async throws -> DeviceKeys? {
+        if DeviceKeys.isDeviceKeyFile(identityText) {
+            let device: DeviceKeys
+            do { device = try DeviceKeys.parse(identityText) } catch { throw ModelError.notAnIdentity }
+            try await unlock(device: device, awaitNotes: awaitNotes)
+            return device
+        }
         let identity: NativeIdentity
         do { identity = try IdentityFile.parse(identityText) } catch { throw ModelError.notAnIdentity }
         try await unlock(with: [identity], awaitNotes: awaitNotes)
-        return identity
+        return nil
     }
 
-    /// Unlocks with the passphrase of the vault's stored key files
-    /// (`keys/<key-name>.key.age`, format.md §3.2). Every stored key the
-    /// passphrase opens is used: finishing an interrupted key change may
-    /// need more than one. Returns the first for `RememberedKeys`.
-    @discardableResult
-    func unlock(passphrase: String, awaitNotes: Bool = true) async throws -> NativeIdentity {
+    /// Unlocks with the passphrase of the recovery key's passphrase copy
+    /// (`keys/recovery-….key.age`, format.md §15.11): the vault opens
+    /// read-only, checked against the root the copy carries.
+    func unlock(passphrase: String, awaitNotes: Bool = true) async throws {
         guard let locked = vault else { throw ModelError.noVaultOpen }
         let gen = generation
         let coordinate = coordinationURL
-        let identities: [NativeIdentity] = try await offMain {
-            try CloudVault.coordinatedRead(coordinate) { () throws -> [NativeIdentity] in
-                let stored = try locked.identityFiles()
-                guard !stored.isEmpty else { throw ModelError.noStoredKeys }
-                // Not only `stored`: an unfinished replacement's old key is unlisted.
-                do { return try locked.identitiesFromKeyFiles(passphrase: passphrase) } catch VaultError.wrongPassphrase {
+        let copy: RecoveryPassphraseCopy = try await offMain {
+            try CloudVault.coordinatedRead(coordinate) { () throws -> RecoveryPassphraseCopy in
+                do { return try locked.openPassphraseCopy(passphrase: passphrase) } catch VaultError.passphraseCopyMissing {
+                    throw ModelError.noStoredKeys
+                } catch VaultError.wrongPassphrase {
                     throw ModelError.passphraseMatchesNoKey
                 }
             }
         }
         try ensureCurrent(gen)
-        guard let first = identities.first else { throw ModelError.passphraseMatchesNoKey }
-        try await unlock(with: identities, awaitNotes: awaitNotes)
-        return first
+        try await unlock(with: UnlockKeys(identities: [NativeIdentity.mlkem768x25519(copy.identity)], root: copy.root),
+                         awaitNotes: awaitNotes)
     }
 
     /// Re-reads every note summary from disk: summaries whose revision files
@@ -957,7 +931,6 @@ final class AppModel {
     /// of them.
     func reload() async throws {
         guard let vault else { throw ModelError.noVaultOpen }
-        guard phase != .finishingKeyChange else { return }   // nothing is read before the key change is finished
         let gen = generation
         isBusy = true
         defer { if gen == generation { isBusy = false } }
@@ -1194,7 +1167,7 @@ final class AppModel {
         scopedURL = nil
         loadTask?.cancel()
         loadTask = nil
-        recipientsAlert = nil
+        listAlert = nil
         loading = nil
         listLoaded = false
         loadFailure = nil
@@ -1221,8 +1194,7 @@ final class AppModel {
         drawingCache = nil
         // Nor do decrypted attachments and their pictures (`dropAttachments`, when `vault` goes).
         vault = nil
-        keyChangeResume = nil
-        unlockIdentities = []
+        unlockKeys = UnlockKeys()
         vaultURL = nil
         vaultOpenedExternally = false
         notes = []

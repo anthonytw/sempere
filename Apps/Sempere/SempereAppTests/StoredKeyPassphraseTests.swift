@@ -9,7 +9,7 @@ struct StoredKeyPassphraseTests {
         #expect(!StoredKeyPassphrase.accepts("sempere-test"))
         #expect(StoredKeyPassphrase.warning("sempere-test") != nil)
         #expect(StoredKeyPassphrase.warning("") == nil, "nothing typed yet: no warning")
-        #expect(StoredKeyPassphrase.accepts("lunar-pickle-tundra-mosaic-quiver"))
-        #expect(StoredKeyPassphrase.warning("lunar-pickle-tundra-mosaic-quiver") == nil)
+        #expect(StoredKeyPassphrase.accepts("lunar-pickle-tundra-mosaic-quiver-banjo"))
+        #expect(StoredKeyPassphrase.warning("lunar-pickle-tundra-mosaic-quiver-banjo") == nil)
     }
 }

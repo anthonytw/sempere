@@ -143,27 +143,15 @@ struct SettingsTests {
 
     // MARK: Device keys
 
-    @Test func rewrapDefaultsAreTheDecidedPolicy() {
+    /// The old format's `rewrap.*` shared settings round-trip as plain strings (nothing reads them).
+    @Test func legacyRewrapSettingsKeepTheirDefaults() {
         let d = scratch()
-        #expect(RewrapSettings.onAdd(d) == .headerOnly)
-        #expect(RewrapSettings.onRemove(d) == .reencrypt)
-        #expect(RewrapSettings.policy(d) == RewrapPolicy())
-    }
-
-    @Test func rewrapChoicesFeedThePolicy() {
-        let d = scratch()
-        RewrapSettings.setOnAdd(.reencrypt, in: d)
-        RewrapSettings.setOnRemove(.headerOnly, in: d)
-        let policy = RewrapSettings.policy(d)
-        #expect(policy.onAdd == .reencrypt)
-        #expect(policy.onRemove == .headerOnly)
-        d.set("garbage", forKey: RewrapSettings.onAddKey)
-        #expect(RewrapSettings.onAdd(d) == .headerOnly)
-    }
-
-    @Test func onlyHeaderOnlyRemovalNeedsConfirmation() {
-        #expect(RewrapSettings.needsConfirmation(forRemoval: .headerOnly))
-        #expect(!RewrapSettings.needsConfirmation(forRemoval: .reencrypt))
+        #expect(LegacyRewrapSettings.onAdd(d) == "header")
+        #expect(LegacyRewrapSettings.onRemove(d) == "reencrypt")
+        d.set("garbage", forKey: LegacyRewrapSettings.onAddKey)
+        #expect(LegacyRewrapSettings.onAdd(d) == "header")
+        d.set("header", forKey: LegacyRewrapSettings.onRemoveKey)
+        #expect(LegacyRewrapSettings.onRemove(d) == "header")
     }
 
     // MARK: New notes

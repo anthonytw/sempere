@@ -110,8 +110,7 @@ struct CloudConflictTests {
         let (url, key) = try AppModelTests.fixtureVault()
         // Another vault's manifest stands in for "the keys differ".
         let stranger = TestTemp.root.appendingPathComponent(UUID().uuidString + ".sempere")
-        let id = try Self.identity(key)
-        _ = try Vault.create(at: stranger, recipients: [id.recipient], labels: ["x"], identities: [id])
+        try TS.makeVault(at: stranger, device: try TS.fixtureDevice(key))
         let cloud = FakeCloud(vault: url)
         cloud.addConflict(of: url.appendingPathComponent("vault.json"), version: stranger.appendingPathComponent("vault.json"))
         let model = CloudSyncTests.model(cloud)

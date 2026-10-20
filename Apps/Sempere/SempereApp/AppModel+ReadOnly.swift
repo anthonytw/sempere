@@ -18,14 +18,25 @@ extension AppModel {
         return reasons
     }
 
+    /// True when the open vault was unlocked with its recovery key (or the
+    /// recovery key's passphrase copy): it reads everything and writes nothing
+    /// (design §4.3 step 4).
+    var isRecoveryOpen: Bool { vault?.isRecoveryOpen ?? false }
+
     /// True when nothing may be written to the open vault.
-    var isVaultReadOnly: Bool { !readOnlyReasons.isEmpty }
+    var isVaultReadOnly: Bool { isRecoveryOpen || !readOnlyReasons.isEmpty }
 
     /// The banner over the note list of a read-only vault; nil when writable.
     var readOnlyBanner: String? {
+        if isRecoveryOpen { return Self.recoveryReadOnlyText }
         let reasons = readOnlyReasons
         guard !reasons.isEmpty else { return nil }
         return Self.readOnlyText(reasons)
+    }
+
+    /// Why a vault opened with the recovery key is read-only.
+    nonisolated static var recoveryReadOnlyText: String {
+        String(localized: "Read-only: unlocked with the recovery key. Open the vault with this device's key to change it.")
     }
 
     /// "Read-only: <reasons>. Update Sempere to change this vault."
@@ -55,6 +66,7 @@ extension AppModel {
 
     /// Throws `VaultError.readOnly` for a read-only vault (format.md §7.3).
     func requireWritableVault() throws {
+        if isRecoveryOpen { throw VaultError.recoveryKeyReadOnly }
         let reasons = readOnlyReasons
         if !reasons.isEmpty { throw VaultError.readOnly(reasons) }
     }

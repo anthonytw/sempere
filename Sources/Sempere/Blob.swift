@@ -129,15 +129,15 @@ public enum BlobFraming {
 
 /// Keyed blob names and the file names built from them (format.md §8.1.2).
 public enum BlobName {
-    /// `blobName = hex(HMAC-SHA256(vaultSecret, "sempere/1" ‖ 0 ‖ "blob" ‖ 0 ‖ sha256))`,
+    /// `blobName = hex(HMAC-SHA256(blobNameKey, "sempere/1" ‖ 0 ‖ "blob" ‖ 0 ‖ sha256))`,
     /// with `sha256` the 32 raw bytes of the content hash.
-    public static func name(digest: Data, secret: VaultSecret) -> String {
+    public static func name(digest: Data, secret: VaultEpochKey) -> String {
         var m = Data(SempereFormat.tagLabel.utf8)
         m.append(0)
         m += Data("blob".utf8)
         m.append(0)
         m += digest
-        return Hex.encode(HMAC<SHA256>.authenticationCode(for: m, using: secret.key))
+        return Hex.encode(HMAC<SHA256>.authenticationCode(for: m, using: SymmetricKey(data: secret.blobNameKey)))
     }
 
     /// `<name>.<kind>.age`.
@@ -158,7 +158,7 @@ public enum BlobName {
 
     /// True when the name verifies (in constant time) against `digest` under
     /// one of `secrets`; returns the index of the secret that matched.
-    static func verify(_ name: String, digest: Data, secrets: [VaultSecret]) -> Int? {
+    static func verify(_ name: String, digest: Data, secrets: [VaultEpochKey]) -> Int? {
         guard let given = Hex.decode(name) else { return nil }
         var m = Data(SempereFormat.tagLabel.utf8)
         m.append(0)
@@ -166,7 +166,7 @@ public enum BlobName {
         m.append(0)
         m += digest
         for (i, s) in secrets.enumerated()
-        where HMAC<SHA256>.isValidAuthenticationCode(given, authenticating: m, using: s.key) {
+        where HMAC<SHA256>.isValidAuthenticationCode(given, authenticating: m, using: SymmetricKey(data: s.blobNameKey)) {
             return i
         }
         return nil

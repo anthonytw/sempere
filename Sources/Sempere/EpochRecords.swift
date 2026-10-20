@@ -84,7 +84,7 @@ public struct EpochRecord: Hashable, Sendable {
     public func seal(key: VaultEpochKey) throws -> Data {
         guard key.epochId == epochId else { throw EpochFileError.mismatch("the key is not this epoch's") }
         let body = try BodyFraming.frame(json: try json(), noteId: Self.label, filename: fileName,
-                                         secret: VaultSecret(bytes: key.tagKey))
+                                         secret: key)
         return try AgeFile.encrypt(body, to: [try key.vaultIdentity().recipient])
     }
 
@@ -97,7 +97,7 @@ public struct EpochRecord: Hashable, Sendable {
             throw EpochFileError.unreadable
         }
         let gzip: Data
-        do { gzip = try BodyFraming.unframe(body, noteId: label, filename: name, secret: VaultSecret(bytes: key.tagKey)).gzip }
+        do { gzip = try BodyFraming.unframe(body, noteId: label, filename: name, secret: key).gzip }
         catch { throw EpochFileError.unreadable }
         let json: Data
         do { json = try Gzip.decompress(gzip, maxOutput: maxBytes) } catch { throw EpochFileError.tooLarge }
@@ -249,7 +249,7 @@ public struct ReencryptJournal: Hashable, Sendable {
     public func seal(key: VaultEpochKey) throws -> Data {
         guard key.epochId == epochId else { throw EpochFileError.mismatch("the key is not this epoch's") }
         let body = try BodyFraming.frame(json: try json(), noteId: Self.label, filename: Self.fileName,
-                                         secret: VaultSecret(bytes: key.tagKey))
+                                         secret: key)
         return try AgeFile.encrypt(body, to: [try key.vaultIdentity().recipient])
     }
 
@@ -258,7 +258,7 @@ public struct ReencryptJournal: Hashable, Sendable {
         let body: Data
         do { body = try AgeFile.decrypt(file, with: [try key.vaultIdentity()]) } catch { throw EpochFileError.unreadable }
         let gzip: Data
-        do { gzip = try BodyFraming.unframe(body, noteId: label, filename: fileName, secret: VaultSecret(bytes: key.tagKey)).gzip }
+        do { gzip = try BodyFraming.unframe(body, noteId: label, filename: fileName, secret: key).gzip }
         catch { throw EpochFileError.unreadable }
         let json: Data
         do { json = try Gzip.decompress(gzip, maxOutput: EpochRecord.maxBytes) } catch { throw EpochFileError.tooLarge }

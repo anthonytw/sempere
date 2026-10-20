@@ -6,12 +6,12 @@
 // Sources/Sempere/Epoch*.swift and JoinCodes.swift; the shared vectors are
 // Tests/SempereTests/Fixtures/epoch-vectors.json and epoch-chain-vectors.json.
 //
-// Swift-only for now, because the viewer reads and never decides: wrap
-// sealing, trust records v3, the chain check, fork resolution, and writing
-// epoch records, the journal and the passphrase copy. KH2's viewer port reads
-// the records and the journal for older keys. Nothing here is wired into the
-// reader yet. Pure JavaScript (@noble, @scure), so it runs under the strict
-// CSP (no WebAssembly).
+// Swift-only, because the viewer reads and never decides: wrap sealing, trust
+// records v3, the chain check, fork resolution, and writing epoch records,
+// the journal and the passphrase copy. vault.ts uses the derivations, the wrap
+// reader, listTag, the fingerprints, the signed messages and the link check to
+// open a vault and check its vault.json. Pure JavaScript (@noble, @scure), so
+// it runs under the strict CSP (no WebAssembly).
 
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { p256 } from "@noble/curves/nist.js";

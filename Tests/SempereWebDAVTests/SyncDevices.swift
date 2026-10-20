@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import XCTest
+import VaultTestSupport
 @testable import Sempere
 @testable import SempereSync
 @testable import SempereWebDAV
@@ -218,8 +219,7 @@ final class SyncDevices: @unchecked Sendable {
             devices.append(try SyncDevice(name: name, root: root.appendingPathComponent(name), identity: pqIdentity(),
                                           remote: try remote(name), device: DeviceID(hex)))
         }
-        _ = try Vault.create(at: devices[0].folder, recipients: devices.map(\.identity.recipient),
-                             labels: devices.map(\.name), identities: [devices[0].identity])
+        _ = try TestVaults.create(at: devices[0].folder, identities: devices.map(\.identity), names: devices.map(\.name))
         let set = SyncDevices(devices, inspector: inspector)
         if pull {
             try set.a.syncUntilQuiet()

@@ -50,88 +50,79 @@ final class CLICommandTests: CLITestCase {
         XCTAssertEqual(again.status, 0, again.err)
     }
 
-    func testKeysExportMovesKeyToAnotherDevice() throws {
-        let out = path("exported.key")
-        let r = try cli(["keys", "export", "--vault", Self.fixtureVault, "--out", out],
-                        env: ["SEMPERE_PASSPHRASE": Self.passphrase])
-        XCTAssertEqual(r.status, 0, r.err)
-        let exported = try String(contentsOfFile: out, encoding: .utf8)
-        XCTAssertEqual(try IdentityFile.parse(exported).string, try fixtureIdentity().string)
-        // The exported file opens the vault.
-        let list = try cli(["notes", "list", "--vault", Self.fixtureVault, "--identity", out, "--json"])
-        XCTAssertEqual(list.status, 0, list.err)
-        XCTAssertEqual((list.json as? [[String: Any]])?.count, 1)
-        // Wrong passphrase: exit 4, no key file written.
-        let bad = try cli(["keys", "export", "--vault", Self.fixtureVault, "--out", path("nope.key")],
-                          env: ["SEMPERE_PASSPHRASE": "wrong"])
-        XCTAssertEqual(bad.status, 4)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: path("nope.key")))
-    }
-
     // MARK: vault
 
+    /// The fixture's recovery passphrase copy (keys/recovery-<fp>.key.age).
+    private func passphraseCopy(in vault: String = CLITestCase.fixtureVault) throws -> String {
+        let name = try XCTUnwrap(try FileManager.default.contentsOfDirectory(atPath: vault + "/keys")
+            .first { $0.hasPrefix("recovery-") && $0.hasSuffix(".key.age") })
+        return vault + "/keys/" + name
+    }
+
     func testInitAndInfo() throws {
-        let key = path("a.key")
-        let pub = try {
-            let r = try cli(["keys", "generate", "--out", key, "-q"])
-            return r.out.trimmingCharacters(in: .whitespacesAndNewlines)
-        }()
         let vault = path("fresh.sempere")
-        // A key is never stored under an empty passphrase (as in the app and `keys paper`).
-        let empty = try cli(["vault", "init", vault, "--recipient", pub, "--store-key", key, "--work-factor", "15"],
+        let recovery = path("recovery.key")
+        // A device key is never wrapped under an empty passphrase, and a failed init leaves nothing behind.
+        let empty = try cli(["vault", "init", vault, "--recovery-out", recovery, "--passphrase"],
                             env: ["SEMPERE_PASSPHRASE": ""])
         XCTAssertEqual(empty.status, 2, empty.err)
         XCTAssertTrue(empty.err.contains("the passphrase is empty"), empty.err)
         XCTAssertFalse(FileManager.default.fileExists(atPath: vault), "nothing created")
-        // One easy to guess offline is refused unless asked for (security review 2026-10, stage 4, S5).
-        let weak = try cli(["vault", "init", vault, "--recipient", pub, "--store-key", key, "--passphrase-env", "MY_PASS",
-                            "--work-factor", "15"], env: ["MY_PASS": "s3cret"])
-        XCTAssertEqual(weak.status, 2, weak.err)
-        XCTAssertTrue(weak.err.contains("too easy to guess"), weak.err)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: vault), "nothing created")
-        // --store-key names what a wrong file holds (the app's New Vault "Use an existing key" shares the check).
-        try (pub + "\n").write(toFile: path("pub.txt"), atomically: true, encoding: .utf8)
-        let publicOnly = try cli(["vault", "init", vault, "--recipient", pub, "--store-key", path("pub.txt"),
-                                  "--work-factor", "15"], env: ["SEMPERE_PASSPHRASE": "lunar-pickle-tundra-mosaic-quiver"])
-        XCTAssertNotEqual(publicOnly.status, 0)
-        XCTAssertTrue(publicOnly.err.contains("is a public key"), publicOnly.err)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: vault), "nothing created")
-        let r = try cli(["vault", "init", vault, "--recipient", pub, "--label", "laptop", "--store-key", key,
-                         "--passphrase-env", "MY_PASS", "--work-factor", "15", "--allow-weak-passphrase"],
+        XCTAssertFalse(FileManager.default.fileExists(atPath: recovery), "no recovery key left behind")
+        let r = try cli(["vault", "init", vault, "--name", "  my\nlaptop ", "--vault-label", "Notes",
+                         "--recovery-out", recovery, "--passphrase", "--passphrase-env", "MY_PASS", "--json"],
                         env: ["MY_PASS": "s3cret"])
         XCTAssertEqual(r.status, 0, r.err)
-        // Stored key works through the passphrase path.
+        let created = try XCTUnwrap(r.json as? [String: Any])
+        XCTAssertTrue((created["deviceKey"] as? String)?.hasSuffix("/device.key.age") == true, "\(created)")
+        let mode = try FileManager.default.attributesOfItem(atPath: recovery)[.posixPermissions] as? Int
+        XCTAssertEqual(mode, 0o600)
+        // `info` works without a key; device names are stored as the app stores them: one line, trimmed.
         let info = try cli(["vault", "info", "--vault", vault, "--json"])
         XCTAssertEqual(info.status, 0, info.err)
         let obj = try XCTUnwrap(info.json as? [String: Any])
         XCTAssertEqual(obj["notes"] as? Int, 0)
-        XCTAssertEqual(obj["pendingRewrap"] as? Bool, false)
-        XCTAssertEqual((obj["recipients"] as? [[String: Any]])?.first?["label"] as? String, "laptop")
-        XCTAssertEqual((obj["keyFiles"] as? [String])?.first, pub)
+        XCTAssertEqual(obj["unlocked"] as? Bool, false)
+        XCTAssertEqual(obj["label"] as? String, "Notes")
+        XCTAssertEqual(obj["root"] as? String, created["root"] as? String)
+        let devices = try XCTUnwrap(obj["devices"] as? [[String: Any]])
+        XCTAssertEqual(devices.count, 1)
+        XCTAssertEqual(devices.first?["name"] as? String, "my laptop")
+        XCTAssertEqual(devices.first?["home"] as? Bool, true)
         let text = try cli(["vault", "info", "--vault", vault])
-        // Keys are post-quantum by default; `info` abbreviates the long key.
-        XCTAssertTrue(pub.hasPrefix("age1pq1"), pub)
-        XCTAssertTrue(text.out.contains(String(pub.prefix(16))) && text.out.contains("laptop"), text.out)
+        XCTAssertTrue(text.out.contains("my laptop"), text.out)
+        // The wrapped device key opens with a scripted passphrase; a wrong one is exit 4.
         let verify = try cli(["vault", "verify", "--vault", vault], env: ["SEMPERE_PASSPHRASE": "s3cret"])
-        XCTAssertEqual(verify.status, 0, verify.err)
+        XCTAssertEqual(verify.status, 0, verify.out + verify.err)
         XCTAssertEqual(try cli(["vault", "verify", "--vault", vault], env: ["SEMPERE_PASSPHRASE": "bad"]).status, 4)
-        // Refuses to init twice and rejects bad names / recipients.
-        XCTAssertEqual(try cli(["vault", "init", vault, "--recipient", pub]).status, 1)
-        XCTAssertEqual(try cli(["vault", "init", path("x"), "--recipient", pub]).status, 1)
-        XCTAssertEqual(try cli(["vault", "init", path("y.sempere"), "--recipient", "nope"]).status, 2)
+        // Refuses to init twice and rejects bad names; a recovery key is required.
+        let twice = try cli(["vault", "init", vault, "--recovery-out", path("r2.key")])
+        XCTAssertEqual(twice.status, 1, twice.err)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path("r2.key")))
+        XCTAssertEqual(try cli(["vault", "init", path("x"), "--recovery-out", path("r3.key")]).status, 1)
         XCTAssertEqual(try cli(["vault", "init", path("y.sempere")]).status, 2)
+        XCTAssertEqual(try cli(["vault", "init", path("y.sempere"), "--recovery-out", path("r4.key"), "--kind", "Bad Kind"]).status, 2)
     }
 
     func testVerifyHealthyFixtureAndCorruption() throws {
-        let ok = try cli(["vault", "verify", "--vault", Self.fixtureVault, "--identity", Self.fixtureKey])
-        XCTAssertEqual(ok.status, 0, ok.err)
+        // The committed fixture is not confirmed on this machine: it reads, and verify says why (exit 6)
+        // until the root is given (design §4.3).
+        let unconfirmed = try cli(["vault", "verify", "--vault", Self.fixtureVault, "--identity", Self.fixtureKey])
+        XCTAssertEqual(unconfirmed.status, 6, unconfirmed.out + unconfirmed.err)
+        XCTAssertTrue(unconfirmed.out.contains("rootUnconfirmed"), unconfirmed.out)
+        let root = try XCTUnwrap((try cli(["vault", "info", "--vault", Self.fixtureVault, "--json"]).json as? [String: Any])?["root"] as? String)
+        let ok = try cli(["vault", "verify", "--vault", Self.fixtureVault, "--identity", Self.fixtureKey, "--root", root])
+        XCTAssertEqual(ok.status, 0, ok.out + ok.err)
         XCTAssertTrue(ok.out.contains("healthy"), ok.out)
-        let json = try cli(["vault", "verify", "--vault", Self.fixtureVault, "--identity", Self.fixtureKey, "--json"])
-        let obj = try XCTUnwrap(json.json as? [String: Any])
-        XCTAssertEqual(obj["healthy"] as? Bool, true)
-        XCTAssertEqual((obj["files"] as? [[String: Any]])?.count, 9)   // 7 revisions, 1 key file, 1 blob
 
         let copy = try copyFixtureVault()
+        let json = try cli(["vault", "verify", "--vault", copy, "--identity", Self.fixtureKey, "--json"])
+        XCTAssertEqual(json.status, 0, json.out + json.err)
+        let obj = try XCTUnwrap(json.json as? [String: Any])
+        XCTAssertEqual(obj["healthy"] as? Bool, true)
+        // 7 revisions, the recovery passphrase copy, 1 blob, the epoch record
+        XCTAssertEqual((obj["files"] as? [[String: Any]])?.count, 10, "\(obj)")
+
         let victim = "notes/\(Self.lecture)/17911308020000000-99ee00ff-1.delta.age"
         let url = URL(fileURLWithPath: copy).appendingPathComponent(victim)
         var bytes = try Data(contentsOf: url)
@@ -149,74 +140,38 @@ final class CLICommandTests: CLITestCase {
         XCTAssertEqual(quiet.out.split(separator: "\n").filter { $0.hasPrefix("ok") }.count, 0)
     }
 
+    /// The recovery key's passphrase copy (format.md §15.11) reads with a scripted passphrase.
     func testPassphraseFromEnvironmentOnFixture() throws {
-        let r = try cli(["notes", "list", "--vault", Self.fixtureVault, "--json"],
+        let copy = try passphraseCopy()
+        let r = try cli(["notes", "list", "--vault", Self.fixtureVault, "--recovery-key", copy, "--json"],
                         env: ["SEMPERE_PASSPHRASE": Self.passphrase])
         XCTAssertEqual(r.status, 0, r.err)
         XCTAssertEqual((r.json as? [[String: Any]])?.first?["title"] as? String, "Fixture lecture")
         // A named variable works too, and a wrong passphrase is exit 4.
-        XCTAssertEqual(try cli(["notes", "list", "--vault", Self.fixtureVault, "--passphrase-env", "P"],
+        XCTAssertEqual(try cli(["notes", "list", "--vault", Self.fixtureVault, "--recovery-key", copy, "--passphrase-env", "P"],
                                env: ["P": Self.passphrase]).status, 0)
-        let bad = try cli(["notes", "list", "--vault", Self.fixtureVault], env: ["SEMPERE_PASSPHRASE": "nope"])
+        let bad = try cli(["notes", "list", "--vault", Self.fixtureVault, "--recovery-key", copy],
+                          env: ["SEMPERE_PASSPHRASE": "nope"])
         XCTAssertEqual(bad.status, 4)
         XCTAssertEqual(bad.err.split(separator: "\n").count, 1, bad.err)
-        // No key and no way to ask (stdin is /dev/null): exit 4.
+        // No key on this machine and none given: exit 4.
         let noKey = try cli(["notes", "list", "--vault", Self.fixtureVault])
         XCTAssertEqual(noKey.status, 4)
-        XCTAssertTrue(noKey.err.contains("no passphrase"), noKey.err)
+        XCTAssertTrue(noKey.err.contains("no device key"), noKey.err)
         // A named variable that is not set is an error, also for `vault info` (which must not run locked).
         for cmd in [["notes", "list"], ["vault", "info"], ["vault", "verify"]] {
-            let unset = try cli(cmd + ["--vault", Self.fixtureVault, "--passphrase-env", "NOT_SET_ANYWHERE"])
+            let unset = try cli(cmd + ["--vault", Self.fixtureVault, "--recovery-key", copy, "--passphrase-env", "NOT_SET_ANYWHERE"])
             XCTAssertEqual(unset.status, 4, "\(cmd)")
             XCTAssertTrue(unset.err.contains("NOT_SET_ANYWHERE"), unset.err)
         }
         // Library errors read as sentences, not enum dumps.
-        let notVault = try cli(["vault", "init", path("notes"), "--recipient",
-                                try NativeIdentity.generate(.postQuantum).recipient.string])
+        let notVault = try cli(["vault", "init", path("notes"), "--recovery-out", path("r.key")])
         XCTAssertEqual(notVault.status, 1)
         XCTAssertTrue(notVault.err.contains("must end in .sempere"), notVault.err)
         // Environment variables stand in for the options.
         let env = try cli(["notes", "list", "--json"], env: ["SEMPERE_VAULT": Self.fixtureVault,
                                                              "SEMPERE_IDENTITY": Self.fixtureKey])
         XCTAssertEqual(env.status, 0, env.err)
-    }
-
-    func testRecipientsAddThenExportWithNewIdentity() throws {
-        let copy = try copyFixtureVault()
-        let newKey = path("new.key")
-        let pub = try cli(["keys", "generate", "--out", newKey, "-q"]).out.trimmingCharacters(in: .whitespacesAndNewlines)
-        let add = try cli(["vault", "recipients", "add", pub, "--label", "  my\nphone ", "--vault", copy,
-                           "--identity", Self.fixtureKey])
-        XCTAssertEqual(add.status, 0, add.err)
-        XCTAssertTrue(add.out.contains("Rewrapped"), add.out)
-        // Labels are stored as the app stores them: one line, trimmed.
-        let labels = (try cli(["vault", "info", "--vault", copy, "--json"]).json as? [String: Any])?["recipients"]
-        XCTAssertEqual((labels as? [[String: Any]])?.last?["label"] as? String, "my phone")
-        let unnamed = path("unnamed.sempere")
-        XCTAssertEqual(try cli(["vault", "init", unnamed, "--recipient", pub]).status, 0)
-        let shown = try cli(["vault", "info", "--vault", unnamed])
-        XCTAssertTrue(shown.out.contains("  Device  "), "an empty label shows as the app shows it: \(shown.out)")
-        // The new identity alone can now export.
-        let out = path("export")
-        let ex = try cli(["export", "--all", "--format", "json", "--out", out, "--vault", copy, "--identity", newKey])
-        XCTAssertEqual(ex.status, 0, ex.err)
-        let files = try FileManager.default.contentsOfDirectory(atPath: out)
-        XCTAssertEqual(files.count, 1)
-        XCTAssertEqual(try cli(["vault", "verify", "--vault", copy, "--identity", newKey]).status, 0)
-        let info = try cli(["vault", "info", "--vault", copy, "--json"])
-        XCTAssertEqual((info.json as? [String: Any])?["recipients"].flatMap { ($0 as? [Any])?.count }, 2)
-        // Removing the original key locks it out.
-        let fixturePub = try fixtureIdentity().recipient.string
-        // Both keys unlock: either may go, since the other stays listed.
-        let held = try cli(["vault", "recipients", "remove", fixturePub, "--vault", copy, "--identity", Self.fixtureKey])
-        XCTAssertEqual(held.status, 2, held.err)
-        XCTAssertTrue(held.err.contains("the key this vault was unlocked with"), held.err)
-        let rm = try cli(["vault", "recipients", "remove", fixturePub, "--vault", copy, "--identity", newKey,
-                          "--identity", Self.fixtureKey])
-        XCTAssertEqual(rm.status, 0, rm.err)
-        XCTAssertEqual(try cli(["vault", "verify", "--vault", copy, "--identity", Self.fixtureKey]).status, 4)
-        XCTAssertEqual(try cli(["vault", "verify", "--vault", copy, "--identity", newKey]).status, 0)
-        XCTAssertEqual(try cli(["vault", "rewrap-resume", "--vault", copy, "--identity", newKey]).status, 0)
     }
 
     // MARK: notes and export
@@ -451,8 +406,9 @@ final class CLICommandTests: CLITestCase {
         let bad = try cli(["recover", firstRevision, "--identity", other])
         XCTAssertEqual(bad.status, 4)
         XCTAssertTrue(bad.out.isEmpty)
-        // Stored key plus passphrase works too, with no identity file.
-        let viaPass = try cli(["recover", firstRevision], env: ["SEMPERE_PASSPHRASE": Self.passphrase])
+        // The recovery passphrase copy works too, with no identity file.
+        let viaPass = try cli(["recover", firstRevision, "--recovery-key", try passphraseCopy()],
+                              env: ["SEMPERE_PASSPHRASE": Self.passphrase])
         XCTAssertEqual(viaPass.status, 0, viaPass.err)
         XCTAssertEqual(viaPass.out, r.out)
     }
@@ -460,7 +416,11 @@ final class CLICommandTests: CLITestCase {
     func testRecoverLoneFileIsUnverified() throws {
         let lone = path("rev.age")
         try FileManager.default.copyItem(atPath: firstRevision, toPath: lone)
-        let r = try cli(["recover", lone, "--identity", Self.fixtureKey])
+        // Away from its vault a file opens only with the vault keys (the kit script's vault-keys.txt,
+        // format.md §15.13): a device key opens just its wrap in vault.json.
+        XCTAssertEqual(try cli(["recover", lone, "--identity", Self.fixtureKey]).status, 4)
+        let vaultKeys = try vaultKeysFile(vault: Self.fixtureVault, keyFile: Self.fixtureKey)
+        let r = try cli(["recover", lone, "--identity", vaultKeys])
         XCTAssertEqual(r.status, 0, r.err)
         XCTAssertTrue(r.err.contains("UNVERIFIED"), r.err)
         XCTAssertNotNil(r.json)
@@ -483,15 +443,22 @@ final class CLICommandTests: CLITestCase {
 
     func testRecoverMatchesStockAgePipeline() throws {
         // The fixture key is post-quantum: stock recovery needs age 1.3 or later.
-        guard let age = CLIPostQuantumTests.agePQ() else {
+        guard let age = CLIDevicesTests.agePQ() else {
             if ProcessInfo.processInfo.environment["SEMPERE_REQUIRE_AGE_PQ"] != nil {
                 XCTFail("SEMPERE_REQUIRE_AGE_PQ set but no age >= 1.3 on PATH")
             }
             throw XCTSkip("no age >= 1.3 on PATH")
         }
+        // The device key opens its wrap in vault.json; the vault keys open the file (format.md §15.13).
+        let wrap = path("wrap.age")
+        let manifest = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: Self.fixtureVault)
+            .appendingPathComponent("vault.json"))) as? [String: Any]
+        let entry = (manifest?["keys"] as? [[String: Any]])?.first { $0["role"] as? String == "device" }
+        try XCTUnwrap(entry?["wrap"] as? String).write(toFile: wrap, atomically: true, encoding: .utf8)
         let sh = Process()
         sh.executableURL = URL(fileURLWithPath: "/bin/sh")
-        sh.arguments = ["-c", "\"$0\" -d -i \"$1\" \"$2\" | tail -c +38 | gunzip", age, Self.fixtureKey, firstRevision]
+        sh.arguments = ["-c", "\"$0\" -d -i \"$1\" \"$3\" > \"$4\" && \"$0\" -d -i \"$4\" \"$2\" | tail -c +38 | gunzip",
+                        age, Self.fixtureKey, firstRevision, wrap, path("vault-keys.txt")]
         let pipe = Pipe()
         sh.standardOutput = pipe
         try sh.run()

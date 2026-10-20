@@ -4,16 +4,18 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// Creates a vault: name, location, and where the key comes from: a new key
-/// (default), a key the user already has (pasted, or a key file, maybe
-/// passphrase-wrapped: `ExistingKeyInput`), or only someone's public key.
+/// Creates a vault: name, location, and where its recovery key comes from: a
+/// new key (default) or a key the user already has (pasted, or a key file,
+/// maybe passphrase-wrapped: `ExistingKeyInput`). This device is the vault's
+/// home, with a device key made here and remembered in its Keychain.
 struct NewVaultView: View {
     @AppModelEnvironment private var model
     @AppEnvironmentObject private var library: VaultLibrary
+    @AppEnvironmentObject private var keys: RememberedKeys
     @Environment(\.dismiss) private var dismiss
 
     private enum Location: Hashable { case onDevice, folder }
-    enum Source: Hashable { case generate, existing, recipient }
+    enum Source: Hashable { case generate, existing }
 
     @State private var name = ""
     @State private var location = Location.onDevice
@@ -23,7 +25,6 @@ struct NewVaultView: View {
     @State private var namingFolder = false
     @State private var newFolderName = ""
     @State private var source = Source.generate
-    @State private var recipient = ""
     @State private var existingText = ""
     @State private var existingFile: String?
     @State private var existing = ExistingKeyInput.Status.empty
@@ -98,9 +99,7 @@ struct NewVaultView: View {
             }
             whereSection
             keySection
-            if source != .recipient {
-                storeSection
-            }
+            storeSection
             if let failure {
                 Text(failure).foregroundStyle(.red)
                     .accessibilityIdentifier("newVault.failure")
@@ -161,26 +160,16 @@ struct NewVaultView: View {
 
     private var keySection: some View {
         Section {
-            Picker("Key", selection: $source) {
+            Picker("Recovery Key", selection: $source) {
                 Text("Generate a new key").tag(Source.generate)
                 Text("Use an existing key").tag(Source.existing)
-                Text("Public key only").tag(Source.recipient)
             }
             .accessibilityIdentifier("newVault.keySource")
-            switch source {
-            case .generate:
-                EmptyView()
-            case .existing:
+            if source == .existing {
                 existingKeyRows
-            case .recipient:
-                TextField("age1pq1…", text: $recipient, axis: .vertical)
-                    .font(.body.monospaced())
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                    .accessibilityIdentifier("newVault.recipient")
             }
         } header: {
-            Text("Key")
+            Text("Recovery Key")
         } footer: {
             Text(Self.keyFooter(source))
                 .accessibilityIdentifier("newVault.keyFooter")
@@ -194,14 +183,11 @@ struct NewVaultView: View {
     static func keyFooter(_ source: Source) -> String {
         switch source {
         case .generate:
-            return String(localized: "Sempere makes a new post-quantum key (AGE-SECRET-KEY-PQ-1…) on this device and shows it once, after the vault is created. Save it: without it, or a passphrase copy, the vault cannot be opened.",
-                          comment: "Footer of the key choice: generate a new key")
+            return String(localized: "This device gets its own key, kept in its Keychain, and becomes the vault's home. Sempere also makes the vault's recovery key (AGE-SECRET-KEY-PQ-1…) and shows it once, after the vault is created: save it or print its kit. No device keeps it, and without it nobody can open the vault if this device is lost.",
+                          comment: "Footer of the recovery key choice: generate a new key")
         case .existing:
-            return String(localized: "Paste a secret key that starts with AGE-SECRET-KEY-PQ-1 (the whole output of age-keygen -pq or sempere keys generate works too), or choose a key file: a saved key, or a passphrase-wrapped key file (keys/….key.age) from another vault. A public key (age1pq1…) cannot open a vault, and classic keys (AGE-SECRET-KEY-1…) are not accepted.",
-                          comment: "Footer of the key choice: use an existing key")
-        case .recipient:
-            return String(localized: "Encrypt to someone's public key (age1pq1…). This device gets no key: only the matching secret key opens the vault, and you will be asked for it.",
-                          comment: "Footer of the key choice: public key only")
+            return String(localized: "This device gets its own key, kept in its Keychain, and becomes the vault's home. Paste a secret key that starts with AGE-SECRET-KEY-PQ-1 to be the vault's recovery key (the whole output of age-keygen -pq works too), or choose a key file. A public key (age1pq1…) cannot open a vault, and classic keys (AGE-SECRET-KEY-1…) are not accepted.",
+                          comment: "Footer of the recovery key choice: use an existing key")
         }
     }
 
@@ -232,7 +218,7 @@ struct NewVaultView: View {
         case .empty:
             EmptyView()
         case .ready(let identity):
-            Label(String(localized: "Ready. The vault will be encrypted to \(ExistingKeyInput.shortRecipient(identity)).",
+            Label(String(localized: "Ready. The recovery key is \(ExistingKeyInput.shortRecipient(identity)).",
                          comment: "%@ is the abbreviated public key of the existing key"),
                   systemImage: "checkmark.circle.fill")
                 .foregroundStyle(.green)
@@ -295,7 +281,7 @@ struct NewVaultView: View {
 
     private var storeSection: some View {
         Section {
-            Toggle("Also store the key under a passphrase", isOn: $wrap)
+            Toggle("Also store the recovery key under a passphrase", isOn: $wrap)
                 .accessibilityIdentifier("newVault.storeKey")
             if wrap {
                 // One row: AutoFill's Strong Password fills both fields only when they sit together (iPad).
@@ -313,12 +299,25 @@ struct NewVaultView: View {
 
     // MARK: - Create
 
+    /// Keeps this device's key of the new vault in the Keychain: it is the
+    /// only copy, and without it this device could only read the vault with
+    /// the recovery key. A failure says so (the vault stays open until it closes).
+    private func rememberDeviceKey(_ created: CreatedVault) async {
+        do {
+            try await keys.rememberCreatedVaultKey(created.device, vaultID: created.vaultID,
+                                                   vaultName: VaultLibrary.displayName(of: created.url),
+                                                   folder: model.vault?.vaultId == created.vaultID ? model.vaultURL : nil)
+        } catch {
+            model.errorMessage = String(localized: "The vault was created, but this device's key could not be saved in the Keychain: \(String(describing: error)). Once the vault is closed, this device can only read it with the recovery key.",
+                                        comment: "The error text follows (English)")
+        }
+    }
+
     private var canCreate: Bool {
         guard !working, !name.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
         if location == .folder && folder == nil { return false }
         let passphraseOK = !wrap || (!passphrase.isEmpty && passphrase == confirmation && StoredKeyPassphrase.accepts(passphrase))
         switch source {
-        case .recipient: return !recipient.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .generate: return passphraseOK
         case .existing: return existing.identity != nil && passphraseOK
         }
@@ -329,7 +328,6 @@ struct NewVaultView: View {
         let keySource: NewVaultRequest.KeySource
         switch source {
         case .generate: keySource = .generate
-        case .recipient: keySource = .recipient(recipient)
         case .existing:
             guard let identity = existing.identity else { return }
             keySource = .identity(identity)
@@ -342,14 +340,17 @@ struct NewVaultView: View {
         let request = NewVaultRequest(
             name: name,
             keySource: keySource,
-            passphrase: source != .recipient && wrap ? passphrase : nil,
-            subfolder: location == .folder ? subfolder : nil)
+            passphrase: wrap ? passphrase : nil,
+            subfolder: location == .folder ? subfolder : nil,
+            deviceName: ThisDevice.name,
+            deviceKind: ThisDevice.kind)
         let parent = location == .folder ? folder : VaultLibrary.onDeviceFolder
         Task {
             defer { working = false }
             do {
                 guard let parent else { return }
                 let result = try await model.createVault(request, in: parent, library: library)
+                await rememberDeviceKey(result)
                 if result.secretKey == nil { dismiss() } else { created = result }
             } catch {
                 failure = "\(error)"
@@ -358,8 +359,8 @@ struct NewVaultView: View {
     }
 }
 
-/// Shows the freshly generated secret key once; there is no other copy
-/// unless a passphrase wrapped one into `keys/`.
+/// Shows the freshly generated recovery key once, with its kit; there is no
+/// other copy unless a passphrase wrapped one into `keys/`.
 private struct KeyReceipt: View {
     let created: CreatedVault
     let done: () -> Void
@@ -369,7 +370,7 @@ private struct KeyReceipt: View {
     var body: some View {
         Form {
             Section {
-                Text("“\(created.url.deletingPathExtension().lastPathComponent)” is ready. Save this secret key now: anyone with it can read the vault, and without it (or a passphrase-wrapped copy) the vault cannot be opened again.")
+                Text("“\(created.url.deletingPathExtension().lastPathComponent)” is ready. Save its recovery key now, or print its kit: anyone with it can read the vault, and without it the vault cannot be opened if this device is lost.")
                 // Not selectable, as in the key window: ⌘C would put the secret on the clipboard with no
                 // expiry and let Universal Clipboard sync it; Copy Key below does not.
                 Text(created.secretKey ?? "")
@@ -384,6 +385,9 @@ private struct KeyReceipt: View {
                     .help("Copy the secret key to the clipboard")
                 // The share sheet without its Copy (`SecretSharing`), never a ShareLink.
                 Button("Share…", systemImage: "square.and.arrow.up") { sharing = true }
+            }
+            if let key = created.recoveryKey {
+                KeyFileActions(key: key, vault: created.kitVault)
             }
             Section {
                 Button("I Saved the Key", action: done)

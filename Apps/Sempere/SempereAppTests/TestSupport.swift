@@ -1,3 +1,4 @@
+import Age
 import Foundation
 import Sempere
 import PencilKit
@@ -67,6 +68,23 @@ enum TS {
         let identity = try IdentityFile.parse(try String(contentsOf: key, encoding: .utf8))
         let vault = try Vault.open(at: url, identities: [identity])
         _ = try vault.apply(ops, to: id, deviceState: deviceStateURL(), app: "other-device/1")
+    }
+
+    /// A new vault at `url` (format.md §15): `device` (a fresh one when nil) is
+    /// its home, with a fresh recovery key, opened as that device. The app's
+    /// counterpart of the package's `TestVaults`, which app tests do not link.
+    @discardableResult
+    static func makeVault(at url: URL, device: DeviceKeys? = nil, name: String = "test device", label: String? = nil,
+                          trust: (any EpochTrustStore)? = nil) throws -> (vault: Vault, device: DeviceKeys) {
+        let device = try device ?? DeviceKeys.generate()
+        let vault = try Vault.create(at: url, device: device, deviceName: name, kind: "ipad",
+                                     recovery: try MLKEM768X25519Identity(), workFactor: 10, trust: trust, label: label)
+        return (vault, device)
+    }
+
+    /// The fixture's device keys (`Fixtures/sample.key`, a device key file).
+    static func fixtureDevice(_ key: URL) throws -> DeviceKeys {
+        try DeviceKeys.parse(try String(contentsOf: key, encoding: .utf8))
     }
 
     /// Polls `condition` every 10 ms until it holds or `timeout` passes.

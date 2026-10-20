@@ -39,7 +39,7 @@ struct SempereApp: App {
                              renderCacheRoot: AppModel.drawingCacheEnabled ? RenderCache.defaultRoot : nil,
                              attachmentIndexRoot: AppModel.defaultAttachmentIndexRoot,
                              automaticThinning: true,
-                             recipientsTrust: AppModel.defaultRecipientsTrust,
+                             trust: AppModel.defaultTrust,
                              backupNotifier: UserNotificationBackupNotifier())
         AppModel.current = model
         _model = State(initialValue: model)

@@ -88,24 +88,31 @@ let package = Package(
         .target(name: "FuzzSupport", path: "Tests/FuzzSupport"),
         // The base class of the tests that need a scratch directory (XCTest).
         .target(name: "TempDirSupport", path: "Tests/TempDirSupport"),
+        // Vaults for tests: devices from bare identities, approvals, a recovery key (key hierarchy, KH2).
+        .target(name: "VaultTestSupport", dependencies: ["Age", "Sempere"], path: "Tests/VaultTestSupport"),
         // The base class of the CLI tests (a subprocess driver, fixture vaults); shared with the importers' CLI tests.
-        .target(name: "CLITestSupport", dependencies: ["Age", "Sempere", "TempDirSupport"], path: "Tests/CLITestSupport"),
+        .target(name: "CLITestSupport", dependencies: ["Age", "Sempere", "TempDirSupport", "VaultTestSupport"],
+                path: "Tests/CLITestSupport"),
         // Plist, keyed-archive and zip writers for the importers' tests (Foundation and zlib only).
         .target(name: "ImportTestSupport", dependencies: ["CZlib"], path: "Tests/ImportTestSupport"),
         .testTarget(name: "AgeTests", dependencies: ["Age", "CZlib", "FuzzSupport", "TempDirSupport"],
                     resources: [.copy("Vectors")]),
         .testTarget(name: "SempereTests",
-                    dependencies: ["Sempere", "FuzzSupport", "TempDirSupport", .product(name: "Crypto", package: "swift-crypto")],
+                    dependencies: ["Sempere", "FuzzSupport", "TempDirSupport", "VaultTestSupport",
+                                   .product(name: "Crypto", package: "swift-crypto")],
                     resources: [.copy("Fixtures")]),
-        .testTarget(name: "SempereRenderTests", dependencies: ["SempereRender", "SempereFonts", "Age", "FuzzSupport", "TempDirSupport"],
+        .testTarget(name: "SempereRenderTests", dependencies: ["SempereRender", "SempereFonts", "Age", "FuzzSupport", "TempDirSupport",
+                                                       "VaultTestSupport"],
                     exclude: ["generate_sample_note.py", "generate_qr_vectors.py", "generate_image_fixtures.py", "generate_legacy_image_fixtures.py", "generate_shaping_fixtures.py"],
                     resources: [.copy("Fixtures")]),
         .testTarget(name: "SemperePDFTests", dependencies: ["SemperePDF", "FuzzSupport"],
                     exclude: ["generate_fixtures.py"], resources: [.copy("Fixtures")]),
         .testTarget(name: "SempereImportTests",
-                    dependencies: ["SempereImport", "Sempere", "SempereRender", "Age", "CZlib", "FuzzSupport", "TempDirSupport", "ImportTestSupport"]),
-        .testTarget(name: "SempereWebDAVTests", dependencies: ["SempereWebDAV", "SempereSync", "Sempere", "Age", "FuzzSupport", "TempDirSupport"]),
-        .testTarget(name: "CLITests", dependencies: ["Age", "Sempere", "CLITestSupport", "FuzzSupport"]),
+                    dependencies: ["SempereImport", "Sempere", "SempereRender", "Age", "CZlib", "FuzzSupport", "TempDirSupport",
+                                   "ImportTestSupport", "VaultTestSupport"]),
+        .testTarget(name: "SempereWebDAVTests", dependencies: ["SempereWebDAV", "SempereSync", "Sempere", "Age", "FuzzSupport",
+                                                       "TempDirSupport", "VaultTestSupport"]),
+        .testTarget(name: "CLITests", dependencies: ["Age", "Sempere", "CLITestSupport", "FuzzSupport", "VaultTestSupport"]),
     ] + (hasNotability ? [
         // The Notability importer (docs/import-notability.md "Structure"). Optional: delete this directory
         // (and Tests/SempereNotabilityTests) and everything else still builds.
@@ -115,7 +122,7 @@ let package = Package(
         ),
         .testTarget(name: "SempereNotabilityTests",
                     dependencies: ["SempereNotability", "SempereImport", "Sempere", "SempereRender", "Age", "CZlib", "FuzzSupport",
-                                   "TempDirSupport", "ImportTestSupport", "CLITestSupport"],
+                                   "TempDirSupport", "ImportTestSupport", "CLITestSupport", "VaultTestSupport"],
                     exclude: ["Fixtures"]),
     ] : []),
     swiftLanguageModes: [.v6]

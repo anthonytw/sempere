@@ -95,13 +95,7 @@ final class LaunchSmokeUITests: XCTestCase {
         requireSheet("restoreBackupSheet", titled: "Restore from Backup", "Restore from Backup sheet", in: app)
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
         requireRunning(app, "restore sheet")
-        // Save Key… (Sync & Devices ▸ Device Keys), a sheet of a section's row (on the section, it
-        // came and went at once on Catalyst 27, as Restore from Backup… did).
-        openSettingsGroup("sync", in: app)
-        clickInSettings("Save Key…", settings, in: app)
-        requireSheet("saveKeySheet", titled: "Save Key", "Save Key sheet", in: app)
-        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
-        requireRunning(app, "save key sheet")
+        // TODO(KH5): Save Key… (Sync & Devices ▸ Device Keys) comes back with device management.
         app.typeKey("w", modifierFlags: .command)   // closes the Settings window
         // The close is asynchronous: a shortcut typed while the window is still going is lost.
         XCTAssertTrue(settings.waitForNonExistence(timeout: 10), "the Settings window closed")

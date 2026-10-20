@@ -5,27 +5,10 @@ import Testing
 import UIKit
 @testable import SempereApp
 
-/// Settings → Device Keys: Save Key… (this device's key after Face ID) and
-/// New Key… (a key for another device), and the share sheet's staged file.
+/// A new vault's recovery key on its way out (the receipt's Save to Files,
+/// Share and kit), and the share sheet's staged file.
 @MainActor
 struct KeyExportTests {
-    /// Grants or refuses, and can run something while the "prompt" is up.
-    final class FakeAuthenticator: OwnerAuthenticator, @unchecked Sendable {
-        var outcome: (any Error)?
-        var reasons: [String] = []
-        var during: (@MainActor () -> Void)?
-
-        init(outcome: (any Error)? = nil) { self.outcome = outcome }
-
-        func authenticate(reason: String) async throws {
-            await MainActor.run {
-                reasons.append(reason)
-                during?()
-            }
-            if let outcome { throw outcome }
-        }
-    }
-
     /// Security review 2026-10 stage 4, S14 and P2: the share sheet of a secret key (its text on the new-vault
     /// screen, its key file in Save Key… and New Key…) has no Copy, which would put the key on
     /// the general pasteboard with no expiry and hand it to Universal Clipboard.
@@ -53,33 +36,6 @@ struct KeyExportTests {
         }
     }
 
-    @Test func saveKeyGivesThisDevicesKeyAfterAuthentication() async throws {
-        let (model, url) = try await KeyManagementTests.unlockedModel()
-        let auth = FakeAuthenticator()
-        let key = try await model.exportThisDeviceKey(authenticator: auth)
-        #expect(auth.reasons.count == 1)
-        let held = try #require(model.heldIdentity)
-        #expect(key.secret == held.string)
-        #expect(key.recipient == held.recipient.string)
-        #expect(key.label == model.deviceKeys.first { $0.isInUse }?.label)
-        #expect(key.fileName == IdentityFile.exportFileName(label: key.label))
-        // The CLI's identity file format, which opens the vault.
-        let parsed = try IdentityFile.parse(key.text)
-        #expect(parsed.string == held.string)
-        #expect(key.text.hasPrefix("# created: "))
-        #expect(try Vault.open(at: url, identities: [parsed]).summaries().count == 2)
-    }
-
-    @Test func saveKeyShowsNothingWithoutAuthentication() async throws {
-        let (model, _) = try await KeyManagementTests.unlockedModel()
-        await #expect(throws: AppModel.KeyExportError.notAuthenticated) {
-            _ = try await model.exportThisDeviceKey(authenticator: FakeAuthenticator(outcome: AppModel.KeyExportError.notAuthenticated))
-        }
-        await #expect(throws: CancellationError.self) {
-            _ = try await model.exportThisDeviceKey(authenticator: FakeAuthenticator(outcome: CancellationError()))
-        }
-    }
-
     /// Biometrics when enrolled, never the passcode after a lockout (anyone who
     /// knows it could fail Face ID on purpose); the passcode only without biometrics.
     @Test func ownerCheckNeverFallsBackToThePasscodeAfterALockout() {
@@ -88,36 +44,27 @@ struct KeyExportTests {
         #expect(OwnerCheck.choose(biometricsUsable: false, biometricsLockedOut: false) == .passcode)
     }
 
-    @Test func saveKeyNeedsAnUnlockedVaultThatStaysOpen() async throws {
-        let locked = AppModel()
-        let auth = FakeAuthenticator()
-        await #expect(throws: AppModel.KeyError.notUnlocked) { _ = try await locked.exportThisDeviceKey(authenticator: auth) }
-        #expect(auth.reasons.isEmpty, "no prompt without a vault")
-
-        let (model, _) = try await KeyManagementTests.unlockedModel()
-        auth.during = { model.close() }
-        await #expect(throws: AppModel.KeyError.vaultChanged) { _ = try await model.exportThisDeviceKey(authenticator: auth) }
-    }
-
-    @Test func aNewKeyIsAFileTheVaultIsEncryptedTo() async throws {
-        let (model, url) = try await KeyManagementTests.unlockedModel()
-        let generated = try await model.generateDeviceKey(label: " Anna's\niPad ", authenticator: PassingOwnerAuthenticator())
-        let file = generated.file
-        #expect(file.secret == generated.secret)
-        #expect(file.label == "Anna's iPad")
-        #expect(file.fileName == "Sempere key - Anna's iPad.txt")
+    /// The receipt of a new vault: its generated recovery key as a key file
+    /// (the CLI's identity file format), which opens the vault read-only, and
+    /// its kit, printed for that vault.
+    @Test func aNewVaultsRecoveryKeyIsAFileAndAKit() async throws {
+        let parent = TestTemp.root.appendingPathComponent("Kit-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: parent) }
+        let created = try VaultLibrary.createVault(NewVaultRequest(name: "Kit", keySource: .generate, passphrase: nil),
+                                                   folder: "Kit.sempere", in: parent)
+        let file = try #require(created.recoveryKey)
+        #expect(file.secret == created.secretKey)
+        #expect(file.fileName.hasPrefix("Sempere key - "))
         let identity = try IdentityFile.parse(file.text)
         #expect(identity.recipient.string == file.recipient)
-        #expect(model.deviceKeys.contains { $0.recipient == file.recipient && $0.label == "Anna's iPad" })
-        #expect(try Vault.open(at: url, identities: [identity]).summaries().count == 2)
-        let kit = try model.recoveryKitPDF(for: file)
+        let vault = try Vault.open(at: created.url, identities: [identity])
+        #expect(vault.isRecoveryOpen)
+        #expect(created.kitVault.root == vault.root)
+        let kit = try AppModel.recoveryKitPDF(for: file, vault: created.kitVault)
         #expect(kit.starts(with: Data("%PDF-".utf8)))
-    }
-
-    @Test func theRecoveryKitIsOnlyForTheVaultsKeys() async throws {
-        let (model, _) = try await KeyManagementTests.unlockedModel()
-        let stranger = KeyFile(identity: try NativeIdentity.generate(.postQuantum), label: "x")
-        #expect(throws: AppModel.KeyError.notListed) { _ = try model.recoveryKitPDF(for: stranger) }
+        let a4 = try AppModel.recoveryKitPDF(for: file, vault: created.kitVault, a4: true)
+        #expect(a4.starts(with: Data("%PDF-".utf8)))
     }
 
     @Test func theSharedFileIsPrivateAndPurged() throws {

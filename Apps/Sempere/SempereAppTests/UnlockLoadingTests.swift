@@ -18,7 +18,7 @@ struct UnlockLoadingTests {
     @Test func faceIDUnlockReleasesTheSheetBeforeTheNotesAreRead() async throws {
         let (model, gate, key) = try await Self.gatedModel()
         let store = FakeKeyStore()
-        await store.put((try IdentityFile.parse(key)).string, for: try #require(model.vault?.vaultId))
+        await store.put(key, for: try #require(model.vault?.vaultId))
         let keys = RememberedKeys(store: store)
         await gate.close()
         let start = await gate.arrivals

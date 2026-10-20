@@ -2,6 +2,7 @@ import Age
 import Foundation
 import TempDirSupport
 import XCTest
+import VaultTestSupport
 @testable import Sempere
 
 /// A fresh post-quantum identity (vaults take no other kind).
@@ -12,8 +13,7 @@ class VaultTestCase: TempDirTestCase {
     func vaultURL(_ name: String = "Test") -> URL { tmp.appendingPathComponent("\(name).sempere") }
 
     func makeVault(_ identity: NativeIdentity, name: String = "Test") throws -> Vault {
-        try Vault.create(at: vaultURL(name), recipients: [identity.recipient], labels: ["test"],
-                         identities: [identity])
+        try TestVaults.create(at: vaultURL(name), identities: [identity], names: ["test"])
     }
 
     func fileURL(_ vault: Vault, _ note: UUID, _ name: RevisionName) -> URL {
@@ -61,7 +61,6 @@ class VaultTestCase: TempDirTestCase {
         }
         let report = v.verify()
         XCTAssertTrue(report.isHealthy, "\(report)", file: file, line: line)
-        XCTAssertFalse(report.rewrapPending, file: file, line: line)
     }
 
     func stanzaCounts(_ vault: Vault, _ revs: [Revision]) throws -> [Int] {
@@ -73,5 +72,15 @@ class VaultTestCase: TempDirTestCase {
         var d = try Data(contentsOf: url)
         d[d.count - offsetFromEnd] ^= 0x01
         try d.write(to: url)
+    }
+}
+
+extension Vault {
+    /// `m` re-tagged and re-signed as this vault's home writes `vault.json` (format.md §15.3), for tests
+    /// that change a field the way a (newer) writer would. `home` is the home device's identity.
+    func resealed(_ m: EpochManifest, home: NativeIdentity) throws -> EpochManifest {
+        var out = m
+        try Vault.seal(&out, key: try requireSecret(), signing: TestVaults.signing(home), author: m.author)
+        return out
     }
 }

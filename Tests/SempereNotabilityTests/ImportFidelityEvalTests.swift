@@ -2,6 +2,7 @@ import Age
 import Foundation
 import ImportTestSupport
 import SempereRender
+import VaultTestSupport
 import Sempere
 import XCTest
 @testable import SempereImport
@@ -47,8 +48,7 @@ final class ImportFidelityEvalTests: XCTestCase {
         let identity = try NativeIdentity.generate(.postQuantum)
         try (identity.string + "\n").write(to: dir.appendingPathComponent("identity.key"), atomically: true,
                                            encoding: .utf8)
-        let vault = try Vault.create(at: dir.appendingPathComponent("vault.sempere"),
-                                     recipients: [identity.recipient], identities: [identity])
+        let vault = try TestVaults.create(at: dir.appendingPathComponent("vault.sempere"), identities: [identity])
         var clock = HybridClock()
         let report = try NotabilityImporter.import(paths: samples, into: vault, device: DeviceID("e0a1e0a1")!,
                                                    clock: &clock)

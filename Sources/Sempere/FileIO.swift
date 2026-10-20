@@ -292,7 +292,7 @@ package func autoreleasing<T>(_ body: () throws -> T) rethrows -> T {
 public enum BoundedRead {
     /// The largest revision file a reader opens (the WebDAV client's download limit too).
     public static let maxRevisionBytes = 256 << 20
-    /// The largest `vault.json` or `rewrap-journal.json` a reader opens.
+    /// The largest `vault.json` a reader opens.
     public static let maxManifestBytes = 16 << 20
     /// The largest identity file (`keys/*.key.age`) or device-state file a reader opens.
     public static let maxSmallFileBytes = 1 << 20

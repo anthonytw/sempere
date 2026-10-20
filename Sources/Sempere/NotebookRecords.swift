@@ -246,13 +246,8 @@ extension Vault {
         return try NotebookRecords.decode(json, id: id)
     }
 
-    private func unframeNotebookRecord(_ plain: Data, fileName: String, secret: VaultSecret) throws -> BodyFraming.Unframed {
-        do {
-            return try BodyFraming.unframe(plain, noteId: NotebookRecords.tagScope, filename: fileName, secret: secret)
-        } catch BodyFramingError.tagMismatch {
-            guard let previousSecret else { throw BodyFramingError.tagMismatch }
-            return try BodyFraming.unframe(plain, noteId: NotebookRecords.tagScope, filename: fileName, secret: previousSecret)
-        }
+    private func unframeNotebookRecord(_ plain: Data, fileName: String, secret: VaultEpochKey) throws -> BodyFraming.Unframed {
+        try BodyFraming.unframe(plain, noteId: NotebookRecords.tagScope, filename: fileName, secret: secret)
     }
 
     /// The bytes of `record`'s file (tagged under the vault secret, encrypted
@@ -261,7 +256,7 @@ extension Vault {
         let secret = try requireSecret()
         let body = try BodyFraming.frame(json: try NotebookRecords.encode(record), noteId: NotebookRecords.tagScope,
                                          filename: record.fileName, secret: secret)
-        return try Self.encrypt(body, to: try ageRecipients())
+        return try encrypt(body)
     }
 
     /// Writes `record` under its own name (write-once: an existing file is
@@ -307,34 +302,5 @@ extension Vault {
         guard let record = NotebookRecords.delete(path, records: try readNotebookRecords().records, now: now) else { return nil }
         try writeNotebookRecord(record)
         return record
-    }
-
-    /// Rewrites the notebook records for the current recipients during a
-    /// recipient change (format.md §3.3.1 step 3), like revisions: a record
-    /// that cannot be decrypted or verified is left as it is and listed in
-    /// `notebooksSkipped` (it does not keep the journal).
-    func rewrapNotebookRecords(recipients: [NativeRecipient], report: inout RewrapReport, stopAfter: Int?) throws {
-        let current = try requireSecret()
-        let expected = Self.expectedStanzas(recipients)
-        for name in try notebookRecordNames() {
-            let path = "\(NotebookRecords.folderName)/\(name)"
-            let file = notebooksURL.appendingPathComponent(name)
-            let data: Data
-            do { data = try FileIO.read(file, maxBytes: NotebookRecords.maxFileBytes) } catch VaultError.fileTooLarge {
-                report.notebooksSkipped.append(path); continue
-            } catch {
-                report.failures[path] = .unreadable("\(error)"); continue
-            }
-            guard let stanzas = try? Self.stanzaCounts(data), let plain = try? AgeFile.decrypt(data, with: identities),
-                  let unframed = try? unframeNotebookRecord(plain, fileName: name, secret: current) else {
-                report.notebooksSkipped.append(path); continue
-            }
-            let tagged = (try? BodyFraming.unframe(plain, noteId: NotebookRecords.tagScope, filename: name, secret: current)) != nil
-            if tagged, stanzas == expected { report.alreadyCurrent.append(path); continue }
-            if let stopAfter, report.rewrapped.count >= stopAfter { throw VaultError.interrupted }
-            let body = BodyFraming.retag(unframed, noteId: NotebookRecords.tagScope, filename: name, secret: current)
-            try FileIO.writeAtomically(try Self.encrypt(body, to: recipients), to: file, replacing: true)
-            report.rewrapped.append(path)
-        }
     }
 }

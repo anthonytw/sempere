@@ -47,10 +47,10 @@ struct InboxEnable: ParsableCommand {
         commandName: "enable",
         abstract: "Store this machine's capture profile for the vault (needs the key once).",
         discussion: """
-            The profile holds the vault's public recipients and the device capture key of the key you unlock \
-            with (derived from the vault secret; it can only put captures in the inbox, never read or change \
-            notes), so captures are attributed to that key's device. It is written with mode 0600. Run it again \
-            after the vault's keys change (a removed key rotates the capture key).
+            The profile holds the vault identity's public key and this device's capture key (derived from the \
+            vault's key; it can only put captures in the inbox, never read or change notes), so captures are \
+            attributed to this device. It is written with mode 0600. Run it again after the vault's key \
+            changes (a removal starts a new epoch and a new capture key).
             """
     )
 
@@ -76,7 +76,7 @@ struct InboxEnable: ParsableCommand {
             struct Out: Encodable { var profile: String; var device: String; var notebook: String; var recipient: String }
             try output.emitJSON(Out(profile: url.path, device: p.device, notebook: p.notebook, recipient: p.recipient))
         } else {
-            let label = vault.recipients.first { CaptureKey.fingerprint(of: $0.key) == p.recipient }?.displayLabel
+            let label = vault.devices.first { CaptureKey.fingerprint(of: $0.key) == p.recipient }.map { DeviceName.display($0.name) }
             output.info("Capture profile written to \(url.path) (notebook \(p.notebook); captures attributed to "
                 + "\(label ?? "this key"))")
         }
@@ -89,7 +89,7 @@ struct InboxCapture: ParsableCommand {
         abstract: "Put an audio file in the vault's inbox, encrypted, without the key.",
         discussion: """
             Seals the file with the capture profile (no key, no passphrase) as inbox/<id>.capture.age: encrypted \
-            to the vault's recipients and tagged with the capture key. The next `sempere inbox import`, or the \
+            to the vault identity and tagged with the capture key. The next `sempere inbox import`, or the \
             app once the vault is unlocked, makes it a note in the inbox notebook titled from the date. Prints \
             the capture id. --transcript seals a transcript (sempere-transcript/1 JSON; its recording id is \
             replaced by the capture's) next to it.
@@ -256,7 +256,7 @@ struct InboxList: ParsableCommand {
                     out.device = p.manifest?.device
                     out.recipient = p.manifest?.recipient
                     if let m = p.manifest {
-                        out.capturedBy = CaptureAttribution(device: m.device, recipient: m.recipient).label(in: vault.recipients)
+                        out.capturedBy = CaptureAttribution(device: m.device, recipient: m.recipient).label(in: vault.manifest)
                     }
                 } catch {
                     out.error = (error as? CaptureError)?.description ?? CLIError.from(error).message
@@ -281,7 +281,7 @@ struct InboxList: ParsableCommand {
     /// recipient is not listed.
     static func attribution(device: String, label: String?) -> String {
         guard let label else { return "from a device no longer in this vault (device \(device))" }
-        return "from \(VaultManifest.Recipient.displayLabel(label)) (device \(device))"
+        return "from \(DeviceName.display(label)) (device \(device))"
     }
 }
 

@@ -88,47 +88,6 @@ struct ReadOnlyVaultTests {
         #expect(try TS.fileSnapshot(of: url) == before, "nothing in the vault changed")
     }
 
-    /// A newer revision that arrives while its note is open (another device,
-    /// format.md §7.3): the merge shows what it understands and the editor
-    /// becomes read-only instead of failing its next autosave.
-    @Test func aNewerRevisionArrivingInAnOpenNoteMakesItReadOnly() async throws {
-        let (url, keyText) = try Self.newerVault()
-        // A version-1 manifest and only the mixed note: its newer delta is the only newer content.
-        let manifestURL = url.appendingPathComponent("vault.json")
-        var manifest = try VaultManifest.decode(Data(contentsOf: manifestURL))
-        manifest.format = "sempere/1"
-        manifest.features = []
-        manifest.markersTag = nil
-        try manifest.encoded().write(to: manifestURL)
-        for other in ["44444444-4444-4444-8444-444444444444", "55555555-5555-4555-8555-555555555555"] {
-            try FileManager.default.removeItem(at: url.appendingPathComponent("notes/\(other)"))
-        }
-        let noteDir = url.appendingPathComponent("notes/\(Self.mixed.uuidString.lowercased())")
-        let newerFile = try #require(try FileManager.default.contentsOfDirectory(atPath: noteDir.path)
-            .first { $0.contains("-0e0e0e0e-") })
-        let aside = url.deletingLastPathComponent().appendingPathComponent(newerFile)
-        try FileManager.default.moveItem(at: noteDir.appendingPathComponent(newerFile), to: aside)
-
-        let model = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .seconds(60))
-        try await model.openVault(at: url)
-        try await model.unlock(identityText: keyText)
-        #expect(!model.isVaultReadOnly)
-        model.selectedNoteID = Self.mixed
-        try await model.openEditor(for: Self.mixed)
-        let editor = try #require(model.editor)
-        #expect(!editor.isReadOnly)
-
-        try FileManager.default.moveItem(at: aside, to: noteDir.appendingPathComponent(newerFile))
-        _ = try await model.mergeRemoteRevisions(into: editor)
-        #expect(editor.isReadOnly)
-        #expect(editor.readOnlyReason?.contains("newer version") == true)
-        #expect(editor.pages.first?.strokes.count == 2)
-        let before = try TS.fileSnapshot(of: url)
-        await editor.flush()
-        #expect(editor.deltasWritten == 0)
-        #expect(try TS.fileSnapshot(of: url) == before)
-    }
-
     /// The banner's reasons are the app's own localized strings, not the CLI's English
     /// (`ReadOnlyReasons.descriptions`), which left an English clause inside the Spanish banner.
     @Test func bannerReasonsAreTheAppsLocalizedStrings() {

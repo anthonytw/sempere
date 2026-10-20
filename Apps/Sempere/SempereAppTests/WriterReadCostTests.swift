@@ -4,17 +4,13 @@ import Sempere
 import Testing
 @testable import SempereApp
 
-/// Counts the files decrypted through it (one `unwrap` per file).
-final class CountingIdentity: AgeIdentity, @unchecked Sendable {
-    let inner: any AgeIdentity
-    private let lock = NSLock()
-    private var n = 0
-    init(_ inner: any AgeIdentity) { self.inner = inner }
-    func unwrap(stanzas: [Stanza]) throws -> FileKey? {
-        lock.withLock { n += 1 }
-        return try inner.unwrap(stanzas: stanzas)
-    }
-    var count: Int { lock.withLock { n } }
+/// Counts the revision files a vault (and every copy of it) decrypted
+/// (`Vault.revisionDecryptCount`). Files are decrypted by the vault identity
+/// derived from the epoch key (format.md §15.2), not by the key the vault was
+/// opened with, so wrapping that key no longer sees them.
+struct DecryptCounter: Sendable {
+    let vault: Vault
+    var count: Int { vault.revisionDecryptCount }
 }
 
 /// What `NoteWriter` and Version History decrypt (perf audit P50, P53),
@@ -23,10 +19,10 @@ final class CountingIdentity: AgeIdentity, @unchecked Sendable {
 struct WriterReadCostTests {
     static let lecture = AppModelTests.lecture
 
-    static func vault() throws -> (Vault, CountingIdentity) {
+    static func vault() throws -> (Vault, DecryptCounter) {
         let (url, key) = try AppModelTests.fixtureVault()
-        let counter = CountingIdentity(try IdentityFile.parse(try String(contentsOf: key, encoding: .utf8)))
-        return (try Vault.open(at: url, identities: [counter]), counter)
+        let vault = try Vault.open(at: url, identities: [try IdentityFile.parse(try String(contentsOf: key, encoding: .utf8))])
+        return (vault, DecryptCounter(vault: vault))
     }
 
     static func clock() throws -> DeviceClock { try DeviceClock(url: TS.deviceStateURL()) }

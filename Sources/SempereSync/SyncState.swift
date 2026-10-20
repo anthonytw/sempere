@@ -25,16 +25,6 @@ struct SyncState: Codable, Equatable {
         var unreferencedSince: Date?
     }
 
-    /// A rewrap journal on the server that this device refuses but that may
-    /// be step 1 of a recipient change whose `vault.json` has not reached
-    /// the server yet (`SyncEngine.holdInFlightJournal`).
-    struct InFlightJournal: Codable, Equatable {
-        /// SHA-256 (hex) of its bytes.
-        var hash: String
-        /// When this device first found it so.
-        var firstSeen: Date
-    }
-
     /// A blob download that was interrupted: its partial file
     /// (`att/.sempere-tmp-part-<name>`) continues only from the same remote
     /// version.
@@ -86,8 +76,6 @@ struct SyncState: Codable, Equatable {
     var folderETagsChange: Bool?
     /// When a run last listed every note folder.
     var lastFullListing: Date?
-    /// The server's journal while it may be in flight; nil otherwise.
-    var inFlightJournal: InFlightJournal?
     /// Whether the server answers `PROPFIND` `Depth: infinity` on `notes/`
     /// in full (`TreeListing.swift`); nil until a run checked.
     var treeListing: TreeListingRecord?

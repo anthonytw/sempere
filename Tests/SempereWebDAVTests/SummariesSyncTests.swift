@@ -84,24 +84,6 @@ final class SummariesSyncTests: SyncTestCase {
         XCTAssertEqual(try remote(server, a)?.count, 2)
     }
 
-    func testARotatedSecretResealsTheServerFile() throws {
-        // A recipient removal rotates the vault secret but renames no revision: the
-        // server's file, sealed under the old secret, must still be rewritten.
-        let server = MockDAV()
-        var a = try makeVault()
-        let other = pqIdentity()
-        try a.addRecipient(other.recipient, label: "other")
-        let n1 = UUID()
-        _ = try newNote(a, n1, title: "Synthetic", t: 0)
-        try syncSummaries("A", server, publish: true)
-        XCTAssertEqual(try remote(server, a)?[n1]?.title, "Synthetic")
-
-        try a.removeRecipient(other.recipient)
-        let rotated = try openVault("A")
-        XCTAssertTrue(try syncSummaries("A", server).uploaded.contains(PublishedSummaries.fileName))
-        XCTAssertEqual(try remote(server, rotated)?[n1]?.title, "Synthetic", "sealed under the new secret")
-    }
-
     func testPushOnlyPublishesTheServerFilesAndWritesNothingLocally() throws {
         let server = MockDAV()
         let a = try makeVault()
