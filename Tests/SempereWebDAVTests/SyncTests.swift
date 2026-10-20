@@ -294,6 +294,8 @@ final class SyncTests: SyncTestCase {
         _ = try makeVault("A")
         let journal = dir("A").appendingPathComponent("rewrap-journal.json")
         try Data("{\"format\":\"sempere/1\"}".utf8).write(to: journal)
+        // A journal this device refuses is never uploaded (design §6.2 F2): both sides hold it, as synced.
+        server.putDirect("rewrap-journal.json", Data("{\"format\":\"sempere/1\"}".utf8))
         try sync("A", server, vault: .some(try Vault.open(at: dir("A"))))
         XCTAssertNotNil(server.file("rewrap-journal.json"))
         try FileManager.default.removeItem(at: journal)
@@ -312,6 +314,7 @@ final class SyncTests: SyncTestCase {
         _ = try makeVault("A")
         let journal = dir("A").appendingPathComponent("rewrap-journal.json")
         try Data("{\"format\":\"sempere/1\"}".utf8).write(to: journal)
+        server.putDirect("rewrap-journal.json", Data("{\"format\":\"sempere/1\"}".utf8))   // never uploaded (F2): synced as in step
         try sync("A", server, vault: .some(try Vault.open(at: dir("A"))))
         try FileManager.default.removeItem(at: journal)
         // The server's copy changing under its listing ETag (If-Match) is left alone.
@@ -334,6 +337,7 @@ final class SyncTests: SyncTestCase {
         // The copy this device synced, unchanged: deleted there.
         let again = try SyncTests.fresh(self, "C")
         try Data("{\"format\":\"sempere/1\"}".utf8).write(to: again.journal)
+        again.server.putDirect("rewrap-journal.json", Data("{\"format\":\"sempere/1\"}".utf8))
         try sync("C", again.server, vault: .some(try Vault.open(at: dir("C"))))
         try FileManager.default.removeItem(at: again.journal)
         let report = try sync("C", again.server)

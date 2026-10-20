@@ -100,6 +100,29 @@ public struct SyncOptions: Sendable {
     /// done is kept, a blob cut short continues on the next run.
     public var isCancelled: (@Sendable () -> Bool)?
 
+    /// This device's secret keyring for the vault (design §6.3). With it, a
+    /// run stores the local secret before taking a `vault.json` with another
+    /// one (R1), copies an accepted journal's policy into it, and treats a
+    /// received file tagged under an older secret as a late file: taken in
+    /// (rewrapped) within the change's window, quarantined as a late file
+    /// after it (F9, F17 to F19). Nil: no keyring, as before.
+    public var keyring: (any SecretKeyringStore)?
+    /// Key-change propagation (design §5.2 rewrap-replace, §6.1 R3), off by
+    /// default until P4 turns it on: with `keyring` and the vault unlocked,
+    /// a run rewraps this device's late local files from the keyring, and
+    /// replaces a copy of a write-once file on one side by the other side's
+    /// only while both sides hold the same list, both copies verify, their
+    /// bodies are equal, and exactly one is current (both current: the
+    /// smaller SHA-256 wins).
+    public var rewrapReplace = false
+    /// Leave `vault.json` and `rewrap-journal.json` alone this run (a key
+    /// change's own propagation writes them, design §6.1 C5).
+    public var holdMutableFiles = false
+    /// Test hook (design §6.4): called before each local file a rewrap-replace
+    /// or a late file would replace or place; what it throws stops there, as
+    /// a crash would.
+    public var beforeLocalReplace: (@Sendable (String) throws -> Void)?
+
     /// A partial pull instead of a sync (format.md §1.2, docs/io.md "Partial
     /// copies"): `.metadata` makes or continues a partial copy, `.fetch`
     /// fetches what one lacks. Nil: an ordinary run.
@@ -233,6 +256,8 @@ public final class SyncEngine {
     var prefetched = Set<String>()
     /// Notes whose prefetched downloads or pre-uploads reported anything: their folder ETag is not recorded this run.
     var prefetchTroubled = Set<String>()
+    /// Key-change work of this run (`KeyChangeSync.swift`).
+    var kc = KeyChangeRunState()
     /// Keys of the uploads the pre-upload pass tried (`preuploadNewFiles`), whatever the outcome.
     var preuploadTried = Set<String>()
     /// The keys it uploaded, per note: the note loop counts them as its own uploads.
@@ -315,12 +340,14 @@ public final class SyncEngine {
         if !remoteJournal { state.inFlightJournal = nil }
         removeLeftoverRemoteTemps()
 
-        for name in [Vault.manifestName, Vault.journalName] {
+        beginKeyChangeRun()
+        for name in [Vault.manifestName, Vault.journalName] where !options.holdMutableFiles {
             let remote = remoteRoot[name].flatMap { $0.isCollection ? nil : $0 }
             do { options.pushOnly ? try pushMutable(name, remote: remote) : try syncMutable(name, remote: remote) } catch {
                 report.errors.append(.init(path: name, message: Self.describe(error)))
             }
         }
+        afterMutableFiles()
 
         // Shared settings (format.md §13): merged per key when both sides changed.
         let remoteSettings = remoteRoot[SharedSettings.fileName].flatMap { $0.isCollection ? nil : $0 }
@@ -373,6 +400,7 @@ public final class SyncEngine {
             report.errors.append(.init(path: Vault.notesName, message: Self.describe(e)))
         }
         if options.pushOnly { deleteRemoteJunk() }
+        finishKeyChangeRun()
         let hasIndex = remoteRoot[WebIndex.fileName].map { !$0.isCollection } ?? false
         let hasSummaries = remoteRoot[PublishedSummaries.fileName].map { !$0.isCollection } ?? false
         if !options.dryRun, !notesListed {
@@ -493,6 +521,10 @@ public final class SyncEngine {
                 report.deleted.append(.init(side: "local", path: name))
                 return
             }
+            if name == Vault.journalName, let why = journalNotUploadable(local) {
+                report.skipped.append(.init(path: name, message: why))
+                return
+            }
             // Never on the server, or wiped there: (re)create it, never overwriting.
             if try push(name, local, condition: .create) { try recordMutable(name, hash: localHash) }
             return
@@ -513,6 +545,10 @@ public final class SyncEngine {
             // Only the server moved on: take it (an atomic replace, the one in-place write sync makes).
             try accept(name, remoteData, stamp: stamp)
         case (true, false):
+            if name == Vault.journalName, let why = journalNotUploadable(local) {
+                report.skipped.append(.init(path: name, message: why))
+                return
+            }
             try replaceUnchanged(name, local: local, localHash: localHash, remoteData: remoteData,
                                  etag: remote.etag ?? getETag, record: record)
         case (true, true):
@@ -523,6 +559,15 @@ public final class SyncEngine {
     /// Both sides changed a mutable file since the last sync (or there is no record).
     private func bothChanged(_ name: String, local: Data, remoteData: Data, stamp: String?,
                              record: SyncState.MutableRecord?) throws {
+        if name == Vault.manifestName, let finished = Vault.finishedOfSameChange(local, remoteData) {
+            // One side holds a change's step-2 copy, the other its step-4 copy (the same list, without
+            // `rewrapPending`): the finished one wins on both sides (format.md §3.3.1 step 4). Never the
+            // other way, which would bring back a finished change's binding (S4).
+            if finished == remoteData { return try accept(name, remoteData, stamp: stamp) }
+            if try push(name, local, condition: Self.replaceCondition(etag: stamp.flatMap { Self.isStrong($0) ? $0 : nil })) {
+                return try recordMutable(name, hash: FileDigest.sha256(local))
+            }
+        }
         if name == Vault.manifestName && VaultManifest.sameExceptLabel(local, remoteData) {
             // Only the display label differs: the same vault (format.md §1.3). The server's copy is
             // the one every device shares, so it stays, as iCloud Drive's current version does.
@@ -619,11 +664,13 @@ public final class SyncEngine {
             let local = try localMutable(name)
             if let why = Vault.incomingManifestProblem(data, local: local, vault: vault) {
                 report.rejected.append(.init(path: name, message: SyncReport.printable(why)))
+                if let vault, vault.isRemoved(by: data) { keyChangeActivity { $0.removedFromVault = true } }
                 return
             }
         }
         report.downloaded.append(name)
         guard !options.dryRun else { return }
+        try willTakeMutable(name, data)
         try LocalFS.write(data, to: root.appendingPathComponent(name), replacing: true)
         state.mutable[name] = .init(hash: FileDigest.sha256(data), stamp: stamp)
     }
@@ -1021,6 +1068,8 @@ public final class SyncEngine {
 
         // Blob deletions are judged against the revisions both sides hold now.
         try syncBlobDeletions(id, &blobs, remoteRevisions: R)
+        // Rewrap-replace (design §5.2): the copies both sides hold, compared while a key change settles.
+        try rewrapReplaceNote(id, revisions: L.intersection(R), entries: entries, blobs: blobs)
         // A partial copy's note that now holds what the server listed is complete (format.md §1.2).
         settlePartialNote(id, remote: remoteListed, remoteBlobs: blobs.remoteListed ? Set(blobs.remote.keys)
                             : (remoteAtt == nil ? [] : nil))
@@ -1182,11 +1231,26 @@ public final class SyncEngine {
             throw SyncError.responseTooLarge(path: path, limit: options.maxFileBytes)
         }
         var problem: String?
+        var placed = data
+        var late: Date?
         if !data.starts(with: Self.ageMagic) {
             problem = "not an age file"
         } else if let checker = checker(), let uuid = UUID(uuidString: id) {
-            do { try checker.checkIncomingRevision(data, noteId: uuid, name: n) } catch {
-                problem = "\(error)"
+            switch lateRevision(data, note: uuid, name: n) {
+            case .notLate:
+                do { try checker.checkIncomingRevision(data, noteId: uuid, name: n) } catch {
+                    problem = "\(error)"
+                }
+            case .accept(let rewrapped, let deadline):
+                // Taken in within the window, as the current copy it rewraps to (design §6.2 F9).
+                do { try checker.checkIncomingRevision(rewrapped, noteId: uuid, name: n) } catch {
+                    problem = "\(error)"
+                }
+                placed = rewrapped
+                late = deadline
+            case .quarantine(let why):
+                quarantineLate(key(id, n), path: path, entry: entry, reason: why, data: data)
+                return false
             }
         }
         if let problem {
@@ -1195,8 +1259,10 @@ public final class SyncEngine {
         }
         locked { state.quarantined?[key(id, n)] = nil }
         let url = root.appendingPathComponent("notes/\(id)/\(n.filename)")
-        if try !LocalFS.write(data, to: url, replacing: false) { return false }
+        if late != nil { try options.beforeLocalReplace?(path) }
+        if try !LocalFS.write(placed, to: url, replacing: false) { return false }
         locked { report.downloaded.append(path) }
+        if let late { tookLateRevision(id, n, path: path, placed: placed, entry: entry, deadline: late) }
         return true
     }
 

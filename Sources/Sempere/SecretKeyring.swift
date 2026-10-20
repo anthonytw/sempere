@@ -42,6 +42,10 @@ public struct SecretKeyring: Hashable, Sendable, Codable {
     public var format: String
     public var vaultId: UUID
     public var entries: [Entry]
+    /// Bumped whenever a sync run rewrote a local file of the vault by a
+    /// rewrap (design §5.2, R3): every target's pair then compares its copies
+    /// again, so a copy one target settled is carried to the others.
+    public var generation: Int?
 
     public init(vaultId: UUID) {
         format = Self.formatName

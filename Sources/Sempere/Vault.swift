@@ -142,7 +142,7 @@ public struct Vault: Sendable {
     public internal(set) var manifest: VaultManifest
     let identities: [any AgeIdentity]
     /// The vault secret; nil when locked.
-    private(set) var secret: VaultSecret?
+    internal(set) var secret: VaultSecret?
     /// During an unfinished secret-rotating rewrap: the secret files not yet
     /// rewrapped are still tagged with.
     internal(set) var previousSecret: VaultSecret?
@@ -785,7 +785,7 @@ public struct Vault: Sendable {
     /// policy, before anything is written (design §6.3). `faults` stops the
     /// change where a crash would (tests, `RewrapFaults`).
     mutating func commitChange(_ p: PreparedKeyChange, faults: RewrapFaults, keyring: (any SecretKeyringStore)?,
-                               now: Date) throws -> RewrapReport {
+                               now: Date, manifestWritten: ((Data) throws -> Void)? = nil) throws -> RewrapReport {
         let current = try requireReadable()
         guard p.vaultId == vaultId else { throw VaultError.manifestCorrupt("the prepared change is for another vault") }
         // Nothing may have changed since it was prepared (another device's change synced in):
@@ -838,6 +838,7 @@ public struct Vault: Sendable {
         recipientsStatus = .verified(.unchanged)
         try? rememberRecipients()   // else saved by the next write (requireWritable)
         if let keyring { try? keyring.update(vaultId: vaultId) { $0.remember(newSecret, now: now) } }
+        try manifestWritten?(try FileIO.read(manifestURL, maxBytes: BoundedRead.maxManifestBytes))
         if faults.stop == .afterManifest { throw VaultError.interrupted }
 
         return try finishRewrap(blobs: p.method, stopAfter: faults.stopAfterFiles, stopBeforeFinish: faults.stop == .beforeFinish)

@@ -88,6 +88,13 @@ struct SyncState: Codable, Equatable {
     var lastFullListing: Date?
     /// The server's journal while it may be in flight; nil otherwise.
     var inFlightJournal: InFlightJournal?
+    /// Key changes (design §6): the list (`recipientsTag`) for which this
+    /// device last rewrapped its late local files from its keyring (R3).
+    var lateRewrapFor: String?
+    /// Key changes: the list and keyring generation for which the last run
+    /// found every file both sides hold current and the same on both
+    /// (rewrap-replace settled, design §5.2); nil until then.
+    var rewrapSettled: String?
     /// Whether the server answers `PROPFIND` `Depth: infinity` on `notes/`
     /// in full (`TreeListing.swift`); nil until a run checked.
     var treeListing: TreeListingRecord?

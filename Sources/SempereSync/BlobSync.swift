@@ -230,12 +230,27 @@ extension SyncEngine {
                         return
                     }
                     if set.localListed && allowed(name) {
+                        // A key change's old blob name (design §6.2 F14) goes only after the retention.
+                        if options.rewrapReplace {
+                            let key = blobKey(id, name)
+                            let since = state.files[key]?.unreferencedSince ?? options.now
+                            if !options.dryRun { state.files[key, default: .init()].unreferencedSince = since }
+                            let due = since.addingTimeInterval(options.blobRetention)
+                            guard options.now >= due else {
+                                report.skipped.append(.init(path: blobPath(id, name), message: "unreferenced; kept on the "
+                                    + "server until \(Self.compactUTC(due)) (format.md §8.1.6 rule 4)"))
+                                return
+                            }
+                        }
                         if !options.dryRun { try transport.delete([Vault.notesName, id, Vault.attachmentsName, name]) }
                         report.deleted.append(.init(side: "remote", path: blobPath(id, name)))
                         set.remote[name] = nil
                     } else if options.pushOnly {
                         report.skipped.append(.init(path: blobPath(id, name),
                                                     message: "missing locally and not explained by collection, kept on the server"))
+                    } else if isRewrapLeftover(id, name, local: Array(set.local.keys)) {
+                        report.skipped.append(.init(path: blobPath(id, name), message: "the old name of a blob rewrapped by a "
+                            + "key change; collected once no journal is left (design §6.2 F14)"))
                     } else if let size = try downloadBlob(id, name, entry: set.remote[name]) {
                         set.local[name] = size
                     }
@@ -416,12 +431,22 @@ extension SyncEngine {
         // Checked before it is placed (format.md §9.1): a failure is
         // quarantined, never placed and never silently dropped.
         var problem: String?
+        defer { locked { state.partials[key] = nil } }
         if try LocalFS.prefix(of: part, count: Self.ageMagic.count) != Self.ageMagic {
             problem = "not an age file"
         } else if let checker = checker() {
-            do { try checker.checkIncomingBlob(at: part, fileName: name) } catch { problem = "\(error)" }
+            switch lateBlob(at: part, note: id, name: name) {
+            case .notLate:
+                do { try checker.checkIncomingBlob(at: part, fileName: name) } catch { problem = "\(error)" }
+            case .quarantine(let why):
+                quarantineLate(key, path: path, entry: entry, reason: why, file: part)
+                return nil
+            case .accept(let deadline):
+                // Taken in under its current name; this old name is then a leftover, collected later (F9, F14).
+                try takeLateBlob(at: part, note: id, name: name, path: path, deadline: deadline)
+                return nil
+            }
         }
-        defer { locked { state.partials[key] = nil } }
         if let problem {
             quarantine(key, path: path, entry: entry, reason: problem, file: part)
             return nil

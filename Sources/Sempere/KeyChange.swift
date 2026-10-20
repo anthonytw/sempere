@@ -239,8 +239,12 @@ extension Vault {
     /// - Throws: `VaultError.manifestCorrupt` when `vault.json` changed since
     ///   it was prepared; `VaultError.interrupted` where `faults` stops it.
     @discardableResult
+    ///
+    /// - Parameter manifestWritten: given the bytes of `vault.json` as step
+    ///   2 wrote them (K2), for a sync layer that uploads them first (C5(a)).
     public mutating func commit(_ prepared: PreparedKeyChange, faults: RewrapFaults = .none,
-                                keyring: (any SecretKeyringStore)? = nil, now: Date = Date()) throws -> RewrapReport {
+                                keyring: (any SecretKeyringStore)? = nil, now: Date = Date(),
+                                manifestWritten: ((Data) throws -> Void)? = nil) throws -> RewrapReport {
         try requireWritable()
         if pendingRewrap {
             // Only a journal this device refuses (F1, F2: a claim or K1 left by a crash) gives way.
@@ -249,7 +253,7 @@ extension Vault {
             }
             _ = try discardRefusedJournal()
         }
-        return try commitChange(prepared, faults: faults, keyring: keyring, now: now)
+        return try commitChange(prepared, faults: faults, keyring: keyring, now: now, manifestWritten: manifestWritten)
     }
 
     /// Design §6.1 C0 for this vault: complete, a list that checks, and no
@@ -467,5 +471,145 @@ public enum OutgoingKeyGuard {
         if let vault, vault.recipients.contains(where: { $0.key == recipient }), !targetsPending { return nil }
         return "a key change is unfinished: files not yet rewrapped open only with this key. Keep it until the "
             + "change finishes on this device and every sync target"
+    }
+}
+
+// MARK: - What the sync engine needs from a vault during a key change
+
+extension Vault {
+    /// The current secret (nil when locked): for the sync engine's keyring
+    /// entries (design §6.1 R1). Never written anywhere but the sealed keyring.
+    package var currentSecret: VaultSecret? { secret }
+
+    /// The secret an incoming `vault.json` carries, opened with this vault's
+    /// identities; nil when it does not parse or does not open here.
+    package func secret(ofManifest data: Data) -> VaultSecret? {
+        guard let m = try? Self.readManifest(data), m.vaultId == vaultId else { return nil }
+        return try? Self.decryptSecret(m.vaultSecret, with: identities)
+    }
+
+    /// True when the two `vault.json`s hold the same list (design §5.2 rule
+    /// 1): the same recipients, the same sealed secret and the same tag.
+    /// `rewrapPending` and the label do not count: a change's step-2 and
+    /// step-4 copies hold the same list.
+    package static func sameList(_ a: Data, _ b: Data) -> Bool {
+        guard let x = try? readManifest(a), let y = try? readManifest(b) else { return false }
+        return x.vaultId == y.vaultId && x.recipients.map(\.key) == y.recipients.map(\.key)
+            && x.vaultSecret == y.vaultSecret && x.recipientsTag == y.recipientsTag
+    }
+
+    /// True when `a` and `b` hold the same list and exactly one of them
+    /// carries `rewrapPending`: one is the step-2 copy of a change, the other
+    /// its step-4 copy (format.md §3.3.1). Returns which one is finished.
+    package static func finishedOfSameChange(_ a: Data, _ b: Data) -> Data? {
+        guard sameList(a, b), let x = try? readManifest(a), let y = try? readManifest(b) else { return nil }
+        switch (x.rewrapPending == nil, y.rewrapPending == nil) {
+        case (true, false): return a
+        case (false, true): return b
+        default: return nil
+        }
+    }
+
+    /// The `recipientsTag` of `vault.json` bytes (a fingerprint of its list), nil when it does not parse.
+    package static func listFingerprint(_ data: Data) -> String? {
+        guard let m = try? readManifest(data) else { return nil }
+        return m.recipientsTag ?? m.vaultSecret
+    }
+
+    /// The policy and outgoing secret of a journal this device accepts under
+    /// `manifest` (format.md §3.3.1 "Accepting the journal"); nil when it
+    /// refuses it or cannot judge it.
+    package func acceptedJournalPolicy(_ journal: Data, manifest: Data) -> (policy: KeyChangePolicy, previous: VaultSecret?)? {
+        guard canRead, let m = try? Self.readManifest(manifest), m.vaultId == vaultId,
+              let s = try? Self.decryptSecret(m.vaultSecret, with: identities) else { return nil }
+        let record = (try? trustStore?.record(for: vaultId)) ?? nil
+        guard case .accepted(let j, let previous) = Self.judgeJournal(bytes: journal, manifest: m, secret: s,
+                                                                    identities: identities, record: record),
+              let policy = try? j.keyChangePolicy() else { return nil }
+        return (policy, previous)
+    }
+
+    /// True when this device accepts `journal` under its own `vault.json`
+    /// now: the only journal it may upload (design §6.2 F2, §6.3).
+    package func acceptsJournal(_ journal: Data) -> Bool {
+        guard let manifest = try? FileIO.read(manifestURL, maxBytes: BoundedRead.maxManifestBytes) else { return false }
+        return acceptedJournalPolicy(journal, manifest: manifest) != nil
+    }
+
+    /// True when `manifest` does not list any of this device's keys.
+    package func isRemoved(by manifest: Data) -> Bool {
+        guard let m = try? Self.readManifest(manifest), m.vaultId == vaultId else { return false }
+        let mine = identityRecipients
+        return !mine.isEmpty && !m.recipients.contains { mine.contains($0.key) }
+    }
+}
+
+// MARK: - Two concurrent key changes (design §6.2 F7)
+
+extension Vault {
+    /// "Keep the other change" (design §6.2 F7): takes `incoming`, the
+    /// `vault.json` of another device's key change made concurrently with
+    /// this device's own, and rewraps every local file to its list from this
+    /// device's keyring, so that this device can redo its own change on top.
+    ///
+    /// Taken only when it checks as that device's change from a secret this
+    /// device held: the same vault, this device's key opens its secret, its
+    /// tag verifies under it, and its `secretLink` verifies a rotation from
+    /// a secret in `keyring` (format.md §2.1). That is the confirmation
+    /// `confirmRecipients` would ask for, made by the user's choice; a
+    /// `vault.json` that does not check is refused. The trust record then
+    /// names the adopted secret. This device's own secret stays in the
+    /// keyring, so files under it (its late files, F7's invariant) are
+    /// rewrapped, never discarded.
+    ///
+    /// - Returns: the rewrap of the local files to the adopted list.
+    @discardableResult
+    public mutating func adoptConcurrentChange(_ incoming: Data, keyring store: any SecretKeyringStore,
+                                               now: Date = Date()) throws -> RewrapReport {
+        let own = try requireReadable()
+        try requireNotReadOnly()
+        let m = try Self.readManifest(incoming)
+        guard m.vaultId == vaultId else { throw VaultError.manifestCorrupt("the other change's vault.json belongs to another vault") }
+        let other = try Self.decryptSecret(m.vaultSecret, with: identities)
+        guard let tag = m.recipientsTag,
+              RecipientsAuth.verifyTag(tag, vaultId: vaultId, keys: m.recipients.map(\.key), secret: other) else {
+            throw VaultError.untrustedRecipients(.init(reason: .tagMismatch, current: m.recipients.map(\.key),
+                                                       restore: nil, record: nil))
+        }
+        guard m.markersIntact(secret: other), Self.readOnlyReasons(m).isEmpty else {
+            throw VaultError.manifestCorrupt("the other change's vault.json has markers that do not check")
+        }
+        var ring = try store.load(vaultId: vaultId) ?? SecretKeyring(vaultId: vaultId)
+        ring.remember(own, now: now)
+        let known = ring.secrets(excluding: other)
+        guard RecipientsAuth.constantTimeEqual(other.bytes, own.bytes)
+                || known.contains(where: { RecipientsAuth.linkConnects(m.secretLink, from: $0, to: other, vaultId: vaultId) }) else {
+            throw VaultError.untrustedRecipients(.init(reason: .secretUnconfirmed, current: m.recipients.map(\.key),
+                                                       restore: nil, record: nil))
+        }
+        if !RecipientsAuth.constantTimeEqual(other.bytes, own.bytes) { ring.noteReplaced(own, now: now) }
+        ring.remember(other, now: now)
+        try store.save(ring)
+        // This device's own journal (its change, finished or not) gives way: its
+        // outgoing secret is in the keyring, so nothing it protected is lost.
+        if pendingRewrap {
+            let aside = url.appendingPathComponent(Self.refusedJournalName)
+            if FileIO.exists(aside) { try FileIO.remove(aside) }
+            do { try FileManager.default.moveItem(at: journalURL, to: aside) } catch {
+                throw VaultError.io("move \(journalURL.path) aside: \(error)")
+            }
+        }
+        // As it is: a `rewrapPending` it carries binds the other change's journal, which arrives by sync.
+        try FileIO.writeAtomically(incoming, to: manifestURL, replacing: true)
+        manifest = m
+        secret = other
+        previousSecret = nil
+        journalProblem = nil
+        journalRefused = false
+        recipientsStatus = .verified(.unchanged)
+        try rememberRecipients(replacing: true)
+        var v = self
+        v.olderSecrets = ring.secrets(excluding: other)
+        return try v.rewrapNotes(blobs: .reencrypt, stopAfter: nil)
     }
 }

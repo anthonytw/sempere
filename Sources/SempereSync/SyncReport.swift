@@ -75,6 +75,41 @@ public struct SyncReport: Codable, Hashable, Sendable {
     /// still lacks after the run, and what a push-only run left on the server
     /// because the copy has not fetched it yet.
     public var partial: PartialStatus?
+    /// What the run did for key changes (design §6); nil when it did nothing.
+    public var keyChange: KeyChangeActivity?
+
+    /// Key-change work of one run (docs/design/device-first-sync.md §5.2, §6).
+    public struct KeyChangeActivity: Codable, Hashable, Sendable {
+        /// Files replaced by rewrap-replace (design §5.2), with the side replaced.
+        public var replaced: [Deletion] = []
+        /// Late files (tagged under an older secret, design §6.2 F9) taken in
+        /// within the window: rewrapped and placed.
+        public var lateAccepted: [LateFile] = []
+        /// Late files after the window (or of a change whose policy is
+        /// unknown here): quarantined as late files, never deleted.
+        public var lateQuarantined: [Issue] = []
+        /// Local files rewrapped from this device's keyring (R3).
+        public var rewrapped = 0
+        /// Shared files whose two copies differ and stay as they are this run.
+        public var unsettled: [Issue] = []
+        /// True when this run found every file both sides hold current and
+        /// the same on both, under the same list (what lets a key change
+        /// remove the journal from this target, design §6.1 C5(d)).
+        public var settled = false
+        /// The remote `vault.json` lists none of this device's keys: it was removed.
+        public var removedFromVault = false
+
+        public init() {}
+
+        var isEmpty: Bool { replaced.isEmpty && lateAccepted.isEmpty && lateQuarantined.isEmpty && rewrapped == 0 }
+    }
+
+    /// A late file taken in, and the end of the window it was taken in under.
+    public struct LateFile: Codable, Hashable, Sendable {
+        public var path: String
+        public var deadline: Date
+        public init(path: String, deadline: Date) { self.path = path; self.deadline = deadline }
+    }
 
     /// What a partial copy lacks (docs/io.md "Partial copies").
     public struct PartialStatus: Codable, Hashable, Sendable {
@@ -114,5 +149,6 @@ public struct SyncReport: Codable, Hashable, Sendable {
     public var isEmpty: Bool {
         uploaded.isEmpty && downloaded.isEmpty && deleted.isEmpty && conflicts.isEmpty && errors.isEmpty && rejected.isEmpty
             && extraneous.isEmpty && overwritten.isEmpty && quarantined.isEmpty && merged.isEmpty
+            && (keyChange?.isEmpty ?? true)
     }
 }
