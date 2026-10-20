@@ -5,16 +5,17 @@ import Foundation
 // The key schedule of the key hierarchy (docs/design/key-hierarchy.md, phase
 // KH1a: K_e, the vault identity, the §2.2 derivations, the per-key wraps of
 // K_e, fingerprints, listTag, epochLink, the root fingerprint and trust
-// records v3). KH1b adds the author signatures, the chain, fork resolution,
-// join codes, the epoch record, the journal, the passphrase copy and the kit.
+// records v3). KH1b adds the author signatures, the chain, the single-writer
+// precedence rule (home, handoff, takeover), join codes, the epoch record, the
+// journal, the passphrase copy and the kit.
 //
 // Pure functions only: nothing here reads or writes a vault, and no `Vault`
 // path uses it yet (KH2 wires it in). Every primitive is swift-crypto's or
 // the Age module's: HKDF-SHA256, HMAC-SHA256, SHA-256, X-Wing, Ed25519 and
 // ML-DSA-65 (the secret link's `LinkSigningKeys`).
 //
-// Byte layouts that the design text leaves open are marked **provisional**
-// below and decided here; format.md §15 (KH1b) states them normatively.
+// Byte layouts the design leaves open are decided here and stated
+// normatively in format.md §15.
 
 /// Errors of the key schedule.
 public enum EpochKeyError: Error, Hashable, Sendable {
@@ -176,7 +177,7 @@ public enum EpochLinks {
     /// `vaultId` lowercase, `e` in decimal ASCII without leading zeros (as in
     /// `vault.json`), `epochId` its 32 raw bytes.
     ///
-    /// **Provisional**: the design (§4 table) still gives this
+    /// The design (§4 table) gives this
     /// NUL-separated message, today's secret-link encoding, while its other
     /// signed messages moved to `lp()` (§4.1). Built to the text as written.
     static func message(vaultId: UUID, epoch: Int, epochId: Data) -> Data {
@@ -210,7 +211,7 @@ public enum EpochLinks {
     }
 }
 
-// MARK: - Wraps of K_e (design §3), provisional plaintext
+// MARK: - Wraps of K_e (design §3; format.md §15.3)
 
 /// A wrap: `K_e` and `V_e` age-encrypted (armored, one stanza) to one listed
 /// key. Its plaintext is an age identity file, so stock `age -d -i` reads it:
@@ -221,9 +222,8 @@ public enum EpochLinks {
 /// AGE-SECRET-KEY-PQ-1…
 /// ```
 ///
-/// **Provisional** (KH1a): the plaintext is exactly the design's, but the
-/// printed kit's script reads it (review M8'), so its final form is frozen
-/// with the kit. Readers here are strict: exactly these three lines, the
+/// Frozen with the kit (format.md §15.3): the printed script reads it.
+/// Readers here are strict: exactly these three lines, the
 /// first naming the vault and epoch the reader expects, and the identity the
 /// one derived from the key (design §4.3: anything else is tampering).
 package enum EpochKeyWrap {
@@ -261,7 +261,10 @@ package enum EpochKeyWrap {
             throw EpochKeyError.wrapOtherEpoch
         }
         let key = try VaultEpochKey(bytes: raw)
-        guard try key.vaultIdentity() == identity else { throw EpochKeyError.wrapIdentityMismatch }
+        // Compared in constant time (review L6).
+        guard RecipientsAuth.constantTimeEqual(Data(try key.vaultIdentity().string.utf8), Data(identity.string.utf8)) else {
+            throw EpochKeyError.wrapIdentityMismatch
+        }
         return key
     }
 
@@ -318,7 +321,7 @@ package struct LPMessage {
 /// key and its signing keys; its `id` is the first 8 hex digits.
 /// (format.md §11.1's fingerprint stays what capture keys use.)
 ///
-/// **Provisional encoding** (KH1a): the design writes `lp(sign.p256)`
+/// The encoding (format.md §15.1): the design writes `lp(sign.p256)`
 /// without saying whether that is the hex text of `vault.json` or the raw
 /// key. Here, as everywhere in this file, a value that `vault.json` holds is
 /// taken as the UTF-8 of its JSON text (so signing keys as lowercase hex),
@@ -331,11 +334,20 @@ package enum KeyFingerprint {
         return Data(SHA256.hash(data: m.bytes))
     }
 
-    /// `SHA-256("sempere/1 recovery" ‖ lp(key))`.
-    package static func recovery(key: String) -> Data {
+    /// `SHA-256("sempere/1 recovery" ‖ lp(key) ‖ lp(sign.p256) ‖ lp(sign.mldsa65))`: the recovery key and
+    /// its signing pair (derived from it, design §5.6), hex as in `vault.json`.
+    package static func recovery(key: String, signP256: String, signMLDSA65: String) -> Data {
         var m = LPMessage("sempere/1 recovery")
-        m.field(key)
+        m.field(key); m.field(signP256); m.field(signMLDSA65)
         return Data(SHA256.hash(data: m.bytes))
+    }
+
+    /// The recovery fingerprint of a recovery identity (its key and derived signing pair).
+    ///
+    /// - Throws: `AgeError.postQuantumUnavailable` where the platform has no ML-DSA.
+    package static func recovery(identity: MLKEM768X25519Identity) throws -> Data {
+        let keys = try DeviceSigningKeys.recovery(identity: identity).publicKeys()
+        return recovery(key: identity.recipient.string, signP256: keys.p256Hex, signMLDSA65: keys.mldsa65Hex)
     }
 
     /// A device's `id`: the first 8 hex digits of its fingerprint.
@@ -386,7 +398,7 @@ package struct EpochListEntry: Hashable, Sendable {
 ///
 /// `vaultId` lowercase; `root`, `epochId` and `epochRecordHash` their 64 hex
 /// digits as written; numbers decimal ASCII; `SHA-256(wrap)` the 32 raw bytes
-/// of the digest of the wrap string's UTF-8 (**provisional** encoding, see
+/// of the digest of the wrap string's UTF-8 (format.md §15.1, see
 /// `KeyFingerprint`). `authorSig` signs `SHA-256(listMessage)` (not here).
 package enum EpochListTag {
     package static func message(vaultId: UUID, root: String, epoch: Int, epochId: String, epochRecordHash: String,
@@ -430,8 +442,7 @@ package enum EpochListTag {
 /// only. The vault id, the root, the kept chain this device has verified
 /// (each epoch's number, id, parent id, link public keys and first list of
 /// fingerprints), the current list, the markers, `reencryptFinished`, and
-/// the user's answers to fork questions (design §5.6: the authors the user
-/// rejected). Not wired to any store yet (KH2).
+/// the current home device (design §5.6). Not wired to any store yet (KH2).
 public struct EpochTrustRecord: Codable, Hashable, Sendable {
     /// The record format. A file of any other format does not decode.
     public static let formatName = "sempere-trust/3"
@@ -477,18 +488,7 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
     }
 
     /// A device's signing public keys (design §4.1).
-    public struct SigningKeys: Hashable, Sendable {
-        public static let p256Size = 65
-        public static let mldsa65Size = 1952
-        public let p256: Data
-        public let mldsa65: Data
-
-        /// Nil unless both have their exact sizes.
-        public init?(p256: Data, mldsa65: Data) {
-            guard p256.count == Self.p256Size, mldsa65.count == Self.mldsa65Size else { return nil }
-            self.p256 = p256; self.mldsa65 = mldsa65
-        }
-    }
+    public typealias SigningKeys = DeviceSigningPublicKeys
 
     public var vaultId: UUID
     /// The root fingerprint (32 bytes).
@@ -501,9 +501,9 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
     public var markers: VaultMarkers
     /// True once this device saw the pinned epoch with no re-encryption into it pending (design §7.1).
     public var reencryptFinished: Bool
-    /// The authors whose side the user rejected at a mutual removal (design §5.6 rule 2), as fingerprints:
-    /// their forks lose at every branch on this device without asking again.
-    public var rejectedAuthors: [Data]
+    /// The home device of the pinned epoch (design §5.6): the only device whose epochs this device
+    /// follows, until a handoff or a takeover.
+    public var home: Data
 
     /// The pinned (last verified) epoch.
     public var pinned: ChainEpoch? { chain.last }
@@ -511,11 +511,11 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
     /// - Throws: `EpochKeyError.invalidKey` for a root that is not 32 bytes,
     ///   `.invalidEpoch` for a chain that is not well formed (`wellFormed`).
     public init(vaultId: UUID, root: Data, chain: [ChainEpoch], list: [Entry], markers: VaultMarkers,
-                reencryptFinished: Bool = false, rejectedAuthors: [Data] = []) throws {
-        guard root.count == 32, rejectedAuthors.allSatisfy({ $0.count == 32 }) else { throw EpochKeyError.invalidKey }
+                reencryptFinished: Bool = false, home: Data) throws {
+        guard root.count == 32, home.count == 32 else { throw EpochKeyError.invalidKey }
         guard Self.wellFormed(chain) else { throw EpochKeyError.invalidEpoch }
         self.vaultId = vaultId; self.root = root; self.chain = chain; self.list = list; self.markers = markers
-        self.reencryptFinished = reencryptFinished; self.rejectedAuthors = rejectedAuthors
+        self.reencryptFinished = reencryptFinished; self.home = home
     }
 
     /// Epochs 1, 2, … in order, each `parent` the previous `epochId` (none at
@@ -535,7 +535,7 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case format, vaultId, root, chain, list, markers, reencryptFinished, rejectedAuthors
+        case format, vaultId, root, chain, list, markers, reencryptFinished, home
     }
     enum ChainKeys: String, CodingKey { case epoch, epochId, parent, linkPublicKeys, list }
     enum LinkKeys: String, CodingKey { case ed25519, mldsa65 }
@@ -602,11 +602,7 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
         let m = try c.decode(VaultMarkers.self, forKey: .markers)
         markers = VaultMarkers(format: m.format, features: m.features)
         reencryptFinished = try c.decodeIfPresent(Bool.self, forKey: .reencryptFinished) ?? false
-        let rejected = try c.decodeIfPresent([String].self, forKey: .rejectedAuthors) ?? []
-        rejectedAuthors = rejected.compactMap { Hex.decode($0) }
-        guard rejectedAuthors.count == rejected.count else {
-            throw DecodingError.dataCorruptedError(forKey: .rejectedAuthors, in: c, debugDescription: "not fingerprints")
-        }
+        home = try Self.hex32(c, .home)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -614,7 +610,7 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
         try c.encode(Self.formatName, forKey: .format)
         try c.encode(LowercaseUUID(vaultId), forKey: .vaultId)
         try c.encode(Hex.encode(root), forKey: .root)
-        if !rejectedAuthors.isEmpty { try c.encode(rejectedAuthors.map { Hex.encode($0) }, forKey: .rejectedAuthors) }
+        try c.encode(Hex.encode(home), forKey: .home)
         var cc = c.nestedUnkeyedContainer(forKey: .chain)
         for epoch in chain {
             var e = cc.nestedContainer(keyedBy: ChainKeys.self)

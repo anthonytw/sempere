@@ -518,7 +518,7 @@ final class SempereFuzzTests: VaultTestCase {
         let record = try JSONEncoder().encode(try EpochTrustRecord(
             vaultId: vaultId, root: try VaultRoot.fingerprint(vaultId: vaultId, epochOne: k1), chain: chain,
             list: [.init(role: "recovery", key: "age1pq1r", sign: nil, name: "Recovery kit")],
-            markers: VaultMarkers(format: "sempere/1", features: [])))
+            markers: VaultMarkers(format: "sempere/1", features: []), home: Data(repeating: 1, count: 32)))
         assertClean(Fuzz.run("epoch-keys", seeds: [wrap, record], quick: 300, text: true) { input in
             if let key = try? EpochKeyWrap.parse(input, vaultId: vaultId, epoch: 2) {
                 let text = String(decoding: input, as: UTF8.self)
@@ -529,6 +529,42 @@ final class SempereFuzzTests: VaultTestCase {
             if let r = try? JSONDecoder().decode(EpochTrustRecord.self, from: input) {
                 if r.root.count != 32 || !EpochTrustRecord.wellFormed(r.chain) { return "a malformed record decoded" }
                 _ = try? JSONEncoder().encode(r)
+            }
+            return nil
+        })
+    }
+
+    /// Key-hierarchy readers of untrusted bytes (design §3, §5.2.1, §6.2, §7.4; KH1): `vault.json`,
+    /// epoch records, the journal and join requests never trap, and a chain whose JSON was mutated
+    /// either fails `EpochChain.verify` or still admits at most 256 additions per epoch.
+    func testFuzzKeyHierarchyReaders() throws {
+        try XCTSkipUnless(postQuantumAvailable, "X-Wing and ML-DSA need Apple OS 26")
+        let a = try ChainTestDevice("A"), n = try ChainTestDevice("N")
+        let r = try ChainTestRecovery("recovery").fingerprint
+        var b = try ChainTestBuilder(author: a, founders: [a.fingerprint, r])
+        try b.add(n, by: a)
+        try b.next(author: a, list: [a.fingerprint, n.fingerprint, r], parentList: [a.fingerprint, n.fingerprint, r])
+        let record = try EpochRecord(vaultId: b.vaultId, root: b.root, epoch: 2, epochId: b.keys[1].epochId,
+                                     parent: EpochRecordParent(epoch: 1, epochId: b.keys[0].epochId, key: b.keys[0],
+                                                               sealed: ["notes/a/b.delta.age": String(repeating: "cd", count: 32)]),
+                                     chain: b.entries, created: "2026-10-20T16:20:00Z", by: a.id, reason: "remove").json()
+        let journal = try ReencryptJournal(vaultId: b.vaultId, epoch: 3, epochId: VaultEpochKey.random().epochId,
+                                           keys: [.init(epoch: 1, key: b.keys[0])], created: "2026-10-20T16:20:00Z",
+                                           by: a.id).json()
+        let join = try JSONEncoder().encode(JoinRequest(vaultId: b.vaultId, key: n.key, sign: n.sign, name: "N",
+                                                        kind: "iphone", created: "2026-10-20T16:20:00Z"))
+        let chain = try JSONEncoder().encode(b.entries)
+        let vaultId = b.vaultId, root = b.root
+        assertClean(Fuzz.run("key-hierarchy", seeds: [record, journal, join, chain], quick: 300, text: true) { input in
+            _ = try? EpochRecord.parse(input)
+            _ = try? ReencryptJournal.parse(input)
+            _ = try? JoinRequest.parse(input)
+            _ = try? EpochManifest.parse(input)
+            if let entries = try? JSONDecoder().decode([ChainEntry].self, from: input), entries.count <= 4,
+               let v = try? EpochChain.verify(entries, vaultId: vaultId, root: root) {
+                if v.entries.contains(where: { $0.additions.count > EpochChain.maxAdditions }) {
+                    return "more than 256 additions admitted"
+                }
             }
             return nil
         })

@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import {
   type ListTagEntry, deviceFingerprint, epochCaptureKey, epochKeys, epochLinkMessage, epochLinkPublicKeys, listTag,
   listTagMessage, lp, parseEpochWrap, recoveryFingerprint, rootFingerprint, vaultRecipient, verifyEpochLink,
+  entryMessage, epochMessage, joinCommitment, joinReply, manifestMessage, sixWords, verifyAuthorSignature,
 } from "../src/vault/epoch.ts";
 import type { SecretLink } from "../src/vault/link.ts";
 import { fixtures } from "./support.ts";
@@ -24,7 +25,7 @@ interface Vectors {
   vaultId: string;
   device: { identity: string; recipient: string; signP256: string; signMLDSA65: string; fingerprint: string; id: string;
     captureFingerprint: string };
-  recovery: { recipient: string; fingerprint: string };
+  recovery: { recipient: string; signP256: string; signMLDSA65: string; fingerprint: string };
   epochs: Epoch[];
   root: string;
   link: { epoch: number; message: string; links: { by: string; ed25519: string; mldsa65: string }[] };
@@ -69,7 +70,8 @@ describe("key hierarchy key schedule (design §2–§4)", () => {
     const d = v.device;
     expect(hex(deviceFingerprint(d.recipient, d.signP256, d.signMLDSA65))).toBe(d.fingerprint);
     expect(d.fingerprint.slice(0, 8)).toBe(d.id);
-    expect(hex(recoveryFingerprint(v.recovery.recipient))).toBe(v.recovery.fingerprint);
+    expect(hex(recoveryFingerprint(v.recovery.recipient, v.recovery.signP256, v.recovery.signMLDSA65)))
+      .toBe(v.recovery.fingerprint);
     expect(Array.from(lp("ab"))).toEqual([0, 0, 0, 2, 0x61, 0x62]);
     expect(Array.from(lp(12))).toEqual([0, 0, 0, 2, 0x31, 0x32]);
   });
@@ -136,5 +138,133 @@ describe("key hierarchy key schedule (design §2–§4)", () => {
       expect(parseEpochWrap(enc.encode(bad), v.vaultId, 2)).toEqual({ problem: "malformed" });
     }
     expect(parseEpochWrap(Uint8Array.of(0xff, 0xfe, 0x0a), v.vaultId, 2)).toEqual({ problem: "malformed" });
+  });
+});
+
+interface AuthorSig { by: string; p256: string; mldsa65: string }
+interface Signatures {
+  signer: { p256: string; mldsa65: string; key: string; fingerprint: string };
+  signatures: {
+    entry: { claim: { key: string; signP256: string; signMLDSA65: string; kind: string; added: string; addedEpoch: number;
+      addedBy: string }; message: string; signatures: AuthorSig[] };
+    epoch: { fields: { root: string; epoch: number; epochId: string; parent: string; reason: string; recovery: string;
+      home: string; list: string[]; parentList: string[] }; message: string; signatures: AuthorSig[] };
+    manifest: { fields: { root: string; epoch: number; epochId: string; epochRecordHash: string; format: string;
+      features: string[] }; message: string; signatures: AuthorSig[] };
+  };
+  join: { request: { vaultId: string; key: string; sign: { p256: string; mldsa65: string }; kind: string };
+    commitment: string; words: string[]; root: string; frontier: string; reply: string; replyWords: string[] };
+}
+const s = JSON.parse(readFileSync(join(fixtures, "epoch-vectors.json"), "utf8")) as Vectors & Signatures;
+
+describe("author signatures and join codes (design §4.1, §6.2)", () => {
+  const keys = { p256: bytes(s.signer.p256), mldsa65: bytes(s.signer.mldsa65) };
+  const sig = (x: AuthorSig): { p256: Uint8Array; mldsa65: Uint8Array } => ({ p256: bytes(x.p256), mldsa65: bytes(x.mldsa65) });
+
+  it("builds the three messages and verifies noble's and swift-crypto's signatures", () => {
+    expect(hex(deviceFingerprint(s.signer.key, s.signer.p256, s.signer.mldsa65))).toBe(s.signer.fingerprint);
+    const c = s.signatures.entry.claim;
+    const entry = entryMessage(v.vaultId, c);
+    expect(hex(entry)).toBe(s.signatures.entry.message);
+    const f = s.signatures.epoch.fields;
+    const epoch = epochMessage(v.vaultId, f.root, f.epoch, f.epochId, f.parent, f.reason, f.recovery, f.home, f.list,
+      f.parentList);
+    expect(hex(epoch)).toBe(s.signatures.epoch.message);
+    expect(hex(epochMessage(v.vaultId, f.root, f.epoch, f.epochId, f.parent, f.reason, f.recovery, f.home,
+      [...f.list].reverse(), [...f.parentList].reverse()))).toBe(s.signatures.epoch.message);
+    const m = s.signatures.manifest.fields;
+    const manifest = manifestMessage(v.vaultId, m.root, m.epoch, m.epochId, m.epochRecordHash, bytes(v.listTag.message),
+      m.format, m.features);
+    expect(hex(manifest)).toBe(s.signatures.manifest.message);
+    const all: [Uint8Array, AuthorSig[]][] = [[entry, s.signatures.entry.signatures], [epoch, s.signatures.epoch.signatures],
+      [manifest, s.signatures.manifest.signatures]];
+    for (const [message, list] of all) {
+      expect(list.map((x) => x.by).sort()).toEqual(["noble", "swift-crypto"]);
+      for (const x of list) {
+        expect(verifyAuthorSignature(message, sig(x), keys)).toBe(true);
+        expect(verifyAuthorSignature(Uint8Array.of(...message, 0), sig(x), keys)).toBe(false);
+        const flipped = sig(x);
+        flipped.mldsa65[7] = (flipped.mldsa65[7] ?? 0) ^ 1;
+        expect(verifyAuthorSignature(message, flipped, keys)).toBe(false);
+        expect(verifyAuthorSignature(message, { ...sig(x), p256: new Uint8Array(64) }, keys)).toBe(false);
+      }
+    }
+  });
+
+  it("computes the join commitment, words and reverse code", () => {
+    const r = s.join.request;
+    const c = joinCommitment(r.vaultId, r.key, r.sign.p256, r.sign.mldsa65, r.kind);
+    expect(hex(c)).toBe(s.join.commitment);
+    expect(sixWords(c)).toEqual(s.join.words);
+    const reply = joinReply(r.vaultId, c, s.join.root, s.join.frontier);
+    expect(hex(reply)).toBe(s.join.reply);
+    expect(sixWords(reply)).toEqual(s.join.replyWords);
+  });
+});
+
+interface ChainEntryJSON {
+  epoch: number; epochId: string; parent?: string; linkPublicKeys: { ed25519: string; mldsa65: string };
+  link?: { ed25519: string; mldsa65: string }; reason: string; list: string[]; parentList: string[];
+  recovery: string; home: string;
+  author: { key: string; p256: string; mldsa65: string }; epochSig: { p256: string; mldsa65: string };
+  recoveryAuthor?: { key: string; p256: string; mldsa65: string }; recoverySig?: { p256: string; mldsa65: string };
+  additions?: { key: string; sign: { p256: string; mldsa65: string }; kind: string; added: string; addedEpoch: number;
+    addedBy: string; addSig: { p256: string; mldsa65: string } }[];
+}
+interface ChainCase { name: string; root: string; expect: string; chain: ChainEntryJSON[] }
+
+describe("the shared chain vectors (design §4.1, §4.3)", () => {
+  const cv = JSON.parse(readFileSync(join(fixtures, "epoch-chain-vectors.json"), "utf8")) as
+    { vaultId: string; cases: ChainCase[] };
+  const linkKeys = (e: ChainEntryJSON): { ed25519: Uint8Array; mldsa65: Uint8Array } =>
+    ({ ed25519: bytes(e.linkPublicKeys.ed25519), mldsa65: bytes(e.linkPublicKeys.mldsa65) });
+
+  it("verifies every link, epochSig, recoverySig and addSig of the chain that verifies in Swift", () => {
+    const ok = cv.cases[0];
+    if (!ok) throw new Error("no case");
+    expect(ok.expect.startsWith("ok")).toBe(true);
+    const [first] = ok.chain;
+    if (!first) throw new Error("empty chain");
+    expect(hex(rootFingerprint(cv.vaultId, linkKeys(first)))).toBe(ok.root);
+    let additions = 0, takeovers = 0;
+    ok.chain.forEach((e, i) => {
+      const author = { p256: bytes(e.author.p256), mldsa65: bytes(e.author.mldsa65) };
+      const m = epochMessage(cv.vaultId, ok.root, e.epoch, e.epochId, e.parent ?? "", e.reason, e.recovery, e.home,
+        e.list, e.parentList);
+      expect(verifyAuthorSignature(m, { p256: bytes(e.epochSig.p256), mldsa65: bytes(e.epochSig.mldsa65) }, author)).toBe(true);
+      const prev = ok.chain[i - 1];
+      // A takeover (design §5.6) is also signed by the parent's recovery key.
+      expect(e.reason === "takeover").toBe(e.recoverySig !== undefined);
+      if (e.recoveryAuthor && e.recoverySig && prev) {
+        const ra = e.recoveryAuthor;
+        expect(hex(recoveryFingerprint(ra.key, ra.p256, ra.mldsa65))).toBe(prev.recovery);
+        expect(verifyAuthorSignature(m, { p256: bytes(e.recoverySig.p256), mldsa65: bytes(e.recoverySig.mldsa65) },
+          { p256: bytes(ra.p256), mldsa65: bytes(ra.mldsa65) })).toBe(true);
+        takeovers++;
+      }
+      if (prev && e.link) {
+        const link: SecretLink = { kind: "signed", ed25519: bytes(e.link.ed25519), mldsa65: bytes(e.link.mldsa65) };
+        expect(verifyEpochLink(link, linkKeys(prev), e.epoch, bytes(e.epochId), cv.vaultId)).toBe(true);
+      }
+      for (const a of e.additions ?? []) {
+        const claim = { key: a.key, signP256: a.sign.p256, signMLDSA65: a.sign.mldsa65, kind: a.kind, added: a.added,
+          addedEpoch: a.addedEpoch, addedBy: a.addedBy };
+        // Only home approves (design §5.6); in this vector the additions are epoch 1's, whose home is its author.
+        expect(a.addedBy).toBe(e.home.slice(0, 8));
+        expect(verifyAuthorSignature(entryMessage(cv.vaultId, claim), { p256: bytes(a.addSig.p256),
+          mldsa65: bytes(a.addSig.mldsa65) }, author)).toBe(true);
+        additions++;
+      }
+    });
+    expect(additions).toBe(2);
+    expect(takeovers).toBe(1);
+  });
+
+  it("finds the broken link of the negative vector", () => {
+    const broken = cv.cases.find((c) => c.expect === "brokenLink:2");
+    const [e1, e2] = broken?.chain ?? [];
+    if (!e1 || !e2?.link) throw new Error("no case");
+    const link: SecretLink = { kind: "signed", ed25519: bytes(e2.link.ed25519), mldsa65: bytes(e2.link.mldsa65) };
+    expect(verifyEpochLink(link, linkKeys(e1), 2, bytes(e2.epochId), cv.vaultId)).toBe(false);
   });
 });

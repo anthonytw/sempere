@@ -21,7 +21,8 @@ final class EpochKeysTests: VaultTestCase {
         struct Device: Codable {
             var identity, recipient, signP256, signMLDSA65, fingerprint, id, captureFingerprint: String
         }
-        struct Recovery: Codable { var recipient, fingerprint: String }
+        /// The recovery key: its identity, recipient, derived signing keys (design §5.6) and fingerprint.
+        struct Recovery: Codable { var identity: String?; var recipient, signP256, signMLDSA65, fingerprint: String }
         struct Epoch: Codable {
             var epoch: Int
             var key, identitySeed, identity, recipient, tagKey, blobNameKey, listKey, markersKey, epochId, pendingKey: String
@@ -37,6 +38,34 @@ final class EpochKeysTests: VaultTestCase {
             var epoch: Int; var root, epochId, epochRecordHash: String; var entries: [Entry]; var message, tag: String
         }
         struct Wrap: Codable { var by: String; var epoch: Int; var armored: String }
+        struct Signer: Codable { var p256Scalar, mldsa65Seed, p256, mldsa65, key, fingerprint: String }
+        struct AuthorSig: Codable { var by, p256, mldsa65: String }
+        struct Claim: Codable {
+            var key, signP256, signMLDSA65, kind, added: String; var addedEpoch: Int; var addedBy: String
+        }
+        struct EpochFields: Codable {
+            var root: String; var epoch: Int; var epochId, parent, reason, recovery, home: String
+            var list, parentList: [String]
+        }
+        struct ManifestFields: Codable {
+            var root: String; var epoch: Int; var epochId, epochRecordHash, format: String; var features: [String]
+        }
+        struct EntrySigned: Codable { var claim: Claim; var message: String; var signatures: [AuthorSig] }
+        struct EpochSigned: Codable { var fields: EpochFields; var message: String; var signatures: [AuthorSig] }
+        struct ManifestSigned: Codable { var fields: ManifestFields; var message: String; var signatures: [AuthorSig] }
+        struct Signatures: Codable { var entry: EntrySigned; var epoch: EpochSigned; var manifest: ManifestSigned }
+        struct JoinRequestFields: Codable {
+            struct Sign: Codable { var p256, mldsa65: String }
+            var vaultId, key: String; var sign: Sign; var name, kind, created: String
+        }
+        struct Join: Codable {
+            var request: JoinRequestFields
+            var commitment: String; var words: [String]; var qr, root, frontier, reply: String; var replyWords: [String]
+            var replyQR: String
+        }
+        var signer: Signer?
+        var signatures: Signatures?
+        var join: Join?
         var description, vaultId: String
         var device: Device
         var recovery: Recovery
@@ -95,13 +124,14 @@ final class EpochKeysTests: VaultTestCase {
         XCTAssertEqual(Hex.encode(KeyFingerprint.device(key: d.recipient, signP256: d.signP256, signMLDSA65: d.signMLDSA65)),
                        d.fingerprint)
         XCTAssertEqual(KeyFingerprint.deviceId(key: d.recipient, signP256: d.signP256, signMLDSA65: d.signMLDSA65), d.id)
-        XCTAssertEqual(Hex.encode(KeyFingerprint.recovery(key: v.recovery.recipient)), v.recovery.fingerprint)
+        XCTAssertEqual(Hex.encode(KeyFingerprint.recovery(key: v.recovery.recipient, signP256: v.recovery.signP256,
+                                                          signMLDSA65: v.recovery.signMLDSA65)), v.recovery.fingerprint)
         // The signing keys are bound: another one changes the fingerprint, and
         // the domain prefixes keep a device and a recovery key apart.
         XCTAssertNotEqual(Hex.encode(KeyFingerprint.device(key: d.recipient, signP256: d.signP256 + "00",
                                                            signMLDSA65: d.signMLDSA65)), d.fingerprint)
-        XCTAssertNotEqual(KeyFingerprint.device(key: d.recipient, signP256: "", signMLDSA65: ""),
-                          KeyFingerprint.recovery(key: d.recipient))
+        XCTAssertNotEqual(KeyFingerprint.device(key: d.recipient, signP256: d.signP256, signMLDSA65: d.signMLDSA65),
+                          KeyFingerprint.recovery(key: d.recipient, signP256: d.signP256, signMLDSA65: d.signMLDSA65))
         XCTAssertNotEqual(d.fingerprint, d.captureFingerprint, "format.md §11.1's fingerprint stays separate")
     }
 
@@ -156,7 +186,7 @@ final class EpochKeysTests: VaultTestCase {
                                                  vaultId: vaultId), name)
             }
             if ProcessInfo.processInfo.environment["SEMPERE_WRITE_EPOCH_VECTORS"] == "1" {
-                try updateVectors {
+                try Self.updateVectors {
                     $0.link.links.removeAll { $0.by == "swift-crypto" }
                     $0.link.links.append(.init(by: "swift-crypto", ed25519: Hex.encode(ed), mldsa65: Hex.encode(ml)))
                 }
@@ -213,7 +243,7 @@ final class EpochKeysTests: VaultTestCase {
         let mine = try EpochKeyWrap.seal(k2, vaultId: vaultId, epoch: 2, to: device.recipient)
         XCTAssertEqual(try EpochKeyWrap.open(mine, with: [device], vaultId: vaultId, epoch: 2), k2)
         if ProcessInfo.processInfo.environment["SEMPERE_WRITE_EPOCH_VECTORS"] == "1" {
-            try updateVectors {
+            try Self.updateVectors {
                 $0.wraps.removeAll { $0.by == "swift" }
                 $0.wraps.append(.init(by: "swift", epoch: 2, armored: mine))
             }
@@ -222,7 +252,7 @@ final class EpochKeysTests: VaultTestCase {
 
     /// Rewrites the source fixture (not the copy the test bundle was built
     /// with), so the two writers above do not undo each other.
-    func updateVectors(_ change: (inout Vectors) -> Void) throws {
+    static func updateVectors(_ change: (inout Vectors) -> Void) throws {
         let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("Fixtures/epoch-vectors.json")
         var v = try JSONDecoder().decode(Vectors.self, from: Data(contentsOf: source))
@@ -340,8 +370,8 @@ final class EpochKeysTests: VaultTestCase {
         let record = try EpochTrustRecord(
             vaultId: vaultId, root: root, chain: chain,
             list: [.init(role: "device", key: "age1pq1d", sign: sign, name: "Ñandú / ☕️"),
-                   .init(role: "recovery", key: "age1pq1r", sign: nil, name: "Recovery kit")],
-            markers: VaultMarkers(format: "sempere/1", features: []), reencryptFinished: true, rejectedAuthors: [fpA])
+                   .init(role: "recovery", key: "age1pq1r", sign: sign, name: "Recovery kit")],
+            markers: VaultMarkers(format: "sempere/1", features: []), reencryptFinished: true, home: fpA)
         XCTAssertEqual(record.pinned?.epochId, k2.epochId)
         XCTAssertEqual(record.pinned?.linkPublicKeys, try LinkPublicKeys(epochKey: k2))
         let data = try JSONEncoder().encode(record)
@@ -379,7 +409,8 @@ final class EpochKeysTests: VaultTestCase {
             ("short fingerprint", try mutateChain(1) { $0["list"] = ["00"] }),
             ("short link key", try mutateChain(0) { $0["linkPublicKeys"] = ["ed25519": "00", "mldsa65": "00"] }),
             ("no list", try mutate { $0["list"] = nil }),
-            ("short rejected author", try mutate { $0["rejectedAuthors"] = ["00"] }),
+            ("no home", try mutate { $0["home"] = nil }),
+            ("short home", try mutate { $0["home"] = "00" }),
             ("short p256", try mutate {
                 var list = $0["list"] as? [[String: Any]] ?? []
                 list[0]["sign"] = ["p256": "04", "mldsa65": Hex.encode(sign.mldsa65)]
@@ -390,10 +421,13 @@ final class EpochKeysTests: VaultTestCase {
             XCTAssertThrowsError(try JSONDecoder().decode(EpochTrustRecord.self, from: data), name)
         }
         let markers = VaultMarkers(format: "sempere/1", features: [])
-        XCTAssertThrowsError(try EpochTrustRecord(vaultId: vaultId, root: root, chain: [], list: [], markers: markers))
-        XCTAssertThrowsError(try EpochTrustRecord(vaultId: vaultId, root: root, chain: [chain[1]], list: [], markers: markers))
+        XCTAssertThrowsError(try EpochTrustRecord(vaultId: vaultId, root: root, chain: [], list: [], markers: markers, home: fpA))
+        XCTAssertThrowsError(try EpochTrustRecord(vaultId: vaultId, root: root, chain: [chain[1]], list: [], markers: markers,
+                                                  home: fpA))
         XCTAssertThrowsError(try EpochTrustRecord(vaultId: vaultId, root: Data(count: 31), chain: chain, list: [],
-                                                  markers: markers))
+                                                  markers: markers, home: fpA))
+        XCTAssertThrowsError(try EpochTrustRecord(vaultId: vaultId, root: root, chain: chain, list: [], markers: markers,
+                                                  home: Data(count: 31)))
     }
 
     // MARK: - Stock age

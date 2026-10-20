@@ -116,6 +116,10 @@ public struct MLKEM768X25519Identity: AgeIdentity, Hashable {
         try self.init(seed: Data(data))
     }
 
+    /// The 32-byte X-Wing seed, for derivations inside this package (the recovery key's signing
+    /// pair, key-hierarchy design §5.6).
+    package var seedBytes: Data { seed }
+
     /// The Bech32 encoding, uppercase `AGE-SECRET-KEY-PQ-1...` (77 characters).
     public var string: String {
         Bech32.encode(hrp: pqIdentityHRP, data: [UInt8](seed)) ?? ""

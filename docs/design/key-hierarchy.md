@@ -1,6 +1,7 @@
 # Key hierarchy: vault keys, device keys and one recovery key (design)
 
-Status: **design, 2026-10-20, revised after three rounds of independent review (§16).** It follows the owner's
+Status: **design, 2026-10-20, revised after three rounds of independent review and the KH1 code reviews
+(§16); the list has a single writer since §16.6.** It follows the owner's
 decisions of 2026-10-20 (below). Each open question was settled by its recommendation, which the
 owner pre-approved ("Decided (recommended, owner pre-approved 2026-10-20)", §15). It replaces the
 key-change part of `docs/design/device-first-sync.md` (§6 and the P4a, P4 and P10 rows of §10; see
@@ -50,18 +51,17 @@ Owner's decisions (2026-10-20):
   A still-listed device that was offline during a change re-encrypts under the current key exactly
   the files of its ledger that the change did not seal.
 - **Authenticated authors.** Each device also has its own signing pair (P-256 and ML-DSA-65, both in
-  the Secure Enclave on Apple devices). It signs every epoch it creates, every `vault.json` it
-  writes, and every entry it adds, over length-prefixed byte strings, never JSON (§4.1). An entry
-  that signed itself is a kit join, whatever it claims. An epoch never introduces a device.
-- **Forks are never merged.** At each branch the subtrees are compared, not the two children:
-  a side whose author the other side removed anywhere loses; mutual removal is always put to the
-  user, in the parent's names, with a signed answer; a stale side loses to
-  one that went on; otherwise the smaller `epochId`. Only removals of a losing side are re-applied on
-  top, with a fresh key. A removed device, or a coalition of them, can therefore never get a key
-  admitted, nor get its files sealed, through a fork (§5.6).
+  the Secure Enclave on Apple devices), over length-prefixed byte strings, never JSON (§4.1). An epoch
+  never introduces a device, except a takeover's new home.
+- **A single writer.** One device, the **home**, changes the list: it signs every epoch, approves
+  every device and writes every `vault.json`. It may hand that role to another device. When home is
+  lost or stolen, a device holding the recovery key **takes over**: a `takeover` epoch signed by the
+  recovery key and the new home, with a list the user picks. A takeover beats every home-signed epoch
+  that is not its ancestor; anything not signed by home or the recovery key is ignored. There are no
+  fork questions (§5.6).
 - **Joining is verified both ways.** The kit and the passphrase copy carry the vault's **root
   fingerprint**, and every chain is checked from it. An approval join exchanges typed codes or QR
-  commitments in both directions (§6).
+  commitments in both directions with home (§6). A kit join is a takeover.
 - **One recovery key**, printed as today's kit. The optional passphrase copy wraps the recovery key
   (scrypt, work factor 20, at least about 70 bits, superseded copies deleted). Stock-`age` recovery
   still works, with one extra `age -d` per epoch (§8).
@@ -79,12 +79,15 @@ Owner's decisions (2026-10-20):
 | vault identity `V_e` | the age MLKEM768-X25519 identity whose seed is `HKDF(K_e, "sempere/1 vault identity seed")` (`AGE-SECRET-KEY-PQ-1…`), and its recipient `v_e` (`age1pq1…`) |
 | device key | the MLKEM768-X25519 key pair a device generated. Its private half never leaves the device |
 | device signing pair | the P-256 and ML-DSA-65 key pairs a device generated, for authorship (§4.1) |
-| recovery key `R` | the one MLKEM768-X25519 identity printed in the recovery kit. It is never stored on a device |
+| recovery key `R` | the one MLKEM768-X25519 identity printed in the recovery kit. It is never stored on a device. Its signing pair is derived from it (§5.6) |
+| home | the one device that changes the list (§5.6): the creator, until a handoff or a takeover |
+| handoff | an epoch by home naming another listed device as home (§5.6) |
+| takeover | an epoch signed by the recovery key and a new home, with a list the user picked (§5.6) |
 | root fingerprint | `SHA-256` of the vault id and epoch 1's link public keys; constant for the vault's life, printed on every kit (§4.2) |
 | wrap | `K_e` and `V_e` encrypted to one listed key (an age file), in `vault.json` |
 | epoch record | `epochs/<e>-<idprefix>.epoch.age`: the parent key, the sealed set, and the public chain of every epoch since epoch 1 (§5.2.1) |
-| fork | two epochs with the same parent epoch (§5.6) |
-| kept chain | the path from epoch 1 that fork resolution keeps, over every epoch a device has seen (§5.6) |
+| fork | two epochs with the same parent epoch: only a takeover, or a copied or former home key, makes one (§5.6) |
+| kept chain | the path from epoch 1 that the precedence rule keeps, over every epoch a device has seen (§5.6) |
 | first list | the list an epoch was created with, signed in `epochSig` (§4.1); removals are computed from it |
 | sealed set | the paths and SHA-256 digests of the files under the parent key that the change kept |
 | write ledger | device-local: every file this device wrote (path, SHA-256, epoch) |
@@ -162,12 +165,16 @@ the tag or name uses changes.
       "addSig": { "p256": "…(128 hex)…", "mldsa65": "…(6618 hex)…" },
       "name": "Alex's iPad",
       "wrap": "-----BEGIN AGE ENCRYPTED FILE-----\n…\n-----END AGE ENCRYPTED FILE-----\n" },
-    { "role": "recovery", "key": "age1pq1…", "name": "Recovery kit", "added": "2026-10-04T16:20:00Z",
+    { "role": "recovery", "key": "age1pq1…", "sign": { "p256": "…", "mldsa65": "…" },
+      "name": "Recovery kit", "added": "2026-10-04T16:20:00Z",
       "wrap": "-----BEGIN AGE ENCRYPTED FILE-----\n…" }
   ],
   "listTag": "…(64 hex digits)…",
   "epochLink": { "ed25519": "…(128 hex)…", "mldsa65": "…(6618 hex)…" },
   "epochAuthor": "a1b2c3d4",
+  "epochReason": "remove",
+  "home": "…(64 hex digits: the home device's fingerprint after this epoch)…",
+  "parentList": ["…(64 hex digits: the parent list as the author saw it, sorted; absent at epoch 1)…"],
   "epochSig": { "p256": "…", "mldsa65": "…" },
   "markersTag": "…(64 hex digits)…",
   "author": "a1b2c3d4",
@@ -185,11 +192,14 @@ the tag or name uses changes.
   type.
 - **Fingerprints.** A device's fingerprint is
   `SHA-256("sempere/1 device" ‖ lp(key) ‖ lp(sign.p256) ‖ lp(sign.mldsa65))`, binding its decryption
-  key and its signing keys; the recovery key's is `SHA-256("sempere/1 recovery" ‖ lp(key))`. `lp(x)`
+  key and its signing keys; the recovery key's is
+  `SHA-256("sempere/1 recovery" ‖ lp(key) ‖ lp(sign.p256) ‖ lp(sign.mldsa65))`, over its signing pair
+  derived from it (§5.6). `lp(x)`
   is the 4-byte big-endian length of `x` followed by `x`, for every message in this document.
   (format.md §11.1's `fingerprint(r)` stays what capture keys use.)
-- `sign` (devices only): the device's signing public keys (§4.1), uncompressed P-256 (65 bytes) and
-  ML-DSA-65 (1952 bytes), lowercase hex. They never change for an entry: a device whose signing keys
+- `sign`: the device's signing public keys (§4.1), uncompressed P-256 (65 bytes) and ML-DSA-65 (1952
+  bytes), lowercase hex; for the recovery entry, the recovery key's derived pair (§5.6), which a
+  takeover's `recoverySig` verifies under. They never change for an entry: a device whose signing keys
   are lost leaves and joins again (§6.1).
 - `id`: the first 8 hex digits of the device fingerprint. It is the `<device>` of revision names (§5)
   and of `summaries/<device>.sealed` (§12.5). **Ids are for file names and the interface only**: no
@@ -198,12 +208,12 @@ the tag or name uses changes.
   re-encryption included; the joining device then generates another key. Eight hex digits keep file
   names as they are, and within one vault's few dozen keys a collision is about one in 10^7.
 - `kind` (`ipad`, `iphone`, `mac`, `cli`, or another lowercase word), `added`, `addedEpoch` and
-  `addedBy` are fixed when the entry is added and covered by `addSig` (§4.1): **`addedBy` is the
-  device whose signature `addSig` is**, or `recovery` when the entry signed itself. An entry whose
-  `addSig` is its own **is a kit join, whatever the field says**: it must say `recovery`, and is
-  tampered otherwise (§6.3).
-- `name` (at most 40 characters, cleaned as `label` in §2) is the one field any listed device may
-  change (a rename, §5.1). Names are plaintext, so storage can read them, as today (docs/security.md
+  `addedBy` are fixed when the entry is added and covered by `addSig` (§4.1): **`addedBy` is the home
+  that approved it, and `addSig` its signature**. The one exception is the new home a takeover
+  introduces (a kit join): `addedBy: "recovery"`, `addSig` by the recovery key's pair (§5.6). An entry
+  that signed itself is tampered.
+- `name` (at most 40 characters, cleaned as `label` in §2) is the one field home may change in place
+  (a rename, §5.1). Names are plaintext, so storage can read them, as today (docs/security.md
   "What others can see"). Unlike today they are covered by `listTag` and `authorSig`, so storage cannot
   rename a device to mislead the user.
 - `wrap`: an armored age file to `key` (one stanza) whose plaintext is an age identity file:
@@ -217,10 +227,17 @@ the tag or name uses changes.
   `age -i` reads this file as it is (lines starting with `#` are comments), so
   `age -d -i recovery.txt wrap.age > vault-keys.txt` gives a usable identity file. Sempere reads
   `K_e` from the second line and refuses the wrap unless the identity equals `V_e` derived from it.
-- `epochAuthor`, `epochSig`: the device that created this epoch, and its signature over the epoch
-  message (§4.1). They are the same in every `vault.json` of the epoch.
-- `author`, `authorSig`: the device that wrote this version of `vault.json` (the epoch's author, an
-  approver, a renamer or a merger), and its signature over the manifest message (§4.1).
+- `epochAuthor`, `epochSig`: the device that created this epoch (the parent's home; for a takeover, the
+  new home), and its signature over the epoch message (§4.1). They are the same in every `vault.json`
+  of the epoch, as are `epochReason`, `parentList`, `home` and (in a takeover) `recoverySig`, the
+  recovery key's signature over the same message, which carry the rest of what is signed.
+  The epoch's **first list** is the recovery entry, every device entry with `addedEpoch` below
+  `epoch`, and the home (at epoch 1 the creating device; after a takeover possibly a device the
+  takeover introduced), so `epochSig` verifies from
+  `vault.json` alone (§4.3 step 2; KH1 code review H2: of the two ways to get there, this one keeps the
+  signed parent list, from which removals are computed, under the author's own signature).
+- `author`, `authorSig`: the device that wrote this version of `vault.json`, and its signature over
+  the manifest message (§4.1): home, or the old home writing the `vault.json` of its own handoff.
 - Removed: `recipients`, `vaultSecret`, `recipientsTag`, `secretLink`, `rewrapPending`.
   `rewrap-journal.json` is gone too, except for the re-encryption journal of §7.
 - `features` and `markersTag` stay as in format.md §2 and §2.1.
@@ -237,15 +254,15 @@ the tag or name uses changes.
 | `markersTag` | `format` and `features` | unchanged, under `markersKey` of `K_e` |
 | body tag (§4), blob name (§8.1.2) | file authenticity | the same constructions, keyed by `tagKey` and `blobNameKey` of the epoch the file was written in |
 | `rewrapPending` + `rewrapFinished` (§3.3.1) | bind and retire a rewrap journal | the same mechanism, renamed `reencryptPending`, used only by §7 |
-| trust record `sempere-trust/2` | the last verified secret, list and markers | `sempere-trust/3`: vault id, `root`, the kept chain this device has verified (each epoch's number, id, parent, link keys, first list), the current list, markers, `reencryptFinished`, and the user's answers to fork questions (§5.6) |
+| trust record `sempere-trust/2` | the last verified secret, list and markers | `sempere-trust/3`: vault id, `root`, the kept chain this device has verified (each epoch's number, id, parent, link keys, first list), the current list, markers, `reencryptFinished`, and the current home (§5.6) |
 
 ### 4.1 Device signing pairs and authorship
 
 Each device generates, next to its device key, a **P-256 ECDSA** pair and an **ML-DSA-65** pair. On
 Apple devices both live in the Secure Enclave (`SecureEnclave.P256.Signing` and
 `SecureEnclave.MLDSA65`, CryptoKit, iOS and macOS 26; verified against Apple's documentation on
-2026-10-20), with the access class `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, so that a
-locked background run can still sign a union merge or a re-application (§5.1, §5.6). The CLI keeps
+2026-10-20), with the access class `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, so that home's
+locked background runs can still sign (an approval, a re-encryption step, §5.1, §7). The CLI keeps
 them in software next to its device key (§6.1). Two schemes, as for links, so a signature stays
 unforgeable while either holds.
 
@@ -254,9 +271,10 @@ unforgeable while either holds.
 
 | Signature | Message (`"sempere/1 author "` ‖ kind ‖ …) | Made by |
 | --- | --- | --- |
-| `addSig` (per entry) | `entry` ‖ lp(vaultId) ‖ lp(addedEpoch) ‖ lp(key) ‖ lp(sign.p256) ‖ lp(sign.mldsa65) ‖ lp(kind) ‖ lp(added) ‖ lp(addedBy) | the approver, which must be listed in the `vault.json` of `addedEpoch` that first lists the entry; or the entry itself (a kit join, `addedBy: "recovery"`) |
-| `epochSig` | `epoch` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(parent) ‖ lp(reason) ‖ lp(n) ‖ the epoch's **first list**: n fingerprints, sorted ‖ lp(m) ‖ the parent list as the author saw it: m fingerprints, sorted | the epoch's author, which must be in the parent epoch's list; at epoch 1, the creating device, which must be in epoch 1's first list (there is no parent; the root anchors it) |
-| `authorSig` | `manifest` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(epochRecordHash) ‖ lp(SHA-256(listMessage)) ‖ lp(format) ‖ lp(k) ‖ the k distinct features, sorted | a device listed in this `vault.json` |
+| `addSig` (per entry) | `entry` ‖ lp(vaultId) ‖ lp(addedEpoch) ‖ lp(key) ‖ lp(sign.p256) ‖ lp(sign.mldsa65) ‖ lp(kind) ‖ lp(added) ‖ lp(addedBy) | the home of `addedEpoch` (§5.6); for the new home a takeover introduces, the recovery key's pair (`addedBy: "recovery"`) |
+| `epochSig` | `epoch` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(parent) ‖ lp(reason) ‖ lp(recovery fingerprint) ‖ lp(home fingerprint after this epoch) ‖ lp(n) ‖ the epoch's **first list**: n fingerprints, sorted ‖ lp(m) ‖ the parent list as the author saw it: m fingerprints, sorted | the parent epoch's home; at epoch 1, the creating device (its own home, in epoch 1's first list; the root anchors it); in a takeover, the new home |
+| `recoverySig` (takeover only) | the same message as `epochSig` | the recovery key's derived pair (§5.6), under the `sign` keys whose recovery fingerprint is the parent's `recovery` |
+| `authorSig` | `manifest` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(epochRecordHash) ‖ lp(SHA-256(listMessage)) ‖ lp(format) ‖ lp(k) ‖ the k distinct features, sorted | home (or the old home, for the `vault.json` of its own handoff) |
 
 ECDSA signs the message with SHA-256 and stores `r ‖ s` (64 bytes); ML-DSA-65 signs the message
 itself (pure, empty context), as links do. Both must verify. `authorSig` covers the record's hash, so
@@ -267,27 +285,22 @@ a name in Swift and TypeScript.
 **Rules a reader checks**:
 
 - an epoch's first list contains only fingerprints of its **parent's list**, plus at most one new
-  recovery entry (a kit replacement or re-encryption): **no new device is ever introduced by an
-  epoch**. New devices enter only by a same-epoch addition with an `addSig`. The parent's list is
-  its first list **plus every addition made during the parent epoch**: an entry with
-  `addedEpoch` = the parent whose `addSig` verifies under a device of the parent's first list, or of
-  an addition already admitted this way (an approver added earlier in the same epoch). The additions
+  recovery entry (a kit replacement or re-encryption), or the new home of a takeover: **no other new
+  device is ever introduced by an epoch**. New devices enter only by a same-epoch addition with
+  home's `addSig`. The parent's list is its first list **plus every addition made during the parent
+  epoch**: an entry with `addedEpoch` = the parent whose `addSig` verifies under the parent's home. The additions
   of each epoch are carried in its chain entry (§5.2.1), because an entry whose device was later
   removed is no longer in any `keys[]`. A device that missed an addition therefore still verifies a
   removal whose first list carries the added device;
-- **bound** (format.md §9 style): at most 256 additions per epoch, admitted in one pass in the order
-  they are listed, each against the devices admitted before it; an addition whose approver is not yet
-  admitted is rejected, so verification is linear and cannot recurse. The fuzz target covers it;
-- an entry's **`addedBy` chain** is its approver, that approver's approver, and so on, through the
-  `addSig`s in `keys[]` and the chain's `additions`, until it reaches an entry of epoch 1's first list
-  or a kit join. It is finite, because every approver was admitted before the entry it approved. §5.6
-  uses it to tell whether a device was added by a fork's author;
+- **bound** (format.md §9 style): at most 256 additions per epoch, each checked once against home's
+  keys, so verification is linear. The fuzz target covers it;
 - an entry's `addSig` verifies as the table says. An entry that first appears in a `vault.json`
   without a valid `addSig` is tampered, and so is one whose `addedBy` names someone other than its
   signer;
-- `epochSig` and `authorSig` verify under the `sign` keys of a device listed where the table says.
+- `epochSig`, `recoverySig` and `authorSig` verify under the keys the table names, and `home` stays
+  the parent's except in a handoff (another listed device) or a takeover (its author).
 
-Authorship decides which fork is kept (§5.6) and who a device was added by (§6.4). Everything else
+Authorship decides which epoch is followed (§5.6) and who approved a device (§6.4). Everything else
 (what a file is, who may read) is decided by keys and sealed sets, as before. The private signing keys
 never leave their device, so no key holder can sign as another device.
 
@@ -312,25 +325,30 @@ A device unwraps its own entry. If the result does not parse, or the identity is
 from `K_e`, its wrap was tampered with. `root` must equal the trust record's root in every case, or
 the file is tampered. Then:
 
-1. **Same epoch and `epochId` as the trust record**, and `listTag`, `authorSig` and every new entry's
-   `addSig` verify: **verified**. A list that only gained entries under the same epoch is an addition;
+1. **Same epoch and `epochId` as the trust record**, and `listTag`, `authorSig` (by home) and every new
+   entry's `addSig` (by home) verify: **verified**. A new entry is admitted only with home's signature,
+   never on other entries' say-so (KH1 code review H1). A list that only gained entries under the same epoch is an addition;
    one whose entries changed only by `name` is a rename. A list that lost entries, or whose entry
    changed any other field, under the same epoch is **tampered**: a removal always changes the epoch
    (§5).
 2. **A higher epoch.**
    - If the record is local: the device opens it with the unwrapped key and reads its `chain` (§5.2).
      It finds its pinned epoch there, then checks each later link under the previous entry's link
-     keys, and each entry's `epochSig` under the `sign` keys of its parent list, up to `vault.json`'s
-     own. The first link after the pinned epoch can only be made by a holder of the pinned key, so a
+     keys, and each entry's `epochSig` under its parent's home (a takeover: its new home and the
+     parent's recovery key), up to `vault.json`'s own. The first link after the pinned epoch can only be made by a holder of the pinned key, so a
      `vault.json` built around an attacker's key fails here.
    - If the record has not arrived: the change is taken only when the epoch's `parent` is the pinned
-     epoch and `epochLink` and `epochSig` verify **directly** under the pinned epoch's keys. Otherwise
+     epoch, `epochLink` verifies **directly** under the pinned epoch's link keys, and `epochSig`
+     verifies from `vault.json` (§3) by the pinned epoch's home (or, for a takeover, by its new home and
+     the recovery key `TakeoverRule` names for the pinned epoch), over a first list within the pinned
+     list. The pinned epoch's home and recovery key come from the trust record, never from the new
+     file: its own `home` names whoever wrote it (round 7, M3). Otherwise
      the new epoch is **unverified-pending**: the device keeps reading, keeps writing locally under its
      pinned key, uploads nothing new, and pulls again. Writes made meanwhile are in its ledger and are
      caught up (§5.4) once the epoch verifies. The status line says "Waiting for a device-change record
      from <target>"; every device that holds a record pushes it to every target it has, and adding
      another target, or Export, is the way out if one target withholds it for good.
-   - Then fork resolution (§5.6) runs over every epoch the device has seen.
+   - Then the precedence rule (§5.6) runs over every epoch the device has seen.
 3. **A lower epoch**, or the same epoch with another `epochId`: when it chains from an epoch the device
    holds, it joins the epoch tree, and §5.6 decides. Otherwise it is a rollback: tampering. Nothing is
    written, and the device keeps its own `vault.json`.
@@ -344,37 +362,27 @@ the file is tampered. Then:
 
 ### 5.1 Adding, renaming
 
-**Adding.** An approving device appends an entry with a wrap of the current `K_e`, its own `addSig`
-(`addedBy` = its id), `listTag` and `authorSig`. A joining device with the recovery key adds itself
-the same way with a self-signed `addSig` and `addedBy: "recovery"` (§6.3). No file is touched and the
-epoch does not change.
+**Adding.** Home appends an entry with a wrap of the current `K_e`, its own `addSig` (`addedBy` = its
+id), `listTag` and `authorSig`, after a join by approval (§6.2). No file is touched and the epoch
+does not change. A device with the recovery key joins by a takeover instead (§6.3).
 
-**Renaming.** Any listed device may change any entry's `name` (and only that), with a new `listTag`
-and its own `authorSig`.
+**Renaming.** Home may change any entry's `name` (and only that), with a new `listTag` and its own
+`authorSig`. Other devices ask home (the device list offers "Rename" only on home, and elsewhere
+says which device manages devices).
 
-**Concurrent changes under one epoch merge.** Two verified `vault.json` with the same epoch and
-`epochId` are merged by any listed device: the union of their entries, sorted by `key`. When the same
-key appears on both sides with a different `name` (a rename on both sides), the entry with the smaller
-SHA-256 of its `listMessage` encoding wins, and the user renames again if needed. Any other field of
-an entry is fixed by `addSig`, so it cannot differ between two valid copies. An addition never drops a
-key, so there is no "owed rotation". A merger signs the merged file as its `author`; `addedBy` stays
-the original approver, checked by `addSig`, never by who wrote the file.
+**One writer, no merge.** Only home writes `vault.json`, one version after another, so two versions
+of one epoch are the same writer's: the newer one's list contains the older one's (additions only;
+names may differ). Readers keep the version whose list contains the other's, and a later rename wins
+on home itself. Two versions of one epoch whose lists do not contain each other are a home conflict
+(§5.6), never merged. There is no "owed rotation" and nothing re-applies an addition: home's own
+removal epoch carries the additions it made before it.
 
-**Additions overtaken by a removal.** Each approving device records its approvals in its ledger until
-it sees them on the kept chain's current list. If a new epoch does not carry an addition (A removes X
-at `e+1` while B adds N at `e`), **B re-applies it** on top, with a new `addSig`. Only the approver
-re-applies, and only while it is itself listed. Nothing else ever re-adds a key: not a merge, not a
-fork rule (§5.6).
-
-What a key holder that is about to be removed can do (review L5): until the removal reaches a device,
-the soon-to-be-removed device X still holds `K_e` and may add entries under `e`. Each carries X's
-`addSig` and shows "added by <X's name>". The next epoch's first list is a subset of its parent list
-as its author saw it, so an entry the remover never saw is not carried, and X, no longer listed,
-cannot re-apply it.
+A device that is not home and about to be removed cannot add anything: it never could.
 
 ### 5.2 Removing a key (immediate)
 
-On the removing device A, in this order, each step durable before the next. A holds the vault's write
+On home A (only home removes, §5.6; home itself is removed only after a handoff or by a takeover),
+in this order, each step durable before the next. A holds the vault's write
 lock (`VaultFileLock`) from step 3 to step 5, so no write lands between sealing and the new
 `vault.json`.
 
@@ -426,9 +434,13 @@ revision). The JSON:
               "sealed": { "notes/<id>/<name>.delta.age": "<sha256 hex>", … } },
   "chain": [ { "epoch": 1, "epochId": "…", "linkPublicKeys": { "ed25519": "…", "mldsa65": "…" },
                "reason": "create", "list": ["<fingerprint>", …], "parentList": [],
-               "author": { "key": "age1pq1…", "p256": "…", "mldsa65": "…" }, "epochSig": { … } },
+               "author": { "key": "age1pq1…", "p256": "…", "mldsa65": "…" }, "epochSig": { … },
+               "recovery": "<fingerprint>", "home": "<fingerprint>" },
              { "epoch": 2, "epochId": "…", "parent": "…", "linkPublicKeys": { … }, "link": { … },
                "reason": "remove", "list": [ … ], "parentList": [ … ], "author": { … }, "epochSig": { … },
+               "recovery": "<fingerprint>", "home": "<fingerprint>",
+               "recoveryAuthor": { "key": "age1pq1…", "p256": "…", "mldsa65": "…" },
+               "recoverySig": { … },
                "additions": [ { "key": "age1pq1…", "sign": { … }, "kind": "iphone",
                                 "added": "…", "addedEpoch": 2, "addedBy": "e5f6a7b8",
                                 "addSig": { … } }, … ] },
@@ -441,14 +453,23 @@ revision). The JSON:
   or `identity` there (§7). Epoch 1 has no `parent`.
 - `chain` holds only public values, one entry per epoch on this epoch's ancestry from epoch 1, each
   with the first list and the signed parent list of §4.1, the author's public keys (whose
-  fingerprint must be in the parent list), and `additions`: every same-epoch addition the next
+  fingerprint must be the parent's home, or the new home of a takeover), `home`, a takeover's
+  `recoveryAuthor` (the recovery key and its signing keys, whose recovery fingerprint must be the
+  parent's `recovery`) and `recoverySig`, and `additions`: every same-epoch addition the next
   epoch's author saw during that epoch, with the fields its `addSig` covers (§4.1, "parent's list").
   About 11 KB per epoch plus about 9 KB per addition. It lets a device that missed several
-  epochs check every link and signature (§4.3), and lets fork resolution compute removals (§5.6),
+  epochs check every link and signature (§4.3), and lets the precedence rule compute removals (§5.6),
   even after re-encryption has deleted the older records.
-- `reason`: `create`, `remove`, `recovery` (replacing the kit), `reencrypt`, `reapply` or `resolve`
+- `reason`: `create`, `remove`, `recovery` (replacing the kit), `reencrypt`, `handoff` or `takeover`
   (§5.6). It and `removed` are shown in the device history and are informational: removals are
-  computed (§4.1).
+  computed (§4.1). The record's `reason` and `by` must equal its last chain entry's (KH1 code review
+  M6), and readers use the chain entry.
+- Each chain entry names the epoch's **recovery** fingerprint and its **home**, both signed by
+  `epochSig`, so every copy of the chain carries them (KH1 code review M1, M2). A `recovery` or
+  `reencrypt` epoch replaces the recovery fingerprint (the new one is its only new key, the old one is
+  gone); every other epoch keeps it, a takeover included. The recovery keys are the chain's
+  `recovery` fields. When the removed device authored a recovery epoch, the
+  removal sheet suggests replacing the kit.
 - Readers bound the file (64 MiB on disk and after gunzip) and treat it as untrusted input (format.md
   §9); KH1 adds a fuzz target.
 
@@ -462,8 +483,8 @@ For a vault file `F` at path `p` (revision, blob, notebook record, inbox file, `
    (§5.6), verifies under `j`'s keys, and the record whose `parent` is `j` lists `p` with
    `SHA-256(F)`: **accepted**.
 3. Otherwise, if that record has not arrived yet: **pending** (neither accepted nor set aside).
-4. Otherwise, if it verifies under some epoch the device holds (on the kept chain or a discarded
-   fork): **set aside** ("from before a device change"), with the reason. This includes a sealed path
+4. Otherwise, if it verifies under some epoch the device holds (on the kept chain, or one the
+   precedence rule dropped or ignored): **set aside** ("from before a device change"), with the reason. This includes a sealed path
    whose bytes differ.
 5. Otherwise: unreadable. It is quarantined (format.md §9.1) and reported, as today.
 
@@ -478,7 +499,7 @@ removal.
 ### 5.4 Catch-up and the write ledger
 
 **The ledger.** Device-local, outside the vault, per vault. One entry per file this device writes:
-path, SHA-256, epoch, time, and the approvals of §5.1. It is stored with the working copy in the App
+path, SHA-256, epoch, time. It is stored with the working copy in the App
 Group container, sealed with a key in a Keychain item of class
 `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` (the class capture profiles already use), so the
 widget extension can append while the device is locked. In the CLI it is sealed to the device key.
@@ -488,9 +509,18 @@ widget extension can append while the device is locked. In the CLI it is sealed 
   leaves an entry with no file, which is dropped at the next open; the reverse order could leave a
   file that no ledger knows.
 - **Lifetime.** An entry lives until the record whose `parent` is its epoch seals its path with its
-  digest, or until its re-encryption under a later epoch is recorded (the new entry then lives by the
-  same rule). Uploads and acceptance on targets prune nothing. An entry whose file this device has
+  digest, **and that record is on the pinned chain with a kit replacement (a `recovery` or `reencrypt`
+  epoch) pinned at or above it**, or until its re-encryption under a later epoch is recorded (the new
+  entry then lives by the same rule). Only a pinned replacement makes a seal final: from then on no
+  takeover from before it is valid for this device (§5.6 rule 3), while any number of plain home
+  epochs above the sealer can still be dropped by a takeover from an older parent (round 8, H1-b). So
+  **a thief's plain removal epochs, when a takeover drops them, un-seal**: the entries they sealed are
+  still there, and the device re-encrypts its own files instead of leaving them set aside (round 7,
+  H1: a stolen home that re-encrypts everything must not strand the vault; `LedgerRule.sealIsFinal`). Uploads and acceptance on targets prune nothing. An entry whose file this device has
   itself deleted by compaction or thinning (format.md §5.3, §5.8.4) is dropped with the file.
+- **Bulk Keep.** Repair offers **"Keep every file from the dropped epochs that this device wrote"**: the
+  set-aside files under an epoch a takeover dropped whose path and bytes this device's ledger holds
+  (`LedgerRule.keepable`), re-encrypted under the current key in one action.
 - **Failure.** An unreadable ledger fails closed: catch-up stops and is reported, and nothing is
   re-encrypted or set aside on its account. Re-encryption (§7) writes its outputs as ledger entries
   too.
@@ -512,10 +542,11 @@ widget extension can append while the device is locked. In the CLI it is sealed 
 3. replaces its local file with the re-encrypted copy only after the copy decrypts and its body
    equals the old one, then records the new entry;
 4. uploads normally. On a target, an **accepted** copy replaces an **unaccepted** copy of the same
-   path (an old-key copy that is not sealed, or a copy under a losing fork's key), after the
+   path (an old-key copy that is not sealed, or a copy under the key of an epoch the precedence rule
+   dropped), after the
    receiver has set the unaccepted one aside. A current copy is preferred when the device has one;
-   otherwise an accepted sealed copy is used, so a target left holding only a losing re-encryption's
-   copies (§7.2) is repaired by any device that still has the old accepted bytes. This is the one
+   otherwise an accepted sealed copy is used, so a target left holding only the copies of a
+   re-encryption a takeover dropped (§7.2) is repaired by any device that still has the old accepted bytes. This is the one
    replacement rule of the engine outside §7, and it never replaces an accepted file.
 
 Files written under an old key by another listed device D that C holds are set aside on C until D
@@ -530,13 +561,13 @@ that does not list it. Then X:
 1. **never pins** an epoch that does not list it, and keeps its own `vault.json`;
 2. stops uploading, but **keeps pulling** `vault.json` (every version and conflict copy the target
    offers) and `epochs/`, read-only, at the idle pace;
-3. re-runs fork resolution on everything it pulls. If the kept chain changes to one that lists X (a
-   real change discards a forged one), X takes it and resumes.
+3. re-runs the precedence rule on everything it pulls. If the kept chain changes to one that lists X
+   (a takeover drops a stolen home's removal of X), X takes it and resumes.
 
 The screen says what X can know, and that it can change: **"This device is not on the newest device
-list of <vault>. The change was made by <name> on <date>. If that is a mistake (for example a change
-made on another device at the same time), this device will rejoin by itself when the vault shows
-it."** The parent list supplies the names (§5.6). It offers:
+list of <vault>. The change was made by <name> on <date>. If that is a mistake (for example a lost
+device that was managing devices), a takeover with the recovery kit undoes it, and this device rejoins
+by itself when the vault shows it."** The parent list supplies the names (§5.6). It offers:
 
 - the count of its own changes that no other device has: ledger entries not sealed and not on any
   target as accepted files;
@@ -546,125 +577,163 @@ it."** The parent list supplies the names (§5.6). It offers:
 
 An unlisted device refuses every write to the vault (`VaultError.removedFromVault`, CLI exit code 8).
 "Removed" is never final in the format: it is the state of a device whose kept chain omits it, and a
-forged change seen first is undone when the real one arrives (§5.6, scenario "forged removal seen
-first", §11.1).
+stolen home's removal is undone by a takeover (§5.6, scenario "stolen home", §11.1).
 
 **Removing a device warns when its last sync is stale.** Each device's published summaries file
 (`summaries/<id>.sealed`, format.md §12.5) gains a `synced` timestamp (the end of its last complete
 two-way run), authenticated under the current epoch. The sheet shows "Alex's iPhone last synced 12
 days ago. Changes it made since then will not reach this vault. It will be told it was removed, and
 can export them." It also says what the key change cannot do: **"It can still reach your storage.
-Change the password of <WebDAV target>, or sign it out of iCloud, if you no longer control it."** When
-the device approved other devices, the sheet lists them (from `addSig`) with **"Also remove the
-devices <name> added"**, checked when the user marks the device as lost or stolen.
+Change the password of <WebDAV target>, or sign it out of iCloud, if you no longer control it."** When the device was home for a while (a handoff), the sheet lists the devices it approved then
+(from `addSig`) with **"Also remove the devices <name> added"**, checked when the user marks the
+device as lost or stolen.
 
-### 5.6 Forks: resolved over subtrees, never merged
+### 5.6 Home, handoff, takeover, precedence
 
-Two devices that each make a new epoch from the same parent while they cannot see each other create a
-**fork**. So does a removed device that makes an epoch from any epoch whose key it held, at any depth.
-Records do not collide (their names carry the id), and `vault.json` versions conflict (format.md §1.3).
-**Forks are never merged and no key is derived from two epochs.**
+The list has **one writer**. Six review rounds of fork rules (§16) showed that letting every listed
+device change the list makes forks a permanent source of attacks and questions. So only one device,
+the **home**, changes the list, and the recovery key takes over when home is gone.
 
-**The epoch tree.** Each device keeps the tree of every epoch it has verified (§4.3: link under the
-parent key, `epochSig` by a device of the parent list, first list within the parent list plus at most
-one recovery entry), from `vault.json` versions, conflict copies and records. For each epoch it knows
-the author, the first list, and the removals computed as in §4.1. The **kept chain** is found from the
-root down: at each epoch with more than one child, the rules below pick one child, comparing the
-**subtrees** below the children (each child with all its descendants), never the children alone.
+1. **Home.** The device that creates the vault is home. Only home's signing keys sign device-list
+   epochs (`epochSig`) and same-epoch list changes: approving a device (`addSig`), removing one,
+   renaming, replacing the recovery kit, re-encrypting. Every `vault.json` names its `home` (signed in
+   `epochSig`), and home writes every `vault.json` (`authorSig`). Other devices never sign list
+   changes: they request (§6.2) and follow.
+2. **Handoff.** Home signs a `handoff` epoch naming another listed device as the new home ("Make this
+   Mac the device that manages devices"). It is an ordinary linear epoch: same list, new `home`, a new
+   key as for any epoch. From its parent on, the old home's signatures no longer count.
+3. **Takeover.** A device that holds the recovery key `R` (the kit, or the passphrase copy) signs a
+   `takeover` epoch **whose parent is its own pinned frontier** (round 7, M1; a kit joiner's is the
+   epoch it verified, or the branch the user picked at a home conflict). It names the device itself as
+   the new home, and an explicit list the user picks on
+   the takeover screen: a checkbox per device of the parent's list, checked, and per device of an
+   earlier list on its ancestry, **unchecked by default when a later epoch removed it** (so the user may
+   re-admit a device a stolen home removed; round 7, M2); the recovery entry is always kept. It is
+   signed by the new home's device keys (`epochSig`) **and** by the recovery key's signing pair
+   (`recoverySig`, over the same message). Its first list is within the lists of its ancestry plus the
+   new home itself, which may be a device no list held: **a kit join is a takeover**. It never lists a
+   retired recovery key. **For a pinned device it is valid only under the pinned frontier's own kit**
+   (owner decision, round 7 C1; round 8 C1-b): its `recoverySig` must be by the recovery key of the
+   last epoch the device pinned, and its parent must still have that key. So **a kit's retirement is
+   final for every device that has seen it**, and **a kit introduced below the frontier signs nothing
+   for the device until it has followed and pinned the epoch that introduced it** (a run later, since
+   the frontier is read when a run starts; `EpochChain.verify` reports such a takeover as
+   `kitNotPinned`, not as tampering). An unpinned device (a joiner) takes the parent's kit. The rule is
+   one function, `TakeoverRule.recoveryKey`. The recovery key does not change in a takeover (a new kit is a
+   later `recovery` epoch by the new home).
+4. **Precedence (the only branch rule).** A device follows epochs that extend its chain linearly and
+   are signed by the home of their parent (a handoff's own signer is its parent's home). **A takeover
+   beats every home-signed epoch that is not among its own ancestors**: a device that sees a valid
+   takeover whose parent is on its chain, or below it, switches to it and drops the home-signed epochs
+   after that parent. Two takeovers that are not ancestors of each other are both the user's, so the
+   one with the smaller `epochId` wins, silently and deterministically; a takeover below a takeover is
+   simply linear. Any epoch not signed by the home of its parent, and any takeover without a valid
+   `recoverySig` by the recovery key rule 3 names, is ignored with everything below it. **No user
+   questions.** If home's own key signed two children of one epoch (it was copied or stolen, or a
+   former home signs under an epoch where it was still home), a device stays on the one its pinned
+   chain holds; otherwise **the user picks the branch**: the screen shows both ("this branch added X and
+   removed Y; that one …"), and the pick becomes the pinned chain once followed (round 7, M2). Until
+   then the device stops there. Both cases report a **home conflict**; a takeover also settles it. A
+   conflict is never settled by `epochId`.
+5. **Keys change immediately** (unchanged, §5.2). Re-encrypt everything stays an option (§7), started
+   by home.
 
-**Pre-pass.** At a branch with several children, first discard every child whose author is removed by
-some sibling's subtree, unless that child's own subtree removes that sibling's author in turn (a true
-mutual pair, rule 2). A child discarded here has lost by rule 1. Then the remaining children are
-compared in pairs, in `epochId` order, the winner of each pair going on. Rule outcomes are not
-transitive, so the pre-pass makes rule 1 decisive whatever the pairing order: a removed device cannot
-force a question (rule 2) against an honest sibling when another sibling already removes it. A side
-counts as lost by rule 3 or 4, and is re-applied, whichever sibling it lost to.
+**The recovery key's signing pair.** `R`'s 32-byte X-Wing seed (what `AGE-SECRET-KEY-PQ-1…` encodes)
+derives a P-256 and an ML-DSA-65 pair, as for a device (§4.1), with HKDF-SHA256 (RFC 5869, empty
+salt, `L = 32`):
 
-For a branch point P with sides **S** and **T** (subtrees rooted at children `s` and `t`, authored by
-`author(s)` and `author(t)`):
+- the P-256 scalar is the first output of `HKDF(seed, info = "sempere/1 recovery signing p256" ‖ c)`,
+  for `c` = 0, 1, … (one byte), that is a valid scalar (1 ≤ s < n; a retry has probability about
+  2^-32);
+- the ML-DSA-65 seed (FIPS 204 `KeyGen_internal`) is `HKDF(seed, info = "sempere/1 recovery signing
+  mldsa65")`.
 
-1. **A removed author loses.** If `author(s)` is removed by some epoch in **T** and `author(t)` is not
-   removed by any epoch in **S**, then **T** wins (and the reverse). A removed device that forks from
-   any older epoch, with any `epochId`, loses at the branch, because the real side's subtree contains
-   its removal.
-2. **Both authors removed by the other side** (mutual removal): **the user decides; nothing decides
-   without asking.** (The second draft's "a third device decides" rule is dropped: a device that X
-   added, carried into later epochs, could have decided it for X; round-3 M2.)
-   - **Who is asked**: every device listed on at least one side (in P's list or added on either side
-     after the branch) that is not one of the two authors. The CLI cannot ask: `sempere devices
-     resolve --keep <epochId>` answers, `sempere sync --json` reports `forkQuestion` with both
-     changes, and until then a CLI bridge keeps pulling but uploads nothing new.
-   - **The question** shows both changes with names from **P's list** (never from either fork's own
-     list): **"Two device changes were made at the same time. Which of these did you make?"**, each
-     line reading "<author's name in P> removed <names in P> on <date>".
-   - **The answer** is stored in the device's trust record, and from then on any fork authored by the
-     rejected device loses at every branch on this device without asking again. It is published as a
-     **`resolve` epoch** (`reason: "resolve"`, a fresh key) on top of the chosen side when the
-     answering device is listed there, whose record names the rejected author. A resolve epoch may
-     remove nothing; it is not a re-application, and the liveness check ignores it (J9).
-   - **Who is bound**: other non-author devices still ask their own users, and show any resolve epoch
-     they have seen as context ("Mac kept the change made on iPad"). The two **authors**, which are
-     never asked, follow a resolve epoch whose author's `addedBy` chain (§4.1) passes through neither
-     author, so a device X added cannot settle it for X. An author on the losing side is then
-     unlisted and told so (§5.5).
-   - **Contradictions**: a device whose stored answer differs from a resolve epoch it sees shows both
-     ("You kept the change made on iPad; Mac kept the change made on Phone") and lets the user revise
-     the answer, in the prompt and later in Settings ▸ Vault ▸ Devices ▸ History. Until the answers
-     agree, each device follows its own, and the status line says the devices disagree.
+The labels are disjoint from every other derivation (§2.2). The recovery entry of `vault.json` carries
+the public keys in `sign`, and the recovery fingerprint binds them (§3), so a takeover verifies under
+the keys of its parent's `recovery` fingerprint and nobody can substitute them. **The kit and the
+passphrase copy need nothing new**: both hold `R`, and the pair is derived from it when a takeover is
+signed, then dropped with `R`. Nothing stores the private pair.
 
-   Until the device has an answer, it treats both sides as unverified-pending (§4.3): it keeps
-   writing locally under its pinned key and uploads nothing new. Authors keep their own side until a
-   binding resolve epoch arrives (§5.5 rule 1).
-3. **A stale side loses.** If neither author is removed by the other side, a side whose child has no
-   descendants loses to a side that has descendants. An honest device that was offline and made a
-   change from an old epoch therefore never replaces the chain that went on without it. Descendants
-   are counted whoever wrote them, so a removed device can give its own side descendants; that only
-   matters where rule 1 does not already discard its side (see "Residual").
-4. **Otherwise** (honest concurrent changes, both stale or both continued): the child with the smaller
-   `epochId` wins, and the user is told ("Two device changes were made at the same time; the one from
-   Mac was applied first").
-
-**Re-application.** When a side loses by rule 3 or 4 (never 1 or 2), the first listed device that sees
-it writes **one** new removal epoch on top of the kept chain (`reason: "reapply"`, a fresh random key)
-that removes every key removed by any epoch of the **whole losing subtree** that is still listed on
-the kept chain. If no such key remains, it writes nothing. Two devices re-applying at once make a fork
-of two re-applications with the same removals: rules 3 and 4 keep one, and the other's re-application
-finds nothing left to remove and stops.
-
-**Only removals are re-applied, and never of the recovery entry.** A losing side's recovery
-replacement (`recovery` or `reencrypt`) is offered again to its initiator ("Replace the recovery kit
-again"), and until then the kept chain's kit stays valid. A losing side's additions come back only
-through their approvers (§5.1), who must be listed on the kept chain.
-
-**What happens to files.** A losing side's records are set aside (kept for the history view). Files
-under its keys are not accepted: they are set aside on every device. The honest writers on the losing
-side catch up from their own ledgers into the kept chain (§5.4), so nothing of theirs is lost. A
-removed device's files never become accepted through a fork.
-
-**Why this holds (J10, §11.2).** Every key of every kept epoch is wrapped only to that epoch's list
-and appears only in records of its descendants. An epoch's list never introduces a device (§4.1), and
-re-application only removes. A coalition of removed devices therefore holds exactly the keys of the
-epochs that listed one of its members, and can get none of its forks kept against a side that removes
-them (rule 1, applied in the pre-pass), nor decided in its favor without a user's answer (rule 2),
-and the user is asked in the parent's names, about changes the user made or did not make.
+**Why this holds.** Every epoch on a kept chain is signed by the home of its parent or by `R`. A removed
+device signs nothing that counts unless it is home (only home removes, so home is never removed
+without a handoff or a takeover first), and a former home's late signatures under an old epoch are a
+home conflict that the pinned chain settles for every device that ever saw the newer epoch. Devices
+that are not home cannot even approve. A takeover's list is the user's own pick, so removals the
+takeover did not see are covered by unchecking those devices.
 
 **Residual.**
 
-- A device that has seen **neither** the real removal **nor** anything after it, and is shown only a
-  fork that a removed device made, takes it and writes under its key until the real change reaches it.
-  Rule 1 then discards the fork, and the device catches up, but what it wrote meanwhile was readable to
-  the removed device. This is today's limit (format.md §2.1 "Limits"), narrowed: the removed device
-  has to make and serve the fork before that device sees the real change.
-- A removed device can make a mutual-removal fork (rule 2) and so make a device ask its user once
-  before it uploads again. After the answer, that device discards every later fork by that author
-  without asking. The cost is one question per device per removed attacker. It cannot avoid being
-  named: the question uses P's list.
-- **A still-listed device the attacker added** (a "puppet": X approved it before its removal, and the
-  remover carried it) is an honest listed device to the rules. It can author epochs, answer fork
-  questions and write resolve epochs; only the authors' binding rule ignores it. The removal sheet
-  therefore offers **"Also remove the devices <X> added"** (§5.5), listed from `addSig`.
-- On a device that has seen only a removed device's stale fork and that device's own descendants of
-  it, rule 3 cannot help (rule 1 decides once the real removal arrives).
+- **Managing devices needs home or `R`.** Approving, removing, renaming and replacing the kit happen
+  on home. Removing a device while home is unreachable (home itself lost or stolen) needs the kit or
+  the passphrase: a takeover.
+- **A stolen home acts as owner until the takeover.** It can approve its own devices and remove
+  others; every such epoch is dropped by the takeover (or, if the takeover is made on top of them,
+  kept as history while the takeover's list excludes what the user unchecks).
+- **A takeover drops home changes it did not see.** Removals are covered, because the user picks the
+  list. Additions need re-approval by the new home; the devices they added see themselves unlisted
+  (§5.5) and join again.
+- **Whoever holds `R` holds everything**, as before: every wrap, and now also the power to take over.
+- **A takeover by an attacker who holds `R` is total compromise, and a grinding attacker wins it.** Two
+  takeovers by holders of the same `R` are indistinguishable, and the attacker can grind the smaller
+  `epochId`, so another takeover is no answer. The answer is **Replace Recovery Kit (§6.5) before the
+  attacker acts**: a replacement retires `R` for every device that sees it, and from then on no
+  takeover with `R` is valid there. **Once an attacker's takeover has won on a device there is no
+  recourse on that device** except rejoining it from one where it has not.
+- **A stolen, unlocked home whose thief knows the passcode can replace the kit** before the owner's
+  takeover reaches a device (Replace Kit asks for device-owner authentication, §6.5, which the passcode
+  satisfies). Devices that pinned that replacement then refuse the owner's old-kit takeover and take
+  the thief's takeover under its own kit. Devices pinned before it take the owner's takeover and refuse
+  the thief's (its kit is not their frontier's, round 8 C1-b), so the thief does not win them by
+  grinding an id. An unpinned joiner sees both takeovers as valid and takes the smaller `epochId`, so
+  the thief can win joiners. The defense is the passcode on home, and taking over the moment home is
+  lost: the kit is the longer-lived secret, so its retirement is final.
+- **Re-encrypt Everything is a kit replacement too** (§7: it replaces `R`). A thief's re-encryption on
+  a stolen home therefore locks the owner's old kit out of every device that pinned it, exactly as a
+  kit replacement does; the owner's takeover drops it only on devices pinned before it (§7.2, §11.1).
+- **A kit joiner on a chain where `R` was retired cannot take over at all**: its takeover is signed by
+  `R`, and every device that pinned the retirement refuses it. Only the current kit joins.
+- **A home conflict stops joiners** until the user picks a branch or a takeover settles it. Approval
+  joiners start pinned at the approver's frontier (§6.2), which settles it for them.
+- A device that has not seen a kit replacement (pinned before it, or a joiner that saw nothing) still
+  takes a takeover by the retired kit; approval joiners are pinned at home's frontier, which closes it
+  for them.
+- **The old kit's optional `recoverySig` on a replacement (§6.5) is evidence only**: it records that the
+  old kit's holder agreed, and changes no precedence. A thief holding home simply omits it.
+- A device that has seen neither the takeover nor anything after its parent follows the old home until
+  the takeover reaches it; what it wrote meanwhile is caught up from its ledger like any other own file
+  (§5.4).
+
+**The property test** (`EpochPrecedenceTests`) builds random trees: home epochs (removals, handoffs)
+under random parents (so the home key also signs twice under one epoch), epochs by devices that are not
+home (listed ones, removed ones, and the home before a takeover), and takeovers with random new homes
+and lists (re-admitting devices of earlier lists), some without the recovery key's signature, signed by
+another kit, or introducing a device; and kit replacements and re-encryptions, so the recovery key
+varies. Pins are random paths.
+It checks, against an independent oracle: (a) every followed epoch is signed by the home of its parent,
+or is a valid takeover; (b) takeover precedence: no valid takeover below the chain's end, each valid
+takeover off the chain lost to a smaller one, and pinned epochs are dropped only by a takeover; (c)
+order independence; (d) no device a takeover left out signs or is home after it; (e) a home conflict
+that neither the pin nor the user settles stops the chain; (f) no takeover on the chain was signed by a
+kit the device's pinned chain retired, or that the takeover's own branch introduced below the pinned
+frontier; (g) every takeover a pinned device follows is signed by its pinned frontier's own kit; (h) no
+epoch whose seal `LedgerRule.sealIsFinal` calls final is dropped. The generator also plays the thief
+race: home replaces the kit under an epoch, a takeover under the new kit, and a takeover under the old
+kit from that epoch, with random ids, and pins just above and on the replacement. Six test-only
+mutations must each fail it: a non-home signer accepted, takeovers ignored, the home from before a
+takeover still accepted, a home conflict settled by the smaller id, a retired kit's takeover accepted,
+and a kit introduced below the frontier accepted (the round-7 rule); and the round-7 seal rule must
+fail (h). `Fixtures/epoch-precedence-vectors.json` covers a stolen home writing after
+the takeover's parent, a user's pick at a home conflict, a takeover re-admitting a device of an
+ancestor list (and one listing a device of no list, ignored), a takeover signed by another kit, the
+an old kit's takeover after a replacement (refused by a device that saw it, taken by one that did
+not), the new kit's takeover (and its one-run wait on a device pinned before the replacement), the
+thief race (owner's takeover from before the thief's replacement vs the thief's under its own kit: the
+pinned-before device, the device that saw it, a joiner), a takeover listing a retired kit, a stolen
+home's re-encryption dropped by the user's
+takeover, a takeover on top of the stolen home's epochs, two takeovers, a handoff followed
+by the old home signing, a non-home signer, a removed former home replaying under an old epoch, and a
+stale device meeting a takeover.
+
 ### 5.7 Inbox, settings, notebooks, summaries, `keys/`, blob collection
 
 - **Quick capture**: a profile holds `v_e`, `epoch` and `deviceCaptureKey` under `K_e`, and seals to
@@ -687,7 +756,7 @@ and the user is asked in the parent's names, about changes the user made or did 
 P4a's late-file quarantine, renamed. It lives at `<state dir>/setaside/<vaultId>/…`, outside the
 vault, and keeps every copy under a content-addressed name, at most 16 per path (P2/#52's rule). It
 shows in Repair as "From before a device change", per item with its epoch, its reason (not sealed,
-bytes differ, discarded fork), whether it is **superseded** (an accepted file with the same path and
+bytes differ, dropped by a takeover or ignored), whether it is **superseded** (an accepted file with the same path and
 body exists), and **Export** or **Keep** (re-encrypt under the current key on the user's word, with a
 warning that it may come from a removed device). Nothing is deleted except by the user ("Clear
 superseded" is one action). Writing a copy aside must be durable **before** the original is replaced
@@ -706,8 +775,8 @@ or removed from anywhere. A failure to set aside stops that replacement or remov
   are Secure Enclave keys (§4.1), class `AfterFirstUnlockThisDeviceOnly`, so locked runs can sign.
 - **Lost keys.** A device whose device key or signing keys are gone (a Face ID re-enrollment with
   `.biometryCurrentSet`, a Keychain reset) can no longer unwrap, or no longer change the list. It
-  **leaves and joins again** as a new device: another device removes the old entry, and the device
-  joins with a new key and id. No device may rewrite another entry's `sign` keys (they are fixed by
+  **leaves and joins again** as a new device: home removes the old entry, and the device joins with a
+  new key and id (home itself: a handoff first, or a takeover from another device). No device may rewrite another entry's `sign` keys (they are fixed by
   `addSig`, §5.1).
 - **Secure Enclave for the device key (verified 2026-10-20 against Apple's CryptoKit docs).**
   `SecureEnclave` offers `P256`, `MLKEM768`, `MLKEM1024`, `MLDSA65` and `MLDSA87` (iOS and macOS 26).
@@ -741,68 +810,82 @@ or removed from anywhere. A failure to set aside stops that replacement or remov
    `c = SHA-256("sempere/1 join" ‖ lp(vaultId) ‖ lp(key) ‖ lp(sign.p256) ‖ lp(sign.mldsa65) ‖ lp(kind))`
    and shows **six words** (the first 66 bits of `c` in the BIP-39 English word list) and a **QR code
    of `vaultId` and `c`** (48 bytes, a version 3 code). The request itself is never in the QR code.
-2. **An existing device E** shows "New device wants to join: <name>". The user either scans N's QR
+2. **Home E** (the one device that approves, §5.6) shows "New device wants to join: <name>"; other
+   devices show where to approve it. The user either scans N's QR
    code or **types** N's six words on E (typing, not comparing, so a near match cannot be waved
    through). E reads the request from storage and checks it against the commitment. A mismatch means
    the request was replaced on the way, and E refuses it. A second preimage (a storage attacker's own
    key with the same words) costs about 2^66 key generations, or 2^256 against the QR code.
 3. E adds N's entry with its own `addSig` (§5.1), deletes the request, and shows its **reverse code**:
-   six words of `SHA-256("sempere/1 join reply" ‖ lp(vaultId) ‖ lp(c) ‖ lp(root))`, and a QR code of
-   `(vaultId, root)`.
+   six words of `SHA-256("sempere/1 join reply" ‖ lp(vaultId) ‖ lp(c) ‖ lp(root) ‖ lp(frontier))`, where
+   the frontier is E's current `epochId`, and a QR code of `(vaultId, root, frontier)`. N finds the epoch
+   whose id gives the words and pins the chain up to it, so a home conflict below it never stops N
+   (second KH1 code review).
 4. N sees its wrap and unwraps it. Before pinning anything it asks the user to **type** E's six words
    (or scan E's QR code), computes them from the root of the chain it was given, and refuses the vault
    on a mismatch.
 
 What the reverse code stops: a **storage provider** serving N a vault of its own, which cannot have a
 chain rooted at the real root. It does not stop a **removed device**, which holds a rooted chain up to
-its removal and can show N a fork from there. N then sees the real change later, and fork resolution
-(§5.6) discards the forged side; the §5.6 residual applies to what N wrote meanwhile.
+its removal. If it was never home it signs nothing N follows; a former home's fork from an epoch
+where it was home is a home conflict that N's pin, at E's frontier, settles (§5.6).
 
-Requests older than 7 days, and those of keys already listed, are deleted by any listed device.
+Requests older than 7 days, and those of keys already listed, are deleted by home.
 
-### 6.3 Joining with the recovery kit or the passphrase
+### 6.3 Joining with the recovery kit or the passphrase: a takeover
 
 N scans the kit's two QR codes (key and root), or the user types the key and the root groups with
 their line checksums, or enters only the passphrase: the passphrase copy carries the root (§8.2). N
-unwraps the recovery entry, checks that the chain is rooted at that root (§4.3 step 4), adds its own
-entry with a **self-signed** `addSig` and `addedBy: "recovery"`, and drops the recovery identity from
-memory. The recovery key is never stored on a device.
+unwraps the recovery entry and checks that the chain is rooted at that root (§4.3 step 4). **A kit join
+is a takeover** (§5.6): the takeover screen lists the devices of the current list with a checkbox each
+(checked by default, "Uncheck any device you no longer have"), and the devices of earlier lists that a
+later epoch removed (unchecked by default); at a home conflict it shows both branches and the user
+picks the parent; and N signs a `takeover` epoch that
+makes N home, with N's entry (`addedBy: "recovery"`, `addSig` by the recovery key's pair) and the
+checked devices. N derives the recovery key's signing pair for that one signature and drops it and
+the recovery identity from memory. The recovery key is never stored on a device.
 
-**Kit joins are recognized by the signature, not the field.** An entry whose `addSig` is made by its
-own signing keys is a kit join, whatever `addedBy` says (§3), and an entry that claims another
-approver must carry that approver's signature. A kit finder cannot pass as "added by iPad".
+The same screen serves an existing device that takes over ("This Mac manages devices from now on"),
+for a lost or stolen home: then no new entry is needed.
 
-**Every listed device alerts on a kit join**, as a notification and a banner that stays until it is
-dismissed: "A device joined <vault> with the recovery kit: <name>, <date>. If this was not you, remove
-it, then replace the recovery kit." The device list marks such devices (§6.4).
+**Every listed device alerts on a takeover**, as a notification and a banner that stays until it is
+dismissed: "<name> took over managing devices of <vault> with the recovery kit, <date>. If this was
+not you, replace the recovery kit on a device that still manages devices." The device list marks the
+takeover in the history (§6.4).
 
 ### 6.4 The device list (Settings ▸ Vault ▸ Devices)
 
 | Row | Shows |
 | --- | --- |
-| each device | name (editable by any listed device, §5.1), kind icon, "This device", added on and by whom (from `addSig`; "with the recovery kit" in bold for a self-signed entry), "Last synced 3 hours ago" (§5.5) |
+| each device | name (editable on home, §5.1), kind icon, "This device", **"Manages devices"** on home, added on and by whom (from `addSig`; "with the recovery kit" in bold for a takeover's new home), "Last synced 3 hours ago" (§5.5) |
 | recovery kit | "Recovery kit, created <date>", **Replace Recovery Kit** (§6.5; there is no "print again", since no device holds the recovery key), and the passphrase copy's state |
-| actions | **Add Device** (how to join from the new device, and pending requests), **Remove** per device (§5.2, with the warnings of §5.5), **Re-encrypt Everything…** (§7) |
-| history | every epoch's `reason`, author and date: "Old Mac removed by iPad on 20 Oct"; forks that lost, and the user's answers |
+| actions | on home: **Add Device** (how to join from the new device, and pending requests), **Remove** per device (§5.2, with the warnings of §5.5), **Make Home** per device (a handoff, §5.6), **Re-encrypt Everything…** (§7); on any device: **Take Over with Recovery Kit…** (§6.3) |
+| history | every epoch's `reason`, author and date: "Old Mac removed by iPad on 20 Oct", "iPad took over with the recovery kit on 21 Oct"; epochs a takeover dropped; home conflicts |
 
-The CLI mirrors it: `sempere devices list|approve|remove|rename|resolve [--json]` (`resolve --keep
-<epochId>` answers a fork question, §5.6),
-`sempere recovery replace|passphrase`, `sempere vault reencrypt`.
+The CLI mirrors it: `sempere devices list|approve|remove|rename|handoff [--json]`, `sempere devices
+takeover --recovery-key FILE [--keep ID…]`, `sempere recovery replace|passphrase`, `sempere vault
+reencrypt`.
 
 ### 6.5 Replacing the recovery kit
 
 The kit is shown once, at creation, and never stored, so it cannot be printed again. **Replace
-Recovery Kit**:
+Recovery Kit** (on home):
 
-1. **lists every device** and highlights each kit join (a self-signed entry, §6.3) since the current
-   kit was created. The user must **confirm or remove** each listed device before going on. A kit
-   finder who joined quietly is therefore either removed in this change or kept by the user's explicit
-   choice;
+0. **asks for device-owner authentication** (Face ID, Touch ID or the device passcode:
+   `LAContext.evaluatePolicy(.deviceOwnerAuthentication)`; the UI lands in KH5). A replacement retires
+   the kit for every device that sees it (§5.6), so it is the one list change that needs the owner at
+   the device, not only an unlocked home;
+1. **lists every device** and highlights each takeover since the current kit was created. The user
+   must **confirm or remove** each listed device before going on. A kit finder who took over quietly
+   would be home itself, which the alerts of §6.3 report on every other device;
 2. generates a new recovery identity `R'`, prints it (`sempere keys paper` layout, with the root), and
    asks the user to type a checksum line from the printout;
 3. **removes `R` (and the devices the user removed) and adds `R'` as one removal** (§5.2,
    `reason: "recovery"`): a new epoch, because `R` opens the old wrap in any old copy of
-   `vault.json`.
+   `vault.json`. When the user still holds the old kit or its passphrase, the sheet asks for it and the
+   epoch also carries the old key's `recoverySig` (with `recoveryAuthor`), over the same message as
+   `epochSig`: optional, and verified when present. It is **evidence only** (the record shows that
+   the old kit's holder agreed) and changes no precedence: a thief holding home omits it (§5.6).
 
 Files from before stay readable to `R` through old copies of `vault.json`. If that matters (the kit
 was lost, not destroyed), use §7. The passphrase copy is rewritten for `R'` and the old one is
@@ -815,10 +898,10 @@ the storage to open with it any more. It is explicit, rare and slow, and the she
 note and attachment will be encrypted again. This may take a while and uses network for every
 file. Old backups and provider version history still open with the old kit."
 
-### 7.1 Steps (initiating device A)
+### 7.1 Steps (home A)
 
 1. **Devices**: the sheet lists every device and requires the user to confirm or remove each, with
-   kit-joined devices highlighted, as in §6.5 step 1.
+   takeovers highlighted, as in §6.5 step 1.
 2. **Preconditions**: as §5.2 steps 1 and 2, and every target reachable (with an override per target
    that is claimed and finished later, P4a C1).
 3. **Claim**: write `reencrypt-journal.age` create-only to every target (P4a claims: `If-None-Match:
@@ -839,8 +922,8 @@ file. Old backups and provider version history still open with the old kit."
    reported and set aside, never re-encrypted (P4a's "never launder").
 6. **Propagate** per target with P4a's C5: (a) the epoch record, the journal and `vault.json`;
    (b) the rewritten files by rewrap-replace (P4a rules 1 to 4: the same `vault.json` on both sides,
-   both copies verify, equal bodies, exactly one current copy, which wins; if the re-encryption later
-   loses a fork, §5.4 step 4's "accepted replaces unaccepted" repairs these paths); (c) once A's sync
+   both copies verify, equal bodies, exactly one current copy, which wins; if a takeover later drops the
+   re-encryption, §5.4 step 4's "accepted replaces unaccepted" repairs these paths); (c) once A's sync
    state
    shows every file on that target accepted under an epoch at least `m`, the old epoch records and the
    old blob names are deleted there.
@@ -860,24 +943,23 @@ file. Old backups and provider version history still open with the old kit."
   local old copies of sealed files are replaced by the current copies from targets (D checks body
   equality with the old keys in its own keyring). D re-encrypts its own unsealed files (ledger) and
   sets aside everything else. Then it deletes its local old epoch records and forgets the old keys.
-- **A removal during the pass** is allowed (removals are immediate). It is an ordinary new epoch
+- **A removal during the pass** (by home, which runs the pass) is allowed (removals are immediate). It is an ordinary new epoch
   `m+1` whose record holds `K_m` as its parent key. The pass continues under `K_{m+1}`: its outputs are
   ledger entries of the passing device, so any written under `K_m` after the seal are caught up like
   any other own file. The journal stays bound by `reencryptPending`, re-derived under the new key in
   the new `vault.json`.
-- **A re-encryption that meets an offline removal (a fork).** The two epochs share a parent, and §5.6
-  decides. If the re-encryption side is kept, the removal is re-applied on top (§5.6
-  "Re-application") and the pass goes on. If the removal side is kept (rule 3 or 4, or rule 1 when the
-  initiator was removed), the re-encryption epoch loses and its journal is refused. Its removal of
-  devices is re-applied when it lost by rule 3 or 4, but its recovery replacement is not (§5.6:
-  re-application never touches the recovery entry), so the old kit stays valid until the run is
-  repeated. Its initiator, if still listed, reports
-  "Re-encryption was stopped by a device change made on <device> at the same time", and the sheet
-  offers to run it again. Its new kit is void, and a new one is printed by the next run. Files the
-  pass had re-encrypted under the discarded key are its initiator's ledger entries, so they come back
-  under the kept chain by catch-up.
+- **A re-encryption that meets a takeover.** Only home re-encrypts and removes, so two of its own
+  epochs never compete. A takeover whose parent is below the re-encryption keeps it; one whose parent is
+  above it drops the re-encryption epoch, whose journal is then refused, **but only on devices pinned
+  before the re-encryption**: a re-encryption replaces the kit, so a device that pinned it refuses a
+  takeover by the old kit (§5.6 rule 3), and a thief's re-encryption locks the owner out of those
+  devices. Where it is dropped, its recovery replacement is dropped with it, so the old kit stays
+  valid until the new home runs it again; the sheet says
+  "Re-encryption was stopped by a takeover" and offers to run it again. Files the pass had
+  re-encrypted under the dropped key are its initiator's ledger entries, so they come back under the
+  kept chain by catch-up.
 - **Resume**: the pass skips files already current (P4a "complete"), so a crash, a lock or a lost
-  network resumes where it left off, on A or on any listed device that holds the journal ("Finish
+  network resumes where it left off, on A, or on a later home after a handoff ("Finish
   re-encryption" in Repair).
 - **Progress**: "Re-encrypting: 1,240 of 8,912 files (this device); targets: iCloud Drive 80 %, NAS
   12 %". The count is derived from the files (current or not), not stored.
@@ -945,7 +1027,7 @@ age -d -i vault-keys.txt notes/ID/NAME.delta.age | tail -c +38 | gunzip | jq .
 ```
 
 Identities are appended through `prev.txt`, never by redirecting `age`'s output into the file it is
-reading. A record that does not open (an orphan, or a fork that lost) only prints an error and adds
+reading. A record that does not open (an orphan, or an epoch a takeover dropped) only prints an error and adds
 nothing, and repeated identities are harmless. The note and blob pipelines of format.md §4 and §8.1.7
 are unchanged except for `-i vault-keys.txt`. CLAUDE.md's "Keep the stock-CLI recovery path working"
 rule is updated in KH1 to this script.
@@ -964,8 +1046,9 @@ AGE-SECRET-KEY-PQ-1…
 ```
 
 `age -d` with the passphrase gives a file `age -i` reads directly (step 0 above). The root line lets
-the passphrase alone, without the paper, verify a join (§6.3) and the CLI's `--recovery-key` mode
-(§4.3). It is authenticated by the scrypt stanza's AEAD, and whoever could forge the file already
+the passphrase alone, without the paper, verify a takeover (§6.3) and the CLI's `--recovery-key` mode
+(§4.3). The identity is all a takeover needs: the recovery key's signing pair is derived from it
+(§5.6), and its file name carries the recovery fingerprint, which binds that pair. It is authenticated by the scrypt stanza's AEAD, and whoever could forge the file already
 knows the passphrase and so holds `R`. The copy is optional and wraps only the recovery key: device
 keys are never passphrase-wrapped into the vault.
 
@@ -1021,15 +1104,16 @@ every future file.
   about 2.5 KB, 4 KB of signing keys and 6.8 KB of `addSig`, all in hex), plus about 7 KB each of
   `epochLink`, `epochSig` and `authorSig`. 4 devices and the kit come to about 85 KB, against about
   15 KB today. It is far below format.md §9's bounds, and it changes rarely. The cost that matters is
-  different: every same-epoch rename or union merge writes a new `vault.json` with a new 7 KB
+  different: every same-epoch rename or approval writes a new `vault.json` with a new 7 KB
   `authorSig`, and in a provider folder each such write can become a conflict version. That is
-  acceptable: renames and joins are rare, and conflict versions of `vault.json` are merged by §5.1.
+  acceptable: renames and joins are rare, and only home writes, so the newer version contains the
+  older (§5.1).
 - Epoch records: about 100 bytes per sealed file after gzip (path plus SHA-256), plus about 11 KB per
   epoch of chain. A removal in a 20,000-file vault writes a record of about 2 MB, once.
 
 ### 9.3 What `epochs/` and `joins/` show to storage
 
-Storage sees how many epochs were made (including orphans and forks that lost), when, and roughly how
+Storage sees how many epochs were made (including orphans and epochs a takeover dropped), when, and roughly how
 many files each sealed (from the record's size). It does not see who was removed (that is inside the
 record). `vault.json` shows the epoch ids and the current list, as it shows the list today. Join
 requests are plaintext: they show a new device's public keys, name and kind, as `vault.json` does once
@@ -1039,11 +1123,12 @@ it joins.
 
 | Threat | What the attacker gets | What stops the rest | Residual |
 | --- | --- | --- | --- |
-| **Stolen device** (locked) | the encrypted working copy; the device key only if the passcode or Face ID is broken | Keychain this-device-only; signing keys in the Secure Enclave; "Require Face ID" option; remove it from another device: a new epoch at once | if unlocked by the thief: everything up to the removal. Files from before stay readable to it (old keys) unless §7 is run and the thief has no copy |
-| **Removed device with modified software** (alone or with other removed devices) | the keys of the epochs that listed it; its working copy | §5.3: anything it writes after the change is set aside on every device (J3); it cannot unwrap a later key (J2); a fork it makes from any epoch loses by §5.6 rule 1 (in the pre-pass), or needs a user's answer (rule 2); it cannot avoid being named in the question, which uses the parent's list; epochs never add devices and re-application only removes (J10) | a device that has seen neither the real removal nor anything later can be shown its fork first (§5.6 "Residual"); it can force one question per device; additions under the old epoch attributed to it, shown as such (§5.1); **one still-listed device it added (a puppet) can author epochs and answer questions like any listed device**, which is why the removal sheet offers "also remove the devices it added" |
+| **Stolen device** (locked) | the encrypted working copy; the device key only if the passcode or Face ID is broken | Keychain this-device-only; signing keys in the Secure Enclave; "Require Face ID" option; home removes it: a new epoch at once | if unlocked by the thief: everything up to the removal. Files from before stay readable to it (old keys) unless §7 is run and the thief has no copy |
+| **Stolen home** (unlocked by the thief) | as above, and home's signing keys: it can approve its own devices and remove others | a takeover with the recovery kit or the passphrase beats every epoch the stolen home signs after the takeover's parent, and the user's list leaves the stolen device out (§5.6); every device alerts on a takeover | it acts as owner until the takeover reaches each device; devices it approved see themselves unlisted after the takeover |
+| **Removed device with modified software** (alone or with other removed devices) | the keys of the epochs that listed it; its working copy | §5.3: anything it writes after the change is set aside on every device (J3); it cannot unwrap a later key (J2); it never signs an epoch or an approval that counts, because it was not home (§5.6); a former home's epochs under an epoch where it was home are a home conflict that every device pinned past it ignores; epochs never add devices but a takeover's new home (J10) | a former home can stop a joiner that is not pinned past its fork until a takeover (§5.6 "Residual"); approval joiners are pinned at home's frontier |
 | **Removed device's storage credentials** | write access to the targets it was given | removal changes no file it can read later; the sheet tells the user to change the target's password (§5.5); every working copy is complete, so a file it deletes from a target is restored (not an explained deletion) | until the password changes, it can delete or withhold files on a target (denial of service, including withholding a record: §4.3 "unverified-pending"), and see metadata |
 | **Hostile storage provider** | metadata (§9.3, security.md); every ciphertext | tags, names, `listTag`, author and entry signatures; the trust record pins the root and the chain (rollbacks refused); records bound by hash; joins rooted at the printed root, with codes both ways (§6.2, §6.3); §9.1 checks | it can withhold files or records (pending, never accepted or deleted; a withheld record keeps devices from uploading until another target or a device brings it) and delete things (devices re-upload). The reverse code stops a fake vault from storage, not a fork from a removed device (§6.2) |
-| **Lost recovery kit** | whoever finds it can unwrap the key of any epoch the kit was listed in, from any copy of `vault.json`, and can join a device | a kit join is recognized by its self-signature and alerts every device (§6.3); Replace Recovery Kit and Re-encrypt require confirming or removing each kit-joined device (§6.5); Replace: nothing written after opens with it; Re-encrypt: nothing in the vault opens with it | backups, provider history and copies made before still open |
+| **Lost recovery kit** | whoever finds it can unwrap the key of any epoch the kit was listed in, from any copy of `vault.json`, and **take over**: become home and drop every other device | every device alerts on a takeover (§6.3); **Replace Recovery Kit** (device-owner authentication, §6.5) retires the kit for every device that sees it: no takeover with it is valid there afterwards (§5.6); Replace: nothing written after opens with it; Re-encrypt: nothing in the vault opens with it | **a takeover by someone who holds `R` is total compromise**, and a grinding finder wins any race of takeovers: replace the kit before the finder acts; once the finder's takeover has won on a device, that device has no recourse but rejoining from one where it has not; they read everything they were listed for and the owner's devices are dropped meanwhile; devices that never saw the replacement still take a takeover by the old kit; backups, provider history and copies made before still open |
 | **Leaked passphrase copy** (file and passphrase) | the recovery key: the same as a lost kit | 70-bit minimum and work factor 20 make offline guessing infeasible for a strong passphrase; the copy is deleted when superseded | a weak passphrase reused elsewhere; backups keep old copies |
 | **Quantum adversary harvesting now** | ciphertexts and `vault.json` | every public-key encryption step is X-Wing (ML-KEM-768 + X25519); links and signatures are each classical + ML-DSA-65; the rest is 256-bit symmetric | the passphrase copy is as strong as the passphrase (§8.2). A future break of ML-KEM-768 *and* X25519 would expose everything, as today |
 
@@ -1056,7 +1141,7 @@ it joins.
   `vault.json`; after the ledger intent and before the file is placed; during catch-up after file n
   (re-encrypted copy written, not verified; verified, not renamed; renamed, ledger not updated); in
   re-encryption after file n at each of those points, before the old blob name is deleted, before the
-  journal is removed; in a re-application and a `resolve` epoch at the same points as a removal. After
+  journal is removed; in a handoff and a takeover at the same points as a removal. After
   every crash: reopen, resume, check J1 to J10.
 - **Engine faults** (`MemoryRemote` faults, the WebDAV mock, wsgidav behind `dav-fault-proxy.py`):
   `vault.json` arrives before its record (direct child of the pinned epoch: taken, old files pending;
@@ -1065,55 +1150,54 @@ it joins.
   complete copy, never a mix); a target without strong ETags (nothing replaced, reported: P4a's
   `weakStamps`); **a set-aside write that fails** (disk full, permission): the replacement does not
   happen and the original stays; the remover's best-effort pull with one target unreachable; a locked
-  run that must sign (union merge, re-application) with signing keys of class AfterFirstUnlock.
+  run on home that must sign (an approval, a re-encryption step) with signing keys of class
+  AfterFirstUnlock.
 - **Scenarios** (`EpochScenarioTests`, one test each):
   - catch-up: an offline listed device catches up revisions, blobs, inbox, settings and notebook
     records; B uploads, A (not synced down from that target) removes X, and B's files come back from
     B's ledger; locked widget captures appended to the ledger, caught up at unlock; a same-device
     restore and a restore onto another device;
   - removed devices: X writes after the change; a stale removal shows the warning and the password
-    advice; **forged removal seen first**: C sees only X's fork omitting C, is unlisted (stops
-    uploading, keeps pulling), and resumes when the real change arrives;
-  - list changes: concurrent additions (union); a rename on both sides of the same entry (smaller
-    digest wins); an addition overtaken by a removal (re-applied by its approver only); an addition by
-    X under the old epoch (shown as X's, not carried by the remover, never re-applied);
-  - **`addedBy`**: an entry whose `addedBy` names iPad but is self-signed (tampered, or a kit join if it
-    says `recovery`); an entry whose `addSig` is by a device not in that `vault.json`; a merged
-    `vault.json` written by C keeps the approver's `addedBy`;
-  - forks, honest: two concurrent removals from the same epoch (rule 4 and re-application, including
-    two re-appliers at once, the second writing nothing); **an honest fork at a non-frontier level**:
-    B, offline since `j−1`, removes a key from `j−1` while the chain went on to `e+1` (rule 3: B's side
-    loses, its removals are re-applied on top, keys removed at `j+1…e` stay removed);
-  - forks, adversarial: removed X forks from `K_e`, adds nothing and seals its own files (rule 1); **X
-    forks from an older epoch `j < e+1` with a ground `epochId` smaller than the real `j`'s** (rule 1
-    over the subtree: the real side contains X's removal); X's fork removes every other device (rule 1,
-    nothing re-applied); two removed devices fork together, from different epochs (rule 1; no kept
-    epoch's key derivable by them); **mutual removal**: X's fork removes the real branch author (rule 2
-    always asks, every non-author device listed on either side, with names from the parent list even
-    when X's fork swaps the names; the answer becomes a `resolve` epoch that binds the authors; a
-    second mutual fork by X is discarded without asking); **three children** at one branch: the real
-    removal of X, an honest stale fork by B, and X's fork with a ground id that removes B (the pre-pass
-    discards X's fork by rule 1, no question is asked, and B's side is re-applied); **a puppet**: N_x,
-    added by X and carried into `e+1`, writes a resolve epoch for X's side (the authors are not bound by
-    it; other devices still ask; the removal sheet offered to remove N_x with X); **a resolve by a
-    device added after the branch** (asked, its answer binds the authors); **contradicting answers** on
-    two devices (both shown, one revised, the devices converge); a CLI bridge with a pending question
-    (`forkQuestion` in `sync --json`, uploads held, `devices resolve --keep` releases them);
+    advice; **stolen home**: the thief's home removes C, C is unlisted (stops uploading, keeps
+    pulling), and resumes when the owner's takeover arrives;
+  - list changes: two versions of one epoch's `vault.json` (the one whose list contains the other is
+    kept); a device that is not home approving or renaming (refused); a handoff, then the old home
+    approving (refused);
+  - **`addedBy`**: an entry whose `addedBy` names home but is self-signed (tampered); an entry whose
+    `addSig` is by a device that is not home (tampered); a takeover's new home approved by the recovery
+    key;
+  - home and takeover (the precedence vectors, §5.6): a stolen home writing after the takeover's
+    parent (dropped); a takeover on top of the stolen home's epochs (kept as history, the stolen home
+    off the list); two takeovers (the smaller `epochId`, silently); a handoff, then the old home signing
+    (ignored); a non-home device signing (ignored); a removed former home replaying under an epoch where
+    it was home (a home conflict the pin settles; a joiner stops until a takeover); a stale device
+    meeting a takeover; a kit join (a takeover with a new device as home), and the alerts; a user's pick
+    at a home conflict; a takeover re-admitting a device a stolen home removed;
+  - **a stolen home re-encrypts everything, then the user takes over** (round 7, H1): on devices pinned
+    before the re-encryption (the only ones that take the old kit's takeover, §5.6), the honest
+    devices' ledger entries outlived the dropped `reencrypt` record, so they re-encrypt their own
+    files; the rest is offered by the bulk Keep. Devices that pinned the re-encryption refuse the
+    takeover;
+  - **a stolen home's plain removals, dropped by the user's takeover** (round 8, H1-b): pinned home
+    epochs above them do not make their seals final; the entries stay and the files come back;
+  - **the thief race** (round 8, C1-b): the stolen home replaces the kit and takes over under its own
+    kit with a small id; the owner takes over under the old kit from before the replacement;
   - **an offline device verifies a removal whose first list carries a device added while it was
     away** (the addition is admitted from the parent's chain entry; the removal verifies);
-  - **a losing re-encryption** whose initiator was removed: a target holding only its copies is
-    repaired by a device that still has the accepted old bytes (§5.4 step 4);
-  - recovery: kit replacement with a kit-joined device highlighted, which the user removes; the alerts on
-    every device after a kit join; a kit join that claims `addedBy: "<iPad>"` (refused);
+  - **a re-encryption a takeover dropped**: a target holding only its copies is repaired by a device
+    that still has the accepted old bytes (§5.4 step 4);
+  - recovery: kit replacement on home with a takeover highlighted; the alerts on every device after a
+    takeover; a self-signed entry claiming `addedBy: "<iPad>"` (refused);
   - joins: by approval with typed words, and with QR commitments, in both directions; a request replaced
     on the way (refused on E); storage serves N a fake `vault.json` and chain (refused on N by the reverse
-    code); with the kit and root; with only the passphrase (root from the copy); a wrong root (refused);
+    code); by takeover with the kit and root; with only the passphrase (root from the copy); a wrong root
+    (refused);
   - storage: swaps a wrap, renames a device, rolls back `vault.json`, changes `root`, deletes an epoch
     record, re-serves a superseded passphrase copy (deleted again only under §8.2's rule), plants a
     malformed join request, epoch record or journal (fuzzed readers, typed errors);
   - re-encryption: one device offline until after the finish; a crash and resume on another device; a
-    removal during the pass; a re-encryption fork against an offline removal, both outcomes (§7.2);
-  - recovery script: the kit's script on a fixture with two removals, an orphan record, a lost fork and
+    removal during the pass; a takeover above and below the re-encryption (§7.2);
+  - recovery script: the kit's script on a fixture with two removals, an orphan record, a dropped epoch and
     an unfinished re-encryption, with the printed key and with the passphrase copy;
   - blob collection: a blob referenced only by a set-aside or pending revision is not collected;
   - seed 88's blob-before-revision ordering, kept as an engine regression test.
@@ -1123,24 +1207,25 @@ it joins.
 Three to five devices, two targets, random edits with attachments and captures, adds, renames,
 removals, recovery replacements, re-encryptions, joins, offline periods, crashes at the fault points
 above, locked runs, a hostile target that serves old copies or drops records, and **adversarial removed
-devices**: after its removal, a device may keep writing under the keys it holds, make forks from any
-epoch it held with ground `epochId`s (alone or with other removed devices), make mutual-removal forks,
-plant requests and delete from targets. A scripted user answers fork questions truthfully. The oracle
+devices**: after its removal, a device may keep writing under the keys it holds, sign epochs from any
+epoch it held with ground `epochId`s (alone or with other removed devices; a former home under epochs
+where it was home), plant requests and delete from targets; **a stolen home** acts as owner until a
+scripted takeover. The oracle
 records every write: who wrote it, its epoch, and whether its writer had been removed at that moment.
 
 | # | Invariant (checked after every step and at quiescence) | Mutation that must make it fail |
 | --- | --- | --- |
 | J1 | **No loss**: every body written by a device that is listed at quiescence is accepted on every listed device and target, or, while catch-up is pending, still in its writer's working copy and ledger | ledger pruned on upload; the remover skips its pull and the writer's ledger is ignored |
 | J2 | **Revocation**: for every coalition of removed devices, no file written after a member's removal was seen by its writer opens with any key the coalition holds | a writer keeps a cached `K_e` after taking `e+1`; a merge key derived from two forks |
-| J3 | **No injection**: no body first written by a removed device after its removal is ever accepted by a listed device, for any coalition, unless the user chose Keep on that set-aside file (the oracle records it). No fork exemption | old-key files accepted without the sealed-set check; catch-up by device id instead of the ledger; a losing fork's sealed set honored |
-| J4 | **Convergence**: with faults off and two runs per device, all listed devices and targets hold the same kept chain, list and accepted file set | the fork tie-break by local arrival order instead of `epochId`; pairs of more than two children compared in arrival order |
+| J3 | **No injection**: no body first written by a removed device after its removal is ever accepted by a listed device, for any coalition, unless the user chose Keep on that set-aside file (the oracle records it). No exemption for dropped epochs | old-key files accepted without the sealed-set check; catch-up by device id instead of the ledger; a dropped epoch's sealed set honored |
+| J4 | **Convergence**: with faults off and two runs per device, all listed devices and targets hold the same kept chain, list and accepted file set | the takeover tie-break by local arrival order instead of `epochId` |
 | J5a | **Immediacy (writes)**: no device writes under epoch `j` after it has **verified** a `vault.json` of an epoch above `j` | the capture profile not refreshed and not caught up |
 | J5b | **Immediacy (uploads)**: no device uploads a new file under epoch `j` after it has merely **seen** a `vault.json` of an epoch above `j` (verified or unverified-pending) | uploads allowed while unverified-pending |
 | J6 | **Set aside is monotone**: nothing leaves the set-aside store without a user action, and every replaced or removed unaccepted file is in it first | set-aside write failure ignored |
 | J7 | **Re-encryption completeness**: after a finish and quiescence, no file on a target or in a working copy opens with an epoch key from before the re-encryption or the old recovery key | old blob names never deleted; old epoch records kept |
 | J8 | **Body integrity**: no path ever holds two different bodies in the vault | a re-encryption that replaces before verifying, with a crash between |
-| J9 | **Liveness**: every re-encryption journal finishes or is reported within a bounded number of runs once targets are reachable; every fork is resolved or put to the user; re-application ends (no `reapply` epoch is written that removes nothing; `resolve` epochs are exempt) | the "skip complete files" check inverted; a re-application written when nothing is left to remove |
-| J10 | **Key reach**: for every epoch on any device's kept chain and every coalition of removed devices, the principals able to derive that epoch's key are exactly the keys listed in it or in a later kept epoch (devices and recovery keys) | siblings compared instead of subtrees (the ground-id fork from an older epoch wins); a stale side with no descendants allowed to win by `epochId`; additions re-applied from a losing side; an epoch whose first list introduces a device accepted; `addedBy` taken from the field instead of `addSig`; names in the fork question taken from the forks' own lists; the pre-pass skipped (pairs in `epochId` order only); the authors bound by a resolve epoch written by a device one of them added |
+| J9 | **Liveness**: every re-encryption journal finishes or is reported within a bounded number of runs once targets are reachable; every device follows home linearly, and a takeover reaches every device that sees it | the "skip complete files" check inverted; a takeover ignored |
+| J10 | **Key reach**: for every epoch on any device's kept chain and every coalition of removed devices, the principals able to derive that epoch's key are exactly the keys listed in it or in a later kept epoch (devices and recovery keys) | (the three mutations of `EpochPrecedenceTests`, §5.6) a non-home signer accepted; takeovers ignored; the home from before a takeover still accepted; also: an epoch whose first list introduces a device other than a takeover's home accepted; `addedBy` taken from the field instead of `addSig`; an addition approved by a device that is not home admitted |
 
 Each mutation is a test-only switch. `EpochMutationTests` runs every mutation for a few seeds and
 requires it to fail, so no invariant is vacuous (P4a's round-1 finding). Quick mode: 3 seeds × 40
@@ -1153,22 +1238,23 @@ Sizes as in device-first-sync.md §10: S < 300 changed lines, M 300 to 1,000, L 
 
 | # | PR | Size | Depends on | Test gate |
 | --- | --- | --- | --- | --- |
-| **KH1** | **Key schedule, identities, signatures, fork rules and the frozen kit.** Pure types and functions, no `Vault` wiring: `VaultEpochKey` (`K_e` → identity seed → vault identity, the §2.2 derivations); wraps; `vault.json` model with `keys[]`, fingerprints, `listMessage`/`listTag`, `epochLink`, `root`; the three signature messages of §4.1 (`lp()` encoding, no JSON canonicalization) and their checks (`addSig` ⇒ `addedBy`, self-signed ⇒ kit join, first lists within the parent list **including the parent's carried additions**, the 256-addition bound); the epoch record model, chain check and computed removals; **fork resolution as a pure function** over an epoch tree (§5.6: the pre-pass, rules 1 to 4, subtrees, pairwise order, re-application set, user answers and resolve epochs as input, the authors' binding rule); join commitment, words and reverse code; trust record v3. Shared vectors `Fixtures/epoch-vectors.json`: seed → identity → derived keys → tags, links, root, fingerprints, all three signatures (including a device name with non-ASCII, a slash and an emoji), join words; **negative vectors** (a broken link, a wrong root, a signature by an unlisted key, an `addedBy` that is not the signer, an epoch introducing a device); **fork-tree vectors** (the §11.1 fork scenarios as trees, with the expected kept chain and re-application set, including: three children where a mutual pair meets a decisive sibling (pre-pass); a removal whose first list carries a device added during the parent epoch; a resolve epoch by a device not in P's list; a resolve by a puppet, which does not bind the authors). Mirrored in `web/src/vault/`. format.md: §2, §2.1, §3, §4, §8.1.2, §11.1 rewritten, and **new sections for `epochs/` (§5.2.1 here), the re-encryption journal (§7.4), the passphrase copy's plaintext (§8.2) and the signature messages (§4.1)**. The kit layout (key, root) and the recovery script (§8.1) frozen; CLAUDE.md's recovery rule updated | M to L | — | vectors from two implementations (Swift, TypeScript); `age` interop: a file to `v_e` opens with `age -d -i` the wrap's plaintext; enclave signatures verify in software (Mac test behind `#if canImport(CryptoKit)`); the recovery script on a hand-built fixture (two epochs, an orphan, a lost fork, a journal, the passphrase copy); fuzz targets for the `vault.json`, epoch record, journal and join request readers |
-| KH2 | **Single-epoch vaults.** `Vault.create`/`open` on the new manifest: one stanza per file to `v_e`, tags and blob names under derived keys, recovery entry, passphrase copy (work factor 20, 70 bits, root inside), add and rename (signed), union merge, CLI `devices list/approve/rename`, `device init`, `--recovery-key [--root]` read-only; old vault format removed (no migration); fixtures regenerated; web viewer reads the new format | L | KH1 | full `swift test`; the kit's recovery script in CI on a generated fixture; web goldens |
+| **KH1** | **Key schedule, identities, signatures, the single writer and the frozen kit.** Pure types and functions, no `Vault` wiring: `VaultEpochKey` (`K_e` → identity seed → vault identity, the §2.2 derivations); wraps; `vault.json` model with `keys[]`, fingerprints, `listMessage`/`listTag`, `epochLink`, `root`; the three signature messages of §4.1 (`lp()` encoding, no JSON canonicalization) and their checks (`addSig` by home ⇒ `addedBy`, first lists within the parent list **including the parent's carried additions**, the 256-addition bound); `home`, handoff and takeover, the recovery key's derived signing pair and `recoverySig`; the epoch record model, chain check and computed removals; **the precedence rule as a pure function** over an epoch tree (§5.6: linear following of home-signed epochs, takeover precedence, the deterministic tie between takeovers, home conflicts); join commitment, words and reverse code; trust record v3 with the home. Shared vectors `Fixtures/epoch-vectors.json`: seed → identity → derived keys → tags, links, root, fingerprints, all three signatures (including a device name with non-ASCII, a slash and an emoji), join words; the recovery key's derived signing keys; **negative vectors** (a broken link, a wrong root, a signature by a device that is not home, an `addedBy` that is not the signer, an epoch introducing a device, a takeover by another recovery key); **precedence vectors** (the §11.1 home and takeover scenarios, with the expected chain, dropped and ignored epochs and home conflicts). Mirrored in `web/src/vault/`. format.md: §2, §2.1, §3, §4, §8.1.2, §11.1 rewritten, and **new sections for `epochs/` (§5.2.1 here), the re-encryption journal (§7.4), the passphrase copy's plaintext (§8.2) and the signature messages (§4.1)**. The kit layout (key, root) and the recovery script (§8.1) frozen; CLAUDE.md's recovery rule updated | M to L | — | vectors from two implementations (Swift, TypeScript); `age` interop: a file to `v_e` opens with `age -d -i` the wrap's plaintext; enclave signatures verify in software (Mac test behind `#if canImport(CryptoKit)`); the recovery script on a hand-built fixture (two epochs, an orphan, a dropped epoch, a journal, the passphrase copy); the precedence property test with its mutations; fuzz targets for the `vault.json`, epoch record, journal and join request readers |
+| KH2 | **Single-epoch vaults.** `Vault.create`/`open` on the new manifest: one stanza per file to `v_e`, tags and blob names under derived keys, recovery entry, passphrase copy (work factor 20, 70 bits, root inside), add and rename by home (signed), handoff, CLI `devices list/approve/rename/handoff`, `device init`, `--recovery-key [--root]` read-only; old vault format removed (no migration); fixtures regenerated; web viewer reads the new format | L | KH1 | full `swift test`; the kit's recovery script in CI on a generated fixture; web goldens |
 | KH3 | **Removal and the acceptance rule.** Epoch records (final name first), sealed sets, §5.2 under the write lock, §5.3, the set-aside store (moved from P4a's quarantine), the write ledger (intent first, lifetime, App Group, AfterFirstUnlock key), catch-up (§5.4), unlisted devices (§5.5), recovery kit replacement with the device review, blob-collection conditions (§5.7); CLI `devices remove`, `recovery replace` | L | KH2 | `EpochFaults` (core points), the scenarios that need no sync over in-process devices sharing a folder, J1, J2, J3, J5a, J6, J8 |
-| KH4 | **Engine.** Sync of `epochs/` (to every target), `joins/`, `keys/` deletions (§8.2's rule); the remover's best-effort pull; pending-until-record and unverified-pending (J5b); current-replaces-unaccepted (§5.4 step 4); the epoch tree and KH1's fork function applied, with re-application and `resolve` epochs; unlisted devices keep pulling; `synced` timestamps | L | KH3, P3 | engine faults, every scenario, `EpochInterleavingTests` J1 to J6 and J8 to J10 with mutation checks; 60 seeds in sync-stress |
-| KH5 | **App.** Device keys in the Keychain and signing pairs in the Secure Enclave, join by approval (typed words both ways, QR commitments) and by kit or passphrase with the root, kit-join alerts, device list and history, removal with the stale and password warnings, the unlisted-device screen with Export, fork notices and the "Which of these did you make?" question, set-aside view in Repair, recovery kit replacement; delete remembered-key and key-replace UI | L | KH4, P5 | Mac Catalyst unit tests (gate); `scripts/app.sh test-mac-smoke` with the new sheets; owner device checks below |
-| KH6 | **Re-encrypt everything.** §7 on P4a's coordinator, claims, journal binding, rewrap-replace and keyring; removals during the pass; forks against it; CLI `vault reencrypt [--resume]`, app sheet with the device review and progress | L | KH4 (app part: KH5) | `EpochFaults` re-encryption points, J7 and J9, the F11 cut-upload test over wsgidav, 60 seeds in sync-stress |
+| KH4 | **Engine.** Sync of `epochs/` (to every target), `joins/`, `keys/` deletions (§8.2's rule); the remover's best-effort pull; pending-until-record and unverified-pending (J5b); current-replaces-unaccepted (§5.4 step 4); the epoch tree and KH1's precedence function applied, takeovers (CLI `devices takeover`); unlisted devices keep pulling; `synced` timestamps | L | KH3, P3 | engine faults, every scenario, `EpochInterleavingTests` J1 to J6 and J8 to J10 with mutation checks; 60 seeds in sync-stress |
+| KH5 | **App.** Device keys in the Keychain and signing pairs in the Secure Enclave, join by approval on home (typed words both ways, QR commitments) and the takeover screen (kit or passphrase with the root, a checkbox per device), takeover alerts, device list and history with "Manages devices" and Make Home, removal with the stale and password warnings, the unlisted-device screen with Export, home-conflict notices, set-aside view in Repair, recovery kit replacement; delete remembered-key and key-replace UI | L | KH4, P5 | Mac Catalyst unit tests (gate); `scripts/app.sh test-mac-smoke` with the new sheets; owner device checks below |
+| KH6 | **Re-encrypt everything.** §7 on P4a's coordinator, claims, journal binding, rewrap-replace and keyring; removals during the pass; takeovers against it; CLI `vault reencrypt [--resume]`, app sheet with the device review and progress | L | KH4 (app part: KH5) | `EpochFaults` re-encryption points, J7 and J9, the F11 cut-upload test over wsgidav, 60 seeds in sync-stress |
 | (later) | Secure Enclave device keys (`mlkem768p256tag`), when CryptoKit offers that hybrid in HPKE | M | KH5 | Revisit later, §15 |
 
 Critical path: KH1 → KH2 → KH3 → KH4 → KH5. KH6 follows KH4 alongside KH5. KH1 is pure functions,
-vectors and text, so the cryptography, the fork rules and everything the printed kit depends on are
+vectors and text, so the cryptography, the precedence rule and everything the printed kit depends on are
 reviewed and frozen before anything stores data under them, and KH2's writers and the web viewer port
 start from its vectors. The parts of KH1 the round-2 review found unaffected by its blockers (the key
 schedule, derivations, wraps, `listTag`, `epochLink`, root, trust record and the positive vectors) can
 be written first, in the same PR.
 
-Owner device checks that remain: join an iPhone by approval and an iPad by the kit; remove a device
+Owner device checks that remain: join an iPhone by approval and an iPad by a kit takeover; hand home
+to a Mac; remove a device
 while a third is in airplane mode with new notes, then reconnect it; an unlisted iPad's screen and
 Export; re-encrypt everything with one device offline overnight.
 
@@ -1180,7 +1266,7 @@ Export; re-encrypt everything with one device offline overnight.
 | --- | --- |
 | `KeyChangePolicy` (modes, `lateFileWindowDays`, `changedAt`), `lateFileDeadline`, compromised-mode "push first", C0's "synced within a minute" | **obsolete**: every change is immediate (decision 1) |
 | R3 with `ownDevices` (device ids) | **obsolete**: catch-up uses the write ledger (§5.4) |
-| `rotationOwed`, `adoptConcurrentChange`, `keepThisList` | **obsolete**: additions merge as a union; removals are epochs; forks are never merged (§5.6) |
+| `rotationOwed`, `adoptConcurrentChange`, `keepThisList` | **obsolete**: only home changes the list; removals are epochs; forks are never merged (§5.6) |
 | `OutgoingKeyGuard` (F4) | **obsolete**: device keys are never replaced. A device leaves and joins again with a new key |
 | rewrapping every file on add or remove; `rekeyBlobs`; blob renames at removal | **obsolete** for add and remove; kept only in §7 |
 | `rewrap-journal.json` binding (`rewrapPending`, finished-rotation record), claims, stale-claim removal, never uploading a refused journal | **carried over** to `reencrypt-journal.age` (§7) |
@@ -1202,7 +1288,7 @@ quarantine) land on `main` separately, as the #57 agent is already doing.
 | --- | --- |
 | **seed 88**: a revision uploaded while its blob's upload failed, so the attachment ends only in quarantine | **still applies.** It is an engine ordering bug (format.md §8.1.4 step 4 on the remote side), not a key-change one. It is being fixed on `main` separately and stays a regression test (§11.1). One trigger disappears: removals no longer rename blobs |
 | **device-id spoofing** bypasses R3's "own" check | **disappears.** Provenance is the device-local ledger of exact bytes, and ids are for names and the interface only (§3, §5.4, J3) |
-| **durable owed rotation** (lost at a crash or ledger repair) | **disappears.** There is no owed state: a removal is complete when `vault.json` is written (§5.2), and additions never drop keys. Re-application of a losing fork (§5.6) is recomputed by any listed device from the epoch tree, so it needs no durable state either |
+| **durable owed rotation** (lost at a crash or ledger repair) | **disappears.** There is no owed state: a removal is complete when `vault.json` is written (§5.2), and additions never drop keys. Nothing is re-applied: only home changes the list, and a takeover's list is the user's pick (§5.6) |
 | **quarantine failure** ignored | **still applies**, to the set-aside store: a copy is durable aside before anything is replaced or removed, and a failure stops it (§5.8, J6). Fixed on `main` separately |
 | **shared device ids** (two installs with one id) | **disappears.** The id comes from the device's fingerprint, its keys are this-device-only, and ids decide nothing (§3). A same-device restore is the same device; a restore onto another device has no key and joins as a new device (§5.4 "Restores") |
 | **clock issues** (window ends, `changedAt`, slack) | **gone** with immediate changes: no rule reads a clock |
@@ -1230,11 +1316,12 @@ That document's status and §10 point here.
   device could make a fork that adds its own key or seals its files, and two removed devices could
   derive the merged key together (review C1, H1). Rejected: forks are never merged (§5.6).
 - **Authorship without device signatures**, from link keys only (the first draft). Links show that a
-  holder of the parent key made a change, which every removed device was. Rejected: rule 1 of §5.6
-  needs to know which device made each fork.
-- **Comparing only the two children of a branch** (the second draft). A removed device could fork
-  from an older epoch with a ground `epochId`, and an honest stale fork could bring back keys removed
-  after its branch point (round-2 C1'). Rejected: subtrees are compared (§5.6).
+  holder of the parent key made a change, which every removed device was. Rejected: §5.6 needs to know
+  that home signed each epoch.
+- **Any listed device may change the list, with fork rules** (the drafts and KH1 rounds 1 to 6: subtree
+  comparison, a pre-pass, labels at a fixed point, disputes, binding resolves, then the simple rule's
+  questions). Each round found a new attack or a new question. Rejected for a single writer and a
+  recovery takeover (§5.6, §16.6).
 - **Signing canonical JSON** (the second draft). JSON encoders differ on escapes and numbers, so two
   implementations would disagree (round-2 M2'). Rejected: `lp()`-encoded messages (§4.1).
 - **A hidden epoch record renamed after `vault.json`** (the second draft). A crash plus the
@@ -1242,6 +1329,8 @@ That document's status and §10 point here.
 - **An epoch hint in each file** (an extra stanza or a name field), to avoid trying older keys. It
   would tell storage which files predate a removal, and the saving is one decapsulation per epoch on
   failure. Rejected.
+- **Kit joins as self-signed additions** (until §16.6). A kit finder joined beside the owner's
+  devices, recognized only by alerts. Rejected: a kit join is a takeover (§6.3).
 - **Trust on first use for joins** (the first draft). A provider could serve a joining device a vault
   of its own and read what it writes. Rejected: the root fingerprint and the reverse code (§6.2,
   §6.3).
@@ -1257,13 +1346,13 @@ round 2)**; their recommendation is again the decision.
 | K1 | Wrap or derive the file key? | Wrap: a fresh age file key per file, in one stanza to the vault identity. **(revised after review)** The identity's seed is derived from the vault key by HKDF (§2.1) |
 | K2 | Secure Enclave? | **(revised after review)** Device signing pairs (P-256, ML-DSA-65) in the enclave now, **(revised after round 2)** with class AfterFirstUnlockThisDeviceOnly so locked runs can sign. The device's decryption key stays a software X-Wing key in a this-device-only Keychain item, because the enclave has no X-Wing and HPKE has no ML-KEM + P-256 hybrid (§6.1) |
 | K3 | Passphrase KDF and parameters | scrypt stays; writer work factor 20; minimum about 70 bits with no override; superseded copies deleted only under §8.2's rule. **(revised after round 2)** The copy carries the vault id and root |
-| K4 | Forks | **(revised after round 3)** Never merged; resolved at each branch over subtrees, after a pre-pass that applies rule 1 to all siblings: a removed author loses; mutual removal is always put to every non-author device listed on either side ("Which of these did you make?", names from the parent list), answered by a signed `resolve` epoch that binds the authors unless a device one of them added wrote it, with contradictions shown and revisable; a stale side loses; otherwise the smaller `epochId`. Only removals are re-applied, from the whole losing subtree, in one epoch (§5.6) |
+| K4 | Forks | **(replaced by the single writer, §16.6)** Only home signs list changes; a handoff moves home; a takeover by the recovery key and a new home, with the user's list, beats every home epoch that is not its ancestor; the smaller `epochId` between two takeovers; anything else ignored; no questions (§5.6) |
 | K5 | Join verification | **(revised after review, and after round 2)** Typed six words or a QR code of the 32-byte commitment in both directions, and every chain rooted at the printed root fingerprint (§4.2, §6.2) |
-| K6 | Device names | Plaintext as today, authenticated by `listTag` and `authorSig`. **(revised after round 2)** A rename on both sides: the smaller digest wins (§5.1) |
+| K6 | Device names | Plaintext as today, authenticated by `listTag` and `authorSig`. **(revised, §16.6)** Renamed on home only (§5.1) |
 | K7 | Set-aside files | Never deleted automatically; "Clear superseded" is one user action (§5.8) |
 | K8 | Sealed set contents | Path and SHA-256 of the exact bytes of every accepted file under the parent key, after a best-effort pull (§5.2) |
 | K9 | #57 | Not merged; carried-over parts move into KH3, KH4 and KH6 (§13.1) |
-| K10 | Kit joins | **(revised after round 2)** Recognized by a self-signed `addSig`, never by the `addedBy` field; loud alerts on every device, and the device review before Replace Kit and Re-encrypt (§6.3, §6.5, §7.1) |
+| K10 | Kit joins | **(revised, §16.6)** A kit join is a takeover with the joining device as home and a list the user picks; loud alerts on every device, and the device review before Replace Kit and Re-encrypt (§6.3, §6.5, §7.1) |
 | K11 | Device id length | Keep 8 hex digits: ids are for names and the interface only, and joins refuse a collision with any fingerprint in the chain's lists (§3) |
 | K12 | Signed bytes | **(round 2)** `lp()`-encoded messages, never JSON, so no canonicalization is needed (§4.1) |
 | K13 | Epoch record order | **(revised after round 2)** Final name first; an orphan is ignored, never deleted (§5.2) |
@@ -1279,10 +1368,14 @@ round 2)**; their recommendation is again the decision.
 3. **Plaintext device names** in `vault.json` and join requests (§3, §9.3). They could move into an
    encrypted record if the owner wants storage not to see them; doing that later changes only those
    files.
-4. **The fork question's wording** (§5.6 rule 2.2), which users see only in an attack or a rare
-   accident. It should be checked with the owner on a device before KH5 ships.
+4. **The takeover screen's wording** (§6.3: "Uncheck any device you no longer have"), and the home
+   label ("Manages devices"), which users see when a device is lost. They should be checked with the
+   owner on a device before KH5 ships.
 
 ## 16. Reviews of 2026-10-20 and what changed
+
+The fork rules that §16.1 to §16.5 describe were replaced by the single writer (§16.6); those
+sections record the history.
 
 ### 16.1 Round 1
 
@@ -1360,3 +1453,101 @@ design now.
 | L3 rule 3 counts a removed device's own descendants | stated in §5.6 rule 3 and "Residual" |
 | L4 §10's removed-device row | one question per device, named from the parent list, and the puppet line (§10) |
 | L5 missing fork-tree vectors | three children with a mutual pair and a decisive sibling; an addition carried into a removal; a resolve by a device not in P's list; a puppet's resolve (§12 KH1) |
+
+### 16.4 KH1 code review
+
+The independent review of KH1's code (#63 merged; #65 fixed before merging) found one critical, two
+high, six medium and five low findings. The design changes they made are written above:
+
+| Finding | Change |
+| --- | --- |
+| C1 a removed device hijacks the kept chain by appending under an old honest stale fork | §5.6: the pinned chain as context, counted epochs per pair of sides, pruning on the kept prefix |
+| H1 additions admitted against the `vault.json` itself | §4.3 step 1: only against the verified list |
+| H2 `epochSig` not verifiable from `vault.json` | §3: `epochReason`, `parentList` (and `rejected`) in `vault.json`; the first list derived from `addedEpoch` |
+| M1 which fingerprint is the recovery key | §5.2.1: `recovery` in each chain entry, signed; replaced by recovery and re-encryption epochs |
+| M2 a resolve epoch's rejected author unsigned and dropped from chain copies | §4.1, §5.2.1: `rejected` in `epochSig` and in chain entries |
+| M4 two binding resolve epochs that disagree settled silently | §5.6: a contradiction and a question |
+| M6 the record's `reason`/`by` not tied to its chain entry | §5.2.1 |
+
+The second review (of the fixes) found that fork resolution still failed for devices whose pinned
+chain does not hold the removal: a child that always counts let X's own fork reject its removal; a
+deadlock between X's epoch under an honest stale fork and the real removal went to rule 4; stored
+answers and binding resolves acted on direct children only. §5.6 "Context, labels and disputes"
+(since replaced by the simple rule, §16.5) replaced the round-1 rules (wholesale exclusion, labels over all siblings at once with children
+labelled like any epoch, disputes always rule 2), the reverse code carries the approver's frontier
+(§6.2), and a randomized property test with required-failing mutations guards the function.
+
+### 16.5 The simple fork rule (superseded by §16.6)
+
+Five review rounds of automatic fork resolution (subtree comparison, a pre-pass, labels over all
+siblings at a least fixed point, disputes, binding resolves, `epochId` tie-breaks) each found a new
+attack class: C1, C1-a/b/c, H1, H2, M1, puppets, coalitions, ground ids, stale forks, deadlocks. The
+reviewer (Fable) recommended, and the owner adopted with amendments 1 to 4, **the simple rule** of
+§5.6: nothing is decided automatically. A device follows its chain's linear extensions, asks at every
+branch "Did you make this change?" per side, stores the answer, writes a resolve epoch, and follows
+another device's resolve only under rule 4. Every earlier attack tree now ends in "no effect" or "one
+question" (`epoch-fork-vectors.json`).
+
+| Before | Now |
+| --- | --- |
+| labels, least fixed point, disputes, rules 1 to 4, pairwise `epochId` order | dropped: linear following, questions, resolve-following (rule 4), the outcast filter (rule 6) |
+| `reapply` epochs | dropped: a resolve epoch carries the re-applied removals; `reason` is `create`, `remove`, `recovery`, `reencrypt` or `resolve`, and `rejected` is optional in a resolve |
+| trust record: `rejectedAuthors` | `forkAnswers`: per branch, the chosen child, the authors confirmed and the authors rejected (format.md §15.10) |
+| binding resolves, contradictions | rule 4: (a) a resolver listed, not removed or rejected, not added by a removed or rejected device; (b) settling a branch on the device's chain, from below the branch's child, through authors removed only further down; (c) no conflicting resolve |
+| property invariants I-a to I-d | P1 to P6 with a truthful scripted user and five required mutations (§5.6) |
+
+Found while implementing it, and settled in §5.6: a resolve that is itself a child of the branch
+settles nothing (otherwise an attacker's resolve keeps a device pinned through it silent); removals by
+authors the device's chain removes do not void a resolver (otherwise an attacker that removed every
+resolver on its fork keeps an honest stale device from following); a side that a resolve vouches for
+but rule 6 hid is asked about, also after an answer; and amendment 2 keeps an author's epochs from
+before its removal further down the chosen side.
+
+### 16.6 The single writer (2026-10-20)
+
+The sixth review of the simple rule (round 6, findings C1, C2, H1 to H3, M1 to M3) again found
+attacks, each from an automatic exception that crept back in: a pre-removal exemption that let a
+rejected device's epoch reach chains, a "none" answer the rule could not express, an
+attacker-steerable suggestion, answers per author that collided per side, and islands. Six rounds of
+fork rules had each fixed the last round's attacks and opened new ones, and every honest stale fork
+cost the user a question. The owner chose to remove forks at their source instead: **one writer**.
+
+| Before | Now |
+| --- | --- |
+| any listed device signs epochs, approves devices, renames and merges `vault.json` | only **home** does (§5.6); others request and follow |
+| fork questions, `resolve` epochs, stored answers (`forkAnswers`), the outcast filter, islands, scripted users | gone: the **precedence rule** decides without questions (§5.6) |
+| kit joins as self-signed additions | a kit join is a **takeover**, signed by the recovery key's derived pair and the new home, with the list the user picks (§6.3) |
+| the recovery fingerprint over the key | over the key and its derived signing pair (§3), so a takeover verifies |
+| the union merge of `vault.json` versions | one writer: the newer version contains the older (§5.1) |
+| trust record: the user's fork answers | trust record: the current home |
+| `EpochForkPropertyTests` (P1 to P6, five mutations) | `EpochPrecedenceTests` (invariants (a) to (h) and six mutations since round 8) and `epoch-precedence-vectors.json` |
+
+The residuals are stated in §5.6: managing devices needs home or the recovery key; a stolen home acts
+as owner until the takeover; a takeover drops home changes it did not see (additions need
+re-approval; removals are covered by the user's list); whoever holds the recovery key holds
+everything, and a takeover by an attacker who holds it is total compromise.
+
+### 16.7 Round 7 (the single writer's first review)
+
+| Finding | Change |
+| --- | --- |
+| C1 a retired kit can still take over | owner decision: a takeover is valid only under the kit current at the verifier's pinned frontier, so a retirement is final for every device that saw it (`TakeoverRule.recoveryKey`, one function); Replace Kit needs device-owner authentication and may carry the old kit's `recoverySig`; the thief-with-passcode residual and "answer an `R` holder with Replace Kit" stated (§5.6, §6.5); invariant (f) and the `retiredKitAccepted` mutation |
+| H1 a takeover that drops a stolen home's re-encryption strands every file | ledger entries pruned only when the sealer is pinned with a later pinned epoch above it; Repair's bulk Keep of the dropped epochs' own files (§5.4) |
+| M1 the takeover's parent unspecified | the taking-over device's pinned frontier (§5.6 rule 3) |
+| M2 a home conflict stops a kit joiner and its takeover resets history | the user picks the branch at a conflict; a takeover may re-admit devices of its ancestry's lists, unchecked by default when removed (§5.6, §6.3) |
+| M3 `check` trusted the file's own `home` | the parent as verified (list, home, recovery key, ancestry) is required above epoch 1 (§4.3) |
+| L1 an id-settled conflict was invisible | invariant (e) and the `conflictSettledById` mutation |
+| L3, L4 | the stale comment fixed; a malformed epoch 1 is tampering (format.md §15.9) |
+| generator | kit replacements and re-encryptions, so the recovery key varies; takeovers signed by other kits |
+
+### 16.8 Round 8
+
+| Finding | Change |
+| --- | --- |
+| C1-b a kit introduced below the frontier signed valid takeovers, so a thief holding home won with its own kit and a ground id | a pinned device takes a takeover only under its pinned frontier's own kit; a kit introduced below the frontier counts once pinned (`TakeoverRule.recoveryKey`; `EpochChain.verify` reports `kitNotPinned`); the oracle's `retired` also looks at the takeover's own branch; invariant (g), the `kitBelowFrontierAccepted` mutation, the thief race in the generator and the vectors |
+| H1-b a seal with pinned home epochs above it could still be dropped | final only with a kit replacement pinned at or above the sealer (§5.4); invariant (h), and the round-7 rule must fail it |
+| M1 residuals overstated | §5.6: a grinding `R` holder (no recourse on a device where its takeover won), Re-encrypt Everything is a kit replacement, a kit joiner on a chain where `R` was retired cannot take over, the old-kit `recoverySig` is evidence only; §7.2, §11.1, §10 |
+| M2 oracle and generator | (f) looks at the takeover's branch below the frontier; the thief race with ids random both ways and pins above and on the replacement; (h) for the ledger rule |
+| L1 a takeover listing a retired kit passed the precedence layer | `listAllowed` takes the ancestry's retired kits (precedence and chain alike); a vector and the oracle |
+| L2 `check` and the pin | comment: the record-less direct child's parent is the frontier |
+| L3 §6.3 alert | "replace the recovery kit on a device that still manages devices" |
