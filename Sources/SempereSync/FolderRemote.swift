@@ -371,7 +371,8 @@ public struct FolderRemote: SyncRemote {
     public func stat(_ path: [String]) throws -> RemoteEntry? {
         try validate(path)
         try checkInterrupt()
-        try checkNoLink(path)
+        // A link as the item itself is just not there (never listed); one above it is refused.
+        try checkNoLink(Array(path.dropLast()))
         let u = url(path)
         let (s, isLink, _) = Self.lstatItem(u)
         if isLink { return nil }
@@ -547,10 +548,12 @@ public struct FolderRemote: SyncRemote {
         return tmp
     }
 
-    /// Runs `body` holding the folder's write lock: a coordinated write of `url` in a provider's
-    /// folder, an advisory lock on `.sempere-lock` at the base otherwise.
+    /// Runs `body` holding the folder's write lock. Every caller runs inside a coordinated
+    /// write of `target` already, which in a provider's folder is the lock (a second, nested
+    /// coordination of the same item would wait for the first for ever); a plain folder takes
+    /// an advisory lock on `.sempere-lock` at the base.
     private func locked<T>(_ target: URL, _ body: () throws -> T) throws -> T {
-        if manages { return try provider.coordinatedWrite(target, body) }
+        if manages { return try body() }
         let lockURL = root.appendingPathComponent(Self.lockName)
         let fd = lockURL.withUnsafeFileSystemRepresentation { p -> Int32 in
             guard let p else { return -1 }

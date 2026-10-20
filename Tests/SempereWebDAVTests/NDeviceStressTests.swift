@@ -123,6 +123,18 @@ final class StressTarget {
         }
     }
 
+    /// A plain folder (`FolderRemote`), with transport faults (`FaultyRemote`): a share that drops,
+    /// refuses, loses answers and cuts copies midway.
+    static func folder(_ name: String, root: URL) -> StressTarget {
+        let remote = FolderRemote(root: root, provider: PlainFolder())
+        return StressTarget(name: name, inspector: remote) { seed in
+            let on = Locked(false)
+            let faulty = FaultyRemote(remote, seed: seed, faults: .all(transportRate))
+            let switched = SwitchedRemote(plain: remote, faulty: faulty, on: on)
+            return StressLink.Endpoint(remote: switched, setFaults: { on.value = $0 }, injected: { Int(faulty.injected.value) })
+        }
+    }
+
     static func webDAVMock(_ name: String, deepETags: Bool) -> StressTarget {
         let server = MockDAV()
         server.collectionETags = deepETags ? .deep : .none
@@ -181,8 +193,9 @@ final class StressWorld {
         self.mode = mode
         rng = SeededRNG(seed)
         let deviceCount = mode.devices.lowerBound + Int(rng.next() % UInt64(mode.devices.count))
-        // Seeds take turns: one remote; two in-memory ones; in-memory and the WebDAV mock.
-        targets = [.memory("R0")]
+        // Seeds take turns: one remote; two in-memory ones; in-memory and the WebDAV mock. Every
+        // fourth seed's first remote is a folder (`FolderRemote`) instead of an in-memory store.
+        targets = [seed % 4 == 3 ? .folder("R0", root: root.appendingPathComponent("R0-folder")) : .memory("R0")]
         switch seed % 3 {
         case 1: targets.append(.memory("R1"))
         case 2: targets.append(.webDAVMock("R1", deepETags: rng.next() % 2 == 0))
@@ -211,7 +224,7 @@ final class StressWorld {
 
     var summary: String {
         let injected = links.joined().map { $0.endpoint.injected() }.reduce(0, +)
-        let kinds = targets.map { $0.inspector is MemoryRemote ? "memory" : "webdav-mock" }
+        let kinds = targets.map { $0.inspector is MemoryRemote ? "memory" : $0.inspector is FolderRemote ? "folder" : "webdav-mock" }
         let ops = counts.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: " ")
         return "\(devices.count) devices on \(targets.count) remotes (\(kinds.joined(separator: ", "))), "
             + "\(written.count) files written, \(injected) faults, \(quarantined.count) quarantined; \(ops)"
@@ -483,4 +496,34 @@ final class StressWorld {
         let injected = links.joined().map { $0.endpoint.injected() }.reduce(0, +)
         if injected == 0 { fail("no fault was injected") }
     }
+}
+
+/// A remote that goes through its faulty twin while `on` is set.
+struct SwitchedRemote: SyncRemote {
+    var plain: any SyncRemote
+    var faulty: any SyncRemote
+    let on: Locked<Bool>
+    private var now: any SyncRemote { on.value ? faulty : plain }
+
+    var location: String { plain.location }
+    var capabilities: RemoteCapabilities { plain.capabilities }
+    var interrupt: (@Sendable () -> (any Error)?)? {
+        get { plain.interrupt }
+        set { plain.interrupt = newValue; faulty.interrupt = newValue }
+    }
+    func list(_ path: [String]) throws -> [RemoteEntry]? { try now.list(path) }
+    func listTree(_ path: [String], maxBytes: Int) throws -> RemoteTree? { try now.listTree(path, maxBytes: maxBytes) }
+    func stat(_ path: [String]) throws -> RemoteEntry? { try now.stat(path) }
+    func read(_ path: [String], maxBytes: Int) throws -> (data: Data, etag: String?) { try now.read(path, maxBytes: maxBytes) }
+    func download(_ path: [String], to file: URL, resumeFrom: Int, ifETag: String?, maxBytes: Int, segmentBytes: Int,
+                  progress: ((Int) throws -> Void)?) throws -> DownloadResult {
+        try now.download(path, to: file, resumeFrom: resumeFrom, ifETag: ifETag, maxBytes: maxBytes, segmentBytes: segmentBytes,
+                         progress: progress)
+    }
+    func write(_ path: [String], _ body: RemoteBody, condition: PutCondition) throws -> Bool { try now.write(path, body, condition: condition) }
+    func moveNoOverwrite(_ path: [String], to destination: [String]) throws -> Bool { try now.moveNoOverwrite(path, to: destination) }
+    func makeCollection(_ path: [String]) throws -> CollectionResult { try now.makeCollection(path) }
+    func createBase() throws { try now.createBase() }
+    func delete(_ path: [String], ifETag: String?) throws -> Bool { try now.delete(path, ifETag: ifETag) }
+    func missingCollectionError(_ path: [String]) -> any Error { plain.missingCollectionError(path) }
 }

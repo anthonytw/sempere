@@ -49,6 +49,8 @@ public final class EvictingFolderProvider: FolderProvider, @unchecked Sendable {
     private let lock = NSLock()
     private var evicted: [String: Eviction] = [:]
     private var unlisted = Set<String>()
+    /// Where each unlisted folder's contents are kept meanwhile.
+    private var unlistedStore: [String: URL] = [:]
     private var pending: [String: Int] = [:]
     private var failures: [String: String] = [:]
     private var versionStore: [String: [(version: RemoteVersion, file: URL)]] = [:]
@@ -125,8 +127,9 @@ public final class EvictingFolderProvider: FolderProvider, @unchecked Sendable {
     public func unlist(_ rel: String) throws {
         try withLock {
             let dir = local(rel)
-            let keep = stored(rel)
+            let keep = cloud.appendingPathComponent("unlisted").appendingPathComponent(UUID().uuidString)
             try FileManager.default.createDirectory(at: keep, withIntermediateDirectories: true)
+            unlistedStore[rel] = keep
             for name in try FileManager.default.contentsOfDirectory(atPath: dir.path) {
                 try FileManager.default.moveItem(at: dir.appendingPathComponent(name), to: keep.appendingPathComponent(name))
             }
@@ -195,8 +198,8 @@ public final class EvictingFolderProvider: FolderProvider, @unchecked Sendable {
                 }
             }
         }
-        if unlisted.remove(rel) != nil {
-            let dir = local(rel), keep = stored(rel)
+        if unlisted.remove(rel) != nil, let keep = unlistedStore.removeValue(forKey: rel) {
+            let dir = local(rel)
             for name in (try? fm.contentsOfDirectory(atPath: keep.path)) ?? [] {
                 try? fm.moveItem(at: keep.appendingPathComponent(name), to: dir.appendingPathComponent(name))
             }
@@ -222,8 +225,13 @@ public final class EvictingFolderProvider: FolderProvider, @unchecked Sendable {
             guard let rel = rel(url) else { return }
             _requested.append(rel)
             tick()
-            guard failures[rel] == nil, evicted[rel] != nil || unlisted.contains(rel), pending[rel] == nil else { return }
-            if _arrivalDelay == 0 { arrive(rel) } else { pending[rel] = _arrivalDelay }
+            guard failures[rel] == nil, evicted[rel] != nil || unlisted.contains(rel) else { return }
+            if _arrivalDelay == 0 {
+                pending[rel] = nil
+                arrive(rel)
+            } else if pending[rel] == nil {
+                pending[rel] = _arrivalDelay
+            }
         }
     }
 

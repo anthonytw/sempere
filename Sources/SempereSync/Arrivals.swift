@@ -170,6 +170,11 @@ extension SyncEngine {
             return false
         }
         request([path])
+        // Asked for: a provider that has it at hand lists it now, before anything below is listed.
+        if !options.dryRun, !options.pushOnly, let now = try? transport.stat(path), now.isCollection, now.availability == .available {
+            settled(path, folder: true)
+            return false
+        }
         let key = Self.arrivalKey(path, folder: true)
         return locked {
             arrivals.seen.insert(key)

@@ -179,6 +179,8 @@ struct FaultyRemote: SyncRemote {
     let seed: UInt64
     let faults: TransportFaults
     private let calls = CallCounter()
+    /// How many faults were injected.
+    let injected = CallCounter()
 
     init(_ inner: any SyncRemote, seed: UInt64, faults: TransportFaults) {
         self.inner = inner; self.seed = seed; self.faults = faults
@@ -216,10 +218,16 @@ struct FaultyRemote: SyncRemote {
         return nil
     }
 
+    private func decideCounted(_ path: [String], body: Bool) -> Fault? {
+        let f = decide(path, body: body)
+        if f != nil { _ = injected.next() }
+        return f
+    }
+
     /// Runs `op` on `path` under the faults decided for it.
     private func faulted<T>(_ verb: String, _ path: [String], body: Bool = false, _ op: () throws -> T) throws -> T {
         let shown = "\(verb) /\(path.joined(separator: "/"))"
-        switch decide(path, body: body) {
+        switch decideCounted(path, body: body) {
         case .drop?: throw InjectedFault.dropped(shown)
         case .refuse?: throw InjectedFault.refused(shown)
         case .lose?:
@@ -242,7 +250,7 @@ struct FaultyRemote: SyncRemote {
     func download(_ path: [String], to file: URL, resumeFrom: Int, ifETag: String?, maxBytes: Int, segmentBytes: Int,
                   progress: ((Int) throws -> Void)?) throws -> DownloadResult {
         let shown = "download /\(path.joined(separator: "/"))"
-        switch decide(path, body: true) {
+        switch decideCounted(path, body: true) {
         case .drop?: throw InjectedFault.dropped(shown)
         case .refuse?: throw InjectedFault.refused(shown)
         case .lose?:
@@ -295,4 +303,5 @@ final class CallCounter: @unchecked Sendable {
     private let lock = NSLock()
     private var n: UInt64 = 0
     func next() -> UInt64 { lock.lock(); defer { lock.unlock() }; n += 1; return n }
+    var value: UInt64 { lock.lock(); defer { lock.unlock() }; return n }
 }
