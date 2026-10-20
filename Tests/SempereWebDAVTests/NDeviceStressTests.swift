@@ -350,9 +350,11 @@ final class StressWorld {
                     let group = DispatchGroup()
                     let reports = Locked([SyncReport?](repeating: nil, count: 2))
                     for (n, (k, l)) in [(i, link), (j, other)].enumerated() {
-                        let dev = devices[k]
+                        // Only Sendable values cross into the closure: the device (internally
+                        // synchronized test harness), its remote (a `SyncRemote`) and the state file.
+                        let dev = devices[k], remote = l.endpoint.remote, state = l.state
                         DispatchQueue.global().async(group: group) {
-                            let r = try? dev.sync(via: l.endpoint.remote, state: l.state)
+                            let r = try? dev.sync(via: remote, state: state)
                             reports.value[n] = r
                         }
                     }
