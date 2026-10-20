@@ -200,6 +200,8 @@ struct RememberedKeysTests {
         // Finished: forgetting is the user's choice again.
         var finishing = try Vault.open(at: try #require(model.vaultURL), identities: [old, new])
         #expect(try finishing.resumeRewrap().isComplete)
+        #expect(RememberedKeys.outgoingKeyRefusal(model.vault, targetsPending: true) != nil,
+                "a sync target still holding the change unfinished keeps the old key")
         #expect(RememberedKeys.outgoingKeyRefusal(model.vault) == nil)
     }
 

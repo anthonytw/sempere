@@ -246,8 +246,33 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         t0.offline.value = false
         w.oracle.learn(w.b)
         // They meet: each records the other's change on a target, and nothing is replaced across lists.
-        for _ in 0..<2 { for d in [w.a, w.b] { for t in ["T0", "T1"] { w.tick(); _ = try? d.sync(t, now: w.now) } } }
-        XCTAssertFalse(w.a.coordinator.conflicts.isEmpty && w.b.coordinator.conflicts.isEmpty, "the changes met")
+        for _ in 0..<2 {
+            for d in [w.a, w.b] {
+                for t in ["T0", "T1"] {
+                    w.tick()
+                    if let r = try? d.sync(t, now: w.now) {
+                        XCTAssertTrue(r.keyChange?.replaced.isEmpty ?? true, "\(d.name) on \(t): \(KCWorld.brief(r))")
+                    }
+                }
+            }
+        }
+        XCTAssertFalse(w.a.coordinator.conflicts.isEmpty, "A recorded B's change")
+        XCTAssertFalse(w.b.coordinator.conflicts.isEmpty, "B recorded A's change")
+        // Each target keeps its own list, and every copy there opens with every key that list names:
+        // a copy sealed to the other list (missing one of its keys) would have crossed over.
+        let lists = try w.targets.map { t in
+            try VaultManifest.decode(try XCTUnwrap(t.file([Vault.manifestName]))).recipients.map(\.key)
+        }
+        XCTAssertNotEqual(Set(lists[0]), Set(lists[1]), "neither list overwrote the other")
+        for (t, listed) in zip(w.targets, lists) {
+            let keys = w.oracle.identities.filter { listed.contains($0.recipient.string) }
+            XCTAssertEqual(keys.count, listed.count)
+            for (p, data) in t.noteFiles() where !p.contains("/att/") {
+                for k in keys {
+                    XCTAssertNotNil(try? AgeFile.decrypt(data, with: [k]), "\(t.name) \(p) does not open with a key its list names")
+                }
+            }
+        }
         w.assertNoLoss()
         // The user keeps B's change on A, then A redoes its own.
         var va = try w.a.vault()

@@ -385,3 +385,56 @@ struct WeakStampRemote: SyncRemote {
     func delete(_ path: [String], ifETag: String?) throws -> Bool { try inner.delete(path, ifETag: ifETag.map { _ in "x" }) }
     func missingCollectionError(_ path: [String]) -> any Error { inner.missingCollectionError(path) }
 }
+
+/// F11 over real HTTP: wsgidav behind `scripts/dav-fault-proxy.py` (review 11). Skipped unless
+/// `SEMPERE_WEBDAV_PROXY_URL` is set (`scripts/test-webdav.sh`, `scripts/sync-stress.sh`); the proxy's
+/// configuration is global, so this must not run in parallel with `SyncFaultProxyTests`.
+final class KeyChangeOverFaultProxyTests: TempDirTestCase {
+    /// A connection reset in the middle of uploads (request bodies cut, answers lost) and random 5xx
+    /// while a removal replaces copies on the server: every copy there is complete, old or new, after
+    /// every run; the change then settles.
+    func testCutDuringReplaceOverWsgidav() throws {
+        let proxy = try FaultProxy.fromEnvironment()
+        let env = ProcessInfo.processInfo.environment
+        guard let direct = env["SEMPERE_WEBDAV_TEST_URL"].flatMap(URL.init(string:)) else {
+            throw XCTSkip("SEMPERE_WEBDAV_TEST_URL not set")
+        }
+        let path = "kc-\(UUID().uuidString.lowercased())"
+        let creds = env["SEMPERE_WEBDAV_TEST_USER"].map { WebDAVCredentials(user: $0, password: env["SEMPERE_WEBDAV_TEST_PASSWORD"] ?? "") }
+        try proxy.configure()
+        defer { try? proxy.configure() }
+        let server = WebDAVSyncRemote(try WebDAVClient(baseURL: direct.appendingPathComponent(path, isDirectory: true),
+                                                       credentials: creds))
+        let t0 = KCTarget(name: "T0", devices: WebDAVSyncRemote(try proxy.client(path)), direct: server)
+        let t1 = KCTarget(name: "T1")
+        let w = try KCWorld(root: tmp.appendingPathComponent("w"), targets: [t0, t1])
+        let n1 = UUID(), n2 = UUID()
+        try w.write(w.a, n1, "one")
+        try w.write(w.b, n2, "two")
+        _ = try w.attach(w.a, n1, Data(repeating: 9, count: 200_000))
+        try w.converge()
+        let spare = try w.addSpare(on: w.a)
+        try w.converge()
+        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }
+        try proxy.configure(errorRate: 0.1, seed: 11, rules: [
+            .init(method: "PUT", path: "/\(path)/notes/", action: "reset", direction: "request", afterBytes: 600,
+                  times: -1, probability: 0.4),
+            .init(method: "PUT", path: "/\(path)/notes/", action: "reset", direction: "response", times: -1, probability: 0.2),
+        ])
+        for _ in 0..<12 {
+            w.tick()
+            _ = try? w.a.sync("T0", now: w.now)
+            w.oracle.learn(w.a)
+            for (p, data) in t0.noteFiles() where p.split(separator: "/").count == 3 {
+                XCTAssertNotNil(w.oracle.body(data, path: p), "\(p): a partial copy on the server")
+            }
+        }
+        let hits = try proxy.requests().filter { $0.path.hasPrefix("/\(path)/") && $0.fault != nil }
+        XCTAssertFalse(hits.isEmpty, "the proxy cut something")
+        try proxy.configure()
+        try w.converge()
+        w.assertConverged()
+        w.assertRevoked([spare])
+        w.assertNoLoss()
+    }
+}

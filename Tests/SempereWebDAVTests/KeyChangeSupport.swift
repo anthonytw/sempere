@@ -60,8 +60,21 @@ final class KCTarget: @unchecked Sendable {
     let dav: MockDAV?
     let folder: URL?
     let provider: EvictingFolderProvider?
+    /// A real server: how devices reach it (e.g. through `scripts/dav-fault-proxy.py`) and a direct client.
+    let server: (devices: any SyncRemote, direct: any SyncRemote)?
+
+    /// A target on a real server (`devices`: what the devices use; `direct`: for checking and planting).
+    init(name: String, devices: any SyncRemote, direct: any SyncRemote) {
+        self.name = name
+        store = nil
+        dav = nil
+        folder = nil
+        provider = nil
+        server = (devices, direct)
+    }
 
     init(name: String, webdav: Bool = false) {
+        server = nil
         self.name = name
         store = webdav ? nil : MemoryStore(name: name)
         dav = webdav ? MockDAV() : nil
@@ -71,6 +84,7 @@ final class KCTarget: @unchecked Sendable {
 
     init(name: String, kind: Kind, dir: URL) {
         self.name = name
+        server = nil
         store = kind == .memory ? MemoryStore(name: name) : nil
         dav = kind == .webdav ? MockDAV() : nil
         if kind == .folder || kind == .evicting {
@@ -85,6 +99,7 @@ final class KCTarget: @unchecked Sendable {
     }
 
     private var bare: any SyncRemote {
+        if let server { return server.direct }
         if let store { return MemoryRemote(store: store, base: ["vault"]) }
         if let folder { return FolderRemote(root: folder, provider: provider ?? PlainFolder()) }
         return WebDAVSyncRemote(try! WebDAVClient(baseURL: URL(string: "https://dav.example.com\(MockDAV.base)/")!,
@@ -93,7 +108,7 @@ final class KCTarget: @unchecked Sendable {
 
     /// How a device reaches it (`faults`: that device's own transport faults, in-memory targets only).
     func remote(faults: MemoryFaults? = nil) -> any SyncRemote {
-        let inner: any SyncRemote = store.map { MemoryRemote(store: $0, base: ["vault"], faults: faults) } ?? bare
+        let inner: any SyncRemote = store.map { MemoryRemote(store: $0, base: ["vault"], faults: faults) } ?? server?.devices ?? bare
         return SwitchableRemote(inner: inner, offline: offline)
     }
 
@@ -107,6 +122,9 @@ final class KCTarget: @unchecked Sendable {
             let url = folder.appendingPathComponent(path.joined(separator: "/"))
             try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? data.write(to: url)
+        } else if let server {
+            for i in 1..<path.count { _ = try? server.direct.makeCollection(Array(path.prefix(i))) }
+            _ = try? server.direct.write(path, .data(data), condition: .unconditional)
         } else { dav?.putDirect(path.joined(separator: "/"), data) }
     }
     func remove(_ path: [String]) { _ = try? inspector.delete(path) }
@@ -321,11 +339,12 @@ final class KCWorld: @unchecked Sendable {
 
     /// `deviceCount` devices; device i uses the targets `uses[i]` (default: every target).
     init(root: URL, deviceCount: Int = 3, targetCount: Int = 2, webdav: Set<Int> = [], uses: [[Int]]? = nil,
-         kinds: [KCTarget.Kind]? = nil) throws {
-        let ts = (0..<targetCount).map { i in
+         kinds: [KCTarget.Kind]? = nil, targets given: [KCTarget]? = nil) throws {
+        let ts = given ?? (0..<targetCount).map { i in
             kinds.map { KCTarget(name: "T\(i)", kind: $0[i], dir: root.appendingPathComponent("targets")) }
                 ?? KCTarget(name: "T\(i)", webdav: webdav.contains(i))
         }
+        let targetCount = ts.count
         targets = ts
         var ds: [KCDevice] = []
         for i in 0..<deviceCount {

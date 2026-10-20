@@ -612,6 +612,19 @@ The user picks the mode in the key-change sheet:
   other device redoes its addition on top; when neither rotated from the other, the user keeps
   one (`adoptOtherChange`), and the keys it dropped are added again or the secret rotates
   (`prepareRotation`), since stanza counts cannot tell a dropped key's files from current ones.
+- **Fixed after the adversarial review** (`Tests/SempereWebDAVTests/KeyChangeReviewTests.swift`):
+  the window ends at `min(firstSeen, changedAt + 1 h) + days` (the journal's `changedAt`, bound by
+  `rewrapPending`), so a device shown the change late opens no fresh window; R3 rewraps only this
+  device's own files (`SyncOptions.ownDevices`), others' are set aside once the lists agree; a "keep
+  the other change" under the same secret that drops keys records a **rotation owed**, which blocks
+  C0 and the coordinator runs itself (compromised mode); the oracle checks blobs and attachment
+  revisions with the current keys only, and I6 is checked from the journals the test recorded, not
+  from the device's own policy; an unreadable ledger fails closed (reported, `repairLedger()`), the
+  ledger is written before the claims and claims are taken back if the save fails; any device
+  removes a journal older than the in-flight day with If-Match; targets without strong ETags are
+  reported (`weakStamps`) and never replaced or settled; the keyring is written 0600 before the
+  rename, updated under a lock, set aside (never overwritten) when it does not open, and resealed
+  when the CLI identity changes; `listsDiffer` fails closed when the remote list was not read.
 - **Not in P4a**: inbox, `keys/`, `summaries/` and notebook records are not rewrap-replaced (P4);
   F16 runs over a target whose `vault.json` is replaced underneath and over P3's provider folder
   (`EvictingFolderProvider` conflict versions); F11 runs over `MemoryRemote` faults and the WebDAV mock, not wsgidav behind the fault

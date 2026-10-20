@@ -512,7 +512,8 @@ change can be finished by any device holding an identity of the new set:
      "previousVaultSecret": "-----BEGIN AGE ENCRYPTED FILE-----\n...\n",
      "rekeyBlobs": true,
      "mode": "routine",
-     "lateFileWindowDays": 7 }
+     "lateFileWindowDays": 7,
+     "changedAt": "2026-10-20T14:03:00Z" }
    ```
 
    - `format`: `sempere/1`.
@@ -531,14 +532,20 @@ change can be finished by any device holding an identity of the new set:
      the outgoing secret (a *late file*, below). Absent means 7 in routine
      mode and 0 in compromised mode; in compromised mode any other value than
      0 is invalid.
+   - `changedAt` (optional): when the change was made, an RFC 3339 UTC time
+     by the changing device's clock. It caps the late-file window in real
+     time (§3.3.2): a device that first sees the change late counts its
+     window from `changedAt` (plus one hour of clock slack), not from when it
+     saw it. Absent means the reader knows no change time and applies a
+     0-day window; a value that does not parse makes the journal unreadable.
 
    A journal whose `mode` is another string or whose `lateFileWindowDays` is
-   out of range does not parse (it is refused, whatever binds it). Both fields
+   out of range does not parse (it is refused, whatever binds it). These fields
    are covered by `rewrapPending` (step 2, "Binding the journal"), which binds
    the journal's exact bytes: whoever can write the folder but does not hold
    the new secret cannot change them without the journal being refused, so
    every device that accepts the journal applies the same policy. Writers
-   write both fields.
+   write `mode`, `lateFileWindowDays` and `changedAt`.
 2. Write `vault.json` with the new `recipients` and `vaultSecret`, and with
    `recipientsTag` (and, when the secret rotates, `secretLink`) for them
    (§2.1), and `rewrapPending` for the journal of step 1 (below), in one
@@ -690,18 +697,27 @@ Nothing in `vault.json` lets a reader verify them once the journal is gone, so
 a device that syncs SHOULD keep, outside the vault and never synced, a
 **secret keyring**: every secret it has held for the vault, sealed at rest,
 with, for each replaced one, when the device first held a `vault.json` with a
-later secret and the policy (`mode`, `lateFileWindowDays`) of the journal of
-that change, copied when the device first accepted it. A device that never
-accepted that journal records no policy and applies 0 days.
+later secret and the policy (`mode`, `lateFileWindowDays`, `changedAt`) of
+the journal of that change, copied when the device first accepted it. A device
+that never accepted that journal records no policy and applies 0 days.
 
-- A late file that **this device** holds in its own copy (written there, or
-  taken in earlier) is rewritten as in step 3 above, from the keyring's secret.
-- A late file that **arrives** from elsewhere is taken in (rewritten as in
-  step 3, then placed) only until the earliest end of the late-file windows of
-  the change away from its secret and of every later change, each counted
-  from when this device first saw that change. After that it is not placed: it
-  is kept aside as a late file, never deleted, for the user to adopt (rewritten
-  into the vault) or export.
+A change's late-file window ends at
+`min(firstSeen, changedAt + 1 hour) + lateFileWindowDays`, where `firstSeen`
+is when this device first held a later `vault.json`. A device that is shown the
+change weeks late (a stale copy, or a target replaying an old `vault.json`)
+therefore does not open a fresh window; the hour of slack covers a changing
+device whose clock runs ahead.
+
+- A late file that **this device wrote** (its device id names the revision or
+  blob) is rewritten as in step 3 above, from the keyring's secret.
+- A late file that **arrives** from elsewhere, or that another device wrote
+  into this copy, is taken in (rewritten as in step 3, then placed) only until
+  the earliest end of the late-file windows of the change away from its
+  secret and of every later change. After that it is not placed: it is kept
+  aside as a late file, never deleted, for the user to adopt (rewritten into
+  the vault) or export. A copy already placed in the local folder is set aside
+  the same way once the recipients lists agree, unless a current copy of the
+  same file is on the target.
 - A file whose name is an older blob name (§8.1.5) of a blob this device holds
   under its current name is the leftover of a rename: it is not placed.
 
@@ -711,6 +727,13 @@ but that lists fewer of its keys does not take it (an older list put back, or
 another device's concurrent addition, which the user resolves). The keyring
 reveals nothing the device did not already hold; whoever reads it can read
 what that device could read before each change.
+
+The keyring needs no rollback counter. Putting back an older keyring can only
+make a device stricter: a secret it lacks makes files under it unreadable (kept
+aside, never accepted); a missing policy or change time means 0 days; a `firstSeen`
+recorded again later is still capped by `changedAt`. Nothing in an older keyring widens what is
+accepted. A keyring that does not open is set aside (renamed, kept) and
+reported, never read as empty and overwritten.
 
 ## 4. Encrypted file bodies
 
