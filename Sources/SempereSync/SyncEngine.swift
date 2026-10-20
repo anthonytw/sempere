@@ -100,6 +100,18 @@ public struct SyncOptions: Sendable {
     /// done is kept, a blob cut short continues on the next run.
     public var isCancelled: (@Sendable () -> Bool)?
 
+    /// Files a provider lists but has not downloaded yet (`Arrivals.swift`):
+    /// the longest one run waits, in all, for the ones it asked for to arrive.
+    /// What has not arrived by then is left for a later run (`SyncReport.arriving`).
+    public var arrivalWait: TimeInterval = 10
+    /// A folder listed before its files (`Arrivals.swift`) counts as arriving
+    /// (nothing in it is judged) for this long after this device first found
+    /// it so; then its listing is taken as it is (iCloud's `cloudUnlistedTimeout`).
+    public var unlistedTimeout: TimeInterval = 120
+    /// A file still not downloaded this long after this device first asked for
+    /// it is reported in `errors` (still never deleted or uploaded over).
+    public var arrivalStall: TimeInterval = 15 * 60
+
     /// A partial pull instead of a sync (format.md §1.2, docs/io.md "Partial
     /// copies"): `.metadata` makes or continues a partial copy, `.fetch`
     /// fetches what one lacks. Nil: an ordinary run.
@@ -214,6 +226,8 @@ public final class SyncEngine {
     /// Push-only on a partial copy: server files kept because the copy has
     /// not fetched them yet (format.md §1.2).
     var pendingKept = 0
+    /// Files and folders a provider has not downloaded yet (`Arrivals.swift`). Under `mutex`.
+    var arrivals = ArrivalTracker()
 
     /// Guards what concurrent listings and downloads share (`TransferPool`):
     /// `state`, `report`, `budget`, `progress`, the checker cache and the
@@ -308,21 +322,29 @@ public final class SyncEngine {
         let rootEntries = try transport.list([]) ?? []
         try budget.list(rootEntries.count)
         let remoteRoot = Dictionary(rootEntries.map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })
+        // A provider's evicted root files are asked for at once; vault.json is waited for (`Arrivals.swift`).
+        try awaitRootFiles(remoteRoot)
         try checkSameVault(remoteRoot)
         remoteJournal = remoteRoot[Vault.journalName] != nil
         if !remoteJournal { state.inFlightJournal = nil }
         removeLeftoverRemoteTemps()
+        // A provider's conflict versions of the root files, merged or kept, then resolved (`ConflictVersions.swift`).
+        settleConflictVersions(remoteRoot)
 
         for name in [Vault.manifestName, Vault.journalName] {
             let remote = remoteRoot[name].flatMap { $0.isCollection ? nil : $0 }
-            do { options.pushOnly ? try pushMutable(name, remote: remote) : try syncMutable(name, remote: remote) } catch {
+            do {
+                // Listed but not downloaded yet: neither taken nor replaced this run.
+                if try !available([name], entry: remote) { continue }
+                options.pushOnly ? try pushMutable(name, remote: remote) : try syncMutable(name, remote: remote)
+            } catch {
                 report.errors.append(.init(path: name, message: Self.describe(error)))
             }
         }
 
         // Shared settings (format.md §13): merged per key when both sides changed.
         let remoteSettings = remoteRoot[SharedSettings.fileName].flatMap { $0.isCollection ? nil : $0 }
-        do { try syncSharedSettings(remote: remoteSettings) } catch {
+        do { if try available([SharedSettings.fileName], entry: remoteSettings) { try syncSharedSettings(remote: remoteSettings) } } catch {
             report.errors.append(.init(path: SharedSettings.fileName, message: Self.describe(error)))
         }
 
@@ -334,7 +356,8 @@ public final class SyncEngine {
 
         do {
             recordedFiles = state.fileNamesByNote()
-            let remoteNotes = try listRemoteNotes(rootEntries)
+            // Note folders a provider listed before their `att/` are left out until they arrive (`Arrivals.swift`).
+            let remoteNotes = try setAsideArrivingAttachments(try listRemoteNotes(rootEntries))
             let localNotes = try localNoteIDs()
             for (id, entries) in remoteNotes {
                 remoteRevisions[id] = entries.compactMap { e in
@@ -344,6 +367,7 @@ public final class SyncEngine {
             let all = Set(remoteNotes.keys).union(localNotes).subtracting(notesNotReadable)
             notesListed = notesNotReadable.isEmpty
             try listAttachments(remoteNotes)
+            requestArrivals(remoteNotes)
             if treeMode == .verify, let tree = notesTree { settleTreeCheck(tree, listed: listedOneByOne) }
             if !options.dryRun && !options.pushOnly { try prefetchDownloads(remoteNotes) }
             if !options.dryRun { try preuploadNewFiles(remoteNotes, localNotes: localNotes) }
@@ -400,6 +424,7 @@ public final class SyncEngine {
             status.keptOnServer = pendingKept
             report.partial = status
         }
+        finishArrivals()
         if !options.dryRun {
             do {
                 try state.save(stateURL)
@@ -667,7 +692,7 @@ public final class SyncEngine {
         state.mutable[name] = .init(hash: hash, stamp: entry?.stamp)
     }
 
-    private func conflict(_ name: String, remote: Data, detail: String) throws {
+    func conflict(_ name: String, remote: Data, detail: String) throws {
         try requireLocalWrite("write a conflict copy of \(name)")
         let base = (name as NSString).deletingPathExtension
         var copy: String?
@@ -708,6 +733,12 @@ public final class SyncEngine {
     }
 
     private func listRemoteNotes(_ rootEntries: [RemoteEntry]) throws -> [String: [RemoteEntry]] {
+        if let notes = rootEntries.first(where: { $0.name == Vault.notesName && $0.isCollection }),
+           folderArriving([Vault.notesName], entry: notes) {
+            // Listed before its folders (`Arrivals.swift`): no note is judged this run.
+            notesNotReadable.formUnion(try localNoteIDs())
+            return [:]
+        }
         guard rootEntries.contains(where: { $0.name == Vault.notesName && $0.isCollection }),
               let dirs = try transport.list([Vault.notesName]) else { return [:] }
         try budget.list(dirs.count)
@@ -740,6 +771,11 @@ public final class SyncEngine {
             guard d.isCollection, Vault.isNoteDirectoryName(d.name) else {
                 report.ignored.append(SyncReport.printable("notes/\(d.name)"))
                 remoteJunk.append([Vault.notesName, d.name])
+                continue
+            }
+            if folderArriving([Vault.notesName, d.name], entry: d) {
+                // Listed before its files: nothing is judged for it until they arrive (`Arrivals.swift`).
+                notesNotReadable.insert(d.name)
                 continue
             }
             if let unchanged = unchangedNoteEntries(d) {
@@ -1037,6 +1073,9 @@ public final class SyncEngine {
         let size = entry?.size
         if let size, size > options.maxFileBytes { throw SyncError.responseTooLarge(path: path, limit: options.maxFileBytes) }
         if skipQuarantined(key(id, n), path: path, entry: entry) { return false }
+        // Listed but not downloaded by its provider yet: asked for, waited for a while, else left for later.
+        let remotePath = [Vault.notesName, id, n.filename]
+        if try !available(remotePath, entry: entry) { return false }
         let reserved = try locked { try budget.willDownload(size) }
         guard !options.dryRun else {
             locked { budget.release(reserved); report.downloaded.append(path) }
@@ -1044,9 +1083,13 @@ public final class SyncEngine {
         }
         let data: Data
         do {
-            data = try transport.read([Vault.notesName, id, n.filename], maxBytes: options.maxFileBytes).data
+            data = try transport.read(remotePath, maxBytes: options.maxFileBytes).data
         } catch {
             locked { budget.release(reserved) }
+            if Self.isUnavailable(error) {
+                noteArriving(remotePath)
+                return false
+            }
             throw error
         }
         try locked { try budget.downloaded(data.count, reserved: reserved) }

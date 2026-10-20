@@ -83,6 +83,11 @@ struct SyncState: Codable, Equatable {
     /// Whether the server answers `PROPFIND` `Depth: infinity` on `notes/`
     /// in full (`TreeListing.swift`); nil until a run checked.
     var treeListing: TreeListingRecord?
+    /// Remote files and folders a provider listed but had not downloaded,
+    /// keyed by their path (`notes/<id>/<name>`; a folder's ends with `/`), with
+    /// when this device first found them so (`Arrivals.swift`): the bound on
+    /// how long they count as arriving.
+    var arriving: [String: Date]?
 
     /// What a run found about `Depth: infinity` listings.
     struct TreeListingRecord: Codable, Equatable {

@@ -415,6 +415,42 @@ final class WebDAVMockConformanceTests: SyncRemoteConformanceCase {
     func testHostileNamesAreRefused() throws { try checkHostileNamesAreRefused() }
 }
 
+/// `FolderRemote` on a plain folder.
+final class FolderRemoteConformanceTests: SyncRemoteConformanceCase {
+    override func transport() throws -> TransportUnderTest { .folder(tmp.appendingPathComponent("remote")) }
+    func testListingAndStat() throws { try checkListingAndStat() }
+    func testReadsAreBounded() throws { try checkReadsAreBounded() }
+    func testConditionalWrites() throws { try checkConditionalWrites() }
+    func testWriteNeedsItsParent() throws { try checkWriteNeedsItsParent() }
+    func testCreateOnlyRace() throws { try checkCreateOnlyRace() }
+    func testMoveNeverOverwrites() throws { try checkMoveNeverOverwrites() }
+    func testCollections() throws { try checkCollections() }
+    func testDeletes() throws { try checkDeletes() }
+    func testDownloadsAndResume() throws { try checkDownloadsAndResume() }
+    func testDeepListing() throws { try checkDeepListing() }
+    func testErrorClassification() throws { try checkErrorClassification() }
+    func testCapabilitiesAreHonest() throws { try checkCapabilitiesAreHonest() }
+    func testHostileNamesAreRefused() throws { try checkHostileNamesAreRefused() }
+}
+
+/// `FolderRemote` on a folder a simulated provider holds (`EvictingFolderProvider`, nothing evicted).
+final class EvictingFolderConformanceTests: SyncRemoteConformanceCase {
+    override func transport() throws -> TransportUnderTest { TransportUnderTest.evictingFolder(tmp.appendingPathComponent("remote")).0 }
+    func testListingAndStat() throws { try checkListingAndStat() }
+    func testReadsAreBounded() throws { try checkReadsAreBounded() }
+    func testConditionalWrites() throws { try checkConditionalWrites() }
+    func testWriteNeedsItsParent() throws { try checkWriteNeedsItsParent() }
+    func testCreateOnlyRace() throws { try checkCreateOnlyRace() }
+    func testMoveNeverOverwrites() throws { try checkMoveNeverOverwrites() }
+    func testCollections() throws { try checkCollections() }
+    func testDeletes() throws { try checkDeletes() }
+    func testDownloadsAndResume() throws { try checkDownloadsAndResume() }
+    func testDeepListing() throws { try checkDeepListing() }
+    func testErrorClassification() throws { try checkErrorClassification() }
+    func testCapabilitiesAreHonest() throws { try checkCapabilitiesAreHonest() }
+    func testHostileNamesAreRefused() throws { try checkHostileNamesAreRefused() }
+}
+
 /// Against wsgidav (`scripts/test-webdav.sh`, CI's `webdav` job); skipped without it.
 final class WsgidavConformanceTests: SyncRemoteConformanceCase {
     override func transport() throws -> TransportUnderTest { try .wsgidav() }
