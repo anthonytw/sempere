@@ -1,3 +1,4 @@
+import TempDirSupport
 import CLITestSupport
 import Foundation
 import Sempere
@@ -224,7 +225,7 @@ final class CLIImportSearchTests: CLITestCase {
         XCTAssertEqual(blobs.status, 0, blobs.err)
         XCTAssertTrue(blobs.out.contains("\"kind\" : \"pdf\"") && blobs.out.contains("\"kind\" : \"image\""), blobs.out)
 
-        let pdf = FileManager.default.temporaryDirectory.appendingPathComponent("att-\(UUID().uuidString).pdf")
+        let pdf = TestTemp.root.appendingPathComponent("att-\(UUID().uuidString).pdf")
         defer { try? FileManager.default.removeItem(at: pdf) }
         let e = try cli(["export", id, "--format", "pdf", "--out", pdf.path] + vaultArgs(vault))
         XCTAssertEqual(e.status, 0, e.err)

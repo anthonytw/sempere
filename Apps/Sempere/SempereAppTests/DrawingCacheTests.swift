@@ -13,7 +13,7 @@ struct DrawingCacheTests {
     static let lecture = AppModelTests.lecture
 
     static func tempDir() -> URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("sempere-drawings-\(UUID().uuidString)")
+        TestTemp.root.appendingPathComponent("sempere-drawings-\(UUID().uuidString)")
     }
 
     /// An unlocked model with a drawing cache, on a copy of the fixture.

@@ -1,3 +1,4 @@
+import TempDirSupport
 import Foundation
 import Age
 @testable import Sempere
@@ -178,7 +179,7 @@ final class ImageExportTests: XCTestCase {
 
     /// Every page of `pdf` as PNG, rendered by poppler.
     static func rasterize(_ pdf: Data, pdftoppm: String, dpi: Int) throws -> [Data] {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("sempere-img-\(UUID().uuidString)")
+        let dir = TestTemp.root.appendingPathComponent("sempere-img-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let file = dir.appendingPathComponent("in.pdf")
@@ -583,7 +584,7 @@ final class ImageExportTests: XCTestCase {
 /// Images read from a real vault's blob store (format.md §8.1) into exports.
 final class VaultImageExportTests: XCTestCase {
     func testVaultBlobsDrawAndBadOnesArePlaceholders() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("sempere-vimg-\(UUID().uuidString)")
+        let dir = TestTemp.root.appendingPathComponent("sempere-vimg-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         let id = try NativeIdentity.generate(.postQuantum)
         let vault = try Vault.create(at: dir.appendingPathComponent("V.sempere"), recipients: [id.recipient], identities: [id])

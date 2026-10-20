@@ -26,7 +26,7 @@ struct KeyChangeCaptureTests {
     /// pick an interruption point inside the inbox, which is rewrapped after
     /// the notes).
     static func filesARemovalRewraps(_ url: URL, key: NativeIdentity, removing other: NativeRecipient) throws -> Int {
-        let copy = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let copy = TestTemp.root.appendingPathComponent(UUID().uuidString)
             .appendingPathComponent(url.lastPathComponent)
         try FileManager.default.createDirectory(at: copy.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileManager.default.copyItem(at: url, to: copy)

@@ -29,7 +29,7 @@ struct KeyExportGapTests {
     @Test func aStrangerVaultOrALockedModelAdoptsNothing() async throws {
         let (model, url) = try await KeyManagementTests.unlockedModel()
         let identity = try NativeIdentity.generate(.postQuantum)
-        let otherURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let otherURL = TestTemp.root.appendingPathComponent(UUID().uuidString, isDirectory: true)
             .appendingPathComponent("Other.sempere")
         try FileManager.default.createDirectory(at: otherURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: otherURL.deletingLastPathComponent()) }
@@ -62,7 +62,7 @@ struct KeyExportGapTests {
     /// The share sheet's key folder: purging when nothing was staged is harmless,
     /// and purging removes every key file under the root.
     @Test func purgingKeyFilesIsSafeWhenNothingIsStaged() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("keyshare-\(UUID().uuidString)", isDirectory: true)
+        let root = TestTemp.root.appendingPathComponent("keyshare-\(UUID().uuidString)", isDirectory: true)
         KeyShareFile.purge(in: root)   // nothing there: no crash
         let key = KeyFile(identity: try NativeIdentity.generate(.postQuantum), label: "Mac")
         let url = try KeyShareFile.stage(key, in: root)
@@ -82,7 +82,7 @@ struct KeyExportGapTests {
         PDFPreparation.discard(file)
         #expect(!FileManager.default.fileExists(atPath: folder.path))
 
-        let elsewhere = FileManager.default.temporaryDirectory.appendingPathComponent("gap-\(UUID().uuidString)", isDirectory: true)
+        let elsewhere = TestTemp.root.appendingPathComponent("gap-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: elsewhere) }
         let loose = elsewhere.appendingPathComponent("b.pdf")

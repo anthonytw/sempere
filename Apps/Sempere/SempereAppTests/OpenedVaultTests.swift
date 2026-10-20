@@ -12,7 +12,7 @@ import Testing
 @MainActor
 struct OpenedVaultTests {
     static func library() -> VaultLibrary {
-        VaultLibrary(storeURL: FileManager.default.temporaryDirectory
+        VaultLibrary(storeURL: TestTemp.root
             .appendingPathComponent("lib-\(UUID().uuidString)/recents.json"))
     }
 
@@ -101,7 +101,7 @@ struct OpenedVaultTests {
     }
 
     @Test func locationsPersistAndIgnoreJunk() throws {
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent("loc-\(UUID().uuidString).json")
+        let file = TestTemp.root.appendingPathComponent("loc-\(UUID().uuidString).json")
         let id = UUID()
         let folder = URL(fileURLWithPath: "/tmp/Vaults/Mine.sempere")
         RememberedKeyLocations(url: file).bind(id, to: folder)

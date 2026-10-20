@@ -1,3 +1,4 @@
+import TempDirSupport
 import Foundation
 import FuzzSupport
 import XCTest
@@ -185,7 +186,7 @@ final class QRCodeTests: XCTestCase {
     /// `zbarimg --raw` on a PNG; nil when zbarimg is not installed.
     static func zbar(_ png: Data) throws -> Data? {
         guard let tool = ExternalTool.find("zbarimg") else { return nil }
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent("qr-\(UUID().uuidString).png")
+        let file = TestTemp.root.appendingPathComponent("qr-\(UUID().uuidString).png")
         try png.write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
         // -Sbinary: the payload bytes exactly, no trailing newline added.

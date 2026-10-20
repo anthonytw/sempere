@@ -1,3 +1,4 @@
+import TempDirSupport
 import Foundation
 import FuzzSupport
 import Sempere
@@ -215,7 +216,7 @@ final class RecoveryKitTests: XCTestCase {
             try QRCodeTests.zbar(QRCodeTests.png(try QRCode.encode(text: "probe"))) != nil else {
             throw XCTSkip("pdftoppm or zbarimg not installed")
         }
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("kit-\(UUID().uuidString)")
+        let dir = TestTemp.root.appendingPathComponent("kit-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         for (name, secret, payload) in [("plain", RecoveryKit.Secret.identity(Self.key), Self.key),

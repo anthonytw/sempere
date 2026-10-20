@@ -6,7 +6,7 @@ open class TempDirTestCase: XCTestCase {
     public var tmp: URL!
 
     override open func setUpWithError() throws {
-        tmp = FileManager.default.temporaryDirectory.appendingPathComponent("sempere-test-\(UUID().uuidString)")
+        tmp = TestTemp.root.appendingPathComponent("sempere-test-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
     }
 
@@ -18,7 +18,7 @@ open class TempDirTestCase: XCTestCase {
 extension XCTestCase {
     /// A fresh path in the temporary directory, removed when the test ends. Nothing is created there yet.
     public func makeScratch(_ prefix: String = "sempere-test") -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(prefix)-\(UUID().uuidString)")
+        let url = TestTemp.root.appendingPathComponent("\(prefix)-\(UUID().uuidString)")
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }
         return url
     }

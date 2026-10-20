@@ -23,7 +23,7 @@ struct CloudConflictTests {
 
     /// A copy of the vault next to it, as iCloud keeps another device's version.
     static func version(of url: URL, _ name: String) throws -> URL {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let dir = TestTemp.root.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let copy = dir.appendingPathComponent(name)
         try FileManager.default.copyItem(at: url, to: copy)
@@ -109,7 +109,7 @@ struct CloudConflictTests {
     @Test func aKeyChangeOnOneSideIsNeverGuessedAndShowsInTheBar() async throws {
         let (url, key) = try AppModelTests.fixtureVault()
         // Another vault's manifest stands in for "the keys differ".
-        let stranger = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".sempere")
+        let stranger = TestTemp.root.appendingPathComponent(UUID().uuidString + ".sempere")
         let id = try Self.identity(key)
         _ = try Vault.create(at: stranger, recipients: [id.recipient], labels: ["x"], identities: [id])
         let cloud = FakeCloud(vault: url)

@@ -17,7 +17,7 @@ struct AppModelTests {
         guard let fixtures = bundle.url(forResource: "Fixtures", withExtension: nil) else {
             throw CocoaError(.fileNoSuchFile, userInfo: [NSLocalizedDescriptionKey: "Fixtures missing from test bundle"])
         }
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let dir = TestTemp.root.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let vault = dir.appendingPathComponent("sample.sempere")
         try FileManager.default.copyItem(at: fixtures.appendingPathComponent("sample.sempere"), to: vault)
@@ -104,7 +104,7 @@ struct AppModelTests {
     @Test func openingAFolderThatIsNotAVaultFails() async throws {
         let model = AppModel()
         await #expect(throws: VaultError.self) {
-            try await model.openVault(at: FileManager.default.temporaryDirectory)
+            try await model.openVault(at: TestTemp.root)
         }
         #expect(model.phase == .noVault)
     }

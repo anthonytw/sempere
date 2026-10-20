@@ -172,11 +172,11 @@ struct MacPolishBuild7Tests {
     @Test func anOpenedPDFWaitsForTheUnlockThenBecomesANote() async throws {
         let (url, key) = try AppModelTests.fixtureVault()
         let model = AppModel(deviceStateURL: TS.deviceStateURL())
-        let library = VaultLibrary(storeURL: FileManager.default.temporaryDirectory
+        let library = VaultLibrary(storeURL: TestTemp.root
             .appendingPathComponent("lib-\(UUID().uuidString)/recents.json"))
         // Opened before any vault: copied at once (the scope ends with the call), and waits.
         let pdf = try PDFImportTests.makePDF(pages: 2)
-        let outside = FileManager.default.temporaryDirectory.appendingPathComponent("Opened \(UUID().uuidString).pdf")
+        let outside = TestTemp.root.appendingPathComponent("Opened \(UUID().uuidString).pdf")
         try FileManager.default.moveItem(at: pdf, to: outside)
         PDFPreparation.discard(pdf)
         await model.handleOpened(outside, library: library)
@@ -234,7 +234,7 @@ struct MacPolishBuild7Tests {
         let bundle = Bundle(for: BundleToken.self)
         let fixture = try #require(bundle.url(forResource: "Fixtures", withExtension: nil))
             .appendingPathComponent("notability/synthetic.note")
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("nb-\(UUID().uuidString)")
+        let dir = TestTemp.root.appendingPathComponent("nb-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let copy = dir.appendingPathComponent("Synthetic note.note")
         try FileManager.default.copyItem(at: fixture, to: copy)
@@ -265,7 +265,7 @@ struct MacPolishBuild7Tests {
 
     @Test(.enabled(if: AppImporters.primary != nil)) func aFolderWithoutNotesSaysSo() async throws {
         let (model, _) = try await NoteWindowTests.unlockedModel()
-        let empty = FileManager.default.temporaryDirectory.appendingPathComponent("empty-\(UUID().uuidString)")
+        let empty = TestTemp.root.appendingPathComponent("empty-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: empty) }
         try await model.importFromApp(try #require(AppImporters.primary), urls: [empty], notebook: nil)

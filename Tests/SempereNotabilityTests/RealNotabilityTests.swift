@@ -1,3 +1,4 @@
+import TempDirSupport
 import Age
 import Foundation
 import ImportTestSupport
@@ -167,7 +168,7 @@ final class RealNotabilityTests: XCTestCase {
     /// box in the same place.
     func testRenderedFirstPageMatchesThumbnail() throws {
         let renderDir = ProcessInfo.processInfo.environment["SEMPERE_NOTABILITY_RENDER_DIR"].map { URL(fileURLWithPath: $0) }
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("inkimport-fid-\(UUID().uuidString)")
+        let tmp = TestTemp.root.appendingPathComponent("inkimport-fid-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
         if let renderDir { try FileManager.default.createDirectory(at: renderDir, withIntermediateDirectories: true) }

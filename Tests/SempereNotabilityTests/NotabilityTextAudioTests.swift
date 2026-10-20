@@ -1,3 +1,4 @@
+import TempDirSupport
 import Age
 import Foundation
 import ImportTestSupport
@@ -184,7 +185,7 @@ final class NotabilityTextAudioTests: XCTestCase {
                                         files: [("Recordings/Recording 1.m4a", AttachmentFixtures.m4a(seconds: 12.5))],
                                         tokens: [0, 1500, -1, 3000])
         let identity = try NativeIdentity.generate(.postQuantum)
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("sempere-rec-\(UUID().uuidString)")
+        let tmp = TestTemp.root.appendingPathComponent("sempere-rec-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: tmp) }
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         let vault = try Vault.create(at: tmp.appendingPathComponent("V.sempere"), recipients: [identity.recipient],
@@ -247,7 +248,7 @@ final class NotabilityTextAudioTests: XCTestCase {
         let pkg = Self.recordingPackage(library: AttachmentFixtures.library([("rec-0", Self.transcriptEntry)]),
                                         files: [("Recordings/Recording 1.m4a", AttachmentFixtures.m4a(seconds: 12.5))])
         let identity = try NativeIdentity.generate(.postQuantum)
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("sempere-trn-\(UUID().uuidString)")
+        let tmp = TestTemp.root.appendingPathComponent("sempere-trn-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: tmp) }
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         let vault = try Vault.create(at: tmp.appendingPathComponent("V.sempere"), recipients: [identity.recipient],

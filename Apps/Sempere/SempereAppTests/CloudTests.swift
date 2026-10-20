@@ -36,7 +36,7 @@ struct CloudTests {
     /// A vault folder as iCloud shows it with some files evicted.
     static func evictedVault() throws -> URL {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = TestTemp.root.appendingPathComponent(UUID().uuidString)
             .appendingPathComponent("Notes.sempere")
         let note = root.appendingPathComponent("notes/11111111-1111-4111-8111-111111111111")
         let other = root.appendingPathComponent("notes/22222222-2222-4222-8222-222222222222")
@@ -83,7 +83,7 @@ struct CloudTests {
     }
 
     @Test func scanOfAVaultWithoutKeysOrNotesIsJustTheManifest() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = TestTemp.root.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try Data("{}".utf8).write(to: root.appendingPathComponent("vault.json"))
         #expect(try CloudScan.items(inVault: root).map(\.url.lastPathComponent) == ["vault.json"])
@@ -103,7 +103,7 @@ struct CloudTests {
     }
 
     @Test func coordinatedAccessRunsTheBodyAndPassesErrorsThrough() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let dir = TestTemp.root.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         #expect(try CloudVault.coordinatedRead(dir) { 1 } == 1)
         #expect(try CloudVault.coordinatedRead(nil) { 2 } == 2)

@@ -27,7 +27,7 @@ struct PDFKitRasterizerTests {
         out += "xref\n0 \(objects.count + 1)\n0000000000 65535 f \n"
         for o in offsets { out += String(repeating: "0", count: 10 - String(o).count) + "\(o) 00000 n \n" }
         out += "trailer\n<< /Size \(objects.count + 1) /Root 1 0 R >>\nstartxref\n\(xref)\n%%EOF\n"
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("raster-\(UUID().uuidString).pdf")
+        let url = TestTemp.root.appendingPathComponent("raster-\(UUID().uuidString).pdf")
         try Data(out.utf8).write(to: url)
         return url
     }
@@ -83,7 +83,7 @@ struct PDFKitRasterizerTests {
         #expect(throws: PDFKitRasterizer.Failure.tooLarge) {
             try PDFKitRasterizer().rasterize(pdf: url, pageIndex: 0, pixelWidth: 100_000, pixelHeight: 100_000)
         }
-        let junk = FileManager.default.temporaryDirectory.appendingPathComponent("junk-\(UUID().uuidString).pdf")
+        let junk = TestTemp.root.appendingPathComponent("junk-\(UUID().uuidString).pdf")
         try Data("not a pdf".utf8).write(to: junk)
         defer { try? FileManager.default.removeItem(at: junk) }
         #expect(throws: PDFKitRasterizer.Failure.unreadable) {

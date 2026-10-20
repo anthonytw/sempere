@@ -85,7 +85,7 @@ struct AttachmentEditorTests {
         let (vault, _) = try TS.unlockedFixture()
         let (editor, _) = try await NoteEditorTests.open(vault)
         let page = try #require(editor.currentPage).id
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
+        let file = TestTemp.root.appendingPathComponent(UUID().uuidString + ".png")
         try Self.png().write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
         let item = try await editor.addAttachment(file: file, type: "image/png", on: page) { Self.imageItem($0) }
@@ -258,7 +258,7 @@ struct AttachmentEditorTests {
     @Test func modelClipboardCopiesAndPastesAcrossNotes() async throws {
         let (url, key) = try AppModelTests.fixtureVault()
         let model = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .milliseconds(50))
-        model.blobCacheFolder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        model.blobCacheFolder = TestTemp.root.appendingPathComponent(UUID().uuidString)
         try await model.openVault(at: url)
         try await model.unlock(identityText: try String(contentsOf: key, encoding: .utf8))
         model.selectedNoteID = Self.lecture

@@ -1,3 +1,4 @@
+import TempDirSupport
 import Foundation
 import FuzzSupport
 import Sempere
@@ -35,7 +36,7 @@ final class TextItemExportTests: XCTestCase {
     static func tool(_ name: String) -> String? { ExternalTool.find(name)?.path }
 
     static func run(_ tool: String, _ args: [String], input pdf: Data) throws -> String {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("sempere-text-\(UUID().uuidString)")
+        let dir = TestTemp.root.appendingPathComponent("sempere-text-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let file = dir.appendingPathComponent("in.pdf")

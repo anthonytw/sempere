@@ -34,7 +34,7 @@ struct MathModelFetchTests {
     }
 
     static func leftovers() -> Set<String> {
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: FileManager.default.temporaryDirectory.path)) ?? []
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: TestTemp.systemTemporaryDirectory.path)) ?? []
         return Set(names.filter { $0.hasPrefix("math-model-") })
     }
 

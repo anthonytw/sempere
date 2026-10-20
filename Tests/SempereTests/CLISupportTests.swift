@@ -1,3 +1,4 @@
+import TempDirSupport
 import Age
 import XCTest
 
@@ -63,7 +64,7 @@ final class CLISupportTests: XCTestCase {
     }
 
     func testDeviceStateRoundTrip() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("dev-\(UUID().uuidString)")
+        let dir = TestTemp.root.appendingPathComponent("dev-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         let url = DeviceState.defaultURL(environment: ["XDG_STATE_HOME": dir.path], home: dir)
         XCTAssertEqual(url.path, dir.appendingPathComponent("sempere/device.json").path)

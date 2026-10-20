@@ -1,3 +1,4 @@
+import TempDirSupport
 import Foundation
 @testable import Sempere
 import XCTest
@@ -124,7 +125,7 @@ final class VideoExportTests: XCTestCase {
         XCTAssertNotNil(pdf.range(of: Data("/Subtype /video#2Fquicktime".utf8)))
 
         // Written to a file: the same bytes as in memory.
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("video-\(UUID().uuidString).pdf")
+        let url = TestTemp.root.appendingPathComponent("video-\(UUID().uuidString).pdf")
         defer { try? FileManager.default.removeItem(at: url) }
         var fileReport = RenderReport()
         try PDFWriter.write(note: state, options: options, report: &fileReport, to: url)
@@ -173,7 +174,7 @@ final class VideoExportTests: XCTestCase {
         ByteEdit.apply(VideoMetadata.strippingEdits(try VideoProbe.probe(clip)), to: &stripped, at: 0)
         XCTAssertNotNil(pdf.range(of: stripped), "the clip, blanked in place")
         // Written to a file: the same.
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("video-\(UUID().uuidString).pdf")
+        let url = TestTemp.root.appendingPathComponent("video-\(UUID().uuidString).pdf")
         defer { try? FileManager.default.removeItem(at: url) }
         var r2 = RenderReport()
         try PDFWriter.write(note: state, options: options, report: &r2, to: url)

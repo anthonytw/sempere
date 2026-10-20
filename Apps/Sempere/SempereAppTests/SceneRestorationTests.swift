@@ -60,7 +60,7 @@ struct SceneRestorationTests {
     /// The model, library and keys a window gets (`appEnvironment`), with fakes.
     static func environment<V: View>(_ view: V, model: AppModel) -> some View {
         view.appEnvironment(model: model,
-                            library: VaultLibrary(storeURL: FileManager.default.temporaryDirectory
+                            library: VaultLibrary(storeURL: TestTemp.root
                                 .appendingPathComponent(UUID().uuidString).appendingPathComponent("recents.json")),
                             keys: RememberedKeys(store: FakeKeyStore()))
     }

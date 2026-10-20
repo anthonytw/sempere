@@ -178,6 +178,27 @@ crashing thread and, on the iPad, the simulator's log of the app's faults and ha
   toolchain version and `Package.resolved`, so changing any of them starts a fresh cache. If a
   build fails in a way a clean build would not, run `gh cache delete --all` and re-run.
 
+## Temp-folder guard
+
+Tests put every scratch file under `TestTemp.root`, one folder per test process
+(`sempere-test-<pid>-<uuid>`) that is removed when the process exits; the first use in a later
+process also removes the roots of processes that are gone. The app tests use
+`Apps/Sempere/SempereAppTests/TestTemp.swift`, the SwiftPM tests `Tests/TempDirSupport/TestTemp.swift`
+(same API: `root`, `url(_:)`, `directory(_:)`, `with(_:_:)`). Never build a path from
+`FileManager.default.temporaryDirectory` or `NSTemporaryDirectory()` in a test; for XCTest, `makeScratch`
+and `TempDirTestCase` already do the right thing. Production code that makes a temp folder removes it
+itself (an `AppModel` built without explicit roots owns one scratch folder, removed in `deinit`).
+
+Why: leaked folders once piled up to about 195,000 entries in the sandboxed app container's tmp
+(`~/Library/Containers/io.github.anthonytw.sempere/Data/tmp`), hit APFS's 65,535-subfolder limit, and
+failed every Mac Catalyst test that wrote there with Cocoa error 512.
+
+`scripts/app.sh test-mac`, `test-mac-ui` and `test-mac-smoke` count that folder's entries before and
+after and print `tmp-guard: ... before=N after=M`. More than `SEMPERE_TMP_LEAK_MAX` (default 20) new
+entries is a warning; `scripts/local-ci.sh` sets `SEMPERE_TMP_GUARD_FAIL=1`, which makes it a failure.
+`SEMPERE_CONTAINER_TMP` points the guard at another folder. The iOS simulator runs are not covered:
+their tmp lives in a throwaway simulator clone.
+
 ## Device checks in process
 
 The owner's device checks that only need the app's own paths run as Mac Catalyst unit tests
