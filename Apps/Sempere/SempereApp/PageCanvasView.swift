@@ -705,6 +705,7 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
                 + ";select=\(self.itemSelectionActive ? 1 : 0)" + self.pageAppearanceReport
         }
         itemSelection.debugEmoji = { [weak self] in self?.textEditor.emojiSummary ?? "0,0" }
+        itemSelection.debugHighlights = { [weak self] in self?.highlightReport ?? "hl=0,0" }
         itemSelection.debugPalette = { [weak self] in
             guard let self else { return false }
             return self.canvas.isFirstResponder && self.toolPicker.isVisible
@@ -1371,7 +1372,26 @@ final class PageCanvasHost: UIView, PKToolPickerObserver, UIPointerInteractionDe
         guard boxes != highlights else { return }
         highlights = boxes
         layoutHighlights()
+        #if DEBUG
+        itemSelection.debugRefreshReport()
+        #endif
     }
+
+    #if DEBUG
+    /// `hl=count,current;hlRect=x,y,w,h` (`ItemSelectionController.debugHighlights`): the search highlights
+    /// on this page, and where the current one is in the window (`none` when it is not on this page).
+    var highlightReport: String {
+        let search = highlights.filter { $0.style == .search }
+        let current = search.first(where: \.isCurrent)
+        var rect = "none"
+        if let box = current?.box {
+            let z = canvas.zoomScale
+            let r = highlightView.convert(CGRect(x: box.x * z, y: box.y * z, width: box.w * z, height: box.h * z), to: nil)
+            rect = String(format: "%.1f,%.1f,%.1f,%.1f", Double(r.minX), Double(r.minY), Double(r.width), Double(r.height))
+        }
+        return "hl=\(search.count),\(current == nil ? 0 : 1);hlRect=\(rect)"
+    }
+    #endif
 
     /// Scrolls so the current highlight is on screen (centered unless it is already comfortably visible).
     func revealHighlight() {

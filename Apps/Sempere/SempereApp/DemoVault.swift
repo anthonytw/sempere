@@ -71,8 +71,11 @@ enum DemoVault {
     /// `denseStrokes` (UI tests, `SEMPERE_DEMO_DENSE`): also a pageless ruled note "dense"
     /// holding that many synthetic strokes (`SyntheticInk`), like a long note imported from
     /// Notability, for zoom, scroll and menu checks on a dense page (`IPadZoomScrollUITests`).
+    ///
+    /// `searchNotes` (UI tests, `SEMPERE_DEMO_SEARCH`): also two notes with recognized handwriting
+    /// for the search highlights (`searchNoteOps`).
     static func build(in directory: URL, specs: [Spec] = DemoVault.specs, passphrase: String? = nil,
-                      itemsImage: Data? = nil, denseStrokes: Int? = nil) async throws -> Built {
+                      itemsImage: Data? = nil, denseStrokes: Int? = nil, searchNotes: Bool = false) async throws -> Built {
         let fm = FileManager.default
         if fm.fileExists(atPath: directory.path) { try fm.removeItem(at: directory) }
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -106,6 +109,13 @@ enum DemoVault {
                 ops += try itemOps(vault: vault, note: id, png: png, page: densePage)
             }
             try await NoteWriter.append(ops, to: id, vault: vault, clock: clock, wall: anchor.addingTimeInterval(-0.1 * 86_400))
+        }
+        if searchNotes {
+            for note in searchNoteOps() {
+                let id = noteID(note.key)
+                ids[note.key] = id
+                try await NoteWriter.append(note.ops, to: id, vault: vault, clock: clock, wall: anchor.addingTimeInterval(-0.2 * 86_400))
+            }
         }
         return Built(url: vaultURL, identityText: text, notes: ids)
     }

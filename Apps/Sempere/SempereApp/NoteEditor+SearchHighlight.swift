@@ -95,9 +95,12 @@ extension NoteEditor {
         return cursor.matches(onPage: id).map { HighlightBox(box: $0.match.box, isCurrent: $0.index == cursor.index) } + playback
     }
 
+    /// Shows the current match: its page becomes the current one and the canvas scrolls to it
+    /// (`revealToken`). No page jump: in a paged note a jump to the top of the match's page arriving
+    /// after the reveal scrolled a match lower on a page out of view again (`showPageOfMatch`).
     private func revealCurrentMatch() {
         guard let cursor = searchCursor else { return }
-        showPage(id: cursor.current.pageId)
+        showPageOfMatch(id: cursor.current.pageId)
         revealToken &+= 1
     }
 }

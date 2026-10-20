@@ -741,6 +741,7 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
     /// how many item edits the page has had, so a test can aim the pointer and
     /// check that a gesture wrote one delta.
     private static let reports = DebugLaunch.environment["SEMPERE_DEMO_ITEMS"] != nil
+        || DebugLaunch.environment["SEMPERE_DEMO_SEARCH"] != nil
 
     private func debugReport() {
         guard Self.reports, let canvas, let pageID else { return }
@@ -760,7 +761,7 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
             + ";edits=\(editor?.itemRevisions[pageID] ?? 0);selected=\(selected);menu=\(menuShown ? 1 : 0)"
             + ";menus=\(menusShown);trace=\(debugTrace.joined(separator: ","));bar=\(bar.isHidden ? 0 : 1);barFrame=\(n(Double(bar.frame.minX))),\(n(Double(bar.frame.minY))),"
             + "\(n(Double(bar.frame.width))),\(n(Double(bar.frame.height)));palette=\(debugPalette() ? 1 : 0);strokes=\(debugStrokes());items="
-            + list.joined(separator: "|") + ";emoji=\(debugEmoji());\(debugInput())" + (debugTyping().map { ";typing=" + $0 } ?? "")
+            + list.joined(separator: "|") + ";emoji=\(debugEmoji());\(debugInput());\(debugHighlights())" + (debugTyping().map { ";typing=" + $0 } ?? "")
     }
 
     /// The text of the box being typed in on this page, if any (`debugReport`).
@@ -768,6 +769,10 @@ final class ItemSelectionController: NSObject, UIGestureRecognizerDelegate, @Mai
 
     /// The emoji list under the box being typed in: `rows,highlighted` (`0,0` when none shows).
     var debugEmoji: () -> String = { "0,0" }
+
+    /// The search highlights on this page (`debugReport`, `PhoneSearchUITests`): `hl=count,current` (current is
+    /// 1 when the current match is on this page) and `hlRect=x,y,w,h`, the current one's frame in the window.
+    var debugHighlights: () -> String = { "hl=0,0" }
 
     /// Whether this canvas has the focus with its palette up (`debugReport`).
     var debugPalette: () -> Bool = { false }
