@@ -7,7 +7,8 @@ import XCTest
 @testable import SempereWebDAV
 
 /// The key-change property test (docs/design/device-first-sync.md §6.4 `KeyChangeInterleavingTests`):
-/// 3 devices and 2 targets (in memory; the second one the WebDAV mock in every other seed), random
+/// 3 devices and 2 targets (by seed: two in memory, memory and the WebDAV mock, or a plain folder and a
+/// provider folder, P3's `FolderRemote` over `EvictingFolderProvider`), random
 /// edits and attachments; adds, removals and replaces of keys on random devices in both modes,
 /// stopped at random fault points (after the claims, after K1, K2, file n of K3, before K4, after
 /// any step C5(a) to (d) on a target); targets going offline and coming back, with the routine
@@ -96,7 +97,10 @@ final class KeyChangeRun: @unchecked Sendable {
         var r = rng
         let uses = [[0, 1], r.chance(0.5) ? [0] : [0, 1], r.chance(0.5) ? [1] : [0, 1]]
         rng = r
-        w = try KCWorld(root: root, deviceCount: 3, targetCount: 2, webdav: seed % 2 == 0 ? [1] : [], uses: uses)
+        // The targets by seed: two in memory, memory and the WebDAV mock, or a plain folder and a folder a
+        // simulated provider holds (`FolderRemote`, `EvictingFolderProvider`).
+        let kinds: [[KCTarget.Kind]] = [[.memory, .webdav], [.memory, .memory], [.folder, .evicting]]
+        w = try KCWorld(root: root, deviceCount: 3, targetCount: 2, uses: uses, kinds: kinds[Int(seed % 3)])
     }
 
     var summary: String { counts.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: ", ") }

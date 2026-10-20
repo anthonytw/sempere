@@ -13,14 +13,14 @@ final class KeyChangeScenarioTests: TempDirTestCase {
     let n1 = UUID(uuidString: "6b000000-0000-4000-8000-000000000001")!
     let n2 = UUID(uuidString: "6b000000-0000-4000-8000-000000000002")!
 
-    func world(webdav: Set<Int> = [], uses: [[Int]]? = nil, devices: Int = 3) throws -> KCWorld {
+    func world(webdav: Set<Int> = [], uses: [[Int]]? = nil, devices: Int = 3, kinds: [KCTarget.Kind]? = nil) throws -> KCWorld {
         try KCWorld(root: tmp.appendingPathComponent("w\(UUID().uuidString.prefix(6))"), deviceCount: devices,
-                    webdav: webdav, uses: uses)
+                    webdav: webdav, uses: uses, kinds: kinds)
     }
 
     /// A world with a few notes on every side, in step.
-    func seeded(webdav: Set<Int> = [], uses: [[Int]]? = nil) throws -> KCWorld {
-        let w = try world(webdav: webdav, uses: uses)
+    func seeded(webdav: Set<Int> = [], uses: [[Int]]? = nil, kinds: [KCTarget.Kind]? = nil) throws -> KCWorld {
+        let w = try world(webdav: webdav, uses: uses, kinds: kinds)
         try w.write(w.a, n1, "one")
         try w.write(w.b, n2, "two")
         try w.converge()
@@ -30,8 +30,9 @@ final class KeyChangeScenarioTests: TempDirTestCase {
     // MARK: The happy path
 
     func testARoutineRemovalReachesEveryDeviceAndTarget() throws {
-        for webdav in [Set<Int>(), [1]] {
-            let w = try seeded(webdav: webdav)
+        let kinds: [[KCTarget.Kind]] = [[.memory, .memory], [.memory, .webdav], [.folder, .evicting]]
+        for k in kinds {
+            let w = try seeded(kinds: k)
             let spare = try w.addSpare(on: w.a)
             try w.converge()
             w.assertConverged()
@@ -648,6 +649,70 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         XCTAssertEqual(try w.c.notes()[UUID(uuidString: late.path[1])!], "late", "C takes the current copy")
         XCTAssertEqual(w.c.lateFiles().count, 1, "and keeps the quarantined original")
         w.assertConverged()
+        w.assertNoLoss()
+    }
+
+    // MARK: Over folder targets (P3's `FolderRemote`, the design's `EvictingFolderRemote`)
+
+    /// F3, F9 and F12 over a plain folder and a provider folder (both targets folders).
+    func testCrashesAndLateFilesOverFolderTargets() throws {
+        let w = try seeded(kinds: [.folder, .evicting])
+        try w.a.attach(n1, Data("folder blob".utf8), now: w.now)
+        try w.converge()
+        _ = try w.addSpare(on: w.a)
+        try w.converge()
+        let late = try offlineRevision(w, w.c, UUID(), "late")
+        let spare = try XCTUnwrap(w.spare)
+        XCTAssertThrowsError(try w.change(w.a, faults: KeyChangeFaults(rewrap: RewrapFaults(stop: .afterFiles(2)))) {
+            try $0.prepareRemoveRecipient(spare.recipient, keyChange: try .routine(days: 7))
+        })
+        w.tick()
+        XCTAssertThrowsError(try w.a.sync("T0", now: w.now, faults: KeyChangeFaults(afterStep: ["T0": .manifest])))
+        w.tick()
+        XCTAssertTrue(try w.b.sync("T0", now: w.now).downloaded.contains(Vault.journalName))
+        try w.converge(skip: ["C"])
+        w.tick(86_400)
+        w.targets[1].put(late.path, late.data)
+        w.tick()
+        let r = try w.b.sync("T1", now: w.now) { $0.beforeLocalReplace = nil }
+        XCTAssertEqual(r.keyChange?.lateAccepted.count, 1, "\(KCWorld.brief(r))")
+        try w.converge()
+        w.assertConverged()
+        w.assertRevoked([spare])
+        w.assertNoLoss()
+    }
+
+    /// F16 over the design's `EvictingFolderRemote`: the provider forks `vault.json` during a change (a
+    /// conflict version of another device's list beside this change's): never a blind pick, no file
+    /// replaced across lists, the fork reported; a fork that differs only in label is the same vault.
+    func testProviderForksManifestOverEvictingFolder() throws {
+        let w = try seeded(kinds: [.evicting, .memory])
+        let spare = try w.addSpare(on: w.a)
+        try w.converge()
+        let provider = try XCTUnwrap(w.targets[0].provider)
+        // A label-only fork: merged as the same vault.
+        var labelled = try XCTUnwrap(w.targets[0].file([Vault.manifestName]))
+        var obj = try JSONSerialization.jsonObject(with: labelled) as! [String: Any]
+        obj["label"] = "Forked"
+        labelled = try JSONSerialization.data(withJSONObject: obj)
+        _ = try provider.addConflict(Vault.manifestName, labelled)
+        w.tick()
+        let label = try w.a.sync("T0", now: w.now)
+        XCTAssertTrue(label.conflicts.isEmpty, "\(KCWorld.brief(label))")
+        try w.converge()
+        // A list fork: B's addition as a conflict version beside A's removal.
+        try w.change(w.b, syncFirst: true) { try $0.prepareAddRecipient(pqIdentity().recipient, label: "x") }
+        let bList = try XCTUnwrap(w.b.manifest())
+        try w.converge(skip: ["A", "C"])
+        try w.change(w.a, overriding: ["T0", "T1"], syncFirst: false) { try $0.prepareRemoveRecipient(spare.recipient) }
+        _ = try provider.addConflict(Vault.manifestName, bList)
+        let before = w.targets[0].noteFiles()
+        w.tick()
+        let fork = try? w.a.sync("T0", now: w.now)
+        XCTAssertNotEqual(w.a.manifest(), bList, "never a blind pick")
+        XCTAssertEqual(w.targets[0].noteFiles().filter { before[$0.key] != nil && before[$0.key] != $0.value }
+            .keys.filter { _ in w.targets[0].file([Vault.manifestName]).map { !Vault.sameList($0, w.a.manifest() ?? Data()) } ?? true }
+            .count, 0, "no file replaced across lists: \(fork.map(KCWorld.brief) ?? "threw")")
         w.assertNoLoss()
     }
 }

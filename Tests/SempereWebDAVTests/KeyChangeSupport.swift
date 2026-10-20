@@ -42,42 +42,72 @@ struct SwitchableRemote: SyncRemote {
     func createBase() throws { try check(); try inner.createBase() }
     func delete(_ path: [String], ifETag: String?) throws -> Bool { try check(); return try inner.delete(path, ifETag: ifETag) }
     func missingCollectionError(_ path: [String]) -> any Error { inner.missingCollectionError(path) }
+    func requestDownload(_ paths: [[String]]) throws { try check(); try inner.requestDownload(paths) }
+    func conflictVersions(_ path: [String]) -> [RemoteVersion] { offline.value ? [] : inner.conflictVersions(path) }
+    func readVersion(_ path: [String], _ version: RemoteVersion, maxBytes: Int) throws -> Data {
+        try check(); return try inner.readVersion(path, version, maxBytes: maxBytes)
+    }
+    func resolveConflicts(_ path: [String], _ versions: [RemoteVersion]) throws { try check(); try inner.resolveConflicts(path, versions) }
 }
 
-/// One target: an in-memory store under `vault/`, or the WebDAV mock.
+/// One target: an in-memory store under `vault/`, the WebDAV mock, a plain folder (`FolderRemote`), or a
+/// folder a simulated provider holds (`EvictingFolderProvider`: the design's `EvictingFolderRemote`).
 final class KCTarget: @unchecked Sendable {
+    enum Kind { case memory, webdav, folder, evicting }
     let name: String
     let offline = Locked(false)
     let store: MemoryStore?
     let dav: MockDAV?
+    let folder: URL?
+    let provider: EvictingFolderProvider?
 
     init(name: String, webdav: Bool = false) {
         self.name = name
         store = webdav ? nil : MemoryStore(name: name)
         dav = webdav ? MockDAV() : nil
+        folder = nil
+        provider = nil
     }
 
-    /// How a device reaches it (`faults`: that device's own transport faults).
-    func remote(faults: MemoryFaults? = nil) -> any SyncRemote {
-        let inner: any SyncRemote
-        if let store { inner = MemoryRemote(store: store, base: ["vault"], faults: faults) } else {
-            inner = WebDAVSyncRemote(try! WebDAVClient(baseURL: URL(string: "https://dav.example.com\(MockDAV.base)/")!,
-                                                       credentials: nil, transport: dav!))
+    init(name: String, kind: Kind, dir: URL) {
+        self.name = name
+        store = kind == .memory ? MemoryStore(name: name) : nil
+        dav = kind == .webdav ? MockDAV() : nil
+        if kind == .folder || kind == .evicting {
+            let root = dir.appendingPathComponent("\(name).sempere")
+            try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            folder = root
+            provider = kind == .evicting ? EvictingFolderProvider(root: root, cloud: dir.appendingPathComponent("\(name)-cloud")) : nil
+        } else {
+            folder = nil
+            provider = nil
         }
-        return SwitchableRemote(inner: inner, offline: offline)
     }
 
-    /// The target itself, never offline, with no faults (for checking it).
-    var inspector: any SyncRemote {
+    private var bare: any SyncRemote {
         if let store { return MemoryRemote(store: store, base: ["vault"]) }
+        if let folder { return FolderRemote(root: folder, provider: provider ?? PlainFolder()) }
         return WebDAVSyncRemote(try! WebDAVClient(baseURL: URL(string: "https://dav.example.com\(MockDAV.base)/")!,
                                                   credentials: nil, transport: dav!))
     }
 
+    /// How a device reaches it (`faults`: that device's own transport faults, in-memory targets only).
+    func remote(faults: MemoryFaults? = nil) -> any SyncRemote {
+        let inner: any SyncRemote = store.map { MemoryRemote(store: $0, base: ["vault"], faults: faults) } ?? bare
+        return SwitchableRemote(inner: inner, offline: offline)
+    }
+
+    /// The target itself, never offline, with no faults (for checking it).
+    var inspector: any SyncRemote { bare }
+
     func file(_ path: [String]) -> Data? { try? inspector.read(path, maxBytes: 1 << 26).data }
     /// Puts a file there directly (making its parents), as a server or another writer would.
     func put(_ path: [String], _ data: Data) {
-        if let store { store.putDirect(["vault"] + path, data) } else { dav?.putDirect(path.joined(separator: "/"), data) }
+        if let store { store.putDirect(["vault"] + path, data) } else if let folder {
+            let url = folder.appendingPathComponent(path.joined(separator: "/"))
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? data.write(to: url)
+        } else { dav?.putDirect(path.joined(separator: "/"), data) }
     }
     func remove(_ path: [String]) { _ = try? inspector.delete(path) }
 
@@ -284,8 +314,12 @@ final class KCWorld: @unchecked Sendable {
     var spare: NativeIdentity?
 
     /// `deviceCount` devices; device i uses the targets `uses[i]` (default: every target).
-    init(root: URL, deviceCount: Int = 3, targetCount: Int = 2, webdav: Set<Int> = [], uses: [[Int]]? = nil) throws {
-        let ts = (0..<targetCount).map { KCTarget(name: "T\($0)", webdav: webdav.contains($0)) }
+    init(root: URL, deviceCount: Int = 3, targetCount: Int = 2, webdav: Set<Int> = [], uses: [[Int]]? = nil,
+         kinds: [KCTarget.Kind]? = nil) throws {
+        let ts = (0..<targetCount).map { i in
+            kinds.map { KCTarget(name: "T\(i)", kind: $0[i], dir: root.appendingPathComponent("targets")) }
+                ?? KCTarget(name: "T\(i)", webdav: webdav.contains(i))
+        }
         targets = ts
         var ds: [KCDevice] = []
         for i in 0..<deviceCount {
