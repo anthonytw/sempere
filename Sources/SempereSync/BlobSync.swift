@@ -460,9 +460,9 @@ extension SyncEngine {
                 report.skipped.append(.init(path: path, message: "an older name of a blob held here under its current name "
                     + "(a key change's leftover): not placed; collected once no journal is left"))
                 return nil
-            case .accept(let deadline):
+            case .accept(let deadline, let secretId):
                 // Taken in under its current name; this old name is then a leftover, collected later (F9, F14).
-                try takeLateBlob(at: part, note: id, name: name, path: path, deadline: deadline)
+                try takeLateBlob(at: part, note: id, name: name, path: path, deadline: deadline, secretId: secretId)
                 return nil
             }
         }

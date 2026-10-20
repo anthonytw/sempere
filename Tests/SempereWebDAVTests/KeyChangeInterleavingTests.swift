@@ -158,7 +158,8 @@ final class KeyChangeRun: @unchecked Sendable {
         case 78..<84:
             w.tick(Double(rng.int(4)) * 86_400 + Double(rng.int(3600)))
             count("time")
-        case 84..<88: downgrade()
+        case 84..<86: downgrade()
+        case 86..<88: if rng.chance(0.5) { try offlineWrite() } else { deliverOffline() }
         case 88..<91: try removeDevice()
         case 91..<95:
             // Transport faults on one device's way to one target, for a while.
@@ -203,12 +204,11 @@ final class KeyChangeRun: @unchecked Sendable {
         w.tick()
         var faults = KeyChangeFaults()
         if rng.chance(0.08) { faults.afterStep[t.name] = rng.pick(KeyChangeStep.allCases) }
+        recordJournals()
         do {
             let r = try d.sync(t.name, now: w.now, faults: faults)
             note("\(d.name)/\(t.name)\(faults.afterStep.isEmpty ? "" : " stop \(faults.afterStep)"): \(KCWorld.brief(r))")
-            for late in r.keyChange?.lateAccepted ?? [] where late.deadline <= w.now {
-                fail("I6: \(d.name) took in \(late.path) after its window (\(late.deadline))")
-            }
+            checkLate(r, d)
             count("sync")
         } catch {
             count("sync threw")
@@ -271,6 +271,7 @@ final class KeyChangeRun: @unchecked Sendable {
             count("change stopped")
             note("\(d.name): \(error)")
         }
+        recordJournals()
     }
 
     /// A target serves an older copy of a file it holds (the same body under an older wrap).
@@ -304,6 +305,42 @@ final class KeyChangeRun: @unchecked Sendable {
     }
 
     // MARK: Invariants as it goes
+
+    /// Every change made, by the `secretId` of the secret it rotated away from: when it was made and its
+    /// window, read from the journals themselves (I6 is checked against these, not the engine's deadline).
+    var changes: [String: (changedAt: Date, days: Int)] = [:]
+
+    func recordJournals() {
+        var journals = w.targets.compactMap { $0.file([Vault.journalName]) }
+        for d in w.devices {
+            if let j = (try? d.coordinator.load())?.change?.journal { journals.append(j) }
+            if let j = try? Data(contentsOf: d.folder.appendingPathComponent(Vault.journalName)) { journals.append(j) }
+        }
+        for j in journals {
+            guard let o = try? JSONSerialization.jsonObject(with: j) as? [String: Any],
+                  let armored = o["previousVaultSecret"] as? String,
+                  let previous = try? Vault.decryptSecret(armored, with: w.oracle.identities),
+                  let at = (o["changedAt"] as? String).flatMap(RFC3339.parse) else { continue }
+            let days = (o["mode"] as? String) == "compromised" ? 0 : ((o["lateFileWindowDays"] as? Int) ?? 7)
+            changes[SecretKeyring.id(of: previous)] = (at, days)
+        }
+    }
+
+    /// I6, independently of the engine's deadline: a late file is taken in only before its change's
+    /// `changedAt` + window (+ the clock slack), as the journal recorded them.
+    func checkLate(_ r: SyncReport, _ d: KCDevice) {
+        for late in r.keyChange?.lateAccepted ?? [] {
+            if late.deadline <= w.now { fail("I6: \(d.name) took in \(late.path) after its own deadline (\(late.deadline))") }
+            guard let sid = late.secretId, let c = changes[sid] else {
+                fail("I6: \(d.name) took in \(late.path) under a secret no recorded change replaced")
+                continue
+            }
+            let end = c.changedAt.addingTimeInterval(TimeInterval(c.days) * 86_400 + SecretKeyring.clockSlack)
+            if w.now > end { fail("I6: \(d.name) took in \(late.path) after its change's window (ended \(end))") }
+            count("late taken in")
+        }
+        for _ in r.keyChange?.lateQuarantined ?? [] { count("late quarantined") }
+    }
 
     func checkQuarantine() {
         for d in w.devices {
@@ -380,7 +417,35 @@ final class KeyChangeRun: @unchecked Sendable {
 
     // MARK: Quiescence
 
+    /// Revisions written offline elsewhere (taken out of their writer's copy), waiting to reach a target:
+    /// they arrive later, possibly after a key change, as late files (F9).
+    var offline: [(path: [String], data: Data)] = []
+
+    func offlineWrite() throws {
+        let d = rng.pick(listed)
+        guard (try? d.vault())?.canRead == true else { return }
+        let note = rng.uuid()
+        w.tick()
+        guard let n = try? d.write(note, "offline \(rng.int(1000))", now: w.now) else { return }
+        w.oracle.wrote(d, note: note, name: n)
+        let p = [Vault.notesName, note.uuidString.lowercased(), n.filename]
+        let url = d.folder.appendingPathComponent(p.joined(separator: "/"))
+        guard let data = try? Data(contentsOf: url) else { return }
+        try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+        offline.append((p, data))
+        count("offline write")
+    }
+
+    func deliverOffline() {
+        guard !offline.isEmpty else { return }
+        let i = rng.int(offline.count)
+        let f = offline.remove(at: i)
+        rng.pick(w.targets).put(f.path, f.data)
+        count("offline delivered")
+    }
+
     func quiesce() throws {
+        while !offline.isEmpty { deliverOffline() }
         for t in w.targets { t.offline.value = false }
         for d in w.devices { d.faults = [:] }
         // Every device sees what the targets hold, then a day passes: claims a crashed change left there

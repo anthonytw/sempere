@@ -1280,6 +1280,7 @@ public final class SyncEngine {
         var problem: String?
         var placed = data
         var late: Date?
+        var lateSecretId = ""
         if !data.starts(with: Self.ageMagic) {
             problem = "not an age file"
         } else if let checker = checker(), let uuid = UUID(uuidString: id) {
@@ -1288,13 +1289,14 @@ public final class SyncEngine {
                 do { try checker.checkIncomingRevision(data, noteId: uuid, name: n) } catch {
                     problem = "\(error)"
                 }
-            case .accept(let rewrapped, let deadline):
+            case .accept(let rewrapped, let deadline, let secretId):
                 // Taken in within the window, as the current copy it rewraps to (design §6.2 F9).
                 do { try checker.checkIncomingRevision(rewrapped, noteId: uuid, name: n) } catch {
                     problem = "\(error)"
                 }
                 placed = rewrapped
                 late = deadline
+                lateSecretId = secretId
             case .quarantine(let why):
                 quarantineLate(key(id, n), path: path, entry: entry, reason: why, data: data)
                 return false
@@ -1309,7 +1311,7 @@ public final class SyncEngine {
         if late != nil { try options.beforeLocalReplace?(path) }
         if try !LocalFS.write(placed, to: url, replacing: false) { return false }
         locked { report.downloaded.append(path) }
-        if let late { tookLateRevision(id, n, path: path, placed: placed, entry: entry, deadline: late) }
+        if let late { tookLateRevision(id, n, path: path, placed: placed, entry: entry, deadline: late, secretId: lateSecretId) }
         placedCopy(key(id, n), entry: entry, sameAsRemote: late == nil) {
             $0.classifyRevision(placed, note: UUID(uuidString: id) ?? UUID(), name: n).isCurrent
         }

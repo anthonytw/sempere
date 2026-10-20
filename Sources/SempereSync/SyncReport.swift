@@ -120,7 +120,11 @@ public struct SyncReport: Codable, Hashable, Sendable {
     public struct LateFile: Codable, Hashable, Sendable {
         public var path: String
         public var deadline: Date
-        public init(path: String, deadline: Date) { self.path = path; self.deadline = deadline }
+        /// The `secretId` (format.md §2.1, hex) of the older secret it was tagged under.
+        public var secretId: String?
+        public init(path: String, deadline: Date, secretId: String? = nil) {
+            self.path = path; self.deadline = deadline; self.secretId = secretId
+        }
     }
 
     /// What a partial copy lacks (docs/io.md "Partial copies").

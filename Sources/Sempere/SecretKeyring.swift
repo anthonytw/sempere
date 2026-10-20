@@ -57,7 +57,8 @@ public struct SecretKeyring: Hashable, Sendable, Codable {
         entries = []
     }
 
-    static func id(of secret: VaultSecret) -> String { Hex.encode(RecipientsAuth.secretId(secret)) }
+    /// The `secretId` of `secret` (format.md §2.1) in lowercase hex.
+    public static func id(of secret: VaultSecret) -> String { Hex.encode(RecipientsAuth.secretId(secret)) }
 
     /// The entry of `secret`, if held.
     public func entry(for secret: VaultSecret) -> Entry? {

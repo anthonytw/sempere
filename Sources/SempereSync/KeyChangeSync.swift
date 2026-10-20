@@ -44,7 +44,7 @@ struct KeyChangeRunState {
 /// What to do with a received file under an older secret.
 enum LateVerdict {
     case notLate
-    case accept(rewrapped: Data, deadline: Date)
+    case accept(rewrapped: Data, deadline: Date, secretId: String)
     case quarantine(String)
 }
 
@@ -53,7 +53,7 @@ enum LateBlobVerdict {
     case notLate
     /// An older name of a blob this device holds under its current name (a rename's leftover): not placed.
     case leftover
-    case accept(deadline: Date)
+    case accept(deadline: Date, secretId: String)
     case quarantine(String)
 }
 
@@ -226,7 +226,10 @@ extension SyncEngine {
         guard options.keyring != nil, let v = keyChangeVault(), let s = v.lateSecret(ofRevision: data, note: note, name: name),
               let deadline = locked({ kc.ring?.lateFileDeadline(for: s) }) else { return .notLate }
         guard options.now < deadline else { return .quarantine(lateReason(deadline)) }
-        do { return .accept(rewrapped: try v.rewrappedRevision(data, note: note, name: name), deadline: deadline) } catch {
+        do {
+            return .accept(rewrapped: try v.rewrappedRevision(data, note: note, name: name), deadline: deadline,
+                           secretId: SecretKeyring.id(of: s))
+        } catch {
             return .notLate
         }
     }
@@ -240,7 +243,7 @@ extension SyncEngine {
             return .leftover
         }
         guard let deadline = locked({ kc.ring?.lateFileDeadline(for: s) }) else { return .notLate }
-        return options.now < deadline ? .accept(deadline: deadline) : .quarantine(lateReason(deadline))
+        return options.now < deadline ? .accept(deadline: deadline, secretId: SecretKeyring.id(of: s)) : .quarantine(lateReason(deadline))
     }
 
     func lateReason(_ deadline: Date) -> String {
@@ -256,8 +259,9 @@ extension SyncEngine {
 
     /// A late revision was placed, rewrapped: the remote copy is replaced
     /// by it too while both sides hold the same list (rewrap-replace).
-    func tookLateRevision(_ id: String, _ n: RevisionName, path: String, placed: Data, entry: RemoteEntry?, deadline: Date) {
-        keyChangeActivity { $0.lateAccepted.append(.init(path: path, deadline: deadline)) }
+    func tookLateRevision(_ id: String, _ n: RevisionName, path: String, placed: Data, entry: RemoteEntry?, deadline: Date,
+                          secretId: String) {
+        keyChangeActivity { $0.lateAccepted.append(.init(path: path, deadline: deadline, secretId: secretId)) }
         guard options.rewrapReplace, kc.listAgreed, let etag = entry?.etag, Self.isStrong(etag) else { return }
         if (try? transport.write([Vault.notesName, id, n.filename], .data(placed), condition: .replace(etag: etag))) == true {
             keyChangeActivity { $0.replaced.append(.init(side: "remote", path: path)) }
@@ -266,7 +270,7 @@ extension SyncEngine {
 
     /// A late blob, taken in under its current name; its old name stays a
     /// shared record, so the leftover is collected like any old name.
-    func takeLateBlob(at part: URL, note id: String, name: String, path: String, deadline: Date) throws {
+    func takeLateBlob(at part: URL, note id: String, name: String, path: String, deadline: Date, secretId: String) throws {
         defer { try? FileManager.default.removeItem(at: part) }
         guard let v = keyChangeVault(), let current = v.currentBlobName(at: part, fileName: name) else { return }
         let target = attURL(id).appendingPathComponent(current)
@@ -281,7 +285,7 @@ extension SyncEngine {
             locked { report.downloaded.append(blobPath(id, current)) }
         }
         locked { state.files[blobKey(id, name)] = SyncState.FileRecord() }
-        keyChangeActivity { $0.lateAccepted.append(.init(path: path, deadline: deadline)) }
+        keyChangeActivity { $0.lateAccepted.append(.init(path: path, deadline: deadline, secretId: secretId)) }
     }
 
     /// True when `name` (on the server, gone here) is an older name of a blob this device holds.
