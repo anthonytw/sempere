@@ -24,6 +24,8 @@ struct DrawingPaletteView: View {
     @AppStorage(ObjectEraserSize.defaultsKey) private var eraserRadius = ObjectEraserSize.defaultRadius
     @AppStorage(NotePagesAppearance.key) private var notePages = NotePagesAppearance.defaultValue.rawValue
     @Environment(\.colorScheme) private var colorScheme
+    /// The system color picker, as a sheet of the palette (iPad, iPhone).
+    @State private var pickingColor = false
 
     var body: some View {
         Group {
@@ -41,6 +43,15 @@ struct DrawingPaletteView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("Drawing-Palette")
+        .sheet(isPresented: $pickingColor) {
+            if let ink = state.tool.ink {
+                SystemColorPicker(color: shown(state.settings(for: ink).color), onChange: { picked in
+                    let stored = DrawingToolbox.stored(fromShown: picked, darkPages: darkPages)
+                    toolbox.setColor(Sempere.Color(stored))
+                }, onFinish: { pickingColor = false })
+                .presentationDetents([.medium, .large])
+            }
+        }
     }
 
     // MARK: The bars
@@ -290,19 +301,44 @@ struct DrawingPaletteView: View {
         }
     }
 
-    /// Any color (the system's picker), chosen as the page shows it and stored as drawn on light paper.
+    /// Any color (the system's picker), chosen as the page shows it and stored as drawn on light paper. On a Mac
+    /// SwiftUI's `ColorPicker` (the system color panel). On the iPad and the iPhone a button that puts the choices'
+    /// popover away and shows the system picker as a sheet: a `ColorPicker` inside the popover presented nothing on
+    /// the iPad (iPadOS 27 simulator: a popover over a popover).
+    @ViewBuilder
     private func colorPicker(_ ink: InkTool) -> some View {
-        let binding = Binding<SwiftUI.Color>(
-            get: { SwiftUI.Color(uiColor: shown(state.settings(for: ink).color)) },
-            set: { picked in
-                let stored = DrawingToolbox.stored(fromShown: UIColor(picked), darkPages: darkPages)
-                toolbox.setColor(Sempere.Color(stored))
-            })
-        return ColorPicker("Other Color", selection: binding, supportsOpacity: false)
-            .labelsHidden()
-            .frame(width: 30, height: 30)
+        if Platform.isMac {
+            let binding = Binding<SwiftUI.Color>(
+                get: { SwiftUI.Color(uiColor: shown(state.settings(for: ink).color)) },
+                set: { picked in
+                    let stored = DrawingToolbox.stored(fromShown: UIColor(picked), darkPages: darkPages)
+                    toolbox.setColor(Sempere.Color(stored))
+                })
+            ColorPicker("Other Color", selection: binding, supportsOpacity: false)
+                .labelsHidden()
+                .frame(width: 30, height: 30)
+                .accessibilityIdentifier("palette.colorPicker")
+                .help("Pick any color")
+        } else {
+            Button {
+                let wasShowing = toolbox.showingAttributes
+                toolbox.showingAttributes = false
+                // After the popover is gone: one presentation at a time.
+                DispatchQueue.main.asyncAfter(deadline: .now() + (wasShowing ? 0.4 : 0)) { pickingColor = true }
+            } label: {
+                Circle()
+                    .strokeBorder(AngularGradient(colors: [.red, .yellow, .green, .cyan, .blue, .purple, .red], center: .center),
+                                  lineWidth: 4)
+                    .background(Circle().fill(SwiftUI.Color(uiColor: shown(state.settings(for: ink).color))).padding(6))
+                    .frame(width: 28, height: 28)
+                    .frame(width: 30, height: 30)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Other Color"))
             .accessibilityIdentifier("palette.colorPicker")
             .help("Pick any color")
+        }
     }
 
     @ViewBuilder
@@ -530,5 +566,46 @@ struct PencilGestureHost: UIViewRepresentable {
     func updateUIView(_ view: UIView, context: Context) {
         let enabled = enabled
         context.coordinator.isEnabled = { enabled }
+    }
+}
+
+/// The system's `UIColorPickerViewController` in a sheet: every change is handed over as it is made.
+private struct SystemColorPicker: UIViewControllerRepresentable {
+    let color: UIColor
+    let onChange: (UIColor) -> Void
+    /// Its close button.
+    let onFinish: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onChange: onChange, onFinish: onFinish) }
+
+    func makeUIViewController(context: Context) -> UIColorPickerViewController {
+        let picker = UIColorPickerViewController()
+        picker.supportsAlpha = false
+        picker.selectedColor = color
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ picker: UIColorPickerViewController, context: Context) {
+        context.coordinator.onChange = onChange
+        context.coordinator.onFinish = onFinish
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, UIColorPickerViewControllerDelegate {
+        var onChange: (UIColor) -> Void
+        var onFinish: () -> Void
+        init(onChange: @escaping (UIColor) -> Void, onFinish: @escaping () -> Void) {
+            self.onChange = onChange
+            self.onFinish = onFinish
+        }
+
+        func colorPickerViewControllerDidFinish(_ picker: UIColorPickerViewController) {
+            onFinish()
+        }
+
+        func colorPickerViewController(_ picker: UIColorPickerViewController, didSelect color: UIColor, continuously: Bool) {
+            onChange(color)
+        }
     }
 }

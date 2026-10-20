@@ -112,6 +112,9 @@ final class DrawingPaletteUITests: XCTestCase {
     @MainActor
     private func canvas(_ app: XCUIApplication) -> XCUIElement? {
         let canvases = app.descendants(matching: .any).matching(identifier: "pageCanvas")
+        // A fresh simulator clone's first launch builds the demo vault for a while: wait for a canvas first
+        // (`waitForExistence` rides out a busy main thread; listing the elements fails on one).
+        _ = canvases.firstMatch.waitForExistence(timeout: 120)
         for _ in 0..<60 {
             for element in canvases.allElementsBoundByIndex {
                 if let r = report(element), r.frame("image") != nil { return element }
@@ -375,17 +378,45 @@ final class DrawingPaletteUITests: XCTestCase {
         let well = element(app, "palette.colorPicker")
         XCTAssertTrue(well.waitForExistence(timeout: 5), "the color picker")
         well.tap()
-        let spectrum = app.buttons["Spectrum"].firstMatch
-        XCTAssertTrue(spectrum.waitForExistence(timeout: 10), "the system color picker: \(app.debugDescription.prefix(4000))")
-        spectrum.tap()
-        Thread.sleep(forTimeInterval: 1)
-        spectrum.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).withOffset(CGVector(dx: 25, dy: 130)).tap()
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "palette-\(device)-system-picker")
+        // The picker's grid: its cells are small squares (labeled in the system's language, so found by size).
+        // Read from the tree's description: the picker runs in another process, whose elements a snapshot leaves
+        // out and listing them one by one races its updates.
+        var cells: [CGRect] = []
+        func collect(_ description: String) {
+            let pattern = /Other, 0x[0-9a-f]+, \{\{([0-9.]+), ([0-9.]+)\}, \{([0-9.]+), ([0-9.]+)\}\}/
+            for match in description.matches(of: pattern) {
+                guard let x = Double(match.1), let y = Double(match.2), let w = Double(match.3), let h = Double(match.4),
+                      abs(w - h) < 1, w > 20, w < 40 else { continue }
+                cells.append(CGRect(x: x, y: y, width: w, height: h))
+            }
+        }
+        // The picker comes up in its own time; a tap that came too early (the popover still settling) brought
+        // none up, so the well is tapped again then.
+        for attempt in 0..<3 where cells.count <= 20 {
+            if attempt > 0, well.exists { well.tap() }
+            for _ in 0..<10 where cells.count <= 20 {
+                cells = []
+                collect(app.debugDescription)
+                if cells.count <= 20 { Thread.sleep(forTimeInterval: 0.5) }
+            }
+        }
+        XCTAssertGreaterThan(cells.count, 20, "the system color picker's grid: \(app.debugDescription.suffix(3000))")
+        guard cells.count > 20 else { return }
+        let cell = cells[cells.count / 2]   // a mid-grid color, none of the palette's swatches
+        let window = app.windows.firstMatch
+        window.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: cell.midX - window.frame.minX, dy: cell.midY - window.frame.minY)).tap()
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "palette-\(device)-custom-color")
-        // Away with the picker (a tap outside its popover), and the palette's choices.
-        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).tap()
-        Thread.sleep(forTimeInterval: 1)
-        if spectrum.exists { app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).tap() }
+        // Away with the picker's sheet (a swipe down from its top), and the palette's choices if they are up.
+        let top = cells.map(\.minY).min() ?? 600
+        let window2 = app.windows.firstMatch
+        let grab = window2.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: window2.frame.width / 2, dy: max(top - 120, 80)))
+        grab.press(forDuration: 0.1, thenDragTo: grab.withOffset(CGVector(dx: 0, dy: 900)))
+        Thread.sleep(forTimeInterval: 1.5)
         hideChoices(app)
         let swatches = ["#000000FF", "#8E8E93FF", "#007AFFFF", "#FF3B30FF", "#34C759FF", "#FF9500FF", "#AF52DEFF", "#FFCC00FF"]
         guard let custom = waitReport(canvas, "a custom color", {
