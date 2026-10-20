@@ -4072,7 +4072,9 @@ From epoch 1 (`EpochChain.verify`):
      that key; otherwise no key is valid and the takeover is refused. A kit replaced on the pinned chain
      never signs again, and a kit introduced below the frontier signs only once the epoch that
      introduced it is pinned (the verifier then reports `kitNotPinned`, not tampering, and verifies
-     again after pinning the epoch before the takeover). A takeover's parent is the
+     again after pinning the epoch before the takeover). The verifier checks `recoverySig` under
+     `e−1`'s `recovery` first: a takeover whose signature fails there is `badTakeover` whatever the
+     pin, and only a valid one refused by the rule alone is `kitNotPinned`. A takeover's parent is the
      taking-over device's pinned frontier; the first list holds the home and otherwise only fingerprints of the
      lists of epochs 1 to `e−1` (a device a stolen home removed may be re-admitted), and no earlier
      recovery key; `recovery` is `e−1`'s.
@@ -4122,7 +4124,11 @@ questions:
    key the takeover rule names for this device's pinned chain (§15.7: the pinned frontier's own kit,
    or for an unpinned device the parent's), whose author is its home, whose list holds only that home and
    devices of its ancestry's lists and no recovery key its ancestry retired, and whose `recovery` is the parent's. `home` is in the epoch's list
-   and is not its recovery key. Every other epoch is ignored with its subtree.
+   and is not its recovery key. A `takeover` that meets every other condition, with `recoverySig`
+   valid under its parent's `recovery`, but that the takeover rule refuses only because that kit was
+   introduced below the pinned frontier (`kitNotPinned`, §15.7) is **deferred** with its subtree: not
+   followed, not tampering, and taken by the next run once the replacement is pinned (or, at a home
+   conflict before it, once the user picks). Every other epoch is ignored with its subtree.
 2. From epoch 1, the device walks down the valid tree. If a valid `takeover` lies below the current
    epoch with no takeover between, it goes to the one with the smallest `epochId` (bytes compared
    lexicographically) and goes on from there; a takeover below a takeover is reached the same way.
@@ -4135,7 +4141,9 @@ questions:
 
 **The write ledger** (KH3) prunes an entry only when its sealing record is on the pinned chain with a
 kit replacement (an epoch whose `recovery` differs from its parent's) pinned at or above it
-(`LedgerRule.sealIsFinal`; plain home epochs above it can still be dropped by a takeover), and Repair's bulk Keep takes the set-aside
+(`LedgerRule.sealIsFinal`; plain home epochs above it can still be dropped by a takeover). It finds a replacement by `recovery`
+changing between two pinned epochs, which relies on §15.7 rule 3: a `recovery` or `reencrypt` epoch must change the kit
+and no other epoch may. Repair's bulk Keep takes the set-aside
 files of dropped epochs that the ledger holds (`LedgerRule.keepable`).
 
 `EpochPrecedenceTests` checks the rule against an independent oracle on random trees (2000 seeds in
