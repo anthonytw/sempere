@@ -1545,7 +1545,11 @@ changed). `PROPFIND` with `Depth: infinity` on `notes/` gives the same entries
 in one request where the server allows it; many refuse it (Apache's default)
 and some answer it as `Depth: 1` (Sabre/Nextcloud with infinite depth off), so
 it is trusted only where it is seen to work. A run that has not seen it work
-lists one by one as before and also asks for the tree once; when every note
+asks for the tree once and compares it with the listing of a sample of
+`verifySample` (16) note folders and their `att/`, spread over the vault, taking
+the other folders from the tree in the same run (a vault of 640 notes: about
+20 requests); a vault with no more folders than that, or a sample that differs
+from the tree, is listed one by one as before. When every note
 folder and `att/` it listed holds exactly what the tree says, the server is
 recorded (`treeListing` in the sync state) as answering in full. A refusal (a
 4xx such as 403 `propfind-finite-depth`, a 501, or an answer with nothing below

@@ -842,9 +842,47 @@ public final class SyncEngine {
             updateProgress { $0.notesListed += toList.count }
             return out
         }
+        // A check of a big vault compares a sample with the tree, and takes the rest from it when they agree.
+        var sampled: [String: Result<[RemoteEntry]?, Error>] = [:]
+        if mode == .verify, let tree = notesTree, toList.count > Self.verifySample {
+            let sample = sampleForCheck(toList, tree: tree)
+            let check = try checkSample(sample.sorted(), tree: tree)
+            sampled = check.results
+            if check.agreed, notesNotReadable.isEmpty {
+                if !options.dryRun { state.treeListing = .init(supported: true, verifiedAt: options.now) }
+                treeMode = .use
+                skipsUnchangedNotes = false
+            }
+        }
+        let fromTree = treeMode == .use
+        var rest = toList
+        for (name, result) in sampled.sorted(by: { $0.key < $1.key }) {
+            rest.removeAll { $0 == name }
+            switch result {
+            case .success(let entries):
+                out[name] = entries ?? []
+                listedOneByOne[name] = entries ?? []
+                if let entries { exists(name, entries) }
+            case .failure(let error):
+                report.errors.append(.init(path: "notes/\(name)", message: Self.describe(error)))
+                notesNotReadable.insert(name)
+            }
+        }
+        if fromTree, let tree = notesTree {
+            for name in rest {
+                let entries = tree[[name]] ?? []
+                out[name] = entries
+                exists(name, entries)
+                if entries.contains(where: { $0.name == Vault.attachmentsName && $0.isCollection }) {
+                    attListings[name] = .success(tree[[name, Vault.attachmentsName]] ?? [])
+                }
+            }
+            updateProgress { $0.notesListed += rest.count }
+            return out
+        }
         // One PROPFIND per folder, `concurrency` at a time.
-        let listed = try listConcurrently(toList.map { [Vault.notesName, $0] }, notes: true)
-        for (name, result) in zip(toList, listed) {
+        let listed = try listConcurrently(rest.map { [Vault.notesName, $0] }, notes: true)
+        for (name, result) in zip(rest, listed) {
             switch result {
             case .success(let entries):
                 out[name] = entries ?? []
