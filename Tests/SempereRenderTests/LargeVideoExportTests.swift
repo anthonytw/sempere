@@ -1,3 +1,4 @@
+import TempDirSupport
 import Age
 import FuzzSupport
 import Foundation
@@ -18,7 +19,7 @@ final class LargeVideoExportTests: XCTestCase {
     func testLargeClipStreamsThroughEveryExport() throws {
         let megabytes = Int(ProcessInfo.processInfo.environment["SEMPERE_LARGE_BLOB_MB"] ?? "") ?? 200
         let total = megabytes * 1_000_000
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("sempere-large-video-\(UUID().uuidString)")
+        let dir = TestTemp.root.appendingPathComponent("sempere-large-video-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let source = dir.appendingPathComponent("lecture.mp4")

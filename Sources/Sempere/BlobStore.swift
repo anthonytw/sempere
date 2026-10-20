@@ -201,8 +201,8 @@ extension Vault {
         var tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("sempere-blob-" + UUID().uuidString.lowercased())
         if let pathExtension, !pathExtension.isEmpty { tmp.appendPathExtension(pathExtension) }
+        defer { try? FileManager.default.removeItem(at: tmp) }   // before the write: a failed stream leaves a partial file
         try FileIO.writeNewFile(tmp) { write in try streamBlob(note: note, ref) { try write($0) } }
-        defer { try? FileManager.default.removeItem(at: tmp) }
         return try body(tmp)
     }
 

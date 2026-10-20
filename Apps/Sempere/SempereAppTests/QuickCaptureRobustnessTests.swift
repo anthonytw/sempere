@@ -13,7 +13,7 @@ enum TestAudio {
     /// A 2-second 440 Hz tone, AAC in ADTS (what quick voice notes record, `QuickCapture.segmentExtension`),
     /// written once per test run.
     static func adtsTone() throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("sempere-test-tone.aac")
+        let url = TestTemp.root.appendingPathComponent("sempere-test-tone.aac")
         if FileManager.default.fileExists(atPath: url.path) { return url }
         let staging = url.deletingLastPathComponent().appendingPathComponent("tone-\(UUID().uuidString).aac")
         try write(seconds: 2, to: staging)

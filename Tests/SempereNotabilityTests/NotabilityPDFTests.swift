@@ -1,3 +1,4 @@
+import TempDirSupport
 import Age
 import Foundation
 import ImportTestSupport
@@ -93,7 +94,7 @@ final class NotabilityPDFTests: XCTestCase {
 
     /// A PDF that was never written on: no curves, no handwriting index.
     func testInklessPDFNoteImportsEmptyAndReportsItsPages() throws {
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("inkimport-pdf-\(UUID().uuidString)")
+        let tmp = TestTemp.root.appendingPathComponent("inkimport-pdf-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
         let path = tmp.appendingPathComponent("Deck.note")

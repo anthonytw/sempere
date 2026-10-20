@@ -48,7 +48,7 @@ struct SlowFakeImporter: VaultImporter {
 @Suite(.serialized)
 struct ImportProgressTests {
     static func file() throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("x-\(UUID().uuidString).slow")
+        let url = TestTemp.root.appendingPathComponent("x-\(UUID().uuidString).slow")
         try Data().write(to: url)
         return url
     }
@@ -141,7 +141,7 @@ struct ImportProgressTests {
             .appendingPathComponent("notability/synthetic.note")
         let source = try ZipArchive(url: fixture)
         let uuid = Data("5A1E0000-0000-4000-8000-000000000001".utf8)
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("nb-backup-\(UUID().uuidString)")
+        let dir = TestTemp.root.appendingPathComponent("nb-backup-\(UUID().uuidString)")
         let staging = dir.appendingPathComponent("staging")
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         var notes: [[(name: String, file: URL)]] = [[], [], []]

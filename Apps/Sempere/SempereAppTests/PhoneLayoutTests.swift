@@ -307,7 +307,7 @@ struct PhoneCanvasTests {
 struct PhoneRootTests {
     static func host(_ model: AppModel) -> (UIWindow, UIViewController) {
         let controller = UIHostingController(rootView: RootView()
-            .environment(model).environment(VaultLibrary(storeURL: FileManager.default.temporaryDirectory
+            .environment(model).environment(VaultLibrary(storeURL: TestTemp.root
                 .appendingPathComponent(UUID().uuidString).appendingPathComponent("recents.json"))).environment(RememberedKeys(store: FakeKeyStore())))
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
         window.rootViewController = controller

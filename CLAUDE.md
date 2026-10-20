@@ -120,6 +120,9 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
 - A test that depends on a simulator's leftover state is a bug: every run may start on a fresh clone.
 - Cancel only your own processes, by PID; never `pkill -f` or `killall` patterns (they kill other agents' runs).
 - Temp files go in your own scratch directory, never shared names (`/tmp/out.log`).
+- Tests never use `FileManager.default.temporaryDirectory` directly: use `TestTemp` (app tests:
+  `SempereAppTests/TestTemp.swift`; SwiftPM: `TempDirSupport`), which removes everything at process exit
+  (docs/ci.md "Temp-folder guard").
 
 ## Gotchas
 
