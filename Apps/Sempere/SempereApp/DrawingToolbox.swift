@@ -20,11 +20,14 @@ final class DrawingToolbox {
     static let shared = DrawingToolbox(defaults: launchDefaults)
 
     /// `UserDefaults.standard`; in a demo-vault launch (`SEMPERE_DEMO`, the UI tests and the App Store
-    /// screenshots) a defaults suite emptied at launch, so every such launch starts with the black pen and
+    /// screenshots) and in the unit tests' host a defaults suite emptied at launch, so every such launch starts with the black pen and
     /// the object eraser whatever an earlier test picked.
     private static var launchDefaults: UserDefaults {
         #if DEBUG
-        if DebugLaunch.environment["SEMPERE_DEMO"] != nil, let suite = UserDefaults(suiteName: "sempere-demo-tools") {
+        // The unit tests' host app too: tests that draw expect the pen, whatever a UI test left in the defaults.
+        let testHost = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        if DebugLaunch.environment["SEMPERE_DEMO"] != nil || testHost,
+           let suite = UserDefaults(suiteName: "sempere-demo-tools") {
             suite.removePersistentDomain(forName: "sempere-demo-tools")
             return suite
         }

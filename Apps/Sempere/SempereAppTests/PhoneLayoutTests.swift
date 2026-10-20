@@ -249,7 +249,8 @@ struct PhoneCanvasTests {
         let (window, host) = Self.host(size: Self.sizes[1])
         host.drawingSuspended = true
         host.drawingSuspended = false
-        #expect(host.canvas.drawingGestureRecognizer.isEnabled)
+        // `drawsInk`: PencilKit's gesture, or on a Mac the app's smoothed pointer ink (Smooth Mouse Strokes).
+        #expect(host.drawsInk)
         window.isHidden = true
     }
 
@@ -284,7 +285,7 @@ struct PhoneCanvasTests {
     @Test func theIPadCanvasIsNotSuspendedByDefault() {
         let (window, host) = Self.host(size: CGSize(width: 1024, height: 1366))
         #expect(!host.drawingSuspended)
-        #expect(host.canvas.drawingGestureRecognizer.isEnabled)
+        #expect(host.drawsInk)
         window.isHidden = true
     }
 
