@@ -2677,14 +2677,14 @@
         }
       }
     },
-    "A vault is a folder of encrypted files in iCloud Drive or any Files location; the command-line tool can mirror it to WebDAV." : {
+    "A vault is a folder of encrypted files in iCloud Drive or any Files location, or on a WebDAV server." : {
       "comment" : "Quick tour page 5",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Una bóveda es una carpeta de archivos cifrados en iCloud Drive o en cualquier ubicación de Archivos; la herramienta de línea de comandos puede reflejarla en WebDAV."
+            "value" : "Una bóveda es una carpeta de archivos cifrados en iCloud Drive, en cualquier ubicación de Archivos o en un servidor WebDAV."
           }
         }
       }
