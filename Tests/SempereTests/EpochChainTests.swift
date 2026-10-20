@@ -386,6 +386,15 @@ final class EpochChainTests: VaultTestCase {
         try kit2Takeover.next(author: k, reason: "takeover", list: [k.fingerprint, bDev.fingerprint, kit2.fingerprint],
                                 parentList: [a.fingerprint, bDev.fingerprint, kit2.fingerprint], takeover: kit2)
         XCTAssertNoThrow(try EpochChain.verify(kit2Takeover.entries, vaultId: good.vaultId, root: good.root, pinned: pinnedAfter))
+        // Round 8, C1-b (probe testThiefKitBelowTheFrontierWinsTheRace): for a device pinned before the
+        // replacement, the new kit's takeover waits until the replacement is pinned (not tampering).
+        let pinnedBefore = good.entries.map { TakeoverRule.PinnedEpoch(epochId: $0.epochId, recovery: $0.recovery) }
+        XCTAssertThrowsError(try EpochChain.verify(kit2Takeover.entries, vaultId: good.vaultId, root: good.root, pinned: pinnedBefore)) {
+            XCTAssertEqual($0 as? ChainError, .kitNotPinned(epoch: 3))
+        }
+        XCTAssertNoThrow(try EpochChain.verify(replaced.entries, vaultId: good.vaultId, root: good.root, pinned: pinnedBefore),
+                         "it follows and pins the replacement first")
+        XCTAssertNoThrow(try kit2Takeover.verify(), "a joiner takes it at once")
         // ... but it introduces no device of no ancestor list.
         var intro = good
         try intro.next(author: k, reason: "takeover", list: [k.fingerprint, try ChainTestDevice("Z").fingerprint, r],
@@ -586,6 +595,7 @@ final class EpochChainTests: VaultTestCase {
             case .notHome(let n): return "notHome:\(n)"
             case .badHome(let n): return "badHome:\(n)"
             case .badTakeover(let n): return "badTakeover:\(n)"
+            case .kitNotPinned(let n): return "kitNotPinned:\(n)"
             case .badEpochSig(let n): return "badEpochSig:\(n)"
             case .introducesDevice(let n): return "introducesDevice:\(n)"
             case .tooManyAdditions(let n): return "tooManyAdditions:\(n)"

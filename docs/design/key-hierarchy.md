@@ -509,11 +509,14 @@ widget extension can append while the device is locked. In the CLI it is sealed 
   leaves an entry with no file, which is dropped at the next open; the reverse order could leave a
   file that no ledger knows.
 - **Lifetime.** An entry lives until the record whose `parent` is its epoch seals its path with its
-  digest, **and that record is on the pinned chain with a later pinned epoch above it**, or until its
-  re-encryption under a later epoch is recorded (the new entry then lives by the same rule). A
-  takeover that drops the sealing record therefore finds the entry still there, and the device
-  re-encrypts its own file instead of leaving it set aside (round 7, H1: a stolen home that
-  re-encrypts everything must not strand the vault; `LedgerRule.sealIsFinal`). Uploads and acceptance on targets prune nothing. An entry whose file this device has
+  digest, **and that record is on the pinned chain with a kit replacement (a `recovery` or `reencrypt`
+  epoch) pinned at or above it**, or until its re-encryption under a later epoch is recorded (the new
+  entry then lives by the same rule). Only a pinned replacement makes a seal final: from then on no
+  takeover from before it is valid for this device (§5.6 rule 3), while any number of plain home
+  epochs above the sealer can still be dropped by a takeover from an older parent (round 8, H1-b). So
+  **a thief's plain removal epochs, when a takeover drops them, un-seal**: the entries they sealed are
+  still there, and the device re-encrypts its own files instead of leaving them set aside (round 7,
+  H1: a stolen home that re-encrypts everything must not strand the vault; `LedgerRule.sealIsFinal`). Uploads and acceptance on targets prune nothing. An entry whose file this device has
   itself deleted by compaction or thinning (format.md §5.3, §5.8.4) is dropped with the file.
 - **Bulk Keep.** Repair offers **"Keep every file from the dropped epochs that this device wrote"**: the
   set-aside files under an epoch a takeover dropped whose path and bytes this device's ledger holds
@@ -609,11 +612,14 @@ the **home**, changes the list, and the recovery key takes over when home is gon
    signed by the new home's device keys (`epochSig`) **and** by the recovery key's signing pair
    (`recoverySig`, over the same message). Its first list is within the lists of its ancestry plus the
    new home itself, which may be a device no list held: **a kit join is a takeover**. It never lists a
-   retired recovery key. **It is valid only under the recovery key current at the verifier's pinned
-   frontier** (owner decision, round 7 C1): the parent's recovery key, unless the verifier's pinned
-   chain replaced that key after the point where the takeover's ancestry leaves the pinned chain; then
-   it is ignored. **A kit's retirement is final for every device that has seen it.** The rule is one
-   function, `TakeoverRule.recoveryKey`. The recovery key does not change in a takeover (a new kit is a
+   retired recovery key. **For a pinned device it is valid only under the pinned frontier's own kit**
+   (owner decision, round 7 C1; round 8 C1-b): its `recoverySig` must be by the recovery key of the
+   last epoch the device pinned, and its parent must still have that key. So **a kit's retirement is
+   final for every device that has seen it**, and **a kit introduced below the frontier signs nothing
+   for the device until it has followed and pinned the epoch that introduced it** (a run later, since
+   the frontier is read when a run starts; `EpochChain.verify` reports such a takeover as
+   `kitNotPinned`, not as tampering). An unpinned device (a joiner) takes the parent's kit. The rule is
+   one function, `TakeoverRule.recoveryKey`. The recovery key does not change in a takeover (a new kit is a
    later `recovery` epoch by the new home).
 4. **Precedence (the only branch rule).** A device follows epochs that extend its chain linearly and
    are signed by the home of their parent (a handoff's own signer is its parent's home). **A takeover
@@ -667,22 +673,32 @@ takeover did not see are covered by unchecking those devices.
   list. Additions need re-approval by the new home; the devices they added see themselves unlisted
   (§5.5) and join again.
 - **Whoever holds `R` holds everything**, as before: every wrap, and now also the power to take over.
-- **A takeover by an attacker who holds `R` is total compromise** until the owner answers. The answer
-  is **Replace Recovery Kit (§6.5), not another takeover**: two takeovers by holders of the same `R`
-  are indistinguishable and the attacker can grind the smaller `epochId`, but a replacement retires
-  `R` for every device that sees it, and from then on no takeover with `R` is valid there. (On a chain
-  where the attacker's takeover already won, the owner first takes over from a device pinned before
-  it, then replaces the kit.)
+- **A takeover by an attacker who holds `R` is total compromise, and a grinding attacker wins it.** Two
+  takeovers by holders of the same `R` are indistinguishable, and the attacker can grind the smaller
+  `epochId`, so another takeover is no answer. The answer is **Replace Recovery Kit (§6.5) before the
+  attacker acts**: a replacement retires `R` for every device that sees it, and from then on no
+  takeover with `R` is valid there. **Once an attacker's takeover has won on a device there is no
+  recourse on that device** except rejoining it from one where it has not.
 - **A stolen, unlocked home whose thief knows the passcode can replace the kit** before the owner's
   takeover reaches a device (Replace Kit asks for device-owner authentication, §6.5, which the passcode
-  satisfies). Devices that saw that replacement first then refuse the owner's old-kit takeover;
-  devices pinned before it still take it. The defense is the passcode on home, and taking over the
-  moment home is lost: the kit is the longer-lived secret, so its retirement is final.
+  satisfies). Devices that pinned that replacement then refuse the owner's old-kit takeover and take
+  the thief's takeover under its own kit. Devices pinned before it take the owner's takeover and refuse
+  the thief's (its kit is not their frontier's, round 8 C1-b), so the thief does not win them by
+  grinding an id. An unpinned joiner sees both takeovers as valid and takes the smaller `epochId`, so
+  the thief can win joiners. The defense is the passcode on home, and taking over the moment home is
+  lost: the kit is the longer-lived secret, so its retirement is final.
+- **Re-encrypt Everything is a kit replacement too** (§7: it replaces `R`). A thief's re-encryption on
+  a stolen home therefore locks the owner's old kit out of every device that pinned it, exactly as a
+  kit replacement does; the owner's takeover drops it only on devices pinned before it (§7.2, §11.1).
+- **A kit joiner on a chain where `R` was retired cannot take over at all**: its takeover is signed by
+  `R`, and every device that pinned the retirement refuses it. Only the current kit joins.
 - **A home conflict stops joiners** until the user picks a branch or a takeover settles it. Approval
   joiners start pinned at the approver's frontier (§6.2), which settles it for them.
 - A device that has not seen a kit replacement (pinned before it, or a joiner that saw nothing) still
   takes a takeover by the retired kit; approval joiners are pinned at home's frontier, which closes it
   for them.
+- **The old kit's optional `recoverySig` on a replacement (§6.5) is evidence only**: it records that the
+  old kit's holder agreed, and changes no precedence. A thief holding home simply omits it.
 - A device that has seen neither the takeover nor anything after its parent follows the old home until
   the takeover reaches it; what it wrote meanwhile is caught up from its ledger like any other own file
   (§5.4).
@@ -698,13 +714,22 @@ or is a valid takeover; (b) takeover precedence: no valid takeover below the cha
 takeover off the chain lost to a smaller one, and pinned epochs are dropped only by a takeover; (c)
 order independence; (d) no device a takeover left out signs or is home after it; (e) a home conflict
 that neither the pin nor the user settles stops the chain; (f) no takeover on the chain was signed by a
-kit the device's pinned chain retired. Five test-only mutations must each fail it: a non-home signer
-accepted, takeovers ignored, the home from before a takeover still accepted, a home conflict settled
-by the smaller id, and a retired kit's takeover accepted. `Fixtures/epoch-precedence-vectors.json` covers a stolen home writing after
+kit the device's pinned chain retired, or that the takeover's own branch introduced below the pinned
+frontier; (g) every takeover a pinned device follows is signed by its pinned frontier's own kit; (h) no
+epoch whose seal `LedgerRule.sealIsFinal` calls final is dropped. The generator also plays the thief
+race: home replaces the kit under an epoch, a takeover under the new kit, and a takeover under the old
+kit from that epoch, with random ids, and pins just above and on the replacement. Six test-only
+mutations must each fail it: a non-home signer accepted, takeovers ignored, the home from before a
+takeover still accepted, a home conflict settled by the smaller id, a retired kit's takeover accepted,
+and a kit introduced below the frontier accepted (the round-7 rule); and the round-7 seal rule must
+fail (h). `Fixtures/epoch-precedence-vectors.json` covers a stolen home writing after
 the takeover's parent, a user's pick at a home conflict, a takeover re-admitting a device of an
 ancestor list (and one listing a device of no list, ignored), a takeover signed by another kit, the
 an old kit's takeover after a replacement (refused by a device that saw it, taken by one that did
-not), the new kit's takeover, a stolen home's re-encryption dropped by the user's
+not), the new kit's takeover (and its one-run wait on a device pinned before the replacement), the
+thief race (owner's takeover from before the thief's replacement vs the thief's under its own kit: the
+pinned-before device, the device that saw it, a joiner), a takeover listing a retired kit, a stolen
+home's re-encryption dropped by the user's
 takeover, a takeover on top of the stolen home's epochs, two takeovers, a handoff followed
 by the old home signing, a non-home signer, a removed former home replaying under an old epoch, and a
 stale device meeting a takeover.
@@ -825,8 +850,7 @@ for a lost or stolen home: then no new entry is needed.
 
 **Every listed device alerts on a takeover**, as a notification and a banner that stays until it is
 dismissed: "<name> took over managing devices of <vault> with the recovery kit, <date>. If this was
-not you, replace the recovery kit on a device that still manages devices, or take over from a device
-that has not seen this yet and then replace the kit." The device list marks the
+not you, replace the recovery kit on a device that still manages devices." The device list marks the
 takeover in the history (§6.4).
 
 ### 6.4 The device list (Settings ▸ Vault ▸ Devices)
@@ -860,8 +884,8 @@ Recovery Kit** (on home):
    `reason: "recovery"`): a new epoch, because `R` opens the old wrap in any old copy of
    `vault.json`. When the user still holds the old kit or its passphrase, the sheet asks for it and the
    epoch also carries the old key's `recoverySig` (with `recoveryAuthor`), over the same message as
-   `epochSig`: optional, and verified when present, so the record shows that the old kit's holder
-   agreed.
+   `epochSig`: optional, and verified when present. It is **evidence only** (the record shows that
+   the old kit's holder agreed) and changes no precedence: a thief holding home omits it (§5.6).
 
 Files from before stay readable to `R` through old copies of `vault.json`. If that matters (the kit
 was lost, not destroyed), use §7. The passphrase copy is rewritten for `R'` and the old one is
@@ -926,8 +950,11 @@ file. Old backups and provider version history still open with the old kit."
   the new `vault.json`.
 - **A re-encryption that meets a takeover.** Only home re-encrypts and removes, so two of its own
   epochs never compete. A takeover whose parent is below the re-encryption keeps it; one whose parent is
-  above it drops the re-encryption epoch, whose journal is then refused. Its recovery replacement is
-  dropped with it, so the old kit stays valid until the new home runs it again; the sheet says
+  above it drops the re-encryption epoch, whose journal is then refused, **but only on devices pinned
+  before the re-encryption**: a re-encryption replaces the kit, so a device that pinned it refuses a
+  takeover by the old kit (§5.6 rule 3), and a thief's re-encryption locks the owner out of those
+  devices. Where it is dropped, its recovery replacement is dropped with it, so the old kit stays
+  valid until the new home runs it again; the sheet says
   "Re-encryption was stopped by a takeover" and offers to run it again. Files the pass had
   re-encrypted under the dropped key are its initiator's ledger entries, so they come back under the
   kept chain by catch-up.
@@ -1101,7 +1128,7 @@ it joins.
 | **Removed device with modified software** (alone or with other removed devices) | the keys of the epochs that listed it; its working copy | §5.3: anything it writes after the change is set aside on every device (J3); it cannot unwrap a later key (J2); it never signs an epoch or an approval that counts, because it was not home (§5.6); a former home's epochs under an epoch where it was home are a home conflict that every device pinned past it ignores; epochs never add devices but a takeover's new home (J10) | a former home can stop a joiner that is not pinned past its fork until a takeover (§5.6 "Residual"); approval joiners are pinned at home's frontier |
 | **Removed device's storage credentials** | write access to the targets it was given | removal changes no file it can read later; the sheet tells the user to change the target's password (§5.5); every working copy is complete, so a file it deletes from a target is restored (not an explained deletion) | until the password changes, it can delete or withhold files on a target (denial of service, including withholding a record: §4.3 "unverified-pending"), and see metadata |
 | **Hostile storage provider** | metadata (§9.3, security.md); every ciphertext | tags, names, `listTag`, author and entry signatures; the trust record pins the root and the chain (rollbacks refused); records bound by hash; joins rooted at the printed root, with codes both ways (§6.2, §6.3); §9.1 checks | it can withhold files or records (pending, never accepted or deleted; a withheld record keeps devices from uploading until another target or a device brings it) and delete things (devices re-upload). The reverse code stops a fake vault from storage, not a fork from a removed device (§6.2) |
-| **Lost recovery kit** | whoever finds it can unwrap the key of any epoch the kit was listed in, from any copy of `vault.json`, and **take over**: become home and drop every other device | every device alerts on a takeover (§6.3); **Replace Recovery Kit** (device-owner authentication, §6.5) retires the kit for every device that sees it: no takeover with it is valid there afterwards (§5.6); Replace: nothing written after opens with it; Re-encrypt: nothing in the vault opens with it | **a takeover by someone who holds `R` is total compromise** until the owner replaces the kit (first taking over from a device pinned before the finder's takeover, where it already won): they read everything they were listed for and the owner's devices are dropped meanwhile; devices that never saw the replacement still take a takeover by the old kit; backups, provider history and copies made before still open |
+| **Lost recovery kit** | whoever finds it can unwrap the key of any epoch the kit was listed in, from any copy of `vault.json`, and **take over**: become home and drop every other device | every device alerts on a takeover (§6.3); **Replace Recovery Kit** (device-owner authentication, §6.5) retires the kit for every device that sees it: no takeover with it is valid there afterwards (§5.6); Replace: nothing written after opens with it; Re-encrypt: nothing in the vault opens with it | **a takeover by someone who holds `R` is total compromise**, and a grinding finder wins any race of takeovers: replace the kit before the finder acts; once the finder's takeover has won on a device, that device has no recourse but rejoining from one where it has not; they read everything they were listed for and the owner's devices are dropped meanwhile; devices that never saw the replacement still take a takeover by the old kit; backups, provider history and copies made before still open |
 | **Leaked passphrase copy** (file and passphrase) | the recovery key: the same as a lost kit | 70-bit minimum and work factor 20 make offline guessing infeasible for a strong passphrase; the copy is deleted when superseded | a weak passphrase reused elsewhere; backups keep old copies |
 | **Quantum adversary harvesting now** | ciphertexts and `vault.json` | every public-key encryption step is X-Wing (ML-KEM-768 + X25519); links and signatures are each classical + ML-DSA-65; the rest is 256-bit symmetric | the passphrase copy is as strong as the passphrase (§8.2). A future break of ML-KEM-768 *and* X25519 would expose everything, as today |
 
@@ -1146,9 +1173,15 @@ it joins.
     it was home (a home conflict the pin settles; a joiner stops until a takeover); a stale device
     meeting a takeover; a kit join (a takeover with a new device as home), and the alerts; a user's pick
     at a home conflict; a takeover re-admitting a device a stolen home removed;
-  - **a stolen home re-encrypts everything, then the user takes over** (round 7, H1): the honest devices'
-    ledger entries outlived the dropped `reencrypt` record, so they re-encrypt their own files; the
-    rest is offered by the bulk Keep;
+  - **a stolen home re-encrypts everything, then the user takes over** (round 7, H1): on devices pinned
+    before the re-encryption (the only ones that take the old kit's takeover, §5.6), the honest
+    devices' ledger entries outlived the dropped `reencrypt` record, so they re-encrypt their own
+    files; the rest is offered by the bulk Keep. Devices that pinned the re-encryption refuse the
+    takeover;
+  - **a stolen home's plain removals, dropped by the user's takeover** (round 8, H1-b): pinned home
+    epochs above them do not make their seals final; the entries stay and the files come back;
+  - **the thief race** (round 8, C1-b): the stolen home replaces the kit and takes over under its own
+    kit with a small id; the owner takes over under the old kit from before the replacement;
   - **an offline device verifies a removal whose first list carries a device added while it was
     away** (the addition is admitted from the parent's chain entry; the removal verifies);
   - **a re-encryption a takeover dropped**: a target holding only its copies is repaired by a device
@@ -1487,7 +1520,7 @@ cost the user a question. The owner chose to remove forks at their source instea
 | the recovery fingerprint over the key | over the key and its derived signing pair (§3), so a takeover verifies |
 | the union merge of `vault.json` versions | one writer: the newer version contains the older (§5.1) |
 | trust record: the user's fork answers | trust record: the current home |
-| `EpochForkPropertyTests` (P1 to P6, five mutations) | `EpochPrecedenceTests` (five properties, four mutations since round 7) and `epoch-precedence-vectors.json` |
+| `EpochForkPropertyTests` (P1 to P6, five mutations) | `EpochPrecedenceTests` (invariants (a) to (h) and six mutations since round 8) and `epoch-precedence-vectors.json` |
 
 The residuals are stated in §5.6: managing devices needs home or the recovery key; a stolen home acts
 as owner until the takeover; a takeover drops home changes it did not see (additions need
@@ -1506,3 +1539,15 @@ everything, and a takeover by an attacker who holds it is total compromise.
 | L1 an id-settled conflict was invisible | invariant (e) and the `conflictSettledById` mutation |
 | L3, L4 | the stale comment fixed; a malformed epoch 1 is tampering (format.md §15.9) |
 | generator | kit replacements and re-encryptions, so the recovery key varies; takeovers signed by other kits |
+
+### 16.8 Round 8
+
+| Finding | Change |
+| --- | --- |
+| C1-b a kit introduced below the frontier signed valid takeovers, so a thief holding home won with its own kit and a ground id | a pinned device takes a takeover only under its pinned frontier's own kit; a kit introduced below the frontier counts once pinned (`TakeoverRule.recoveryKey`; `EpochChain.verify` reports `kitNotPinned`); the oracle's `retired` also looks at the takeover's own branch; invariant (g), the `kitBelowFrontierAccepted` mutation, the thief race in the generator and the vectors |
+| H1-b a seal with pinned home epochs above it could still be dropped | final only with a kit replacement pinned at or above the sealer (§5.4); invariant (h), and the round-7 rule must fail it |
+| M1 residuals overstated | §5.6: a grinding `R` holder (no recourse on a device where its takeover won), Re-encrypt Everything is a kit replacement, a kit joiner on a chain where `R` was retired cannot take over, the old-kit `recoverySig` is evidence only; §7.2, §11.1, §10 |
+| M2 oracle and generator | (f) looks at the takeover's branch below the frontier; the thief race with ids random both ways and pins above and on the replacement; (h) for the ledger rule |
+| L1 a takeover listing a retired kit passed the precedence layer | `listAllowed` takes the ancestry's retired kits (precedence and chain alike); a vector and the oracle |
+| L2 `check` and the pin | comment: the record-less direct child's parent is the frontier |
+| L3 §6.3 alert | "replace the recovery kit on a device that still manages devices" |

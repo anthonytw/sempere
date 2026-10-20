@@ -24,7 +24,7 @@ final class EpochPrecedenceTests: XCTestCase {
     func testPrecedenceVectors() throws {
         let url = try FixtureTests.bundled("epoch-precedence-vectors.json")
         let v = try JSONDecoder().decode(Vectors.self, from: Data(contentsOf: url))
-        XCTAssertGreaterThanOrEqual(v.cases.count, 22)
+        XCTAssertGreaterThanOrEqual(v.cases.count, 35)
         for c in v.cases {
             let nodes = try c.nodes.map { n in
                 EpochNode(epochId: Self.d(n.id), parent: n.parent.map(Self.d), signer: Self.d(n.signer),
@@ -55,13 +55,33 @@ final class EpochPrecedenceTests: XCTestCase {
         XCTAssertEqual(try EpochPrecedence.resolve([n("1", nil)]).keptChain, [Self.d("1")])
     }
 
-    /// Round 7, H1: a ledger entry is pruned only when its sealing record is on the pinned chain with a
-    /// later pinned epoch above it; Repair keeps, in bulk, the dropped epochs' files this device wrote.
-    func testLedgerPruningAndBulkKeep() {
-        let pinned = ["e1", "e2", "m", "e4"].map(Self.d)
-        XCTAssertTrue(LedgerRule.sealIsFinal(sealer: Self.d("m"), pinned: pinned))
-        XCTAssertFalse(LedgerRule.sealIsFinal(sealer: Self.d("e4"), pinned: pinned), "the pinned end can still be dropped")
-        XCTAssertFalse(LedgerRule.sealIsFinal(sealer: Self.d("x"), pinned: pinned), "a sealer off the pinned chain")
+    static func pin(_ ids: [String], _ kits: [String]) -> [TakeoverRule.PinnedEpoch] {
+        zip(ids, kits).map { TakeoverRule.PinnedEpoch(epochId: d($0), recovery: d($1)) }
+    }
+
+    /// Round 7, H1, and round 8, H1-b (probe `testSealIsFinalButDroppable`): a ledger entry is pruned only
+    /// when its sealing record is on the pinned chain with a kit replacement pinned at or above it; Repair
+    /// keeps, in bulk, the dropped epochs' files this device wrote.
+    func testLedgerPruningAndBulkKeep() throws {
+        // The probe: pinned e1,e2,m,e4 with no kit change. The round-7 rule pruned m's entries, yet the
+        // owner's takeover from e2 drops m and e4.
+        let plain = Self.pin(["e1", "e2", "m", "e4"], ["R", "R", "R", "R"])
+        XCTAssertFalse(LedgerRule.sealIsFinal(sealer: Self.d("m"), pinned: plain), "no replacement pinned: m can still be dropped")
+        let n = { (id: String, parent: String?, signer: String, reason: EpochReason, home: String, list: [String], rs: String?) in
+            EpochNode(epochId: Self.d(id), parent: parent.map(Self.d), signer: Self.d(signer), reason: reason, home: Self.d(home),
+                      list: Set(list.map(Self.d)), recovery: Self.d("R"), recoverySigner: rs.map(Self.d))
+        }
+        let tree = [n("e1", nil, "A", .create, "A", ["A", "B", "R"], nil), n("e2", "e1", "A", .remove, "A", ["A", "B", "R"], nil),
+                    n("m", "e2", "A", .remove, "A", ["A", "R"], nil), n("e4", "m", "A", .remove, "A", ["A", "R"], nil),
+                    n("t", "e2", "B", .takeover, "B", ["B", "R"], "R")]
+        let r = try EpochPrecedence.resolve(tree, pinned: plain.map(\.epochId))
+        XCTAssertEqual(r.dropped.map(Self.s), ["m", "e4"])
+        // A replacement pinned at or above the sealer makes the seal final; below it, not.
+        let replaced = Self.pin(["e1", "e2", "m", "e4", "e5"], ["R", "R", "R", "R2", "R2"])
+        XCTAssertTrue(LedgerRule.sealIsFinal(sealer: Self.d("m"), pinned: replaced))
+        XCTAssertTrue(LedgerRule.sealIsFinal(sealer: Self.d("e4"), pinned: replaced), "the replacement seals itself finally")
+        XCTAssertFalse(LedgerRule.sealIsFinal(sealer: Self.d("e5"), pinned: replaced), "a sealer above the replacement")
+        XCTAssertFalse(LedgerRule.sealIsFinal(sealer: Self.d("x"), pinned: replaced), "a sealer off the pinned chain")
         // A takeover dropped m and e4: the device's entries sealed by e4 were kept, so its files come back.
         let f = { (p: String, e: String) in LedgerRule.FileRef(path: p, sha256: Data(SHA256.hash(data: Data(p.utf8))), epochId: Self.d(e)) }
         let setAside = [f("notes/a", "m"), f("notes/b", "m"), f("notes/c", "e1"), f("notes/d", "e4")]
@@ -76,7 +96,30 @@ final class EpochPrecedenceTests: XCTestCase {
         let anc: Set<Data> = ["A", "B", "C", "R"].map(Self.d).reduce(into: []) { $0.insert($1) }
         XCTAssertTrue(TakeoverRule.listAllowed([Self.d("K"), Self.d("B"), Self.d("R")], home: Self.d("K"), ancestorLists: anc))
         XCTAssertFalse(TakeoverRule.listAllowed([Self.d("K"), Self.d("Z"), Self.d("R")], home: Self.d("K"), ancestorLists: anc))
+        XCTAssertFalse(TakeoverRule.listAllowed([Self.d("K"), Self.d("B"), Self.d("R")], home: Self.d("K"), ancestorLists: anc,
+                                                retiredKits: [Self.d("R")]), "round 8 L1: a retired kit is never listed again")
         XCTAssertEqual(TakeoverRule.recoveryKey(parentRecovery: Self.d("R")), Self.d("R"))
+    }
+
+    /// Round 8, C1-b (probe `testThiefKitBelowTheFrontierWinsTheRace`): a pinned device takes a takeover
+    /// only under its frontier's own kit; a kit introduced below the frontier counts once it is pinned.
+    func testTakeoverKitIsTheFrontiers() {
+        let pinned = Self.pin(["e1", "e2"], ["R", "R"])
+        let below = ["e1", "e2", "x1"].map(Self.d)
+        XCTAssertNil(TakeoverRule.recoveryKey(parentRecovery: Self.d("Rx"), parentPath: below, pinned: pinned),
+                     "the thief's kit Rx, introduced by x1 below the frontier e2")
+        XCTAssertTrue(TakeoverRule.kitNotYetPinned(parentRecovery: Self.d("Rx"), parentPath: below, pinned: pinned))
+        XCTAssertEqual(TakeoverRule.recoveryKey(parentRecovery: Self.d("R"), parentPath: ["e1", "e2"].map(Self.d), pinned: pinned),
+                       Self.d("R"), "the owner's takeover from the frontier")
+        XCTAssertEqual(TakeoverRule.round7RecoveryKey(parentRecovery: Self.d("Rx"), parentPath: below, pinned: pinned), Self.d("Rx"),
+                       "the round-7 rule took it (the mutation kitBelowFrontierAccepted)")
+        let pinnedX = Self.pin(["e1", "e2", "x1"], ["R", "R", "Rx"])
+        XCTAssertEqual(TakeoverRule.recoveryKey(parentRecovery: Self.d("Rx"), parentPath: below, pinned: pinnedX), Self.d("Rx"))
+        XCTAssertNil(TakeoverRule.recoveryKey(parentRecovery: Self.d("R"), parentPath: ["e1", "e2"].map(Self.d), pinned: pinnedX),
+                     "retirement is final once seen")
+        XCTAssertFalse(TakeoverRule.kitNotYetPinned(parentRecovery: Self.d("R"), parentPath: ["e1", "e2"].map(Self.d), pinned: pinnedX))
+        XCTAssertNil(TakeoverRule.recoveryKey(parentRecovery: Self.d("R"), parentPath: ["z1"].map(Self.d), pinned: pinned),
+                     "another vault")
     }
 
     // MARK: - Property test
@@ -115,9 +158,31 @@ final class EpochPrecedenceTests: XCTestCase {
         var nodes = [root]
         var byId = [root.epochId: root]
         var homeBefore: [Data: Data] = [:]   // after a takeover: the home before it
+        func takeover(under p: EpochNode, kit: Data?, home newHome: Data) -> EpochNode {
+            let n = EpochNode(epochId: newId(), parent: p.epochId, signer: newHome, reason: .takeover, home: newHome,
+                              list: Set(p.list.filter { $0 == p.recovery || rng.chance(0.6) }).union([newHome, p.recovery]),
+                              recovery: p.recovery, recoverySigner: kit)
+            homeBefore[n.epochId] = p.home
+            return n
+        }
         for _ in 0..<(3 + rng.int(12)) {
             // Prefer recent epochs as parents.
             let p = nodes[max(0, nodes.count - 1 - rng.int(min(nodes.count, 4)))]
+            if rng.chance(0.12) {
+                // Round 8, C1-b: the thief race. Home (stolen) replaces the kit under p with its own and takes
+                // over under it; the owner takes over under p's kit from p. Ids are random, so either may be
+                // the smaller.
+                let rx = d("R\(kits.count)"); kits.append(rx)
+                let x = EpochNode(epochId: newId(), parent: p.epochId, signer: p.home, reason: rng.chance(0.5) ? .recovery : .reencrypt,
+                                  home: p.home, list: p.list.subtracting([p.recovery]).union([rx]), recovery: rx)
+                let tx = takeover(under: x, kit: rx, home: d("K\(rng.int(3))"))
+                let to = takeover(under: p, kit: p.recovery, home: rng.pick(devices))
+                for n in [x, tx, to] {
+                    nodes.append(n); byId[n.epochId] = n
+                    if n.reason != .takeover, let hb = homeBefore[p.epochId] { homeBefore[n.epochId] = hb }
+                }
+                continue
+            }
             let others = p.list.filter { !kits.contains($0) && $0 != p.home }.sorted { $0.lexicographicallyPrecedes($1) }
             var n: EpochNode
             switch rng.int(12) {
@@ -147,6 +212,7 @@ final class EpochPrecedenceTests: XCTestCase {
                 var list = Set(p.list.filter { $0 == p.recovery || rng.chance(0.6) }).union([newHome, p.recovery])
                 if rng.chance(0.2) { list.insert(rng.pick(devices)) }   // a device of an ancestor list, re-admitted
                 if rng.chance(0.1) { list.insert(d("Z")) }   // a takeover that introduces a device: invalid
+                if rng.chance(0.1), let old = kits.first(where: { $0 != p.recovery }) { list.insert(old) }   // a retired kit: invalid if p's ancestry retired it
                 // Signed by the parent's recovery key, mostly; sometimes by another kit, or not at all.
                 let signer: Data? = rng.chance(0.75) ? p.recovery : (rng.chance(0.5) ? rng.pick(kits) : nil)
                 n = EpochNode(epochId: newId(), parent: p.epochId, signer: newHome, reason: .takeover, home: newHome,
@@ -162,16 +228,18 @@ final class EpochPrecedenceTests: XCTestCase {
     /// The oracle's own validity (independent of the code): a takeover signed by the recovery key and its
     /// new home, listing nothing new but that home; any other epoch signed by its parent's home, keeping it
     /// (a handoff: naming another).
-    static func valid(_ c: EpochNode, under p: EpochNode, ancestry: Set<Data>) -> Bool {
+    static func valid(_ c: EpochNode, under p: EpochNode, ancestry: Set<Data>, ancestryKits: Set<Data>) -> Bool {
         guard c.list.contains(c.home), c.home != c.recovery else { return false }
         if c.reason == .takeover {
             return c.recoverySigner == p.recovery && c.recovery == p.recovery && c.signer == c.home
                 && c.list.isSubset(of: ancestry.union([c.home]))
+                && c.list.intersection(ancestryKits).isSubset(of: [p.recovery])
         }
         return c.signer == p.home && (c.reason == .handoff ? c.home != p.home : c.home == p.home)
     }
 
-    static func check(seed: UInt64, mutations: Set<PrecedenceMutation> = []) throws {
+    static func check(seed: UInt64, mutations: Set<PrecedenceMutation> = [],
+                      sealIsFinal: (Data, [TakeoverRule.PinnedEpoch]) -> Bool = LedgerRule.sealIsFinal) throws {
         let nodes = tree(seed: seed)
         let byId = Dictionary(uniqueKeysWithValues: nodes.map { ($0.epochId, $0) })
         func path(_ id: Data) -> [Data] {
@@ -180,24 +248,34 @@ final class EpochPrecedenceTests: XCTestCase {
             return out
         }
         func ancestry(_ id: Data) -> Set<Data> { path(id).reduce(into: Set<Data>()) { $0.formUnion(byId[$1]?.list ?? []) } }
-        /// (f) Was the kit that signs a takeover under `parent` retired on `pinned`: replaced by a `recovery`
-        /// or `reencrypt` epoch of the pinned chain after the point where the parent's ancestry leaves it?
+        func ancestryKits(_ id: Data) -> Set<Data> { Set(path(id).compactMap { byId[$0]?.recovery }) }
+        func replacesKit(_ id: Data) -> Bool { byId[id]?.reason == .recovery || byId[id]?.reason == .reencrypt }
+        /// (f) Is the kit that signs a takeover under `parent` not the pinned frontier's own: replaced by a
+        /// `recovery` or `reencrypt` epoch after the point where the parent's ancestry leaves the pinned
+        /// chain, either on the pinned chain (retired: round 7 C1) or on the takeover's own branch, below
+        /// the frontier included (introduced but not yet pinned: round 8 C1-b)?
         func retired(under parent: Data, pinned: [Data]) -> Bool {
+            guard !pinned.isEmpty else { return false }
             let ancestry = path(parent)
             var shared = 0
             while shared < min(ancestry.count, pinned.count), ancestry[shared] == pinned[shared] { shared += 1 }
-            guard shared > 0 else { return !pinned.isEmpty }
-            return pinned[shared...].contains { byId[$0]?.reason == .recovery || byId[$0]?.reason == .reencrypt }
+            guard shared > 0 else { return true }
+            return pinned[shared...].contains(where: replacesKit) || ancestry[shared...].contains(where: replacesKit)
         }
         var rng = RNG(state: seed ^ 0x5eed)
         var pins: [[Data]] = [[]]
         for _ in 0..<4 { pins.append(path(rng.pick(nodes).epochId)) }
+        // Pinned just above a kit replacement (the race's honest side), and on it (the side that saw it).
+        let replacements = nodes.filter { replacesKit($0.epochId) }
+        if !replacements.isEmpty, let x = Optional(rng.pick(replacements)), let p = x.parent {
+            pins.append(path(p)); pins.append(path(x.epochId))
+        }
         for pinned in pins {
             let at = "seed \(seed), pinned \(pinned.count)"
             func validStep(_ c: Data, _ parent: Data) -> Bool {
                 guard let cn = byId[c], let pn = byId[parent] else { return false }
                 if cn.reason == .takeover && retired(under: parent, pinned: pinned) { return false }
-                return valid(cn, under: pn, ancestry: ancestry(parent))
+                return valid(cn, under: pn, ancestry: ancestry(parent), ancestryKits: ancestryKits(parent))
             }
             let validNodes = Set(nodes.filter { n in
                 let p = path(n.epochId)
@@ -249,6 +327,17 @@ final class EpochPrecedenceTests: XCTestCase {
                     throw Violation(description: "(f) \(at): a retired kit's takeover was followed")
                 }
             }
+            // (g) A pinned device follows only takeovers signed by its pinned frontier's own kit (round 8 C1-b).
+            if let frontier = pinned.last.flatMap({ byId[$0] }) {
+                for c in chain where byId[c]?.reason == .takeover && byId[c]?.recoverySigner != frontier.recovery {
+                    throw Violation(description: "(g) \(at): a takeover not signed by the frontier's kit was followed")
+                }
+            }
+            // (h) A ledger entry `sealIsFinal` lets go of is never sealed by an epoch the rule drops (round 8 H1-b).
+            let pinnedEpochs = pinned.compactMap { id in byId[id].map { TakeoverRule.PinnedEpoch(epochId: id, recovery: $0.recovery) } }
+            for s in r.dropped where sealIsFinal(s, pinnedEpochs) {
+                throw Violation(description: "(h) \(at): a seal sealIsFinal called final was dropped")
+            }
             // (e) A home conflict (two valid home-signed children, no takeover below) that neither the pin
             // nor the user settles stops the chain: never settled by id.
             let validChildren = { (x: Data) in nodes.filter { $0.parent == x && validNodes.contains($0.epochId) }.map(\.epochId) }
@@ -285,12 +374,22 @@ final class EpochPrecedenceTests: XCTestCase {
     /// Each mutation breaks one safeguard, and the property must notice within the quick seeds.
     func testEveryMutationIsCaught() throws {
         for mutation in [PrecedenceMutation.nonHomeSignerAccepted, .takeoverIgnored, .olderHomeKept, .conflictSettledById,
-                         .retiredKitAccepted] {
+                         .retiredKitAccepted, .kitBelowFrontierAccepted] {
             var caught: String?
             for seed in 1...UInt64(2000) {
                 do { try Self.check(seed: seed, mutations: [mutation]) } catch { caught = "\(error)"; break }
             }
             XCTAssertNotNil(caught, "\(mutation) was not caught")
         }
+        // Round 8, H1-b: the round-7 seal rule (one pinned epoch above the sealer) fails invariant (h).
+        let round7Seal = { (sealer: Data, pinned: [TakeoverRule.PinnedEpoch]) -> Bool in
+            guard let i = pinned.firstIndex(where: { $0.epochId == sealer }) else { return false }
+            return i + 1 < pinned.count
+        }
+        var caught: String?
+        for seed in 1...UInt64(2000) {
+            do { try Self.check(seed: seed, sealIsFinal: round7Seal) } catch { caught = "\(error)"; break }
+        }
+        XCTAssertNotNil(caught, "the round-7 seal rule was not caught")
     }
 }

@@ -30,6 +30,10 @@ public enum ChainError: Error, Hashable, Sendable {
     /// verifier's pinned chain retired included), a kit replacement whose optional `recoverySig` by the
     /// old kit does not verify, or a `recoverySig` in any other epoch.
     case badTakeover(epoch: Int)
+    /// A takeover signed by a kit that an epoch below the verifier's pinned frontier introduced
+    /// (`TakeoverRule.kitNotYetPinned`): not tampering. The device follows the chain up to the epoch
+    /// before the takeover, pins it, and verifies again (round 8, C1-b).
+    case kitNotPinned(epoch: Int)
     /// `epochSig` does not verify under the author's signing keys.
     case badEpochSig(epoch: Int)
     /// The first list holds a device that is not in the parent's list (a takeover: in no list of its
@@ -368,14 +372,19 @@ public enum EpochChain {
                     guard authorFP == e.home else { throw ChainError.notHome(epoch: e.epoch) }
                     let required = TakeoverRule.recoveryKey(parentRecovery: prev.recovery,
                                                             parentPath: chain[..<i].map(\.epochId), pinned: pinned)
+                    if required == nil, TakeoverRule.kitNotYetPinned(parentRecovery: prev.recovery,
+                                                                      parentPath: chain[..<i].map(\.epochId), pinned: pinned) {
+                        throw ChainError.kitNotPinned(epoch: e.epoch)
+                    }
                     guard let ra = e.recoveryAuthor, let rk = ra.sign, let rs = e.recoverySig, let required,
                           ra.recoveryFingerprint == required, rs.verifies(message, keys: rk) else {
                         throw ChainError.badTakeover(epoch: e.epoch)
                     }
                     let ancestry = lists.reduce(into: Set<Data>()) { $0.formUnion($1.list) }
                     let retiredKits = Set(chain[..<i].map(\.recovery)).subtracting([prev.recovery])
-                    guard TakeoverRule.listAllowed(first, home: e.home, ancestorLists: ancestry),
-                          first.isDisjoint(with: retiredKits) else { throw ChainError.introducesDevice(epoch: e.epoch) }
+                    guard TakeoverRule.listAllowed(first, home: e.home, ancestorLists: ancestry, retiredKits: retiredKits) else {
+                        throw ChainError.introducesDevice(epoch: e.epoch)
+                    }
                     guard e.recovery == prev.recovery else { throw ChainError.badRecovery(epoch: e.epoch) }
                 default:
                     guard authorFP == prev.home else { throw ChainError.notHome(epoch: e.epoch) }

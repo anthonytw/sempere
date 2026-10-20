@@ -4067,9 +4067,12 @@ From epoch 1 (`EpochChain.verify`):
 3. Epoch `e` > 1: `parent` is epoch `e−1`'s id; `link` verifies (§15.3) under `e−1`'s link keys.
    - A `takeover`: the author is its `home`; `recoveryAuthor`'s recovery fingerprint is the one the
      **takeover rule** names and `recoverySig` verifies under its keys. The takeover rule
-     (`TakeoverRule.recoveryKey`): `e−1`'s `recovery`, unless the verifier's pinned chain replaced that
-     key (a `recovery` or `reencrypt` epoch) after the point where the takeover's ancestry leaves the
-     pinned chain; then no key is valid and the takeover is refused. A takeover's parent is the
+     (`TakeoverRule.recoveryKey`): for an unpinned verifier, `e−1`'s `recovery`; for a pinned one, the
+     `recovery` of its pinned frontier (the last epoch it pinned), and only when `e−1`'s `recovery` is
+     that key; otherwise no key is valid and the takeover is refused. A kit replaced on the pinned chain
+     never signs again, and a kit introduced below the frontier signs only once the epoch that
+     introduced it is pinned (the verifier then reports `kitNotPinned`, not tampering, and verifies
+     again after pinning the epoch before the takeover). A takeover's parent is the
      taking-over device's pinned frontier; the first list holds the home and otherwise only fingerprints of the
      lists of epochs 1 to `e−1` (a device a stolen home removed may be re-admitted), and no earlier
      recovery key; `recovery` is `e−1`'s.
@@ -4116,9 +4119,9 @@ questions:
 
 1. An epoch is **valid** under its parent when it is signed by the parent's home and keeps `home`
    (a `handoff`: names another), or is a `takeover` whose `recoverySig` verifies under the recovery
-   key the takeover rule names for this device's pinned chain (§15.7; a kit the pinned chain retired
-   names none), whose author is its home, whose list holds only that home and
-   devices of its ancestry's lists, and whose `recovery` is the parent's. `home` is in the epoch's list
+   key the takeover rule names for this device's pinned chain (§15.7: the pinned frontier's own kit,
+   or for an unpinned device the parent's), whose author is its home, whose list holds only that home and
+   devices of its ancestry's lists and no recovery key its ancestry retired, and whose `recovery` is the parent's. `home` is in the epoch's list
    and is not its recovery key. Every other epoch is ignored with its subtree.
 2. From epoch 1, the device walks down the valid tree. If a valid `takeover` lies below the current
    epoch with no takeover between, it goes to the one with the smallest `epochId` (bytes compared
@@ -4131,12 +4134,13 @@ questions:
 5. A malformed epoch 1 gives an empty chain with every epoch ignored: tampering, never an empty vault.
 
 **The write ledger** (KH3) prunes an entry only when its sealing record is on the pinned chain with a
-later pinned epoch above it (`LedgerRule.sealIsFinal`), and Repair's bulk Keep takes the set-aside
+kit replacement (an epoch whose `recovery` differs from its parent's) pinned at or above it
+(`LedgerRule.sealIsFinal`; plain home epochs above it can still be dropped by a takeover), and Repair's bulk Keep takes the set-aside
 files of dropped epochs that the ledger holds (`LedgerRule.keepable`).
 
 `EpochPrecedenceTests` checks the rule against an independent oracle on random trees (2000 seeds in
-`swift test`; `SEMPERE_PRECEDENCE_PROPERTY_SEEDS` for more), and five test-only mutations must each
-fail it; `Fixtures/epoch-precedence-vectors.json` holds the shared cases.
+`swift test`; `SEMPERE_PRECEDENCE_PROPERTY_SEEDS` for more), and six test-only mutations (and the
+round-7 seal rule) must each fail it; `Fixtures/epoch-precedence-vectors.json` holds the shared cases.
 
 ### 15.10 Trust record v3
 

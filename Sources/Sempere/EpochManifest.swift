@@ -263,7 +263,9 @@ public struct EpochManifest: Hashable, Sendable {
               epochSig.verifies(epochMessage, keys: signerKeys) else { throw ProblemError(problem: .epochSig) }
         let recoveryEntry = keys.first { $0.role == .recovery }
         if reason == .takeover {
-            // A direct child of the pinned epoch: the parent is the frontier, so the rule names its key.
+            // A direct child of the pinned epoch: the parent IS the frontier, so the rule names the parent's
+            // (the frontier's) kit with no pin to pass (round 8 L2). A caller must never use this path for a
+            // deeper parent: a takeover below the frontier goes through `EpochChain.verify(…, pinned:)`.
             guard let recoverySig, let rk = recoveryEntry?.sign, let rf = recoveryFingerprint, let parent,
                   rf == TakeoverRule.recoveryKey(parentRecovery: parent.recovery),
                   recoverySig.verifies(epochMessage, keys: rk) else { throw ProblemError(problem: .epochSig) }

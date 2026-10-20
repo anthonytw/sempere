@@ -1811,6 +1811,787 @@
         "homeConflicts": [],
         "stopped": []
       }
+    },
+    {
+      "name": "round 8 C1-b: a device pinned before the stolen home's replacement takes the owner's takeover, not the thief's under its new kit",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R1"
+          ],
+          "recovery": "R1"
+        },
+        {
+          "id": "e2",
+          "signer": "A",
+          "reason": "reencrypt",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R2"
+          ],
+          "recovery": "R2",
+          "parent": "e1"
+        },
+        {
+          "id": "t",
+          "signer": "B",
+          "reason": "takeover",
+          "home": "B",
+          "list": [
+            "B",
+            "C",
+            "R1"
+          ],
+          "recovery": "R1",
+          "parent": "e1",
+          "recoverySigner": "R1"
+        },
+        {
+          "id": "0tx",
+          "signer": "K",
+          "reason": "takeover",
+          "home": "K",
+          "list": [
+            "K",
+            "R2"
+          ],
+          "recovery": "R2",
+          "parent": "e2",
+          "recoverySigner": "R2"
+        }
+      ],
+      "pinned": [
+        "e1"
+      ],
+      "expect": {
+        "kept": [
+          "e1",
+          "t"
+        ],
+        "dropped": [],
+        "ignored": [
+          "0tx"
+        ],
+        "homeConflicts": [],
+        "stopped": []
+      }
+    },
+    {
+      "name": "round 8 C1-b: a device that saw the replacement takes the thief's takeover (stated residual)",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R1"
+          ],
+          "recovery": "R1"
+        },
+        {
+          "id": "e2",
+          "signer": "A",
+          "reason": "reencrypt",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R2"
+          ],
+          "recovery": "R2",
+          "parent": "e1"
+        },
+        {
+          "id": "t",
+          "signer": "B",
+          "reason": "takeover",
+          "home": "B",
+          "list": [
+            "B",
+            "C",
+            "R1"
+          ],
+          "recovery": "R1",
+          "parent": "e1",
+          "recoverySigner": "R1"
+        },
+        {
+          "id": "0tx",
+          "signer": "K",
+          "reason": "takeover",
+          "home": "K",
+          "list": [
+            "K",
+            "R2"
+          ],
+          "recovery": "R2",
+          "parent": "e2",
+          "recoverySigner": "R2"
+        }
+      ],
+      "pinned": [
+        "e1",
+        "e2"
+      ],
+      "expect": {
+        "kept": [
+          "e1",
+          "e2",
+          "0tx"
+        ],
+        "dropped": [],
+        "ignored": [
+          "t"
+        ],
+        "homeConflicts": [],
+        "stopped": []
+      }
+    },
+    {
+      "name": "round 8 C1-b: a joiner picks by id (stated residual)",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R1"
+          ],
+          "recovery": "R1"
+        },
+        {
+          "id": "e2",
+          "signer": "A",
+          "reason": "reencrypt",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R2"
+          ],
+          "recovery": "R2",
+          "parent": "e1"
+        },
+        {
+          "id": "t",
+          "signer": "B",
+          "reason": "takeover",
+          "home": "B",
+          "list": [
+            "B",
+            "C",
+            "R1"
+          ],
+          "recovery": "R1",
+          "parent": "e1",
+          "recoverySigner": "R1"
+        },
+        {
+          "id": "0tx",
+          "signer": "K",
+          "reason": "takeover",
+          "home": "K",
+          "list": [
+            "K",
+            "R2"
+          ],
+          "recovery": "R2",
+          "parent": "e2",
+          "recoverySigner": "R2"
+        }
+      ],
+      "pinned": [],
+      "expect": {
+        "kept": [
+          "e1",
+          "e2",
+          "0tx"
+        ],
+        "dropped": [],
+        "ignored": [],
+        "homeConflicts": [],
+        "stopped": []
+      }
+    },
+    {
+      "name": "round 8 C1-b probe: pinned before the thief's replacement, the owner's takeover beats the thief's ground id",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R"
+        },
+        {
+          "id": "e2",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "x1",
+          "signer": "A",
+          "reason": "recovery",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "Rx"
+          ],
+          "recovery": "Rx",
+          "parent": "e2"
+        },
+        {
+          "id": "0tx",
+          "signer": "K",
+          "reason": "takeover",
+          "home": "K",
+          "list": [
+            "K",
+            "Rx"
+          ],
+          "recovery": "Rx",
+          "parent": "x1",
+          "recoverySigner": "Rx"
+        },
+        {
+          "id": "t-o",
+          "signer": "B",
+          "reason": "takeover",
+          "home": "B",
+          "list": [
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e2",
+          "recoverySigner": "R"
+        }
+      ],
+      "pinned": [
+        "e1",
+        "e2"
+      ],
+      "expect": {
+        "kept": [
+          "e1",
+          "e2",
+          "t-o"
+        ],
+        "dropped": [],
+        "ignored": [
+          "0tx"
+        ],
+        "homeConflicts": [],
+        "stopped": []
+      }
+    },
+    {
+      "name": "round 8 C1-b probe: a device that pinned the thief's replacement takes the thief's takeover (stated residual)",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R"
+        },
+        {
+          "id": "e2",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "x1",
+          "signer": "A",
+          "reason": "recovery",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "Rx"
+          ],
+          "recovery": "Rx",
+          "parent": "e2"
+        },
+        {
+          "id": "0tx",
+          "signer": "K",
+          "reason": "takeover",
+          "home": "K",
+          "list": [
+            "K",
+            "Rx"
+          ],
+          "recovery": "Rx",
+          "parent": "x1",
+          "recoverySigner": "Rx"
+        },
+        {
+          "id": "t-o",
+          "signer": "B",
+          "reason": "takeover",
+          "home": "B",
+          "list": [
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e2",
+          "recoverySigner": "R"
+        }
+      ],
+      "pinned": [
+        "e1",
+        "e2",
+        "x1"
+      ],
+      "expect": {
+        "kept": [
+          "e1",
+          "e2",
+          "x1",
+          "0tx"
+        ],
+        "dropped": [],
+        "ignored": [
+          "t-o"
+        ],
+        "homeConflicts": [],
+        "stopped": []
+      }
+    },
+    {
+      "name": "round 8 C1-b probe: a joiner picks by id (stated residual)",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R"
+        },
+        {
+          "id": "e2",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "x1",
+          "signer": "A",
+          "reason": "recovery",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "Rx"
+          ],
+          "recovery": "Rx",
+          "parent": "e2"
+        },
+        {
+          "id": "0tx",
+          "signer": "K",
+          "reason": "takeover",
+          "home": "K",
+          "list": [
+            "K",
+            "Rx"
+          ],
+          "recovery": "Rx",
+          "parent": "x1",
+          "recoverySigner": "Rx"
+        },
+        {
+          "id": "t-o",
+          "signer": "B",
+          "reason": "takeover",
+          "home": "B",
+          "list": [
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e2",
+          "recoverySigner": "R"
+        }
+      ],
+      "pinned": [],
+      "expect": {
+        "kept": [
+          "e1",
+          "e2",
+          "x1",
+          "0tx"
+        ],
+        "dropped": [],
+        "ignored": [],
+        "homeConflicts": [],
+        "stopped": []
+      }
+    },
+    {
+      "name": "round 8 C1-b probe: without the thief's takeover the owner's wins",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R"
+        },
+        {
+          "id": "e2",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "x1",
+          "signer": "A",
+          "reason": "recovery",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "Rx"
+          ],
+          "recovery": "Rx",
+          "parent": "e2"
+        },
+        {
+          "id": "t-o",
+          "signer": "B",
+          "reason": "takeover",
+          "home": "B",
+          "list": [
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e2",
+          "recoverySigner": "R"
+        }
+      ],
+      "pinned": [
+        "e1",
+        "e2"
+      ],
+      "expect": {
+        "kept": [
+          "e1",
+          "e2",
+          "t-o"
+        ],
+        "dropped": [],
+        "ignored": [],
+        "homeConflicts": [],
+        "stopped": []
+      }
+    },
+    {
+      "name": "round 8 C1-b: a new kit's takeover waits one run on a device pinned before the replacement",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "R"
+          ],
+          "recovery": "R"
+        },
+        {
+          "id": "e2",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "e3",
+          "signer": "A",
+          "reason": "recovery",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "R2"
+          ],
+          "recovery": "R2",
+          "parent": "e2"
+        },
+        {
+          "id": "u",
+          "signer": "B",
+          "reason": "takeover",
+          "home": "B",
+          "list": [
+            "B",
+            "R2"
+          ],
+          "recovery": "R2",
+          "parent": "e3",
+          "recoverySigner": "R2"
+        }
+      ],
+      "pinned": [
+        "e1",
+        "e2"
+      ],
+      "expect": {
+        "kept": [
+          "e1",
+          "e2",
+          "e3"
+        ],
+        "dropped": [],
+        "ignored": [
+          "u"
+        ],
+        "homeConflicts": [],
+        "stopped": []
+      }
+    },
+    {
+      "name": "round 8 C1-b: ... and is followed once the replacement is pinned",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "R"
+          ],
+          "recovery": "R"
+        },
+        {
+          "id": "e2",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "e3",
+          "signer": "A",
+          "reason": "recovery",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "R2"
+          ],
+          "recovery": "R2",
+          "parent": "e2"
+        },
+        {
+          "id": "u",
+          "signer": "B",
+          "reason": "takeover",
+          "home": "B",
+          "list": [
+            "B",
+            "R2"
+          ],
+          "recovery": "R2",
+          "parent": "e3",
+          "recoverySigner": "R2"
+        }
+      ],
+      "pinned": [
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "expect": {
+        "kept": [
+          "e1",
+          "e2",
+          "e3",
+          "u"
+        ],
+        "dropped": [],
+        "ignored": [],
+        "homeConflicts": [],
+        "stopped": []
+      }
+    },
+    {
+      "name": "round 8 L1: a takeover listing a retired kit is ignored",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "R"
+          ],
+          "recovery": "R"
+        },
+        {
+          "id": "e2",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "e3",
+          "signer": "A",
+          "reason": "recovery",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "R2"
+          ],
+          "recovery": "R2",
+          "parent": "e2"
+        },
+        {
+          "id": "u",
+          "signer": "B",
+          "reason": "takeover",
+          "home": "B",
+          "list": [
+            "B",
+            "R",
+            "R2"
+          ],
+          "recovery": "R2",
+          "parent": "e3",
+          "recoverySigner": "R2"
+        }
+      ],
+      "pinned": [],
+      "expect": {
+        "kept": [
+          "e1",
+          "e2",
+          "e3"
+        ],
+        "dropped": [],
+        "ignored": [
+          "u"
+        ],
+        "homeConflicts": [],
+        "stopped": []
+      }
     }
   ]
 }

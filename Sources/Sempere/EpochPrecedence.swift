@@ -33,30 +33,46 @@ public enum TakeoverRule {
     }
 
     /// The recovery key (its fingerprint) a takeover under `parent` must be signed by, for a verifier
-    /// whose pinned chain is `pinned` (owner decision, round 7 C1): the recovery key **current at the
-    /// verifier's pinned frontier**. That is the parent's recovery key, unless the verifier's pinned chain
-    /// replaced it after the point where the takeover's ancestry (`parentPath`, from epoch 1) leaves the
-    /// pinned chain: then nil, and no takeover there is valid. A kit's retirement is final for every
-    /// device that has seen it; a device that has not (unpinned, or pinned before it) still takes an
-    /// old kit's takeover (design §5.6 residual). This is the one place the rule is decided.
+    /// whose pinned chain is `pinned` (owner decision, round 7 C1; round 8 C1-b): **the pinned frontier's
+    /// own kit** (`pinned.last.recovery`), and only when the takeover keeps it (its parent's kit is that
+    /// kit); otherwise nil, and no takeover there is valid. So a kit the pinned chain retired never signs
+    /// again for this device, and a kit introduced by an epoch below the frontier signs only once the
+    /// device has followed and pinned that epoch (a run later: the frontier is read when the run starts).
+    /// An unpinned device (a joiner) takes the parent's kit (design §5.6 residuals). This is the one
+    /// place the rule is decided.
     public static func recoveryKey(parentRecovery: Data, parentPath: [Data] = [], pinned: [PinnedEpoch] = []) -> Data? {
+        guard let frontier = pinned.last else { return parentRecovery }
+        // The takeover's ancestry must start at the pinned epoch 1 (otherwise: a different vault).
+        guard parentPath.first == pinned.first?.epochId, parentRecovery == frontier.recovery else { return nil }
+        return frontier.recovery
+    }
+
+    /// Whether `recoveryKey` refused a takeover only because its kit was introduced below the frontier
+    /// (the parent's ancestry runs through the whole pinned chain): not tampering, the device follows and
+    /// pins the replacement first and takes the takeover on its next run (`ChainError.kitNotPinned`).
+    public static func kitNotYetPinned(parentRecovery: Data, parentPath: [Data], pinned: [PinnedEpoch]) -> Bool {
+        guard let frontier = pinned.last, parentPath.count > pinned.count, parentRecovery != frontier.recovery else { return false }
+        return zip(parentPath, pinned).allSatisfy { $0 == $1.epochId }
+    }
+
+    /// The round-7 rule (the parent's kit whenever the parent is at or below the frontier), kept only for
+    /// the `kitBelowFrontierAccepted` mutation.
+    static func round7RecoveryKey(parentRecovery: Data, parentPath: [Data], pinned: [PinnedEpoch]) -> Data? {
         guard let frontier = pinned.last else { return parentRecovery }
         var common = 0
         while common < min(parentPath.count, pinned.count), parentPath[common] == pinned[common].epochId { common += 1 }
-        // The takeover's ancestry leaves the pinned chain after `common` shared epochs (none shared: a
-        // different vault; refuse).
         guard common > 0 else { return nil }
-        let meeting = pinned[common - 1]
-        if common == pinned.count { return parentRecovery }   // the parent is on or below the frontier
-        return frontier.recovery == meeting.recovery ? parentRecovery : nil
+        if common == pinned.count { return parentRecovery }
+        return frontier.recovery == pinned[common - 1].recovery ? parentRecovery : nil
     }
 
     /// May a takeover list `list` with new home `home`, under a parent whose ancestry (the parent
     /// included) listed `ancestorLists`? Only the new home is new; every other device must have been
     /// on a list of the takeover's own ancestry (round 7, M2: the user may re-admit a device a stolen
-    /// home removed; the takeover screen leaves it unchecked by default).
-    public static func listAllowed(_ list: Set<Data>, home: Data, ancestorLists: Set<Data>) -> Bool {
-        list.subtracting([home]).isSubset(of: ancestorLists)
+    /// home removed; the takeover screen leaves it unchecked by default), and no kit the ancestry
+    /// retired (`retiredKits`, round 8 L1) is listed again.
+    public static func listAllowed(_ list: Set<Data>, home: Data, ancestorLists: Set<Data>, retiredKits: Set<Data> = []) -> Bool {
+        list.subtracting([home]).isSubset(of: ancestorLists) && list.isDisjoint(with: retiredKits)
     }
 }
 
@@ -97,6 +113,8 @@ enum PrecedenceMutation: Hashable, Sendable {
     case conflictSettledById
     /// A takeover by a kit the verifier's pinned chain retired is accepted.
     case retiredKitAccepted
+    /// A takeover by a kit introduced below the pinned frontier is accepted (the round-7 rule, round 8 C1-b).
+    case kitBelowFrontierAccepted
 }
 
 /// Epochs with more than one valid home-signed child and no takeover below (the home key signed twice).
@@ -170,14 +188,21 @@ public enum EpochPrecedence {
 
         // The valid tree: from epoch 1 down, each epoch valid under its parent. `homeBefore` is the home
         // in force before the last takeover above (for the `olderHomeKept` mutation only).
-        func valid(_ c: EpochNode, under p: EpochNode, olderHome: Data?, ancestorLists: Set<Data>) -> Bool {
+        func valid(_ c: EpochNode, under p: EpochNode, olderHome: Data?, ancestorLists: Set<Data>, kits: Set<Data>) -> Bool {
             guard c.list.contains(c.home), c.home != c.recovery else { return false }
             if c.reason == .takeover {
                 if mut.contains(.takeoverIgnored) { return false }
-                let required = mut.contains(.retiredKitAccepted) ? p.recovery
-                    : TakeoverRule.recoveryKey(parentRecovery: p.recovery, parentPath: path(p.epochId), pinned: pinnedEpochs)
-                return required != nil && c.recoverySigner == required && c.signer == c.home
-                    && c.recovery == p.recovery && TakeoverRule.listAllowed(c.list, home: c.home, ancestorLists: ancestorLists)
+                let required: Data?
+                if mut.contains(.retiredKitAccepted) {
+                    required = p.recovery
+                } else if mut.contains(.kitBelowFrontierAccepted) {
+                    required = TakeoverRule.round7RecoveryKey(parentRecovery: p.recovery, parentPath: path(p.epochId), pinned: pinnedEpochs)
+                } else {
+                    required = TakeoverRule.recoveryKey(parentRecovery: p.recovery, parentPath: path(p.epochId), pinned: pinnedEpochs)
+                }
+                return required != nil && c.recoverySigner == required && c.signer == c.home && c.recovery == p.recovery
+                    && TakeoverRule.listAllowed(c.list, home: c.home, ancestorLists: ancestorLists,
+                                                retiredKits: kits.subtracting([p.recovery]))
             }
             let signerOK = c.signer == p.home || (mut.contains(.nonHomeSignerAccepted) && p.list.contains(c.signer))
                 || (mut.contains(.olderHomeKept) && olderHome == c.signer)
@@ -193,16 +218,19 @@ public enum EpochPrecedence {
         var validSet: Set<Data> = [root]
         var olderHome: [Data: Data?] = [root: nil]
         var lists: [Data: Set<Data>] = [root: rootNode.list]   // the union of the lists of an epoch's ancestry, itself included
+        var kits: [Data: Set<Data>] = [root: [rootNode.recovery]]   // the recovery keys of an epoch's ancestry, itself included
         var todo = [root]
         while let x = todo.popLast() {
             guard let p = byId[x] else { continue }
             for c in children[x] ?? [] {
-                guard let n = byId[c], valid(n, under: p, olderHome: olderHome[x] ?? nil, ancestorLists: lists[x] ?? []) else {
+                guard let n = byId[c], valid(n, under: p, olderHome: olderHome[x] ?? nil, ancestorLists: lists[x] ?? [],
+                                             kits: kits[x] ?? []) else {
                     continue
                 }
                 validSet.insert(c)
                 olderHome[c] = n.reason == .takeover ? p.home : olderHome[x] ?? nil
                 lists[c] = (lists[x] ?? []).union(n.list)
+                kits[c] = (kits[x] ?? []).union([n.recovery])
                 todo.append(c)
             }
         }
@@ -270,11 +298,14 @@ public enum LedgerRule {
     }
 
     /// May a ledger entry be pruned because the epoch record `sealer` sealed it? Only when `sealer` is
-    /// on the pinned chain and a later pinned epoch sits above it: a takeover that drops the sealer then
-    /// leaves the entry in the ledger, so the device re-encrypts its own file instead of stranding it.
-    public static func sealIsFinal(sealer: Data, pinned: [Data]) -> Bool {
-        guard let i = pinned.firstIndex(of: sealer) else { return false }
-        return i + 1 < pinned.count
+    /// on the pinned chain and a kit replacement (an epoch whose recovery key differs from its parent's:
+    /// `recovery` or `reencrypt`) is pinned at or above it (round 8, H1-b). From then on no takeover can
+    /// drop the sealer for this device (`TakeoverRule.recoveryKey` wants the frontier's kit, which no
+    /// epoch before the replacement has). Until then a takeover may still drop it (any number of pinned
+    /// home epochs above it notwithstanding), and the entry stays so the device re-encrypts its own file.
+    public static func sealIsFinal(sealer: Data, pinned: [TakeoverRule.PinnedEpoch]) -> Bool {
+        guard let i = pinned.firstIndex(where: { $0.epochId == sealer }) else { return false }
+        return pinned.indices.contains { k in k >= max(i, 1) && pinned[k].recovery != pinned[k - 1].recovery }
     }
 
     /// Repair's "Keep every file from the dropped epochs that this device's ledger wrote": the set-aside
