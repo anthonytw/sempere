@@ -242,8 +242,9 @@ final class TwoDeviceStressTests: SyncTestCase {
     }
 
     /// Per-device published summaries (`summaries/<device>.sealed`, format.md
-    /// §12.5) are never another device's to write: a sync neither uploads nor
-    /// downloads them, and merge-copy leaves the vault's own.
+    /// §12.5) are never another device's to write: each device uploads its own,
+    /// and a received one that is not a sealed file of the vault is not placed
+    /// (these hold junk); merge-copy leaves the vault's own.
     func testDeviceSummariesStayWithTheirDevice() throws {
         let server = MockDAV()
         let (set, _) = try devices(server, seed: 4)
@@ -257,7 +258,8 @@ final class TwoDeviceStressTests: SyncTestCase {
             let names = try FileManager.default.contentsOfDirectory(atPath: d.folder.appendingPathComponent("summaries").path)
             XCTAssertEqual(names, ["\(d.device.rawValue).sealed"], d.name)
         }
-        XCTAssertNil(try set.inspector.list(["summaries"]))
+        XCTAssertEqual(Set((try set.inspector.list(["summaries"]) ?? []).map(\.name)),
+                       Set(set.devices.map { "\($0.device.rawValue).sealed" }))
         let merged = try set.a.vault().mergeCopy(from: set.b.folder)
         XCTAssertTrue(merged.added.isEmpty, "\(merged)")
     }

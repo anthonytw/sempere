@@ -44,6 +44,34 @@ final class CLIFolderSyncTests: CLITestCase {
         XCTAssertEqual((idleJSON["downloaded"] as? [String])?.count, 0, idle.out)
     }
 
+    /// A voice note captured without the key on one machine travels through the folder; the
+    /// other imports it; the import travels back and the inbox empties on every side
+    /// (format.md §11.4).
+    func testInboxTravelsAndEmptiesAfterImport() throws {
+        let (vault, _, key) = try makeVault(named: "a.sempere")
+        let a = vault.url.path, b = path("b.sempere"), folder = path("Drive/Notes.sempere")
+        XCTAssertEqual(try cli(["inbox", "enable", "--vault", a, "--identity", key]).status, 0)
+        let tone = CLIInboxTests.tone
+        XCTAssertEqual(try cli(["inbox", "capture", tone, "--title", "Call", "--vault", a]).status, 0)
+        let inbox = { (v: String) in ((try? FileManager.default.contentsOfDirectory(atPath: v + "/inbox")) ?? []).filter { !$0.hasPrefix(".") } }
+        // Locked: the capture still goes up.
+        let up = try cli(["sync", "folder", folder, "--vault", a, "--json"])
+        XCTAssertEqual(up.status, 0, up.err)
+        XCTAssertEqual(inbox(folder).count, 1, up.out)
+        XCTAssertEqual(try cli(["sync", "folder", folder, "--vault", b, "--identity", key]).status, 0)
+        XCTAssertEqual(inbox(b), inbox(a))
+        let imported = try cli(["inbox", "import", "--json", "--vault", b, "--identity", key])
+        XCTAssertEqual(imported.status, 0, imported.err)
+        XCTAssertEqual(inbox(b), [])
+        let back = try cli(["sync", "folder", folder, "--vault", b, "--identity", key, "--json"])
+        XCTAssertEqual(back.status, 0, back.err)
+        let deleted = try XCTUnwrap((back.json as? [String: Any])?["deleted"] as? [[String: Any]])
+        XCTAssertEqual(deleted.compactMap { $0["side"] as? String }, ["remote"], back.out)
+        XCTAssertEqual(try cli(["sync", "folder", folder, "--vault", a, "--identity", key]).status, 0)
+        XCTAssertEqual(inbox(a), []); XCTAssertEqual(inbox(folder), [])
+        XCTAssertEqual(noteFiles(a), noteFiles(b))
+    }
+
     func testUsageErrors() throws {
         let (_, _, key) = try makeVault(named: "a.sempere")
         let a = path("a.sempere")

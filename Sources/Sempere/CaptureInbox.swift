@@ -671,7 +671,10 @@ extension Vault {
     ///     failure of the tag check (or decryption, framing, size) is
     ///     recorded. Nil reads every file (tests, an explicit retry).
     ///   - now: the clock for the back-off.
-    public func readCapture(_ id: UUID, backoff: InboxBackoff? = nil, now: Date = Date()) throws -> PendingCapture {
+    ///   - directory: where the files are; nil: the vault's `inbox/`. A sync
+    ///     checks a received inbox file in a staging folder before it places it.
+    public func readCapture(_ id: UUID, backoff: InboxBackoff? = nil, now: Date = Date(),
+                            in directory: URL? = nil) throws -> PendingCapture {
         guard canRead else { throw isLocked ? VaultError.locked : VaultError.noIdentities }
         // Captures are attributed against the authenticated device list (format.md §2.1, §11.2).
         try requireTrustedRecipients()
@@ -679,7 +682,7 @@ extension Vault {
         var pending = PendingCapture(id: id, files: [])
         for kind in CaptureFile.Kind.allCases {
             let name = CaptureFile.name(id, kind)
-            let url = inboxURL.appendingPathComponent(name)
+            let url = (directory ?? inboxURL).appendingPathComponent(name)
             guard FileManager.default.fileExists(atPath: url.path) else { continue }
             let mark = backoff == nil ? nil : InboxBackoff.FileMark(url)
             if let backoff, let mark, let e = backoff.pending(vault: vaultId, name: name, mark: mark, now: now) {
