@@ -224,6 +224,11 @@ final class KeyChangeRun: @unchecked Sendable {
     var spares: [NativeIdentity] = []
 
     func keyChange() throws {
+        // Mostly, the devices catch up first (a change in flight elsewhere finishes), so most changes run
+        // to the end; sometimes they meet one still in flight (refused) or a crash (stopped).
+        if rng.chance(0.75) {
+            for x in listed { for t in x.targets where !t.offline.value { w.tick(); _ = try? x.sync(t.name, now: w.now) } }
+        }
         let d = rng.pick(listed)
         guard let v = try? d.vault(), v.canRead else { return }
         let keys = Set(v.recipients.map(\.key))
@@ -258,7 +263,8 @@ final class KeyChangeRun: @unchecked Sendable {
                 try w.change(d, overriding: overriding, faults: faults) { try $0.prepareRemoveRecipient(s.recipient, keyChange: policy, now: w.now) }
                 count("remove"); note("\(d.name) now \(listOf(d))")
             default:
-                let old = d.identity, new = pqIdentity()
+                guard let old = d.identities.first(where: { keys.contains($0.recipient.string) }) else { return }
+                let new = pqIdentity()
                 d.identities.insert(new, at: 0)
                 w.oracle.learn(d)
                 revoked.append(old)
