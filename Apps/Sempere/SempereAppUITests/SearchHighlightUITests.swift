@@ -43,7 +43,10 @@ final class SearchHighlightUITests: XCTestCase {
         expectBar(app, position: 1, count: 5)
         let stack = app.descendants(matching: .any)["pageStack"].firstMatch
         require(stack, "the page stack", in: app)
+        // `pinch` does not exist on Mac Catalyst (the suite is skipped there; this keeps the target compiling).
+        #if !targetEnvironment(macCatalyst)
         stack.pinch(withScale: 2.5, velocity: 1.5)
+        #endif
         Thread.sleep(forTimeInterval: 1.5)
         try walk(app, count: 5, checkFirst: false)
     }
