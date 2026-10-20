@@ -590,6 +590,12 @@ extension Vault {
                 + "no device this one lacks): nothing to keep")
         }
         var ring = try store.load(vaultId: vaultId) ?? SecretKeyring(vaultId: vaultId)
+        // A secret this device held and moved away from: an older vault.json put back (a rollback, which
+        // would bring back keys removed since), never kept, not even when the user confirms it.
+        if ring.entry(for: other)?.replaced != nil {
+            throw VaultError.recipientsNotRepairable("the other vault.json is under a secret this device replaced: an older "
+                + "list, nothing to keep")
+        }
         ring.remember(own, now: now)
         let known = ring.secrets(excluding: other)
         guard confirmed || RecipientsAuth.constantTimeEqual(other.bytes, own.bytes)

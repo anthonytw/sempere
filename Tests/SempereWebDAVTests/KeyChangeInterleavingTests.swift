@@ -112,6 +112,12 @@ final class KeyChangeRun: @unchecked Sendable {
 
     func note(_ s: String) { trace.append("   \(s)") }
 
+    /// A device's list, briefly (key prefixes and the tag), for the trace.
+    func listOf(_ d: KCDevice) -> String {
+        guard let m = d.manifest(), let v = try? VaultManifest.decode(m) else { return "-" }
+        return "\(v.recipients.map { String($0.key.dropFirst(7).prefix(4)) }) tag \(String((v.recipientsTag ?? "").prefix(6)))"
+    }
+
     func fail(_ message: String, file: StaticString = #filePath, line: UInt = #line) {
         dumpTrace()
         XCTFail("seed \(seed): \(message)", file: file, line: line)
@@ -240,11 +246,11 @@ final class KeyChangeRun: @unchecked Sendable {
                 try w.change(d, overriding: overriding, faults: faults) {
                     try $0.prepareAddRecipient(s.recipient, label: "paper", keyChange: policy)
                 }
-                count("add")
+                count("add"); note("\(d.name) now \(listOf(d))")
             case (0, let s?), (1, let s?):
                 revoked.append(s)
                 try w.change(d, overriding: overriding, faults: faults) { try $0.prepareRemoveRecipient(s.recipient, keyChange: policy) }
-                count("remove")
+                count("remove"); note("\(d.name) now \(listOf(d))")
             default:
                 let old = d.identity, new = pqIdentity()
                 d.identities.insert(new, at: 0)
@@ -253,7 +259,7 @@ final class KeyChangeRun: @unchecked Sendable {
                 try w.change(d, overriding: overriding, faults: faults) {
                     try $0.prepareReplaceRecipient(old.recipient, with: new.recipient, keyChange: policy)
                 }
-                count("replace")
+                count("replace"); note("\(d.name) now \(listOf(d))")
             }
         } catch {
             // Refused (another change in flight, a target unreachable or not synced lately, a list that
@@ -339,7 +345,7 @@ final class KeyChangeRun: @unchecked Sendable {
                 for t in d.targets { w.tick(); _ = try? d.sync(t.name, now: w.now) }
                 if (try? w.change(d) { try $0.prepareAddRecipient(spare.recipient, label: "paper") }) != nil { break }
             }
-            count("redone")
+            count("redone"); note("\(d.name) now \(listOf(d))")
         }
     }
 
@@ -360,7 +366,7 @@ final class KeyChangeRun: @unchecked Sendable {
                             // It missed a rotation in between: the user checks the list and confirms it.
                             dropped = try d.coordinator.adoptOtherChange(from: target, vault: &v, now: w.now, confirmed: true)
                         }
-                        count("adopted")
+                        count("adopted"); note("\(d.name) now \(listOf(d))")
                         try redo(d, dropped)
                     } catch VaultError.recipientsNotRepairable {
                         // The target holds an older list again: nothing to keep; propagation goes on.
@@ -389,7 +395,7 @@ final class KeyChangeRun: @unchecked Sendable {
                         if met && theirs > mine && visible { continue }
                         do {
                             try redo(d, try d.coordinator.adoptOtherChange(from: t.name, vault: &v, now: w.now, confirmed: !met))
-                            count("confirmed")
+                            count("confirmed"); note("\(d.name) now \(listOf(d))")
                         } catch {
                             note("confirm on \(d.name) failed: \(error)")
                         }
@@ -450,6 +456,10 @@ final class KeyChangeRun: @unchecked Sendable {
         }
         w.assertConverged(ignoring: ignored)
         let stillListed = Set((try? VaultManifest.decode(listed[0].manifest() ?? Data()))?.recipients.map(\.key) ?? [])
+        if ProcessInfo.processInfo.environment["SEMPERE_KEYCHANGE_TRACE"] == "1" {
+            print("LISTED \(stillListed.map { $0.prefix(16) }) REVOKED \(revoked.map { $0.recipient.string.prefix(16) }) "
+                  + "SPARES \(spares.map { $0.recipient.string.prefix(16) }) DEVICES \(w.devices.map { "\($0.name): \($0.identities.map { $0.recipient.string.prefix(16) })" })")
+        }
         w.assertRevoked(revoked.filter { !stillListed.contains($0.recipient.string) }, ignoring: ignored)
         w.assertNoLoss()
         checkQuarantine()

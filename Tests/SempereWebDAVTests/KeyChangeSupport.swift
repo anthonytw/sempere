@@ -434,7 +434,8 @@ final class KCWorld: @unchecked Sendable {
                 XCTAssertEqual(header.stanzas.count, manifest.recipients.count, "\(loc) \(path): stanzas", file: file, line: line)
             }
             for r in removed {
-                XCTAssertNil(try? AgeFile.decrypt(data, with: [r]), "\(loc) \(path) opens with a removed key", file: file, line: line)
+                XCTAssertNil(try? AgeFile.decrypt(data, with: [r]), "\(loc) \(path) opens with a removed key \(r.recipient.string.prefix(16))",
+                             file: file, line: line)
             }
         }
     }
