@@ -2350,7 +2350,10 @@ Every downloaded revision and blob is checked before it is placed
 `--identity`) it must decrypt, verify its tag (a blob: its keyed name and
 content hash) and name its note and file; locked, only its age structure is
 checked. A file that fails is never placed in the vault: it is kept under
-`<sync state>.quarantine/` (mode 0600, outside the vault), printed as
+`<sync state>.quarantine/` (mode 0600, outside the vault; a later copy of the
+same path with other bytes is kept beside the first as
+`<name>.copy-<16 hex digits of its SHA-256>`, never over it, up to 16 copies
+of a path), printed as
 `quarantined: PATH: why` on stderr, listed in the JSON `quarantined`
 (`{path, message}`), and the exit code is 1. Later runs do not fetch it
 again while it, the local `vault.json` and the lock state are unchanged (it

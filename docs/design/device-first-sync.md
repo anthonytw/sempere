@@ -381,10 +381,62 @@ Deleting a note is a revision, so it is a union. Physical deletes (compaction, t
 propagate only by the explain-or-restore rules. No deletion is ever judged for a note that is
 incomplete or has an unavailable listed file.
 
+**Explained.** A revision missing on one side is *explained* when a compactor or thinner of this
+format could have deleted it (format.md §5.3, §5.8.4): a snapshot that both sides hold covers it (or,
+for a snapshot, subsumes it), it is not a checkpoint or the created anchor, every complete checkpoint
+stays complete without it, and the note has no unreadable revision. Its age is not judged, since
+"thin everything except checkpoints" is legitimate. This is the existing rule for a deletion on
+either side of one (device, target) pair (docs/io.md "Compaction deletes").
+
+**Settled deletions are remembered, per pair (new).** Each pair's sync state (`SyncState`, device-local,
+never in the vault) records the files both sides held at the last run. Until now, once an explained
+deletion was carried out on both sides, that record was dropped, so the pair forgot the file had ever
+been there. If the file then came back on one side only, the pair took it for a new file and copied it.
+Now the record is kept as a **settled deletion** (`SyncState.thinned`, a snapshot's coverage
+included) while neither side holds the file. When a settled file is back on one side only, the pair
+judges it as a deletion again instead of copying it:
+
+- back locally (another target brought it, through this device), or back on the target (another
+  device put it there; it is fetched first, so it is judged with its content): judged over every
+  revision both sides hold now, under the explained rule above. Explained: deleted wherever it is.
+  Otherwise it is an ordinary file again, copied to the side that lacks it, and no longer settled.
+  Judging with the content and the whole set matters: the created anchor (format.md §5.3) depends
+  on which revisions remain, so two devices that each judged a deletion from a different subset
+  could each protect the revision the other deleted, and keep putting it back on the targets
+  (found by the stress run while this rule was being written);
+- locked: left where it is, reported, and judged at the next unlocked run;
+- once both sides hold it again (copied because it was not explained), it is no longer settled.
+  Records go when the note has no file on either side.
+
+Why this is safe, and why it ends:
+
+- **Nothing a reader needs is deleted.** A settled file is deleted only under the same rules as any
+  deletion this engine judges (explained, as above), so each side's current state and every complete
+  checkpoint read the same with or without it (G1, G2 of format.md §5.8.4). The settled record adds
+  evidence; it never relaxes a check. A file that is not explained now is copied, as before.
+- **No tombstones in the vault.** The vault format is unchanged and holds no deletion records: what
+  lets a deletion be judged is still the covering snapshot, which thinning writes before it deletes
+  (§5.8.4). The settled record only says that this pair once held the file on both sides and
+  agreed it was thinned, the same kind of fact as the "both sides had it" record the existing rules
+  already rely on. A new device or target has no such records and simply copies, as today.
+- **Order independent, and it terminates.** Write-once names have one body (I3), so a settled name
+  that comes back is the same revision. A pair copies a given file at most once more before it settles
+  it: after a copy the file is in step on both sides, and the next deletion it sees is explained and
+  settled, from then on never copied. With finitely many pairs, every resurrection ends, whatever
+  order the devices and targets run in. The outcome does not depend on that order either: a settled
+  file ends deleted from every side that holds its covering snapshot, which is where the first
+  thinner's deletion would have spread anyway.
+- **Never across the explain rules.** A target that drops files without a covering snapshot still
+  gets them back (restore), and an emptied or recreated target still deletes nothing: a settled
+  record is only consulted for a file present on exactly one side of its pair.
+
 ### 5.5 Hostile or broken remotes (format.md §9)
 
 Every guarantee lives in the engine and so applies to every target:
-- §9.1 checks before placing, then quarantine;
+- §9.1 checks before placing, then quarantine, which never replaces or removes a copy it holds (I6,
+  §6.4): a later copy of the same path with other bytes is kept beside the first under a
+  content-addressed name (`<name>.copy-<hash>`), the same bytes once, at most 16 distinct copies of a
+  path (a further one is reported as not kept, so a server cannot fill the disk through one path);
 - name validation;
 - `SyncLimits`;
 - the vault-id check;
@@ -398,10 +450,13 @@ This is new for iCloud and other providers, whose daemons used to write into the
   target to any device, or bridging with the CLI, converges them by union.
 - A device with two targets **bridges** them. Compaction deletes cross a bridge only when explained on
   each hop. Rewrap-replace converges across bridges because of the tie-break in §5.2.
-  **Open (found by P2's N-device stress):** two devices bridging the same two targets can circle a
-  deletable delta for ever (one deletes it from a target while the other uploads it there again; never
-  lost, never quiet; docs/ci.md "Known: two bridges cycle"). The engine needs a rule for it before
-  P6 offers several targets per vault.
+- **Several bridges on the same targets** (two devices that both sync iCloud and WebDAV, the expected
+  setup) converge too. P2's N-device stress found that they used to circle a thinned delta for ever:
+  one device deleted it from target A (explained there), while the other, which had it again from
+  target B and had forgotten that A once held it, uploaded it to A as new; a round later the roles
+  swapped. Nothing was lost, but runs never went quiet. Each pair now remembers the deletions it
+  settled (§5.4), so a copy that comes back through the other bridge is deleted again instead of
+  copied, and the stress run uses several bridges by default (docs/ci.md "Sync stress").
 - The UI lists the devices seen through each target, from the trust record and from the device ids in
   revision names (no format change).
 

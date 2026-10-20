@@ -169,34 +169,76 @@ extension SyncEngine {
         entry?.stamp ?? entry?.size.map { "size:\($0)" }
     }
 
+    /// Distinct copies of one vault path the quarantine keeps (the first under
+    /// the path itself, the others beside it, `quarantineCopyName`). A further
+    /// distinct copy is not kept, and reported so; the ones kept stay.
+    static let maxQuarantinedCopies = 16
+
+    /// The name of a further distinct copy of `name` in the quarantine:
+    /// `<name>.copy-<first 16 hex digits of its SHA-256>`.
+    static func quarantineCopyName(_ name: String, hash: String) -> String {
+        "\(name).copy-\(hash.prefix(16))"
+    }
+
     /// Records a refused download: moves `file` (or writes `data`) to the
     /// quarantine folder under its vault path and reports it.
+    ///
+    /// Nothing in the quarantine is ever replaced or removed (design §6, I6:
+    /// a file leaves it only by Adopt or Export). The first copy of a path is
+    /// kept under the path; a copy with other bytes, quarantined later, is
+    /// kept beside it under a content-addressed name, and one with the same
+    /// bytes as a kept copy is not kept twice. At most
+    /// `maxQuarantinedCopies` distinct copies of a path are kept, so a
+    /// server cannot fill the disk by changing one file again and again.
     func quarantine(_ key: String, path: String, entry: RemoteEntry?, reason: String,
                     data: Data? = nil, file: URL? = nil) {
         locked { lockedQuarantine(key, path: path, entry: entry, reason: reason, data: data, file: file) }
     }
 
     private func lockedQuarantine(_ key: String, path: String, entry: RemoteEntry?, reason: String, data: Data?, file: URL?) {
-        let target = quarantineRoot.appendingPathComponent(path)
-        var kept = target.path
+        let fm = FileManager.default
+        let first = quarantineRoot.appendingPathComponent(path)
+        var kept: String
         do {
-            let fm = FileManager.default
-            try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try fm.createDirectory(at: first.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: quarantineRoot.path)
-            try? fm.removeItem(at: target)
-            if let file {
-                try fm.moveItem(at: file, to: target)
-            } else if let data {
-                try data.write(to: target, options: .withoutOverwriting)
-            }
-            try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target.path)
+            kept = try keepQuarantined(first: first, data: data, file: file)
         } catch {
-            if let file { try? FileManager.default.removeItem(at: file) }
             kept = "not kept: \(Self.describe(error))"
         }
+        if let file { try? fm.removeItem(at: file) }
         report.quarantined.append(.init(path: path, message: SyncReport.printable(reason) + " (\(kept))"))
         state.quarantined = state.quarantined ?? [:]
         state.quarantined?[key] = .init(stamp: Self.quarantineStamp(entry), manifest: manifestHash(),
                                         unlocked: checker()?.canRead ?? false)
+    }
+
+    /// Keeps one refused copy (`data`, or the file `file`) beside the copies of
+    /// the same path kept already, never over one: the report's text says where.
+    private func keepQuarantined(first: URL, data: Data?, file: URL?) throws -> String {
+        let fm = FileManager.default
+        let hash: String
+        if let file { hash = try FileDigest.sha256(of: file).hex } else if let data { hash = FileDigest.sha256(data) } else {
+            return "nothing to keep"
+        }
+        func place(_ target: URL) throws {
+            // Never over an existing file: a move or a write that finds the name taken fails.
+            if let file { try fm.moveItem(at: file, to: target) } else if let data { try data.write(to: target, options: .withoutOverwriting) }
+            try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target.path)
+        }
+        guard fm.fileExists(atPath: first.path) else {
+            try place(first)
+            return first.path
+        }
+        if (try? FileDigest.sha256(of: first).hex) == hash { return "the same copy is kept at \(first.path)" }
+        let dir = first.deletingLastPathComponent(), name = first.lastPathComponent
+        let copy = dir.appendingPathComponent(Self.quarantineCopyName(name, hash: hash))
+        if fm.fileExists(atPath: copy.path) { return "the same copy is kept at \(copy.path)" }
+        let others = try LocalFS.entries(dir).filter { $0.hasPrefix(name + ".copy-") }.count
+        guard 1 + others < Self.maxQuarantinedCopies else {
+            return "not kept: \(Self.maxQuarantinedCopies) other copies of it are kept already, in \(dir.path)"
+        }
+        try place(copy)
+        return "another copy of this path was quarantined before; this one is kept at \(copy.path)"
     }
 }

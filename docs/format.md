@@ -3162,7 +3162,8 @@ name:
 
 A file that fails is **quarantined**: never placed under `notes/`, kept
 outside the vault (the reference implementation: next to the sync state,
-`<state>.quarantine/<path>`, mode 0600) and reported. It is not fetched again
+`<state>.quarantine/<path>`, mode 0600; a later copy of the same path with
+other bytes is kept beside it, never over it) and reported. It is not fetched again
 while neither it, `vault.json` nor the lock state changed (`sempere sync
 webdav --retry-quarantined` fetches it again). It is never deleted silently.
 

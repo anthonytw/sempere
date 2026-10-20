@@ -1228,7 +1228,9 @@ and unknown files are not synced. A downloaded revision must start with the
 age header or it is rejected, and before it is placed it is checked as
 format.md §9.1 says (tag, note and name with the vault unlocked; age
 structure when locked); a file that fails is quarantined next to the sync
-state (`<state>.quarantine/`), reported, and not fetched again while it and
+state (`<state>.quarantine/`; a later copy of the same path with other bytes
+beside it as `<name>.copy-<16 hex digits of its SHA-256>`, never over one, at
+most 16 distinct copies of a path), reported, and not fetched again while it and
 the local `vault.json` are unchanged (`--retry-quarantined`). A first pull
 with `--identity` checks under the `vault.json` it pulls. Remote names are reported with control
 characters escaped, so a hostile name cannot drive the terminal. Response
@@ -1270,6 +1272,16 @@ folder therefore deletes nothing locally; its files are uploaded again. A snapsh
 the `included` coverage recorded when it was last synced. Without an unlocked
 vault nothing can be checked, so nothing is deleted. A removal that fails the
 check is undone (the file is copied back).
+
+A deletion settled this way is remembered in the state (`thinned`) once
+neither side holds the file. If it comes back on one side only (another device
+or another remote brought it back), it is not copied as a new file: it is
+fetched if it is on the server, and judged again with its content over every
+revision both sides hold, by the rules above; explained, it is deleted from
+both sides, else it is copied and forgotten. This is what lets two devices sync
+the same two remotes: without it, one deleted a thinned delta from a remote
+while the other uploaded it there again from the other remote, for ever
+(docs/design/device-first-sync.md §5.4).
 
 **Attachment blobs** (`docs/attachments.md` §4). Each note's `att/` follows
 the same write-once table, keyed `<noteId>/att/<name>` in the state. A note
@@ -1349,7 +1361,11 @@ changed (or no common ancestor and different content): the remote copy is
 saved as `<name>.conflict-<device>-<yyyymmddThhmmssZ>.<ext>` in the vault root
 (not again if an identical one exists), nothing else changes, and the
 conflict is reported on every run until the files agree. A PUT rejected with
-412 is a conflict too. Two `vault.json` versions that differ only in `label`
+412 is judged by the bytes, not the ETag: the server copy is read again, and
+only different bytes are a change there (then both changed, as above); an
+ETag that moved over the same bytes is retried with the new one (3 tries, then
+the upload waits for a later run, listed as skipped), so no conflict copy
+identical to the server's is ever made. Two `vault.json` versions that differ only in `label`
 (a vault renamed on two devices) are the same vault (format.md §1.3), not a
 conflict: the server's copy, the one every device shares, is taken (as
 iCloud Drive's current version stays), and a push-only run keeps it on the
