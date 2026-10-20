@@ -4,7 +4,7 @@
 #   scripts/local-ci.sh               # the PR gate: package tests, Mac Catalyst unit tests (the
 #                                     # pseudo-language layout check among them), iOS compile check;
 #                                     # posts `local/app-tests` (the `main` ruleset requires it)
-#   scripts/local-ci.sh --testflight  # the gate, then every Mac UI test and the Mac launch smoke tests;
+#   scripts/local-ci.sh --testflight  # the gate, then every Mac UI test, the Mac launch smoke tests and the dense-note performance suite;
 #                                     # posts `local/testflight-suite`
 #   scripts/local-ci.sh --release     # all of --testflight, then the iPad and iPhone suites, the iPhone canvas UI tests, the iPad UI
 #                                     # tests and the pseudo-language UI test on the iPad; posts `local/release-sweep`
@@ -45,8 +45,8 @@ gate_steps=(help package mac ios-build)
 steps=("${gate_steps[@]}")
 case "$mode" in
   gate)       context=$gate_context ;;
-  testflight) context=local/testflight-suite; steps+=(mac-ui mac-smoke) ;;
-  release)    context=local/release-sweep;    steps+=(mac-ui mac-smoke ipad iphone iphone-ui ipad-ui pseudo) ;;
+  testflight) context=local/testflight-suite; steps+=(mac-ui mac-smoke mac-perf) ;;
+  release)    context=local/release-sweep;    steps+=(mac-ui mac-smoke mac-perf ipad iphone iphone-ui ipad-ui pseudo) ;;
 esac
 
 describe() {   # step: what it runs
@@ -57,6 +57,7 @@ describe() {   # step: what it runs
     ios-build)  echo "scripts/app.sh build-ios       (iOS simulator compile check, no tests)" ;;
     mac-ui)     echo "scripts/app.sh test-mac-ui     (Mac UI tests; screen)" ;;
     mac-smoke)  echo "scripts/app.sh test-mac-smoke  (Mac launch smoke tests; screen)" ;;
+    mac-perf)   echo "scripts/app.sh test-mac-perf   (dense-note open time, scroll and zoom hitches, memory, against baselines)" ;;
     ipad)       echo "scripts/app.sh test            (iPad simulator unit tests)" ;;
     iphone)     echo "scripts/app.sh test-phone      (iPhone simulator suites)" ;;
     iphone-ui)  echo "scripts/app.sh test-phone-ui   (iPhone simulator canvas UI tests: tap, hold, draw)" ;;
@@ -102,6 +103,7 @@ run_step() {
     ios-build)  scripts/app.sh build-ios ;;
     mac-ui)     scripts/app.sh test-mac-ui ;;
     mac-smoke)  scripts/app.sh test-mac-smoke ;;
+    mac-perf)   scripts/app.sh test-mac-perf ;;
     ipad)       scripts/app.sh test ;;
     iphone)     scripts/app.sh test-phone ;;
     iphone-ui)  scripts/app.sh test-phone-ui ;;

@@ -6,7 +6,7 @@ struct NotesCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "notes",
         abstract: "List, find, create and edit notes, switch page layout, show their history and restore earlier revisions.",
-        subcommands: [NotesList.self, NotesShow.self, NotesNew.self, NotesRename.self, NotesTag.self, NotesMove.self,
+        subcommands: [NotesList.self, NotesShow.self, NotesNew.self, NotesDense.self, NotesRename.self, NotesTag.self, NotesMove.self,
                       NotesPaper.self, NotesLanguage.self, NotesMarkers.self, NotesFavorite.self, NotesLayout.self, NotesSearch.self, NotesDelete.self, NotesUndelete.self, NotesHistory.self,
                       NotesRestore.self, NotesCheckpoint.self, NotesDedupe.self]
     )
