@@ -336,6 +336,13 @@ final class KeyChangeRun: @unchecked Sendable {
         }
     }
 
+    /// True when `theirs` rotated the secret away from the one this device holds now.
+    func rotatedFromMine(_ d: KCDevice, _ theirs: Data) -> Bool {
+        guard let v = try? d.vault(), let own = v.currentSecret, let other = v.secret(ofManifest: theirs), other != own,
+              let m = try? VaultManifest.decode(theirs) else { return false }
+        return RecipientsAuth.linkConnects(m.secretLink, from: own, to: other, vaultId: v.vaultId)
+    }
+
     /// After keeping another change: this device's own change is redone (spare keys it had added are
     /// added again; a dropped key of its own is simply not used).
     func redo(_ d: KCDevice, _ dropped: [String]) throws {
@@ -368,6 +375,11 @@ final class KeyChangeRun: @unchecked Sendable {
                 guard var v = try? d.vault(), v.canRead else { continue }
                 _ = try? d.coordinator.recover(&v)
                 if let (target, _) = d.coordinator.conflicts.sorted(by: { $0.key < $1.key }).first {
+                    if let t = w.targets.first(where: { $0.name == target }), let theirsData = t.file([Vault.manifestName]),
+                       let theirs = Vault.listFingerprint(theirsData), let mine = d.manifest().flatMap(Vault.listFingerprint),
+                       theirs > mine, !rotatedFromMine(d, theirsData) {
+                        continue   // the other side keeps this one
+                    }
                     do {
                         var dropped: [String]
                         do { dropped = try d.coordinator.adoptOtherChange(from: target, vault: &v, now: w.now) } catch VaultError.untrustedRecipients {
@@ -376,9 +388,9 @@ final class KeyChangeRun: @unchecked Sendable {
                         }
                         count("adopted"); note("\(d.name) now \(listOf(d))")
                         try redo(d, dropped)
-                    } catch VaultError.recipientsNotRepairable {
+                    } catch VaultError.recipientsNotRepairable(let why) {
                         // The target holds an older list again: nothing to keep; propagation goes on.
-                        count("nothing to adopt")
+                        count("nothing to adopt"); note("\(d.name): \(why)")
                     } catch {
                         fail("adopting the other change failed on \(d.name): \(error)")
                     }
@@ -400,7 +412,9 @@ final class KeyChangeRun: @unchecked Sendable {
                         let met = concurrent(d, theirsData)
                         // The other side keeps this one, when it can see it on a target.
                         let visible = d.manifest().map { m in w.targets.contains { Vault.sameList($0.file([Vault.manifestName]) ?? Data(), m) } } ?? false
-                        if met && theirs > mine && visible { continue }
+                        // A change that rotated away from this device's secret is never undone (that would
+                        // roll back a revocation): this side keeps it, whatever the order.
+                        if met && theirs > mine && visible && !rotatedFromMine(d, theirsData) { continue }
                         do {
                             try redo(d, try d.coordinator.adoptOtherChange(from: t.name, vault: &v, now: w.now, confirmed: !met))
                             count("confirmed"); note("\(d.name) now \(listOf(d))")

@@ -387,7 +387,7 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
         if out.conflict != nil {
             // Looked at again: the other change may have given way there (the other device kept this one).
             guard let (there, _) = try? t.remote.read([Vault.manifestName], maxBytes: BoundedRead.maxManifestBytes),
-                  Vault.sameList(there, step2) || isBaseOrOlder(there, ledger.base, vault) else { return out }
+                  Vault.sameList(there, step2) || replaces(there, ledger, vault) else { return out }
             if let (j, _) = try? t.remote.read([Vault.journalName], maxBytes: BoundedRead.maxManifestBytes), j != ledger.journal {
                 return out
             }
@@ -419,7 +419,7 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
             if let (there, etag) = current {
                 if there == step2 || there == step4 || Vault.sameList(there, step2) {
                     // There already.
-                } else if isBaseOrOlder(there, ledger.base, vault), let etag, SyncEngine.isStrong(etag) {
+                } else if replaces(there, ledger, vault), let etag, SyncEngine.isStrong(etag) {
                     guard try t.remote.write(manifestPath, .data(step2), condition: .replace(etag: etag)) else {
                         return out   // it moved meanwhile: next time
                     }
@@ -485,9 +485,27 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
 
     /// True when `there` is the list the change started from, or an older one under the same secret
     /// (a list only grows under one secret): what the change replaces.
+    /// True when this change replaces the list `there` on a target: the list it started from, an older
+    /// one, or one that only added keys under the secret this change rotates away from (another
+    /// device's concurrent addition: a rotation is never undone for it; the addition must be redone,
+    /// and until then its key opens nothing written after the rotation).
+    func replaces(_ there: Data, _ ledger: KeyChangeLedger, _ vault: Vault) -> Bool {
+        if isBaseOrOlder(there, ledger.base, vault) { return true }
+        guard let step2 = ledger.step2, let a = vault.secret(ofManifest: there), let b = vault.secret(ofManifest: ledger.base),
+              let c = vault.secret(ofManifest: step2) else { return false }
+        return a == b && c != b
+    }
+
+    /// Also a list under a secret this device replaced before (its keyring says so): a target that
+    /// missed earlier changes.
     func isBaseOrOlder(_ there: Data, _ base: Data, _ vault: Vault) -> Bool {
         if Vault.sameList(there, base) { return true }
-        guard let a = vault.secret(ofManifest: there), let b = vault.secret(ofManifest: base), a == b,
+        guard let a = vault.secret(ofManifest: there) else { return false }
+        if let entry = ((try? keyring.load(vaultId: vault.vaultId)) ?? nil)?.entry(for: a), entry.replaced != nil,
+           let b = vault.secret(ofManifest: base), a != b {
+            return true
+        }
+        guard let b = vault.secret(ofManifest: base), a == b,
               let x = try? VaultManifest.decode(there), let y = try? VaultManifest.decode(base) else { return false }
         return Set(x.recipients.map(\.key)).isSubset(of: Set(y.recipients.map(\.key)))
     }
