@@ -89,6 +89,7 @@ Errors go to stderr, one line each, prefixed `sempere:`. A usage error (exit
 | Variable | Use |
 | --- | --- |
 | `SEMPERE_VAULT` | Default for `--vault`. |
+| `SEMPERE_STORE` | Default for `--store` ([Vault store](#vault-store)). |
 | `SEMPERE_IDENTITY` | Default identity file. |
 | `SEMPERE_PASSPHRASE` | Passphrase for the vault's stored key file, for scripts and tests. |
 | `SEMPERE_TITLE_FORMAT` | Default for `notes new --title-format` ([Editing notes](#editing-notes)). |
@@ -101,7 +102,7 @@ Errors go to stderr, one line each, prefixed `sempere:`. A usage error (exit
 | `SEMPERE_FONT_DIR` | An extra directory of font packs, searched first ([Text in exports](#text-in-exports)). |
 | `XDG_STATE_HOME` | Where this machine's state lives under `sempere/` (`device.json`, recipient trust, sync and capture state; default `~/.local/state`). |
 | `XDG_CACHE_HOME` | Where the summary cache lives (default `~/.cache`; [Notes](#notes)). |
-| `XDG_DATA_HOME` | Font packs under `sempere/fonts` (default `~/.local/share`; [Text in exports](#text-in-exports)). |
+| `XDG_DATA_HOME` | Font packs under `sempere/fonts` (default `~/.local/share`; [Text in exports](#text-in-exports)), and the default vault store `sempere/vaults` ([Vault store](#vault-store)). |
 
 ## Commands
 
@@ -444,6 +445,59 @@ sempere vault merge-copy FROM [--dry-run] [--json]
   `differs PATH`, then the settings and manifest notes. Exit 1 when a file was
   refused. `--json` emits `added`, `differing`, `refused` (path → why),
   `settingsMerged`, `settingsPending` and `manifestDiffers`.
+
+### Vault store
+
+```
+sempere store list [--store DIR] [--json]
+sempere store path VAULT [--store DIR] [--json]
+sempere store create NAME --recipient age1pq1... [vault init's options] [--store DIR] [--json]
+sempere store import SOURCE [--name NAME] [--store DIR] [--json]
+sempere store restore BACKUP [--name NAME] [--replace] [--store DIR] [--json]
+sempere store remove VAULT --yes [--store DIR] [--json]
+```
+
+A store is a folder of complete vaults, one per vault id, laid out as `<store>/<vault id>/<name>.sempere`
+([device-first sync](design/device-first-sync.md) §2). The app keeps every vault in its own store, hidden
+in its container (on a Mac:
+`~/Library/Containers/io.github.anthonytw.sempere/Data/Library/Application Support/Sempere/Vaults`); these
+commands work on that store or any other. `--store DIR` names the store; the default is `$SEMPERE_STORE`,
+else `$XDG_DATA_HOME/sempere/vaults` (`~/.local/share/sempere/vaults`). `VAULT` is the vault id, a unique
+prefix of it (4 characters or more), or the vault's exact name. Every other command reaches a store vault
+by its folder: `--vault "$(sempere store path Notes)"`.
+
+- `list` prints name, id, label and path of every vault (reading only each `vault.json`, no key); a vault
+  whose `vault.json` does not open or names another id is listed with a warning on stderr. `--json`: an
+  array of `{vaultId, name, path, label, problem}`.
+- `path` prints the vault's folder (`--json`: the same object).
+- `create NAME` makes a new vault in the store, with `vault init`'s options (`--recipient`, `--label`,
+  `--vault-label`, `--store-key`, …; [Vault](#vault)). `NAME` is the folder name without `.sempere`: no
+  slashes, colons, leading dots or control characters (exit 2). Names need not be unique; ids are.
+- `import SOURCE` copies the vault folder `SOURCE` into the store, as the app's Open Vault… does. The
+  source is only read. It must be a complete vault: a readable `vault.json`, no partial-copy markers
+  (format.md §1.2), no unfinished restore, no cloud placeholders (`.<name>.icloud`: download it first), and
+  only folders and regular files (a symbolic link or special file is refused). Hidden files (`.DS_Store`,
+  temporary files) are not copied. Every file is copied and read back, then the whole copy is compared byte
+  for byte with the source and the source is listed again; only then does the vault appear in the store,
+  moved there in one rename. Any failure, or an interruption, leaves nothing listed (what it left in the
+  store's staging folder is removed by the next store command). A vault id the store already holds is
+  refused (exit 1). `--name` names the copy (default: the source folder's name); `-q` prints only the new
+  path; `-v` reports progress on stderr.
+- `restore BACKUP` restores a backup folder (or any vault folder) into the store, every file checked
+  against `backup.json` as `sempere restore` does. The restore is built in the store's staging folder and
+  must bring back every file, else nothing is added (exit 1). A vault id the store already holds is
+  refused unless `--replace`: then the store's copy is replaced as a whole once the restored one is
+  complete, keeping its name (changes made since the backup are lost), and only while that vault is not
+  open. The old copy is moved aside before the new one moves in and deleted after; a crash between the two
+  leaves it aside, and the next store command puts it back. `--name` names a new vault (default: the
+  backup folder's name). `--json`: `{vault, restored}`.
+- `remove VAULT --yes` deletes the vault from the store, permanently: with no other copy, its notes are
+  gone. Without `--yes` it exits 2 and deletes nothing. It is refused (exit 1) while the vault is open in
+  the app or by another command, which hold a lease on it.
+
+Each vault has its own lock (`<store>/.locks/<vault id>.write`, `flock(2)`): the store takes it to install
+or remove a vault, and it is the one lock every writer of that vault on the device shares
+([device-first sync](design/device-first-sync.md) §4), so writers of two vaults never wait for each other.
 
 ### Attachments
 

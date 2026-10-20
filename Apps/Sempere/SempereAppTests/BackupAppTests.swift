@@ -366,7 +366,7 @@ struct BackupAppTests {
 
     // MARK: - Restore
 
-    @Test func restoreRefusesTheOpenVaultsLocation() async throws {
+    @Test func restoreGoesIntoTheStoreAndAsksBeforeReplacing() async throws {
         let scratch = try Scratch()
         defer { scratch.cleanUp() }
         let (model, _, url, _) = try await model(scratch)
@@ -381,32 +381,36 @@ struct BackupAppTests {
         #expect(found.preview.attachments == 1)
         #expect(found.preview.newestRevision != nil)
 
-        // Inside the open vault, and the open vault itself.
-        await #expect(throws: BackupError.protectedTarget(url.appendingPathComponent("x.sempere").path)) {
-            _ = try await model.restoreBackup(picked: backup, source: backup, into: url, name: "x", library: library)
-        }
-        await #expect(throws: BackupError.protectedTarget(url.path)) {
-            _ = try await model.restoreBackup(picked: backup, source: backup, into: url.deletingLastPathComponent(),
-                                              name: "sample", library: library)
-        }
-        #expect(try FileManager.default.subpathsOfDirectory(atPath: url.path).sorted() == before, "nothing written")
-        #expect(library.recents.isEmpty)
-        #expect(model.phase == .unlocked, "the open vault stays open")
-
-        // Elsewhere: a new vault, remembered, opening with the same key.
-        let parent = try scratch.folder("Restored")
-        let outcome = try await model.restoreBackup(picked: backup, source: backup, into: parent, name: "Notes (Restored)",
+        // Into the in-app store, remembered, opening with the same key; the open vault is not touched.
+        #expect(await model.restoreConflict(source: backup, picked: backup, library: library) == nil)
+        let outcome = try await model.restoreBackup(picked: backup, source: backup, name: "Notes (Restored)",
                                                     library: library)
         #expect(outcome.isComplete)
         #expect(outcome.url.lastPathComponent == "Notes (Restored).sempere")
+        #expect(outcome.url.path.hasPrefix(library.vaultStore.root.path + "/"))
         #expect(library.recents.first?.id == outcome.recentID)
+        #expect(library.recents.first?.storeID == model.vault?.vaultId)
         #expect(try Vault.open(at: outcome.url).vaultId == model.vault?.vaultId)
         #expect(BackupText.restore(outcome).contains("Restored “Notes (Restored)”"))
-        // Not again into the same (now full) folder.
-        await #expect(throws: BackupError.self) {
-            _ = try await model.restoreBackup(picked: backup, source: backup, into: parent, name: "Notes (Restored)",
-                                              library: library)
+        #expect(try FileManager.default.subpathsOfDirectory(atPath: url.path).sorted() == before, "nothing written")
+        #expect(model.phase == .unlocked, "the open vault stays open")
+
+        // Again: the vault is on this device now. Without replace it is refused; the sheet asks first.
+        let existing = try #require(await model.restoreConflict(source: backup, picked: backup, library: library))
+        #expect(existing.url == outcome.url)
+        await #expect(throws: VaultStoreProblem(error: .alreadyInStore(vaultId: existing.vaultId, name: "Notes (Restored)"))) {
+            _ = try await model.restoreBackup(picked: backup, source: backup, name: "Other", library: library)
         }
+        // Replacing the store copy while it is open: it is closed first, and keeps its name.
+        let entry = try #require(library.storedVaults.first)
+        try await model.openStored(entry, library: library)
+        let replaced = try await model.restoreBackup(picked: backup, source: backup, name: "Other", replace: true,
+                                                     library: library)
+        #expect(replaced.isComplete)
+        #expect(replaced.url == outcome.url)
+        #expect(model.phase == .noVault)
+        #expect(library.vaultStore.list().count == 1)
+        #expect(library.storedVaults.count == 1)
     }
 
     @Test func restoreWorksWithoutAnOpenVault() async throws {
@@ -418,8 +422,8 @@ struct BackupAppTests {
         let model = AppModel(deviceStateURL: TS.deviceStateURL())
         let library = VaultLibrary(storeURL: scratch.dir.appendingPathComponent("recents.json"))
         let found = try await model.previewRestore(from: scratch.dir)
-        let outcome = try await model.restoreBackup(picked: scratch.dir, source: found.source,
-                                                    into: try scratch.folder("New"), name: "Mine", library: library)
+        let outcome = try await model.restoreBackup(picked: scratch.dir, source: found.source, name: "Mine",
+                                                    library: library)
         #expect(outcome.isComplete)
         let entry = try #require(library.recents.first)
         try await model.open(recent: entry, library: library)

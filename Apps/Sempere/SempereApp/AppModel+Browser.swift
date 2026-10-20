@@ -10,8 +10,9 @@ extension AppModel {
     // MARK: - Opening and creating
 
     /// Opens what the user picked (a `.sempere` vault, a plain folder, a folder
-    /// holding one vault, or a file inside a vault: `VaultLocator`) and
-    /// remembers it.
+    /// holding one vault, or a file inside a vault: `VaultLocator`) IN PLACE and
+    /// remembers it. Earlier builds' path, read until P7 (docs/design/device-first-sync.md):
+    /// "Open Vault…" now copies the vault into the store instead (`copyIn`).
     func open(picked url: URL, library: VaultLibrary, external: Bool = false) async throws {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
@@ -39,25 +40,18 @@ extension AppModel {
         remember(in: library)
     }
 
-    /// Creates a vault in `parent` and opens it: unlocked when a key was
+    /// Creates a vault in the in-app store (`VaultLibrary.create`) and opens it: unlocked when a key was
     /// generated or given, locked (asking for the key) when only a recipient was given.
     ///
     /// When another vault is opened or this one closed meanwhile, the vault
     /// is still created and returned (with its key, which nothing else holds)
     /// but not opened.
-    func createVault(_ request: NewVaultRequest, in parent: URL, library: VaultLibrary) async throws -> CreatedVault {
+    func createVault(_ request: NewVaultRequest, library: VaultLibrary) async throws -> CreatedVault {
         let gen = generation
-        let created = try await library.create(request, in: parent)
+        let created = try await library.create(request)
         guard gen == generation else { return created }
         do {
-            // The scope on `parent` ended; reopen through the bookmark `create` saved
-            // (by id: another recent vault may have the same name).
-            if let entry = library.recents.first(where: { $0.id == created.recentID }),
-               let url = try? library.resolve(entry) {
-                try await openVault(at: url)
-            } else {
-                try await openVault(at: created.url)
-            }
+            try await openVault(at: created.url)
             let opened = generation
             if let secret = created.unlockKey {
                 try ensureCurrent(opened)
@@ -71,7 +65,7 @@ extension AppModel {
         return created
     }
 
-    private func remember(in library: VaultLibrary) {
+    func remember(in library: VaultLibrary) {
         guard let url = vaultURL else { return }
         do { try library.remember(url) } catch {
             errorMessage = String(localized: "The vault opened, but Sempere could not save access to it for next time: \(String(describing: error))")

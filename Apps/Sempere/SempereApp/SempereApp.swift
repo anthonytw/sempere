@@ -41,6 +41,8 @@ struct SempereApp: App {
                              automaticThinning: true,
                              recipientsTrust: AppModel.defaultRecipientsTrust,
                              backupNotifier: UserNotificationBackupNotifier())
+        // An open vault of the in-app store holds a lease, so it is never removed while open.
+        model.vaultStore = library.vaultStore
         AppModel.current = model
         _model = State(initialValue: model)
         // Background sync (iOS): the model the scheduled tasks sync (`.backgroundTask` below).

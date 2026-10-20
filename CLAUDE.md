@@ -310,6 +310,16 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   to the vault folder (never upward: a pick inside a vault is an error, its scope
   does not cover the vault); `openVault(at:accessing:)` holds the security scope of the
   picked URL, not the derived one.
+- In-app vault store (P5a of docs/design/device-first-sync.md; `Sources/Sempere/VaultStore.swift`,
+  `VaultFileLock.swift`): New Vault (`VaultLibrary.create`) and Open Vault… (`AppModel.copyIn`, which
+  copies the picked vault in and opens the copy, or opens the copy already there) and Restore from Backup
+  (`VaultStore.restore`, `--replace` swaps a copy: old aside, new in, `sweep` restores an interrupted one) put every vault in `VaultLibrary.vaultStore`
+  (`Application Support/Sempere/Vaults/<vaultId>/<name>.sempere`; tests get one next to their
+  `recents.json`). Nothing creates an in-place vault any more; the in-place reading paths stay until P7. A
+  vault appears in the store only complete (built or copied under `.staging`, checked, one `rename`;
+  `sweep` removes leftovers), so never write into a store folder by hand. One copy per vault id. Recents
+  of store vaults carry `storeID` and no bookmark; an open store vault holds a `VaultStore.Lease`, and every
+  writer of a vault's files shares its `VaultFileLock` (`VaultStore.writeLock(for:)`). CLI: `sempere store` (list, path, create, import, restore, remove).
 - iCloud notes load progressively (`ProgressiveLoad`, `AppModel+Cloud`): never
   await the whole vault before listing. Tests fake placeholders with
   `FakeCloud` (`ProgressiveLoadTests.swift`) and `CloudVault.Hooks`; the model

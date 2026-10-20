@@ -19,15 +19,28 @@ struct VaultInit: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "init",
         abstract: "Create a new vault directory (its name must end in .sempere).",
-        discussion: """
-            Every note is encrypted to all --recipient keys. With --store-key the matching identity is
-            also written passphrase-wrapped to keys/ (the passphrase comes from the variable named by
-            --passphrase-env, else $SEMPERE_PASSPHRASE, else the terminal).
-            """
+        discussion: VaultInitOptions.discussion
     )
 
     @Argument(help: ArgumentHelp("The new vault directory.", valueName: "path"))
     var path: String
+
+    @OptionGroup var spec: VaultInitOptions
+    @OptionGroup var output: OutputOptions
+
+    func run() throws {
+        let created = try spec.create(at: URL(fileURLWithPath: path))
+        try created.report(path: path, output: output)
+    }
+}
+
+/// What a new vault is made with: `vault init` and `store create`.
+struct VaultInitOptions: ParsableArguments {
+    static let discussion = """
+        Every note is encrypted to all --recipient keys. With --store-key the matching identity is
+        also written passphrase-wrapped to keys/ (the passphrase comes from the variable named by
+        --passphrase-env, else $SEMPERE_PASSPHRASE, else the terminal).
+        """
 
     @Option(name: .long, help: ArgumentHelp("A recipient public key. Repeatable, at least one.", valueName: "age1..."))
     var recipient: [String] = []
@@ -57,8 +70,6 @@ struct VaultInit: ParsableCommand {
           help: "Store the key even under a passphrase too easy to guess offline (security.md).")
     var allowWeakPassphrase = false
 
-    @OptionGroup var output: OutputOptions
-
     func validate() throws {
         guard IdentityFile.writerWorkFactors.contains(workFactor) else {
             throw ValidationError("--work-factor must be in \(IdentityFile.writerWorkFactors)")
@@ -70,7 +81,14 @@ struct VaultInit: ParsableCommand {
         if passphraseEnv != nil && storeKey == nil { throw ValidationError("--passphrase-env needs --store-key") }
     }
 
-    func run() throws {
+    /// The parsed recipients and the key to store, checked before anything is written.
+    struct Prepared {
+        var recipients: [NativeRecipient]
+        var stored: (NativeIdentity, String)?
+    }
+
+    /// Checks the recipients and reads the key to store (asking for its passphrase).
+    func prepare() throws -> Prepared {
         let recipients = try recipient.map(parseRecipient)
         try requirePostQuantum(recipients)
         var stored: (NativeIdentity, String)?
@@ -84,18 +102,40 @@ struct VaultInit: ParsableCommand {
             try requireStoredKeyPassphrase(pass, allowWeak: allowWeakPassphrase)
             stored = (id, pass)
         }
-        let vault = try Vault.create(at: URL(fileURLWithPath: path), recipients: recipients, labels: label,
+        return Prepared(recipients: recipients, stored: stored)
+    }
+
+    /// Creates the vault at `url` from `prepared` (`prepare()`).
+    func create(at url: URL, prepared: Prepared) throws -> Created {
+        let vault = try Vault.create(at: url, recipients: prepared.recipients, labels: label,
                                      trust: trustStore(), label: vaultLabel)
         var keyFile: String?
-        if let (id, pass) = stored {
+        if let (id, pass) = prepared.stored {
             keyFile = try vault.writeIdentityFile(id, passphrase: pass, workFactor: workFactor).path
         }
-        if output.json {
-            try output.emitJSON(InitOutput(path: path, vaultId: vault.vaultId.uuidString.lowercased(),
-                                           recipients: recipients.map(\.string), keyFile: keyFile))
-        } else {
-            output.info("Created \(path)\nVault id: \(vault.vaultId.uuidString.lowercased())")
-            if let keyFile { output.info("Stored passphrase-wrapped key: \(keyFile)") }
+        return Created(vaultId: vault.vaultId, recipients: prepared.recipients.map(\.string), keyFile: keyFile)
+    }
+
+    /// `prepare()`, then `create(at:prepared:)`.
+    func create(at url: URL) throws -> Created {
+        try create(at: url, prepared: try prepare())
+    }
+
+    struct Created {
+        var vaultId: UUID
+        var recipients: [String]
+        /// The stored key file's path (where it was written).
+        var keyFile: String?
+
+        func report(path: String, output: OutputOptions, keyFile shownKeyFile: String? = nil) throws {
+            let keyFile = shownKeyFile ?? self.keyFile
+            if output.json {
+                try output.emitJSON(InitOutput(path: path, vaultId: vaultId.uuidString.lowercased(),
+                                                recipients: recipients, keyFile: keyFile))
+            } else {
+                output.info("Created \(path)\nVault id: \(vaultId.uuidString.lowercased())")
+                if let keyFile { output.info("Stored passphrase-wrapped key: \(keyFile)") }
+            }
         }
     }
 

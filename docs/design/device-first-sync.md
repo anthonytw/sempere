@@ -15,7 +15,12 @@ the whole vault folder (package-era vaults; no migration, Q5). P4's engine parit
 change from §5.3 came out of the N-device stress run: an inbox file that adoption explains is never
 copied, whether or not both sides held it before (two bridges handed an adopted capture back and
 forth otherwise). The
-key-change review (§6) is a gate that must pass before P4 and P10 land.
+key-change review (§6) is a gate that must pass before P4 and P10 land. P5a, the in-app vault store
+(the part of P5 that needs no engine work: `VaultStore`, a per-vault `VaultFileLock`, `sempere store`, New
+Vault and "Open Vault…" copying into the store, Restore from Backup into the store with a confirmed
+replace), is implemented. Owner's decisions there: "Open Vault…" on a vault id already in the store opens
+that copy (P6 offers to sync it with the picked folder); a restore of a vault already on the device asks
+to replace it. Until P6 the store is `Application Support/Sempere/Vaults`, not yet the App Group container.
 
 **Superseded in part (2026-10-20):** key changes now follow `docs/design/key-hierarchy.md` (a vault
 key per epoch, per-device keys, one recovery key, immediate changes with no late-file window). §6

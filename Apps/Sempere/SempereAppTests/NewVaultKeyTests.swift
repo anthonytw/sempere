@@ -20,8 +20,7 @@ struct NewVaultKeyTests {
         let library = try BrowserTests.library()
         let model = AppModel(deviceStateURL: try BrowserTests.tempDir().appendingPathComponent("device.json"))
         let created = try await model.createVault(
-            NewVaultRequest(name: "Reused", keySource: .identity(identity), passphrase: "lunar-pickle-tundra-mosaic-quiver"),
-            in: parent, library: library)
+            NewVaultRequest(name: "Reused", keySource: .identity(identity), passphrase: "lunar-pickle-tundra-mosaic-quiver"), library: library)
         // No receipt: the user already has the key.
         #expect(created.secretKey == nil)
         #expect(created.unlockKey == identity.string)
@@ -99,40 +98,6 @@ struct NewVaultKeyTests {
         #expect(NewVaultView.keyFooter(.existing).contains("age1pq1"))
         #expect(NewVaultView.keyFooter(.existing).contains("AGE-SECRET-KEY-1"))
         #expect(NewVaultView.keyFooter(.recipient).contains("age1pq1"))
-    }
-
-    // MARK: - New folder
-
-    @Test func aNewFolderIsMadeForTheVault() async throws {
-        let parent = try BrowserTests.tempDir()
-        let library = try BrowserTests.library()
-        let created = try await library.create(
-            NewVaultRequest(name: "Notes", keySource: .generate, passphrase: nil, subfolder: " Vaults "), in: parent)
-        #expect(created.url.standardizedFileURL == parent.appendingPathComponent("Vaults/Notes.sempere").standardizedFileURL)
-        #expect(try Vault.open(at: created.url).recipients.count == 1)
-        // A folder of that name already there is used; a vault of the same name in it is still refused.
-        let second = try await library.create(
-            NewVaultRequest(name: "Other", keySource: .generate, passphrase: nil, subfolder: "Vaults"), in: parent)
-        #expect(second.url.deletingLastPathComponent().lastPathComponent == "Vaults")
-        await #expect(throws: (any Error).self) {
-            try await library.create(NewVaultRequest(name: "Notes", keySource: .generate, passphrase: nil, subfolder: "Vaults"),
-                                     in: parent)
-        }
-        // A file where the folder should be is an error, not a vault beside it.
-        try Data("x".utf8).write(to: parent.appendingPathComponent("Plain"))
-        await #expect(throws: (any Error).self) {
-            try await library.create(NewVaultRequest(name: "N", keySource: .generate, passphrase: nil, subfolder: "Plain"),
-                                     in: parent)
-        }
-    }
-
-    @Test func newFolderNamesAreValidated() throws {
-        #expect(try VaultLibrary.subfolderName("  Vaults ") == "Vaults")
-        #expect(try VaultLibrary.subfolderName("Notas de clase") == "Notas de clase")
-        for bad in ["", "   ", ".hidden", "a/b", "a:b", "x.sempere", "X.SEMPERE", "a\nb", "a\u{0}b", "a\u{7}b",
-                    String(repeating: "é", count: 200)] {
-            #expect(throws: VaultLibrary.LibraryError.invalidFolderName) { try VaultLibrary.subfolderName(bad) }
-        }
     }
 
     // MARK: - Passphrase checklist
