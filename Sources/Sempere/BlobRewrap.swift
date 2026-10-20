@@ -76,7 +76,8 @@ extension Vault {
         let dir = notesURL.appendingPathComponent(note).appendingPathComponent(Self.attachmentsName)
         guard FileIO.isDirectory(dir) else { return }
         let expected = Self.expectedStanzas(recipients)
-        let secrets = [current] + (previousSecret.map { [$0] } ?? [])
+        // The journal's outgoing secret, then (a late file's rewrap, design §6.3) the keyring's.
+        let secrets = [current] + (previousSecret.map { [$0] } ?? []) + olderSecrets
         for entry in try FileIO.entries(dir) {
             guard let parsed = BlobName.parse(entry) else { continue }
             let url = dir.appendingPathComponent(entry)
@@ -91,7 +92,7 @@ extension Vault {
             case 0?:
                 if peek.stanzas == expected { report.alreadyCurrent.append(path); continue }
                 target = url
-            case 1?:
+            case let older? where older >= 1:
                 target = dir.appendingPathComponent(
                     BlobName.fileName(name: BlobName.name(digest: peek.header.digest, secret: current), kind: parsed.kind))
                 if FileIO.exists(target), isCompleteBlob(target, header: peek.header, stanzas: expected, secret: current) {

@@ -154,6 +154,12 @@ public struct Vault: Sendable {
     /// it gives no secret, and `discardRefusedJournal` may delete it. False
     /// when there is none, it is accepted, or it could not be read.
     public internal(set) var journalRefused = false
+    /// Secrets this vault used before its current one, from this device's
+    /// secret keyring (design §6.3, `SecretKeyring`): set only by
+    /// `withOlderSecrets`, for the rewrap of this device's late files
+    /// (`rewrapLateFiles`) and the checks of copies received during a key
+    /// change (`classifyCopy`). Ordinary reads never use them.
+    var olderSecrets: [VaultSecret] = []
     /// The notes whose newer revisions this vault (or a copy) has read
     /// (format.md §7.3); shared by every copy.
     let readOnlyLatch = ReadOnlyLatch()
@@ -694,9 +700,10 @@ public struct Vault: Sendable {
     /// Rewraps, then removes the journal only if every file is complete.
     /// Otherwise the journal (and the outgoing secret in it) stays, so the
     /// files that failed can still be verified and rewrapped by a retry.
-    mutating func finishRewrap(blobs: RewrapMethod, stopAfter: Int?) throws -> RewrapReport {
+    mutating func finishRewrap(blobs: RewrapMethod, stopAfter: Int?, stopBeforeFinish: Bool = false) throws -> RewrapReport {
         let report = try rewrapNotes(blobs: blobs, stopAfter: stopAfter)
         guard report.isComplete else { return report }
+        if stopBeforeFinish { throw VaultError.interrupted }
         // The binding goes first (format.md §3.3.1 step 4): a journal left by
         // a crash between the two is then refused, never accepted again.
         try clearRewrapPending()
@@ -718,7 +725,20 @@ public struct Vault: Sendable {
     /// `secretLink` when the secret rotates. `repairing` skips the check of
     /// the current list: a repair writes the last verified one instead.
     mutating func changeRecipients(_ next: [VaultManifest.Recipient], rotate: Bool, policy: RewrapPolicy,
-                                   stopAfter: Int?, repairing: Bool = false) throws -> RewrapReport {
+                                   stopAfter: Int?, repairing: Bool = false,
+                                   keyChange: KeyChangePolicy = .routine) throws -> RewrapReport {
+        let prepared = try prepareChange(next, rotate: rotate, policy: policy, repairing: repairing, keyChange: keyChange)
+        var faults = RewrapFaults.none
+        if let stopAfter { faults.stop = .afterFiles(stopAfter) }
+        return try commitChange(prepared, faults: faults, keyring: nil, now: Date())
+    }
+
+    /// Everything of a recipient change before its first write (format.md
+    /// §3.3.1 step 1's journal bytes included): the checks, the new list and
+    /// the journal, so that a caller can claim every sync target with exactly
+    /// those bytes before anything changes locally (design §6.1 C1).
+    func prepareChange(_ next: [VaultManifest.Recipient], rotate: Bool, policy: RewrapPolicy, repairing: Bool,
+                       keyChange: KeyChangePolicy) throws -> PreparedKeyChange {
         let current = try requireReadable()
         // A repair skips the check of the current list, never the read-only rule (format.md §7.3).
         if repairing { try requireNotReadOnly() } else { try requireWritable() }
@@ -749,40 +769,78 @@ public struct Vault: Sendable {
         }
         try Self.requirePostQuantum(ageNext)
         let method = policy.method(rotating: rotate)
-        let newSecret = rotate ? VaultSecret.random() : current
+        let journal = RewrapJournal(format: SempereFormat.identifier,
+                                    previousVaultSecret: rotate ? try Self.encryptSecret(current, to: ageNext) : nil,
+                                    rekeyBlobs: method == .reencrypt,
+                                    mode: keyChange.mode.rawValue,
+                                    lateFileWindowDays: keyChange.lateFileWindowDays)
+        return PreparedKeyChange(vaultId: vaultId, base: onDisk, next: next, rotate: rotate, method: method,
+                                 journal: try InkJSON.encoder().encode(journal), keyChange: keyChange)
+    }
+
+    /// Steps K1 to K4 of design §6.1 (format.md §3.3.1 steps 1 to 4) for a
+    /// prepared change: the journal (exactly the prepared bytes), then
+    /// `vault.json` binding it, then every file, then the journal goes.
+    /// With `keyring`, the outgoing secret is stored in it, with the change's
+    /// policy, before anything is written (design §6.3). `faults` stops the
+    /// change where a crash would (tests, `RewrapFaults`).
+    mutating func commitChange(_ p: PreparedKeyChange, faults: RewrapFaults, keyring: (any SecretKeyringStore)?,
+                               now: Date) throws -> RewrapReport {
+        let current = try requireReadable()
+        guard p.vaultId == vaultId else { throw VaultError.manifestCorrupt("the prepared change is for another vault") }
+        // Nothing may have changed since it was prepared (another device's change synced in):
+        // the prepared list was built from that vault.json.
+        let onDisk = try Self.readManifest(FileIO.read(manifestURL, maxBytes: BoundedRead.maxManifestBytes))
+        guard onDisk.recipients.map(\.key) == p.base.recipients.map(\.key), onDisk.vaultSecret == p.base.vaultSecret,
+              onDisk.recipients.map(\.key) == manifest.recipients.map(\.key), onDisk.vaultSecret == manifest.vaultSecret else {
+            throw VaultError.manifestCorrupt(VaultError.changedSinceOpened)
+        }
+        let ageNext = try p.next.map { r in
+            do { return try NativeRecipient(string: r.key) } catch { throw VaultError.invalidRecipient(r.key) }
+        }
+        let newSecret = p.rotate ? VaultSecret.random() : current
         // Signed before anything is written (it throws where ML-DSA is
         // unavailable); a change that keeps the secret keeps a signed link
         // and drops a malformed one.
         let link: SecretLink?
-        if rotate {
-            link = try RecipientsAuth.link(from: current, to: newSecret, vaultId: onDisk.vaultId)
-        } else if case .signed? = onDisk.secretLink {
-            link = onDisk.secretLink
+        if p.rotate {
+            link = try RecipientsAuth.link(from: current, to: newSecret, vaultId: p.base.vaultId)
+        } else if case .signed? = p.base.secretLink {
+            link = p.base.secretLink
         } else {
             link = nil
         }
-        let journal = RewrapJournal(format: SempereFormat.identifier,
-                                    previousVaultSecret: rotate ? try Self.encryptSecret(current, to: ageNext) : nil,
-                                    rekeyBlobs: method == .reencrypt)
-        let journalData = try InkJSON.encoder().encode(journal)
-        try FileIO.writeAtomically(journalData, to: journalURL, replacing: true)
-        previousSecret = rotate ? current : nil
+        // The keyring holds the outgoing secret before vault.json stops naming it (design §6.3, C0).
+        if let keyring {
+            try keyring.update(vaultId: vaultId) { ring in
+                ring.remember(current, now: now)
+                if p.rotate {
+                    ring.noteReplaced(current, now: now)
+                    ring.notePolicy(p.keyChange, outgoing: current)
+                }
+            }
+        }
+        try FileIO.writeAtomically(p.journal, to: journalURL, replacing: true)
+        previousSecret = p.rotate ? current : nil
+        if faults.stop == .afterJournal { throw VaultError.interrupted }
 
-        var m = onDisk
-        m.recipients = next
+        var m = p.base
+        m.recipients = p.next
         m.vaultSecret = try Self.encryptSecret(newSecret, to: ageNext)
-        m.recipientsTag = RecipientsAuth.tag(vaultId: m.vaultId, keys: next.map(\.key), secret: newSecret)
+        m.recipientsTag = RecipientsAuth.tag(vaultId: m.vaultId, keys: p.next.map(\.key), secret: newSecret)
         m.secretLink = link
         // The journal is bound to this vault.json under the new secret, which a
         // removed device does not hold (format.md §3.3.1 "Binding the journal"):
         // no journal counts without it.
-        m.rewrapPending = RecipientsAuth.rewrapPending(vaultId: m.vaultId, journal: journalData, secret: newSecret)
+        m.rewrapPending = RecipientsAuth.rewrapPending(vaultId: m.vaultId, journal: p.journal, secret: newSecret)
         manifest = try Self.writeManifest(m, to: manifestURL, replacing: true, secret: newSecret)
         secret = newSecret
         recipientsStatus = .verified(.unchanged)
         try? rememberRecipients()   // else saved by the next write (requireWritable)
+        if let keyring { try? keyring.update(vaultId: vaultId) { $0.remember(newSecret, now: now) } }
+        if faults.stop == .afterManifest { throw VaultError.interrupted }
 
-        return try finishRewrap(blobs: method, stopAfter: stopAfter)
+        return try finishRewrap(blobs: p.method, stopAfter: faults.stopAfterFiles, stopBeforeFinish: faults.stop == .beforeFinish)
     }
 
     // MARK: - Authenticated recipients (format.md §2.1)
@@ -924,6 +982,17 @@ public struct Vault: Sendable {
         /// re-encrypts each under a new file key, false rewrites only its
         /// header. Required: a journal without it is unreadable.
         var rekeyBlobs: Bool
+        /// The key-change mode (format.md §3.3.1, design §6.5): `routine` or
+        /// `compromised`; absent means `routine`.
+        var mode: String?
+        /// The late-file window in days (design §6.5); absent means 7
+        /// (0 in `compromised` mode).
+        var lateFileWindowDays: Int?
+
+        /// The policy these fields record (`KeyChangePolicy.init(journalMode:days:)`).
+        func keyChangePolicy() throws -> KeyChangePolicy {
+            try KeyChangePolicy(journalMode: mode, days: lateFileWindowDays)
+        }
     }
 
     /// The journal and its outgoing secret, when this device accepts it
@@ -973,8 +1042,11 @@ public struct Vault: Sendable {
                     }
                     body = plain
                 } catch BodyFramingError.tagMismatch {
-                    guard let previousSecret,
-                          let old = try? BodyFraming.unframe(plain, noteId: note, filename: name, secret: previousSecret)
+                    // The journal's outgoing secret, then (a late file's rewrap, design §6.3) the keyring's.
+                    let candidates = (previousSecret.map { [$0] } ?? []) + olderSecrets
+                    guard let old = candidates.lazy.compactMap({
+                        try? BodyFraming.unframe(plain, noteId: note, filename: name, secret: $0)
+                    }).first
                     else { report.failures[path] = .tagMismatch; continue }
                     body = BodyFraming.retag(old, noteId: note, filename: name, secret: current)
                 } catch {

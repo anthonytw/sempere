@@ -1,0 +1,266 @@
+import Age
+import Crypto
+import Foundation
+
+// MARK: - Secret keyring (docs/design/device-first-sync.md §6.3)
+//
+// A device-local record, per vault, of every vault secret this device has
+// held, with when each was replaced and the policy of the change that
+// replaced it (format.md §3.3.1 `mode`, `lateFileWindowDays`, as the journal
+// recorded them when this device first saw it). It lets this device verify
+// and rewrap files written under an older secret after the change finished
+// and the journal is gone (R3, F7, F8, F9). It lives outside the vault, is
+// never synced, and is sealed at rest (`KeyringSealer`): the app with a key
+// held in the Keychain, the CLI to the device's own age identity. It holds
+// only secrets this device already knew, so it reveals nothing new if the
+// device is compromised.
+
+/// The secrets one device held for one vault.
+public struct SecretKeyring: Hashable, Sendable, Codable {
+    /// The format identifier of the sealed plaintext.
+    public static let formatName = "sempere-keyring/1"
+    /// The most entries kept (oldest dropped first); a vault rotates its secret once per removal.
+    public static let maxEntries = 64
+
+    /// One secret.
+    public struct Entry: Hashable, Sendable, Codable {
+        /// `secretId` (format.md §2.1) in lowercase hex: names the secret without revealing it.
+        public var id: String
+        /// The secret, lowercase hex (sealed at rest with the whole keyring).
+        var secret: String
+        /// When this device first held it.
+        public var added: Date
+        /// When this device first held a `vault.json` with a later secret
+        /// (design R1, K2): the start of the late-file window. Nil while current.
+        public var replaced: Date?
+        /// The policy of the change away from it, as its journal recorded it,
+        /// copied when this device first saw that journal; nil when it never
+        /// did (then the strictest applies, design F18).
+        public var policy: KeyChangePolicy?
+    }
+
+    public var format: String
+    public var vaultId: UUID
+    public var entries: [Entry]
+
+    public init(vaultId: UUID) {
+        format = Self.formatName
+        self.vaultId = vaultId
+        entries = []
+    }
+
+    static func id(of secret: VaultSecret) -> String { Hex.encode(RecipientsAuth.secretId(secret)) }
+
+    /// The entry of `secret`, if held.
+    public func entry(for secret: VaultSecret) -> Entry? {
+        let id = Self.id(of: secret)
+        return entries.first { $0.id == id }
+    }
+
+    /// Adds `secret` if it is not held yet.
+    public mutating func remember(_ secret: VaultSecret, now: Date) {
+        let id = Self.id(of: secret)
+        guard !entries.contains(where: { $0.id == id }) else { return }
+        entries.append(Entry(id: id, secret: Hex.encode(secret.bytes), added: now))
+        if entries.count > Self.maxEntries { entries.removeFirst(entries.count - Self.maxEntries) }
+    }
+
+    /// Records that `secret` was replaced (the first time only): this device
+    /// now holds a `vault.json` with another secret.
+    public mutating func noteReplaced(_ secret: VaultSecret, now: Date) {
+        remember(secret, now: now)
+        let id = Self.id(of: secret)
+        guard let i = entries.firstIndex(where: { $0.id == id }), entries[i].replaced == nil else { return }
+        entries[i].replaced = now
+    }
+
+    /// Records the policy of the change away from `outgoing`, as its journal
+    /// recorded it. The first one seen is kept; a later one can only make it
+    /// stricter (an authenticated journal records one policy, so the two
+    /// agree unless something is wrong, and then the stricter is safe).
+    public mutating func notePolicy(_ policy: KeyChangePolicy, outgoing: VaultSecret) {
+        let id = Self.id(of: outgoing)
+        guard let i = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[i].policy = entries[i].policy.map { $0.stricter(policy) } ?? policy
+    }
+
+    /// Every held secret other than `current`, newest replaced first.
+    public func secrets(excluding current: VaultSecret) -> [VaultSecret] {
+        let currentId = Self.id(of: current)
+        return entries.filter { $0.id != currentId }
+            .sorted { ($0.replaced ?? .distantFuture) > ($1.replaced ?? .distantFuture) }
+            .compactMap { Hex.decode($0.secret).flatMap { try? VaultSecret(bytes: $0) } }
+    }
+
+    /// Until when a file tagged under `secret` (not the current one) arriving
+    /// from elsewhere is still a late file to take in (design §6.2 F9, F17
+    /// to F19): the earliest end of the windows of the change away from it
+    /// and of every later change, each counted from when this device first
+    /// saw that change (`replaced`), with 0 days for a change whose journal
+    /// it never saw. Nil when this device does not hold `secret`, or holds it
+    /// as current (not replaced): nothing is late then.
+    public func lateFileDeadline(for secret: VaultSecret) -> Date? {
+        guard let own = entry(for: secret), let since = own.replaced else { return nil }
+        var deadline = since.addingTimeInterval((own.policy ?? .unknown).window)
+        for e in entries where e.id != own.id {
+            guard let r = e.replaced, r >= since else { continue }
+            deadline = min(deadline, r.addingTimeInterval((e.policy ?? .unknown).window))
+        }
+        return deadline
+    }
+}
+
+/// Seals a keyring at rest. Implementations use swift-crypto or age only.
+public protocol KeyringSealer: Sendable {
+    func seal(_ plaintext: Data, vaultId: UUID) throws -> Data
+    func open(_ sealed: Data, vaultId: UUID) throws -> Data
+}
+
+/// Errors of the keyring stores.
+public enum SecretKeyringError: Error, Hashable, Sendable, CustomStringConvertible {
+    /// The sealed file does not open with this device's sealing key, or is not a keyring.
+    case unreadable(String)
+    /// The keyring names another vault.
+    case wrongVault
+
+    public var description: String {
+        switch self {
+        case .unreadable(let why): return "the secret keyring cannot be read: \(why)"
+        case .wrongVault: return "the secret keyring belongs to another vault"
+        }
+    }
+}
+
+/// ChaCha20-Poly1305 under a 256-bit key the platform keeps (the app: a
+/// Keychain item, `ThisDeviceOnly`), with the vault id as associated data.
+public struct SymmetricKeyringSealer: KeyringSealer {
+    let key: SymmetricKey
+
+    public init(key: SymmetricKey) { self.key = key }
+
+    static func associatedData(_ vaultId: UUID) -> Data {
+        var d = Data(SecretKeyring.formatName.utf8)
+        d.append(0)
+        d.append(contentsOf: vaultId.uuidString.lowercased().utf8)
+        return d
+    }
+
+    public func seal(_ plaintext: Data, vaultId: UUID) throws -> Data {
+        try ChaChaPoly.seal(plaintext, using: key, authenticating: Self.associatedData(vaultId)).combined
+    }
+
+    public func open(_ sealed: Data, vaultId: UUID) throws -> Data {
+        do {
+            return try ChaChaPoly.open(try ChaChaPoly.SealedBox(combined: sealed), using: key,
+                                       authenticating: Self.associatedData(vaultId))
+        } catch {
+            throw SecretKeyringError.unreadable("\(error)")
+        }
+    }
+}
+
+/// An age file to this device's own identity (the CLI's state directory):
+/// only that identity opens it, and the vault id inside is checked on load.
+public struct AgeKeyringSealer: KeyringSealer {
+    let identity: NativeIdentity
+
+    public init(identity: NativeIdentity) { self.identity = identity }
+
+    public func seal(_ plaintext: Data, vaultId: UUID) throws -> Data {
+        try AgeFile.encrypt(plaintext, to: [identity.recipient])
+    }
+
+    public func open(_ sealed: Data, vaultId: UUID) throws -> Data {
+        do { return try AgeFile.decrypt(sealed, with: [identity]) } catch {
+            throw SecretKeyringError.unreadable("\(error)")
+        }
+    }
+}
+
+/// Where a device keeps its keyrings, one per vault.
+public protocol SecretKeyringStore: Sendable {
+    /// The keyring of `vaultId`; nil when there is none yet.
+    ///
+    /// - Throws: `SecretKeyringError` when one exists and cannot be read
+    ///   (never taken as "none": that would forget secrets).
+    func load(vaultId: UUID) throws -> SecretKeyring?
+    func save(_ keyring: SecretKeyring) throws
+}
+
+extension SecretKeyringStore {
+    /// Loads (or starts) the keyring of `vaultId`, changes it and saves it
+    /// when it changed.
+    @discardableResult
+    public func update(vaultId: UUID, _ body: (inout SecretKeyring) throws -> Void) throws -> SecretKeyring {
+        let old = try load(vaultId: vaultId)
+        var ring = old ?? SecretKeyring(vaultId: vaultId)
+        try body(&ring)
+        if ring != old { try save(ring) }
+        return ring
+    }
+}
+
+/// Keyrings in memory (tests).
+public final class MemorySecretKeyringStore: SecretKeyringStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var rings: [UUID: SecretKeyring] = [:]
+
+    public init() {}
+
+    public func load(vaultId: UUID) throws -> SecretKeyring? {
+        lock.lock(); defer { lock.unlock() }
+        return rings[vaultId]
+    }
+
+    public func save(_ keyring: SecretKeyring) throws {
+        lock.lock(); defer { lock.unlock() }
+        rings[keyring.vaultId] = keyring
+    }
+}
+
+/// Keyrings as sealed files `<directory>/<vaultId>.keyring` (mode 0600 in a
+/// 0700 folder), each sealed by `sealer`.
+public struct SealedFileKeyringStore: SecretKeyringStore {
+    public let directory: URL
+    let sealer: any KeyringSealer
+
+    /// The largest sealed keyring read (`SecretKeyring.maxEntries` entries fit many times over).
+    static let maxBytes = 1 << 20
+
+    public init(directory: URL, sealer: any KeyringSealer) {
+        self.directory = directory
+        self.sealer = sealer
+    }
+
+    func url(_ vaultId: UUID) -> URL { directory.appendingPathComponent("\(vaultId.uuidString.lowercased()).keyring") }
+
+    public func load(vaultId: UUID) throws -> SecretKeyring? {
+        let file = url(vaultId)
+        guard FileIO.exists(file) else { return nil }
+        let sealed = try BoundedRead.contents(of: file, maxBytes: Self.maxBytes)
+        let plain = try sealer.open(sealed, vaultId: vaultId)
+        let ring: SecretKeyring
+        do {
+            let d = JSONDecoder()
+            d.dateDecodingStrategy = .secondsSince1970
+            ring = try d.decode(SecretKeyring.self, from: plain)
+        } catch {
+            throw SecretKeyringError.unreadable("not a keyring: \(error)")
+        }
+        guard ring.format == SecretKeyring.formatName else { throw SecretKeyringError.unreadable("format \(ring.format.prefix(32))") }
+        guard ring.vaultId == vaultId else { throw SecretKeyringError.wrongVault }
+        return ring
+    }
+
+    public func save(_ keyring: SecretKeyring) throws {
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = .secondsSince1970
+        e.outputFormatting = [.sortedKeys]
+        let sealed = try sealer.seal(try e.encode(keyring), vaultId: keyring.vaultId)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        let file = url(keyring.vaultId)
+        try FileIO.writeAtomically(sealed, to: file, replacing: true)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+    }
+}
