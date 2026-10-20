@@ -625,6 +625,12 @@ The user picks the mode in the key-change sheet:
   reported (`weakStamps`) and never replaced or settled; the keyring is written 0600 before the
   rename, updated under a lock, set aside (never overwritten) when it does not open, and resealed
   when the CLI identity changes; `listsDiffer` fails closed when the remote list was not read.
+- **Found by the 100-seed long run after those fixes**: an interrupted change resumed without the
+  keyring, so a blob under an even older secret held it back for ever (it now resumes under R3's
+  rules); R3 makes every local blob current (inert until a current revision references it, and
+  readable to removed keys if left); a device that took its list on the user's confirmation without
+  a link (it missed a rotation) replaces a server copy of its own revision that verifies under no
+  secret it holds (kept in quarantine first); otherwise such a copy is never pushed over (F6).
 - **Not in P4a**: inbox, `keys/`, `summaries/` and notebook records are not rewrap-replaced (P4);
   F16 runs over a target whose `vault.json` is replaced underneath and over P3's provider folder
   (`EvictingFolderProvider` conflict versions); F11 runs over `MemoryRemote` faults and the WebDAV mock, not wsgidav behind the fault
