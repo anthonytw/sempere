@@ -44,9 +44,13 @@ final class VaultStoreUITests: XCTestCase {
 
         // Delete from This Device, after confirming.
         openContextMenu(row, app)
-        click(button(app, "Delete from This Device…"))
-        let confirm = app.alerts.buttons["Delete"].firstMatch.exists ? app.alerts.buttons["Delete"].firstMatch
-            : app.buttons["Delete"].firstMatch
+        // A menu item on the Mac (found by its title), a button in the iPad's context menu.
+        let menuItem = app.menuItems["Delete from This Device…"].firstMatch
+        click(menuItem.waitForExistence(timeout: 5) ? menuItem : button(app, "Delete from This Device…"))
+        // The alert's button (never the Mac's Touch Bar copy of it).
+        let alert = app.alerts.buttons["Delete"].firstMatch
+        let confirm = alert.waitForExistence(timeout: 15) ? alert
+            : app.windows.descendants(matching: .button).matching(identifier: "Delete").firstMatch
         require(confirm, "the delete confirmation", in: app)
         click(confirm)
         XCTAssertTrue(row.waitForNonExistence(timeout: 30), "the vault is gone from the list")
