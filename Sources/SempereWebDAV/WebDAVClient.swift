@@ -71,8 +71,7 @@ public struct WebDAVClient: Sendable {
     /// credentials and transport (a vault found one level down).
     public func descendant(_ path: [String]) throws -> WebDAVClient {
         guard !path.isEmpty else { return self }
-        guard path.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." && !$0.contains("/") && !$0.contains("\0") }),
-              let url = url(for: path, collection: true) else {
+        guard let url = url(for: path, collection: true) else {
             throw WebDAVError.malformedResponse("not a usable folder name: \(SyncReport.printable(path.joined(separator: "/")))")
         }
         var c = self
@@ -403,7 +402,17 @@ public struct WebDAVClient: Sendable {
         <d:getetag/><d:getlastmodified/><d:getcontentlength/><d:resourcetype/></d:prop></d:propfind>
         """
 
+    /// A path component a URL can carry as one segment below the base:
+    /// never empty, `.`, `..` (a server or URL normalization would resolve
+    /// those to another collection, even above the base), or holding a `/` or a NUL.
+    static func isUsableComponent(_ c: String) -> Bool {
+        !c.isEmpty && c != "." && c != ".." && !c.contains("/") && !c.contains("\0")
+    }
+
+    /// The URL of `path` below the base; nil when a component is not usable
+    /// (`isUsableComponent`): the request is refused, never sent elsewhere.
     func url(for path: [String], collection: Bool) -> URL? {
+        guard path.allSatisfy(Self.isUsableComponent) else { return nil }
         let all = (baseComponents + path).map { $0.addingPercentEncoding(withAllowedCharacters: Self.segmentAllowed) ?? $0 }
         var s = origin + "/" + all.joined(separator: "/")
         if collection && !all.isEmpty { s += "/" }

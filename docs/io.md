@@ -1097,14 +1097,30 @@ own failures are its own error type and pass through unchanged (`WebDAVError`). 
 the ones a later run may not see (no network, a cut connection) as `TransientRemoteError`, so the
 engine keeps a partial download for the next run.
 
+**The in-memory transport.** `MemoryRemote` (`MemoryRemote.swift`, in `SempereSync`, Foundation only)
+keeps a vault layout in a `MemoryStore` shared by every remote made on it (one "server" for several
+devices) and keeps every promise above: counter version tokens, create-only and conditional
+writes, moves that never overwrite, ranged and resumed downloads, deep listings, folder tokens that
+change with anything below them (`MemoryStore.Behavior` sets atomic writes and a size limit, and
+`capabilities` reports them). `MemoryFaults` breaks those promises from a seed, per operation and
+path (so concurrent transfers replay): requests dropped, refused, applied with the answer lost or
+cut midway, latency (interruptible), and a hostile server's wrong bytes, listings that drop or
+invent entries or misreport sizes, and version tokens that change underneath. The store can also
+act like a provider that evicts files (`evict`, `requestDownload` after `arrivalDelay` operations,
+folders listed before their children: `setArriving`); the engine does not use availability yet.
+It serves the transport conformance suite, the engine's scenarios over every transport and the
+N-device stress run (docs/ci.md "Transports", "Sync stress"); nothing in the app or the CLI uses it.
+
 **Adding a transport.** Conform a type to `SyncRemote` in its own target; one that talks to a
 network goes beside `SempereWebDAV` and needs the network allowances (`scripts/check-portability.sh`,
 the `NETWORK_ALLOWED` list in `scripts/release-check.sh`, the privacy policy), and `SempereSync`
 stays network-free. Map paths (component lists below the remote's base, built from validated vault
-names) and version tokens (they change whenever the bytes do; a strong one, not `W/"…"`, backs
-conditions and resumes), bound what is read, and keep the hooks' defaults unless the store needs
-them. The planned ones are a folder transport for iCloud Drive and other providers, and possibly
-first-class S3-compatible or Dropbox adapters (docs/design/device-first-sync.md §3).
+names; refuse a component that is empty, `.`, `..` or holds a `/`, as `WebDAVClient` does) and
+version tokens (they change whenever the bytes do; a strong one, not `W/"…"`, backs conditions and
+resumes), bound what is read, and keep the hooks' defaults unless the store needs them. Then give it
+a fixture in the conformance suite and the engine's scenarios (docs/ci.md "Transports"). The planned
+ones are a folder transport for iCloud Drive and other providers, and possibly first-class
+S3-compatible or Dropbox adapters (docs/design/device-first-sync.md §3).
 
 ## WebDAV sync (`Sources/SempereWebDAV`)
 
