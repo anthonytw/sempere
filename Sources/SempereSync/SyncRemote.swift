@@ -25,13 +25,18 @@ import Foundation
 //   version token: it must change whenever the bytes do. A *strong* one
 //   (`SyncEngine.isStrong`: not `W/"…"`, not empty) also backs conditional
 //   writes, deletes and resumed downloads; a weak one is only compared.
-//   WebDAV uses its ETags; a folder transport would use size + mtime + file id.
+//   WebDAV uses its ETags; the folder transport (`FolderRemote`) the file's
+//   id, size and change times, plus a digest of small files at the base.
 // - Everything a remote returns is untrusted (format.md §9): the engine
 //   bounds and checks it, and a transport bounds what it reads (`maxBytes`).
 // - A failure the next run may not see (no network, a cut connection, a
 //   timeout) is an error conforming to `TransientRemoteError` whose
 //   `isTransient` is true: the engine then keeps a partial download for the
-//   next run instead of discarding it.
+//   next run instead of discarding it. A file that is listed but whose bytes
+//   are not here yet (an evicted file) is listed with its `availability`,
+//   and reading it throws an error whose `isUnavailable` is true: the engine
+//   asks for it (`requestDownload`), waits a bounded time, and otherwise
+//   leaves it for a later run, never taking it as missing (`Arrivals.swift`).
 //
 // Adding a transport: conform a type to `SyncRemote` in its own target (a
 // network transport belongs in a network target; `SempereSync` stays
@@ -181,6 +186,14 @@ public enum RemoteChange: Sendable, Hashable {
 /// run instead of discarding it. Transports' error types conform.
 public protocol TransientRemoteError: Error {
     var isTransient: Bool { get }
+    /// The file exists on the remote but its bytes are not here yet (an
+    /// evicted file a provider is still fetching): the engine treats it as
+    /// arriving, never as missing or failed. Default: false.
+    var isUnavailable: Bool { get }
+}
+
+extension TransientRemoteError {
+    public var isUnavailable: Bool { false }
 }
 
 /// The remote side of a sync: the operations `SyncEngine` makes (see the
@@ -256,6 +269,10 @@ public protocol SyncRemote: Sendable {
     /// Other versions of a file the store keeps beside the current one. Default: none.
     func conflictVersions(_ path: [String]) -> [RemoteVersion]
 
+    /// The bytes of one of `conflictVersions(path)`, read at most to
+    /// `maxBytes` (an error past it). Default: an error (there are no versions).
+    func readVersion(_ path: [String], _ version: RemoteVersion, maxBytes: Int) throws -> Data
+
     /// Removes the versions of `path` that the engine has merged. Default: nothing.
     func resolveConflicts(_ path: [String], _ versions: [RemoteVersion]) throws
 
@@ -266,6 +283,9 @@ public protocol SyncRemote: Sendable {
 extension SyncRemote {
     public func requestDownload(_ paths: [[String]]) throws {}
     public func conflictVersions(_ path: [String]) -> [RemoteVersion] { [] }
+    public func readVersion(_ path: [String], _ version: RemoteVersion, maxBytes: Int) throws -> Data {
+        throw SyncError.io("\(location): no version \(SyncReport.printable(version.id)) of /\(path.joined(separator: "/"))")
+    }
     public func resolveConflicts(_ path: [String], _ versions: [RemoteVersion]) throws {}
     public func changes() -> AsyncStream<RemoteChange>? { nil }
 

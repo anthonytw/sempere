@@ -20,6 +20,10 @@ public enum SyncError: Error, Hashable, Sendable {
     /// The caller canceled the run (`SyncOptions.isCancelled`); it
     /// stopped like a run bound does, and the next run continues.
     case cancelled
+    /// A file the run cannot do without (the remote's `vault.json`) is listed
+    /// but not downloaded by its provider yet, even after a bounded wait;
+    /// nothing was synced, and a later run continues (`Arrivals.swift`).
+    case notDownloaded(String)
 }
 
 extension SyncError {
@@ -43,6 +47,8 @@ extension SyncError: LocalizedError {
             return "the response for \(SyncReport.printable(path)) is over \(limit) bytes; not read"
         case .limitExceeded(let m): return "sync run stopped: \(m)"
         case .cancelled: return "sync run canceled"
+        case .notDownloaded(let p):
+            return "\(SyncReport.printable(p)) is not downloaded from the provider yet (asked for it); nothing was synced, run again"
         }
     }
 }
