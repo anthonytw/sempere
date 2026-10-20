@@ -15,7 +15,8 @@ import Sempere
 //   lacks, whatever the last sync recorded (the server lost them);
 //
 // a note's blobs first, its revisions once they all finished (format.md
-// §8.1.4 step 4), as the note loop orders them. Each upload is the same
+// §8.1.4 step 4), as the note loop orders them; when one of the note's blobs
+// failed to upload, its revisions wait for the next run (`blobsHeldBack`). Each upload is the same
 // `upload` / `uploadBlob` the note loop calls (`If-None-Match: *`; a blob to
 // a temporary name, then `MOVE` with `Overwrite: F`), so nothing on the
 // server is ever replaced. What it shares with the run is under `mutex`.
