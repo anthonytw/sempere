@@ -114,14 +114,14 @@ final class KeyChangeCoreTests: VaultTestCase {
         var ring = SecretKeyring(vaultId: UUID())
         ring.remember(s0, now: t0)
         ring.noteReplaced(s0, now: t0)
-        ring.notePolicy(try .routine(days: 7), outgoing: s0)
+        ring.notePolicy(try .routine(days: 7), outgoing: s0, changedAt: t0)
         XCTAssertEqual(ring.lateFileDeadline(for: s0), t0.addingTimeInterval(7 * 86_400))
         XCTAssertNil(ring.lateFileDeadline(for: s1), "a secret this device never held is never late, only invalid")
         ring.remember(s1, now: t0)
         XCTAssertNil(ring.lateFileDeadline(for: s1), "current: nothing is late")
         // A later compromised change closes the window of every older secret too.
         ring.noteReplaced(s1, now: t0.addingTimeInterval(86_400))
-        ring.notePolicy(.compromised, outgoing: s1)
+        ring.notePolicy(.compromised, outgoing: s1, changedAt: t0.addingTimeInterval(86_400))
         ring.remember(s2, now: t0.addingTimeInterval(86_400))
         XCTAssertEqual(ring.lateFileDeadline(for: s0), t0.addingTimeInterval(86_400))
         XCTAssertEqual(ring.lateFileDeadline(for: s1), t0.addingTimeInterval(86_400))
@@ -130,8 +130,8 @@ final class KeyChangeCoreTests: VaultTestCase {
         unseen.noteReplaced(s0, now: t0)
         XCTAssertEqual(unseen.lateFileDeadline(for: s0), t0)
         // A policy seen later can only make it stricter.
-        unseen.notePolicy(try .routine(days: 9), outgoing: s0)
-        unseen.notePolicy(try .routine(days: 2), outgoing: s0)
+        unseen.notePolicy(try .routine(days: 9), outgoing: s0, changedAt: t0)
+        unseen.notePolicy(try .routine(days: 2), outgoing: s0, changedAt: t0)
         XCTAssertEqual(unseen.entry(for: s0)?.policy?.lateFileWindowDays, 2)
         XCTAssertEqual(ring.secrets(excluding: s2), [s1, s0], "newest replaced first")
     }
@@ -185,11 +185,11 @@ final class KeyChangeCoreTests: VaultTestCase {
         let data = try Data(contentsOf: vaultURL().appendingPathComponent(path))
         XCTAssertNil(current.lateSecret(ofRevision: data, note: testNote, name: name), "without the keyring: unknown")
         XCTAssertFalse(current.withOlderSecrets(from: nil).classifyRevision(data, note: testNote, name: name).isCurrent)
-        XCTAssertTrue(try current.rewrapLateFiles().failures.keys.contains { $0.hasSuffix(name.filename) },
+        XCTAssertTrue(try current.rewrapLateFiles(ownDevices: [devA, devB, devC]).failures.keys.contains { $0.hasSuffix(name.filename) },
                       "without the keyring it is left as it is and reported")
         let withRing = current.withOlderSecrets(from: try ring.load(vaultId: current.vaultId))
         XCTAssertNotNil(withRing.lateSecret(ofRevision: data, note: testNote, name: name))
-        let report = try withRing.rewrapLateFiles()
+        let report = try withRing.rewrapLateFiles(ownDevices: [devA, devB, devC])
         XCTAssertTrue(report.isComplete, "\(report)")
         let after = try Data(contentsOf: vaultURL().appendingPathComponent(path))
         XCTAssertTrue(current.classifyRevision(after, note: testNote, name: name).isCurrent)

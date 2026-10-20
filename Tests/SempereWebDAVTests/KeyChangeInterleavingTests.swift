@@ -248,12 +248,12 @@ final class KeyChangeRun: @unchecked Sendable {
                 spares.append(s)
                 w.oracle.identities.append(s)
                 try w.change(d, overriding: overriding, faults: faults) {
-                    try $0.prepareAddRecipient(s.recipient, label: "paper", keyChange: policy)
+                    try $0.prepareAddRecipient(s.recipient, label: "paper", keyChange: policy, now: w.now)
                 }
                 count("add"); note("\(d.name) now \(listOf(d))")
             case (0, let s?), (1, let s?):
                 revoked.append(s)
-                try w.change(d, overriding: overriding, faults: faults) { try $0.prepareRemoveRecipient(s.recipient, keyChange: policy) }
+                try w.change(d, overriding: overriding, faults: faults) { try $0.prepareRemoveRecipient(s.recipient, keyChange: policy, now: w.now) }
                 count("remove"); note("\(d.name) now \(listOf(d))")
             default:
                 let old = d.identity, new = pqIdentity()
@@ -261,7 +261,7 @@ final class KeyChangeRun: @unchecked Sendable {
                 w.oracle.learn(d)
                 revoked.append(old)
                 try w.change(d, overriding: overriding, faults: faults) {
-                    try $0.prepareReplaceRecipient(old.recipient, with: new.recipient, keyChange: policy)
+                    try $0.prepareReplaceRecipient(old.recipient, with: new.recipient, keyChange: policy, now: w.now)
                 }
                 count("replace"); note("\(d.name) now \(listOf(d))")
             }
@@ -293,7 +293,7 @@ final class KeyChangeRun: @unchecked Sendable {
         let d = rng.pick([w.a, w.b])
         do {
             try w.change(d, overriding: Set(w.targets.filter { $0.offline.value }.map(\.name))) {
-                try $0.prepareRemoveRecipient(c.identity.recipient, keyChange: try .routine(days: 1))
+                try $0.prepareRemoveRecipient(c.identity.recipient, keyChange: try .routine(days: 1), now: w.now)
             }
             c.removed = true
             revoked.append(contentsOf: c.identities)
@@ -365,13 +365,13 @@ final class KeyChangeRun: @unchecked Sendable {
             var redone = false
             for _ in 0..<3 where !redone {
                 for t in d.targets { w.tick(); _ = try? d.sync(t.name, now: w.now) }
-                redone = (try? w.change(d) { try $0.prepareAddRecipient(spare.recipient, label: "paper") }) != nil
+                redone = (try? w.change(d) { try $0.prepareAddRecipient(spare.recipient, label: "paper", now: w.now) }) != nil
             }
             if !redone {
                 // The addition is given up: the key it added must not keep access, so the secret rotates.
                 for _ in 0..<3 where !redone {
                     for t in d.targets { w.tick(); _ = try? d.sync(t.name, now: w.now) }
-                    redone = (try? w.change(d) { try $0.prepareRotation() }) != nil
+                    redone = (try? w.change(d) { try $0.prepareRotation(now: w.now) }) != nil
                 }
             }
             count(redone ? "redone" : "redo failed"); note("\(d.name) now \(listOf(d))")

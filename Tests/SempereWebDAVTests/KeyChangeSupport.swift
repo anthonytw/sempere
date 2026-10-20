@@ -192,6 +192,7 @@ final class KCDevice: @unchecked Sendable {
     func options(_ now: Date) -> SyncOptions {
         var o = SyncOptions(deviceLabel: name, now: now)
         o.blobRetention = 0
+        o.ownDevices = [device]
         return o
     }
 
@@ -411,7 +412,7 @@ final class KCWorld: @unchecked Sendable {
     func addSpare(on d: KCDevice, policy: KeyChangePolicy = .routine) throws -> NativeIdentity {
         let s = pqIdentity()
         oracle.identities.append(s)
-        try change(d) { try $0.prepareAddRecipient(s.recipient, label: "paper", keyChange: policy) }
+        try change(d) { try $0.prepareAddRecipient(s.recipient, label: "paper", keyChange: policy, now: now) }
         spare = s
         return s
     }

@@ -106,11 +106,12 @@ extension SyncEngine {
         // R3: this device's late files (and stale copies) rewrapped from its keyring.
         if options.lateRewrap, state.lateRewrapFor != fingerprint, let v = keyChangeVault() {
             do {
-                let r = try v.rewrapLateFiles()
+                let r = try v.rewrapLateFiles(ownDevices: options.ownDevices)
                 if !r.rewrapped.isEmpty {
                     keyChangeActivity { $0.rewrapped += r.rewrapped.count }
                     bumpGeneration(store)
                 }
+                setAsideLateFiles(r.lateSkipped, vault: v)
                 if r.isComplete { state.lateRewrapFor = fingerprint }
             } catch {
                 report.skipped.append(.init(path: Vault.notesName, message: "late files not rewrapped: \(Self.describe(error))"))
@@ -161,11 +162,11 @@ extension SyncEngine {
             locked { kc.ring = ring; kc.vault = nil }
         } else if name == Vault.journalName {
             guard let manifest = try? localMutable(Vault.manifestName),
-                  let (policy, previous) = vault.acceptedJournalPolicy(data, manifest: manifest), let previous else { return }
+                  let (policy, previous, changedAt) = vault.acceptedJournalPolicy(data, manifest: manifest), let previous else { return }
             // The change's policy, copied when first seen (design §6.5).
             let ring = try store.update(vaultId: vault.vaultId) {
                 $0.noteReplaced(previous, now: options.now)
-                $0.notePolicy(policy, outgoing: previous)
+                $0.notePolicy(policy, outgoing: previous, changedAt: changedAt)
             }
             locked { kc.ring = ring; kc.vault = nil }
         }
@@ -179,6 +180,30 @@ extension SyncEngine {
         }
         return vault.acceptsJournal(local) ? nil
             : "this device refuses the local rewrap journal (vault.json does not bind it): never uploaded (design §6.2 F2)"
+    }
+
+    /// Another device's revisions under a keyring secret held here (R3 skipped them) whose names say they
+    /// were written after the change away from that secret: received here before this device learned of
+    /// the change (a removed device's write to a target the change had not reached, review finding 2).
+    /// They are moved to the late-file quarantine (kept, never deleted; Adopt or Export), never made
+    /// current here. One whose name claims an earlier time stays as it is, under its old wrap, unreadable
+    /// until its writer or a current copy from a target replaces it.
+    func setAsideLateFiles(_ paths: [String], vault v: Vault) {
+        guard !options.dryRun, let ring = locked({ kc.ring }) else { return }
+        for p in paths {
+            let parts = p.split(separator: "/").map(String.init)
+            guard parts.count == 2, let n = RevisionName(parts[1]), let note = UUID(uuidString: parts[0]) else { continue }
+            let url = root.appendingPathComponent(Vault.notesName).appendingPathComponent(p)
+            guard let data = try? BoundedRead.contents(of: url, maxBytes: options.maxFileBytes),
+                  let s = v.lateSecret(ofRevision: data, note: note, name: n),
+                  let changedAt = ring.entry(for: s)?.changedAt ?? ring.entry(for: s)?.replaced,
+                  Double(n.hlc.millis) / 1000 > changedAt.timeIntervalSince1970 else { continue }
+            let path = "notes/\(p)"
+            quarantineLate(key(parts[0], n), path: path, entry: nil,
+                           reason: "another device's file under a replaced secret, written after the change; set aside, "
+                               + "never made current here (adopt or export it)", data: data)
+            try? LocalFS.remove(url)
+        }
     }
 
     // MARK: Late files (F9, F17 to F19)
@@ -297,8 +322,13 @@ extension SyncEngine {
                 if local == remote {
                     if case .current = v.classifyRevision(local, note: uuid, name: n) {
                         settled(key(id, n), remotePath, etag)
+                    } else if options.ownDevices.contains(n.device) {
+                        notSettled(path, "neither copy is current yet")   // this device's own: R3 rewraps it
                     } else {
-                        notSettled(path, "neither copy is current yet")
+                        // Another device's, under an older wrap on both sides: only its writer (or a current
+                        // copy from elsewhere) makes it current; it does not hold this pair back.
+                        staleKept(path)
+                        settled(key(id, n), remotePath, etag)
                     }
                     continue
                 }
@@ -331,10 +361,10 @@ extension SyncEngine {
                 let lh = try FileDigest.sha256(of: localURL).hex, rh = try FileDigest.sha256(of: tmp).hex
                 if lh == rh {
                     if case .current = v.classifyBlob(at: localURL, fileName: name) {
-                        settled(blobKey(id, name), remotePath, result.etag ?? blobs.remote[name]?.etag)
                     } else {
-                        notSettled(path, "neither copy is current yet")
+                        staleKept(path)   // R3 rewraps it here when a readable revision of this device's references it
                     }
+                    settled(blobKey(id, name), remotePath, result.etag ?? blobs.remote[name]?.etag)
                     continue
                 }
                 let l = v.classifyBlob(at: localURL, fileName: name), r = v.classifyBlob(at: tmp, fileName: name)
@@ -353,6 +383,11 @@ extension SyncEngine {
                 report.errors.append(.init(path: path, message: Self.describe(error)))
             }
         }
+    }
+
+    /// A file left under an older wrap on both sides, which this pair cannot make current.
+    func staleKept(_ path: String) {
+        keyChangeActivity { $0.staleKept.append(path) }
     }
 
     /// A shared file whose copies are not settled: the pair is not settled either.
@@ -393,6 +428,8 @@ extension SyncEngine {
         }
         if localWins {
             guard let etag = (etag ?? entry?.etag), Self.isStrong(etag) else {
+                // No unconditional replace: another device's replace could be lost under it (review finding 7).
+                keyChangeActivity { $0.weakStamps = true }
                 return unsettled("the server gives no strong version token to replace its copy under")
             }
             if try replaceRemote(.replace(etag: etag)) {
@@ -406,6 +443,8 @@ extension SyncEngine {
             try replaceLocal()
             keyChangeActivity { $0.replaced.append(.init(side: "local", path: path)) }
             if let store = options.keyring { bumpGeneration(store) }
+            // A revision now current here may reference blobs R3 left under an older name: look again.
+            locked { state.lateRewrapFor = nil }
             settled(etag ?? entry?.etag)
         }
     }

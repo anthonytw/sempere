@@ -37,6 +37,10 @@ public struct SecretKeyring: Hashable, Sendable, Codable {
         /// copied when this device first saw that journal; nil when it never
         /// did (then the strictest applies, design F18).
         public var policy: KeyChangePolicy?
+        /// When the change away from it was made, as its journal recorded it (`changedAt`, bound by
+        /// `rewrapPending`): its window ends at most `policy`'s days after it, however late this device
+        /// first saw the change. Nil: unknown (the window is then 0 days).
+        public var changedAt: Date?
     }
 
     public var format: String
@@ -82,10 +86,23 @@ public struct SecretKeyring: Hashable, Sendable, Codable {
     /// recorded it. The first one seen is kept; a later one can only make it
     /// stricter (an authenticated journal records one policy, so the two
     /// agree unless something is wrong, and then the stricter is safe).
-    public mutating func notePolicy(_ policy: KeyChangePolicy, outgoing: VaultSecret) {
+    public mutating func notePolicy(_ policy: KeyChangePolicy, outgoing: VaultSecret, changedAt: Date?) {
         let id = Self.id(of: outgoing)
         guard let i = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[i].policy = entries[i].policy.map { $0.stricter(policy) } ?? policy
+        if let changedAt { entries[i].changedAt = entries[i].changedAt.map { min($0, changedAt) } ?? changedAt }
+    }
+
+    /// How far a change time may be behind this device's clock and still count (clock skew between devices).
+    public static let clockSlack: TimeInterval = 3600
+
+    /// When the late-file window of `e`'s change ends: from the earlier of when this device first saw the
+    /// change and when it was made (plus `clockSlack`), `policy`'s days; 0 days with no policy or no change
+    /// time (design F18; review: a target replaying a finished change's step-2 `vault.json` to a stale
+    /// device must not reopen the window).
+    static func windowEnd(_ e: Entry, since: Date) -> Date {
+        guard let policy = e.policy, let changedAt = e.changedAt else { return since }
+        return min(since, changedAt.addingTimeInterval(clockSlack)).addingTimeInterval(policy.window)
     }
 
     /// Every held secret other than `current`, newest replaced first.
@@ -105,10 +122,10 @@ public struct SecretKeyring: Hashable, Sendable, Codable {
     /// as current (not replaced): nothing is late then.
     public func lateFileDeadline(for secret: VaultSecret) -> Date? {
         guard let own = entry(for: secret), let since = own.replaced else { return nil }
-        var deadline = since.addingTimeInterval((own.policy ?? .unknown).window)
+        var deadline = Self.windowEnd(own, since: since)
         for e in entries where e.id != own.id {
             guard let r = e.replaced, r >= since else { continue }
-            deadline = min(deadline, r.addingTimeInterval((e.policy ?? .unknown).window))
+            deadline = min(deadline, Self.windowEnd(e, since: r))
         }
         return deadline
     }

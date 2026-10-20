@@ -122,6 +122,9 @@ public struct SyncOptions: Sendable {
     /// or a late file would replace or place; what it throws stops there, as
     /// a crash would.
     public var beforeLocalReplace: (@Sendable (String) throws -> Void)?
+    /// The device ids this device writes as (its `DeviceState`): R3 rewraps from the keyring only their
+    /// files (design §6.1 R3). Empty: none.
+    public var ownDevices: Set<DeviceID> = []
     /// Tests: false skips R3 (this device's late files rewrapped from its keyring), so a sweep meets stale local copies.
     var lateRewrap = true
     /// Files a provider lists but has not downloaded yet (`Arrivals.swift`):

@@ -116,11 +116,13 @@ public struct KeyChangePolicy: Hashable, Sendable, Codable {
 public enum KeyChangePolicyError: Error, Hashable, Sendable, CustomStringConvertible {
     case unknownMode(String)
     case windowOutOfRange(Int)
+    case badChangeTime
 
     public var description: String {
         switch self {
         case .unknownMode(let m):
             return "unknown key-change mode \(String(String.UnicodeScalarView(m.unicodeScalars.filter { $0.isASCII && $0.value >= 0x20 && $0.value < 0x7f })))"
+        case .badChangeTime: return "changedAt is not an RFC 3339 time"
         case .windowOutOfRange(let d):
             return "late-file window \(d) days is outside 0 to \(KeyChangePolicy.maxWindowDays) (0 in compromised mode)"
         }
@@ -176,6 +178,8 @@ public struct PreparedKeyChange: Sendable {
     public let journal: Data
     /// The mode and late-file window it records.
     public let keyChange: KeyChangePolicy
+    /// When the change was made (`changedAt` in the journal).
+    public let changedAt: Date
 
     /// The keys of the new list.
     public var nextKeys: [String] { next.map(\.key) }
@@ -191,31 +195,31 @@ extension Vault {
     /// change refuses (design §6.1 C0: no journal is pending).
     public mutating func prepareAddRecipient(_ recipient: NativeRecipient, label: String, added: Date = Date(),
                                              policy: RewrapPolicy = RewrapPolicy(),
-                                             keyChange: KeyChangePolicy = .routine) throws -> PreparedKeyChange {
+                                             keyChange: KeyChangePolicy = .routine, now: Date = Date()) throws -> PreparedKeyChange {
         guard recipient.isPostQuantum else { throw VaultError.classicRecipient(recipient.string) }
         try requirePreparable()
         let key = recipient.string
         guard !manifest.recipients.contains(where: { $0.key == key }) else { throw VaultError.duplicateRecipient(key) }
         var next = manifest.recipients
         next.append(.init(key: key, label: VaultManifest.Recipient.cleanLabel(label), added: added))
-        return try prepareChange(next, rotate: false, policy: policy, repairing: false, keyChange: keyChange)
+        return try prepareChange(next, rotate: false, policy: policy, repairing: false, keyChange: keyChange, now: now)
     }
 
     /// Prepares removing `recipient` (as `removeRecipient`): the secret rotates.
     public mutating func prepareRemoveRecipient(_ recipient: NativeRecipient, policy: RewrapPolicy = RewrapPolicy(),
-                                                keyChange: KeyChangePolicy = .routine) throws -> PreparedKeyChange {
+                                                keyChange: KeyChangePolicy = .routine, now: Date = Date()) throws -> PreparedKeyChange {
         try requirePreparable()
         let key = recipient.string
         guard manifest.recipients.contains(where: { $0.key == key }) else { throw VaultError.unknownRecipient(key) }
         let next = manifest.recipients.filter { $0.key != key }
         guard !next.isEmpty else { throw VaultError.lastRecipient }
-        return try prepareChange(next, rotate: true, policy: policy, repairing: false, keyChange: keyChange)
+        return try prepareChange(next, rotate: true, policy: policy, repairing: false, keyChange: keyChange, now: now)
     }
 
     /// Prepares replacing `old` by `new` (as `replaceRecipient`): the secret rotates.
     public mutating func prepareReplaceRecipient(_ old: NativeRecipient, with new: NativeRecipient, label: String? = nil,
                                                  added: Date = Date(), policy: RewrapPolicy = RewrapPolicy(),
-                                                 keyChange: KeyChangePolicy = .routine) throws -> PreparedKeyChange {
+                                                 keyChange: KeyChangePolicy = .routine, now: Date = Date()) throws -> PreparedKeyChange {
         guard new.isPostQuantum else { throw VaultError.classicRecipient(new.string) }
         try requirePreparable()
         let oldKey = old.string, newKey = new.string
@@ -225,7 +229,7 @@ extension Vault {
         guard !manifest.recipients.contains(where: { $0.key == newKey }) else { throw VaultError.duplicateRecipient(newKey) }
         var next = manifest.recipients
         next[index] = .init(key: newKey, label: label.map(VaultManifest.Recipient.cleanLabel) ?? next[index].label, added: added)
-        return try prepareChange(next, rotate: true, policy: policy, repairing: false, keyChange: keyChange)
+        return try prepareChange(next, rotate: true, policy: policy, repairing: false, keyChange: keyChange, now: now)
     }
 
     /// Prepares rotating the vault secret without changing the list: every file is re-encrypted to the
@@ -234,9 +238,10 @@ extension Vault {
     /// that key still count as current (stanza counts cannot tell recipients apart, format.md §3.3.1),
     /// so the key keeps access until a rotation like this one (or the addition is redone).
     public mutating func prepareRotation(policy: RewrapPolicy = RewrapPolicy(),
-                                         keyChange: KeyChangePolicy = .routine) throws -> PreparedKeyChange {
+                                         keyChange: KeyChangePolicy = .routine, now: Date = Date()) throws -> PreparedKeyChange {
         try requirePreparable()
-        return try prepareChange(manifest.recipients, rotate: true, policy: policy, repairing: false, keyChange: keyChange)
+        return try prepareChange(manifest.recipients, rotate: true, policy: policy, repairing: false, keyChange: keyChange,
+                                 now: now)
     }
 
     /// Writes a prepared change (K1 to K4): its journal, `vault.json` binding
@@ -305,12 +310,18 @@ extension Vault {
     /// files that lack a recipient added since they were written.
     ///
     /// - Throws: the checks of `requireWritable`; `partialCopy`.
+    ///
+    /// - Parameter ownDevices: the device ids this device writes as. Only their revisions under a keyring
+    ///   secret are rewrapped, and only blobs one of its readable revisions references; another device's
+    ///   (a removed device's above all) is left as it is and listed in `lateSkipped`.
     @discardableResult
-    public func rewrapLateFiles() throws -> RewrapReport {
+    public func rewrapLateFiles(ownDevices: Set<DeviceID>) throws -> RewrapReport {
         _ = try requireReadable()
         try requireWritable()
         try requireCompleteCopy()
-        return try rewrapNotes(blobs: .reencrypt, stopAfter: nil)
+        var v = self
+        v.lateOwnDevices = ownDevices
+        return try v.rewrapNotes(blobs: .reencrypt, stopAfter: nil)
     }
 
     // MARK: Two copies of one file (design §5.2 rewrap-replace, §6.2 F9)
@@ -536,14 +547,15 @@ extension Vault {
     /// The policy and outgoing secret of a journal this device accepts under
     /// `manifest` (format.md §3.3.1 "Accepting the journal"); nil when it
     /// refuses it or cannot judge it.
-    package func acceptedJournalPolicy(_ journal: Data, manifest: Data) -> (policy: KeyChangePolicy, previous: VaultSecret?)? {
+    package func acceptedJournalPolicy(_ journal: Data, manifest: Data)
+        -> (policy: KeyChangePolicy, previous: VaultSecret?, changedAt: Date?)? {
         guard canRead, let m = try? Self.readManifest(manifest), m.vaultId == vaultId,
               let s = try? Self.decryptSecret(m.vaultSecret, with: identities) else { return nil }
         let record = (try? trustStore?.record(for: vaultId)) ?? nil
         guard case .accepted(let j, let previous) = Self.judgeJournal(bytes: journal, manifest: m, secret: s,
                                                                     identities: identities, record: record),
               let policy = try? j.keyChangePolicy() else { return nil }
-        return (policy, previous)
+        return (policy, previous, j.changeTime)
     }
 
     /// True when this device accepts `journal` under its own `vault.json`

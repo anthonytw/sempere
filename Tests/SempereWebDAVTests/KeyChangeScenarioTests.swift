@@ -36,7 +36,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
             let spare = try w.addSpare(on: w.a)
             try w.converge()
             w.assertConverged()
-            try w.change(w.b) { try $0.prepareRemoveRecipient(spare.recipient) }
+            try w.change(w.b) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }
             try w.converge()
             w.assertConverged()
             w.assertRevoked([spare])
@@ -64,7 +64,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
     /// take the step-2 vault.json and the journal (the policy) there; then it finishes everywhere.
     func removeSpareSeenBy(_ w: KCWorld, on d: KCDevice, policy: KeyChangePolicy, seers: [KCDevice]) throws {
         let spare = try XCTUnwrap(w.spare)
-        try w.change(d) { try $0.prepareRemoveRecipient(spare.recipient, keyChange: policy) }
+        try w.change(d) { try $0.prepareRemoveRecipient(spare.recipient, keyChange: policy, now: w.now) }
         w.tick()
         XCTAssertThrowsError(try d.sync("T0", now: w.now, faults: KeyChangeFaults(afterStep: ["T0": .manifest])))
         for s in seers {
@@ -85,7 +85,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         let before = w.everyCopy().map { "\($0.0)/\($0.1)" }.sorted()
         let manifest = w.a.manifest()
         XCTAssertThrowsError(try w.change(w.a, faults: KeyChangeFaults(afterClaims: true)) {
-            try $0.prepareRemoveRecipient(spare.recipient)
+            try $0.prepareRemoveRecipient(spare.recipient, now: w.now)
         })
         for t in w.targets { XCTAssertNotNil(t.file([Vault.journalName]), "\(t.name): claimed") }
         XCTAssertEqual(w.a.manifest(), manifest, "no file changed")
@@ -110,7 +110,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         let spare = try w.addSpare(on: w.a)
         try w.converge()
         XCTAssertThrowsError(try w.change(w.a, faults: KeyChangeFaults(rewrap: RewrapFaults(stop: .afterJournal))) {
-            try $0.prepareRemoveRecipient(spare.recipient)
+            try $0.prepareRemoveRecipient(spare.recipient, now: w.now)
         })
         XCTAssertTrue(FileManager.default.fileExists(atPath: w.a.folder.appendingPathComponent(Vault.journalName).path))
         XCTAssertTrue(try w.a.vault().journalRefused, "unbound: refused at open")
@@ -138,7 +138,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
             let spare = try w.addSpare(on: w.a)
             try w.converge()
             XCTAssertThrowsError(try w.change(w.a, faults: KeyChangeFaults(rewrap: RewrapFaults(stop: .afterFiles(n)))) {
-                try $0.prepareRemoveRecipient(spare.recipient)
+                try $0.prepareRemoveRecipient(spare.recipient, now: w.now)
             }, "n = \(n)")
             let v = try w.a.vault()
             XCTAssertNotNil(v.previousSecret, "n = \(n): the journal is accepted")
@@ -160,7 +160,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         let old = w.a.identity, new = pqIdentity()
         w.a.identities.insert(new, at: 0)
         XCTAssertThrowsError(try w.change(w.a, faults: KeyChangeFaults(rewrap: RewrapFaults(stop: .afterFiles(1)))) {
-            try $0.prepareReplaceRecipient(old.recipient, with: new.recipient)
+            try $0.prepareReplaceRecipient(old.recipient, with: new.recipient, now: w.now)
         })
         let pending = try w.a.vault()
         XCTAssertTrue(pending.pendingRewrap)
@@ -206,7 +206,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         let spare = try w.addSpare(on: w.a)
         try w.converge()
         let bBefore = w.b.noteFiles()
-        try w.change(w.a, syncFirst: false) { try $0.prepareRemoveRecipient(spare.recipient) }
+        try w.change(w.a, syncFirst: false) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }
         // A transport that reorders: the files arrive, vault.json does not.
         for (p, data) in w.a.noteFiles() { w.targets[0].put(p.split(separator: "/").map(String.init), data) }
         let target = w.targets[0].noteFiles()
@@ -230,19 +230,19 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         let t0 = w.targets[0], t1 = w.targets[1]
         // Without the override, an unreachable target refuses a routine change.
         t1.offline.value = true
-        XCTAssertThrowsError(try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient) }) { e in
+        XCTAssertThrowsError(try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }) { e in
             guard case KeyChangeError.targetNotRecentlySynced = e else {
                 guard case KeyChangeError.targetUnreachable = e else { return XCTFail("\(e)") }
                 return
             }
         }
         // A removes the spare with T1 overridden; B, with T0 out of reach, replaces its own key.
-        try w.change(w.a, overriding: ["T1"]) { try $0.prepareRemoveRecipient(spare.recipient) }
+        try w.change(w.a, overriding: ["T1"]) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }
         t1.offline.value = false
         t0.offline.value = true
         let bOld = w.b.identity, bNew = pqIdentity()
         w.b.identities.insert(bNew, at: 0)
-        try w.change(w.b, overriding: ["T0"]) { try $0.prepareReplaceRecipient(bOld.recipient, with: bNew.recipient) }
+        try w.change(w.b, overriding: ["T0"]) { try $0.prepareReplaceRecipient(bOld.recipient, with: bNew.recipient, now: w.now) }
         t0.offline.value = false
         w.oracle.learn(w.b)
         // They meet: each records the other's change on a target, and nothing is replaced across lists.
@@ -254,7 +254,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         try w.a.coordinator.adoptOtherChange(from: "T1", vault: &va, now: w.now)
         w.oracle.learn(w.a)
         try w.converge()
-        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient) }
+        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }
         try w.converge()
         w.assertConverged()
         w.assertRevoked([spare, bOld])
@@ -272,7 +272,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
             try w.converge()
             let n3 = UUID()
             try w.write(w.c, n3, "written by C while away")
-            try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient) }
+            try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }
             try w.converge(skip: ["C"])
             XCTAssertNil(w.targets[0].file([Vault.journalName]), "the change finished everywhere else")
             w.tick(days * 86_400)
@@ -344,7 +344,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
     func testRemovedDeviceWrites() throws {
         let w = try seeded()
         let removed = w.c
-        try w.change(w.a) { try $0.prepareRemoveRecipient(removed.identity.recipient, keyChange: try .routine(days: 1)) }
+        try w.change(w.a) { try $0.prepareRemoveRecipient(removed.identity.recipient, keyChange: try .routine(days: 1), now: w.now) }
         try w.converge(skip: ["C"])
         removed.removed = true
         let n3 = UUID()
@@ -375,7 +375,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         let w = try seeded()
         let spare = try w.addSpare(on: w.a)
         try w.converge()
-        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient) }
+        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }
         w.a.faults["T0"] = MemoryFaults(seed: 11, rates: MemoryFaults.Rates([.cutBody: 0.5, .dropBefore: 0.2, .loseAnswer: 0.2]))
         let oracle = w.oracle
         for _ in 0..<12 {
@@ -398,7 +398,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         let w = try seeded()
         let spare = try w.addSpare(on: w.a)
         try w.converge()
-        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient) }
+        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }
         try w.converge(skip: ["B", "C"])
         // B's R3 is off (its own copies stay stale), so the sweep replaces them locally.
         w.tick()
@@ -423,7 +423,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         let w = try seeded()
         let spare = try w.addSpare(on: w.a)
         try w.converge()
-        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient) }
+        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }
         try w.converge(skip: ["B", "C"])
         let before = w.b.noteFiles(), manifest = w.b.manifest()
         w.tick()
@@ -451,7 +451,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         try w.converge()
         XCTAssertThrowsError(try w.change(w.a) { v in
             v.crashAfterBlobPlace = true
-            return try v.prepareRemoveRecipient(spare.recipient)
+            return try v.prepareRemoveRecipient(spare.recipient, now: w.now)
         })
         let att = w.a.folder.appendingPathComponent("notes/\(n1.uuidString.lowercased())/att")
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: att.path).filter { !$0.hasPrefix(".") }.count, 2,
@@ -478,7 +478,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         let spare = try w.addSpare(on: w.a)
         try w.converge()
         let old = w.targets[0].noteFiles()
-        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient) }
+        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }
         try w.converge()
         let current = w.b.noteFiles()
         for (p, data) in old { w.targets[0].put(p.split(separator: "/").map(String.init), data) }
@@ -494,7 +494,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         let w = try seeded()
         let spare = try w.addSpare(on: w.a)
         try w.converge()
-        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient) }
+        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }
         try w.converge()
         let v = try w.a.vault()
         let (p, data) = try XCTUnwrap(w.a.noteFiles().first { $0.key.split(separator: "/").count == 3 })
@@ -528,12 +528,12 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         try w.converge()
         // A list fork: A's change on T0, and the pre-change list put back under it as the provider's pick.
         let pre = try XCTUnwrap(w.targets[0].file([Vault.manifestName]))
-        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient) }
+        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }
         w.tick()
         _ = try w.a.sync("T0", now: w.now)
         let files = w.targets[0].noteFiles()
         let bBefore = w.b.noteFiles()
-        try w.change(w.b) { try $0.prepareAddRecipient(pqIdentity().recipient, label: "x") }
+        try w.change(w.b) { try $0.prepareAddRecipient(pqIdentity().recipient, label: "x", now: w.now) }
         w.targets[0].put([Vault.manifestName], pre)
         w.tick()
         let fork = try w.a.sync("T0", now: w.now)
@@ -569,7 +569,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         let w = try seeded()
         let spare = try w.addSpare(on: w.a)
         try w.converge()
-        try w.change(w.a, syncFirst: false) { try $0.prepareRemoveRecipient(spare.recipient, keyChange: .compromised) }
+        try w.change(w.a, syncFirst: false) { try $0.prepareRemoveRecipient(spare.recipient, keyChange: .compromised, now: w.now) }
         try w.write(w.a, UUID(), "written after the change")
         let faults = MemoryFaults(seed: 1)
         w.a.faults["T0"] = faults
@@ -590,7 +590,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         let spare = try w.addSpare(on: w.a)
         try w.converge()
         w.targets[1].offline.value = true
-        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient, keyChange: .compromised) }
+        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient, keyChange: .compromised, now: w.now) }
         XCTAssertNil(w.targets[1].file([Vault.journalName]), "not claimed while out of reach")
         try w.converge()
         XCTAssertTrue(w.a.coordinator.inProgress, "T1 is still to be done")
@@ -612,7 +612,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         let late = try offlineRevision(w, w.b, UUID(), "B's, never synced")
         let own = UUID()
         try w.write(w.c, own, "C's own, while away")
-        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient, keyChange: try .routine(days: 30)) }
+        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient, keyChange: try .routine(days: 30), now: w.now) }
         try w.converge(skip: ["C"])
         w.targets[0].put(late.path, late.data)
         w.tick()
@@ -633,18 +633,20 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         _ = try w.addSpare(on: w.a)
         try w.converge()
         let late = try offlineRevision(w, w.b, UUID(), "late")
-        try removeSpareSeenBy(w, on: w.a, policy: try .routine(days: 3), seers: [w.c])
-        // B sees the change (the journal still on T0: A is away) only four days later: its window starts then.
-        w.tick(4 * 86_400)
-        let seen = try w.b.sync("T0", now: w.now)
-        XCTAssertTrue(seen.downloaded.contains(Vault.journalName), "\(KCWorld.brief(seen))")
+        // B sees the change while its journal is on T0 (the policy: 3 days); C is away until it finished,
+        // so it never sees the policy and applies 0 days (F18). Every window ends by changedAt + 3 days.
+        try removeSpareSeenBy(w, on: w.a, policy: try .routine(days: 3), seers: [w.b])
+        try w.converge(skip: ["C"])
+        w.tick()
+        _ = try w.c.sync("T0", now: w.now)
+        w.tick(86_400)
         w.targets[0].put(late.path, late.data)
         w.tick()
         let rc = try w.c.sync("T0", now: w.now)
-        XCTAssertEqual(rc.keyChange?.lateQuarantined.count, 1, "C's window is over: \(KCWorld.brief(rc))")
+        XCTAssertEqual(rc.keyChange?.lateQuarantined.count, 1, "C never saw the policy: \(KCWorld.brief(rc))")
         w.tick()
         let rb = try w.b.sync("T0", now: w.now)
-        XCTAssertEqual(rb.keyChange?.lateAccepted.count, 1, "B's is open: \(KCWorld.brief(rb))")
+        XCTAssertEqual(rb.keyChange?.lateAccepted.count, 1, "B's window is open: \(KCWorld.brief(rb))")
         try w.converge()
         XCTAssertEqual(try w.c.notes()[UUID(uuidString: late.path[1])!], "late", "C takes the current copy")
         XCTAssertEqual(w.c.lateFiles().count, 1, "and keeps the quarantined original")
@@ -664,7 +666,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         let late = try offlineRevision(w, w.c, UUID(), "late")
         let spare = try XCTUnwrap(w.spare)
         XCTAssertThrowsError(try w.change(w.a, faults: KeyChangeFaults(rewrap: RewrapFaults(stop: .afterFiles(2)))) {
-            try $0.prepareRemoveRecipient(spare.recipient, keyChange: try .routine(days: 7))
+            try $0.prepareRemoveRecipient(spare.recipient, keyChange: try .routine(days: 7), now: w.now)
         })
         w.tick()
         XCTAssertThrowsError(try w.a.sync("T0", now: w.now, faults: KeyChangeFaults(afterStep: ["T0": .manifest])))
@@ -701,10 +703,10 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         XCTAssertTrue(label.conflicts.isEmpty, "\(KCWorld.brief(label))")
         try w.converge()
         // A list fork: B's addition as a conflict version beside A's removal.
-        try w.change(w.b, syncFirst: true) { try $0.prepareAddRecipient(pqIdentity().recipient, label: "x") }
+        try w.change(w.b, syncFirst: true) { try $0.prepareAddRecipient(pqIdentity().recipient, label: "x", now: w.now) }
         let bList = try XCTUnwrap(w.b.manifest())
         try w.converge(skip: ["A", "C"])
-        try w.change(w.a, overriding: ["T0", "T1"], syncFirst: false) { try $0.prepareRemoveRecipient(spare.recipient) }
+        try w.change(w.a, overriding: ["T0", "T1"], syncFirst: false) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }
         _ = try provider.addConflict(Vault.manifestName, bList)
         let before = w.targets[0].noteFiles()
         w.tick()

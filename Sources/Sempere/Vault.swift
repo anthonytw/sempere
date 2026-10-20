@@ -160,6 +160,10 @@ public struct Vault: Sendable {
     /// (`rewrapLateFiles`) and the checks of copies received during a key
     /// change (`classifyCopy`). Ordinary reads never use them.
     var olderSecrets: [VaultSecret] = []
+    /// While `rewrapLateFiles` runs: the devices whose files under a keyring secret it rewraps (the
+    /// files this device wrote, by the device id in their names); nil: every file (a recipient change's
+    /// own rewrap, which uses the journal's secret, not the keyring's).
+    var lateOwnDevices: Set<DeviceID>?
     /// The notes whose newer revisions this vault (or a copy) has read
     /// (format.md §7.3); shared by every copy.
     let readOnlyLatch = ReadOnlyLatch()
@@ -521,6 +525,9 @@ public struct Vault: Sendable {
         /// Why a rewrap journal this device refuses was moved aside when this
         /// change started (`discardRefusedJournal`); nil when there was none.
         public var discardedJournal: String?
+        /// `rewrapLateFiles`: files under a keyring secret left as they are because another device wrote
+        /// them (revisions), or no revision this device can read references them (blobs).
+        public var lateSkipped: [String] = []
 
         public init() {}
 
@@ -535,6 +542,7 @@ public struct Vault: Sendable {
             inboxSkipped += o.inboxSkipped
             settingsSkipped += o.settingsSkipped
             notebooksSkipped += o.notebooksSkipped
+            lateSkipped += o.lateSkipped
             discardedJournal = o.discardedJournal ?? discardedJournal
         }
     }
@@ -745,7 +753,7 @@ public struct Vault: Sendable {
     /// the journal, so that a caller can claim every sync target with exactly
     /// those bytes before anything changes locally (design §6.1 C1).
     func prepareChange(_ next: [VaultManifest.Recipient], rotate: Bool, policy: RewrapPolicy, repairing: Bool,
-                       keyChange: KeyChangePolicy) throws -> PreparedKeyChange {
+                       keyChange: KeyChangePolicy, now: Date = Date()) throws -> PreparedKeyChange {
         let current = try requireReadable()
         // A repair skips the check of the current list, never the read-only rule (format.md §7.3).
         if repairing { try requireNotReadOnly() } else { try requireWritable() }
@@ -780,9 +788,11 @@ public struct Vault: Sendable {
                                     previousVaultSecret: rotate ? try Self.encryptSecret(current, to: ageNext) : nil,
                                     rekeyBlobs: method == .reencrypt,
                                     mode: keyChange.mode.rawValue,
-                                    lateFileWindowDays: keyChange.lateFileWindowDays)
+                                    lateFileWindowDays: keyChange.lateFileWindowDays,
+                                    changedAt: RFC3339.string(from: now))
         return PreparedKeyChange(vaultId: vaultId, base: onDisk, next: next, rotate: rotate, method: method,
-                                 journal: try InkJSON.encoder().encode(journal), keyChange: keyChange)
+                                 journal: try InkJSON.encoder().encode(journal), keyChange: keyChange,
+                                 changedAt: RFC3339.parse(journal.changedAt ?? "") ?? now)
     }
 
     /// Steps K1 to K4 of design §6.1 (format.md §3.3.1 steps 1 to 4) for a
@@ -823,7 +833,7 @@ public struct Vault: Sendable {
                 ring.remember(current, now: now)
                 if p.rotate {
                     ring.noteReplaced(current, now: now)
-                    ring.notePolicy(p.keyChange, outgoing: current)
+                    ring.notePolicy(p.keyChange, outgoing: current, changedAt: p.changedAt)
                 }
             }
         }
@@ -997,11 +1007,18 @@ public struct Vault: Sendable {
         /// The late-file window in days (design §6.5); absent means 7
         /// (0 in `compromised` mode).
         var lateFileWindowDays: Int?
+        /// When the change was made (RFC 3339, the writer's clock): every late-file window ends at
+        /// most this long after it, whenever a device first sees the change. Absent: 0 days.
+        var changedAt: String?
 
         /// The policy these fields record (`KeyChangePolicy.init(journalMode:days:)`).
         func keyChangePolicy() throws -> KeyChangePolicy {
-            try KeyChangePolicy(journalMode: mode, days: lateFileWindowDays)
+            if let changedAt, RFC3339.parse(changedAt) == nil { throw KeyChangePolicyError.badChangeTime }
+            return try KeyChangePolicy(journalMode: mode, days: lateFileWindowDays)
         }
+
+        /// `changedAt` as a date (nil: absent).
+        var changeTime: Date? { changedAt.flatMap(RFC3339.parse) }
     }
 
     /// The journal and its outgoing secret, when this device accepts it
@@ -1052,11 +1069,19 @@ public struct Vault: Sendable {
                     body = plain
                 } catch BodyFramingError.tagMismatch {
                     // The journal's outgoing secret, then (a late file's rewrap, design §6.3) the keyring's.
-                    let candidates = (previousSecret.map { [$0] } ?? []) + olderSecrets
-                    guard let old = candidates.lazy.compactMap({
+                    var old = previousSecret.flatMap { try? BodyFraming.unframe(plain, noteId: note, filename: name, secret: $0) }
+                    if old == nil, let fromKeyring = olderSecrets.lazy.compactMap({
                         try? BodyFraming.unframe(plain, noteId: note, filename: name, secret: $0)
-                    }).first
-                    else { report.failures[path] = .tagMismatch; continue }
+                    }).first {
+                        // R3 rewraps from the keyring only what this device wrote (review finding 2: another
+                        // device's file under an old secret, a removed device's included, is never made current
+                        // here; it waits for its writer, or for a current copy from a target).
+                        if let own = lateOwnDevices, !(RevisionName(name).map { own.contains($0.device) } ?? false) {
+                            report.lateSkipped.append(path); continue
+                        }
+                        old = fromKeyring
+                    }
+                    guard let old else { report.failures[path] = .tagMismatch; continue }
                     body = BodyFraming.retag(old, noteId: note, filename: name, secret: current)
                 } catch {
                     report.failures[path] = .corruptBody("\(error)"); continue

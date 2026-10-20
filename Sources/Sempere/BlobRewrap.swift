@@ -93,6 +93,12 @@ extension Vault {
                 if peek.stanzas == expected { report.alreadyCurrent.append(path); continue }
                 target = url
             case let older? where older >= 1:
+                // A keyring secret (R3): only a blob a revision this device can read references.
+                if lateOwnDevices != nil, older > (previousSecret == nil ? 0 : 1),
+                   let id = UUID(uuidString: note),
+                   !((try? blobInventory(note: id))?.referencedHashes.contains(peek.header.sha256) ?? false) {
+                    report.lateSkipped.append(path); continue
+                }
                 target = dir.appendingPathComponent(
                     BlobName.fileName(name: BlobName.name(digest: peek.header.digest, secret: current), kind: parsed.kind))
                 if FileIO.exists(target), isCompleteBlob(target, header: peek.header, stanzas: expected, secret: current) {

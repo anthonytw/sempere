@@ -98,6 +98,12 @@ public struct SyncReport: Codable, Hashable, Sendable {
         public var rewrapped = 0
         /// Shared files whose two copies differ and stay as they are this run.
         public var unsettled: [Issue] = []
+        /// Shared files under an older wrap on both sides that this device cannot make current (another
+        /// device's): kept as they are until their writer or a current copy replaces them.
+        public var staleKept: [String] = []
+        /// The remote gives no strong version tokens, so no copy there is replaced (rewrap-replace needs
+        /// `If-Match`): a key change never finishes on it (C5(d) waits). Reported, never worked around.
+        public var weakStamps = false
         /// True when this run found every file both sides hold current and
         /// the same on both, under the same list (what lets a key change
         /// remove the journal from this target, design §6.1 C5(d)).
