@@ -15,7 +15,7 @@ final class SilenceCapture: AudioCaptureBackend {
     private(set) var files: [URL] = []
 
     init(seconds: Double) throws {
-        source = FileManager.default.temporaryDirectory.appendingPathComponent("silence-\(UUID().uuidString).m4a")
+        source = TestTemp.url("silence").appendingPathExtension("m4a")
         let settings: [String: Any] = [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 44_100, AVNumberOfChannelsKey: 1]
         let file = try AVAudioFile(forWriting: source, settings: settings)
         let frames = AVAudioFrameCount(seconds * 44_100)
