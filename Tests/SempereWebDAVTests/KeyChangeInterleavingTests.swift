@@ -147,19 +147,19 @@ final class KeyChangeRun: @unchecked Sendable {
     func oneStep() throws {
         let roll = rng.int(100)
         switch roll {
-        case 0..<22: try write()
-        case 22..<27: try attach()
-        case 27..<60: sync()
-        case 60..<72: try keyChange()
-        case 72..<78:
+        case 0..<18: try write()
+        case 18..<23: try attach()
+        case 23..<53: sync()
+        case 53..<65: try keyChange()
+        case 65..<70:
             let t = rng.pick(w.targets)
             t.offline.value.toggle()
             count(t.offline.value ? "offline" : "online")
-        case 78..<84:
+        case 70..<76:
             w.tick(Double(rng.int(4)) * 86_400 + Double(rng.int(3600)))
             count("time")
-        case 84..<86: downgrade()
-        case 86..<88: if rng.chance(0.5) { try offlineWrite() } else { deliverOffline() }
+        case 76..<78: downgrade()
+        case 78..<88: if rng.chance(0.5) { try offlineWrite() } else { deliverOffline() }
         case 88..<91: try removeDevice()
         case 91..<95:
             // Transport faults on one device's way to one target, for a while.
@@ -230,12 +230,14 @@ final class KeyChangeRun: @unchecked Sendable {
         let spare = spares.first { keys.contains($0.recipient.string) }
         let policy: KeyChangePolicy = rng.chance(0.3) ? .compromised : ((try? .routine(days: rng.int(8))) ?? .routine)
         var faults = KeyChangeFaults()
-        switch rng.int(10) {
+        // About one change in five stops at a fault point; the others run to the end.
+        switch rng.int(25) {
         case 0: faults.afterClaims = true
         case 1: faults.rewrap = RewrapFaults(stop: .afterJournal)
         case 2: faults.rewrap = RewrapFaults(stop: .afterManifest)
         case 3: faults.rewrap = RewrapFaults(stop: .afterFiles(rng.int(6)))
         case 4: faults.rewrap = RewrapFaults(stop: .beforeFinish)
+        case 5: faults.afterFirstClaimWrite = true
         default: break
         }
         let offline = Set(d.targets.filter { $0.offline.value }.map(\.name))
@@ -555,6 +557,8 @@ final class KeyChangeRun: @unchecked Sendable {
         let onTargets = Set(w.targets.flatMap { $0.noteFiles().keys })
         var ignored = afterRemoval.union(w.oracle.written.keys.filter { removedNames.contains(w.oracle.writer[$0] ?? "") })
             .union(onTargets.filter { p in !p.contains("/att/") && removedIds.contains { p.contains($0) } })
+            // Late files the vault never took in (quarantined everywhere as late) stay on targets too.
+            .union(w.devices.flatMap { $0.lateFiles().map(\.path) })
             .subtracting(held)
         // Those revisions keep their note's blobs on the targets from being collected (format.md §8.1.6
         // rule 1: a revision the collector cannot read may reference them): an older name of a blob
