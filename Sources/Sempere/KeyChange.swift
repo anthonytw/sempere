@@ -635,13 +635,26 @@ extension Vault {
         if !RecipientsAuth.constantTimeEqual(other.bytes, own.bytes) { ring.noteReplaced(own, now: now) }
         ring.remember(other, now: now)
         try store.save(ring)
-        // This device's own journal (its change, finished or not) gives way: its
-        // outgoing secret is in the keyring, so nothing it protected is lost.
+        // This device's own journal (its change, finished or not) gives way. Its outgoing secret goes
+        // into the keyring first (a change made without one, e.g. by the CLI, kept it only there), and the
+        // journal is kept aside under a name of its own, never over another one (review finding 10).
         if pendingRewrap {
-            let aside = url.appendingPathComponent(Self.refusedJournalName)
-            if FileIO.exists(aside) { try FileIO.remove(aside) }
-            do { try FileManager.default.moveItem(at: journalURL, to: aside) } catch {
-                throw VaultError.io("move \(journalURL.path) aside: \(error)")
+            if let previousSecret {
+                ring.remember(previousSecret, now: now)
+                ring.noteReplaced(previousSecret, now: now)
+                try store.save(ring)
+            }
+            let bytes = try FileIO.read(journalURL, maxBytes: BoundedRead.maxManifestBytes)
+            var aside = url.appendingPathComponent(Self.refusedJournalName)
+            if FileIO.exists(aside) {
+                aside = url.appendingPathComponent("rewrap-journal.refused-\(FileDigest.sha256(bytes).prefix(16)).json")
+            }
+            if !FileIO.exists(aside) {
+                do { try FileManager.default.moveItem(at: journalURL, to: aside) } catch {
+                    throw VaultError.io("move \(journalURL.path) aside: \(error)")
+                }
+            } else {
+                try FileIO.remove(journalURL)   // the same bytes are kept aside already
             }
         }
         // As it is: a `rewrapPending` it carries binds the other change's journal, which arrives by sync.

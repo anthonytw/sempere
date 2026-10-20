@@ -453,13 +453,13 @@ final class KeyChangeRun: @unchecked Sendable {
         if ProcessInfo.processInfo.environment["SEMPERE_KEYCHANGE_TRACE"] == "1" {
             func h(_ x: Data?) -> String { x.map { String(FileDigest.sha256($0).prefix(6)) } ?? "-" }
             for d in w.devices {
-                let f = d.coordinator.load()
+                let f = (try? d.coordinator.load()) ?? KeyChangeFile()
                 print("FILE \(d.name): change \(h(f.change?.journal)) takeBack \(f.takeBack?.mapValues { $0.map(h) } ?? [:]) targets \(d.targets.map(\.name))")
             }
             print("JOURNALS " + w.targets.map { "\($0.name) \(h($0.file([Vault.journalName])))" }.joined(separator: " "))
         }
         for d in listed {
-            if d.coordinator.inProgress, let l = d.coordinator.load().change {
+            if d.coordinator.inProgress, let l = (try? d.coordinator.load())?.change {
                 func fp(_ x: Data?) -> String { x.flatMap { Vault.listFingerprint($0) }.map { String($0.prefix(6)) } ?? "-" }
                 func h(_ x: Data?) -> String { x.map { String(FileDigest.sha256($0).prefix(6)) } ?? "-" }
                 print("LEDGER \(d.name): conflicts \(l.conflicts) journal \(h(l.journal)) base \(fp(l.base)) step2 \(fp(l.step2)) "

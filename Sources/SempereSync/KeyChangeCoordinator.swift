@@ -61,9 +61,13 @@ public struct KeyChangeFaults: Sendable, Hashable {
     public var rewrap = RewrapFaults.none
     /// Stop on a target right after this step.
     public var afterStep: [String: KeyChangeStep] = [:]
+    /// Stop right after the first claim is written, before the ledger records it (a crash there).
+    public var afterFirstClaimWrite = false
 
-    public init(afterClaims: Bool = false, rewrap: RewrapFaults = .none, afterStep: [String: KeyChangeStep] = [:]) {
+    public init(afterClaims: Bool = false, rewrap: RewrapFaults = .none, afterStep: [String: KeyChangeStep] = [:],
+                afterFirstClaimWrite: Bool = false) {
         self.afterClaims = afterClaims; self.rewrap = rewrap; self.afterStep = afterStep
+        self.afterFirstClaimWrite = afterFirstClaimWrite
     }
 }
 
@@ -79,6 +83,12 @@ public enum KeyChangeError: Error, Hashable, Sendable, CustomStringConvertible {
     case changeInProgress
     /// A fault point (tests).
     case interrupted
+    /// This device's record of its key changes cannot be read: no change starts until it is repaired
+    /// (`repairLedger`), and nothing it would record is guessed.
+    case ledgerUnreadable(String)
+    /// "Keep the other change" dropped keys this device had added under the same secret: they can still
+    /// open every file until the secret rotates, which the coordinator does first, by itself.
+    case rotationOwed
 
     public var description: String {
         switch self {
@@ -87,6 +97,8 @@ public enum KeyChangeError: Error, Hashable, Sendable, CustomStringConvertible {
         case .targetNotRecentlySynced(let t): return "\(t) has not synced in the last minute: sync it first"
         case .changeInProgress: return "a key change is still propagating from this device"
         case .interrupted: return "interrupted (test)"
+        case .ledgerUnreadable(let why): return "this device's key-change record cannot be read (\(why)): repair it first"
+        case .rotationOwed: return "the vault secret must rotate first (keys dropped when another change was kept)"
         }
     }
 }
@@ -101,6 +113,17 @@ public struct KeyChangePropagation: Hashable, Sendable {
     public var conflict: String?
     /// The engine run of C5(b), if one ran.
     public var report: SyncReport?
+    /// This device's record of its key changes cannot be read (`repairLedger`).
+    public var ledgerProblem: String?
+    /// A rotation is owed and could not run yet (`KeyChangeError.rotationOwed`); why.
+    public var rotationOwed: String?
+    /// A refused journal left on the target by a change that is over (older than the in-flight day) was
+    /// removed (`If-Match`): it held back blob collection and every run's clean state.
+    public var removedStaleJournal = false
+
+    public init(step: KeyChangeStep? = nil, conflict: String? = nil, report: SyncReport? = nil) {
+        self.step = step; self.conflict = conflict; self.report = report
+    }
 }
 
 /// The device-local record of a change in progress.
@@ -123,6 +146,8 @@ struct KeyChangeFile: Codable, Equatable {
     var change: KeyChangeLedger?
     /// Claims to take back from targets that could not be reached when they were dropped, by target.
     var takeBack: [String: [Data]]?
+    /// Keys "Keep the other change" dropped under the same secret: the secret must rotate (review finding 3).
+    var rotationOwed: [String]?
 }
 
 /// One device's key changes against the targets of one vault.
@@ -144,11 +169,36 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
         self.ledgerURL = ledger
     }
 
-    func load() -> KeyChangeFile {
-        guard let data = try? BoundedRead.contents(of: ledgerURL, maxBytes: 16 << 20) else { return KeyChangeFile() }
-        let d = JSONDecoder()
-        d.dateDecodingStrategy = .secondsSince1970
-        return (try? d.decode(KeyChangeFile.self, from: data)) ?? KeyChangeFile()
+    /// The record; none yet is an empty one. One that exists but cannot be read is an error, never taken
+    /// as "nothing in progress" (claims and a half-propagated change would be forgotten; review finding 6).
+    func load() throws -> KeyChangeFile {
+        guard FileManager.default.fileExists(atPath: ledgerURL.path) else { return KeyChangeFile() }
+        do {
+            let data = try BoundedRead.contents(of: ledgerURL, maxBytes: 16 << 20)
+            let d = JSONDecoder()
+            d.dateDecodingStrategy = .secondsSince1970
+            return try d.decode(KeyChangeFile.self, from: data)
+        } catch {
+            throw KeyChangeError.ledgerUnreadable(SyncEngine.describe(error))
+        }
+    }
+
+    /// Why the record cannot be read; nil when it can.
+    public var ledgerProblem: String? {
+        do { _ = try load(); return nil } catch { return "\(error)" }
+    }
+
+    /// Sets an unreadable record aside (kept beside it, never deleted), so changes can start again. Claims
+    /// it named stay on targets as refused journals; any device removes them after the in-flight day
+    /// (`sync(target:)`), and a change it left half-propagated is finished by the devices that hold its
+    /// journal or superseded by the next change. Returns where it was put.
+    @discardableResult
+    public func repairLedger() throws -> URL? {
+        guard ledgerProblem != nil else { return nil }
+        let aside = ledgerURL.deletingLastPathComponent()
+            .appendingPathComponent(ledgerURL.lastPathComponent + ".unreadable-\(UUID().uuidString.prefix(8))")
+        try FileManager.default.moveItem(at: ledgerURL, to: aside)
+        return aside
     }
 
     func save(_ f: KeyChangeFile) throws {
@@ -160,19 +210,23 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
     }
 
     func update(_ body: (inout KeyChangeFile) throws -> Void) throws {
-        var f = load()
+        var f = try load()
         try body(&f)
         try save(f)
     }
 
     /// True while a change from this device is still propagating.
-    public var inProgress: Bool { load().change != nil }
+    /// True too while the record cannot be read (it may name one).
+    public var inProgress: Bool { (try? load()).map { $0.change != nil } ?? true }
 
     /// Per target, how far the change got; empty when none is in progress.
-    public var steps: [String: KeyChangeStep] { load().change?.steps ?? [:] }
+    public var steps: [String: KeyChangeStep] { (try? load())?.change?.steps ?? [:] }
 
     /// Targets where another change was met (F7).
-    public var conflicts: [String: String] { load().change?.conflicts ?? [:] }
+    public var conflicts: [String: String] { (try? load())?.change?.conflicts ?? [:] }
+
+    /// Keys a kept change dropped under the same secret: a rotation is owed (it runs at the next sync).
+    public var rotationOwed: [String] { (try? load())?.rotationOwed ?? [] }
 
     // MARK: C0, C1, K1 to K4
 
@@ -188,8 +242,14 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
     public func change(_ vault: inout Vault, overriding: Set<String> = [], now: Date = Date(),
                        faults: KeyChangeFaults = KeyChangeFaults(),
                        prepare: (inout Vault) throws -> PreparedKeyChange) throws -> Vault.RewrapReport {
-        var file = load()
+        try change(&vault, overriding: overriding, now: now, faults: faults, owedRotation: false, prepare: prepare)
+    }
+
+    func change(_ vault: inout Vault, overriding: Set<String>, now: Date, faults: KeyChangeFaults, owedRotation: Bool,
+                prepare: (inout Vault) throws -> PreparedKeyChange) throws -> Vault.RewrapReport {
+        var file = try load()
         guard file.change == nil else { throw KeyChangeError.changeInProgress }
+        if file.rotationOwed != nil, !owedRotation { throw KeyChangeError.rotationOwed }
         let prepared = try prepare(&vault)
         let routine = prepared.keyChange.mode == .routine
         // C0: in routine mode every target synced cleanly within the last minute.
@@ -203,16 +263,28 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
         let base = try BoundedRead.contents(of: folder.appendingPathComponent(Vault.manifestName),
                                             maxBytes: BoundedRead.maxManifestBytes)
         var ledger = KeyChangeLedger(journal: prepared.journal, policy: prepared.keyChange, base: base)
+        // The record first: a crash at any point after a claim is written finds it, and takes the claims
+        // back (`recover`); a record that cannot be written stops the change before any claim.
+        file.change = ledger
+        try save(file)
         // C1: claim every target with the journal's exact bytes.
         // Every target written to, claimed or not: a write whose answer was lost may have landed.
         var claimed: [KeyChangeTarget] = []
         for t in targets {
             claimed.append(t)
             do {
-                switch try claim(t, journal: prepared.journal, vault: vault, now: now) {
+                let result = try claim(t, journal: prepared.journal, vault: vault, now: now)
+                if faults.afterFirstClaimWrite { throw KeyChangeError.interrupted }
+                switch result {
                 case .claimed:
                     ledger.steps[t.id] = .claimed
+                    do { try update { $0.change = ledger } } catch {
+                        takeBack(claimed, journal: prepared.journal)
+                        try? update { $0.change = nil }
+                        throw error
+                    }
                 case .taken:
+                    try? update { $0.change = nil }
                     takeBack(claimed, journal: prepared.journal)
                     throw KeyChangeError.anotherChangeInFlight(target: t.id)
                 }
@@ -222,12 +294,11 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
                 // Unreachable: routine refuses unless overridden; compromised claims it when it is back.
                 if routine && !overriding.contains(t.id) {
                     takeBack(claimed, journal: prepared.journal)
+                    try? update { $0.change = nil }
                     throw KeyChangeError.targetUnreachable(target: t.id, SyncEngine.describe(error))
                 }
             }
         }
-        file.change = ledger
-        try save(file)
         if faults.afterClaims { throw KeyChangeError.interrupted }
         // K1 to K4.
         let report = try vault.commit(prepared, faults: faults.rewrap, keyring: keyring, now: now) { written in
@@ -288,7 +359,7 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
 
     /// Claims still to take back from `t`.
     func retryTakeBack(_ t: KeyChangeTarget) {
-        guard let pending = load().takeBack?[t.id], !pending.isEmpty else { return }
+        guard let pending = (try? load())?.takeBack?[t.id], !pending.isEmpty else { return }
         let left = pending.filter { !takeBack(t, journal: $0) }
         try? update { f in
             f.takeBack?[t.id] = left.isEmpty ? nil : left
@@ -318,7 +389,7 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
     /// is finished (F3). Returns whether a change is still propagating.
     @discardableResult
     public func recover(_ vault: inout Vault) throws -> Bool {
-        guard let ledger = load().change else { return false }
+        guard let ledger = try load().change else { return false }
         let local = try BoundedRead.contents(of: folder.appendingPathComponent(Vault.manifestName),
                                              maxBytes: BoundedRead.maxManifestBytes)
         if ledger.step2 == nil && Vault.sameList(local, ledger.base) {
@@ -340,7 +411,7 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
     /// it, or one the user kept): that change propagates now, so this one's work is over. Its claims
     /// are taken back (only its own bytes) and its record dropped.
     func dropIfSuperseded(_ vault: Vault) throws {
-        guard let ledger = load().change, let step4 = ledger.step4, !vault.pendingRewrap,
+        guard let ledger = try load().change, let step4 = ledger.step4, !vault.pendingRewrap,
               let local = try? BoundedRead.contents(of: folder.appendingPathComponent(Vault.manifestName),
                                                     maxBytes: BoundedRead.maxManifestBytes),
               !Vault.sameList(local, step4), !Vault.sameList(local, ledger.step2 ?? step4),
@@ -360,15 +431,50 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
         guard let t = targets.first(where: { $0.id == id }) else { throw SyncError.io("no target \(id)") }
         var propagation: KeyChangePropagation?
         retryTakeBack(t)
-        if vault.canRead, load().change != nil {
+        let file: KeyChangeFile
+        do { file = try load() } catch {
+            // Fail closed: nothing is propagated or recorded from a record that cannot be read; the run
+            // itself goes on (the vault's own checks hold), and the problem is reported until repaired.
+            var o = options
+            o.keyring = keyring
+            o.rewrapReplace = true
+            var p = KeyChangePropagation()
+            p.ledgerProblem = "\(error)"
+            if vault.canRead { p.removedStaleJournal = removeStaleJournal(t, vault: vault, now: options.now, own: nil) }
+            let report = try SyncEngine(directory: folder, vault: vault.canRead ? vault : nil, remote: t.remote,
+                                        stateURL: t.stateURL, options: o).run()
+            return (p, report)
+        }
+        if vault.canRead, file.change != nil {
             try recover(&vault)
             try dropIfSuperseded(vault)
-            if load().change != nil { propagation = try propagate(t, vault: &vault, options: options, faults: faults) }
+            if try load().change != nil { propagation = try propagate(t, vault: &vault, options: options, faults: faults) }
+        }
+        if vault.canRead, try load().change == nil, try load().rotationOwed != nil {
+            // The owed rotation runs by itself, ahead of other work (compromised mode: no preconditions, 0 days).
+            do {
+                try change(&vault, overriding: Set(targets.map(\.id)), now: options.now, faults: KeyChangeFaults(),
+                           owedRotation: true) { try $0.prepareRotation(keyChange: .compromised, now: options.now) }
+                try update { $0.rotationOwed = nil }
+                if try load().change != nil { propagation = try propagate(t, vault: &vault, options: options, faults: faults) }
+            } catch {
+                var p = propagation ?? KeyChangePropagation()
+                p.rotationOwed = "\(error)"
+                propagation = p
+            }
+        }
+        if vault.canRead {
+            let own = try load().change?.journal
+            if removeStaleJournal(t, vault: vault, now: options.now, own: own) {
+                var p = propagation ?? KeyChangePropagation()
+                p.removedStaleJournal = true
+                propagation = p
+            }
         }
         var o = options
         o.keyring = keyring
         o.rewrapReplace = true
-        let pending = load().change.map { ($0.steps[id] ?? .claimed) < .finished || $0.conflicts[id] != nil } ?? false
+        let pending = try load().change.map { ($0.steps[id] ?? .claimed) < .finished || $0.conflicts[id] != nil } ?? false
         o.holdMutableFiles = pending
         let report = try SyncEngine(directory: folder, vault: vault.canRead ? vault : nil, remote: t.remote,
                                     stateURL: t.stateURL, options: o).run()
@@ -378,10 +484,29 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
         return (propagation, report)
     }
 
+    /// Removes from `t` a rewrap journal this device refuses and that is not in flight any more (refused
+    /// for longer than `Vault.inFlightJournalWindow` since this device first saw it, or not a change's
+    /// step 1 at all): a claim or journal a finished, abandoned or crashed change left there (review
+    /// finding 6). Only that version (`If-Match`), and never this device's own claim (`own`). Any device
+    /// may do it: such a journal binds nothing and gives no secret.
+    func removeStaleJournal(_ t: KeyChangeTarget, vault: Vault, now: Date, own: Data?) -> Bool {
+        guard let (there, etag) = try? t.remote.read([Vault.journalName], maxBytes: BoundedRead.maxManifestBytes),
+              there != own, let etag, SyncEngine.isStrong(etag) else { return false }
+        let manifest = (try? t.remote.read([Vault.manifestName], maxBytes: BoundedRead.maxManifestBytes).data)
+        guard let manifest, case .refused? = Vault.incomingJournalProblem(there, local: nil, manifest: manifest, vault: vault)
+        else { return false }
+        if Vault.incomingJournalMayBeInFlight(there, manifest: manifest, vault: vault) {
+            let state = (try? SyncState.load(t.stateURL)) ?? nil
+            guard let seen = state?.inFlightJournal, seen.hash == FileDigest.sha256(there),
+                  now.timeIntervalSince(seen.firstSeen) >= Vault.inFlightJournalWindow else { return false }
+        }
+        return (try? t.remote.delete([Vault.journalName], ifETag: etag)) == true
+    }
+
     /// C5 on one target, from where it stopped.
     func propagate(_ t: KeyChangeTarget, vault: inout Vault, options: SyncOptions,
                    faults: KeyChangeFaults) throws -> KeyChangePropagation {
-        guard var ledger = load().change else { return KeyChangePropagation() }
+        guard var ledger = try load().change else { return KeyChangePropagation() }
         var out = KeyChangePropagation(step: ledger.steps[t.id], conflict: ledger.conflicts[t.id])
         guard let step2 = ledger.step2, let step4 = ledger.step4 else { return out }
         if out.conflict != nil {
@@ -559,8 +684,9 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
         guard let t = targets.first(where: { $0.id == target }) else { throw SyncError.io("no target \(target)") }
         let (other, _) = try t.remote.read([Vault.manifestName], maxBytes: BoundedRead.maxManifestBytes)
         let ownKeys = vault.recipients.map(\.key)
+        let ownSecret = vault.currentSecret
         try vault.adoptConcurrentChange(other, keyring: keyring, now: now, confirmed: confirmed)
-        if let ledger = load().change {
+        if let ledger = try load().change {
             takeBack(targets, journal: ledger.journal)
             // Targets this change reached hold its vault.json: the adopted one replaces it there.
             for t in targets {
@@ -580,6 +706,12 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
         }
         vault = try vault.reopened()
         let kept = Set(vault.recipients.map(\.key))
-        return ownKeys.filter { !kept.contains($0) }
+        let dropped = ownKeys.filter { !kept.contains($0) }
+        if !dropped.isEmpty, let ownSecret, ownSecret == vault.currentSecret {
+            // Same secret: the dropped keys still open every file (stanza counts cannot tell) and hold the
+            // secret. The rotation is owed and blocks other changes; `sync(target:)` makes it (review 3).
+            try update { $0.rotationOwed = dropped }
+        }
+        return dropped
     }
 }
