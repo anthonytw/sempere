@@ -3,22 +3,18 @@ import Crypto
 import Foundation
 
 // The key schedule of the key hierarchy (docs/design/key-hierarchy.md, phase
-// KH1, the part its round-2 review left unaffected by the revision: K_e, the
-// vault identity, the §2.2 derivations, the per-key wraps of K_e, listTag,
-// epochLink, the root fingerprint and trust records v3).
+// KH1a: K_e, the vault identity, the §2.2 derivations, the per-key wraps of
+// K_e, fingerprints, listTag, epochLink, the root fingerprint and trust
+// records v3). KH1b adds the author signatures, the chain, fork resolution,
+// join codes, the epoch record, the journal, the passphrase copy and the kit.
 //
 // Pure functions only: nothing here reads or writes a vault, and no `Vault`
 // path uses it yet (KH2 wires it in). Every primitive is swift-crypto's or
 // the Age module's: HKDF-SHA256, HMAC-SHA256, SHA-256, X-Wing, Ed25519 and
 // ML-DSA-65 (the secret link's `LinkSigningKeys`).
 //
-// Built to the design at df28555 (PR #61). Not here, because a third review
-// is still on them: fork resolution, join codes, the epoch record, the three
-// author signatures (`addSig`, `epochSig`, `authorSig`), the passphrase
-// copy's plaintext and the kit script.
 // Byte layouts that the design text leaves open are marked **provisional**
-// below; they are `package`, so the revision can change them without a
-// public API change.
+// below and decided here; format.md §15 (KH1b) states them normatively.
 
 /// Errors of the key schedule.
 public enum EpochKeyError: Error, Hashable, Sendable {
@@ -180,7 +176,7 @@ public enum EpochLinks {
     /// `vaultId` lowercase, `e` in decimal ASCII without leading zeros (as in
     /// `vault.json`), `epochId` its 32 raw bytes.
     ///
-    /// **Provisional**: the design at df28555 (§4 table) still gives this
+    /// **Provisional**: the design (§4 table) still gives this
     /// NUL-separated message, today's secret-link encoding, while its other
     /// signed messages moved to `lp()` (§4.1). Built to the text as written.
     static func message(vaultId: UUID, epoch: Int, epochId: Data) -> Data {
@@ -353,8 +349,8 @@ package enum KeyFingerprint {
 /// entry has no `id`, `sign`, `kind`, `addedEpoch`, `addedBy` or `addSig`) as
 /// the empty string, `addedEpoch` in decimal ASCII.
 ///
-/// **Provisional**: the entry model follows the design at df28555, whose
-/// `vault.json` is still under review (round 3).
+/// The entry model of design §3; the field encoding is decided here
+/// (format.md §15 states it).
 package struct EpochListEntry: Hashable, Sendable {
     package var role: String
     package var key: String
@@ -433,22 +429,14 @@ package enum EpochListTag {
 /// replacing `sempere-trust/2`): never stored in the vault, public values
 /// only. The vault id, the root, the kept chain this device has verified
 /// (each epoch's number, id, parent id, link public keys and first list of
-/// fingerprints), the current list, the markers and `reencryptFinished`.
-///
-/// Not wired to any store yet (KH2). **Provisional**: the design also keeps
-/// "the user's answers to fork questions" here, and fork resolution is under
-/// review (round 3), so that member is not modeled yet (a reader ignores it).
+/// fingerprints), the current list, the markers, `reencryptFinished`, and
+/// the user's answers to fork questions (design §5.6: the authors the user
+/// rejected). Not wired to any store yet (KH2).
 public struct EpochTrustRecord: Codable, Hashable, Sendable {
     /// The record format. A file of any other format does not decode.
     public static let formatName = "sempere-trust/3"
 
-    /// One verified epoch of the kept chain.
-    ///
-    /// **Provisional layout**: the design's next revision adds the additions
-    /// made during each epoch (fingerprint, approver, `addSig`) to chain
-    /// entries, with the parent list used for verification being the first
-    /// list plus those additions. This entry will grow with it; nothing reads
-    /// or writes a stored record yet.
+    /// One verified epoch of the kept chain (design §4 table: number, id, parent, link keys, first list).
     public struct ChainEpoch: Hashable, Sendable {
         public var epoch: Int
         /// 32 bytes.
@@ -513,6 +501,9 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
     public var markers: VaultMarkers
     /// True once this device saw the pinned epoch with no re-encryption into it pending (design §7.1).
     public var reencryptFinished: Bool
+    /// The authors whose side the user rejected at a mutual removal (design §5.6 rule 2), as fingerprints:
+    /// their forks lose at every branch on this device without asking again.
+    public var rejectedAuthors: [Data]
 
     /// The pinned (last verified) epoch.
     public var pinned: ChainEpoch? { chain.last }
@@ -520,11 +511,11 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
     /// - Throws: `EpochKeyError.invalidKey` for a root that is not 32 bytes,
     ///   `.invalidEpoch` for a chain that is not well formed (`wellFormed`).
     public init(vaultId: UUID, root: Data, chain: [ChainEpoch], list: [Entry], markers: VaultMarkers,
-                reencryptFinished: Bool = false) throws {
-        guard root.count == 32 else { throw EpochKeyError.invalidKey }
+                reencryptFinished: Bool = false, rejectedAuthors: [Data] = []) throws {
+        guard root.count == 32, rejectedAuthors.allSatisfy({ $0.count == 32 }) else { throw EpochKeyError.invalidKey }
         guard Self.wellFormed(chain) else { throw EpochKeyError.invalidEpoch }
         self.vaultId = vaultId; self.root = root; self.chain = chain; self.list = list; self.markers = markers
-        self.reencryptFinished = reencryptFinished
+        self.reencryptFinished = reencryptFinished; self.rejectedAuthors = rejectedAuthors
     }
 
     /// Epochs 1, 2, … in order, each `parent` the previous `epochId` (none at
@@ -543,7 +534,9 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
         return true
     }
 
-    enum CodingKeys: String, CodingKey { case format, vaultId, root, chain, list, markers, reencryptFinished }
+    enum CodingKeys: String, CodingKey {
+        case format, vaultId, root, chain, list, markers, reencryptFinished, rejectedAuthors
+    }
     enum ChainKeys: String, CodingKey { case epoch, epochId, parent, linkPublicKeys, list }
     enum LinkKeys: String, CodingKey { case ed25519, mldsa65 }
     enum EntryKeys: String, CodingKey { case role, key, sign, name }
@@ -609,6 +602,11 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
         let m = try c.decode(VaultMarkers.self, forKey: .markers)
         markers = VaultMarkers(format: m.format, features: m.features)
         reencryptFinished = try c.decodeIfPresent(Bool.self, forKey: .reencryptFinished) ?? false
+        let rejected = try c.decodeIfPresent([String].self, forKey: .rejectedAuthors) ?? []
+        rejectedAuthors = rejected.compactMap { Hex.decode($0) }
+        guard rejectedAuthors.count == rejected.count else {
+            throw DecodingError.dataCorruptedError(forKey: .rejectedAuthors, in: c, debugDescription: "not fingerprints")
+        }
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -616,6 +614,7 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
         try c.encode(Self.formatName, forKey: .format)
         try c.encode(LowercaseUUID(vaultId), forKey: .vaultId)
         try c.encode(Hex.encode(root), forKey: .root)
+        if !rejectedAuthors.isEmpty { try c.encode(rejectedAuthors.map { Hex.encode($0) }, forKey: .rejectedAuthors) }
         var cc = c.nestedUnkeyedContainer(forKey: .chain)
         for epoch in chain {
             var e = cc.nestedContainer(keyedBy: ChainKeys.self)

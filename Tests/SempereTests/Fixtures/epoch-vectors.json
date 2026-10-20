@@ -1,5 +1,5 @@
 {
-  "description" : "key-hierarchy design §2–§4 (KH1): fixed vault epoch keys → identity seed → vault identity and recipient → §2.2 derived keys → link public keys; the root fingerprint of epoch 1; an epochLink from epoch 1 into epoch 2 (both signatures must verify); device and recovery fingerprints; listMessage and listTag of an epoch-2 list (lp() fields); wraps of K_2 to a fixed device key, made by two implementations. Built to the design at df28555; field encodings marked provisional in EpochKeys.swift.",
+  "description" : "key-hierarchy design §2–§4 (KH1): fixed vault epoch keys → identity seed → vault identity and recipient → §2.2 derived keys → link public keys; the root fingerprint of epoch 1; an epochLink from epoch 1 into epoch 2 (both signatures must verify); device and recovery fingerprints; listMessage and listTag of an epoch-2 list (lp() fields); wraps of K_2 to a fixed device key, made by two implementations. Built to the merged design (#61); field encodings marked provisional in EpochKeys.swift.",
   "listTag" : {
     "entries" : [
       {

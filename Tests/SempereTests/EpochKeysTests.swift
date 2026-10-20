@@ -341,7 +341,7 @@ final class EpochKeysTests: VaultTestCase {
             vaultId: vaultId, root: root, chain: chain,
             list: [.init(role: "device", key: "age1pq1d", sign: sign, name: "Ñandú / ☕️"),
                    .init(role: "recovery", key: "age1pq1r", sign: nil, name: "Recovery kit")],
-            markers: VaultMarkers(format: "sempere/1", features: []), reencryptFinished: true)
+            markers: VaultMarkers(format: "sempere/1", features: []), reencryptFinished: true, rejectedAuthors: [fpA])
         XCTAssertEqual(record.pinned?.epochId, k2.epochId)
         XCTAssertEqual(record.pinned?.linkPublicKeys, try LinkPublicKeys(epochKey: k2))
         let data = try JSONEncoder().encode(record)
@@ -379,6 +379,7 @@ final class EpochKeysTests: VaultTestCase {
             ("short fingerprint", try mutateChain(1) { $0["list"] = ["00"] }),
             ("short link key", try mutateChain(0) { $0["linkPublicKeys"] = ["ed25519": "00", "mldsa65": "00"] }),
             ("no list", try mutate { $0["list"] = nil }),
+            ("short rejected author", try mutate { $0["rejectedAuthors"] = ["00"] }),
             ("short p256", try mutate {
                 var list = $0["list"] as? [[String: Any]] ?? []
                 list[0]["sign"] = ["p256": "04", "mldsa65": Hex.encode(sign.mldsa65)]

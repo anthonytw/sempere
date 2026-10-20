@@ -143,7 +143,7 @@ const vectors = {
     + "recipient → §2.2 derived keys → link public keys; the root fingerprint of epoch 1; an epochLink from epoch 1 "
     + "into epoch 2 (both signatures must verify); device and recovery fingerprints; listMessage and listTag of an "
     + "epoch-2 list (lp() fields); wraps of K_2 to a fixed device key, made by two implementations. Built to the "
-    + "design at df28555; field encodings marked provisional in EpochKeys.swift.",
+    + "merged design (#61); field encodings marked provisional in EpochKeys.swift.",
   vaultId,
   device: { identity: deviceIdentity, recipient: deviceRecipient, signP256: deviceSignP256,
     signMLDSA65: deviceSignMLDSA65, fingerprint: deviceFingerprint, id: deviceFingerprint.slice(0, 8),

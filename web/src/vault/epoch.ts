@@ -12,7 +12,7 @@
 // Provisional, as in the Swift file: the wrap plaintext (the kit reads it,
 // review M8'), fingerprints and listMessage's field encoding (every vault.json
 // value as its JSON text inside lp(), SHA-256(wrap) as its 32 raw bytes).
-// Built to the design at df28555.
+// Built to docs/design/key-hierarchy.md as merged (#61).
 
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
