@@ -1085,7 +1085,7 @@ public final class SyncEngine {
         }
         for n in shared {
             let k = key(id, n)
-            state.files[k] = SyncState.FileRecord(included: coverage[n] ?? state.files[k]?.included)
+            state.files[k] = SyncState.FileRecord(included: coverage[n] ?? state.files[k]?.included, stamp: state.files[k]?.stamp)
             // In step on both sides again: no longer a settled deletion.
             state.thinned?[k] = nil
         }

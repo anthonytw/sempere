@@ -23,6 +23,10 @@ struct SyncState: Codable, Equatable {
         /// every look since agreeing. The deletion is followed here only once
         /// that is `blobRetention` ago (rule 4; `BlobSync.swift`).
         var unreferencedSince: Date?
+        /// Key changes (design §5.2): the server's version token of the file
+        /// when a run last found both copies current and the same. A run
+        /// compares the copies again when it changes.
+        var stamp: String?
     }
 
     /// A rewrap journal on the server that this device refuses but that may

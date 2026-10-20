@@ -260,7 +260,9 @@ extension SyncEngine {
 
         guard !options.dryRun else { return }
         let shared = Set(set.local.keys).intersection(set.remote.keys)
-        for name in shared { state.files[blobKey(id, name)] = SyncState.FileRecord() }
+        for name in shared {
+            state.files[blobKey(id, name)] = SyncState.FileRecord(stamp: state.files[blobKey(id, name)]?.stamp)
+        }
         // A blob one side still has keeps its record (a skipped deletion is decided later).
         for name in set.recorded where set.local[name] == nil && set.remote[name] == nil {
             state.files[blobKey(id, name)] = nil

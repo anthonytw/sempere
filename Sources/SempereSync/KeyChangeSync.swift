@@ -250,15 +250,35 @@ extension SyncEngine {
     /// Compares every copy both sides hold of one note while the run sweeps.
     func rewrapReplaceNote(_ id: String, revisions: Set<RevisionName>, entries: [RevisionName: RemoteEntry],
                            blobs: BlobSet) throws {
-        guard kc.sweeping, let v = keyChangeVault(), let uuid = UUID(uuidString: id) else { return }
+        guard options.rewrapReplace, kc.listAgreed, !options.dryRun, let v = keyChangeVault(),
+              let uuid = UUID(uuidString: id) else { return }
+        /// Compared when the run sweeps, or when the server's copy changed since both were found current.
+        func due(_ k: String, _ entry: RemoteEntry?) -> Bool {
+            if kc.sweeping { return true }
+            guard let recorded = state.files[k]?.stamp else { return false }
+            return entry?.stamp != recorded
+        }
+        /// Records the server's version once both copies are the same.
+        func settled(_ k: String, _ remote: [String], _ etag: String?) {
+            let stamp = etag ?? ((try? transport.stat(remote)) ?? nil)?.stamp
+            locked { state.files[k, default: .init()].stamp = stamp }
+        }
         let dir = root.appendingPathComponent(Vault.notesName).appendingPathComponent(id)
-        for n in revisions.sorted() {
+        for n in revisions.sorted() where due(key(id, n), entries[n]) {
             let path = "notes/\(key(id, n))"
+            let remotePath = [Vault.notesName, id, n.filename]
             do {
                 let local = try BoundedRead.contents(of: dir.appendingPathComponent(n.filename), maxBytes: options.maxFileBytes)
-                let (remote, etag) = try transport.read([Vault.notesName, id, n.filename], maxBytes: options.maxFileBytes)
+                let (remote, etag) = try transport.read(remotePath, maxBytes: options.maxFileBytes)
                 try budget.downloaded(remote.count)
-                if local == remote { continue }
+                if local == remote {
+                    if case .current = v.classifyRevision(local, note: uuid, name: n) {
+                        settled(key(id, n), remotePath, etag)
+                    } else {
+                        notSettled(path, "neither copy is current yet")
+                    }
+                    continue
+                }
                 let l = v.classifyRevision(local, note: uuid, name: n), r = v.classifyRevision(remote, note: uuid, name: n)
                 try settleCopies(path: path, key: key(id, n), local: l, remote: r,
                                  localHash: FileDigest.sha256(local), remoteHash: FileDigest.sha256(remote),
@@ -266,7 +286,8 @@ extension SyncEngine {
                                  replaceRemote: { cond in
                                      try self.transport.write([Vault.notesName, id, n.filename], .data(local), condition: cond)
                                  },
-                                 replaceLocal: { try LocalFS.write(remote, to: dir.appendingPathComponent(n.filename), replacing: true) })
+                                 replaceLocal: { try LocalFS.write(remote, to: dir.appendingPathComponent(n.filename), replacing: true) },
+                                 settled: { settled(self.key(id, n), remotePath, $0) })
             } catch {
                 try rethrowRunLimit(error)
                 kc.sweepClean = false
@@ -274,17 +295,25 @@ extension SyncEngine {
             }
         }
         let att = attURL(id)
-        for name in Set(blobs.local.keys).intersection(blobs.remote.keys).sorted() {
+        for name in Set(blobs.local.keys).intersection(blobs.remote.keys).sorted() where due(blobKey(id, name), blobs.remote[name]) {
             let path = blobPath(id, name)
+            let remotePath = [Vault.notesName, id, Vault.attachmentsName, name]
             let tmp = FileIO.tempURL(in: att)
             defer { try? FileManager.default.removeItem(at: tmp) }
             do {
                 let localURL = att.appendingPathComponent(name)
-                let result = try transport.download([Vault.notesName, id, Vault.attachmentsName, name], to: tmp, resumeFrom: 0,
+                let result = try transport.download(remotePath, to: tmp, resumeFrom: 0,
                                                     ifETag: nil, maxBytes: options.maxBlobBytes,
                                                     segmentBytes: options.blobSegmentBytes, progress: nil)
                 let lh = try FileDigest.sha256(of: localURL).hex, rh = try FileDigest.sha256(of: tmp).hex
-                if lh == rh { continue }
+                if lh == rh {
+                    if case .current = v.classifyBlob(at: localURL, fileName: name) {
+                        settled(blobKey(id, name), remotePath, result.etag ?? blobs.remote[name]?.etag)
+                    } else {
+                        notSettled(path, "neither copy is current yet")
+                    }
+                    continue
+                }
                 let l = v.classifyBlob(at: localURL, fileName: name), r = v.classifyBlob(at: tmp, fileName: name)
                 let remoteData = (try? Data(contentsOf: tmp)) ?? Data()
                 try settleCopies(path: path, key: blobKey(id, name), local: l, remote: r, localHash: lh, remoteHash: rh,
@@ -293,7 +322,8 @@ extension SyncEngine {
                                      try self.transport.write([Vault.notesName, id, Vault.attachmentsName, name], .file(localURL),
                                                               condition: cond)
                                  },
-                                 replaceLocal: { try FileIO.place(tmp, at: localURL) })
+                                 replaceLocal: { try FileIO.place(tmp, at: localURL) },
+                                 settled: { settled(self.blobKey(id, name), remotePath, $0) })
             } catch {
                 try rethrowRunLimit(error)
                 kc.sweepClean = false
@@ -302,14 +332,21 @@ extension SyncEngine {
         }
     }
 
+    /// A shared file whose copies are not settled: the pair is not settled either.
+    func notSettled(_ path: String, _ why: String) {
+        locked {
+            kc.sweepClean = false
+            state.rewrapSettled = nil
+        }
+        keyChangeActivity { $0.unsettled.append(.init(path: path, message: why)) }
+    }
+
     /// Rules 2 to 4 of design §5.2 for two differing copies of one path.
     private func settleCopies(path: String, key: String, local: Vault.CopyStatus, remote: Vault.CopyStatus,
                               localHash: String, remoteHash: String, entry: RemoteEntry?, etag: String?, remoteData: Data,
-                              replaceRemote: (PutCondition) throws -> Bool, replaceLocal: () throws -> Void) throws {
-        func unsettled(_ why: String) {
-            kc.sweepClean = false
-            keyChangeActivity { $0.unsettled.append(.init(path: path, message: why)) }
-        }
+                              replaceRemote: (PutCondition) throws -> Bool, replaceLocal: () throws -> Void,
+                              settled: (String?) -> Void) throws {
+        func unsettled(_ why: String) { notSettled(path, why) }
         // Rule 2: both verify. A remote copy that does not is quarantined (never placed, never deleted).
         guard let rb = remote.body else {
             if case .invalid(let why) = remote {
@@ -337,6 +374,7 @@ extension SyncEngine {
             }
             if try replaceRemote(.replace(etag: etag)) {
                 keyChangeActivity { $0.replaced.append(.init(side: "remote", path: path)) }
+                settled(nil)
             } else {
                 unsettled("the server's copy changed while it was replaced")
             }
@@ -345,6 +383,7 @@ extension SyncEngine {
             try replaceLocal()
             keyChangeActivity { $0.replaced.append(.init(side: "local", path: path)) }
             if let store = options.keyring { bumpGeneration(store) }
+            settled(etag ?? entry?.etag)
         }
     }
 }
