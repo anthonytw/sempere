@@ -88,6 +88,43 @@ extension Vault {
         }
     }
 
+    /// Checks a capture inbox file received from elsewhere (at `file`, whose
+    /// name must be `name`: the staging folder holds it under its own name)
+    /// before it is placed as `inbox/<name>` (format.md §9.1, §11.2).
+    /// Unlocked: it is read as an adoption reads it (`readCapture`: the tag under
+    /// the capture key ring, the manifest, the audio's hash and size, or the
+    /// transcript). Locked: only the age structure of its first bytes, as for blobs.
+    ///
+    /// - Throws: `IncomingFileProblem` for the file's own faults; a
+    ///   `VaultError` when the vault cannot judge it now (a tampered device
+    ///   list, an I/O failure): then it is neither placed nor quarantined.
+    public func checkIncomingInboxFile(at file: URL, name: String) throws {
+        guard let parsed = CaptureFile.parse(name: name), file.lastPathComponent == name else {
+            throw IncomingFileProblem("not an inbox file name")
+        }
+        guard let size = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? NSNumber,
+              size.intValue <= CaptureFile.maxSealedBytes(parsed.kind) else {
+            throw IncomingFileProblem("larger than an inbox file may be")
+        }
+        guard canRead else {
+            let head: Data
+            do {
+                let handle = try BoundedRead.openRegularFile(file)
+                defer { try? handle.close() }
+                head = try handle.read(upToCount: 4 << 20) ?? Data()
+            } catch {
+                throw IncomingFileProblem("unreadable: \(error)")
+            }
+            return try checkAgeStructure(head, complete: false)
+        }
+        do {
+            let pending = try readCapture(parsed.id, in: file.deletingLastPathComponent())
+            guard pending.files.contains(name) else { throw IncomingFileProblem("not read") }
+        } catch let e as CaptureError {
+            throw IncomingFileProblem(e.description)
+        }
+    }
+
     /// The structural check of a locked vault. `complete` is false when
     /// `data` is only the start of the file (blobs).
     func checkAgeStructure(_ data: Data, complete: Bool = true) throws {

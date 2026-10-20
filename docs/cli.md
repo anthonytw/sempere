@@ -2352,6 +2352,12 @@ if no revision of its note references it there and every revision of the
 note could be read (`format.md` §8.1.6 rules 1–3); otherwise it is copied
 back. Blob paths appear in the output and the JSON report like revisions
 (`notes/<id>/att/<name>`).
+Voice notes waiting in `inbox/` (`format.md` §11.4) are copied to the side that lacks them, each
+checked before it is placed (unlocked, as `inbox import` reads it); one that one side deleted since
+the last run is deleted on the other only when its adoption explains it (the note made from it is
+here, with the vault unlocked), and otherwise copied back. Each device's `summaries/<device>.sealed`
+(`format.md` §12.5) is copied to the side that lacks it, a newer copy replaces an older one, and this
+machine's own file (its device id from `device.json`) is only ever uploaded.
 With the vault unlocked, the server's `sempere-summaries.sealed` (`format.md`
 §12; the note list the web viewer reads first) is rewritten after the sync to
 describe what the server then holds (an entry per note whose revisions there
