@@ -675,7 +675,11 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   this session (`dirtyPages`), is left out. The layer is a plain `UIView` of `CALayer`s inside the
   canvas, above the paper and the items, below the ink; it follows `zoomChanged()`. In a paged note's stack (`PageStackHost`) each page's canvas draws its own highlights
   (`Coordinator.apply`) and the stack scrolls the match into view (`performReveal`,
-  `PageStackLayout.revealOffset`): embedded canvases never scroll. "Recognize All" results
+  `PageStackLayout.revealOffset`): embedded canvases never scroll. A match's page is made current with
+  `showPageOfMatch`, never `selectPage`/`showPage`: the stack reads `revealToken` live but `pageJump` from its
+  configuration, so the two can arrive in separate updates and a late jump to the page's top undid the reveal
+  (TestFlight 1.0.0 (6)). `SearchHighlightUITests` (`SEMPERE_DEMO_SEARCH`, the canvas report's `hl=`/`hlRect=`)
+  walks every match on an iPhone (zoomed too) and an iPad. "Recognize All" results
   (`recognitionResults`) live in the model until the next run or `close()`, never on disk.
   A run writes each page only if its digest still matches (`RecognitionJob.ops`).
   Stepping is incremental: `SearchMatchCursor` keeps matches per page with the input they came from
