@@ -1712,7 +1712,9 @@ and its server each); folder targets and several targets per vault come with P6.
 - **`SyncCoordinator`** (one per app, started at launch) owns one `SyncSession` per location. The
   open vault's session runs two-way while the vault is unlocked here; every other session runs
   upload-only. At most two runs go at once across the app (`maxConcurrentRuns`), at most one per
-  session, the open vault's first. Each session has its own copy, sync state, quarantine,
+  session, and one slot is kept for the open vault: background runs take at most one, so slow uploads
+  of closed vaults never hold up the open vault's runs or Sync Now. A voice note delivered into a
+  closed vault's copy asks its session for a run (`QuickCapture.deliveredNotification`). Each session has its own copy, sync state, quarantine,
   credentials (the Keychain item of its location), schedule, backoff and status: one vault's wrong
   password, hung server (bounded by the run's limits) or full disk never delays or fails another
   (`SyncCoordinatorTests`).
@@ -1730,13 +1732,24 @@ and its server each); folder targets and several targets per vault come with P6.
   adoption; notebook records reload the tree; other devices' published summaries refresh the rows of
   notes not here yet. A new `vault.json` with another device list or secret (a key change made with
   the CLI elsewhere) saves and closes every editor and opens the vault again with this device's keys,
-  as after a key change made here (`keyEpoch`); if this device's key is no longer listed, the vault
-  closes and says so. A label alone changes nothing.
+  as after a key change made here (`keyEpoch`), then opens again the notes that were open (they say
+  "Updated from another device"); if this device's key is no longer listed, the vault closes and says
+  so. A label alone changes nothing. Until the vault is open under the new `vault.json`, or for good
+  when that fails, its runs only upload (`syncVaultStale`), and after every two-way run (also one that
+  stopped or threw) the open vault is compared with the disk. The engine never checks files under a
+  stale vault either: a run whose `Vault` no longer matches `vault.json` on disk opens it again first,
+  and a quarantine record names the key the file was checked under (`checkerKeyID`), so a run under
+  another key checks it again (review of #70: a stale vault had kept another device's new notes out
+  for good).
 - **The write lock** (`VaultFileLock`, `<location>/vault.write`): a run holds it while it settles and
   replaces the copy's mutable files (`vault.json`, the journal, `settings.age`;
   `SyncOptions.localWriteLock`), and the model holds it while it writes `settings.age`, so a merge
   never interleaves with the app's own write. A run that cannot take it within 30 s leaves those
   files to the next run (listed as skipped). Revisions and blobs are write-once and need no lock.
+- **Leftovers of "Download Again"** (earlier builds): at launch, before any session runs,
+  `LocalCopy.recoverInterruptedRedownload` puts a copy back from `<copy>.old` when the copy is missing,
+  removes an unfinished `<copy>.download` and its state, and removes `<copy>.old` only when the copy
+  holds every revision, blob and inbox file in it; otherwise it is kept and named in an alert.
 - **Status** (`SyncStatus`, the note list's bar): syncing; synced (and how many files a provider
   still delivers); "n changes not synced yet"; offline ("Changes are kept on this device and sync
   when the server can be reached", not an error); waiting for the unlock (a closed or locked vault);

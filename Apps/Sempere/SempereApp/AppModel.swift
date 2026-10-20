@@ -437,6 +437,9 @@ final class AppModel {
     /// The sync session of the open vault when it is a WebDAV location's local copy (the
     /// coordinator's, two-way while the vault is unlocked); nil for any other vault.
     var webdav: SyncSession?
+    /// The open vault's `vault.json` changed on disk (a sync took another device's key change) and the
+    /// open `Vault` has not been opened again under it yet: its runs only upload (review of #70, F1).
+    var syncVaultStale = false
     /// Every in-app vault's sync sessions (`SyncCoordinator`, made on first use).
     @ObservationIgnored private var coordinatorStorage: SyncCoordinator?
     var syncCoordinator: SyncCoordinator {
@@ -864,11 +867,14 @@ final class AppModel {
             // whose vault.json has not synced in yet (`automatic`); the vault
             // then opens normally, without it.
             let start = opened
+            let lock = vaultWriteLock   // never interleaved with a sync run replacing the journal or vault.json
             if let discarded = try? await Task.detached(priority: .userInitiated, operation: { () throws -> Vault in
-                try CloudVault.coordinatedWrite(coordinate) { () throws -> Vault in
-                    var v = start
-                    try v.discardRefusedJournal(automatic: true)
-                    return v
+                try Self.withWriteLock(lock) {
+                    try CloudVault.coordinatedWrite(coordinate) { () throws -> Vault in
+                        var v = start
+                        try v.discardRefusedJournal(automatic: true)
+                        return v
+                    }
                 }
             }).value {
                 try ensureCurrent(gen)

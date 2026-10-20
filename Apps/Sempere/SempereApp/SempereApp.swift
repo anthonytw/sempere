@@ -47,8 +47,12 @@ struct SempereApp: App {
         _model = State(initialValue: model)
         // Background sync (iOS): the model the scheduled tasks sync (`.backgroundTask` below).
         BackgroundSync.model = model
-        // Every in-app vault with a sync target keeps syncing, open or not (`SyncCoordinator`).
-        model.syncCoordinator.start()
+        // Every in-app vault with a sync target keeps syncing, open or not (`SyncCoordinator`), once what an
+        // interrupted "Download Again" of an earlier build left is recovered.
+        Task { @MainActor in
+            await model.recoverWebDAVLeftovers()
+            model.syncCoordinator.start()
+        }
         // Staged exports are plaintext copies of notes: none survives a launch.
         ExportJob.purgeStale()
         BulkExportRun.purgeStale()

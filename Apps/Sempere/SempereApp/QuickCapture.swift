@@ -907,6 +907,9 @@ final class QuickCapture {
                     try CloudVault.coordinatedWrite(CloudVault.isUbiquitous(url) ? inbox : nil) {
                         try CaptureWriter.store(sealed, in: inbox)
                     }
+                    // A synced copy runs soon, open or not (`SyncCoordinator.captureDelivered`).
+                    NotificationCenter.default.post(name: Self.deliveredNotification, object: nil,
+                                                    userInfo: ["vault": stored.profile.vaultId])
                     return .vault
                 } catch {
                     // Not reachable now: queued below.
@@ -925,6 +928,9 @@ final class QuickCapture {
         guard let vault = try? Vault.open(at: url) else { return false }
         return vault.vaultId == vaultId && !vault.isReadOnly
     }
+
+    /// Posted (userInfo `vault`: the vault id) when a voice note was written into a vault's inbox.
+    nonisolated static let deliveredNotification = Notification.Name("io.github.anthonytw.sempere.captureDelivered")
 
     func queueFolder(_ vault: UUID) -> URL { queueRoot.appendingPathComponent(vault.uuidString.lowercased(), isDirectory: true) }
 

@@ -3397,6 +3397,18 @@
         }
       }
     },
+    "An earlier “Download Again” of “%@” was interrupted. The previous copy holds notes or attachments that are not in the vault, so it was kept, at %@. Merge it in with the sempere command-line tool (vault merge-copy) before removing it." : {
+      "comment" : "First %@ is the vault's name, the second a folder path",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una “Descargar de nuevo” anterior de “%@” se interrumpió. La copia anterior contiene notas o adjuntos que no están en la bóveda, así que se conservó, en %@. Intégrala con la herramienta de línea de comandos sempere (vault merge-copy) antes de borrarla."
+          }
+        }
+      }
+    },
     "Annotate" : {
       "comment" : "iPhone toolbar toggle: draw with a finger",
       "extractionState" : "manual",

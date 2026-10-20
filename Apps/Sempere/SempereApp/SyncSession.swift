@@ -58,9 +58,14 @@ final class SyncSession {
     @ObservationIgnored var onSuccess: (Date) -> Void = { _ in }
     /// Told what a two-way run changed in the local copy (the open vault's model applies it).
     @ObservationIgnored var onChanges: (LocalChanges) -> Void = { _ in }
+    /// Called after every two-way run, whether it returned or threw (the model compares its open vault
+    /// with the disk: a run that stopped may still have taken a new `vault.json`).
+    @ObservationIgnored var afterTwoWayRun: () -> Void = {}
     /// Taken around each run: the coordinator's budget (at most a few runs at once app-wide).
     @ObservationIgnored var admit: @MainActor (_ priority: Bool) async -> Void = { _ in }
     @ObservationIgnored var release: @MainActor () -> Void = {}
+    /// The open vault's session (the coordinator sets it): its runs take the slot kept for it.
+    @ObservationIgnored var isOpenVault = false
     /// Runs automatically at all (the coordinator's background sessions; the open vault's always do).
     @ObservationIgnored var runsAutomatically = true
     @ObservationIgnored var now: () -> Date = { Date() }
@@ -144,11 +149,12 @@ final class SyncSession {
         if let running { return await running.value }
         let mode: SyncRunMode = twoWay ? .twoWay : .uploadOnly
         let task = Task { () -> SyncReport? in
-            await admit(mode == .twoWay)
+            await admit(mode == .twoWay || isOpenVault)
             defer { release() }
             isSyncing = true
             schedule.started(at: now())
             defer {
+                if mode == .twoWay { afterTwoWayRun() }
                 isSyncing = false
                 running = nil   // cleared by the run itself, so a waiter never takes a finished run for a current one
             }

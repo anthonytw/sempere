@@ -16,8 +16,9 @@ import SempereWebDAV
 /// - Isolation: each session has its own copy, sync state, quarantine, credentials (Keychain item by
 ///   location id), schedule, backoff and status. A failure (a hung server bounded by the run's limits, a
 ///   wrong password, a full disk) marks only its own session.
-/// - Budget: at most `maxConcurrentRuns` runs at once across the app, at most one per session; the open
-///   vault's runs go first.
+/// - Budget: at most `maxConcurrentRuns` runs at once across the app, at most one per session. One slot is
+///   kept for the open vault: background runs take at most `maxConcurrentRuns - 1`, so slow uploads of
+///   closed vaults never hold up the open vault's runs or Sync Now (review of #70, F2).
 @MainActor
 @Observable
 final class SyncCoordinator {
@@ -45,7 +46,16 @@ final class SyncCoordinator {
          makeSession: @escaping @MainActor (WebDAVLocation) -> SyncSession?) {
         self.locations = locations
         self.makeSession = makeSession
+        // Quick capture writes into a vault's copy from outside the model (`QuickCapture.deliver`).
+        captureObserver = NotificationCenter.default.addObserver(forName: QuickCapture.deliveredNotification, object: nil,
+                                                                 queue: .main) { [weak self] note in
+            guard let id = note.userInfo?["vault"] as? UUID else { return }
+            MainActor.assumeIsolated { self?.captureDelivered(vault: id) }
+        }
     }
+
+    /// The observer of `QuickCapture.deliveredNotification` (it holds the coordinator weakly; one per app).
+    @ObservationIgnored private var captureObserver: (any NSObjectProtocol)?
 
     // MARK: - Sessions
 
@@ -55,12 +65,14 @@ final class SyncCoordinator {
         refresh()
     }
 
-    /// Makes sessions for new locations and drops those of removed ones (when `runsAll`).
+    /// Makes sessions for new locations and drops those of removed ones (when `runsAll`). The model calls
+    /// it when a location is added (`connectWebDAV`) or removed (`removeWebDAVLocation`).
     func refresh() {
         let now = Set(locations().map(\.id))
         for id in sessions.keys where !now.contains(id) && id != openLocation { _ = stop(id) }
         guard runsAll else { return }
-        for location in locations() where sessions[location.id] == nil { _ = session(for: location) }
+        // A location whose first download has not finished has no copy to sync yet (`openWebDAV` makes it).
+        for location in locations() where location.downloaded && sessions[location.id] == nil { _ = session(for: location) }
     }
 
     /// The session of `location`, made and started if there is none.
@@ -80,7 +92,9 @@ final class SyncCoordinator {
     /// The model opened the vault of `location`: its session is the open one (made if needed).
     func attachOpen(_ location: WebDAVLocation) -> SyncSession? {
         openLocation = location.id
-        return session(for: location)
+        let s = session(for: location)
+        s?.isOpenVault = true
+        return s
     }
 
     /// The model closed the open vault: its session goes back to upload-only (or stops when only the
@@ -91,6 +105,7 @@ final class SyncCoordinator {
         openLocation = nil
         guard let session = sessions[id] else { return nil }
         session.vaultClosed()
+        session.isOpenVault = false
         guard runsAll else { return stop(id) }
         return nil
     }
@@ -110,8 +125,13 @@ final class SyncCoordinator {
 
     // MARK: - Budget
 
+    /// Background runs may hold at most this many slots; the open vault's may use them all.
+    private func fits(priority: Bool) -> Bool {
+        active < (priority ? max(maxConcurrentRuns, 1) : max(maxConcurrentRuns - 1, 1))
+    }
+
     private func admit(priority: Bool) async {
-        if active < maxConcurrentRuns {
+        if waiting.isEmpty || priority, fits(priority: priority) {
             active += 1
             return
         }
@@ -125,11 +145,25 @@ final class SyncCoordinator {
     }
 
     private func releaseRun() {
-        if waiting.isEmpty {
-            active = max(active - 1, 0)
-        } else {
-            // The slot passes to the next waiter (the open vault's first).
-            waiting.removeFirst().resume.resume()
+        active = max(active - 1, 0)
+        // Each waiter that fits now takes a slot, the open vault's first.
+        var i = 0
+        while i < waiting.count {
+            if fits(priority: waiting[i].priority) {
+                active += 1
+                waiting.remove(at: i).resume.resume()
+            } else {
+                i += 1
+            }
         }
+    }
+
+    /// The number of runs going now (tests).
+    var runsGoing: Int { active }
+
+    /// A voice note was delivered into vault `id`'s copy (quick capture, open or not): its sessions run soon
+    /// rather than at the idle pace.
+    func captureDelivered(vault id: UUID) {
+        for s in sessions.values where s.vaultID == id { s.noteWrite() }
     }
 }
