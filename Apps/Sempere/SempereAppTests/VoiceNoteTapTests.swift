@@ -62,7 +62,7 @@ extension QuickCaptureIntentTests {
     }
 
     @Test func theTapLogKeepsTheNewestAndRefusesWhatIsNotOurs() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("taps-\(UUID().uuidString)", isDirectory: true)
+        let dir = TestTemp.root.appendingPathComponent("taps-\(UUID().uuidString)", isDirectory: true)
         let log = VoiceNoteTapLog(directory: dir)
         #expect(log.read().isEmpty)
         for i in 0..<(VoiceNoteTapLog.capacity + 3) {

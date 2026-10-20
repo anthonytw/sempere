@@ -46,6 +46,46 @@ final class MacWindowUITests: XCTestCase {
         assertOneNoteWindow(app, "shortcut")
     }
 
+    /// Quit with a note window open and relaunch with state restoration on: the windows that
+    /// come back are real ones (the library and the note), never an empty "No Note Selected"
+    /// window (TestFlight: an extra one was restored).
+    @MainActor
+    func testRelaunchRestoresOnlyRealWindows() throws {
+        func start(fresh: Bool = false) -> XCUIApplication {
+            let app = XCUIApplication()
+            // The first launch ignores windows an earlier run left; the second restores the first's.
+            app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-NSQuitAlwaysKeepsWindows", "YES"]
+                + (fresh ? ["-ApplePersistenceIgnoreState", "YES"] : [])
+            app.launchEnvironment = ["SEMPERE_DEMO": "1", "SEMPERE_DEBUG_COLUMNS": "all", "SEMPERE_DEMO_NOTE": "respiration",
+                                     "SEMPERE_DEMO_MAC_WINDOW": "1100x760", "TZ": "UTC"]
+                // `SEMPERE_DEBUG_FRESH` also deletes the Saved Application State of earlier runs.
+                .merging(fresh ? ["SEMPERE_DEBUG_FRESH": "1"] : [:]) { _, new in new }
+            app.launch()
+            return app
+        }
+        let first = start(fresh: true)
+        XCTAssertTrue(first.staticTexts["Cellular Respiration"].firstMatch.waitForExistence(timeout: 60))
+        center(of: noteRow(first)).doubleClick()
+        assertOneNoteWindow(first, "before quitting")
+        first.typeKey("q", modifierFlags: .command)
+        XCTAssertTrue(first.wait(for: .notRunning, timeout: 30), "quit")
+        let second = start()
+        defer { second.terminate() }
+        XCTAssertTrue(second.staticTexts["Cellular Respiration"].firstMatch.waitForExistence(timeout: 60))
+        Thread.sleep(forTimeInterval: 5)   // restored scenes arrive after launch
+        XCTAssertFalse(second.staticTexts["No Note Selected"].exists, "no empty window was restored")
+        let notes = second.descendants(matching: .any).matching(identifier: "noteWindow").count
+        let described = second.windows.allElementsBoundByIndex.map {
+            "\($0.identifier)|\($0.title)|lib=\($0.descendants(matching: .any).matching(identifier: "libraryWindow").count)"
+                + "|note=\($0.descendants(matching: .any).matching(identifier: "noteWindow").count)|\(Int($0.frame.width))x\(Int($0.frame.height))"
+        }
+        print("MACUIDEBUG restored windows: \(described)")
+        // (XCUI reports a Catalyst scene's window more than once, so windows are not counted.)
+        XCTAssertLessThanOrEqual(notes, 1, "at most the note's own window came back (windows: \(described))")
+        XCTAssertTrue(second.descendants(matching: .any)["libraryWindow"].firstMatch.exists, "the library came back")
+        XCTAssertFalse(described.contains { $0.contains("|No Note Selected") }, "no window titled No Note Selected: \(described)")
+    }
+
     /// The same from the note list's context menu.
     @MainActor
     func testTheContextMenuOpensANoteWindow() throws {

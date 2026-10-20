@@ -217,7 +217,7 @@ struct ProgressiveLoadTests {
     }
 
     @Test func theOpenedNoteIsRequestedFirstAndRequestsAreWindowed() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = TestTemp.root.appendingPathComponent(UUID().uuidString)
         let ids = (0..<5).map { _ in UUID() }.sorted { $0.uuidString < $1.uuidString }
         for id in ids {
             let dir = root.appendingPathComponent("notes/\(id.uuidString.lowercased())")
@@ -248,7 +248,7 @@ struct ProgressiveLoadTests {
     }
 
     @Test func notesWithADownloadErrorDoNotHoldTheWindow() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = TestTemp.root.appendingPathComponent(UUID().uuidString)
         let ids = (0..<3).map { _ in UUID() }.sorted { $0.uuidString < $1.uuidString }
         for id in ids {
             let dir = root.appendingPathComponent("notes/\(id.uuidString.lowercased())")
@@ -455,7 +455,7 @@ struct ProgressiveLoadTests {
 /// Opening a vault from whatever the picker returned.
 struct VaultLocatorTests {
     static func temp() throws -> URL {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let dir = TestTemp.root.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.standardizedFileURL
     }

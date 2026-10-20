@@ -100,6 +100,18 @@ public struct SyncOptions: Sendable {
     /// done is kept, a blob cut short continues on the next run.
     public var isCancelled: (@Sendable () -> Bool)?
 
+    /// Files a provider lists but has not downloaded yet (`Arrivals.swift`):
+    /// the longest one run waits, in all, for the ones it asked for to arrive.
+    /// What has not arrived by then is left for a later run (`SyncReport.arriving`).
+    public var arrivalWait: TimeInterval = 10
+    /// A folder listed before its files (`Arrivals.swift`) counts as arriving
+    /// (nothing in it is judged) for this long after this device first found
+    /// it so; then its listing is taken as it is (iCloud's `cloudUnlistedTimeout`).
+    public var unlistedTimeout: TimeInterval = 120
+    /// A file still not downloaded this long after this device first asked for
+    /// it is reported in `errors` (still never deleted or uploaded over).
+    public var arrivalStall: TimeInterval = 15 * 60
+
     /// A partial pull instead of a sync (format.md §1.2, docs/io.md "Partial
     /// copies"): `.metadata` makes or continues a partial copy, `.fetch`
     /// fetches what one lacks. Nil: an ordinary run.
@@ -183,6 +195,8 @@ public final class SyncEngine {
     /// synced once per run, so this stays exact without being updated; it
     /// must be rebuilt if a note is ever synced twice in one run.
     var recordedFiles: [String: [String]] = [:]
+    /// `state.thinned` by note as the note loop started (as `recordedFiles`).
+    var thinnedFiles: [String: [String]] = [:]
     /// How many notes this run read through `vault` (decrypted every
     /// revision of) to judge deletions or record snapshot coverage.
     var notesRead = 0
@@ -214,6 +228,8 @@ public final class SyncEngine {
     /// Push-only on a partial copy: server files kept because the copy has
     /// not fetched them yet (format.md §1.2).
     var pendingKept = 0
+    /// Files and folders a provider has not downloaded yet (`Arrivals.swift`). Under `mutex`.
+    var arrivals = ArrivalTracker()
 
     /// Guards what concurrent listings and downloads share (`TransferPool`):
     /// `state`, `report`, `budget`, `progress`, the checker cache and the
@@ -308,21 +324,29 @@ public final class SyncEngine {
         let rootEntries = try transport.list([]) ?? []
         try budget.list(rootEntries.count)
         let remoteRoot = Dictionary(rootEntries.map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })
+        // A provider's evicted root files are asked for at once; vault.json is waited for (`Arrivals.swift`).
+        try awaitRootFiles(remoteRoot)
         try checkSameVault(remoteRoot)
         remoteJournal = remoteRoot[Vault.journalName] != nil
         if !remoteJournal { state.inFlightJournal = nil }
         removeLeftoverRemoteTemps()
+        // A provider's conflict versions of the root files, merged or kept, then resolved (`ConflictVersions.swift`).
+        settleConflictVersions(remoteRoot)
 
         for name in [Vault.manifestName, Vault.journalName] {
             let remote = remoteRoot[name].flatMap { $0.isCollection ? nil : $0 }
-            do { options.pushOnly ? try pushMutable(name, remote: remote) : try syncMutable(name, remote: remote) } catch {
+            do {
+                // Listed but not downloaded yet: neither taken nor replaced this run.
+                if try !available([name], entry: remote) { continue }
+                options.pushOnly ? try pushMutable(name, remote: remote) : try syncMutable(name, remote: remote)
+            } catch {
                 report.errors.append(.init(path: name, message: Self.describe(error)))
             }
         }
 
         // Shared settings (format.md §13): merged per key when both sides changed.
         let remoteSettings = remoteRoot[SharedSettings.fileName].flatMap { $0.isCollection ? nil : $0 }
-        do { try syncSharedSettings(remote: remoteSettings) } catch {
+        do { if try available([SharedSettings.fileName], entry: remoteSettings) { try syncSharedSettings(remote: remoteSettings) } } catch {
             report.errors.append(.init(path: SharedSettings.fileName, message: Self.describe(error)))
         }
 
@@ -334,7 +358,9 @@ public final class SyncEngine {
 
         do {
             recordedFiles = state.fileNamesByNote()
-            let remoteNotes = try listRemoteNotes(rootEntries)
+            thinnedFiles = SyncState.namesByNote(state.thinned?.keys.map { $0 } ?? [])
+            // Note folders a provider listed before their `att/` are left out until they arrive (`Arrivals.swift`).
+            let remoteNotes = try setAsideArrivingAttachments(try listRemoteNotes(rootEntries))
             let localNotes = try localNoteIDs()
             for (id, entries) in remoteNotes {
                 remoteRevisions[id] = entries.compactMap { e in
@@ -344,6 +370,7 @@ public final class SyncEngine {
             let all = Set(remoteNotes.keys).union(localNotes).subtracting(notesNotReadable)
             notesListed = notesNotReadable.isEmpty
             try listAttachments(remoteNotes)
+            requestArrivals(remoteNotes)
             if treeMode == .verify, let tree = notesTree { settleTreeCheck(tree, listed: listedOneByOne) }
             if !options.dryRun && !options.pushOnly { try prefetchDownloads(remoteNotes) }
             if !options.dryRun { try preuploadNewFiles(remoteNotes, localNotes: localNotes) }
@@ -400,6 +427,7 @@ public final class SyncEngine {
             status.keptOnServer = pendingKept
             report.partial = status
         }
+        finishArrivals()
         if !options.dryRun {
             do {
                 try state.save(stateURL)
@@ -510,20 +538,61 @@ public final class SyncEngine {
             // Only the server moved on: take it (an atomic replace, the one in-place write sync makes).
             try accept(name, remoteData, stamp: stamp)
         case (true, false):
-            let condition = Self.replaceCondition(etag: remote.etag ?? getETag)
-            if try push(name, local, condition: condition) {
-                try recordMutable(name, hash: localHash)
-            } else {
-                try conflict(name, remote: remoteData, detail: "the server copy changed while uploading")
-            }
-        case (true, true) where name == Vault.manifestName && VaultManifest.sameExceptLabel(local, remoteData):
+            try replaceUnchanged(name, local: local, localHash: localHash, remoteData: remoteData,
+                                 etag: remote.etag ?? getETag, record: record)
+        case (true, true):
+            try bothChanged(name, local: local, remoteData: remoteData, stamp: stamp, record: record)
+        }
+    }
+
+    /// Both sides changed a mutable file since the last sync (or there is no record).
+    private func bothChanged(_ name: String, local: Data, remoteData: Data, stamp: String?,
+                             record: SyncState.MutableRecord?) throws {
+        if name == Vault.manifestName && VaultManifest.sameExceptLabel(local, remoteData) {
             // Only the display label differs: the same vault (format.md §1.3). The server's copy is
             // the one every device shares, so it stays, as iCloud Drive's current version does.
-            try accept(name, remoteData, stamp: stamp)
-        case (true, true):
-            try conflict(name, remote: remoteData,
-                         detail: record == nil ? "both sides differ and there is no common ancestor" : "changed on both sides since the last sync")
+            return try accept(name, remoteData, stamp: stamp)
         }
+        try conflict(name, remote: remoteData,
+                     detail: record == nil ? "both sides differ and there is no common ancestor" : "changed on both sides since the last sync")
+    }
+
+    /// How many times a replace of a mutable file is tried while the server's
+    /// version token moves over unchanged bytes.
+    static let stampRetries = 3
+
+    /// Uploads a mutable file this side changed over a server copy that did
+    /// not change since the last sync (`remoteData`), only if it is still that
+    /// copy (`If-Match`). A failed precondition is judged by the bytes, not
+    /// the token: the copy is read again, and only different bytes are a
+    /// change on the server (then both sides changed: `bothChanged`). A token
+    /// that moved over the same bytes (a server that stamps again, a touch, a
+    /// listing older than the read) is tried again with the new token; one
+    /// that keeps moving leaves the upload to the next run, and never makes a
+    /// conflict copy identical to the server's.
+    private func replaceUnchanged(_ name: String, local: Data, localHash: String, remoteData: Data, etag: String?,
+                                  record: SyncState.MutableRecord?) throws {
+        let seenHash = FileDigest.sha256(remoteData)
+        var etag = etag
+        for _ in 0..<Self.stampRetries {
+            if try push(name, local, condition: Self.replaceCondition(etag: etag)) {
+                return try recordMutable(name, hash: localHash)
+            }
+            let fresh = try transport.read([name], maxBytes: Self.maxMutableReadBytes)
+            try budget.downloaded(fresh.data.count)
+            let freshHash = FileDigest.sha256(fresh.data)
+            if freshHash == localHash {
+                // Another writer put the same bytes there meanwhile: in step.
+                state.mutable[name] = .init(hash: localHash, stamp: fresh.etag)
+                return
+            }
+            guard freshHash == seenHash else {
+                return try bothChanged(name, local: local, remoteData: fresh.data, stamp: fresh.etag, record: record)
+            }
+            etag = fresh.etag
+        }
+        report.skipped.append(.init(path: name, message: "the server's version of it kept changing over the same bytes "
+                                    + "while uploading; uploaded on a later run"))
     }
 
     /// GETs a mutable file, or takes the copy `checkSameVault` fetched
@@ -667,7 +736,7 @@ public final class SyncEngine {
         state.mutable[name] = .init(hash: hash, stamp: entry?.stamp)
     }
 
-    private func conflict(_ name: String, remote: Data, detail: String) throws {
+    func conflict(_ name: String, remote: Data, detail: String) throws {
         try requireLocalWrite("write a conflict copy of \(name)")
         let base = (name as NSString).deletingPathExtension
         var copy: String?
@@ -708,6 +777,12 @@ public final class SyncEngine {
     }
 
     private func listRemoteNotes(_ rootEntries: [RemoteEntry]) throws -> [String: [RemoteEntry]] {
+        if let notes = rootEntries.first(where: { $0.name == Vault.notesName && $0.isCollection }),
+           folderArriving([Vault.notesName], entry: notes) {
+            // Listed before its folders (`Arrivals.swift`): no note is judged this run.
+            notesNotReadable.formUnion(try localNoteIDs())
+            return [:]
+        }
         guard rootEntries.contains(where: { $0.name == Vault.notesName && $0.isCollection }),
               let dirs = try transport.list([Vault.notesName]) else { return [:] }
         try budget.list(dirs.count)
@@ -740,6 +815,11 @@ public final class SyncEngine {
             guard d.isCollection, Vault.isNoteDirectoryName(d.name) else {
                 report.ignored.append(SyncReport.printable("notes/\(d.name)"))
                 remoteJunk.append([Vault.notesName, d.name])
+                continue
+            }
+            if folderArriving([Vault.notesName, d.name], entry: d) {
+                // Listed before its files: nothing is judged for it until they arrive (`Arrivals.swift`).
+                notesNotReadable.insert(d.name)
                 continue
             }
             if let unchanged = unchangedNoteEntries(d) {
@@ -785,6 +865,12 @@ public final class SyncEngine {
         Set((recordedFiles[id] ?? []).compactMap(RevisionName.init))
     }
 
+    /// The revisions of a note whose deletion this device settled with the
+    /// remote as thinning before (`SyncState.thinned`), as the run started.
+    func thinnedRevisions(_ id: String) -> Set<RevisionName> {
+        options.pushOnly ? [] : Set((thinnedFiles[id] ?? []).compactMap(RevisionName.init))
+    }
+
     /// The blobs the last sync recorded for a note (keys `<id>/att/<file name>`).
     func recordedBlobs(_ id: String) -> Set<String> {
         let prefix = "\(Vault.attachmentsName)/"
@@ -818,9 +904,13 @@ public final class SyncEngine {
             if let n = RevisionName(f), n.filename == f { L.insert(n) }
         }
         let S = recordedRevisions(id)
+        // Settled here as thinning before, and back on one side only: judged below, never copied first.
+        let thinned = thinnedRevisions(id)
 
         let newLocal = L.subtracting(R).subtracting(S)
         let newRemote = R.subtracting(L).subtracting(S)
+        let backLocal = newLocal.intersection(thinned)
+        let backRemote = newRemote.intersection(thinned)
         let remoteDeleted = L.subtracting(R).intersection(S)
         let localDeleted = R.subtracting(L).intersection(S)
 
@@ -832,15 +922,22 @@ public final class SyncEngine {
         }
 
         // The prefetch made these already (`prefetchDownloads`); one it placed is in L by now.
-        for n in newRemote.sorted() where !prefetched.contains(key(id, n)) {
+        for n in newRemote.subtracting(backRemote).sorted() where !prefetched.contains(key(id, n)) {
             try attempt(n) { if try download(id, n, entry: entries[n]) { L.insert(n) } }
         }
-        for n in newLocal.sorted() {
+        for n in newLocal.subtracting(backLocal).sorted() {
             // The pre-upload pass may have made it already (`preuploadNewFiles`), or tried and reported it.
             switch preuploadOutcome(id, key(id, n)) {
             case .uploaded: R.insert(n)
             case .failed: break
             case .notTried: try attempt(n) { try upload(id, n); R.insert(n) }
+            }
+        }
+        // Thinned here before and back on the server: fetched to be judged with its content (below).
+        var fetchedBack = Set<RevisionName>()
+        if vault != nil {
+            for n in backRemote.sorted() {
+                try attempt(n) { if try download(id, n, entry: entries[n]) { L.insert(n); fetchedBack.insert(n) } }
             }
         }
 
@@ -849,36 +946,19 @@ public final class SyncEngine {
         // above, as before. An unchanged note is never read.
         lazy var loaded: LoadedNote? = loadForSync(id)
         let epoch = Date(timeIntervalSince1970: 0)
+        /// Remembers a deletion settled as thinning (`SyncState.thinned`).
+        func settleThinned(_ n: RevisionName, included: Included?) {
+            guard !options.dryRun else { return }
+            state.thinned = state.thinned ?? [:]
+            state.thinned?[key(id, n)] = SyncState.FileRecord(included: n.kind == .snapshot ? included : nil)
+        }
 
         // The other side deleted these: delete here only if compaction allows it, else put them back.
         // A compaction there kept its covering snapshot there, so only snapshots the server
         // listed count as cover; an emptied or recreated remote folder deletes nothing here.
         if !remoteDeleted.isEmpty {
-            let onServer = (loaded?.revisions ?? []).filter { remoteListed.contains($0.name) }
-                .compactMap(SnapshotCoverage.init)
-            var coverage: [RevisionName: SnapshotCoverage] = [:]
-            for r in loaded?.revisions ?? [] { if let c = SnapshotCoverage(r) { coverage[c.name] = c } }
+            let explained = loaded.map { explainedDeletions(remoteDeleted, of: $0, coverOn: remoteListed) } ?? []
             let readable = Set(loaded?.revisions.map(\.name) ?? [])
-            // Only what a compactor or thinner of this format could have deleted (format.md §5.3,
-            // §5.8.4; security review 2026-10, stage 4, S2): never a checkpoint or the created
-            // anchor, every complete checkpoint still complete afterwards (its positioned snapshots
-            // and witnesses kept), and nothing judged from a note with an unreadable revision.
-            // Anything else is the server losing (or deleting) files: they are put back.
-            var explained = Set<RevisionName>()
-            if let loaded, loaded.failures.isEmpty {
-                let protected = CompactionPlanner.neverDeleted(loaded.revisions)
-                for n in remoteDeleted where readable.contains(n) && !protected.contains(n) {
-                    var snaps = onServer
-                    if var own = coverage[n] { own.wall = epoch; snaps.append(own) }
-                    if CompactionPlanner.deletable(names: [n], wall: [n: epoch], snapshots: snaps,
-                                                   retention: 0, now: options.now).contains(n) {
-                        explained.insert(n)
-                    }
-                }
-                if !CompactionPlanner.deletionKeepsCheckpoints(explained, from: loaded.revisions, now: options.now) {
-                    explained = []
-                }
-            }
             for n in remoteDeleted.sorted() {
                 try attempt(n) {
                     let allowed = explained.contains(n)
@@ -887,6 +967,7 @@ public final class SyncEngine {
                         try requireLocalWrite("delete notes/\(key(id, n))")
                         if !options.dryRun { try LocalFS.remove(dir.appendingPathComponent(n.filename)) }
                         L.remove(n)
+                        settleThinned(n, included: loaded?.revisions.first { $0.name == n }.flatMap(SnapshotCoverage.init)?.included)
                     } else if loaded != nil && readable.contains(n) {
                         // Not a compaction: the server lost it. Restore it.
                         try upload(id, n); R.insert(n)
@@ -924,8 +1005,51 @@ public final class SyncEngine {
                         if !options.dryRun { try transport.delete([Vault.notesName, id, n.filename]) }
                         report.deleted.append(.init(side: "remote", path: "notes/\(key(id, n))"))
                         R.remove(n)
+                        settleThinned(n, included: state.files[key(id, n)]?.included)
                     } else if try download(id, n, entry: entries[n]) {
                         L.insert(n)
+                    }
+                }
+            }
+        }
+
+        // Thinned before and back on one side only: another device, or another remote through a
+        // device that bridges both, brought it back (design §5.4). Copying it would undo a deletion
+        // this pair already settled, and with two bridges on the same two remotes the deletion and
+        // the copy chase each other for ever. So it is judged again, with its content, over every
+        // revision both sides hold (one back on the server is fetched first), under the same rules
+        // as any deletion judged here: a snapshot both sides hold covers it, it is never a
+        // checkpoint or the created anchor, every complete checkpoint stays complete, and nothing
+        // is judged in a note with an unreadable revision. Explained: deleted wherever it is.
+        // Otherwise it is an ordinary file again, copied to the side that lacks it.
+        if !backLocal.isEmpty || !backRemote.isEmpty {
+            var back = backLocal.union(fetchedBack)
+            if vault == nil {
+                for n in backLocal.union(backRemote).sorted() {
+                    report.skipped.append(.init(path: "notes/\(key(id, n))", message: "thinned before and back on "
+                        + (L.contains(n) ? "this side" : "the server") + "; cannot check it against compaction (vault not unlocked)"))
+                }
+                back = []
+            }
+            let held = Set(loaded?.revisions.map(\.name) ?? [])
+            let explained = loaded.map { explainedDeletions(back, of: $0, coverOn: R.subtracting(back)) } ?? []
+            for n in back.sorted() {
+                try attempt(n) {
+                    if explained.contains(n) {
+                        report.deleted.append(.init(side: "local", path: "notes/\(key(id, n))"))
+                        try requireLocalWrite("delete notes/\(key(id, n))")
+                        if !options.dryRun { try LocalFS.remove(dir.appendingPathComponent(n.filename)) }
+                        L.remove(n)
+                        if R.contains(n) {
+                            if !options.dryRun { try transport.delete([Vault.notesName, id, n.filename]) }
+                            report.deleted.append(.init(side: "remote", path: "notes/\(key(id, n))"))
+                            R.remove(n)
+                        }
+                    } else if !held.contains(n) {
+                        report.skipped.append(.init(path: "notes/\(key(id, n))", message: "thinned before and back; unreadable here, kept"))
+                    } else {
+                        if !options.dryRun { state.thinned?[key(id, n)] = nil }
+                        if !R.contains(n) { try upload(id, n); R.insert(n) }
                     }
                 }
             }
@@ -949,8 +1073,41 @@ public final class SyncEngine {
         for n in shared {
             let k = key(id, n)
             state.files[k] = SyncState.FileRecord(included: coverage[n] ?? state.files[k]?.included)
+            // In step on both sides again: no longer a settled deletion.
+            state.thinned?[k] = nil
         }
         for n in S where !L.contains(n) && !R.contains(n) { state.files[key(id, n)] = nil }
+        if L.isEmpty && R.isEmpty { for n in thinned { state.thinned?[key(id, n)] = nil } }
+        if state.thinned?.isEmpty == true { state.thinned = nil }
+    }
+
+    /// Which of `names` (revisions of the note that `loaded` holds) a compactor
+    /// or thinner of this format could have deleted, given the snapshots among
+    /// `loaded`'s revisions that the other side holds (`coverOn`): format.md
+    /// §5.3, §5.8.4; security review 2026-10, stage 4, S2. Never a checkpoint
+    /// or the created anchor, every complete checkpoint still complete
+    /// afterwards (its positioned snapshots and witnesses kept), and nothing
+    /// judged from a note with an unreadable revision. Their age is not judged:
+    /// thinning everything except checkpoints is a legitimate action.
+    func explainedDeletions(_ names: Set<RevisionName>, of loaded: LoadedNote,
+                            coverOn other: Set<RevisionName>) -> Set<RevisionName> {
+        guard loaded.failures.isEmpty, !names.isEmpty else { return [] }
+        let epoch = Date(timeIntervalSince1970: 0)
+        let onOther = loaded.revisions.filter { other.contains($0.name) }.compactMap(SnapshotCoverage.init)
+        var coverage: [RevisionName: SnapshotCoverage] = [:]
+        for r in loaded.revisions { if let c = SnapshotCoverage(r) { coverage[c.name] = c } }
+        let readable = Set(loaded.revisions.map(\.name))
+        let protected = CompactionPlanner.neverDeleted(loaded.revisions)
+        var explained = Set<RevisionName>()
+        for n in names where readable.contains(n) && !protected.contains(n) {
+            var snaps = onOther
+            if var own = coverage[n] { own.wall = epoch; snaps.append(own) }
+            if CompactionPlanner.deletable(names: [n], wall: [n: epoch], snapshots: snaps,
+                                           retention: 0, now: options.now).contains(n) {
+                explained.insert(n)
+            }
+        }
+        return CompactionPlanner.deletionKeepsCheckpoints(explained, from: loaded.revisions, now: options.now) ? explained : []
     }
 
     /// The note as `vault` reads it, nil when the vault is not unlocked or
@@ -1037,6 +1194,9 @@ public final class SyncEngine {
         let size = entry?.size
         if let size, size > options.maxFileBytes { throw SyncError.responseTooLarge(path: path, limit: options.maxFileBytes) }
         if skipQuarantined(key(id, n), path: path, entry: entry) { return false }
+        // Listed but not downloaded by its provider yet: asked for, waited for a while, else left for later.
+        let remotePath = [Vault.notesName, id, n.filename]
+        if try !available(remotePath, entry: entry) { return false }
         let reserved = try locked { try budget.willDownload(size) }
         guard !options.dryRun else {
             locked { budget.release(reserved); report.downloaded.append(path) }
@@ -1044,9 +1204,13 @@ public final class SyncEngine {
         }
         let data: Data
         do {
-            data = try transport.read([Vault.notesName, id, n.filename], maxBytes: options.maxFileBytes).data
+            data = try transport.read(remotePath, maxBytes: options.maxFileBytes).data
         } catch {
             locked { budget.release(reserved) }
+            if Self.isUnavailable(error) {
+                noteArriving(remotePath)
+                return false
+            }
             throw error
         }
         try locked { try budget.downloaded(data.count, reserved: reserved) }

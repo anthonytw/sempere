@@ -95,7 +95,7 @@ Errors go to stderr, one line each, prefixed `sempere:`. A usage error (exit
 | `SEMPERE_PDFTOPPM` | Poppler's `pdftoppm` for PDF page backgrounds in SVG/PNG exports (default: `pdftoppm` on `PATH`; [PDF page backgrounds](#pdf-page-backgrounds)). |
 | `SEMPERE_PDFTOTEXT` | Poppler's `pdftotext` for the text of imported PDF pages (default: `pdftotext` on `PATH`; [`import pdf`](#import-pdf)). |
 | `SEMPERE_WEBDAV_PASSWORD` | The WebDAV password, unless `--password-env` names another variable ([Sync](#sync)). |
-| `SEMPERE_PROGRESS` | `always` or `never`: the `sync webdav` progress line on stderr regardless of whether it is a terminal ([Sync](#sync)). |
+| `SEMPERE_PROGRESS` | `always` or `never`: the `sync webdav` / `sync folder` progress line on stderr regardless of whether it is a terminal ([Sync](#sync)). |
 | `VISUAL`, `EDITOR` | The editor `settings edit` opens (default `vi`; [Shared settings](#shared-settings)). |
 | `SEMPERE_BUNDLED_FONTS` | The directory of the fonts shipped with the CLI ([Text in exports](#text-in-exports)). |
 | `SEMPERE_FONT_DIR` | An extra directory of font packs, searched first ([Text in exports](#text-in-exports)). |
@@ -2350,7 +2350,10 @@ Every downloaded revision and blob is checked before it is placed
 `--identity`) it must decrypt, verify its tag (a blob: its keyed name and
 content hash) and name its note and file; locked, only its age structure is
 checked. A file that fails is never placed in the vault: it is kept under
-`<sync state>.quarantine/` (mode 0600, outside the vault), printed as
+`<sync state>.quarantine/` (mode 0600, outside the vault; a later copy of the
+same path with other bytes is kept beside the first as
+`<name>.copy-<16 hex digits of its SHA-256>`, never over it, up to 16 copies
+of a path), printed as
 `quarantined: PATH: why` on stderr, listed in the JSON `quarantined`
 (`{path, message}`), and the exit code is 1. Later runs do not fetch it
 again while it, the local `vault.json` and the lock state are unchanged (it
@@ -2457,6 +2460,45 @@ first compares it with the one-by-one listings (and again once a day), and a
 server that refuses it (Apache's default) or answers it as `Depth: 1` is
 remembered and listed one by one (`docs/io.md`, "One listing for every note
 folder"). `--no-deep-listing` always lists one by one.
+
+```
+sempere sync folder PATH --vault V [--identity FILE | --passphrase-env VAR] [--device NAME] [--wait SECONDS]
+                         [--max-blob-mib N] [--web-viewer] [--dry-run] [--json] [--retry-quarantined]
+                         [--push-only [--delete-extraneous] [--keep-server-changes]]
+                         [--max-notes N] [--max-entries N] [--max-download-mib N] [--max-minutes N] [--jobs N]
+```
+
+The same two-way sync as `sync webdav`, with a folder as the other side (`docs/io.md`, "Folder
+targets"): a folder in iCloud Drive or another provider's storage, on a USB drive, a network share,
+anywhere. Every rule above applies unchanged: write-once files copied to the side that lacks them and
+never overwritten, `vault.json` and `rewrap-journal.json` compared with the last sync (conflict copies,
+exit 3; a label-only difference taken), `settings.age` merged per key, notebook records unioned,
+deletions only by compaction and blob collection (with the vault unlocked), every file taken from the
+folder checked before it is placed and quarantined otherwise (exit 1), a rejected `vault.json` exit 6,
+the run bounds, `--jobs`, `--dry-run`, `--push-only` (with `--delete-extraneous` and
+`--keep-server-changes`) and `--web-viewer` (a folder a web server serves to the web viewer). The JSON
+report is the same object. `PATH` may be missing or empty (the first run copies the vault into it), and
+so may the vault (the first run copies the folder's vault in; `--identity` checks it under the key).
+The two must not overlap (exit 2), and `PATH` must be a folder (exit 2). The sync state is kept per
+(folder, vault) pair like a server's.
+
+In a provider's folder (iCloud Drive, a Mac's `~/Library/CloudStorage/…` providers), reads and writes
+are coordinated with the provider. A file it has evicted (a `.<name>.icloud` stand-in or a dataless
+file) is asked for and waited for, at most `--wait` seconds for the whole run (default 30, 0 to
+86400); a folder it has listed before its files is left alone for two minutes, then taken as listed.
+Such files exist: nothing is uploaded over them and no deletion is judged from them. What has not
+arrived is printed as `arriving: PATH: why` on stderr, listed in the JSON `arriving` (`{path,
+message}`), and the exit code is 1: run again. One still arriving 15 minutes after the first request
+is an error instead. A `vault.json` in the folder that does not arrive stops the run before anything
+is copied (exit 1). The provider's conflict versions of `vault.json`, the journal and `settings.age`
+are merged, or kept as conflict copies, and removed, so no version picker appears.
+
+The folder is not trusted: symbolic links in it are never followed, FIFOs and names that are not vault
+files are not taken (listed as ignored with `-v`), reads are bounded. In a plain folder, conditional
+writes (`vault.json`, `settings.age`) take an advisory lock on `.sempere-lock` in `PATH`, so the CLI and
+the app on one machine take turns; on a file system without hard links (FAT) new files are checked and
+renamed under it. Exit codes: 0 ok, 1 errors, quarantined files or files still arriving, 2 usage, 3
+conflicts, 6 a rejected `vault.json`.
 
 ```
 sempere webdav check URL [--user U --password-env VAR] [--json]

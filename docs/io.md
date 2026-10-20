@@ -1106,10 +1106,87 @@ change with anything below them (`MemoryStore.Behavior` sets atomic writes and a
 path (so concurrent transfers replay): requests dropped, refused, applied with the answer lost or
 cut midway, latency (interruptible), and a hostile server's wrong bytes, listings that drop or
 invent entries or misreport sizes, and version tokens that change underneath. The store can also
-act like a provider that evicts files (`evict`, `requestDownload` after `arrivalDelay` operations,
-folders listed before their children: `setArriving`); the engine does not use availability yet.
+act like a provider that evicts files (`evict`, or every file as it is written:
+`Behavior.evictOnWrite`; `requestDownload` after `arrivalDelay` operations; folders listed before
+their children, `setArriving`, listed as not downloaded until asked for), which the engine's arrival
+rules (below) handle.
 It serves the transport conformance suite, the engine's scenarios over every transport and the
 N-device stress run (docs/ci.md "Transports", "Sync stress"); nothing in the app or the CLI uses it.
+
+**The folder transport.** `FolderRemote` (`FolderRemote.swift`, in `SempereSync`, Foundation and POSIX
+only, Linux-tested) is a `SyncRemote` over a directory: a vault folder in iCloud Drive or another
+provider, on a USB drive, a network share or anywhere else (`sempere sync folder`; the app's folder
+targets later, design §8.1). What it promises:
+
+| | How |
+| --- | --- |
+| version tokens | `"<device>-<inode>-<size>-<mtime ns>-<ctime ns>"` from `lstat(2)`, plus 16 hex digits of the SHA-256 of a file at the base of at most 64 KiB (`vault.json`, `settings.age`, the journal: the files rewritten in place). Never the modification time alone: a replace through a new file changes the inode and the change time within one tick of a coarse clock (FAT: 2 s), and the digest catches a same-size rewrite in place where neither moves. Strong |
+| create only | a hidden temporary file in the same folder (`.sempere-tmp-<uuid>`), flushed, then `link(2)` (fails if the name exists); where the file system has no hard links (FAT, some shares), a check and `rename(2)` under the lock |
+| conditional replace and delete | the token compared and the file renamed (or unlinked) under the lock: an advisory `flock(2)` on `.sempere-lock` at the base (hidden from listings) in a plain folder, the coordinated write itself in a provider's |
+| reads | bounded (the size first, then never more than the bound), opened without following a link (`O_NOFOLLOW` at each folder); downloads resume at an offset when the token still matches |
+| a hostile folder (format.md §9) | symbolic links never followed nor listed (every other operation checks each component first), FIFOs, sockets and devices not listed, names that are not UTF-8 never listed, unusable path components refused, listings bounded (`Limits.maxEntries`) |
+| errors | `FolderRemoteError`; I/O failures a later run may not see (`EIO`, `ENOTCONN`, `ESTALE`, `ETIMEDOUT`, a full disk, ...) and the lock staying busy are transient; missing files, bounds, links and bad names are not |
+
+What a provider adds comes from a `FolderProvider` (`FolderProvider.swift`): `PlainFolder` (Linux's
+default: nothing to add), `UbiquitousFolderHooks` (Apple platforms' default, `#if canImport(Darwin)`,
+below) and `EvictingFolderProvider` (a provider simulated on any file system for tests:
+dataless files, `.<name>.icloud` stand-ins, folders listed before their files, delayed delivery,
+download errors, conflict versions, change hints; the design's `EvictingFolderRemote` is a
+`FolderRemote` over it).
+
+### Folder targets in providers
+
+A vault folder that iCloud Drive or another provider holds keeps every hazard the app's in-place
+iCloud code handled (design §3.3); the folder transport and the engine handle them instead, so they
+apply wherever a folder target is, and to the CLI:
+
+- **Classification** (`FolderLocation`, moved from the app's `StorageLocation`): iCloud Drive, a
+  Mac's `~/Library/CloudStorage/<Provider>-…`, iPadOS's `File Provider Storage` and shared app-group
+  containers are a provider's (`managesFiles`), and so is any folder whose items report
+  `isUbiquitousItem`. Every read and write there is coordinated (`NSFileCoordinator`, reads with
+  `.withoutChanges`); a plain folder is not.
+- **Evicted files.** In a ubiquitous folder, a `.<name>.icloud` stand-in is listed as `<name>`, and a
+  dataless file (`SF_DATALESS`, or a "not downloaded" downloading status) under its own name; both
+  are listed with `availability` `.remoteOnly` (`.downloading` once asked for, `.failed` with the
+  provider's error). Reading one throws `FolderRemoteError.unavailable` (transient, `isUnavailable`)
+  instead of blocking on a download.
+- **Folders listed before their files.** A folder (other than the base) that lists no visible file
+  yet is `.downloading`; the base itself not downloaded makes every listing fail (transient), so a
+  run stops before it judges anything.
+- **Conflict versions** (`NSFileVersion`): `conflictVersions`, `readVersion`, `resolveConflicts`.
+- **Change hints**: `changes()` is an `NSFilePresenter` on the base (any coordinated writer: iCloud's
+  daemon, the app, the CLI), as paths below it; elsewhere nil (poll).
+
+The engine's rules for them (`Arrivals.swift`, `ConflictVersions.swift`), for any transport that
+lists availability:
+
+- **A listed file exists.** An evicted file is never taken as dropped, missing or extraneous: it is
+  in the listing, so nothing is uploaded over it and no deletion is judged from its absence. Files
+  the run would download that the provider has not downloaded are asked for (`requestDownload`, in
+  windows of 64) as soon as the listings are in; each read waits for its file, all of them together
+  at most `SyncOptions.arrivalWait` (10 s; the CLI's `--wait`, 30 s). What has not arrived is
+  reported in `SyncReport.arriving` and left for a later run (its note records no folder stamp, so
+  the next run lists it again); a dry run or a mirror asks for nothing. One still arriving
+  `arrivalStall` (15 min) after this device first asked for it is reported in `errors` instead (the
+  provider may be offline or full): never deleted, never given up on.
+- **Folders listed before their files** (`notes/`, a note folder, its `att/`, `notebooks/`) are
+  arriving for `unlistedTimeout` (120 s, iCloud's `cloudUnlistedTimeout`) from when this device first
+  found them so: the note is left out of the run with its records kept, nothing in it judged. After
+  that its listing is taken as it is: an emptied folder still deletes nothing (an emptied remote
+  folder never explains a deletion) and its files are put back. So "arriving" never waits for ever.
+  An `att/`-only folder (an import in progress elsewhere: blobs before their revision) is not a note
+  until a revision appears.
+- **The remote's `vault.json`** is waited for before anything else; still away after the wait, the
+  run stops (`SyncError.notDownloaded`) rather than sync without knowing it is the same vault.
+- When each one was first seen is kept in the sync state (`SyncState.arriving`), so the bounds hold
+  across runs and processes.
+- **Conflict versions** of the root's mutable files are settled before they are synced (format.md
+  §1.3, §13.3; the app's `CloudConflicts` rules): a `vault.json` version that is the current file or
+  differs only in its label is dropped, any other `vault.json` or journal version is kept as a local
+  conflict copy and reported (exit 3); `settings.age` versions that verify are merged per key into
+  the local copy (locked: left until an unlocked run), which the settings sync then merges with the
+  remote's; the web viewer's summaries and index keep the current version. Then the versions are
+  removed, so no version picker ever reaches the user. Mirrors and dry runs leave them alone.
 
 **Adding a transport.** Conform a type to `SyncRemote` in its own target; one that talks to a
 network goes beside `SempereWebDAV` and needs the network allowances (`scripts/check-portability.sh`,
@@ -1118,9 +1195,8 @@ stays network-free. Map paths (component lists below the remote's base, built fr
 names; refuse a component that is empty, `.`, `..` or holds a `/`, as `WebDAVClient` does) and
 version tokens (they change whenever the bytes do; a strong one, not `W/"…"`, backs conditions and
 resumes), bound what is read, and keep the hooks' defaults unless the store needs them. Then give it
-a fixture in the conformance suite and the engine's scenarios (docs/ci.md "Transports"). The planned
-ones are a folder transport for iCloud Drive and other providers, and possibly first-class
-S3-compatible or Dropbox adapters (docs/design/device-first-sync.md §3).
+a fixture in the conformance suite and the engine's scenarios (docs/ci.md "Transports"). Possible
+later ones are first-class S3-compatible or Dropbox adapters (docs/design/device-first-sync.md §3.4).
 
 ## WebDAV sync (`Sources/SempereWebDAV`)
 
@@ -1152,7 +1228,9 @@ and unknown files are not synced. A downloaded revision must start with the
 age header or it is rejected, and before it is placed it is checked as
 format.md §9.1 says (tag, note and name with the vault unlocked; age
 structure when locked); a file that fails is quarantined next to the sync
-state (`<state>.quarantine/`), reported, and not fetched again while it and
+state (`<state>.quarantine/`; a later copy of the same path with other bytes
+beside it as `<name>.copy-<16 hex digits of its SHA-256>`, never over one, at
+most 16 distinct copies of a path), reported, and not fetched again while it and
 the local `vault.json` are unchanged (`--retry-quarantined`). A first pull
 with `--identity` checks under the `vault.json` it pulls. Remote names are reported with control
 characters escaped, so a hostile name cannot drive the terminal. Response
@@ -1194,6 +1272,16 @@ folder therefore deletes nothing locally; its files are uploaded again. A snapsh
 the `included` coverage recorded when it was last synced. Without an unlocked
 vault nothing can be checked, so nothing is deleted. A removal that fails the
 check is undone (the file is copied back).
+
+A deletion settled this way is remembered in the state (`thinned`) once
+neither side holds the file. If it comes back on one side only (another device
+or another remote brought it back), it is not copied as a new file: it is
+fetched if it is on the server, and judged again with its content over every
+revision both sides hold, by the rules above; explained, it is deleted from
+both sides, else it is copied and forgotten. This is what lets two devices sync
+the same two remotes: without it, one deleted a thinned delta from a remote
+while the other uploaded it there again from the other remote, for ever
+(docs/design/device-first-sync.md §5.4).
 
 **Attachment blobs** (`docs/attachments.md` §4). Each note's `att/` follows
 the same write-once table, keyed `<noteId>/att/<name>` in the state. A note
@@ -1273,7 +1361,11 @@ changed (or no common ancestor and different content): the remote copy is
 saved as `<name>.conflict-<device>-<yyyymmddThhmmssZ>.<ext>` in the vault root
 (not again if an identical one exists), nothing else changes, and the
 conflict is reported on every run until the files agree. A PUT rejected with
-412 is a conflict too. Two `vault.json` versions that differ only in `label`
+412 is judged by the bytes, not the ETag: the server copy is read again, and
+only different bytes are a change there (then both changed, as above); an
+ETag that moved over the same bytes is retried with the new one (3 tries, then
+the upload waits for a later run, listed as skipped), so no conflict copy
+identical to the server's is ever made. Two `vault.json` versions that differ only in `label`
 (a vault renamed on two devices) are the same vault (format.md §1.3), not a
 conflict: the server's copy, the one every device shares, is taken (as
 iCloud Drive's current version stays), and a push-only run keeps it on the

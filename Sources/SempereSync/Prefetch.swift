@@ -160,7 +160,8 @@ extension SyncEngine {
         for id in remoteNotes.keys.sorted() where !notesNotReadable.contains(id) {
             // A note whose local folder cannot be listed is left to the note loop, which reports it.
             guard let local = localRevisionNames(id) else { continue }
-            let recorded = recordedRevisions(id)
+            // Revisions thinned here before are judged by the note loop (`syncNote`), never fetched ahead.
+            let recorded = recordedRevisions(id).union(thinnedRevisions(id))
             let revisions = (remoteNotes[id] ?? []).compactMap { e -> (RevisionName, RemoteEntry)? in
                 guard !e.isCollection, let n = RevisionName(e.name), n.filename == e.name,
                       !local.contains(e.name), !recorded.contains(n) else { return nil }
@@ -194,14 +195,16 @@ extension SyncEngine {
             $0.bytesTotal += bytes
         }
         let marks = (downloaded: report.downloaded.count, errors: report.errors.count, skipped: report.skipped.count,
-                     quarantined: report.quarantined.count)
+                     quarantined: report.quarantined.count, arriving: report.arriving.count)
         defer {
             // Completion order depends on the threads: keep reports reproducible.
             report.downloaded[marks.downloaded...].sort()
             report.errors[marks.errors...].sort { $0.path < $1.path }
             report.skipped[marks.skipped...].sort { $0.path < $1.path }
             report.quarantined[marks.quarantined...].sort { $0.path < $1.path }
-            for issue in report.errors[marks.errors...] + report.skipped[marks.skipped...] + report.quarantined[marks.quarantined...] {
+            report.arriving[marks.arriving...].sort { $0.path < $1.path }
+            for issue in report.errors[marks.errors...] + report.skipped[marks.skipped...] + report.quarantined[marks.quarantined...]
+                + report.arriving[marks.arriving...] {
                 let parts = issue.path.split(separator: "/")
                 if parts.count > 1, parts[0] == Vault.notesName { prefetchTroubled.insert(String(parts[1])) }
             }

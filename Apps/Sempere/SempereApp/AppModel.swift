@@ -428,6 +428,12 @@ final class AppModel {
     /// "WebDAV vaults in the app"). The app passes the default store; without
     /// one (tests) a store in a folder of this model alone.
     let webdavLocations: WebDAVLocationStore
+
+    /// The folder holding this model's default (not injected) scratch locations; nothing is created in it until
+    /// one is used, and `deinit` removes it.
+    private let ownedScratch: URL
+
+    deinit { try? FileManager.default.removeItem(at: ownedScratch) }
     /// The push-only sync of the open vault when it is a WebDAV location's
     /// local copy; nil for any other vault.
     var webdav: WebDAVSession?
@@ -653,8 +659,12 @@ final class AppModel {
          webdavLocations: WebDAVLocationStore? = nil,
          afterIO: (@Sendable () async -> Void)? = nil) {
         self.recipientsTrust = recipientsTrust ?? MemoryRecipientsTrustStore()
-        let webdavScratch = FileManager.default.temporaryDirectory
-            .appendingPathComponent("SempereWebDAV-\(UUID().uuidString)", isDirectory: true)
+        // One private scratch folder for every default location below, removed when the model goes away: a model
+        // built without explicit roots (tests, previews) would otherwise leave three folders per instance in tmp.
+        let scratch = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SempereModel-\(UUID().uuidString)", isDirectory: true)
+        ownedScratch = scratch
+        let webdavScratch = scratch.appendingPathComponent("WebDAV", isDirectory: true)
         self.webdavLocations = webdavLocations
             ?? WebDAVLocationStore(storeURL: webdavScratch.appendingPathComponent("webdav.json"),
                                    root: webdavScratch.appendingPathComponent("WebDAV", isDirectory: true))
@@ -665,11 +675,10 @@ final class AppModel {
         self.summaryCacheDirectory = summaryCacheDirectory
         self.drawingCacheRoot = drawingCacheRoot
         blobCacheFolder = blobCacheRoot
-            ?? FileManager.default.temporaryDirectory.appendingPathComponent("SempereBlobs-\(UUID().uuidString)", isDirectory: true)
+            ?? scratch.appendingPathComponent("Blobs", isDirectory: true)
         self.renderCacheRoot = renderCacheRoot
         self.attachmentIndexRoot = attachmentIndexRoot
-            ?? FileManager.default.temporaryDirectory.appendingPathComponent("SempereAttachmentIndex-\(UUID().uuidString)",
-                                                                           isDirectory: true)
+            ?? scratch.appendingPathComponent("AttachmentIndex", isDirectory: true)
         self.editorDebounce = editorDebounce
         self.recognizer = recognizer
         self.recognitionDelay = recognitionDelay

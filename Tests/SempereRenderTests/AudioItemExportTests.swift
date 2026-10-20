@@ -1,3 +1,4 @@
+import TempDirSupport
 import Foundation
 import Sempere
 import SempereFonts
@@ -141,7 +142,7 @@ final class AudioItemExportTests: XCTestCase {
         let t = try transcriptData()
         let tref = BlobRef(content: t, type: BlobRef.transcriptType)
         let state = note([card(), card(Rect(x: 20, y: 150, w: 200, h: 60))], recordings: [recording(transcript: tref)])
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let dir = TestTemp.root.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let audio = self.audio

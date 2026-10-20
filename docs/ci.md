@@ -101,17 +101,18 @@ flight, every device reads the same notes).
 | Level | Runs in | What |
 | --- | --- | --- |
 | `TwoDeviceStressTests` | every `swift test` (6 seeds; `SEMPERE_STRESS_SEEDS=N` for more) | devices on the in-memory `MockDAV`, each through a `FaultyTransport` (seeded: requests dropped, answered 503, applied with the answer lost, downloads cut midway), interleaving notes, renames, tags, blobs, shared settings, two-way runs, pushes and simultaneous runs; request counts of idle and catching-up runs; label-only `vault.json` changes; per-device summaries; merge-copy round trips |
-| `NDeviceStressTests` | every `swift test` (quick: 3 seeds of 90 steps, 3 devices, a few seconds); `SEMPERE_SYNC_STRESS_LONG=1` (60 seeds of 300 steps, 3 to 5 devices, simultaneous runs; `SEMPERE_SYNC_STRESS_SEEDS=N`; `scripts/sync-stress.sh`) | devices on one or two remotes (a `MemoryRemote`, plus a second one or the WebDAV mock, by seed), the first bridging both, the others on one (`SEMPERE_SYNC_STRESS_BRIDGES=many`: a random subset, which shows a known cycle, below); new notes, renames, tags, attachments, deletes, thinning and shared settings, synced in random order through transport faults and, on in-memory remotes, a hostile server (wrong bytes, listings that drop or invent entries or misreport sizes, version tokens changing underneath). Checks as it goes and at the end: no note file on any device or remote differs from what its writer wrote or appears unwritten; every attachment and revision is everywhere, or (thinned) the note reads the same with all of them put back; every quarantined file is still kept; with faults off, a few rounds (retrying quarantined files, as Repair does) converge every device and remote with no conflict copy and nothing in flight. `SEMPERE_SYNC_STRESS_SEED=N` replays one seed; prints `NDEVICE` lines |
+| `NDeviceStressTests` | every `swift test` (quick: 3 seeds of 90 steps, 3 devices, a few seconds); `SEMPERE_SYNC_STRESS_LONG=1` (60 seeds of 300 steps, 3 to 5 devices, simultaneous runs; `SEMPERE_SYNC_STRESS_SEEDS=N`; `scripts/sync-stress.sh`) | devices on one or two remotes (a `MemoryRemote`, or every fourth seed a `FolderRemote` on a plain folder through `FaultyRemote`, plus a second in-memory one or the WebDAV mock, by seed), the first bridging both, each other one a random non-empty subset, so two or more devices often bridge the same two remotes (`SEMPERE_SYNC_STRESS_BRIDGES=one`: one remote each); new notes, renames, tags, attachments, deletes, thinning and shared settings, synced in random order through transport faults and, on in-memory remotes, a hostile server on note files and `vault.json` (wrong bytes, listings that drop or invent entries or misreport sizes, version tokens changing underneath). Checks as it goes and at the end: no note file on any device or remote differs from what its writer wrote or appears unwritten; every attachment and revision is everywhere, or (thinned) the note reads the same with all of them put back; every file that appeared in a quarantine folder is still there with the same bytes; with faults off, a few rounds (retrying quarantined files, as Repair does) converge every device and remote with no conflict copy and nothing in flight. `SEMPERE_SYNC_STRESS_SEED=N` replays one seed; prints `NDEVICE` lines |
 | `SyncFaultProxyTests` | `scripts/test-webdav.sh` (CI's `webdav` job) | real sockets: wsgidav behind `scripts/dav-fault-proxy.py`; a reset mid-download resumes with `Range`, a reset mid-upload leaves no partial blob, random 5xx and resets converge, a stalled request ends at the idle timeout, a dripping download ends at the run's time bound, request counts over latency and a bandwidth cap |
 | `SyncStressTests` | `scripts/sync-stress.sh` only (about five minutes) | the seeded 640-note vault the CLI builds (`scripts/make-stress-vault.sh`: notebooks, tags, text boxes, edits from a second device, small and 3 MB images), uploaded and pulled through faults, 240 concurrent edits from both devices, idle request counts, a fresh pull canceled at random points, a merge-copy round trip; prints `STRESS` lines (times, requests by method, faults) |
 | `SyncTimingTests` | `scripts/sync-stress.sh` only | the same vault without faults at `SEMPERE_STRESS_LATENCIES` ms per request (default `0,20`): first upload, first pull, two idle runs (the first checks the deep listing, the second uses it), the app's push after one edit; prints `TIMING` lines (wall time, requests by method, client connections) for before/after numbers in performance PRs |
 
-**Known: two bridges cycle.** With two devices that both sync the same two remotes, a delta that
-thinning made deletable can circle for ever: one bridge deletes it from a remote (explained by the
-snapshot there) while the other uploads it there again from the other remote, and a round later the
-reverse. Nothing is lost, but the runs are never quiet. `NDeviceStressTests` therefore uses one
-bridge by default; `SEMPERE_SYNC_STRESS_BRIDGES=many SEMPERE_SYNC_STRESS_LONG=1` reproduces it
-within a few seeds. It belongs to the multi-target phases (docs/design/device-first-sync.md §5.6).
+**Two bridges.** With two devices that both sync the same two remotes, a delta that thinning made
+deletable used to circle for ever: one bridge deleted it from a remote (explained by the snapshot
+there) while the other uploaded it there again from the other remote, and a round later the
+reverse. Each (device, remote) pair now remembers the deletions it settled (`SyncState.thinned`), so
+a copy that comes back is judged as a deletion again instead of copied
+(docs/design/device-first-sync.md §5.4; `testTwoBridgesSettleAThinnedDelta`), and
+`NDeviceStressTests` uses several bridges by default.
 
 `scripts/sync-stress.sh` runs all five (60 seeds each), and the transport suites below over wsgidav, against a local wsgidav and the proxy, building
 the vault once per seed and size in `build/sync-stress/` (`SEMPERE_STRESS_SEED`,
@@ -122,14 +123,18 @@ the PR gate, so list it under `## Tests run`.
 
 Every `SyncRemote` (docs/io.md "Sync engine and transports") is held to one contract and runs the
 engine's core rules, over each transport (`Tests/SempereWebDAVTests/TransportFixtures.swift`:
-`TransportUnderTest.memory()`, `.mockDAV()`, `.wsgidav()`, each a fresh base plus an unfaulted
-inspector, seeded fault injection and an unreachable remote):
+`TransportUnderTest.memory()`, `.mockDAV()`, `.wsgidav()`, `.folder()`, `.evictingFolder()` and
+`.evictedMemory()`, each a fresh base plus an unfaulted inspector, seeded fault injection and an
+unreachable remote; the folder transport has no faults of its own, so `FaultyRemote` wraps it):
 
 | Suite | Transports | What |
 | --- | --- | --- |
-| `SyncRemoteConformanceCase` (`MemoryRemoteConformanceTests`, `WebDAVMockConformanceTests`, `WsgidavConformanceTests`) | `MemoryRemote`; `WebDAVSyncRemote` on `MockDAV`; on wsgidav (`scripts/test-webdav.sh`) | listings and stat, bounded reads, create-only and conditional writes, a write needing its parent, a create-only race of 8 writers, moves that never overwrite, collections and the base, deletes with version tokens, downloads in pieces, resumed and restarted, deep listings matching per-collection ones, error classification (unreachable, dropped and lost answers transient; bounds, missing files and refusals not), capability flags held where observable, unusable path components refused. Known server deviations are pinned per fixture (`TransportUnderTest.Deviation`: wsgidav's whole-second ETags, `If-Match` creating a missing file, unquoted `getetag`) |
-| `EngineScenarioCase` (`EngineOverMemoryTests`, `EngineOverWebDAVMockTests`, `EngineOverWsgidavTests`) | the same three | first upload, pull and idle runs; concurrent deltas; never overwriting write-once files; quarantine; compaction deletes; unexplained and wiped remote deletions put back; another vault refused; `vault.json` conflict copies; settings merged per key; a cut blob download finished next run; random transport faults converging; `skipUnchangedNotes` |
+| `SyncRemoteConformanceCase` (`MemoryRemoteConformanceTests`, `WebDAVMockConformanceTests`, `WsgidavConformanceTests`, `FolderRemoteConformanceTests`, `EvictingFolderConformanceTests`) | `MemoryRemote`; `WebDAVSyncRemote` on `MockDAV`; on wsgidav (`scripts/test-webdav.sh`); `FolderRemote` on a plain folder and on one `EvictingFolderProvider` holds | listings and stat, bounded reads, create-only and conditional writes, a write needing its parent, a create-only race of 8 writers, moves that never overwrite, collections and the base, deletes with version tokens, downloads in pieces, resumed and restarted, deep listings matching per-collection ones, error classification (unreachable, dropped and lost answers transient; bounds, missing files and refusals not), capability flags held where observable, unusable path components refused. Known server deviations are pinned per fixture (`TransportUnderTest.Deviation`: wsgidav's whole-second ETags, `If-Match` creating a missing file, unquoted `getetag`) |
+| `EngineScenarioCase` (`EngineOverMemoryTests`, `EngineOverWebDAVMockTests`, `EngineOverWsgidavTests`, `EngineOverFolderTests`, `EngineOverEvictingFolderTests`, `EngineOverEvictedMemoryTests`) | the same, plus `MemoryRemote` in evicted mode (every file evicted as it is written, so every read goes through the arrival rules) | first upload, pull and idle runs; concurrent deltas; never overwriting write-once files; quarantine (every distinct copy of a path kept, bounded); compaction deletes; unexplained and wiped remote deletions put back; another vault refused; `vault.json` conflict copies, and none when only its version token moved; settings merged per key; a cut blob download finished next run; random transport faults converging; `skipUnchangedNotes` |
 | `MemoryRemoteTests` | `MemoryRemote` | each injected fault does what it says; faults replay from the seed whatever the call order; an evicted file is listed, unreadable (transient) and arrives after `requestDownload`; an arriving folder lists empty; latency is interruptible |
+| `FolderRemoteTests` | `FolderRemote` | version tokens follow the bytes (a same-size rewrite in place; folder tokens follow children); the lock file is hidden; a conditional-replace race has one winner; symbolic links never followed or listed; FIFOs and names that are not UTF-8 not listed; huge files and listings bounded; a provider's stand-ins and dataless files listed, unreadable (transient, `isUnavailable`) and arriving after `requestDownload`; folders listed before their files (and the base); conflict versions and change hints; on macOS `UbiquitousFolderHooks` on a local folder (real `NSFileCoordinator`, an `NSFilePresenter` hearing a coordinated write) |
+| `FolderHazardTests` | `FolderRemote` + `EvictingFolderProvider`, `MemoryRemote` evicted | the design's §3.3 hazards through the engine: evicted files arriving within the run's wait, or left for later (never quarantined, never taken as missing, nothing uploaded over them); download failures, then stalls as errors; an evicted `vault.json` or base stopping the run; note and `att/` folders listed before their files (nothing judged until `unlistedTimeout`, then taken as listed); `att/`-only folders; conflict versions of `vault.json` (label-only dropped, others kept as conflict copies), `settings.age` (merged, waiting for the key when locked) and the summaries (dropped) |
+| `CLIFolderSyncTests` | `sempere sync folder` | two devices through a folder, usage errors (overlap, a file, flags), `--push-only` and `--dry-run`, quarantine (exit 1), and on macOS a real FAT volume (no hard links, a 2 s clock) |
 
 A new transport gets a fixture and a subclass of each case with the same test methods.
 
@@ -170,6 +175,27 @@ crashing thread and, on the iPad, the simulator's log of the app's faults and ha
   cache a `main` run saved; pull requests never save. The key is the checkout path, the
   toolchain version and `Package.resolved`, so changing any of them starts a fresh cache. If a
   build fails in a way a clean build would not, run `gh cache delete --all` and re-run.
+
+## Temp-folder guard
+
+Tests put every scratch file under `TestTemp.root`, one folder per test process
+(`sempere-test-<pid>-<uuid>`) that is removed when the process exits; the first use in a later
+process also removes the roots of processes that are gone. The app tests use
+`Apps/Sempere/SempereAppTests/TestTemp.swift`, the SwiftPM tests `Tests/TempDirSupport/TestTemp.swift`
+(same API: `root`, `url(_:)`, `directory(_:)`, `with(_:_:)`). Never build a path from
+`FileManager.default.temporaryDirectory` or `NSTemporaryDirectory()` in a test; for XCTest, `makeScratch`
+and `TempDirTestCase` already do the right thing. Production code that makes a temp folder removes it
+itself (an `AppModel` built without explicit roots owns one scratch folder, removed in `deinit`).
+
+Why: leaked folders once piled up to about 195,000 entries in the sandboxed app container's tmp
+(`~/Library/Containers/io.github.anthonytw.sempere/Data/tmp`), hit APFS's 65,535-subfolder limit, and
+failed every Mac Catalyst test that wrote there with Cocoa error 512.
+
+`scripts/app.sh test-mac`, `test-mac-ui` and `test-mac-smoke` count that folder's entries before and
+after and print `tmp-guard: ... before=N after=M`. More than `SEMPERE_TMP_LEAK_MAX` (default 20) new
+entries is a warning; `scripts/local-ci.sh` sets `SEMPERE_TMP_GUARD_FAIL=1`, which makes it a failure.
+`SEMPERE_CONTAINER_TMP` points the guard at another folder. The iOS simulator runs are not covered:
+their tmp lives in a throwaway simulator clone.
 
 ## Device checks in process
 

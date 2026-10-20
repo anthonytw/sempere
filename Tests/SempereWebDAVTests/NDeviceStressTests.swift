@@ -11,11 +11,12 @@ import XCTest
 /// devices, each with its own key, clock (virtual, skewed) and sync state per
 /// remote, make random edits (new notes, renames, tags, attachments, deletes,
 /// thinning, shared settings) and sync in random order with a random remote
-/// they use (one bridge: see `StressWorld.manyBridges`), through injected faults: requests dropped, refused, applied with
+/// they use (several bridges: see `StressWorld.manyBridges`), through injected faults: requests dropped, refused, applied with
 /// the answer lost, cut midway, and, on in-memory remotes, a hostile server
 /// (wrong bytes, listings that drop or invent entries or misreport sizes,
-/// version tokens that change underneath). The first device uses every
-/// remote (a bridge); the others a random subset. A second remote is either
+/// version tokens that change underneath; on note files and on `vault.json`). The first device
+/// uses every remote (a bridge); the others a random subset, so two devices often bridge the same
+/// two remotes. A second remote is either
 /// another `MemoryRemote` or the WebDAV mock (mixed targets).
 ///
 /// Invariants, checked as it goes and at the end:
@@ -24,7 +25,8 @@ import XCTest
 /// - nothing is lost: every attachment and revision written is on every
 ///   device and remote, or (thinned or compacted) the note reads the same
 ///   with every one of them put back;
-/// - quarantine never deletes: every file a run quarantined is still kept;
+/// - quarantine never deletes or replaces: every file that ever appeared in a
+///   quarantine folder is still there with the same bytes;
 /// - with faults off, a few rounds converge: every device and remote holds
 ///   the same note files, nothing is left in flight, every device reads the
 ///   same notes and settings, and no conflict copy was made.
@@ -89,6 +91,65 @@ final class NDeviceStressTests: TempDirTestCase {
         }
         XCTAssertEqual(try a.vault().readSharedSettings(), s)
     }
+
+    /// Found by this run with two bridges (docs/design/device-first-sync.md §5.4): devices X and Y
+    /// both sync remotes R0 and R1. X thinned a note and deleted the thinned deltas from R0, then
+    /// had them again from R1 (as a download from R1 brings them back); Y still holds them, in
+    /// step with both remotes. Each run then undid another: Y deleted them (R0 dropped them),
+    /// X uploaded them to R0 again (new there, as far as its R0 state remembered), Y fetched them
+    /// from R0 and gave them to R1, X deleted them... never quiet. A deletion settled as
+    /// thinning is remembered (`SyncState.thinned`), so a copy that comes back is deleted again.
+    func testTwoBridgesSettleAThinnedDelta() throws {
+        let store0 = MemoryStore(name: "R0"), store1 = MemoryStore(name: "R1")
+        let r0 = MemoryRemote(store: store0, base: ["vault"]), r1 = MemoryRemote(store: store1, base: ["vault"])
+        let ids = [pqIdentity(), pqIdentity()]
+        let x = try SyncDevice(name: "X", root: tmp.appendingPathComponent("X"), identity: ids[0], remote: r0,
+                               device: DeviceID("aaaaaaaa"))
+        let y = try SyncDevice(name: "Y", root: tmp.appendingPathComponent("Y"), identity: ids[1], remote: r0,
+                               device: DeviceID("bbbbbbbb"))
+        let start = Date(timeIntervalSince1970: 1_790_000_000)
+        let tick = Locked(0)
+        for d in [x, y] { d.clock = { start.addingTimeInterval(Double(tick.value * 60)) } }
+        _ = try Vault.create(at: x.folder, recipients: ids.map(\.recipient), labels: ["X", "Y"], identities: [x.identity])
+        let runs: [(SyncDevice, MemoryRemote, String)] = [(y, r0, "R0"), (y, r1, "R1"), (x, r0, "R0"), (x, r1, "R1")]
+        func round() throws -> [String] {
+            try runs.compactMap { d, r, name in
+                let rep = try d.sync(via: r, state: d.root.appendingPathComponent("sync-\(name).json"))
+                return rep.isEmpty ? nil : "\(d.name)/\(name): \(StressWorld.brief(rep))"
+            }
+        }
+        let id = UUID(uuidString: "0b5e55ed-0000-4000-8000-000000000001")!
+        try x.newNote("one", id: id)
+        for i in 2...6 { tick.value = i; try x.rename(id, "title \(i)") }
+        for _ in 0..<4 { _ = try round() }
+        XCTAssertEqual(try round(), [], "in step before thinning")
+
+        tick.value = 100
+        let thinned = try x.thin(id)
+        XCTAssertFalse(thinned.isEmpty, "thinning deleted nothing")
+        let files = try thinned.map { n -> (String, Data) in
+            let p = "notes/\(id.uuidString.lowercased())/\(n.filename)"
+            return (p, try Data(contentsOf: y.folder.appendingPathComponent(p)))
+        }
+        try x.sync(via: r0, state: x.root.appendingPathComponent("sync-R0.json"))
+        // X has them again, as a download from R1 (whose X state records them) would bring them.
+        for (p, data) in files { try data.write(to: x.folder.appendingPathComponent(p)) }
+
+        var last: [String] = []
+        var quiet = false
+        for _ in 0..<6 where !quiet {
+            last = try round()
+            quiet = last.isEmpty
+        }
+        XCTAssertTrue(quiet, "never quiet: \(last.joined(separator: "\n"))")
+        for (p, _) in files {
+            XCTAssertFalse(x.noteFiles().contains(p) || y.noteFiles().contains(p), "\(p) is back on a device")
+            for store in [store0, store1] { XCTAssertNil(store.file(["vault"] + p.split(separator: "/").map(String.init)), p) }
+        }
+        XCTAssertEqual(x.noteFiles(), y.noteFiles())
+        XCTAssertEqual(try x.vault().reconstruct(noteId: id), try y.vault().reconstruct(noteId: id))
+        XCTAssertEqual(try x.vault().reconstruct(noteId: id).meta.title, "title 6")
+    }
 }
 
 /// One remote of the stress run and how each device reaches it.
@@ -113,13 +174,28 @@ final class StressTarget {
         return StressTarget(name: name, inspector: remote) { seed in
             let faults = MemoryFaults(seed: seed)
             faults.keepLog = false
-            // A hostile server's answers about note files; the mutable files at the root
-            // are covered by their own suites (a changed answer there is a reported conflict).
-            faults.eligible = { kind, _, path in MemoryFaults.Kind.transport.contains(kind) || path.first == Vault.notesName }
+            // A hostile server's answers about note files and `vault.json`. The other mutable
+            // files at the root have their own suites: a changed answer about `settings.age`
+            // is merged or reported, one about the rewrap journal judged under §3.3.1.
+            faults.eligible = { kind, _, path in
+                MemoryFaults.Kind.transport.contains(kind) || path.first == Vault.notesName || path == [Vault.manifestName]
+            }
             var rates = MemoryFaults.Rates.transport(transportRate)
             for k in MemoryFaults.Kind.hostile { rates[k] = hostileRate }
             return StressLink.Endpoint(remote: remote.with(faults: faults),
                                        setFaults: { faults.rates = $0 ? rates : .none }, injected: { faults.injected })
+        }
+    }
+
+    /// A plain folder (`FolderRemote`), with transport faults (`FaultyRemote`): a share that drops,
+    /// refuses, loses answers and cuts copies midway.
+    static func folder(_ name: String, root: URL) -> StressTarget {
+        let remote = FolderRemote(root: root, provider: PlainFolder())
+        return StressTarget(name: name, inspector: remote) { seed in
+            let on = Locked(false)
+            let faulty = FaultyRemote(remote, seed: seed, faults: .all(transportRate))
+            let switched = SwitchedRemote(plain: remote, faulty: faulty, on: on)
+            return StressLink.Endpoint(remote: switched, setFaults: { on.value = $0 }, injected: { Int(faulty.injected.value) })
         }
     }
 
@@ -161,19 +237,20 @@ final class StressWorld {
     private(set) var links: [[StressLink]] = []
     /// Every write-once file written, by vault path, as its writer wrote it.
     private var written: [String: Data] = [:]
-    /// Every file a run quarantined.
-    private var quarantined = Set<URL>()
+    /// Every file seen in a quarantine folder, with its bytes' SHA-256.
+    private var quarantined: [URL: String] = [:]
     private let tick = Locked(0)
     private var counts: [String: Int] = [:]
     private static let epoch = Date(timeIntervalSince1970: 1_790_000_000)
 
-    /// Whether devices other than the first may bridge both remotes. Off by default: with two
-    /// bridges on the same two remotes, a delta that thinning made deletable can circle for
-    /// ever (one bridge deletes it from a remote while the other uploads it there again from
-    /// the other remote, a round later the reverse), never losing anything but never quiet.
-    /// A known engine issue for the multi-target phases (docs/design/device-first-sync.md §5.6);
-    /// `SEMPERE_SYNC_STRESS_BRIDGES=many` reproduces it within a few long-mode seeds.
-    static var manyBridges: Bool { ProcessInfo.processInfo.environment["SEMPERE_SYNC_STRESS_BRIDGES"] == "many" }
+    /// Whether devices other than the first may bridge both remotes (the default; each one
+    /// does with a chance of one half): two devices that both sync iCloud and WebDAV are the
+    /// expected setup. With two bridges on the same two remotes, a delta that thinning made
+    /// deletable used to circle for ever (one bridge deleted it from a remote while the other
+    /// uploaded it there again from the other remote); the engine now settles it
+    /// (`SyncState.thinned`, docs/design/device-first-sync.md §5.4).
+    /// `SEMPERE_SYNC_STRESS_BRIDGES=one` keeps the other devices on one remote each.
+    static var manyBridges: Bool { ProcessInfo.processInfo.environment["SEMPERE_SYNC_STRESS_BRIDGES"] != "one" }
 
     init(seed: UInt64, root: URL, mode: NDeviceStressTests.Mode) throws {
         self.seed = seed
@@ -181,8 +258,9 @@ final class StressWorld {
         self.mode = mode
         rng = SeededRNG(seed)
         let deviceCount = mode.devices.lowerBound + Int(rng.next() % UInt64(mode.devices.count))
-        // Seeds take turns: one remote; two in-memory ones; in-memory and the WebDAV mock.
-        targets = [.memory("R0")]
+        // Seeds take turns: one remote; two in-memory ones; in-memory and the WebDAV mock. Every
+        // fourth seed's first remote is a folder (`FolderRemote`) instead of an in-memory store.
+        targets = [seed % 4 == 3 ? .folder("R0", root: root.appendingPathComponent("R0-folder")) : .memory("R0")]
         switch seed % 3 {
         case 1: targets.append(.memory("R1"))
         case 2: targets.append(.webDAVMock("R1", deepETags: rng.next() % 2 == 0))
@@ -192,8 +270,8 @@ final class StressWorld {
         for i in 0..<deviceCount {
             let name = String(UnicodeScalar(UInt8(65 + i)))
             let hex = String(repeating: String(UnicodeScalar(UInt8(97 + i))), count: 8)
-            // The first device bridges every target; each other one uses one of them (or, with
-            // `SEMPERE_SYNC_STRESS_BRIDGES=many`, a random non-empty subset: see `manyBridges`).
+            // The first device bridges every target; each other one a random non-empty subset, so
+            // two devices often bridge both (or, with `SEMPERE_SYNC_STRESS_BRIDGES=one`, one of them).
             var mine = targets.indices.filter { _ in i == 0 || (Self.manyBridges && rng.next() % 2 == 0) }
             if mine.isEmpty { mine = [Int(rng.next() % UInt64(targets.count))] }
             let deviceLinks = mine.map { ti in
@@ -211,7 +289,7 @@ final class StressWorld {
 
     var summary: String {
         let injected = links.joined().map { $0.endpoint.injected() }.reduce(0, +)
-        let kinds = targets.map { $0.inspector is MemoryRemote ? "memory" : "webdav-mock" }
+        let kinds = targets.map { $0.inspector is MemoryRemote ? "memory" : $0.inspector is FolderRemote ? "folder" : "webdav-mock" }
         let ops = counts.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: " ")
         return "\(devices.count) devices on \(targets.count) remotes (\(kinds.joined(separator: ", "))), "
             + "\(written.count) files written, \(injected) faults, \(quarantined.count) quarantined; \(ops)"
@@ -264,13 +342,22 @@ final class StressWorld {
         return visible
     }
 
-    /// Notes what a run quarantined; each must be kept (format.md §9.1).
+    /// Notes what a run quarantined; each must be kept (format.md §9.1), and nothing kept before
+    /// may be gone or changed (design §6, I6: nothing leaves quarantine without Adopt or Export).
     private func noteQuarantined(_ r: SyncReport, _ link: StressLink, _ d: SyncDevice) {
         let dir = link.state.deletingPathExtension().appendingPathExtension("quarantine")
-        for q in r.quarantined {
-            let url = dir.appendingPathComponent(q.path)
-            if !FileManager.default.fileExists(atPath: url.path) { fail("\(d.name): quarantined \(q.path) was not kept") }
-            quarantined.insert(url)
+        for q in r.quarantined where q.message.contains("not kept") {
+            fail("\(d.name): quarantined \(q.path) was not kept: \(q.message)")
+        }
+        guard let e = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil) else { return }
+        for case let url as URL in e where (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true {
+            guard let hash = try? FileDigest.sha256(of: url).hex else { continue }
+            if let before = quarantined[url], before != hash { fail("\(d.name): quarantined \(url.lastPathComponent) was replaced") }
+            quarantined[url] = hash
+        }
+        // Kept under its path, or beside it as a further distinct copy (`<path>.copy-<hash>`).
+        for q in r.quarantined where !quarantined.keys.contains(where: { $0.path.hasSuffix("/" + q.path) || $0.path.contains("/\(q.path).copy-") }) {
+            fail("\(d.name): quarantined \(q.path) is not in \(dir.path)")
         }
     }
 
@@ -478,9 +565,41 @@ final class StressWorld {
             try? fm.removeItem(at: ideal)
         }
 
-        // Quarantine never deletes.
-        for q in quarantined where !fm.fileExists(atPath: q.path) { fail("quarantined \(q.lastPathComponent) is gone") }
+        // Quarantine never deletes or replaces.
+        for (q, hash) in quarantined where (try? FileDigest.sha256(of: q).hex) != hash {
+            fail("quarantined \(q.lastPathComponent) is gone or changed")
+        }
         let injected = links.joined().map { $0.endpoint.injected() }.reduce(0, +)
         if injected == 0 { fail("no fault was injected") }
     }
+}
+
+/// A remote that goes through its faulty twin while `on` is set.
+struct SwitchedRemote: SyncRemote {
+    var plain: any SyncRemote
+    var faulty: any SyncRemote
+    let on: Locked<Bool>
+    private var now: any SyncRemote { on.value ? faulty : plain }
+
+    var location: String { plain.location }
+    var capabilities: RemoteCapabilities { plain.capabilities }
+    var interrupt: (@Sendable () -> (any Error)?)? {
+        get { plain.interrupt }
+        set { plain.interrupt = newValue; faulty.interrupt = newValue }
+    }
+    func list(_ path: [String]) throws -> [RemoteEntry]? { try now.list(path) }
+    func listTree(_ path: [String], maxBytes: Int) throws -> RemoteTree? { try now.listTree(path, maxBytes: maxBytes) }
+    func stat(_ path: [String]) throws -> RemoteEntry? { try now.stat(path) }
+    func read(_ path: [String], maxBytes: Int) throws -> (data: Data, etag: String?) { try now.read(path, maxBytes: maxBytes) }
+    func download(_ path: [String], to file: URL, resumeFrom: Int, ifETag: String?, maxBytes: Int, segmentBytes: Int,
+                  progress: ((Int) throws -> Void)?) throws -> DownloadResult {
+        try now.download(path, to: file, resumeFrom: resumeFrom, ifETag: ifETag, maxBytes: maxBytes, segmentBytes: segmentBytes,
+                         progress: progress)
+    }
+    func write(_ path: [String], _ body: RemoteBody, condition: PutCondition) throws -> Bool { try now.write(path, body, condition: condition) }
+    func moveNoOverwrite(_ path: [String], to destination: [String]) throws -> Bool { try now.moveNoOverwrite(path, to: destination) }
+    func makeCollection(_ path: [String]) throws -> CollectionResult { try now.makeCollection(path) }
+    func createBase() throws { try now.createBase() }
+    func delete(_ path: [String], ifETag: String?) throws -> Bool { try now.delete(path, ifETag: ifETag) }
+    func missingCollectionError(_ path: [String]) -> any Error { plain.missingCollectionError(path) }
 }

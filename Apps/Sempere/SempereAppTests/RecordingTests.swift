@@ -94,7 +94,7 @@ struct RecordingTests {
     }
 
     static func root() -> URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("rec-" + UUID().uuidString, isDirectory: true)
+        TestTemp.root.appendingPathComponent("rec-" + UUID().uuidString, isDirectory: true)
     }
 
     static func session(_ clock: TestClock, backend: FakeCapture, center: NotificationCenter = NotificationCenter()) -> RecordingSession {
@@ -329,7 +329,7 @@ struct RecordingTests {
     static func model() async throws -> AppModel {
         let (url, key) = try AppModelTests.fixtureVault()
         let model = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .milliseconds(50))
-        model.blobCacheFolder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        model.blobCacheFolder = TestTemp.root.appendingPathComponent(UUID().uuidString)
         model.transcriber = FakeTranscriber()
         model.playbackBackend = { FakePlayback() }
         model.recordingRoot = root()

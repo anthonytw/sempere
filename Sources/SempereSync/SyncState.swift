@@ -48,6 +48,14 @@ struct SyncState: Codable, Equatable {
     /// Keyed `<noteId>/<file name>` for revisions and
     /// `<noteId>/att/<file name>` for blobs.
     var files: [String: FileRecord] = [:]
+    /// Revisions whose deletion this device settled with this remote as a
+    /// compaction or thinning (explained: docs/io.md "Compaction deletes")
+    /// and that neither side has held since, keyed like `files` (a
+    /// snapshot's record keeps its coverage). When one comes back on one side
+    /// only (another device or remote brought it back), it is deleted again
+    /// there if it is still explained, never copied to the other side
+    /// (docs/design/device-first-sync.md §5.4). Nil in older state files.
+    var thinned: [String: FileRecord]?
     /// Interrupted blob downloads, keyed `<noteId>/att/<file name>`.
     var partials: [String: PartialRecord] = [:]
     /// Temporary upload names (paths below the collection) this device
@@ -83,6 +91,11 @@ struct SyncState: Codable, Equatable {
     /// Whether the server answers `PROPFIND` `Depth: infinity` on `notes/`
     /// in full (`TreeListing.swift`); nil until a run checked.
     var treeListing: TreeListingRecord?
+    /// Remote files and folders a provider listed but had not downloaded,
+    /// keyed by their path (`notes/<id>/<name>`; a folder's ends with `/`), with
+    /// when this device first found them so (`Arrivals.swift`): the bound on
+    /// how long they count as arriving.
+    var arriving: [String: Date]?
 
     /// What a run found about `Depth: infinity` listings.
     struct TreeListingRecord: Codable, Equatable {
@@ -124,8 +137,13 @@ struct SyncState: Codable, Equatable {
     /// revision, `att/<file name>` for a blob). One pass over `files`, so a
     /// run looks a note's records up without scanning every other note's.
     func fileNamesByNote() -> [String: [String]] {
+        Self.namesByNote(files.keys)
+    }
+
+    /// Keys `<noteId>/<rest>` grouped by note id, as `fileNamesByNote`.
+    static func namesByNote<S: Sequence>(_ keys: S) -> [String: [String]] where S.Element == String {
         var out: [String: [String]] = [:]
-        for key in files.keys {
+        for key in keys {
             guard let slash = key.firstIndex(of: "/") else { continue }
             out[String(key[..<slash]), default: []].append(String(key[key.index(after: slash)...]))
         }

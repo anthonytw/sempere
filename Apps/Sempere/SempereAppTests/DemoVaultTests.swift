@@ -9,7 +9,7 @@ import UIKit
 /// The synthetic vault behind the App Store screenshots (`DemoVault`).
 struct DemoVaultTests {
     static func build() async throws -> (DemoVault.Built, URL) {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("demo-\(UUID().uuidString)")
+        let dir = TestTemp.root.appendingPathComponent("demo-\(UUID().uuidString)")
         return (try await DemoVault.build(in: dir), dir)
     }
 
@@ -39,7 +39,7 @@ struct DemoVaultTests {
     /// `SEMPERE_DEMO_PASSPHRASE` (launch smoke tests): the key is stored in
     /// `keys/` under the passphrase, so the unlock sheet's passphrase field opens it.
     @Test func passphraseStoresTheKey() async throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("demo-\(UUID().uuidString)")
+        let dir = TestTemp.root.appendingPathComponent("demo-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         let built = try await DemoVault.build(in: dir, specs: Array(DemoVault.specs.prefix(1)), passphrase: "smoke test")
         let vault = try Self.open(built)

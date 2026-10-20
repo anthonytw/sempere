@@ -204,7 +204,7 @@ enum PluralDoubling {
 
     private static func make(from resources: URL, table: String) -> Bundle? {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("SemperePluralDoubling-\(UUID().uuidString).bundle", isDirectory: true)
+        let root = TestTemp.root.appendingPathComponent("SemperePluralDoubling-\(UUID().uuidString).bundle", isDirectory: true)
         var any = false
         for entry in (try? fm.contentsOfDirectory(atPath: resources.path)) ?? [] where entry.hasSuffix(".lproj") {
             let source = resources.appendingPathComponent(entry).appendingPathComponent("\(table).stringsdict")
