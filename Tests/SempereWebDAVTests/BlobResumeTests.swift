@@ -187,11 +187,13 @@ final class BlobResumeTests: BlobSyncTestCase {
         let server = MockDAV()
         let a = try makeVault("A")
         let ref = try a.writeBlob(note: noteID, syntheticBlob(200_000), type: "application/pdf")
-        try referencing(a, device: devA, t: 0, [ref])
+        let r = try referencing(a, device: devA, t: 0, [ref]).name.filename
         let name = try blobFile(a, ref)
         server.cutPUT[".sempere-tmp-"] = 64_000
         let first = try sync("A", server)
-        XCTAssertEqual(first.errors.map(\.path), ["notes/\(id)/att/\(name)"], "\(first)")
+        // The revision that references it waits for it (format.md §8.1.4 step 4).
+        XCTAssertEqual(Set(first.errors.map(\.path)), ["notes/\(id)/att/\(name)", "notes/\(id)/\(r)"], "\(first)")
+        XCTAssertFalse(first.uploaded.contains("notes/\(id)/\(r)"))
         // The partial upload was under a temporary name, removed at once;
         // a reader meanwhile sees no blob at all, never a truncated one.
         XCTAssertEqual(server.names(under: "notes/\(id)/att"), [])
