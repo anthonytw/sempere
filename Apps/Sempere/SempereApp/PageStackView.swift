@@ -107,7 +107,14 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
     private(set) var slots: [UUID: Slot] = [:]
     /// Canvases off screen, kept for reuse (at most `spareLimit`).
     private(set) var spares: [Slot] = []
-    static let spareLimit = 3
+    static let spareLimit = 6
+    /// Spares made ahead while the stack is quiet (`scheduleWarming`): building a `PKCanvasView` costs 3 to 12 ms on
+    /// the main thread (the first one most), on top of the page's ink, in the middle of a pinch that brings more
+    /// pages on screen (zooming out to half the fit shows about twice the pages).
+    static let spareWarmCount = 5
+    /// How long nothing moved before a spare is built, and between two.
+    static let warmDelay: TimeInterval = 0.15
+    private var warmWork: DispatchWorkItem?
     private(set) var layout = PageStackLayout(pageWidth: 612, pageHeight: 792, count: 0)
     /// Screen points per page point; 0 before the first layout.
     private(set) var scale: CGFloat = 0
@@ -231,6 +238,8 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         for id in Array(slots.keys) { recycle(id) }
         for slot in spares { slot.coordinator.forget(host: slot.host) }
         spares = []
+        warmWork?.cancel()
+        warmWork = nil
         if editor?.canvasTarget === self { editor?.canvasTarget = nil }
     }
 
@@ -334,7 +343,10 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         var keep: [Int: UUID] = [:]
         for i in wanted where ids.indices.contains(i) { keep[i] = ids[i] }
         let kept = Set(keep.values)
-        for id in Array(slots.keys) where !kept.contains(id) { recycle(id) }
+        // During a pinch no page is let go: zooming in and back out would drop a page's canvas and build it again
+        // (its ink back in, 25 to 40 ms) a few frames later. `bake` lets them go when the pinch ends.
+        let pinching = scroller.zoomScale != 1 && !baking
+        if !pinching { for id in Array(slots.keys) where !kept.contains(id) { recycle(id) } }
         for (index, id) in keep.sorted(by: { $0.key < $1.key }) {
             if let slot = slots[id] {
                 if reconfigure { configure(slot, index: index, pageID: id, editor: editor, configuration: configuration) }
@@ -346,6 +358,40 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         }
         ensureFocus()
         placeRuler()
+        scheduleWarming()
+    }
+
+    /// Builds the missing spares one at a time once the stack has been quiet for `warmDelay`
+    /// (every scroll or pinch step calls `updateSlots`, which pushes the next one back).
+    private func scheduleWarming() {
+        warmWork?.cancel()
+        warmWork = nil
+        guard window != nil, spares.count < Self.spareWarmCount else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.window != nil, self.spares.count < Self.spareWarmCount else { return }
+            self.warmWork = nil
+            if self.scroller.isDragging || self.scroller.isDecelerating || self.scroller.isZooming {
+                self.scheduleWarming()
+                return
+            }
+            let spare = self.buildSlot()
+            // The first layout of a canvas is the costly one (about 35 ms): done here, in the stack where it
+            // will sit, hidden from view, rather than in the pinch that needs the page.
+            spare.host.frame = self.layout.pageFrame(0, scale: Double(self.scale))
+            self.content.insertSubview(spare.host, belowSubview: self.footerButton)
+            spare.host.layoutIfNeeded()
+            let pts = [PKStrokePoint(location: CGPoint(x: 20, y: 20), timeOffset: 0, size: CGSize(width: 4, height: 4), opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2),
+                       PKStrokePoint(location: CGPoint(x: 60, y: 40), timeOffset: 0.05, size: CGSize(width: 4, height: 4), opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2)]
+            let path = PKStrokePath(controlPoints: pts, creationDate: Date())
+            spare.host.canvas.drawing = PKDrawing(strokes: [PKStroke(ink: PKInk(.pen, color: .black), path: path)])
+            CATransaction.flush()
+            spare.host.canvas.drawing = PKDrawing()
+            spare.host.removeFromSuperview()
+            self.spares.append(spare)
+            self.scheduleWarming()
+        }
+        warmWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.warmDelay, execute: work)
     }
 
     /// PencilKit's ruler, when the palette's is on, shows on one page only: the one with the focus, else
@@ -383,15 +429,19 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         slot.host.itemSelection.scroller = scroller
     }
 
+    private func buildSlot() -> Slot {
+        let host = PageCanvasHost(frame: .zero, embedded: true, toolbox: toolbox)
+        let coordinator = PageCanvasView.Coordinator()
+        host.canvas.delegate = coordinator
+        return Slot(host: host, coordinator: coordinator)
+    }
+
     private func makeSlot() -> Slot {
         let slot: Slot
         if let spare = spares.popLast() {
             slot = spare
         } else {
-            let host = PageCanvasHost(frame: .zero, embedded: true, toolbox: toolbox)
-            let coordinator = PageCanvasView.Coordinator()
-            host.canvas.delegate = coordinator
-            slot = Slot(host: host, coordinator: coordinator)
+            slot = buildSlot()
         }
         content.insertSubview(slot.host, belowSubview: footerButton)
         return slot
