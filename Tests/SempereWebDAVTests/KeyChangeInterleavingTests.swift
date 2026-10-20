@@ -437,6 +437,9 @@ final class KeyChangeRun: @unchecked Sendable {
                         do {
                             try redo(d, try d.coordinator.adoptOtherChange(from: t.name, vault: &v, now: w.now, confirmed: !met))
                             count("confirmed"); note("\(d.name) now \(listOf(d))")
+                        } catch VaultError.recipientsNotRepairable {
+                            // Theirs is under a secret this device rotated away from: the user keeps this change.
+                            if (try? d.coordinator.keepThisList(on: t.name, vault: v)) == true { count("kept this change") }
                         } catch {
                             note("confirm on \(d.name) failed: \(error)")
                         }

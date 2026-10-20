@@ -514,6 +514,28 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
 
     // MARK: F7
 
+    /// "Keep this change" (design §6.2 F7), the counterpart of `adoptOtherChange`: puts this device's
+    /// `vault.json` on `target` over a list under a secret this device rotated away from (another
+    /// device's addition made concurrently with this device's rotation, or an older list). A rotation
+    /// is never undone for an addition; the other device redoes its addition on top. Only that version
+    /// is replaced (`If-Match`). Returns false when the target holds anything else.
+    @discardableResult
+    public func keepThisList(on target: String, vault: Vault) throws -> Bool {
+        guard let t = targets.first(where: { $0.id == target }) else { throw SyncError.io("no target \(target)") }
+        let (there, etag) = try t.remote.read([Vault.manifestName], maxBytes: BoundedRead.maxManifestBytes)
+        let local = try BoundedRead.contents(of: folder.appendingPathComponent(Vault.manifestName),
+                                             maxBytes: BoundedRead.maxManifestBytes)
+        guard let theirs = vault.secret(ofManifest: there), theirs != vault.currentSecret,
+              ((try? keyring.load(vaultId: vault.vaultId)) ?? nil)?.entry(for: theirs)?.replaced != nil,
+              let etag, SyncEngine.isStrong(etag),
+              try t.remote.write([Vault.manifestName], .data(local), condition: .replace(etag: etag)) else { return false }
+        if var state = (try? SyncState.load(t.stateURL)) ?? nil {
+            state.mutable[Vault.manifestName] = .init(hash: FileDigest.sha256(local), stamp: nil)
+            try? state.save(t.stateURL)
+        }
+        return true
+    }
+
     /// "Keep the other change" (design §6.2 F7): takes the device list of
     /// another device's concurrent change from `target`, rewraps every local
     /// file to it from the keyring, takes this device's claims back and

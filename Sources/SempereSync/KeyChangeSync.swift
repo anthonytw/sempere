@@ -28,6 +28,9 @@ struct KeyChangeRunState {
     var listAgreed = false
     /// The local `vault.json` when the run started.
     var startManifest: Data?
+    /// Both sides' `vault.json` were there and held different lists when the run started: blob names
+    /// keyed under one side's secret say nothing about the other's, so no blob is collected this run.
+    var listsDiffer = false
     /// This run compares the copies both sides hold (rewrap-replace).
     var sweeping = false
     /// Nothing the sweep found stays unsettled.
@@ -82,6 +85,7 @@ extension SyncEngine {
         kc.startManifest = try? localMutable(Vault.manifestName)
         if let remote = fetchedManifest?.data, let local = kc.startManifest {
             kc.listAgreed = Vault.sameList(local, remote)
+            kc.listsDiffer = !kc.listAgreed
         }
         guard let store = options.keyring, let vault, let secret = vault.currentSecret else { return }
         do {

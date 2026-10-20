@@ -294,6 +294,9 @@ extension SyncEngine {
             return .unknown("cannot check it against the collection rules (vault not unlocked)")
         }
         guard !vault.pendingRewrap, !remoteJournal else { return .judged { _ in false } }
+        // The two sides hold different device lists (a key change not taken yet, or two that met): a
+        // blob named under the other side's secret looks unreferenced here; nothing is collected.
+        guard !kc.listsDiffer, (try? localMutable(Vault.manifestName)) == kc.startManifest else { return .judged { _ in false } }
         let inventory: BlobInventory
         do { inventory = try vault.blobInventory(note: note) } catch { return .judged { _ in false } }
         let readable = Set(inventory.references.keys)
