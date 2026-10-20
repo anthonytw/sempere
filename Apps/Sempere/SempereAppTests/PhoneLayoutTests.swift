@@ -132,10 +132,10 @@ struct PhoneCanvasTests {
     static let sizes: [CGSize] = [CGSize(width: 440, height: 956), CGSize(width: 402, height: 874),
                                   CGSize(width: 375, height: 667), CGSize(width: 956, height: 440)]
 
-    static func host(size: CGSize, pageSize: PageSize = PageSize(width: 612, height: 792, infinite: false, breakHeight: 792))
-        -> (UIWindow, PageCanvasHost) {
+    static func host(size: CGSize, pageSize: PageSize = PageSize(width: 612, height: 792, infinite: false, breakHeight: 792),
+                     toolbox: DrawingToolbox = .shared) -> (UIWindow, PageCanvasHost) {
         let window = UIWindow(frame: CGRect(origin: .zero, size: size))
-        let host = PageCanvasHost(frame: window.bounds)
+        let host = PageCanvasHost(frame: window.bounds, embedded: false, toolbox: toolbox)
         window.addSubview(host)
         window.isHidden = false
         host.apply(paper: .blank, pageSize: pageSize)
@@ -205,27 +205,26 @@ struct PhoneCanvasTests {
     /// and the Hand keep one finger.
     @Test func pencilKitsOwnRecountKeepsReadingAtOneFinger() {
         let (window, host) = Self.host(size: Self.sizes[1], pageSize: PageSize(width: 612, height: 792, infinite: true,
-                                                                               breakHeight: 792))
+                                                                               breakHeight: 792),
+                                       toolbox: DrawingToolbox(defaults: DrawingToolboxTests.scratchDefaults()))
         defer { window.isHidden = true }
         guard Platform.isPhone else { return }
         let pan = host.canvas.panGestureRecognizer
-        let tools = host.toolPicker.toolItems
-        #expect(!tools.isEmpty)
-        for tool in tools {
+        for tool in DrawingToolState.compactTools(selected: .pen) {   // pen, marker, eraser (object), lasso
             host.drawingSuspended = false
-            host.toolPicker.selectedToolItemIdentifier = tool.identifier   // pen, marker, eraser (object), lasso
-            #expect(pan.minimumNumberOfTouches == 2, "annotating with \(tool.identifier)")
+            #expect(host.select(drawingTool: tool))
+            #expect(pan.minimumNumberOfTouches == 2, "annotating with \(tool)")
             host.drawingSuspended = true
             #expect(host.canvas.drawingPolicy == .pencilOnly, "reading: no finger draws")
             _ = Self.pencilKitRecount(host.canvas)
             // Also what a move to a window does (`-[PKTiledView didMoveToWindow]`).
             host.removeFromSuperview()
             window.addSubview(host)
-            #expect(pan.minimumNumberOfTouches == 1, "reading after \(tool.identifier), after PencilKit's recount")
+            #expect(pan.minimumNumberOfTouches == 1, "reading after \(tool), after PencilKit's recount")
             host.drawingSuspended = false
             host.itemSelectionActive = true
             _ = Self.pencilKitRecount(host.canvas)
-            #expect(pan.minimumNumberOfTouches == 1, "the Hand after \(tool.identifier)")
+            #expect(pan.minimumNumberOfTouches == 1, "the Hand after \(tool)")
             host.itemSelectionActive = false
         }
     }
@@ -250,7 +249,8 @@ struct PhoneCanvasTests {
         let (window, host) = Self.host(size: Self.sizes[1])
         host.drawingSuspended = true
         host.drawingSuspended = false
-        #expect(host.canvas.drawingGestureRecognizer.isEnabled)
+        // `drawsInk`: PencilKit's gesture, or on a Mac the app's smoothed pointer ink (Smooth Mouse Strokes).
+        #expect(host.drawsInk)
         window.isHidden = true
     }
 
@@ -285,7 +285,7 @@ struct PhoneCanvasTests {
     @Test func theIPadCanvasIsNotSuspendedByDefault() {
         let (window, host) = Self.host(size: CGSize(width: 1024, height: 1366))
         #expect(!host.drawingSuspended)
-        #expect(host.canvas.drawingGestureRecognizer.isEnabled)
+        #expect(host.drawsInk)
         window.isHidden = true
     }
 

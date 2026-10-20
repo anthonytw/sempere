@@ -2773,14 +2773,14 @@
         }
       }
     },
-    "A vault is a folder of encrypted files in iCloud Drive or any Files location; the command-line tool can mirror it to WebDAV." : {
+    "A vault is a folder of encrypted files in iCloud Drive or any Files location, or on a WebDAV server." : {
       "comment" : "Quick tour page 5",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Una bóveda es una carpeta de archivos cifrados en iCloud Drive o en cualquier ubicación de Archivos; la herramienta de línea de comandos puede reflejarla en WebDAV."
+            "value" : "Una bóveda es una carpeta de archivos cifrados en iCloud Drive, en cualquier ubicación de Archivos o en un servidor WebDAV."
           }
         }
       }
@@ -3369,6 +3369,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Anotar: dibuja en la página con el dedo"
+          }
+        }
+      }
+    },
+    "Annotate: draw on the page with the mouse and the tool palette" : {
+      "comment" : "Tooltip of the Annotate button on the Mac",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anotar: dibuja en la página con el ratón y la paleta de herramientas"
           }
         }
       }
@@ -4865,6 +4877,18 @@
         }
       }
     },
+    "Color and Width" : {
+      "comment" : "Drawing palette (compact): the button that shows the ink's color, width and opacity",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Color y grosor"
+          }
+        }
+      }
+    },
     "Command line: %@" : {
       "comment" : "%@ is a sempere command, not translated",
       "extractionState" : "manual",
@@ -5435,6 +5459,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cantidades de lo que la aplicación de origen guarda y Sempere no convierte (todavía). Todo lo demás de esas notas se importó."
+          }
+        }
+      }
+    },
+    "Crayon" : {
+      "comment" : "Drawing palette: the crayon",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cera"
           }
         }
       }
@@ -6450,6 +6486,42 @@
         }
       }
     },
+    "Draw with Finger" : {
+      "comment" : "iPad drawing palette: a finger draws too, not only Apple Pencil",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dibujar con el dedo"
+          }
+        }
+      }
+    },
+    "Draw with a finger too, not only with Apple Pencil" : {
+      "comment" : "Tooltip of the iPad drawing palette's Draw with Finger",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dibuja también con el dedo, no solo con el Apple Pencil"
+          }
+        }
+      }
+    },
+    "Draw with this tool; tap again for its color, width and opacity" : {
+      "comment" : "Tooltip of a drawing palette's ink tool (pen, marker…)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dibuja con esta herramienta; toca otra vez para su color, grosor y opacidad"
+          }
+        }
+      }
+    },
     "Drawing Cache" : {
       "comment" : "Settings ▸ Storage: size of a cache (label)",
       "extractionState" : "manual",
@@ -6806,6 +6878,18 @@
         }
       }
     },
+    "Erase; tap again for the object or pixel eraser and its size" : {
+      "comment" : "Tooltip of the drawing palette's eraser",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Borrar; toca otra vez para elegir el borrador de objetos o de píxeles y su tamaño"
+          }
+        }
+      }
+    },
     "Eraser" : {
       "comment" : "Tools menu: select the eraser",
       "extractionState" : "manual",
@@ -6814,6 +6898,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Borrador"
+          }
+        }
+      }
+    },
+    "Eraser Size" : {
+      "comment" : "Drawing palette (compact): the button that shows the eraser's mode and size",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tamaño del borrador"
           }
         }
       }
@@ -7483,6 +7579,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Formato"
+          }
+        }
+      }
+    },
+    "Fountain Pen" : {
+      "comment" : "Drawing palette: the fountain pen",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pluma estilográfica"
           }
         }
       }
@@ -9396,6 +9504,18 @@
         }
       }
     },
+    "Line width: any width between the thinnest and the thickest" : {
+      "comment" : "Tooltip of the drawing palette's width slider",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grosor de línea: cualquiera entre el más fino y el más grueso"
+          }
+        }
+      }
+    },
     "Link" : {
       "comment" : "Markdown bar: insert a [link](https://…)",
       "extractionState" : "manual",
@@ -9680,6 +9800,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mono"
+          }
+        }
+      }
+    },
+    "Monoline" : {
+      "comment" : "Drawing palette: the monoline pen (one even width)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Monolínea"
           }
         }
       }
@@ -11372,6 +11504,18 @@
         }
       }
     },
+    "Opacity" : {
+      "comment" : "Drawing palette: the ink's opacity",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opacidad"
+          }
+        }
+      }
+    },
     "Open" : {
       "comment" : "Button: open a protected PDF with the password",
       "extractionState" : "manual",
@@ -11818,6 +11962,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Naranja"
+          }
+        }
+      }
+    },
+    "Other Color" : {
+      "comment" : "Drawing palette: the system color picker (any color)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otro color"
           }
         }
       }
@@ -12534,6 +12690,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Elige en Archivos la carpeta de un modelo, o un zip de ella. Se comprueba con su manifiesto y se guarda en este dispositivo."
+          }
+        }
+      }
+    },
+    "Pick any color" : {
+      "comment" : "Tooltip of the drawing palette's color picker",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige cualquier color"
           }
         }
       }
@@ -13736,6 +13904,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rehacer"
+          }
+        }
+      }
+    },
+    "Redo the last change undone" : {
+      "comment" : "Tooltip of the iPhone drawing palette's Redo",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rehacer el último cambio deshecho"
           }
         }
       }
@@ -15321,6 +15501,18 @@
         }
       }
     },
+    "Select ink by drawing around it" : {
+      "comment" : "Tooltip of the drawing palette's lasso",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selecciona la tinta rodeándola"
+          }
+        }
+      }
+    },
     "Select several notes to act on them together" : {
       "comment" : "Help tag",
       "extractionState" : "manual",
@@ -15963,6 +16155,18 @@
         }
       }
     },
+    "Show or hide the ruler for straight lines" : {
+      "comment" : "Tooltip of the drawing palette's ruler",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar u ocultar la regla para trazar líneas rectas"
+          }
+        }
+      }
+    },
     "Show or hide the tool palette; press and hold for the compact palette" : {
       "comment" : "Help tag of the tool palette button",
       "extractionState" : "manual",
@@ -16094,6 +16298,18 @@
         }
       }
     },
+    "Size of the object eraser" : {
+      "comment" : "Tooltip of the drawing palette's object eraser sizes",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tamaño del borrador de objetos"
+          }
+        }
+      }
+    },
     "Size of the object eraser; the pixel eraser's size is in the tool palette" : {
       "comment" : "Tooltip",
       "extractionState" : "manual",
@@ -16102,6 +16318,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tamaño del borrador de objetos; el del borrador de píxeles está en la paleta de herramientas"
+          }
+        }
+      }
+    },
+    "Size of the pixel eraser" : {
+      "comment" : "Tooltip of the drawing palette's pixel eraser sizes",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tamaño del borrador de píxeles"
           }
         }
       }
@@ -17936,6 +18164,18 @@
         }
       }
     },
+    "The eraser's mode and size" : {
+      "comment" : "Tooltip of the compact drawing palette's eraser button",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El modo y el tamaño del borrador"
+          }
+        }
+      }
+    },
     "The files are deleted from the app when you close this sheet." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -18002,6 +18242,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No se ha podido leer la escritura: %@ Escribe la ecuación abajo."
+          }
+        }
+      }
+    },
+    "The ink's color, width and opacity" : {
+      "comment" : "Tooltip of the compact drawing palette's color button",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El color, el grosor y la opacidad de la tinta"
           }
         }
       }
@@ -19933,6 +20185,18 @@
         }
       }
     },
+    "Undo the last change" : {
+      "comment" : "Tooltip of the iPhone drawing palette's Undo",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deshacer el último cambio"
+          }
+        }
+      }
+    },
     "Unfold %@" : {
       "comment" : "Sidebar on an iPhone: show a notebook's sub-notebooks (the notebook's name)",
       "extractionState" : "manual",
@@ -20774,6 +21038,18 @@
         }
       }
     },
+    "Watercolor" : {
+      "comment" : "Drawing palette: the watercolor brush",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acuarela"
+          }
+        }
+      }
+    },
     "WebDAV" : {
       "comment" : "Section title: a protocol name",
       "extractionState" : "manual",
@@ -20882,6 +21158,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Widget o Centro de control"
+          }
+        }
+      }
+    },
+    "Width" : {
+      "comment" : "Drawing palette: the ink's line width (slider label)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grosor"
+          }
+        }
+      }
+    },
+    "Width %lld" : {
+      "comment" : "Drawing palette: line width preset (1 is the thinnest)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grosor %lld"
           }
         }
       }

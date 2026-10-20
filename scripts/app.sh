@@ -13,6 +13,8 @@
 #   scripts/app.sh test-mac-ui # the Mac UI tests (MacWindowUITests, MacItemUITests, SidebarDropUITests, MacFocusUITests,
 #                              # KeyShareMacUITests, QuitPurgeMacUITests, NewVaultSheetUITests, MacImportUITests, MacExportUITests, MacRealMouseUITests,
 #                              # VaultStoreUITests) on Mac Catalyst
+#   scripts/app.sh test-mac-perf # the dense-note performance suite (DensePerformanceTests) on Mac Catalyst: open time, scroll and zoom
+#                              # frame hitches, memory, against baselines (slow; test-mac leaves it out)
 #   scripts/app.sh test-ui    # the iPad UI tests (SidebarDropUITests: real drags; the launch smoke tests) on an iPad simulator
 #   scripts/app.sh test-mac-smoke # the launch smoke tests (LaunchSmokeUITests: fresh state, every layout and window) on Mac Catalyst
 #   scripts/app.sh simulator [PREFIX [SUFFIX]] # print the simulator id `test` would use (or one named PREFIX…SUFFIX)
@@ -114,6 +116,8 @@ extra=("${@:2}")
 narrowed=false
 for arg in ${extra[@]+"${extra[@]}"}; do [[ "$arg" == -only-testing:* ]] && narrowed=true; done
 suites() { if $narrowed; then only=(); else only=("$@"); fi; }
+# The slow performance suite (test-mac-perf): out of test-mac, which would otherwise run every app suite.
+perf_suites=(-skip-testing:SempereAppTests/DensePerformanceTests)
 only=()
 
 # Temp-folder guard (docs/ci.md "Temp-folder guard"): a Mac Catalyst run must leave the sandboxed app
@@ -148,8 +152,9 @@ case "${1:-}" in
   test)
     sim=$(pick_simulator)
     settle_simulator "$sim"
+    skip=("${perf_suites[@]}"); $narrowed && skip=()   # the performance suite is the Mac's (test-mac-perf)
     xcb test "${lang[@]}" -project "$project" -scheme "$scheme" -derivedDataPath "$derived" \
-      -destination "platform=iOS Simulator,id=$sim" CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"}
+      -destination "platform=iOS Simulator,id=$sim" CODE_SIGNING_ALLOWED=NO ${skip[@]+"${skip[@]}"} ${extra[@]+"${extra[@]}"}
     ;;
   test-phone)
     # Same build products as `test` (the simulator SDK is shared), so after it this only runs the suites.
@@ -236,6 +241,17 @@ case "${1:-}" in
     tmp_guard_start
     # Ad-hoc signed: a sandboxed Catalyst test host has to be signed to launch.
     suites -only-testing:SempereAppTests
+    skip=("${perf_suites[@]}"); $narrowed && skip=()
+    xcb test "${lang[@]}" -project "$project" -scheme "$scheme" -derivedDataPath "$derived" \
+      -destination 'platform=macOS,variant=Mac Catalyst' ${only[@]+"${only[@]}"} ${skip[@]+"${skip[@]}"} \
+      CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES ${extra[@]+"${extra[@]}"}
+    ;;
+  test-mac-perf)
+    # Dense-note performance (DensePerformanceTests, docs/ci.md "Performance tests"): open time, scroll and
+    # zoom frame hitches and memory on generated notes, against checked-in baselines. Slow (minutes).
+    # SEMPERE_PERF_RECORD=1 prints new baselines (pass it as TEST_RUNNER_SEMPERE_PERF_RECORD=1).
+    shutdown_simulators
+    suites -only-testing:SempereAppTests/DensePerformanceTests
     xcb test "${lang[@]}" -project "$project" -scheme "$scheme" -derivedDataPath "$derived" \
       -destination 'platform=macOS,variant=Mac Catalyst' ${only[@]+"${only[@]}"} \
       CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES ${extra[@]+"${extra[@]}"}
@@ -286,7 +302,7 @@ case "${1:-}" in
       -parallel-testing-enabled NO ${ui_retry[@]+"${ui_retry[@]}"} CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"}
     ;;
   *)
-    echo "usage: $0 test|test-phone|test-phone-ui|test-ui|build-ios|pseudo|pseudo-mac|catalyst|test-mac|test-mac-ui|test-mac-smoke|simulator" >&2
+    echo "usage: $0 test|test-phone|test-phone-ui|test-ui|build-ios|pseudo|pseudo-mac|catalyst|test-mac|test-mac-ui|test-mac-smoke|test-mac-perf|simulator" >&2
     exit 2
     ;;
 esac

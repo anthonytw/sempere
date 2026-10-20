@@ -104,7 +104,7 @@ struct PhoneCanvasInteractionTests {
     /// selected and back once nothing is.
     @Test func aPickedItemShowsTheBarAndDrawingComesBack() async throws {
         let (host, editor, image, _) = try await Self.hostWithImage()
-        #expect(host.canvas.drawingGestureRecognizer.isEnabled || host.objectEraserSelected)
+        #expect(host.drawsInk || host.objectEraserSelected)
         host.itemSelection.pick(image.id, menu: false)
         #expect(host.itemSelection.selectedID == image.id)
         #expect(host.transientSelection)
@@ -114,7 +114,7 @@ struct PhoneCanvasInteractionTests {
         #expect(!host.canvas.drawingGestureRecognizer.isEnabled, "a drag on the selected item moves it, not ink")
         host.itemSelection.select(nil)   // a tap beside it
         #expect(!host.transientSelection && host.itemSelection.selectedID == nil)
-        #expect(host.canvas.drawingGestureRecognizer.isEnabled || host.objectEraserSelected, "a finger draws again")
+        #expect(host.drawsInk || host.objectEraserSelected, "a finger draws again")
         await editor.flush()
     }
 
@@ -145,7 +145,7 @@ struct PhoneCanvasInteractionTests {
     @Test func theTapRecognizerLeavesFingerDrawingOn() async throws {
         let (host, editor, _, _) = try await Self.hostWithImage()
         host.canvas.drawingPolicy = .anyInput
-        #expect(host.canvas.drawingGestureRecognizer.isEnabled || host.objectEraserSelected)
+        #expect(host.drawsInk || host.objectEraserSelected)
         #expect(host.itemSelection.fingerTap.isEnabled && host.itemSelection.fingerTap.cancelsTouchesInView == false)
         await editor.flush()
     }

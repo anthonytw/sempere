@@ -151,7 +151,7 @@ extension StrokeLedger {
                 for i in strokes.indices { strokes[i].rec = link }
             }
             return strokes
-        })
+        }, seed: pk.randomSeed)
     }
 
     /// `update(_:)` with the canvas's strokes `strokes`, fingerprinting only

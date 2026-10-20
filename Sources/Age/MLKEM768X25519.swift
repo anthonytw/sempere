@@ -84,7 +84,13 @@ public struct MLKEM768X25519Identity: AgeIdentity, Hashable {
     /// equality do not need the KEM again.
     let publicKey: Data
 
-    init(seed: Data) throws {
+    /// The identity of a 32-byte X-Wing seed (what `AGE-SECRET-KEY-PQ-1…`
+    /// encodes), for keys derived elsewhere (the vault identity of a vault
+    /// epoch key, key-hierarchy design §2.1).
+    ///
+    /// - Throws: `AgeError.invalidKey` unless exactly 32 bytes,
+    ///   `AgeError.postQuantumUnavailable` where the platform lacks X-Wing.
+    public init(seed: Data) throws {
         guard seed.count == pqSeedSize else { throw AgeError.invalidKey }
         self.seed = Data(seed)
         publicKey = try XWingHPKE.publicKey(seed: seed)
@@ -109,6 +115,10 @@ public struct MLKEM768X25519Identity: AgeIdentity, Hashable {
         }
         try self.init(seed: Data(data))
     }
+
+    /// The 32-byte X-Wing seed, for derivations inside this package (the recovery key's signing
+    /// pair, key-hierarchy design §5.6).
+    package var seedBytes: Data { seed }
 
     /// The Bech32 encoding, uppercase `AGE-SECRET-KEY-PQ-1...` (77 characters).
     public var string: String {

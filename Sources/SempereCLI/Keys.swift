@@ -6,8 +6,8 @@ import Sempere
 struct KeysCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "keys",
-        abstract: "Generate, show and export age identities, and print recovery kits.",
-        subcommands: [KeysGenerate.self, KeysShow.self, KeysExport.self, KeysPaper.self]
+        abstract: "Generate, show and export age identities, print recovery kits, and derive epoch keys.",
+        subcommands: [KeysGenerate.self, KeysShow.self, KeysExport.self, KeysPaper.self, KeysDerive.self]
     )
 }
 

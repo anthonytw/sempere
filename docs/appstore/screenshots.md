@@ -62,6 +62,24 @@ The iPhone is a stack, so each shot is one screen (`ScreenshotTests.phoneShots`)
 unlock sheet. There is no paper-picker shot on the phone. Look at the PNGs before uploading: they have
 not been seen on a real run yet.
 
+### Website user-guide shots
+
+`scripts/screenshots.sh docs-ipad` and `docs-iphone` run `DocsScreenshotTests` instead: the shots the project
+website's user guide (/docs) shows, into `build/screenshots/docs-ipad/` and `docs-iphone/`. Same demo vault and
+simulators; the website's `scripts/media.mjs` turns them into its images.
+
+| File | Shows |
+| --- | --- |
+| `docs-welcome`, `docs-new-vault` | The welcome screen of a first launch, then the New Vault sheet. |
+| `docs-palette`, `docs-palette-choices` | A note being annotated, then the selected pen's choices (colors, width, opacity). |
+| `docs-settings`, `docs-settings-general`, `docs-settings-sync`, `docs-settings-backups` | Settings' groups, then three of its pages. |
+| `docs-search`, `docs-search-highlight` | The results for a handwritten word (the demo's search notes, stored recognition), then a hit with its words highlighted. |
+
+Unlike the store shots, these tap their way to a screen, so a UI change can break one: the test keeps going,
+writes whatever was on screen, and logs `SHOTDEBUG` for the shot that missed. Look at every PNG. The status bar
+date follows the simulator's language, not the app's: set the simulator to English first
+(`xcrun simctl spawn SIM defaults write -g AppleLanguages -array en`, the same for `AppleLocale en_US`, then reboot it).
+
 ## The demo vault
 
 `DemoVault.swift` builds `My Notes.sempere` in the app's temporary directory on every launch, with a

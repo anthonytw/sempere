@@ -172,10 +172,10 @@ struct CanvasFocusTests {
         #expect(host.canvas.isFirstResponder, "with no field typed in, the canvas has the focus")
     }
 
-    /// Turning the palette on (the toolbar button) gives the one-page canvas the focus back from a
-    /// responder that is not typing (a list row, the sidebar), so the palette shows (TestFlight 1.0.0 (6),
-    /// the owner's iPad: the button flipped and nothing came up); on a phone the mode does that instead.
-    @Test func turningThePaletteOnTakesTheFocusFromAList() async throws {
+    /// Annotate shows Sempere's own palette, which needs no first responder (PencilKit's showed only for
+    /// it, so Annotate used to take the focus from a list: TestFlight 1.0.0 (6)). The canvas now leaves a
+    /// list's focus alone, as everywhere else (`CanvasFocus`); a touch on it takes the focus.
+    @Test func turningThePaletteOnLeavesAListsFocus() async throws {
         let window = try await Self.keyWindow()
         defer { window.isHidden = true }
         let host = PageCanvasHost(frame: CGRect(x: 220, y: 0, width: 800, height: 1000))
@@ -185,7 +185,9 @@ struct CanvasFocusTests {
         #expect(list.becomeFirstResponder())
         host.paletteVisible = false
         host.paletteVisible = true
-        #expect(host.canvas.isFirstResponder == PageCanvasHost.paletteTakesFocus(isPhone: Platform.isPhone))
+        #expect(list.isFirstResponder)
+        host.reclaimFocus()   // a touch on the canvas
+        #expect(host.canvas.isFirstResponder)
         list.removeFromSuperview()
         host.removeFromSuperview()
     }

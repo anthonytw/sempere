@@ -6,6 +6,7 @@
 #   scripts/screenshots.sh iphone  # iPhone Pro Max simulator (6.9"), 1320x2868 portrait
 #   scripts/screenshots.sh mac     # Mac Catalyst, composed onto 2880x1800 (best effort)
 #   scripts/screenshots.sh         # all three
+#   scripts/screenshots.sh docs-ipad|docs-iphone   # the website's user-guide shots (DocsScreenshotTests)
 #
 # Output: build/screenshots/ipad/*.png, iphone/*.png and mac/*.png
 # (SEMPERE_SHOTS_OUT changes the folder). SEMPERE_SIM_ID picks the simulator.
@@ -20,20 +21,21 @@ out=$(cd "$out" && pwd)   # the test runner needs an absolute path
 
 pixels() { sips -g pixelWidth -g pixelHeight "$1" | awk '/pixelWidth/ {w=$2} /pixelHeight/ {h=$2} END {print w "x" h}'; }
 
-# One simulator family: $1 name (ipad|iphone), $2 simulator name prefix, $3 accepted sizes
-# ("2064x2752" or "1320x2868 1290x2796"), $4 status bar flags for the connectivity icons.
+# One simulator family: $1 name (ipad|iphone|docs-ipad|docs-iphone), $2 simulator name prefix, $3 accepted
+# sizes ("2064x2752" or "1320x2868 1290x2796"), $4 the UI test class (default ScreenshotTests).
 simulator_shots() {
-  local name=$1 prefix=$2 sizes=$3 sim dir="$out/$1"
+  local name=$1 prefix=$2 sizes=$3 tests=${4:-ScreenshotTests} sim dir="$out/$1"
   # The newest simulator on iOS 27 or newer: "iPad Pro 13-inch" (2064x2752 pixels) or the newest
   # "iPhone … Pro Max" (6.9": 1320x2868 or 1290x2796 pixels).
   local suffix=
   if [[ $prefix == iPhone* ]]; then suffix="Pro Max"; fi
   sim=$(scripts/app.sh simulator "$prefix" "$suffix")
-  rm -rf "$dir"; mkdir -p "$dir"
+  # xcodebuild refuses an existing result bundle: a second run into the same folder failed at once.
+  rm -rf "$dir" "$out/$name.xcresult"; mkdir -p "$dir"
   xcrun simctl bootstatus "$sim" -b >/dev/null
   # No clutter: 9:41, full battery, full bars, light mode. (The iPad status bar also shows
   # the date, which this does not fix: simctl on Xcode 26.6 refused an ISO date with an offset.)
-  if [[ $name == iphone ]]; then
+  if [[ $name == *iphone ]]; then
     xcrun simctl status_bar "$sim" override --time 9:41 --dataNetwork wifi --wifiMode active --wifiBars 3 \
       --cellularMode active --cellularBars 4 --operatorName "" --batteryState charged --batteryLevel 100
   else
@@ -41,12 +43,14 @@ simulator_shots() {
       --cellularMode notSupported --batteryState charged --batteryLevel 100
   fi
   xcrun simctl ui "$sim" appearance light
-  trap 'xcrun simctl status_bar "$sim" clear || true' RETURN
+  # The trap removes itself: left set, it fired again when the caller (ipad, iphone) returned, where `sim`
+  # is unset, and `set -u` made the script exit 1 after a successful run.
+  trap 'xcrun simctl status_bar "$sim" clear || true; trap - RETURN' RETURN
   local status=0 f bad=0 size ok s
   # A shot that never showed its screen fails the test but still leaves a PNG: keep going to check them all.
   TEST_RUNNER_SEMPERE_SHOTS_DIR="$dir" xcodebuild test -project "$project" -scheme "$scheme" \
     -derivedDataPath "$derived" -destination "platform=iOS Simulator,id=$sim" \
-    -only-testing:SempereAppUITests/ScreenshotTests -parallel-testing-enabled NO -resultBundlePath "$out/$name.xcresult" \
+    -only-testing:"SempereAppUITests/$tests" -parallel-testing-enabled NO -resultBundlePath "$out/$name.xcresult" \
     CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$out/$name.log" || status=${PIPESTATUS[0]}
   grep -E "error: |SHOTDEBUG" "$out/$name.log" > "$out/$name-summary.txt" || true
   ls "$dir"/*.png >/dev/null 2>&1 || { echo "error: no screenshots were written" >&2; exit 1; }
@@ -63,6 +67,9 @@ simulator_shots() {
 ipad() { simulator_shots ipad "iPad Pro 13-inch" "2064x2752"; }
 # 6.9" is the iPhone size App Store Connect scales the other iPhone sizes from.
 iphone() { simulator_shots iphone "iPhone" "1320x2868 1290x2796"; }
+# The website's user-guide shots (DocsScreenshotTests), portrait.
+docs_ipad() { simulator_shots docs-ipad "iPad Pro 13-inch" "2064x2752" DocsScreenshotTests; }
+docs_iphone() { simulator_shots docs-iphone "iPhone" "1320x2868 1290x2796" DocsScreenshotTests; }
 
 # Copies the screenshot attachments of a result bundle to DIR as <shot name>.png.
 export_attachments() {
@@ -124,5 +131,7 @@ case "${1:-all}" in
   iphone) iphone ;;
   mac) mac ;;
   all) ipad; iphone; mac ;;
-  *) echo "usage: $0 [ipad|iphone|mac|all]" >&2; exit 2 ;;
+  docs-ipad) docs_ipad ;;
+  docs-iphone) docs_iphone ;;
+  *) echo "usage: $0 [ipad|iphone|mac|all|docs-ipad|docs-iphone]" >&2; exit 2 ;;
 esac

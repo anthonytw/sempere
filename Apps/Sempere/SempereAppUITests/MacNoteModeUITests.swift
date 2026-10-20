@@ -3,7 +3,7 @@ import XCTest
 /// The note view's three modes on a Mac (`NoteMode`, docs/mac.md "Reading, Hand and Annotate"): a note opens in
 /// reading (the wheel scrolls, a click or a drag selects and draws nothing, no palette); Hand (the top bar's Hand,
 /// Tools > Hand ⌥⌘7) selects with a click and moves with a drag; Annotate (the top bar's pencil, Tools > Annotate
-/// ⇧⌘P) shows Drawing Tools (PencilKit shows no palette on a Mac) and the mouse draws. The demo vault's "thoughts" note has a picture
+/// ⇧⌘P) shows the palette and Drawing Tools, and the mouse draws. The demo vault's "thoughts" note has a picture
 /// (`SEMPERE_DEMO_ITEMS`), and the canvas reports its items, selection, strokes and palette
 /// (`ItemSelectionController.debugReport`). Run by `scripts/app.sh test-mac-ui
 /// -only-testing:SempereAppUITests/MacNoteModeUITests`; skipped on the iPad and the iPhone
@@ -169,11 +169,13 @@ final class MacNoteModeUITests: XCTestCase {
 
         // Annotate (Tools > Annotate, ⇧⌘P): Drawing Tools, and a drag draws one stroke.
         app.typeKey("p", modifierFlags: [.command, .shift])
-        // (No palette: PencilKit shows none in a Mac Catalyst app, docs/mac.md "No tool palette on a Mac".)
+        // Sempere's own palette (PencilKit shows none in a Mac Catalyst app, docs/mac.md "The drawing palette").
         guard let r4 = waitReport(canvas, "Annotate: selection off", { $0.selected == "none" }) else { return }
         XCTAssertTrue(lit(annotate) && !lit(hand), "the pencil is lit, the Hand is not")
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "Drawing-Palette").firstMatch.waitForExistence(timeout: 5),
+                      "Annotate: the palette")
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Drawing Tools")).firstMatch.exists,
-                      "Drawing Tools beside Annotate (PencilKit shows no palette on a Mac)")
+                      "Drawing Tools beside Annotate")
         dragOnTheEmptyPage(canvas, r4, app: app)
         waitReport(canvas, "Annotate: a drag draws one stroke") { $0.strokes == r4.strokes + 1 }
 

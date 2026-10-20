@@ -41,11 +41,12 @@ final class InkInjector {
     /// update, extent, autosave scheduling), in milliseconds, oldest first.
     var changeTimes: [Double] { timer.times }
 
-    init(editor: NoteEditor, page: UUID? = nil, size: CGSize = CGSize(width: 820, height: 1180)) throws {
+    init(editor: NoteEditor, page: UUID? = nil, size: CGSize = CGSize(width: 820, height: 1180),
+         toolbox: DrawingToolbox = .shared) throws {
         self.editor = editor
         pageID = try #require(page ?? editor.currentPage?.id)
         window = UIWindow(frame: CGRect(origin: .zero, size: size))
-        host = PageCanvasHost(frame: window.bounds)
+        host = PageCanvasHost(frame: window.bounds, embedded: false, toolbox: toolbox)
         coordinator = PageCanvasView.Coordinator()
         timer = TimingDelegate(coordinator)
         host.canvas.delegate = timer
@@ -89,6 +90,14 @@ final class InkInjector {
     /// Pen-up of `strokes` (drawn now, so their creation dates fall in any recording running).
     func draw(_ strokes: [Stroke], created: Date = Date()) {
         apply(self.strokes + strokes.map { TS.canvasStroke($0, created: created) }, action: "Draw")
+    }
+
+    /// Pen-up of strokes PencilKit made (`PencilTrace`): points with the pressure, azimuth, altitude and
+    /// timing a Pencil reports. `tool` becomes the canvas's tool first, as picking it in the palette
+    /// does, so its width reaches the stored stroke (the coordinator reads the tool at pen-up).
+    func drawCanvas(_ strokes: [PKStroke], tool: PKInkingTool? = nil) {
+        if let tool { host.canvas.tool = tool }
+        apply(self.strokes + strokes, action: "Draw")
     }
 
     /// A lasso move of the strokes `ids` by (`dx`, `dy`): same ids, new transforms, brought to the top.

@@ -17,6 +17,11 @@ replace), is implemented. Owner's decisions there: "Open Vault…" on a vault id
 that copy (P6 offers to sync it with the picked folder); a restore of a vault already on the device asks
 to replace it. Until P6 the store is `Application Support/Sempere/Vaults`, not yet the App Group container.
 
+**Superseded in part (2026-10-20):** key changes now follow `docs/design/key-hierarchy.md` (a vault
+key per epoch, per-device keys, one recovery key, immediate changes with no late-file window). §6
+applies only to "Re-encrypt everything" there (its §13.3 says which rows), and the P4a, P4 and P10
+rows of §10 are replaced by its phases KH1 to KH6 (its §12).
+
 Owner's decision (2026-10-19):
 
 > Sync both ways. Probably switching the structure to be device first with iCloud or WebDAV sync is
@@ -708,6 +713,7 @@ Sizes: S < 300 changed lines, M 300 to 1,000, L > 1,000 (moved lines count once)
 | P7 | Delete in-place reading and `WebDAVFetcher` and their tests; port the hazard tests; rewrite docs/io.md and the CLAUDE.md gotchas | M (mostly deletions) | P6 | removing a path still used. Mitigation: `isCloudVault` reaching zero | — |
 | P8 | BGAppRefresh and BGProcessing for every vault and target with the shared budget (§4.2), reachability, locked staging per vault | M | P5 | iOS timing. Mitigation: owner check 3 | — |
 | P9 | UI: details, Storage, Repair (including late files), the devices-per-target view | M | P5, P6 | — | — |
+| — | **Replaced (2026-10-20):** P4a and P10 are replaced by KH1 to KH6 of `docs/design/key-hierarchy.md` §12; P4 keeps `keys/`, `inbox/` and `summaries/<device>` sync, and its rewrap-replace moves to KH6 | | | | |
 | P10 | Key changes for synced vaults in the app (mode and window in the sheet, Adopt or Export for late files); delete `requireLocalKeyChanges`; outgoing-identity guard | S to M | P4a, P4, P5 | covered by the gate | — |
 
 Critical path: P1 → P2 → P4a → P4 → P5 → P6 → P7. P3 runs alongside P4a. P8, P9 and P10 can run in

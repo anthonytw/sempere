@@ -20,7 +20,6 @@ struct PageStackView: UIViewRepresentable {
     /// `NoteEditor.pageJump`: a change scrolls to the current page.
     var pageJump = 0
     var paletteVisible = true
-    var paletteCompact = false
     /// What the note's mode lets the pages do (`NoteModeInput`).
     var input = NoteModeInput()
     /// `NoteEditor.canvasGeneration`: a change reloads every page's ink.
@@ -41,10 +40,14 @@ struct PageStackView: UIViewRepresentable {
     }
 
     func updateUIView(_ stack: PageStackHost, context: Context) {
+        CanvasFocus.updating { update(stack) }
+    }
+
+    private func update(_ stack: PageStackHost) {
         editor.canvasTarget = stack
         stack.update(PageStackHost.Configuration(
             editor: editor, pageIDs: pageIDs, pageSize: pageSize, pageJump: pageJump, generation: generation,
-            paletteVisible: paletteVisible, paletteCompact: paletteCompact, input: input,
+            paletteVisible: paletteVisible, input: input,
             itemSource: itemSource, itemCommands: itemCommands, selectingItems: selectingItems,
             onSelectingItemsEnded: onSelectingItemsEnded, onPencilAnnotate: onPencilAnnotate, addingText: addingText, onAddingTextEnded: onAddingTextEnded,
             onDrop: onDrop))
@@ -74,7 +77,6 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         var pageJump = 0
         var generation = 0
         var paletteVisible = true
-        var paletteCompact = false
         var input = NoteModeInput()
         var itemSource = ItemLayerSource()
         var itemCommands = ItemCommands()
@@ -97,15 +99,23 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
     let content = UIView()
     /// Add Page, below the last page.
     let footerButton = UIButton(configuration: .bordered())
-    /// One palette for all pages: each page's canvas observes it.
-    private(set) var toolPicker = PageCanvasHost.makePicker(compact: ToolPalette.isCompact(), replacing: nil)
+    /// The palette's tool state: every page's canvas draws with it (`DrawingToolbox`).
+    let toolbox: DrawingToolbox
     private(set) var editor: NoteEditor?
     private(set) var configuration: Configuration?
     /// Canvases of the pages on screen and within a screen of it, by page id.
     private(set) var slots: [UUID: Slot] = [:]
     /// Canvases off screen, kept for reuse (at most `spareLimit`).
     private(set) var spares: [Slot] = []
-    static let spareLimit = 3
+    static let spareLimit = 6
+    /// Spares made ahead while the stack is quiet (`scheduleWarming`): building a `PKCanvasView` costs 3 to 12 ms on
+    /// the main thread (the first one most), on top of the page's ink, in the middle of a pinch that brings more
+    /// pages on screen (zooming out to half the fit shows about twice the pages).
+    static let spareWarmCount = 5
+    /// How long nothing moved before a spare is built, and between two.
+    static let warmDelay: TimeInterval = 0.15
+    static let warmGap: TimeInterval = 0.6
+    private var warmWork: DispatchWorkItem?
     private(set) var layout = PageStackLayout(pageWidth: 612, pageHeight: 792, count: 0)
     /// Screen points per page point; 0 before the first layout.
     private(set) var scale: CGFloat = 0
@@ -121,9 +131,14 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
     /// A reveal waits for the jump to the match's page, the first layout or the end of a pinch.
     private(set) var pendingReveal = false
     private var baking = false
-    private var paletteCompact = ToolPalette.isCompact()
+    private var focusScheduled = false
 
-    override init(frame: CGRect) {
+    override convenience init(frame: CGRect) {
+        self.init(frame: frame, toolbox: .shared)
+    }
+
+    init(frame: CGRect, toolbox: DrawingToolbox) {
+        self.toolbox = toolbox
         super.init(frame: frame)
         backgroundColor = .secondarySystemBackground
         scroller.delegate = self
@@ -155,9 +170,17 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         footerButton.configuration = config
         footerButton.addAction(UIAction { [weak self] _ in self?.editor?.addPage() }, for: .primaryActionTriggered)
         content.addSubview(footerButton)
+        // Draw with Finger changes the fingers a scroll takes (`updateGestures`).
+        NotificationCenter.default.addObserver(self, selector: #selector(toolsChanged), name: DrawingToolbox.didChange,
+                                               object: toolbox)
         // A note window that becomes key (opened, or clicked) gives its page the focus then.
         NotificationCenter.default.addObserver(self, selector: #selector(windowBecameKey(_:)),
                                                name: UIWindow.didBecomeKeyNotification, object: nil)
+    }
+
+    @objc private func toolsChanged() {
+        // After the pages applied the change (their drawing policy, which `fingersDraw` reads).
+        DispatchQueue.main.async { [weak self] in self?.updateGestures() }
     }
 
     @objc private func windowBecameKey(_ note: Notification) {
@@ -175,16 +198,8 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
     func update(_ configuration: Configuration) {
         let editor = configuration.editor
         let newEditor = self.editor !== editor
-        let turnedOn = configuration.paletteVisible && self.configuration?.paletteVisible == false
-        defer { if turnedOn, !newEditor { paletteTurnedOn() } }
         self.configuration = configuration
         self.editor = editor
-        if configuration.paletteCompact != paletteCompact {
-            paletteCompact = configuration.paletteCompact
-            let picker = PageCanvasHost.makePicker(compact: paletteCompact, replacing: toolPicker)
-            toolPicker = picker
-            for slot in Array(slots.values) + spares { slot.host.adopt(picker) }
-        }
         let size = PageCanvasHost.displayable(configuration.pageSize)
         let footer = !editor.isReadOnly && !configuration.input.reading   // a tap while reading never writes
         layout = PageStackLayout(pageWidth: size.width, pageHeight: size.height, count: configuration.pageIDs.count,
@@ -224,6 +239,8 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         for id in Array(slots.keys) { recycle(id) }
         for slot in spares { slot.coordinator.forget(host: slot.host) }
         spares = []
+        warmWork?.cancel()
+        warmWork = nil
         if editor?.canvasTarget === self { editor?.canvasTarget = nil }
     }
 
@@ -327,7 +344,10 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         var keep: [Int: UUID] = [:]
         for i in wanted where ids.indices.contains(i) { keep[i] = ids[i] }
         let kept = Set(keep.values)
-        for id in Array(slots.keys) where !kept.contains(id) { recycle(id) }
+        // During a pinch no page is let go: zooming in and back out would drop a page's canvas and build it again
+        // (its ink back in, 25 to 40 ms) a few frames later. `bake` lets them go when the pinch ends.
+        let pinching = scroller.zoomScale != 1 && !baking
+        if !pinching { for id in Array(slots.keys) where !kept.contains(id) { recycle(id) } }
         for (index, id) in keep.sorted(by: { $0.key < $1.key }) {
             if let slot = slots[id] {
                 if reconfigure { configure(slot, index: index, pageID: id, editor: editor, configuration: configuration) }
@@ -338,6 +358,43 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
             }
         }
         ensureFocus()
+        placeRuler()
+        scheduleWarming()
+    }
+
+    /// Builds the missing spares one at a time once the stack has been quiet for `warmDelay`
+    /// (every scroll or pinch step calls `updateSlots`, which pushes the next one back).
+    private func scheduleWarming(after delay: TimeInterval = PageStackHost.warmDelay) {
+        warmWork?.cancel()
+        warmWork = nil
+        guard window != nil, spares.count < Self.spareWarmCount else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.window != nil, self.spares.count < Self.spareWarmCount else { return }
+            self.warmWork = nil
+            if self.scroller.isDragging || self.scroller.isDecelerating || self.scroller.isZooming {
+                self.scheduleWarming()
+                return
+            }
+            let spare = self.buildSlot()
+            // The first layout of a canvas is the costly one (about 35 ms): done here, in the stack where it
+            // will sit, hidden from view, rather than in the pinch that needs the page. A layout allocates the canvas's
+            // tiles (about 80 MB each, freed a moment after), so the spares come a few tenths of a second apart.
+            spare.host.frame = CGRect(x: 0, y: 0, width: 120, height: 160)
+            self.content.insertSubview(spare.host, belowSubview: self.footerButton)
+            spare.host.layoutIfNeeded()
+            spare.host.removeFromSuperview()
+            self.spares.append(spare)
+            self.scheduleWarming(after: Self.warmGap)
+        }
+        warmWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    /// PencilKit's ruler, when the palette's is on, shows on one page only: the one with the focus, else
+    /// the current page (`PageCanvasHost.rulerHere`).
+    private func placeRuler() {
+        let target = focusedSlot?.host
+        for slot in slots.values { slot.host.rulerHere = slot.host === target }
     }
 
     private func configure(_ slot: Slot, index: Int, pageID: UUID, editor: NoteEditor, configuration: Configuration) {
@@ -368,15 +425,19 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         slot.host.itemSelection.scroller = scroller
     }
 
+    private func buildSlot() -> Slot {
+        let host = PageCanvasHost(frame: .zero, embedded: true, toolbox: toolbox)
+        let coordinator = PageCanvasView.Coordinator()
+        host.canvas.delegate = coordinator
+        return Slot(host: host, coordinator: coordinator)
+    }
+
     private func makeSlot() -> Slot {
         let slot: Slot
         if let spare = spares.popLast() {
             slot = spare
         } else {
-            let host = PageCanvasHost(frame: .zero, sharedPicker: toolPicker)
-            let coordinator = PageCanvasView.Coordinator()
-            host.canvas.delegate = coordinator
-            slot = Slot(host: host, coordinator: coordinator)
+            slot = buildSlot()
         }
         content.insertSubview(slot.host, belowSubview: footerButton)
         return slot
@@ -392,28 +453,26 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         if spares.count < Self.spareLimit { spares.append(slot) }
     }
 
-    /// Some page on screen has the focus (the palette shows for the first
-    /// responder): the current page's, unless the user drew on another.
+    /// Some page on screen has the focus (undo, the keys): the current page's,
+    /// unless the user drew on another.
     private func ensureFocus() {
         guard window != nil else { return }
+        // Never in the middle of SwiftUI's update of the stack (`CanvasFocus.isUpdating`): right after it.
+        if CanvasFocus.isUpdating {
+            guard !focusScheduled else { return }
+            focusScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                self?.focusScheduled = false
+                self?.ensureFocus()
+            }
+            return
+        }
         // A page being drawn on, or a text box being typed in, already has it.
         if slots.values.contains(where: { $0.host.canvas.isFirstResponder || $0.host.textEditor.isEditing }) { return }
         guard let id = editor?.currentPage?.id, let slot = slots[id] else { return }
         // Runs on every layout: never take the keyboard from a search or text field, or from a
         // list moved through with the arrow keys (TestFlight 1.0.0, `CanvasFocus`).
         slot.host.focusUnlessKeyboardElsewhere(container: self)
-    }
-
-    /// The palette was turned on (the toolbar button, Tools > Show Tool Palette): the current page's
-    /// canvas takes the first responder so the palette shows, even from a list or the sidebar that held
-    /// the focus (`PageCanvasHost.paletteTakesFocus`). A text box or a field being typed in keeps the keyboard.
-    private func paletteTurnedOn() {
-        guard PageCanvasHost.paletteTakesFocus(isPhone: Platform.isPhone), window != nil,
-              !CanvasFocus.typingElsewhere(than: self) else { return }
-        if slots.values.contains(where: { $0.host.textEditor.isEditing }) { return }
-        let focused = slots.values.first { $0.host.canvas.isFirstResponder }
-        guard let slot = focused ?? editor?.currentPage.flatMap({ slots[$0.id] }) else { return }
-        slot.host.reclaimFocus()
     }
 
     /// Fingers and the Pencil: while the pages can be drawn on, the Pencil
@@ -642,12 +701,19 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
 
 extension PageStackHost: CanvasCommandTarget {
     @discardableResult
-    func select(tool choice: ToolChoice) -> Bool {
-        guard let editor, !editor.isReadOnly,
-              let item = toolPicker.toolItems.first(where: { choice.matches($0) }) else { return false }
-        toolPicker.selectedToolItemIdentifier = item.identifier
-        for slot in slots.values { slot.host.toolDidChange() }
+    func select(drawingTool tool: DrawingTool) -> Bool {
+        guard let editor, !editor.isReadOnly else { return false }
+        toolbox.select(tool)
+        for slot in slots.values { slot.host.toolPicked() }
         return true
+    }
+
+    func undo() {
+        focusedSlot?.host.undo()
+    }
+
+    func redo() {
+        focusedSlot?.host.redo()
     }
 
     func zoom(in zoomingIn: Bool) {
@@ -677,8 +743,9 @@ extension PageStackHost: CanvasCommandTarget {
     }
 
     func toggleRuler() {
-        guard let editor, !editor.isReadOnly, let slot = focusedSlot else { return }
-        slot.host.toggleRuler()
+        guard let editor, !editor.isReadOnly else { return }
+        placeRuler()
+        toolbox.toggleRuler()
     }
 
     /// The command goes to the selected item of the current page, else of the canvas with

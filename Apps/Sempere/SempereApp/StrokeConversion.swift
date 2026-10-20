@@ -19,9 +19,11 @@ import UIKit
 // Not representable in the format, so approximated:
 // - `Ink.width`: PencilKit strokes have no nominal width; a new stroke takes
 //   the tool's width when the tool still matches, else its widest point.
-// - The path's `creationDate`, `randomSeed` (texture grain of pencil, crayon,
-//   watercolor) and the per-point `secondaryScale`/`threshold`/`lateralJitter`:
+// - The path's `creationDate` and the per-point `secondaryScale`/`threshold`/`lateralJitter`:
 //   rebuilt as fixed or derived values on load.
+// - `randomSeed` (texture grain of pencil, crayon, watercolor) is not stored, but
+//   it survives: a canvas stroke is saved under an id whose first four bytes are
+//   its seed (`id(seed:)`), and a load takes the seed back from the id (`seed(for:)`).
 // - `mask` (the pixel eraser): each visible `maskedPathRange` becomes its own
 //   stroke trimmed with `BSpline.substroke`, so cut ends are round caps rather
 //   than the eraser's outline.
@@ -188,6 +190,15 @@ enum StrokeConversion {
     static func seed(for id: UUID) -> UInt32 {
         let u = id.uuid
         return UInt32(u.0) << 24 | UInt32(u.1) << 16 | UInt32(u.2) << 8 | UInt32(u.3)
+    }
+
+    /// A fresh random stroke id whose seed (`seed(for:)`) is `seed`: the first four bytes are the seed,
+    /// the other 12 random. A canvas stroke is saved under such an id, so the reloaded stroke has the
+    /// seed PencilKit gave the stroke the pen drew, and its grain.
+    static func id(seed: UInt32) -> UUID {
+        var u = UUID().uuid
+        u.0 = UInt8(seed >> 24); u.1 = UInt8((seed >> 16) & 0xFF); u.2 = UInt8((seed >> 8) & 0xFF); u.3 = UInt8(seed & 0xFF)
+        return UUID(uuid: u)
     }
 
     /// The control points of a PencilKit path drawn with `tool`.

@@ -15,11 +15,14 @@ struct MenuHandlerTests {
     /// Records what the canvas is asked to do.
     @MainActor
     final class FakeCanvas: CanvasCommandTarget {
-        var tools: [ToolChoice] = []
+        var tools: [DrawingTool] = []
         var zooms: [Bool] = []
         var fits = 0, actuals = 0, rulers = 0
         var visiblePageRect: CGRect? { nil }
-        func select(tool: ToolChoice) -> Bool { tools.append(tool); return true }
+        func select(drawingTool tool: DrawingTool) -> Bool { tools.append(tool); return true }
+        var undos = 0, redos = 0
+        func undo() { undos += 1 }
+        func redo() { redos += 1 }
         func zoom(in zoomingIn: Bool) { zooms.append(zoomingIn) }
         func zoomToFit() { fits += 1 }
         func zoomToActualSize() { actuals += 1 }

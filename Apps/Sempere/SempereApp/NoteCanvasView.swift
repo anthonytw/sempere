@@ -190,7 +190,6 @@ struct EditorView: View {
                 PageStackView(editor: editor, pageIDs: editor.pages.map(\.id), pageSize: editor.pageSize,
                               pageJump: editor.pageJump,
                               paletteVisible: canvasPaletteVisible,
-                              paletteCompact: PhoneReading.paletteCompact(isPhone: Platform.isPhone, stored: paletteCompact),
                               input: modeInput,
                               generation: editor.canvasGeneration,
                               itemSource: model.itemLayerSource, itemCommands: itemCommands,
@@ -204,7 +203,6 @@ struct EditorView: View {
             } else if let page = editor.currentPage {
                 PageCanvasView(editor: editor, pageID: page.id, paper: editor.displayedPaper(of: page), pageSize: editor.pageSize,
                                paletteVisible: canvasPaletteVisible,
-                               paletteCompact: PhoneReading.paletteCompact(isPhone: Platform.isPhone, stored: paletteCompact),
                                input: modeInput,
                                generation: editor.canvasGeneration,
                                itemSource: model.itemLayerSource, itemCommands: itemCommands,
@@ -227,6 +225,18 @@ struct EditorView: View {
                 }
             }
         }
+        // Sempere's drawing palette (`DrawingPaletteView`), on every device, while annotating.
+        .overlay(alignment: .bottom) {
+            if showsPalette {
+                DrawingPaletteView(editor: editor,
+                                   compact: PhoneReading.paletteCompact(isPhone: Platform.isPhone, stored: paletteCompact))
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 10)
+                    .transition(.opacity)
+            }
+        }
+        // The Apple Pencil's double-tap and squeeze (Settings ▸ Apple Pencil), while annotating.
+        .background(PencilGestureHost(enabled: showsPalette))
         .overlay(alignment: .top) {
             if remoteNoticeFor > 0, remoteNoticeFor == editor.remoteUpdates {
                 RemoteUpdateNotice()
@@ -339,6 +349,11 @@ struct EditorView: View {
         modeInput.showsPalette && ui.expectations == nil
     }
 
+    /// The drawing palette is on screen: annotating an editable note with a page.
+    private var showsPalette: Bool {
+        canvasPaletteVisible && !editor.isReadOnly && editor.currentPage != nil
+    }
+
     /// Selection mode for the canvas: the Hand (not while the text tool is armed).
     private var canvasSelectingItems: Bool {
         modeInput.selectingItems && !modes.addingText
@@ -380,7 +395,7 @@ struct EditorView: View {
     /// One of the top bar's two mode buttons: lit in its own mode; a tap on the lit one goes back to reading,
     /// on the other one switches straight to that mode (`NoteMode.tapping`). The iPad's pencil keeps the
     /// compact palette in its menu (press and hold); an iPhone's palette is always the compact one, and a
-    /// Mac has no palette (Drawing Tools, `macToolsMenu`).
+    /// Mac's is chosen in the Tools menu (Use Compact Palette) or Settings.
     @ViewBuilder
     private func modeButton(_ button: NoteMode.Button) -> some View {
         let on = ui.noteMode.lights(button)
@@ -402,7 +417,7 @@ struct EditorView: View {
             Toggle("Annotate", systemImage: on ? "pencil.tip.crop.circle.fill" : "pencil.tip.crop.circle", isOn: binding)
                 .toggleStyle(.button)
                 .accessibilityIdentifier("annotateButton")
-                .help(Platform.isMac ? "Annotate: draw on the page with the mouse; Drawing Tools picks the tool"
+                .help(Platform.isMac ? "Annotate: draw on the page with the mouse and the tool palette"
                                      : "Annotate: draw on the page with a finger")
         case .hand:
             Toggle("Hand", systemImage: on ? "hand.point.up.left.fill" : "hand.point.up.left", isOn: binding)
@@ -665,10 +680,10 @@ struct EditorView: View {
         .help("Size of the object eraser; the pixel eraser's size is in the tool palette")
     }
 
-    /// The Mac's tool button. PencilKit never shows its tool palette in a Mac Catalyst app (Apple's
-    /// `PKToolPicker` documentation), so the iPad's palette button showed nothing there however often it
-    /// was clicked (TestFlight 1.0.0 (6)). The Mac picks its tools from this menu instead: the Tools
-    /// menu's tools (`MenuCommand.toolPen` …, ⌥⌘1–5) and the ruler.
+    /// The Mac's tool menu beside Annotate: the Tools menu's tools (`MenuCommand.toolPen` …, ⌥⌘1–5) and
+    /// the ruler, through the same tool state as the palette (`DrawingToolbox`). It came before the
+    /// palette (PencilKit's never shows in a Mac Catalyst app, TestFlight 1.0.0 (6)) and stays for the
+    /// pointer and the keyboard's sake.
     private var macToolsMenu: some View {
         Menu {
             ForEach(ToolChoice.allCases, id: \.self) { tool in
@@ -765,3 +780,4 @@ enum NoteTitle {
         return t.isEmpty ? String(localized: "Untitled", comment: "Shown for a note without a title") : t
     }
 }
+

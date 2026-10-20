@@ -23,29 +23,34 @@ struct MacInputTests {
     }
 
     @Test func theFullPaletteHasEachMenuToolOnce() {
-        let items = ToolPalette.makePicker(compact: false).toolItems
         for tool in ToolChoice.allCases {
-            #expect(items.filter { tool.matches($0) }.count == 1, "\(tool)")
+            #expect(DrawingToolState.fullTools.filter { $0 == tool.drawingTool }.count == 1, "\(tool)")
         }
     }
 
-    @Test func theCompactPaletteHasNoPencil() {
-        let items = ToolPalette.makePicker(compact: true).toolItems
-        #expect(items.filter { ToolChoice.pencil.matches($0) }.isEmpty)
+    /// The compact palette shows pen, marker, eraser and lasso; the Tools menu's pencil is shown too while picked.
+    @Test func theCompactPaletteShowsAMenuPickedPencil() {
+        #expect(!DrawingToolState.compactTools(selected: .pen).contains(.pencil))
+        #expect(DrawingToolState.compactTools(selected: ToolChoice.pencil.drawingTool).contains(.pencil))
         for tool in [ToolChoice.pen, .marker, .eraser, .lasso] {
-            #expect(items.filter { tool.matches($0) }.count == 1, "\(tool)")
+            #expect(DrawingToolState.compactTools(selected: .pen).filter { $0 == tool.drawingTool }.count == 1, "\(tool)")
         }
     }
 
     @Test func aMenuToolIsSelectedInThePalette() throws {
-        let host = PageCanvasHost(frame: CGRect(x: 0, y: 0, width: 700, height: 900))
+        let toolbox = DrawingToolbox(defaults: DrawingToolboxTests.scratchDefaults())
+        let host = PageCanvasHost(frame: CGRect(x: 0, y: 0, width: 700, height: 900), embedded: false, toolbox: toolbox)
         #expect(host.select(tool: .marker))
-        let marker = try #require(host.toolPicker.selectedToolItem as? PKToolPickerInkingItem)
-        #expect(marker.inkingTool.inkType == .marker)
+        let marker = try #require(host.canvas.tool as? PKInkingTool)
+        #expect(marker.inkType == .marker)
+        #expect(toolbox.state.tool == .marker)
+        #expect(host.select(tool: .pencil), "every tool, whatever the palette's size")
+        #expect((host.canvas.tool as? PKInkingTool)?.inkType == .pencil)
         #expect(host.select(tool: .lasso))
-        #expect(host.toolPicker.selectedToolItem is PKToolPickerLassoItem)
+        #expect(host.canvas.tool is PKLassoTool)
         host.isReadOnly = true
         #expect(!host.select(tool: .pen), "a read-only note has no tools")
+        #expect(toolbox.state.tool == .lasso)
     }
 
     @Test func zoomCommandsStepFromTheFittedWidth() async throws {
@@ -76,7 +81,8 @@ struct MacInputTests {
     }
 
     @Test func theRulerToggles() {
-        let host = PageCanvasHost(frame: CGRect(x: 0, y: 0, width: 700, height: 900))
+        let host = PageCanvasHost(frame: CGRect(x: 0, y: 0, width: 700, height: 900), embedded: false,
+                                  toolbox: DrawingToolbox(defaults: DrawingToolboxTests.scratchDefaults()))
         #expect(!host.canvas.isRulerActive)
         host.toggleRuler()
         #expect(host.canvas.isRulerActive)

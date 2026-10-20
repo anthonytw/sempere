@@ -48,9 +48,9 @@ enum StackTS {
 
     /// A stack showing `editor` in a window of `size`.
     static func stack(_ editor: NoteEditor, size: CGSize = CGSize(width: 1024, height: 1366),
-                      drawingSuspended: Bool = false) -> (UIWindow, PageStackHost) {
+                      drawingSuspended: Bool = false, toolbox: DrawingToolbox = .shared) -> (UIWindow, PageStackHost) {
         let window = UIWindow(frame: CGRect(origin: .zero, size: size))
-        let stack = PageStackHost(frame: window.bounds)
+        let stack = PageStackHost(frame: window.bounds, toolbox: toolbox)
         window.addSubview(stack)
         window.isHidden = false
         stack.update(configuration(editor, drawingSuspended: drawingSuspended))
@@ -369,16 +369,28 @@ struct PageStackTests {
         #expect(!stack.scroller.delaysContentTouches, "strokes start at once")
     }
 
-    /// Menu commands reach the stack: tools go to the shared palette.
+    /// Menu commands reach the stack: tools go to the one tool state every page draws with, and the
+    /// ruler shows on the page with the focus only.
     @Test func menuCommandsReachTheStack() async throws {
         let editor = try await StackTS.editor(pages: 3)
-        let (window, stack) = StackTS.stack(editor)
+        let toolbox = DrawingToolbox(defaults: DrawingToolboxTests.scratchDefaults())
+        let (window, stack) = StackTS.stack(editor, toolbox: toolbox)
         defer { window.isHidden = true }
+        #expect(stack.slots.count > 1)
         #expect(stack.select(tool: .lasso))
-        #expect(stack.toolPicker.selectedToolItem is PKToolPickerLassoItem)
-        #expect(stack.slots.values.allSatisfy { $0.host.toolPicker === stack.toolPicker })
+        #expect(toolbox.state.tool == .lasso)
+        #expect(stack.slots.values.allSatisfy { $0.host.toolbox === toolbox && $0.host.canvas.tool is PKLassoTool })
         stack.toggleRuler()
         #expect(stack.focusedSlot?.host.canvas.isRulerActive == true)
+        #expect(stack.slots.values.filter { $0.host.canvas.isRulerActive }.count == 1, "one ruler, not one per page")
+        stack.toggleRuler()
+        #expect(stack.slots.values.allSatisfy { !$0.host.canvas.isRulerActive })
+        // A color picked in the palette reaches every page.
+        toolbox.select(.pen)
+        toolbox.setColor(DrawingToolState.swatches[3])
+        let inks = stack.slots.values.compactMap { $0.host.canvas.tool as? PKInkingTool }
+        #expect(inks.count == stack.slots.count)
+        #expect(inks.allSatisfy { Sempere.Color($0.color) == DrawingToolState.swatches[3] })
     }
 
     /// A new note in the same stack: canvases of the old one are dropped and

@@ -49,6 +49,22 @@ class EngineScenarioCase: SyncTestCase {
     private func comps(_ rel: String) -> [String] { rel.split(separator: "/").map(String.init) }
     private func remoteNames(_ path: [String]) throws -> [String] { (try t.inspector.list(path) ?? []).map(\.name).sorted() }
 
+    /// A delta adding one image item per reference, on a new page of `note`.
+    @discardableResult
+    private func referencingNote(_ vault: Vault, note: UUID, device: DeviceID, t ms: Int64, _ refs: [BlobRef]) throws -> Revision {
+        let page = UUID()
+        var ops: [Op] = [.addPage(Page(id: page, order: "a\(ms)"))]
+        for (i, r) in refs.enumerated() {
+            ops.append(.addItem(page: page, item: .image(blob: r, pixelSize: Size(w: 4, h: 3),
+                                                         frame: Rect(x: 10, y: 10, w: 40, h: 30), z: "a\(i)")))
+        }
+        let r = Revision(noteId: note, device: device, seq: try vault.nextSeq(noteId: note, device: device),
+                         hlc: HLC(millis: baseMillis + ms, counter: 0)!,
+                         wall: Date(timeIntervalSince1970: Double(baseMillis + ms) / 1000), app: "test/0", body: .delta(ops: ops))
+        try vault.write(r)
+        return r
+    }
+
     /// A delta adding one image item per reference, on a new page.
     @discardableResult
     private func referencing(_ vault: Vault, device: DeviceID, t ms: Int64, _ refs: [BlobRef]) throws -> Revision {
@@ -345,6 +361,29 @@ class EngineScenarioCase: SyncTestCase {
         try assertSameNotes("A", "B")
     }
 
+    /// A blob whose upload fails holds back every revision that references it in that run (format.md
+    /// §8.1.4 step 4): a revision never reaches the server without its attachment, which a device that
+    /// then stops syncing (or is removed) would leave missing for every other device. The next clean
+    /// run uploads both. Over both upload paths: the concurrent pre-upload and the note loop.
+    func scenarioRevisionWaitsForItsBlobs() throws {
+        let a = try makeVault("A")
+        for width in [TransferPool.defaultWidth, 1] {
+            let note = UUID()
+            let ref = try a.writeBlob(note: note, syntheticBlob(30_000, seed: 11), type: "image/png")
+            let r = try referencingNote(a, note: note, device: devA, t: 0, [ref])
+            let failing = t.faulty(31, TransportFaults(serverError: 1, only: { $0.count == 4 && $0[2] == "att" }))
+            let cut = try run("A", via: failing, vault: try openVault("A")) { $0.concurrency = width }
+            XCTAssertFalse(cut.errors.isEmpty, "\(label) width \(width): the blob upload failed: \(cut)")
+            let folder = [Vault.notesName, note.uuidString.lowercased()]
+            XCTAssertFalse(try remoteNames(folder).contains(r.name.filename),
+                           "\(label) width \(width): the revision went up without its blob")
+            let done = try run("A") { $0.concurrency = width }
+            XCTAssertTrue(done.errors.isEmpty, "\(label) width \(width): \(done)")
+            XCTAssertTrue(try remoteNames(folder).contains(r.name.filename), "\(label) width \(width)")
+            XCTAssertTrue(try remoteNames(folder + [Vault.attachmentsName]).contains(try a.blobFileName(for: ref)), label)
+        }
+    }
+
     /// Runs through requests that fail at random (dropped, refused, applied
     /// with the answer lost, cut) lose nothing, and clean runs converge.
     func scenarioTransientFaultsConverge() throws {
@@ -419,6 +458,7 @@ final class EngineOverMemoryTests: EngineScenarioCase {
     func testManifestConflictKeepsBothCopies() throws { try scenarioManifestConflictKeepsBothCopies() }
     func testSettingsMergePerKey() throws { try scenarioSettingsMergePerKey() }
     func testCutBlobDownloadFinishesNextRun() throws { try scenarioCutBlobDownloadFinishesNextRun() }
+    func testRevisionWaitsForItsBlobs() throws { try scenarioRevisionWaitsForItsBlobs() }
     func testTransientFaultsConverge() throws { try scenarioTransientFaultsConverge() }
     func testSkipUnchangedNotesSeesEveryChange() throws { try scenarioSkipUnchangedNotesSeesEveryChange() }
     func testManifestStampChangeIsNoConflict() throws { try scenarioManifestStampChangeIsNoConflict() }
@@ -438,6 +478,7 @@ final class EngineOverWebDAVMockTests: EngineScenarioCase {
     func testManifestConflictKeepsBothCopies() throws { try scenarioManifestConflictKeepsBothCopies() }
     func testSettingsMergePerKey() throws { try scenarioSettingsMergePerKey() }
     func testCutBlobDownloadFinishesNextRun() throws { try scenarioCutBlobDownloadFinishesNextRun() }
+    func testRevisionWaitsForItsBlobs() throws { try scenarioRevisionWaitsForItsBlobs() }
     func testTransientFaultsConverge() throws { try scenarioTransientFaultsConverge() }
     func testSkipUnchangedNotesSeesEveryChange() throws { try scenarioSkipUnchangedNotesSeesEveryChange() }
     func testManifestStampChangeIsNoConflict() throws { try scenarioManifestStampChangeIsNoConflict() }
@@ -459,6 +500,7 @@ final class EngineOverFolderTests: EngineScenarioCase {
     func testManifestConflictKeepsBothCopies() throws { try scenarioManifestConflictKeepsBothCopies() }
     func testSettingsMergePerKey() throws { try scenarioSettingsMergePerKey() }
     func testCutBlobDownloadFinishesNextRun() throws { try scenarioCutBlobDownloadFinishesNextRun() }
+    func testRevisionWaitsForItsBlobs() throws { try scenarioRevisionWaitsForItsBlobs() }
     func testTransientFaultsConverge() throws { try scenarioTransientFaultsConverge() }
     func testSkipUnchangedNotesSeesEveryChange() throws { try scenarioSkipUnchangedNotesSeesEveryChange() }
 }
@@ -481,6 +523,7 @@ final class EngineOverEvictingFolderTests: EngineScenarioCase {
     func testManifestConflictKeepsBothCopies() throws { try scenarioManifestConflictKeepsBothCopies() }
     func testSettingsMergePerKey() throws { try scenarioSettingsMergePerKey() }
     func testCutBlobDownloadFinishesNextRun() throws { try scenarioCutBlobDownloadFinishesNextRun() }
+    func testRevisionWaitsForItsBlobs() throws { try scenarioRevisionWaitsForItsBlobs() }
     func testTransientFaultsConverge() throws { try scenarioTransientFaultsConverge() }
     func testSkipUnchangedNotesSeesEveryChange() throws { try scenarioSkipUnchangedNotesSeesEveryChange() }
 }
@@ -500,6 +543,7 @@ final class EngineOverEvictedMemoryTests: EngineScenarioCase {
     func testManifestConflictKeepsBothCopies() throws { try scenarioManifestConflictKeepsBothCopies() }
     func testSettingsMergePerKey() throws { try scenarioSettingsMergePerKey() }
     func testCutBlobDownloadFinishesNextRun() throws { try scenarioCutBlobDownloadFinishesNextRun() }
+    func testRevisionWaitsForItsBlobs() throws { try scenarioRevisionWaitsForItsBlobs() }
     func testTransientFaultsConverge() throws { try scenarioTransientFaultsConverge() }
     func testSkipUnchangedNotesSeesEveryChange() throws { try scenarioSkipUnchangedNotesSeesEveryChange() }
 }
@@ -518,6 +562,7 @@ final class EngineOverWsgidavTests: EngineScenarioCase {
     func testManifestConflictKeepsBothCopies() throws { try scenarioManifestConflictKeepsBothCopies() }
     func testSettingsMergePerKey() throws { try scenarioSettingsMergePerKey() }
     func testCutBlobDownloadFinishesNextRun() throws { try scenarioCutBlobDownloadFinishesNextRun() }
+    func testRevisionWaitsForItsBlobs() throws { try scenarioRevisionWaitsForItsBlobs() }
     func testTransientFaultsConverge() throws { try scenarioTransientFaultsConverge() }
     func testSkipUnchangedNotesSeesEveryChange() throws { try scenarioSkipUnchangedNotesSeesEveryChange() }
     func testManifestStampChangeIsNoConflict() throws { try scenarioManifestStampChangeIsNoConflict() }

@@ -49,7 +49,15 @@ Do not use features newer than Swift 6.0 in `Sources/`.
   `age -d -i key FILE.age | tail -c +38 | gunzip | jq .` (with `age` 1.3+ for
   post-quantum keys), and for blobs
   `age -d -i key notes/ID/att/NAME.KIND.age | tail -c +46 | head -c LEN`
-  (`format.md` §8.1.7).
+  (`format.md` §8.1.7). Under the key hierarchy (KH2 on, `format.md` §15) the key is `vault-keys.txt`
+  from the kit's frozen script (`KitRecovery.script`, §15.13): never change it, the record and journal
+  framing, the wrap or the passphrase copy without `EpochChainTests.testFrozenRecoveryScriptOpensEveryEpoch`
+  and `testRecoveryScriptMatchesTheDocuments` passing. KH1's pure key-hierarchy code is
+  `Sources/Sempere/Epoch*.swift` and `JoinCodes.swift`, mirrored in `web/src/vault/epoch.ts`; vectors in
+  `Fixtures/epoch-vectors.json` (`web/scripts/make-epoch-vectors.ts`, then
+  `SEMPERE_WRITE_EPOCH_VECTORS=1 swift test --filter "EpochKeysTests|EpochChainTests"`),
+  `epoch-chain-vectors.json` and `epoch-precedence-vectors.json`. Only the home device signs list
+  changes; a takeover by the recovery key is the one other signer (design §5.6).
 
 ## Optional importers
 
@@ -230,7 +238,10 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   `StrokeLedger`'s fingerprints, which are always taken from the `PKStroke`.
   A loaded stroke's `PKStroke.id` is its stored id; the ledger uses a canvas
   stroke's id only to name an edit's parent (PencilKit gives erased pieces
-  new ids), and never writes it.
+  new ids), and never writes it. What a stroke keeps through save and reload is its texture seed: a
+  canvas stroke is saved under an id whose first four bytes are its `PKStroke.randomSeed`
+  (`StrokeConversion.id(seed:)`), and a load takes the seed back from the id, so pencil, crayon and
+  watercolor grain does not change on reopening (`InkRoundTripTests`).
 - `PKStrokePoint.size` is not the drawn width: a pen or monoline of size `s`
   is drawn `2s − 4` wide (invisible below 2), markers and textured inks
   differ again. Point sizes go through `NibSize` (StrokeConversion.swift);
@@ -242,16 +253,16 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   the width, with the width carried inside the (opaque) `PKInk`; on hardware
   the drawn width may depend on that ink, which the simulator ignores. Check
   ink-width changes on a device, not only in tests.
-- `PKToolPicker.init` restores PencilKit's own saved tools
-  (`PKPaletteNamedDefaults` in the app's defaults) over the items it is
-  given, and its saved eraser is the pixel eraser. `EraserPreference` drops
-  that saved eraser entry before building a picker, so the object eraser is
-  the default and the user's last choice (stored under `Sempere.eraserType`)
-  wins (measured on the 27.0 simulator). macOS 27 Catalyst does not keep a
-  `.fixedWidthBitmap` item, and the iPadOS 27.0 simulator keeps no pixel eraser item at all. So the preference is two modes (object, pixel:
-  `EraserPreference.canonical`) and the picker gets the pixel type the
-  platform keeps (`pixelPickerType`, probed); never compare eraser types
-  with `==` across platforms, use `isPixel`.
+- The drawing palette is Sempere's own on every device (`DrawingPaletteView`, docs/iphone.md "The drawing
+  palette"): PencilKit's `PKToolPicker` never shows in a Mac Catalyst app, so never make one. One tool state
+  (`DrawingToolbox.shared`; the pure `DrawingToolState` in `Sources/Sempere/DrawingTools.swift`, Linux-tested)
+  drives every canvas: each `PageCanvasHost` sets `PKCanvasView.tool` from `pkTool` on `DrawingToolbox.didChange`.
+  Change it through the toolbox (or `CanvasCommandTarget.select(drawingTool:)`, which also ends the Hand, the text
+  tool and the math lasso on that canvas), never by setting a canvas's tool. Tests give hosts their own
+  `DrawingToolbox(defaults:)` (Swift Testing runs suites in parallel; the shared one is app-wide state).
+  The eraser mode stays `EraserPreference`'s two modes (object, pixel: `canonical`, compare with `isPixel`,
+  never `==` across types) under `Sempere.eraserType`, which settings sync writes; the pixel eraser is
+  `.fixedWidthBitmap` at the palette's width.
 - Debug builds open a vault and note from launch environment variables, for
   scripted simulator or Catalyst runs (`DebugLaunch.swift`):
   `SEMPERE_DEBUG_VAULT`, `SEMPERE_DEBUG_IDENTITY`, `SEMPERE_DEBUG_NOTE`
@@ -422,7 +433,8 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   `PageStackHost`, layout math in `PageStackLayout`, Linux-testable): one
   embedded `PageCanvasHost` per page within a screen of the visible band
   (recycled, at most `spareLimit` spares), each at the stack's scale with its
-  own undo manager and the stack's shared `PKToolPicker`. The stack zooms
+  own undo manager, drawing with the palette's tool (`DrawingToolbox`; PencilKit's ruler only on the page with
+  the focus, `PageStackHost.placeRuler`). The stack zooms
   natively during a pinch and bakes the scale into the page canvases when it
   ends (`bake`, which settles it with `ZoomDetent`: the fitted width is a detent, and
   the pages zoom out to half of it, centered); never zoom an inner canvas. The current page follows the
@@ -442,7 +454,7 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   window becoming key) only through `focusUnlessKeyboardElsewhere` (`CanvasFocus`):
   never from a text input elsewhere (search, rename, sheets), from a list holding the
   keyboard focus, or in a window that is not key; only a stroke calls `focus()` directly,
-  and a touch on the canvas takes it back with the palette (`PageCanvasHost.hitTest` →
+  and a touch on the canvas takes it back (`PageCanvasHost.hitTest` →
   `reclaimFocus`: the user's own focus, after the sidebar or a list took it).
   Calling `becomeFirstResponder` on a canvas from layout or `updateUIView` took the
   search field's keyboard after every key on a Mac (`CanvasFocusTests`, `MacFocusUITests`).
@@ -455,10 +467,11 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
 - `NavigationSplitView` ignores a programmatic column change that arrives
   while the view is first being built, so the stored choice (`ColumnLayout`,
   `@AppStorage`) is never made to depend on selection state.
-- `PKToolPicker` has no minimized/docked API (see `ToolPalette.swift`): the app
-  can hide it (`setVisible`) and build a picker with fewer tools; the user
-  minimizes or docks the system palette by dragging it to an edge or tapping its
-  collapse handle. Changing the compact option swaps the picker object.
+- The palette shows only while annotating, docked at the bottom of the note (an overlay of `EditorView`): full
+  (`ViewThatFits`: choices inline, else behind the color button, else the compact bar) or compact (Compact Palette,
+  `ToolPalette.compactKey`; always on an iPhone, `PhoneReading.paletteCompact`). It needs no first responder: never
+  give a canvas the focus for the palette's sake (`CanvasFocus`). Its container keeps PencilKit's accessibility
+  identifier `Drawing-Palette` and its tools their names ("Pen", "Object Eraser"…), which UI tests use.
 - Tags match case-insensitively (`NoteOps.tagKey`); titles are never keys.
   Tags merge per tag (`format.md` §5.4.1): write `addTag` / `removeTag` via
   `NoteOps.addTag` / `removeTag` / `setTags` (a remove lists the instances it
@@ -534,7 +547,7 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   first use until the device writes, so without the sheet the key was needed at every launch
   (`RememberedKeysWebDAVTests`).
 - The object eraser is the app's (`ObjectEraser.swift`, `EraserGeometry.swift`):
-  PencilKit's `.vector` eraser has no size. When the picker's eraser is in
+  PencilKit's `.vector` eraser has no size. When the palette's eraser is in
   object mode, `PageCanvasHost` disables `drawingGestureRecognizer` and
   `ObjectEraserController` takes the touches (Pencil, plus one finger when
   fingers draw; scrolling then needs two), removes every stroke whose sampled
@@ -542,7 +555,7 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   one undo step per gesture on the canvas's undo manager. The ledger turns
   that into ordinary `removeStroke` ops. The pixel eraser stays PencilKit's.
   Radius presets (`ObjectEraserSize`, page points) are in `UserDefaults`
-  under `Sempere.objectEraserRadius`; the size menu is in the editor toolbar.
+  under `Sempere.objectEraserRadius`; the size is in the palette's eraser choices and the editor toolbar's menu.
 - The Mac menu-bar item (`docs/mac.md` "Menu-bar item") is an AppKit bundle, target
   `SempereStatusItem` (`Apps/Sempere/SempereStatusItem/`, SDK macOS, Swift 5 mode), embedded in
   `PlugIns` for Catalyst only (`platformFilter = maccatalyst` on the dependency and the embed

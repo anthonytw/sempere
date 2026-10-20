@@ -149,7 +149,7 @@ enum QuickTour {
                 id: "storage", symbol: "lock.icloud",
                 title: String(localized: "Your Storage", comment: "Quick tour page 5 title"),
                 lines: [
-                    String(localized: "A vault is a folder of encrypted files in iCloud Drive or any Files location; the command-line tool can mirror it to WebDAV.",
+                    String(localized: "A vault is a folder of encrypted files in iCloud Drive or any Files location, or on a WebDAV server.",
                            comment: "Quick tour page 5"),
                     String(localized: "Notes are encrypted on your devices. There is no Sempere server: your storage sees encrypted files, their sizes and times.",
                            comment: "Quick tour page 5"),

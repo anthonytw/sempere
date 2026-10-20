@@ -249,6 +249,10 @@ public final class SyncEngine {
     var prefetchTroubled = Set<String>()
     /// Keys of the uploads the pre-upload pass tried (`preuploadNewFiles`), whatever the outcome.
     var preuploadTried = Set<String>()
+    /// Notes whose revisions this run holds back (format.md §8.1.4 step 4): one of their blobs failed to
+    /// upload, or the server's `att/` listing failed while the note has blobs here. A revision then never
+    /// reaches the server without an attachment it may reference; the next run sends both.
+    var blobsHeldBack = Set<String>()
     /// The keys it uploaded, per note: the note loop counts them as its own uploads.
     var preuploaded: [String: Set<String>] = [:]
 
@@ -842,9 +846,47 @@ public final class SyncEngine {
             updateProgress { $0.notesListed += toList.count }
             return out
         }
+        // A check of a big vault compares a sample with the tree, and takes the rest from it when they agree.
+        var sampled: [String: Result<[RemoteEntry]?, Error>] = [:]
+        if mode == .verify, let tree = notesTree, toList.count > Self.verifySample {
+            let sample = sampleForCheck(toList, tree: tree)
+            let check = try checkSample(sample.sorted(), tree: tree)
+            sampled = check.results
+            if check.agreed, notesNotReadable.isEmpty {
+                if !options.dryRun { state.treeListing = .init(supported: true, verifiedAt: options.now) }
+                treeMode = .use
+                skipsUnchangedNotes = false
+            }
+        }
+        let fromTree = treeMode == .use
+        var rest = toList
+        for (name, result) in sampled.sorted(by: { $0.key < $1.key }) {
+            rest.removeAll { $0 == name }
+            switch result {
+            case .success(let entries):
+                out[name] = entries ?? []
+                listedOneByOne[name] = entries ?? []
+                if let entries { exists(name, entries) }
+            case .failure(let error):
+                report.errors.append(.init(path: "notes/\(name)", message: Self.describe(error)))
+                notesNotReadable.insert(name)
+            }
+        }
+        if fromTree, let tree = notesTree {
+            for name in rest {
+                let entries = tree[[name]] ?? []
+                out[name] = entries
+                exists(name, entries)
+                if entries.contains(where: { $0.name == Vault.attachmentsName && $0.isCollection }) {
+                    attListings[name] = .success(tree[[name, Vault.attachmentsName]] ?? [])
+                }
+            }
+            updateProgress { $0.notesListed += rest.count }
+            return out
+        }
         // One PROPFIND per folder, `concurrency` at a time.
-        let listed = try listConcurrently(toList.map { [Vault.notesName, $0] }, notes: true)
-        for (name, result) in zip(toList, listed) {
+        let listed = try listConcurrently(rest.map { [Vault.notesName, $0] }, notes: true)
+        for (name, result) in zip(rest, listed) {
             switch result {
             case .success(let entries):
                 out[name] = entries ?? []
@@ -1175,6 +1217,10 @@ public final class SyncEngine {
     func upload(_ id: String, _ n: RevisionName) throws {
         defer { updateProgress { $0.uploaded = report.uploaded.count } }
         let path = "notes/\(key(id, n))"
+        if revisionsHeldBack(id) {
+            throw SyncError.io("\(path) not uploaded in this run: an attachment of its note did not upload "
+                + "(format.md §8.1.4 step 4); the next run sends both")
+        }
         guard !options.dryRun else { locked { report.uploaded.append(path) }; return }
         let data = try BoundedRead.contents(of: root.appendingPathComponent("notes/\(id)/\(n.filename)"),
                                             maxBytes: options.maxFileBytes)
@@ -1182,6 +1228,14 @@ public final class SyncEngine {
         // A 412 means the server already has it: write-once, so it is the same file.
         try transport.write([Vault.notesName, id, n.filename], .data(data), condition: .create)
         locked { report.uploaded.append(path) }
+    }
+
+    /// True when this run must not upload `id`'s revisions (`blobsHeldBack`).
+    func revisionsHeldBack(_ id: String) -> Bool {
+        if locked({ blobsHeldBack.contains(id) }) { return true }
+        // The server's `att/` listing failed: no blob of this note is sent in this run.
+        if case .failure? = locked({ attListings[id] }), !(localBlobNames(id) ?? []).isEmpty { return true }
+        return false
     }
 
     /// Downloads a revision, checks it (format.md §9.1) and places it.
