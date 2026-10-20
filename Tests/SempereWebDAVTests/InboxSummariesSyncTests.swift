@@ -263,7 +263,9 @@ class InboxSummariesScenarioCase: SyncTestCase {
         let a2 = try publish("A")
         try run("A"); try run("B")
         XCTAssertEqual(summaries("B")["aaaaaaaa.sealed"], a2, "\(label): the newer copy replaces the older")
-        // Another writer replaces A's file on the remote: A puts its own back and keeps it.
+        // Another writer replaces A's file on the remote: A puts its own back and keeps it. (wsgidav keeps
+        // an ETag over a same-size rewrite within its second: the change is seen once the token moves.)
+        if t.deviations.contains(.etagKeepsTheSecond) { Thread.sleep(forTimeInterval: 1.1) }
         try t.inspector.write(["summaries", "aaaaaaaa.sealed"], .data(b1), condition: .unconditional)
         let r = try run("A")
         XCTAssertTrue(r.uploaded.contains("summaries/aaaaaaaa.sealed"), "\(label): \(StressWorld.brief(r))")
