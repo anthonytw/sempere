@@ -99,7 +99,9 @@ extension SyncEngine {
             } catch {
                 try rethrowRunLimit(error)
                 report.errors.append(.init(path: "notes/\(id)/\(Vault.attachmentsName)", message: Self.describe(error)))
-                // Unknown remote state: transfer nothing, delete nothing.
+                // Unknown remote state: transfer nothing, delete nothing; and no revision of this note goes
+                // up without the blobs it may reference.
+                if !(localBlobNames(id) ?? []).isEmpty { locked { _ = blobsHeldBack.insert(id) } }
                 set.recorded = []
                 set.local = [:]
                 return set
@@ -333,6 +335,14 @@ extension SyncEngine {
     /// losing that race is success. Safe on the pool's threads
     /// (`preuploadNewFiles`): what it shares with the run is under `mutex`.
     func uploadBlob(_ id: String, _ name: String) throws {
+        do { try uploadBlobOnce(id, name) } catch {
+            // Its note's revisions wait for the next run (`blobsHeldBack`).
+            locked { _ = blobsHeldBack.insert(id) }
+            throw error
+        }
+    }
+
+    private func uploadBlobOnce(_ id: String, _ name: String) throws {
         let path = blobPath(id, name)
         let file = attURL(id).appendingPathComponent(name)
         guard let size = LocalFS.regularFileSize(file) else { throw SyncError.io("\(path) is not a regular file") }

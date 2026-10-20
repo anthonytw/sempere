@@ -6,8 +6,8 @@ import UIKit
 /// Dark pages: the paper and its ruling (`PaperView`) and the text boxes, equations and
 /// recording cards (`ItemLayerView`) are shown through `PageColorInversion`, and the canvas
 /// takes the dark style, in which PencilKit shows its ink with dark-mode colors while the
-/// drawing keeps the light ones it stores (`PKInkingTool.convertColor`). The tool picker keeps
-/// the light style, so the colors it hands the canvas stay the stored ones. Pictures, PDF pages
+/// drawing keeps the light ones it stores (`PKInkingTool.convertColor`). The palette hands the
+/// canvas the stored (light) colors and shows them converted (`DrawingToolbox.displayed`). Pictures, PDF pages
 /// and videos are never converted. Display only: what is saved, thumbnails and exports do
 /// not change.
 extension PageCanvasHost {

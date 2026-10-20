@@ -17,6 +17,23 @@ import UIKit
 /// responder (`PageCanvasHost.focus`, called when a stroke begins).
 @MainActor
 enum CanvasFocus {
+    /// How deep SwiftUI is in updating a canvas's view (`PageCanvasView` / `PageStackView.updateUIView`).
+    /// A canvas never takes the first responder by itself in the middle of one: the hosting view's focus
+    /// bridge re-enters the view graph from `becomeFirstResponder`, and on a Mac (macOS 27) Annotate from
+    /// reading hung the app there, inside `_UIHostingView.canBecomeFirstResponder`, once the palette
+    /// appeared in the same update. The focus is taken right after the update instead (`whenUpdated`).
+    private(set) static var updateDepth = 0
+
+    /// Runs `body` as SwiftUI's update of a canvas.
+    static func updating<T>(_ body: () -> T) -> T {
+        updateDepth += 1
+        defer { updateDepth -= 1 }
+        return body()
+    }
+
+    /// Whether a canvas's SwiftUI update is under way: focus changes wait for its end.
+    static var isUpdating: Bool { updateDepth > 0 }
+
     /// The first responder of the key window, nil when there is none.
     static func firstResponder() -> UIResponder? {
         Probe.found = nil

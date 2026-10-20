@@ -1,20 +1,19 @@
 import Foundation
 import CoreGraphics
-import PencilKit
+import Sempere
 
 /// A tool the Tools menu selects.
 enum ToolChoice: String, CaseIterable, Sendable {
     case pen, marker, pencil, eraser, lasso
 
-    /// Whether `item` of the tool picker is this tool.
-    @MainActor
-    func matches(_ item: PKToolPickerItem) -> Bool {
+    /// The palette's tool (`DrawingToolbox`).
+    var drawingTool: DrawingTool {
         switch self {
-        case .pen: return (item as? PKToolPickerInkingItem)?.inkingTool.inkType == .pen
-        case .marker: return (item as? PKToolPickerInkingItem)?.inkingTool.inkType == .marker
-        case .pencil: return (item as? PKToolPickerInkingItem)?.inkingTool.inkType == .pencil
-        case .eraser: return item is PKToolPickerEraserItem
-        case .lasso: return item is PKToolPickerLassoItem
+        case .pen: return .pen
+        case .marker: return .marker
+        case .pencil: return .pencil
+        case .eraser: return .eraser
+        case .lasso: return .lasso
         }
     }
 
@@ -47,13 +46,16 @@ enum ToolChoice: String, CaseIterable, Sendable {
 /// canvas of the focused window through it.
 @MainActor
 protocol CanvasCommandTarget: AnyObject {
-    /// Selects the tool in the palette; false when the palette does not have it
-    /// (the compact palette has no pencil).
-    @discardableResult func select(tool: ToolChoice) -> Bool
+    /// Picks `tool` for every canvas (`DrawingToolbox`) and ends this canvas's selection, text tool or
+    /// math lasso (picking a tool is drawing); false for a read-only note.
+    @discardableResult func select(drawingTool tool: DrawingTool) -> Bool
     /// One zoom step in or out (`ZoomSteps`).
     func zoom(in zoomingIn: Bool)
     func zoomToFit()
     func zoomToActualSize()
+    /// Undoes or redoes the last change of the canvas with the focus (the iPhone palette's buttons).
+    func undo()
+    func redo()
     /// Shows or hides PencilKit's ruler (straight lines with a mouse).
     func toggleRuler()
     /// Runs an item command (`duplicateItem`, `bringItemToFront`, `deleteItem`) on the
@@ -68,6 +70,9 @@ protocol CanvasCommandTarget: AnyObject {
 }
 
 extension CanvasCommandTarget {
+    /// A tool of the Tools menu (`ToolChoice`).
+    @discardableResult func select(tool: ToolChoice) -> Bool { select(drawingTool: tool.drawingTool) }
+
     /// The one-page canvas shows only the current page.
     func visibleRect(ofPage id: UUID) -> CGRect? { visiblePageRect }
 }

@@ -278,6 +278,10 @@ public final class SyncEngine {
     var kc = KeyChangeRunState()
     /// Keys of the uploads the pre-upload pass tried (`preuploadNewFiles`), whatever the outcome.
     var preuploadTried = Set<String>()
+    /// Notes whose revisions this run holds back (format.md §8.1.4 step 4): one of their blobs failed to
+    /// upload, or the server's `att/` listing failed while the note has blobs here. A revision then never
+    /// reaches the server without an attachment it may reference; the next run sends both.
+    var blobsHeldBack = Set<String>()
     /// The keys it uploaded, per note: the note loop counts them as its own uploads.
     var preuploaded: [String: Set<String>] = [:]
 
@@ -1228,6 +1232,10 @@ public final class SyncEngine {
     func upload(_ id: String, _ n: RevisionName) throws {
         defer { updateProgress { $0.uploaded = report.uploaded.count } }
         let path = "notes/\(key(id, n))"
+        if revisionsHeldBack(id) {
+            throw SyncError.io("\(path) not uploaded in this run: an attachment of its note did not upload "
+                + "(format.md §8.1.4 step 4); the next run sends both")
+        }
         guard !options.dryRun else { locked { report.uploaded.append(path) }; return }
         let data = try BoundedRead.contents(of: root.appendingPathComponent("notes/\(id)/\(n.filename)"),
                                             maxBytes: options.maxFileBytes)
@@ -1235,6 +1243,14 @@ public final class SyncEngine {
         // A 412 means the server already has it: write-once, so it is the same file.
         try transport.write([Vault.notesName, id, n.filename], .data(data), condition: .create)
         locked { report.uploaded.append(path) }
+    }
+
+    /// True when this run must not upload `id`'s revisions (`blobsHeldBack`).
+    func revisionsHeldBack(_ id: String) -> Bool {
+        if locked({ blobsHeldBack.contains(id) }) { return true }
+        // The server's `att/` listing failed: no blob of this note is sent in this run.
+        if case .failure? = locked({ attListings[id] }), !(localBlobNames(id) ?? []).isEmpty { return true }
+        return false
     }
 
     /// Downloads a revision, checks it (format.md §9.1) and places it.

@@ -66,7 +66,8 @@ struct MouseSmoothingTests {
     @Test func theIPadCanvasKeepsPencilKitsGesture() throws {
         guard !Platform.isMac else { return }
         try Self.withLevel(.strong) {
-            let host = PageCanvasHost(frame: CGRect(x: 0, y: 0, width: 700, height: 900))
+            let host = PageCanvasHost(frame: CGRect(x: 0, y: 0, width: 700, height: 900), embedded: false,
+                                  toolbox: DrawingToolbox(defaults: DrawingToolboxTests.scratchDefaults()))
             #expect(host.select(tool: .pen))
             #expect(!host.pointerInkActive)
             #expect(host.canvas.drawingGestureRecognizer.isEnabled)
@@ -79,7 +80,8 @@ struct MouseSmoothingTests {
     /// to the app for ink tools only; Off and the ruler give it back.
     @Test func theMacCanvasTakesThePointerForInkTools() throws {
         guard Platform.isMac else { return }
-        let host = PageCanvasHost(frame: CGRect(x: 0, y: 0, width: 700, height: 900))
+        let host = PageCanvasHost(frame: CGRect(x: 0, y: 0, width: 700, height: 900), embedded: false,
+                                  toolbox: DrawingToolbox(defaults: DrawingToolboxTests.scratchDefaults()))
         Self.withLevel(.light) {
             #expect(host.select(tool: .pen))
             #expect(host.pointerInkActive)
@@ -94,7 +96,7 @@ struct MouseSmoothingTests {
             #expect(host.select(tool: .marker))
         }
         Self.withLevel(.off) {
-            host.toolDidChange()
+            host.applyTool()
             #expect(!host.pointerInkActive)
             #expect(host.canvas.drawingGestureRecognizer.isEnabled)
         }

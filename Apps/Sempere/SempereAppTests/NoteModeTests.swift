@@ -323,9 +323,9 @@ struct PencilAnnotatesTests {
 
     /// No device's palette has a Hand: the top bar's Hand is the only one (owner, 2026-10-19).
     @Test func noPaletteHasAHand() {
-        for compact in [false, true] {
-            let picker = ToolPalette.makePicker(compact: compact)
-            #expect(!picker.toolItems.contains { $0 is PKToolPickerCustomItem }, "compact: \(compact)")
+        let palettes = [DrawingToolState.fullTools] + DrawingTool.allCases.map { DrawingToolState.compactTools(selected: $0) }
+        for tools in palettes {
+            #expect(tools.allSatisfy { $0.isInk || $0 == .eraser || $0 == .lasso }, "\(tools)")
         }
     }
 }
