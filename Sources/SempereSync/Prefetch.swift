@@ -160,7 +160,8 @@ extension SyncEngine {
         for id in remoteNotes.keys.sorted() where !notesNotReadable.contains(id) {
             // A note whose local folder cannot be listed is left to the note loop, which reports it.
             guard let local = localRevisionNames(id) else { continue }
-            let recorded = recordedRevisions(id)
+            // Revisions thinned here before are judged by the note loop (`syncNote`), never fetched ahead.
+            let recorded = recordedRevisions(id).union(thinnedRevisions(id))
             let revisions = (remoteNotes[id] ?? []).compactMap { e -> (RevisionName, RemoteEntry)? in
                 guard !e.isCollection, let n = RevisionName(e.name), n.filename == e.name,
                       !local.contains(e.name), !recorded.contains(n) else { return nil }

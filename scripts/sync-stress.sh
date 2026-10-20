@@ -11,7 +11,8 @@
 #   SyncFaultProxyTests   the fast proxy scenarios (also in the CI webdav job)
 #   TwoDeviceStressTests  the in-memory random interleavings, with SEMPERE_STRESS_SEEDS seeds
 #   NDeviceStressTests    3 to 5 devices on one or two remotes (MemoryRemote, the WebDAV mock) through
-#                         transport and hostile-server faults, SEMPERE_SYNC_STRESS_SEEDS seeds (long mode)
+#                         transport and hostile-server faults, several bridges (SEMPERE_SYNC_STRESS_BRIDGES=one:
+#                         one remote each), SEMPERE_SYNC_STRESS_SEEDS seeds (long mode)
 #   WsgidavConformanceTests, EngineOverWsgidavTests   the transport suites over wsgidav
 # Environment: SEMPERE_STRESS_SEED (1), SEMPERE_STRESS_NOTES (640), SEMPERE_STRESS_SEEDS (60),
 # SEMPERE_SYNC_STRESS_SEEDS (60).
