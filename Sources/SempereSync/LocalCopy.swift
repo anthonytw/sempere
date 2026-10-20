@@ -151,6 +151,23 @@ public struct LocalCopy: Sendable {
         return try sync.run()
     }
 
+    /// A two-way run (docs/io.md "WebDAV sync"): takes what other devices wrote (checked before it is
+    /// placed, format.md §9.1), merges `settings.age`, uploads what the copy has, and follows the
+    /// deletions the rules explain. A partial copy (format.md §1.2) is completed by it.
+    ///
+    /// - Parameter vault: the copy, unlocked; locked, received files are checked for their structure
+    ///   only and nothing is deleted.
+    public func sync(remote: any SyncRemote, vault: Vault?, options: SyncOptions = SyncOptions()) throws -> SyncReport {
+        guard exists else { throw SyncError.io("no local copy of the vault to sync") }
+        var o = runOptions(options)
+        o.pushOnly = false
+        o.keepServerChanges = false
+        // The app syncs after every write and every few minutes: list only the notes that changed.
+        o.skipUnchangedNotes = true
+        let sync = SyncEngine(directory: folder, vault: vault, remote: remote, stateURL: stateURL, options: o)
+        return try sync.run()
+    }
+
     /// Files of the copy the server has not confirmed: revisions and blobs
     /// never recorded by a sync, plus `vault.json` / `rewrap-journal.json`
     /// when they differ from what was last synced. Zero after a clean push.

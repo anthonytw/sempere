@@ -143,6 +143,14 @@ public enum PartialCopyState {
         guard readRecord(root)?.listed == true, incompleteNotes(root).isEmpty, pendingBlobsByNote(root).isEmpty else {
             return false
         }
+        // Stand-ins whose blob is here (a fetch and a two-way run crossed) mean nothing: they go with the record.
+        let notes = root.appendingPathComponent(Vault.notesName)
+        for id in ((try? LocalFS.entries(notes)) ?? []) where Vault.isNoteDirectoryName(id) {
+            let att = notes.appendingPathComponent(id).appendingPathComponent(Vault.attachmentsName)
+            for name in (try? LocalFS.entries(att)) ?? [] where PartialCopy.realName(ofStandIn: name) != nil {
+                try? LocalFS.remove(att.appendingPathComponent(name))
+            }
+        }
         do { try FileManager.default.removeItem(at: root.appendingPathComponent(PartialCopy.folderName)) } catch {
             return false
         }
@@ -548,12 +556,15 @@ extension SyncEngine {
                 continue
             }
             if !placedBlobs.contains(name) {
-                if !FileManager.default.fileExists(atPath: standInURL.path) {
+                // A two-way run of the same copy may place the blob meanwhile: a stand-in is never left beside it.
+                let blobURL = att.appendingPathComponent(name)
+                if !FileManager.default.fileExists(atPath: standInURL.path), !FileManager.default.fileExists(atPath: blobURL.path) {
                     do { try LocalFS.write(Data(), to: standInURL, replacing: true) } catch {
                         complete = false
                         report.errors.append(.init(path: blobPath(w.id, name), message: Self.describe(error)))
                     }
                 }
+                if FileManager.default.fileExists(atPath: blobURL.path) { try? LocalFS.remove(standInURL) }
             }
         }
         for name in PartialCopyState.pendingBlobs(root, w.id) where remoteBlobs[name] == nil || placedBlobs.contains(name)

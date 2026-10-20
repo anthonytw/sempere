@@ -266,7 +266,13 @@ extension AppModel {
         if isVaultReadOnly { settingsSyncProblem = .readOnly; return }
         if recipientsAlert != nil || vault.recipientsStatus.problem != nil { settingsSyncProblem = .untrustedRecipients; return }
         do {
-            try await offMain { try CloudVault.coordinatedWrite(coordinate) { try vault.writeSharedSettings(write) } }
+            // Under the copy's write lock: a sync run merging `settings.age` never interleaves (`VaultFileLock`).
+            let lock = vaultWriteLock
+            try await offMain {
+                try Self.withWriteLock(lock) {
+                    try CloudVault.coordinatedWrite(coordinate) { try vault.writeSharedSettings(write) }
+                }
+            }
             if (try? ensureCurrent(gen)) != nil { settingsSyncProblem = nil }
         } catch VaultError.readOnly {
             settingsSyncProblem = .readOnly

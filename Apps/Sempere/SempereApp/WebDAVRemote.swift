@@ -50,6 +50,9 @@ protocol WebDAVRemote: Sendable {
     /// Fetches what the partial copy lacks within `scope`; never uploads or deletes.
     func fetch(_ endpoint: WebDAVEndpoint, copy: LocalCopy, vault: Vault?, scope: FetchScope) throws -> SyncReport
     func push(_ endpoint: WebDAVEndpoint, copy: LocalCopy, vault: Vault?, options: SyncOptions) throws -> SyncReport
+    /// A two-way run of the copy with the server (`LocalCopy.sync`): takes what other devices wrote, checked
+    /// before it is placed, and uploads what this device wrote.
+    func sync(_ endpoint: WebDAVEndpoint, copy: LocalCopy, vault: Vault?, options: SyncOptions) throws -> SyncReport
     /// With `partial`, the new copy is a partial copy filled by `fetch` afterwards.
     func redownload(_ endpoint: WebDAVEndpoint, copy: LocalCopy, identities: [any AgeIdentity],
                     partial: Bool, options: SyncOptions) throws -> (report: SyncReport, replaced: Bool)
@@ -112,6 +115,10 @@ struct LiveWebDAVRemote: WebDAVRemote {
 
     func push(_ endpoint: WebDAVEndpoint, copy: LocalCopy, vault: Vault?, options: SyncOptions) throws -> SyncReport {
         try copy.push(client: try client(endpoint), vault: vault, options: options)
+    }
+
+    func sync(_ endpoint: WebDAVEndpoint, copy: LocalCopy, vault: Vault?, options: SyncOptions) throws -> SyncReport {
+        try copy.sync(client: try client(endpoint), vault: vault, options: options)
     }
 
     func redownload(_ endpoint: WebDAVEndpoint, copy: LocalCopy, identities: [any AgeIdentity],

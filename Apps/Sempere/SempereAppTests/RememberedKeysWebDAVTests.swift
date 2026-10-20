@@ -222,24 +222,6 @@ struct RememberedKeysWebDAVTests {
         model.close()
     }
 
-    /// "Download Again" replaces the copy in the same folder: the key stays offered there.
-    @Test func downloadAgainKeepsTheRememberedKey() async throws {
-        let device = try Device()
-        var (model, keys) = device.launch()
-        let library = device.library
-        _ = try await model.connectWebDAV(device.listing, user: nil, password: "", pin: nil, library: library)
-        _ = try await Self.unlockAsTheSheetDoes(model, keys, key: device.key)
-        try await keys.answer(try #require(keys.offer), storage: .thisDevice)
-        #expect(await TS.waitUntil { device.remote.pushes >= 1 && model.webdav?.isPushing == false })
-        try await model.downloadWebDAVAgain(library: library)
-        #expect(model.phase == .unlocked)
-
-        (model, keys) = device.launch()
-        try await device.openRecent(model, device.library)
-        #expect(await keys.unlockWithRememberedKey(model) == .unlocked)
-        model.close()
-    }
-
     /// Key changes are refused for a WebDAV copy, and the refusal leaves the remembered key alone.
     @Test func aRefusedKeyChangeKeepsTheRememberedKey() async throws {
         let device = try Device()

@@ -10,6 +10,13 @@ public struct SyncOptions: Sendable {
     /// (§12.5) is only ever uploaded, never taken from the remote. Nil: every
     /// per-device file is treated as another device's.
     public var deviceID: DeviceID?
+    /// The vault's write lock on this device (`VaultFileLock`, docs/design/device-first-sync.md §4): held
+    /// while the run settles and replaces the local mutable files (`vault.json`, the rewrap journal,
+    /// `settings.age`), so a writer of them in the same process (the app's settings) or another (the
+    /// CLI) never interleaves with the read, merge and write. Nil: no lock.
+    public var localWriteLock: VaultFileLock?
+    /// How long a run waits for `localWriteLock` before it leaves the mutable files to the next run.
+    public var localWriteLockTimeout: TimeInterval = 30
     /// Names this device in `vault.conflict-<device>-<time>.json`.
     public var deviceLabel = "device"
     /// The clock for conflict file names and compaction checks.
@@ -289,7 +296,10 @@ public final class SyncEngine {
     ///   two sides are different vaults; the transport's error (`WebDAVError.http`,
     ///   `.transport`, …) when the remote's root cannot be listed. Anything per file lands in the report.
     public func run() throws -> SyncReport {
-        try SyncRunLock.shared.withLock(stateURL) { try runLocked() }
+        var report = try SyncRunLock.shared.withLock(stateURL) { try runLocked() }
+        // What it wrote in the vault folder, for the app's arrivals (`LocalChanges`) and `--json`.
+        report.changed = LocalChanges(report: report)
+        return report
     }
 
     private func runLocked() throws -> SyncReport {
@@ -338,24 +348,34 @@ public final class SyncEngine {
         remoteJournal = remoteRoot[Vault.journalName] != nil
         if !remoteJournal { state.inFlightJournal = nil }
         removeLeftoverRemoteTemps()
-        // A provider's conflict versions of the root files, merged or kept, then resolved (`ConflictVersions.swift`).
-        settleConflictVersions(remoteRoot)
+        // The local mutable files are judged and replaced under the vault's write lock (`localWriteLock`).
+        do {
+            try withLocalWriteLock {
+                // A provider's conflict versions of the root files, merged or kept, then resolved (`ConflictVersions.swift`).
+                settleConflictVersions(remoteRoot)
 
-        for name in [Vault.manifestName, Vault.journalName] {
-            let remote = remoteRoot[name].flatMap { $0.isCollection ? nil : $0 }
-            do {
-                // Listed but not downloaded yet: neither taken nor replaced this run.
-                if try !available([name], entry: remote) { continue }
-                options.pushOnly ? try pushMutable(name, remote: remote) : try syncMutable(name, remote: remote)
-            } catch {
-                report.errors.append(.init(path: name, message: Self.describe(error)))
+                for name in [Vault.manifestName, Vault.journalName] {
+                    let remote = remoteRoot[name].flatMap { $0.isCollection ? nil : $0 }
+                    do {
+                        // Listed but not downloaded yet: neither taken nor replaced this run.
+                        if try !available([name], entry: remote) { continue }
+                        options.pushOnly ? try pushMutable(name, remote: remote) : try syncMutable(name, remote: remote)
+                    } catch {
+                        report.errors.append(.init(path: name, message: Self.describe(error)))
+                    }
+                }
+
+                // Shared settings (format.md §13): merged per key when both sides changed.
+                let remoteSettings = remoteRoot[SharedSettings.fileName].flatMap { $0.isCollection ? nil : $0 }
+                do { if try available([SharedSettings.fileName], entry: remoteSettings) { try syncSharedSettings(remote: remoteSettings) } } catch {
+                    report.errors.append(.init(path: SharedSettings.fileName, message: Self.describe(error)))
+                }
             }
-        }
-
-        // Shared settings (format.md §13): merged per key when both sides changed.
-        let remoteSettings = remoteRoot[SharedSettings.fileName].flatMap { $0.isCollection ? nil : $0 }
-        do { if try available([SharedSettings.fileName], entry: remoteSettings) { try syncSharedSettings(remote: remoteSettings) } } catch {
-            report.errors.append(.init(path: SharedSettings.fileName, message: Self.describe(error)))
+        } catch {
+            // Another writer held the lock for the whole wait: the mutable files wait for the next run.
+            for name in [Vault.manifestName, Vault.journalName, SharedSettings.fileName] {
+                report.skipped.append(.init(path: name, message: "not synced this run: \(Self.describe(error))"))
+            }
         }
 
         // Notebook records (format.md §14): write-once, so the union of both sides.
@@ -462,6 +482,12 @@ public final class SyncEngine {
         }
         report.progress = locked { var p = progress; p.stage = .done; return p }
         return report
+    }
+
+    /// Runs `body` holding `options.localWriteLock` (none: just runs it).
+    func withLocalWriteLock(_ body: () throws -> Void) throws {
+        guard let lock = options.localWriteLock, !options.dryRun else { return try body() }
+        try lock.withLock(timeout: options.localWriteLockTimeout, body)
     }
 
     /// Every local write goes through this first: a push-only run never makes one.

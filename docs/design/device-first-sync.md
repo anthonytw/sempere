@@ -20,7 +20,13 @@ key-change review (§6) is a gate that must pass before P4 and P10 land. P5a, th
 Vault and "Open Vault…" copying into the store, Restore from Backup into the store with a confirmed
 replace), is implemented. Owner's decisions there: "Open Vault…" on a vault id already in the store opens
 that copy (P6 offers to sync it with the picked folder); a restore of a vault already on the device asks
-to replace it. Until P6 the store is `Application Support/Sempere/Vaults`, not yet the App Group container.
+to replace it. Until P6 the store is `Application Support/Sempere/Vaults`, not yet the App Group container. P5's sync part is implemented (docs/io.md "Sync targets in the app"): `SyncCoordinator` with a
+`SyncSession` per WebDAV location for every vault (two-way only for the open, unlocked vault; every other run
+upload-only, which also covers §4.1 until P8's locked staging), `SyncSchedule`, the status model (`SyncStatus`),
+arrivals (`LocalChanges`) into reconcile and RemoteMerge, settings merged locally, the copy's `VaultFileLock`
+around the engine's and the app's writes of mutable files, and two-device app tests. "Download Again" is gone
+(Sync Now takes what the server has). WebDAV copies stay where they were (`Application Support/Sempere/WebDAV/`);
+moving them into the store as a target of a store vault is P6.
 
 **Superseded in part (2026-10-20):** key changes now follow `docs/design/key-hierarchy.md` (a vault
 key per epoch, per-device keys, one recovery key, immediate changes with no late-file window). §6

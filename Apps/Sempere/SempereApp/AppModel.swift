@@ -434,9 +434,20 @@ final class AppModel {
     private let ownedScratch: URL
 
     deinit { try? FileManager.default.removeItem(at: ownedScratch) }
-    /// The push-only sync of the open vault when it is a WebDAV location's
-    /// local copy; nil for any other vault.
-    var webdav: WebDAVSession?
+    /// The sync session of the open vault when it is a WebDAV location's local copy (the
+    /// coordinator's, two-way while the vault is unlocked); nil for any other vault.
+    var webdav: SyncSession?
+    /// Every in-app vault's sync sessions (`SyncCoordinator`, made on first use).
+    @ObservationIgnored private var coordinatorStorage: SyncCoordinator?
+    var syncCoordinator: SyncCoordinator {
+        if let coordinatorStorage { return coordinatorStorage }
+        let store = webdavLocations
+        let made = SyncCoordinator(locations: { store.locations },
+                                   makeSession: { [weak self] location in self?.makeSyncSession(location) })
+        made.tick = webdavTick
+        coordinatorStorage = made
+        return made
+    }
     /// The WebDAV vault being downloaded and how far it is, for the overlay; nil when none is.
     var webdavDownload: WebDAVDownloadStatus?
     /// The Cancel of that download (`cancelWebDAVDownload`).
