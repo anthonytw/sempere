@@ -144,6 +144,33 @@ public struct DeviceSigningKeys: Sendable {
 
     private init(p256: P256.Signing.PrivateKey, mldsa65Seed: Data) { self.p256 = p256; self.mldsa65Seed = mldsa65Seed }
 
+    /// The P-256 group order n, big-endian.
+    static let p256Order: [UInt8] = [
+        0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xbc, 0xe6, 0xfa, 0xad, 0xa7, 0x17, 0x9e, 0x84, 0xf3, 0xb9, 0xca, 0xc2, 0xfc, 0x63, 0x25, 0x51,
+    ]
+
+    /// `r ‖ s` with `s` replaced by `n − s` when `s > n/2`, so signatures are canonical (low-S)
+    /// whichever library made them (review L1). Both forms verify; this only fixes the bytes.
+    static func lowS(_ rs: Data) -> Data {
+        guard rs.count == 64 else { return rs }
+        let s = [UInt8](rs.suffix(32))
+        // n/2, rounded down: shift n right by one bit.
+        var half = [UInt8](repeating: 0, count: 32)
+        var carry: UInt8 = 0
+        for i in 0..<32 { half[i] = (p256Order[i] >> 1) | carry; carry = (p256Order[i] & 1) << 7 }
+        guard s.lexicographicallyPrecedes(half) == false, s != half else { return rs }
+        var out = [UInt8](repeating: 0, count: 32)
+        var borrow = 0
+        for i in stride(from: 31, through: 0, by: -1) {
+            var d = Int(p256Order[i]) - Int(s[i]) - borrow
+            borrow = d < 0 ? 1 : 0
+            if d < 0 { d += 256 }
+            out[i] = UInt8(d)
+        }
+        return Data(rs.prefix(32)) + Data(out)
+    }
+
     /// The P-256 scalar (32 bytes), for storing a CLI device's keys.
     public var p256Scalar: Data { p256.rawRepresentation }
 
@@ -162,7 +189,7 @@ public struct DeviceSigningKeys: Sendable {
     ///
     /// - Throws: `AgeError.postQuantumUnavailable` where the platform has no ML-DSA.
     public func sign(_ message: Data) throws -> AuthorSignature {
-        let p = try p256.signature(for: message).rawRepresentation
+        let p = Self.lowS(try p256.signature(for: message).rawRepresentation)
         let m = try MLDSA65Bridge.sign(message, seed: mldsa65Seed)
         guard let s = AuthorSignature(p256: p, mldsa65: m) else { throw EpochKeyError.invalidKey }
         return s
@@ -215,13 +242,16 @@ public enum AuthorMessage {
     }
 
     /// `epochSig`: `epoch` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(parent) ‖ lp(reason)
-    /// ‖ lp(n) ‖ n fingerprints ‖ lp(m) ‖ m fingerprints. `root`, `epochId`, `parent` and each
-    /// fingerprint as 64 lowercase hex digits; `parent` empty at epoch 1; both lists sorted.
+    /// ‖ lp(recovery) ‖ lp(rejected) ‖ lp(n) ‖ n fingerprints ‖ lp(m) ‖ m fingerprints. `root`,
+    /// `epochId`, `parent`, `recovery`, `rejected` and each fingerprint as 64 lowercase hex digits;
+    /// `parent` empty at epoch 1, `rejected` empty except in a `resolve` epoch; both lists sorted.
+    /// (`recovery` and `rejected` added after the KH1 code review, M1 and M2.)
     public static func epoch(vaultId: UUID, root: Data, epoch: Int, epochId: Data, parent: Data?, reason: String,
-                             list: [Data], parentList: [Data]) -> Data {
+                             recovery: Data, rejected: Data?, list: [Data], parentList: [Data]) -> Data {
         var m = LPMessage("sempere/1 author epoch")
         m.field(vaultId.uuidString.lowercased()); m.field(Hex.encode(root)); m.field(epoch)
         m.field(Hex.encode(epochId)); m.field(parent.map { Hex.encode($0) } ?? ""); m.field(reason)
+        m.field(Hex.encode(recovery)); m.field(rejected.map { Hex.encode($0) } ?? "")
         for l in [list, parentList] {
             let sorted = l.map { Hex.encode($0) }.sorted { Array($0.utf8).lexicographicallyPrecedes(Array($1.utf8)) }
             m.field(sorted.count)

@@ -26,8 +26,12 @@ public enum ChainError: Error, Hashable, Sendable {
     case introducesDevice(epoch: Int)
     /// More than `EpochChain.maxAdditions` additions.
     case tooManyAdditions(epoch: Int)
-    /// The reason is not one of the six.
+    /// The reason is not one of the six, or `rejected` is present outside a `resolve` epoch (or
+    /// absent in one).
     case badReason(epoch: Int)
+    /// The recovery fingerprint is not in the first list, or a `recovery`/`reencrypt` epoch does
+    /// not replace it, or another epoch changes it (review M1).
+    case badRecovery(epoch: Int)
 }
 
 /// The author of an epoch, as its chain entry carries it.
@@ -108,25 +112,30 @@ public struct ChainEntry: Hashable, Sendable {
     public var epochSig: AuthorSignature
     /// The additions made during this epoch that the next epoch's author saw.
     public var additions: [ChainAddition]
+    /// The recovery key's fingerprint in this epoch's list (review M1).
+    public var recovery: Data
+    /// A `resolve` epoch's rejected author (review M2); nil otherwise.
+    public var rejected: Data?
 
     public init(epoch: Int, epochId: Data, parent: Data?, linkPublicKeys: LinkPublicKeys, link: EpochLink?,
                 reason: String, list: [Data], parentList: [Data], author: ChainAuthor, epochSig: AuthorSignature,
-                additions: [ChainAddition] = []) {
+                additions: [ChainAddition] = [], recovery: Data, rejected: Data? = nil) {
         self.epoch = epoch; self.epochId = epochId; self.parent = parent; self.linkPublicKeys = linkPublicKeys
         self.link = link; self.reason = reason; self.list = list; self.parentList = parentList; self.author = author
-        self.epochSig = epochSig; self.additions = additions
+        self.epochSig = epochSig; self.additions = additions; self.recovery = recovery; self.rejected = rejected
     }
 
     /// The message its `epochSig` signs.
     public func epochMessage(vaultId: UUID, root: Data) -> Data {
         AuthorMessage.epoch(vaultId: vaultId, root: root, epoch: epoch, epochId: epochId, parent: parent,
-                            reason: reason, list: list, parentList: parentList)
+                            reason: reason, recovery: recovery, rejected: rejected, list: list, parentList: parentList)
     }
 }
 
 extension ChainEntry: Codable {
     enum CodingKeys: String, CodingKey {
         case epoch, epochId, parent, linkPublicKeys, link, reason, list, parentList, author, epochSig, additions
+        case recovery, rejected
     }
     enum LinkKeys: String, CodingKey { case ed25519, mldsa65 }
 
@@ -169,6 +178,8 @@ extension ChainEntry: Codable {
         author = try c.decode(ChainAuthor.self, forKey: .author)
         epochSig = try c.decode(AuthorSignature.self, forKey: .epochSig)
         additions = try c.decodeIfPresent([ChainAddition].self, forKey: .additions) ?? []
+        recovery = try Self.hex32(c, .recovery)
+        rejected = try c.contains(.rejected) ? Self.hex32(c, .rejected) : nil
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -186,6 +197,8 @@ extension ChainEntry: Codable {
         try c.encode(author, forKey: .author)
         try c.encode(epochSig, forKey: .epochSig)
         if !additions.isEmpty { try c.encode(additions, forKey: .additions) }
+        try c.encode(Hex.encode(recovery), forKey: .recovery)
+        if let rejected { try c.encode(Hex.encode(rejected), forKey: .rejected) }
     }
 }
 
@@ -290,6 +303,8 @@ public enum EpochChain {
         public var approvers: [Data: Data?]
         /// Epoch 1's first list.
         public var founders: Set<Data>
+        /// Every recovery fingerprint the chain names (never re-applied, never a device).
+        public var recoveryKeys: Set<Data> { Set(entries.map(\.recovery)) }
 
         /// The `addedBy` chain of `fingerprint` (design §4.1): its approver, that approver's, and
         /// so on, until a founder or a kit join. Empty for a founder or a kit join.
@@ -325,6 +340,7 @@ public enum EpochChain {
             guard let authorKeys = e.author.sign else { throw ChainError.badEpochSig(epoch: e.epoch) }
             let authorFP = e.author.fingerprint
             let first = Set(e.list)
+            guard (e.rejected != nil) == (reason == .resolve) else { throw ChainError.badReason(epoch: e.epoch) }
             if i == 0 {
                 guard e.parent == nil, e.link == nil, e.parentList.isEmpty, reason == .create else {
                     throw ChainError.badSequence(epoch: 1)
@@ -342,12 +358,21 @@ public enum EpochChain {
                 let parentList = lists[i - 1].list
                 guard parentList.contains(authorFP) else { throw ChainError.authorNotListed(epoch: e.epoch) }
                 let new = first.subtracting(parentList)
-                if !new.isEmpty {
-                    guard reason.mayAddRecovery, new.count == 1, let n = new.first, directory.keys[n] == nil else {
-                        throw ChainError.introducesDevice(epoch: e.epoch)
+                if reason.mayAddRecovery {
+                    // A recovery replacement or re-encryption replaces the recovery key: the new one is
+                    // the only new fingerprint, and the old one is gone (review M1).
+                    guard new.isSubset(of: [e.recovery]) else { throw ChainError.introducesDevice(epoch: e.epoch) }
+                    guard new == [e.recovery], e.recovery != prev.recovery, !first.contains(prev.recovery) else {
+                        throw ChainError.badRecovery(epoch: e.epoch)
                     }
+                } else {
+                    guard new.isEmpty else { throw ChainError.introducesDevice(epoch: e.epoch) }
+                    guard e.recovery == prev.recovery else { throw ChainError.badRecovery(epoch: e.epoch) }
                 }
                 removals.append(Set(e.parentList).intersection(parentList).subtracting(first))
+            }
+            guard first.contains(e.recovery), directory.keys[e.recovery] == nil else {
+                throw ChainError.badRecovery(epoch: e.epoch)
             }
             guard e.epochSig.verifies(e.epochMessage(vaultId: vaultId, root: root), keys: authorKeys) else {
                 throw ChainError.badEpochSig(epoch: e.epoch)

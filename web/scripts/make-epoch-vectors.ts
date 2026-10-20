@@ -160,11 +160,13 @@ const entryClaim = { key: deviceRecipient, signP256: signerP256, signMLDSA65: si
 const entryMessage = Buffer.concat([enc.encode("sempere/1 author entry"), lp(vaultId), lp(String(entryClaim.addedEpoch)),
   lp(entryClaim.key), lp(entryClaim.signP256), lp(entryClaim.signMLDSA65), lp(entryClaim.kind), lp(entryClaim.added),
   lp(entryClaim.addedBy)]);
-const epochFields = { root: hex(root), epoch: 2, epochId: e2.epochId, parent: e1.epochId, reason: "remove",
-  list: [signerFingerprint, recoveryFingerprint], parentList: [signerFingerprint, recoveryFingerprint, deviceFingerprint] };
+// A resolve epoch, so that `recovery` and `rejected` (review M1, M2) are both in the signed bytes.
+const epochFields = { root: hex(root), epoch: 2, epochId: e2.epochId, parent: e1.epochId, reason: "resolve",
+  recovery: recoveryFingerprint, rejected: deviceFingerprint,
+  list: [signerFingerprint, recoveryFingerprint], parentList: [signerFingerprint, recoveryFingerprint] };
 const epochMessage = Buffer.concat([enc.encode("sempere/1 author epoch"), lp(vaultId), lp(epochFields.root),
   lp(String(epochFields.epoch)), lp(epochFields.epochId), lp(epochFields.parent), lp(epochFields.reason),
-  lpList(epochFields.list), lpList(epochFields.parentList)]);
+  lp(epochFields.recovery), lp(epochFields.rejected), lpList(epochFields.list), lpList(epochFields.parentList)]);
 const features = ["zeta", "ñ/emoji ☕️", "zeta"];
 const distinct = [...new Set(features)].sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
 const manifestFields = { root: hex(root), epoch: 2, epochId: e2.epochId, epochRecordHash, format: "sempere/1", features };

@@ -59,6 +59,10 @@ extension JoinRequest: Codable {
         sign = try c.decode(DeviceSigningPublicKeys.self, forKey: .sign)
         name = try c.decode(String.self, forKey: .name)
         kind = try c.decode(String.self, forKey: .kind)
+        // A lowercase word (design §3: ipad, iphone, mac, cli, …), at most 32 letters (review L5).
+        guard (1...32).contains(kind.utf8.count), kind.utf8.allSatisfy({ (0x61...0x7a).contains($0) }) else {
+            throw EpochFileError.malformed("kind is not a lowercase word")
+        }
         created = try c.decode(String.self, forKey: .created)
     }
 

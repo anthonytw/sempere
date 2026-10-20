@@ -43,7 +43,8 @@ final class EpochKeysTests: VaultTestCase {
             var key, signP256, signMLDSA65, kind, added: String; var addedEpoch: Int; var addedBy: String
         }
         struct EpochFields: Codable {
-            var root: String; var epoch: Int; var epochId, parent, reason: String; var list, parentList: [String]
+            var root: String; var epoch: Int; var epochId, parent, reason, recovery, rejected: String
+            var list, parentList: [String]
         }
         struct ManifestFields: Codable {
             var root: String; var epoch: Int; var epochId, epochRecordHash, format: String; var features: [String]

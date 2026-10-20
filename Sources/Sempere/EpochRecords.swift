@@ -56,14 +56,11 @@ public struct EpochRecord: Hashable, Sendable {
     public var reason: String
     /// Informational: removals are computed (design §4.1).
     public var removed: [Data]
-    /// A `resolve` epoch's rejected author (design §5.6).
-    public var rejected: Data?
 
     public init(vaultId: UUID, root: Data, epoch: Int, epochId: Data, parent: EpochRecordParent?, chain: [ChainEntry],
-                created: String, by: String, reason: String, removed: [Data] = [], rejected: Data? = nil) {
+                created: String, by: String, reason: String, removed: [Data] = []) {
         self.vaultId = vaultId; self.root = root; self.epoch = epoch; self.epochId = epochId; self.parent = parent
         self.chain = chain; self.created = created; self.by = by; self.reason = reason; self.removed = removed
-        self.rejected = rejected
     }
 
     /// `<e>-<first 16 hex digits of epochId>.epoch.age` (in `epochs/`).
@@ -132,13 +129,17 @@ public struct EpochRecord: Hashable, Sendable {
         if r.reason == EpochReason.reencrypt.rawValue, r.parent?.key != nil {
             throw EpochFileError.malformed("a re-encryption carries no parent key")
         }
+        // The record's own fields agree with its chain entry, which is what readers use (review M6).
+        guard r.reason == last.reason, r.by == String(Hex.encode(last.author.fingerprint).prefix(8)) else {
+            throw EpochFileError.malformed("reason or by differ from the chain's last entry")
+        }
         return r
     }
 }
 
 extension EpochRecord: Codable {
     enum CodingKeys: String, CodingKey {
-        case format, vaultId, root, epoch, epochId, parent, chain, created, by, reason, removed, rejected
+        case format, vaultId, root, epoch, epochId, parent, chain, created, by, reason, removed
     }
     enum ParentKeys: String, CodingKey { case epoch, epochId, key, identity, sealed }
 
@@ -183,7 +184,6 @@ extension EpochRecord: Codable {
         by = try c.decode(String.self, forKey: .by)
         reason = try c.decode(String.self, forKey: .reason)
         removed = try c.contains(.removed) ? ChainEntry.fingerprints(c, .removed) : []
-        rejected = try c.contains(.rejected) ? ChainEntry.hex32(c, .rejected) : nil
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -208,7 +208,6 @@ extension EpochRecord: Codable {
         try c.encode(by, forKey: .by)
         try c.encode(reason, forKey: .reason)
         try c.encode(removed.map { Hex.encode($0) }, forKey: .removed)
-        if let rejected { try c.encode(Hex.encode(rejected), forKey: .rejected) }
     }
 }
 

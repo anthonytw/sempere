@@ -260,7 +260,10 @@ package enum EpochKeyWrap {
             throw EpochKeyError.wrapOtherEpoch
         }
         let key = try VaultEpochKey(bytes: raw)
-        guard try key.vaultIdentity() == identity else { throw EpochKeyError.wrapIdentityMismatch }
+        // Compared in constant time (review L6).
+        guard RecipientsAuth.constantTimeEqual(Data(try key.vaultIdentity().string.utf8), Data(identity.string.utf8)) else {
+            throw EpochKeyError.wrapIdentityMismatch
+        }
         return key
     }
 

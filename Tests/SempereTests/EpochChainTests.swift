@@ -31,7 +31,7 @@ struct ChainTestBuilder {
     var entries: [ChainEntry]
     let root: Data
 
-    /// Epoch 1, created by `author`, listing `founders` (fingerprints).
+    /// Epoch 1, created by `author`, listing `founders` (fingerprints); the recovery key is the last.
     init(vaultId: UUID = UUID(), author: ChainTestDevice, founders: [Data]) throws {
         self.vaultId = vaultId
         let k1 = VaultEpochKey.random()
@@ -40,7 +40,8 @@ struct ChainTestBuilder {
         root = VaultRoot.fingerprint(vaultId: vaultId, epochOne: link)
         var e = ChainEntry(epoch: 1, epochId: k1.epochId, parent: nil, linkPublicKeys: link, link: nil, reason: "create",
                            list: founders, parentList: [], author: author.author,
-                           epochSig: try XCTUnwrap(AuthorSignature(p256: Data(count: 64), mldsa65: Data(count: 3309))))
+                           epochSig: try XCTUnwrap(AuthorSignature(p256: Data(count: 64), mldsa65: Data(count: 3309))),
+                           recovery: try XCTUnwrap(founders.last))
         e.epochSig = try author.signing.sign(e.epochMessage(vaultId: vaultId, root: root))
         entries = [e]
     }
@@ -59,14 +60,16 @@ struct ChainTestBuilder {
 
     /// The next epoch by `author`, with first list `list` and the parent list as the author saw it.
     mutating func next(author: ChainTestDevice, reason: String = "remove", list: [Data], parentList: [Data],
-                       signer: ChainTestDevice? = nil, linkFrom: VaultEpochKey? = nil) throws {
+                       signer: ChainTestDevice? = nil, linkFrom: VaultEpochKey? = nil, recovery: Data? = nil,
+                       rejected: Data? = nil) throws {
         let k = VaultEpochKey.random()
         let prev = entries[entries.count - 1]
         let epoch = entries.count + 1
         var e = ChainEntry(epoch: epoch, epochId: k.epochId, parent: prev.epochId, linkPublicKeys: try LinkPublicKeys(epochKey: k),
                            link: try EpochLinks.link(from: linkFrom ?? keys[keys.count - 1], to: k, epoch: epoch, vaultId: vaultId),
                            reason: reason, list: list, parentList: parentList, author: author.author,
-                           epochSig: try XCTUnwrap(AuthorSignature(p256: Data(count: 64), mldsa65: Data(count: 3309))))
+                           epochSig: try XCTUnwrap(AuthorSignature(p256: Data(count: 64), mldsa65: Data(count: 3309))),
+                           recovery: recovery ?? prev.recovery, rejected: rejected)
         e.epochSig = try (signer ?? author).signing.sign(e.epochMessage(vaultId: vaultId, root: root))
         keys.append(k)
         entries.append(e)
@@ -110,12 +113,14 @@ final class EpochChainTests: VaultTestCase {
         let f = sigs.epoch.fields
         let epochMessage = AuthorMessage.epoch(vaultId: vaultId, root: Self.unhex(f.root), epoch: f.epoch,
                                                epochId: Self.unhex(f.epochId), parent: Self.unhex(f.parent),
-                                               reason: f.reason, list: f.list.map(Self.unhex),
-                                               parentList: f.parentList.map(Self.unhex))
+                                               reason: f.reason, recovery: Self.unhex(f.recovery),
+                                               rejected: f.rejected.isEmpty ? nil : Self.unhex(f.rejected),
+                                               list: f.list.map(Self.unhex), parentList: f.parentList.map(Self.unhex))
         XCTAssertEqual(Hex.encode(epochMessage), sigs.epoch.message)
         // Order of the lists does not matter: they are signed sorted.
         XCTAssertEqual(AuthorMessage.epoch(vaultId: vaultId, root: Self.unhex(f.root), epoch: f.epoch,
                                            epochId: Self.unhex(f.epochId), parent: Self.unhex(f.parent), reason: f.reason,
+                                           recovery: Self.unhex(f.recovery), rejected: f.rejected.isEmpty ? nil : Self.unhex(f.rejected),
                                            list: f.list.reversed().map(Self.unhex),
                                            parentList: f.parentList.reversed().map(Self.unhex)), epochMessage)
 
@@ -155,6 +160,32 @@ final class EpochChainTests: VaultTestCase {
                 put(&$0.signatures!.epoch.signatures, mine[1])
                 put(&$0.signatures!.manifest.signatures, mine[2])
             }
+        }
+    }
+
+    /// Review L1: P-256 signatures are written low-S; a high-S form still verifies.
+    func testSignaturesAreLowS() throws {
+        let keys = DeviceSigningKeys.generate()
+        let pub = try keys.publicKeys()
+        let n = DeviceSigningKeys.p256Order
+        var half = [UInt8](repeating: 0, count: 32), carry: UInt8 = 0
+        for i in 0..<32 { half[i] = (n[i] >> 1) | carry; carry = (n[i] & 1) << 7 }
+        for i in 0..<16 {
+            let message = Data("message \(i)".utf8)
+            let sig = try keys.sign(message)
+            let s = [UInt8](sig.p256.suffix(32))
+            XCTAssertFalse(half.lexicographicallyPrecedes(s), "s ≤ n/2")
+            // n − s, the other valid signature.
+            var high = [UInt8](repeating: 0, count: 32), borrow = 0
+            for j in stride(from: 31, through: 0, by: -1) {
+                var d = Int(n[j]) - Int(s[j]) - borrow
+                borrow = d < 0 ? 1 : 0
+                if d < 0 { d += 256 }
+                high[j] = UInt8(d)
+            }
+            let highSig = try XCTUnwrap(AuthorSignature(p256: Data(sig.p256.prefix(32)) + Data(high), mldsa65: sig.mldsa65))
+            XCTAssertTrue(highSig.verifies(message, keys: pub), "high-S accepted")
+            XCTAssertEqual(DeviceSigningKeys.lowS(highSig.p256), sig.p256, "normalized back")
         }
     }
 
@@ -202,7 +233,8 @@ final class EpochChainTests: VaultTestCase {
         XCTAssertEqual(r.fileName, "\(d.id).join.json")
         XCTAssertThrowsError(try JoinRequest.parse(Data(repeating: 0x20, count: JoinRequest.maxBytes + 1)))
         var json = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        for (k, bad) in [("format", "sempere-join/2"), ("key", "age1abc"), ("vaultId", "nope")] as [(String, Any)] {
+        for (k, bad) in [("format", "sempere-join/2"), ("key", "age1abc"), ("vaultId", "nope"), ("kind", "iPad"), ("kind", ""),
+                         ("kind", "i pad"), ("kind", String(repeating: "a", count: 33))] as [(String, Any)] {
             var j = json; j[k] = bad
             XCTAssertThrowsError(try JoinRequest.parse(try JSONSerialization.data(withJSONObject: j)), k)
         }
@@ -276,18 +308,51 @@ final class EpochChainTests: VaultTestCase {
         var introRecovery = good
         try introRecovery.add(z, by: nil, claimedBy: bDev.id)   // rejected (self-signed, claims B), but Z's keys are known
         try introRecovery.next(author: a, reason: "recovery", list: [a.fingerprint, bDev.fingerprint, z.fingerprint],
-                               parentList: [a.fingerprint, bDev.fingerprint, r])
-        XCTAssertThrowsError(try introRecovery.verify()) { XCTAssertEqual($0 as? ChainError, .introducesDevice(epoch: 2)) }
+                               parentList: [a.fingerprint, bDev.fingerprint, r], recovery: z.fingerprint)
+        XCTAssertThrowsError(try introRecovery.verify()) { XCTAssertEqual($0 as? ChainError, .badRecovery(epoch: 2)) }
         // A recovery replacement may bring one new recovery key; a removal may not.
         let r2 = KeyFingerprint.recovery(key: "age1pq1test-recovery-2")
         var replace = good
         try replace.next(author: a, reason: "recovery", list: [a.fingerprint, bDev.fingerprint, r2],
-                         parentList: [a.fingerprint, bDev.fingerprint, r])
+                         parentList: [a.fingerprint, bDev.fingerprint, r], recovery: r2)
         XCTAssertEqual(try replace.verify().removals[1], [r])
         var replaceAsRemoval = good
         try replaceAsRemoval.next(author: a, list: [a.fingerprint, bDev.fingerprint, r2],
                                   parentList: [a.fingerprint, bDev.fingerprint, r])
         XCTAssertThrowsError(try replaceAsRemoval.verify()) { XCTAssertEqual($0 as? ChainError, .introducesDevice(epoch: 2)) }
+        // Review M1: the chain names the recovery key; a replacement drops the old one; nothing else changes it.
+        XCTAssertEqual(try replace.verify().recoveryKeys, [r, r2])
+        var keepsOld = good
+        try keepsOld.next(author: a, reason: "recovery", list: [a.fingerprint, bDev.fingerprint, r, r2],
+                          parentList: [a.fingerprint, bDev.fingerprint, r], recovery: r2)
+        XCTAssertThrowsError(try keepsOld.verify()) { XCTAssertEqual($0 as? ChainError, .badRecovery(epoch: 2)) }
+        var sameKit = good
+        try sameKit.next(author: a, reason: "recovery", list: [a.fingerprint, bDev.fingerprint, r],
+                         parentList: [a.fingerprint, bDev.fingerprint, r])
+        XCTAssertThrowsError(try sameKit.verify()) { XCTAssertEqual($0 as? ChainError, .badRecovery(epoch: 2)) }
+        var renamedKit = good
+        try renamedKit.next(author: a, list: [a.fingerprint, r], parentList: [a.fingerprint, bDev.fingerprint, r],
+                            recovery: bDev.fingerprint)
+        XCTAssertThrowsError(try renamedKit.verify()) { XCTAssertEqual($0 as? ChainError, .badRecovery(epoch: 2)) }
+        var deviceAsKit = good
+        try deviceAsKit.next(author: a, list: [a.fingerprint, bDev.fingerprint, r], parentList: [a.fingerprint, bDev.fingerprint, r],
+                             recovery: bDev.fingerprint)
+        XCTAssertThrowsError(try deviceAsKit.verify()) { XCTAssertEqual($0 as? ChainError, .badRecovery(epoch: 2)) }
+        // Review M2: `rejected` only, and always, in a resolve epoch; it is signed.
+        var resolveWithout = good
+        try resolveWithout.next(author: a, reason: "resolve", list: [a.fingerprint, bDev.fingerprint, r],
+                                parentList: [a.fingerprint, bDev.fingerprint, r])
+        XCTAssertThrowsError(try resolveWithout.verify()) { XCTAssertEqual($0 as? ChainError, .badReason(epoch: 2)) }
+        var removeWith = good
+        try removeWith.next(author: a, list: [a.fingerprint, r], parentList: [a.fingerprint, bDev.fingerprint, r],
+                            rejected: bDev.fingerprint)
+        XCTAssertThrowsError(try removeWith.verify()) { XCTAssertEqual($0 as? ChainError, .badReason(epoch: 2)) }
+        var resolve = good
+        try resolve.next(author: a, reason: "resolve", list: [a.fingerprint, bDev.fingerprint, r],
+                         parentList: [a.fingerprint, bDev.fingerprint, r], rejected: y.fingerprint)
+        XCTAssertNoThrow(try resolve.verify())
+        resolve.entries[1].rejected = z.fingerprint
+        XCTAssertThrowsError(try resolve.verify()) { XCTAssertEqual($0 as? ChainError, .badEpochSig(epoch: 2)) }
         // An addedBy that is not the signer: the addition is rejected, and an epoch carrying it introduces a device.
         var wrongApprover = good
         try wrongApprover.add(z, by: bDev, claimedBy: a.id)
@@ -366,6 +431,7 @@ final class EpochChainTests: VaultTestCase {
             case .introducesDevice(let n): return "introducesDevice:\(n)"
             case .tooManyAdditions(let n): return "tooManyAdditions:\(n)"
             case .badReason(let n): return "badReason:\(n)"
+            case .badRecovery(let n): return "badRecovery:\(n)"
             }
         } catch {
             return "\(error)"
@@ -435,35 +501,47 @@ final class EpochChainTests: VaultTestCase {
 
     // MARK: - vault.json
 
-    /// A signed epoch-1 `vault.json`: founder A (self-signed, names itself), N approved by A, K a kit
-    /// join, and the recovery entry; written by `writer`.
+    /// A signed `vault.json` for `b`'s last epoch: founder A, N approved by A at epoch 1, K a kit join
+    /// at epoch 1, `extra` entries, and the recovery entry; written by `writer`.
     func manifest(_ b: ChainTestBuilder, a: ChainTestDevice, n: ChainTestDevice, k: ChainTestDevice,
-                  recovery: MLKEM768X25519Identity, writer: ChainTestDevice? = nil) throws -> EpochManifest {
-        let key = b.keys[0]
-        func entry(_ d: ChainTestDevice, by signer: ChainTestDevice, addedBy: String) throws -> EpochKeyEntry {
-            let claim = EntryClaim(key: d.key, sign: d.sign, kind: "ipad", added: "2026-10-20T16:20:00Z", addedEpoch: 1,
-                                   addedBy: addedBy)
-            return EpochKeyEntry(role: .device, key: d.key, id: d.id, sign: d.sign, kind: claim.kind, added: claim.added,
-                                 addedEpoch: 1, addedBy: addedBy,
-                                 addSig: try signer.signing.sign(AuthorMessage.entry(vaultId: b.vaultId, claim)),
-                                 name: "\(d.name)'s iPad / ☕️", wrap: "wrap-\(d.name)")
-        }
-        let keys = [try entry(a, by: a, addedBy: a.id), try entry(n, by: a, addedBy: a.id),
-                    try entry(k, by: k, addedBy: EntryClaim.recovery),
-                    EpochKeyEntry(role: .recovery, key: recovery.recipient.string, added: "2026-10-20T16:20:00Z",
-                                  name: "Recovery kit",
-                                  wrap: try EpochKeyWrap.seal(key, vaultId: b.vaultId, epoch: 1, to: .mlkem768x25519(recovery.recipient)))]
+                  recovery: MLKEM768X25519Identity, writer: ChainTestDevice? = nil,
+                  extra: [EpochKeyEntry] = [], drop: Set<String> = []) throws -> EpochManifest {
+        let e = b.entries[b.entries.count - 1]
+        let key = b.keys[b.keys.count - 1]
+        let entries = [try Self.entry(b.vaultId, a, by: a, addedBy: a.id, epoch: 1), try Self.entry(b.vaultId, n, by: a, addedBy: a.id, epoch: 1),
+                       try Self.entry(b.vaultId, k, by: k, addedBy: EntryClaim.recovery, epoch: 1)]
+            .filter { !drop.contains($0.key) } + extra
+            + [EpochKeyEntry(role: .recovery, key: recovery.recipient.string, added: "2026-10-20T16:20:00Z", name: "Recovery kit",
+                             wrap: try EpochKeyWrap.seal(key, vaultId: b.vaultId, epoch: e.epoch,
+                                                         to: .mlkem768x25519(recovery.recipient)))]
         let zero = try XCTUnwrap(AuthorSignature(p256: Data(count: 64), mldsa65: Data(count: 3309)))
-        var m = EpochManifest(format: "sempere/1", vaultId: b.vaultId, created: "2026-10-20T16:20:00Z", root: b.root, epoch: 1,
-                              epochId: key.epochId, parent: nil, epochRecord: "epochs/" + EpochRecord.fileName(epoch: 1, epochId: key.epochId),
-                              epochRecordHash: Data(repeating: 7, count: 32), keys: keys, listTag: "", epochLink: nil,
-                              epochAuthor: a.id, epochSig: b.entries[0].epochSig, markersTag: "", author: (writer ?? a).id,
-                              authorSig: zero, features: [], label: nil, reencryptPending: nil)
-        m.listTag = EpochListTag.tag(key: key, vaultId: b.vaultId, root: Hex.encode(b.root), epoch: 1,
+        var m = EpochManifest(format: "sempere/1", vaultId: b.vaultId, created: "2026-10-20T16:20:00Z", root: b.root,
+                              epoch: e.epoch, epochId: key.epochId, parent: e.parent,
+                              epochRecord: "epochs/" + EpochRecord.fileName(epoch: e.epoch, epochId: key.epochId),
+                              epochRecordHash: Data(repeating: 7, count: 32), keys: entries, listTag: "", epochLink: e.link,
+                              epochAuthor: String(Hex.encode(e.author.fingerprint).prefix(8)), epochSig: e.epochSig,
+                              markersTag: "", author: (writer ?? a).id, authorSig: zero, features: [], label: nil,
+                              reencryptPending: nil, parentList: e.parentList, epochReason: e.reason, rejected: e.rejected)
+        return try Self.seal(m: &m, key: key, writer: writer ?? a)
+    }
+
+    static func entry(_ vaultId: UUID, _ d: ChainTestDevice, by signer: ChainTestDevice, addedBy: String,
+                      epoch: Int) throws -> EpochKeyEntry {
+        let claim = EntryClaim(key: d.key, sign: d.sign, kind: "ipad", added: "2026-10-20T16:20:00Z", addedEpoch: epoch,
+                               addedBy: addedBy)
+        return EpochKeyEntry(role: .device, key: d.key, id: d.id, sign: d.sign, kind: claim.kind, added: claim.added,
+                             addedEpoch: epoch, addedBy: addedBy,
+                             addSig: try signer.signing.sign(AuthorMessage.entry(vaultId: vaultId, claim)),
+                             name: "\(d.name)'s iPad / ☕️", wrap: "wrap-\(d.name)")
+    }
+
+    /// Re-tags and re-signs `m` after a change.
+    static func seal(m: inout EpochManifest, key: VaultEpochKey, writer: ChainTestDevice) throws -> EpochManifest {
+        m.listTag = EpochListTag.tag(key: key, vaultId: m.vaultId, root: Hex.encode(m.root), epoch: m.epoch,
                                      epochId: Hex.encode(key.epochId), epochRecordHash: Hex.encode(m.epochRecordHash),
                                      entries: m.keys.map(\.listEntry))
-        m.markersTag = try XCTUnwrap(EpochManifest.markersTag(key: key, vaultId: b.vaultId, format: m.format, features: []))
-        m.authorSig = try (writer ?? a).signing.sign(m.manifestMessage)
+        m.markersTag = try XCTUnwrap(EpochManifest.markersTag(key: key, vaultId: m.vaultId, format: m.format, features: m.features))
+        m.authorSig = try writer.signing.sign(m.manifestMessage)
         return m
     }
 
@@ -477,22 +555,23 @@ final class EpochChainTests: VaultTestCase {
         let data = try JSONEncoder().encode(m)
         let read = try EpochManifest.parse(data)
         XCTAssertEqual(read, m)
-        XCTAssertEqual(try read.check(key: key, founders: [a.fingerprint]).map(\.key), [k.key], "K is the one kit join")
-        // The recovery entry's wrap opens with the recovery key.
+        XCTAssertEqual(Set(read.firstList), [a.fingerprint, r], "the creator and the recovery key")
+        let verified: Set<Data> = [a.fingerprint, r]
+        let admitted = try read.check(key: key, verifiedList: verified)
+        XCTAssertEqual(admitted.map(\.entry.key), [n.key, k.key])
+        XCTAssertEqual(admitted.map(\.approver), [a.fingerprint, nil], "K is the one kit join")
         let wrap = try XCTUnwrap(read.keys.first { $0.role == .recovery }?.wrap)
         XCTAssertEqual(try EpochKeyWrap.open(wrap, with: [recovery], vaultId: b.vaultId, epoch: 1), key)
 
-        func problem(_ m: EpochManifest, founders: Set<Data> = [a.fingerprint]) -> EpochManifest.Problem? {
-            do { _ = try m.check(key: key, founders: founders); return nil } catch {
+        func problem(_ m: EpochManifest, verified: Set<Data> = verified) -> EpochManifest.Problem? {
+            do { _ = try m.check(key: key, verifiedList: verified); return nil } catch {
                 return (error as? EpochManifest.ProblemError)?.problem
             }
         }
-        XCTAssertEqual(problem(m, founders: []), .addSig(key: a.key), "a self-signed founder is accepted only as a founder")
-        XCTAssertThrowsError(try m.check(key: .random(), founders: [a.fingerprint]))
+        XCTAssertThrowsError(try m.check(key: .random(), verifiedList: verified))
         // Storage renames a device: listTag (and authorSig) no longer verify.
         var renamed = m; renamed.keys[1].name = "Mallory"
         XCTAssertEqual(problem(renamed), .listTag)
-        // Storage drops a feature: markersTag.
         var markers = m; markers.markersTag = String(repeating: "0", count: 64)
         XCTAssertEqual(problem(markers), .markersTag)
         // authorSig by a device that is not listed (X), or not matching the author id.
@@ -500,26 +579,30 @@ final class EpochChainTests: VaultTestCase {
         XCTAssertEqual(problem(unlisted), .authorSig)
         unlisted.author = a.id
         XCTAssertEqual(problem(unlisted), .authorSig)
-        // An entry whose addedBy names A but which K signed itself; and a kit join that claims an approver.
+        // epochSig (review H2): verified from this file alone; by the epoch's author only.
+        var badEpochSig = m; badEpochSig.epochSig = try a.signing.sign(Data("other".utf8))
+        XCTAssertEqual(problem(try Self.seal(m: &badEpochSig, key: key, writer: a)), .epochSig)
+        var otherAuthor = m; otherAuthor.epochAuthor = n.id
+        XCTAssertEqual(problem(try Self.seal(m: &otherAuthor, key: key, writer: a)), .epochSig)
+        // addSig.
         func reSigned(_ index: Int, signer: ChainTestDevice, addedBy: String) throws -> EpochManifest {
-            var x = m
-            x.keys[index].addedBy = addedBy
-            let claim = try XCTUnwrap(x.keys[index].claim)
-            x.keys[index].addSig = try signer.signing.sign(AuthorMessage.entry(vaultId: b.vaultId, claim))
-            x.listTag = EpochListTag.tag(key: key, vaultId: b.vaultId, root: Hex.encode(b.root), epoch: 1,
-                                         epochId: Hex.encode(key.epochId), epochRecordHash: Hex.encode(x.epochRecordHash),
-                                         entries: x.keys.map(\.listEntry))
-            x.authorSig = try a.signing.sign(x.manifestMessage)
-            return x
+            var y = m
+            y.keys[index].addedBy = addedBy
+            let claim = try XCTUnwrap(y.keys[index].claim)
+            y.keys[index].addSig = try signer.signing.sign(AuthorMessage.entry(vaultId: b.vaultId, claim))
+            return try Self.seal(m: &y, key: key, writer: a)
         }
         XCTAssertEqual(problem(try reSigned(2, signer: k, addedBy: a.id)), .addSig(key: k.key), "a kit join that claims iPad")
         XCTAssertEqual(problem(try reSigned(1, signer: x, addedBy: a.id)), .addSig(key: n.key), "signed by an unlisted device")
         XCTAssertEqual(problem(try reSigned(1, signer: a, addedBy: n.id)), .addSig(key: n.key), "addedBy not the signer")
         XCTAssertEqual(problem(try reSigned(1, signer: a, addedBy: EntryClaim.recovery)), .addSig(key: n.key))
-        // An approver known from the chain (no longer listed here) is accepted through `approvers`.
-        var dir = DeviceDirectory()
-        dir.add(key: x.key, sign: x.sign)
-        XCTAssertNoThrow(try reSigned(1, signer: x, addedBy: x.id).check(key: key, approvers: dir, founders: [a.fingerprint]))
+        // An approval chain inside the epoch, listed in any order: M approved by N, N by A.
+        let mDev = try ChainTestDevice("M")
+        var chained = try manifest(b, a: a, n: n, k: k, recovery: recovery,
+                                   extra: [try Self.entry(b.vaultId, mDev, by: n, addedBy: n.id, epoch: 1)])
+        chained.keys.sort { $0.key > $1.key }
+        XCTAssertEqual(Set(try Self.seal(m: &chained, key: key, writer: a).check(key: key, verifiedList: verified).map(\.entry.key)),
+                       [n.key, k.key, mDev.key])
 
         // Structure.
         var json = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
@@ -531,11 +614,15 @@ final class EpochChainTests: VaultTestCase {
         let bad: [(String, (inout [String: Any]) -> Void)] = [
             ("record name", { $0["epochRecord"] = "epochs/1-0000000000000000.epoch.age" }),
             ("epoch 1 with a parent", { $0["parent"] = String(repeating: "ab", count: 32) }),
+            ("epoch 1 not create", { $0["epochReason"] = "remove" }),
+            ("rejected outside a resolve", { $0["rejected"] = String(repeating: "ab", count: 32) }),
+            ("epoch 1 with a parent list", { $0["parentList"] = [String(repeating: "ab", count: 32)] }),
             ("two recovery entries", {
                 var keys = $0["keys"] as? [[String: Any]] ?? []
                 keys.append(keys[3]); keys[4]["key"] = "age1pq1other"
                 $0["keys"] = keys
             }),
+            ("no device", { var keys = $0["keys"] as? [[String: Any]] ?? []; $0["keys"] = [keys.removeLast()] }),
             ("a classic key", { var keys = $0["keys"] as? [[String: Any]] ?? []; keys[1]["key"] = "age1abc"; $0["keys"] = keys }),
             ("an id that is not the fingerprint's", {
                 var keys = $0["keys"] as? [[String: Any]] ?? []; keys[1]["id"] = "00000000"; $0["keys"] = keys
@@ -549,6 +636,64 @@ final class EpochChainTests: VaultTestCase {
         json["keys"] = nil
         XCTAssertThrowsError(try EpochManifest.parse(try JSONSerialization.data(withJSONObject: json)))
         XCTAssertThrowsError(try EpochManifest.parse(Data(repeating: 0x20, count: EpochManifest.maxBytes + 1)))
+    }
+
+    /// Review H1 (probe testMutualApprovalInsideOneManifest) and M3: entries that approve each other,
+    /// or a removed founder re-listed with its old self-signed entry, have no path to the verified
+    /// list and are refused.
+    func testManifestAdmitsOnlyAgainstTheVerifiedList() throws {
+        let a = try ChainTestDevice("A"), n = try ChainTestDevice("N"), k = try ChainTestDevice("K")
+        let d1 = try ChainTestDevice("D1"), d2 = try ChainTestDevice("D2")
+        let recovery = try MLKEM768X25519Identity()
+        let r = KeyFingerprint.recovery(key: recovery.recipient.string)
+        let b = try ChainTestBuilder(author: a, founders: [a.fingerprint, r])
+        let key = b.keys[0]
+        let mutual = try manifest(b, a: a, n: n, k: k, recovery: recovery, extra: [
+            try Self.entry(b.vaultId, d1, by: d2, addedBy: d2.id, epoch: 1),
+            try Self.entry(b.vaultId, d2, by: d1, addedBy: d1.id, epoch: 1),
+        ])
+        XCTAssertThrowsError(try mutual.check(key: key, verifiedList: [a.fingerprint, r])) {
+            guard case .addSig(let k)? = ($0 as? EpochManifest.ProblemError)?.problem else { return XCTFail("\($0)") }
+            XCTAssertTrue([d1.key, d2.key].contains(k))
+        }
+        // The founder, no longer in the verified list (removed), comes back with its old self-signed entry.
+        let founderBack = try manifest(b, a: a, n: n, k: k, recovery: recovery, writer: n)
+        XCTAssertThrowsError(try founderBack.check(key: key, verifiedList: [n.fingerprint, r])) {
+            XCTAssertEqual(($0 as? EpochManifest.ProblemError)?.problem, .epochSig, "A is no longer a signer either")
+        }
+        // An entry of an earlier epoch that the verified list does not hold is never admitted.
+        var c = b
+        try c.next(author: a, list: [a.fingerprint, r], parentList: [a.fingerprint, r])
+        let epoch2 = try manifest(c, a: a, n: n, k: k, recovery: recovery)
+        XCTAssertThrowsError(try epoch2.check(key: c.keys[1], verifiedList: [a.fingerprint, r])) {
+            XCTAssertEqual(($0 as? EpochManifest.ProblemError)?.problem, .epochSig, "the first list is signed")
+        }
+    }
+
+    /// Review H2: a direct child of the pinned epoch verifies from `vault.json` alone, before its
+    /// record arrives: `epochSig` over the first list (the entries of earlier epochs) and `parentList`.
+    func testDirectChildVerifiesFromVaultJsonAlone() throws {
+        let a = try ChainTestDevice("A"), n = try ChainTestDevice("N"), k = try ChainTestDevice("K")
+        let recovery = try MLKEM768X25519Identity()
+        let r = KeyFingerprint.recovery(key: recovery.recipient.string)
+        var b = try ChainTestBuilder(author: a, founders: [a.fingerprint, r])
+        try b.add(n, by: a)
+        try b.add(k, by: nil)
+        try b.next(author: n, list: [a.fingerprint, n.fingerprint, r],
+                   parentList: [a.fingerprint, n.fingerprint, k.fingerprint, r])
+        let m = try manifest(b, a: a, n: n, k: k, recovery: recovery, drop: [k.key])
+        XCTAssertEqual(Set(m.firstList), [a.fingerprint, n.fingerprint, r])
+        let pinned: Set<Data> = [a.fingerprint, n.fingerprint, k.fingerprint, r]
+        XCTAssertEqual(try m.check(key: b.keys[1], verifiedList: Set(m.firstList), verifiedParentList: pinned).count, 0)
+        // A device that never saw N added cannot take the epoch from vault.json alone.
+        XCTAssertThrowsError(try m.check(key: b.keys[1], verifiedList: Set(m.firstList),
+                                         verifiedParentList: [a.fingerprint, k.fingerprint, r]))
+        // A forged parentList is refused: epochSig covers it.
+        var forged = m; forged.parentList = [a.fingerprint, n.fingerprint, r]
+        XCTAssertThrowsError(try Self.seal(m: &forged, key: b.keys[1], writer: a)
+            .check(key: b.keys[1], verifiedList: Set(m.firstList), verifiedParentList: pinned)) {
+            XCTAssertEqual(($0 as? EpochManifest.ProblemError)?.problem, .epochSig)
+        }
     }
 
     // MARK: - Chain JSON
@@ -634,6 +779,7 @@ final class EpochChainTests: VaultTestCase {
         XCTAssertThrowsError(try parse { $0["reason"] = "reencrypt" })
         var reencrypt = record
         reencrypt.reason = "reencrypt"
+        reencrypt.chain[reencrypt.chain.count - 1].reason = "reencrypt"
         reencrypt.parent?.key = nil
         XCTAssertEqual(try EpochRecord.parse(try reencrypt.json()), reencrypt)
         XCTAssertThrowsError(try EpochRecord.parse(Data(repeating: 0x20, count: 10)))
@@ -739,14 +885,17 @@ final class EpochChainTests: VaultTestCase {
         var b = try ChainTestBuilder(author: a, founders: [a.fingerprint, bDev.fingerprint, c.fingerprint, r])
         try b.next(author: a, list: [a.fingerprint, bDev.fingerprint, r], parentList: [a.fingerprint, bDev.fingerprint, c.fingerprint, r])
         try b.next(author: a, list: [a.fingerprint, r], parentList: [a.fingerprint, bDev.fingerprint, r])
-        try b.next(author: a, reason: "reencrypt", list: [a.fingerprint, r], parentList: [a.fingerprint, r])
+        // The re-encryption replaces the recovery key (format.md §15.7).
+        let recovery2 = try MLKEM768X25519Identity()
+        let r2 = KeyFingerprint.recovery(key: recovery2.recipient.string)
+        try b.next(author: a, reason: "reencrypt", list: [a.fingerprint, r2], parentList: [a.fingerprint, r], recovery: r2)
         XCTAssertNoThrow(try b.verify())
         let k = b.keys
         let dir = tmp.appendingPathComponent("kit.sempere")
         let epochs = dir.appendingPathComponent("epochs")
         try FileManager.default.createDirectory(at: epochs, withIntermediateDirectories: true)
         // vault.json: only what the script reads (the recovery entry's wrap of the current key).
-        let wrap = try EpochKeyWrap.seal(k[3], vaultId: b.vaultId, epoch: 4, to: .mlkem768x25519(recovery.recipient))
+        let wrap = try EpochKeyWrap.seal(k[3], vaultId: b.vaultId, epoch: 4, to: .mlkem768x25519(recovery2.recipient))
         let manifest = try JSONSerialization.data(withJSONObject: ["keys": [["role": "recovery", "wrap": wrap]]])
         try manifest.write(to: dir.appendingPathComponent("vault.json"))
         // Records 1 to 4 (4: a re-encryption, no parent key), an orphan 5, and a lost fork at 3.
@@ -759,7 +908,7 @@ final class EpochChainTests: VaultTestCase {
             try rec.seal(key: k[e - 1]).write(to: epochs.appendingPathComponent(rec.fileName))
         }
         var orphanChain = b
-        try orphanChain.next(author: a, list: [a.fingerprint, r], parentList: [a.fingerprint, r])
+        try orphanChain.next(author: a, list: [a.fingerprint, r2], parentList: [a.fingerprint, r2])
         let k5 = orphanChain.keys[4]
         try EpochRecord(vaultId: b.vaultId, root: b.root, epoch: 5, epochId: k5.epochId,
                         parent: EpochRecordParent(epoch: 4, epochId: k[3].epochId, key: k[3], sealed: [:]),
@@ -790,7 +939,7 @@ final class EpochChainTests: VaultTestCase {
             expected["notes/\(note)/\(name)"] = #"{"epoch":\#(e)}"#
         }
         // recovery.txt: the passphrase copy's plaintext.
-        let copy = RecoveryPassphraseCopy(created: "2026-10-20T16:20:00Z", vaultId: b.vaultId, root: b.root, identity: recovery)
+        let copy = RecoveryPassphraseCopy(created: "2026-10-20T16:20:00Z", vaultId: b.vaultId, root: b.root, identity: recovery2)
         try copy.plaintext.write(to: dir.appendingPathComponent("recovery.txt"), atomically: true, encoding: .utf8)
 
         // Steps 1 and 2 exactly as printed; step 3 for each note.

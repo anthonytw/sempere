@@ -146,8 +146,8 @@ interface Signatures {
   signatures: {
     entry: { claim: { key: string; signP256: string; signMLDSA65: string; kind: string; added: string; addedEpoch: number;
       addedBy: string }; message: string; signatures: AuthorSig[] };
-    epoch: { fields: { root: string; epoch: number; epochId: string; parent: string; reason: string; list: string[];
-      parentList: string[] }; message: string; signatures: AuthorSig[] };
+    epoch: { fields: { root: string; epoch: number; epochId: string; parent: string; reason: string; recovery: string;
+      rejected: string; list: string[]; parentList: string[] }; message: string; signatures: AuthorSig[] };
     manifest: { fields: { root: string; epoch: number; epochId: string; epochRecordHash: string; format: string;
       features: string[] }; message: string; signatures: AuthorSig[] };
   };
@@ -166,10 +166,11 @@ describe("author signatures and join codes (design §4.1, §6.2)", () => {
     const entry = entryMessage(v.vaultId, c);
     expect(hex(entry)).toBe(s.signatures.entry.message);
     const f = s.signatures.epoch.fields;
-    const epoch = epochMessage(v.vaultId, f.root, f.epoch, f.epochId, f.parent, f.reason, f.list, f.parentList);
+    const epoch = epochMessage(v.vaultId, f.root, f.epoch, f.epochId, f.parent, f.reason, f.recovery, f.rejected, f.list,
+      f.parentList);
     expect(hex(epoch)).toBe(s.signatures.epoch.message);
-    expect(hex(epochMessage(v.vaultId, f.root, f.epoch, f.epochId, f.parent, f.reason, [...f.list].reverse(),
-      [...f.parentList].reverse()))).toBe(s.signatures.epoch.message);
+    expect(hex(epochMessage(v.vaultId, f.root, f.epoch, f.epochId, f.parent, f.reason, f.recovery, f.rejected,
+      [...f.list].reverse(), [...f.parentList].reverse()))).toBe(s.signatures.epoch.message);
     const m = s.signatures.manifest.fields;
     const manifest = manifestMessage(v.vaultId, m.root, m.epoch, m.epochId, m.epochRecordHash, bytes(v.listTag.message),
       m.format, m.features);
@@ -203,6 +204,7 @@ describe("author signatures and join codes (design §4.1, §6.2)", () => {
 interface ChainEntryJSON {
   epoch: number; epochId: string; parent?: string; linkPublicKeys: { ed25519: string; mldsa65: string };
   link?: { ed25519: string; mldsa65: string }; reason: string; list: string[]; parentList: string[];
+  recovery: string; rejected?: string;
   author: { key: string; p256: string; mldsa65: string }; epochSig: { p256: string; mldsa65: string };
   additions?: { key: string; sign: { p256: string; mldsa65: string }; kind: string; added: string; addedEpoch: number;
     addedBy: string; addSig: { p256: string; mldsa65: string } }[];
@@ -225,7 +227,8 @@ describe("the shared chain vectors (design §4.1, §4.3)", () => {
     let additions = 0;
     ok.chain.forEach((e, i) => {
       const author = { p256: bytes(e.author.p256), mldsa65: bytes(e.author.mldsa65) };
-      const m = epochMessage(cv.vaultId, ok.root, e.epoch, e.epochId, e.parent ?? "", e.reason, e.list, e.parentList);
+      const m = epochMessage(cv.vaultId, ok.root, e.epoch, e.epochId, e.parent ?? "", e.reason, e.recovery, e.rejected ?? "",
+        e.list, e.parentList);
       expect(verifyAuthorSignature(m, { p256: bytes(e.epochSig.p256), mldsa65: bytes(e.epochSig.mldsa65) }, author)).toBe(true);
       const prev = ok.chain[i - 1];
       if (prev && e.link) {

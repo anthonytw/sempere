@@ -3883,7 +3883,8 @@ links, root, fingerprints, the three signatures, join codes; made by Swift and b
 - **Signatures** (`addSig`, `epochSig`, `authorSig`) are two: P-256 ECDSA over SHA-256 of the message,
   `r ‖ s` (64 bytes), under the uncompressed X9.63 public key (65 bytes); and ML-DSA-65 (FIPS 204, pure,
   empty context, 3309 bytes) over the message, under a 1952-byte key. Both must verify. A verifier
-  accepts an ECDSA signature whatever the half of its `s` (swift-crypto does not normalize it). JSON:
+  accepts an ECDSA signature whatever the half of its `s`; writers normalize `s` to the lower half
+  (`s ≤ n/2`), so the bytes do not depend on the library. JSON:
   `{ "p256": "…(128 hex)…", "mldsa65": "…(6618 hex)…" }`; signing keys `{ "p256": "…(130 hex)…",
   "mldsa65": "…(3904 hex)…" }`.
 
@@ -3918,7 +3919,30 @@ As the design's §3, with these rules for readers (a file breaking one is malfor
 - exactly one entry with `role: "recovery"`, which has none of `id`, `sign`, `kind`, `addedEpoch`,
   `addedBy`, `addSig`; every key `age1pq1…` and listed once;
 - every device entry has `id`, `sign`, `kind`, `addedEpoch`, `addedBy` and `addSig`, and `id` is the
-  first 8 hex digits of its fingerprint (§15.4); a wrap is at most 16 KiB.
+  first 8 hex digits of its fingerprint (§15.4); a wrap is at most 16 KiB; at least one device entry;
+- `epochReason` is one of §15.7's reasons, `create` exactly at epoch 1; `rejected` (a fingerprint) is
+  present exactly when it is `resolve`; `parentList` (sorted fingerprints, the parent list as the epoch
+  author saw it) is present exactly when `epoch` > 1.
+
+**`epochSig` from `vault.json` alone** (review H2: a direct child of the pinned epoch is taken before
+its record arrives, design §4.3). The epoch's **first list** is the recovery entry and every device
+entry with `addedEpoch` below `epoch` (at epoch 1: the recovery entry and the creating device,
+`epochAuthor`, added at epoch 1); its recovery fingerprint is the recovery entry's. With `epochReason`,
+`rejected` and `parentList`, that gives every field of §15.5's `epochSig` message, which must verify
+under the signing keys of the entry whose id is `epochAuthor` and which is in `parentList` (and, for a
+direct child, in the parent's list as the device verified it; at epoch 1, in the first list). The
+first list must be within that parent list except a new recovery key of a `recovery` or `reencrypt`
+epoch. Of the two ways to make `epochSig` checkable here, this one keeps the signed parent list (from
+which removals are computed) under the epoch author's own signature in every copy; dropping the
+parent list from the message would leave it signed only by whoever wrote a later copy of the chain.
+
+**Entries and additions** (review H1). The device checks a `vault.json` against the epoch's list as it
+verified it (the first list from the chain, or from this file once `epochSig` verified as above, plus
+the additions it already admitted). An entry in that list needs no new check of its `addSig`. Every
+other device entry must have `addedEpoch` = `epoch` and is admitted only against devices already
+admitted, starting from that list, never against entries of this file that are not admitted
+themselves; approvals inside the epoch may be listed in any order. An entry that is not admitted makes
+the file tampered. `authorSig` must verify under an admitted device whose id is `author`.
 
 **Wrap plaintext** (an age file to the entry's key, armored, one stanza):
 
@@ -3952,21 +3976,24 @@ listMessage = "sempere/1 list" ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp
 - recovery fingerprint = `SHA-256("sempere/1 recovery" ‖ lp(key))`;
 - a device's `id` is the first 8 hex digits of its fingerprint.
 
-An entry's `addSig` (§15.5) is checked when the entry first appears:
+An entry's `addSig` (§15.5) is checked when the entry first appears as an addition:
 
 - it verifies under the entry's own signing keys: a **kit join**, and `addedBy` must be `recovery`;
-  or, for the device that created the vault (in epoch 1's first list, `addedEpoch` 1), `addedBy` is its
-  own id (the design does not cover the creator's entry; this is the rule);
-- otherwise it verifies under the signing keys of the device whose id is `addedBy` and which is listed
-  where §15.7 says, and `addedBy` is not `recovery`;
+- otherwise it verifies under the signing keys of an already admitted device whose id is `addedBy`,
+  and `addedBy` is not `recovery`;
 - anything else is tampering.
+
+The device that creates the vault writes its own entry with a self-signed `addSig` and its own id in
+`addedBy` (the design does not cover the creator's entry). It is in epoch 1's first list, so it is
+never checked as an addition; a later copy of it outside the verified list is refused like any entry
+that is not an addition of the current epoch (review M3).
 
 ### 15.5 Signed messages
 
 | Signature | Message |
 | --- | --- |
 | `addSig` | `"sempere/1 author entry"` ‖ lp(vaultId) ‖ lp(addedEpoch) ‖ lp(key) ‖ lp(sign.p256) ‖ lp(sign.mldsa65) ‖ lp(kind) ‖ lp(added) ‖ lp(addedBy) |
-| `epochSig` | `"sempere/1 author epoch"` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(parent) ‖ lp(reason) ‖ the first list ‖ the parent list as the author saw it (lists as §15.1; `parent` empty at epoch 1) |
+| `epochSig` | `"sempere/1 author epoch"` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(parent) ‖ lp(reason) ‖ lp(recovery) ‖ lp(rejected) ‖ the first list ‖ the parent list as the author saw it (lists as §15.1; `parent` empty at epoch 1; `recovery` the epoch's recovery fingerprint; `rejected` the rejected author of a `resolve` epoch, otherwise empty; review M1, M2) |
 | `authorSig` | `"sempere/1 author manifest"` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(epochRecordHash) ‖ lp(SHA-256(listMessage)) ‖ lp(format) ‖ the distinct `features` (a list, §15.1) |
 
 ### 15.6 Epoch records
@@ -3981,16 +4008,15 @@ without `epochs/`), tagged under `tagKey` of `K_e`; so `tail -c +38 | gunzip` gi
   "parent": { "epoch": 3, "epochId": "…", "key": "…(64 hex: K_3)…", "identity": "AGE-SECRET-KEY-PQ-1…",
               "sealed": { "<path>": "<sha256 hex>", … } },
   "chain": [ <chain entry>, … from epoch 1 up to and including this epoch ],
-  "created": "…", "by": "<author id>", "reason": "remove", "removed": ["<fingerprint>", …],
-  "rejected": "<fingerprint>" }
+  "created": "…", "by": "<author id>", "reason": "remove", "removed": ["<fingerprint>", …] }
 ```
 
 - `parent` is absent at epoch 1. A `reencrypt` record's `parent` has neither `key` nor `identity`;
   otherwise both or neither, and `identity` is the one derived from `key`, whose `epochId` is
   `parent.epochId`.
 - `chain` has `epoch` entries, the last being this epoch, and `parent.epochId` is the previous one.
-- `removed` is informational (§15.8 computes removals). `rejected` is present only in a `resolve`
-  record (§15.9): the author whose side it rejected.
+- `reason` equals the last chain entry's, and `by` is its author's id (review M6). `removed` is
+  informational (§15.7 computes removals). Readers use the chain entry, never these fields.
 - Readers bound the file and its gunzipped JSON at 64 MiB.
 
 A **chain entry**:
@@ -4000,12 +4026,15 @@ A **chain entry**:
   "link": { "ed25519": "…", "mldsa65": "…" }, "reason": "remove",
   "list": ["<fingerprint>", …], "parentList": ["<fingerprint>", …],
   "author": { "key": "age1pq1…", "p256": "…", "mldsa65": "…" }, "epochSig": { "p256": "…", "mldsa65": "…" },
+  "recovery": "<fingerprint>", "rejected": "<fingerprint>",
   "additions": [ { "key": "age1pq1…", "sign": { "p256": "…", "mldsa65": "…" }, "kind": "iphone",
                    "added": "…", "addedEpoch": 2, "addedBy": "<id>", "addSig": { … } }, … ] }
 ```
 
-`parent` and `link` are absent at epoch 1; `additions` is written only when not empty (absent reads
-as empty) and holds the additions made during that epoch that the next epoch's author saw. Lists hold at
+`parent` and `link` are absent at epoch 1; `recovery` is the epoch's recovery fingerprint; `rejected`
+is present only in a `resolve` epoch (the author whose side it rejected); both are signed by
+`epochSig`. `additions` is written only when not empty (absent reads as empty) and holds the additions
+made during that epoch that the next epoch's author saw. Lists hold at
 most 4096 fingerprints; a chain at most 100,000 entries.
 
 ### 15.7 Checking a chain
@@ -4013,14 +4042,16 @@ most 4096 fingerprints; a chain at most 100,000 entries.
 From epoch 1 (`EpochChain.verify`):
 
 1. Entry `i` has `epoch` = `i`; `reason` is one of `create`, `remove`, `recovery`, `reencrypt`,
-   `reapply`, `resolve`; `create` only at epoch 1.
+   `reapply`, `resolve`; `create` only at epoch 1; `rejected` present exactly in a `resolve` epoch.
 2. Epoch 1: no `parent`, `link` or parent list; `root` = SHA-256 of its link keys (design §4.2); its
    author's fingerprint is in its first list.
 3. Epoch `e` > 1: `parent` is epoch `e−1`'s id; `link` verifies (§15.3) under `e−1`'s link keys; the
-   author's fingerprint is in `e−1`'s **list**; the first list is within `e−1`'s list, except that a
-   `recovery` or `reencrypt` epoch may hold one fingerprint more that is no known device (a new
-   recovery key).
-4. `epochSig` verifies under the author's signing keys.
+   author's fingerprint is in `e−1`'s **list**; the first list is within `e−1`'s list. A `recovery` or
+   `reencrypt` epoch **replaces** the recovery key: its `recovery` is the one fingerprint not in
+   `e−1`'s list, and `e−1`'s `recovery` is not in its first list; any other epoch keeps `e−1`'s
+   `recovery` (review M1).
+4. `recovery` is in the first list and is no known device; `epochSig` verifies under the author's
+   signing keys.
 5. Epoch `e`'s **list** is its first list plus its admitted additions: at most 256 (more is
    tampering), admitted in one pass in order, each with `addedEpoch` = `e` and an `addSig` valid as
    §15.4 says against the devices admitted before it (the first list's, then earlier additions). An
@@ -4030,7 +4061,8 @@ From epoch 1 (`EpochChain.verify`):
 
 **Removals are computed**: the keys epoch `x` removed are the fingerprints in both `x`'s signed parent
 list and the parent's list as verified, minus `x`'s first list. A device's **`addedBy` chain** follows
-admitted additions' approvers to a member of epoch 1's first list or a kit join.
+admitted additions' approvers to a member of epoch 1's first list or a kit join. The chain's
+`recovery` fields are the vault's recovery keys: never a device, never re-applied.
 
 ### 15.8 The re-encryption journal
 
@@ -4051,28 +4083,41 @@ apply. Bounded at 64 MiB.
 
 ### 15.9 Fork resolution
 
-Over the tree of every verified epoch (`EpochForks.resolve`), from epoch 1 down. At an epoch with
-several children, each child's **subtree** (it and its descendants) and the keys the subtree removed:
+Over the tree of every verified epoch (`EpochForks.resolve`), from epoch 1 down. Amended after the
+KH1 code review (C1: a removed device appending one epoch under an old honest stale fork took the kept
+chain on every device).
 
-1. **Stored answers**: a child whose author the user rejected (trust record) loses (rule 2).
-2. **Pre-pass**: a child is discarded (lost by rule 1) when a sibling's subtree removed its author and
-   its own subtree did not remove that sibling's author; only siblings that no other sibling discards
-   this way discard others, and the pass repeats until nothing changes. (Three children: the real
-   removal of X, B's honest stale fork, and X's fork removing B: X's fork goes, and B's side stays to
-   be compared and re-applied.)
-3. The rest are compared in pairs in `epochId` order (bytes), the winner of each pair going on:
+0. **Context**: an epoch authored by a device that this device's pinned chain removed never enters the
+   tree, unless it is on the pinned chain.
+1. **Counted epochs.** Two sides S and T (children with their descendants) are compared over their
+   counted epochs: each child counts; a descendant counts when its parent counts and no counted epoch
+   of the other side removed its author; one that a counted epoch of the other side removed does not
+   count, nor anything below it; this is computed to a fixed point, and an epoch left undecided does
+   not count. A side's removals, its descendants (rule 3) and its re-applied removals are those of its
+   counted epochs only. So a removed device's epochs supply neither removals nor descendants.
+2. **Stored answers**: a child whose author the user rejected (trust record) loses (rule 2).
+3. **Pre-pass**: a child is discarded (lost by rule 1) when a sibling's counted removals include its
+   author and its own counted removals do not include that sibling's author; only siblings that no
+   other sibling discards this way discard others, and the pass repeats until nothing changes. (Three
+   children: the real removal of X, B's honest stale fork, and X's fork removing B: X's fork goes,
+   and B's side stays to be compared and re-applied.)
+4. The rest are compared in pairs in `epochId` order (bytes), the winner of each pair going on:
    rule 1, a side whose author the other side removed (not the reverse) loses; rule 2, mutual removal:
-   an author (this device) follows a **binding** resolve epoch (on either side, by a device that is
-   neither author and whose `addedBy` chain passes through neither, rejecting one of them), otherwise
-   keeps its own side; any other device asks its user (the kept chain stops at the branch); rule 3, a
-   side without descendants loses to one with; rule 4, the larger `epochId` loses.
-4. **Re-application**: the removals of every side lost by rule 3 or 4 (its whole subtree), minus
+   an author (this device) follows a **binding** resolve epoch (counted on either side, by a device
+   that is neither author and whose `addedBy` chain passes through neither, rejecting one of them),
+   otherwise keeps its own side; two binding resolve epochs that reject different authors are a
+   contradiction and a question (review M4); any other device asks its user (the kept chain stops at
+   the branch); rule 3, a side without counted descendants loses to one with; rule 4, the larger
+   `epochId` loses.
+5. **Pruning**: walking down the kept chain, a child whose author the kept prefix removed, or whose
+   author is in the re-application set, is dropped with its subtree, also when it is the only child.
+6. **Re-application**: the counted removals of every side lost by rule 3 or 4, minus the chain's
    recovery keys, that are still in the kept chain's last list, in one `reapply` epoch; none: nothing
    is written.
 
-Whom to ask: every device in the branch epoch's list or in a list on either side, except the two
-authors and recovery keys. A resolve epoch whose rejected author differs from the device's own answer
-is reported as a contradiction; the device follows its own answer.
+Whom to ask: every device in the branch epoch's list or in a counted list on either side, except the
+two authors and recovery keys. A resolve epoch whose rejected author differs from the device's own
+answer is reported as a contradiction; the device follows its own answer.
 
 ### 15.10 Trust record v3
 
@@ -4100,7 +4145,8 @@ with the public key the identity's. Stock `age -i` reads it as an identity file.
 ### 15.12 Joining
 
 - Join request `joins/<id>.join.json` (bounded at 16 KiB): `{ "format": "sempere-join/1", "vaultId",
-  "key", "sign": { "p256", "mldsa65" }, "name", "kind", "created" }`; `key` is `age1pq1…`.
+  "key", "sign": { "p256", "mldsa65" }, "name", "kind", "created" }`; `key` is `age1pq1…`; `kind` is
+  a lowercase word of 1 to 32 letters `a`–`z`.
 - Commitment `c = SHA-256("sempere/1 join" ‖ lp(vaultId) ‖ lp(key) ‖ lp(sign.p256) ‖ lp(sign.mldsa65) ‖
   lp(kind))`; the name is not covered.
 - **Six words**: the first 66 bits of a digest as six 11-bit indices, most significant bit first, into

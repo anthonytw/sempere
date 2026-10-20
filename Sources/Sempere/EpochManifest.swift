@@ -78,6 +78,13 @@ public struct EpochManifest: Hashable, Sendable {
     public var features: [String]
     public var label: String?
     public var reencryptPending: String?
+    /// The parent list as the epoch author saw it (sorted fingerprints; empty at epoch 1), signed in
+    /// `epochSig` (review H2: so `epochSig` verifies from `vault.json` alone).
+    public var parentList: [Data]
+    /// The epoch's `reason` (signed in `epochSig`).
+    public var epochReason: String
+    /// A `resolve` epoch's rejected author (signed in `epochSig`).
+    public var rejected: Data?
 
     /// `listMessage` (design §4).
     public var listMessage: Data {
@@ -112,6 +119,11 @@ public struct EpochManifest: Hashable, Sendable {
             throw EpochFileError.malformed("epochRecord is not this epoch's record")
         }
         guard m.keys.filter({ $0.role == .recovery }).count == 1 else { throw EpochFileError.malformed("not one recovery entry") }
+        guard m.keys.contains(where: { $0.role == .device }) else { throw EpochFileError.malformed("no device entry") }
+        guard let reason = EpochReason(rawValue: m.epochReason), (m.epoch == 1) == (reason == .create),
+              (m.rejected != nil) == (reason == .resolve), (m.epoch == 1) == m.parentList.isEmpty else {
+            throw EpochFileError.malformed("epochReason, rejected or parentList")
+        }
         var seen: Set<String> = []
         for k in m.keys {
             guard k.key.hasPrefix("age1pq1"), seen.insert(k.key).inserted else {
@@ -136,24 +148,57 @@ public struct EpochManifest: Hashable, Sendable {
         case wrap
         case listTag
         case markersTag
-        /// `authorSig` does not verify under the listed device whose id is `author`.
+        /// `authorSig` does not verify under a device of the verified list (or admitted now) whose id
+        /// is `author`.
         case authorSig
-        /// An entry's `addSig` fails, or names someone other than its signer, or is self-signed and
-        /// does not say `recovery` (design §3, §6.3).
+        /// `epochSig` does not verify under `epochAuthor`, a device of the signed parent list (epoch 1:
+        /// of the first list), over this file's first list and `parentList` (review H2).
+        case epochSig
+        /// The first list is not within `parentList` plus at most the new recovery key of a recovery
+        /// replacement or re-encryption.
+        case introducesDevice
+        /// An entry outside the verified list is not an addition of this epoch that `addSig` admits
+        /// against the verified list (review H1).
         case addSig(key: String)
     }
 
+    /// The recovery entry's fingerprint.
+    public var recoveryFingerprint: Data? { keys.first { $0.role == .recovery }?.fingerprint }
+
+    /// The epoch's first list, from this file alone (review H2): the recovery entry and every device
+    /// entry added in an earlier epoch; at epoch 1, the recovery entry and the creating device
+    /// (`epochAuthor`, added at epoch 1).
+    public var firstList: [Data] {
+        keys.filter { k in
+            k.role == .recovery || (k.addedEpoch ?? 0) < epoch || (epoch == 1 && k.id == epochAuthor && k.addedEpoch == 1)
+        }.map(\.fingerprint)
+    }
+
+    /// The message `epochSig` signs, rebuilt from this file (review H2).
+    public var epochMessage: Data? {
+        guard let recovery = recoveryFingerprint else { return nil }
+        return AuthorMessage.epoch(vaultId: vaultId, root: root, epoch: epoch, epochId: epochId, parent: parent,
+                                   reason: epochReason, recovery: recovery, rejected: rejected, list: firstList,
+                                   parentList: parentList)
+    }
+
     /// The checks of design §4.3 that need no chain, for a reader holding `K_e` (from its own wrap):
-    /// the key is this epoch's, `listTag` and `markersTag` verify, `authorSig` verifies under a
-    /// listed device, and every device entry's `addSig` verifies under its approver or itself.
+    /// the key is this epoch's; `listTag` and `markersTag` verify; `epochSig` verifies over the first
+    /// list and `parentList`, by a device of the parent list, and the first list introduces no device;
+    /// every entry is in `verifiedList` or is an addition of this epoch admitted against it; `authorSig`
+    /// verifies under an admitted device.
     ///
-    /// - Parameter approvers: devices that may have approved entries first listed in an earlier
-    ///   `vault.json` of `addedEpoch` (the chain's lists and additions); entries of this file count too.
-    /// - Parameter founders: epoch 1's first list (the chain's): the creating device signs its own entry
-    ///   and names itself in `addedBy` (design §3 says nothing of it; format.md §15.4 decides).
-    /// - Returns: the kit joins (entries whose `addSig` is their own), in list order.
-    public func check(key: VaultEpochKey, approvers: DeviceDirectory = DeviceDirectory(), founders: Set<Data> = []) throws
-        -> [EpochKeyEntry] {
+    /// - Parameters:
+    ///   - verifiedList: the epoch's list as the device verified it: the first list from the chain (or,
+    ///     for a direct child of the pinned epoch, this file's first list once `epochSig` verified and
+    ///     the parent list is the pinned one) plus the additions it already admitted. Entries outside
+    ///     it are admitted only against it, never against each other's say-so in this file.
+    ///   - verifiedParentList: the parent epoch's list as the device verified it, when known (a direct
+    ///     child of the pinned epoch): the epoch author and the first list must then be within it
+    ///     (and the signed `parentList`), except a new recovery key.
+    /// - Returns: the entries admitted now, in admission order, with their approver (nil: a kit join).
+    public func check(key: VaultEpochKey, verifiedList: Set<Data>, verifiedParentList: Set<Data>? = nil) throws
+        -> [(entry: EpochKeyEntry, approver: Data?)] {
         guard key.epochId == epochId else { throw ProblemError(problem: .wrap) }
         guard EpochListTag.verify(listTag, key: key, vaultId: vaultId, root: Hex.encode(root), epoch: epoch,
                                   epochId: Hex.encode(epochId), epochRecordHash: Hex.encode(epochRecordHash),
@@ -164,35 +209,76 @@ public struct EpochManifest: Hashable, Sendable {
                   for: markers, using: SymmetricKey(data: key.markersKey)))) else {
             throw ProblemError(problem: .markersTag)
         }
-        let message = manifestMessage
-        guard devices(withId: author).contains(where: { $0.sign.map { authorSig.verifies(message, keys: $0) } ?? false }) else {
-            throw ProblemError(problem: .authorSig)
+        // epochSig (H2): by a device of the signed parent list (epoch 1: of the first list).
+        let first = Set(firstList)
+        // With the parent's list as this device verified it (a direct child of the pinned epoch), the
+        // author must be in it; otherwise the signed parentList stands in until the record's chain is
+        // checked (design §4.3 step 2).
+        let parentKnown = verifiedParentList ?? Set(parentList)
+        let signers = epoch == 1 ? first.intersection(verifiedList) : Set(parentList).intersection(parentKnown)
+        guard let epochMessage, devices(withId: epochAuthor).contains(where: { e in
+            signers.contains(e.fingerprint) && (e.sign.map { epochSig.verifies(epochMessage, keys: $0) } ?? false)
+        }) else { throw ProblemError(problem: .epochSig) }
+        if epoch > 1 {
+            let new = first.subtracting(Set(parentList).intersection(parentKnown))
+            let reason = EpochReason(rawValue: epochReason)
+            guard new.isEmpty || (reason?.mayAddRecovery == true && new == Set([recoveryFingerprint].compactMap { $0 })) else {
+                throw ProblemError(problem: .introducesDevice)
+            }
         }
-        var directory = approvers
-        for k in keys where k.role == .device { if let s = k.sign { directory.add(key: k.key, sign: s) } }
-        var kitJoins: [EpochKeyEntry] = []
-        for k in keys where k.role == .device {
-            guard let claim = k.claim, let sig = k.addSig else { throw ProblemError(problem: .addSig(key: k.key)) }
-            let m = AuthorMessage.entry(vaultId: vaultId, claim)
-            if sig.verifies(m, keys: claim.sign) {
-                // Self-signed: a kit join, which must say so; or the device that created the vault
-                // (epoch 1's first list), which has no approver and names itself.
+        // Additions (H1): every entry outside the verified list must be an addition of this epoch,
+        // approved by a device already admitted (the verified list, then additions admitted before it),
+        // or a kit join. Approval chains inside this epoch are followed in any order; each signature
+        // is checked once per candidate approver.
+        var admitted = verifiedList
+        var result: [(entry: EpochKeyEntry, approver: Data?)] = []
+        var pending: [EpochKeyEntry] = []
+        for k in keys where k.role == .device && !verifiedList.contains(k.fingerprint) {
+            guard let claim = k.claim, claim.addedEpoch == epoch, k.addSig != nil else {
+                throw ProblemError(problem: .addSig(key: k.key))
+            }
+            pending.append(k)
+        }
+        guard pending.count <= EpochChain.maxAdditions else { throw ProblemError(problem: .addSig(key: pending[0].key)) }
+        var signing: [Data: DeviceSigningPublicKeys] = [:]
+        for k in keys where k.role == .device { if let s = k.sign { signing[k.fingerprint] = s } }
+        var tried: Set<[Data]> = []
+        var progress = true
+        while progress && !pending.isEmpty {
+            progress = false
+            var i = 0
+            while i < pending.count {
+                let k = pending[i]
+                guard let claim = k.claim, let sig = k.addSig else { i += 1; continue }
+                let m = AuthorMessage.entry(vaultId: vaultId, claim)
+                var approver: Data??
                 if claim.claimsKitJoin {
-                    kitJoins.append(k)
-                } else if founders.contains(k.fingerprint), claim.addedEpoch == 1, claim.addedBy == k.id {
-                    continue
+                    if !tried.contains([k.fingerprint, k.fingerprint]) {
+                        tried.insert([k.fingerprint, k.fingerprint])
+                        if sig.verifies(m, keys: claim.sign) { approver = .some(nil) }
+                    }
                 } else {
-                    throw ProblemError(problem: .addSig(key: k.key))
+                    let candidates = admitted.filter {
+                        $0 != k.fingerprint && claim.addedBy.utf8.count == 8 && Hex.encode($0).hasPrefix(claim.addedBy)
+                    }.sorted { $0.lexicographicallyPrecedes($1) }
+                    for c in candidates where !tried.contains([k.fingerprint, c]) {
+                        tried.insert([k.fingerprint, c])
+                        if let keys = signing[c], sig.verifies(m, keys: keys) { approver = .some(c); break }
+                    }
                 }
-                continue
+                if let approver {
+                    admitted.insert(k.fingerprint); result.append((k, approver)); pending.remove(at: i); progress = true
+                } else {
+                    i += 1
+                }
             }
-            let approved = !claim.claimsKitJoin && directory.keys.contains { fp, keys in
-                Hex.encode(fp).hasPrefix(claim.addedBy) && claim.addedBy.utf8.count == 8 && fp != k.fingerprint
-                    && sig.verifies(m, keys: keys)
-            }
-            guard approved else { throw ProblemError(problem: .addSig(key: k.key)) }
         }
-        return kitJoins
+        if let left = pending.first { throw ProblemError(problem: .addSig(key: left.key)) }
+        let message = manifestMessage
+        guard devices(withId: author).contains(where: { e in
+            admitted.contains(e.fingerprint) && (e.sign.map { authorSig.verifies(message, keys: $0) } ?? false)
+        }) else { throw ProblemError(problem: .authorSig) }
+        return result
     }
 
     /// The thrown form of `Problem`.
@@ -251,6 +337,7 @@ extension EpochManifest: Codable {
     enum CodingKeys: String, CodingKey {
         case format, vaultId, created, root, epoch, epochId, parent, epochRecord, epochRecordHash, keys, listTag, epochLink
         case epochAuthor, epochSig, markersTag, author, authorSig, features, label, reencryptPending
+        case parentList, epochReason, rejected
     }
 
     public init(from decoder: Decoder) throws {
@@ -282,6 +369,9 @@ extension EpochManifest: Codable {
         features = try c.decodeIfPresent([String].self, forKey: .features) ?? []
         label = try c.decodeIfPresent(String.self, forKey: .label)
         reencryptPending = try c.decodeIfPresent(String.self, forKey: .reencryptPending)
+        parentList = try c.contains(.parentList) ? ChainEntry.fingerprints(c, .parentList) : []
+        epochReason = try c.decode(String.self, forKey: .epochReason)
+        rejected = try c.contains(.rejected) ? ChainEntry.hex32(c, .rejected) : nil
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -306,5 +396,8 @@ extension EpochManifest: Codable {
         if !features.isEmpty { try c.encode(features, forKey: .features) }
         try c.encodeIfPresent(label, forKey: .label)
         try c.encodeIfPresent(reencryptPending, forKey: .reencryptPending)
+        if !parentList.isEmpty { try c.encode(parentList.map { Hex.encode($0) }.sorted(), forKey: .parentList) }
+        try c.encode(epochReason, forKey: .epochReason)
+        if let rejected { try c.encode(Hex.encode(rejected), forKey: .rejected) }
     }
 }

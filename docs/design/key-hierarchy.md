@@ -168,6 +168,8 @@ the tag or name uses changes.
   "listTag": "…(64 hex digits)…",
   "epochLink": { "ed25519": "…(128 hex)…", "mldsa65": "…(6618 hex)…" },
   "epochAuthor": "a1b2c3d4",
+  "epochReason": "remove",
+  "parentList": ["…(64 hex digits: the parent list as the author saw it, sorted; absent at epoch 1)…"],
   "epochSig": { "p256": "…", "mldsa65": "…" },
   "markersTag": "…(64 hex digits)…",
   "author": "a1b2c3d4",
@@ -218,7 +220,12 @@ the tag or name uses changes.
   `age -d -i recovery.txt wrap.age > vault-keys.txt` gives a usable identity file. Sempere reads
   `K_e` from the second line and refuses the wrap unless the identity equals `V_e` derived from it.
 - `epochAuthor`, `epochSig`: the device that created this epoch, and its signature over the epoch
-  message (§4.1). They are the same in every `vault.json` of the epoch.
+  message (§4.1). They are the same in every `vault.json` of the epoch, as are `epochReason`,
+  `parentList` and (in a `resolve` epoch) `rejected`, which carry the rest of what `epochSig` signs.
+  The epoch's **first list** is the recovery entry and every device entry with `addedEpoch` below
+  `epoch` (at epoch 1: the recovery entry and the creating device), so `epochSig` verifies from
+  `vault.json` alone (§4.3 step 2; KH1 code review H2: of the two ways to get there, this one keeps the
+  signed parent list, from which removals are computed, under the author's own signature).
 - `author`, `authorSig`: the device that wrote this version of `vault.json` (the epoch's author, an
   approver, a renamer or a merger), and its signature over the manifest message (§4.1).
 - Removed: `recipients`, `vaultSecret`, `recipientsTag`, `secretLink`, `rewrapPending`.
@@ -255,7 +262,7 @@ unforgeable while either holds.
 | Signature | Message (`"sempere/1 author "` ‖ kind ‖ …) | Made by |
 | --- | --- | --- |
 | `addSig` (per entry) | `entry` ‖ lp(vaultId) ‖ lp(addedEpoch) ‖ lp(key) ‖ lp(sign.p256) ‖ lp(sign.mldsa65) ‖ lp(kind) ‖ lp(added) ‖ lp(addedBy) | the approver, which must be listed in the `vault.json` of `addedEpoch` that first lists the entry; or the entry itself (a kit join, `addedBy: "recovery"`) |
-| `epochSig` | `epoch` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(parent) ‖ lp(reason) ‖ lp(n) ‖ the epoch's **first list**: n fingerprints, sorted ‖ lp(m) ‖ the parent list as the author saw it: m fingerprints, sorted | the epoch's author, which must be in the parent epoch's list; at epoch 1, the creating device, which must be in epoch 1's first list (there is no parent; the root anchors it) |
+| `epochSig` | `epoch` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(parent) ‖ lp(reason) ‖ lp(recovery fingerprint) ‖ lp(rejected author, empty except in a `resolve` epoch) ‖ lp(n) ‖ the epoch's **first list**: n fingerprints, sorted ‖ lp(m) ‖ the parent list as the author saw it: m fingerprints, sorted | the epoch's author, which must be in the parent epoch's list; at epoch 1, the creating device, which must be in epoch 1's first list (there is no parent; the root anchors it) |
 | `authorSig` | `manifest` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(epochRecordHash) ‖ lp(SHA-256(listMessage)) ‖ lp(format) ‖ lp(k) ‖ the k distinct features, sorted | a device listed in this `vault.json` |
 
 ECDSA signs the message with SHA-256 and stores `r ‖ s` (64 bytes); ML-DSA-65 signs the message
@@ -313,7 +320,9 @@ from `K_e`, its wrap was tampered with. `root` must equal the trust record's roo
 the file is tampered. Then:
 
 1. **Same epoch and `epochId` as the trust record**, and `listTag`, `authorSig` and every new entry's
-   `addSig` verify: **verified**. A list that only gained entries under the same epoch is an addition;
+   `addSig` verify: **verified**. A new entry is admitted only against the list the device already
+   verified (and entries admitted before it), never against other new entries' say-so (KH1 code
+   review H1). A list that only gained entries under the same epoch is an addition;
    one whose entries changed only by `name` is a rename. A list that lost entries, or whose entry
    changed any other field, under the same epoch is **tampered**: a removal always changes the epoch
    (§5).
@@ -324,7 +333,8 @@ the file is tampered. Then:
      own. The first link after the pinned epoch can only be made by a holder of the pinned key, so a
      `vault.json` built around an attacker's key fails here.
    - If the record has not arrived: the change is taken only when the epoch's `parent` is the pinned
-     epoch and `epochLink` and `epochSig` verify **directly** under the pinned epoch's keys. Otherwise
+     epoch, `epochLink` verifies **directly** under the pinned epoch's link keys, and `epochSig`
+     verifies from `vault.json` (§3) by a device of the pinned list, over a first list within it. Otherwise
      the new epoch is **unverified-pending**: the device keeps reading, keeps writing locally under its
      pinned key, uploads nothing new, and pulls again. Writes made meanwhile are in its ledger and are
      caught up (§5.4) once the epoch verifies. The status line says "Waiting for a device-change record
@@ -426,9 +436,11 @@ revision). The JSON:
               "sealed": { "notes/<id>/<name>.delta.age": "<sha256 hex>", … } },
   "chain": [ { "epoch": 1, "epochId": "…", "linkPublicKeys": { "ed25519": "…", "mldsa65": "…" },
                "reason": "create", "list": ["<fingerprint>", …], "parentList": [],
-               "author": { "key": "age1pq1…", "p256": "…", "mldsa65": "…" }, "epochSig": { … } },
+               "author": { "key": "age1pq1…", "p256": "…", "mldsa65": "…" }, "epochSig": { … },
+               "recovery": "<fingerprint>" },
              { "epoch": 2, "epochId": "…", "parent": "…", "linkPublicKeys": { … }, "link": { … },
                "reason": "remove", "list": [ … ], "parentList": [ … ], "author": { … }, "epochSig": { … },
+               "recovery": "<fingerprint>", "rejected": "<fingerprint, resolve epochs only>",
                "additions": [ { "key": "age1pq1…", "sign": { … }, "kind": "iphone",
                                 "added": "…", "addedEpoch": 2, "addedBy": "e5f6a7b8",
                                 "addSig": { … } }, … ] },
@@ -448,7 +460,14 @@ revision). The JSON:
   even after re-encryption has deleted the older records.
 - `reason`: `create`, `remove`, `recovery` (replacing the kit), `reencrypt`, `reapply` or `resolve`
   (§5.6). It and `removed` are shown in the device history and are informational: removals are
-  computed (§4.1).
+  computed (§4.1). The record's `reason` and `by` must equal its last chain entry's (KH1 code review
+  M6), and readers use the chain entry.
+- Each chain entry names the epoch's **recovery** fingerprint and, in a `resolve` epoch, the
+  **rejected** author, both signed by `epochSig`, so every copy of the chain carries them (KH1 code
+  review M1, M2). A `recovery` or `reencrypt` epoch replaces the recovery fingerprint (the new one is
+  its only new key, the old one is gone); every other epoch keeps it. The recovery keys of fork
+  resolution are the chain's `recovery` fields. When the removed device authored a recovery epoch, the
+  removal sheet suggests replacing the kit.
 - Readers bound the file (64 MiB on disk and after gunzip) and treat it as untrusted input (format.md
   §9); KH1 adds a fuzz target.
 
@@ -572,9 +591,25 @@ the author, the first list, and the removals computed as in §4.1. The **kept ch
 root down: at each epoch with more than one child, the rules below pick one child, comparing the
 **subtrees** below the children (each child with all its descendants), never the children alone.
 
+**Context and counted epochs (KH1 code review C1).** A removed device that appended one epoch under
+an old honest stale fork, removing the real side's author, made that fork win by rule 1 on every
+device. So:
+
+- an epoch authored by a device that this device's **pinned chain** removed never enters the tree
+  (unless it is on the pinned chain);
+- two sides are compared over their **counted** epochs: each child counts; a descendant counts when
+  its parent counts and no counted epoch of the other side removed its author (to a fixed point;
+  undecided epochs do not count). "Removed by some epoch in S", "has descendants" and the
+  re-application set below are over counted epochs only, so a removed device's epochs supply neither
+  removals nor descendants to a side;
+- walking down the kept chain, a child whose author the kept prefix removed, or whose author is in the
+  re-application set, is dropped with its subtree, also when it is the only child.
+
 **Pre-pass.** At a branch with several children, first discard every child whose author is removed by
 some sibling's subtree, unless that child's own subtree removes that sibling's author in turn (a true
-mutual pair, rule 2). A child discarded here has lost by rule 1. Then the remaining children are
+mutual pair, rule 2); only siblings that no other sibling discards this way discard others, and the
+pass repeats until nothing changes (in the three-children case, X's fork removing B must not discard
+B's honest side). A child discarded here has lost by rule 1. Then the remaining children are
 compared in pairs, in `epochId` order, the winner of each pair going on. Rule outcomes are not
 transitive, so the pre-pass makes rule 1 decisive whatever the pairing order: a removed device cannot
 force a question (rule 2) against an honest sibling when another sibling already removes it. A side
@@ -605,7 +640,8 @@ For a branch point P with sides **S** and **T** (subtrees rooted at children `s`
    - **Who is bound**: other non-author devices still ask their own users, and show any resolve epoch
      they have seen as context ("Mac kept the change made on iPad"). The two **authors**, which are
      never asked, follow a resolve epoch whose author's `addedBy` chain (§4.1) passes through neither
-     author, so a device X added cannot settle it for X. An author on the losing side is then
+     author, so a device X added cannot settle it for X. Two such resolve epochs that reject different
+     authors are shown as a contradiction, and the author's user is asked (KH1 code review M4). An author on the losing side is then
      unlisted and told so (§5.5).
    - **Contradictions**: a device whose stored answer differs from a resolve epoch it sees shows both
      ("You kept the change made on iPad; Mac kept the change made on Phone") and lets the user revise
@@ -1360,3 +1396,18 @@ design now.
 | L3 rule 3 counts a removed device's own descendants | stated in §5.6 rule 3 and "Residual" |
 | L4 §10's removed-device row | one question per device, named from the parent list, and the puppet line (§10) |
 | L5 missing fork-tree vectors | three children with a mutual pair and a decisive sibling; an addition carried into a removal; a resolve by a device not in P's list; a puppet's resolve (§12 KH1) |
+
+### 16.4 KH1 code review
+
+The independent review of KH1's code (#63 merged; #65 fixed before merging) found one critical, two
+high, six medium and five low findings. The design changes they made are written above:
+
+| Finding | Change |
+| --- | --- |
+| C1 a removed device hijacks the kept chain by appending under an old honest stale fork | §5.6: the pinned chain as context, counted epochs per pair of sides, pruning on the kept prefix |
+| H1 additions admitted against the `vault.json` itself | §4.3 step 1: only against the verified list |
+| H2 `epochSig` not verifiable from `vault.json` | §3: `epochReason`, `parentList` (and `rejected`) in `vault.json`; the first list derived from `addedEpoch` |
+| M1 which fingerprint is the recovery key | §5.2.1: `recovery` in each chain entry, signed; replaced by recovery and re-encryption epochs |
+| M2 a resolve epoch's rejected author unsigned and dropped from chain copies | §4.1, §5.2.1: `rejected` in `epochSig` and in chain entries |
+| M4 two binding resolve epochs that disagree settled silently | §5.6: a contradiction and a question |
+| M6 the record's `reason`/`by` not tied to its chain entry | §5.2.1 |
