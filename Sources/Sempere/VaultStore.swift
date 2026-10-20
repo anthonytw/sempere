@@ -116,6 +116,9 @@ public struct VaultStore: Sendable {
     static let stagingName = ".staging"
     static let trashName = ".trash"
     static let locksName = ".locks"
+    /// The folder of the store vaults' sync targets and their sync state (`SyncTargetRegistry` in
+    /// SempereSync): `<root>/.sync/<vault id>/`. Removed with its vault.
+    public static let syncName = ".sync"
     /// How long `create`, `importVault` and `remove` wait for a vault's write lock.
     public static let lockTimeout: TimeInterval = 30
 
@@ -403,6 +406,9 @@ public struct VaultStore: Sendable {
             throw VaultStoreError.busy(id)
         }
         try? FileManager.default.removeItem(at: trash)
+        // Its sync targets and their state go with it (nothing remote is touched).
+        try? FileManager.default.removeItem(at: root.appendingPathComponent(Self.syncName, isDirectory: true)
+            .appendingPathComponent(id.uuidString.lowercased(), isDirectory: true))
     }
 
     // MARK: - Locks

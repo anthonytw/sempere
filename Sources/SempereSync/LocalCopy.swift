@@ -26,6 +26,13 @@ public struct LocalCopy: Sendable {
         self.folder = directory.appendingPathComponent(folderName, isDirectory: true)
     }
 
+    /// A copy at `folder` whose sync state lives in `stateDirectory`: a store vault and one of its
+    /// targets (`SyncTargetRegistry.stateDirectory`). `remove()` then deletes only the state.
+    public init(folder: URL, stateDirectory: URL) {
+        self.directory = stateDirectory
+        self.folder = folder
+    }
+
     /// The sync-state file of the copy.
     public var stateURL: URL { directory.appendingPathComponent("sync-state.json") }
     var stagingFolder: URL { folder.appendingPathExtension("download") }
