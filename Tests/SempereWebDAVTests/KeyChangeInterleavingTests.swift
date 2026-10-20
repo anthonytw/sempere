@@ -340,6 +340,16 @@ final class KeyChangeRun: @unchecked Sendable {
         }
     }
 
+    /// True when a device holding `theirs` syncs a target that holds this device's list: it will meet
+    /// this list and can keep it. Otherwise only this device can resolve the two (the user keeps theirs).
+    func othersSee(_ d: KCDevice, theirs: Data) -> Bool {
+        guard let mine = d.manifest() else { return false }
+        return listed.contains { o in
+            o !== d && (o.manifest().map { Vault.sameList($0, theirs) } ?? false)
+                && o.targets.contains { Vault.sameList($0.file([Vault.manifestName]) ?? Data(), mine) }
+        }
+    }
+
     /// True when `theirs` rotated the secret away from the one this device holds now.
     func rotatedFromMine(_ d: KCDevice, _ theirs: Data) -> Bool {
         guard let v = try? d.vault(), let own = v.currentSecret, let other = v.secret(ofManifest: theirs), other != own,
@@ -386,7 +396,7 @@ final class KeyChangeRun: @unchecked Sendable {
                     if let t = w.targets.first(where: { $0.name == target }), let theirsData = t.file([Vault.manifestName]),
                        let theirs = Vault.listFingerprint(theirsData), let mine = d.manifest().flatMap(Vault.listFingerprint),
                        theirs > mine, !rotatedFromMine(d, theirsData),
-                       let m = d.manifest(), w.targets.contains(where: { Vault.sameList($0.file([Vault.manifestName]) ?? Data(), m) }) {
+                       othersSee(d, theirs: theirsData) {
                         continue   // the other side keeps this one: it can see it on a target
                     }
                     do {
@@ -420,7 +430,7 @@ final class KeyChangeRun: @unchecked Sendable {
                               let mine = d.manifest().flatMap(Vault.listFingerprint) else { continue }
                         let met = concurrent(d, theirsData)
                         // The other side keeps this one, when it can see it on a target.
-                        let visible = d.manifest().map { m in w.targets.contains { Vault.sameList($0.file([Vault.manifestName]) ?? Data(), m) } } ?? false
+                        let visible = othersSee(d, theirs: theirsData)
                         // A change that rotated away from this device's secret is never undone (that would
                         // roll back a revocation): this side keeps it, whatever the order.
                         if met && theirs > mine && visible && !rotatedFromMine(d, theirsData) { continue }
