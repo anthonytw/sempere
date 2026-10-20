@@ -603,8 +603,8 @@ The user picks the mode in the key-change sheet:
   were never taken back; a leftover old blob name came back as a download; a confirmed "keep the
   other change" could roll back to a list under a secret this device had replaced.
 - **Not in P4a**: inbox, `keys/`, `summaries/` and notebook records are not rewrap-replaced (P4);
-  F16 runs over a target whose `vault.json` is replaced underneath (P3's `EvictingFolderRemote` is not
-  merged yet); F11 runs over `MemoryRemote` faults and the WebDAV mock, not wsgidav behind the fault
+  F16 runs over a target whose `vault.json` is replaced underneath and over P3's provider folder
+  (`EvictingFolderProvider` conflict versions); F11 runs over `MemoryRemote` faults and the WebDAV mock, not wsgidav behind the fault
   proxy; the app neither syncs key changes nor shows late files (P10, P9).
 
 ## 7. What gets deleted, what stays (revised for placed vaults)

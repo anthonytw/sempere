@@ -381,8 +381,9 @@ final class KeyChangeRun: @unchecked Sendable {
                 if let (target, _) = d.coordinator.conflicts.sorted(by: { $0.key < $1.key }).first {
                     if let t = w.targets.first(where: { $0.name == target }), let theirsData = t.file([Vault.manifestName]),
                        let theirs = Vault.listFingerprint(theirsData), let mine = d.manifest().flatMap(Vault.listFingerprint),
-                       theirs > mine, !rotatedFromMine(d, theirsData) {
-                        continue   // the other side keeps this one
+                       theirs > mine, !rotatedFromMine(d, theirsData),
+                       let m = d.manifest(), w.targets.contains(where: { Vault.sameList($0.file([Vault.manifestName]) ?? Data(), m) }) {
+                        continue   // the other side keeps this one: it can see it on a target
                     }
                     do {
                         var dropped: [String]
