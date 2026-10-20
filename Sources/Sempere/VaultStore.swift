@@ -38,6 +38,8 @@ public enum VaultStoreError: Error, Equatable, Sendable, CustomStringConvertible
     case inUse(UUID)
     /// Another writer held the vault's lock for the whole wait.
     case busy(UUID)
+    /// A restore could not bring back every file of the backup (how many failed): nothing was added.
+    case restoreIncomplete(Int)
     /// A file system failure.
     case io(String)
 
@@ -72,6 +74,8 @@ public enum VaultStoreError: Error, Equatable, Sendable, CustomStringConvertible
             return "vault \(id.uuidString.lowercased()) is open (in the app or another command); close it first"
         case .busy(let id):
             return "another writer is using vault \(id.uuidString.lowercased()); try again"
+        case .restoreIncomplete(let count):
+            return "\(count) files of the backup could not be restored (see `sempere backup verify`); nothing was added"
         case .io(let detail):
             return detail
         }
@@ -91,13 +95,16 @@ public enum VaultStoreError: Error, Equatable, Sendable, CustomStringConvertible
 /// <root>/.trash/<uuid>/              a vault being removed (never listed)
 /// <root>/.locks/<vaultId>.write      the vault's VaultFileLock (writers)
 /// <root>/.locks/<vaultId>.open       held shared while the vault is open (`lease`)
+/// <root>/<vaultId>/.replaced-<name>  the vault being replaced (`restore` with `replace`), for an instant
 /// ```
 ///
 /// Each vault is isolated by its id (§4.2): its own folder, write lock and lease, so two vaults are
 /// open, written and removed independently. A vault appears in the store only complete: it is built
 /// or copied under `.staging`, checked there, and moved into place by one `rename(2)` of its folder,
 /// so an interrupted create or copy-in leaves nothing listed (`sweep` removes what it left). The
-/// store holds one copy of each vault id.
+/// store holds one copy of each vault id. A replace (`restore` with `replace`) builds the new copy in
+/// staging first, then moves the old copy aside and the new one in; a crash between the two renames
+/// leaves the old copy aside, and `sweep` puts it back.
 ///
 /// Every byte of a copied-in source is untrusted (format.md §9): only folders and regular files are
 /// copied, no symbolic link is followed, each file is bounded, and the whole copy is compared byte for
@@ -313,6 +320,62 @@ public struct VaultStore: Sendable {
         }
     }
 
+    // MARK: - Restore
+
+    /// Options of `restore`.
+    public struct RestoreOptions: Sendable {
+        /// The vault's name in the store; nil keeps the name of the copy it replaces, else the backup folder's.
+        public var name: String?
+        /// Replace the store's copy of the same vault id (else that is refused with `.alreadyInStore`).
+        public var replace: Bool
+        /// Test seam: stop (as a crash would) after the old copy was moved aside, before the new one is in.
+        var crashAfterSettingAside = false
+
+        public init(name: String? = nil, replace: Bool = false) {
+            self.name = name
+            self.replace = replace
+        }
+    }
+
+    /// Restores the backup folder (or any vault folder) `backup` into the store (`Backup.restore`: every
+    /// file checked against `backup.json`). The restore is built in staging and must bring back every file,
+    /// else nothing is added (`.restoreIncomplete`). When the store holds the vault id already, the restore
+    /// is refused unless `options.replace`: then the old copy is replaced as a whole, after the new one is
+    /// complete, and only while the vault is not open anywhere (`.inUse`).
+    ///
+    /// - Returns: the new entry and the restore's report.
+    @discardableResult
+    public func restore(from backup: URL, options: RestoreOptions = RestoreOptions()) throws
+        -> (entry: Entry, report: RestoreReport)
+    {
+        let src = backup.standardizedFileURL
+        if src.overlaps(root) { throw VaultStoreError.sourceInsideStore(src.path) }
+        let id: UUID
+        do { id = try Vault.open(at: src).vaultId } catch {
+            throw VaultStoreError.notAVault(path: src.path, detail: "\(error)")
+        }
+        let existing = entry(id: id)
+        if let existing, !options.replace { throw VaultStoreError.alreadyInStore(vaultId: id, name: existing.name) }
+        let folder = try Self.folderName(for: options.name ?? existing?.name ?? Self.displayName(of: src))
+        try prepare()
+        sweep()
+        let staging = try makeStaging()
+        defer { staging.discard() }
+        let staged = staging.dir.appendingPathComponent(folder, isDirectory: true)
+        let report = try Backup.restore(from: src, to: staged)
+        guard report.errors.isEmpty, FileIO.exists(staged.appendingPathComponent(Vault.manifestName)) else {
+            throw VaultStoreError.restoreIncomplete(max(report.errors.count, 1))
+        }
+        let restored: UUID
+        do { restored = try Vault.open(at: staged).vaultId } catch {
+            throw VaultStoreError.copyMismatch("\(Vault.manifestName): \(error)")
+        }
+        guard restored == id else { throw VaultStoreError.sourceChanged(Vault.manifestName) }
+        let entry = try install(staged, id: id, replacing: options.replace,
+                                crashAfterSettingAside: options.crashAfterSettingAside)
+        return (entry, report)
+    }
+
     // MARK: - Remove
 
     /// Removes the vault `id` from the store, permanently: its folder is moved out of the store in one
@@ -400,9 +463,21 @@ public struct VaultStore: Sendable {
         for name in (try? FileIO.entries(root, directories: true) { !$0.hasPrefix(".") }) ?? [] {
             guard let id = Self.storeID(name) else { continue }
             let dir = folder(of: id)
-            guard Self.vaultFolder(in: dir) == nil else { continue }
+            let aside = Self.setAside(in: dir)
+            guard Self.vaultFolder(in: dir) == nil || !aside.isEmpty else { continue }
             _ = try? writeLock(for: id).withLockIfFree {
-                if Self.vaultFolder(in: dir) == nil { try? fm.removeItem(at: dir) }
+                let aside = Self.setAside(in: dir)
+                if Self.vaultFolder(in: dir) != nil {
+                    // A replace finished: the old copy goes.
+                    for old in aside { try? fm.removeItem(at: old) }
+                } else if let old = aside.first {
+                    // A replace stopped between its two renames: the old copy comes back.
+                    let back = dir.appendingPathComponent(String(old.lastPathComponent.dropFirst(Self.asidePrefix.count)),
+                                                          isDirectory: true)
+                    try? Self.rename(old, to: back)
+                } else {
+                    try? fm.removeItem(at: dir)
+                }
             }
         }
     }
@@ -421,6 +496,15 @@ public struct VaultStore: Sendable {
     static func storeID(_ name: String) -> UUID? {
         guard let id = UUID(uuidString: name), id.uuidString.lowercased() == name else { return nil }
         return id
+    }
+
+    /// The prefix of a copy being replaced, inside its vault-id folder (`.replaced-<name>.sempere`).
+    static let asidePrefix = ".replaced-"
+
+    /// The copies set aside by a replace in the vault-id folder `dir`.
+    static func setAside(in dir: URL) -> [URL] {
+        ((try? FileIO.entries(dir, directories: true) { $0.hasPrefix(asidePrefix) && $0.count > asidePrefix.count }) ?? [])
+            .map { dir.appendingPathComponent($0, isDirectory: true) }
     }
 
     /// The vault folder inside a vault-id folder: the `.sempere` folder holding a `vault.json`.
@@ -476,21 +560,52 @@ public struct VaultStore: Sendable {
         return Staging(dir: dir, held: held)
     }
 
-    /// Moves the finished vault folder `vaultURL` into `<root>/<id>/` under the vault's write lock.
-    private func install(_ vaultURL: URL, id: UUID) throws -> Entry {
+    /// Moves the finished vault folder `vaultURL` into `<root>/<id>/` under the vault's write lock. With
+    /// `replacing`, a copy already there is first moved aside (`.replaced-<name>`), then deleted once the new
+    /// one is in; refused while that vault is open anywhere.
+    private func install(_ vaultURL: URL, id: UUID, replacing: Bool = false,
+                         crashAfterSettingAside: Bool = false) throws -> Entry {
         let dir = folder(of: id)
+        var notOpen: FileLock?
+        defer { notOpen?.release() }
+        if replacing, Self.vaultFolder(in: dir) != nil {
+            guard let held = try FileLock.acquire(openLockURL(id), exclusive: true, deadline: .distantPast,
+                                                  createParent: true, throwOnTimeout: false) else {
+                throw VaultStoreError.inUse(id)
+            }
+            notOpen = held
+        }
+        var aside: URL?
         do {
             try writeLock(for: id).withLock(timeout: Self.lockTimeout) {
                 if FileIO.isDirectory(dir) {
                     if let present = Self.vaultFolder(in: dir) {
-                        throw VaultStoreError.alreadyInStore(vaultId: id, name: Self.displayName(of: present))
+                        guard replacing, notOpen != nil else {
+                            throw VaultStoreError.alreadyInStore(vaultId: id, name: Self.displayName(of: present))
+                        }
+                        let old = dir.appendingPathComponent(Self.asidePrefix + present.lastPathComponent, isDirectory: true)
+                        for stale in Self.setAside(in: dir) { try? FileManager.default.removeItem(at: stale) }
+                        try Self.rename(present, to: old)
+                        try FileIO.syncDirectory(dir)
+                        aside = old
+                        if crashAfterSettingAside { throw VaultStoreError.io("simulated crash after setting the old copy aside") }
+                        do {
+                            try Self.rename(vaultURL, to: dir.appendingPathComponent(vaultURL.lastPathComponent, isDirectory: true))
+                        } catch {
+                            try? Self.rename(old, to: present)   // the old copy stays
+                            aside = nil
+                            throw error
+                        }
+                    } else {
+                        try Self.rename(vaultURL, to: dir.appendingPathComponent(vaultURL.lastPathComponent, isDirectory: true))
                     }
                 } else {
                     try FileIO.createStagingDirectory(dir)
+                    try Self.rename(vaultURL, to: dir.appendingPathComponent(vaultURL.lastPathComponent, isDirectory: true))
                 }
-                try Self.rename(vaultURL, to: dir.appendingPathComponent(vaultURL.lastPathComponent, isDirectory: true))
                 try FileIO.syncDirectory(dir)
                 try FileIO.syncDirectory(root)
+                if let old = aside { try? FileManager.default.removeItem(at: old) }
             }
         } catch VaultFileLock.LockError.timedOut {
             throw VaultStoreError.busy(id)

@@ -69,6 +69,9 @@ struct VaultStoreProblem: Error, Equatable, CustomStringConvertible {
             return String(localized: "The vault changed while it was being copied, so nothing was added. Try again.")
         case .copyMismatch:
             return String(localized: "The copy did not match the original, so nothing was added. Try again; if it happens again, check the storage the vault is on.")
+        case .restoreIncomplete(let count):
+            return String(localized: "\(count) files of the backup could not be restored, so nothing was added. Check the backup, or restore from another copy of it.",
+                          comment: "%lld is a number of files")
         case .inUse:
             return String(localized: "That vault is open. Close it first.")
         case .busy:
@@ -87,12 +90,13 @@ extension AppModel {
     /// "Open Vault…" and vaults handed to the app: copies the vault the user picked (a `.sempere` folder,
     /// a plain folder, a folder holding one vault: `VaultLocator`) into the store, then opens the copy.
     /// The picked folder is only read. A vault in iCloud Drive is downloaded completely first. The open
-    /// vault stays open until the copy is in place, so a refused copy changes nothing.
+    /// vault stays open until the copy is in place, so a refused copy changes nothing. A vault whose id
+    /// the store already holds is not copied again: its copy opens (`openExistingCopy`).
     ///
     /// - Parameters:
     ///   - external: the vault was handed to the app from outside (`handleOpened`, S16).
     ///   - followUp: what happens to the picked folder afterwards (P6 adds keeping it as a sync target).
-    /// - Throws: `VaultStoreProblem` (already on this device, not downloaded, incomplete…), or what
+    /// - Throws: `VaultStoreProblem` (not downloaded, incomplete…), or what
     ///   opening the copy throws.
     func copyIn(picked url: URL, library: VaultLibrary, external: Bool = false,
                 followUp: CopyInFollowUp = .importOnly) async throws {
@@ -101,17 +105,27 @@ extension AppModel {
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         try FolderAccess.check(url, scoped: scoped)
         let source = try VaultLocator.resolve(url)
-        vaultCopy = VaultCopyProgress(name: VaultLibrary.displayName(of: source), stage: .copying(done: 0, total: 0))
-        defer { vaultCopy = nil }
         let hooks = iCloudHooks
         let ubiquitous = hooks.isUbiquitous(source)
-        if ubiquitous { try await downloadForCopyIn(source, hooks: hooks) }
         let coordinated = ubiquitous || StorageLocation.classify(source).needsCoordination
+        // A vault already on this device opens its copy, before anything is downloaded or copied.
+        let sourceID = try? await offMain { try CloudVault.coordinatedRead(coordinated ? source : nil) { try Vault.open(at: source).vaultId } }
+        if let sourceID, let existing = library.vaultStore.entry(id: sourceID) {
+            return try await openExistingCopy(existing, from: source, library: library, external: external)
+        }
+        vaultCopy = VaultCopyProgress(name: VaultLibrary.displayName(of: source), stage: .copying(done: 0, total: 0))
+        defer { vaultCopy = nil }
+        if ubiquitous { try await downloadForCopyIn(source, hooks: hooks) }
         let entry: VaultStore.Entry
         do {
             entry = try await library.copyIn(source, coordinated: coordinated) { [weak self] done, total in
                 Task { @MainActor in self?.vaultCopy?.stage = .copying(done: done, total: total) }
             }
+        } catch VaultStoreError.alreadyInStore(let id, _) {
+            // Its vault.json could not be read up front (iCloud had not delivered it yet).
+            guard let existing = library.vaultStore.entry(id: id) else { throw VaultStoreProblem(error: .notFound(id.uuidString)) }
+            vaultCopy = nil
+            return try await openExistingCopy(existing, from: source, library: library, external: external)
         } catch let error as VaultStoreError {
             throw VaultStoreProblem(error: error)
         }
@@ -121,6 +135,19 @@ extension AppModel {
         }
         try await openVault(at: entry.url, external: external)
         remember(in: library)
+    }
+
+    /// "Open Vault…" on a vault whose id the store already holds: opens that copy (the store keeps one
+    /// copy per vault id), and leaves `source` as it is.
+    ///
+    /// The P6 hook: here the app offers to sync the copy with `source` ("Keep syncing with this folder",
+    /// docs/design/device-first-sync.md §8.1), which also brings in what `source` has that the copy lacks.
+    private func openExistingCopy(_ entry: VaultStore.Entry, from source: URL, library: VaultLibrary,
+                                  external: Bool) async throws {
+        if vaultURL?.standardizedFileURL != entry.url.standardizedFileURL {
+            try await openVault(at: entry.url, external: external)
+        }
+        library.rememberStored(entry)
     }
 
     /// Opens a vault of the in-app store (the welcome list) and remembers it.

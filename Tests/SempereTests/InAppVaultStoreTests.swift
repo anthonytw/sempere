@@ -254,6 +254,82 @@ final class InAppVaultStoreTests: TempDirTestCase {
         XCTAssertTrue(stagingLeftovers().isEmpty)
     }
 
+    // MARK: - Restore
+
+    /// A backup folder of the sample vault (`Backup.run`).
+    private func backupFolder() throws -> URL {
+        let dest = tmp.appendingPathComponent("backups/Notes Backup", isDirectory: true)
+        try FileManager.default.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let report = try Backup.run(source: try Vault.open(at: try sourceVault("for-backup.sempere")), to: dest)
+        XCTAssertTrue(report.errors.isEmpty)
+        return dest
+    }
+
+    func testRestoreIntoTheStoreAndReplaceOnlyWhenAsked() throws {
+        let backup = try backupFolder()
+        let (first, report) = try store.restore(from: backup, options: .init(name: "Notes"))
+        XCTAssertEqual(first.vaultId, SampleFixture.vaultId)
+        XCTAssertEqual(first.name, "Notes")
+        XCTAssertFalse(report.restored.isEmpty)
+        XCTAssertTrue(try Vault.open(at: first.url, identities: [identity]).verify().isHealthy)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: first.url.appendingPathComponent(".sempere-restore.json").path))
+
+        // The id is there: refused unless replacing.
+        XCTAssertThrowsError(try store.restore(from: backup)) {
+            XCTAssertEqual($0 as? VaultStoreError, .alreadyInStore(vaultId: SampleFixture.vaultId, name: "Notes"))
+        }
+        // A note written since the backup: a replace brings back the backup as it was.
+        let note = UUID()
+        try Vault.open(at: first.url, identities: [identity]).write(SampleFixture.delta(note, SampleFixture.devA, 1, 9000,
+                                                                                       [.addPage(Page(id: note, order: "a0"))]))
+        // Not while the vault is open.
+        let lease = try store.lease(first.vaultId)
+        XCTAssertThrowsError(try store.restore(from: backup, options: .init(replace: true))) {
+            XCTAssertEqual($0 as? VaultStoreError, .inUse(first.vaultId))
+        }
+        XCTAssertTrue(try Vault.open(at: first.url).noteIDs().contains(note), "nothing changed")
+        lease.release()
+        let (replaced, _) = try store.restore(from: backup, options: .init(replace: true))
+        XCTAssertEqual(replaced.name, "Notes", "keeps the name of the copy it replaces")
+        XCTAssertEqual(store.list().map(\.vaultId), [SampleFixture.vaultId])
+        XCTAssertFalse(try Vault.open(at: replaced.url).noteIDs().contains(note))
+        XCTAssertTrue(VaultStore.setAside(in: replaced.url.deletingLastPathComponent()).isEmpty)
+        XCTAssertTrue(stagingLeftovers().isEmpty)
+    }
+
+    /// A crash between moving the old copy aside and moving the new one in: the next sweep puts the old
+    /// copy back, whole.
+    func testAReplaceCutBetweenItsRenamesKeepsTheOldCopy() throws {
+        let backup = try backupFolder()
+        let first = try store.restore(from: backup, options: .init(name: "Notes")).entry
+        let note = UUID()
+        try Vault.open(at: first.url, identities: [identity]).write(SampleFixture.delta(note, SampleFixture.devA, 1, 9000,
+                                                                                       [.addPage(Page(id: note, order: "a0"))]))
+        let before = try files(first.url)
+        var crash = VaultStore.RestoreOptions(replace: true)
+        crash.crashAfterSettingAside = true
+        XCTAssertThrowsError(try store.restore(from: backup, options: crash))
+        XCTAssertEqual(VaultStore.setAside(in: first.url.deletingLastPathComponent()).count, 1)
+        store.sweep()
+        XCTAssertEqual(store.list().map(\.url), [first.url])
+        XCTAssertEqual(try files(first.url), before, "the old copy is back, note included")
+        XCTAssertTrue(VaultStore.setAside(in: first.url.deletingLastPathComponent()).isEmpty)
+    }
+
+    func testAnIncompleteRestoreAddsNothing() throws {
+        let backup = try backupFolder()
+        let lecture = backup.appendingPathComponent("notes/\(SampleFixture.lecture.uuidString.lowercased())")
+        let name = try XCTUnwrap(FileManager.default.contentsOfDirectory(atPath: lecture.path).first { $0.hasSuffix(".delta.age") })
+        var bytes = try Data(contentsOf: lecture.appendingPathComponent(name))
+        bytes[bytes.count - 1] ^= 0xFF
+        try bytes.write(to: lecture.appendingPathComponent(name))
+        XCTAssertThrowsError(try store.restore(from: backup)) {
+            XCTAssertEqual($0 as? VaultStoreError, .restoreIncomplete(1))
+        }
+        XCTAssertTrue(store.list().isEmpty)
+        XCTAssertTrue(stagingLeftovers().isEmpty)
+    }
+
     // MARK: - Several vaults
 
     /// Two vaults open at once: each has its own lease and write lock, writes to one never wait for

@@ -62,17 +62,20 @@ struct VaultStoreAppTests {
         #expect(model.notes.contains { $0.id == AppModelTests.lecture })
         #expect(library.recents.first?.storeID == entry.vaultId)
 
-        // The same vault again: refused with the app's words, and the open vault stays open.
-        await #expect(throws: VaultStoreProblem(error: .alreadyInStore(vaultId: entry.vaultId, name: "sample"))) {
-            try await model.copyIn(picked: source, library: library)
-        }
+        // The same vault again: not copied twice; its copy stays open as it was.
+        try await model.copyIn(picked: source, library: library)
         #expect(model.phase == .unlocked)
+        #expect(model.vaultURL?.standardizedFileURL == entry.url.standardizedFileURL)
         #expect(library.vaultStore.list().count == 1)
-        // A pick inside a folder holding the vault finds it (VaultLocator), as the in-place open did.
+        // Another folder of the same vault (a pick of the folder holding it: VaultLocator), with no vault
+        // open: the copy on this device opens.
+        model.close()
         let (other, _) = try AppModelTests.fixtureVault()
-        await #expect(throws: VaultStoreProblem.self) {
-            try await model.copyIn(picked: other.deletingLastPathComponent(), library: library)
-        }
+        try await model.copyIn(picked: other.deletingLastPathComponent(), library: library)
+        #expect(model.vaultURL?.standardizedFileURL == entry.url.standardizedFileURL)
+        #expect(model.phase == .locked)
+        #expect(library.vaultStore.list().count == 1)
+        #expect(library.recents.filter { $0.storeID == entry.vaultId }.count == 1)
     }
 
     @Test func anIncompleteVaultIsNotCopiedAndNothingChanges() async throws {

@@ -7,7 +7,7 @@ import Sempere
 struct StoreCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "store",
-        abstract: "List, create, copy in and remove the vaults of a vault store.",
+        abstract: "List, create, copy in, restore and remove the vaults of a vault store.",
         discussion: """
             A store is a folder of complete vaults, one per vault id: <store>/<vault id>/<name>.sempere. The app \
             keeps every vault in its own store, inside its container; on a Mac that is ~/Library/Containers/\
@@ -15,7 +15,7 @@ struct StoreCommand: ParsableCommand {
             store only complete: it is built or copied in a staging folder, checked, and moved into place at \
             once. Any other command works on a store vault through --vault "$(sempere store path NAME)".
             """,
-        subcommands: [StoreList.self, StorePath.self, StoreCreate.self, StoreImport.self, StoreRemove.self]
+        subcommands: [StoreList.self, StorePath.self, StoreCreate.self, StoreImport.self, StoreRestore.self, StoreRemove.self]
     )
 }
 
@@ -156,6 +156,54 @@ struct StoreImport: ParsableCommand {
         if output.json { return try output.emitJSON(entry) }
         output.info("Copied into the store as “\(entry.name)” (\(entry.vaultId.uuidString.lowercased()))")
         if output.quiet { print(entry.url.path) } else { output.info("Path: \(entry.url.path)") }
+    }
+}
+
+struct StoreRestore: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "restore",
+        abstract: "Restore a backup folder (or a vault folder) into the store.",
+        discussion: """
+            Every file is checked against the backup's backup.json (as `sempere restore`). The restore is built \
+            in the store's staging folder and must bring back every file, else nothing is added. A vault id the \
+            store already holds is refused unless --replace: then the store's copy is replaced as a whole once \
+            the restored one is complete (changes made since the backup are lost), and only while that vault \
+            is not open. No key is needed.
+            """
+    )
+
+    @Argument(help: ArgumentHelp("The backup folder (or a vault folder) to restore.", valueName: "backup"))
+    var backup: String
+
+    @Option(name: .long, help: ArgumentHelp(
+        "The vault's name in the store (default: the name of the copy it replaces, else the backup folder's).",
+        valueName: "name"))
+    var name: String?
+
+    @Flag(name: .long, help: "Replace the store's copy of the same vault.")
+    var replace = false
+
+    @OptionGroup var location: StoreOptions
+    @OptionGroup var output: OutputOptions
+
+    func validate() throws {
+        if let name {
+            do { _ = try VaultStore.folderName(for: name) } catch { throw ValidationError("\(error)") }
+        }
+    }
+
+    func run() throws {
+        let (entry, report) = try location.open().restore(from: URL(fileURLWithPath: backup, isDirectory: true),
+                                                          options: VaultStore.RestoreOptions(name: name, replace: replace))
+        if output.json { return try output.emitJSON(RestoreOutput(vault: entry, restored: report.restored.count)) }
+        output.info("Restored \(report.restored.count) files into the store as “\(entry.name)” "
+            + "(\(entry.vaultId.uuidString.lowercased()))")
+        if output.quiet { print(entry.url.path) } else { output.info("Path: \(entry.url.path)") }
+    }
+
+    private struct RestoreOutput: Encodable {
+        var vault: VaultStore.Entry
+        var restored: Int
     }
 }
 

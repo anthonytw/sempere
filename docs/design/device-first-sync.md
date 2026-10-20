@@ -5,8 +5,10 @@ Status: **design approved by the owner on 2026-10-19** (answers in §11). P1 (`S
 transport, N-device stress; docs/ci.md "Transports", "Sync stress") are implemented. The
 key-change review (§6) is a gate that must pass before P4 and P10 land. P5a, the in-app vault store
 (the part of P5 that needs no engine work: `VaultStore`, a per-vault `VaultFileLock`, `sempere store`, New
-Vault and "Open Vault…" copying into the store), is implemented; until P6 the store is
-`Application Support/Sempere/Vaults`, not yet the App Group container.
+Vault and "Open Vault…" copying into the store, Restore from Backup into the store with a confirmed
+replace), is implemented. Owner's decisions there: "Open Vault…" on a vault id already in the store opens
+that copy (P6 offers to sync it with the picked folder); a restore of a vault already on the device asks
+to replace it. Until P6 the store is `Application Support/Sempere/Vaults`, not yet the App Group container.
 
 Owner's decision (2026-10-19):
 

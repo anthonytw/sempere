@@ -65,11 +65,12 @@ final class VaultStoreUITests: XCTestCase {
         let row = element(app, "storeVault-My Notes")
         require(row, "the copy under On This Device", in: app, timeout: 30)
 
-        // The same vault again: refused, and it stays listed once.
+        // The same vault again: not copied twice, the copy on this device opens; it stays listed once.
         click(button(app, "Open Vault…"))
-        let refusal = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "already on this device")).firstMatch
-        require(refusal, "the already-on-this-device message", in: app, timeout: 60)
-        click(app.buttons["OK"].firstMatch)
+        require(close, "the unlock sheet of the copy on this device", in: app, timeout: 60)
+        XCTAssertFalse(element(app, "vaultCopyProgress").exists, "nothing is copied")
+        click(close)
+        require(row, "the copy under On This Device", in: app, timeout: 30)
         XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "storeVault-My Notes").count, 1)
 
         // Opened from the list and unlocked with the passphrase stored in the vault.

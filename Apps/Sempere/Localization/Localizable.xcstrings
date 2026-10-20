@@ -789,6 +789,54 @@
         }
       }
     },
+    "%lld files of the backup could not be restored, so nothing was added. Check the backup, or restore from another copy of it." : {
+      "comment" : "%lld is a number of files",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld file of the backup could not be restored, so nothing was added. Check the backup, or restore from another copy of it."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld files of the backup could not be restored, so nothing was added. Check the backup, or restore from another copy of it."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "No se han podido restaurar %lld archivos de la copia de seguridad, así que no se añadió nada. Revisa la copia de seguridad o restaura desde otra copia."
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "No se ha podido restaurar %lld archivo de la copia de seguridad, así que no se añadió nada. Revisa la copia de seguridad o restaura desde otra copia."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "No se han podido restaurar %lld archivos de la copia de seguridad, así que no se añadió nada. Revisa la copia de seguridad o restaura desde otra copia."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld files of this vault are not on this device yet. Download the vault (in Files, choose Download Now) and try again." : {
       "comment" : "%lld is a number of files",
       "extractionState" : "manual",
@@ -2733,72 +2781,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Una bóveda es una carpeta de archivos cifrados en iCloud Drive o en cualquier ubicación de Archivos; la herramienta de línea de comandos puede reflejarla en WebDAV."
-          }
-        }
-      }
-    },
-    "A vault is one .sempere item in Files: on this device, in iCloud Drive, or anywhere else. Choose the .sempere item itself (a plain folder works too)." : {
-      "comment" : "Welcome screen footer",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "device" : {
-              "ipad" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "A vault is one .sempere item in Files: on this device, in iCloud Drive, or anywhere else. Choose the .sempere item itself (a plain folder works too)."
-                }
-              },
-              "iphone" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "A vault is one .sempere item in Files: on this device, in iCloud Drive, or anywhere else. Choose the .sempere item itself (a plain folder works too)."
-                }
-              },
-              "mac" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "A vault is one .sempere item in the Finder: on this device, in iCloud Drive, or anywhere else. Choose the .sempere item itself (a plain folder works too)."
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "A vault is one .sempere item in Files: on this device, in iCloud Drive, or anywhere else. Choose the .sempere item itself (a plain folder works too)."
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "device" : {
-              "ipad" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Una bóveda es un único elemento .sempere en Archivos: en este dispositivo, en iCloud Drive o en cualquier otro lugar. Elige el propio elemento .sempere (también sirve una carpeta normal)."
-                }
-              },
-              "iphone" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Una bóveda es un único elemento .sempere en Archivos: en este dispositivo, en iCloud Drive o en cualquier otro lugar. Elige el propio elemento .sempere (también sirve una carpeta normal)."
-                }
-              },
-              "mac" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Una bóveda es un único elemento .sempere en el Finder: en este dispositivo, en iCloud Drive o en cualquier otro lugar. Elige el propio elemento .sempere (también sirve una carpeta normal)."
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Una bóveda es un único elemento .sempere en Archivos: en este dispositivo, en iCloud Drive o en cualquier otro lugar. Elige el propio elemento .sempere (también sirve una carpeta normal)."
-                }
-              }
-            }
           }
         }
       }
@@ -5481,18 +5463,6 @@
         }
       }
     },
-    "Create Folder" : {
-      "comment" : "Confirms the new folder for the vault",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Crear carpeta"
-          }
-        }
-      }
-    },
     "Create a device key for “%@”" : {
       "comment" : "Face ID prompt reason; %@ is the vault's name",
       "extractionState" : "manual",
@@ -7601,18 +7571,6 @@
         }
       }
     },
-    "Give the new folder a name without slashes, colons, leading dots or control characters, not ending in .sempere." : {
-      "comment" : "Invalid new folder name",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pon a la carpeta nueva un nombre sin barras, dos puntos, puntos iniciales ni caracteres de control, que no termine en .sempere."
-          }
-        }
-      }
-    },
     "Give the vault a name without slashes, leading dots or control characters." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9558,18 +9516,6 @@
         }
       }
     },
-    "Make a new folder for the vault inside the chosen one" : {
-      "comment" : "Tooltip of the New Folder button",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Crear una carpeta nueva para la bóveda dentro de la elegida"
-          }
-        }
-      }
-    },
     "Make a note from a PDF: one page per PDF page, to write on" : {
       "comment" : "Help tag of Import PDF…",
       "extractionState" : "manual",
@@ -10025,18 +9971,6 @@
         }
       }
     },
-    "New Folder…" : {
-      "comment" : "Button: put the vault into a new folder",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nueva carpeta…"
-          }
-        }
-      }
-    },
     "New Key" : {
       "comment" : "Section header",
       "extractionState" : "manual",
@@ -10344,18 +10278,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La próxima vez, %@ se abrirá tras el código del dispositivo. La clave se queda en el Llavero de este dispositivo y no se incluye en las copias de seguridad."
-          }
-        }
-      }
-    },
-    "No New Folder" : {
-      "comment" : "Button: put the vault directly in the chosen folder",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sin carpeta nueva"
           }
         }
       }
@@ -13035,18 +12957,6 @@
         }
       }
     },
-    "Put the vault directly in the chosen folder" : {
-      "comment" : "Tooltip of the No New Folder button",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poner la bóveda directamente en la carpeta elegida"
-          }
-        }
-      }
-    },
     "Quality" : {
       "comment" : "Settings ▸ Recording: bit rate picker",
       "extractionState" : "manual",
@@ -14127,18 +14037,6 @@
         }
       }
     },
-    "Rename New Folder…" : {
-      "comment" : "Button: rename the new folder for the vault",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Renombrar carpeta nueva…"
-          }
-        }
-      }
-    },
     "Rename Note" : {
       "comment" : "Alert title: rename a note",
       "extractionState" : "manual",
@@ -14340,6 +14238,18 @@
         }
       }
     },
+    "Replace" : {
+      "comment" : "Button: replace the vault on this device with the backup",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reemplazar"
+          }
+        }
+      }
+    },
     "Replace Device Key" : {
       "comment" : "Key window: title of the sheet that replaces a device's key",
       "extractionState" : "manual",
@@ -14442,6 +14352,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sustituir «%@»"
+          }
+        }
+      }
+    },
+    "Replace “%@”?" : {
+      "comment" : "%@ is the name of the vault on this device",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Reemplazar «%@»?"
           }
         }
       }
@@ -14552,18 +14474,6 @@
         }
       }
     },
-    "Restore As a New Vault" : {
-      "comment" : "Restore from Backup: section header",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Restaurar como bóveda nueva"
-          }
-        }
-      }
-    },
     "Restore Note" : {
       "comment" : "Note menu: bring a deleted note back",
       "extractionState" : "manual",
@@ -14608,6 +14518,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Restaurar desde copia…"
+          }
+        }
+      }
+    },
+    "Restore onto This Device" : {
+      "comment" : "Header of the restore's name field",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restaurar en este dispositivo"
           }
         }
       }
@@ -17888,17 +17810,6 @@
         }
       }
     },
-    "The backup is copied into a new vault; the vault you have open is never changed. It opens with the same key as the vault that was backed up." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La copia se restaura en una bóveda nueva; la bóveda que tienes abierta nunca cambia. Se abre con la misma clave que la bóveda copiada."
-          }
-        }
-      }
-    },
     "The backup is healthy: %lld files match their recorded checksums." : {
       "comment" : "Verify Backup result",
       "extractionState" : "manual",
@@ -17943,6 +17854,17 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "The backup is restored onto this device, inside the app, and opens with the same key as the vault that was backed up. If that vault is on this device already, you are asked before it is replaced." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La copia de seguridad se restaura en este dispositivo, dentro de la app, y se abre con la misma clave que la bóveda copiada. Si esa bóveda ya está en este dispositivo, se te pregunta antes de reemplazarla."
           }
         }
       }
@@ -18540,18 +18462,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No se pudo volver a descargar la bóveda; la copia de este dispositivo no ha cambiado: %@"
-          }
-        }
-      }
-    },
-    "The vault goes into a new folder inside “%@”. It is made when you create the vault." : {
-      "comment" : "%@ is the name of the chosen folder",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La bóveda irá en una carpeta nueva dentro de «%@». Se crea al crear la bóveda."
           }
         }
       }
@@ -19388,6 +19298,17 @@
         }
       }
     },
+    "This vault is already on this device. Replacing it puts the backup in its place: changes made since the backup are lost." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta bóveda ya está en este dispositivo. Al reemplazarla, la copia de seguridad ocupa su lugar: se pierden los cambios hechos después de la copia de seguridad."
+          }
+        }
+      }
+    },
     "This vault is read-only: it was written by a newer version of Sempere." : {
       "comment" : "Sheet for PDFs opened with Sempere",
       "extractionState" : "manual",
@@ -19549,72 +19470,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A carpeta o zip…"
-          }
-        }
-      }
-    },
-    "To keep a vault in iCloud Drive, choose a folder inside it. Any Files location works." : {
-      "comment" : "New vault form footer",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "device" : {
-              "ipad" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "To keep a vault in iCloud Drive, choose a folder inside it. Any Files location works."
-                }
-              },
-              "iphone" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "To keep a vault in iCloud Drive, choose a folder inside it. Any Files location works."
-                }
-              },
-              "mac" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "To keep a vault in iCloud Drive, choose a folder inside it. Any Finder location works."
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "To keep a vault in iCloud Drive, choose a folder inside it. Any Files location works."
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "device" : {
-              "ipad" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Para guardar una bóveda en iCloud Drive, elige una carpeta dentro de él. Sirve cualquier ubicación de Archivos."
-                }
-              },
-              "iphone" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Para guardar una bóveda en iCloud Drive, elige una carpeta dentro de él. Sirve cualquier ubicación de Archivos."
-                }
-              },
-              "mac" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Para guardar una bóveda en iCloud Drive, elige una carpeta dentro de él. Sirve cualquier ubicación del Finder."
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Para guardar una bóveda en iCloud Drive, elige una carpeta dentro de él. Sirve cualquier ubicación de Archivos."
-                }
-              }
-            }
           }
         }
       }

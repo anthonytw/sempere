@@ -143,6 +143,30 @@ final class CLIStoreTests: CLITestCase {
         XCTAssertEqual((try cli(["store", "list", "--store", path("s2"), "--json"]).json as? [Any])?.count, 0)
     }
 
+    func testRestoreIntoTheStoreAndReplace() throws {
+        let source = try copyFixtureVault()
+        let backup = path("Notes Backup")
+        let made = try cli(["backup", "--vault", source, "--to", backup])
+        XCTAssertEqual(made.status, 0, made.err)
+        let restored = object(try cli(["store", "restore", backup, "--name", "Notes", "--store", store, "--json"]))
+        let vault = try XCTUnwrap(restored["vault"] as? [String: Any])
+        let path = try XCTUnwrap(vault["path"] as? String)
+        XCTAssertEqual(vault["name"] as? String, "Notes")
+        XCTAssertGreaterThan(restored["restored"] as? Int ?? 0, 0)
+        XCTAssertEqual(try cli(["vault", "verify", "--vault", path, "--identity", Self.fixtureKey]).status, 0)
+
+        let again = try cli(["store", "restore", backup, "--store", store])
+        XCTAssertEqual(again.status, 1)
+        XCTAssertTrue(again.err.contains("already in the store as “Notes”"), again.err)
+        let note = try cli(["notes", "new", "Since the backup", "--vault", path, "--identity", Self.fixtureKey])
+        XCTAssertEqual(note.status, 0, note.err)
+        let replaced = try cli(["store", "restore", backup, "--replace", "--store", store, "-q"])
+        XCTAssertEqual(replaced.status, 0, replaced.err)
+        XCTAssertEqual(replaced.out, path + "\n", "the same vault, under the same name")
+        XCTAssertFalse(try cli(["notes", "list", "--vault", path, "--identity", Self.fixtureKey]).out.contains("Since the backup"))
+        XCTAssertEqual((try cli(["store", "list", "--store", store, "--json"]).json as? [Any])?.count, 1)
+    }
+
     func testTheStoreComesFromTheEnvironment() throws {
         let source = try copyFixtureVault()
         let viaEnv = try cli(["store", "import", source, "-q"], env: ["SEMPERE_STORE": store])

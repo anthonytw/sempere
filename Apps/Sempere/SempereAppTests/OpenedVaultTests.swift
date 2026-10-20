@@ -34,18 +34,15 @@ struct OpenedVaultTests {
         let copy = try #require(library.storedVaults.first)
         #expect(model.vaultURL?.standardizedFileURL == copy.url.standardizedFileURL)
         #expect(model.vaultOpenedExternally)
-        // With no vault open there is nothing to replace: copied at once. The store holds one copy
-        // per vault id, so a second folder with the same id is refused, and nothing opens.
+        // With no vault open there is nothing to replace: opened at once. The store holds one copy per
+        // vault id, so a second folder with the same id opens that copy (nothing is copied again).
         model.close()
         #expect(!model.vaultOpenedExternally)
         #expect(await model.handleOpened(mine, library: library) == nil)
-        #expect(model.phase == .noVault)
-        #expect(model.errorMessage?.contains("already on this device") == true)
-        library.storedVaults = []
-        try library.vaultStore.remove(copy.vaultId)
-        #expect(await model.handleOpened(mine, library: library) == nil)
         #expect(model.phase == .locked)
+        #expect(model.vaultURL?.standardizedFileURL == copy.url.standardizedFileURL)
         #expect(model.vaultOpenedExternally)
+        #expect(library.vaultStore.list().count == 1)
     }
 
     @Test func aRememberedKeyIsOfferedOnlyWhereItOpenedItsVault() async throws {

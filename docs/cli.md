@@ -442,6 +442,7 @@ sempere store list [--store DIR] [--json]
 sempere store path VAULT [--store DIR] [--json]
 sempere store create NAME --recipient age1pq1... [vault init's options] [--store DIR] [--json]
 sempere store import SOURCE [--name NAME] [--store DIR] [--json]
+sempere store restore BACKUP [--name NAME] [--replace] [--store DIR] [--json]
 sempere store remove VAULT --yes [--store DIR] [--json]
 ```
 
@@ -471,6 +472,14 @@ by its folder: `--vault "$(sempere store path Notes)"`.
   store's staging folder is removed by the next store command). A vault id the store already holds is
   refused (exit 1). `--name` names the copy (default: the source folder's name); `-q` prints only the new
   path; `-v` reports progress on stderr.
+- `restore BACKUP` restores a backup folder (or any vault folder) into the store, every file checked
+  against `backup.json` as `sempere restore` does. The restore is built in the store's staging folder and
+  must bring back every file, else nothing is added (exit 1). A vault id the store already holds is
+  refused unless `--replace`: then the store's copy is replaced as a whole once the restored one is
+  complete, keeping its name (changes made since the backup are lost), and only while that vault is not
+  open. The old copy is moved aside before the new one moves in and deleted after; a crash between the two
+  leaves it aside, and the next store command puts it back. `--name` names a new vault (default: the
+  backup folder's name). `--json`: `{vault, restored}`.
 - `remove VAULT --yes` deletes the vault from the store, permanently: with no other copy, its notes are
   gone. Without `--yes` it exits 2 and deletes nothing. It is refused (exit 1) while the vault is open in
   the app or by another command, which hold a lease on it.
