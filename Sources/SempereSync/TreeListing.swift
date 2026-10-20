@@ -25,6 +25,15 @@ import Sempere
 //   folder and `att/` from the tree (`use`): three PROPFINDs in all (the
 //   root, `notes/`, the tree). One that is older checks again.
 //
+// - a check lists only `verifySample` of the note folders (and their `att/`)
+//   one by one when there are more of them than that, spread over the
+//   vault, and takes the rest from the tree in the same run: a first sync,
+//   or the daily check, of a 640-note vault makes about 20 listing requests
+//   instead of 686. The sample compares the same way (the run's folder
+//   listing and the tree must agree exactly on each); a server that
+//   truncates or flattens its answer shows in it, and the failure costs
+//   only what a check cost before (the rest are listed one by one);
+//
 // The tree is used only between `deepListingNotes` note folders (below, the
 // per-folder listings cost little; above, the answer would near the 16 MiB
 // listing bound). A tree request that fails (a 5xx, a cut connection, too
@@ -50,6 +59,56 @@ extension SyncEngine {
 
     /// Note folder counts for which the tree is used (or checked).
     static let deepListingNotes = 8...5_000
+
+    /// How many note folders a check lists one by one to compare with the tree
+    /// (more than this many folders: the rest come from the tree at once).
+    static let verifySample = 16
+
+    /// The folders a check compares: spread evenly over `names` (sorted), and
+    /// some that the tree shows holding an `att/`, which the plain spread
+    /// would miss in a vault where few notes have attachments.
+    func sampleForCheck(_ names: [String], tree: [[String]: [RemoteEntry]]) -> Set<String> {
+        let names = names.sorted()
+        guard names.count > Self.verifySample else { return Set(names) }
+        let plain = Self.verifySample * 3 / 4
+        var out = Set<String>()
+        for i in 0..<plain { out.insert(names[i * names.count / plain]) }
+        out.insert(names[names.count - 1])
+        let withAtt = names.filter { n in
+            (tree[[n]] ?? []).contains { $0.name == Vault.attachmentsName && $0.isCollection }
+        }
+        let extra = Self.verifySample - out.count
+        if extra > 0, !withAtt.isEmpty {
+            for i in 0..<min(extra, withAtt.count) { out.insert(withAtt[i * withAtt.count / min(extra, withAtt.count)]) }
+        }
+        return out
+    }
+
+    /// Lists the sampled folders and their `att/` one by one and compares them
+    /// with the tree. Returns the folders' listings, and whether every one
+    /// agreed (nothing failed, nothing differed).
+    func checkSample(_ sample: [String], tree: [[String]: [RemoteEntry]])
+        throws -> (results: [String: Result<[RemoteEntry]?, Error>], agreed: Bool) {
+        let listed = try listConcurrently(sample.map { [Vault.notesName, $0] }, notes: true)
+        var results: [String: Result<[RemoteEntry]?, Error>] = [:]
+        for (name, r) in zip(sample, listed) { results[name] = r }
+        func same(_ a: [RemoteEntry], _ b: [RemoteEntry]?) -> Bool {
+            a.sorted { $0.name < $1.name } == (b ?? []).sorted { $0.name < $1.name }
+        }
+        var agreed = true
+        var withAtt: [String] = []
+        for name in sample {
+            guard case .success(let entries?) = results[name] else { agreed = false; continue }
+            if !same(entries, tree[[name]]) { agreed = false }
+            if entries.contains(where: { $0.name == Vault.attachmentsName && $0.isCollection }) { withAtt.append(name) }
+        }
+        let atts = try listConcurrently(withAtt.map { [Vault.notesName, $0, Vault.attachmentsName] }, notes: false)
+        for (name, r) in zip(withAtt, atts) {
+            attListings[name] = r
+            guard case .success(let att?) = r, same(att, tree[[name, Vault.attachmentsName]]) else { agreed = false; continue }
+        }
+        return (results, agreed)
+    }
 
     /// Decides how this run lists the `noteDirs` note folders.
     func treeMode(noteDirs: Int) -> TreeMode {
