@@ -85,15 +85,19 @@ extension SyncEngine {
         kc.startManifest = try? localMutable(Vault.manifestName)
         if let remote = fetchedManifest?.data, let local = kc.startManifest {
             kc.listAgreed = Vault.sameList(local, remote)
-            kc.listsDiffer = !kc.listAgreed
         }
+        // Fail closed: a remote vault.json not listed or not read counts as another list (review 10).
+        kc.listsDiffer = !kc.listAgreed
         guard let store = options.keyring, let vault, let secret = vault.currentSecret else { return }
         do {
             // The keyring always holds the current secret (design §6.1 C0).
             kc.ring = options.dryRun ? try store.load(vaultId: vault.vaultId)
                 : try store.update(vaultId: vault.vaultId) { $0.remember(secret, now: options.now) }
         } catch {
-            report.errors.append(.init(path: "keyring", message: Self.describe(error)))
+            // Reported, not an error of every run: sync goes on without the keyring (late files are then
+            // never taken in, only quarantined) until it is repaired (`SealedFileKeyringStore.setAside`).
+            let why = Self.describe(error)
+            keyChangeActivity { $0.keyringProblem = why }
         }
     }
 

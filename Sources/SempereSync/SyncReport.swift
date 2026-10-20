@@ -104,6 +104,8 @@ public struct SyncReport: Codable, Hashable, Sendable {
         /// The remote gives no strong version tokens, so no copy there is replaced (rewrap-replace needs
         /// `If-Match`): a key change never finishes on it (C5(d) waits). Reported, never worked around.
         public var weakStamps = false
+        /// The keyring cannot be read: this run went on without it. Repair: `SealedFileKeyringStore.setAside`.
+        public var keyringProblem: String?
         /// True when this run found every file both sides hold current and
         /// the same on both, under the same list (what lets a key change
         /// remove the journal from this target, design §6.1 C5(d)).

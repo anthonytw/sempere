@@ -2,6 +2,14 @@ import Age
 import Crypto
 import Foundation
 
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Musl)
+import Musl
+#elseif canImport(Darwin)
+import Darwin
+#endif
+
 // MARK: - Secret keyring (docs/design/device-first-sync.md §6.3)
 //
 // A device-local record, per vault, of every vault secret this device has
@@ -183,17 +191,26 @@ public struct SymmetricKeyringSealer: KeyringSealer {
 
 /// An age file to this device's own identity (the CLI's state directory):
 /// only that identity opens it, and the vault id inside is checked on load.
+///
+/// When the CLI's identity is also a vault key and gets replaced (a key change that replaces this very
+/// key), pass both: the keyring opens with either and is sealed again, to every one given, at its next
+/// save. Drop the old identity only after that (`SealedFileKeyringStore.reseal`); otherwise the keyring
+/// no longer opens, which is reported (`SecretKeyringError.unreadable`) and repaired by
+/// `SealedFileKeyringStore.setAside` (its secrets are lost to this device, never guessed).
 public struct AgeKeyringSealer: KeyringSealer {
-    let identity: NativeIdentity
+    let identities: [NativeIdentity]
 
-    public init(identity: NativeIdentity) { self.identity = identity }
+    public init(identity: NativeIdentity) { identities = [identity] }
+
+    /// Opens with any of `identities`, seals to all of them.
+    public init(identities: [NativeIdentity]) { self.identities = identities }
 
     public func seal(_ plaintext: Data, vaultId: UUID) throws -> Data {
-        try AgeFile.encrypt(plaintext, to: [identity.recipient])
+        try AgeFile.encrypt(plaintext, to: identities.map(\.recipient))
     }
 
     public func open(_ sealed: Data, vaultId: UUID) throws -> Data {
-        do { return try AgeFile.decrypt(sealed, with: [identity]) } catch {
+        do { return try AgeFile.decrypt(sealed, with: identities) } catch {
             throw SecretKeyringError.unreadable("\(error)")
         }
     }
@@ -207,13 +224,15 @@ public protocol SecretKeyringStore: Sendable {
     ///   (never taken as "none": that would forget secrets).
     func load(vaultId: UUID) throws -> SecretKeyring?
     func save(_ keyring: SecretKeyring) throws
+    /// Loads (or starts) the keyring of `vaultId`, changes it and saves it when it changed, as one step:
+    /// two runs (two targets, the app and the CLI) never lose each other's entries.
+    @discardableResult
+    func update(vaultId: UUID, _ body: (inout SecretKeyring) throws -> Void) throws -> SecretKeyring
 }
 
 extension SecretKeyringStore {
-    /// Loads (or starts) the keyring of `vaultId`, changes it and saves it
-    /// when it changed.
-    @discardableResult
-    public func update(vaultId: UUID, _ body: (inout SecretKeyring) throws -> Void) throws -> SecretKeyring {
+    /// `update` without a lock of its own (stores that serialize otherwise).
+    func unlockedUpdate(vaultId: UUID, _ body: (inout SecretKeyring) throws -> Void) throws -> SecretKeyring {
         let old = try load(vaultId: vaultId)
         var ring = old ?? SecretKeyring(vaultId: vaultId)
         try body(&ring)
@@ -237,6 +256,14 @@ public final class MemorySecretKeyringStore: SecretKeyringStore, @unchecked Send
     public func save(_ keyring: SecretKeyring) throws {
         lock.lock(); defer { lock.unlock() }
         rings[keyring.vaultId] = keyring
+    }
+
+    private let updates = NSLock()
+
+    @discardableResult
+    public func update(vaultId: UUID, _ body: (inout SecretKeyring) throws -> Void) throws -> SecretKeyring {
+        updates.lock(); defer { updates.unlock() }
+        return try unlockedUpdate(vaultId: vaultId, body)
     }
 }
 
@@ -274,6 +301,8 @@ public struct SealedFileKeyringStore: SecretKeyringStore {
         return ring
     }
 
+    /// Seals and writes the keyring: a temporary file created 0600 (`O_EXCL`), flushed, renamed into
+    /// place, the folder flushed. The bytes never sit in a file anyone else can open.
     public func save(_ keyring: SecretKeyring) throws {
         let e = JSONEncoder()
         e.dateEncodingStrategy = .secondsSince1970
@@ -281,8 +310,64 @@ public struct SealedFileKeyringStore: SecretKeyringStore {
         let sealed = try sealer.seal(try e.encode(keyring), vaultId: keyring.vaultId)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
-        let file = url(keyring.vaultId)
-        try FileIO.writeAtomically(sealed, to: file, replacing: true)
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        let tmp = FileIO.tempURL(in: directory)
+        do { try FileIO.writeNewFile(tmp) { try $0(sealed) } } catch {
+            try? FileManager.default.removeItem(at: tmp)
+            throw error
+        }
+        try FileIO.place(tmp, at: url(keyring.vaultId))
+    }
+
+    /// One update at a time, across threads of this process and across processes (`flock(2)` on a lock
+    /// file beside the keyring).
+    @discardableResult
+    public func update(vaultId: UUID, _ body: (inout SecretKeyring) throws -> Void) throws -> SecretKeyring {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        let lockPath = url(vaultId).path + ".lock"
+        let local = KeyringLocks.shared.lock(for: lockPath)
+        local.lock(); defer { local.unlock() }
+        let fd = lockPath.withCString { open($0, O_RDWR | O_CREAT | O_CLOEXEC, 0o600) }
+        guard fd >= 0 else { throw SecretKeyringError.unreadable("lock \(lockPath): errno \(errno)") }
+        defer { close(fd) }
+        guard flock(fd, LOCK_EX) == 0 else { throw SecretKeyringError.unreadable("lock \(lockPath): errno \(errno)") }
+        defer { _ = flock(fd, LOCK_UN) }
+        return try unlockedUpdate(vaultId: vaultId, body)
+    }
+
+    /// Sets an unreadable keyring aside (kept, never deleted: `<id>.keyring.unreadable-<n>`) so sync can
+    /// keep a keyring again. The secrets it held are lost to this device: files under them become
+    /// invalid here (quarantined, never accepted), never more acceptable. Returns where it went, nil when
+    /// the keyring reads fine or there is none.
+    @discardableResult
+    public func setAside(vaultId: UUID) throws -> URL? {
+        let file = url(vaultId)
+        guard FileIO.exists(file) else { return nil }
+        do { _ = try load(vaultId: vaultId); return nil } catch {}
+        let aside = directory.appendingPathComponent(file.lastPathComponent + ".unreadable-\(UUID().uuidString.prefix(8))")
+        try FileManager.default.moveItem(at: file, to: aside)
+        return aside
+    }
+
+    /// Seals the keyring again under the current sealer (after adding an identity to `AgeKeyringSealer`).
+    public func reseal(vaultId: UUID) throws {
+        guard let ring = try load(vaultId: vaultId) else { return }
+        try save(ring)
+    }
+}
+
+/// One `NSLock` per keyring lock file in this process (`flock` does not exclude threads of one process
+/// on every platform).
+final class KeyringLocks: @unchecked Sendable {
+    static let shared = KeyringLocks()
+    private let guardLock = NSLock()
+    private var locks: [String: NSLock] = [:]
+
+    func lock(for path: String) -> NSLock {
+        guardLock.lock(); defer { guardLock.unlock() }
+        if let l = locks[path] { return l }
+        let l = NSLock()
+        locks[path] = l
+        return l
     }
 }

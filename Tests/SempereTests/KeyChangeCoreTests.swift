@@ -214,4 +214,63 @@ final class KeyChangeCoreTests: VaultTestCase {
         XCTAssertNotNil(OutgoingKeyGuard.refusal(recipient: a.recipient.string, vault: pending, targetsPending: true),
                         "a sync target still pending keeps it")
     }
+
+    // MARK: Keyring store (review finding 8)
+
+    func testKeyringUpdatesFromSeveralThreadsAndStoresLoseNothing() throws {
+        let id = UUID()
+        let dir = tmp.appendingPathComponent("rings-concurrent")
+        let a = SealedFileKeyringStore(directory: dir, sealer: SymmetricKeyringSealer(key: SymmetricKey(data: Data(repeating: 7, count: 32))))
+        let b = SealedFileKeyringStore(directory: dir, sealer: SymmetricKeyringSealer(key: SymmetricKey(data: Data(repeating: 7, count: 32))))
+        let secrets = (0..<24).map { _ in VaultSecret.random() }
+        DispatchQueue.concurrentPerform(iterations: secrets.count) { i in
+            let store = i % 2 == 0 ? a : b
+            _ = try? store.update(vaultId: id) { $0.remember(secrets[i], now: Date()) }
+        }
+        let ring = try XCTUnwrap(try a.load(vaultId: id))
+        XCTAssertEqual(Set(ring.entries.map(\.id)), Set(secrets.map(SecretKeyring.id(of:))), "no update lost")
+    }
+
+    func testAnUnreadableKeyringIsSetAsideNotReadAsEmpty() throws {
+        let id = UUID()
+        let dir = tmp.appendingPathComponent("rings-aside")
+        let store = SealedFileKeyringStore(directory: dir, sealer: AgeKeyringSealer(identity: a))
+        try store.update(vaultId: id) { $0.remember(VaultSecret.random(), now: Date()) }
+        let other = SealedFileKeyringStore(directory: dir, sealer: AgeKeyringSealer(identity: b))
+        XCTAssertThrowsError(try other.load(vaultId: id))
+        XCTAssertThrowsError(try other.update(vaultId: id) { _ in }, "never overwritten as if empty")
+        let aside = try XCTUnwrap(try other.setAside(vaultId: id))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: aside.path), "kept")
+        XCTAssertNil(try other.load(vaultId: id))
+        try other.update(vaultId: id) { $0.remember(VaultSecret.random(), now: Date()) }
+        XCTAssertNotNil(try other.load(vaultId: id))
+    }
+
+    /// The CLI's identity is also a vault key and is replaced: sealed to both, the keyring opens with the
+    /// new one once it was saved again; with the old one alone it is reported unreadable, never guessed.
+    func testTheCLIIdentityReplacedResealsTheKeyring() throws {
+        let id = UUID(), s = VaultSecret.random()
+        let dir = tmp.appendingPathComponent("rings-reseal")
+        try SealedFileKeyringStore(directory: dir, sealer: AgeKeyringSealer(identity: a)).update(vaultId: id) {
+            $0.remember(s, now: Date())
+        }
+        let both = SealedFileKeyringStore(directory: dir, sealer: AgeKeyringSealer(identities: [b, a]))
+        XCTAssertNotNil(try both.load(vaultId: id))
+        try both.reseal(vaultId: id)
+        let newOnly = SealedFileKeyringStore(directory: dir, sealer: AgeKeyringSealer(identity: b))
+        XCTAssertEqual(try newOnly.load(vaultId: id)?.secrets(excluding: VaultSecret.random()), [s])
+    }
+
+    func testTheWindowEndsAtTheChangeTimeHoweverLateItIsSeen() {
+        let s0 = VaultSecret.random()
+        let changedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        var ring = SecretKeyring(vaultId: UUID())
+        ring.noteReplaced(s0, now: changedAt.addingTimeInterval(30 * 86_400))   // seen 30 days late
+        ring.notePolicy(try! .routine(days: 7), outgoing: s0, changedAt: changedAt)
+        XCTAssertEqual(ring.lateFileDeadline(for: s0), changedAt.addingTimeInterval(SecretKeyring.clockSlack + 7 * 86_400))
+        var early = SecretKeyring(vaultId: UUID())
+        early.noteReplaced(s0, now: changedAt.addingTimeInterval(-600))   // a clock behind the changer's
+        early.notePolicy(try! .routine(days: 7), outgoing: s0, changedAt: changedAt)
+        XCTAssertEqual(early.lateFileDeadline(for: s0), changedAt.addingTimeInterval(-600 + 7 * 86_400))
+    }
 }
