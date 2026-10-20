@@ -13,6 +13,8 @@
 #   NDeviceStressTests    3 to 5 devices on one or two remotes (MemoryRemote, the WebDAV mock) through
 #                         transport and hostile-server faults, several bridges (SEMPERE_SYNC_STRESS_BRIDGES=one:
 #                         one remote each), SEMPERE_SYNC_STRESS_SEEDS seeds (long mode)
+#   KeyChangeInterleavingTests  the key-change property test (3 devices, 2 targets), SEMPERE_SYNC_STRESS_SEEDS
+#                         seeds of 120 steps (long mode); KeyChangeScenarioTests  F1 to F19 (design §6.4)
 #   WsgidavConformanceTests, EngineOverWsgidavTests   the transport suites over wsgidav
 # Environment: SEMPERE_STRESS_SEED (1), SEMPERE_STRESS_NOTES (640), SEMPERE_STRESS_SEEDS (60),
 # SEMPERE_SYNC_STRESS_SEEDS (60).
@@ -28,5 +30,5 @@ export SEMPERE_STRESS_VAULT="$PWD/$out"
 export SEMPERE_STRESS_SEEDS="${SEMPERE_STRESS_SEEDS:-60}"
 export SEMPERE_SYNC_STRESS_LONG=1
 export SEMPERE_SYNC_STRESS_SEEDS="${SEMPERE_SYNC_STRESS_SEEDS:-60}"
-export SEMPERE_WEBDAV_TESTS='SyncStressTests|SyncTimingTests|SyncFaultProxyTests|TwoDeviceStressTests|NDeviceStressTests|WsgidavConformanceTests|EngineOverWsgidavTests'
+export SEMPERE_WEBDAV_TESTS='SyncStressTests|SyncTimingTests|SyncFaultProxyTests|TwoDeviceStressTests|NDeviceStressTests|KeyChangeInterleavingTests|KeyChangeScenarioTests|WsgidavConformanceTests|EngineOverWsgidavTests'
 exec scripts/test-webdav.sh --skip-build "$@"

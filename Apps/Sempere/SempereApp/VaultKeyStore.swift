@@ -26,6 +26,8 @@ enum KeyStoreError: Error, Equatable, CustomStringConvertible {
     /// The build lacks the Keychain entitlement this needs (e.g. an unsigned build).
     case missingEntitlement
     case keychain(Int32)
+    /// The saved key must stay: a key change that replaces it is unfinished (design §6.2 F4); the value says why.
+    case keepOutgoingKey(String)
 
     var description: String {
         switch self {
@@ -37,6 +39,8 @@ enum KeyStoreError: Error, Equatable, CustomStringConvertible {
         case .keychain(let status):
             let text = SecCopyErrorMessageString(status, nil) as String? ?? "error"
             return String(localized: "Keychain error \(status): \(text)", comment: "The values are the status code and the system's message")
+        case .keepOutgoingKey:
+            return String(localized: "A key change is unfinished, and files not yet rewrapped open only with the saved key. Keep it until the change finishes.")
         }
     }
 }

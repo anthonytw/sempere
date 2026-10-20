@@ -510,7 +510,9 @@ change can be finished by any device holding an identity of the new set:
    ```json
    { "format": "sempere/1",
      "previousVaultSecret": "-----BEGIN AGE ENCRYPTED FILE-----\n...\n",
-     "rekeyBlobs": true }
+     "rekeyBlobs": true,
+     "mode": "routine",
+     "lateFileWindowDays": 7 }
    ```
 
    - `format`: `sempere/1`.
@@ -521,6 +523,22 @@ change can be finished by any device holding an identity of the new set:
      re-encrypts each under a new file key, `false` rewrites only its
      header. A journal without it is unreadable. A device finishing an
      interrupted change uses the recorded value.
+   - `mode` (optional): `"routine"` or `"compromised"` (the user's "my key
+     may be compromised"). Absent means `"routine"`.
+   - `lateFileWindowDays` (optional): an integer from 0 to 365, the
+     **late-file window**: for how many days after a device first sees this
+     change it still takes in a file that arrives from elsewhere tagged under
+     the outgoing secret (a *late file*, below). Absent means 7 in routine
+     mode and 0 in compromised mode; in compromised mode any other value than
+     0 is invalid.
+
+   A journal whose `mode` is another string or whose `lateFileWindowDays` is
+   out of range does not parse (it is refused, whatever binds it). Both fields
+   are covered by `rewrapPending` (step 2, "Binding the journal"), which binds
+   the journal's exact bytes: whoever can write the folder but does not hold
+   the new secret cannot change them without the journal being refused, so
+   every device that accepts the journal applies the same policy. Writers
+   write both fields.
 2. Write `vault.json` with the new `recipients` and `vaultSecret`, and with
    `recipientsTag` (and, when the secret rotates, `secretLink`) for them
    (§2.1), and `rewrapPending` for the journal of step 1 (below), in one
@@ -661,6 +679,38 @@ A change may also **replace** one recipient by another in a single pass
 (steps 1–4 as for a removal: the secret rotates). Until it finishes, files
 not yet rewrapped are encrypted only to the outgoing recipient, so finishing
 it needs an identity of the outgoing key as well as one of the new set.
+
+#### 3.3.2 Late files and the secret keyring
+
+A copy of the vault that syncs with others (docs/design/device-first-sync.md
+§6) may receive, after a rotation, files tagged under a secret the rotation
+replaced: written by a device that had not seen the change yet, or by a
+removed device, which still holds that secret. These are **late files**.
+Nothing in `vault.json` lets a reader verify them once the journal is gone, so
+a device that syncs SHOULD keep, outside the vault and never synced, a
+**secret keyring**: every secret it has held for the vault, sealed at rest,
+with, for each replaced one, when the device first held a `vault.json` with a
+later secret and the policy (`mode`, `lateFileWindowDays`) of the journal of
+that change, copied when the device first accepted it. A device that never
+accepted that journal records no policy and applies 0 days.
+
+- A late file that **this device** holds in its own copy (written there, or
+  taken in earlier) is rewritten as in step 3 above, from the keyring's secret.
+- A late file that **arrives** from elsewhere is taken in (rewritten as in
+  step 3, then placed) only until the earliest end of the late-file windows of
+  the change away from its secret and of every later change, each counted
+  from when this device first saw that change. After that it is not placed: it
+  is kept aside as a late file, never deleted, for the user to adopt (rewritten
+  into the vault) or export.
+- A file whose name is an older blob name (§8.1.5) of a blob this device holds
+  under its current name is the leftover of a rename: it is not placed.
+
+Under one secret a recipients list only grows: a removal rotates the secret
+(§3.3). A reader that receives a `vault.json` whose secret is the one it holds
+but that lists fewer of its keys does not take it (an older list put back, or
+another device's concurrent addition, which the user resolves). The keyring
+reveals nothing the device did not already hold; whoever reads it can read
+what that device could read before each change.
 
 ## 4. Encrypted file bodies
 

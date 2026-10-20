@@ -341,11 +341,19 @@ final class KeyChangeRun: @unchecked Sendable {
     func redo(_ d: KCDevice, _ dropped: [String]) throws {
         for key in dropped {
             guard let spare = spares.first(where: { $0.recipient.string == key }) else { continue }
-            for _ in 0..<3 {
+            var redone = false
+            for _ in 0..<3 where !redone {
                 for t in d.targets { w.tick(); _ = try? d.sync(t.name, now: w.now) }
-                if (try? w.change(d) { try $0.prepareAddRecipient(spare.recipient, label: "paper") }) != nil { break }
+                redone = (try? w.change(d) { try $0.prepareAddRecipient(spare.recipient, label: "paper") }) != nil
             }
-            count("redone"); note("\(d.name) now \(listOf(d))")
+            if !redone {
+                // The addition is given up: the key it added must not keep access, so the secret rotates.
+                for _ in 0..<3 where !redone {
+                    for t in d.targets { w.tick(); _ = try? d.sync(t.name, now: w.now) }
+                    redone = (try? w.change(d) { try $0.prepareRotation() }) != nil
+                }
+            }
+            count(redone ? "redone" : "redo failed"); note("\(d.name) now \(listOf(d))")
         }
     }
 

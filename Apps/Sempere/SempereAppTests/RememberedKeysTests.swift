@@ -176,6 +176,33 @@ struct RememberedKeysTests {
         #expect(keys.offer == nil)
     }
 
+    /// Design §6.2 F4 (`replaceKeepsOldKey`): while a replace of the remembered key is unfinished, the
+    /// files not yet rewrapped open only with it, so it is neither forgotten nor overwritten.
+    @Test func replaceKeepsOldKey() async throws {
+        let (model, key) = try await Self.lockedModel()
+        let store = FakeKeyStore()
+        let keys = RememberedKeys(store: store)
+        try await keys.unlock(model, identityText: key)
+        try await keys.answer(try #require(keys.offer), storage: .thisDevice)
+        let old = try IdentityFile.parse(key)
+        let new = try NativeIdentity.generate(.postQuantum)
+        var changing = try Vault.open(at: try #require(model.vaultURL), identities: [old, new])
+        let prepared = try changing.prepareReplaceRecipient(old.recipient, with: new.recipient)
+        #expect(throws: VaultError.interrupted) { _ = try changing.commit(prepared, faults: RewrapFaults(stop: .afterFiles(0))) }
+        #expect(RememberedKeys.outgoingKeyRefusal(model.vault) != nil)
+        await #expect(throws: KeyStoreError.self) { try await keys.forget(model) }
+        #expect(await store.items.count == 1, "the outgoing key stays saved")
+        // Offering the new key in its place is refused too.
+        let offer = RememberedKeys.Offer(vaultID: try #require(model.vault?.vaultId), vaultName: "sample", identity: new.string,
+                                         replacing: .thisDevice, keepRemembered: RememberedKeys.outgoingKeyRefusal(model.vault))
+        await #expect(throws: KeyStoreError.self) { try await keys.answer(offer, storage: .thisDevice) }
+        #expect(await store.items.first?.value.identity == old.string)
+        // Finished: forgetting is the user's choice again.
+        var finishing = try Vault.open(at: try #require(model.vaultURL), identities: [old, new])
+        #expect(try finishing.resumeRewrap().isComplete)
+        #expect(RememberedKeys.outgoingKeyRefusal(model.vault) == nil)
+    }
+
     /// The vault is closed while Face ID is up (the store is suspended in
     /// `readKey`): the key that arrives afterwards must not unlock anything.
     @Test func aCloseDuringFaceIDDoesNotUnlock() async throws {

@@ -209,10 +209,10 @@ sempere vault init PATH --recipient age1pq1... [--recipient ...] [--label TEXT .
                          [--store-key FILE [--passphrase-env VAR] [--work-factor 15...18] [--allow-weak-passphrase]]
 sempere vault info
 sempere vault label [TEXT | --clear] [--json]
-sempere vault recipients add age1pq1... [--label TEXT] [--rewrap header|reencrypt] [--store-key FILE [--store-passphrase-env VAR] [--work-factor 15...18]]
-sempere vault recipients remove age1... [--force] [--rewrap header|reencrypt]
-sempere vault recipients replace age1old... age1pq1new... [--label TEXT] [--rewrap header|reencrypt] [--store-key FILE ...]
-sempere vault recipients repair [--keep age1pq1... ...] [--dry-run] [--rewrap header|reencrypt]
+sempere vault recipients add age1pq1... [--label TEXT] [--rewrap header|reencrypt] [--compromised | --late-file-window DAYS] [--store-key FILE [--store-passphrase-env VAR] [--work-factor 15...18]]
+sempere vault recipients remove age1... [--force] [--rewrap header|reencrypt] [--compromised | --late-file-window DAYS]
+sempere vault recipients replace age1old... age1pq1new... [--label TEXT] [--rewrap header|reencrypt] [--compromised | --late-file-window DAYS] [--store-key FILE ...]
+sempere vault recipients repair [--keep age1pq1... ...] [--dry-run] [--rewrap header|reencrypt] [--compromised | --late-file-window DAYS]
 sempere vault recipients confirm
 sempere vault markers [status|repair]
 sempere vault rewrap-resume
@@ -269,6 +269,14 @@ sempere vault merge-copy FROM [--dry-run] [--json]
   file with the removed key. The method is recorded in the journal, so
   `rewrap-resume` (from any device) finishes with the same one. `--json`
   reports it as `blobs`.
+- The journal also records the key change's **mode** and **late-file window**
+  (`format.md` §3.3.1, design `docs/design/device-first-sync.md` §6.5): for how
+  many days after a syncing device first sees the change it still takes in a
+  file another device wrote under the outgoing secret (default 7,
+  `--late-file-window 0...365`). `--compromised` ("my key may be compromised")
+  records 0 days: such late files are kept aside, never placed. `--json`
+  reports them as `mode` and `lateFileWindowDays`. Key changes of a vault the
+  app syncs are not offered in the app yet.
 - Voice notes waiting in `inbox/` (`format.md` §11) are re-encrypted to the
   new set and re-tagged under the new capture key, so they are still adopted
   after a removal. One that verifies under neither the current nor the

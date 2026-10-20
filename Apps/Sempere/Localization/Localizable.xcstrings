@@ -2525,6 +2525,18 @@
         }
       }
     },
+    "A key change is unfinished, and files not yet rewrapped open only with the saved key. Keep it until the change finishes." : {
+      "comment" : "Shown when the user tries to forget or replace a saved vault key during an unfinished key change",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hay un cambio de claves sin terminar y los archivos aún no recifrados solo se abren con la clave guardada. Consérvala hasta que el cambio termine."
+          }
+        }
+      }
+    },
     "A key for a vault with this id is saved on %@, but for another folder (another copy of this vault, or a WebDAV vault added again). Remembering this key replaces it, and it is then offered here too." : {
       "comment" : "Remember Key sheet; the value is “this iPad”, “this iPhone” or “this Mac”",
       "extractionState" : "manual",

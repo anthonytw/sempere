@@ -272,6 +272,20 @@ final class CLIBlobsTests: CLITestCase {
         r = try cli(["vault", "recipients", "add", other.recipient.string, "--rewrap", "sideways"] + access(vault, key))
         XCTAssertEqual(r.status, 2)
 
+        // The key-change mode and late-file window the journal records (format.md §3.3.1).
+        r = try cli(["vault", "recipients", "add", other.recipient.string, "--late-file-window", "3", "--json"] + access(vault, key))
+        XCTAssertEqual(r.status, 0, r.err)
+        XCTAssertEqual((r.json as? [String: Any])?["mode"] as? String, "routine")
+        XCTAssertEqual((r.json as? [String: Any])?["lateFileWindowDays"] as? Int, 3)
+        for bad in [["--compromised", "--late-file-window", "2"], ["--late-file-window", "400"], ["--late-file-window", "-1"]] {
+            r = try cli(["vault", "recipients", "remove", other.recipient.string] + bad + access(vault, key))
+            XCTAssertNotEqual(r.status, 0, "\(bad)")
+        }
+        r = try cli(["vault", "recipients", "remove", other.recipient.string, "--compromised", "--json"] + access(vault, key))
+        XCTAssertEqual(r.status, 0, r.err)
+        XCTAssertEqual((r.json as? [String: Any])?["mode"] as? String, "compromised")
+        XCTAssertEqual((r.json as? [String: Any])?["lateFileWindowDays"] as? Int, 0)
+
         // recover: the content, the name checked inside the vault
         let reopened = try Vault.open(at: vault.url, identities: [try IdentityFile.parse(String(contentsOfFile: key, encoding: .utf8))])
         let blob = vault.url.appendingPathComponent("notes/\(n1)/att/\(try reopened.blobFileName(for: ref))")

@@ -228,6 +228,17 @@ extension Vault {
         return try prepareChange(next, rotate: true, policy: policy, repairing: false, keyChange: keyChange)
     }
 
+    /// Prepares rotating the vault secret without changing the list: every file is re-encrypted to the
+    /// listed keys and re-tagged under a new secret. After "Keep the other change" dropped a key this
+    /// device had added under the same secret (two additions met, design §6.2 F7), files encrypted to
+    /// that key still count as current (stanza counts cannot tell recipients apart, format.md §3.3.1),
+    /// so the key keeps access until a rotation like this one (or the addition is redone).
+    public mutating func prepareRotation(policy: RewrapPolicy = RewrapPolicy(),
+                                         keyChange: KeyChangePolicy = .routine) throws -> PreparedKeyChange {
+        try requirePreparable()
+        return try prepareChange(manifest.recipients, rotate: true, policy: policy, repairing: false, keyChange: keyChange)
+    }
+
     /// Writes a prepared change (K1 to K4): its journal, `vault.json` binding
     /// it, every file rewrapped, then the journal removed. With `keyring`,
     /// this device's outgoing secret is stored there with the change's
@@ -468,7 +479,12 @@ public enum OutgoingKeyGuard {
     public static func refusal(recipient: String, vault: Vault?, targetsPending: Bool) -> String? {
         let pendingHere = vault?.pendingRewrap ?? false
         guard pendingHere || targetsPending else { return nil }
-        if let vault, vault.recipients.contains(where: { $0.key == recipient }), !targetsPending { return nil }
+        // Listed in the vault.json on disk (a change may have written it since this value was opened).
+        let listed = vault.map { v in
+            ((try? Vault.readManifest(FileIO.read(v.manifestURL, maxBytes: BoundedRead.maxManifestBytes)))?.recipients
+                ?? v.recipients).contains { $0.key == recipient }
+        } ?? false
+        if listed, !targetsPending { return nil }
         return "a key change is unfinished: files not yet rewrapped open only with this key. Keep it until the "
             + "change finishes on this device and every sync target"
     }

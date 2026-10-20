@@ -321,15 +321,20 @@ private struct RewrapOutput: Encodable {
     var inboxSkipped: [String] = []
     /// Why a rewrap journal this machine refuses was moved aside first (format.md §3.3.1 "Refused journals").
     var discardedJournal: String? = nil
+    /// The mode the change's journal recorded (`routine` or `compromised`, format.md §3.3.1); nil for a resume.
+    var mode: String? = nil
+    /// The late-file window the journal recorded, in days; nil for a resume.
+    var lateFileWindowDays: Int? = nil
 }
 
-private func reportRewrap(_ report: Vault.RewrapReport, output: OutputOptions) throws {
+private func reportRewrap(_ report: Vault.RewrapReport, output: OutputOptions, keyChange: KeyChangePolicy? = nil) throws {
     if output.json {
         try output.emitJSON(RewrapOutput(complete: report.isComplete, rewrapped: report.rewrapped.count,
                                          alreadyCurrent: report.alreadyCurrent.count,
                                          failures: report.failures.mapValues { "\($0)" },
                                          blobs: report.blobMethod?.rawValue, inboxSkipped: report.inboxSkipped,
-                                         discardedJournal: report.discardedJournal))
+                                         discardedJournal: report.discardedJournal, mode: keyChange?.mode.rawValue,
+                                         lateFileWindowDays: keyChange?.lateFileWindowDays))
     } else {
         if let why = report.discardedJournal {
             output.info("Moved rewrap-journal.json aside to \(Vault.refusedJournalName) first (refused: \(why)).")
@@ -367,9 +372,9 @@ struct RecipientsAdd: ParsableCommand {
         try requirePostQuantum([key])
         var vault = try access.openVault(.required)
         let stored = try store.prepare(for: key)
-        let report = try vault.addRecipient(key, label: label, policy: rewrap.policy)
+        let report = try vault.addRecipient(key, label: label, policy: rewrap.policy, keyChange: try rewrap.keyChange())
         try store.write(stored, into: vault, output: output)
-        try reportRewrap(report, output: output)
+        try reportRewrap(report, output: output, keyChange: try rewrap.keyChange())
     }
 }
 
@@ -403,7 +408,8 @@ struct RecipientsRemove: ParsableCommand {
             throw CLIError.usage("that is the key this vault was unlocked with: unlock with another key to remove it "
                 + "(or pass --force)")
         }
-        try reportRewrap(try vault.removeRecipient(key, policy: rewrap.policy), output: output)
+        try reportRewrap(try vault.removeRecipient(key, policy: rewrap.policy, keyChange: try rewrap.keyChange()), output: output,
+                         keyChange: try rewrap.keyChange())
     }
 }
 
@@ -442,9 +448,10 @@ struct RecipientsReplace: ParsableCommand {
         try requirePostQuantum([newKey])
         var vault = try access.openVault(.required)
         let stored = try store.prepare(for: newKey)
-        let report = try vault.replaceRecipient(oldKey, with: newKey, label: label, policy: rewrap.policy)
+        let report = try vault.replaceRecipient(oldKey, with: newKey, label: label, policy: rewrap.policy,
+                                                keyChange: try rewrap.keyChange())
         try store.write(stored, into: vault, output: output)
-        try reportRewrap(report, output: output)
+        try reportRewrap(report, output: output, keyChange: try rewrap.keyChange())
     }
 }
 
@@ -492,7 +499,8 @@ struct RecipientsRepair: ParsableCommand {
             }
             return
         }
-        try reportRewrap(try vault.repairRecipients(keeping: target, policy: rewrap.policy), output: output)
+        try reportRewrap(try vault.repairRecipients(keeping: target, policy: rewrap.policy, keyChange: try rewrap.keyChange()),
+                         output: output, keyChange: try rewrap.keyChange())
     }
 }
 
@@ -535,9 +543,33 @@ struct RewrapOptions: ParsableArguments {
                 valueName: "header|reencrypt"))
     var rewrap: RewrapMethod?
 
+    @Flag(name: .long,
+          help: ArgumentHelp("My key may be compromised: record the change in compromised mode (format.md §3.3.1).",
+                             discussion: "Devices that sync then take in no file tagged under the outgoing secret "
+                                 + "once they see the change: such late files are kept aside, never placed "
+                                 + "(late-file window 0 days)."))
+    var compromised = false
+
+    @Option(name: .customLong("late-file-window"),
+            help: ArgumentHelp("Days during which syncing devices still take in late files tagged under the outgoing "
+                + "secret (0 to 365; default 7; 0 with --compromised).", valueName: "days"))
+    var lateFileWindow: Int?
+
     var policy: RewrapPolicy {
         guard let rewrap else { return RewrapPolicy() }
         return RewrapPolicy(onAdd: rewrap, onRemove: rewrap)
+    }
+
+    /// The mode and late-file window the change's journal records.
+    func keyChange() throws -> KeyChangePolicy {
+        if compromised {
+            guard lateFileWindow == nil || lateFileWindow == 0 else {
+                throw ValidationError("--compromised takes in no late file: --late-file-window must be 0 or left out")
+            }
+            return .compromised
+        }
+        guard let days = lateFileWindow else { return .routine }
+        do { return try .routine(days: days) } catch { throw ValidationError("\(error)") }
     }
 }
 

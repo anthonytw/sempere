@@ -27,7 +27,22 @@ final class RememberedKeys {
         /// offered at `folder` (another copy of the vault, a WebDAV vault added
         /// again): answering replaces it, and the sheet starts on its storage.
         var replacing: KeyStorage? = nil
+        /// Why the key remembered now must stay (design §6.2 F4: a replace of it is unfinished); answering
+        /// with another key is then refused (`answer`).
+        var keepRemembered: String? = nil
         var id: UUID { vaultID }
+    }
+
+    /// The key-change guard (docs/design/device-first-sync.md §6.2 F4): while a recipient change that
+    /// removes a key this vault was opened with is unfinished, files not yet rewrapped open only with
+    /// that key, so it is never forgotten, deleted or overwritten. `targetsPending`: a sync target still
+    /// holds the change unfinished (none until the app syncs key changes).
+    nonisolated static func outgoingKeyRefusal(_ vault: Vault?, targetsPending: Bool = false) -> String? {
+        guard let vault else { return nil }
+        for r in vault.identityRecipients.sorted() {
+            if let why = OutgoingKeyGuard.refusal(recipient: r, vault: vault, targetsPending: targetsPending) { return why }
+        }
+        return nil
     }
 
     /// How an attempt to unlock with the remembered key ended.
@@ -250,7 +265,8 @@ final class RememberedKeys {
             replacing = stored
         }
         offer = Offer(vaultID: id, vaultName: model.vaultName ?? String(localized: "Vault", comment: "Name shown for a vault that has none"),
-                      identity: identity.string, folder: model.vaultURL, replacing: replacing)
+                      identity: identity.string, folder: model.vaultURL, replacing: replacing,
+                      keepRemembered: replacing == nil ? nil : Self.outgoingKeyRefusal(model.vault))
     }
 
     /// The recipients list verified against this device's trust record (format.md §2.1), not on first use.
@@ -267,6 +283,7 @@ final class RememberedKeys {
     func answer(_ offer: Offer, storage: KeyStorage?) async throws {
         if self.offer?.vaultID == offer.vaultID { self.offer = nil }
         guard let storage else { return }
+        if let why = offer.keepRemembered { throw KeyStoreError.keepOutgoingKey(why) }
         try await store.save(offer.identity, for: offer.vaultID, vaultName: offer.vaultName, storage: storage)
         if let folder = offer.folder { locations.bind(offer.vaultID, to: folder) }
         storageVaultID = offer.vaultID
@@ -277,6 +294,7 @@ final class RememberedKeys {
     /// Forgets the open vault's remembered key.
     func forget(_ model: AppModel) async throws {
         guard let id = model.vault?.vaultId else { return }
+        if let why = Self.outgoingKeyRefusal(model.vault) { throw KeyStoreError.keepOutgoingKey(why) }
         try await store.deleteKey(for: id)
         locations.forget(id)
         if model.vault?.vaultId == id {

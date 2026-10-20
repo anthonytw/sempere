@@ -551,10 +551,13 @@ public struct Vault: Sendable {
     /// - Parameter policy: how attachment blobs are rewrapped (format.md
     ///   §8.1.5); by default an addition rewrites blob headers only.
     @discardableResult
+    ///
+    /// - Parameter keyChange: the mode and late-file window the journal records (format.md §3.3.1).
     public mutating func addRecipient(_ recipient: NativeRecipient, label: String,
-                                      added: Date = Date(), policy: RewrapPolicy = RewrapPolicy()) throws -> RewrapReport {
+                                      added: Date = Date(), policy: RewrapPolicy = RewrapPolicy(),
+                                      keyChange: KeyChangePolicy = .routine) throws -> RewrapReport {
         guard recipient.isPostQuantum else { throw VaultError.classicRecipient(recipient.string) }
-        return try addRecipient(recipient, label: label, added: added, policy: policy, stopAfter: nil)
+        return try addRecipient(recipient, label: label, added: added, policy: policy, stopAfter: nil, keyChange: keyChange)
     }
 
     /// Removes a recipient: rotates the vault secret, re-encrypts it to the
@@ -566,9 +569,9 @@ public struct Vault: Sendable {
     ///   §8.1.5); by default a removal re-encrypts every blob under a new
     ///   file key and renames it under the new secret.
     @discardableResult
-    public mutating func removeRecipient(_ recipient: NativeRecipient,
-                                         policy: RewrapPolicy = RewrapPolicy()) throws -> RewrapReport {
-        try removeRecipient(recipient, policy: policy, stopAfter: nil)
+    public mutating func removeRecipient(_ recipient: NativeRecipient, policy: RewrapPolicy = RewrapPolicy(),
+                                         keyChange: KeyChangePolicy = .routine) throws -> RewrapReport {
+        try removeRecipient(recipient, policy: policy, stopAfter: nil, keyChange: keyChange)
     }
 
     /// Replaces `old` with `new` (keeping `old`'s label unless `label` is
@@ -580,9 +583,11 @@ public struct Vault: Sendable {
     /// Blobs follow the removal row of `policy` (format.md §8.1.5).
     @discardableResult
     public mutating func replaceRecipient(_ old: NativeRecipient, with new: NativeRecipient, label: String? = nil,
-                                          added: Date = Date(), policy: RewrapPolicy = RewrapPolicy()) throws -> RewrapReport {
+                                          added: Date = Date(), policy: RewrapPolicy = RewrapPolicy(),
+                                          keyChange: KeyChangePolicy = .routine) throws -> RewrapReport {
         guard new.isPostQuantum else { throw VaultError.classicRecipient(new.string) }
-        return try replaceRecipient(old, with: new, label: label, added: added, policy: policy, stopAfter: nil)
+        return try replaceRecipient(old, with: new, label: label, added: added, policy: policy, stopAfter: nil,
+                                    keyChange: keyChange)
     }
 
     /// Finishes an interrupted recipient change: rewraps every file not yet
@@ -593,7 +598,8 @@ public struct Vault: Sendable {
     }
 
     mutating func addRecipient(_ recipient: NativeRecipient, label: String, added: Date,
-                               policy: RewrapPolicy = RewrapPolicy(), stopAfter: Int?) throws -> RewrapReport {
+                               policy: RewrapPolicy = RewrapPolicy(), stopAfter: Int?,
+                               keyChange: KeyChangePolicy = .routine) throws -> RewrapReport {
         _ = try requireSecret()
         try requireTrustedRecipients()
         let key = recipient.string
@@ -615,12 +621,13 @@ public struct Vault: Sendable {
         }
         var next = manifest.recipients
         next.append(.init(key: key, label: VaultManifest.Recipient.cleanLabel(label), added: added))
-        report.merge(try changeRecipients(next, rotate: false, policy: policy, stopAfter: stopAfter))
+        report.merge(try changeRecipients(next, rotate: false, policy: policy, stopAfter: stopAfter, keyChange: keyChange))
         return report
     }
 
     mutating func replaceRecipient(_ old: NativeRecipient, with new: NativeRecipient, label: String?, added: Date,
-                                   policy: RewrapPolicy = RewrapPolicy(), stopAfter: Int?) throws -> RewrapReport {
+                                   policy: RewrapPolicy = RewrapPolicy(), stopAfter: Int?,
+                                   keyChange: KeyChangePolicy = .routine) throws -> RewrapReport {
         _ = try requireSecret()
         try requireTrustedRecipients()
         let oldKey = old.string, newKey = new.string
@@ -643,12 +650,12 @@ public struct Vault: Sendable {
         var next = manifest.recipients
         next[index] = .init(key: newKey, label: label.map(VaultManifest.Recipient.cleanLabel) ?? next[index].label,
                             added: added)
-        report.merge(try changeRecipients(next, rotate: true, policy: policy, stopAfter: stopAfter))
+        report.merge(try changeRecipients(next, rotate: true, policy: policy, stopAfter: stopAfter, keyChange: keyChange))
         return report
     }
 
     mutating func removeRecipient(_ recipient: NativeRecipient, policy: RewrapPolicy = RewrapPolicy(),
-                                  stopAfter: Int?) throws -> RewrapReport {
+                                  stopAfter: Int?, keyChange: KeyChangePolicy = .routine) throws -> RewrapReport {
         _ = try requireSecret()
         try requireTrustedRecipients()
         let key = recipient.string
@@ -668,7 +675,7 @@ public struct Vault: Sendable {
         }
         let next = manifest.recipients.filter { $0.key != key }
         guard !next.isEmpty else { throw VaultError.lastRecipient }
-        report.merge(try changeRecipients(next, rotate: true, policy: policy, stopAfter: stopAfter))
+        report.merge(try changeRecipients(next, rotate: true, policy: policy, stopAfter: stopAfter, keyChange: keyChange))
         return report
     }
 
@@ -890,7 +897,8 @@ public struct Vault: Sendable {
     ///   while a recipient change is unfinished (its journal holds a secret a
     ///   second rotation would lose: restore `vault.json` from a backup).
     @discardableResult
-    public mutating func repairRecipients(keeping: [String]? = nil, policy: RewrapPolicy = RewrapPolicy()) throws -> RewrapReport {
+    public mutating func repairRecipients(keeping: [String]? = nil, policy: RewrapPolicy = RewrapPolicy(),
+                                          keyChange: KeyChangePolicy = .routine) throws -> RewrapReport {
         _ = try requireReadable()
         guard let problem = recipientsStatus.problem else {
             throw VaultError.recipientsNotRepairable("the recipients list checks; nothing to repair")
@@ -918,7 +926,7 @@ public struct Vault: Sendable {
                 throw VaultError.unknownRecipient(k)
             }
         }
-        return try changeRecipients(next, rotate: true, policy: policy, stopAfter: nil, repairing: true)
+        return try changeRecipients(next, rotate: true, policy: policy, stopAfter: nil, repairing: true, keyChange: keyChange)
     }
 
     /// Confirms the current list on this device after the user checked it

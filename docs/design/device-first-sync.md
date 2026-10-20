@@ -2,8 +2,10 @@
 
 Status: **design approved by the owner on 2026-10-19** (answers in §11). P1 (`SempereSync` behind
 `SyncRemote`) and P2 (`MemoryRemote`, the transport conformance suite, the engine over every
-transport, N-device stress; docs/ci.md "Transports", "Sync stress") are implemented. The
-key-change review (§6) is a gate that must pass before P4 and P10 land.
+transport, N-device stress; docs/ci.md "Transports", "Sync stress") are implemented. P4a (the
+key-change safety gate, §6.6) is implemented: the mechanisms of §6.3, rewrap-replace behind
+`SyncOptions.rewrapReplace` (off until P4), and the §6.4 suites. The key-change review (§6) is a
+gate that must pass before P4 and P10 land.
 
 Owner's decision (2026-10-19):
 
@@ -568,6 +570,35 @@ The user picks the mode in the key-change sheet:
 - format.md §3.3.1 gains the two journal fields, with absent meaning routine and 7 days. This is an
   additive field; pre-1.0, so no compatibility concern.
 
+### 6.6 As implemented (P4a)
+
+- **Core** (`Sources/Sempere/KeyChange.swift`, `SecretKeyring.swift`): `KeyChangePolicy` (the journal's
+  `mode` and `lateFileWindowDays`, format.md §3.3.1), `RewrapFaults`, `PreparedKeyChange` (the checks
+  and the journal's exact bytes before anything is written, so the claim carries them) and
+  `Vault.commit`, the keyring and its sealed stores (`SymmetricKeyringSealer` for a Keychain key,
+  `AgeKeyringSealer` for the CLI's identity), `rewrapLateFiles` (R3), the copy classification of §5.2,
+  `adoptConcurrentChange` (F7's "Keep the other change") and `OutgoingKeyGuard` (F4, used by the app's
+  `RememberedKeys`).
+- **Engine** (`Sources/SempereSync/KeyChangeSync.swift`): with `SyncOptions.keyring`, R1, the policy
+  copy, late-file windows and quarantine under `late/` (`LateFiles` lists, adopts, exports); always,
+  never uploading a journal this device refuses; with `rewrapReplace` (off by default, P4 turns it
+  on), R3 and rewrap-replace for revisions and same-name blobs. Rule 1 compares lists by keys and
+  `recipientsTag` (a change's step-2 and step-4 `vault.json` differ only in `rewrapPending`, and C5
+  replaces files between them). A pair compares its copies while a change settles, then again only
+  when the server's version of a file or this device's keyring generation changes.
+- **Coordinator** (`KeyChangeCoordinator.swift`): C0, C1 (claims, taken back if the change stops
+  before K2, retried for a target out of reach), K1 to K4, and C5 per target in order, with a
+  device-local ledger; a target that moved on to a later change built on this one ends the work; two
+  changes that met are reported per target until the user keeps one.
+- **Found by the property test and fixed here**: a pair that never compared a file missed another
+  device's replacement of it; a `vault.json` under the same secret with fewer keys (an older list, or
+  a concurrent addition) was taken by bridges in turn for ever; claims whose write answer was lost
+  were never taken back; a leftover old blob name came back as a download; a confirmed "keep the
+  other change" could roll back to a list under a secret this device had replaced.
+- **Not in P4a**: inbox, `keys/`, `summaries/` and notebook records are not rewrap-replaced (P4);
+  F16 runs over a target whose `vault.json` is replaced underneath (P3's `EvictingFolderRemote` is not
+  merged yet); F11 runs over `MemoryRemote` faults and the WebDAV mock, not wsgidav behind the fault
+  proxy; the app neither syncs key changes nor shows late files (P10, P9).
 
 ## 7. What gets deleted, what stays (revised for placed vaults)
 
