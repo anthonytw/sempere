@@ -87,7 +87,13 @@ extension SyncEngine {
             try take(remoteData ?? Data())
         case (let m?, let t?):
             let merged = m.merging(t)
-            if merged == t {
+            if m == t {
+                // The same settings sealed twice (two devices merged the same change): different
+                // bytes, nothing to take or give. Taking the server's bytes here made a device
+                // that syncs with two remotes holding such copies download one, then the
+                // other, on every run (NDeviceStressTests).
+                state.mutable[name] = .init(hash: FileDigest.sha256(local ?? Data()), stamp: stamp)
+            } else if merged == t {
                 try take(remoteData ?? Data())
             } else if merged == m {
                 try upload(name, local: local ?? Data(), over: remote, etag: etag)

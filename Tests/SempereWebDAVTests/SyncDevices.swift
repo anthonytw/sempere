@@ -9,33 +9,40 @@ import XCTest
 /// vault folder, key (the vault lists every device's key; each device opens it
 /// with its own only), device clock (`device.json`: device id and hybrid
 /// clock, as the CLI keeps them, with an optional skew of its wall clock) and
-/// sync state, all under `root`, on one remote shared with the other devices.
+/// sync state, all under `root`, on one remote shared with the other devices
+/// (`remote`; any transport), or on several (`sync(via:state:)`).
 final class SyncDevice: @unchecked Sendable {
     let name: String
     let root: URL
     let identity: NativeIdentity
     /// The remote as this device reaches it (its own transport, faults and all).
-    var client: WebDAVClient
+    var remote: any SyncRemote
     /// Added to the real time for this device's writes and sync runs.
     var skew: TimeInterval = 0
+    /// The time instead of the real one (a virtual clock, for runs that replay); `skew` is added.
+    var clock: (@Sendable () -> Date)?
     /// Applied to the options of every run (concurrency, limits, ...).
     var tune: (inout SyncOptions) -> Void = { _ in }
 
-    init(name: String, root: URL, identity: NativeIdentity, client: WebDAVClient, device: DeviceID? = nil) throws {
+    init(name: String, root: URL, identity: NativeIdentity, remote: any SyncRemote, device: DeviceID? = nil) throws {
         self.name = name
         self.root = root
         self.identity = identity
-        self.client = client
+        self.remote = remote
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         if let device, !FileManager.default.fileExists(atPath: deviceStateURL.path) {
             try DeviceState(device: device).save(to: deviceStateURL)
         }
     }
 
+    convenience init(name: String, root: URL, identity: NativeIdentity, client: WebDAVClient, device: DeviceID? = nil) throws {
+        try self.init(name: name, root: root, identity: identity, remote: WebDAVSyncRemote(client), device: device)
+    }
+
     var folder: URL { root.appendingPathComponent("Vault.sempere", isDirectory: true) }
     var deviceStateURL: URL { root.appendingPathComponent("device.json") }
     var stateURL: URL { root.appendingPathComponent("sync.json") }
-    var now: Date { Date().addingTimeInterval(skew) }
+    var now: Date { (clock?() ?? Date()).addingTimeInterval(skew) }
     var device: DeviceID { (try? DeviceState.loadOrCreate(at: deviceStateURL).device) ?? DeviceID("00000000")! }
     var hasVault: Bool { FileManager.default.fileExists(atPath: folder.appendingPathComponent(Vault.manifestName).path) }
 
@@ -75,6 +82,28 @@ final class SyncDevice: @unchecked Sendable {
         return try v.blobFileName(for: ref)
     }
 
+    /// Deletes a note (a revision: deleting is an edit like any other).
+    @discardableResult
+    func delete(_ id: UUID) throws -> Revision {
+        try vault().apply([.deleteNote], to: id, deviceState: deviceStateURL, app: "stress/\(name)", wall: now)
+    }
+
+    /// Thins a note's history now (`sempere vault thin --older-than 0`): a
+    /// snapshot, and the revisions it covers deleted. Returns what was deleted.
+    @discardableResult
+    func thin(_ id: UUID) throws -> [RevisionName] {
+        let v = try vault()
+        var state = try DeviceState.loadOrCreate(at: deviceStateURL)
+        var clock = state.clock
+        let results = v.prepareCompactions([id], mode: .thin(olderThan: 0), now: now, device: state.device, clock: &clock,
+                                           app: "stress/\(name)", cache: nil, execute: true)
+        if clock != state.clock {
+            state.clock = clock
+            try state.save(to: deviceStateURL)
+        }
+        return try results.first?.result.get().plan.deletions ?? []
+    }
+
     // MARK: Sync
 
     func options(_ edit: (inout SyncOptions) -> Void = { _ in }) -> SyncOptions {
@@ -88,8 +117,14 @@ final class SyncDevice: @unchecked Sendable {
     /// A two-way run (the CLI's `sync webdav`).
     @discardableResult
     func sync(_ edit: (inout SyncOptions) -> Void = { _ in }) throws -> SyncReport {
+        try sync(via: remote, state: stateURL, edit)
+    }
+
+    /// A two-way run with another remote (a second target), with its own sync state.
+    @discardableResult
+    func sync(via remote: any SyncRemote, state: URL, _ edit: (inout SyncOptions) -> Void = { _ in }) throws -> SyncReport {
         let v = hasVault ? try vault() : nil
-        return try SyncEngine(directory: folder, vault: v, client: client, stateURL: stateURL, options: options(edit)).run()
+        return try SyncEngine(directory: folder, vault: v, remote: remote, stateURL: state, options: options(edit)).run()
     }
 
     /// The app's push (push-only, keeping what another device changed on the server).
@@ -156,10 +191,10 @@ final class SyncDevices: @unchecked Sendable {
     let devices: [SyncDevice]
     var a: SyncDevice { devices[0] }
     var b: SyncDevice { devices[1] }
-    /// A client for checking the remote itself, with no faults.
-    let inspector: WebDAVClient
+    /// The remote itself, with no faults, for checking it.
+    let inspector: any SyncRemote
 
-    init(_ devices: [SyncDevice], inspector: WebDAVClient) {
+    init(_ devices: [SyncDevice], inspector: any SyncRemote) {
         self.devices = devices
         self.inspector = inspector
     }
@@ -169,12 +204,19 @@ final class SyncDevices: @unchecked Sendable {
     /// recipient), syncs it up, and the others pull it.
     static func make(root: URL, count: Int = 2, client: (String) throws -> WebDAVClient, inspector: WebDAVClient,
                      pull: Bool = true) throws -> SyncDevices {
+        try make(root: root, count: count, remote: { WebDAVSyncRemote(try client($0)) }, inspector: WebDAVSyncRemote(inspector),
+                 pull: pull)
+    }
+
+    /// `make` with any transport: `remote(name)` is how device `name` reaches the remote.
+    static func make(root: URL, count: Int = 2, remote: (String) throws -> any SyncRemote, inspector: any SyncRemote,
+                     pull: Bool = true) throws -> SyncDevices {
         var devices: [SyncDevice] = []
         for i in 0..<count {
             let name = String(UnicodeScalar(UInt8(65 + i)))
             let hex = String(repeating: String(UnicodeScalar(UInt8(97 + i))), count: 8)
             devices.append(try SyncDevice(name: name, root: root.appendingPathComponent(name), identity: pqIdentity(),
-                                          client: try client(name), device: DeviceID(hex)))
+                                          remote: try remote(name), device: DeviceID(hex)))
         }
         _ = try Vault.create(at: devices[0].folder, recipients: devices.map(\.identity.recipient),
                              labels: devices.map(\.name), identities: [devices[0].identity])
@@ -204,7 +246,7 @@ final class SyncDevices: @unchecked Sendable {
             devices.append(d)
         }
         try fm.copyItem(at: seed.appendingPathComponent("Stress.sempere"), to: devices[0].folder)
-        return SyncDevices(devices, inspector: inspector)
+        return SyncDevices(devices, inspector: WebDAVSyncRemote(inspector))
     }
 
     /// Every device runs two-way syncs in turn until a whole round changes nothing.
@@ -249,7 +291,7 @@ final class SyncDevices: @unchecked Sendable {
     }
 
     /// Every file under the remote's `notes/` (hidden names included), as `notes/<id>/...`.
-    static func remoteFiles(_ client: WebDAVClient) throws -> Set<String> {
+    static func remoteFiles(_ client: any SyncRemote) throws -> Set<String> {
         var out = Set<String>()
         for note in try client.list([Vault.notesName]) ?? [] where note.isCollection {
             for e in try client.list([Vault.notesName, note.name]) ?? [] {
