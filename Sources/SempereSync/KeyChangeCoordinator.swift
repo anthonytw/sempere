@@ -508,7 +508,19 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
                    faults: KeyChangeFaults) throws -> KeyChangePropagation {
         guard var ledger = try load().change else { return KeyChangePropagation() }
         var out = KeyChangePropagation(step: ledger.steps[t.id], conflict: ledger.conflicts[t.id])
-        guard let step2 = ledger.step2, let step4 = ledger.step4 else { return out }
+        // A later change built on this one is on the target while this one could not finish locally
+        // (a file it cannot rewrap keeps its journal): that change carries it; this device takes it.
+        if let step2 = ledger.step2, ledger.step4 == nil,
+           let (there, _) = try? t.remote.read([Vault.manifestName], maxBytes: BoundedRead.maxManifestBytes),
+           !Vault.sameList(there, step2), !replaces(there, ledger, vault),
+           Vault.incomingManifestProblem(there, local: step2, vault: vault) == nil {
+            takeBack(targets, journal: ledger.journal)
+            try update { $0.change = nil }
+            return out
+        }
+        // Not finished here yet: (a) and (b) go on with the step-2 vault.json; (c) waits for step 4.
+        guard let step2 = ledger.step2 else { return out }
+        let step4 = ledger.step4 ?? step2
         if out.conflict != nil {
             // Looked at again: the other change may have given way there (the other device kept this one).
             guard let (there, _) = try? t.remote.read([Vault.manifestName], maxBytes: BoundedRead.maxManifestBytes),
@@ -594,6 +606,7 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
             guard report.keyChange?.settled == true else { return out }
             try done(.files)
         }
+        if ledger.steps[t.id]! < .finished, ledger.step4 == nil { return out }
         if ledger.steps[t.id]! < .finished {
             let (there, etag) = try t.remote.read(manifestPath, maxBytes: BoundedRead.maxManifestBytes)
             if there != step4 {
