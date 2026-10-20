@@ -74,8 +74,58 @@ struct DrawingToolboxTests {
         #expect(next.state.tool == .fountainPen)
         #expect(next.state.settings(for: .fountainPen) == toolbox.state.settings(for: .fountainPen))
         #expect(next.state.pixelEraserWidth == 32)
-        #expect(!next.state.rulerActive, "the ruler is not remembered")
+        #expect(next.state.rulerActive, "the ruler is remembered too")
     }
+
+    /// Owner, PR #51: "Every tool should remember its last settings." Distinct values on every ink (exact,
+    /// off-preset widths from the slider), both eraser modes and their sizes, the ruler and Draw with Finger,
+    /// through tool and mode switches and a relaunch (a new tool state over the same defaults); and each ink's
+    /// exact width reaches PencilKit's tool.
+    @Test func everyToolRemembersItsOwnSettingsAcrossLaunches() throws {
+        let d = Self.scratchDefaults()
+        let toolbox = DrawingToolbox(defaults: d)
+        var expected: [InkTool: InkSettings] = [:]
+        for (i, ink) in InkTool.allCases.enumerated() {
+            let range = DrawingToolbox.widthRange(for: ink)
+            let width = range.lowerBound + (range.upperBound - range.lowerBound) * (0.23 + 0.09 * Double(i))
+            let color = Sempere.Color(r: UInt8(20 + i * 29), g: UInt8(180 - i * 13), b: UInt8(90 + i * 7))
+            let opacity = 0.35 + 0.08 * Double(i)
+            toolbox.select(DrawingTool(ink: ink))
+            toolbox.setColor(color)
+            toolbox.setWidth(width)
+            toolbox.setOpacity(opacity)
+            expected[ink] = InkSettings(color: color, width: width, opacity: opacity)
+        }
+        toolbox.select(.eraser)
+        toolbox.setEraserMode(.pixel)
+        toolbox.setPixelEraserWidth(37.25)
+        ObjectEraserSize.save(16, to: d)
+        toolbox.select(.lasso)
+        toolbox.toggleRuler()
+        toolbox.setFingerDrawing(false)
+        toolbox.select(.fountainPen)
+
+        for launch in 0..<2 {
+            let box = launch == 0 ? toolbox : DrawingToolbox(defaults: d)
+            let what = launch == 0 ? "this launch" : "the next launch"
+            #expect(box.state.tool == .fountainPen, "\(what)")
+            for ink in InkTool.allCases {
+                #expect(box.state.settings(for: ink) == expected[ink], "\(ink), \(what)")
+                box.select(DrawingTool(ink: ink))
+                let tool = try #require(box.pkTool as? PKInkingTool)
+                #expect(abs(Double(tool.width) - (expected[ink]?.width ?? 0)) < 0.001, "\(ink): PencilKit gets the exact width, \(what)")
+                #expect(Sempere.Color(tool.color) == expected[ink]?.color.withAlpha(tool), "\(ink)'s color, \(what)")
+            }
+            #expect(box.state.eraserMode == .pixel && box.state.pixelEraserWidth == 37.25, "\(what)")
+            box.select(.eraser)
+            #expect(abs(Double((box.pkTool as? PKEraserTool)?.width ?? 0) - 37.25) < 0.01)
+            #expect(ObjectEraserSize.load(from: d) == 16)
+            #expect(box.state.rulerActive, "\(what)")
+            #expect(box.fingerDrawing == false, "\(what)")
+            box.select(.fountainPen)
+        }
+    }
+
 
     @Test func changesAreAnnounced() {
         let toolbox = DrawingToolbox(defaults: Self.scratchDefaults())
@@ -188,5 +238,14 @@ struct DrawingToolboxTests {
         // Black ink shows light on a dark page.
         let black = Sempere.Color(DrawingToolbox.displayed(.black, darkPages: true))
         #expect(Int(black.r) + Int(black.g) + Int(black.b) > 600)
+    }
+}
+
+private extension Sempere.Color {
+    /// This color with `tool`'s alpha (the opacity rides in the ink's alpha; compared on its own).
+    func withAlpha(_ tool: PKInkingTool) -> Sempere.Color {
+        var c = self
+        c.a = Sempere.Color(tool.color).a
+        return c
     }
 }

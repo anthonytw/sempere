@@ -192,6 +192,7 @@ struct DrawingPaletteView: View {
             colorPicker(ink)
             separator
             widthButtons(ink)
+            widthSlider(ink).frame(width: 110)
             opacityMenu(ink)
         } else if state.tool == .eraser {
             eraserModeButtons
@@ -237,6 +238,12 @@ struct DrawingPaletteView: View {
                     colorPicker(ink)
                 }
                 HStack(spacing: 4) { widthButtons(ink) }
+                HStack {
+                    Text("Width")
+                    widthSlider(ink)
+                    Text(Self.widthText(state.settings(for: ink).width)).monospacedDigit()
+                        .frame(minWidth: 44, alignment: .trailing)
+                }
                 opacitySlider(ink)
             } else if state.tool == .eraser {
                 HStack(spacing: 4) { eraserModeButtons }
@@ -301,15 +308,35 @@ struct DrawingPaletteView: View {
     @ViewBuilder
     private func widthButtons(_ ink: InkTool) -> some View {
         let presets = DrawingToolState.widthPresets(for: ink)
-        let current = state.widthIndex(for: ink)
+        let width = state.settings(for: ink).width
         ForEach(presets.indices, id: \.self) { i in
-            sizeButton(index: i, count: presets.count, selected: i == current,
+            // Lit only for the preset in use exactly: a width set with the slider lights none.
+            sizeButton(index: i, count: presets.count, selected: abs(presets[i] - width) < 0.005,
                        label: String(localized: "Width \(i + 1)", comment: "Drawing palette: line width preset (1 is the thinnest)"),
                        identifier: "palette.width.\(i)") {
                 toolbox.setWidth(presets[i])
             }
             .help("Line width")
         }
+    }
+
+    /// Any width in the ink's range (PencilKit's `validWidthRange` for its type), kept exactly: the presets are
+    /// quick picks of the same value. The tool width goes to `PKInkingTool` as it is; the drawn point sizes are
+    /// PencilKit's, and `NibSize` maps them when strokes are stored, as for any stroke.
+    private func widthSlider(_ ink: InkTool) -> some View {
+        let range = DrawingToolbox.widthRange(for: ink)
+        return Slider(value: Binding(get: { min(max(state.settings(for: ink).width, range.lowerBound), range.upperBound) },
+                                     set: { toolbox.setWidth($0) }),
+                      in: range)
+            .accessibilityLabel(Text("Width"))
+            .accessibilityValue(Text(Self.widthText(state.settings(for: ink).width)))
+            .accessibilityIdentifier("palette.widthSlider")
+            .help("Line width: any width between the thinnest and the thickest")
+    }
+
+    /// A width as the palette shows it (PencilKit's tool units, two decimals at most).
+    static func widthText(_ width: Double) -> String {
+        width.formatted(.number.precision(.fractionLength(0...2)))
     }
 
     private func sizeButton(index: Int, count: Int, selected: Bool, label: String, identifier: String,

@@ -9439,6 +9439,18 @@
         }
       }
     },
+    "Line width: any width between the thinnest and the thickest" : {
+      "comment" : "Tooltip of the drawing palette's width slider",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grosor de línea: cualquiera entre el más fino y el más grueso"
+          }
+        }
+      }
+    },
     "Link" : {
       "comment" : "Markdown bar: insert a [link](https://…)",
       "extractionState" : "manual",
@@ -21060,6 +21072,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Widget o Centro de control"
+          }
+        }
+      }
+    },
+    "Width" : {
+      "comment" : "Drawing palette: the ink's line width (slider label)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grosor"
           }
         }
       }

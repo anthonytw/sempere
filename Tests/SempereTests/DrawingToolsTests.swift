@@ -106,10 +106,9 @@ final class DrawingToolsTests: XCTestCase {
         XCTAssertEqual(back.settings(for: .pen), s.settings(for: .pen))
         XCTAssertEqual(back.settings(for: .watercolor).opacity, 0.25)
         XCTAssertEqual(back.pixelEraserWidth, 48)
-        XCTAssertFalse(back.rulerActive, "the ruler is not remembered")
+        XCTAssertTrue(back.rulerActive, "the ruler is remembered")
         XCTAssertEqual(back.eraserMode, .object, "the eraser mode is EraserPreference's, not this blob's")
         back.eraserMode = .pixel
-        back.rulerActive = true
         XCTAssertEqual(back, s)
     }
 
@@ -160,6 +159,43 @@ final class DrawingToolsTests: XCTestCase {
         XCTAssertEqual(s.pencil(.showPalette), .togglePalette)
         XCTAssertEqual(s.pencil(.ignore), .nothing)
         XCTAssertEqual(s.tool, .pen)
+    }
+
+    /// Owner, PR #51: "Every tool should remember its last settings." Distinct, off-preset values on every ink
+    /// (color, exact width, opacity), the pixel eraser and the ruler, kept through tool switches and storage.
+    func testEveryToolRemembersItsOwnExactSettings() {
+        var s = DrawingToolState()
+        var expected: [InkTool: InkSettings] = [:]
+        for (i, ink) in InkTool.allCases.enumerated() {
+            let range = DrawingToolState.widthRange(for: ink)
+            // Between presets, with digits a preset never has.
+            let width = range.lowerBound + (range.upperBound - range.lowerBound) * (0.137 + 0.1 * Double(i))
+            let color = Color(r: UInt8(10 + i * 31), g: UInt8(200 - i * 17), b: UInt8(33 + i * 5))
+            let opacity = 0.31 + 0.09 * Double(i)
+            s.select(DrawingTool(ink: ink))
+            s.setColor(color, for: ink)
+            s.setWidth(width, for: ink)
+            s.setOpacity(opacity, for: ink)
+            expected[ink] = InkSettings(color: color, width: width, opacity: opacity)
+            XCTAssertFalse(DrawingToolState.widthPresets(for: ink).contains(width), "\(ink): not a preset")
+        }
+        s.select(.eraser)
+        s.setPixelEraserWidth(41.7)
+        s.select(.lasso)
+        s.rulerActive = true
+        s.select(.marker)   // the last tool
+        // Switching through every tool changes no other tool's settings.
+        for tool in DrawingTool.allCases { s.select(tool) }
+        s.select(.marker)
+        for ink in InkTool.allCases { XCTAssertEqual(s.settings(for: ink), expected[ink], "\(ink) after switching") }
+        let back = DrawingToolState(decoding: s.encoded())
+        for ink in InkTool.allCases {
+            XCTAssertEqual(back.settings(for: ink), expected[ink], "\(ink) after a relaunch")
+        }
+        XCTAssertEqual(back.pixelEraserWidth, 41.7)
+        XCTAssertTrue(back.rulerActive)
+        XCTAssertEqual(back.tool, .marker)
+        XCTAssertEqual(back.previousTool, .lasso)
     }
 
     func testPickingTheToolInUseKeepsTheWayBack() {

@@ -103,7 +103,7 @@ public struct DrawingToolState: Hashable, Sendable {
     public var eraserMode: EraserMode
     /// The pixel eraser's width (PencilKit units, `pixelEraserWidths`).
     public private(set) var pixelEraserWidth: Double
-    /// PencilKit's ruler is shown (not remembered across launches).
+    /// PencilKit's ruler is shown (remembered across launches, as every tool's state).
     public var rulerActive = false
 
     /// A fresh palette: the pen, black, at its default width; the object eraser.
@@ -272,14 +272,15 @@ public struct DrawingToolState: Hashable, Sendable {
 
     // MARK: Storage
 
-    /// What is remembered (`encoded`): the tool, the one before it, each ink and the pixel eraser's
-    /// width. The eraser mode is `EraserPreference`'s in the app (settings sync writes it there), and the
-    /// ruler is not remembered.
+    /// What is remembered (`encoded`): the tool, the one before it, each ink's exact color, width and opacity,
+    /// the pixel eraser's width and the ruler. The eraser mode is `EraserPreference`'s in the app (settings sync
+    /// writes it there), as is the object eraser's size (`ObjectEraserSize`).
     struct Stored: Codable {
         var tool: String?
         var previous: String?
         var inks: [String: StoredInk]?
         var pixelEraserWidth: Double?
+        var ruler: Bool?
     }
 
     struct StoredInk: Codable {
@@ -296,7 +297,7 @@ public struct DrawingToolState: Hashable, Sendable {
             inks[ink.rawValue] = StoredInk(color: s.color.hex, width: s.width, opacity: s.opacity)
         }
         let stored = Stored(tool: tool.rawValue, previous: previousTool.rawValue, inks: inks,
-                            pixelEraserWidth: pixelEraserWidth)
+                            pixelEraserWidth: pixelEraserWidth, ruler: rulerActive)
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
         return (try? encoder.encode(stored)) ?? Data()
@@ -317,5 +318,6 @@ public struct DrawingToolState: Hashable, Sendable {
             if let o = value.opacity { setOpacity(o, for: ink) }
         }
         if let w = stored.pixelEraserWidth { setPixelEraserWidth(w) }
+        if let r = stored.ruler { rulerActive = r }
     }
 }

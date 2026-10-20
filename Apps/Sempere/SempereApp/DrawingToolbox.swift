@@ -28,7 +28,10 @@ final class DrawingToolbox {
         let testHost = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
         if DebugLaunch.environment["SEMPERE_DEMO"] != nil || testHost,
            let suite = UserDefaults(suiteName: "sempere-demo-tools") {
-            suite.removePersistentDomain(forName: "sempere-demo-tools")
+            // `SEMPERE_DEMO_KEEP_TOOLS`: a relaunch in a UI test keeps what the last launch picked.
+            if DebugLaunch.environment["SEMPERE_DEMO_KEEP_TOOLS"] == nil {
+                suite.removePersistentDomain(forName: "sempere-demo-tools")
+            }
             return suite
         }
         #endif
@@ -166,8 +169,19 @@ final class DrawingToolbox {
         default:
             guard let ink = state.tool.ink else { return PKInkingTool(.pen, color: .black, width: 2) }
             let s = state.settings(for: ink)
-            return PKInkingTool(ink.pkInkType, color: s.inkColor.uiColor, width: CGFloat(s.width))
+            let range = widthRange(for: ink)
+            return PKInkingTool(ink.pkInkType, color: s.inkColor.uiColor,
+                                width: CGFloat(min(max(s.width, range.lowerBound), range.upperBound)))
         }
+    }
+
+    /// The widths `ink` takes here: the model's range within PencilKit's `validWidthRange` for its type (the
+    /// model's was measured on macOS 27; a platform with a narrower range wins).
+    static func widthRange(for ink: InkTool) -> ClosedRange<Double> {
+        let model = DrawingToolState.widthRange(for: ink)
+        let pk = ink.pkInkType.validWidthRange
+        let lo = max(model.lowerBound, Double(pk.lowerBound)), hi = min(model.upperBound, Double(pk.upperBound))
+        return lo < hi ? lo...hi : model
     }
 
     /// The pixel eraser the canvas is given (a fixed width, whatever the zoom).

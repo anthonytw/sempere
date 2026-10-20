@@ -234,9 +234,13 @@ why not share the palette across all devices for consistency?" So every device d
   `EraserPreference`, `ObjectEraserSize`), the lasso and the ruler. No Hand (the top bar's is the only one) and no
   text tool (Text stays in the toolbar).
 - **Per tool**: eight swatches (black, gray, blue, red, green, orange, purple, yellow) and any color (the system
-  color picker, `ColorPicker`), five widths (inside each ink's `validWidthRange`), the opacity (every ink, as the
+  color picker, `ColorPicker`), any width (a slider over the ink's range, PencilKit's `validWidthRange`, kept exactly)
+  with five presets as quick picks, the opacity (every ink, as the
   system palette had it); the eraser's mode (object or pixel) and its sizes. A tap on the selected tool shows its
-  choices, as PencilKit's did. Remembered across launches: `Sempere.drawingTools` (JSON, damaged values start
+  choices, as PencilKit's did. Every tool keeps its own last settings, exactly, through tool switches, the modes, other
+  notes, other Mac windows and relaunches (owner, PR #51: "Every tool should remember its last settings"; the ruler too).
+  The width goes to `PKInkingTool` unchanged; the drawn point sizes are PencilKit's, mapped by `NibSize` when strokes are
+  stored. Remembered across launches: `Sempere.drawingTools` (JSON, damaged values start
   fresh), the eraser mode under `Sempere.eraserType` and the object eraser's size under
   `Sempere.objectEraserRadius`, as before (settings sync writes those two). PencilKit's own saved palette
   (`PKPaletteNamedDefaults`) is no longer read.
@@ -260,7 +264,7 @@ why not share the palette across all devices for consistency?" So every device d
   (`Sempere.fingerDrawing`) the system's Settings ▸ Apple Pencil ▸ Only Draw with Apple Pencil decides (`.default`).
   Without a picker, PencilKit's `.default` follows only that system setting.
 - **Not reproduced from PencilKit's palette**: dragging it to any edge or corner and minimizing it (it docks at the
-  bottom); a continuous width slider (five presets); the reed ink (stored as the
+  bottom); the reed ink (stored as the
   fountain pen anyway); the squeeze's palette at the Pencil's hover position (it toggles the docked palette's choices).
 
 Tests: `DrawingToolsTests` (Linux: per-tool settings, storage, the Pencil's actions), `DrawingToolboxTests`,

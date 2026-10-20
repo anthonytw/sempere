@@ -67,7 +67,7 @@ final class DrawingPaletteUITests: XCTestCase {
     }
 
     @MainActor
-    private func launch(annotating: Bool, compact: Bool = false) -> XCUIApplication {
+    private func launch(annotating: Bool, compact: Bool = false, keepTools: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES",
                                "-Sempere.paletteCompact", compact ? "YES" : "NO"]
@@ -75,6 +75,7 @@ final class DrawingPaletteUITests: XCTestCase {
                    "SEMPERE_DEMO_ITEMS": "1", "SEMPERE_DEMO_MAC_WINDOW": "1000x900", "SEMPERE_DEBUG_FINGERS_DRAW": "1",
                    "TZ": "UTC"]
         if annotating { env["SEMPERE_DEBUG_NOTE_MODE"] = "annotate" }
+        if keepTools { env["SEMPERE_DEMO_KEEP_TOOLS"] = "1" }   // a relaunch: the tools the last launch picked
         app.launchEnvironment = env
         #if !targetEnvironment(macCatalyst)
         XCUIDevice.shared.orientation = .portrait
@@ -344,5 +345,69 @@ final class DrawingPaletteUITests: XCTestCase {
             shoot(app, "palette-\(device)-\(full ? "full" : "compact")")
             app.terminate()
         }
+    }
+
+    /// Owner, PR #51: "Every tool should remember its last settings." On the iPad: a width set with the slider (not a
+    /// preset) and a custom color from the system color picker, then another tool, a relaunch, the pen again: the pen
+    /// is exactly as it was, and a stroke is drawn with that ink.
+    @MainActor
+    func testThePenKeepsASliderWidthAndACustomColorAcrossARelaunch() throws {
+        #if targetEnvironment(macCatalyst)
+        throw XCTSkip("iPad: the system color picker's iPad layout")
+        #else
+        if UIDevice.current.userInterfaceIdiom == .phone { throw XCTSkip("iPad: the system color picker's iPad layout") }
+        var app = launch(annotating: true)
+        guard var canvas = canvas(app) else { return XCTFail("no canvas reports the demo items") }
+        XCTAssertTrue(palette(app).waitForExistence(timeout: 10))
+        pick(app, ["Pen"], canvas: canvas, reports: "pen:")
+
+        // A width from the slider.
+        showChoices(app, needing: "palette.widthSlider")
+        let slider = app.sliders["palette.widthSlider"].firstMatch
+        XCTAssertTrue(slider.waitForExistence(timeout: 5), "the width slider")
+        slider.adjust(toNormalizedSliderPosition: 0.37)
+        guard let widened = waitReport(canvas, "the slider set the pen's width", { $0.tool.hasPrefix("pen:") && !$0.tool.hasSuffix(":2.7") })
+        else { return }
+        let width = widened.tool.split(separator: ":").last.map(String.init) ?? ""
+        XCTAssertFalse(["1.0", "1.8", "2.7", "5.0", "10.0"].contains(width), "not a preset: \(width)")
+
+        // A custom color: the system picker's spectrum.
+        let well = element(app, "palette.colorPicker")
+        XCTAssertTrue(well.waitForExistence(timeout: 5), "the color picker")
+        well.tap()
+        let spectrum = app.buttons["Spectrum"].firstMatch
+        XCTAssertTrue(spectrum.waitForExistence(timeout: 10), "the system color picker: \(app.debugDescription.prefix(4000))")
+        spectrum.tap()
+        Thread.sleep(forTimeInterval: 1)
+        spectrum.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).withOffset(CGVector(dx: 25, dy: 130)).tap()
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "palette-\(device)-custom-color")
+        // Away with the picker (a tap outside its popover), and the palette's choices.
+        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).tap()
+        Thread.sleep(forTimeInterval: 1)
+        if spectrum.exists { app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).tap() }
+        hideChoices(app)
+        let swatches = ["#000000FF", "#8E8E93FF", "#007AFFFF", "#FF3B30FF", "#34C759FF", "#FF9500FF", "#AF52DEFF", "#FFCC00FF"]
+        guard let custom = waitReport(canvas, "a custom color", {
+            let color = $0.tool.split(separator: ":").dropFirst().first.map(String.init) ?? ""
+            return $0.tool.hasPrefix("pen:") && !swatches.contains(color) && $0.tool.hasSuffix(":" + width)
+        }) else { return }
+        let penTool = custom.tool
+        let penColor = penTool.split(separator: ":")[1]
+
+        // Another tool, then a relaunch that keeps the tools.
+        pick(app, ["Marker"], canvas: canvas, reports: "marker:")
+        app.terminate()
+        app = launch(annotating: true, keepTools: true)
+        defer { app.terminate() }
+        guard let again = self.canvas(app) else { return XCTFail("no canvas after the relaunch") }
+        canvas = again
+        XCTAssertTrue(palette(app).waitForExistence(timeout: 10))
+        waitReport(canvas, "the marker is still the tool after the relaunch") { $0.tool.hasPrefix("marker:") }
+        pick(app, ["Pen"], canvas: canvas, reports: "pen:")
+        guard let r0 = waitReport(canvas, "the pen as it was: \(penTool)", { $0.tool == penTool }), let a = strokeStart(r0) else { return }
+        drag(from: point(a, on: canvas, r0, app: app), to: point(CGPoint(x: a.x + 120, y: a.y + 20), on: canvas, r0, app: app))
+        waitReport(canvas, "a stroke in the remembered ink") { $0.strokes == r0.strokes + 1 && $0.lastInk == "pen:\(penColor)" }
+        #endif
     }
 }
