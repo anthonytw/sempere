@@ -389,7 +389,9 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
             guard let (there, _) = try? t.remote.read([Vault.manifestName], maxBytes: BoundedRead.maxManifestBytes),
                   Vault.sameList(there, step2) || replaces(there, ledger, vault) else { return out }
             if let (j, _) = try? t.remote.read([Vault.journalName], maxBytes: BoundedRead.maxManifestBytes), j != ledger.journal {
-                return out
+                // Another journal: a change in flight keeps the conflict; a stale one nothing binds (left by a
+                // finished change, uploaded again by a device that held it) gives way to this change's claim.
+                guard case .claimed = try claim(t, journal: ledger.journal, vault: vault, now: options.now) else { return out }
             }
             ledger.conflicts[t.id] = nil
             out.conflict = nil
