@@ -1,5 +1,6 @@
 import Age
 import Foundation
+import TempDirSupport
 import XCTest
 @testable import Sempere
 @testable import SempereSync
@@ -533,7 +534,7 @@ final class KCWorld: @unchecked Sendable {
             }
         }
         var blobsFound = Set<String>()
-        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("kc-blob-\(UUID().uuidString)")
+        let scratch = TestTemp.url("kc-blob")
         defer { try? FileManager.default.removeItem(at: scratch) }
         for (loc, path, data) in copies {
             if path.contains("/att/") {
