@@ -11,7 +11,7 @@ struct BrowserTests {
     static let deleted = AppModelTests.deleted
 
     static func tempDir() throws -> URL {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let dir = TestTemp.root.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }

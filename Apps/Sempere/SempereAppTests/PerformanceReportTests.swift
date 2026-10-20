@@ -100,7 +100,7 @@ struct PerformanceReportTests {
     @Test func reopenAndNoteOpenTimings() async throws {
         let (vault, url, key, big) = try Self.vault()
         let total = Self.ordinaryNotes + 5   // the fixture's two notes too
-        let cacheDir = FileManager.default.temporaryDirectory.appendingPathComponent("perf-\(UUID().uuidString)")
+        let cacheDir = TestTemp.root.appendingPathComponent("perf-\(UUID().uuidString)")
 
         // First open on this device (no index): the same work before and after.
         var model = AppModel(deviceStateURL: TS.deviceStateURL(), summaryCacheDirectory: cacheDir)
@@ -175,7 +175,7 @@ struct PerformanceReportTests {
         #expect(newConvert < oldConvert * 1.25)
 
         // End to end through the model: a miss, then a hit.
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("perf-drawings-\(UUID().uuidString)")
+        let root = TestTemp.root.appendingPathComponent("perf-drawings-\(UUID().uuidString)")
         model = AppModel(deviceStateURL: TS.deviceStateURL(), summaryCacheDirectory: cacheDir, drawingCacheRoot: root)
         try await model.openVault(at: url)
         try await model.unlock(identityText: key)

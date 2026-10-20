@@ -18,7 +18,7 @@ struct FolderAccessTests {
     }
 
     @Test func aReadableFolderPasses() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let dir = TestTemp.root.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         try FolderAccess.check(dir, scoped: false)
@@ -26,12 +26,12 @@ struct FolderAccessTests {
     }
 
     @Test func aMissingFolderIsLeftToTheVaultToReport() throws {
-        let missing = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let missing = TestTemp.root.appendingPathComponent(UUID().uuidString)
         try FolderAccess.check(missing, scoped: false)
     }
 
     @Test func aFolderTheSystemRefusesIsReportedByName() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("Locked-\(UUID().uuidString).sempere")
+        let dir = TestTemp.root.appendingPathComponent("Locked-\(UUID().uuidString).sempere")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: dir.path)
         defer {

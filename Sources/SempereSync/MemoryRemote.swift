@@ -21,10 +21,12 @@ import Foundation
 //   change underneath the client with the bytes unchanged.
 //
 // The store can also act like a provider that evicts files (iCloud Drive's
-// placeholders): a listed file whose bytes are elsewhere (`evict`), fetched
-// on `requestDownload` after a scripted delay, and a folder that is listed
-// before its children ("arriving", `setArriving`). The engine does not use
-// availability yet (the folder transport does, P3).
+// placeholders): a listed file whose bytes are elsewhere (`evict`, or every
+// file as it is written: `Behavior.evictOnWrite`), fetched on
+// `requestDownload` after a scripted delay, and a folder that is listed
+// before its children ("arriving", `setArriving`: listed as not downloaded,
+// and empty, until asked for). The engine asks for such files and waits a
+// bounded time (`Arrivals.swift`).
 //
 // Foundation only; nothing here reaches a network.
 
@@ -92,10 +94,15 @@ public final class MemoryStore: @unchecked Sendable {
         public var atomicWrites: Bool
         /// The largest file the store takes (`RemoteCapabilities.maxObjectBytes`).
         public var maxObjectBytes: Int?
+        /// Every file written (through a remote or `putDirect`) is evicted at
+        /// once, as a provider that keeps only what was asked for: a reader
+        /// must ask for it and wait (the engine's "evicted mode" scenarios).
+        public var evictOnWrite: Bool
 
-        public init(atomicWrites: Bool = true, maxObjectBytes: Int? = nil) {
+        public init(atomicWrites: Bool = true, maxObjectBytes: Int? = nil, evictOnWrite: Bool = false) {
             self.atomicWrites = atomicWrites
             self.maxObjectBytes = maxObjectBytes
+            self.evictOnWrite = evictOnWrite
         }
     }
 
@@ -168,8 +175,11 @@ public final class MemoryStore: @unchecked Sendable {
     private func entry(_ path: [String], _ n: Node) -> RemoteEntry {
         var size: Int?
         if case .file(let d) = n.content { size = d.count }
+        // A folder listed before its children is there, not downloaded (asked for, `.downloading`).
+        let availability: RemoteAvailability = arriving.contains(path) ? (arrivals[path] != nil ? .downloading : .remoteOnly)
+            : n.availability
         return RemoteEntry(name: path.last ?? "", isCollection: n.isCollection, etag: n.etag, size: size,
-                           availability: n.availability)
+                           availability: availability)
     }
 
     private func entries(_ path: [String]) -> [RemoteEntry] {
@@ -212,7 +222,7 @@ public final class MemoryStore: @unchecked Sendable {
             for (path, left) in arrivals {
                 if left <= 1 {
                     arrivals[path] = nil
-                    nodes[path]?.availability = .available
+                    if arriving.contains(path) { arriving.remove(path) } else { nodes[path]?.availability = .available }
                 } else {
                     arrivals[path] = left - 1
                 }
@@ -251,11 +261,11 @@ public final class MemoryStore: @unchecked Sendable {
         withLock { node(path).map { entry(path, $0) } }
     }
 
-    func read(_ path: [String], maxBytes: Int) throws -> (data: Data, etag: String) {
+    func read(_ path: [String], maxBytes: Int, evictedToo: Bool = false) throws -> (data: Data, etag: String) {
         try withLock {
             guard let n = node(path) else { throw MemoryRemoteError.notFound(Self.shown(path)) }
             guard case .file(let data) = n.content else { throw MemoryRemoteError.notAFile(Self.shown(path)) }
-            guard n.availability == .available else { throw MemoryRemoteError.unavailable(Self.shown(path)) }
+            guard evictedToo || n.availability == .available else { throw MemoryRemoteError.unavailable(Self.shown(path)) }
             if data.count > maxBytes { throw MemoryRemoteError.tooLarge(path: Self.shown(path), limit: maxBytes) }
             return (data, n.etag)
         }
@@ -278,7 +288,7 @@ public final class MemoryStore: @unchecked Sendable {
             case .unconditional: break
             }
             arrivals[path] = nil
-            insert(path, Node(content: .file(data), etag: nextETag(), availability: .available))
+            insert(path, Node(content: .file(data), etag: nextETag(), availability: behavior.evictOnWrite ? .remoteOnly : .available))
             return true
         }
     }
@@ -325,6 +335,11 @@ public final class MemoryStore: @unchecked Sendable {
 
     func requestDownload(_ path: [String]) {
         withLock {
+            if arriving.contains(path), nodes[path] != nil, !hidden(path) {
+                // A folder listed before its children: its listing arrives.
+                if _arrivalDelay == 0 { arriving.remove(path) } else if arrivals[path] == nil { arrivals[path] = _arrivalDelay }
+                return
+            }
             guard let n = node(path), !n.isCollection, n.availability != .available else { return }
             if _arrivalDelay == 0 {
                 nodes[path]?.availability = .available
@@ -362,7 +377,7 @@ public final class MemoryStore: @unchecked Sendable {
         withLock {
             makeParents(path)
             removeTree(path)
-            insert(path, Node(content: .file(data), etag: nextETag(), availability: .available))
+            insert(path, Node(content: .file(data), etag: nextETag(), availability: behavior.evictOnWrite ? .remoteOnly : .available))
         }
     }
 
@@ -629,6 +644,9 @@ public struct MemoryRemote: SyncRemote {
     /// The faults this remote injects; nil: none.
     public var faults: MemoryFaults?
     public var interrupt: (@Sendable () -> (any Error)?)?
+    /// Reads return a file's bytes even when the store evicted it (an
+    /// inspector's view, for tests: never what a device sees).
+    public var readsEvicted = false
 
     public init(store: MemoryStore = MemoryStore(), base: [String] = [], faults: MemoryFaults? = nil) {
         self.store = store
@@ -786,7 +804,7 @@ public struct MemoryRemote: SyncRemote {
 
     public func read(_ path: [String], maxBytes: Int) throws -> (data: Data, etag: String?) {
         let d = try begin(.read, path)
-        let got = try store.read(base + path, maxBytes: maxBytes)
+        let got = try store.read(base + path, maxBytes: maxBytes, evictedToo: readsEvicted)
         try end(.read, path, d)
         return (corrupt(got.data, d), got.etag)
     }
@@ -798,7 +816,7 @@ public struct MemoryRemote: SyncRemote {
     public func download(_ path: [String], to file: URL, resumeFrom: Int, ifETag: String?, maxBytes: Int,
                          segmentBytes: Int, progress: ((Int) throws -> Void)?) throws -> DownloadResult {
         let d = try begin(.download, path)
-        let got = try store.read(base + path, maxBytes: maxBytes)
+        let got = try store.read(base + path, maxBytes: maxBytes, evictedToo: readsEvicted)
         let data = corrupt(got.data, d)
         let fm = FileManager.default
         if !fm.fileExists(atPath: file.path) {

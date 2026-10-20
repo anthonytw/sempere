@@ -171,7 +171,7 @@ struct AttachmentCloudTests {
         model.cloudHooks = cloud.hooks
         model.cloudPollInterval = .milliseconds(10)
         model.cloudIdleInterval = .milliseconds(20)
-        model.blobCacheFolder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        model.blobCacheFolder = TestTemp.root.appendingPathComponent(UUID().uuidString)
         try await model.openVault(at: url)
         #expect(model.isCloudVault)
         try await model.unlock(identityText: try String(contentsOf: key, encoding: .utf8))
@@ -206,7 +206,7 @@ struct AttachmentCloudTests {
         model.cloudHooks = cloud.hooks
         model.cloudPollInterval = .milliseconds(10)
         model.cloudIdleInterval = .milliseconds(20)
-        model.blobCacheFolder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        model.blobCacheFolder = TestTemp.root.appendingPathComponent(UUID().uuidString)
         try await model.openVault(at: url)
         try await model.unlock(identityText: try String(contentsOf: key, encoding: .utf8))
         model.selectedNoteID = Self.lecture

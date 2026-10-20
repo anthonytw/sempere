@@ -42,7 +42,7 @@ struct VaultOpeningTests {
     static let other = AppModelTests.deleted
 
     static func tempDir() -> URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("sempere-opening-\(UUID().uuidString)")
+        TestTemp.root.appendingPathComponent("sempere-opening-\(UUID().uuidString)")
     }
 
     static func key(_ url: URL) throws -> String { try String(contentsOf: url, encoding: .utf8) }

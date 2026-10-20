@@ -37,7 +37,7 @@ struct BackupAppTests {
     final class Scratch {
         let name = "sempere-backup-tests-\(UUID().uuidString)"
         lazy var defaults = UserDefaults(suiteName: name)!
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("BackupAppTests-\(UUID().uuidString)")
+        let dir = TestTemp.root.appendingPathComponent("BackupAppTests-\(UUID().uuidString)")
 
         init() throws { try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true) }
 

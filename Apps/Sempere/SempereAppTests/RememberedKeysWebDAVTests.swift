@@ -21,7 +21,7 @@ struct RememberedKeysWebDAVTests {
     /// the key locations file.
     @MainActor
     final class Device {
-        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("rkw-\(UUID().uuidString)", isDirectory: true)
+        let scratch = TestTemp.root.appendingPathComponent("rkw-\(UUID().uuidString)", isDirectory: true)
         let server: URL
         let key: String
         let listing: WebDAVVaultListing

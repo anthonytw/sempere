@@ -237,7 +237,7 @@ final class BulkLoadAheadBenchTests: XCTestCase {
         @Sendable func load(_ id: UUID) throws -> NoteState { try vault.reconstruct(try vault.loadNote(id)) }
 
         func scratch(_ name: String) throws -> URL {
-            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("bulk-bench-\(name)-\(UUID().uuidString)")
+            let dir = TestTemp.root.appendingPathComponent("bulk-bench-\(name)-\(UUID().uuidString)")
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             return dir
         }

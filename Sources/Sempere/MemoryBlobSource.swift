@@ -36,8 +36,8 @@ public struct MemoryBlobSource: BlobSource {
         let d = try data(for: ref, maxBytes: Int(BlobRef.maxSize))
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("sempere-blob-" + UUID().uuidString.lowercased())
-        try FileIO.writeNewFile(tmp) { write in try write(d) }
         defer { try? FileManager.default.removeItem(at: tmp) }
+        try FileIO.writeNewFile(tmp) { write in try write(d) }
         return try body(tmp)
     }
 }

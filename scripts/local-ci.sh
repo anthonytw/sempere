@@ -110,6 +110,8 @@ run_step() {
   esac
 }
 
+# The Mac Catalyst steps fail when they leave temp folders in the app container (scripts/app.sh tmp-guard).
+export SEMPERE_TMP_GUARD_FAIL=1
 mkdir -p build/local-ci
 host=$(scutil --get ComputerName 2>/dev/null || hostname -s)
 start=$(date +%s)

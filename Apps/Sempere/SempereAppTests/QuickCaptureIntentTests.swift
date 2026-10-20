@@ -28,7 +28,7 @@ struct QuickCaptureIntentTests {
         var opened: [VoiceNoteLink] = []
         var live = VoiceNoteStatus(phase: .ready)
         /// Where the intents keep their taps in this test (never the App Group).
-        let taps = VoiceNoteTapLog(directory: FileManager.default.temporaryDirectory
+        let taps = VoiceNoteTapLog(directory: TestTemp.root
             .appendingPathComponent("taps-\(UUID().uuidString)", isDirectory: true))
 
         func install() {

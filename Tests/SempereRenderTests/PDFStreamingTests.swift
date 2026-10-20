@@ -1,3 +1,4 @@
+import TempDirSupport
 import Foundation
 import Sempere
 import SemperePDF
@@ -104,7 +105,7 @@ final class PDFStreamingTests: XCTestCase {
             var r1 = RenderReport(), r2 = RenderReport()
             let data = try PDFWriter.render(note: note, options: options, report: &r1)
             XCTAssertGreaterThan(data.count, 1 << 20)   // the patch happens after the first flush
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent("stream-\(UUID().uuidString).pdf")
+            let url = TestTemp.root.appendingPathComponent("stream-\(UUID().uuidString).pdf")
             defer { try? FileManager.default.removeItem(at: url) }
             try PDFWriter.write(note: note, options: options, report: &r2, to: url)
             let fileData = try Data(contentsOf: url)

@@ -270,7 +270,7 @@ struct NoteWindowTests {
     }
 
     @Test func oldExportsArePurgedAndNewOnesKept() throws {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("purge-\(UUID().uuidString)")
+        let folder = TestTemp.root.appendingPathComponent("purge-\(UUID().uuidString)")
         let rendered = NotePDFExport.Rendered(title: "T", pdf: Data("%PDF-1.4".utf8))
         let url = try NotePDFExport.write(rendered, in: folder)
         NotePDFExport.purge(in: folder, olderThan: 600)

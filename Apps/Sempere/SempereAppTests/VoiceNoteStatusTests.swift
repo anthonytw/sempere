@@ -6,7 +6,7 @@ import Testing
 /// (`VoiceNoteStatus`, `VoiceNoteLink`, `VoiceNoteResult`; docs/quick-capture.md).
 struct VoiceNoteStatusTests {
     static func temp() -> URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("voice-status-\(UUID().uuidString)", isDirectory: true)
+        TestTemp.root.appendingPathComponent("voice-status-\(UUID().uuidString)", isDirectory: true)
     }
 
     /// Build 7: the control did nothing until quick voice notes were turned

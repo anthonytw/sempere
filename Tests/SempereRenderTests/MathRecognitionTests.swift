@@ -1,3 +1,4 @@
+import TempDirSupport
 import Foundation
 import Sempere
 import XCTest
@@ -263,7 +264,7 @@ final class MathRecognitionTests: XCTestCase {
     }
 
     func copyOfTiny() throws -> URL {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("math-\(UUID().uuidString)")
+        let dir = TestTemp.root.appendingPathComponent("math-\(UUID().uuidString)")
         try FileManager.default.copyItem(at: tinyFolder(), to: dir)
         addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
         return dir
@@ -273,7 +274,7 @@ final class MathRecognitionTests: XCTestCase {
         let staging = try copyOfTiny()
         let manifestData = try Data(contentsOf: staging.appendingPathComponent("manifest.json"))
         let sha = FileDigest.sha256(manifestData)
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("models-\(UUID().uuidString)")
+        let root = TestTemp.root.appendingPathComponent("models-\(UUID().uuidString)")
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let m = try MathModelStore.manifest(in: staging)
         let entry = MathModelCatalogEntry(id: m.id, name: m.name, manifestURL: "https://example.org/m/manifest.json",
@@ -347,7 +348,7 @@ final class MathRecognitionTests: XCTestCase {
     func testCoreMLRunsTheTinyModel() throws {
         let folder = try tinyFolder()
         let m = try MathModelStore.manifest(in: folder)
-        let cache = FileManager.default.temporaryDirectory.appendingPathComponent("mlc-\(UUID().uuidString)")
+        let cache = TestTemp.root.appendingPathComponent("mlc-\(UUID().uuidString)")
         addTeardownBlock { try? FileManager.default.removeItem(at: cache) }
         let recognizer = try CoreMLMathRecognizer(folder: folder, manifest: m, compiledCache: cache)
         let result = try XCTUnwrap(recognizer.recognize(strokes: [line(0, 0, 40, 20), line(0, 20, 40, 0)]))

@@ -42,7 +42,7 @@ struct PDFKitTextExtractorTests {
 
     /// The app's PDF import stores each page's text (format.md §8.2.6), so search finds it.
     @Test func preparedPDFsCarryTheirPageText() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("text-\(UUID().uuidString).pdf")
+        let url = TestTemp.root.appendingPathComponent("text-\(UUID().uuidString).pdf")
         try Self.pdf(["Eigenvalues here", "second page"]).write(to: url)
         defer { try? FileManager.default.removeItem(at: url) }
         let prepared = try PDFPreparation.prepare(url)

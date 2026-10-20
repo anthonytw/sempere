@@ -45,7 +45,7 @@ struct MassReimportReportTests {
     static func ms(_ d: Duration) -> String { PerformanceReportTests.ms(d) }
 
     static func copy(_ dir: URL) throws -> URL {
-        let to = FileManager.default.temporaryDirectory.appendingPathComponent("perf3-cache-\(UUID().uuidString)")
+        let to = TestTemp.root.appendingPathComponent("perf3-cache-\(UUID().uuidString)")
         try FileManager.default.copyItem(at: dir, to: to)
         return to
     }
@@ -75,7 +75,7 @@ struct MassReimportReportTests {
         print("PERF-REPORT round3 generated \(Self.noteCount) imported notes with an image each in \(ContinuousClock.now - start)")
 
         // This device lists the vault: its index knows every note as first imported.
-        let indexDir = FileManager.default.temporaryDirectory.appendingPathComponent("perf3-\(UUID().uuidString)")
+        let indexDir = TestTemp.root.appendingPathComponent("perf3-\(UUID().uuidString)")
         var model = AppModel(deviceStateURL: TS.deviceStateURL(), summaryCacheDirectory: indexDir)
         try await model.openVault(at: url)
         try await model.unlock(identityText: key)

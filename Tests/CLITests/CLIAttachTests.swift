@@ -1,3 +1,4 @@
+import TempDirSupport
 import Age
 import CLITestSupport
 import Foundation
@@ -446,7 +447,7 @@ final class CLIAttachTests: CLITestCase {
         // ALAC; overrides win over the header; without --started the file's time minus its length.
         // A fresh copy: the committed file's modification time is the checkout's,
         // which is only "now" on a fresh clone (the test failed on older checkouts).
-        let fresh = FileManager.default.temporaryDirectory.appendingPathComponent("tone-alac-\(UUID().uuidString).m4a")
+        let fresh = TestTemp.root.appendingPathComponent("tone-alac-\(UUID().uuidString).m4a")
         try FileManager.default.copyItem(at: URL(fileURLWithPath: audio("tone-alac.m4a")), to: fresh)
         defer { try? FileManager.default.removeItem(at: fresh) }
         try FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: fresh.path)

@@ -121,7 +121,7 @@ struct KeyExportTests {
     }
 
     @Test func theSharedFileIsPrivateAndPurged() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("KeyShare-\(UUID().uuidString)")
+        let root = TestTemp.root.appendingPathComponent("KeyShare-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
         let key = KeyFile(identity: try NativeIdentity.generate(.postQuantum), label: "Mac")
         let first = try KeyShareFile.stage(key, in: root)

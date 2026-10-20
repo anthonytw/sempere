@@ -99,7 +99,7 @@ struct ItemLayerTests {
             func next() -> Int { lock.withLock { count += 1; return count } }
         }
         let attempts = Attempts()
-        let cache = BlobCache(root: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)) { note, ref, dest in
+        let cache = BlobCache(root: TestTemp.root.appendingPathComponent(UUID().uuidString)) { note, ref, dest in
             if attempts.next() == 1 { throw CloudVault.CloudError.blobNotLocal(name: "x") }
             try await AppModel.fetchBlob(ref, of: note, from: vault, to: dest, cloud: false, hooks: .live,
                                          stallTimeout: .seconds(5), pollInterval: .milliseconds(10))
@@ -131,7 +131,7 @@ struct ItemLayerTests {
 
     /// A blob cache over the vault, as the model makes it (no iCloud).
     static func cache(_ vault: Vault) -> BlobCache {
-        BlobCache(root: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)) { note, ref, dest in
+        BlobCache(root: TestTemp.root.appendingPathComponent(UUID().uuidString)) { note, ref, dest in
             try await AppModel.fetchBlob(ref, of: note, from: vault, to: dest, cloud: false, hooks: .live,
                                          stallTimeout: .seconds(5), pollInterval: .milliseconds(10))
         }

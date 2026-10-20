@@ -120,6 +120,9 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
 - A test that depends on a simulator's leftover state is a bug: every run may start on a fresh clone.
 - Cancel only your own processes, by PID; never `pkill -f` or `killall` patterns (they kill other agents' runs).
 - Temp files go in your own scratch directory, never shared names (`/tmp/out.log`).
+- Tests never use `FileManager.default.temporaryDirectory` directly: use `TestTemp` (app tests:
+  `SempereAppTests/TestTemp.swift`; SwiftPM: `TempDirSupport`), which removes everything at process exit
+  (docs/ci.md "Temp-folder guard").
 
 ## Gotchas
 
@@ -845,6 +848,13 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   (`scripts/test-webdav.sh`). A recent WebDAV vault is a `RecentVault` with `webdav` set and no bookmark.
 - Vaults in another app's provider storage (`StorageLocation`) are coordinated like iCloud ones
   (`isCloudVault`), even when the provider does not report its files as ubiquitous.
+- Folder targets (`FolderRemote`, `sempere sync folder`, docs/io.md "Folder targets in providers"): a
+  provider's evicted file or a folder listed before its files is *arriving* (`RemoteEntry.availability`,
+  `SyncReport.arriving`), never missing: the engine asks for it and waits at most `arrivalWait` per run,
+  folders only for `unlistedTimeout`, and reports stalls after `arrivalStall` (`Arrivals.swift`). Never
+  read a file a provider has not downloaded, and never nest two coordinated writes of one item (the second
+  waits for the first for ever). Tests simulate providers with `EvictingFolderProvider` and
+  `MemoryStore.Behavior.evictOnWrite`, never real iCloud.
 - Web viewer (`web/`, `docs/web-viewer.md`): a TypeScript port of the reader
   (`NoteReducer`, `SempereRender`, framing, decoding rules). A change to
   merging, decoding or rendering in Swift needs the same change in

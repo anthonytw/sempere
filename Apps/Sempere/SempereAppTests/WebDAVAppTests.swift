@@ -174,7 +174,7 @@ struct WebDAVAppTests {
         model.webdavPasswords = passwords
         model.webdavTick = .milliseconds(20)
         model.webdavWriteDelay = 0.05
-        let library = VaultLibrary(storeURL: FileManager.default.temporaryDirectory
+        let library = VaultLibrary(storeURL: TestTemp.root
             .appendingPathComponent("recents-\(UUID().uuidString).json"))
         let manifest = try JSONSerialization.jsonObject(with: Data(contentsOf: server.appendingPathComponent("vault.json")))
         let vaultId = try #require((manifest as? [String: Any])?["vaultId"] as? String).lowercased()
