@@ -101,7 +101,7 @@ final class InAppVaultStoreTests: TempDirTestCase {
         try FileManager.default.createDirectory(at: source.appendingPathComponent("inbox"), withIntermediateDirectories: true)
         try Data("capture".utf8).write(to: source.appendingPathComponent("inbox/0f.capture.age"))
         let before = try files(source)
-        let progress = Progress()
+        let progress = Progress(totalUnitCount: 0)
         let entry = try store.importVault(from: source, options: .init(progress: { done, total in
             progress.totalUnitCount = Int64(total)
             progress.completedUnitCount = Int64(done)
@@ -405,8 +405,9 @@ final class InAppVaultStoreTests: TempDirTestCase {
     func testRemoveWaitsForAWriter() throws {
         let entry = try newVault("Busy")
         let holding = DispatchSemaphore(value: 0), done = DispatchSemaphore(value: 0)
+        let lock = store.writeLock(for: entry.vaultId)
         let thread = Thread {
-            try? self.store.writeLock(for: entry.vaultId).withLock {
+            try? lock.withLock {
                 holding.signal()
                 done.wait()
             }
