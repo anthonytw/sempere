@@ -53,12 +53,12 @@ Owner's decisions (2026-10-20):
   the Secure Enclave on Apple devices). It signs every epoch it creates, every `vault.json` it
   writes, and every entry it adds, over length-prefixed byte strings, never JSON (§4.1). An entry
   that signed itself is a kit join, whatever it claims. An epoch never introduces a device.
-- **Forks are never merged.** At each branch the subtrees are compared, not the two children:
-  a side whose author the other side removed anywhere loses; mutual removal is always put to the
-  user, in the parent's names, with a signed answer; a stale side loses to
-  one that went on; otherwise the smaller `epochId`. Only removals of a losing side are re-applied on
-  top, with a fresh key. A removed device, or a coalition of them, can therefore never get a key
-  admitted, nor get its files sealed, through a fork (§5.6).
+- **Forks are never merged, and never decided automatically.** A device follows only linear
+  extensions of its chain and ignores epochs by devices its chain removed. At a branch it asks, per
+  side, "Did you make this change?", in the parent's names: "yes" re-applies that side's removals in
+  the device's signed `resolve` epoch, "no" rejects its author everywhere. Other devices follow such a
+  resolve only under strict conditions. A removed device, or a coalition of them, can therefore never
+  get a key admitted, nor get its files sealed, through a fork; at most it costs one question (§5.6).
 - **Joining is verified both ways.** The kit and the passphrase copy carry the vault's **root
   fingerprint**, and every chain is checked from it. An approval join exchanges typed codes or QR
   commitments in both directions (§6).
@@ -221,7 +221,7 @@ the tag or name uses changes.
   `K_e` from the second line and refuses the wrap unless the identity equals `V_e` derived from it.
 - `epochAuthor`, `epochSig`: the device that created this epoch, and its signature over the epoch
   message (§4.1). They are the same in every `vault.json` of the epoch, as are `epochReason`,
-  `parentList` and (in a `resolve` epoch) `rejected`, which carry the rest of what `epochSig` signs.
+  `parentList` and (in a `resolve` epoch that rejected an author) `rejected`, which carry the rest of what `epochSig` signs.
   The epoch's **first list** is the recovery entry and every device entry with `addedEpoch` below
   `epoch` (at epoch 1: the recovery entry and the creating device), so `epochSig` verifies from
   `vault.json` alone (§4.3 step 2; KH1 code review H2: of the two ways to get there, this one keeps the
@@ -262,7 +262,7 @@ unforgeable while either holds.
 | Signature | Message (`"sempere/1 author "` ‖ kind ‖ …) | Made by |
 | --- | --- | --- |
 | `addSig` (per entry) | `entry` ‖ lp(vaultId) ‖ lp(addedEpoch) ‖ lp(key) ‖ lp(sign.p256) ‖ lp(sign.mldsa65) ‖ lp(kind) ‖ lp(added) ‖ lp(addedBy) | the approver, which must be listed in the `vault.json` of `addedEpoch` that first lists the entry; or the entry itself (a kit join, `addedBy: "recovery"`) |
-| `epochSig` | `epoch` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(parent) ‖ lp(reason) ‖ lp(recovery fingerprint) ‖ lp(rejected author, empty except in a `resolve` epoch) ‖ lp(n) ‖ the epoch's **first list**: n fingerprints, sorted ‖ lp(m) ‖ the parent list as the author saw it: m fingerprints, sorted | the epoch's author, which must be in the parent epoch's list; at epoch 1, the creating device, which must be in epoch 1's first list (there is no parent; the root anchors it) |
+| `epochSig` | `epoch` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(parent) ‖ lp(reason) ‖ lp(recovery fingerprint) ‖ lp(rejected author, empty unless a `resolve` epoch rejected one) ‖ lp(n) ‖ the epoch's **first list**: n fingerprints, sorted ‖ lp(m) ‖ the parent list as the author saw it: m fingerprints, sorted | the epoch's author, which must be in the parent epoch's list; at epoch 1, the creating device, which must be in epoch 1's first list (there is no parent; the root anchors it) |
 | `authorSig` | `manifest` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(epochRecordHash) ‖ lp(SHA-256(listMessage)) ‖ lp(format) ‖ lp(k) ‖ the k distinct features, sorted | a device listed in this `vault.json` |
 
 ECDSA signs the message with SHA-256 and stores `r ‖ s` (64 bytes); ML-DSA-65 signs the message
@@ -458,12 +458,12 @@ revision). The JSON:
   About 11 KB per epoch plus about 9 KB per addition. It lets a device that missed several
   epochs check every link and signature (§4.3), and lets fork resolution compute removals (§5.6),
   even after re-encryption has deleted the older records.
-- `reason`: `create`, `remove`, `recovery` (replacing the kit), `reencrypt`, `reapply` or `resolve`
-  (§5.6). It and `removed` are shown in the device history and are informational: removals are
+- `reason`: `create`, `remove`, `recovery` (replacing the kit), `reencrypt` or `resolve` (§5.6; a
+  resolve epoch carries the re-applied removals). It and `removed` are shown in the device history and are informational: removals are
   computed (§4.1). The record's `reason` and `by` must equal its last chain entry's (KH1 code review
   M6), and readers use the chain entry.
-- Each chain entry names the epoch's **recovery** fingerprint and, in a `resolve` epoch, the
-  **rejected** author, both signed by `epochSig`, so every copy of the chain carries them (KH1 code
+- Each chain entry names the epoch's **recovery** fingerprint and, in a `resolve` epoch, a
+  **rejected** author when the user rejected one, both signed by `epochSig`, so every copy of the chain carries them (KH1 code
   review M1, M2). A `recovery` or `reencrypt` epoch replaces the recovery fingerprint (the new one is
   its only new key, the old one is gone); every other epoch keeps it. The recovery keys of fork
   resolution are the chain's `recovery` fields. When the removed device authored a recovery epoch, the
@@ -565,8 +565,8 @@ it."** The parent list supplies the names (§5.6). It offers:
 
 An unlisted device refuses every write to the vault (`VaultError.removedFromVault`, CLI exit code 8).
 "Removed" is never final in the format: it is the state of a device whose kept chain omits it, and a
-forged change seen first is undone when the real one arrives (§5.6, scenario "forged removal seen
-first", §11.1).
+forged change seen first is undone when the real one arrives and the user answers "no" to it (§5.6,
+scenario "forged removal seen first", §11.1).
 
 **Removing a device warns when its last sync is stale.** Each device's published summaries file
 (`summaries/<id>.sealed`, format.md §12.5) gains a `synced` timestamp (the end of its last complete
@@ -577,7 +577,7 @@ Change the password of <WebDAV target>, or sign it out of iCloud, if you no long
 the device approved other devices, the sheet lists them (from `addSig`) with **"Also remove the
 devices <name> added"**, checked when the user marks the device as lost or stolen.
 
-### 5.6 Forks: resolved over subtrees, never merged
+### 5.6 Forks: never decided automatically, never merged
 
 Two devices that each make a new epoch from the same parent while they cannot see each other create a
 **fork**. So does a removed device that makes an epoch from any epoch whose key it held, at any depth.
@@ -587,142 +587,114 @@ Records do not collide (their names carry the id), and `vault.json` versions con
 **The epoch tree.** Each device keeps the tree of every epoch it has verified (§4.3: link under the
 parent key, `epochSig` by a device of the parent list, first list within the parent list plus at most
 one recovery entry), from `vault.json` versions, conflict copies and records. For each epoch it knows
-the author, the first list, and the removals computed as in §4.1. The **kept chain** is found from the
-root down: at each epoch with more than one child, the rules below pick one child, comparing the
-**subtrees** below the children (each child with all its descendants), never the children alone.
+the author, the first list, and the removals computed as in §4.1.
 
-**Context, labels and disputes (KH1 code reviews C1, round 2).** A removed device that appended one
-epoch under an old honest stale fork, removing the real side's author, made that fork win by rule 1 on
-every device (round 1). The first fix let a branch's children always count, which let X's own child
-reject its removal, and left deadlocks to rules 3 and 4 (round 2). The rules are now:
+**The simple rule** (adopted after five review rounds of automatic rules, §16.5). A device never picks
+one of two changes by itself:
 
-- **Exclusion.** Epochs authored by a device that this device's pinned chain removed, that its user
-  rejected (stored answers), or that a binding resolve epoch rejected leave the tree with their
-  subtrees, wholesale, except epoch 1, the pinned chain, and the ancestors of an epoch that removes
-  their author and is not itself by an excluded device (a device's legitimate epochs from before its
-  removal).
-- **Labels.** At a branch, all the children's subtrees are labelled at once, with the grounded
-  semantics of "epoch e removes the author of epoch f in another child's subtree": an epoch is
-  **accepted** when its parent is accepted (a child's parent, the branch point, is) and every epoch of
-  the other subtrees that removes its author is rejected; **rejected** when its parent is rejected or
-  an accepted epoch of another subtree removes its author. The least fixed point leaves the rest
-  **undecided**. Children are labelled like any other epoch, and a third child's removal of X counts
-  against X's epochs under the other two.
-- **Disputes are rule 2.** Undecided epochs at the fixed point are a dispute between their authors.
-  A device that authored one of the disputed epochs keeps its own side: it rejects the authors of the
-  epochs that dispute its own, and resolution starts again (two binding resolve epochs that disagree
-  make it ask instead). Every other device gets the question, with names from P's list. A dispute is
-  never settled by rule 3 or 4.
-- **Otherwise**, a child that is rejected loses (rule 1); among the accepted ones, rule 3 (accepted
-  descendants) and rule 4 decide in pairs in `epochId` order, and a side whose author is about to be
-  re-applied goes too. The re-application set is the accepted removals of the sides lost by rule 3 or
-  4.
-- **Pruning.** Walking down the kept chain, a child whose author the kept prefix removed, or whose
-  author is in the re-application set, is dropped with its subtree, also when it is the only child.
-- **A randomized property test** (`EpochForkPropertyTests`) checks, from every honest device's point
-  of view (unpinned, pinned at every prefix, after rejecting the removed devices), over random honest
-  histories and attacker coalitions that author anything anywhere they were listed: a removed device
-  is never kept and never left listed without a question; the result does not depend on input order;
-  no recovery key is re-applied; a user who rejected the removed devices is not asked again; honest
-  forks alone never make a question. Each test-only mutation of the safeguards must fail it.
+1. **Linear following.** A device follows only epochs that extend its pinned chain linearly: the one
+   child of its chain's end, verified as above, whose author is listed in that end's list and is
+   neither removed on the chain nor rejected (rule 6).
+2. **A branch is a question.** When an epoch on or after its pin has more than one such child, the
+   device asks, per foreign side: **"Did you make this change?"**, with names from the branch epoch's
+   list, showing the side's whole continuation ("iPad removed Phone, then Laptop removed Mac").
+   - **Yes**: the side's removals are re-applied, carried by the device's resolve epoch (rule 3).
+   - **No**: the side's author is **rejected**, wholesale (rule 6).
+   - The author of a side the user merely did not pick is never rejected: in honest concurrent
+     removals both sides are the user's.
+   The CLI cannot ask: `sempere devices resolve` answers, and `sempere sync --json` reports the open
+   questions.
+3. **The answer is stored** (trust record, per branch: the chosen child, the authors confirmed and the
+   authors rejected), and the device writes a signed **`resolve` epoch** (a fresh key) at the end of
+   the chosen side. It removes the re-applied keys still listed (never a recovery key) and names one
+   rejected author when there is one (`rejected`, covered by `epochSig`).
+   **Amendment 2:** after a choice, the re-applied removals and the rejected authors **prune** the
+   chosen side's continuation: an epoch there by one of those authors is not followed, except one
+   from before that author's removal further down the same side (an ancestor of an epoch, by an author
+   who is not rejected, that removes it), so a "yes" to a stale fork never drops the real chain's
+   history. The chosen child itself is the user's pick and is kept.
+4. **Following another device's resolve.** A device follows a resolve epoch automatically only if:
+   - (a) its author is listed on the device's chain, is not rejected, is not removed on the device's
+     own side of the branch, is not removed by an epoch that counts (one on the device's chain, or by
+     an author that chain does not remove and the user did not reject), and was not added (`addedBy`
+     chain, §4.1) by a removed or rejected device, so a puppet's resolve never settles anything;
+   - (b) it settles a branch whose parent is on the device's chain: its path leaves the chain there,
+     **below** the branch's child (a resolve that is itself a child of the branch answered nothing
+     there), and every author of an epoch on that path that is not already on the device's chain is
+     not rejected and is removed, if at all, only further down that path (its epoch is from before its
+     removal). So B, pinned on its own stale side whose removal hides the real side, follows A's
+     resolve on the real side;
+   - (c) no other resolve passing (a) and (b) settles the same branch for another side; otherwise the
+     device asks, showing them.
+   A resolve that passes (a) but not (b) makes its side part of the question, also at a branch the user
+   already answered (the side was hidden then; the user may change the choice). A question shows a
+   deterministic **suggested** default: the side on which more distinct listed, non-rejected authors
+   continued, then the smaller `epochId`, so devices answering at the same time agree.
+5. **Joiners.** An unpinned device (a kit join, a device that lost its trust record) starts at epoch 1
+   and asks once per branch it meets that no resolve settles. An approval joiner gets the approver's
+   frontier in the reverse code (§6.2) and starts pinned on it.
+6. **Outcasts.** Epochs by devices the pinned chain removed, or by authors rejected in an answer, are
+   ignored with their subtrees, except a rejected author's epochs from before its removal (an ancestor
+   of an epoch, by a device not rejected, removing it; transitively).
+7. **Amendment 4: open questions do not stop linear following.** While a question is open, the device
+   keeps following its pin's linear extensions (they are unambiguous) and keeps syncing notes under
+   the pinned key; it refuses only the unchosen sides. A joiner with an open question has no key yet
+   and waits.
 
-Devices whose pinned chain does not contain the removal (joiners, kit joins, devices pinned before it,
-devices after losing their trust record) are therefore asked once when a removed device disputes
-the real chain; an approval joiner gets the approver's frontier in the reverse code (§6.2) and starts
-pinned on it.
+There is no fixed point, no labelling of subtrees and no ordering tie-break: nothing is decided by
+`epochId`, descendants or who wrote first.
 
-**Pre-pass.** With every child labelled at once (above), the pre-pass is rule 1 applied to all
-siblings before any pairing: a rejected child loses, whichever sibling rejected it, so a removed device
-cannot force a question against an honest sibling when another sibling already removes it. The
-accepted children are then compared in pairs, in `epochId` order, the winner of each pair going on;
-a side counts as lost by rule 3 or 4, and is re-applied, whichever sibling it lost to.
+**Only removals are re-applied, and never of the recovery entry.** A side's recovery replacement
+(`recovery` or `reencrypt`) that the user did not choose is offered again to its initiator ("Replace
+the recovery kit again"), and until then the kept chain's kit stays valid. A side's additions come back
+only through their approvers (§5.1), who must be listed on the kept chain.
 
-For a branch point P with sides **S** and **T** (subtrees rooted at children `s` and `t`, authored by
-`author(s)` and `author(t)`):
-
-1. **A removed author loses.** If `author(s)` is removed by some epoch in **T** and `author(t)` is not
-   removed by any epoch in **S**, then **T** wins (and the reverse). A removed device that forks from
-   any older epoch, with any `epochId`, loses at the branch, because the real side's subtree contains
-   its removal.
-2. **Both authors removed by the other side** (mutual removal): **the user decides; nothing decides
-   without asking.** (The second draft's "a third device decides" rule is dropped: a device that X
-   added, carried into later epochs, could have decided it for X; round-3 M2.)
-   - **Who is asked**: every device listed on at least one side (in P's list or added on either side
-     after the branch) that is not one of the two authors. The CLI cannot ask: `sempere devices
-     resolve --keep <epochId>` answers, `sempere sync --json` reports `forkQuestion` with both
-     changes, and until then a CLI bridge keeps pulling but uploads nothing new.
-   - **The question** shows both changes with names from **P's list** (never from either fork's own
-     list): **"Two device changes were made at the same time. Which of these did you make?"**, each
-     line reading "<author's name in P> removed <names in P> on <date>".
-   - **The answer** is stored in the device's trust record, and from then on any fork authored by the
-     rejected device loses at every branch on this device without asking again. It is published as a
-     **`resolve` epoch** (`reason: "resolve"`, a fresh key) on top of the chosen side when the
-     answering device is listed there, whose record names the rejected author. A resolve epoch may
-     remove nothing; it is not a re-application, and the liveness check ignores it (J9).
-   - **Who is bound**: other non-author devices still ask their own users, and show any resolve epoch
-     they have seen as context ("Mac kept the change made on iPad"). The two **authors**, which are
-     never asked, follow a resolve epoch whose author's `addedBy` chain (§4.1) passes through neither
-     author, so a device X added cannot settle it for X. Two such resolve epochs that reject different
-     authors are shown as a contradiction, and the author's user is asked (KH1 code review M4). An author on the losing side is then
-     unlisted and told so (§5.5).
-   - **Contradictions**: a device whose stored answer differs from a resolve epoch it sees shows both
-     ("You kept the change made on iPad; Mac kept the change made on Phone") and lets the user revise
-     the answer, in the prompt and later in Settings ▸ Vault ▸ Devices ▸ History. Until the answers
-     agree, each device follows its own, and the status line says the devices disagree.
-
-   Until the device has an answer, it treats both sides as unverified-pending (§4.3): it keeps
-   writing locally under its pinned key and uploads nothing new. Authors keep their own side until a
-   binding resolve epoch arrives (§5.5 rule 1).
-3. **A stale side loses.** If neither author is removed by the other side, a side whose child has no
-   descendants loses to a side that has descendants. An honest device that was offline and made a
-   change from an old epoch therefore never replaces the chain that went on without it. Descendants
-   are counted whoever wrote them, so a removed device can give its own side descendants; that only
-   matters where rule 1 does not already discard its side (see "Residual").
-4. **Otherwise** (honest concurrent changes, both stale or both continued): the child with the smaller
-   `epochId` wins, and the user is told ("Two device changes were made at the same time; the one from
-   Mac was applied first").
-
-**Re-application.** When a side loses by rule 3 or 4 (never 1 or 2), the first listed device that sees
-it writes **one** new removal epoch on top of the kept chain (`reason: "reapply"`, a fresh random key)
-that removes every key removed by any epoch of the **whole losing subtree** that is still listed on
-the kept chain. If no such key remains, it writes nothing. Two devices re-applying at once make a fork
-of two re-applications with the same removals: rules 3 and 4 keep one, and the other's re-application
-finds nothing left to remove and stops.
-
-**Only removals are re-applied, and never of the recovery entry.** A losing side's recovery
-replacement (`recovery` or `reencrypt`) is offered again to its initiator ("Replace the recovery kit
-again"), and until then the kept chain's kit stays valid. A losing side's additions come back only
-through their approvers (§5.1), who must be listed on the kept chain.
-
-**What happens to files.** A losing side's records are set aside (kept for the history view). Files
-under its keys are not accepted: they are set aside on every device. The honest writers on the losing
-side catch up from their own ledgers into the kept chain (§5.4), so nothing of theirs is lost. A
-removed device's files never become accepted through a fork.
+**What happens to files.** A side that is not kept has its records set aside (kept for the history
+view). Files under its keys are not accepted: they are set aside on every device. The honest writers
+on that side catch up from their own ledgers into the kept chain (§5.4), so nothing of theirs is lost.
+A removed device's files never become accepted through a fork.
 
 **Why this holds (J10, §11.2).** Every key of every kept epoch is wrapped only to that epoch's list
 and appears only in records of its descendants. An epoch's list never introduces a device (§4.1), and
 re-application only removes. A coalition of removed devices therefore holds exactly the keys of the
-epochs that listed one of its members, and can get none of its forks kept against a side that removes
-them (rule 1, applied in the pre-pass), nor decided in its favor without a user's answer (rule 2),
-and the user is asked in the parent's names, about changes the user made or did not make.
+epochs that listed one of its members. A device pinned through a removal ignores everything its
+members author afterwards (rule 6); anywhere else their forks are a question about a change the user
+did not make, answered "no" once per author. Every attack tree of the earlier review rounds (C1,
+C1-a/b/c, H1, H2, M1, puppets, coalitions, ground ids, stale forks, deadlocks) ends in **no effect** or
+**one question** (`epoch-fork-vectors.json`).
+
+**The property test** (`EpochForkPropertyTests`) runs random honest histories (removed devices
+authoring legitimate epochs before their removal, honest forks, Y writing the real chain's last epoch),
+attacker coalitions that author anything anywhere they were listed, honest and puppet epochs under
+attacker epochs, and pins on every prefix, every fork path and through attacker epochs, with a
+truthful scripted user ("yes" to honest changes, "no" to attackers and puppets). It checks: **P1** no
+sibling adopted without an answer or a resolve passing rule 4, and no epoch by an author the pin
+removed or an answer rejected or re-applied (beyond a chosen child); **P2** a device pinned through
+every attacker's removal is asked only about non-attackers, and with neither honest forks nor puppets
+is asked nothing; **P3** after truthful answers, no attacker epoch on an honest chain, no removed
+device listed, no recovery key re-applied; **P4** bounded questions (per device, at most the honest
+sibling epochs seen plus the distinct rejected authors, and at most one round per attacker author);
+**P5** convergence of four devices answering and writing resolves in turn, with honest-only trees
+asking at most once per branch overall; **P6** order independence. Five test-only mutations must
+each fail it: rule 6 off, siblings followed automatically, resolves followed without 4(a), "no" not
+excluding the author, and the continuation not pruned (amendment 2).
 
 **Residual.**
 
-- A device that has seen **neither** the real removal **nor** anything after it, and is shown only a
-  fork that a removed device made, takes it and writes under its key until the real change reaches it.
-  Rule 1 then discards the fork, and the device catches up, but what it wrote meanwhile was readable to
-  the removed device. This is today's limit (format.md §2.1 "Limits"), narrowed: the removed device
-  has to make and serve the fork before that device sees the real change.
-- A removed device can make a mutual-removal fork (rule 2) and so make a device ask its user once
-  before it uploads again. After the answer, that device discards every later fork by that author
-  without asking. The cost is one question per device per removed attacker. It cannot avoid being
-  named: the question uses P's list.
-- **A still-listed device the attacker added** (a "puppet": X approved it before its removal, and the
-  remover carried it) is an honest listed device to the rules. It can author epochs, answer fork
-  questions and write resolve epochs; only the authors' binding rule ignores it. The removal sheet
-  therefore offers **"Also remove the devices <X> added"** (§5.5), listed from `addSig`.
-- On a device that has seen only a removed device's stale fork and that device's own descendants of
-  it, rule 3 cannot help (rule 1 decides once the real removal arrives).
+- **One question per honest stale fork** (per device without a usable resolve), where the earlier
+  rules settled it silently. The user must say "yes" to their own concurrent change for it to be
+  re-applied.
+- **A puppet** (a still-listed device X added before its removal, carried by the remover) can force
+  questions, bounded by one "no" per puppet author. Its resolve epochs never settle anything (rule
+  4(a)). The removal sheet therefore offers **"Also remove the devices <X> added"** (§5.5), listed
+  from `addSig`.
+- **An unpinned (kit) joiner** answers once per branch it meets.
+- **A device whose chain runs through an attacker's epoch** (it saw the fork first, or followed one
+  linearly from its own stale fork whose removals hide the real side) recovers only when it sees a
+  real sibling and answers; it is then asked, unless the attacker's own resolve below its fork settles
+  the branch for it under rule 4. What it wrote meanwhile was readable to the removed device. This is
+  today's limit (format.md §2.1 "Limits"), narrowed: the removed device has to make and serve the fork
+  before that device sees the real change.
 ### 5.7 Inbox, settings, notebooks, summaries, `keys/`, blob collection
 
 - **Quick capture**: a profile holds `v_e`, `epoch` and `deviceCaptureKey` under `K_e`, and seals to
@@ -815,8 +787,8 @@ or removed from anywhere. A failure to set aside stops that replacement or remov
 
 What the reverse code stops: a **storage provider** serving N a vault of its own, which cannot have a
 chain rooted at the real root. It does not stop a **removed device**, which holds a rooted chain up to
-its removal and can show N a fork from there. N then sees the real change later, and fork resolution
-(§5.6) discards the forged side; the §5.6 residual applies to what N wrote meanwhile.
+its removal and can show N a fork from there. N then sees the real change later, is asked (§5.6),
+and the user's "no" discards the forged side; the §5.6 residual applies to what N wrote meanwhile.
 
 Requests older than 7 days, and those of keys already listed, are deleted by any listed device.
 
@@ -926,12 +898,12 @@ file. Old backups and provider version history still open with the old kit."
   any other own file. The journal stays bound by `reencryptPending`, re-derived under the new key in
   the new `vault.json`.
 - **A re-encryption that meets an offline removal (a fork).** The two epochs share a parent, and §5.6
-  decides. If the re-encryption side is kept, the removal is re-applied on top (§5.6
-  "Re-application") and the pass goes on. If the removal side is kept (rule 3 or 4, or rule 1 when the
-  initiator was removed), the re-encryption epoch loses and its journal is refused. Its removal of
-  devices is re-applied when it lost by rule 3 or 4, but its recovery replacement is not (§5.6:
-  re-application never touches the recovery entry), so the old kit stays valid until the run is
-  repeated. Its initiator, if still listed, reports
+  decides: the devices that see both ask their users (a device pinned through the removal of the
+  initiator ignores the re-encryption side). If the re-encryption side is chosen and the removal
+  confirmed, the removal is re-applied in the resolve epoch and the pass goes on. If the removal side
+  is chosen, the re-encryption epoch is not kept and its journal is refused. Its removal of devices is
+  re-applied when the user confirms it, but its recovery replacement is not (§5.6: re-application
+  never touches the recovery entry), so the old kit stays valid until the run is repeated. Its initiator, if still listed, reports
   "Re-encryption was stopped by a device change made on <device> at the same time", and the sheet
   offers to run it again. Its new kit is void, and a new one is printed by the next run. Files the
   pass had re-encrypted under the discarded key are its initiator's ledger entries, so they come back
@@ -1100,7 +1072,7 @@ it joins.
 | Threat | What the attacker gets | What stops the rest | Residual |
 | --- | --- | --- | --- |
 | **Stolen device** (locked) | the encrypted working copy; the device key only if the passcode or Face ID is broken | Keychain this-device-only; signing keys in the Secure Enclave; "Require Face ID" option; remove it from another device: a new epoch at once | if unlocked by the thief: everything up to the removal. Files from before stay readable to it (old keys) unless §7 is run and the thief has no copy |
-| **Removed device with modified software** (alone or with other removed devices) | the keys of the epochs that listed it; its working copy | §5.3: anything it writes after the change is set aside on every device (J3); it cannot unwrap a later key (J2); a fork it makes from any epoch loses by §5.6 rule 1 (in the pre-pass), or needs a user's answer (rule 2); it cannot avoid being named in the question, which uses the parent's list; epochs never add devices and re-application only removes (J10) | a device that has seen neither the real removal nor anything later can be shown its fork first (§5.6 "Residual"); it can force one question per device; additions under the old epoch attributed to it, shown as such (§5.1); **one still-listed device it added (a puppet) can author epochs and answer questions like any listed device**, which is why the removal sheet offers "also remove the devices it added" |
+| **Removed device with modified software** (alone or with other removed devices) | the keys of the epochs that listed it; its working copy | §5.3: anything it writes after the change is set aside on every device (J3); it cannot unwrap a later key (J2); a fork it makes from any epoch is ignored by a device pinned through its removal (§5.6 rule 6) and is otherwise one question, answered "no" once (rule 2); it cannot avoid being named in the question, which uses the parent's list; epochs never add devices and re-application only removes (J10) | a device that has seen neither the real removal nor anything later can be shown its fork first (§5.6 "Residual"); it can force one question per device and author; additions under the old epoch attributed to it, shown as such (§5.1); **one still-listed device it added (a puppet) can author epochs and answer questions like any listed device**, which is why the removal sheet offers "also remove the devices it added" |
 | **Removed device's storage credentials** | write access to the targets it was given | removal changes no file it can read later; the sheet tells the user to change the target's password (§5.5); every working copy is complete, so a file it deletes from a target is restored (not an explained deletion) | until the password changes, it can delete or withhold files on a target (denial of service, including withholding a record: §4.3 "unverified-pending"), and see metadata |
 | **Hostile storage provider** | metadata (§9.3, security.md); every ciphertext | tags, names, `listTag`, author and entry signatures; the trust record pins the root and the chain (rollbacks refused); records bound by hash; joins rooted at the printed root, with codes both ways (§6.2, §6.3); §9.1 checks | it can withhold files or records (pending, never accepted or deleted; a withheld record keeps devices from uploading until another target or a device brings it) and delete things (devices re-upload). The reverse code stops a fake vault from storage, not a fork from a removed device (§6.2) |
 | **Lost recovery kit** | whoever finds it can unwrap the key of any epoch the kit was listed in, from any copy of `vault.json`, and can join a device | a kit join is recognized by its self-signature and alerts every device (§6.3); Replace Recovery Kit and Re-encrypt require confirming or removing each kit-joined device (§6.5); Replace: nothing written after opens with it; Re-encrypt: nothing in the vault opens with it | backups, provider history and copies made before still open |
@@ -1140,25 +1112,25 @@ it joins.
   - **`addedBy`**: an entry whose `addedBy` names iPad but is self-signed (tampered, or a kit join if it
     says `recovery`); an entry whose `addSig` is by a device not in that `vault.json`; a merged
     `vault.json` written by C keeps the approver's `addedBy`;
-  - forks, honest: two concurrent removals from the same epoch (rule 4 and re-application, including
-    two re-appliers at once, the second writing nothing); **an honest fork at a non-frontier level**:
-    B, offline since `j−1`, removes a key from `j−1` while the chain went on to `e+1` (rule 3: B's side
-    loses, its removals are re-applied on top, keys removed at `j+1…e` stay removed);
-  - forks, adversarial: removed X forks from `K_e`, adds nothing and seals its own files (rule 1); **X
-    forks from an older epoch `j < e+1` with a ground `epochId` smaller than the real `j`'s** (rule 1
-    over the subtree: the real side contains X's removal); X's fork removes every other device (rule 1,
-    nothing re-applied); two removed devices fork together, from different epochs (rule 1; no kept
-    epoch's key derivable by them); **mutual removal**: X's fork removes the real branch author (rule 2
-    always asks, every non-author device listed on either side, with names from the parent list even
-    when X's fork swaps the names; the answer becomes a `resolve` epoch that binds the authors; a
-    second mutual fork by X is discarded without asking); **three children** at one branch: the real
-    removal of X, an honest stale fork by B, and X's fork with a ground id that removes B (the pre-pass
-    discards X's fork by rule 1, no question is asked, and B's side is re-applied); **a puppet**: N_x,
-    added by X and carried into `e+1`, writes a resolve epoch for X's side (the authors are not bound by
-    it; other devices still ask; the removal sheet offered to remove N_x with X); **a resolve by a
-    device added after the branch** (asked, its answer binds the authors); **contradicting answers** on
-    two devices (both shown, one revised, the devices converge); a CLI bridge with a pending question
-    (`forkQuestion` in `sync --json`, uploads held, `devices resolve --keep` releases them);
+  - forks, honest: two concurrent removals from the same epoch (each device asks once; "yes" to the
+    other side re-applies its removals in the resolve epoch; the other devices follow that resolve;
+    two devices answering at once agree on the suggested side); **an honest fork at a non-frontier
+    level**: B, offline since `j−1`, removes a key from `j−1` while the chain went on to `e+1` (asked
+    once; B, pinned on its own side, follows the resolve on the real side even when its removal hid the
+    real side's author, rule 4(b); keys removed at `j+1…e` stay removed);
+  - forks, adversarial: removed X forks from `K_e`, adds nothing and seals its own files (no effect on
+    a device pinned through the removal, rule 6; one question elsewhere); **X forks from an older epoch
+    `j < e+1` with a ground `epochId`** (no effect: nothing is decided by id); X's fork removes every
+    other device (it cannot settle anything: its resolvers are removed); two removed devices fork
+    together, from different epochs (one "no" per author); **mutual removal**: X's fork removes the
+    real branch author (one question; "no" rejects X wholesale, and X's later forks are ignored);
+    **three children** at one branch (the real removal of X, an honest stale fork by B, and X's fork
+    removing B: one question about B, X ignored); **a puppet**: N_x, added by X and carried into
+    `e+1`, writes a resolve epoch for X's side (never followed, rule 4(a); one "no" per puppet; the
+    removal sheet offered to remove N_x with X); **an attacker's resolve as a child of the branch**
+    (settles nothing; the device pinned through it is asked); **conflicting resolves** (asked, with
+    both shown); a CLI bridge with a pending question (`forkQuestion` in `sync --json`, the pinned
+    chain still followed linearly, `devices resolve` answers);
   - **an offline device verifies a removal whose first list carries a device added while it was
     away** (the addition is admitted from the parent's chain entry; the removal verifies);
   - **a losing re-encryption** whose initiator was removed: a target holding only its copies is
@@ -1199,8 +1171,8 @@ records every write: who wrote it, its epoch, and whether its writer had been re
 | J6 | **Set aside is monotone**: nothing leaves the set-aside store without a user action, and every replaced or removed unaccepted file is in it first | set-aside write failure ignored |
 | J7 | **Re-encryption completeness**: after a finish and quiescence, no file on a target or in a working copy opens with an epoch key from before the re-encryption or the old recovery key | old blob names never deleted; old epoch records kept |
 | J8 | **Body integrity**: no path ever holds two different bodies in the vault | a re-encryption that replaces before verifying, with a crash between |
-| J9 | **Liveness**: every re-encryption journal finishes or is reported within a bounded number of runs once targets are reachable; every fork is resolved or put to the user; re-application ends (no `reapply` epoch is written that removes nothing; `resolve` epochs are exempt) | the "skip complete files" check inverted; a re-application written when nothing is left to remove |
-| J10 | **Key reach**: for every epoch on any device's kept chain and every coalition of removed devices, the principals able to derive that epoch's key are exactly the keys listed in it or in a later kept epoch (devices and recovery keys) | siblings compared instead of subtrees (the ground-id fork from an older epoch wins); a stale side with no descendants allowed to win by `epochId`; additions re-applied from a losing side; an epoch whose first list introduces a device accepted; `addedBy` taken from the field instead of `addSig`; names in the fork question taken from the forks' own lists; the pre-pass skipped (pairs in `epochId` order only); the authors bound by a resolve epoch written by a device one of them added |
+| J9 | **Liveness**: every re-encryption journal finishes or is reported within a bounded number of runs once targets are reachable; every fork is followed linearly or put to the user, and open questions never stop linear following (§5.6 amendment 4) | the "skip complete files" check inverted; a question that blocks the pinned chain's linear extensions |
+| J10 | **Key reach**: for every epoch on any device's kept chain and every coalition of removed devices, the principals able to derive that epoch's key are exactly the keys listed in it or in a later kept epoch (devices and recovery keys) | (the five required mutations of `EpochForkPropertyTests`, §5.6) rule 6 off; siblings followed automatically; resolves followed without rule 4(a); "no" answers not excluding the author; the chosen continuation not pruned by the re-application set; also: additions re-applied; an epoch whose first list introduces a device accepted; `addedBy` taken from the field instead of `addSig`; names in the fork question taken from the forks' own lists |
 
 Each mutation is a test-only switch. `EpochMutationTests` runs every mutation for a few seeds and
 requires it to fail, so no invariant is vacuous (P4a's round-1 finding). Quick mode: 3 seeds × 40
@@ -1213,7 +1185,7 @@ Sizes as in device-first-sync.md §10: S < 300 changed lines, M 300 to 1,000, L 
 
 | # | PR | Size | Depends on | Test gate |
 | --- | --- | --- | --- | --- |
-| **KH1** | **Key schedule, identities, signatures, fork rules and the frozen kit.** Pure types and functions, no `Vault` wiring: `VaultEpochKey` (`K_e` → identity seed → vault identity, the §2.2 derivations); wraps; `vault.json` model with `keys[]`, fingerprints, `listMessage`/`listTag`, `epochLink`, `root`; the three signature messages of §4.1 (`lp()` encoding, no JSON canonicalization) and their checks (`addSig` ⇒ `addedBy`, self-signed ⇒ kit join, first lists within the parent list **including the parent's carried additions**, the 256-addition bound); the epoch record model, chain check and computed removals; **fork resolution as a pure function** over an epoch tree (§5.6: the pre-pass, rules 1 to 4, subtrees, pairwise order, re-application set, user answers and resolve epochs as input, the authors' binding rule); join commitment, words and reverse code; trust record v3. Shared vectors `Fixtures/epoch-vectors.json`: seed → identity → derived keys → tags, links, root, fingerprints, all three signatures (including a device name with non-ASCII, a slash and an emoji), join words; **negative vectors** (a broken link, a wrong root, a signature by an unlisted key, an `addedBy` that is not the signer, an epoch introducing a device); **fork-tree vectors** (the §11.1 fork scenarios as trees, with the expected kept chain and re-application set, including: three children where a mutual pair meets a decisive sibling (pre-pass); a removal whose first list carries a device added during the parent epoch; a resolve epoch by a device not in P's list; a resolve by a puppet, which does not bind the authors). Mirrored in `web/src/vault/`. format.md: §2, §2.1, §3, §4, §8.1.2, §11.1 rewritten, and **new sections for `epochs/` (§5.2.1 here), the re-encryption journal (§7.4), the passphrase copy's plaintext (§8.2) and the signature messages (§4.1)**. The kit layout (key, root) and the recovery script (§8.1) frozen; CLAUDE.md's recovery rule updated | M to L | — | vectors from two implementations (Swift, TypeScript); `age` interop: a file to `v_e` opens with `age -d -i` the wrap's plaintext; enclave signatures verify in software (Mac test behind `#if canImport(CryptoKit)`); the recovery script on a hand-built fixture (two epochs, an orphan, a lost fork, a journal, the passphrase copy); fuzz targets for the `vault.json`, epoch record, journal and join request readers |
+| **KH1** | **Key schedule, identities, signatures, fork rules and the frozen kit.** Pure types and functions, no `Vault` wiring: `VaultEpochKey` (`K_e` → identity seed → vault identity, the §2.2 derivations); wraps; `vault.json` model with `keys[]`, fingerprints, `listMessage`/`listTag`, `epochLink`, `root`; the three signature messages of §4.1 (`lp()` encoding, no JSON canonicalization) and their checks (`addSig` ⇒ `addedBy`, self-signed ⇒ kit join, first lists within the parent list **including the parent's carried additions**, the 256-addition bound); the epoch record model, chain check and computed removals; **fork resolution as a pure function** over an epoch tree (§5.6, the simple rule: linear following, questions per branch, stored answers, resolve-following under rule 4, the outcast filter, re-application from "yes" answers and amendment-2 pruning); join commitment, words and reverse code; trust record v3. Shared vectors `Fixtures/epoch-vectors.json`: seed → identity → derived keys → tags, links, root, fingerprints, all three signatures (including a device name with non-ASCII, a slash and an emoji), join words; **negative vectors** (a broken link, a wrong root, a signature by an unlisted key, an `addedBy` that is not the signer, an epoch introducing a device); **fork-tree vectors** (the §11.1 fork scenarios and every earlier review round's attack trees, with the expected chain, questions, re-application set and followed resolves: each ends in "no effect" or "one question"). Mirrored in `web/src/vault/`. format.md: §2, §2.1, §3, §4, §8.1.2, §11.1 rewritten, and **new sections for `epochs/` (§5.2.1 here), the re-encryption journal (§7.4), the passphrase copy's plaintext (§8.2) and the signature messages (§4.1)**. The kit layout (key, root) and the recovery script (§8.1) frozen; CLAUDE.md's recovery rule updated | M to L | — | vectors from two implementations (Swift, TypeScript); `age` interop: a file to `v_e` opens with `age -d -i` the wrap's plaintext; enclave signatures verify in software (Mac test behind `#if canImport(CryptoKit)`); the recovery script on a hand-built fixture (two epochs, an orphan, a lost fork, a journal, the passphrase copy); fuzz targets for the `vault.json`, epoch record, journal and join request readers |
 | KH2 | **Single-epoch vaults.** `Vault.create`/`open` on the new manifest: one stanza per file to `v_e`, tags and blob names under derived keys, recovery entry, passphrase copy (work factor 20, 70 bits, root inside), add and rename (signed), union merge, CLI `devices list/approve/rename`, `device init`, `--recovery-key [--root]` read-only; old vault format removed (no migration); fixtures regenerated; web viewer reads the new format | L | KH1 | full `swift test`; the kit's recovery script in CI on a generated fixture; web goldens |
 | KH3 | **Removal and the acceptance rule.** Epoch records (final name first), sealed sets, §5.2 under the write lock, §5.3, the set-aside store (moved from P4a's quarantine), the write ledger (intent first, lifetime, App Group, AfterFirstUnlock key), catch-up (§5.4), unlisted devices (§5.5), recovery kit replacement with the device review, blob-collection conditions (§5.7); CLI `devices remove`, `recovery replace` | L | KH2 | `EpochFaults` (core points), the scenarios that need no sync over in-process devices sharing a folder, J1, J2, J3, J5a, J6, J8 |
 | KH4 | **Engine.** Sync of `epochs/` (to every target), `joins/`, `keys/` deletions (§8.2's rule); the remover's best-effort pull; pending-until-record and unverified-pending (J5b); current-replaces-unaccepted (§5.4 step 4); the epoch tree and KH1's fork function applied, with re-application and `resolve` epochs; unlisted devices keep pulling; `synced` timestamps | L | KH3, P3 | engine faults, every scenario, `EpochInterleavingTests` J1 to J6 and J8 to J10 with mutation checks; 60 seeds in sync-stress |
@@ -1317,7 +1289,7 @@ round 2)**; their recommendation is again the decision.
 | K1 | Wrap or derive the file key? | Wrap: a fresh age file key per file, in one stanza to the vault identity. **(revised after review)** The identity's seed is derived from the vault key by HKDF (§2.1) |
 | K2 | Secure Enclave? | **(revised after review)** Device signing pairs (P-256, ML-DSA-65) in the enclave now, **(revised after round 2)** with class AfterFirstUnlockThisDeviceOnly so locked runs can sign. The device's decryption key stays a software X-Wing key in a this-device-only Keychain item, because the enclave has no X-Wing and HPKE has no ML-KEM + P-256 hybrid (§6.1) |
 | K3 | Passphrase KDF and parameters | scrypt stays; writer work factor 20; minimum about 70 bits with no override; superseded copies deleted only under §8.2's rule. **(revised after round 2)** The copy carries the vault id and root |
-| K4 | Forks | **(revised after round 3)** Never merged; resolved at each branch over subtrees, after a pre-pass that applies rule 1 to all siblings: a removed author loses; mutual removal is always put to every non-author device listed on either side ("Which of these did you make?", names from the parent list), answered by a signed `resolve` epoch that binds the authors unless a device one of them added wrote it, with contradictions shown and revisable; a stale side loses; otherwise the smaller `epochId`. Only removals are re-applied, from the whole losing subtree, in one epoch (§5.6) |
+| K4 | Forks | **(replaced by the simple rule, §16.5)** Never merged and never decided automatically: linear following; a branch is a question per side ("Did you make this change?", names from the parent list), "yes" re-applies the side's removals in the device's signed `resolve` epoch, "no" rejects the author; another device's resolve is followed only under rule 4; epochs by removed or rejected authors are ignored (§5.6) |
 | K5 | Join verification | **(revised after review, and after round 2)** Typed six words or a QR code of the 32-byte commitment in both directions, and every chain rooted at the printed root fingerprint (§4.2, §6.2) |
 | K6 | Device names | Plaintext as today, authenticated by `listTag` and `authorSig`. **(revised after round 2)** A rename on both sides: the smaller digest wins (§5.1) |
 | K7 | Set-aside files | Never deleted automatically; "Clear superseded" is one user action (§5.8) |
@@ -1339,8 +1311,8 @@ round 2)**; their recommendation is again the decision.
 3. **Plaintext device names** in `vault.json` and join requests (§3, §9.3). They could move into an
    encrypted record if the owner wants storage not to see them; doing that later changes only those
    files.
-4. **The fork question's wording** (§5.6 rule 2.2), which users see only in an attack or a rare
-   accident. It should be checked with the owner on a device before KH5 ships.
+4. **The fork question's wording** (§5.6 rule 2, "Did you make this change?"), which users see in an
+   attack and after every honest stale fork. It should be checked with the owner on a device before KH5 ships.
 
 ## 16. Reviews of 2026-10-20 and what changed
 
@@ -1440,6 +1412,32 @@ The second review (of the fixes) found that fork resolution still failed for dev
 chain does not hold the removal: a child that always counts let X's own fork reject its removal; a
 deadlock between X's epoch under an honest stale fork and the real removal went to rule 4; stored
 answers and binding resolves acted on direct children only. §5.6 "Context, labels and disputes"
-replaces the round-1 rules (wholesale exclusion, labels over all siblings at once with children
+(since replaced by the simple rule, §16.5) replaced the round-1 rules (wholesale exclusion, labels over all siblings at once with children
 labelled like any epoch, disputes always rule 2), the reverse code carries the approver's frontier
 (§6.2), and a randomized property test with required-failing mutations guards the function.
+
+### 16.5 The simple fork rule
+
+Five review rounds of automatic fork resolution (subtree comparison, a pre-pass, labels over all
+siblings at a least fixed point, disputes, binding resolves, `epochId` tie-breaks) each found a new
+attack class: C1, C1-a/b/c, H1, H2, M1, puppets, coalitions, ground ids, stale forks, deadlocks. The
+reviewer (Fable) recommended, and the owner adopted with amendments 1 to 4, **the simple rule** of
+§5.6: nothing is decided automatically. A device follows its chain's linear extensions, asks at every
+branch "Did you make this change?" per side, stores the answer, writes a resolve epoch, and follows
+another device's resolve only under rule 4. Every earlier attack tree now ends in "no effect" or "one
+question" (`epoch-fork-vectors.json`).
+
+| Before | Now |
+| --- | --- |
+| labels, least fixed point, disputes, rules 1 to 4, pairwise `epochId` order | dropped: linear following, questions, resolve-following (rule 4), the outcast filter (rule 6) |
+| `reapply` epochs | dropped: a resolve epoch carries the re-applied removals; `reason` is `create`, `remove`, `recovery`, `reencrypt` or `resolve`, and `rejected` is optional in a resolve |
+| trust record: `rejectedAuthors` | `forkAnswers`: per branch, the chosen child, the authors confirmed and the authors rejected (format.md §15.10) |
+| binding resolves, contradictions | rule 4: (a) a resolver listed, not removed or rejected, not added by a removed or rejected device; (b) settling a branch on the device's chain, from below the branch's child, through authors removed only further down; (c) no conflicting resolve |
+| property invariants I-a to I-d | P1 to P6 with a truthful scripted user and five required mutations (§5.6) |
+
+Found while implementing it, and settled in §5.6: a resolve that is itself a child of the branch
+settles nothing (otherwise an attacker's resolve keeps a device pinned through it silent); removals by
+authors the device's chain removes do not void a resolver (otherwise an attacker that removed every
+resolver on its fork keeps an honest stale device from following); a side that a resolve vouches for
+but rule 6 hid is asked about, also after an answer; and amendment 2 keeps an author's epochs from
+before its removal further down the chosen side.

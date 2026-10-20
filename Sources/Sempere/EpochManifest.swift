@@ -121,7 +121,7 @@ public struct EpochManifest: Hashable, Sendable {
         guard m.keys.filter({ $0.role == .recovery }).count == 1 else { throw EpochFileError.malformed("not one recovery entry") }
         guard m.keys.contains(where: { $0.role == .device }) else { throw EpochFileError.malformed("no device entry") }
         guard let reason = EpochReason(rawValue: m.epochReason), (m.epoch == 1) == (reason == .create),
-              (m.rejected != nil) == (reason == .resolve), (m.epoch == 1) == m.parentList.isEmpty else {
+              m.rejected == nil || reason == .resolve, (m.epoch == 1) == m.parentList.isEmpty else {
             throw EpochFileError.malformed("epochReason, rejected or parentList")
         }
         var seen: Set<String> = []

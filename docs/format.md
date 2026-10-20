@@ -3921,7 +3921,7 @@ As the design's §3, with these rules for readers (a file breaking one is malfor
 - every device entry has `id`, `sign`, `kind`, `addedEpoch`, `addedBy` and `addSig`, and `id` is the
   first 8 hex digits of its fingerprint (§15.4); a wrap is at most 16 KiB; at least one device entry;
 - `epochReason` is one of §15.7's reasons, `create` exactly at epoch 1; `rejected` (a fingerprint) is
-  present exactly when it is `resolve`; `parentList` (sorted fingerprints, the parent list as the epoch
+  present only when it is `resolve`, and there only when the user rejected an author; `parentList` (sorted fingerprints, the parent list as the epoch
   author saw it) is present exactly when `epoch` > 1.
 
 **`epochSig` from `vault.json` alone** (review H2: a direct child of the pinned epoch is taken before
@@ -4032,7 +4032,7 @@ A **chain entry**:
 ```
 
 `parent` and `link` are absent at epoch 1; `recovery` is the epoch's recovery fingerprint; `rejected`
-is present only in a `resolve` epoch (the author whose side it rejected); both are signed by
+is present only in a `resolve` epoch, when its user rejected an author; both are signed by
 `epochSig`. `additions` is written only when not empty (absent reads as empty) and holds the additions
 made during that epoch that the next epoch's author saw. Lists hold at
 most 4096 fingerprints; a chain at most 100,000 entries.
@@ -4042,7 +4042,7 @@ most 4096 fingerprints; a chain at most 100,000 entries.
 From epoch 1 (`EpochChain.verify`):
 
 1. Entry `i` has `epoch` = `i`; `reason` is one of `create`, `remove`, `recovery`, `reencrypt`,
-   `reapply`, `resolve`; `create` only at epoch 1; `rejected` present exactly in a `resolve` epoch.
+   `resolve`; `create` only at epoch 1; `rejected` present only in a `resolve` epoch (optional there).
 2. Epoch 1: no `parent`, `link` or parent list; `root` = SHA-256 of its link keys (design §4.2); its
    author's fingerprint is in its first list.
 3. Epoch `e` > 1: `parent` is epoch `e−1`'s id; `link` verifies (§15.3) under `e−1`'s link keys; the
@@ -4083,49 +4083,48 @@ apply. Bounded at 64 MiB.
 
 ### 15.9 Fork resolution
 
-Over the tree of every verified epoch (`EpochForks.resolve`), from epoch 1 down. Amended after two
-KH1 code reviews (a removed device appending under an old honest stale fork; X's own child rejecting
-its removal; a deadlock settled by rule 4).
+Over the tree of every verified epoch (`EpochForks.resolve`; design §5.6, the simple rule). Nothing
+is decided automatically:
 
-1. **Exclusion.** An epoch authored by a device that the pinned chain removed, that the user rejected
-   (trust record), or that a binding resolve epoch rejected, leaves the tree with its subtree, except
-   epoch 1, the pinned chain, and the ancestors of an epoch that removes their author and is not by an
-   excluded device. A resolve epoch is **binding** for this device when this device is its rejected
-   author or is in dispute with it (an epoch of one removes the other), and its author is neither,
-   is removed by no epoch of the tree, and has an `addedBy` chain through neither of them and through
-   no removed device. Binding resolve epochs that reject different authors are contradictions, and
-   then this device is asked instead of keeping its own side.
-2. **Labels.** At an epoch with several children, every epoch of every child's subtree is labelled:
-   **accepted** when its parent is accepted (for a child, the branch point is) and every epoch of
-   another child's subtree that removes its author is rejected; **rejected** when its parent is
-   rejected or an accepted epoch of another child's subtree removes its author; the least fixed point
-   leaves the rest **undecided**.
-3. **Disputes (rule 2).** If any epoch is undecided, the disputed epochs are the undecided ones that
-   remove the author of, or are removed by, an undecided epoch of another subtree. A device that
-   authored a disputed epoch rejects the authors of the epochs that dispute its own and resolution
-   starts again; any other device stops at the branch with the question (the sides holding disputed
-   epochs, their disputed authors, names from the branch epoch's list). Asked: every device in the
-   branch epoch's list or in a list on those sides, except the disputed authors and recovery keys.
-4. **Rule 1**: a rejected child loses. **Rules 3 and 4**, in pairs in `epochId` order among accepted
-   children: a child without accepted descendants loses to one with; otherwise the larger `epochId`
-   loses. A child whose author is in the re-application set goes (pruned).
-5. **Pruning**: walking down, a child whose author the kept prefix removed, or whose author is in the
-   re-application set, is dropped with its subtree, also when it is the only child.
-6. **Re-application**: the accepted removals of every side lost by rule 3 or 4, minus the chain's
-   recovery keys, still in the kept chain's last list, in one `reapply` epoch; none: nothing is
-   written. A resolve epoch whose rejected author differs from the user's stored answer is reported as
-   a contradiction; the device follows its own answer.
+1. **Linear following.** From the pinned chain's end (epoch 1 when unpinned), the device follows the
+   one child whose author is in the end's list and is neither removed on the chain nor rejected.
+2. **A branch is a question.** With more than one such child, the device asks, per side, about each
+   author of the side's continuation ("Did you make this change?", names from the branch epoch's
+   list). A question on the pinned chain does not stop linear following past it.
+3. **Answers** (trust record `forkAnswers`): the chosen child is followed; the removals by confirmed
+   authors on the other sides are the **re-application set**; rejected authors are ignored everywhere.
+   The device writes a `resolve` epoch at the chain's end that removes the re-application set still
+   listed there, minus the chain's recovery keys, and names one rejected author if any. After a
+   choice, an epoch on the chosen side by an author in the re-application set or rejected is not
+   followed, unless it is an ancestor of an epoch that removes that author (by an author not
+   rejected).
+4. **Resolve epochs of other devices.** At a branch on the chain, a resolve epoch whose path leaves the
+   chain there, below the branch's child, is followed (to the deepest such resolve) when: its author is
+   not rejected, not removed on the device's own side, not removed by an epoch on the chain or by an
+   author the chain does not remove and the user did not reject, and was not added (`addedBy` chain) by
+   a removed or rejected device; every author of an epoch on its path that is not on the chain is not
+   rejected and is removed only further down that path; and no such resolve leads to another side
+   (otherwise a question listing them). A resolve that fails only the path test puts its side into the
+   question, also at an answered branch. A resolve on the device's own side settles the branch.
+5. **Outcasts.** An epoch whose author the chain removed or the user rejected is ignored with its
+   subtree, except a rejected author's epoch that is an ancestor of an epoch (by an author not
+   rejected, or itself so kept) removing it.
+6. **Questions** list the sides with the authors still to answer for, the device's current side, any
+   conflicting resolves, and a suggested side: the most distinct listed, non-rejected authors, then the
+   smaller `epochId`.
 
-`EpochForkPropertyTests` checks these rules on random trees with attacker coalitions (2000 seeds in
-`swift test`; `SEMPERE_FORK_PROPERTY_SEEDS` for more).
+`EpochForkPropertyTests` checks invariants P1 to P6 on random trees with attacker coalitions and a
+truthful scripted user (600 seeds in `swift test`; `SEMPERE_FORK_PROPERTY_SEEDS` for more), and five
+test-only mutations must each fail it.
 
 ### 15.10 Trust record v3
 
 `sempere-trust/3`, outside the vault: `vaultId`, `root`, `chain` (from epoch 1: `epoch`, `epochId`,
 `parent`, `linkPublicKeys`, `list` of the first list's fingerprints), `list` (the current list: `role`,
 `key`, `sign` for devices, `name`), `markers`, `reencryptFinished` (written only when true) and
-`rejectedAuthors` (fingerprints, written only when not empty). Readers refuse a chain that does not
-start at epoch 1 or whose `parent`s do not follow.
+`forkAnswers` (written only when not empty): per answered branch, `branch` and `chosen` (epoch ids),
+`confirmed` and `rejected` (fingerprints). Readers refuse a chain that does not start at epoch 1 or
+whose `parent`s do not follow.
 
 ### 15.11 The passphrase copy
 

@@ -1,33 +1,40 @@
 import Foundation
 
-// Fork resolution (docs/design/key-hierarchy.md §5.6; format.md §15.9): over
-// the tree of every verified epoch a device has seen, find the kept chain
-// from epoch 1 down. Pure function: the caller verified every epoch
-// (`EpochChain.verify`) before building the tree. Where the structure alone
-// cannot tell who is right, the result is a question, never a guess.
+// Fork resolution: the simple rule (docs/design/key-hierarchy.md §5.6; format.md
+// §15.9), adopted after five review rounds of automatic rules. A device never
+// decides between two changes by itself:
 //
-// 1. Exclusion. Epochs authored by a device that the pinned chain removed,
-//    that the user rejected (stored answers), or that a binding resolve epoch
-//    rejected, leave the tree with their subtrees, except the pinned chain
-//    and the ancestors of an epoch that removes their author (a device's
-//    legitimate epochs from before its removal).
-// 2. Two sides S and T of a branch are labelled with the grounded semantics
-//    of "epoch e removes the author of epoch f on the other side": an epoch
-//    is accepted when its parent is accepted (a child's parent, the branch
-//    point, is) and every epoch of the other side that removes its author is
-//    rejected; rejected when its parent is rejected or an accepted epoch of
-//    the other side removes its author; the least fixed point leaves the rest
-//    undecided. A child is labelled like any other epoch.
-// 3. Undecided epochs are a dispute (rule 2) between their authors: a device
-//    among them keeps its own side (it treats the other side's disputed
-//    authors as rejected) unless binding resolve epochs disagree; every other
-//    device gets a question. Never rule 3 or 4.
-// 4. Otherwise: a side whose child is rejected loses (rule 1); then a side
-//    without accepted descendants loses (rule 3); then the larger epochId
-//    (rule 4). More than two children: a pre-pass discards children that an
-//    undominated sibling rejects; the rest go in pairs in epochId order.
-// 5. Pruning on the kept prefix, and one re-application of the accepted
-//    removals of every side lost by rule 3 or 4 (never a recovery key).
+// 1. It follows only epochs that extend its chain linearly: the one child of
+//    its chain's end whose author is listed there and is neither removed on
+//    its chain nor rejected.
+// 2. At a branch (more than one such child of an epoch on or after its pin) it
+//    asks, per side, "Did you make this change?" about each author of the
+//    side's continuation. Yes: the author's removals there are re-applied in
+//    the device's resolve epoch. No: the author is rejected everywhere.
+// 3. The answer is stored, and the device writes a resolve epoch on the chosen
+//    side (amendment 2: the re-applied removals and the rejected authors prune
+//    the chosen side's continuation, except an author's epochs from before its
+//    removal further down that side).
+// 4. It follows another device's resolve epoch only when the resolve's path
+//    leaves its chain at a branch on its chain, below the branch's child (a
+//    resolve that is itself a child of the branch answered nothing there); the
+//    resolver is not rejected, not removed on the device's own side, not removed
+//    by an epoch that counts (one on the device's chain, or by an author that
+//    chain does not remove and the user did not reject), and was not added by a
+//    removed or rejected device; every author of an epoch on that path not
+//    already on the device's chain is not rejected and is removed only further
+//    down the path; and no other such resolve leaves for another side. A resolve
+//    that passes the first checks but not the path check makes its side part of
+//    a question, also after an answer (the user may change the choice).
+// 5. An unpinned device (a kit joiner) starts at epoch 1 and asks at every
+//    branch it meets that no resolve settles.
+// 6. Epochs by devices its chain removed, or that its user rejected, are
+//    ignored entirely.
+// 7. Questions about a branch on its pinned chain do not stop it from following
+//    its pin's linear extensions (amendment 4).
+//
+// There is no fixed point, no labelling and no tie-break: only linear following,
+// answers and resolve epochs.
 
 /// One verified epoch, as fork resolution sees it.
 public struct ForkNode: Hashable, Sendable {
@@ -43,7 +50,7 @@ public struct ForkNode: Hashable, Sendable {
     public var reason: EpochReason
     /// Its recovery fingerprint (the chain entry's `recovery`, covered by `epochSig`).
     public var recovery: Data?
-    /// For a `resolve` epoch: the author whose side it rejected (covered by `epochSig`).
+    /// For a `resolve` epoch: an author its writer rejected, if any (covered by `epochSig`).
     public var rejected: Data?
 
     public init(epochId: Data, parent: Data?, author: Data, removals: Set<Data>, list: Set<Data>, reason: EpochReason,
@@ -53,100 +60,103 @@ public struct ForkNode: Hashable, Sendable {
     }
 }
 
+/// The user's answer at one branch (stored in the trust record, design §5.6).
+public struct ForkAnswer: Hashable, Sendable {
+    /// The epoch with several children.
+    public var branch: Data
+    /// The child the device continues on.
+    public var chosen: Data
+    /// Authors the user said "yes" to: their removals on the other sides are re-applied.
+    public var confirmed: Set<Data>
+    /// Authors the user said "no" to: rejected everywhere.
+    public var rejected: Set<Data>
+
+    public init(branch: Data, chosen: Data, confirmed: Set<Data> = [], rejected: Set<Data> = []) {
+        self.branch = branch; self.chosen = chosen; self.confirmed = confirmed; self.rejected = rejected
+    }
+}
+
 /// What the device brings to resolution besides the tree.
 public struct ForkContext: Sendable {
     /// This device's fingerprint (nil: a reader that is no device, e.g. the CLI with the recovery key).
     public var me: Data?
-    /// The authors this device's user rejected ("Which of these did you make?"), from its trust record.
-    public var rejectedAuthors: Set<Data>
-    /// The `addedBy` chain of each device that wrote a resolve epoch (`EpochChain.Verified.approverChain`).
-    public var approverChains: [Data: [Data]]
-    /// The device's pinned chain (epoch ids from epoch 1), from its trust record; empty for a joining device.
+    /// The device's pinned chain (epoch ids from epoch 1), from its trust record; empty for a joining
+    /// device (it starts at epoch 1, which its root vouches for).
     public var pinned: [Data]
+    /// The user's answers, from the trust record.
+    public var answers: [ForkAnswer]
+    /// Authors rejected otherwise (the union of the answers' is added).
+    public var rejectedAuthors: Set<Data>
+    /// The `addedBy` chain of each device (`EpochChain.Verified.approverChain`): a resolve epoch by a
+    /// device that a removed or rejected device added is never followed (rule 4).
+    public var approverChains: [Data: [Data]]
     /// Test-only mutations (`EpochForkPropertyTests`): the property test must fail with each.
     var mutations: Set<ForkMutation> = []
 
-    public init(me: Data? = nil, rejectedAuthors: Set<Data> = [], approverChains: [Data: [Data]] = [:],
-                pinned: [Data] = []) {
-        self.me = me; self.rejectedAuthors = rejectedAuthors; self.approverChains = approverChains; self.pinned = pinned
+    public init(me: Data? = nil, pinned: [Data] = [], answers: [ForkAnswer] = [], rejectedAuthors: Set<Data> = [],
+                approverChains: [Data: [Data]] = [:]) {
+        self.me = me; self.pinned = pinned; self.answers = answers; self.rejectedAuthors = rejectedAuthors
+        self.approverChains = approverChains
     }
 }
 
 /// Test-only switches that break one safeguard each.
 enum ForkMutation: Hashable, Sendable {
-    /// Undecided epochs simply do not count, and the branch goes on by rules 1, 3 and 4.
-    case deadlockAsUncounted
-    /// Children always count (the first round's fix).
-    case childrenAlwaysCount
-    /// No exclusion of rejected authors beyond the branch's direct children.
-    case noWholesaleExclusion
+    /// Rule 6 off: epochs by removed or rejected authors are followed like any other.
+    case ruleSixOff
+    /// At a branch the smallest child is followed without asking.
+    case siblingsFollowedAutomatically
+    /// Resolve epochs followed without checking their authors.
+    case resolvesWithoutAuthorCheck
+    /// "No" answers do not reject the author.
+    case noAnswersDoNotReject
+    /// The chosen side's continuation is not pruned by the re-applied removals (amendment 2).
+    case noReapplyPruning
 }
 
-/// How a side was decided at a branch.
-public enum ForkRule: String, Hashable, Sendable, Codable {
-    /// Rule 1 (also the pre-pass, and exclusion by the pinned chain): an accepted epoch of the other
-    /// side removed its author.
-    case removedAuthor = "rule1"
-    /// Rule 2, decided: its author was rejected (stored answer, binding resolve epoch, or this
-    /// device being the other side's disputed author).
-    case mutualAnswered = "rule2"
-    /// Rule 3: no accepted descendants, against a side with some.
-    case stale = "rule3"
-    /// Rule 4: the larger `epochId`.
-    case epochIdOrder = "rule4"
-    /// Dropped walking down: its author was removed on the kept prefix or is in the re-application set.
-    case pruned = "pruned"
-
-    /// Sides lost by rules 3 and 4 are re-applied; the others never.
-    public var reapplies: Bool { self == .stale || self == .epochIdOrder }
-}
-
-/// A side that lost at a branch.
-public struct ForkLoss: Hashable, Sendable {
+/// One side of a branch, as the question shows it.
+public struct ForkSide: Hashable, Sendable {
+    /// The child at the branch.
     public var child: Data
-    /// The winner (for `.pruned`, the kept epoch it hung from).
-    public var to: Data
-    public var rule: ForkRule
-}
-
-/// The open question of rule 2 (design §5.6): nothing decides without the user.
-public struct ForkQuestion: Hashable, Sendable {
-    /// The branch point P: names come from its list.
-    public var branch: Data
-    /// The two children, in `epochId` order.
-    public var sides: [Data]
-    /// Their authors, in the same order.
+    /// Its continuation (the child and its descendants that rule 6 does not drop), parents first.
+    public var epochs: [Data]
+    /// The authors of the continuation the user has not answered for yet, in order of appearance.
     public var authors: [Data]
-    /// The authors of each side's disputed epochs (undecided, and removing or removed by an undecided
-    /// epoch of the other side), in the same order: the changes the user is asked about.
-    public var disputed: [Set<Data>]
-    /// Each side's removals by disputed epochs, in the same order.
-    public var removals: [Set<Data>]
-    /// Who is asked: every device in P's list or in a list on either side, except the disputed
-    /// authors and recovery keys.
-    public var asked: Set<Data>
-    /// Resolve epochs on either side (shown as context), with the author they rejected.
-    public var resolves: [Data: Data]
+    /// What the continuation removed.
+    public var removals: Set<Data>
 }
 
-/// A resolve epoch that differs from this device's stored answer, or from another binding resolve
-/// epoch (design §5.6 "Contradictions").
-public struct ForkContradiction: Hashable, Sendable {
-    public var resolveEpoch: Data
-    public var rejected: Data
+/// A branch the device cannot settle by itself: "Did you make this change?" per side.
+public struct ForkQuestion: Hashable, Sendable {
+    /// The epoch with several children: names come from its list.
+    public var branch: Data
+    /// Every side, in `epochId` order.
+    public var sides: [ForkSide]
+    /// The child on this device's chain, if the branch is on it.
+    public var current: Data?
+    /// The suggested default: the side on which more devices continued (distinct authors listed at the
+    /// branch and not rejected), then the smaller id; so that devices answered at the same time agree.
+    public var suggested: Data
+    /// Resolve epochs that leave at this branch for different sides (rule 4(c)).
+    public var conflictingResolves: [Data]
 }
 
 /// The outcome of resolution.
 public struct ForkResolution: Hashable, Sendable {
-    /// From epoch 1 to the last kept epoch (P when a question is open).
+    /// The device's chain from epoch 1.
     public var keptChain: [Data]
-    /// Every side that lost, at every branch on the way.
-    public var losses: [ForkLoss]
-    /// Keys to remove in one `reapply` epoch on top of the kept chain; empty: write nothing.
+    /// Open questions, in chain order. A question at the chain's end stops it there (a joiner then has
+    /// no key and waits); one at an earlier branch does not (amendment 4).
+    public var questions: [ForkQuestion]
+    /// The branches this device answered and still has to settle with a resolve epoch of its own.
+    public var resolveFor: [Data]
+    /// The removals that resolve epoch carries (re-application), never a recovery key.
     public var reapply: Set<Data>
-    /// An open rule-2 question; the device then treats both sides as unverified-pending.
-    public var question: ForkQuestion?
-    public var contradictions: [ForkContradiction]
+    /// The resolve epochs followed (rule 4).
+    public var followed: [Data]
+
+    /// The first open question (compatibility with callers that show one at a time).
+    public var question: ForkQuestion? { questions.first }
 }
 
 /// Why the tree cannot be resolved.
@@ -160,252 +170,270 @@ public enum ForkError: Error, Hashable, Sendable {
 /// Fork resolution (design §5.6).
 public enum EpochForks {
     public static func resolve(_ nodes: [ForkNode], context: ForkContext = ForkContext()) throws -> ForkResolution {
-        let tree = try Tree(nodes)
-        var contradictions: [ForkContradiction] = []
-        var rejected = context.rejectedAuthors
-        var askAnyway = false
-
-        // Stored answers against resolve epochs seen.
-        if !context.rejectedAuthors.isEmpty {
-            for r in tree.sorted where r.reason == .resolve {
-                if let rej = r.rejected, !context.rejectedAuthors.contains(rej) {
-                    contradictions.append(ForkContradiction(resolveEpoch: r.epochId, rejected: rej))
-                }
-            }
-        }
-        // Binding resolve epochs: only for a device in dispute with the rejected author (or rejected
-        // itself), written by a device that no epoch removes and whose addedBy chain passes through
-        // neither them nor any removed device (so neither party nor a puppet can write one).
-        if let me = context.me, context.rejectedAuthors.isEmpty {
-            let removedAnywhere = tree.sorted.reduce(into: Set<Data>()) { $0.formUnion($1.removals) }
-            func inDispute(_ z: Data) -> Bool {
-                tree.sorted.contains { ($0.author == z && $0.removals.contains(me)) || ($0.author == me && $0.removals.contains(z)) }
-            }
-            let binding = tree.sorted.filter { r in
-                guard r.reason == .resolve, let z = r.rejected, r.author != me, r.author != z,
-                      !removedAnywhere.contains(r.author), z == me || inDispute(z) else { return false }
-                let chain = context.approverChains[r.author] ?? []
-                return !chain.contains { $0 == me || $0 == z || removedAnywhere.contains($0) }
-            }
-            let verdicts = Set(binding.compactMap(\.rejected))
-            if verdicts.count > 1 {
-                for r in binding { if let z = r.rejected { contradictions.append(ForkContradiction(resolveEpoch: r.epochId, rejected: z)) } }
-                askAnyway = true
-            } else if let z = verdicts.first {
-                rejected.insert(z)
-            }
-        }
-        // Resolve; a device that is itself a disputed author rejects the other side's and starts again.
-        for _ in 0...tree.byId.count {
-            switch walk(tree, context: context, rejected: rejected, askAnyway: askAnyway) {
-            case .done(var result):
-                result.contradictions = contradictions
-                return result
-            case .reject(let authors):
-                rejected.formUnion(authors)
-            }
-        }
-        preconditionFailure("each restart rejects at least one more author")
-    }
-
-    struct Tree {
+        // The tree.
         var byId: [Data: ForkNode] = [:]
+        for n in nodes { byId[n.epochId] = n }
+        let roots = byId.values.filter { $0.parent == nil }
+        guard roots.count == 1, let root = roots.first?.epochId else { throw ForkError.noRoot }
         var children: [Data: [Data]] = [:]
-        var root: Data
-        var sorted: [ForkNode]
-
-        init(_ nodes: [ForkNode]) throws {
-            for n in nodes { byId[n.epochId] = n }
-            let roots = byId.values.filter { $0.parent == nil }
-            guard roots.count == 1, let root = roots.first else { throw ForkError.noRoot }
-            self.root = root.epochId
-            for n in byId.values {
-                guard let p = n.parent else { continue }
-                guard byId[p] != nil else { throw ForkError.detached }
-                children[p, default: []].append(n.epochId)
-            }
-            for k in children.keys { children[k]?.sort { $0.lexicographicallyPrecedes($1) } }
-            var reached = 0
-            var stack = [root.epochId]
-            while let x = stack.popLast(), reached <= byId.count { reached += 1; stack += children[x] ?? [] }
-            guard reached == byId.count else { throw ForkError.detached }
-            sorted = byId.values.sorted { $0.epochId.lexicographicallyPrecedes($1.epochId) }
+        for n in byId.values {
+            guard let p = n.parent else { continue }
+            guard byId[p] != nil else { throw ForkError.detached }
+            children[p, default: []].append(n.epochId)
         }
-
-        func ancestors(_ id: Data) -> [Data] {
-            var out: [Data] = []
+        for k in children.keys { children[k]?.sort { $0.lexicographicallyPrecedes($1) } }
+        var reached = 0
+        var stack = [root]
+        while let x = stack.popLast(), reached <= byId.count { reached += 1; stack += children[x] ?? [] }
+        guard reached == byId.count else { throw ForkError.detached }
+        func node(_ id: Data) -> ForkNode? { byId[id] }
+        func author(_ id: Data) -> Data { byId[id]?.author ?? Data() }
+        func path(_ id: Data) -> [Data] {
+            var out = [id]
             var cur = byId[id]?.parent
             while let c = cur { out.append(c); cur = byId[c]?.parent }
+            return out.reversed()
+        }
+        let recoveryKeys = Set(byId.values.compactMap(\.recovery))
+        var removers: [Data: [Data]] = [:]
+        for n in byId.values { for r in n.removals { removers[r, default: []].append(n.epochId) } }
+        let mut = context.mutations
+
+        // The pinned chain: from epoch 1, each the previous one's child.
+        var chain: [Data] = [root]
+        for id in context.pinned.dropFirst() where context.pinned.first == root {
+            guard byId[id]?.parent == chain.last else { break }
+            chain.append(id)
+        }
+        let answers = Dictionary(context.answers.map { ($0.branch, $0) }, uniquingKeysWith: { a, _ in a })
+        var rejected = context.rejectedAuthors
+        if !mut.contains(.noAnswersDoNotReject) { for a in context.answers { rejected.formUnion(a.rejected) } }
+
+        // A rejection never drops a rejected author's legitimate history, and amendment 2 never prunes a
+        // re-applied author's: an epoch is **from before its author's removal** when an epoch below it
+        // removes its author and is by an author not rejected, or is itself a rejected author's epoch
+        // kept this way. Such an epoch by a rejected author stays admissible (`protected`); any such
+        // epoch is exempt from pruning (`preRemoval`). One pass from the leaves up, each subtree's set
+        // of authors removed below it (by epochs that count) merged into its parent's and then dropped,
+        // so the work is linear in the tree and the lists.
+        var protected: Set<Data> = []
+        var preRemoval: Set<Data> = []
+        var order: [Data] = []
+        var pending = [root]
+        while let x = pending.popLast() { order.append(x); pending += children[x] ?? [] }
+        var removedBelow: [Data: Set<Data>] = [:]
+        for id in order.reversed() {
+            var below: Set<Data> = []
+            for c in children[id] ?? [] {
+                if let cs = removedBelow.removeValue(forKey: c) { below.formUnion(cs) }
+                if !rejected.contains(author(c)) || protected.contains(c) { below.formUnion(byId[c]?.removals ?? []) }
+            }
+            if below.contains(author(id)) {
+                preRemoval.insert(id)
+                if rejected.contains(author(id)) { protected.insert(id) }
+            }
+            removedBelow[id] = below
+        }
+        func removedOn(_ c: [Data]) -> Set<Data> { c.dropFirst().reduce(into: Set<Data>()) { $0.formUnion(byId[$1]?.removals ?? []) } }
+        /// Rule 6 (and 1): may `child` of `parent` be followed or shown, given the chain's removals?
+        func admissible(_ child: Data, under parent: Data, removed: Set<Data>, pruned: Set<Data>) -> Bool {
+            let a = author(child)
+            if mut.contains(.ruleSixOff) { return byId[parent]?.list.contains(a) ?? false }
+            if protected.contains(child) { return byId[parent]?.list.contains(a) ?? false }
+            return (byId[parent]?.list.contains(a) ?? false) && !removed.contains(a) && !rejected.contains(a)
+                && (!pruned.contains(a) || preRemoval.contains(child))
+        }
+        /// A side's continuation: the child and its descendants, dropping epochs (and their subtrees)
+        /// whose author rule 6 drops, or that the continuation itself removed.
+        func continuation(_ child: Data, removed: Set<Data>) -> [Data] {
+            var out: [Data] = []
+            func walk(_ id: Data, _ removedHere: Set<Data>) {
+                out.append(id)
+                let r = removedHere.union(byId[id]?.removals ?? [])
+                for c in children[id] ?? [] where admissible(c, under: id, removed: r, pruned: []) { walk(c, r) }
+            }
+            walk(child, removed)
             return out
         }
-    }
 
-    enum Step { case done(ForkResolution), reject(Set<Data>) }
+        var questions: [ForkQuestion] = []
+        var followed: [Data] = []
+        var answeredBranches: [Data] = []
+        var reapplyFrom: Set<Data> = []
 
-    static func walk(_ tree: Tree, context: ForkContext, rejected: Set<Data>, askAnyway: Bool) -> Step {
-        let byId = tree.byId
-        func author(_ id: Data) -> Data { byId[id]?.author ?? Data() }
-        func precedes(_ a: Data, _ b: Data) -> Bool { a.lexicographicallyPrecedes(b) }
-        let recoveryKeys = Set(byId.values.compactMap(\.recovery))
+        /// The question at `branch` for `sides`, or nil when every side is answered.
+        func question(at branch: Data, sides: [Data], current: Data?, removed: Set<Data>,
+                      conflicts: [Data]) -> ForkQuestion? {
+            let answer = answers[branch]
+            var out: [ForkSide] = []
+            var open = answer == nil && current == nil
+            for c in sides {
+                let epochs = continuation(c, removed: removed)
+                var authors: [Data] = []
+                for e in epochs where !authors.contains(author(e)) { authors.append(author(e)) }
+                let isOwn = c == current
+                let unanswered = authors.filter { a in
+                    !(answer?.confirmed.contains(a) ?? false) && !(answer?.rejected.contains(a) ?? false) && !rejected.contains(a)
+                }
+                if !isOwn && !unanswered.isEmpty { open = true }
+                out.append(ForkSide(child: c, epochs: epochs, authors: isOwn ? [] : unanswered,
+                                    removals: epochs.reduce(into: Set<Data>()) { $0.formUnion(byId[$1]?.removals ?? []) }))
+            }
+            guard open || !conflicts.isEmpty else { return nil }
+            let listed = byId[branch]?.list ?? []
+            let suggested = out.max { a, b in
+                let ca = Set(a.epochs.map(author)).intersection(listed).subtracting(rejected).count
+                let cb = Set(b.epochs.map(author)).intersection(listed).subtracting(rejected).count
+                return ca != cb ? ca < cb : !a.child.lexicographicallyPrecedes(b.child)
+            }?.child ?? sides[0]
+            return ForkQuestion(branch: branch, sides: out, current: current, suggested: suggested,
+                                conflictingResolves: conflicts)
+        }
 
-        // 1. Exclusion.
-        var pinnedIds: Set<Data> = []
-        var removedOnPinned: Set<Data> = []
-        var expected: Data? = nil
-        for id in context.pinned {
-            guard let n = byId[id], n.parent == expected else { break }
-            pinnedIds.insert(id); removedOnPinned.formUnion(n.removals); expected = id
+        /// Rule 4: resolve epochs below branch `chain[k]` (their path shares chain[0...k] and then goes
+        /// through a child of it), by a resolver this device can take at its word: not rejected, not
+        /// removed by an epoch on this device's chain or by one whose author that chain does not remove
+        /// and this device does not reject, and not added
+        /// (`addedBy` chain) by a device that anything removed or that is rejected (no puppet). With
+        /// `followable`, also: the resolver is not removed on this device's own side (rule 4(a)), and
+        /// every author of an epoch on the path below the branch that is not already on this device's
+        /// chain is not rejected and is removed (by an epoch that counts) only further down that path
+        /// (a device's epoch from before its removal, even if this device's stale side removed it too;
+        /// a removed device's fork is not followed this way).
+        /// A resolve that is visible but not followable makes its side part of a question instead.
+        /// A resolve settles only branches above its own parent: one that is itself a child of the branch
+        /// answered nothing there (a device that answered writes below the side it chose), so an
+        /// attacker's resolve as a sibling never silences the question of a device pinned through it.
+        func resolves(at k: Int, chain: [Data], followable: Bool) -> [Data] {
+            let removedHere = removedOn(chain)
+            let onChain = Set(chain)
+            // A removal counts when it is on this device's chain, or its author is neither removed on
+            // that chain nor rejected (a removed device's attack does not void others' resolves).
+            func counting(_ a: Data) -> [Data] {
+                removers[a, default: []].filter {
+                    onChain.contains($0) || (!removedHere.contains(author($0)) && !rejected.contains(author($0)))
+                }
+            }
+            return byId.values.filter { $0.reason == .resolve }.map(\.epochId).sorted { $0.lexicographicallyPrecedes($1) }.filter { r in
+                let p = path(r)
+                guard p.count > k + 2, Array(p.prefix(k + 1)) == Array(chain.prefix(k + 1)) else { return false }
+                if mut.contains(.resolvesWithoutAuthorCheck) { return true }
+                let resolver = author(r)
+                if !counting(resolver).isEmpty || rejected.contains(resolver) { return false }
+                if (context.approverChains[resolver] ?? []).contains(where: { !removers[$0, default: []].isEmpty || rejected.contains($0) }) {
+                    return false
+                }
+                guard followable else { return true }
+                let onPath = Set(p)
+                let removedOnMySide = removedOn([chain[0]] + chain.filter { !onPath.contains($0) })
+                if removedOnMySide.contains(resolver) { return false }
+                for i in (k + 1)..<p.count where !onChain.contains(p[i]) {
+                    let a = author(p[i])
+                    if rejected.contains(a) { return false }
+                    let below = Set(p[(i + 1)...])
+                    let rs = counting(a)
+                    if !rs.isEmpty && !rs.contains(where: { below.contains($0) }) { return false }
+                }
+                return true
+            }
         }
-        let rejectedNow = context.mutations.contains(.noWholesaleExclusion) ? Set<Data>() : rejected
-        let outcast = removedOnPinned.union(rejectedNow)
-        // Epochs that are ancestors of an epoch removing their own author stay (legitimate history).
-        // Only a removal by a device that is not itself outcast vouches for its ancestors.
-        var keep = pinnedIds.union([tree.root])
-        for n in tree.sorted where !n.removals.isEmpty && !outcast.contains(n.author) {
-            for a in tree.ancestors(n.epochId) where n.removals.contains(author(a)) { keep.insert(a) }
-        }
-        var excluded: [Data: ForkRule] = [:]
-        func exclude(_ id: Data, _ rule: ForkRule) {
-            if excluded[id] == nil { excluded[id] = rule }
-            for c in tree.children[id] ?? [] { exclude(c, rule) }
-        }
-        for n in tree.sorted where !keep.contains(n.epochId) && outcast.contains(n.author) {
-            exclude(n.epochId, removedOnPinned.contains(n.author) ? .removedAuthor : .mutualAnswered)
-        }
-        func kids(_ id: Data) -> [Data] { (tree.children[id] ?? []).filter { excluded[$0] == nil } }
-        func subtree(_ id: Data) -> [Data] { [id] + kids(id).flatMap(subtree) }
 
-        // 2. Labels of all the siblings of a branch at once: an epoch is attacked by every epoch of
-        // another sibling's subtree that removes its author (so a third sibling that removed X
-        // discounts X's epochs under the other two).
-        struct Labels {
-            var sideOf: [Data: Data] = [:]
-            var accepted: Set<Data> = []
-            var undecided: Set<Data> = []
-            /// Undecided epochs that remove the author of, or are removed by, an undecided epoch of another sibling.
-            var disputed: Set<Data> = []
+        /// The decision at a branch with children `sides` (the chain's child there is `current`), when the
+        /// user has not answered there: a resolve to follow, or a question.
+        enum Decision { case stay, take(Data), follow(Data), ask(ForkQuestion) }
+        func decide(at k: Int, chain: [Data], sides: [Data], current: Data?, removed: Set<Data>) -> Decision {
+            let branch = chain[k]
+            if mut.contains(.siblingsFollowedAutomatically) { return current == nil ? .take(sides[0]) : .stay }
+            let found = resolves(at: k, chain: chain, followable: true).filter { sides.contains(path($0)[k + 1]) }
+            let directions = Set(found.map { path($0)[k + 1] })
+            if directions.count == 1, let direction = directions.first {
+                // Settled by resolve epochs for one side: on this device's own side nothing changes (the
+                // walk reaches them linearly); otherwise follow the deepest one's path.
+                if direction == current { return .stay }
+                let deepest = found.max { path($0).count < path($1).count } ?? direction
+                return .follow(deepest)
+            }
+            if let q = question(at: branch, sides: sides, current: current, removed: removed,
+                                conflicts: directions.count > 1 ? found : []) {
+                return .ask(q)
+            }
+            return .stay
         }
-        func attacks(_ e: Data, _ f: Data) -> Bool { byId[e]?.removals.contains(author(f)) ?? false }
-        func judge(_ siblings: [Data]) -> Labels {
-            var l = Labels()
-            var all: [Data] = []
-            for c in siblings { for x in subtree(c) { l.sideOf[x] = c; all.append(x) } }
-            let isChild = Set(siblings)
-            var rejectedEpochs: Set<Data> = []
-            if context.mutations.contains(.childrenAlwaysCount) { l.accepted = isChild }
-            var changed = true
-            while changed {
-                changed = false
-                for f in all where !l.accepted.contains(f) && !rejectedEpochs.contains(f) {
-                    let parent = byId[f]?.parent ?? Data()
-                    let attackers = all.filter { l.sideOf[$0] != l.sideOf[f] && !rejectedEpochs.contains($0) && attacks($0, f) }
-                    if (!isChild.contains(f) && rejectedEpochs.contains(parent)) || attackers.contains(where: l.accepted.contains) {
-                        rejectedEpochs.insert(f); changed = true
-                    } else if (isChild.contains(f) || l.accepted.contains(parent)) && attackers.isEmpty {
-                        l.accepted.insert(f); changed = true
+
+        /// The user's answer at `chain[k]`: recorded (its "yes" removals re-applied), and its chosen child
+        /// returned; a question too when authors on the other sides are still unanswered.
+        func applyAnswer(at k: Int, chain: [Data], removed: Set<Data>) -> Data? {
+            let branch = chain[k]
+            guard let answer = answers[branch], (children[branch] ?? []).contains(answer.chosen) else { return nil }
+            // A side that a resolve vouches for after the answer (hidden by rule 6 when it was given) is
+            // asked about too: the user may change the choice.
+            let vouched = Set(resolves(at: k, chain: chain, followable: false).map { path($0)[k + 1] })
+            let others = (children[branch] ?? []).filter {
+                $0 != answer.chosen && (vouched.contains($0) || admissible($0, under: branch, removed: removed, pruned: []))
+            }
+            if let q = question(at: branch, sides: [answer.chosen] + others, current: answer.chosen, removed: removed, conflicts: []) {
+                questions.append(q)
+            }
+            answeredBranches.append(branch)
+            for side in others {
+                for e in continuation(side, removed: removed) where answer.confirmed.contains(author(e)) {
+                    reapplyFrom.formUnion(byId[e]?.removals ?? [])
+                }
+            }
+            return answer.chosen
+        }
+
+        // The pinned chain: its branches' foreign sides (amendment 4: questions there do not stop the walk).
+        var k = 0
+        var blocked = false
+        while k < chain.count - 1 {
+            let removed = removedOn(chain)
+            if let chosen = applyAnswer(at: k, chain: chain, removed: removed) {
+                if chosen != chain[k + 1] { chain = Array(chain.prefix(k + 1)) + [chosen] }
+            } else {
+                let vouched = Set(resolves(at: k, chain: chain, followable: false).map { path($0)[k + 1] })
+                let sides = (children[chain[k]] ?? []).filter {
+                    $0 == chain[k + 1] || vouched.contains($0) || admissible($0, under: chain[k], removed: removed, pruned: [])
+                }
+                if sides.count > 1 {
+                    switch decide(at: k, chain: chain, sides: sides, current: chain[k + 1], removed: removed) {
+                    case .stay: break
+                    case .take(let c): chain = Array(chain.prefix(k + 1)) + [c]
+                    case .follow(let r): followed.append(r); chain = path(r)
+                    case .ask(let q): questions.append(q)
                     }
                 }
             }
-            l.undecided = Set(all).subtracting(l.accepted).subtracting(rejectedEpochs)
-            l.disputed = l.undecided.filter { e in
-                l.undecided.contains { l.sideOf[$0] != l.sideOf[e] && (attacks(e, $0) || attacks($0, e)) }
-            }
-            if context.mutations.contains(.deadlockAsUncounted) { l.undecided = []; l.disputed = [] }
-            return l
+            k += 1
         }
-        func removals(_ ids: Set<Data>) -> Set<Data> { ids.reduce(into: Set<Data>()) { $0.formUnion(byId[$1]?.removals ?? []) } }
-        func authors(_ ids: Set<Data>) -> Set<Data> { Set(ids.map(author)) }
-
-        var losses: [ForkLoss] = []
-        var reapplyFrom: Set<Data> = []
-        var cur = tree.root
-        var kept = [cur]
-        var prefixRemoved: Set<Data> = []
-        var question: ForkQuestion?
-        walk: while true {
-            var candidates: [Data] = []
-            var outcastKids: [(Data, ForkRule)] = []
-            for c in tree.children[cur] ?? [] {
-                if let rule = excluded[c] {
-                    outcastKids.append((c, rule))
-                } else if prefixRemoved.contains(author(c)) || reapplyFrom.contains(author(c)) {
-                    losses.append(ForkLoss(child: c, to: cur, rule: .pruned))
-                } else {
-                    candidates.append(c)
-                }
+        // Linear extension of the chain's end.
+        while !blocked {
+            let end = chain[chain.count - 1]
+            let removed = removedOn(chain)
+            if let chosen = applyAnswer(at: chain.count - 1, chain: chain, removed: removed) {
+                chain.append(chosen); continue
             }
-            if candidates.isEmpty {
-                for (c, rule) in outcastKids { losses.append(ForkLoss(child: c, to: cur, rule: rule)) }
-                break
+            let pruned = mut.contains(.noReapplyPruning) ? Set<Data>() : reapplyFrom
+            let vouched = Set(resolves(at: chain.count - 1, chain: chain, followable: false).map { path($0)[chain.count] })
+            let sides = (children[end] ?? []).filter { vouched.contains($0) || admissible($0, under: end, removed: removed, pruned: pruned) }
+            if sides.isEmpty { break }
+            if sides.count == 1 { chain.append(sides[0]); continue }
+            switch decide(at: chain.count - 1, chain: chain, sides: sides, current: nil, removed: removed) {
+            case .stay: blocked = true
+            case .take(let c): chain.append(c)
+            case .follow(let r): followed.append(r); chain = path(r)
+            case .ask(let q): questions.append(q); blocked = true
             }
-            let l = judge(candidates)
-            if !l.undecided.isEmpty {
-                // A dispute (rule 2). A device among the disputed authors keeps its own side: it rejects
-                // the authors of the epochs that dispute its own, and starts again. Everyone else is asked.
-                if let me = context.me, !askAnyway {
-                    let mine = l.disputed.filter { author($0) == me }
-                    let opponents = Set(l.disputed.filter { e in
-                        mine.contains { l.sideOf[$0] != l.sideOf[e] && (attacks($0, e) || attacks(e, $0)) }
-                    }.map(author)).subtracting([me]).subtracting(rejected)
-                    if !opponents.isEmpty { return .reject(opponents) }
-                }
-                let sides = candidates.filter { c in l.disputed.contains { l.sideOf[$0] == c } }
-                let disputedBySide = sides.map { c in l.disputed.filter { l.sideOf[$0] == c } }
-                var asked = byId[cur]?.list ?? []
-                for c in sides { for x in subtree(c) { asked.formUnion(byId[x]?.list ?? []) } }
-                asked.subtract(authors(l.disputed)); asked.subtract(recoveryKeys)
-                var seen: [Data: Data] = [:]
-                for c in sides {
-                    for x in subtree(c) { if let r = byId[x], r.reason == .resolve, let rej = r.rejected { seen[x] = rej } }
-                }
-                question = ForkQuestion(branch: cur, sides: sides, authors: sides.map(author),
-                                        disputed: disputedBySide.map(authors), removals: disputedBySide.map(removals),
-                                        asked: asked, resolves: seen)
-                break walk
-            }
-            // Rule 1: a child that an accepted epoch of another sibling removed loses.
-            var remaining: [Data] = []
-            for c in candidates {
-                if l.accepted.contains(c) {
-                    remaining.append(c)
-                } else {
-                    let by = candidates.first { d in l.accepted.contains(d) && subtree(d).contains { l.accepted.contains($0) && attacks($0, c) } }
-                    losses.append(ForkLoss(child: c, to: by ?? cur, rule: .removedAuthor))
-                }
-            }
-            guard !remaining.isEmpty else { break walk }
-            // Rules 3 and 4, in pairs in epochId order. A sibling whose author is about to be
-            // re-applied (removed by a side that lost by rule 3 or 4) goes too.
-            func accepted(_ c: Data) -> Set<Data> { Set(subtree(c)).intersection(l.accepted) }
-            var winner = remaining[0]
-            for next in remaining.dropFirst() {
-                if reapplyFrom.contains(author(next)) {
-                    losses.append(ForkLoss(child: next, to: winner, rule: .pruned)); continue
-                }
-                let (a, b) = (accepted(winner), accepted(next))
-                let rule: ForkRule
-                let newWinner: Data
-                if (a.count > 1) != (b.count > 1) {
-                    rule = .stale; newWinner = a.count > 1 ? winner : next
-                } else {
-                    rule = .epochIdOrder; newWinner = precedes(winner, next) ? winner : next
-                }
-                let loser = newWinner == winner ? next : winner
-                losses.append(ForkLoss(child: loser, to: newWinner, rule: rule))
-                reapplyFrom.formUnion(removals(loser == winner ? a : b))
-                winner = newWinner
-            }
-            if reapplyFrom.contains(author(winner)) {
-                losses.append(ForkLoss(child: winner, to: cur, rule: .pruned))
-                break walk
-            }
-            for (c, rule) in outcastKids { losses.append(ForkLoss(child: c, to: winner, rule: rule)) }
-            cur = winner
-            kept.append(cur)
-            prefixRemoved.formUnion(byId[cur]?.removals ?? [])
         }
-        let end = byId[kept[kept.count - 1]]?.list ?? []
-        let reapply = question == nil ? reapplyFrom.intersection(end).subtracting(recoveryKeys) : []
-        return .done(ForkResolution(keptChain: kept, losses: losses, reapply: reapply, question: question, contradictions: []))
+        // The resolve this device owes: answered branches not already settled by a resolve epoch below
+        // them on its chain.
+        let resolveFor = answeredBranches.filter { b in
+            guard let i = chain.firstIndex(of: b) else { return false }
+            return !chain[(i + 1)...].contains { byId[$0]?.reason == .resolve && byId[$0]?.author == context.me }
+        }
+        let endList = byId[chain[chain.count - 1]]?.list ?? []
+        let reapply = resolveFor.isEmpty ? [] : reapplyFrom.intersection(endList).subtracting(recoveryKeys)
+        return ForkResolution(keptChain: chain, questions: questions, resolveFor: resolveFor, reapply: reapply,
+                              followed: followed)
     }
 }

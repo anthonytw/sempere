@@ -344,11 +344,11 @@ final class EpochChainTests: VaultTestCase {
         try deviceAsKit.next(author: a, list: [a.fingerprint, bDev.fingerprint, r], parentList: [a.fingerprint, bDev.fingerprint, r],
                              recovery: bDev.fingerprint)
         XCTAssertThrowsError(try deviceAsKit.verify()) { XCTAssertEqual($0 as? ChainError, .badRecovery(epoch: 2)) }
-        // Review M2: `rejected` only, and always, in a resolve epoch; it is signed.
+        // Review M2: `rejected` only in a resolve epoch (optional there: the simple fork rule); it is signed.
         var resolveWithout = good
         try resolveWithout.next(author: a, reason: "resolve", list: [a.fingerprint, bDev.fingerprint, r],
                                 parentList: [a.fingerprint, bDev.fingerprint, r])
-        XCTAssertThrowsError(try resolveWithout.verify()) { XCTAssertEqual($0 as? ChainError, .badReason(epoch: 2)) }
+        XCTAssertNoThrow(try resolveWithout.verify(), "a resolve may reject nobody (it carries re-applied removals only)")
         var removeWith = good
         try removeWith.next(author: a, list: [a.fingerprint, r], parentList: [a.fingerprint, bDev.fingerprint, r],
                             rejected: bDev.fingerprint)

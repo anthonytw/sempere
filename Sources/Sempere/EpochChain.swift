@@ -88,7 +88,7 @@ extension ChainAddition: Codable {
 
 /// The reasons an epoch is made (design §5.2.1).
 public enum EpochReason: String, Hashable, Sendable, Codable, CaseIterable {
-    case create, remove, recovery, reencrypt, reapply, resolve
+    case create, remove, recovery, reencrypt, resolve
 
     /// May the first list hold one key that is not in the parent list (a new recovery key)?
     var mayAddRecovery: Bool { self == .recovery || self == .reencrypt }
@@ -340,7 +340,7 @@ public enum EpochChain {
             guard let authorKeys = e.author.sign else { throw ChainError.badEpochSig(epoch: e.epoch) }
             let authorFP = e.author.fingerprint
             let first = Set(e.list)
-            guard (e.rejected != nil) == (reason == .resolve) else { throw ChainError.badReason(epoch: e.epoch) }
+            guard e.rejected == nil || reason == .resolve else { throw ChainError.badReason(epoch: e.epoch) }
             if i == 0 {
                 guard e.parent == nil, e.link == nil, e.parentList.isEmpty, reason == .create else {
                     throw ChainError.badSequence(epoch: 1)
