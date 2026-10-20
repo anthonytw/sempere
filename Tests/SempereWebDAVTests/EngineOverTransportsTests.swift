@@ -228,6 +228,75 @@ class EngineScenarioCase: SyncTestCase {
         XCTAssertEqual(remote, try vaultJSON("A"), "\(label): the remote was not touched")
     }
 
+    /// The server's version token of `vault.json` moves between the listing and the upload over the
+    /// same bytes (a server that stamps again, another writer putting the same file back): the local
+    /// change is uploaded, and no conflict copy (identical to the server's copy) is made.
+    func scenarioManifestStampChangeIsNoConflict() throws {
+        _ = try makeVault("A")
+        try run("A"); try run("B")
+        let url = dir("B").appendingPathComponent("vault.json")
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        json["x-test"] = "B's change"
+        try JSONSerialization.data(withJSONObject: json, options: [.sortedKeys]).write(to: url)
+        let inspector = t.inspector
+        let done = Locked(false)
+        let restamping = BeforeWriteRemote(t.remote) { path in
+            guard path == ["vault.json"], !done.value else { return }
+            done.value = true
+            let same = try inspector.read(path, maxBytes: 1 << 20).data
+            try inspector.write(path, .data(same), condition: .unconditional)
+        }
+        let report = try run("B", via: restamping, vault: .some(nil))
+        XCTAssertTrue(report.conflicts.isEmpty, "\(label): \(report)")
+        XCTAssertEqual(report.uploaded, ["vault.json"], "\(label): \(report)")
+        XCTAssertEqual(try t.inspector.read(["vault.json"], maxBytes: 1 << 20).data, try vaultJSON("B"), label)
+        let copies = try FileManager.default.contentsOfDirectory(atPath: dir("B").path).filter { $0.contains(".conflict-") }
+        XCTAssertEqual(copies, [], label)
+        XCTAssertTrue(try run("B", vault: .some(nil)).isEmpty, label)
+    }
+
+    /// Quarantining the same path again keeps every distinct copy (design §6, I6: nothing leaves
+    /// the quarantine without Adopt or Export), the same bytes once, and at most
+    /// `SyncEngine.maxQuarantinedCopies` copies of one path.
+    func scenarioQuarantineKeepsEveryCopy() throws {
+        let a = try makeVault("A")
+        let r = try delta(a, device: devA, t: 0, title: "one")
+        try run("A")
+        let q = tmp.appendingPathComponent("state-B.quarantine")
+        func serve(_ text: String) throws -> Data {
+            let data = Data(text.utf8)
+            try t.inspector.write(comps(rel(r)), .data(data), condition: .unconditional)
+            return data
+        }
+        func kept() throws -> [Data] {
+            let dir = q.appendingPathComponent("notes/\(id)")
+            return try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted()
+                .map { try Data(contentsOf: dir.appendingPathComponent($0)) }
+        }
+        let first = try serve("<html>login required</html>")
+        XCTAssertEqual(try run("B").quarantined.map(\.path), [rel(r)], label)
+        let second = try serve("<html>try again later</html>")
+        let again = try run("B") { $0.retryQuarantined = true }
+        XCTAssertEqual(again.quarantined.map(\.path), [rel(r)], "\(label): \(again)")
+        XCTAssertEqual(try Data(contentsOf: q.appendingPathComponent(rel(r))), first, "\(label): the first copy stays")
+        XCTAssertEqual(Set(try kept()), [first, second], label)
+        _ = try serve("<html>login required</html>")
+        try run("B") { $0.retryQuarantined = true }
+        XCTAssertEqual(try kept().count, 2, "\(label): the same bytes are kept once")
+        let limit = SyncEngine.maxQuarantinedCopies
+        for i in 0..<limit {
+            _ = try serve("<html>page \(i)</html>")
+            let rep = try run("B") { $0.retryQuarantined = true }
+            XCTAssertEqual(rep.quarantined.count, 1, label)
+            if i == limit - 2 {
+                XCTAssertTrue(rep.quarantined[0].message.contains("not kept"), "\(label): \(rep.quarantined)")
+            }
+        }
+        XCTAssertEqual(try kept().count, limit, "\(label): bounded")
+        XCTAssertEqual(try Data(contentsOf: q.appendingPathComponent(rel(r))), first, label)
+        XCTAssertTrue(Set(try kept()).isSuperset(of: [first, second]), label)
+    }
+
     func scenarioSettingsMergePerKey() throws {
         func write(_ vault: Vault, _ key: String, _ value: JSONValue, at ms: Int64) throws {
             var s = try vault.readSharedSettings() ?? SharedSettings()
@@ -347,6 +416,8 @@ final class EngineOverMemoryTests: EngineScenarioCase {
     func testCutBlobDownloadFinishesNextRun() throws { try scenarioCutBlobDownloadFinishesNextRun() }
     func testTransientFaultsConverge() throws { try scenarioTransientFaultsConverge() }
     func testSkipUnchangedNotesSeesEveryChange() throws { try scenarioSkipUnchangedNotesSeesEveryChange() }
+    func testManifestStampChangeIsNoConflict() throws { try scenarioManifestStampChangeIsNoConflict() }
+    func testQuarantineKeepsEveryCopy() throws { try scenarioQuarantineKeepsEveryCopy() }
 }
 
 final class EngineOverWebDAVMockTests: EngineScenarioCase {
@@ -364,6 +435,8 @@ final class EngineOverWebDAVMockTests: EngineScenarioCase {
     func testCutBlobDownloadFinishesNextRun() throws { try scenarioCutBlobDownloadFinishesNextRun() }
     func testTransientFaultsConverge() throws { try scenarioTransientFaultsConverge() }
     func testSkipUnchangedNotesSeesEveryChange() throws { try scenarioSkipUnchangedNotesSeesEveryChange() }
+    func testManifestStampChangeIsNoConflict() throws { try scenarioManifestStampChangeIsNoConflict() }
+    func testQuarantineKeepsEveryCopy() throws { try scenarioQuarantineKeepsEveryCopy() }
 }
 
 /// Against wsgidav (`scripts/test-webdav.sh`, CI's `webdav` job); skipped without it.
@@ -382,4 +455,45 @@ final class EngineOverWsgidavTests: EngineScenarioCase {
     func testCutBlobDownloadFinishesNextRun() throws { try scenarioCutBlobDownloadFinishesNextRun() }
     func testTransientFaultsConverge() throws { try scenarioTransientFaultsConverge() }
     func testSkipUnchangedNotesSeesEveryChange() throws { try scenarioSkipUnchangedNotesSeesEveryChange() }
+    func testManifestStampChangeIsNoConflict() throws { try scenarioManifestStampChangeIsNoConflict() }
+    func testQuarantineKeepsEveryCopy() throws { try scenarioQuarantineKeepsEveryCopy() }
+}
+
+/// A remote that runs `before` ahead of each write (another writer acting between the engine's
+/// listing and its upload), and otherwise is `inner`.
+final class BeforeWriteRemote: SyncRemote, @unchecked Sendable {
+    private var inner: any SyncRemote
+    private let before: ([String]) throws -> Void
+
+    init(_ inner: any SyncRemote, before: @escaping ([String]) throws -> Void) {
+        self.inner = inner
+        self.before = before
+    }
+
+    var location: String { inner.location }
+    var capabilities: RemoteCapabilities { inner.capabilities }
+    var interrupt: (@Sendable () -> (any Error)?)? {
+        get { inner.interrupt }
+        set { inner.interrupt = newValue }
+    }
+    func list(_ path: [String]) throws -> [RemoteEntry]? { try inner.list(path) }
+    func listTree(_ path: [String], maxBytes: Int) throws -> RemoteTree? { try inner.listTree(path, maxBytes: maxBytes) }
+    func stat(_ path: [String]) throws -> RemoteEntry? { try inner.stat(path) }
+    func read(_ path: [String], maxBytes: Int) throws -> (data: Data, etag: String?) { try inner.read(path, maxBytes: maxBytes) }
+    func download(_ path: [String], to file: URL, resumeFrom: Int, ifETag: String?, maxBytes: Int,
+                  segmentBytes: Int, progress: ((Int) throws -> Void)?) throws -> DownloadResult {
+        try inner.download(path, to: file, resumeFrom: resumeFrom, ifETag: ifETag, maxBytes: maxBytes,
+                           segmentBytes: segmentBytes, progress: progress)
+    }
+    func write(_ path: [String], _ body: RemoteBody, condition: PutCondition) throws -> Bool {
+        try before(path)
+        return try inner.write(path, body, condition: condition)
+    }
+    func moveNoOverwrite(_ path: [String], to destination: [String]) throws -> Bool {
+        try inner.moveNoOverwrite(path, to: destination)
+    }
+    func makeCollection(_ path: [String]) throws -> CollectionResult { try inner.makeCollection(path) }
+    func createBase() throws { try inner.createBase() }
+    func delete(_ path: [String], ifETag: String?) throws -> Bool { try inner.delete(path, ifETag: ifETag) }
+    func missingCollectionError(_ path: [String]) -> any Error { inner.missingCollectionError(path) }
 }

@@ -58,7 +58,8 @@ extension SyncEngine {
                 if e.name == Vault.attachmentsName && e.isCollection { remoteAtt = true; continue }
                 if !e.isCollection, let n = RevisionName(e.name), n.filename == e.name { remote.insert(e.name) }
             }
-            let recorded = Set(recordedRevisions(id).map(\.filename))
+            // Revisions thinned here before are judged by the note loop (`syncNote`), never sent ahead.
+            let recorded = Set(recordedRevisions(id).union(thinnedRevisions(id)).map(\.filename))
             let dir = root.appendingPathComponent(Vault.notesName).appendingPathComponent(id)
             let revisions = local.subtracting(remote).subtracting(options.pushOnly ? [] : recorded)
                 .compactMap(RevisionName.init).sorted()
