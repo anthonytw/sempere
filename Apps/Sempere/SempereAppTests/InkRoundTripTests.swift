@@ -1,6 +1,7 @@
 import Foundation
 import PencilKit
 import Sempere
+import SempereRender
 import Testing
 import UIKit
 @testable import SempereApp
@@ -11,7 +12,7 @@ import UIKit
 /// vault, reloaded into a new canvas and rendered. Checks: every point's force, azimuth, altitude,
 /// opacity, size and time within PencilKit's and the format's precision; the ink tool, color and the
 /// tool's width; and that rendering is stable (two reloads draw the same pixels, and a reload draws
-/// what the pen drew, within the grain a textured ink gets from its seed).
+/// what the pen drew: textured inks too, since a saved stroke's id carries PencilKit's seed).
 /// The palette's own per-tool settings (`DrawingToolbox`) are tested with the palette (PR #51).
 @MainActor
 @Suite(.serialized, .timeLimit(.minutes(10)))
@@ -145,7 +146,7 @@ struct InkRoundTripTests {
 
     /// Rendering: a page reloaded twice draws the same pixels (textured inks take their grain from the stroke's
     /// id, not from chance), and a reload draws what the pen drew (the smooth inks within anti-aliasing; the
-    /// textured ones share their shape, their grain differs: the stroke's seed is derived from its stored id).
+    /// textured ones the same pixels, grain included: a canvas stroke is saved under an id that carries its seed).
     @Test func reloadedInkRendersTheSameEveryTimeAndLikeTheOriginal() async throws {
         let made = try InkFixture.denseNote(strokes: 0)
         let traces = Self.traces()
@@ -176,7 +177,131 @@ struct InkRoundTripTests {
             let diff = Self.difference(one, two)
             let textured = [InkTool.pencil, .crayon, .watercolor].contains(trace.tool)
             print(String(format: "INK-ROUNDTRIP %@ meanDiff %.3f share>24 %.4f", trace.tool.rawValue, diff.mean, diff.share))
-            #expect(diff.mean < (textured ? 4 : 0.1), "\(trace.tool): a reload draws differently from the pen's stroke (mean \(diff.mean))")
+            #expect(diff.mean < (textured ? 0.05 : 0.1), "\(trace.tool): a reload draws differently from the pen's stroke (mean \(diff.mean))")
+            if textured {
+                // Measured 0.002 to 0.033 with the seed kept; with a different seed 0.5 to 1.7 and a share over 0.005.
+                #expect(diff.share < 0.001, "\(trace.tool): grain differs after reload (share \(diff.share))")
+                let seeds = { (d: PKDrawing) in d.strokes.filter { $0.ink.inkType == type }.map(\.randomSeed) }
+                #expect(seeds(drawn) == seeds(reloads[0]), "\(trace.tool): the seed changed on reload")
+            }
         }
+    }
+
+    // MARK: Ids and seeds
+
+    @Test func idWithSeedKeepsTheSeedAndStaysUnique() {
+        for seed in [UInt32(0), 1, 0xDEAD_BEEF, .max, 0x0100_0000] {
+            let a = StrokeConversion.id(seed: seed), b = StrokeConversion.id(seed: seed)
+            #expect(StrokeConversion.seed(for: a) == seed)
+            #expect(StrokeConversion.seed(for: b) == seed)
+            #expect(a != b)
+        }
+    }
+
+    /// A second reopen keeps the grain of the first (strokes keep their stored ids).
+    @Test func grainIsStableAcrossRepeatedReopens() async throws {
+        let r = try await Self.drawnAndReloaded()
+        let again = try await Self.canvas(r.made)
+        let third = again.drawing
+        again.close()
+        await again.editor.close()
+        let area = CGRect(x: 0, y: 0, width: 612, height: 90 + CGFloat(r.traces.count) * 70)
+        #expect(Self.pixels(r.reloaded, in: area) == Self.pixels(third, in: area))
+    }
+
+    static let textured: [InkTool] = [.pencil, .crayon, .watercolor]
+    static let pageWidth = 612
+    static let pageHeight = 792
+
+    static func band(_ i: Int) -> CGRect { CGRect(x: 0, y: 90 + CGFloat(i) * 70 - 35, width: 612, height: 70) }
+
+    /// Draws every tool's trace through the canvas, saves and reopens: the drawing the pen made and
+    /// the drawing after a reload.
+    static func drawnAndReloaded() async throws -> (made: InkFixture.Made, drawn: PKDrawing, reloaded: PKDrawing,
+                                                    traces: [PencilTrace]) {
+        let made = try InkFixture.denseNote(strokes: 0)
+        let traces = Self.traces()
+        let first = try await canvas(made)
+        for trace in traces { first.drawCanvas([trace.stroke()], tool: trace.inkingTool) }
+        let drawn = first.drawing
+        await first.editor.flush()
+        first.close()
+        await first.editor.close()
+        let again = try await canvas(made)
+        let reloaded = again.drawing
+        again.close()
+        await again.editor.close()
+        return (made, drawn, reloaded, traces)
+    }
+
+    // MARK: CLI renderer against the app
+
+    /// The CLI's renderer (`SempereRender.PNGWriter`, no grain by design) and the app's canvas show the
+    /// same page: per stroke, the inked area has the same extent and the two silhouettes overlap.
+    @Test func cliAndAppRenderTheSameNote() async throws {
+        let r = try await Self.drawnAndReloaded()
+        let state = try r.made.vault.reconstruct(noteId: r.made.note)
+        var options = RenderOptions()
+        options.paper = false
+        let png = try #require(try PNGWriter.render(note: state, options: options, png: PNGOptions(scale: 2)).first)
+        let w = Self.pageWidth * 2, h = Self.pageHeight * 2
+        let cli = try Self.decode(png, width: w, height: h)
+        let app = Self.pixels(r.reloaded, in: CGRect(x: 0, y: 0, width: Self.pageWidth, height: Self.pageHeight))
+        for (i, trace) in r.traces.enumerated() {
+            let band = Self.band(i)
+            let a = Self.ink(app, width: w, in: band), c = Self.ink(cli, width: w, in: band)
+            let ab = try #require(Self.bounds(a, width: w, in: band), "\(trace.tool): app drew nothing")
+            let cb = try #require(Self.bounds(c, width: w, in: band), "\(trace.tool): CLI drew nothing")
+            var both = 0, either = 0
+            for k in a.indices where a[k] || c[k] { either += 1; if a[k] && c[k] { both += 1 } }
+            let iou = Double(both) / Double(max(either, 1))
+            print("INK-CLI \(trace.tool.rawValue) iou \(iou) appBox \(ab) cliBox \(cb)")
+            // The same extent to a few pixels (caps and grain edges differ).
+            for (x, y) in [(ab.minX, cb.minX), (ab.maxX, cb.maxX), (ab.minY, cb.minY), (ab.maxY, cb.maxY)] {
+                #expect(abs(x - y) <= 8, "\(trace.tool): app \(ab), CLI \(cb)")
+            }
+            // Measured on the simulator: 0.80 to 0.96, except the fountain pen (0.67) and the marker (0.45), whose
+            // renderers differ in nib shape and translucency (not part of this fix); a grain-only difference stays above 0.85.
+            #expect(iou > 0.4, "\(trace.tool): silhouettes overlap \(iou)")
+            if Self.textured.contains(trace.tool) { #expect(iou > 0.85, "\(trace.tool): silhouettes overlap \(iou)") }
+        }
+    }
+
+    /// RGBA bytes of a PNG composited on white, `width` x `height`, its top edge at the top.
+    static func decode(_ png: Data, width: Int, height: Int) throws -> [UInt8] {
+        let image = try #require(UIImage(data: png)?.cgImage)
+        var bytes = [UInt8](repeating: 255, count: width * height * 4)
+        bytes.withUnsafeMutableBytes { raw in
+            guard let ctx = CGContext(data: raw.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                                      bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+            ctx.setFillColor(UIColor.white.cgColor)
+            ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            ctx.draw(image, in: CGRect(x: 0, y: height - image.height, width: image.width, height: image.height))
+        }
+        return bytes
+    }
+
+    /// Which pixels (row-major, `width` per row) inside `rect` (points, 2x) are inked: not close to white.
+    static func ink(_ rgba: [UInt8], width: Int, in rect: CGRect) -> [Bool] {
+        var out = [Bool](repeating: false, count: rgba.count / 4)
+        for y in Int(rect.minY * 2)..<Int(rect.maxY * 2) {
+            for x in 0..<width {
+                let o = (y * width + x) * 4
+                let d = max(255 - Int(rgba[o]), 255 - Int(rgba[o + 1]), 255 - Int(rgba[o + 2]))
+                out[y * width + x] = d > 40
+            }
+        }
+        return out
+    }
+
+    static func bounds(_ mask: [Bool], width: Int, in rect: CGRect) -> CGRect? {
+        var minX = Int.max, maxX = -1, minY = Int.max, maxY = -1
+        for y in Int(rect.minY * 2)..<Int(rect.maxY * 2) {
+            for x in 0..<width where mask[y * width + x] {
+                minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
+            }
+        }
+        return maxX < 0 ? nil : CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 }
