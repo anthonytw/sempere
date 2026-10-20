@@ -563,9 +563,13 @@ extension Vault {
     /// rewrapped, never discarded.
     ///
     /// - Returns: the rewrap of the local files to the adopted list.
+    ///
+    /// - Parameter confirmed: the user checked the list and confirms it (format.md §2.1 "Repair": a
+    ///   device that missed two or more rotations cannot link the new secret to one it held). The link
+    ///   is then not required; the tag still is. Never set implicitly.
     @discardableResult
     public mutating func adoptConcurrentChange(_ incoming: Data, keyring store: any SecretKeyringStore,
-                                               now: Date = Date()) throws -> RewrapReport {
+                                               now: Date = Date(), confirmed: Bool = false) throws -> RewrapReport {
         let own = try requireReadable()
         try requireNotReadOnly()
         let m = try Self.readManifest(incoming)
@@ -579,10 +583,16 @@ extension Vault {
         guard m.markersIntact(secret: other), Self.readOnlyReasons(m).isEmpty else {
             throw VaultError.manifestCorrupt("the other change's vault.json has markers that do not check")
         }
+        // The same secret and a list this one already includes: an older list, not a change to keep.
+        if RecipientsAuth.constantTimeEqual(other.bytes, own.bytes),
+           Set(m.recipients.map(\.key)).isSubset(of: Set(manifest.recipients.map(\.key))) {
+            throw VaultError.recipientsNotRepairable("the other vault.json is an older list of this vault (the same secret, "
+                + "no device this one lacks): nothing to keep")
+        }
         var ring = try store.load(vaultId: vaultId) ?? SecretKeyring(vaultId: vaultId)
         ring.remember(own, now: now)
         let known = ring.secrets(excluding: other)
-        guard RecipientsAuth.constantTimeEqual(other.bytes, own.bytes)
+        guard confirmed || RecipientsAuth.constantTimeEqual(other.bytes, own.bytes)
                 || known.contains(where: { RecipientsAuth.linkConnects(m.secretLink, from: $0, to: other, vaultId: vaultId) }) else {
             throw VaultError.untrustedRecipients(.init(reason: .secretUnconfirmed, current: m.recipients.map(\.key),
                                                        restore: nil, record: nil))

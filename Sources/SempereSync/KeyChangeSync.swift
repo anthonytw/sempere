@@ -48,6 +48,8 @@ enum LateVerdict {
 /// The same for a blob (taken in under its current name).
 enum LateBlobVerdict {
     case notLate
+    /// An older name of a blob this device holds under its current name (a rename's leftover): not placed.
+    case leftover
     case accept(deadline: Date)
     case quarantine(String)
 }
@@ -190,8 +192,12 @@ extension SyncEngine {
     /// The verdict on a received blob named under an older secret.
     func lateBlob(at file: URL, note: String, name: String) -> LateBlobVerdict {
         guard options.keyring != nil, let v = keyChangeVault(),
-              case .stale(_, let s?) = v.classifyBlob(at: file, fileName: name),
-              let deadline = locked({ kc.ring?.lateFileDeadline(for: s) }) else { return .notLate }
+              case .stale(_, let s?) = v.classifyBlob(at: file, fileName: name) else { return .notLate }
+        if let current = v.currentBlobName(at: file, fileName: name),
+           FileManager.default.fileExists(atPath: attURL(note).appendingPathComponent(current).path) {
+            return .leftover
+        }
+        guard let deadline = locked({ kc.ring?.lateFileDeadline(for: s) }) else { return .notLate }
         return options.now < deadline ? .accept(deadline: deadline) : .quarantine(lateReason(deadline))
     }
 
@@ -255,7 +261,8 @@ extension SyncEngine {
         /// Compared when the run sweeps, or when the server's copy changed since both were found current.
         func due(_ k: String, _ entry: RemoteEntry?) -> Bool {
             if kc.sweeping { return true }
-            guard let recorded = state.files[k]?.stamp else { return false }
+            // Never compared by this pair: once, after this device saw any key change.
+            guard let recorded = state.files[k]?.stamp else { return v.olderSecretCount > 0 }
             return entry?.stamp != recorded
         }
         /// Records the server's version once both copies are the same.

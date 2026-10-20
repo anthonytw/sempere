@@ -517,6 +517,16 @@ extension Vault {
            RecipientsAuth.constantTimeEqual(own.bytes, secret.bytes) {
             return pendingProblem
         }
+        // Under one secret a list only grows: a removal rotates the secret (format.md §3.3). One that drops a
+        // key this copy lists, under the same secret, is an older list put back or a concurrent addition by
+        // another device (design §6.2 F7): kept apart, never taken (two bridges handed two such lists to
+        // each other for ever).
+        if !sameKeys, let own = try? decryptSecret(mine.vaultSecret, with: vault.identities),
+           RecipientsAuth.constantTimeEqual(own.bytes, secret.bytes),
+           !Set(mine.recipients.map(\.key)).isSubset(of: Set(incoming.recipients.map(\.key))) {
+            return "the incoming vault.json lists fewer devices under the same secret (format.md §3.3: a removal "
+                + "rotates the secret): an older list, or another device's concurrent addition"
+        }
         var anchor: RecipientsTrustRecord?
         do { anchor = try vault.trustStore?.record(for: vault.vaultId) } catch {
             return "this device's trust record for the vault cannot be read, so the incoming vault.json cannot be checked: \(error)"

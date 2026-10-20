@@ -181,7 +181,14 @@ final class KCDevice: @unchecked Sendable {
         }
         var v = try vault()
         guard v.canRead else { throw SyncError.io("\(name) cannot open the vault") }
-        return try coordinator.sync(target: t, vault: &v, options: o, faults: kf).report
+        let watch = ProcessInfo.processInfo.environment["SEMPERE_KEYCHANGE_WATCH"]
+        let had = watch.map { w in noteFiles().keys.filter { $0.contains(w) } } ?? []
+        let r = try coordinator.sync(target: t, vault: &v, options: o, faults: kf).report
+        if let watch {
+            let has = noteFiles().keys.filter { $0.contains(watch) }
+            if Set(has) != Set(had) { print("WATCH \(name)/\(t) at \(now.timeIntervalSince1970 - 1_790_000_000): \(had.count) -> \(has.count): \(KCWorld.brief(r)) \(r.downloaded.filter { $0.contains(watch) }) \(r.deleted)") }
+        }
+        return r
     }
 
     /// Syncs every target of this device in turn; errors become empty reports.
@@ -312,6 +319,12 @@ final class KCWorld: @unchecked Sendable {
                     do {
                         let r = try d.sync(t.name, now: now)
                         if !r.isEmpty { last.append("\(d.name)/\(t.name): \(KCWorld.brief(r))") }
+                        if ProcessInfo.processInfo.environment["SEMPERE_KEYCHANGE_TRACE"] == "2" {
+                            func fp(_ d: Data?) -> String { d.flatMap { Vault.listFingerprint($0) }.map { String($0.prefix(6)) } ?? "-" }
+                            print("  \(d.name)/\(t.name): local \(fp(d.manifest())) T0 \(fp(targets[0].file([Vault.manifestName]))) "
+                                  + "T1 \(fp(targets.count > 1 ? targets[1].file([Vault.manifestName]) : nil)) | \(KCWorld.brief(r)) "
+                                  + "\(r.uploaded.prefix(2)) \(r.downloaded.prefix(2)) \(r.skipped.prefix(2).map(\.message))")
+                        }
                     } catch {
                         last.append("\(d.name)/\(t.name): threw \(error)")
                     }
@@ -376,8 +389,15 @@ final class KCWorld: @unchecked Sendable {
         let listed = devices.filter { !$0.removed }
         guard let reference = listed.first?.manifest() else { return XCTFail("no vault.json", file: file, line: line) }
         let files = listed[0].noteFiles()
+        func diff(_ x: Data?) -> String {
+            guard let x, let a = try? JSONSerialization.jsonObject(with: x) as? [String: Any],
+                  let b = try? JSONSerialization.jsonObject(with: reference) as? [String: Any] else { return "?" }
+            return Set(a.keys).union(b.keys).sorted().filter { k in
+                "\(a[k].map { "\($0)" } ?? "nil")" != "\(b[k].map { "\($0)" } ?? "nil")"
+            }.map { k in "\(k): \(String("\(a[k] ?? "nil")".prefix(70))) vs \(String("\(b[k] ?? "nil")".prefix(70)))" }.joined(separator: "; ")
+        }
         for d in listed {
-            XCTAssertEqual(d.manifest(), reference, "\(d.name): another vault.json", file: file, line: line)
+            XCTAssertEqual(d.manifest(), reference, "\(d.name): another vault.json: \(diff(d.manifest()))", file: file, line: line)
             let mine = d.noteFiles()
             XCTAssertEqual(Set(mine.keys), Set(files.keys), "\(d.name): other files: "
                 + "\(Set(mine.keys).symmetricDifference(files.keys).sorted().prefix(4))", file: file, line: line)
@@ -387,7 +407,8 @@ final class KCWorld: @unchecked Sendable {
                            "\(d.name): a journal is left", file: file, line: line)
         }
         for t in targets {
-            XCTAssertEqual(t.file([Vault.manifestName]), reference, "\(t.name): another vault.json", file: file, line: line)
+            XCTAssertEqual(t.file([Vault.manifestName]), reference, "\(t.name): another vault.json: \(diff(t.file([Vault.manifestName])))",
+                           file: file, line: line)
             XCTAssertNil(t.file([Vault.journalName]), "\(t.name): a journal is left (I5)", file: file, line: line)
             let there = t.noteFiles().filter { !ignoring.contains($0.key) }
             XCTAssertEqual(Set(there.keys), Set(files.keys), "\(t.name): other files: "

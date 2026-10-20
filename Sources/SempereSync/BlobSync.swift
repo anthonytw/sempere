@@ -443,6 +443,13 @@ extension SyncEngine {
             case .quarantine(let why):
                 quarantineLate(key, path: path, entry: entry, reason: why, file: part)
                 return nil
+            case .leftover:
+                // Recorded as both sides', so its collection follows the usual rules (design §6.2 F14).
+                try? FileManager.default.removeItem(at: part)
+                locked { state.files[key] = SyncState.FileRecord() }
+                report.skipped.append(.init(path: path, message: "an older name of a blob held here under its current name "
+                    + "(a key change's leftover): not placed; collected once no journal is left"))
+                return nil
             case .accept(let deadline):
                 // Taken in under its current name; this old name is then a leftover, collected later (F9, F14).
                 try takeLateBlob(at: part, note: id, name: name, path: path, deadline: deadline)

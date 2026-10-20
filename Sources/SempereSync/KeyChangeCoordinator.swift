@@ -121,6 +121,8 @@ struct KeyChangeLedger: Codable, Equatable {
 struct KeyChangeFile: Codable, Equatable {
     var lastClean: [String: Date] = [:]
     var change: KeyChangeLedger?
+    /// Claims to take back from targets that could not be reached when they were dropped, by target.
+    var takeBack: [String: [Data]]?
 }
 
 /// One device's key changes against the targets of one vault.
@@ -259,12 +261,37 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
         return .claimed
     }
 
-    /// Deletes this device's own claims (only those versions).
+    /// Deletes this device's own claims (only those versions). A target that cannot be reached now is
+    /// remembered and tried again at its next run (`sync(target:)`), so no claim is left for ever.
     func takeBack(_ claimed: [KeyChangeTarget], journal: Data) {
-        for t in claimed {
-            guard let (there, etag) = try? t.remote.read([Vault.journalName], maxBytes: BoundedRead.maxManifestBytes),
-                  there == journal else { continue }
-            _ = try? t.remote.delete([Vault.journalName], ifETag: etag.flatMap { SyncEngine.isStrong($0) ? $0 : nil })
+        var missed: [String] = []
+        for t in claimed where !takeBack(t, journal: journal) { missed.append(t.id) }
+        guard !missed.isEmpty else { return }
+        try? update { f in
+            for id in missed where !(f.takeBack?[id]?.contains(journal) ?? false) {
+                f.takeBack = f.takeBack ?? [:]
+                f.takeBack?[id, default: []].append(journal)
+            }
+        }
+    }
+
+    /// True when the target holds no such claim any more.
+    func takeBack(_ t: KeyChangeTarget, journal: Data) -> Bool {
+        let there: (data: Data, etag: String?)
+        do { there = try t.remote.read([Vault.journalName], maxBytes: BoundedRead.maxManifestBytes) } catch {
+            return (try? t.remote.stat([Vault.journalName])).map { $0 == nil } ?? false
+        }
+        guard there.data == journal else { return true }
+        return (try? t.remote.delete([Vault.journalName], ifETag: there.etag.flatMap { SyncEngine.isStrong($0) ? $0 : nil })) == true
+    }
+
+    /// Claims still to take back from `t`.
+    func retryTakeBack(_ t: KeyChangeTarget) {
+        guard let pending = load().takeBack?[t.id], !pending.isEmpty else { return }
+        let left = pending.filter { !takeBack(t, journal: $0) }
+        try? update { f in
+            f.takeBack?[t.id] = left.isEmpty ? nil : left
+            if f.takeBack?.isEmpty == true { f.takeBack = nil }
         }
     }
 
@@ -274,7 +301,9 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
         let bytes = try BoundedRead.contents(of: folder.appendingPathComponent(Vault.manifestName),
                                              maxBytes: BoundedRead.maxManifestBytes)
         try update { f in
-            guard f.change != nil else { return }
+            // Once: what this device holds later may be another change made on top of this one.
+            guard f.change != nil, f.change?.step4 == nil else { return }
+            if let step2 = f.change?.step2, !Vault.sameList(step2, bytes) { return }
             f.change?.step4 = bytes
             if f.change?.step2 == nil { f.change?.step2 = bytes }
         }
@@ -306,6 +335,19 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
         return true
     }
 
+    /// This device took a later list since its change finished (another device's change made on top of
+    /// it, or one the user kept): that change propagates now, so this one's work is over. Its claims
+    /// are taken back (only its own bytes) and its record dropped.
+    func dropIfSuperseded(_ vault: Vault) throws {
+        guard let ledger = load().change, let step4 = ledger.step4, !vault.pendingRewrap,
+              let local = try? BoundedRead.contents(of: folder.appendingPathComponent(Vault.manifestName),
+                                                    maxBytes: BoundedRead.maxManifestBytes),
+              !Vault.sameList(local, step4), !Vault.sameList(local, ledger.step2 ?? step4),
+              !isBaseOrOlder(local, ledger.base, vault) else { return }
+        takeBack(targets, journal: ledger.journal)
+        try update { $0.change = nil }
+    }
+
     // MARK: C5 and runs
 
     /// One target's run: the change's propagation first (C5), then an
@@ -316,8 +358,10 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
                      faults: KeyChangeFaults = KeyChangeFaults()) throws -> (propagation: KeyChangePropagation?, report: SyncReport) {
         guard let t = targets.first(where: { $0.id == id }) else { throw SyncError.io("no target \(id)") }
         var propagation: KeyChangePropagation?
+        retryTakeBack(t)
         if vault.canRead, load().change != nil {
             try recover(&vault)
+            try dropIfSuperseded(vault)
             if load().change != nil { propagation = try propagate(t, vault: &vault, options: options, faults: faults) }
         }
         var o = options
@@ -342,7 +386,7 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
         if out.conflict != nil {
             // Looked at again: the other change may have given way there (the other device kept this one).
             guard let (there, _) = try? t.remote.read([Vault.manifestName], maxBytes: BoundedRead.maxManifestBytes),
-                  Vault.sameList(there, step2) || Vault.sameList(there, ledger.base) else { return out }
+                  Vault.sameList(there, step2) || isBaseOrOlder(there, ledger.base, vault) else { return out }
             if let (j, _) = try? t.remote.read([Vault.journalName], maxBytes: BoundedRead.maxManifestBytes), j != ledger.journal {
                 return out
             }
@@ -374,7 +418,7 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
             if let (there, etag) = current {
                 if there == step2 || there == step4 || Vault.sameList(there, step2) {
                     // There already.
-                } else if Vault.sameList(there, ledger.base), let etag, SyncEngine.isStrong(etag) {
+                } else if isBaseOrOlder(there, ledger.base, vault), let etag, SyncEngine.isStrong(etag) {
                     guard try t.remote.write(manifestPath, .data(step2), condition: .replace(etag: etag)) else {
                         return out   // it moved meanwhile: next time
                     }
@@ -424,16 +468,35 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
         return out
     }
 
+    /// True when `there` is the list the change started from, or an older one under the same secret
+    /// (a list only grows under one secret): what the change replaces.
+    func isBaseOrOlder(_ there: Data, _ base: Data, _ vault: Vault) -> Bool {
+        if Vault.sameList(there, base) { return true }
+        guard let a = vault.secret(ofManifest: there), let b = vault.secret(ofManifest: base), a == b,
+              let x = try? VaultManifest.decode(there), let y = try? VaultManifest.decode(base) else { return false }
+        return Set(x.recipients.map(\.key)).isSubset(of: Set(y.recipients.map(\.key)))
+    }
+
     // MARK: F7
 
     /// "Keep the other change" (design §6.2 F7): takes the device list of
     /// another device's concurrent change from `target`, rewraps every local
     /// file to it from the keyring, takes this device's claims back and
     /// drops its own change's propagation. The caller then redoes its change.
-    public func adoptOtherChange(from target: String, vault: inout Vault, now: Date = Date()) throws {
+    ///
+    /// - Parameter confirmed: the user checked the target's list and confirms it, for a device that
+    ///   missed two or more rotations (format.md §2.1): no link from a secret it held is required.
+    ///
+    /// - Returns: the keys this device listed that the kept change does not. Under the same secret
+    ///   (two additions met) they could still open every file, which no stanza count can tell: the
+    ///   caller redoes its change (adds them again), or removes them for real (which rotates).
+    @discardableResult
+    public func adoptOtherChange(from target: String, vault: inout Vault, now: Date = Date(),
+                                 confirmed: Bool = false) throws -> [String] {
         guard let t = targets.first(where: { $0.id == target }) else { throw SyncError.io("no target \(target)") }
         let (other, _) = try t.remote.read([Vault.manifestName], maxBytes: BoundedRead.maxManifestBytes)
-        try vault.adoptConcurrentChange(other, keyring: keyring, now: now)
+        let ownKeys = vault.recipients.map(\.key)
+        try vault.adoptConcurrentChange(other, keyring: keyring, now: now, confirmed: confirmed)
         if let ledger = load().change {
             takeBack(targets, journal: ledger.journal)
             // Targets this change reached hold its vault.json: the adopted one replaces it there.
@@ -444,6 +507,16 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
             }
         }
         try update { $0.change = nil }
+        // The adopted vault.json is this device's own now: each pair whose target holds it takes later
+        // versions of it by the usual checks instead of seeing a change on both sides.
+        for t in targets {
+            guard (try? t.remote.read([Vault.manifestName], maxBytes: BoundedRead.maxManifestBytes).data) == other,
+                  var state = (try? SyncState.load(t.stateURL)) ?? nil else { continue }
+            state.mutable[Vault.manifestName] = .init(hash: FileDigest.sha256(other), stamp: nil)
+            try? state.save(t.stateURL)
+        }
         vault = try vault.reopened()
+        let kept = Set(vault.recipients.map(\.key))
+        return ownKeys.filter { !kept.contains($0) }
     }
 }
