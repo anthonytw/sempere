@@ -15,6 +15,7 @@ final class EpochForkTests: XCTestCase {
         }
         struct Question: Decodable {
             var branch: String; var sides: [String]; var authors: [String]; var asked: [String]; var resolves: [String: String]
+            var disputed: [[String]]?
         }
         struct Expect: Decodable {
             var kept: [String]; var losses: [[String]]; var reapply: [String]; var question: Question?
@@ -38,7 +39,7 @@ final class EpochForkTests: XCTestCase {
     func testForkTreeVectors() throws {
         let url = try FixtureTests.bundled("epoch-fork-vectors.json")
         let v = try JSONDecoder().decode(Vectors.self, from: Data(contentsOf: url))
-        XCTAssertGreaterThanOrEqual(v.cases.count, 28)
+        XCTAssertGreaterThanOrEqual(v.cases.count, 43)
         for c in v.cases {
             let ctx = ForkContext(me: c.context.me.map(Self.d), rejectedAuthors: Set(c.context.rejected.map(Self.d)),
                                   approverChains: Dictionary(uniqueKeysWithValues: c.context.approverChains.map {
@@ -55,6 +56,7 @@ final class EpochForkTests: XCTestCase {
                 XCTAssertEqual(Self.s(got.branch), q.branch, c.name)
                 XCTAssertEqual(got.sides.map(Self.s), q.sides, c.name)
                 XCTAssertEqual(got.authors.map(Self.s), q.authors, c.name)
+                if let disputed = q.disputed { XCTAssertEqual(got.disputed.map { Set($0.map(Self.s)) }, disputed.map(Set.init), c.name) }
                 XCTAssertEqual(Set(got.asked.map(Self.s)), Set(q.asked), c.name)
                 XCTAssertEqual(Dictionary(uniqueKeysWithValues: got.resolves.map { (Self.s($0.key), Self.s($0.value)) }),
                                q.resolves, c.name)
@@ -76,9 +78,10 @@ final class EpochForkTests: XCTestCase {
     }
 
     /// Review C1 (probe testPoisonedHonestStaleForkHijacksTheKeptChain): X, removed on the real side,
-    /// appends one epoch under B's old honest stale fork removing A. Before the fix the kept chain
-    /// became e1 → 0b → 1x on every device; now X's epoch counts for nothing and the real side wins by
-    /// rule 3, on every device.
+    /// appends one epoch under B's old honest stale fork removing A. Before the first fix the kept chain
+    /// became e1 → 0b → 1x on every device, silently. Now X's side never wins silently: a device pinned
+    /// through X's removal (or that rejected X, or that is A) keeps the real side, and an unpinned device
+    /// is asked (rule 2).
     func testRemovedDeviceCannotHijackAnOldStaleFork() throws {
         let honest = [
             Self.n("e1", nil, "A", list: ["A", "B", "C", "X", "Y", "R"], removes: [], reason: .create),
@@ -87,19 +90,25 @@ final class EpochForkTests: XCTestCase {
             Self.n("0b", "e1", "B", list: ["A", "B", "C", "X", "R"], removes: ["Y"]),
         ]
         for poison in [["A"], ["A", "C"], ["A", "B", "C"]] {
-            let nodes = honest + [Self.n("1x", "0b", "X", list: ["B", "C", "X", "R"], removes: poison)]
-            for me in ["A", "B", "C", "Y"] {
-                let r = try EpochForks.resolve(nodes, context: ForkContext(me: Self.d(me)))
-                XCTAssertEqual(r.keptChain.map(Self.s), ["e1", "2a", "3a"], "me \(me), X removes \(poison)")
-                XCTAssertEqual(r.losses.map { [Self.s($0.child), $0.rule.rawValue] }, [["0b", "rule3"]], "me \(me)")
-                XCTAssertNil(r.question)
+            for deeper in [false, true] {
+                var nodes = honest + [Self.n("1x", "0b", "X", list: ["B", "C", "X", "R"], removes: poison)]
+                if deeper { nodes.append(Self.n("2x", "1x", "X", list: ["C", "X", "R"], removes: ["B"])) }
+                for me in ["A", "B", "C", "Y"] {
+                    for context in [ForkContext(me: Self.d(me)),
+                                    ForkContext(me: Self.d(me), pinned: [Self.d("e1"), Self.d("2a")]),
+                                    ForkContext(me: Self.d(me), rejectedAuthors: [Self.d("X")])] {
+                        let r = try EpochForks.resolve(nodes, context: context)
+                        let label = "me \(me), X removes \(poison), deeper \(deeper), pinned \(context.pinned.count)"
+                        if r.question == nil {
+                            XCTAssertEqual(r.keptChain.map(Self.s), ["e1", "2a", "3a"], label)
+                        } else {
+                            XCTAssertEqual(r.keptChain.map(Self.s), ["e1"], label)
+                            XCTAssertTrue(context.pinned.isEmpty && context.rejectedAuthors.isEmpty, label)
+                        }
+                    }
+                }
             }
         }
-        // X adds descendants of its own under its poison: still nothing.
-        let deeper = honest + [Self.n("1x", "0b", "X", list: ["B", "C", "X", "R"], removes: ["A"]),
-                               Self.n("2x", "1x", "X", list: ["C", "X", "R"], removes: ["B"])]
-        XCTAssertEqual(try EpochForks.resolve(deeper, context: ForkContext(me: Self.d("C"))).keptChain.map(Self.s),
-                       ["e1", "2a", "3a"])
     }
 
     /// Review M4 (probe testContradictoryBindingResolves): two binding resolve epochs that disagree are

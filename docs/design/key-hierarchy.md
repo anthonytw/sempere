@@ -591,29 +591,51 @@ the author, the first list, and the removals computed as in §4.1. The **kept ch
 root down: at each epoch with more than one child, the rules below pick one child, comparing the
 **subtrees** below the children (each child with all its descendants), never the children alone.
 
-**Context and counted epochs (KH1 code review C1).** A removed device that appended one epoch under
-an old honest stale fork, removing the real side's author, made that fork win by rule 1 on every
-device. So:
+**Context, labels and disputes (KH1 code reviews C1, round 2).** A removed device that appended one
+epoch under an old honest stale fork, removing the real side's author, made that fork win by rule 1 on
+every device (round 1). The first fix let a branch's children always count, which let X's own child
+reject its removal, and left deadlocks to rules 3 and 4 (round 2). The rules are now:
 
-- an epoch authored by a device that this device's **pinned chain** removed never enters the tree
-  (unless it is on the pinned chain);
-- two sides are compared over their **counted** epochs: each child counts; a descendant counts when
-  its parent counts and no counted epoch of the other side removed its author (to a fixed point;
-  undecided epochs do not count). "Removed by some epoch in S", "has descendants" and the
-  re-application set below are over counted epochs only, so a removed device's epochs supply neither
-  removals nor descendants to a side;
-- walking down the kept chain, a child whose author the kept prefix removed, or whose author is in the
-  re-application set, is dropped with its subtree, also when it is the only child.
+- **Exclusion.** Epochs authored by a device that this device's pinned chain removed, that its user
+  rejected (stored answers), or that a binding resolve epoch rejected leave the tree with their
+  subtrees, wholesale, except epoch 1, the pinned chain, and the ancestors of an epoch that removes
+  their author and is not itself by an excluded device (a device's legitimate epochs from before its
+  removal).
+- **Labels.** At a branch, all the children's subtrees are labelled at once, with the grounded
+  semantics of "epoch e removes the author of epoch f in another child's subtree": an epoch is
+  **accepted** when its parent is accepted (a child's parent, the branch point, is) and every epoch of
+  the other subtrees that removes its author is rejected; **rejected** when its parent is rejected or
+  an accepted epoch of another subtree removes its author. The least fixed point leaves the rest
+  **undecided**. Children are labelled like any other epoch, and a third child's removal of X counts
+  against X's epochs under the other two.
+- **Disputes are rule 2.** Undecided epochs at the fixed point are a dispute between their authors.
+  A device that authored one of the disputed epochs keeps its own side: it rejects the authors of the
+  epochs that dispute its own, and resolution starts again (two binding resolve epochs that disagree
+  make it ask instead). Every other device gets the question, with names from P's list. A dispute is
+  never settled by rule 3 or 4.
+- **Otherwise**, a child that is rejected loses (rule 1); among the accepted ones, rule 3 (accepted
+  descendants) and rule 4 decide in pairs in `epochId` order, and a side whose author is about to be
+  re-applied goes too. The re-application set is the accepted removals of the sides lost by rule 3 or
+  4.
+- **Pruning.** Walking down the kept chain, a child whose author the kept prefix removed, or whose
+  author is in the re-application set, is dropped with its subtree, also when it is the only child.
+- **A randomized property test** (`EpochForkPropertyTests`) checks, from every honest device's point
+  of view (unpinned, pinned at every prefix, after rejecting the removed devices), over random honest
+  histories and attacker coalitions that author anything anywhere they were listed: a removed device
+  is never kept and never left listed without a question; the result does not depend on input order;
+  no recovery key is re-applied; a user who rejected the removed devices is not asked again; honest
+  forks alone never make a question. Each test-only mutation of the safeguards must fail it.
 
-**Pre-pass.** At a branch with several children, first discard every child whose author is removed by
-some sibling's subtree, unless that child's own subtree removes that sibling's author in turn (a true
-mutual pair, rule 2); only siblings that no other sibling discards this way discard others, and the
-pass repeats until nothing changes (in the three-children case, X's fork removing B must not discard
-B's honest side). A child discarded here has lost by rule 1. Then the remaining children are
-compared in pairs, in `epochId` order, the winner of each pair going on. Rule outcomes are not
-transitive, so the pre-pass makes rule 1 decisive whatever the pairing order: a removed device cannot
-force a question (rule 2) against an honest sibling when another sibling already removes it. A side
-counts as lost by rule 3 or 4, and is re-applied, whichever sibling it lost to.
+Devices whose pinned chain does not contain the removal (joiners, kit joins, devices pinned before it,
+devices after losing their trust record) are therefore asked once when a removed device disputes
+the real chain; an approval joiner gets the approver's frontier in the reverse code (§6.2) and starts
+pinned on it.
+
+**Pre-pass.** With every child labelled at once (above), the pre-pass is rule 1 applied to all
+siblings before any pairing: a rejected child loses, whichever sibling rejected it, so a removed device
+cannot force a question against an honest sibling when another sibling already removes it. The
+accepted children are then compared in pairs, in `epochId` order, the winner of each pair going on;
+a side counts as lost by rule 3 or 4, and is re-applied, whichever sibling it lost to.
 
 For a branch point P with sides **S** and **T** (subtrees rooted at children `s` and `t`, authored by
 `author(s)` and `author(t)`):
@@ -783,8 +805,10 @@ or removed from anywhere. A failure to set aside stops that replacement or remov
    the request was replaced on the way, and E refuses it. A second preimage (a storage attacker's own
    key with the same words) costs about 2^66 key generations, or 2^256 against the QR code.
 3. E adds N's entry with its own `addSig` (§5.1), deletes the request, and shows its **reverse code**:
-   six words of `SHA-256("sempere/1 join reply" ‖ lp(vaultId) ‖ lp(c) ‖ lp(root))`, and a QR code of
-   `(vaultId, root)`.
+   six words of `SHA-256("sempere/1 join reply" ‖ lp(vaultId) ‖ lp(c) ‖ lp(root) ‖ lp(frontier))`, where
+   the frontier is E's current `epochId`, and a QR code of `(vaultId, root, frontier)`. N finds the epoch
+   whose id gives the words and pins the chain up to it, so it resolves forks with E's context from the
+   start (second KH1 code review).
 4. N sees its wrap and unwraps it. Before pinning anything it asks the user to **type** E's six words
    (or scan E's QR code), computes them from the root of the chain it was given, and refuses the vault
    on a mismatch.
@@ -1411,3 +1435,11 @@ high, six medium and five low findings. The design changes they made are written
 | M2 a resolve epoch's rejected author unsigned and dropped from chain copies | §4.1, §5.2.1: `rejected` in `epochSig` and in chain entries |
 | M4 two binding resolve epochs that disagree settled silently | §5.6: a contradiction and a question |
 | M6 the record's `reason`/`by` not tied to its chain entry | §5.2.1 |
+
+The second review (of the fixes) found that fork resolution still failed for devices whose pinned
+chain does not hold the removal: a child that always counts let X's own fork reject its removal; a
+deadlock between X's epoch under an honest stale fork and the real removal went to rule 4; stored
+answers and binding resolves acted on direct children only. §5.6 "Context, labels and disputes"
+replaces the round-1 rules (wholesale exclusion, labels over all siblings at once with children
+labelled like any epoch, disputes always rule 2), the reverse code carries the approver's frontier
+(§6.2), and a randomized property test with required-failing mutations guards the function.

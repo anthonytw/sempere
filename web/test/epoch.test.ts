@@ -152,7 +152,7 @@ interface Signatures {
       features: string[] }; message: string; signatures: AuthorSig[] };
   };
   join: { request: { vaultId: string; key: string; sign: { p256: string; mldsa65: string }; kind: string };
-    commitment: string; words: string[]; root: string; reply: string; replyWords: string[] };
+    commitment: string; words: string[]; root: string; frontier: string; reply: string; replyWords: string[] };
 }
 const s = JSON.parse(readFileSync(join(fixtures, "epoch-vectors.json"), "utf8")) as Vectors & Signatures;
 
@@ -195,7 +195,7 @@ describe("author signatures and join codes (design §4.1, §6.2)", () => {
     const c = joinCommitment(r.vaultId, r.key, r.sign.p256, r.sign.mldsa65, r.kind);
     expect(hex(c)).toBe(s.join.commitment);
     expect(sixWords(c)).toEqual(s.join.words);
-    const reply = joinReply(r.vaultId, c, s.join.root);
+    const reply = joinReply(r.vaultId, c, s.join.root, s.join.frontier);
     expect(hex(reply)).toBe(s.join.reply);
     expect(sixWords(reply)).toEqual(s.join.replyWords);
   });

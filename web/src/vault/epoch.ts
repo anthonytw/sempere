@@ -290,8 +290,9 @@ export function joinCommitment(vaultId: string, key: string, signP256: string, s
 }
 
 /** The reverse code's digest: `c` raw, `root` as 64 hex digits. */
-export function joinReply(vaultId: string, commitment: Uint8Array, root: string): Uint8Array {
-  return sha256(concat([encoder.encode("sempere/1 join reply"), lp(vaultId.toLowerCase()), lp(commitment), lp(root)]));
+export function joinReply(vaultId: string, commitment: Uint8Array, root: string, frontier: string): Uint8Array {
+  return sha256(concat([encoder.encode("sempere/1 join reply"), lp(vaultId.toLowerCase()), lp(commitment), lp(root),
+    lp(frontier)]));
 }
 
 /** Six BIP-39 English words from the first 66 bits of `digest`. */

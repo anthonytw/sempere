@@ -59,7 +59,7 @@ final class EpochKeysTests: VaultTestCase {
         }
         struct Join: Codable {
             var request: JoinRequestFields
-            var commitment: String; var words: [String]; var qr, root, reply: String; var replyWords: [String]
+            var commitment: String; var words: [String]; var qr, root, frontier, reply: String; var replyWords: [String]
             var replyQR: String
         }
         var signer: Signer?

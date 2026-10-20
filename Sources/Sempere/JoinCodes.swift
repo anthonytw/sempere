@@ -131,11 +131,27 @@ public enum JoinCodes {
         return (id, Data(b[16...]))
     }
 
-    /// The reverse code's digest: `SHA-256("sempere/1 join reply" ‖ lp(vaultId) ‖ lp(c) ‖ lp(root))`,
-    /// `c` raw (32 bytes) and `root` as its 64 hex digits. Its QR is `KitRecovery.rootQR`.
-    public static func reply(vaultId: UUID, commitment: Data, root: Data) -> Data {
+    /// The reverse code's digest: `SHA-256("sempere/1 join reply" ‖ lp(vaultId) ‖ lp(c) ‖ lp(root)
+    /// ‖ lp(frontier))`, `c` raw (32 bytes), `root` and `frontier` (the approver's current `epochId`)
+    /// as 64 hex digits. The frontier gives the joining device the approver's pinned chain as context
+    /// for fork resolution from its first open (second KH1 code review).
+    public static func reply(vaultId: UUID, commitment: Data, root: Data, frontier: Data) -> Data {
         var m = LPMessage("sempere/1 join reply")
-        m.field(vaultId.uuidString.lowercased()); m.field(commitment); m.field(Hex.encode(root))
+        m.field(vaultId.uuidString.lowercased()); m.field(commitment); m.field(Hex.encode(root)); m.field(Hex.encode(frontier))
         return Data(SHA256.hash(data: m.bytes))
+    }
+
+    /// The reverse code's QR: `sempere-reply:<vaultId>:<root hex>:<frontier hex>`.
+    public static func replyQR(vaultId: UUID, root: Data, frontier: Data) -> String {
+        "sempere-reply:\(vaultId.uuidString.lowercased()):\(Hex.encode(root)):\(Hex.encode(frontier))"
+    }
+
+    /// Parses `replyQR`; nil for anything else.
+    public static func parseReplyQR(_ text: String) -> (vaultId: UUID, root: Data, frontier: Data)? {
+        let parts = text.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count == 4, parts[0] == "sempere-reply", let id = UUID(uuidString: parts[1]),
+              parts[1] == id.uuidString.lowercased(), let root = Hex.decode(parts[2]), let frontier = Hex.decode(parts[3])
+        else { return nil }
+        return (id, root, frontier)
     }
 }

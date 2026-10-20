@@ -1670,553 +1670,6 @@
       }
     },
     {
-      "name": "review C1: X appends to an old honest stale fork; its epoch counts for nothing (me A)",
-      "nodes": [
-        {
-          "id": "e1",
-          "author": "A",
-          "list": [
-            "A",
-            "B",
-            "C",
-            "X",
-            "Y",
-            "R"
-          ],
-          "removes": [],
-          "reason": "create",
-          "recovery": "R"
-        },
-        {
-          "id": "2a",
-          "author": "A",
-          "list": [
-            "A",
-            "B",
-            "C",
-            "Y",
-            "R"
-          ],
-          "removes": [
-            "X"
-          ],
-          "reason": "remove",
-          "recovery": "R",
-          "parent": "e1"
-        },
-        {
-          "id": "3a",
-          "author": "C",
-          "list": [
-            "A",
-            "B",
-            "C",
-            "R"
-          ],
-          "removes": [
-            "Y"
-          ],
-          "reason": "remove",
-          "recovery": "R",
-          "parent": "2a"
-        },
-        {
-          "id": "0b",
-          "author": "B",
-          "list": [
-            "A",
-            "B",
-            "C",
-            "X",
-            "R"
-          ],
-          "removes": [
-            "Y"
-          ],
-          "reason": "remove",
-          "recovery": "R",
-          "parent": "e1"
-        },
-        {
-          "id": "1x",
-          "author": "X",
-          "list": [
-            "B",
-            "C",
-            "X",
-            "R"
-          ],
-          "removes": [
-            "A"
-          ],
-          "reason": "remove",
-          "recovery": "R",
-          "parent": "0b"
-        }
-      ],
-      "context": {
-        "me": "A",
-        "rejected": [],
-        "approverChains": {},
-        "pinned": []
-      },
-      "expect": {
-        "kept": [
-          "e1",
-          "2a",
-          "3a"
-        ],
-        "losses": [
-          [
-            "0b",
-            "2a",
-            "rule3"
-          ]
-        ],
-        "reapply": [],
-        "question": null,
-        "contradictions": []
-      }
-    },
-    {
-      "name": "review C1: X appends to an old honest stale fork; its epoch counts for nothing (me B)",
-      "nodes": [
-        {
-          "id": "e1",
-          "author": "A",
-          "list": [
-            "A",
-            "B",
-            "C",
-            "X",
-            "Y",
-            "R"
-          ],
-          "removes": [],
-          "reason": "create",
-          "recovery": "R"
-        },
-        {
-          "id": "2a",
-          "author": "A",
-          "list": [
-            "A",
-            "B",
-            "C",
-            "Y",
-            "R"
-          ],
-          "removes": [
-            "X"
-          ],
-          "reason": "remove",
-          "recovery": "R",
-          "parent": "e1"
-        },
-        {
-          "id": "3a",
-          "author": "C",
-          "list": [
-            "A",
-            "B",
-            "C",
-            "R"
-          ],
-          "removes": [
-            "Y"
-          ],
-          "reason": "remove",
-          "recovery": "R",
-          "parent": "2a"
-        },
-        {
-          "id": "0b",
-          "author": "B",
-          "list": [
-            "A",
-            "B",
-            "C",
-            "X",
-            "R"
-          ],
-          "removes": [
-            "Y"
-          ],
-          "reason": "remove",
-          "recovery": "R",
-          "parent": "e1"
-        },
-        {
-          "id": "1x",
-          "author": "X",
-          "list": [
-            "B",
-            "C",
-            "X",
-            "R"
-          ],
-          "removes": [
-            "A"
-          ],
-          "reason": "remove",
-          "recovery": "R",
-          "parent": "0b"
-        }
-      ],
-      "context": {
-        "me": "B",
-        "rejected": [],
-        "approverChains": {},
-        "pinned": []
-      },
-      "expect": {
-        "kept": [
-          "e1",
-          "2a",
-          "3a"
-        ],
-        "losses": [
-          [
-            "0b",
-            "2a",
-            "rule3"
-          ]
-        ],
-        "reapply": [],
-        "question": null,
-        "contradictions": []
-      }
-    },
-    {
-      "name": "review C1: X appends to an old honest stale fork; its epoch counts for nothing (me C)",
-      "nodes": [
-        {
-          "id": "e1",
-          "author": "A",
-          "list": [
-            "A",
-            "B",
-            "C",
-            "X",
-            "Y",
-            "R"
-          ],
-          "removes": [],
-          "reason": "create",
-          "recovery": "R"
-        },
-        {
-          "id": "2a",
-          "author": "A",
-          "list": [
-            "A",
-            "B",
-            "C",
-            "Y",
-            "R"
-          ],
-          "removes": [
-            "X"
-          ],
-          "reason": "remove",
-          "recovery": "R",
-          "parent": "e1"
-        },
-        {
-          "id": "3a",
-          "author": "C",
-          "list": [
-            "A",
-            "B",
-            "C",
-            "R"
-          ],
-          "removes": [
-            "Y"
-          ],
-          "reason": "remove",
-          "recovery": "R",
-          "parent": "2a"
-        },
-        {
-          "id": "0b",
-          "author": "B",
-          "list": [
-            "A",
-            "B",
-            "C",
-            "X",
-            "R"
-          ],
-          "removes": [
-            "Y"
-          ],
-          "reason": "remove",
-          "recovery": "R",
-          "parent": "e1"
-        },
-        {
-          "id": "1x",
-          "author": "X",
-          "list": [
-            "B",
-            "C",
-            "X",
-            "R"
-          ],
-          "removes": [
-            "A"
-          ],
-          "reason": "remove",
-          "recovery": "R",
-          "parent": "0b"
-        }
-      ],
-      "context": {
-        "me": "C",
-        "rejected": [],
-        "approverChains": {},
-        "pinned": []
-      },
-      "expect": {
-        "kept": [
-          "e1",
-          "2a",
-          "3a"
-        ],
-        "losses": [
-          [
-            "0b",
-            "2a",
-            "rule3"
-          ]
-        ],
-        "reapply": [],
-        "question": null,
-        "contradictions": []
-      }
-    },
-    {
-      "name": "review C1 variant: X appends to the old stale fork and removes every third device too",
-      "nodes": [
-        {
-          "id": "e1",
-          "author": "A",
-          "list": [
-            "A",
-            "B",
-            "C",
-            "X",
-            "Y",
-            "R"
-          ],
-          "removes": [],
-          "reason": "create",
-          "recovery": "R"
-        },
-        {
-          "id": "2a",
-          "author": "A",
-          "list": [
-            "A",
-            "B",
-            "C",
-            "Y",
-            "R"
-          ],
-          "removes": [
-            "X"
-          ],
-          "reason": "remove",
-          "recovery": "R",
-          "parent": "e1"
-        },
-        {
-          "id": "3a",
-          "author": "C",
-          "list": [
-            "A",
-            "B",
-            "C",
-            "R"
-          ],
-          "removes": [
-            "Y"
-          ],
-          "reason": "remove",
-          "recovery": "R",
-          "parent": "2a"
-        },
-        {
-          "id": "0b",
-          "author": "B",
-          "list": [
-            "A",
-            "B",
-            "C",
-            "X",
-            "R"
-          ],
-          "removes": [
-            "Y"
-          ],
-          "reason": "remove",
-          "recovery": "R",
-          "parent": "e1"
-        },
-        {
-          "id": "1x",
-          "author": "X",
-          "list": [
-            "B",
-            "X",
-            "R"
-          ],
-          "removes": [
-            "A",
-            "C"
-          ],
-          "reason": "remove",
-          "recovery": "R",
-          "parent": "0b"
-        }
-      ],
-      "context": {
-        "me": "B",
-        "rejected": [],
-        "approverChains": {},
-        "pinned": []
-      },
-      "expect": {
-        "kept": [
-          "e1",
-          "2a",
-          "3a"
-        ],
-        "losses": [
-          [
-            "0b",
-            "2a",
-            "rule3"
-          ]
-        ],
-        "reapply": [],
-        "question": null,
-        "contradictions": []
-      }
-    },
-    {
-      "name": "review C1 variant: the stale fork is still re-applied when the kept chain has not removed Y",
-      "nodes": [
-        {
-          "id": "e1",
-          "author": "A",
-          "list": [
-            "A",
-            "B",
-            "C",
-            "X",
-            "Y",
-            "R"
-          ],
-          "removes": [],
-          "reason": "create",
-          "recovery": "R"
-        },
-        {
-          "id": "2a",
-          "author": "A",
-          "list": [
-            "A",
-            "B",
-            "C",
-            "Y",
-            "R"
-          ],
-          "removes": [
-            "X"
-          ],
-          "reason": "remove",
-          "recovery": "R",
-          "parent": "e1"
-        },
-        {
-          "id": "3a",
-          "author": "C",
-          "list": [
-            "A",
-            "B",
-            "C",
-            "Y",
-            "R"
-          ],
-          "removes": [],
-          "reason": "resolve",
-          "recovery": "R",
-          "parent": "2a"
-        },
-        {
-          "id": "0b",
-          "author": "B",
-          "list": [
-            "A",
-            "B",
-            "C",
-            "X",
-            "R"
-          ],
-          "removes": [
-            "Y"
-          ],
-          "reason": "remove",
-          "recovery": "R",
-          "parent": "e1"
-        },
-        {
-          "id": "1x",
-          "author": "X",
-          "list": [
-            "B",
-            "C",
-            "X",
-            "R"
-          ],
-          "removes": [
-            "A",
-            "C"
-          ],
-          "reason": "remove",
-          "recovery": "R",
-          "parent": "0b"
-        }
-      ],
-      "context": {
-        "me": "C",
-        "rejected": [],
-        "approverChains": {},
-        "pinned": []
-      },
-      "expect": {
-        "kept": [
-          "e1",
-          "2a",
-          "3a"
-        ],
-        "losses": [
-          [
-            "0b",
-            "2a",
-            "rule3"
-          ]
-        ],
-        "reapply": [
-          "Y"
-        ],
-        "question": null,
-        "contradictions": []
-      }
-    },
-    {
       "name": "pinned context: a device that pinned the removal of X never sees X fork from before it",
       "nodes": [
         {
@@ -2280,7 +1733,13 @@
           "e1",
           "2a"
         ],
-        "losses": [],
+        "losses": [
+          [
+            "2x",
+            "2a",
+            "rule1"
+          ]
+        ],
         "reapply": [],
         "question": null,
         "contradictions": []
@@ -2686,6 +2145,2373 @@
           ],
           "resolves": {}
         },
+        "contradictions": []
+      }
+    },
+    {
+      "name": "review C1: X appends to an old honest stale fork; A (a disputed author) keeps its side",
+      "nodes": [
+        {
+          "id": "e1",
+          "author": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "X",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "create",
+          "recovery": "R"
+        },
+        {
+          "id": "2a",
+          "author": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "Y",
+            "R"
+          ],
+          "removes": [
+            "X"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "3a",
+          "author": "C",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "removes": [
+            "Y"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "2a"
+        },
+        {
+          "id": "0b",
+          "author": "B",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "Y"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "1x",
+          "author": "X",
+          "list": [
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "A"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "0b"
+        }
+      ],
+      "context": {
+        "me": "A",
+        "rejected": [],
+        "approverChains": {},
+        "pinned": []
+      },
+      "expect": {
+        "kept": [
+          "e1",
+          "2a",
+          "3a"
+        ],
+        "losses": [
+          [
+            "0b",
+            "2a",
+            "rule3"
+          ]
+        ],
+        "reapply": [],
+        "question": null,
+        "contradictions": []
+      }
+    },
+    {
+      "name": "review C1: X appends to an old honest stale fork; an unpinned device is asked (me B)",
+      "nodes": [
+        {
+          "id": "e1",
+          "author": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "X",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "create",
+          "recovery": "R"
+        },
+        {
+          "id": "2a",
+          "author": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "Y",
+            "R"
+          ],
+          "removes": [
+            "X"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "3a",
+          "author": "C",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "removes": [
+            "Y"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "2a"
+        },
+        {
+          "id": "0b",
+          "author": "B",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "Y"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "1x",
+          "author": "X",
+          "list": [
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "A"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "0b"
+        }
+      ],
+      "context": {
+        "me": "B",
+        "rejected": [],
+        "approverChains": {},
+        "pinned": []
+      },
+      "expect": {
+        "kept": [
+          "e1"
+        ],
+        "losses": [],
+        "reapply": [],
+        "question": {
+          "branch": "e1",
+          "sides": [
+            "0b",
+            "2a"
+          ],
+          "authors": [
+            "B",
+            "A"
+          ],
+          "asked": [
+            "B",
+            "C",
+            "Y"
+          ],
+          "disputed": [
+            [
+              "X"
+            ],
+            [
+              "A"
+            ]
+          ],
+          "resolves": {}
+        },
+        "contradictions": []
+      }
+    },
+    {
+      "name": "review C1: X appends to an old honest stale fork; an unpinned device is asked (me C)",
+      "nodes": [
+        {
+          "id": "e1",
+          "author": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "X",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "create",
+          "recovery": "R"
+        },
+        {
+          "id": "2a",
+          "author": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "Y",
+            "R"
+          ],
+          "removes": [
+            "X"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "3a",
+          "author": "C",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "removes": [
+            "Y"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "2a"
+        },
+        {
+          "id": "0b",
+          "author": "B",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "Y"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "1x",
+          "author": "X",
+          "list": [
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "A"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "0b"
+        }
+      ],
+      "context": {
+        "me": "C",
+        "rejected": [],
+        "approverChains": {},
+        "pinned": []
+      },
+      "expect": {
+        "kept": [
+          "e1"
+        ],
+        "losses": [],
+        "reapply": [],
+        "question": {
+          "branch": "e1",
+          "sides": [
+            "0b",
+            "2a"
+          ],
+          "authors": [
+            "B",
+            "A"
+          ],
+          "asked": [
+            "B",
+            "C",
+            "Y"
+          ],
+          "disputed": [
+            [
+              "X"
+            ],
+            [
+              "A"
+            ]
+          ],
+          "resolves": {}
+        },
+        "contradictions": []
+      }
+    },
+    {
+      "name": "review C1: a device pinned through the removal of X never sees its epoch",
+      "nodes": [
+        {
+          "id": "e1",
+          "author": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "X",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "create",
+          "recovery": "R"
+        },
+        {
+          "id": "2a",
+          "author": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "Y",
+            "R"
+          ],
+          "removes": [
+            "X"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "3a",
+          "author": "C",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "removes": [
+            "Y"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "2a"
+        },
+        {
+          "id": "0b",
+          "author": "B",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "Y"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "1x",
+          "author": "X",
+          "list": [
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "A"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "0b"
+        }
+      ],
+      "context": {
+        "me": "B",
+        "rejected": [],
+        "approverChains": {},
+        "pinned": [
+          "e1",
+          "2a"
+        ]
+      },
+      "expect": {
+        "kept": [
+          "e1",
+          "2a",
+          "3a"
+        ],
+        "losses": [
+          [
+            "0b",
+            "2a",
+            "rule3"
+          ]
+        ],
+        "reapply": [],
+        "question": null,
+        "contradictions": []
+      }
+    },
+    {
+      "name": "review C1: after the user rejected X",
+      "nodes": [
+        {
+          "id": "e1",
+          "author": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "X",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "create",
+          "recovery": "R"
+        },
+        {
+          "id": "2a",
+          "author": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "Y",
+            "R"
+          ],
+          "removes": [
+            "X"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "3a",
+          "author": "C",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "removes": [
+            "Y"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "2a"
+        },
+        {
+          "id": "0b",
+          "author": "B",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "Y"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "1x",
+          "author": "X",
+          "list": [
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "A"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "0b"
+        }
+      ],
+      "context": {
+        "me": "B",
+        "rejected": [
+          "X"
+        ],
+        "approverChains": {},
+        "pinned": []
+      },
+      "expect": {
+        "kept": [
+          "e1",
+          "2a",
+          "3a"
+        ],
+        "losses": [
+          [
+            "0b",
+            "2a",
+            "rule3"
+          ]
+        ],
+        "reapply": [],
+        "question": null,
+        "contradictions": []
+      }
+    },
+    {
+      "name": "review C1 variant: X also removes every third device; an unpinned device is asked",
+      "nodes": [
+        {
+          "id": "e1",
+          "author": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "X",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "create",
+          "recovery": "R"
+        },
+        {
+          "id": "2a",
+          "author": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "Y",
+            "R"
+          ],
+          "removes": [
+            "X"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "3a",
+          "author": "C",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "removes": [
+            "Y"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "2a"
+        },
+        {
+          "id": "0b",
+          "author": "B",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "Y"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "1x",
+          "author": "X",
+          "list": [
+            "B",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "A",
+            "C"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "0b"
+        }
+      ],
+      "context": {
+        "me": "B",
+        "rejected": [],
+        "approverChains": {},
+        "pinned": []
+      },
+      "expect": {
+        "kept": [
+          "e1"
+        ],
+        "losses": [],
+        "reapply": [],
+        "question": {
+          "branch": "e1",
+          "sides": [
+            "0b",
+            "2a"
+          ],
+          "authors": [
+            "B",
+            "A"
+          ],
+          "asked": [
+            "B",
+            "Y"
+          ],
+          "disputed": [
+            [
+              "X"
+            ],
+            [
+              "A",
+              "C"
+            ]
+          ],
+          "resolves": {}
+        },
+        "contradictions": []
+      }
+    },
+    {
+      "name": "review C1 variant: X also removes every third device; pinned through its removal",
+      "nodes": [
+        {
+          "id": "e1",
+          "author": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "X",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "create",
+          "recovery": "R"
+        },
+        {
+          "id": "2a",
+          "author": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "Y",
+            "R"
+          ],
+          "removes": [
+            "X"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "3a",
+          "author": "C",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "removes": [
+            "Y"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "2a"
+        },
+        {
+          "id": "0b",
+          "author": "B",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "Y"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "1x",
+          "author": "X",
+          "list": [
+            "B",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "A",
+            "C"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "0b"
+        }
+      ],
+      "context": {
+        "me": "B",
+        "rejected": [],
+        "approverChains": {},
+        "pinned": [
+          "e1",
+          "2a"
+        ]
+      },
+      "expect": {
+        "kept": [
+          "e1",
+          "2a",
+          "3a"
+        ],
+        "losses": [
+          [
+            "0b",
+            "2a",
+            "rule3"
+          ]
+        ],
+        "reapply": [],
+        "question": null,
+        "contradictions": []
+      }
+    },
+    {
+      "name": "review C1 variant: the stale fork is re-applied when the kept chain has not removed Y",
+      "nodes": [
+        {
+          "id": "e1",
+          "author": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "X",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "create",
+          "recovery": "R"
+        },
+        {
+          "id": "2a",
+          "author": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "Y",
+            "R"
+          ],
+          "removes": [
+            "X"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "3a",
+          "author": "C",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "resolve",
+          "recovery": "R",
+          "parent": "2a",
+          "rejected": "X"
+        },
+        {
+          "id": "0b",
+          "author": "B",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "Y"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "1x",
+          "author": "X",
+          "list": [
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "A",
+            "C"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "0b"
+        }
+      ],
+      "context": {
+        "me": "C",
+        "rejected": [],
+        "approverChains": {},
+        "pinned": []
+      },
+      "expect": {
+        "kept": [
+          "e1",
+          "2a",
+          "3a"
+        ],
+        "losses": [
+          [
+            "0b",
+            "2a",
+            "rule3"
+          ]
+        ],
+        "reapply": [
+          "Y"
+        ],
+        "question": null,
+        "contradictions": []
+      }
+    },
+    {
+      "name": "review round 2, deadlock under an honest stale fork (b=b): an unpinned device is asked (rule 2), never rule 3 or 4",
+      "nodes": [
+        {
+          "id": "e1",
+          "author": "A",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "create",
+          "recovery": "R"
+        },
+        {
+          "id": "m",
+          "author": "A",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "m2",
+          "author": "A2",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "Y",
+            "R"
+          ],
+          "removes": [
+            "X"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "m"
+        },
+        {
+          "id": "b",
+          "author": "B",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "Y"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "bx",
+          "author": "X",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "A2"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "b"
+        }
+      ],
+      "context": {
+        "me": "C",
+        "rejected": [],
+        "approverChains": {},
+        "pinned": []
+      },
+      "expect": {
+        "kept": [
+          "e1"
+        ],
+        "losses": [],
+        "reapply": [],
+        "question": {
+          "branch": "e1",
+          "sides": [
+            "b",
+            "m"
+          ],
+          "authors": [
+            "B",
+            "A"
+          ],
+          "asked": [
+            "A",
+            "B",
+            "C",
+            "Y"
+          ],
+          "disputed": [
+            [
+              "X"
+            ],
+            [
+              "A2"
+            ]
+          ],
+          "resolves": {}
+        },
+        "contradictions": []
+      }
+    },
+    {
+      "name": "review round 2, deadlock under an honest stale fork (b=b): A2, a disputed author, keeps its side",
+      "nodes": [
+        {
+          "id": "e1",
+          "author": "A",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "create",
+          "recovery": "R"
+        },
+        {
+          "id": "m",
+          "author": "A",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "m2",
+          "author": "A2",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "Y",
+            "R"
+          ],
+          "removes": [
+            "X"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "m"
+        },
+        {
+          "id": "b",
+          "author": "B",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "Y"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "bx",
+          "author": "X",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "A2"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "b"
+        }
+      ],
+      "context": {
+        "me": "A2",
+        "rejected": [],
+        "approverChains": {},
+        "pinned": []
+      },
+      "expect": {
+        "kept": [
+          "e1",
+          "m",
+          "m2"
+        ],
+        "losses": [
+          [
+            "b",
+            "m",
+            "rule3"
+          ]
+        ],
+        "reapply": [
+          "Y"
+        ],
+        "question": null,
+        "contradictions": []
+      }
+    },
+    {
+      "name": "review round 2, deadlock under an honest stale fork (b=b): pinned through the removal of X",
+      "nodes": [
+        {
+          "id": "e1",
+          "author": "A",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "create",
+          "recovery": "R"
+        },
+        {
+          "id": "m",
+          "author": "A",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "m2",
+          "author": "A2",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "Y",
+            "R"
+          ],
+          "removes": [
+            "X"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "m"
+        },
+        {
+          "id": "b",
+          "author": "B",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "Y"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "bx",
+          "author": "X",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "A2"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "b"
+        }
+      ],
+      "context": {
+        "me": "C",
+        "rejected": [],
+        "approverChains": {},
+        "pinned": [
+          "e1",
+          "m",
+          "m2"
+        ]
+      },
+      "expect": {
+        "kept": [
+          "e1",
+          "m",
+          "m2"
+        ],
+        "losses": [
+          [
+            "b",
+            "m",
+            "rule3"
+          ]
+        ],
+        "reapply": [
+          "Y"
+        ],
+        "question": null,
+        "contradictions": []
+      }
+    },
+    {
+      "name": "review round 2, deadlock under an honest stale fork (b=b): after the user rejected X",
+      "nodes": [
+        {
+          "id": "e1",
+          "author": "A",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "create",
+          "recovery": "R"
+        },
+        {
+          "id": "m",
+          "author": "A",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "m2",
+          "author": "A2",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "Y",
+            "R"
+          ],
+          "removes": [
+            "X"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "m"
+        },
+        {
+          "id": "b",
+          "author": "B",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "Y"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "bx",
+          "author": "X",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "A2"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "b"
+        }
+      ],
+      "context": {
+        "me": "C",
+        "rejected": [
+          "X"
+        ],
+        "approverChains": {},
+        "pinned": []
+      },
+      "expect": {
+        "kept": [
+          "e1",
+          "m",
+          "m2"
+        ],
+        "losses": [
+          [
+            "b",
+            "m",
+            "rule3"
+          ]
+        ],
+        "reapply": [
+          "Y"
+        ],
+        "question": null,
+        "contradictions": []
+      }
+    },
+    {
+      "name": "review round 2, deadlock under an honest stale fork (b=0b): an unpinned device is asked (rule 2), never rule 3 or 4",
+      "nodes": [
+        {
+          "id": "e1",
+          "author": "A",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "create",
+          "recovery": "R"
+        },
+        {
+          "id": "m",
+          "author": "A",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "m2",
+          "author": "A2",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "Y",
+            "R"
+          ],
+          "removes": [
+            "X"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "m"
+        },
+        {
+          "id": "0b",
+          "author": "B",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "Y"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "0bx",
+          "author": "X",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "A2"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "0b"
+        }
+      ],
+      "context": {
+        "me": "C",
+        "rejected": [],
+        "approverChains": {},
+        "pinned": []
+      },
+      "expect": {
+        "kept": [
+          "e1"
+        ],
+        "losses": [],
+        "reapply": [],
+        "question": {
+          "branch": "e1",
+          "sides": [
+            "0b",
+            "m"
+          ],
+          "authors": [
+            "B",
+            "A"
+          ],
+          "asked": [
+            "A",
+            "B",
+            "C",
+            "Y"
+          ],
+          "disputed": [
+            [
+              "X"
+            ],
+            [
+              "A2"
+            ]
+          ],
+          "resolves": {}
+        },
+        "contradictions": []
+      }
+    },
+    {
+      "name": "review round 2, deadlock under an honest stale fork (b=0b): A2, a disputed author, keeps its side",
+      "nodes": [
+        {
+          "id": "e1",
+          "author": "A",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "create",
+          "recovery": "R"
+        },
+        {
+          "id": "m",
+          "author": "A",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "m2",
+          "author": "A2",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "Y",
+            "R"
+          ],
+          "removes": [
+            "X"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "m"
+        },
+        {
+          "id": "0b",
+          "author": "B",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "Y"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "0bx",
+          "author": "X",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "A2"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "0b"
+        }
+      ],
+      "context": {
+        "me": "A2",
+        "rejected": [],
+        "approverChains": {},
+        "pinned": []
+      },
+      "expect": {
+        "kept": [
+          "e1",
+          "m",
+          "m2"
+        ],
+        "losses": [
+          [
+            "0b",
+            "m",
+            "rule3"
+          ]
+        ],
+        "reapply": [
+          "Y"
+        ],
+        "question": null,
+        "contradictions": []
+      }
+    },
+    {
+      "name": "review round 2, deadlock under an honest stale fork (b=0b): pinned through the removal of X",
+      "nodes": [
+        {
+          "id": "e1",
+          "author": "A",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "create",
+          "recovery": "R"
+        },
+        {
+          "id": "m",
+          "author": "A",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "m2",
+          "author": "A2",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "Y",
+            "R"
+          ],
+          "removes": [
+            "X"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "m"
+        },
+        {
+          "id": "0b",
+          "author": "B",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "Y"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "0bx",
+          "author": "X",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "A2"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "0b"
+        }
+      ],
+      "context": {
+        "me": "C",
+        "rejected": [],
+        "approverChains": {},
+        "pinned": [
+          "e1",
+          "m",
+          "m2"
+        ]
+      },
+      "expect": {
+        "kept": [
+          "e1",
+          "m",
+          "m2"
+        ],
+        "losses": [
+          [
+            "0b",
+            "m",
+            "rule3"
+          ]
+        ],
+        "reapply": [
+          "Y"
+        ],
+        "question": null,
+        "contradictions": []
+      }
+    },
+    {
+      "name": "review round 2, deadlock under an honest stale fork (b=0b): after the user rejected X",
+      "nodes": [
+        {
+          "id": "e1",
+          "author": "A",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "create",
+          "recovery": "R"
+        },
+        {
+          "id": "m",
+          "author": "A",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "Y",
+            "R"
+          ],
+          "removes": [],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "m2",
+          "author": "A2",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "Y",
+            "R"
+          ],
+          "removes": [
+            "X"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "m"
+        },
+        {
+          "id": "0b",
+          "author": "B",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "Y"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "0bx",
+          "author": "X",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "A2"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "0b"
+        }
+      ],
+      "context": {
+        "me": "C",
+        "rejected": [
+          "X"
+        ],
+        "approverChains": {},
+        "pinned": []
+      },
+      "expect": {
+        "kept": [
+          "e1",
+          "m",
+          "m2"
+        ],
+        "losses": [
+          [
+            "0b",
+            "m",
+            "rule3"
+          ]
+        ],
+        "reapply": [
+          "Y"
+        ],
+        "question": null,
+        "contradictions": []
+      }
+    },
+    {
+      "name": "review round 2, X forks a child that removes its remover: an unpinned device is asked (me C)",
+      "nodes": [
+        {
+          "id": "e1",
+          "author": "A",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [],
+          "reason": "create",
+          "recovery": "R"
+        },
+        {
+          "id": "m",
+          "author": "A",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "m2",
+          "author": "A2",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "R"
+          ],
+          "removes": [
+            "X"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "m"
+        },
+        {
+          "id": "zx",
+          "author": "X",
+          "list": [
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "A",
+            "A2"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "zx2",
+          "author": "X",
+          "list": [
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "zx"
+        }
+      ],
+      "context": {
+        "me": "C",
+        "rejected": [],
+        "approverChains": {},
+        "pinned": []
+      },
+      "expect": {
+        "kept": [
+          "e1"
+        ],
+        "losses": [],
+        "reapply": [],
+        "question": {
+          "branch": "e1",
+          "sides": [
+            "m",
+            "zx"
+          ],
+          "authors": [
+            "A",
+            "X"
+          ],
+          "asked": [
+            "B",
+            "C"
+          ],
+          "disputed": [
+            [
+              "A",
+              "A2"
+            ],
+            [
+              "X"
+            ]
+          ],
+          "resolves": {}
+        },
+        "contradictions": []
+      }
+    },
+    {
+      "name": "review round 2, X forks a child that removes its remover: an unpinned device is asked (me B)",
+      "nodes": [
+        {
+          "id": "e1",
+          "author": "A",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [],
+          "reason": "create",
+          "recovery": "R"
+        },
+        {
+          "id": "m",
+          "author": "A",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "m2",
+          "author": "A2",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "R"
+          ],
+          "removes": [
+            "X"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "m"
+        },
+        {
+          "id": "zx",
+          "author": "X",
+          "list": [
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "A",
+            "A2"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "zx2",
+          "author": "X",
+          "list": [
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "zx"
+        }
+      ],
+      "context": {
+        "me": "B",
+        "rejected": [],
+        "approverChains": {},
+        "pinned": []
+      },
+      "expect": {
+        "kept": [
+          "e1"
+        ],
+        "losses": [],
+        "reapply": [],
+        "question": {
+          "branch": "e1",
+          "sides": [
+            "m",
+            "zx"
+          ],
+          "authors": [
+            "A",
+            "X"
+          ],
+          "asked": [
+            "B",
+            "C"
+          ],
+          "disputed": [
+            [
+              "A",
+              "A2"
+            ],
+            [
+              "X"
+            ]
+          ],
+          "resolves": {}
+        },
+        "contradictions": []
+      }
+    },
+    {
+      "name": "review round 2, X forks a child that removes its remover: pinned through the removal of X",
+      "nodes": [
+        {
+          "id": "e1",
+          "author": "A",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [],
+          "reason": "create",
+          "recovery": "R"
+        },
+        {
+          "id": "m",
+          "author": "A",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "m2",
+          "author": "A2",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "R"
+          ],
+          "removes": [
+            "X"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "m"
+        },
+        {
+          "id": "zx",
+          "author": "X",
+          "list": [
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "A",
+            "A2"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "zx2",
+          "author": "X",
+          "list": [
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "zx"
+        }
+      ],
+      "context": {
+        "me": "C",
+        "rejected": [],
+        "approverChains": {},
+        "pinned": [
+          "e1",
+          "m",
+          "m2"
+        ]
+      },
+      "expect": {
+        "kept": [
+          "e1",
+          "m",
+          "m2"
+        ],
+        "losses": [
+          [
+            "zx",
+            "m",
+            "rule1"
+          ]
+        ],
+        "reapply": [],
+        "question": null,
+        "contradictions": []
+      }
+    },
+    {
+      "name": "review round 2, X forks a child that removes its remover: after the user rejected X",
+      "nodes": [
+        {
+          "id": "e1",
+          "author": "A",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [],
+          "reason": "create",
+          "recovery": "R"
+        },
+        {
+          "id": "m",
+          "author": "A",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "m2",
+          "author": "A2",
+          "list": [
+            "A",
+            "A2",
+            "B",
+            "C",
+            "R"
+          ],
+          "removes": [
+            "X"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "m"
+        },
+        {
+          "id": "zx",
+          "author": "X",
+          "list": [
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [
+            "A",
+            "A2"
+          ],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "zx2",
+          "author": "X",
+          "list": [
+            "B",
+            "C",
+            "X",
+            "R"
+          ],
+          "removes": [],
+          "reason": "remove",
+          "recovery": "R",
+          "parent": "zx"
+        }
+      ],
+      "context": {
+        "me": "C",
+        "rejected": [
+          "X"
+        ],
+        "approverChains": {},
+        "pinned": []
+      },
+      "expect": {
+        "kept": [
+          "e1",
+          "m",
+          "m2"
+        ],
+        "losses": [
+          [
+            "zx",
+            "m",
+            "rule2"
+          ]
+        ],
+        "reapply": [],
+        "question": null,
         "contradictions": []
       }
     }

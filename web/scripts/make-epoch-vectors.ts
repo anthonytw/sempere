@@ -194,7 +194,10 @@ const sixWords = (d: Uint8Array): string[] => {
 const joinKind = "iphone";
 const commitment = sha256(Buffer.concat([enc.encode("sempere/1 join"), lp(vaultId), lp(deviceRecipient), lp(signerP256),
   lp(signerMLDSA65), lp(joinKind)]));
-const reply = sha256(Buffer.concat([enc.encode("sempere/1 join reply"), lp(vaultId), lp(commitment), lp(hex(root))]));
+// The approver's frontier: its current epoch (here epoch 2).
+const frontier = e2.epochId;
+const reply = sha256(Buffer.concat([enc.encode("sempere/1 join reply"), lp(vaultId), lp(commitment), lp(hex(root)),
+  lp(frontier)]));
 const uuidBytes = Buffer.from(vaultId.replace(/-/g, ""), "hex");
 
 const vectors = {
@@ -230,8 +233,8 @@ const vectors = {
     request: { vaultId, key: deviceRecipient, sign: { p256: signerP256, mldsa65: signerMLDSA65 }, name: "Ñandú's iPhone",
       kind: joinKind, created: "2026-10-20T16:20:00Z" },
     commitment: hex(commitment), words: sixWords(commitment), qr: hex(Buffer.concat([uuidBytes, commitment])),
-    root: hex(root), reply: hex(reply), replyWords: sixWords(reply),
-    replyQR: `sempere-root:${vaultId}:${hex(root)}`,
+    root: hex(root), frontier, reply: hex(reply), replyWords: sixWords(reply),
+    replyQR: `sempere-reply:${vaultId}:${hex(root)}:${frontier}`,
   },
 };
 writeFileSync(out, JSON.stringify(vectors, null, 2) + "\n");

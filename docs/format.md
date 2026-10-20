@@ -4083,41 +4083,41 @@ apply. Bounded at 64 MiB.
 
 ### 15.9 Fork resolution
 
-Over the tree of every verified epoch (`EpochForks.resolve`), from epoch 1 down. Amended after the
-KH1 code review (C1: a removed device appending one epoch under an old honest stale fork took the kept
-chain on every device).
+Over the tree of every verified epoch (`EpochForks.resolve`), from epoch 1 down. Amended after two
+KH1 code reviews (a removed device appending under an old honest stale fork; X's own child rejecting
+its removal; a deadlock settled by rule 4).
 
-0. **Context**: an epoch authored by a device that this device's pinned chain removed never enters the
-   tree, unless it is on the pinned chain.
-1. **Counted epochs.** Two sides S and T (children with their descendants) are compared over their
-   counted epochs: each child counts; a descendant counts when its parent counts and no counted epoch
-   of the other side removed its author; one that a counted epoch of the other side removed does not
-   count, nor anything below it; this is computed to a fixed point, and an epoch left undecided does
-   not count. A side's removals, its descendants (rule 3) and its re-applied removals are those of its
-   counted epochs only. So a removed device's epochs supply neither removals nor descendants.
-2. **Stored answers**: a child whose author the user rejected (trust record) loses (rule 2).
-3. **Pre-pass**: a child is discarded (lost by rule 1) when a sibling's counted removals include its
-   author and its own counted removals do not include that sibling's author; only siblings that no
-   other sibling discards this way discard others, and the pass repeats until nothing changes. (Three
-   children: the real removal of X, B's honest stale fork, and X's fork removing B: X's fork goes,
-   and B's side stays to be compared and re-applied.)
-4. The rest are compared in pairs in `epochId` order (bytes), the winner of each pair going on:
-   rule 1, a side whose author the other side removed (not the reverse) loses; rule 2, mutual removal:
-   an author (this device) follows a **binding** resolve epoch (counted on either side, by a device
-   that is neither author and whose `addedBy` chain passes through neither, rejecting one of them),
-   otherwise keeps its own side; two binding resolve epochs that reject different authors are a
-   contradiction and a question (review M4); any other device asks its user (the kept chain stops at
-   the branch); rule 3, a side without counted descendants loses to one with; rule 4, the larger
-   `epochId` loses.
-5. **Pruning**: walking down the kept chain, a child whose author the kept prefix removed, or whose
-   author is in the re-application set, is dropped with its subtree, also when it is the only child.
-6. **Re-application**: the counted removals of every side lost by rule 3 or 4, minus the chain's
-   recovery keys, that are still in the kept chain's last list, in one `reapply` epoch; none: nothing
-   is written.
+1. **Exclusion.** An epoch authored by a device that the pinned chain removed, that the user rejected
+   (trust record), or that a binding resolve epoch rejected, leaves the tree with its subtree, except
+   epoch 1, the pinned chain, and the ancestors of an epoch that removes their author and is not by an
+   excluded device. A resolve epoch is **binding** for this device when this device is its rejected
+   author or is in dispute with it (an epoch of one removes the other), and its author is neither,
+   is removed by no epoch of the tree, and has an `addedBy` chain through neither of them and through
+   no removed device. Binding resolve epochs that reject different authors are contradictions, and
+   then this device is asked instead of keeping its own side.
+2. **Labels.** At an epoch with several children, every epoch of every child's subtree is labelled:
+   **accepted** when its parent is accepted (for a child, the branch point is) and every epoch of
+   another child's subtree that removes its author is rejected; **rejected** when its parent is
+   rejected or an accepted epoch of another child's subtree removes its author; the least fixed point
+   leaves the rest **undecided**.
+3. **Disputes (rule 2).** If any epoch is undecided, the disputed epochs are the undecided ones that
+   remove the author of, or are removed by, an undecided epoch of another subtree. A device that
+   authored a disputed epoch rejects the authors of the epochs that dispute its own and resolution
+   starts again; any other device stops at the branch with the question (the sides holding disputed
+   epochs, their disputed authors, names from the branch epoch's list). Asked: every device in the
+   branch epoch's list or in a list on those sides, except the disputed authors and recovery keys.
+4. **Rule 1**: a rejected child loses. **Rules 3 and 4**, in pairs in `epochId` order among accepted
+   children: a child without accepted descendants loses to one with; otherwise the larger `epochId`
+   loses. A child whose author is in the re-application set goes (pruned).
+5. **Pruning**: walking down, a child whose author the kept prefix removed, or whose author is in the
+   re-application set, is dropped with its subtree, also when it is the only child.
+6. **Re-application**: the accepted removals of every side lost by rule 3 or 4, minus the chain's
+   recovery keys, still in the kept chain's last list, in one `reapply` epoch; none: nothing is
+   written. A resolve epoch whose rejected author differs from the user's stored answer is reported as
+   a contradiction; the device follows its own answer.
 
-Whom to ask: every device in the branch epoch's list or in a counted list on either side, except the
-two authors and recovery keys. A resolve epoch whose rejected author differs from the device's own
-answer is reported as a contradiction; the device follows its own answer.
+`EpochForkPropertyTests` checks these rules on random trees with attacker coalitions (2000 seeds in
+`swift test`; `SEMPERE_FORK_PROPERTY_SEEDS` for more).
 
 ### 15.10 Trust record v3
 
@@ -4154,8 +4154,10 @@ with the public key the identity's. Stock `age -i` reads it as an identity file.
   `2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda`). Typed words compare ignoring case
   and surrounding spaces.
 - The joining device's QR payload: the vault id's 16 bytes (RFC 4122 order), then `c`: 48 bytes.
-- Reverse code: six words of `SHA-256("sempere/1 join reply" ‖ lp(vaultId) ‖ lp(c) ‖ lp(root))` (`c`
-  raw, `root` hex); its QR is `sempere-root:<vaultId>:<64 hex>`, as on the kit.
+- Reverse code: six words of `SHA-256("sempere/1 join reply" ‖ lp(vaultId) ‖ lp(c) ‖ lp(root) ‖
+  lp(frontier))` (`c` raw; `root` and `frontier`, the approver's current `epochId`, hex); its QR is
+  `sempere-reply:<vaultId>:<root hex>:<frontier hex>`. The joining device pins the chain up to the
+  frontier the words confirm.
 
 ### 15.13 The recovery kit
 

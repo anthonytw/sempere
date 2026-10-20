@@ -208,10 +208,16 @@ final class EpochChainTests: VaultTestCase {
         XCTAssertEqual(parsed.vaultId, r.vaultId)
         XCTAssertEqual(parsed.commitment, r.commitment)
         XCTAssertNil(JoinCodes.parseCommitmentQR(qr.dropLast()))
-        let reply = JoinCodes.reply(vaultId: r.vaultId, commitment: r.commitment, root: Self.unhex(j.root))
+        let reply = JoinCodes.reply(vaultId: r.vaultId, commitment: r.commitment, root: Self.unhex(j.root),
+                                    frontier: Self.unhex(j.frontier))
+        XCTAssertNotEqual(JoinCodes.reply(vaultId: r.vaultId, commitment: r.commitment, root: Self.unhex(j.root),
+                                          frontier: Data(repeating: 0, count: 32)), reply, "the frontier is covered")
         XCTAssertEqual(Hex.encode(reply), j.reply)
         XCTAssertEqual(JoinCodes.words(reply), j.replyWords)
-        XCTAssertEqual(KitRecovery.rootQR(vaultId: r.vaultId, root: Self.unhex(j.root)), j.replyQR)
+        let replyQR = JoinCodes.replyQR(vaultId: r.vaultId, root: Self.unhex(j.root), frontier: Self.unhex(j.frontier))
+        XCTAssertEqual(replyQR, j.replyQR)
+        XCTAssertEqual(JoinCodes.parseReplyQR(replyQR)?.frontier, Self.unhex(j.frontier))
+        XCTAssertNil(JoinCodes.parseReplyQR(KitRecovery.rootQR(vaultId: r.vaultId, root: Self.unhex(j.root))))
         // The commitment covers the key, both signing keys, the kind and the vault; not the name.
         var renamed = r; renamed.name = "Other"
         XCTAssertEqual(renamed.commitment, r.commitment)
