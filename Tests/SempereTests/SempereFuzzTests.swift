@@ -506,6 +506,34 @@ final class SempereFuzzTests: VaultTestCase {
         })
     }
 
+    /// Key-hierarchy readers (docs/design/key-hierarchy.md, KH1): a wrap's
+    /// plaintext and `sempere-trust/3` records. A mutated wrap never yields a
+    /// key whose vault identity is not the one it names, and nothing traps.
+    func testFuzzEpochWrapAndTrustRecord() throws {
+        try XCTSkipUnless(postQuantumAvailable, "X-Wing and ML-DSA need Apple OS 26")
+        let vaultId = UUID(), k1 = VaultEpochKey.random(), k2 = VaultEpochKey.random()
+        let wrap = Data(try EpochKeyWrap.plaintext(k2, vaultId: vaultId, epoch: 2).utf8)
+        let chain = [try EpochTrustRecord.ChainEpoch(epoch: 1, key: k1, parent: nil, list: [Data(repeating: 1, count: 32)]),
+                     try EpochTrustRecord.ChainEpoch(epoch: 2, key: k2, parent: k1.epochId, list: [])]
+        let record = try JSONEncoder().encode(try EpochTrustRecord(
+            vaultId: vaultId, root: try VaultRoot.fingerprint(vaultId: vaultId, epochOne: k1), chain: chain,
+            list: [.init(role: "recovery", key: "age1pq1r", sign: nil, name: "Recovery kit")],
+            markers: VaultMarkers(format: "sempere/1", features: [])))
+        assertClean(Fuzz.run("epoch-keys", seeds: [wrap, record], quick: 300, text: true) { input in
+            if let key = try? EpochKeyWrap.parse(input, vaultId: vaultId, epoch: 2) {
+                let text = String(decoding: input, as: UTF8.self)
+                guard let identity = try? key.vaultIdentity(), text.contains(identity.string) else {
+                    return "a wrap parsed to a key whose identity it does not name"
+                }
+            }
+            if let r = try? JSONDecoder().decode(EpochTrustRecord.self, from: input) {
+                if r.root.count != 32 || !EpochTrustRecord.wellFormed(r.chain) { return "a malformed record decoded" }
+                _ = try? JSONEncoder().encode(r)
+            }
+            return nil
+        })
+    }
+
     /// File names and the other string encodings (origin, stamps, colors,
     /// page-order keys, notebook paths).
     func testFuzzNamesAndStrings() throws {

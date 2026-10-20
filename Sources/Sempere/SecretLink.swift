@@ -36,9 +36,7 @@ public struct LinkPublicKeys: Hashable, Sendable {
     /// - Throws: `AgeError.postQuantumUnavailable` where the platform has no
     ///   ML-DSA (Apple OSes before 26, SDKs before Xcode 26).
     public init(secret: VaultSecret) throws {
-        let keys = try LinkSigningKeys(secret: secret)
-        self.ed25519 = keys.ed25519.publicKey.rawRepresentation
-        self.mldsa65 = try MLDSA65Bridge.publicKey(seed: keys.mldsa65Seed)
+        self = try LinkSigningKeys(secret: secret).publicKeys()
     }
 }
 
@@ -91,9 +89,44 @@ struct LinkSigningKeys {
     let mldsa65Seed: Data
 
     init(secret: VaultSecret) throws {
-        let edSeed = RecipientsAuth.bytes(RecipientsAuth.derive(secret, RecipientsAuth.linkEd25519Info))
-        ed25519 = try Curve25519.Signing.PrivateKey(rawRepresentation: edSeed)
-        mldsa65Seed = RecipientsAuth.bytes(RecipientsAuth.derive(secret, RecipientsAuth.linkMLDSA65Info))
+        try self.init(ed25519Seed: RecipientsAuth.bytes(RecipientsAuth.derive(secret, RecipientsAuth.linkEd25519Info)),
+                      mldsa65Seed: RecipientsAuth.bytes(RecipientsAuth.derive(secret, RecipientsAuth.linkMLDSA65Info)))
+    }
+
+    /// The pairs of two 32-byte seeds (a vault secret's, or a vault epoch
+    /// key's, key-hierarchy design §2.2).
+    init(ed25519Seed: Data, mldsa65Seed: Data) throws {
+        ed25519 = try Curve25519.Signing.PrivateKey(rawRepresentation: ed25519Seed)
+        self.mldsa65Seed = mldsa65Seed
+    }
+
+    /// The public keys.
+    ///
+    /// - Throws: `AgeError.postQuantumUnavailable` where the platform has no ML-DSA.
+    func publicKeys() throws -> LinkPublicKeys {
+        guard let keys = LinkPublicKeys(ed25519: ed25519.publicKey.rawRepresentation,
+                                        mldsa65: try MLDSA65Bridge.publicKey(seed: mldsa65Seed)) else {
+            throw AgeError.invalidKey
+        }
+        return keys
+    }
+
+    /// Both signatures over `message`.
+    ///
+    /// - Throws: `AgeError.postQuantumUnavailable` where the platform has no ML-DSA.
+    func sign(_ message: Data) throws -> SecretLink {
+        .signed(ed25519: try ed25519.signature(for: message), mldsa65: try MLDSA65Bridge.sign(message, seed: mldsa65Seed))
+    }
+
+    /// True when `link` is signed and its Ed25519 AND ML-DSA-65 signatures
+    /// both verify under `keys` over `message`. Both are checked whatever the
+    /// first says: no early exit on which one failed.
+    static func verify(_ link: SecretLink?, keys: LinkPublicKeys, message: Data) -> Bool {
+        guard case .signed(let ed, let ml)? = link,
+              let edKey = try? Curve25519.Signing.PublicKey(rawRepresentation: keys.ed25519) else { return false }
+        let edValid = edKey.isValidSignature(ed, for: message)
+        let mlValid = MLDSA65Bridge.verify(ml, for: message, publicKey: keys.mldsa65)
+        return edValid && mlValid
     }
 }
 
@@ -150,23 +183,14 @@ extension RecipientsAuth {
     ///
     /// - Throws: `AgeError.postQuantumUnavailable` where the platform has no ML-DSA.
     public static func link(from old: VaultSecret, to new: VaultSecret, vaultId: UUID) throws -> SecretLink {
-        let keys = try LinkSigningKeys(secret: old)
-        let message = linkMessage(to: new, vaultId: vaultId)
-        return .signed(ed25519: try keys.ed25519.signature(for: message),
-                       mldsa65: try MLDSA65Bridge.sign(message, seed: keys.mldsa65Seed))
+        try LinkSigningKeys(secret: old).sign(linkMessage(to: new, vaultId: vaultId))
     }
 
     /// True when `link` is a signed link whose Ed25519 AND ML-DSA-65
     /// signatures both verify under `keys` (a trust record's) over the link
     /// to `new`.
     public static func verifyLink(_ link: SecretLink?, keys: LinkPublicKeys, to new: VaultSecret, vaultId: UUID) -> Bool {
-        guard case .signed(let ed, let ml)? = link,
-              let edKey = try? Curve25519.Signing.PublicKey(rawRepresentation: keys.ed25519) else { return false }
-        let message = linkMessage(to: new, vaultId: vaultId)
-        // Both are checked whatever the first says: no early exit on which one failed.
-        let edValid = edKey.isValidSignature(ed, for: message)
-        let mlValid = MLDSA65Bridge.verify(ml, for: message, publicKey: keys.mldsa65)
-        return edValid && mlValid
+        LinkSigningKeys.verify(link, keys: keys, message: linkMessage(to: new, vaultId: vaultId))
     }
 
     /// True when `link` is a signed link from `previous` to `current`, for a

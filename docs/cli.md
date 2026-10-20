@@ -30,7 +30,7 @@ keys stored in the vault's `keys/` directory, unlocked with the passphrase from
 the terminal. Every stored key the passphrase opens is used, as in the app
 (finishing an interrupted key change may need the old and the new key); a key file it
 does not open is skipped, and any other problem with one is an error. A passphrase never goes on the command line. Secret keys are
-printed only by `keys generate`, `keys export` and `keys paper` (into its PDF).
+printed only by `keys generate`, `keys export`, `keys paper` (into its PDF) and `keys derive` (from a key you give it).
 
 **Exit codes**
 
@@ -113,6 +113,7 @@ sempere keys show FILE
 sempere keys export --vault V [--recipient age1...] [--out FILE]
 sempere keys paper --out KIT.pdf [--identity FILE] [--vault V] [--passphrase [--work-factor 15...18]]
                     [--paper letter|a4]
+sempere keys derive --epoch-key-file FILE [--epoch N] [--vault-id UUID] [--capture-fingerprint HEX]
 ```
 
 - `generate` writes an `age-keygen`-style identity (mode 0600, refuses to
@@ -167,6 +168,16 @@ sempere keys paper --out KIT.pdf [--identity FILE] [--vault V] [--passphrase [--
   package is older). `backup`, `restore` and the archive copy `keys/*.key.age`
   whatever the file name, so the hash-named key files of post-quantum recipients
   (`age1pq-<64 hex>.key.age`) are included.
+
+- `derive` prints the key schedule of one vault epoch key `K_e` of the key-hierarchy design
+  (`docs/design/key-hierarchy.md` §2, §4; phase KH1, not used by vaults yet): the vault identity
+  (`AGE-SECRET-KEY-PQ-1…`) and its recipient, the derived keys of §2.2 (`tagKey`, `blobNameKey`,
+  `listKey`, `markersKey`, `epochId`, `pendingKey`, the link seeds), the epoch link public keys, with
+  `--capture-fingerprint` that device's capture key, and with `--vault-id` the wrap plaintext (and at
+  `--epoch 1` the root fingerprint). `K_e` is read from a file of 64 lowercase hex digits (`-` for
+  standard input), never from the command line. It reads and writes no vault; it exists so another
+  implementation can be checked against this one, and `--json` uses the field names of
+  `Tests/SempereTests/Fixtures/epoch-vectors.json`. The output holds secret keys.
 
 **The app's key actions and the CLI.** Settings ▸ Device Keys, the Vault
 Keys window and the recipients alert in the app do the same with the same
