@@ -108,10 +108,10 @@ jobs:
     container: swift:6.4-noble
     steps:
       - uses: actions/checkout@v4
-      - name: Install zlib headers, zbar, zip, poppler (QR decode, zip interop, text extraction, PDF background pixel checks) and the UCD (BidiTest.txt)
+      - name: Install zlib headers, zbar, zip, poppler (QR decode, zip interop, text extraction, PDF background pixel checks), jq (the recovery kit script) and the UCD (BidiTest.txt)
         run: |
           apt-get update -q
-          apt-get install -y -q zlib1g-dev curl zbar-tools zip poppler-utils unicode-data
+          apt-get install -y -q zlib1g-dev curl zbar-tools zip poppler-utils unicode-data jq
       - name: Install age v1.3.2 (post-quantum interop; Ubuntu's package is 1.1)
         run: |
           curl -fsSL -o /tmp/age.tgz https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz
