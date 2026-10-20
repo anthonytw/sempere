@@ -1,5 +1,6 @@
 import Foundation
 import Sempere
+import SempereSync
 
 // The pure half of reading a vault from iCloud Drive: placeholder names,
 // which vault files to fetch, and progress. No iCloud API here, so it is
@@ -33,21 +34,19 @@ enum CloudSource: Equatable, Sendable {
 /// partial WebDAV copy's blob stand-ins (`.<name>.sempere-pending`, format.md
 /// §1.2) read the same way.
 enum CloudPlaceholder {
-    static let suffix = ".icloud"
+    static let suffix = UbiquitousPlaceholder.suffix
 
     /// The real name a placeholder stands for (`.vault.json.icloud` →
     /// `vault.json`, `.X.pdf.age.sempere-pending` → `X.pdf.age`); nil when
     /// `name` is not a placeholder.
     static func realName(of name: String) -> String? {
         if let real = PartialCopy.realName(ofStandIn: name) { return real }
-        guard name.hasPrefix("."), name.hasSuffix(suffix) else { return nil }
-        let real = String(name.dropFirst().dropLast(suffix.count))
-        return real.isEmpty ? nil : real
+        return UbiquitousPlaceholder.realName(of: name)
     }
 
     /// The placeholder name of `name` (`vault.json` → `.vault.json.icloud`).
     static func placeholderName(for name: String) -> String {
-        "." + name + suffix
+        UbiquitousPlaceholder.standInName(for: name)
     }
 
     /// The placeholder URL of the file at `url`, in the same folder.

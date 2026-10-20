@@ -65,6 +65,12 @@ public struct SyncReport: Codable, Hashable, Sendable {
     /// the quarantine folder (`quarantineDirectory`), and not downloaded
     /// again while unchanged (then listed in `skipped`).
     public var quarantined: [Issue] = []
+    /// Files and folders a provider lists but has not downloaded yet (evicted
+    /// iCloud files, folders listed before their files: `Arrivals.swift`):
+    /// asked for, waited for a bounded time, and left for a later run. Never
+    /// taken as missing, deleted or uploaded over. One still arriving long after
+    /// this device first asked for it is listed in `errors` instead.
+    public var arriving: [Issue] = []
     /// Set when a bound of the run (`SyncLimits`) stopped it early: what was
     /// reached. Also listed in `errors`; the next run continues.
     public var stoppedEarly: String?
@@ -148,7 +154,7 @@ public struct SyncReport: Codable, Hashable, Sendable {
     /// True when nothing was transferred, deleted or reported.
     public var isEmpty: Bool {
         uploaded.isEmpty && downloaded.isEmpty && deleted.isEmpty && conflicts.isEmpty && errors.isEmpty && rejected.isEmpty
-            && extraneous.isEmpty && overwritten.isEmpty && quarantined.isEmpty && merged.isEmpty
+            && extraneous.isEmpty && overwritten.isEmpty && quarantined.isEmpty && merged.isEmpty && arriving.isEmpty
             && (keyChange?.isEmpty ?? true)
     }
 }

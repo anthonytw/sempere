@@ -8,7 +8,7 @@ struct SyncCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "sync",
         abstract: "Mirror a vault with a remote store.",
-        subcommands: [SyncWebDAVCommand.self]
+        subcommands: [SyncWebDAVCommand.self, SyncFolderCommand.self]
     )
 }
 
@@ -183,10 +183,7 @@ struct SyncWebDAVCommand: ParsableCommand {
         options.summaryCacheDirectory = SummaryCache.cliDirectory(environment: Env.vars)
         options.retryQuarantined = retryQuarantined
         try applyLimits(&options)
-        if let jobs {
-            guard (1...TransferPool.maxWidth).contains(jobs) else { throw CLIError.usage("--jobs must be 1 to \(TransferPool.maxWidth)") }
-            options.concurrency = jobs
-        }
+        try SyncCLI.applyJobs(jobs, &options)
         let meter = ProgressLine.forStderr(json: output.json, quiet: output.quiet)
         if let meter { options.progress = { @Sendable p in meter.show(p.line) } }
         let client = try login.client(remote)
@@ -215,28 +212,15 @@ struct SyncWebDAVCommand: ParsableCommand {
         if output.json {
             try output.emitJSON(report)
         } else {
-            printReport(report)
+            SyncCLI.printReport(report, output)
         }
-        if !report.errors.isEmpty || !report.quarantined.isEmpty { throw ExitCode(ExitStatus.failure) }
-        if !report.rejected.isEmpty { throw ExitCode(ExitStatus.untrustedRecipients) }
-        if !report.conflicts.isEmpty { throw ExitCode(ExitStatus.unhealthy) }
+        try SyncCLI.exit(for: report)
     }
 
     /// The size and run bounds given on the command line.
     private func applyLimits(_ options: inout SyncOptions) throws {
-        if let maxBlobMiB {
-            guard (1...(1 << 20)).contains(maxBlobMiB) else { throw CLIError.usage("--max-blob-mib must be 1 to 1048576") }
-            options.maxBlobBytes = maxBlobMiB << 20
-        }
-        func bounded(_ value: Int?, _ flag: String, max: Int) throws -> Int? {
-            guard let value else { return nil }
-            guard (1...max).contains(value) else { throw CLIError.usage("--\(flag) must be 1 to \(max)") }
-            return value
-        }
-        if let n = try bounded(maxNotes, "max-notes", max: 100_000_000) { options.limits.maxNotes = n }
-        if let n = try bounded(maxEntries, "max-entries", max: 1_000_000_000) { options.limits.maxEntries = n }
-        if let n = try bounded(maxDownloadMiB, "max-download-mib", max: 1 << 30) { options.limits.maxDownloadBytes = Int64(n) << 20 }
-        if let n = try bounded(maxMinutes, "max-minutes", max: 525_600) { options.limits.maxDuration = TimeInterval(n) * 60 }
+        try SyncCLI.applyLimits(&options, maxBlobMiB: maxBlobMiB, maxNotes: maxNotes, maxEntries: maxEntries,
+                                maxDownloadMiB: maxDownloadMiB, maxMinutes: maxMinutes)
     }
 
     // MARK: - Partial pulls
@@ -306,31 +290,64 @@ struct SyncWebDAVCommand: ParsableCommand {
         if output.json {
             try output.emitJSON(report)
         } else {
-            printReport(report)
+            SyncCLI.printReport(report, output)
             if let p = report.partial {
                 output.info(p.completed || (p.incompleteNotes == 0 && p.pendingBlobs == 0)
                     ? "the copy is complete"
                     : "partial copy: \(p.incompleteNotes) notes and \(p.pendingBlobs) blobs not downloaded yet (--fetch)")
             }
         }
-        if !report.errors.isEmpty || !report.quarantined.isEmpty { throw ExitCode(ExitStatus.failure) }
-        if !report.rejected.isEmpty { throw ExitCode(ExitStatus.untrustedRecipients) }
-        if !report.conflicts.isEmpty { throw ExitCode(ExitStatus.unhealthy) }
+        try SyncCLI.exit(for: report)
     }
 
     /// Two runs' reports as one (the later one's partial status wins).
     static func merged(_ a: SyncReport, _ b: SyncReport) -> SyncReport {
         var r = a
         r.uploaded += b.uploaded; r.downloaded += b.downloaded; r.deleted += b.deleted; r.conflicts += b.conflicts
-        r.errors += b.errors; r.skipped += b.skipped; r.ignored += b.ignored; r.extraneous += b.extraneous
+        r.errors += b.errors; r.skipped += b.skipped; r.ignored += b.ignored; r.extraneous += b.extraneous; r.arriving += b.arriving
         r.overwritten += b.overwritten; r.merged += b.merged; r.rejected += b.rejected; r.quarantined += b.quarantined
         r.stoppedEarly = b.stoppedEarly ?? a.stoppedEarly
         r.partial = b.partial ?? a.partial
         r.progress = b.progress ?? a.progress
         return r
     }
+}
 
-    private func printReport(_ r: SyncReport) {
+/// What the sync commands share: bounds from the command line, the report, the exit code.
+enum SyncCLI {
+    /// `--max-blob-mib`, `--max-notes`, `--max-entries`, `--max-download-mib`, `--max-minutes`.
+    static func applyLimits(_ options: inout SyncOptions, maxBlobMiB: Int?, maxNotes: Int?, maxEntries: Int?,
+                            maxDownloadMiB: Int?, maxMinutes: Int?) throws {
+        if let maxBlobMiB {
+            guard (1...(1 << 20)).contains(maxBlobMiB) else { throw CLIError.usage("--max-blob-mib must be 1 to 1048576") }
+            options.maxBlobBytes = maxBlobMiB << 20
+        }
+        func bounded(_ value: Int?, _ flag: String, max: Int) throws -> Int? {
+            guard let value else { return nil }
+            guard (1...max).contains(value) else { throw CLIError.usage("--\(flag) must be 1 to \(max)") }
+            return value
+        }
+        if let n = try bounded(maxNotes, "max-notes", max: 100_000_000) { options.limits.maxNotes = n }
+        if let n = try bounded(maxEntries, "max-entries", max: 1_000_000_000) { options.limits.maxEntries = n }
+        if let n = try bounded(maxDownloadMiB, "max-download-mib", max: 1 << 30) { options.limits.maxDownloadBytes = Int64(n) << 20 }
+        if let n = try bounded(maxMinutes, "max-minutes", max: 525_600) { options.limits.maxDuration = TimeInterval(n) * 60 }
+    }
+
+    /// `--jobs`.
+    static func applyJobs(_ jobs: Int?, _ options: inout SyncOptions) throws {
+        guard let jobs else { return }
+        guard (1...TransferPool.maxWidth).contains(jobs) else { throw CLIError.usage("--jobs must be 1 to \(TransferPool.maxWidth)") }
+        options.concurrency = jobs
+    }
+
+    /// Exit 1 for errors, quarantined files or files still arriving; 6 for a rejected vault.json; 3 for conflicts.
+    static func exit(for report: SyncReport) throws {
+        if !report.errors.isEmpty || !report.quarantined.isEmpty || !report.arriving.isEmpty { throw ExitCode(ExitStatus.failure) }
+        if !report.rejected.isEmpty { throw ExitCode(ExitStatus.untrustedRecipients) }
+        if !report.conflicts.isEmpty { throw ExitCode(ExitStatus.unhealthy) }
+    }
+
+    static func printReport(_ r: SyncReport, _ output: OutputOptions) {
         let verb = r.dryRun ? "would " : ""
         if !output.quiet {
             for p in r.uploaded { print("\(verb)upload    \(p)") }
@@ -348,11 +365,13 @@ struct SyncWebDAVCommand: ParsableCommand {
         for e in r.errors { printStderr("error: \(e.path): \(e.message)") }
         for q in r.quarantined { printStderr("quarantined: \(q.path): \(q.message); not placed in the vault") }
         for e in r.rejected { printStderr("rejected: \(e.path): \(e.message); the local copy is kept") }
+        for a in r.arriving { printStderr("arriving: \(a.path): \(a.message)") }
         output.info("\(r.dryRun ? "dry run: " : "")\(r.uploaded.count) uploaded, \(r.downloaded.count) downloaded, "
                     + "\(r.deleted.count) deleted, \(r.conflicts.count) conflicts, \(r.errors.count) errors"
                     + (r.extraneous.isEmpty ? "" : ", \(r.extraneous.count) extraneous")
                     + ((r.partial?.keptOnServer ?? 0) == 0 ? "" : ", \(r.partial?.keptOnServer ?? 0) kept (not fetched here yet)")
                     + (r.quarantined.isEmpty ? "" : ", \(r.quarantined.count) quarantined")
+                    + (r.arriving.isEmpty ? "" : ", \(r.arriving.count) still arriving (run again)")
                     + (r.skipped.isEmpty ? "" : ", \(r.skipped.count) skipped (-v)"))
     }
 }

@@ -1,11 +1,18 @@
 # Device-first vaults with two-way sync (design)
 
 Status: **design approved by the owner on 2026-10-19** (answers in §11). P1 (`SempereSync` behind
-`SyncRemote`) and P2 (`MemoryRemote`, the transport conformance suite, the engine over every
-transport, N-device stress; docs/ci.md "Transports", "Sync stress") are implemented. P4a (the
-key-change safety gate, §6.6) is implemented: the mechanisms of §6.3, rewrap-replace behind
-`SyncOptions.rewrapReplace` (off until P4), and the §6.4 suites. The key-change review (§6) is a
-gate that must pass before P4 and P10 land.
+`SyncRemote`), P2 (`MemoryRemote`, the transport conformance suite, the engine over every
+transport, N-device stress; docs/ci.md "Transports", "Sync stress") and P3 (`FolderRemote`,
+`UbiquitousFolderHooks`, `EvictingFolderProvider`, the engine's arrival rules and conflict-version
+merge, `sempere sync folder`; docs/io.md "Folder targets in providers") are implemented. P3 notes:
+the app's iCloud code is unchanged except that `StorageLocation` and the `.icloud` stand-in names
+moved to the package (`FolderLocation`, `UbiquitousPlaceholder`); the rest was copied (ported), and
+P6/P7 delete the app's copies. The protocol gained `readVersion` (the engine reads a conflict
+version's bytes) and `TransientRemoteError.isUnavailable`. Not ported: merging a conflict version of
+the whole vault folder (package-era vaults; no migration, Q5). P4a (the key-change safety gate,
+§6.6) is implemented: the mechanisms of §6.3, rewrap-replace behind `SyncOptions.rewrapReplace` (off
+until P4), and the §6.4 suites. The
+key-change review (§6) is a gate that must pass before P4 and P10 land.
 
 Owner's decision (2026-10-19):
 

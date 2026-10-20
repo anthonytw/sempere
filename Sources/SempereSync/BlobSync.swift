@@ -363,6 +363,9 @@ extension SyncEngine {
         let limit = options.maxBlobBytes
         if let size = entry?.size, size > limit { throw SyncError.responseTooLarge(path: path, limit: limit) }
         if skipQuarantined(blobKey(id, name), path: path, entry: entry) { return nil }
+        let remote = [Vault.notesName, id, Vault.attachmentsName, name]
+        // Listed but not downloaded by its provider yet: asked for, waited for a while, else left for later.
+        if try !available(remote, entry: entry) { return nil }
         let reserved = try locked { try budget.willDownload(entry?.size) }
         var settled = false
         defer { if !settled { locked { budget.release(reserved) } } }
@@ -374,7 +377,6 @@ extension SyncEngine {
         }
         let key = blobKey(id, name)
         let part = att.appendingPathComponent(Self.partialPrefix + name)
-        let remote = [Vault.notesName, id, Vault.attachmentsName, name]
         // Only a strong ETag can back `If-Range` (RFC 9110 §13.1.5): with a weak or
         // missing one a cut download is not resumed, it starts over.
         let etag = entry?.etag.flatMap { SyncEngine.isStrong($0) ? $0 : nil }
@@ -410,6 +412,11 @@ extension SyncEngine {
                 // A partial file that does not fit the remote one starts over (`SyncRemote.download`).
                 try transport.download(remote, to: part, resumeFrom: offset, ifETag: etag, maxBytes: limit,
                                        segmentBytes: options.blobSegmentBytes, progress: segmentDone)
+            } catch where Self.isUnavailable(error) {
+                // Evicted between the listing and the read: arriving, not failed.
+                discard()
+                noteArriving(remote)
+                return nil
             } catch {
                 // A dropped connection or a timeout (a `TransientRemoteError`, e.g. WebDAV's
                 // `.offline`), a cancellation or the run's time bound keeps the partial file

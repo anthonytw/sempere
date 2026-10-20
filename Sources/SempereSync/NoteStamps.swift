@@ -33,7 +33,7 @@ extension SyncEngine {
 
         static func issues(_ r: SyncReport) -> Int {
             r.errors.count + r.skipped.count + r.ignored.count + r.extraneous.count + r.rejected.count
-                + r.quarantined.count + r.conflicts.count
+                + r.quarantined.count + r.conflicts.count + r.arriving.count
         }
     }
 
