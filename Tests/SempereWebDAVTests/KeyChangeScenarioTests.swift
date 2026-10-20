@@ -49,22 +49,24 @@ final class KeyChangeScenarioTests: TempDirTestCase {
 
     func path(_ note: UUID, _ n: RevisionName) -> [String] { [Vault.notesName, note.uuidString.lowercased(), n.filename] }
 
-    /// A revision written by `d` under the current (soon old) list and taken out of its working copy:
-    /// the bytes stand for a file that reaches a target only after a key change (written offline elsewhere).
-    func offlineRevision(_ w: KCWorld, _ d: KCDevice, _ note: UUID, _ title: String) throws -> (path: [String], data: Data) {
+    /// A revision written by `d` under the current (soon old) list: the bytes stand for an upload that
+    /// reaches a target only after a key change. With `keep`, `d` keeps its copy (its catch-up rewraps it,
+    /// R3); without, it is taken out of `d`'s copy (written by another install, which never catches up).
+    func offlineRevision(_ w: KCWorld, _ d: KCDevice, _ note: UUID, _ title: String,
+                         keep: Bool = false) throws -> (path: [String], data: Data) {
         let n = try w.write(d, note, title)
         let p = path(note, n)
         let url = d.folder.appendingPathComponent(p.joined(separator: "/"))
         let data = try Data(contentsOf: url)
-        try FileManager.default.removeItem(at: url.deletingLastPathComponent())
+        if !keep { try FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         return (p, data)
     }
 
     /// A removal of the spare key from `d` whose propagation stops after C5(a) on T0, so that `seers`
-    /// take the step-2 vault.json and the journal (the policy) there; then it finishes everywhere.
-    func removeSpareSeenBy(_ w: KCWorld, on d: KCDevice, policy: KeyChangePolicy, seers: [KCDevice]) throws {
+    /// take the step-2 vault.json and the journal there; then it finishes everywhere.
+    func removeSpareSeenBy(_ w: KCWorld, on d: KCDevice, seers: [KCDevice]) throws {
         let spare = try XCTUnwrap(w.spare)
-        try w.change(d) { try $0.prepareRemoveRecipient(spare.recipient, keyChange: policy, now: w.now) }
+        try w.change(d) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }
         w.tick()
         XCTAssertThrowsError(try d.sync("T0", now: w.now, faults: KeyChangeFaults(afterStep: ["T0": .manifest])))
         for s in seers {
@@ -143,8 +145,8 @@ final class KeyChangeScenarioTests: TempDirTestCase {
             let v = try w.a.vault()
             XCTAssertNotNil(v.previousSecret, "n = \(n): the journal is accepted")
             XCTAssertTrue(v.verify().files.allSatisfy { $0.status == .ok || $0.status == .staleRecipients }, "n = \(n): every file still verifies")
-            XCTAssertNotNil(try w.a.keyring.load(vaultId: v.vaultId)?.lateFileDeadline(for: try XCTUnwrap(v.previousSecret)),
-                            "n = \(n): the keyring holds the outgoing secret")
+            XCTAssertEqual(try w.a.keyring.load(vaultId: v.vaultId)?.isReplaced(try XCTUnwrap(v.previousSecret)), true,
+                           "n = \(n): the keyring holds the outgoing secret")
             try w.converge()
             w.assertConverged()
             w.assertRevoked([spare])
@@ -186,7 +188,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         let w = try seeded()
         let spare = try w.addSpare(on: w.a)
         try w.converge()
-        try removeSpareSeenBy(w, on: w.a, policy: .routine, seers: [w.b])
+        try removeSpareSeenBy(w, on: w.a, seers: [w.b])
         var vb = try w.b.vault()
         XCTAssertNotNil(vb.previousSecret)
         XCTAssertTrue(try vb.resumeRewrap().isComplete)
@@ -223,26 +225,20 @@ final class KeyChangeScenarioTests: TempDirTestCase {
 
     // MARK: F7: two changes at once
 
-    func testConcurrentChangesWithOverride() throws {
+    func testConcurrentChanges() throws {
         let w = try seeded()
         let spare = try w.addSpare(on: w.a)
         try w.converge()
         let t0 = w.targets[0], t1 = w.targets[1]
-        // Without the override, an unreachable target refuses a routine change.
         t1.offline.value = true
-        XCTAssertThrowsError(try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }) { e in
-            guard case KeyChangeError.targetNotRecentlySynced = e else {
-                guard case KeyChangeError.targetUnreachable = e else { return XCTFail("\(e)") }
-                return
-            }
-        }
-        // A removes the spare with T1 overridden; B, with T0 out of reach, replaces its own key.
-        try w.change(w.a, overriding: ["T1"]) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }
+        // A removes the spare with T1 out of reach (claimed when it is back); B, with T0 out of reach,
+        // replaces its own key.
+        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }
         t1.offline.value = false
         t0.offline.value = true
         let bOld = w.b.identity, bNew = pqIdentity()
         w.b.identities.insert(bNew, at: 0)
-        try w.change(w.b, overriding: ["T0"]) { try $0.prepareReplaceRecipient(bOld.recipient, with: bNew.recipient, now: w.now) }
+        try w.change(w.b) { try $0.prepareReplaceRecipient(bOld.recipient, with: bNew.recipient, now: w.now) }
         t0.offline.value = false
         w.oracle.learn(w.b)
         // They meet: each records the other's change on a target, and nothing is replaced across lists.
@@ -310,39 +306,41 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         }
     }
 
-    /// F9: another device's file under the old secret arrives after the change: taken in (rewrapped)
-    /// within the window recorded in the journal, quarantined as a late file after it, never deleted;
-    /// Adopt and Export take it out.
-    func testLateFilesWithinWindow() throws {
+    /// F9 and the catch-up of a still-listed device: C writes while away and its upload reaches a target
+    /// after the change. B sets it aside at once (every key change is immediate), never making it current;
+    /// C, back, rewraps what it wrote (by provenance) and uploads it; B takes the current copy and its
+    /// late copy is resolved: nothing lost, nothing left aside.
+    func testLateFileSetAsideThenResolvedByTheWritersCatchUp() throws {
         let w = try seeded()
         _ = try w.addSpare(on: w.a)
         try w.converge()
-        let late = try offlineRevision(w, w.c, UUID(), "late")
-        try removeSpareSeenBy(w, on: w.a, policy: try .routine(days: 7), seers: [w.b])
+        let late = try offlineRevision(w, w.c, UUID(), "late", keep: true)
+        try removeSpareSeenBy(w, on: w.a, seers: [w.b])
         try w.converge(skip: ["C"])
-        w.tick(2 * 86_400)
         w.targets[0].put(late.path, late.data)
         w.tick()
         let r = try w.b.sync("T0", now: w.now)
-        XCTAssertEqual(r.keyChange?.lateAccepted.count, 1, "\(KCWorld.brief(r))")
-        let placed = try Data(contentsOf: w.b.folder.appendingPathComponent(late.path.joined(separator: "/")))
-        XCTAssertNotEqual(placed, late.data, "placed rewrapped")
-        XCTAssertTrue(try w.b.vault().classifyRevision(placed, note: UUID(uuidString: late.path[1])!,
-                                                        name: RevisionName(late.path[2])!).isCurrent)
+        XCTAssertEqual(r.keyChange?.lateQuarantined.count, 1, "\(KCWorld.brief(r))")
+        XCTAssertTrue(r.keyChange?.lateAccepted.isEmpty ?? true)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: w.b.folder.appendingPathComponent(late.path.joined(separator: "/")).path))
+        XCTAssertEqual(w.b.lateFiles().count, 1)
         try w.converge()
+        XCTAssertEqual(try w.b.notes()[UUID(uuidString: late.path[1])!], "late", "the writer's current copy")
+        XCTAssertTrue(w.b.lateFiles().isEmpty, "the late copy is resolved")
         w.assertConverged()
         w.assertNoLoss()
     }
 
-    func testLateFilesAfterWindowQuarantined() throws {
+    /// F9: late files from an install that never catches up stay aside, never deleted; Adopt and Export
+    /// take them out.
+    func testLateFilesSetAsideAdoptAndExport() throws {
         let w = try seeded()
         _ = try w.addSpare(on: w.a)
         try w.converge()
         let late = try offlineRevision(w, w.c, UUID(), "late")
         let other = try offlineRevision(w, w.c, UUID(), "late too")
-        try removeSpareSeenBy(w, on: w.a, policy: try .routine(days: 7), seers: [w.b])
+        try removeSpareSeenBy(w, on: w.a, seers: [w.b])
         try w.converge(skip: ["C"])
-        w.tick(8 * 86_400)
         w.targets[0].put(late.path, late.data)
         w.targets[0].put(other.path, other.data)
         w.tick()
@@ -364,31 +362,45 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         XCTAssertEqual(try w.b.notes()[UUID(uuidString: late.path[1])!], "late")
     }
 
-    /// F10: a removed device keeps its notes and is told; what it uploads under the old secret never
-    /// enters the vault silently (quarantined after the window).
-    func testRemovedDeviceWrites() throws {
+    /// F10: a removed device finds out at its next sync (a `vault.json` without its keys): it stops syncing
+    /// the vault for good (no upload, ever, even when a target hands it an old list that still names it),
+    /// says so (`removedFromVault`), keeps its copy readable and lists what it wrote that no target holds.
+    func testRemovedDeviceStopsSyncing() throws {
         let w = try seeded()
         let removed = w.c
-        try w.change(w.a) { try $0.prepareRemoveRecipient(removed.identity.recipient, keyChange: try .routine(days: 1), now: w.now) }
+        try w.change(w.a) { try $0.prepareRemoveRecipient(removed.identity.recipient, now: w.now) }
         try w.converge(skip: ["C"])
+        let oldList = try XCTUnwrap(removed.manifest(), "C still holds the list that names it")
         removed.removed = true
         let n3 = UUID()
         _ = try removed.write(n3, "after removal", now: w.now)
-        w.tick(2 * 86_400)
-        let r = try removed.sync("T0", now: w.now)
-        XCTAssertEqual(r.keyChange?.removedFromVault, true, "\(KCWorld.brief(r))")
-        XCTAssertEqual(try removed.notes()[n3], "after removal", "its own notes stay readable to it")
         w.tick()
-        let rb = try w.b.sync("T0", now: w.now)
-        XCTAssertFalse((rb.keyChange?.lateAccepted ?? []).contains { $0.path.contains(n3.uuidString.lowercased()) })
-        XCTAssertEqual(rb.keyChange?.lateQuarantined.count, 1, "\(KCWorld.brief(rb))")
-        XCTAssertNil(try w.b.notes()[n3])
+        let before = w.targets.map { $0.noteFiles() }
+        let r = try removed.sync("T0", now: w.now)
+        XCTAssertTrue(r.removedFromVault, "\(KCWorld.brief(r))")
+        XCTAssertTrue(r.uploaded.isEmpty, "nothing uploaded")
+        XCTAssertTrue(r.unsynced.contains { $0.contains(n3.uuidString.lowercased()) }, "\(r.unsynced)")
+        XCTAssertEqual(try removed.notes()[n3], "after removal", "its own notes stay readable to it")
+        // A hostile (or rolled back) target hands it the old list that still names it: still removed.
+        for t in w.targets { t.put([Vault.manifestName], oldList) }
+        for t in ["T0", "T1"] {
+            w.tick()
+            let again = try removed.sync(t, now: w.now)
+            XCTAssertTrue(again.removedFromVault)
+            XCTAssertTrue(again.uploaded.isEmpty && again.downloaded.isEmpty, "\(KCWorld.brief(again))")
+        }
+        XCTAssertEqual(w.targets.map { $0.noteFiles() }, before, "no file reached a target")
+        // Its unsynced changes, exported as a vault folder its key opens.
+        let out = tmp.appendingPathComponent("unsynced")
+        let written = try SyncEngine.exportUnsynced(vault: removed.folder, paths: r.unsynced, to: out)
+        XCTAssertTrue(written.contains(Vault.manifestName))
+        XCTAssertTrue(written.contains { $0.contains(n3.uuidString.lowercased()) })
+        // The listed devices put the right list back and converge without it.
+        let current = try XCTUnwrap(w.a.manifest())
+        for t in w.targets { t.put([Vault.manifestName], current) }
         try w.converge()
-        // What the removed device uploaded stays on the target (never deleted), outside every working copy.
-        let theirs = Set(w.targets[0].noteFiles().keys.filter { $0.contains(n3.uuidString.lowercased()) })
-        XCTAssertEqual(theirs.count, 1)
-        w.assertConverged(ignoring: theirs)
-        w.assertRevoked([removed.identity], ignoring: theirs)
+        w.assertConverged()
+        w.assertRevoked([removed.identity])
         w.assertNoLoss()
     }
 
@@ -571,14 +583,14 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         w.assertNoLoss()
     }
 
-    // MARK: F17: compromised mode
+    // MARK: F17: every key change takes effect at once
 
-    func testCompromisedQuarantinesAtOnce() throws {
+    func testLateFileSetAsideWhileTheJournalIsPending() throws {
         let w = try seeded()
         _ = try w.addSpare(on: w.a)
         try w.converge()
         let late = try offlineRevision(w, w.c, UUID(), "late")
-        try removeSpareSeenBy(w, on: w.a, policy: .compromised, seers: [w.b])
+        try removeSpareSeenBy(w, on: w.a, seers: [w.b])
         // Even while the change is still pending (the journal accepted on B), a file under the old secret is late.
         w.targets[0].put(late.path, late.data)
         w.tick()
@@ -590,11 +602,11 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         w.assertNoLoss()
     }
 
-    func testCompromisedPushesFirst() throws {
+    func testChangePushesFirst() throws {
         let w = try seeded()
         let spare = try w.addSpare(on: w.a)
         try w.converge()
-        try w.change(w.a, syncFirst: false) { try $0.prepareRemoveRecipient(spare.recipient, keyChange: .compromised, now: w.now) }
+        try w.change(w.a, syncFirst: false) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }
         try w.write(w.a, UUID(), "written after the change")
         let faults = MemoryFaults(seed: 1)
         w.a.faults["T0"] = faults
@@ -610,12 +622,12 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         w.assertRevoked([spare])
     }
 
-    func testCompromisedWithTargetOffline() throws {
+    func testChangeWithTargetOffline() throws {
         let w = try seeded()
         let spare = try w.addSpare(on: w.a)
         try w.converge()
         w.targets[1].offline.value = true
-        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient, keyChange: .compromised, now: w.now) }
+        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }
         XCTAssertNil(w.targets[1].file([Vault.journalName]), "not claimed while out of reach")
         try w.converge()
         XCTAssertTrue(w.a.coordinator.inProgress, "T1 is still to be done")
@@ -627,55 +639,25 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         w.assertNoLoss()
     }
 
-    // MARK: F18, F19: the late-file window across devices
+    // MARK: F18: own late files and others'
 
-    /// F18: a device that never saw the journal applies 0 days to others' late files; its own are rewrapped.
-    func testPolicyUnknownDefaultsStrict() throws {
+    /// F18: a device's own late file is rewrapped (by provenance); another device's is set aside.
+    func testOwnLateFileRewrappedOthersSetAside() throws {
         let w = try seeded()
         let spare = try w.addSpare(on: w.a)
         try w.converge()
-        let late = try offlineRevision(w, w.b, UUID(), "B's, never synced")
+        let late = try offlineRevision(w, w.b, UUID(), "B's, from another install")
         let own = UUID()
         try w.write(w.c, own, "C's own, while away")
-        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient, keyChange: try .routine(days: 30), now: w.now) }
+        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }
         try w.converge(skip: ["C"])
         w.targets[0].put(late.path, late.data)
         w.tick()
         let r = try w.c.sync("T0", now: w.now)
-        let ring = try XCTUnwrap(try w.c.keyring.load(vaultId: try w.c.vault().vaultId))
-        XCTAssertTrue(ring.entries.contains { $0.replaced != nil && $0.policy == nil }, "C never saw the policy")
         XCTAssertEqual(r.keyChange?.lateQuarantined.count, 1, "\(KCWorld.brief(r))")
         try w.converge()
         XCTAssertEqual(try w.b.notes()[own], "C's own, while away", "C's own late file was rewrapped and uploaded")
-        w.assertConverged()
-        w.assertNoLoss()
-    }
-
-    /// F19: devices start their windows at different times: one accepts a late file, another
-    /// quarantines it; the accepted (current) copy reaches everyone, and the quarantined original stays.
-    func testWindowDecisionsConverge() throws {
-        let w = try seeded()
-        _ = try w.addSpare(on: w.a)
-        try w.converge()
-        let late = try offlineRevision(w, w.b, UUID(), "late")
-        // B sees the change while its journal is on T0 (the policy: 3 days); C is away until it finished,
-        // so it never sees the policy and applies 0 days (F18). Every window ends by changedAt + 3 days.
-        try removeSpareSeenBy(w, on: w.a, policy: try .routine(days: 3), seers: [w.b])
-        try w.converge(skip: ["C"])
-        w.tick()
-        _ = try w.c.sync("T0", now: w.now)
-        w.tick(86_400)
-        w.targets[0].put(late.path, late.data)
-        w.tick()
-        let rc = try w.c.sync("T0", now: w.now)
-        XCTAssertEqual(rc.keyChange?.lateQuarantined.count, 1, "C never saw the policy: \(KCWorld.brief(rc))")
-        w.tick()
-        let rb = try w.b.sync("T0", now: w.now)
-        XCTAssertEqual(rb.keyChange?.lateAccepted.count, 1, "B's window is open: \(KCWorld.brief(rb))")
-        try w.converge()
-        XCTAssertEqual(try w.c.notes()[UUID(uuidString: late.path[1])!], "late", "C takes the current copy")
-        XCTAssertEqual(w.c.lateFiles().count, 1, "and keeps the quarantined original")
-        w.assertConverged()
+        w.assertConverged(ignoring: [late.path.joined(separator: "/")])
         w.assertNoLoss()
     }
 
@@ -688,10 +670,10 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         try w.converge()
         _ = try w.addSpare(on: w.a)
         try w.converge()
-        let late = try offlineRevision(w, w.c, UUID(), "late")
+        let late = try offlineRevision(w, w.c, UUID(), "late", keep: true)
         let spare = try XCTUnwrap(w.spare)
         XCTAssertThrowsError(try w.change(w.a, faults: KeyChangeFaults(rewrap: RewrapFaults(stop: .afterFiles(2)))) {
-            try $0.prepareRemoveRecipient(spare.recipient, keyChange: try .routine(days: 7), now: w.now)
+            try $0.prepareRemoveRecipient(spare.recipient, now: w.now)
         })
         w.tick()
         XCTAssertThrowsError(try w.a.sync("T0", now: w.now, faults: KeyChangeFaults(afterStep: ["T0": .manifest])))
@@ -702,8 +684,9 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         w.targets[1].put(late.path, late.data)
         w.tick()
         let r = try w.b.sync("T1", now: w.now) { $0.beforeLocalReplace = nil }
-        XCTAssertEqual(r.keyChange?.lateAccepted.count, 1, "\(KCWorld.brief(r))")
+        XCTAssertEqual(r.keyChange?.lateQuarantined.count, 1, "\(KCWorld.brief(r))")
         try w.converge()
+        XCTAssertTrue(w.b.lateFiles().isEmpty, "resolved by C's catch-up")
         w.assertConverged()
         w.assertRevoked([spare])
         w.assertNoLoss()
@@ -731,7 +714,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
         try w.change(w.b, syncFirst: true) { try $0.prepareAddRecipient(pqIdentity().recipient, label: "x", now: w.now) }
         let bList = try XCTUnwrap(w.b.manifest())
         try w.converge(skip: ["A", "C"])
-        try w.change(w.a, overriding: ["T0", "T1"], syncFirst: false) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }
+        try w.change(w.a, syncFirst: false) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }
         _ = try provider.addConflict(Vault.manifestName, bList)
         let before = w.targets[0].noteFiles()
         w.tick()

@@ -164,6 +164,9 @@ public struct Vault: Sendable {
     /// files this device wrote, by the device id in their names); nil: every file (a recipient change's
     /// own rewrap, which uses the journal's secret, not the keyring's).
     var lateOwnDevices: Set<DeviceID>?
+    /// With `lateOwnDevices`: names that carry one of those ids but came from elsewhere (provenance,
+    /// `SecretKeyring.receivedOwnNames`): not this device's, whatever the name says.
+    var lateReceivedOwn: Set<String> = []
     /// The notes whose newer revisions this vault (or a copy) has read
     /// (format.md §7.3); shared by every copy.
     let readOnlyLatch = ReadOnlyLatch()
@@ -559,13 +562,10 @@ public struct Vault: Sendable {
     /// - Parameter policy: how attachment blobs are rewrapped (format.md
     ///   §8.1.5); by default an addition rewrites blob headers only.
     @discardableResult
-    ///
-    /// - Parameter keyChange: the mode and late-file window the journal records (format.md §3.3.1).
     public mutating func addRecipient(_ recipient: NativeRecipient, label: String,
-                                      added: Date = Date(), policy: RewrapPolicy = RewrapPolicy(),
-                                      keyChange: KeyChangePolicy = .routine) throws -> RewrapReport {
+                                      added: Date = Date(), policy: RewrapPolicy = RewrapPolicy()) throws -> RewrapReport {
         guard recipient.isPostQuantum else { throw VaultError.classicRecipient(recipient.string) }
-        return try addRecipient(recipient, label: label, added: added, policy: policy, stopAfter: nil, keyChange: keyChange)
+        return try addRecipient(recipient, label: label, added: added, policy: policy, stopAfter: nil)
     }
 
     /// Removes a recipient: rotates the vault secret, re-encrypts it to the
@@ -577,9 +577,8 @@ public struct Vault: Sendable {
     ///   §8.1.5); by default a removal re-encrypts every blob under a new
     ///   file key and renames it under the new secret.
     @discardableResult
-    public mutating func removeRecipient(_ recipient: NativeRecipient, policy: RewrapPolicy = RewrapPolicy(),
-                                         keyChange: KeyChangePolicy = .routine) throws -> RewrapReport {
-        try removeRecipient(recipient, policy: policy, stopAfter: nil, keyChange: keyChange)
+    public mutating func removeRecipient(_ recipient: NativeRecipient, policy: RewrapPolicy = RewrapPolicy()) throws -> RewrapReport {
+        try removeRecipient(recipient, policy: policy, stopAfter: nil)
     }
 
     /// Replaces `old` with `new` (keeping `old`'s label unless `label` is
@@ -591,11 +590,9 @@ public struct Vault: Sendable {
     /// Blobs follow the removal row of `policy` (format.md §8.1.5).
     @discardableResult
     public mutating func replaceRecipient(_ old: NativeRecipient, with new: NativeRecipient, label: String? = nil,
-                                          added: Date = Date(), policy: RewrapPolicy = RewrapPolicy(),
-                                          keyChange: KeyChangePolicy = .routine) throws -> RewrapReport {
+                                          added: Date = Date(), policy: RewrapPolicy = RewrapPolicy()) throws -> RewrapReport {
         guard new.isPostQuantum else { throw VaultError.classicRecipient(new.string) }
-        return try replaceRecipient(old, with: new, label: label, added: added, policy: policy, stopAfter: nil,
-                                    keyChange: keyChange)
+        return try replaceRecipient(old, with: new, label: label, added: added, policy: policy, stopAfter: nil)
     }
 
     /// Finishes an interrupted recipient change: rewraps every file not yet
@@ -606,8 +603,7 @@ public struct Vault: Sendable {
     }
 
     mutating func addRecipient(_ recipient: NativeRecipient, label: String, added: Date,
-                               policy: RewrapPolicy = RewrapPolicy(), stopAfter: Int?,
-                               keyChange: KeyChangePolicy = .routine) throws -> RewrapReport {
+                               policy: RewrapPolicy = RewrapPolicy(), stopAfter: Int?) throws -> RewrapReport {
         _ = try requireSecret()
         try requireTrustedRecipients()
         let key = recipient.string
@@ -629,13 +625,12 @@ public struct Vault: Sendable {
         }
         var next = manifest.recipients
         next.append(.init(key: key, label: VaultManifest.Recipient.cleanLabel(label), added: added))
-        report.merge(try changeRecipients(next, rotate: false, policy: policy, stopAfter: stopAfter, keyChange: keyChange))
+        report.merge(try changeRecipients(next, rotate: false, policy: policy, stopAfter: stopAfter))
         return report
     }
 
     mutating func replaceRecipient(_ old: NativeRecipient, with new: NativeRecipient, label: String?, added: Date,
-                                   policy: RewrapPolicy = RewrapPolicy(), stopAfter: Int?,
-                                   keyChange: KeyChangePolicy = .routine) throws -> RewrapReport {
+                                   policy: RewrapPolicy = RewrapPolicy(), stopAfter: Int?) throws -> RewrapReport {
         _ = try requireSecret()
         try requireTrustedRecipients()
         let oldKey = old.string, newKey = new.string
@@ -658,12 +653,12 @@ public struct Vault: Sendable {
         var next = manifest.recipients
         next[index] = .init(key: newKey, label: label.map(VaultManifest.Recipient.cleanLabel) ?? next[index].label,
                             added: added)
-        report.merge(try changeRecipients(next, rotate: true, policy: policy, stopAfter: stopAfter, keyChange: keyChange))
+        report.merge(try changeRecipients(next, rotate: true, policy: policy, stopAfter: stopAfter))
         return report
     }
 
     mutating func removeRecipient(_ recipient: NativeRecipient, policy: RewrapPolicy = RewrapPolicy(),
-                                  stopAfter: Int?, keyChange: KeyChangePolicy = .routine) throws -> RewrapReport {
+                                  stopAfter: Int?) throws -> RewrapReport {
         _ = try requireSecret()
         try requireTrustedRecipients()
         let key = recipient.string
@@ -683,7 +678,7 @@ public struct Vault: Sendable {
         }
         let next = manifest.recipients.filter { $0.key != key }
         guard !next.isEmpty else { throw VaultError.lastRecipient }
-        report.merge(try changeRecipients(next, rotate: true, policy: policy, stopAfter: stopAfter, keyChange: keyChange))
+        report.merge(try changeRecipients(next, rotate: true, policy: policy, stopAfter: stopAfter))
         return report
     }
 
@@ -740,9 +735,8 @@ public struct Vault: Sendable {
     /// `secretLink` when the secret rotates. `repairing` skips the check of
     /// the current list: a repair writes the last verified one instead.
     mutating func changeRecipients(_ next: [VaultManifest.Recipient], rotate: Bool, policy: RewrapPolicy,
-                                   stopAfter: Int?, repairing: Bool = false,
-                                   keyChange: KeyChangePolicy = .routine) throws -> RewrapReport {
-        let prepared = try prepareChange(next, rotate: rotate, policy: policy, repairing: repairing, keyChange: keyChange)
+                                   stopAfter: Int?, repairing: Bool = false) throws -> RewrapReport {
+        let prepared = try prepareChange(next, rotate: rotate, policy: policy, repairing: repairing)
         var faults = RewrapFaults.none
         if let stopAfter { faults.stop = .afterFiles(stopAfter) }
         return try commitChange(prepared, faults: faults, keyring: nil, now: Date())
@@ -753,7 +747,7 @@ public struct Vault: Sendable {
     /// the journal, so that a caller can claim every sync target with exactly
     /// those bytes before anything changes locally (design §6.1 C1).
     func prepareChange(_ next: [VaultManifest.Recipient], rotate: Bool, policy: RewrapPolicy, repairing: Bool,
-                       keyChange: KeyChangePolicy, now: Date = Date()) throws -> PreparedKeyChange {
+                       now: Date = Date()) throws -> PreparedKeyChange {
         let current = try requireReadable()
         // A repair skips the check of the current list, never the read-only rule (format.md §7.3).
         if repairing { try requireNotReadOnly() } else { try requireWritable() }
@@ -786,13 +780,9 @@ public struct Vault: Sendable {
         let method = policy.method(rotating: rotate)
         let journal = RewrapJournal(format: SempereFormat.identifier,
                                     previousVaultSecret: rotate ? try Self.encryptSecret(current, to: ageNext) : nil,
-                                    rekeyBlobs: method == .reencrypt,
-                                    mode: keyChange.mode.rawValue,
-                                    lateFileWindowDays: keyChange.lateFileWindowDays,
-                                    changedAt: RFC3339.string(from: now))
+                                    rekeyBlobs: method == .reencrypt)
         return PreparedKeyChange(vaultId: vaultId, base: onDisk, next: next, rotate: rotate, method: method,
-                                 journal: try InkJSON.encoder().encode(journal), keyChange: keyChange,
-                                 changedAt: RFC3339.parse(journal.changedAt ?? "") ?? now)
+                                 journal: try InkJSON.encoder().encode(journal))
     }
 
     /// Steps K1 to K4 of design §6.1 (format.md §3.3.1 steps 1 to 4) for a
@@ -831,10 +821,7 @@ public struct Vault: Sendable {
         if let keyring {
             try keyring.update(vaultId: vaultId) { ring in
                 ring.remember(current, now: now)
-                if p.rotate {
-                    ring.noteReplaced(current, now: now)
-                    ring.notePolicy(p.keyChange, outgoing: current, changedAt: p.changedAt)
-                }
+                if p.rotate { ring.noteReplaced(current, now: now) }
             }
         }
         try FileIO.writeAtomically(p.journal, to: journalURL, replacing: true)
@@ -907,8 +894,7 @@ public struct Vault: Sendable {
     ///   while a recipient change is unfinished (its journal holds a secret a
     ///   second rotation would lose: restore `vault.json` from a backup).
     @discardableResult
-    public mutating func repairRecipients(keeping: [String]? = nil, policy: RewrapPolicy = RewrapPolicy(),
-                                          keyChange: KeyChangePolicy = .routine) throws -> RewrapReport {
+    public mutating func repairRecipients(keeping: [String]? = nil, policy: RewrapPolicy = RewrapPolicy()) throws -> RewrapReport {
         _ = try requireReadable()
         guard let problem = recipientsStatus.problem else {
             throw VaultError.recipientsNotRepairable("the recipients list checks; nothing to repair")
@@ -936,7 +922,7 @@ public struct Vault: Sendable {
                 throw VaultError.unknownRecipient(k)
             }
         }
-        return try changeRecipients(next, rotate: true, policy: policy, stopAfter: nil, repairing: true, keyChange: keyChange)
+        return try changeRecipients(next, rotate: true, policy: policy, stopAfter: nil, repairing: true)
     }
 
     /// Confirms the current list on this device after the user checked it
@@ -1001,24 +987,16 @@ public struct Vault: Sendable {
         /// re-encrypts each under a new file key, false rewrites only its
         /// header. Required: a journal without it is unreadable.
         var rekeyBlobs: Bool
-        /// The key-change mode (format.md §3.3.1, design §6.5): `routine` or
-        /// `compromised`; absent means `routine`.
-        var mode: String?
-        /// The late-file window in days (design §6.5); absent means 7
-        /// (0 in `compromised` mode).
-        var lateFileWindowDays: Int?
-        /// When the change was made (RFC 3339, the writer's clock): every late-file window ends at
-        /// most this long after it, whenever a device first sees the change. Absent: 0 days.
-        var changedAt: String?
 
-        /// The policy these fields record (`KeyChangePolicy.init(journalMode:days:)`).
-        func keyChangePolicy() throws -> KeyChangePolicy {
-            if let changedAt, RFC3339.parse(changedAt) == nil { throw KeyChangePolicyError.badChangeTime }
-            return try KeyChangePolicy(journalMode: mode, days: lateFileWindowDays)
+        /// The fields of the retired late-file policy (format.md §3.3.1): a journal that carries one is
+        /// refused (`RetiredJournalField`), whatever binds it.
+        static let retiredFields = ["mode", "lateFileWindowDays", "changedAt"]
+
+        /// The first retired field `data` carries, if any.
+        static func retiredField(in data: Data) -> String? {
+            guard let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+            return retiredFields.first { o[$0] != nil }
         }
-
-        /// `changedAt` as a date (nil: absent).
-        var changeTime: Date? { changedAt.flatMap(RFC3339.parse) }
     }
 
     /// The journal and its outgoing secret, when this device accepts it
@@ -1076,7 +1054,8 @@ public struct Vault: Sendable {
                         // R3 rewraps from the keyring only what this device wrote (review finding 2: another
                         // device's file under an old secret, a removed device's included, is never made current
                         // here; it waits for its writer, or for a current copy from a target).
-                        if let own = lateOwnDevices, !(RevisionName(name).map { own.contains($0.device) } ?? false) {
+                        if let own = lateOwnDevices,
+                           !(RevisionName(name).map { own.contains($0.device) } ?? false) || lateReceivedOwn.contains(path) {
                             report.lateSkipped.append(path); continue
                         }
                         old = fromKeyring

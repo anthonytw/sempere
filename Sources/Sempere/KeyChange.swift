@@ -8,10 +8,6 @@ import Foundation
 // fails (design §6.2, F1 to F19). This file holds the core pieces of that
 // safety gate (phase P4a):
 //
-// - `KeyChangePolicy`: the mode (routine or "my key may be compromised") and
-//   the late-file window, recorded in the rewrap journal (format.md §3.3.1
-//   `mode`, `lateFileWindowDays`), where `rewrapPending` binds them, so a sync
-//   target cannot change them.
 // - `RewrapFaults`: where a test stops a change, as a crash there would.
 // - `PreparedKeyChange`: a change's checks and its exact journal bytes before
 //   anything is written, so the journal can claim every target first (C1).
@@ -21,111 +17,13 @@ import Foundation
 // - `OutgoingKeyGuard`: the rule that keeps the outgoing identity while a
 //   replace is pending (F4).
 
-/// How a key change treats files written under the old secret that arrive
-/// after it (design §6.5): the mode, and how long such late files are still
-/// taken in (rewrapped and placed) before they are quarantined instead.
-public struct KeyChangePolicy: Hashable, Sendable, Codable {
-    /// The two modes of the key-change sheet.
-    public enum Mode: String, Hashable, Sendable, Codable, CaseIterable {
-        /// A device is added, removed or replaced in the normal course.
-        case routine
-        /// "My key may be compromised": no late file is taken in, and the
-        /// change propagates ahead of all other sync work.
-        case compromised
-    }
-
-    /// The mode.
-    public var mode: Mode
-    /// Days during which late files are rewrapped and placed, counted from
-    /// when the receiving device first saw the change. Always 0 in
-    /// `compromised` mode.
-    public var lateFileWindowDays: Int
-
-    /// The routine default (format.md §3.3.1: an absent field means this).
-    public static let defaultWindowDays = 7
-    /// The longest window a journal may record.
-    public static let maxWindowDays = 365
-
-    /// Routine, 7 days.
-    public static let routine = KeyChangePolicy(uncheckedMode: .routine, days: defaultWindowDays)
-    /// "My key may be compromised": 0 days.
-    public static let compromised = KeyChangePolicy(uncheckedMode: .compromised, days: 0)
-    /// What a device that never saw a change's journal applies (design F18):
-    /// an unknown policy never widens acceptance.
-    public static let unknown = KeyChangePolicy(uncheckedMode: .compromised, days: 0)
-
-    private init(uncheckedMode: Mode, days: Int) {
-        mode = uncheckedMode
-        lateFileWindowDays = days
-    }
-
-    /// A routine change with a window of `days` (0 to `maxWindowDays`).
-    ///
-    /// - Throws: `KeyChangePolicyError.windowOutOfRange`.
-    public static func routine(days: Int) throws -> KeyChangePolicy {
-        guard (0...maxWindowDays).contains(days) else { throw KeyChangePolicyError.windowOutOfRange(days) }
-        return KeyChangePolicy(uncheckedMode: .routine, days: days)
-    }
-
-    /// The policy a journal records (format.md §3.3.1): `mode` absent means
-    /// routine, `lateFileWindowDays` absent means 7 (0 when compromised). A
-    /// mode this version does not know, a window outside 0 to
-    /// `maxWindowDays`, or a compromised change with a window other than 0
-    /// is not a journal of this version.
-    ///
-    /// - Throws: `KeyChangePolicyError`.
-    public init(journalMode: String?, days: Int?) throws {
-        let mode: Mode
-        if let journalMode {
-            guard let m = Mode(rawValue: journalMode) else {
-                throw KeyChangePolicyError.unknownMode(String(journalMode.prefix(32)))
-            }
-            mode = m
-        } else {
-            mode = .routine
-        }
-        switch mode {
-        case .routine:
-            let d = days ?? Self.defaultWindowDays
-            guard (0...Self.maxWindowDays).contains(d) else { throw KeyChangePolicyError.windowOutOfRange(d) }
-            self.init(uncheckedMode: .routine, days: d)
-        case .compromised:
-            guard days == nil || days == 0 else { throw KeyChangePolicyError.windowOutOfRange(days ?? 0) }
-            self.init(uncheckedMode: .compromised, days: 0)
-        }
-    }
-
-    public init(from decoder: Decoder) throws {
-        enum K: String, CodingKey { case mode, lateFileWindowDays }
-        let c = try decoder.container(keyedBy: K.self)
-        try self.init(journalMode: try c.decodeIfPresent(String.self, forKey: .mode),
-                      days: try c.decodeIfPresent(Int.self, forKey: .lateFileWindowDays))
-    }
-
-    /// The window in seconds.
-    public var window: TimeInterval { TimeInterval(lateFileWindowDays) * 86_400 }
-
-    /// The stricter of two policies (the shorter window; compromised over routine).
-    public func stricter(_ other: KeyChangePolicy) -> KeyChangePolicy {
-        if mode == .compromised || other.mode == .compromised { return .compromised }
-        return lateFileWindowDays <= other.lateFileWindowDays ? self : other
-    }
-}
-
-/// A key-change policy outside the format (format.md §3.3.1).
-public enum KeyChangePolicyError: Error, Hashable, Sendable, CustomStringConvertible {
-    case unknownMode(String)
-    case windowOutOfRange(Int)
-    case badChangeTime
-
+/// A rewrap journal that carries a field of the retired late-file policy (`mode`, `lateFileWindowDays`,
+/// `changedAt`): every key change takes effect at once (decided 2026-10-20), and no format compatibility is
+/// kept before v1, so such a journal is refused, whatever binds it (format.md §3.3.1).
+public struct RetiredJournalField: Error, Hashable, Sendable, CustomStringConvertible {
+    public let field: String
     public var description: String {
-        switch self {
-        case .unknownMode(let m):
-            return "unknown key-change mode \(String(String.UnicodeScalarView(m.unicodeScalars.filter { $0.isASCII && $0.value >= 0x20 && $0.value < 0x7f })))"
-        case .badChangeTime: return "changedAt is not an RFC 3339 time"
-        case .windowOutOfRange(let d):
-            return "late-file window \(d) days is outside 0 to \(KeyChangePolicy.maxWindowDays) (0 in compromised mode)"
-        }
+        "the journal carries \(field), a field of the retired late-file window (every key change is immediate)"
     }
 }
 
@@ -176,10 +74,6 @@ public struct PreparedKeyChange: Sendable {
     let method: RewrapMethod
     /// The journal's bytes.
     public let journal: Data
-    /// The mode and late-file window it records.
-    public let keyChange: KeyChangePolicy
-    /// When the change was made (`changedAt` in the journal).
-    public let changedAt: Date
 
     /// The keys of the new list.
     public var nextKeys: [String] { next.map(\.key) }
@@ -195,31 +89,31 @@ extension Vault {
     /// change refuses (design §6.1 C0: no journal is pending).
     public mutating func prepareAddRecipient(_ recipient: NativeRecipient, label: String, added: Date = Date(),
                                              policy: RewrapPolicy = RewrapPolicy(),
-                                             keyChange: KeyChangePolicy = .routine, now: Date = Date()) throws -> PreparedKeyChange {
+                                             now: Date = Date()) throws -> PreparedKeyChange {
         guard recipient.isPostQuantum else { throw VaultError.classicRecipient(recipient.string) }
         try requirePreparable()
         let key = recipient.string
         guard !manifest.recipients.contains(where: { $0.key == key }) else { throw VaultError.duplicateRecipient(key) }
         var next = manifest.recipients
         next.append(.init(key: key, label: VaultManifest.Recipient.cleanLabel(label), added: added))
-        return try prepareChange(next, rotate: false, policy: policy, repairing: false, keyChange: keyChange, now: now)
+        return try prepareChange(next, rotate: false, policy: policy, repairing: false, now: now)
     }
 
     /// Prepares removing `recipient` (as `removeRecipient`): the secret rotates.
     public mutating func prepareRemoveRecipient(_ recipient: NativeRecipient, policy: RewrapPolicy = RewrapPolicy(),
-                                                keyChange: KeyChangePolicy = .routine, now: Date = Date()) throws -> PreparedKeyChange {
+                                                now: Date = Date()) throws -> PreparedKeyChange {
         try requirePreparable()
         let key = recipient.string
         guard manifest.recipients.contains(where: { $0.key == key }) else { throw VaultError.unknownRecipient(key) }
         let next = manifest.recipients.filter { $0.key != key }
         guard !next.isEmpty else { throw VaultError.lastRecipient }
-        return try prepareChange(next, rotate: true, policy: policy, repairing: false, keyChange: keyChange, now: now)
+        return try prepareChange(next, rotate: true, policy: policy, repairing: false, now: now)
     }
 
     /// Prepares replacing `old` by `new` (as `replaceRecipient`): the secret rotates.
     public mutating func prepareReplaceRecipient(_ old: NativeRecipient, with new: NativeRecipient, label: String? = nil,
                                                  added: Date = Date(), policy: RewrapPolicy = RewrapPolicy(),
-                                                 keyChange: KeyChangePolicy = .routine, now: Date = Date()) throws -> PreparedKeyChange {
+                                                 now: Date = Date()) throws -> PreparedKeyChange {
         guard new.isPostQuantum else { throw VaultError.classicRecipient(new.string) }
         try requirePreparable()
         let oldKey = old.string, newKey = new.string
@@ -229,7 +123,7 @@ extension Vault {
         guard !manifest.recipients.contains(where: { $0.key == newKey }) else { throw VaultError.duplicateRecipient(newKey) }
         var next = manifest.recipients
         next[index] = .init(key: newKey, label: label.map(VaultManifest.Recipient.cleanLabel) ?? next[index].label, added: added)
-        return try prepareChange(next, rotate: true, policy: policy, repairing: false, keyChange: keyChange, now: now)
+        return try prepareChange(next, rotate: true, policy: policy, repairing: false, now: now)
     }
 
     /// Prepares rotating the vault secret without changing the list: every file is re-encrypted to the
@@ -238,10 +132,9 @@ extension Vault {
     /// that key still count as current (stanza counts cannot tell recipients apart, format.md §3.3.1),
     /// so the key keeps access until a rotation like this one (or the addition is redone).
     public mutating func prepareRotation(policy: RewrapPolicy = RewrapPolicy(),
-                                         keyChange: KeyChangePolicy = .routine, now: Date = Date()) throws -> PreparedKeyChange {
+                                         now: Date = Date()) throws -> PreparedKeyChange {
         try requirePreparable()
-        return try prepareChange(manifest.recipients, rotate: true, policy: policy, repairing: false, keyChange: keyChange,
-                                 now: now)
+        return try prepareChange(manifest.recipients, rotate: true, policy: policy, repairing: false, now: now)
     }
 
     /// Writes a prepared change (K1 to K4): its journal, `vault.json` binding
@@ -301,10 +194,11 @@ extension Vault {
     /// blob is: it is inert until a current revision references it), otherwise left and listed in `lateSkipped`,
     /// which does not keep the change from completing.
     public mutating func resumeRewrap(keyring: SecretKeyring?, ownDevices: Set<DeviceID>) throws -> RewrapReport {
-        let saved = (olderSecrets, lateOwnDevices)
+        let saved = (olderSecrets, lateOwnDevices, lateReceivedOwn)
         if let keyring, let secret, keyring.vaultId == vaultId { olderSecrets = keyring.secrets(excluding: secret) }
         lateOwnDevices = ownDevices
-        defer { olderSecrets = saved.0; lateOwnDevices = saved.1 }
+        lateReceivedOwn = keyring?.receivedOwnNames ?? []
+        defer { olderSecrets = saved.0; lateOwnDevices = saved.1; lateReceivedOwn = saved.2 }
         return try resumeRewrap()
     }
 
@@ -323,16 +217,19 @@ extension Vault {
     ///
     /// - Throws: the checks of `requireWritable`; `partialCopy`.
     ///
-    /// - Parameter ownDevices: the device ids this device writes as. Only their revisions under a keyring
-    ///   secret are rewrapped, and every blob (inert until a current revision references it); another device's
-    ///   (a removed device's above all) is left as it is and listed in `lateSkipped`.
+    /// - Parameters:
+    ///   - ownDevices: the device ids this device writes as. Only their revisions under a keyring secret
+    ///     are rewrapped, and every blob (inert until a current revision references it); another device's
+    ///     (a removed device's above all) is left as it is and listed in `lateSkipped`.
+    ///   - receivedOwn: names carrying one of those ids that came from elsewhere (provenance): not own.
     @discardableResult
-    public func rewrapLateFiles(ownDevices: Set<DeviceID>) throws -> RewrapReport {
+    public func rewrapLateFiles(ownDevices: Set<DeviceID>, receivedOwn: Set<String> = []) throws -> RewrapReport {
         _ = try requireReadable()
         try requireWritable()
         try requireCompleteCopy()
         var v = self
         v.lateOwnDevices = ownDevices
+        v.lateReceivedOwn = receivedOwn
         return try v.rewrapNotes(blobs: .reencrypt, stopAfter: nil)
     }
 
@@ -384,6 +281,13 @@ extension Vault {
             }
         }
         return .invalid("its tag verifies under no secret this device knows")
+    }
+
+    /// The body (`gzip(JSON)`) of a revision copy this device's key opens, its tag left unchecked: for
+    /// comparing a copy under a secret this device never held with its own (never for placing it).
+    public func unverifiedBody(_ data: Data, note: UUID, name: RevisionName) -> Data? {
+        guard let plain = try? AgeFile.decrypt(data, with: identities) else { return nil }
+        return try? BodyFraming.unframe(plain, noteId: note.uuidString.lowercased(), filename: name.filename, secret: nil).gzip
     }
 
     /// A revision copy re-encrypted to the current recipients and re-tagged
@@ -556,25 +460,23 @@ extension Vault {
         return m.recipientsTag ?? m.vaultSecret
     }
 
-    /// The policy and outgoing secret of a journal this device accepts under
-    /// `manifest` (format.md §3.3.1 "Accepting the journal"); nil when it
-    /// refuses it or cannot judge it.
-    package func acceptedJournalPolicy(_ journal: Data, manifest: Data)
-        -> (policy: KeyChangePolicy, previous: VaultSecret?, changedAt: Date?)? {
+    /// The outgoing secret of a journal this device accepts under `manifest` (format.md §3.3.1
+    /// "Accepting the journal"; nil inside when the change adds a key), or nil when it refuses it or
+    /// cannot judge it.
+    package func acceptedJournal(_ journal: Data, manifest: Data) -> (previous: VaultSecret?, Void)? {
         guard canRead, let m = try? Self.readManifest(manifest), m.vaultId == vaultId,
               let s = try? Self.decryptSecret(m.vaultSecret, with: identities) else { return nil }
         let record = (try? trustStore?.record(for: vaultId)) ?? nil
-        guard case .accepted(let j, let previous) = Self.judgeJournal(bytes: journal, manifest: m, secret: s,
-                                                                    identities: identities, record: record),
-              let policy = try? j.keyChangePolicy() else { return nil }
-        return (policy, previous, j.changeTime)
+        guard case .accepted(_, let previous) = Self.judgeJournal(bytes: journal, manifest: m, secret: s,
+                                                                identities: identities, record: record) else { return nil }
+        return (previous, ())
     }
 
     /// True when this device accepts `journal` under its own `vault.json`
     /// now: the only journal it may upload (design §6.2 F2, §6.3).
     package func acceptsJournal(_ journal: Data) -> Bool {
         guard let manifest = try? FileIO.read(manifestURL, maxBytes: BoundedRead.maxManifestBytes) else { return false }
-        return acceptedJournalPolicy(journal, manifest: manifest) != nil
+        return acceptedJournal(journal, manifest: manifest) != nil
     }
 
     /// True when `manifest` does not list any of this device's keys.
@@ -645,19 +547,28 @@ extension Vault {
             throw VaultError.untrustedRecipients(.init(reason: .secretUnconfirmed, current: m.recipients.map(\.key),
                                                        restore: nil, record: nil))
         }
-        if !RecipientsAuth.constantTimeEqual(other.bytes, own.bytes) { ring.noteReplaced(own, now: now) }
-        ring.remember(other, now: now)
-        if !linked { ring.noteConfirmedUnlinked(other) }
-        try store.save(ring)
-        // This device's own journal (its change, finished or not) gives way. Its outgoing secret goes
-        // into the keyring first (a change made without one, e.g. by the CLI, kept it only there), and the
-        // journal is kept aside under a name of its own, never over another one (review finding 10).
-        if pendingRewrap {
-            if let previousSecret {
-                ring.remember(previousSecret, now: now)
-                ring.noteReplaced(previousSecret, now: now)
-                try store.save(ring)
+        // Keys this list drops under the same secret still open what was written meanwhile: the rotation
+        // owed is recorded with the rest, before the adopted vault.json is written (review round 2: a
+        // crash in between must not lose it).
+        let sameSecret = RecipientsAuth.constantTimeEqual(other.bytes, own.bytes)
+        let dropped = sameSecret
+            ? manifest.recipients.map(\.key).filter { k in !m.recipients.contains { $0.key == k } } : []
+        let pendingPrevious = pendingRewrap ? previousSecret : nil
+        ring = try store.update(vaultId: vaultId) { r in
+            r.remember(own, now: now)
+            if !sameSecret { r.noteReplaced(own, now: now) }
+            r.remember(other, now: now)
+            if !linked { r.noteConfirmedUnlinked(other) }
+            // This device's own journal gives way: its outgoing secret goes into the keyring first (a change
+            // made without one, e.g. by the CLI, kept it only there).
+            if let pendingPrevious {
+                r.remember(pendingPrevious, now: now)
+                r.noteReplaced(pendingPrevious, now: now)
             }
+            if !dropped.isEmpty { r.rotationOwed = Array(Set((r.rotationOwed ?? []) + dropped)).sorted() }
+        }
+        // The journal is kept aside under a name of its own, never over another one (review finding 10).
+        if pendingRewrap {
             let bytes = try FileIO.read(journalURL, maxBytes: BoundedRead.maxManifestBytes)
             var aside = url.appendingPathComponent(Self.refusedJournalName)
             if FileIO.exists(aside) {

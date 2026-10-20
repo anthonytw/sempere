@@ -13,15 +13,16 @@ import Darwin
 // MARK: - Secret keyring (docs/design/device-first-sync.md §6.3)
 //
 // A device-local record, per vault, of every vault secret this device has
-// held, with when each was replaced and the policy of the change that
-// replaced it (format.md §3.3.1 `mode`, `lateFileWindowDays`, as the journal
-// recorded them when this device first saw it). It lets this device verify
-// and rewrap files written under an older secret after the change finished
-// and the journal is gone (R3, F7, F8, F9). It lives outside the vault, is
-// never synced, and is sealed at rest (`KeyringSealer`): the app with a key
-// held in the Keychain, the CLI to the device's own age identity. It holds
-// only secrets this device already knew, so it reveals nothing new if the
-// device is compromised.
+// held and when each was replaced. It lets this device verify and rewrap the
+// files it wrote under an older secret after a change (R3, the catch-up of a
+// device that was away), and set aside, never accept, another device's files
+// under one (every key change takes effect at once, decided 2026-10-20). It
+// also holds this device's provenance of names (`receivedOwnNames`), whether
+// it found itself removed from the vault (`removed`), and a rotation it owes
+// (`rotationOwed`). It lives outside the vault, is never synced, and is sealed
+// at rest (`KeyringSealer`): the app with a key held in the Keychain, the CLI
+// to the device's own age identity. It holds only secrets this device already
+// knew, so it reveals nothing new if the device is compromised.
 
 /// The secrets one device held for one vault.
 public struct SecretKeyring: Hashable, Sendable, Codable {
@@ -39,16 +40,8 @@ public struct SecretKeyring: Hashable, Sendable, Codable {
         /// When this device first held it.
         public var added: Date
         /// When this device first held a `vault.json` with a later secret
-        /// (design R1, K2): the start of the late-file window. Nil while current.
+        /// (design R1, K2). Nil while current.
         public var replaced: Date?
-        /// The policy of the change away from it, as its journal recorded it,
-        /// copied when this device first saw that journal; nil when it never
-        /// did (then the strictest applies, design F18).
-        public var policy: KeyChangePolicy?
-        /// When the change away from it was made, as its journal recorded it (`changedAt`, bound by
-        /// `rewrapPending`): its window ends at most `policy`'s days after it, however late this device
-        /// first saw the change. Nil: unknown (the window is then 0 days).
-        public var changedAt: Date?
         /// True when this device took the list under this secret on the user's confirmation, with no
         /// link from a secret it held (it missed a rotation in between): a copy elsewhere of one of its
         /// own revisions under a secret it never held is then its own file rewrapped there, not a newer one.
@@ -62,6 +55,21 @@ public struct SecretKeyring: Hashable, Sendable, Codable {
     /// rewrap (design §5.2, R3): every target's pair then compares its copies
     /// again, so a copy one target settled is carried to the others.
     public var generation: Int?
+    /// Names (`<noteId>/<file name>`) of revisions that carry this device's id but came from elsewhere
+    /// (a sync download, a late file): this device did not write them. "Own" (R3, rewrap-replace of a
+    /// copy under a secret this device missed) is decided from this provenance, never from the name
+    /// alone, which a removed device can forge (review round 2).
+    public var receivedOwnNames: Set<String>?
+    /// When this device found a `vault.json` that no longer lists any of its keys: it stops syncing the
+    /// vault (no transfer, ever), keeps its copy readable and offers its unsynced changes for export.
+    public var removed: Date?
+    /// When `removed`: this device's own files (by provenance) that no target it synced with had recorded,
+    /// as `notes/<noteId>/<file name>` or `notes/<noteId>/att/<blob>`: its unsynced changes, for export.
+    public var unsynced: Set<String>?
+    /// Keys a "keep the other change" dropped under one secret (they still open what was written
+    /// meanwhile): the rotation this device owes. Recorded before the adopted `vault.json` is written,
+    /// kept here (not in the coordinator's ledger, which a repair sets aside) until the rotation finished.
+    public var rotationOwed: [String]?
 
     public init(vaultId: UUID) {
         format = Self.formatName
@@ -95,34 +103,11 @@ public struct SecretKeyring: Hashable, Sendable, Codable {
         entries[i].replaced = now
     }
 
-    /// Records the policy of the change away from `outgoing`, as its journal
-    /// recorded it. The first one seen is kept; a later one can only make it
-    /// stricter (an authenticated journal records one policy, so the two
-    /// agree unless something is wrong, and then the stricter is safe).
-    public mutating func notePolicy(_ policy: KeyChangePolicy, outgoing: VaultSecret, changedAt: Date?) {
-        let id = Self.id(of: outgoing)
-        guard let i = entries.firstIndex(where: { $0.id == id }) else { return }
-        entries[i].policy = entries[i].policy.map { $0.stricter(policy) } ?? policy
-        if let changedAt { entries[i].changedAt = entries[i].changedAt.map { min($0, changedAt) } ?? changedAt }
-    }
-
     /// Records that this device took `secret`'s list on the user's confirmation without a link (`Entry.confirmedUnlinked`).
     public mutating func noteConfirmedUnlinked(_ secret: VaultSecret) {
         let id = Self.id(of: secret)
         guard let i = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[i].confirmedUnlinked = true
-    }
-
-    /// How far a change time may be behind this device's clock and still count (clock skew between devices).
-    public static let clockSlack: TimeInterval = 3600
-
-    /// When the late-file window of `e`'s change ends: from the earlier of when this device first saw the
-    /// change and when it was made (plus `clockSlack`), `policy`'s days; 0 days with no policy or no change
-    /// time (design F18; review: a target replaying a finished change's step-2 `vault.json` to a stale
-    /// device must not reopen the window).
-    static func windowEnd(_ e: Entry, since: Date) -> Date {
-        guard let policy = e.policy, let changedAt = e.changedAt else { return since }
-        return min(since, changedAt.addingTimeInterval(clockSlack)).addingTimeInterval(policy.window)
     }
 
     /// Every held secret other than `current`, newest replaced first.
@@ -133,21 +118,16 @@ public struct SecretKeyring: Hashable, Sendable, Codable {
             .compactMap { Hex.decode($0.secret).flatMap { try? VaultSecret(bytes: $0) } }
     }
 
-    /// Until when a file tagged under `secret` (not the current one) arriving
-    /// from elsewhere is still a late file to take in (design §6.2 F9, F17
-    /// to F19): the earliest end of the windows of the change away from it
-    /// and of every later change, each counted from when this device first
-    /// saw that change (`replaced`), with 0 days for a change whose journal
-    /// it never saw. Nil when this device does not hold `secret`, or holds it
-    /// as current (not replaced): nothing is late then.
-    public func lateFileDeadline(for secret: VaultSecret) -> Date? {
-        guard let own = entry(for: secret), let since = own.replaced else { return nil }
-        var deadline = Self.windowEnd(own, since: since)
-        for e in entries where e.id != own.id {
-            guard let r = e.replaced, r >= since else { continue }
-            deadline = min(deadline, Self.windowEnd(e, since: r))
-        }
-        return deadline
+    /// True when `secret` is held and was replaced: a file tagged under it is a late file (another
+    /// device's is set aside, never taken in; this device's own is rewrapped, R3).
+    public func isReplaced(_ secret: VaultSecret) -> Bool { entry(for: secret)?.replaced != nil }
+
+    /// True when `path` (`<noteId>/<file name>`) carries this device's id but came from elsewhere.
+    public func receivedAsOwn(_ path: String) -> Bool { receivedOwnNames?.contains(path) ?? false }
+
+    /// Records that `path`, carrying this device's id, came from elsewhere.
+    public mutating func noteReceivedOwn(_ path: String) {
+        receivedOwnNames = (receivedOwnNames ?? []).union([path])
     }
 }
 
@@ -333,6 +313,11 @@ public struct SealedFileKeyringStore: SecretKeyringStore {
     /// file beside the keyring).
     @discardableResult
     public func update(vaultId: UUID, _ body: (inout SecretKeyring) throws -> Void) throws -> SecretKeyring {
+        try locked(vaultId) { try unlockedUpdate(vaultId: vaultId, body) }
+    }
+
+    /// Runs `body` holding the keyring's lock: across threads of this process and across processes.
+    func locked<T>(_ vaultId: UUID, _ body: () throws -> T) throws -> T {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
         let lockPath = url(vaultId).path + ".lock"
@@ -343,7 +328,7 @@ public struct SealedFileKeyringStore: SecretKeyringStore {
         defer { close(fd) }
         guard flock(fd, LOCK_EX) == 0 else { throw SecretKeyringError.unreadable("lock \(lockPath): errno \(errno)") }
         defer { _ = flock(fd, LOCK_UN) }
-        return try unlockedUpdate(vaultId: vaultId, body)
+        return try body()
     }
 
     /// Sets an unreadable keyring aside (kept, never deleted: `<id>.keyring.unreadable-<n>`) so sync can
@@ -352,18 +337,22 @@ public struct SealedFileKeyringStore: SecretKeyringStore {
     /// the keyring reads fine or there is none.
     @discardableResult
     public func setAside(vaultId: UUID) throws -> URL? {
-        let file = url(vaultId)
-        guard FileIO.exists(file) else { return nil }
-        do { _ = try load(vaultId: vaultId); return nil } catch {}
-        let aside = directory.appendingPathComponent(file.lastPathComponent + ".unreadable-\(UUID().uuidString.prefix(8))")
-        try FileManager.default.moveItem(at: file, to: aside)
-        return aside
+        try locked(vaultId) {
+            let file = url(vaultId)
+            guard FileIO.exists(file) else { return nil }
+            do { _ = try load(vaultId: vaultId); return nil } catch {}
+            let aside = directory.appendingPathComponent(file.lastPathComponent + ".unreadable-\(UUID().uuidString.prefix(8))")
+            try FileManager.default.moveItem(at: file, to: aside)
+            return aside
+        }
     }
 
     /// Seals the keyring again under the current sealer (after adding an identity to `AgeKeyringSealer`).
     public func reseal(vaultId: UUID) throws {
-        guard let ring = try load(vaultId: vaultId) else { return }
-        try save(ring)
+        try locked(vaultId) {
+            guard let ring = try load(vaultId: vaultId) else { return }
+            try save(ring)
+        }
     }
 }
 

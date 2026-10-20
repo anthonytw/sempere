@@ -5,20 +5,29 @@ import Sempere
 //
 // With `SyncOptions.keyring` a run:
 // - stores this device's secret in its keyring before it takes a `vault.json`
-//   with another secret (R1), and an accepted journal's policy (mode, late-file
-//   window) when it first takes the journal (§6.5);
+//   with another secret (R1), and an accepted journal's outgoing secret;
 // - never uploads a rewrap journal this device refuses (F2);
-// - treats a received revision or blob tagged under an older secret (one this
-//   device held, or an accepted journal's outgoing one) as a late file (F9):
-//   rewrapped and placed while the window of every change since that secret
-//   is open (counted from when this device first saw each), quarantined as a
-//   late file after it, never deleted (F9, F17 to F19, I6).
+// - every key change takes effect at once (decided 2026-10-20): a received
+//   revision tagged under an older secret (a late file, F9) is set aside under
+//   `late/` in the quarantine, never made current here and never deleted
+//   (Adopt or Export); a late blob is taken in only when a revision held here
+//   references its content (blobs are inert and content-addressed);
+// - records the names that carry this device's id but came from elsewhere
+//   (`SecretKeyring.receivedOwnNames`): "own" is decided from that provenance,
+//   never from a name, which a removed device can forge;
+// - a late file set aside here is resolved once its current copy arrives
+//   with the same body (its writer caught up, R3): the kept copy then goes;
+// - a device that finds a `vault.json` without any of its keys records that it
+//   was removed and stops syncing the vault (no transfer, ever).
 // With `SyncOptions.rewrapReplace` too (P4 turns it on; off by default):
 // - this device's late local files are rewrapped from the keyring (R3);
 // - while both sides hold the same list (rule 1), every file both hold is
 //   compared, and a copy is replaced by the other side's only when both
 //   verify, their bodies are equal and exactly one is current (rules 2 to 4;
 //   both current: the smaller SHA-256 wins), so devices and bridges converge.
+
+/// Stops a run at once: this device was removed from the vault (`noteRemoved`).
+struct RemovedFromVault: Error {}
 
 /// What a run keeps for its key-change work.
 struct KeyChangeRunState {
@@ -44,7 +53,6 @@ struct KeyChangeRunState {
 /// What to do with a received file under an older secret.
 enum LateVerdict {
     case notLate
-    case accept(rewrapped: Data, deadline: Date, secretId: String)
     case quarantine(String)
 }
 
@@ -53,7 +61,8 @@ enum LateBlobVerdict {
     case notLate
     /// An older name of a blob this device holds under its current name (a rename's leftover): not placed.
     case leftover
-    case accept(deadline: Date, secretId: String)
+    /// A revision held here references its content: taken in under its current name.
+    case accept(secretId: String)
     case quarantine(String)
 }
 
@@ -110,7 +119,8 @@ extension SyncEngine {
         // R3: this device's late files (and stale copies) rewrapped from its keyring.
         if options.lateRewrap, state.lateRewrapFor != fingerprint, let v = keyChangeVault() {
             do {
-                let r = try v.rewrapLateFiles(ownDevices: options.ownDevices)
+                let r = try v.rewrapLateFiles(ownDevices: options.ownDevices,
+                                              receivedOwn: locked({ kc.ring?.receivedOwnNames }) ?? [])
                 if !r.rewrapped.isEmpty {
                     keyChangeActivity { $0.rewrapped += r.rewrapped.count }
                     bumpGeneration(store)
@@ -127,6 +137,7 @@ extension SyncEngine {
 
     /// After the notes: records a settled pair.
     func finishKeyChangeRun() {
+        resolveHeldLateFiles()
         guard options.rewrapReplace, options.keyring != nil, !options.dryRun, !options.pushOnly,
               let local = try? localMutable(Vault.manifestName), let fingerprint = Vault.listFingerprint(local) else { return }
         let marker = settledMarker(fingerprint)
@@ -166,12 +177,8 @@ extension SyncEngine {
             locked { kc.ring = ring; kc.vault = nil }
         } else if name == Vault.journalName {
             guard let manifest = try? localMutable(Vault.manifestName),
-                  let (policy, previous, changedAt) = vault.acceptedJournalPolicy(data, manifest: manifest), let previous else { return }
-            // The change's policy, copied when first seen (design §6.5).
-            let ring = try store.update(vaultId: vault.vaultId) {
-                $0.noteReplaced(previous, now: options.now)
-                $0.notePolicy(policy, outgoing: previous, changedAt: changedAt)
-            }
+                  let (previous, _) = vault.acceptedJournal(data, manifest: manifest), let previous else { return }
+            let ring = try store.update(vaultId: vault.vaultId) { $0.noteReplaced(previous, now: options.now) }
             locked { kc.ring = ring; kc.vault = nil }
         }
     }
@@ -186,37 +193,40 @@ extension SyncEngine {
             : "this device refuses the local rewrap journal (vault.json does not bind it): never uploaded (design §6.2 F2)"
     }
 
-    /// Another device's revisions under a keyring secret held here (R3 skipped them) whose names say they
-    /// were written after the change away from that secret (or all of them when this device never saw the
-    /// change's time): received here before this device learned of the change (a removed device's write to a target the change had not reached, review finding 2).
-    /// They are moved to the late-file quarantine (kept, never deleted; Adopt or Export), never made
-    /// current here. One whose name claims an earlier time stays as it is, under its old wrap, unreadable
-    /// until its writer or a current copy from a target replaces it.
+    /// Revisions under a keyring secret held here that are not this device's (R3 skipped them; "own" by
+    /// provenance): received before this device learned of the change (a removed device's write to a
+    /// target the change had not reached, review finding 2), or another device's file whose current copy
+    /// has not arrived yet. When the target holds the current copy, that copy is taken; otherwise the file
+    /// is moved to the late-file quarantine (kept, never deleted; resolved when its current copy arrives,
+    /// else Adopt or Export), never made current here. Removed only once the keep succeeded (round 2).
     func setAsideLateFiles(_ paths: [String], vault v: Vault) {
         // Only while both sides hold the same list: the target's copy is then judged under this list.
-        guard !options.dryRun, kc.listAgreed, let ring = locked({ kc.ring }) else { return }
+        guard !options.dryRun, kc.listAgreed else { return }
         for p in paths {
             let parts = p.split(separator: "/").map(String.init)
             guard parts.count == 2, let n = RevisionName(parts[1]), let note = UUID(uuidString: parts[0]) else { continue }
             let url = root.appendingPathComponent(Vault.notesName).appendingPathComponent(p)
             guard let data = try? BoundedRead.contents(of: url, maxBytes: options.maxFileBytes),
-                  let s = v.lateSecret(ofRevision: data, note: note, name: n) else { continue }
-            // The target holds the current copy (the change's maker rewrapped it): take that one.
+                  v.lateSecret(ofRevision: data, note: note, name: n) != nil else { continue }
+            // The target holds the current copy (its writer or the change's maker rewrapped it), with the
+            // same body: take that one.
             if let remote = try? transport.read([Vault.notesName, parts[0], n.filename], maxBytes: options.maxFileBytes).data,
-               v.classifyRevision(remote, note: note, name: n).isCurrent {
+               case .current(let rb) = v.classifyRevision(remote, note: note, name: n),
+               v.classifyRevision(data, note: note, name: n).body == rb {
                 if (try? options.beforeLocalReplace?("notes/\(p)")) != nil, (try? LocalFS.write(remote, to: url, replacing: true)) != nil {
                     keyChangeActivity { $0.replaced.append(.init(side: "local", path: "notes/\(p)")) }
                 }
                 continue
             }
-            // With the change's time known, only what was written after it; unknown (the journal never seen
-            // here), every such file: fail closed.
-            if let changedAt = ring.entry(for: s)?.changedAt,
-               Double(n.hlc.millis) / 1000 <= changedAt.timeIntervalSince1970 { continue }
             let path = "notes/\(p)"
-            quarantineLate(key(parts[0], n), path: path, entry: nil,
-                           reason: "another device's file under a replaced secret, written after the change; set aside, "
-                               + "never made current here (adopt or export it)", data: data)
+            let kept = quarantineLate(key(parts[0], n), path: path, entry: nil,
+                                      reason: "another device's file under a replaced secret; set aside, never made "
+                                          + "current here (resolved when its current copy arrives; else adopt or export it)",
+                                      data: data)
+            guard kept else {
+                notSettled(path, "not set aside: the quarantine could not keep it; left in place, unreadable here")
+                continue
+            }
             try? LocalFS.remove(url)
             let dir = url.deletingLastPathComponent()
             if (try? LocalFS.entries(dir))?.isEmpty == true { try? FileManager.default.removeItem(at: dir) }
@@ -225,56 +235,161 @@ extension SyncEngine {
 
     // MARK: Late files (F9, F17 to F19)
 
-    /// The verdict on a received revision tagged under an older secret.
+    /// The verdict on a received revision tagged under an older secret: never taken in (every key change
+    /// is immediate); its writer catches up and sends a current copy, which resolves it.
     func lateRevision(_ data: Data, note: UUID, name: RevisionName) -> LateVerdict {
-        guard options.keyring != nil, let v = keyChangeVault(), let s = v.lateSecret(ofRevision: data, note: note, name: name),
-              let deadline = locked({ kc.ring?.lateFileDeadline(for: s) }) else { return .notLate }
-        guard options.now < deadline else { return .quarantine(lateReason(deadline)) }
-        do {
-            return .accept(rewrapped: try v.rewrappedRevision(data, note: note, name: name), deadline: deadline,
-                           secretId: SecretKeyring.id(of: s))
-        } catch {
-            return .notLate
-        }
+        guard options.keyring != nil, let v = keyChangeVault(),
+              v.lateSecret(ofRevision: data, note: note, name: name) != nil else { return .notLate }
+        return .quarantine(Self.lateReason)
     }
 
     /// The verdict on a received blob named under an older secret.
     func lateBlob(at file: URL, note: String, name: String) -> LateBlobVerdict {
         guard options.keyring != nil, let v = keyChangeVault(),
-              case .stale(_, let s?) = v.classifyBlob(at: file, fileName: name) else { return .notLate }
+              case .stale(let body, let s?) = v.classifyBlob(at: file, fileName: name) else { return .notLate }
         if let current = v.currentBlobName(at: file, fileName: name),
            FileManager.default.fileExists(atPath: attURL(note).appendingPathComponent(current).path) {
             return .leftover
         }
-        guard let deadline = locked({ kc.ring?.lateFileDeadline(for: s) }) else { return .notLate }
-        return options.now < deadline ? .accept(deadline: deadline, secretId: SecretKeyring.id(of: s)) : .quarantine(lateReason(deadline))
+        // Taken in when a revision this device holds (placed, so accepted here) references its content: a
+        // blob is inert and content-addressed, and without it that revision's attachment would be missing
+        // (review round 2, property seed 88).
+        if let id = UUID(uuidString: note),
+           (try? v.blobInventory(note: id))?.referencedHashes.contains(String(decoding: body, as: UTF8.self)) == true {
+            return .accept(secretId: SecretKeyring.id(of: s))
+        }
+        return .quarantine(Self.lateReason)
     }
 
-    func lateReason(_ deadline: Date) -> String {
-        "a late file: tagged under a secret a key change replaced, after its late-file window (ended "
-            + "\(Self.compactUTC(deadline))); kept as a late file, never deleted: adopt or export it (design §6.2 F9)"
-    }
+    static let lateReason = "a late file: tagged under a secret a key change replaced (every key change takes effect "
+        + "at once); kept as a late file, never deleted: resolved when its current copy arrives, else adopt or export it"
 
     /// Quarantines a late file under `late/` in the quarantine folder.
-    func quarantineLate(_ key: String, path: String, entry: RemoteEntry?, reason: String, data: Data? = nil, file: URL? = nil) {
-        quarantine(key, path: LateFiles.folder + "/" + path, entry: entry, reason: reason, data: data, file: file)
+    @discardableResult
+    func quarantineLate(_ key: String, path: String, entry: RemoteEntry?, reason: String, data: Data? = nil,
+                        file: URL? = nil) -> Bool {
+        let kept = quarantine(key, path: LateFiles.folder + "/" + path, entry: entry, reason: reason, data: data, file: file)
         keyChangeActivity { $0.lateQuarantined.append(.init(path: path, message: reason)) }
+        return kept
     }
 
-    /// A late revision was placed, rewrapped: the remote copy is replaced
-    /// by it too while both sides hold the same list (rewrap-replace).
-    func tookLateRevision(_ id: String, _ n: RevisionName, path: String, placed: Data, entry: RemoteEntry?, deadline: Date,
-                          secretId: String) {
-        keyChangeActivity { $0.lateAccepted.append(.init(path: path, deadline: deadline, secretId: secretId)) }
-        guard options.rewrapReplace, kc.listAgreed, let etag = entry?.etag, Self.isStrong(etag) else { return }
-        if (try? transport.write([Vault.notesName, id, n.filename], .data(placed), condition: .replace(etag: etag))) == true {
-            keyChangeActivity { $0.replaced.append(.init(side: "remote", path: path)) }
+    /// A revision placed here as current: a copy of it this device set aside as late (its writer caught up
+    /// and sent this one) is resolved when its body is the same; otherwise it stays, reported.
+    func resolveLate(_ id: String, _ n: RevisionName, placed: Data) {
+        guard options.keyring != nil, let q = Optional(quarantineRoot), let v = keyChangeVault(),
+              let uuid = UUID(uuidString: id), let body = v.classifyRevision(placed, note: uuid, name: n).body else { return }
+        let dir = q.appendingPathComponent(LateFiles.folder).appendingPathComponent(Vault.notesName).appendingPathComponent(id)
+        guard let names = try? LocalFS.entries(dir) else { return }
+        for f in names where f == n.filename || f.hasPrefix(n.filename + ".copy-") {
+            let url = dir.appendingPathComponent(f)
+            guard let kept = try? BoundedRead.contents(of: url, maxBytes: options.maxFileBytes) else { continue }
+            if v.classifyRevision(kept, note: uuid, name: n).body == body {
+                try? FileManager.default.removeItem(at: url)
+                keyChangeActivity { $0.lateResolved.append("notes/\(id)/\(n.filename)") }
+            } else {
+                keyChangeActivity { $0.unsettled.append(.init(path: "notes/\(id)/\(n.filename)",
+                    message: "a copy set aside as late holds another body under this name: kept (two installs with one device id?)")) }
+            }
         }
+        if (try? LocalFS.entries(dir))?.isEmpty == true { try? FileManager.default.removeItem(at: dir) }
+    }
+
+    /// The target's `vault.json` lists none of this device's keys: it was removed. Recorded in the keyring
+    /// (it never syncs this vault again: `run` stops before any transfer from then on), with the files it
+    /// wrote that this target never recorded (its unsynced changes, offered for export); the run stops
+    /// here. The removal cannot be verified (the new secret is not given to a removed key): a target
+    /// that fakes it only stops this device's sync, which keeps its copy readable.
+    func noteRemoved() throws {
+        report.removedFromVault = true
+        guard let vault, !options.dryRun else { throw RemovedFromVault() }
+        var unsynced = Set<String>()
+        let store = options.keyring
+        let ring = (try? store?.load(vaultId: vault.vaultId)) ?? nil
+        let notes = root.appendingPathComponent(Vault.notesName)
+        for id in (try? LocalFS.entries(notes)) ?? [] where UUID(uuidString: id) != nil {
+            for f in (try? LocalFS.entries(notes.appendingPathComponent(id))) ?? [] {
+                guard let n = RevisionName(f), n.filename == f, options.ownDevices.contains(n.device),
+                      !(ring?.receivedAsOwn("\(id)/\(f)") ?? false), state.files[key(id, n)] == nil else { continue }
+                unsynced.insert("notes/\(id)/\(f)")
+            }
+            for b in localBlobNames(id) ?? [] where state.files[blobKey(id, b)] == nil {
+                unsynced.insert(blobPath(id, b))
+            }
+        }
+        let found = unsynced
+        _ = try? store?.update(vaultId: vault.vaultId) {
+            if $0.removed == nil { $0.removed = options.now }
+            $0.unsynced = ($0.unsynced ?? []).union(found)
+        }
+        state.removed = state.removed ?? options.now
+        state.unsynced = Array(Set(state.unsynced ?? []).union(found)).sorted()
+        report.unsynced = state.unsynced ?? []
+        try? state.save(stateURL)
+        throw RemovedFromVault()
+    }
+
+    /// Copies `paths` (a removed device's unsynced files, `SyncReport.unsynced`) and `vault.json` from the vault
+    /// folder `vault` into `out`, as a vault folder of their own: what the device wrote that no target holds,
+    /// readable with its key (format.md §4, "Recover one note with nothing but age"), for the user to keep or to
+    /// bring into the vault from a listed device (`sempere import`). Never over an existing file. Returns the
+    /// paths written.
+    public static func exportUnsynced(vault: URL, paths: [String], to out: URL) throws -> [String] {
+        let fm = FileManager.default
+        var written: [String] = []
+        for rel in [Vault.manifestName] + paths.sorted() {
+            let parts = rel.split(separator: "/").map(String.init)
+            guard !parts.isEmpty, !parts.contains(".."), !parts.contains(where: { $0.hasPrefix(".") }),
+                  rel == Vault.manifestName || parts.first == Vault.notesName else { continue }
+            let from = vault.appendingPathComponent(rel), to = out.appendingPathComponent(rel)
+            guard fm.fileExists(atPath: from.path) else { continue }
+            try fm.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try fm.copyItem(at: from, to: to)
+            written.append(rel)
+        }
+        return written
+    }
+
+    /// Every late copy kept in this target's quarantine whose current copy the vault now holds (it may have
+    /// come through another target) with the same body: resolved (`resolveLate`). Once per run.
+    func resolveHeldLateFiles() {
+        guard options.keyring != nil, !options.dryRun else { return }
+        let notes = quarantineRoot.appendingPathComponent(LateFiles.folder).appendingPathComponent(Vault.notesName)
+        for id in (try? LocalFS.entries(notes)) ?? [] where UUID(uuidString: id) != nil {
+            // A late blob whose content this device now holds under its current name: resolved.
+            let lateAtt = notes.appendingPathComponent(id).appendingPathComponent(Vault.attachmentsName)
+            for f in (try? LocalFS.entries(lateAtt)) ?? [] {
+                let url = lateAtt.appendingPathComponent(f)
+                guard let v = keyChangeVault(), let current = v.currentBlobName(at: url, fileName: f.components(separatedBy: ".copy-")[0]),
+                      FileManager.default.fileExists(atPath: attURL(id).appendingPathComponent(current).path) else { continue }
+                try? FileManager.default.removeItem(at: url)
+                keyChangeActivity { $0.lateResolved.append(blobPath(id, f)) }
+            }
+            if (try? LocalFS.entries(lateAtt))?.isEmpty == true { try? FileManager.default.removeItem(at: lateAtt) }
+            let names = (try? LocalFS.entries(notes.appendingPathComponent(id))) ?? []
+            for f in Set(names.map { $0.components(separatedBy: ".copy-")[0] }) {
+                guard let n = RevisionName(f), n.filename == f,
+                      let held = try? BoundedRead.contents(of: root.appendingPathComponent("\(Vault.notesName)/\(id)/\(f)"),
+                                                           maxBytes: options.maxFileBytes),
+                      let v = keyChangeVault(), case .current = v.classifyRevision(held, note: UUID(uuidString: id)!, name: n)
+                else { continue }
+                resolveLate(id, n, placed: held)
+            }
+        }
+    }
+
+    /// A revision that carries this device's id arrived from elsewhere: recorded, so it never counts as this
+    /// device's own (R3, rewrap-replace of a missed rotation's copy). Reported: another install with this
+    /// device id (a restored backup), or a forgery.
+    func noteReceivedOwn(_ id: String, _ n: RevisionName) {
+        guard options.ownDevices.contains(n.device), let store = options.keyring, let vault, !options.dryRun else { return }
+        let path = "\(id)/\(n.filename)"
+        if let ring = try? store.update(vaultId: vault.vaultId, { $0.noteReceivedOwn(path) }) { locked { kc.ring = ring } }
+        keyChangeActivity { $0.receivedOwn.append("notes/" + path) }
     }
 
     /// A late blob, taken in under its current name; its old name stays a
     /// shared record, so the leftover is collected like any old name.
-    func takeLateBlob(at part: URL, note id: String, name: String, path: String, deadline: Date, secretId: String) throws {
+    func takeLateBlob(at part: URL, note id: String, name: String, path: String, secretId: String) throws {
         defer { try? FileManager.default.removeItem(at: part) }
         guard let v = keyChangeVault(), let current = v.currentBlobName(at: part, fileName: name) else { return }
         let target = attURL(id).appendingPathComponent(current)
@@ -289,7 +404,7 @@ extension SyncEngine {
             locked { report.downloaded.append(blobPath(id, current)) }
         }
         locked { state.files[blobKey(id, name)] = SyncState.FileRecord() }
-        keyChangeActivity { $0.lateAccepted.append(.init(path: path, deadline: deadline, secretId: secretId)) }
+        keyChangeActivity { $0.lateAccepted.append(.init(path: path, secretId: secretId)) }
     }
 
     /// True when `name` (on the server, gone here) is an older name of a blob this device holds.
@@ -355,7 +470,9 @@ extension SyncEngine {
                 }
                 let l = v.classifyRevision(local, note: uuid, name: n), r = v.classifyRevision(remote, note: uuid, name: n)
                 try settleCopies(path: path, key: key(id, n), local: l, remote: r,
-                                 ownAfterMissedRotation: options.ownDevices.contains(n.device) && missedRotation(v),
+                                 ownAfterMissedRotation: options.ownDevices.contains(n.device) && missedRotation(v)
+                                     && !(locked({ kc.ring?.receivedAsOwn(key(id, n)) }) ?? false)
+                                     && v.unverifiedBody(remote, note: uuid, name: n) == l.body,
                                  localHash: FileDigest.sha256(local), remoteHash: FileDigest.sha256(remote),
                                  entry: entries[n], etag: etag, remoteData: remote,
                                  replaceRemote: { cond in
@@ -438,13 +555,15 @@ extension SyncEngine {
         // Rule 2: both verify. A remote copy that does not is quarantined (never placed, never deleted).
         guard let rb = remote.body else {
             if case .invalid(let why) = remote {
-                quarantine(key, path: path, entry: entry, reason: "rewrap-replace: the server's copy \(why)", data: remoteData)
-                // This device's own revision, current here, after it missed a rotation (the user confirmed its
-                // list): the server's copy under a secret it never held is its own write rewrapped by another
-                // device in between (or a forgery). It is kept above; the current copy takes its place. Never
-                // otherwise: a copy under an unknown secret may be a newer one whose vault.json has not
-                // arrived yet (F6).
-                if ownAfterMissedRotation, local.isCurrent {
+                let keptRemote = quarantine(key, path: path, entry: entry, reason: "rewrap-replace: the server's copy \(why)",
+                                            data: remoteData)
+                // This device's own revision (by provenance), current here, after it missed a rotation (the
+                // user confirmed its list), whose server copy holds the same body under a secret it never held:
+                // its own write rewrapped by another device in between. The current copy takes its place, only
+                // once the server's copy is kept. Never otherwise: a copy under an unknown secret may be a newer
+                // one whose vault.json has not arrived yet (F6); another body under its name (two installs with
+                // one device id) is never replaced (review round 2).
+                if ownAfterMissedRotation, local.isCurrent, keptRemote {
                     return try replaceRemoteCopy(path: path, entry: entry, etag: etag, replaceRemote: replaceRemote,
                                                  settled: settled)
                 }

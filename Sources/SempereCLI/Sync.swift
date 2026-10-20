@@ -164,6 +164,11 @@ struct SyncWebDAVCommand: ParsableCommand {
           help: "Create the server's sempere-index.json and sempere-summaries.sealed for the web viewer (needs the vault unlocked).")
     var webViewer = false
 
+    @Option(name: .customLong("export-unsynced"),
+            help: ArgumentHelp("Once this device was removed from the vault: copy what it wrote that no target holds, "
+                + "with vault.json, into this new folder.", valueName: "folder"))
+    var exportUnsynced: String?
+
     @OptionGroup var access: AccessOptions
     @OptionGroup var output: OutputOptions
 
@@ -209,10 +214,22 @@ struct SyncWebDAVCommand: ParsableCommand {
         do { report = try sync.run() } catch { meter?.finish(); throw error }
         meter?.finish()
 
+        var exported: [String]?
+        if let exportUnsynced {
+            guard report.removedFromVault else {
+                throw CLIError.usage("--export-unsynced: this device was not removed from the vault; it syncs as usual")
+            }
+            let out = URL(fileURLWithPath: exportUnsynced)
+            if FileManager.default.fileExists(atPath: out.path) {
+                throw CLIError.failure("\(out.path) exists: --export-unsynced writes a new folder")
+            }
+            exported = try SyncEngine.exportUnsynced(vault: dir, paths: report.unsynced, to: out)
+        }
         if output.json {
-            try output.emitJSON(report)
+            try output.emitJSON(SyncWithExport(report: report, exported: exported))
         } else {
             SyncCLI.printReport(report, output)
+            if let exported { output.info("exported \(exported.count) files to \(exportUnsynced ?? "")") }
         }
         try SyncCLI.exit(for: report)
     }
@@ -342,6 +359,7 @@ enum SyncCLI {
 
     /// Exit 1 for errors, quarantined files or files still arriving; 6 for a rejected vault.json; 3 for conflicts.
     static func exit(for report: SyncReport) throws {
+        if report.removedFromVault { throw ExitCode(ExitStatus.removedFromVault) }
         if !report.errors.isEmpty || !report.quarantined.isEmpty || !report.arriving.isEmpty { throw ExitCode(ExitStatus.failure) }
         if !report.rejected.isEmpty { throw ExitCode(ExitStatus.untrustedRecipients) }
         if !report.conflicts.isEmpty { throw ExitCode(ExitStatus.unhealthy) }
@@ -349,6 +367,12 @@ enum SyncCLI {
 
     static func printReport(_ r: SyncReport, _ output: OutputOptions) {
         let verb = r.dryRun ? "would " : ""
+        if r.removedFromVault {
+            FileHandle.standardError.write(Data(("this device was removed from the vault: it no longer syncs it. Its copy "
+                + "stays readable here. \(r.unsynced.count) files it wrote are on no target: --export-unsynced FOLDER "
+                + "copies them out.\n").utf8))
+            for p in r.unsynced where !output.quiet { print("unsynced   \(p)") }
+        }
         if !output.quiet {
             for p in r.uploaded { print("\(verb)upload    \(p)") }
             for p in r.downloaded { print("\(verb)download  \(p)") }
@@ -449,4 +473,20 @@ final class ProgressLine: @unchecked Sendable {
         // Carriage return, the line, then erase what a longer earlier line left.
         FileHandle.standardError.write(Data(("\r" + line + "\u{1B}[K").utf8))
     }
+}
+
+/// `sync webdav --json`: the report, and with `--export-unsynced` what was exported.
+struct SyncWithExport: Encodable {
+    let report: SyncReport
+    let exported: [String]?
+
+    func encode(to encoder: Encoder) throws {
+        try report.encode(to: encoder)
+        if let exported {
+            var c = encoder.container(keyedBy: K.self)
+            try c.encode(exported, forKey: .exported)
+        }
+    }
+
+    enum K: String, CodingKey { case exported }
 }

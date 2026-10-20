@@ -18,15 +18,16 @@ final class KeyChangeReviewTests: TempDirTestCase {
 
     // MARK: Finding 1: the window ends at the change time, however late a device sees the change
 
-    /// A removed device writes 30 days after a 7-day removal; a target replays the finished change's
-    /// authentic step-2 vault.json and journal to a device that was away. Before: that device's window
-    /// started then, it took the file in, rewrapped it and spread it as current to everyone.
+    /// A removed device writes 30 days after its removal and puts the file on a target (it has the login);
+    /// the target replays the finished change's authentic step-2 vault.json and journal to a device that
+    /// was away. Before round 1: that device's window started then, it took the file in, rewrapped it and
+    /// spread it as current to everyone. Now no late file is ever taken in.
     func testLateInjectionThroughStaleDevice() throws {
         let w = try world("w1", devices: 4, uses: [[0, 1], [0, 1], [0, 1], [1]])
         let d = w.devices[3], c = w.c
         try w.write(w.a, n1, "one")
         try w.converge()
-        try w.change(w.a) { try $0.prepareRemoveRecipient(c.identity.recipient, keyChange: try .routine(days: 7), now: w.now) }
+        try w.change(w.a) { try $0.prepareRemoveRecipient(c.identity.recipient, now: w.now) }
         c.removed = true
         w.tick()
         XCTAssertThrowsError(try w.a.sync("T1", now: w.now, faults: KeyChangeFaults(afterStep: ["T1": .manifest])))
@@ -35,9 +36,10 @@ final class KeyChangeReviewTests: TempDirTestCase {
         try w.converge(skip: ["D"])
         w.tick(30 * 86_400)
         let n3 = UUID()
-        _ = try c.write(n3, "injected 30 days later", now: w.now)
+        let injected = try c.write(n3, "injected 30 days later", now: w.now)
+        let injectedPath = [Vault.notesName, n3.uuidString.lowercased(), injected.filename]
+        w.targets[1].put(injectedPath, try Data(contentsOf: c.folder.appendingPathComponent(injectedPath.joined(separator: "/"))))
         w.tick()
-        _ = try? c.sync("T1", now: w.now)
         let final = try XCTUnwrap(w.targets[1].file([Vault.manifestName]))
         w.targets[1].put([Vault.manifestName], step2)
         w.targets[1].put([Vault.journalName], journal)
@@ -64,7 +66,7 @@ final class KeyChangeReviewTests: TempDirTestCase {
         try w.converge()
         let c = w.c
         w.targets[1].offline.value = true
-        try w.change(w.a) { try $0.prepareRemoveRecipient(c.identity.recipient, keyChange: .compromised, now: w.now) }
+        try w.change(w.a) { try $0.prepareRemoveRecipient(c.identity.recipient, now: w.now) }
         c.removed = true
         w.tick(); _ = try? w.a.sync("T0", now: w.now)
         w.targets[1].offline.value = false
@@ -94,11 +96,11 @@ final class KeyChangeReviewTests: TempDirTestCase {
         let x = pqIdentity(), y = pqIdentity()
         w.oracle.identities += [x, y]
         t1.offline.value = true
-        try w.change(w.a, overriding: ["T1"]) { try $0.prepareAddRecipient(x.recipient, label: "X", now: w.now) }
+        try w.change(w.a) { try $0.prepareAddRecipient(x.recipient, label: "X", now: w.now) }
         try w.write(w.a, n1, "A wrote under L+X")
         for _ in 0..<2 { w.tick(); _ = try? w.a.sync("T0", now: w.now) }
         t1.offline.value = false; t0.offline.value = true
-        try w.change(w.b, overriding: ["T0"]) { try $0.prepareAddRecipient(y.recipient, label: "Y", now: w.now) }
+        try w.change(w.b) { try $0.prepareAddRecipient(y.recipient, label: "Y", now: w.now) }
         for _ in 0..<2 { w.tick(); _ = try? w.b.sync("T1", now: w.now) }
         t0.offline.value = false
         for _ in 0..<2 { for d in [w.a, w.b] { for t in ["T0", "T1"] { w.tick(); _ = try? d.sync(t, now: w.now) } } }
@@ -107,7 +109,7 @@ final class KeyChangeReviewTests: TempDirTestCase {
         let dropped = try w.a.coordinator.adoptOtherChange(from: "T1", vault: &va, now: w.now)
         XCTAssertEqual(dropped, [x.recipient.string])
         XCTAssertEqual(w.a.coordinator.rotationOwed, [x.recipient.string])
-        XCTAssertThrowsError(try w.change(w.a) { try $0.prepareAddRecipient(pqIdentity().recipient, label: "z", now: w.now) }) {
+        XCTAssertThrowsError(try w.change(w.a, syncFirst: false) { try $0.prepareAddRecipient(pqIdentity().recipient, label: "z", now: w.now) }) {
             XCTAssertEqual($0 as? KeyChangeError, .rotationOwed)
         }
         // Nobody redoes anything: the coordinator rotates by itself at the next runs.
@@ -202,9 +204,11 @@ final class KeyChangeReviewTests: TempDirTestCase {
 
     // MARK: Finding 4: blobs in I1, late blobs, no collection across lists
 
-    /// F9 with an attachment: a late revision and its blob arrive within the window; both are taken in
-    /// (the blob under its current name), and every device resolves the reference.
-    func testLateAttachmentWithinWindow() throws {
+    /// F9 with an attachment: C attached a picture while away; its upload (the revision and the blob,
+    /// under the old secret) reaches T0 after the change. B sets both aside at once (every key change is
+    /// immediate); C, back, rewraps them (R3) and uploads them; B takes the current copies and both late
+    /// copies are resolved.
+    func testLateAttachmentSetAsideThenResolvedByTheWritersCatchUp() throws {
         let w = try world("w7")
         try w.write(w.a, n1, "one")
         try w.converge()
@@ -214,21 +218,16 @@ final class KeyChangeReviewTests: TempDirTestCase {
         try w.attach(w.c, note, Data("a late picture".utf8))
         let folder = w.c.folder.appendingPathComponent("notes/\(note.uuidString.lowercased())")
         let files = try Self.files(under: folder)
-        try FileManager.default.removeItem(at: folder)
         let spare = try XCTUnwrap(w.spare)
-        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient, keyChange: try .routine(days: 7), now: w.now) }
-        // B sees the change's journal (its policy) while it is on T0.
-        w.tick()
-        XCTAssertThrowsError(try w.a.sync("T0", now: w.now, faults: KeyChangeFaults(afterStep: ["T0": .manifest])))
-        w.tick()
-        XCTAssertTrue(try w.b.sync("T0", now: w.now).downloaded.contains(Vault.journalName))
+        try w.change(w.a) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }
         try w.converge(skip: ["C"])
-        w.tick(86_400)
         for (rel, data) in files { w.targets[0].put(["notes", note.uuidString.lowercased()] + rel.split(separator: "/").map(String.init), data) }
         w.tick()
         let r = try w.b.sync("T0", now: w.now)
-        XCTAssertEqual(r.keyChange?.lateAccepted.count, 2, "the revision and the blob: \(KCWorld.brief(r))")
+        XCTAssertEqual(r.keyChange?.lateQuarantined.count, 2, "the revision and the blob: \(KCWorld.brief(r))")
+        XCTAssertTrue(r.keyChange?.lateAccepted.isEmpty ?? true)
         try w.converge()
+        XCTAssertTrue(w.b.lateFiles().isEmpty, "both resolved: \(w.b.lateFiles().map(\.path))")
         w.assertConverged()
         w.assertRevoked([spare])
         w.assertNoLoss()
@@ -309,7 +308,7 @@ final class KeyChangeReviewTests: TempDirTestCase {
         let spare = try w.addSpare(on: w.b)
         try w.converge()
         w.targets[1].offline.value = true
-        try w.change(w.b, overriding: ["T1"]) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }
+        try w.change(w.b) { try $0.prepareRemoveRecipient(spare.recipient, now: w.now) }
         for _ in 0..<2 { w.tick(); _ = try? w.b.sync("T0", now: w.now) }
         let theirs = try XCTUnwrap(w.targets[0].file([Vault.manifestName]))
         // A changes C's key without the coordinator or keyring (as the CLI does) and stops after a file.

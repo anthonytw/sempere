@@ -83,16 +83,23 @@ public struct SyncReport: Codable, Hashable, Sendable {
     public var partial: PartialStatus?
     /// What the run did for key changes (design §6); nil when it did nothing.
     public var keyChange: KeyChangeActivity?
+    /// This device was removed from the vault (a `vault.json` lists none of its keys): it never syncs the
+    /// vault again; its copy stays readable, and `SecretKeyring.unsynced` lists what it wrote that no target
+    /// recorded (`sempere vault unsynced`).
+    public var removedFromVault = false
+    /// With `removedFromVault`: what this device wrote that no target recorded (`notes/...` paths), for export
+    /// (`SyncEngine.exportUnsynced`; `sempere sync webdav ... --export-unsynced DIR`).
+    public var unsynced: [String] = []
 
     /// Key-change work of one run (docs/design/device-first-sync.md §5.2, §6).
     public struct KeyChangeActivity: Codable, Hashable, Sendable {
         /// Files replaced by rewrap-replace (design §5.2), with the side replaced.
         public var replaced: [Deletion] = []
-        /// Late files (tagged under an older secret, design §6.2 F9) taken in
-        /// within the window: rewrapped and placed.
+        /// Late blobs (named under an older secret, design §6.2 F9) taken in because a revision held here
+        /// references their content; no late revision is ever taken in (every key change is immediate).
         public var lateAccepted: [LateFile] = []
-        /// Late files after the window (or of a change whose policy is
-        /// unknown here): quarantined as late files, never deleted.
+        /// Late files set aside as late files (kept, never deleted; resolved when their current copy
+        /// arrives, else adopt or export).
         public var lateQuarantined: [Issue] = []
         /// Local files rewrapped from this device's keyring (R3).
         public var rewrapped = 0
@@ -101,6 +108,12 @@ public struct SyncReport: Codable, Hashable, Sendable {
         /// Shared files under an older wrap on both sides that this device cannot make current (another
         /// device's): kept as they are until their writer or a current copy replaces them.
         public var staleKept: [String] = []
+        /// Files set aside as late here whose current copy arrived with the same body (their writer caught
+        /// up): the kept copy went.
+        public var lateResolved: [String] = []
+        /// Revisions that carry this device's id but came from elsewhere (another install with this device id,
+        /// a restored backup, or a forgery): recorded, never treated as this device's own.
+        public var receivedOwn: [String] = []
         /// The remote gives no strong version tokens, so no copy there is replaced (rewrap-replace needs
         /// `If-Match`): a key change never finishes on it (C5(d) waits). Reported, never worked around.
         public var weakStamps = false
@@ -110,22 +123,22 @@ public struct SyncReport: Codable, Hashable, Sendable {
         /// the same on both, under the same list (what lets a key change
         /// remove the journal from this target, design §6.1 C5(d)).
         public var settled = false
-        /// The remote `vault.json` lists none of this device's keys: it was removed.
-        public var removedFromVault = false
 
         public init() {}
 
-        var isEmpty: Bool { replaced.isEmpty && lateAccepted.isEmpty && lateQuarantined.isEmpty && rewrapped == 0 }
+        var isEmpty: Bool {
+            replaced.isEmpty && lateAccepted.isEmpty && lateQuarantined.isEmpty && rewrapped == 0 && lateResolved.isEmpty
+                && receivedOwn.isEmpty
+        }
     }
 
     /// A late file taken in, and the end of the window it was taken in under.
     public struct LateFile: Codable, Hashable, Sendable {
         public var path: String
-        public var deadline: Date
         /// The `secretId` (format.md §2.1, hex) of the older secret it was tagged under.
         public var secretId: String?
-        public init(path: String, deadline: Date, secretId: String? = nil) {
-            self.path = path; self.deadline = deadline; self.secretId = secretId
+        public init(path: String, secretId: String? = nil) {
+            self.path = path; self.secretId = secretId
         }
     }
 

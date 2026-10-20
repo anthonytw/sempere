@@ -81,10 +81,10 @@ extension Vault {
         do { j = try InkJSON.decoder().decode(RewrapJournal.self, from: data) } catch {
             return .refused("not a rewrap journal: \(error)")
         }
-        // The key-change policy (format.md §3.3.1 `mode`, `lateFileWindowDays`): one outside the
-        // format is no journal of this version, whatever binds it.
-        do { _ = try j.keyChangePolicy() } catch {
-            return .refused("not a rewrap journal: \(error)")
+        // A field of the retired late-file policy (format.md §3.3.1): no journal of this version,
+        // whatever binds it.
+        if let field = RewrapJournal.retiredField(in: data) {
+            return .refused("not a rewrap journal: \(RetiredJournalField(field: field))")
         }
         // Bound: only the journal vault.json binds under the current secret counts (S0).
         guard let tag = manifest.rewrapPending,

@@ -24,7 +24,11 @@ import XCTest
 /// - I4 revocation: after convergence no note file opens with a removed key, and each has one stanza
 ///   per listed key;
 /// - I5 liveness: no journal and no change in progress is left at quiescence;
-/// - I6 policy: no late file is taken in after its device's window, and nothing ever leaves a quarantine.
+/// - I6 immediacy (every key change takes effect at once): no write made under a replaced secret is
+///   ever current anywhere unless its own writer, still listed, made it current (its catch-up); a removed
+///   device's writes after its removal, its own or under another device's id, are never current anywhere;
+///   nothing leaves a quarantine except a late copy whose current copy (same body) arrived;
+/// - I7 catch-up: at quiescence every late copy of a listed writer's write is resolved (none left aside).
 ///
 /// Seeded (`SEMPERE_KEYCHANGE_SEED=N` replays one). Quick mode (3 seeds of 40 steps) runs in every
 /// `swift test`; `SEMPERE_SYNC_STRESS_LONG=1` runs `SEMPERE_SYNC_STRESS_SEEDS` (60) seeds of 120 steps
@@ -136,6 +140,7 @@ final class KeyChangeRun: @unchecked Sendable {
     func run(steps: Int) throws {
         for step in 0..<steps {
             try oneStep()
+            recordJournals()
             checkQuarantine()
             if step % 8 == 7 { checkBodies() }
         }
@@ -185,9 +190,40 @@ final class KeyChangeRun: @unchecked Sendable {
         if !notes.contains(note) { notes.append(note) }
         w.tick()
         guard let n = try? d.write(note, "t\(rng.int(1000))", now: w.now) else { return }
-        w.oracle.wrote(d, note: note, name: n)
-        if d.removed { afterRemoval.insert("notes/\(note.uuidString.lowercased())/\(n.filename)") }
+        w.oracle.wrote(d, note: note, name: n, at: w.now)
+        if d.removed {
+            let path = "notes/\(note.uuidString.lowercased())/\(n.filename)"
+            afterRemoval.insert(path)
+            // It never syncs again; the key's holder puts it on a target directly (it has the target's login).
+            if rng.chance(0.7), let data = try? Data(contentsOf: d.folder.appendingPathComponent(path)) {
+                rng.pick(w.targets).put(path.split(separator: "/").map(String.init), data)
+                count("removed device's write on a target")
+            }
+            if rng.chance(0.4) { try spoofedWrite(d) }
+        }
         count("write")
+    }
+
+    /// Paths a removed device wrote under a listed device's id (names are not authenticated).
+    var spoofed = Set<String>()
+
+    /// The removed device writes a revision under a listed device's id and puts it on a target.
+    func spoofedWrite(_ c: KCDevice) throws {
+        let victim = rng.pick(listed)
+        let state = c.root.appendingPathComponent("spoof-\(victim.name).json")
+        if !FileManager.default.fileExists(atPath: state.path) { try DeviceState(device: victim.device).save(to: state) }
+        let note = rng.uuid()
+        w.tick()
+        guard let r = try? c.vault().apply([.setMeta(.title("spoofed as \(victim.name)"))], to: note, deviceState: state,
+                                           app: "attacker", wall: w.now) else { return }
+        let path = "notes/\(note.uuidString.lowercased())/\(r.name.filename)"
+        w.oracle.wrote(c, note: note, name: r.name, at: w.now, as: c.name)
+        afterRemoval.insert(path)
+        spoofed.insert(path)
+        if let data = try? Data(contentsOf: c.folder.appendingPathComponent(path)) {
+            rng.pick(w.targets).put(path.split(separator: "/").map(String.init), data)
+        }
+        count("spoofed write")
     }
 
     func attach() throws {
@@ -208,7 +244,8 @@ final class KeyChangeRun: @unchecked Sendable {
         do {
             let r = try d.sync(t.name, now: w.now, faults: faults)
             note("\(d.name)/\(t.name)\(faults.afterStep.isEmpty ? "" : " stop \(faults.afterStep)"): \(KCWorld.brief(r))")
-            checkLate(r, d)
+            countLate(r)
+            checkNoLaundering()
             count("sync")
         } catch {
             count("sync threw")
@@ -233,7 +270,6 @@ final class KeyChangeRun: @unchecked Sendable {
         guard let v = try? d.vault(), v.canRead else { return }
         let keys = Set(v.recipients.map(\.key))
         let spare = spares.first { keys.contains($0.recipient.string) }
-        let policy: KeyChangePolicy = rng.chance(0.3) ? .compromised : ((try? .routine(days: rng.int(8))) ?? .routine)
         var faults = KeyChangeFaults()
         // About one change in five stops at a fault point; the others run to the end.
         switch rng.int(25) {
@@ -245,22 +281,20 @@ final class KeyChangeRun: @unchecked Sendable {
         case 5: faults.afterFirstClaimWrite = true
         default: break
         }
-        let offline = Set(d.targets.filter { $0.offline.value }.map(\.name))
-        let overriding = rng.chance(0.6) ? offline : []
-        note("change on \(d.name): \(policy.mode) \(policy.lateFileWindowDays)d, faults \(faults), overriding \(overriding)")
+        note("change on \(d.name): faults \(faults)")
         do {
             switch (rng.int(3), spare) {
             case (0, nil), (1, nil):
                 let s = pqIdentity()
                 spares.append(s)
                 w.oracle.identities.append(s)
-                try w.change(d, overriding: overriding, faults: faults) {
-                    try $0.prepareAddRecipient(s.recipient, label: "paper", keyChange: policy, now: w.now)
+                try w.change(d, faults: faults) {
+                    try $0.prepareAddRecipient(s.recipient, label: "paper", now: w.now)
                 }
                 count("add"); note("\(d.name) now \(listOf(d))")
             case (0, let s?), (1, let s?):
                 revoked.append(s)
-                try w.change(d, overriding: overriding, faults: faults) { try $0.prepareRemoveRecipient(s.recipient, keyChange: policy, now: w.now) }
+                try w.change(d, faults: faults) { try $0.prepareRemoveRecipient(s.recipient, now: w.now) }
                 count("remove"); note("\(d.name) now \(listOf(d))")
             default:
                 guard let old = d.identities.first(where: { keys.contains($0.recipient.string) }) else { return }
@@ -268,8 +302,8 @@ final class KeyChangeRun: @unchecked Sendable {
                 d.identities.insert(new, at: 0)
                 w.oracle.learn(d)
                 revoked.append(old)
-                try w.change(d, overriding: overriding, faults: faults) {
-                    try $0.prepareReplaceRecipient(old.recipient, with: new.recipient, keyChange: policy, now: w.now)
+                try w.change(d, faults: faults) {
+                    try $0.prepareReplaceRecipient(old.recipient, with: new.recipient, now: w.now)
                 }
                 count("replace"); note("\(d.name) now \(listOf(d))")
             }
@@ -301,12 +335,14 @@ final class KeyChangeRun: @unchecked Sendable {
               w.targets.allSatisfy({ $0.file([Vault.journalName]) == nil }) else { return }
         let d = rng.pick([w.a, w.b])
         do {
-            try w.change(d, overriding: Set(w.targets.filter { $0.offline.value }.map(\.name))) {
-                try $0.prepareRemoveRecipient(c.identity.recipient, keyChange: try .routine(days: 1), now: w.now)
+            try w.change(d) {
+                try $0.prepareRemoveRecipient(c.identity.recipient, now: w.now)
             }
             c.removed = true
+            removedAt = w.now
             revoked.append(contentsOf: c.identities)
             count("device removed by \(d.name)")
+            recordJournals()
         } catch {
             count("change stopped")
         }
@@ -314,55 +350,86 @@ final class KeyChangeRun: @unchecked Sendable {
 
     // MARK: Invariants as it goes
 
-    /// Every change made, by the `secretId` of the secret it rotated away from: when it was made and its
-    /// window, read from the journals themselves (I6 is checked against these, not the engine's deadline).
-    /// Two devices may each rotate away from one secret at once (F7): both are kept.
-    var changes: [String: [(changedAt: Date, days: Int)]] = [:]
+    /// When the run first saw a device leave each secret (`secretId`): its `vault.json` moved to another
+    /// secret (its own change's K2, or one it took or kept). A change that never got that far (refused,
+    /// crashed before K2) replaced nothing.
+    var replacedAt: [String: Date] = [:]
+    /// Each device's secret as last observed.
+    var lastSecret: [String: String] = [:]
+    /// When device C was removed, if it was.
+    var removedAt: Date?
 
     func recordJournals() {
-        var journals = w.targets.compactMap { $0.file([Vault.journalName]) }
         for d in w.devices {
-            if let j = (try? d.coordinator.load())?.change?.journal { journals.append(j) }
-            if let j = try? Data(contentsOf: d.folder.appendingPathComponent(Vault.journalName)) { journals.append(j) }
+            guard let m = d.manifest(), let s = (try? d.vault())?.secret(ofManifest: m) else { continue }
+            let sid = SecretKeyring.id(of: s)
+            if let before = lastSecret[d.name], before != sid, replacedAt[before] == nil {
+                replacedAt[before] = w.now
+                note("\(d.name) left secret \(before.prefix(6)) for \(sid.prefix(6)) at \(w.now.timeIntervalSince1970 - 1_790_000_000)")
+            }
+            lastSecret[d.name] = sid
         }
-        for j in journals {
-            guard let o = try? JSONSerialization.jsonObject(with: j) as? [String: Any],
-                  let armored = o["previousVaultSecret"] as? String,
-                  let previous = try? Vault.decryptSecret(armored, with: w.oracle.identities),
-                  let at = (o["changedAt"] as? String).flatMap(RFC3339.parse) else { continue }
-            let days = (o["mode"] as? String) == "compromised" ? 0 : ((o["lateFileWindowDays"] as? Int) ?? 7)
-            let sid = SecretKeyring.id(of: previous)
-            if !(changes[sid] ?? []).contains(where: { $0.changedAt == at && $0.days == days }) {
-                changes[sid, default: []].append((at, days))
+    }
+
+    /// True when the revision at `path` was written under a secret a change had already replaced (a late
+    /// write: a device that had not seen the change, a removed device, or someone using a removed key).
+    func isLateWrite(_ path: String) -> Bool {
+        guard let sid = w.oracle.writtenUnder[path], let at = w.oracle.writtenAt[path], let r = replacedAt[sid] else { return false }
+        // A secret a listed device holds as current again (two changes met and this one was kept) is not
+        // replaced.
+        if listed.contains(where: { lastSecret[$0.name] == sid }) { return false }
+        return at >= r
+    }
+
+    /// I6, from the oracle alone (every key change is immediate): no late write is ever current anywhere
+    /// unless its own writer, still listed, holds it current itself (its catch-up, R3); a removed device's
+    /// writes after its removal (or under another device's id) are never current anywhere, through any
+    /// path (R3, set-aside, adopt, rewrap-replace, a late blob's revision).
+    func checkNoLaundering() {
+        recordJournals()
+        guard let reference = listed.first, let current = try? reference.vault().currentSecret else { return }
+        let removedNames = Set(w.devices.filter(\.removed).map(\.name))
+        for (path, writer) in w.oracle.writer where isLateWrite(path) || removedNames.contains(writer) && afterRemoval.contains(path) {
+            var holders: [(String, Data)] = listed.compactMap { d in d.noteFiles()[path].map { (d.name, $0) } }
+            holders += w.targets.compactMap { t in t.noteFiles()[path].map { (t.name, $0) } }
+            for (loc, data) in holders where w.oracle.tagged(data, path: path, under: current) {
+                if removedNames.contains(writer) || spoofed.contains(path) {
+                    fail("I6: \(writer)'s write after its removal is current at \(loc): \(path)")
+                } else if let x = w.devices.first(where: { $0.name == writer }),
+                          let lateSecret = w.oracle.secrets.first(where: { SecretKeyring.id(of: $0) == w.oracle.writtenUnder[path] }),
+                          !(x.noteFiles()[path].map { !w.oracle.tagged($0, path: path, under: lateSecret) } ?? false) {
+                    // Its writer has not made it current itself yet (its own copy is still under the replaced
+                    // secret, or gone): another device made it current.
+                    fail("I6: \(writer)'s late write is current at \(loc) before its writer made it current: \(path) "
+                         + "(written under \(w.oracle.writtenUnder[path]?.prefix(6) ?? "?") at \(w.oracle.writtenAt[path].map { $0.timeIntervalSince1970 - 1_790_000_000 } ?? 0))")
+                }
             }
         }
     }
 
-    /// I6, independently of the engine's deadline: a late file is taken in only before its change's
-    /// `changedAt` + window (+ the clock slack), as the journal recorded them.
-    func checkLate(_ r: SyncReport, _ d: KCDevice) {
-        for late in r.keyChange?.lateAccepted ?? [] {
-            if late.deadline <= w.now { fail("I6: \(d.name) took in \(late.path) after its own deadline (\(late.deadline))") }
-            guard let sid = late.secretId, let cs = changes[sid], !cs.isEmpty else {
-                fail("I6: \(d.name) took in \(late.path) under a secret no recorded change replaced")
-                continue
-            }
-            // The device applies the window of the change it saw; with two changes away from one secret
-            // (they met, F7), it may have seen either first: never later than the later of the two ends.
-            let end = cs.map { $0.changedAt.addingTimeInterval(TimeInterval($0.days) * 86_400 + SecretKeyring.clockSlack) }.max()!
-            if w.now > end { fail("I6: \(d.name) took in \(late.path) after its change's window (ended \(end); changes \(cs))") }
-            count("late taken in")
-        }
+    func countLate(_ r: SyncReport) {
         for _ in r.keyChange?.lateQuarantined ?? [] { count("late quarantined") }
+        for _ in r.keyChange?.lateResolved ?? [] { count("late resolved") }
+        for _ in r.keyChange?.lateAccepted ?? [] { count("late blob taken in") }
+        if r.removedFromVault { count("removed detected") }
     }
 
     func checkQuarantine() {
         for d in w.devices {
             let now = d.quarantined()
             for (p, data) in quarantined where now[p] == nil && p.hasPrefix(d.root.path) {
-                // Only an Adopt or Export takes a file out; this run does neither.
-                fail("I6: \(p) left the quarantine")
-                _ = data
+                // Only an Adopt or Export takes a file out (this run does neither), or the arrival of the
+                // current copy of a late file, with the same body, at the same path in the vault.
+                quarantined[p] = nil
+                let resolved: Bool = {
+                    guard let r = p.range(of: "/\(LateFiles.folder)/notes/") else { return false }
+                    var rel = "notes/" + p[r.upperBound...]
+                    if let c = rel.range(of: ".copy-") { rel = String(rel[..<c.lowerBound]) }
+                    guard let held = d.noteFiles()[rel], let cur = try? d.vault().currentSecret,
+                          w.oracle.tagged(held, path: rel, under: cur) else { return false }
+                    return w.oracle.body(held, path: rel) == w.oracle.body(data, path: rel)
+                }()
+                if !resolved { fail("I6: \(p) left the quarantine") }
             }
             for (p, data) in now {
                 if let was = quarantined[p], was != data { fail("I6: \(p) changed in the quarantine") }
@@ -431,9 +498,9 @@ final class KeyChangeRun: @unchecked Sendable {
 
     // MARK: Quiescence
 
-    /// Revisions written offline elsewhere (taken out of their writer's copy, as from another install of
-    /// it), delivered later to one of the writer's targets (a device only ever uploads there), possibly
-    /// after a key change: late files to every device, the writer included (F9).
+    /// Uploads held back: a revision as its writer wrote it, delivered later to one of the writer's targets
+    /// (a device only ever uploads there), possibly after a key change: a late file to the others (F9),
+    /// resolved once the writer, which keeps its own copy, catches up (R3) and its current copy arrives.
     var offline: [(path: [String], data: Data, targets: [KCTarget])] = []
 
     func offlineWrite() throws {
@@ -442,11 +509,10 @@ final class KeyChangeRun: @unchecked Sendable {
         let note = rng.uuid()
         w.tick()
         guard let n = try? d.write(note, "offline \(rng.int(1000))", now: w.now) else { return }
-        w.oracle.wrote(d, note: note, name: n)
+        w.oracle.wrote(d, note: note, name: n, at: w.now)
         let p = [Vault.notesName, note.uuidString.lowercased(), n.filename]
         let url = d.folder.appendingPathComponent(p.joined(separator: "/"))
         guard let data = try? Data(contentsOf: url) else { return }
-        try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
         offline.append((p, data, d.targets))
         count("offline write")
     }
@@ -469,7 +535,7 @@ final class KeyChangeRun: @unchecked Sendable {
         // Every device sees what the targets hold, then a day passes: claims a crashed change left there
         // are no longer in flight (format.md §3.3.1 "Refused journals") and give way to live changes.
         recordJournals()
-        for d in listed { for r in d.syncAll(now: w.now) { checkLate(r, d) }; w.tick() }
+        for d in listed { for r in d.syncAll(now: w.now) { countLate(r); checkNoLaundering() }; w.tick() }
         w.tick(Vault.inFlightJournalWindow + 3600)
         // Changes that met (F7): the user keeps the other change where they did.
         for _ in 0..<3 {
@@ -586,18 +652,6 @@ final class KeyChangeRun: @unchecked Sendable {
                 p.contains("/att/") && !held.contains(p) && leftoverNotes.contains(p.split(separator: "/").prefix(2).joined(separator: "/"))
             })
         }
-        if let watch = ProcessInfo.processInfo.environment["SEMPERE_KEYCHANGE_WATCH"] {   // DEBUG-TEMP
-            for t in w.targets {
-                for (p, data) in t.noteFiles() where p.contains(watch) && !p.contains("/att/") {
-                    let parts = p.split(separator: "/").map(String.init)
-                    for d in w.devices {
-                        guard let v = try? d.vault(), let ring = try? d.keyring.load(vaultId: v.vaultId) else { continue }
-                        let c = v.withOlderSecrets(from: ring).classifyRevision(data, note: UUID(uuidString: parts[1])!, name: RevisionName(parts[2])!)
-                        print("DEBUG-TEMP \(t.name) \(p): \(d.name) says \(c) (ring \(ring.entries.count), removed \(d.removed))")
-                    }
-                }
-            }
-        }
         w.assertConverged(ignoring: ignored)
         let stillListed = Set((try? VaultManifest.decode(listed[0].manifest() ?? Data()))?.recipients.map(\.key) ?? [])
         if ProcessInfo.processInfo.environment["SEMPERE_KEYCHANGE_TRACE"] == "1" {
@@ -608,5 +662,18 @@ final class KeyChangeRun: @unchecked Sendable {
         w.assertNoLoss()
         checkQuarantine()
         checkBodies()
+        checkNoLaundering()
+        // I7: a listed writer's late copies are all resolved (its catch-up sent the current ones).
+        let gone = Set(w.devices.filter(\.removed).map(\.name))
+        for d in listed {
+            for late in d.lateFiles() where !p(late.path, isWrittenBy: gone) {
+                fail("I7: \(d.name) still holds \(late.path) aside, written by \(w.oracle.writer[late.path] ?? "?")")
+            }
+        }
+    }
+
+    func p(_ path: String, isWrittenBy names: Set<String>) -> Bool {
+        if path.contains("/att/") { return true }   // blobs: inert, judged by I1
+        return names.contains(w.oracle.writer[path] ?? "") || spoofed.contains(path) || w.oracle.writer[path] == nil
     }
 }

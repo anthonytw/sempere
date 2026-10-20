@@ -4,8 +4,8 @@ import Foundation
 import XCTest
 @testable import Sempere
 
-/// The core of the key-change safety gate (docs/design/device-first-sync.md §6.3, §6.5; format.md
-/// §3.3.1 `mode`, `lateFileWindowDays`): the policy the journal records, the secret keyring and its
+/// The core of the key-change safety gate (docs/design/device-first-sync.md §6.3; format.md §3.3.1;
+/// every key change takes effect at once): the journal's retired policy fields refused, the secret keyring and its
 /// sealed stores, the fault points of a change (`RewrapFaults`), prepared changes, the late-file rewrap
 /// (R3) and the outgoing-identity guard (F4). The multi-device behavior is in SempereWebDAVTests
 /// (`KeyChangeScenarioTests`, `KeyChangeInterleavingTests`).
@@ -16,57 +16,43 @@ final class KeyChangeCoreTests: VaultTestCase {
         try JSONSerialization.data(withJSONObject: fields.merging(["format": "sempere/1", "rekeyBlobs": true]) { x, _ in x })
     }
 
-    // MARK: The policy in the journal
+    // MARK: The journal carries no late-file policy (every key change is immediate)
 
-    func testAbsentFieldsMeanRoutineSevenDays() throws {
-        let p = try KeyChangePolicy(journalMode: nil, days: nil)
-        XCTAssertEqual(p, .routine)
-        XCTAssertEqual(p.lateFileWindowDays, 7)
-        XCTAssertEqual(try KeyChangePolicy(journalMode: "compromised", days: nil), .compromised)
-        XCTAssertEqual(try KeyChangePolicy(journalMode: "routine", days: 30).lateFileWindowDays, 30)
-        XCTAssertEqual(try KeyChangePolicy(journalMode: nil, days: 0).window, 0)
-    }
-
-    func testPoliciesOutsideTheFormatAreRefused() {
-        for (mode, days) in [("routine", -1), ("routine", 366), ("compromised", 1), ("ROUTINE", 7), ("lenient", 7)] as [(String, Int)] {
-            XCTAssertThrowsError(try KeyChangePolicy(journalMode: mode, days: days), "\(mode) \(days)")
+    /// A journal that carries a field of the retired late-file window is refused, even when bound
+    /// (no format compatibility before v1).
+    func testAJournalWithARetiredPolicyFieldIsRefusedEvenWhenBound() throws {
+        for (field, value) in [("mode", "routine" as Any), ("lateFileWindowDays", 7), ("changedAt", "2026-10-20T00:00:00Z")] {
+            let url = vaultURL(field)
+            var v = try Vault.create(at: url, recipients: [a.recipient, b.recipient], labels: ["a", "b"], identities: [a])
+            _ = try populate(v)
+            XCTAssertThrowsError(try v.removeRecipient(b.recipient, policy: RewrapPolicy(), stopAfter: 0))
+            let opened = try Vault.open(at: url, identities: [a])
+            let secret = try XCTUnwrap(opened.currentSecret)
+            var j = try JSONSerialization.jsonObject(with: Data(contentsOf: opened.journalURL)) as! [String: Any]
+            j[field] = value
+            let bad = try JSONSerialization.data(withJSONObject: j)
+            try bad.write(to: opened.journalURL)
+            var m = opened.manifest
+            m.rewrapPending = RecipientsAuth.rewrapPending(vaultId: m.vaultId, journal: bad, secret: secret)
+            _ = try Vault.writeManifest(m, to: opened.manifestURL, replacing: true, secret: secret)
+            let reopened = try Vault.open(at: url, identities: [a])
+            XCTAssertTrue(reopened.journalRefused, "\(field): refused, bound or not")
         }
-        XCTAssertThrowsError(try KeyChangePolicy.routine(days: 400))
     }
 
-    func testAJournalWithAPolicyOutsideTheFormatIsRefusedEvenWhenBound() throws {
+    func testTheChangeWritesNoPolicyAndItsJournalIsBound() throws {
         var v = try Vault.create(at: vaultURL(), recipients: [a.recipient, b.recipient], labels: ["a", "b"], identities: [a])
         _ = try populate(v)
-        XCTAssertThrowsError(try v.removeRecipient(b.recipient, policy: RewrapPolicy(), stopAfter: 0))
-        // Rebind a journal with a bad window under the new secret: still refused.
-        let opened = try Vault.open(at: vaultURL(), identities: [a])
-        let secret = try XCTUnwrap(opened.currentSecret)
-        var j = try JSONSerialization.jsonObject(with: Data(contentsOf: opened.journalURL)) as! [String: Any]
-        j["lateFileWindowDays"] = 9999
-        let bad = try JSONSerialization.data(withJSONObject: j)
-        try bad.write(to: opened.journalURL)
-        var m = opened.manifest
-        m.rewrapPending = RecipientsAuth.rewrapPending(vaultId: m.vaultId, journal: bad, secret: secret)
-        _ = try Vault.writeManifest(m, to: opened.manifestURL, replacing: true, secret: secret)
-        let reopened = try Vault.open(at: vaultURL(), identities: [a])
-        XCTAssertTrue(reopened.journalRefused, "a target cannot widen the window: the field is bound, and checked")
-    }
-
-    func testTheChangeRecordsItsModeAndWindowBoundByRewrapPending() throws {
-        var v = try Vault.create(at: vaultURL(), recipients: [a.recipient, b.recipient], labels: ["a", "b"], identities: [a])
-        _ = try populate(v)
-        let p = try v.prepareRemoveRecipient(b.recipient, keyChange: try .routine(days: 3))
+        let p = try v.prepareRemoveRecipient(b.recipient)
         let fields = try JSONSerialization.jsonObject(with: p.journal) as! [String: Any]
-        XCTAssertEqual(fields["mode"] as? String, "routine")
-        XCTAssertEqual(fields["lateFileWindowDays"] as? Int, 3)
+        for f in ["mode", "lateFileWindowDays", "changedAt"] { XCTAssertNil(fields[f], f) }
         XCTAssertThrowsError(try v.commit(p, faults: RewrapFaults(stop: .afterManifest)))
         let pending = try Vault.open(at: vaultURL(), identities: [a])
         XCTAssertEqual(try Data(contentsOf: pending.journalURL), p.journal, "K1 writes exactly the prepared (claimed) bytes")
-        guard case .accepted(let j, _) = pending.judgeJournal() else { return XCTFail("bound journal refused") }
-        XCTAssertEqual(try j.keyChangePolicy(), try .routine(days: 3))
-        // Changing the policy in the journal unbinds it (a target cannot alter the policy).
+        guard case .accepted = pending.judgeJournal() else { return XCTFail("bound journal refused") }
+        // Any change to the journal unbinds it.
         var edited = fields
-        edited["lateFileWindowDays"] = 365
+        edited["rekeyBlobs"] = false
         try JSONSerialization.data(withJSONObject: edited).write(to: pending.journalURL)
         XCTAssertTrue(try Vault.open(at: vaultURL(), identities: [a]).journalRefused)
     }
@@ -108,32 +94,23 @@ final class KeyChangeCoreTests: VaultTestCase {
 
     // MARK: The keyring
 
-    func testTheKeyringDeadlineIsTheEarliestOfEveryLaterWindow() throws {
+    func testTheKeyringKnowsWhichSecretsWereReplacedAndWhatCameFromElsewhere() throws {
         let s0 = VaultSecret.random(), s1 = VaultSecret.random(), s2 = VaultSecret.random()
         let t0 = Date(timeIntervalSince1970: 1_800_000_000)
         var ring = SecretKeyring(vaultId: UUID())
         ring.remember(s0, now: t0)
+        XCTAssertFalse(ring.isReplaced(s0), "current: nothing is late")
         ring.noteReplaced(s0, now: t0)
-        ring.notePolicy(try .routine(days: 7), outgoing: s0, changedAt: t0)
-        XCTAssertEqual(ring.lateFileDeadline(for: s0), t0.addingTimeInterval(7 * 86_400))
-        XCTAssertNil(ring.lateFileDeadline(for: s1), "a secret this device never held is never late, only invalid")
+        XCTAssertTrue(ring.isReplaced(s0))
+        XCTAssertFalse(ring.isReplaced(s1), "a secret this device never held is never late, only invalid")
         ring.remember(s1, now: t0)
-        XCTAssertNil(ring.lateFileDeadline(for: s1), "current: nothing is late")
-        // A later compromised change closes the window of every older secret too.
         ring.noteReplaced(s1, now: t0.addingTimeInterval(86_400))
-        ring.notePolicy(.compromised, outgoing: s1, changedAt: t0.addingTimeInterval(86_400))
         ring.remember(s2, now: t0.addingTimeInterval(86_400))
-        XCTAssertEqual(ring.lateFileDeadline(for: s0), t0.addingTimeInterval(86_400))
-        XCTAssertEqual(ring.lateFileDeadline(for: s1), t0.addingTimeInterval(86_400))
-        // A change whose journal this device never saw counts as 0 days (F18).
-        var unseen = SecretKeyring(vaultId: UUID())
-        unseen.noteReplaced(s0, now: t0)
-        XCTAssertEqual(unseen.lateFileDeadline(for: s0), t0)
-        // A policy seen later can only make it stricter.
-        unseen.notePolicy(try .routine(days: 9), outgoing: s0, changedAt: t0)
-        unseen.notePolicy(try .routine(days: 2), outgoing: s0, changedAt: t0)
-        XCTAssertEqual(unseen.entry(for: s0)?.policy?.lateFileWindowDays, 2)
         XCTAssertEqual(ring.secrets(excluding: s2), [s1, s0], "newest replaced first")
+        // Provenance: a name that came from elsewhere is never this device's own.
+        XCTAssertFalse(ring.receivedAsOwn("n/x"))
+        ring.noteReceivedOwn("n/x")
+        XCTAssertTrue(ring.receivedAsOwn("n/x"))
     }
 
     func testSealedKeyringsRoundTripAndFailClosed() throws {
@@ -259,18 +236,5 @@ final class KeyChangeCoreTests: VaultTestCase {
         try both.reseal(vaultId: id)
         let newOnly = SealedFileKeyringStore(directory: dir, sealer: AgeKeyringSealer(identity: b))
         XCTAssertEqual(try newOnly.load(vaultId: id)?.secrets(excluding: VaultSecret.random()), [s])
-    }
-
-    func testTheWindowEndsAtTheChangeTimeHoweverLateItIsSeen() {
-        let s0 = VaultSecret.random()
-        let changedAt = Date(timeIntervalSince1970: 1_800_000_000)
-        var ring = SecretKeyring(vaultId: UUID())
-        ring.noteReplaced(s0, now: changedAt.addingTimeInterval(30 * 86_400))   // seen 30 days late
-        ring.notePolicy(try! .routine(days: 7), outgoing: s0, changedAt: changedAt)
-        XCTAssertEqual(ring.lateFileDeadline(for: s0), changedAt.addingTimeInterval(SecretKeyring.clockSlack + 7 * 86_400))
-        var early = SecretKeyring(vaultId: UUID())
-        early.noteReplaced(s0, now: changedAt.addingTimeInterval(-600))   // a clock behind the changer's
-        early.notePolicy(try! .routine(days: 7), outgoing: s0, changedAt: changedAt)
-        XCTAssertEqual(early.lateFileDeadline(for: s0), changedAt.addingTimeInterval(-600 + 7 * 86_400))
     }
 }

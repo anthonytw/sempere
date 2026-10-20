@@ -21,7 +21,7 @@ import Sempere
 // Its progress is kept in a small device-local file (`ledger`), so a crash
 // anywhere resumes: claims with no local change behind them are taken back
 // at the next launch (F1), and propagation continues where it stopped.
-// `sync(target:)` always propagates first, so in compromised mode the change
+// `sync(target:)` always propagates first, so the change
 // reaches each target ahead of all other sync work, and a target that was
 // unreachable is claimed when it comes back.
 
@@ -75,10 +75,6 @@ public struct KeyChangeFaults: Sendable, Hashable {
 public enum KeyChangeError: Error, Hashable, Sendable, CustomStringConvertible {
     /// A target holds another device's journal in flight (design §6.1 C1).
     case anotherChangeInFlight(target: String)
-    /// Routine mode: a target cannot be reached; override it to go on (C1).
-    case targetUnreachable(target: String, String)
-    /// Routine mode: a target has not synced cleanly in the last minute (C0).
-    case targetNotRecentlySynced(target: String)
     /// A change is already in progress on this device.
     case changeInProgress
     /// A fault point (tests).
@@ -93,8 +89,6 @@ public enum KeyChangeError: Error, Hashable, Sendable, CustomStringConvertible {
     public var description: String {
         switch self {
         case .anotherChangeInFlight(let t): return "another device's key change is in progress on \(t): try again once it finished"
-        case .targetUnreachable(let t, let why): return "\(t) cannot be reached (\(why)); a routine key change needs every target"
-        case .targetNotRecentlySynced(let t): return "\(t) has not synced in the last minute: sync it first"
         case .changeInProgress: return "a key change is still propagating from this device"
         case .interrupted: return "interrupted (test)"
         case .ledgerUnreadable(let why): return "this device's key-change record cannot be read (\(why)): repair it first"
@@ -129,7 +123,6 @@ public struct KeyChangePropagation: Hashable, Sendable {
 /// The device-local record of a change in progress.
 struct KeyChangeLedger: Codable, Equatable {
     var journal: Data
-    var policy: KeyChangePolicy
     /// `vault.json` before the change (what a target not reached yet holds).
     var base: Data
     /// `vault.json` after K2 and after K4.
@@ -146,7 +139,7 @@ struct KeyChangeFile: Codable, Equatable {
     var change: KeyChangeLedger?
     /// Claims to take back from targets that could not be reached when they were dropped, by target.
     var takeBack: [String: [Data]]?
-    /// Keys "Keep the other change" dropped under the same secret: the secret must rotate (review finding 3).
+    /// Read from records written before the owed rotation moved to the keyring (round 2): carried over.
     var rotationOwed: [String]?
 }
 
@@ -156,8 +149,6 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
     public let targets: [KeyChangeTarget]
     public let keyring: any SecretKeyringStore
     let ledgerURL: URL
-    /// The window within which every target must have synced cleanly before a routine change (C0).
-    public static let recentSync: TimeInterval = 60
 
     /// - Parameters:
     ///   - folder: the working copy.
@@ -226,7 +217,18 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
     public var conflicts: [String: String] { (try? load())?.change?.conflicts ?? [:] }
 
     /// Keys a kept change dropped under the same secret: a rotation is owed (it runs at the next sync).
-    public var rotationOwed: [String] { (try? load())?.rotationOwed ?? [] }
+    /// Kept in the keyring (`SecretKeyring.rotationOwed`), never in this record, which a repair sets aside.
+    public var rotationOwed: [String] {
+        guard let id = vaultId else { return [] }
+        return ((try? keyring.load(vaultId: id)) ?? nil)?.rotationOwed ?? []
+    }
+
+    /// The vault's id, from the local `vault.json`.
+    var vaultId: UUID? {
+        guard let data = try? BoundedRead.contents(of: folder.appendingPathComponent(Vault.manifestName),
+                                                   maxBytes: BoundedRead.maxManifestBytes) else { return nil }
+        return try? VaultManifest.decode(data).vaultId
+    }
 
     // MARK: C0, C1, K1 to K4
 
@@ -235,34 +237,25 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
     ///
     /// - Parameters:
     ///   - prepare: builds the change on the vault (`prepareAddRecipient`, …).
-    ///   - overriding: targets the user chose to leave out of the routine
-    ///     preconditions (unreachable, or not synced lately); warned in the UI.
     /// - Throws: `KeyChangeError`; the vault's errors.
+    ///
+    /// Every change takes effect at once (decided 2026-10-20): a target out of reach is claimed and
+    /// propagated to when it is back; a device that was away catches up (it rewraps what it wrote, R3).
     @discardableResult
-    public func change(_ vault: inout Vault, overriding: Set<String> = [], now: Date = Date(),
-                       faults: KeyChangeFaults = KeyChangeFaults(),
+    public func change(_ vault: inout Vault, now: Date = Date(), faults: KeyChangeFaults = KeyChangeFaults(),
                        prepare: (inout Vault) throws -> PreparedKeyChange) throws -> Vault.RewrapReport {
-        try change(&vault, overriding: overriding, now: now, faults: faults, owedRotation: false, prepare: prepare)
+        try change(&vault, now: now, faults: faults, owedRotation: false, prepare: prepare)
     }
 
-    func change(_ vault: inout Vault, overriding: Set<String>, now: Date, faults: KeyChangeFaults, owedRotation: Bool,
+    func change(_ vault: inout Vault, now: Date, faults: KeyChangeFaults, owedRotation: Bool,
                 prepare: (inout Vault) throws -> PreparedKeyChange) throws -> Vault.RewrapReport {
         var file = try load()
         guard file.change == nil else { throw KeyChangeError.changeInProgress }
-        if file.rotationOwed != nil, !owedRotation { throw KeyChangeError.rotationOwed }
+        if !owedRotation, !rotationOwed.isEmpty || file.rotationOwed != nil { throw KeyChangeError.rotationOwed }
         let prepared = try prepare(&vault)
-        let routine = prepared.keyChange.mode == .routine
-        // C0: in routine mode every target synced cleanly within the last minute.
-        if routine {
-            for t in targets where !overriding.contains(t.id) {
-                guard let last = file.lastClean[t.id], now.timeIntervalSince(last) <= Self.recentSync else {
-                    throw KeyChangeError.targetNotRecentlySynced(target: t.id)
-                }
-            }
-        }
         let base = try BoundedRead.contents(of: folder.appendingPathComponent(Vault.manifestName),
                                             maxBytes: BoundedRead.maxManifestBytes)
-        var ledger = KeyChangeLedger(journal: prepared.journal, policy: prepared.keyChange, base: base)
+        var ledger = KeyChangeLedger(journal: prepared.journal, base: base)
         // The record first: a crash at any point after a claim is written finds it, and takes the claims
         // back (`recover`); a record that cannot be written stops the change before any claim.
         file.change = ledger
@@ -283,6 +276,11 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
                         try? update { $0.change = nil }
                         throw error
                     }
+                case .taken where owedRotation:
+                    // A revocation owed: another journal in flight there (or one a hostile target keeps
+                    // planting) never holds it back; that target is claimed later, and two changes that
+                    // meet there resolve as F7 says (review round 2).
+                    break
                 case .taken:
                     try? update { $0.change = nil }
                     takeBack(claimed, journal: prepared.journal)
@@ -291,12 +289,7 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
             } catch let e as KeyChangeError {
                 throw e
             } catch {
-                // Unreachable: routine refuses unless overridden; compromised claims it when it is back.
-                if routine && !overriding.contains(t.id) {
-                    takeBack(claimed, journal: prepared.journal)
-                    try? update { $0.change = nil }
-                    throw KeyChangeError.targetUnreachable(target: t.id, SyncEngine.describe(error))
-                }
+                // Unreachable: claimed and propagated to when it is back.
             }
         }
         if faults.afterClaims { throw KeyChangeError.interrupted }
@@ -434,6 +427,12 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
                      faults: KeyChangeFaults = KeyChangeFaults()) throws -> (propagation: KeyChangePropagation?, report: SyncReport) {
         guard let t = targets.first(where: { $0.id == id }) else { throw SyncError.io("no target \(id)") }
         var propagation: KeyChangePropagation?
+        // Removed from the vault: nothing is propagated or written; the run only says so.
+        if vault.canRead, ((try? keyring.load(vaultId: vault.vaultId)) ?? nil)?.removed != nil {
+            var o = options
+            o.keyring = keyring
+            return (nil, try SyncEngine(directory: folder, vault: vault, remote: t.remote, stateURL: t.stateURL, options: o).run())
+        }
         retryTakeBack(t)
         let file: KeyChangeFile
         do { file = try load() } catch {
@@ -454,12 +453,14 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
             try dropIfSuperseded(vault)
             if try load().change != nil { propagation = try propagate(t, vault: &vault, options: options, faults: faults) }
         }
-        if vault.canRead, try load().change == nil, try load().rotationOwed != nil {
-            // The owed rotation runs by itself, ahead of other work (compromised mode: no preconditions, 0 days).
+        if vault.canRead, try load().change == nil, try !rotationOwed.isEmpty || load().rotationOwed != nil {
+            // The owed rotation runs by itself, ahead of other work.
             do {
-                try change(&vault, overriding: Set(targets.map(\.id)), now: options.now, faults: KeyChangeFaults(),
-                           owedRotation: true) { try $0.prepareRotation(keyChange: .compromised, now: options.now) }
+                try change(&vault, now: options.now, faults: KeyChangeFaults(), owedRotation: true) {
+                    try $0.prepareRotation(now: options.now)
+                }
                 try update { $0.rotationOwed = nil }
+                try keyring.update(vaultId: vault.vaultId) { $0.rotationOwed = nil }
                 if try load().change != nil { propagation = try propagate(t, vault: &vault, options: options, faults: faults) }
             } catch {
                 var p = propagation ?? KeyChangePropagation()
@@ -723,12 +724,10 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
         }
         vault = try vault.reopened()
         let kept = Set(vault.recipients.map(\.key))
-        let dropped = ownKeys.filter { !kept.contains($0) }
-        if !dropped.isEmpty, let ownSecret, ownSecret == vault.currentSecret {
-            // Same secret: the dropped keys still open every file (stanza counts cannot tell) and hold the
-            // secret. The rotation is owed and blocks other changes; `sync(target:)` makes it (review 3).
-            try update { $0.rotationOwed = dropped }
-        }
-        return dropped
+        // Same secret: the dropped keys still open every file (stanza counts cannot tell) and hold the
+        // secret. `adoptConcurrentChange` recorded the owed rotation in the keyring before it wrote the
+        // adopted vault.json; it blocks other changes, and `sync(target:)` makes it (review 3).
+        _ = ownSecret
+        return ownKeys.filter { !kept.contains($0) }
     }
 }

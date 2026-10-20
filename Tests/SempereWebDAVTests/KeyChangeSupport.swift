@@ -298,6 +298,9 @@ final class KCOracle: @unchecked Sendable {
     var writer: [String: String] = [:]
     /// Every attachment written: `notes/<note>` → content hashes, with their writer.
     var attached: [String: [String: String]] = [:]
+    /// The `secretId` each revision was written under, and when (the world's clock).
+    var writtenUnder: [String: String] = [:]
+    var writtenAt: [String: Date] = [:]
 
     func learn(_ d: KCDevice) {
         for i in d.identities where !identities.contains(where: { $0.recipient.string == i.recipient.string }) { identities.append(i) }
@@ -319,14 +322,23 @@ final class KCOracle: @unchecked Sendable {
         return nil
     }
 
-    /// Records a revision just written by `d`.
-    func wrote(_ d: KCDevice, note: UUID, name: RevisionName) {
+    /// Records a revision just written by `d` (`as`: the device that really wrote it, when the name says another).
+    func wrote(_ d: KCDevice, note: UUID, name: RevisionName, at: Date? = nil, as writerName: String? = nil) {
         learn(d)
         let path = "notes/\(note.uuidString.lowercased())/\(name.filename)"
         if let data = try? Data(contentsOf: d.folder.appendingPathComponent(path)), let b = body(data, path: path) {
             written[path] = b
-            writer[path] = d.name
+            writer[path] = writerName ?? d.name
+            if let s = (try? d.vault())?.currentSecret { writtenUnder[path] = SecretKeyring.id(of: s) }
+            if let at { writtenAt[path] = at }
         }
+    }
+
+    /// True when `data` (a revision at `path`) is tagged under `secret`.
+    func tagged(_ data: Data, path: String, under secret: VaultSecret) -> Bool {
+        let parts = path.split(separator: "/").map(String.init)
+        guard parts.count == 3, let plain = try? AgeFile.decrypt(data, with: identities) else { return false }
+        return (try? BodyFraming.unframe(plain, noteId: parts[1], filename: parts[2], secret: secret)) != nil
     }
 }
 
@@ -427,28 +439,28 @@ final class KCWorld: @unchecked Sendable {
     func write(_ d: KCDevice, _ note: UUID, _ title: String) throws -> RevisionName {
         tick()
         let n = try d.write(note, title, now: now)
-        oracle.wrote(d, note: note, name: n)
+        oracle.wrote(d, note: note, name: n, at: now)
         return n
     }
 
     /// A key change on `d` through its coordinator, after a fresh sync of its targets (C0).
     @discardableResult
-    func change(_ d: KCDevice, overriding: Set<String> = [], syncFirst: Bool = true,
+    func change(_ d: KCDevice, syncFirst: Bool = true,
                 faults: KeyChangeFaults = KeyChangeFaults(),
                 _ prepare: (inout Vault) throws -> PreparedKeyChange) throws -> Vault.RewrapReport {
         if syncFirst { for t in d.targets where !t.offline.value { tick(); _ = try? d.sync(t.name, now: now) } }
         tick()
         var v = try d.vault()
         defer { oracle.learn(d) }
-        return try d.coordinator.change(&v, overriding: overriding, now: now, faults: faults, prepare: prepare)
+        return try d.coordinator.change(&v, now: now, faults: faults, prepare: prepare)
     }
 
     /// Adds a spare (paper) key; returns it.
     @discardableResult
-    func addSpare(on d: KCDevice, policy: KeyChangePolicy = .routine) throws -> NativeIdentity {
+    func addSpare(on d: KCDevice) throws -> NativeIdentity {
         let s = pqIdentity()
         oracle.identities.append(s)
-        try change(d) { try $0.prepareAddRecipient(s.recipient, label: "paper", keyChange: policy, now: now) }
+        try change(d) { try $0.prepareAddRecipient(s.recipient, label: "paper", now: now) }
         spare = s
         return s
     }

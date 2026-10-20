@@ -92,6 +92,11 @@ struct SyncState: Codable, Equatable {
     var lastFullListing: Date?
     /// The server's journal while it may be in flight; nil otherwise.
     var inFlightJournal: InFlightJournal?
+    /// When this device found that the vault no longer lists any of its keys (it was removed): it never
+    /// syncs the vault with this target again (also recorded in the keyring, for every target).
+    var removed: Date?
+    /// With `removed`: what this device wrote that this target never recorded (`notes/...` paths).
+    var unsynced: [String]?
     /// Key changes (design §6): the list (`recipientsTag`) for which this
     /// device last rewrapped its late local files from its keyring (R3).
     var lateRewrapFor: String?

@@ -23,6 +23,8 @@ enum ExitStatus {
     // 5 is unused.
     static let untrustedRecipients: Int32 = 6
     static let readOnly: Int32 = 7
+    /// `sync webdav`: this device was removed from the vault; it syncs it no more (`--export-unsynced`).
+    static let removedFromVault: Int32 = 8
 }
 
 /// A failure with its exit code. Messages are one line.

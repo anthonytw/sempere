@@ -190,12 +190,18 @@ extension SyncEngine {
     /// bytes as a kept copy is not kept twice. At most
     /// `maxQuarantinedCopies` distinct copies of a path are kept, so a
     /// server cannot fill the disk by changing one file again and again.
+    ///
+    /// Returns true when the bytes are kept (or the same copy already was); false when they could not be
+    /// (a full disk, a folder that cannot be written, the copy cap): a caller that would remove or replace
+    /// the file it quarantined must not, then (review round 2).
+    @discardableResult
     func quarantine(_ key: String, path: String, entry: RemoteEntry?, reason: String,
-                    data: Data? = nil, file: URL? = nil) {
+                    data: Data? = nil, file: URL? = nil) -> Bool {
         locked { lockedQuarantine(key, path: path, entry: entry, reason: reason, data: data, file: file) }
     }
 
-    private func lockedQuarantine(_ key: String, path: String, entry: RemoteEntry?, reason: String, data: Data?, file: URL?) {
+    private func lockedQuarantine(_ key: String, path: String, entry: RemoteEntry?, reason: String, data: Data?,
+                                  file: URL?) -> Bool {
         let fm = FileManager.default
         let first = quarantineRoot.appendingPathComponent(path)
         var kept: String
@@ -211,6 +217,7 @@ extension SyncEngine {
         state.quarantined = state.quarantined ?? [:]
         state.quarantined?[key] = .init(stamp: Self.quarantineStamp(entry), manifest: manifestHash(),
                                         unlocked: checker()?.canRead ?? false)
+        return !kept.hasPrefix("not kept") && kept != "nothing to keep"
     }
 
     /// Keeps one refused copy (`data`, or the file `file`) beside the copies of

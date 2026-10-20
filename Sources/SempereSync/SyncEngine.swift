@@ -314,7 +314,12 @@ public final class SyncEngine {
     ///   two sides are different vaults; the transport's error (`WebDAVError.http`,
     ///   `.transport`, …) when the remote's root cannot be listed. Anything per file lands in the report.
     public func run() throws -> SyncReport {
-        try SyncRunLock.shared.withLock(stateURL) { try runLocked() }
+        try SyncRunLock.shared.withLock(stateURL) {
+            do { return try runLocked() } catch is RemovedFromVault {
+                // This device was removed: the run stops before any transfer (`noteRemoved`).
+                return locked { report }
+            }
+        }
     }
 
     private func runLocked() throws -> SyncReport {
@@ -340,6 +345,17 @@ public final class SyncEngine {
             let path = SyncState.transfersURL(stateURL).path
             report.skipped.append(.init(path: path, message: "unreadable (\(error.localizedDescription)); ignored"))
         }
+        // A device that found itself removed from the vault never syncs it again: nothing is read or
+        // written, whatever a target holds (a hostile one may hand it an old list that still names it).
+        let ringRemoved: SecretKeyring? = {
+            guard let store = options.keyring, let vault else { return nil }
+            return (try? store.load(vaultId: vault.vaultId)) ?? nil
+        }()
+        if state.removed != nil || ringRemoved?.removed != nil {
+            report.removedFromVault = true
+            report.unsynced = Array(Set(state.unsynced ?? []).union(ringRemoved?.unsynced ?? [])).sorted()
+            return report
+        }
         if options.pushOnly && !FileManager.default.fileExists(atPath: root.appendingPathComponent(Vault.manifestName).path) {
             // A mirror of nothing would list (and could delete) the whole server.
             throw SyncError.io("push-only sync needs a local vault (no \(Vault.manifestName) in \(root.path))")
@@ -360,6 +376,8 @@ public final class SyncEngine {
         // A provider's evicted root files are asked for at once; vault.json is waited for (`Arrivals.swift`).
         try awaitRootFiles(remoteRoot)
         try checkSameVault(remoteRoot)
+        // Removed from the vault (its vault.json lists none of this device's keys): stop before any write.
+        if !options.pushOnly, let vault, let remote = fetchedManifest?.data, vault.isRemoved(by: remote) { try noteRemoved() }
         remoteJournal = remoteRoot[Vault.journalName] != nil
         if !remoteJournal { state.inFlightJournal = nil }
         removeLeftoverRemoteTemps()
@@ -373,6 +391,8 @@ public final class SyncEngine {
                 // Listed but not downloaded yet: neither taken nor replaced this run.
                 if try !available([name], entry: remote) { continue }
                 options.pushOnly ? try pushMutable(name, remote: remote) : try syncMutable(name, remote: remote)
+            } catch let removed as RemovedFromVault {
+                throw removed
             } catch {
                 report.errors.append(.init(path: name, message: Self.describe(error)))
             }
@@ -697,7 +717,7 @@ public final class SyncEngine {
             let local = try localMutable(name)
             if let why = Vault.incomingManifestProblem(data, local: local, vault: vault) {
                 report.rejected.append(.init(path: name, message: SyncReport.printable(why)))
-                if let vault, vault.isRemoved(by: data) { keyChangeActivity { $0.removedFromVault = true } }
+                if let vault, vault.isRemoved(by: data) { try noteRemoved() }
                 return
             }
         }
@@ -1294,9 +1314,7 @@ public final class SyncEngine {
             throw SyncError.responseTooLarge(path: path, limit: options.maxFileBytes)
         }
         var problem: String?
-        var placed = data
-        var late: Date?
-        var lateSecretId = ""
+        let placed = data
         if !data.starts(with: Self.ageMagic) {
             problem = "not an age file"
         } else if let checker = checker(), let uuid = UUID(uuidString: id) {
@@ -1305,14 +1323,6 @@ public final class SyncEngine {
                 do { try checker.checkIncomingRevision(data, noteId: uuid, name: n) } catch {
                     problem = "\(error)"
                 }
-            case .accept(let rewrapped, let deadline, let secretId):
-                // Taken in within the window, as the current copy it rewraps to (design §6.2 F9).
-                do { try checker.checkIncomingRevision(rewrapped, noteId: uuid, name: n) } catch {
-                    problem = "\(error)"
-                }
-                placed = rewrapped
-                late = deadline
-                lateSecretId = secretId
             case .quarantine(let why):
                 quarantineLate(key(id, n), path: path, entry: entry, reason: why, data: data)
                 return false
@@ -1324,11 +1334,12 @@ public final class SyncEngine {
         }
         locked { state.quarantined?[key(id, n)] = nil }
         let url = root.appendingPathComponent("notes/\(id)/\(n.filename)")
-        if late != nil { try options.beforeLocalReplace?(path) }
+        // Provenance first: a crash after the write must not leave it looking like this device's own.
+        noteReceivedOwn(id, n)
         if try !LocalFS.write(placed, to: url, replacing: false) { return false }
         locked { report.downloaded.append(path) }
-        if let late { tookLateRevision(id, n, path: path, placed: placed, entry: entry, deadline: late, secretId: lateSecretId) }
-        placedCopy(key(id, n), entry: entry, sameAsRemote: late == nil) {
+        resolveLate(id, n, placed: placed)
+        placedCopy(key(id, n), entry: entry, sameAsRemote: true) {
             $0.classifyRevision(placed, note: UUID(uuidString: id) ?? UUID(), name: n).isCurrent
         }
         return true
