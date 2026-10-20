@@ -35,8 +35,10 @@ final class PhoneCanvasModeUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"]
         // The iPad shows the canvas alone (the phone's stack shows only it anyway).
+        // On the iPad a finger draws while annotating as the palette's Draw with Finger says (or the system's "Only Draw
+        // with Apple Pencil"): fixed on here, so a one-finger drag draws whatever the simulator's setting.
         app.launchEnvironment = ["SEMPERE_DEMO": "1", "SEMPERE_DEMO_NOTE": note, "SEMPERE_DEMO_ITEMS": "1", "TZ": "UTC",
-                                 "SEMPERE_DEBUG_COLUMNS": "detailOnly"]
+                                 "SEMPERE_DEBUG_COLUMNS": "detailOnly", "SEMPERE_DEBUG_FINGERS_DRAW": "1"]
         #if !targetEnvironment(macCatalyst)
         XCUIDevice.shared.orientation = .portrait
         #endif
@@ -248,19 +250,15 @@ final class PhoneCanvasModeUITests: XCTestCase {
 
     // MARK: Tests
 
-    /// Picks `tool` in the palette ("Pen", "Marker", "Object Eraser", "Lasso"): a tap on the palette first, which
-    /// opens the phone's collapsed one so its items can be tapped.
+    /// Picks `tool` in the palette ("Pen", "Marker", "Object Eraser", "Lasso"; Sempere's own palette,
+    /// `DrawingPaletteView`). The tool in use is left alone: a tap on it would open its choices.
     @MainActor
     private func pick(_ tool: String, _ app: XCUIApplication) {
         let palette = app.descendants(matching: .any).matching(identifier: "Drawing-Palette").firstMatch
         XCTAssertTrue(palette.waitForExistence(timeout: 5), "the palette")
         let item = palette.buttons[tool].firstMatch
-        if !item.isHittable {
-            palette.tap()
-            Thread.sleep(forTimeInterval: 1)
-        }
         XCTAssertTrue(item.waitForExistence(timeout: 5) && item.isHittable, "the palette's \(tool): \(palette.debugDescription.prefix(3000))")
-        item.tap()
+        if !item.isSelected { item.tap() }
         Thread.sleep(forTimeInterval: 1.5)
     }
 
@@ -326,12 +324,6 @@ final class PhoneCanvasModeUITests: XCTestCase {
         tap(annotateButton(app))
         let palette = app.descendants(matching: .any).matching(identifier: "Drawing-Palette").firstMatch
         XCTAssertTrue(palette.waitForExistence(timeout: 5), "the palette")
-        // The phone's collapsed palette opens with a tap; the iPad's lists its tools already (a tap there could
-        // open a tool's options, which would take the next tap).
-        if !palette.buttons["Pen"].firstMatch.isHittable {
-            palette.tap()
-            Thread.sleep(forTimeInterval: 1)
-        }
         XCTAssertTrue(palette.buttons["Pen"].firstMatch.exists, "the palette's tools are listed: \(palette.debugDescription.prefix(2000))")
         XCTAssertFalse(palette.buttons["Hand"].exists, "no Hand in the palette: \(palette.debugDescription.prefix(2000))")
         tap(handButton(app))

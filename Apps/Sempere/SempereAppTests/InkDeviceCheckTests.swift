@@ -430,61 +430,52 @@ struct InkDeviceCheckTests {
 
 extension EraserPreferenceTests {
     /// c5: the eraser mode chosen on one note is the one the next note's canvas starts with, on
-    /// the one-page canvas and on the paged stack, and it survives a round trip back.
+    /// the one-page canvas and on the paged stack, and in the next launch (a new tool state over the
+    /// same defaults); it survives a round trip back.
     @Test func c5TheEraserChoiceIsKeptAcrossNotes() async throws {
-        let key = EraserPreference.defaultsKey
-        let saved = UserDefaults.standard.object(forKey: key)
-        defer { UserDefaults.standard.set(saved, forKey: key) }
-        UserDefaults.standard.removeObject(forKey: key)
+        let defaults = DrawingToolboxTests.scratchDefaults()
+        let toolbox = DrawingToolbox(defaults: defaults)
 
         // Note 1: pick the pixel eraser in the palette (as on the device), erase with it.
         let first = try InkFixture.denseNote(strokes: 10)
         let (e1, _) = try await InkFixture.editor(first)
-        let one = try InkInjector(editor: e1)
+        let one = try InkInjector(editor: e1, toolbox: toolbox)
         #expect(await one.ready())
-        let pixelType = EraserPreference.pixelPickerType() ?? .bitmap
-        let pixel = PKToolPickerEraserItem(type: pixelType)
-        let picker = PKToolPicker(toolItems: one.host.toolPicker.toolItems.map { $0 is PKToolPickerEraserItem ? pixel : $0 })
-        picker.selectedToolItem = pixel
-        one.host.toolPickerSelectedToolItemDidChange(picker)
-        one.host.canvas.tool = pixel.eraserTool
+        toolbox.setEraserMode(.pixel)
+        #expect(one.host.select(drawingTool: .eraser))
+        #expect(EraserPreference.isPixel(try #require(EraserPreference.eraserType(of: one.host.canvas.tool))))
+        #expect(!one.host.objectEraserSelected, "PencilKit's pixel eraser, not the app's object eraser")
         one.pixelErase(across: try #require(one.strokes.first).id)
-        let remembered = EraserPreference.load()
-        #expect(EraserPreference.isPixel(remembered) == EraserPreference.isPixel(pixel.eraserTool.eraserType))
+        #expect(EraserPreference.isPixel(EraserPreference.load(from: defaults)), "remembered")
         one.close()
         await e1.close()
 
-        // Note 2, on the one-page canvas and on the paged stack: the palette starts with that eraser.
+        // Note 2, on the one-page canvas and on the paged stack: the eraser is the pixel one.
         let second = try InkFixture.denseNote(strokes: 10)
         let (e2, _) = try await InkFixture.editor(second)
-        let two = try InkInjector(editor: e2)
+        let two = try InkInjector(editor: e2, toolbox: toolbox)
         defer { two.close() }
-        let start = eraserItems(two.host.toolPicker).first?.eraserTool.eraserType
         let stack = try await StackTS.editor(pages: 2)
-        let (window, paged) = StackTS.stack(stack)
+        let (window, paged) = StackTS.stack(stack, toolbox: toolbox)
         defer { window.isHidden = true }
         let slot = try StackTS.slot(paged, stack, page: 0)
-        let stackStart = eraserItems(paged.toolPicker).first?.eraserTool.eraserType
-        if EraserPreference.pixelPickerType() != nil, EraserPreference.isPixel(remembered) {
-            #expect(start.map(EraserPreference.isPixel) == true, "the one-page canvas starts with the pixel eraser")
-            #expect(stackStart.map(EraserPreference.isPixel) == true, "the paged stack starts with the pixel eraser")
-            #expect(!two.host.objectEraserSelected && !slot.host.objectEraserSelected)
-        } else {
-            // This platform keeps no pixel eraser in the picker (the iPadOS 27.0 simulator): the
-            // remembered mode is still pixel for the next platform that has one.
-            #expect(EraserPreference.isPixel(EraserPreference.load()) == EraserPreference.isPixel(remembered))
+        for (canvas, what) in [(two.host, "the one-page canvas"), (slot.host, "the paged stack")] {
+            #expect(EraserPreference.eraserType(of: canvas.canvas.tool).map(EraserPreference.isPixel) == true, "\(what)")
+            #expect(!canvas.objectEraserSelected, "\(what)")
         }
+        // The next launch.
+        #expect(DrawingToolbox(defaults: defaults).state.eraserMode == .pixel)
+        #expect(DrawingToolbox(defaults: defaults).state.tool == .eraser)
 
         // Back to the object eraser on note 2; note 1 opens with it again.
-        let object = PKToolPickerEraserItem(type: .vector)
-        let picker2 = PKToolPicker(toolItems: two.host.toolPicker.toolItems.map { $0 is PKToolPickerEraserItem ? object : $0 })
-        picker2.selectedToolItem = object
-        two.host.toolPickerSelectedToolItemDidChange(picker2)
-        #expect(EraserPreference.load() == .vector)
+        toolbox.setEraserMode(.object)
+        #expect(EraserPreference.load(from: defaults) == .vector)
+        #expect(two.host.objectEraserSelected && slot.host.objectEraserSelected)
         let (e1b, _) = try await InkFixture.editor(first)
-        let again = try InkInjector(editor: e1b)
+        let again = try InkInjector(editor: e1b, toolbox: toolbox)
         defer { again.close() }
-        #expect(eraserItems(again.host.toolPicker).first?.eraserTool.eraserType == .vector)
+        #expect(again.host.objectEraserSelected)
+        #expect(DrawingToolbox(defaults: defaults).state.eraserMode == .object)
         await e1b.close()
         await e2.close()
     }

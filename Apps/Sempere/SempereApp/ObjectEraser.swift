@@ -4,7 +4,7 @@ import PencilKit
 import UIKit
 
 /// The app's object (stroke) eraser, used instead of PencilKit's when the
-/// tool picker's eraser is in object mode: PencilKit's `.vector` eraser has
+/// palette's eraser is in object mode (`DrawingToolbox`): PencilKit's `.vector` eraser has
 /// no size, this one has `ObjectEraserSize` presets.
 ///
 /// While it is active, `PageCanvasHost` turns PencilKit's drawing gesture off

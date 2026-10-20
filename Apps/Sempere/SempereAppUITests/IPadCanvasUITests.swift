@@ -283,7 +283,8 @@ final class IPadCanvasUITests: XCTestCase {
         let app = launch(columns: "all", landscape: true)
         defer { app.terminate() }
         guard let canvas = canvas(app) else { return XCTFail("no canvas reports the demo items") }
-        let row = app.staticTexts.matching(NSPredicate(format: "label == %@", "Quick thoughts")).firstMatch
+        // The list's row (the note's title is in the toolbar too, beside the Annotate button).
+        let row = app.cells.staticTexts.matching(NSPredicate(format: "label == %@", "Quick thoughts")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.tap()
         Thread.sleep(forTimeInterval: 1.5)

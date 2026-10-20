@@ -543,38 +543,23 @@ struct LayoutAndPaletteTests {
     }
 
     @Test func compactPaletteKeepsPenMarkerEraserLasso() {
-        let full = EraserPreference.makeToolPicker().toolItems
-        let compact = ToolPalette.compactItems(from: full)
-        #expect(compact.count < full.count)
-        #expect(compact.contains { $0 is PKToolPickerEraserItem })
-        #expect(compact.contains { $0 is PKToolPickerLassoItem })
-        let inks = compact.compactMap { ($0 as? PKToolPickerInkingItem)?.inkingTool.inkType }
-        #expect(Set(inks) == [.pen, .marker])
-        #expect(ToolPalette.compactItems(from: []).isEmpty)
-        let picker = ToolPalette.makePicker(compact: true)
-        #expect(picker.toolItems.count == compact.count)
-        #expect(!picker.showsDrawingPolicyControls)
-        #expect(ToolPalette.makePicker(compact: false).toolItems.count == full.count)
+        let compact = DrawingToolState.compactTools(selected: .pen)
+        #expect(compact.count < DrawingToolState.fullTools.count)
+        #expect(compact == [.pen, .marker, .eraser, .lasso])
     }
 
-    @Test func paletteDefaultsToShownAndFull() {
+    @Test func paletteDefaultsToFull() {
         let d = UserDefaults(suiteName: "sempere-palette-tests")!
         d.removePersistentDomain(forName: "sempere-palette-tests")
-        #expect(ToolPalette.isVisible(in: d))
         #expect(!ToolPalette.isCompact(in: d))
-        d.set(false, forKey: ToolPalette.visibleKey)
         d.set(true, forKey: ToolPalette.compactKey)
-        #expect(!ToolPalette.isVisible(in: d))
         #expect(ToolPalette.isCompact(in: d))
     }
 
-    @Test func hostSwapsPickersWithoutLosingTheCanvasObserver() {
+    @Test func aCanvasWithoutAWindowTakesPaletteChanges() {
         let host = PageCanvasHost()
-        let full = host.toolPicker.toolItems.count
-        host.paletteCompact = true
-        #expect(host.toolPicker.toolItems.count < full)
-        host.paletteCompact = false
-        #expect(host.toolPicker.toolItems.count == full)
         host.paletteVisible = false   // no window: nothing to show or hide, must not crash
+        host.paletteVisible = true
+        host.applyTool()
     }
 }

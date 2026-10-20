@@ -8,7 +8,7 @@ enum NoteToolbar {
     enum Item: Hashable, Sendable, CaseIterable {
         // The modes.
         case annotate, hand
-        // Annotate's tools. `drawingTools` is the Mac's palette (PencilKit shows none in Mac Catalyst).
+        // Annotate's tools. `drawingTools` is the Mac's tool menu (the palette's tools as a menu).
         case drawingTools, text, eraserSize
         // Adding to the note.
         case insert, recordings
@@ -53,8 +53,9 @@ enum NoteToolbar {
     /// Where `item` goes on `device`. The iPhone's bar holds the two mode buttons and the overflow menu
     /// only (it must fit the title on an iPhone SE, 375 pt), so its other bar items are in the overflow
     /// menu, in the same order; its page navigation is in the bottom bar (the top bar has no room), and
-    /// Add Page and the thumbnails are in the Pages menu only. Only the Mac has Drawing Tools: PencilKit
-    /// shows no tool palette in a Mac Catalyst app, so its tools are picked from that menu.
+    /// Add Page and the thumbnails are in the Pages menu only. Only the Mac has Drawing Tools: the tools as a
+    /// menu beside the palette, for the pointer and the keyboard (it came first, when PencilKit's palette
+    /// showed nothing in Mac Catalyst).
     static func placement(of item: Item, on device: NoteDevice) -> Placement? {
         switch item {
         case .annotate, .hand:

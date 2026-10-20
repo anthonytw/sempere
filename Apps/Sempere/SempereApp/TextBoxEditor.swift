@@ -523,7 +523,7 @@ final class TextBoxEditorController: NSObject, UITextViewDelegate, UIGestureReco
 
     /// The style bar's color button (it shows the color of the text at the cursor).
     private weak var colourItem: UIBarButtonItem?
-    /// The pen's color now, offered first among the swatches (the host's tool picker).
+    /// The pen's color now, offered first among the swatches (the palette's ink, `DrawingToolbox`).
     var penColour: () -> Sempere.Color? = { nil }
 
     /// The color of the selected text, or of what is typed next.

@@ -118,6 +118,9 @@ final class IPadZoomScrollUITests: XCTestCase {
 
     // MARK: Zoom
 
+    // XCTest has no pinch on a Mac: the suite is skipped there, but must still build for `test-mac-ui`.
+    #if !targetEnvironment(macCatalyst)
+
     /// A pageless note (an import from Notability is one) zooms out below the fitted width: it
     /// stopped at the fit ("still can't zoom out farther than 100%").
     @MainActor
@@ -142,6 +145,7 @@ final class IPadZoomScrollUITests: XCTestCase {
         stack.pinch(withScale: 0.5, velocity: -1)
         waitReport(canvas, "a pinch zooms the pages out below the fit") { $0.zoom < start.zoom * 0.85 }
     }
+    #endif
 
     // MARK: The hold menu
 

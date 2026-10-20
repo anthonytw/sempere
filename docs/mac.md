@@ -141,12 +141,15 @@ canvas's range. Tool commands select the tool in the system palette
 (`PageCanvasHost.select(tool:)`); the compact palette has no pencil, so that
 command does nothing there.
 
-**No tool palette on a Mac.** PencilKit never shows its tool palette (`PKToolPicker`) in a Mac
+**The drawing palette.** PencilKit never shows its tool palette (`PKToolPicker`) in a Mac
 Catalyst app: Apple's documentation says so, and a bare `PKCanvasView` that is the first responder
 with `setVisible(true, forFirstResponder:)` shows none on macOS 27 either (`isVisible` stays false).
-The picker still holds the selected tool, which the Tools menu and the toolbar's Drawing Tools menu
-(`EditorView.macToolsMenu`, beside Annotate while annotating: `NoteToolbar.Item.drawingTools`) change.
-Ink color and width have no control on a Mac yet.
+So the Mac, like the iPad and the iPhone, draws with Sempere's own palette (`DrawingPaletteView`,
+docs/iphone.md "The drawing palette"): docked at the bottom of the note while annotating, with every
+tool, eight swatches and any color, five widths, the opacity, the eraser's modes and sizes, and the
+ruler, each control with a tooltip and a hover highlight. The Tools menu (⌥⌘1–5, Ruler ⌥⌘R, Use
+Compact Palette) and the toolbar's Drawing Tools menu (`EditorView.macToolsMenu`, beside Annotate while
+annotating: `NoteToolbar.Item.drawingTools`) change the same tool state (`DrawingToolbox`).
 
 **Settings….** UIKit also builds the app menu's Settings… (⌘,), which would
 open a pane Catalyst generates (touch alternatives and system items only).
@@ -172,10 +175,9 @@ menu (Pen, Marker…, Text) switches to Annotate.
 |------|------------------------|---------|
 | Reading | the wheel and a two-finger swipe scroll (a click-drag scrolls the pages); nothing draws, a click selects nothing, the pointer is the system arrow | hidden |
 | Hand | a click selects an item (secondary click: its menu), a drag moves or resizes it; nothing draws | hidden |
-| Annotate | draws with the chosen tool | none on a Mac: the toolbar's Drawing Tools menu and the Tools menu pick the tool |
+| Annotate | draws with the chosen tool | shown (Sempere's own); Drawing Tools and the Tools menu pick the tool too |
 
-The Show/Hide Tool Palette button and its command are gone (Annotate is the palette on the iPad;
-PencilKit shows none on a Mac, below). The palette has no Hand on any device. `MacNoteModeUITests` drives
+The Show/Hide Tool Palette button and its command are gone (Annotate is the palette, on every device). The palette has no Hand on any device. `MacNoteModeUITests` drives
 the three modes with the mouse.
 
 Placed items (images, text boxes, PDF pages, videos, recordings' cards): while annotating the mouse
@@ -331,8 +333,8 @@ Recently Deleted (⌘⌫) is off while a search, rename or tag field may have fo
 
 ## Keyboard focus
 
-The open note's canvas wants the first responder (the tool palette shows for it, and
-the menus' undo acts on it), but the page stack lays out on every SwiftUI update: a
+The open note's canvas wants the first responder (the menus' undo and the keys act on
+it; PencilKit's tool palette showed only for it, Sempere's own needs none), but the page stack lays out on every SwiftUI update: a
 search result, a sync tick, a list reconcile, a drop, the sidebar collapsing. In
 TestFlight 1.0.0 each of those layouts gave the current page's canvas the first
 responder, taking the keyboard from the search field (or a new text box's neighbour

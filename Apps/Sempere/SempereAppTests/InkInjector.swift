@@ -41,11 +41,12 @@ final class InkInjector {
     /// update, extent, autosave scheduling), in milliseconds, oldest first.
     var changeTimes: [Double] { timer.times }
 
-    init(editor: NoteEditor, page: UUID? = nil, size: CGSize = CGSize(width: 820, height: 1180)) throws {
+    init(editor: NoteEditor, page: UUID? = nil, size: CGSize = CGSize(width: 820, height: 1180),
+         toolbox: DrawingToolbox = .shared) throws {
         self.editor = editor
         pageID = try #require(page ?? editor.currentPage?.id)
         window = UIWindow(frame: CGRect(origin: .zero, size: size))
-        host = PageCanvasHost(frame: window.bounds)
+        host = PageCanvasHost(frame: window.bounds, embedded: false, toolbox: toolbox)
         coordinator = PageCanvasView.Coordinator()
         timer = TimingDelegate(coordinator)
         host.canvas.delegate = timer
