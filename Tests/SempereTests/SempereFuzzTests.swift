@@ -518,7 +518,7 @@ final class SempereFuzzTests: VaultTestCase {
         let record = try JSONEncoder().encode(try EpochTrustRecord(
             vaultId: vaultId, root: try VaultRoot.fingerprint(vaultId: vaultId, epochOne: k1), chain: chain,
             list: [.init(role: "recovery", key: "age1pq1r", sign: nil, name: "Recovery kit")],
-            markers: VaultMarkers(format: "sempere/1", features: [])))
+            markers: VaultMarkers(format: "sempere/1", features: []), home: Data(repeating: 1, count: 32)))
         assertClean(Fuzz.run("epoch-keys", seeds: [wrap, record], quick: 300, text: true) { input in
             if let key = try? EpochKeyWrap.parse(input, vaultId: vaultId, epoch: 2) {
                 let text = String(decoding: input, as: UTF8.self)
@@ -540,10 +540,10 @@ final class SempereFuzzTests: VaultTestCase {
     func testFuzzKeyHierarchyReaders() throws {
         try XCTSkipUnless(postQuantumAvailable, "X-Wing and ML-DSA need Apple OS 26")
         let a = try ChainTestDevice("A"), n = try ChainTestDevice("N")
-        let r = KeyFingerprint.recovery(key: "age1pq1test-recovery")
+        let r = try ChainTestRecovery("recovery").fingerprint
         var b = try ChainTestBuilder(author: a, founders: [a.fingerprint, r])
         try b.add(n, by: a)
-        try b.next(author: n, list: [a.fingerprint, n.fingerprint, r], parentList: [a.fingerprint, n.fingerprint, r])
+        try b.next(author: a, list: [a.fingerprint, n.fingerprint, r], parentList: [a.fingerprint, n.fingerprint, r])
         let record = try EpochRecord(vaultId: b.vaultId, root: b.root, epoch: 2, epochId: b.keys[1].epochId,
                                      parent: EpochRecordParent(epoch: 1, epochId: b.keys[0].epochId, key: b.keys[0],
                                                                sealed: ["notes/a/b.delta.age": String(repeating: "cd", count: 32)]),

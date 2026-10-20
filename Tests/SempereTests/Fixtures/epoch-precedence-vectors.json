@@ -1,0 +1,1140 @@
+{
+  "description": "key-hierarchy design §5.6 (single writer): trees of epochs whose signatures verified (labels stand for their UTF-8 bytes; signer, reason, home after the epoch, list, recovery fingerprint, and for a takeover whether its recoverySig verified under the parent's recovery key), the device's pinned chain, and the expected chain, the pinned epochs a takeover dropped, the ignored epochs and the home conflicts.",
+  "cases": [
+    {
+      "name": "home-signed epochs are followed linearly; a handoff moves home",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R"
+        },
+        {
+          "id": "e2",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "e3",
+          "signer": "A",
+          "reason": "handoff",
+          "home": "B",
+          "list": [
+            "A",
+            "B",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e2"
+        },
+        {
+          "id": "e4",
+          "signer": "B",
+          "reason": "remove",
+          "home": "B",
+          "list": [
+            "B",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e3"
+        }
+      ],
+      "pinned": [],
+      "expect": {
+        "kept": [
+          "e1",
+          "e2",
+          "e3",
+          "e4"
+        ],
+        "dropped": [],
+        "ignored": [],
+        "homeConflicts": []
+      }
+    },
+    {
+      "name": "a stolen home writing after the takeover's parent: the takeover wins, the stolen epochs are dropped",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R"
+        },
+        {
+          "id": "e2",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "e3s",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e2"
+        },
+        {
+          "id": "t",
+          "signer": "B",
+          "reason": "takeover",
+          "home": "B",
+          "list": [
+            "B",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e2",
+          "recoverySigned": true
+        },
+        {
+          "id": "e4s",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "t"
+        }
+      ],
+      "pinned": [
+        "e1",
+        "e2",
+        "e3s"
+      ],
+      "expect": {
+        "kept": [
+          "e1",
+          "e2",
+          "t"
+        ],
+        "dropped": [
+          "e3s"
+        ],
+        "ignored": [
+          "e4s"
+        ],
+        "homeConflicts": []
+      }
+    },
+    {
+      "name": "a stolen home writing after the takeover's parent: a joiner takes the takeover",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R"
+        },
+        {
+          "id": "e2",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "e3s",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e2"
+        },
+        {
+          "id": "t",
+          "signer": "B",
+          "reason": "takeover",
+          "home": "B",
+          "list": [
+            "B",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e2",
+          "recoverySigned": true
+        },
+        {
+          "id": "e4s",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "t"
+        }
+      ],
+      "pinned": [],
+      "expect": {
+        "kept": [
+          "e1",
+          "e2",
+          "t"
+        ],
+        "dropped": [],
+        "ignored": [
+          "e4s"
+        ],
+        "homeConflicts": []
+      }
+    },
+    {
+      "name": "a takeover on top of the stolen home's epochs keeps them as history; the stolen home is off every later list",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R"
+        },
+        {
+          "id": "x2",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "x3",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "x2"
+        },
+        {
+          "id": "t",
+          "signer": "K",
+          "reason": "takeover",
+          "home": "K",
+          "list": [
+            "K",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "x3",
+          "recoverySigned": true
+        },
+        {
+          "id": "x4",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "t"
+        }
+      ],
+      "pinned": [
+        "e1",
+        "x2",
+        "x3"
+      ],
+      "expect": {
+        "kept": [
+          "e1",
+          "x2",
+          "x3",
+          "t"
+        ],
+        "dropped": [],
+        "ignored": [
+          "x4"
+        ],
+        "homeConflicts": []
+      }
+    },
+    {
+      "name": "two takeovers that are not ancestors of each other: the smaller epochId wins, silently",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R"
+        },
+        {
+          "id": "e2",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "t1",
+          "signer": "B",
+          "reason": "takeover",
+          "home": "B",
+          "list": [
+            "B",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e2",
+          "recoverySigned": true
+        },
+        {
+          "id": "t2",
+          "signer": "C",
+          "reason": "takeover",
+          "home": "C",
+          "list": [
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e2",
+          "recoverySigned": true
+        }
+      ],
+      "pinned": [],
+      "expect": {
+        "kept": [
+          "e1",
+          "e2",
+          "t1"
+        ],
+        "dropped": [],
+        "ignored": [],
+        "homeConflicts": []
+      }
+    },
+    {
+      "name": "two takeovers: the device that made the larger one switches",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R"
+        },
+        {
+          "id": "e2",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "t1",
+          "signer": "B",
+          "reason": "takeover",
+          "home": "B",
+          "list": [
+            "B",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e2",
+          "recoverySigned": true
+        },
+        {
+          "id": "t2",
+          "signer": "C",
+          "reason": "takeover",
+          "home": "C",
+          "list": [
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e2",
+          "recoverySigned": true
+        }
+      ],
+      "pinned": [
+        "e1",
+        "e2",
+        "t2"
+      ],
+      "expect": {
+        "kept": [
+          "e1",
+          "e2",
+          "t1"
+        ],
+        "dropped": [
+          "t2"
+        ],
+        "ignored": [],
+        "homeConflicts": []
+      }
+    },
+    {
+      "name": "a takeover below a takeover: followed, it is on the winner's chain",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R"
+        },
+        {
+          "id": "e2",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "t1",
+          "signer": "B",
+          "reason": "takeover",
+          "home": "B",
+          "list": [
+            "B",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e2",
+          "recoverySigned": true
+        },
+        {
+          "id": "t2",
+          "signer": "C",
+          "reason": "takeover",
+          "home": "C",
+          "list": [
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e2",
+          "recoverySigned": true
+        },
+        {
+          "id": "b3",
+          "signer": "B",
+          "reason": "remove",
+          "home": "B",
+          "list": [
+            "B",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "t1"
+        },
+        {
+          "id": "t3",
+          "signer": "C",
+          "reason": "takeover",
+          "home": "C",
+          "list": [
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "b3",
+          "recoverySigned": true
+        }
+      ],
+      "pinned": [],
+      "expect": {
+        "kept": [
+          "e1",
+          "e2",
+          "t1",
+          "b3",
+          "t3"
+        ],
+        "dropped": [],
+        "ignored": [],
+        "homeConflicts": []
+      }
+    },
+    {
+      "name": "after a handoff the old home signing is ignored",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R"
+        },
+        {
+          "id": "e2",
+          "signer": "A",
+          "reason": "handoff",
+          "home": "B",
+          "list": [
+            "A",
+            "B",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "e3a",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e2"
+        },
+        {
+          "id": "e3b",
+          "signer": "B",
+          "reason": "remove",
+          "home": "B",
+          "list": [
+            "A",
+            "B",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e2"
+        }
+      ],
+      "pinned": [],
+      "expect": {
+        "kept": [
+          "e1",
+          "e2",
+          "e3b"
+        ],
+        "dropped": [],
+        "ignored": [
+          "e3a"
+        ],
+        "homeConflicts": []
+      }
+    },
+    {
+      "name": "an epoch signed by a listed device that is not home is ignored",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R"
+        },
+        {
+          "id": "b2",
+          "signer": "B",
+          "reason": "remove",
+          "home": "B",
+          "list": [
+            "B",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "b3",
+          "signer": "B",
+          "reason": "remove",
+          "home": "B",
+          "list": [
+            "B",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "b2"
+        }
+      ],
+      "pinned": [],
+      "expect": {
+        "kept": [
+          "e1"
+        ],
+        "dropped": [],
+        "ignored": [
+          "b2",
+          "b3"
+        ],
+        "homeConflicts": []
+      }
+    },
+    {
+      "name": "a takeover without the recovery key's signature is ignored",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R"
+        },
+        {
+          "id": "t",
+          "signer": "B",
+          "reason": "takeover",
+          "home": "B",
+          "list": [
+            "B",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        }
+      ],
+      "pinned": [],
+      "expect": {
+        "kept": [
+          "e1"
+        ],
+        "dropped": [],
+        "ignored": [
+          "t"
+        ],
+        "homeConflicts": []
+      }
+    },
+    {
+      "name": "a removed former home signing under an epoch where it was home: the pinned chain holds; a home conflict is reported",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R"
+        },
+        {
+          "id": "e2",
+          "signer": "A",
+          "reason": "handoff",
+          "home": "B",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "e3",
+          "signer": "B",
+          "reason": "remove",
+          "home": "B",
+          "list": [
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e2"
+        },
+        {
+          "id": "c2",
+          "signer": "C",
+          "reason": "remove",
+          "home": "C",
+          "list": [
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "a2",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        }
+      ],
+      "pinned": [
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "expect": {
+        "kept": [
+          "e1",
+          "e2",
+          "e3"
+        ],
+        "dropped": [],
+        "ignored": [
+          "c2"
+        ],
+        "homeConflicts": [
+          "e1"
+        ]
+      }
+    },
+    {
+      "name": "the same tree for a joiner: it stops at the conflict and needs a takeover",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R"
+        },
+        {
+          "id": "e2",
+          "signer": "A",
+          "reason": "handoff",
+          "home": "B",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "e3",
+          "signer": "B",
+          "reason": "remove",
+          "home": "B",
+          "list": [
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e2"
+        },
+        {
+          "id": "c2",
+          "signer": "C",
+          "reason": "remove",
+          "home": "C",
+          "list": [
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "a2",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        }
+      ],
+      "pinned": [],
+      "expect": {
+        "kept": [
+          "e1"
+        ],
+        "dropped": [],
+        "ignored": [
+          "c2"
+        ],
+        "homeConflicts": [
+          "e1"
+        ]
+      }
+    },
+    {
+      "name": "a takeover settles the conflict for everyone",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R"
+        },
+        {
+          "id": "e2",
+          "signer": "A",
+          "reason": "handoff",
+          "home": "B",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "e3",
+          "signer": "B",
+          "reason": "remove",
+          "home": "B",
+          "list": [
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e2"
+        },
+        {
+          "id": "c2",
+          "signer": "C",
+          "reason": "remove",
+          "home": "C",
+          "list": [
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "a2",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "t",
+          "signer": "B",
+          "reason": "takeover",
+          "home": "B",
+          "list": [
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e3",
+          "recoverySigned": true
+        }
+      ],
+      "pinned": [],
+      "expect": {
+        "kept": [
+          "e1",
+          "e2",
+          "e3",
+          "t"
+        ],
+        "dropped": [],
+        "ignored": [
+          "c2"
+        ],
+        "homeConflicts": []
+      }
+    },
+    {
+      "name": "a stale device pinned on a home epoch the takeover did not see switches to it",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R"
+        },
+        {
+          "id": "e2",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "t",
+          "signer": "B",
+          "reason": "takeover",
+          "home": "B",
+          "list": [
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1",
+          "recoverySigned": true
+        },
+        {
+          "id": "t2",
+          "signer": "B",
+          "reason": "remove",
+          "home": "B",
+          "list": [
+            "B",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "t"
+        }
+      ],
+      "pinned": [
+        "e1",
+        "e2"
+      ],
+      "expect": {
+        "kept": [
+          "e1",
+          "t",
+          "t2"
+        ],
+        "dropped": [
+          "e2"
+        ],
+        "ignored": [],
+        "homeConflicts": []
+      }
+    },
+    {
+      "name": "a device pinned before the takeover follows it",
+      "nodes": [
+        {
+          "id": "e1",
+          "signer": "A",
+          "reason": "create",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R"
+        },
+        {
+          "id": "e2",
+          "signer": "A",
+          "reason": "remove",
+          "home": "A",
+          "list": [
+            "A",
+            "B",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1"
+        },
+        {
+          "id": "t",
+          "signer": "B",
+          "reason": "takeover",
+          "home": "B",
+          "list": [
+            "B",
+            "C",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "e1",
+          "recoverySigned": true
+        },
+        {
+          "id": "t2",
+          "signer": "B",
+          "reason": "remove",
+          "home": "B",
+          "list": [
+            "B",
+            "R"
+          ],
+          "recovery": "R",
+          "parent": "t"
+        }
+      ],
+      "pinned": [
+        "e1"
+      ],
+      "expect": {
+        "kept": [
+          "e1",
+          "t",
+          "t2"
+        ],
+        "dropped": [],
+        "ignored": [],
+        "homeConflicts": []
+      }
+    }
+  ]
+}

@@ -357,8 +357,10 @@ public struct RecoveryPassphraseCopy: Hashable, Sendable {
         self.created = created; self.vaultId = vaultId; self.root = root; self.identity = identity
     }
 
-    /// `keys/recovery-<recovery fingerprint hex>.key.age`.
-    public var path: String { "keys/recovery-\(Hex.encode(KeyFingerprint.recovery(key: identity.recipient.string))).key.age" }
+    /// `keys/recovery-<recovery fingerprint hex>.key.age` (the fingerprint binds the derived signing keys).
+    ///
+    /// - Throws: `AgeError.postQuantumUnavailable` where the platform has no ML-DSA.
+    public func path() throws -> String { "keys/recovery-\(Hex.encode(try KeyFingerprint.recovery(identity: identity))).key.age" }
 
     /// The plaintext: `# created:`, `# sempere-vault:`, `# sempere-root:`, `# public key:` and the
     /// identity, one per line; `age -i` reads it as it is.

@@ -56,7 +56,8 @@ Do not use features newer than Swift 6.0 in `Sources/`.
   `Sources/Sempere/Epoch*.swift` and `JoinCodes.swift`, mirrored in `web/src/vault/epoch.ts`; vectors in
   `Fixtures/epoch-vectors.json` (`web/scripts/make-epoch-vectors.ts`, then
   `SEMPERE_WRITE_EPOCH_VECTORS=1 swift test --filter "EpochKeysTests|EpochChainTests"`),
-  `epoch-chain-vectors.json` and `epoch-fork-vectors.json`.
+  `epoch-chain-vectors.json` and `epoch-precedence-vectors.json`. Only the home device signs list
+  changes; a takeover by the recovery key is the one other signer (design §5.6).
 
 ## Optional importers
 

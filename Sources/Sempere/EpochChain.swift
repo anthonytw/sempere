@@ -2,10 +2,12 @@ import Crypto
 import Foundation
 
 // The public chain of an epoch record and its check (docs/design/key-hierarchy.md
-// §4.1, §4.3, §5.2.1; format.md §15.6, §15.7): every epoch since epoch 1, with
-// its link keys, its author and `epochSig`, its first list, the parent list
-// its author signed, and the same-epoch additions its successor carried.
-// Pure functions.
+// §4.1, §4.3, §5.2.1, §5.6; format.md §15.6, §15.7): every epoch since epoch 1,
+// with its link keys, its author and `epochSig`, its first list, the parent list
+// its author signed, its home, and the same-epoch additions its successor
+// carried. A single writer: only the home device signs epochs and approves
+// additions; a takeover is signed by the recovery key and the new home. Pure
+// functions.
 
 /// Why a chain does not verify (design §4.3). Each names the epoch at fault.
 public enum ChainError: Error, Hashable, Sendable {
@@ -17,17 +19,24 @@ public enum ChainError: Error, Hashable, Sendable {
     case notRooted
     /// The link into this epoch does not verify under the previous epoch's link keys.
     case brokenLink(epoch: Int)
-    /// The author is not in the parent's list (epoch 1: not in its own first list).
+    /// Epoch 1's author is not in its own first list.
     case authorNotListed(epoch: Int)
+    /// The author is not the parent's home (a home-signed epoch), or not the new home (a takeover).
+    case notHome(epoch: Int)
+    /// `home` is not listed, changes outside a handoff or takeover, or a handoff names the same home
+    /// or no device (epoch 1: home is not its author).
+    case badHome(epoch: Int)
+    /// A takeover without a valid `recoverySig` by the parent's recovery key, or a `recoverySig`
+    /// outside a takeover.
+    case badTakeover(epoch: Int)
     /// `epochSig` does not verify under the author's signing keys.
     case badEpochSig(epoch: Int)
-    /// The first list holds a device that is not in the parent's list, or more
-    /// than one new key, or a new key outside a recovery replacement.
+    /// The first list holds a device that is not in the parent's list (a takeover: other than its new
+    /// home), or more than one new key, or a new key outside a recovery replacement.
     case introducesDevice(epoch: Int)
     /// More than `EpochChain.maxAdditions` additions.
     case tooManyAdditions(epoch: Int)
-    /// The reason is not one of the six, or `rejected` is present outside a `resolve` epoch (or
-    /// absent in one).
+    /// The reason is not one of the six.
     case badReason(epoch: Int)
     /// The recovery fingerprint is not in the first list, or a `recovery`/`reencrypt` epoch does
     /// not replace it, or another epoch changes it (review M1).
@@ -49,6 +58,9 @@ public struct ChainAuthor: Hashable, Sendable, Codable {
 
     /// The device fingerprint (design §3).
     public var fingerprint: Data { KeyFingerprint.device(key: key, signP256: p256, signMLDSA65: mldsa65) }
+
+    /// The recovery fingerprint, for a takeover's `recoveryAuthor` (design §3).
+    public var recoveryFingerprint: Data { KeyFingerprint.recovery(key: key, signP256: p256, signMLDSA65: mldsa65) }
 }
 
 /// A same-epoch addition carried in a chain entry: the fields `addSig` covers, and `addSig`.
@@ -86,9 +98,9 @@ extension ChainAddition: Codable {
     }
 }
 
-/// The reasons an epoch is made (design §5.2.1).
+/// The reasons an epoch is made (design §5.2.1, §5.6).
 public enum EpochReason: String, Hashable, Sendable, Codable, CaseIterable {
-    case create, remove, recovery, reencrypt, resolve
+    case create, remove, recovery, reencrypt, handoff, takeover
 
     /// May the first list hold one key that is not in the parent list (a new recovery key)?
     var mayAddRecovery: Bool { self == .recovery || self == .reencrypt }
@@ -114,28 +126,36 @@ public struct ChainEntry: Hashable, Sendable {
     public var additions: [ChainAddition]
     /// The recovery key's fingerprint in this epoch's list (review M1).
     public var recovery: Data
-    /// A `resolve` epoch's rejected author (review M2); nil otherwise.
-    public var rejected: Data?
+    /// The home device after this epoch (design §5.6): the author's own, except in a handoff (the device
+    /// it names) and a takeover (the new home, its author).
+    public var home: Data
+    /// A takeover's recovery key: its key and derived signing keys (their recovery fingerprint must be
+    /// the parent's `recovery`). Nil otherwise.
+    public var recoveryAuthor: ChainAuthor?
+    /// A takeover's signature by the recovery key, over the same message as `epochSig`. Nil otherwise.
+    public var recoverySig: AuthorSignature?
 
     public init(epoch: Int, epochId: Data, parent: Data?, linkPublicKeys: LinkPublicKeys, link: EpochLink?,
                 reason: String, list: [Data], parentList: [Data], author: ChainAuthor, epochSig: AuthorSignature,
-                additions: [ChainAddition] = [], recovery: Data, rejected: Data? = nil) {
+                additions: [ChainAddition] = [], recovery: Data, home: Data, recoveryAuthor: ChainAuthor? = nil,
+                recoverySig: AuthorSignature? = nil) {
         self.epoch = epoch; self.epochId = epochId; self.parent = parent; self.linkPublicKeys = linkPublicKeys
         self.link = link; self.reason = reason; self.list = list; self.parentList = parentList; self.author = author
-        self.epochSig = epochSig; self.additions = additions; self.recovery = recovery; self.rejected = rejected
+        self.epochSig = epochSig; self.additions = additions; self.recovery = recovery; self.home = home
+        self.recoveryAuthor = recoveryAuthor; self.recoverySig = recoverySig
     }
 
-    /// The message its `epochSig` signs.
+    /// The message its `epochSig` (and a takeover's `recoverySig`) signs.
     public func epochMessage(vaultId: UUID, root: Data) -> Data {
         AuthorMessage.epoch(vaultId: vaultId, root: root, epoch: epoch, epochId: epochId, parent: parent,
-                            reason: reason, recovery: recovery, rejected: rejected, list: list, parentList: parentList)
+                            reason: reason, recovery: recovery, home: home, list: list, parentList: parentList)
     }
 }
 
 extension ChainEntry: Codable {
     enum CodingKeys: String, CodingKey {
         case epoch, epochId, parent, linkPublicKeys, link, reason, list, parentList, author, epochSig, additions
-        case recovery, rejected
+        case recovery, home, recoveryAuthor, recoverySig
     }
     enum LinkKeys: String, CodingKey { case ed25519, mldsa65 }
 
@@ -179,7 +199,9 @@ extension ChainEntry: Codable {
         epochSig = try c.decode(AuthorSignature.self, forKey: .epochSig)
         additions = try c.decodeIfPresent([ChainAddition].self, forKey: .additions) ?? []
         recovery = try Self.hex32(c, .recovery)
-        rejected = try c.contains(.rejected) ? Self.hex32(c, .rejected) : nil
+        home = try Self.hex32(c, .home)
+        recoveryAuthor = try c.decodeIfPresent(ChainAuthor.self, forKey: .recoveryAuthor)
+        recoverySig = try c.decodeIfPresent(AuthorSignature.self, forKey: .recoverySig)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -198,7 +220,9 @@ extension ChainEntry: Codable {
         try c.encode(epochSig, forKey: .epochSig)
         if !additions.isEmpty { try c.encode(additions, forKey: .additions) }
         try c.encode(Hex.encode(recovery), forKey: .recovery)
-        if let rejected { try c.encode(Hex.encode(rejected), forKey: .rejected) }
+        try c.encode(Hex.encode(home), forKey: .home)
+        try c.encodeIfPresent(recoveryAuthor, forKey: .recoveryAuthor)
+        try c.encodeIfPresent(recoverySig, forKey: .recoverySig)
     }
 }
 
@@ -230,8 +254,8 @@ public struct DeviceDirectory: Sendable {
 public struct AdmittedAdditions: Hashable, Sendable {
     /// The first list plus every admitted addition: the epoch's list as its children see it.
     public var list: Set<Data>
-    /// Each admitted addition's fingerprint and its approver (nil for a kit join), in order.
-    public var admitted: [(fingerprint: Data, approver: Data?)]
+    /// Each admitted addition's fingerprint and its approver (the epoch's home), in order.
+    public var admitted: [(fingerprint: Data, approver: Data)]
     /// The indices of rejected additions.
     public var rejected: [Int]
 
@@ -251,43 +275,25 @@ public enum EpochChain {
     public static let maxEpochs = 100_000
     public static let maxListSize = 4096
 
-    /// Admits `additions` of epoch `epoch` in one pass, in order (design §4.1): each must name
-    /// this epoch, and its `addSig` must verify under its own keys with `addedBy: "recovery"` (a
-    /// kit join), or under the keys of an already admitted device whose id is `addedBy` (never its
-    /// own keys then). A self-signed entry that names an approver, or one whose approver is not
-    /// admitted yet, is rejected.
+    /// Admits `additions` of epoch `epoch` in one pass, in order (design §4.1, §5.6): each must name
+    /// this epoch and be approved by the epoch's home (`addedBy` its id, `addSig` under its keys). No
+    /// other device approves, and no entry approves itself: a kit join is a takeover.
     ///
     /// - Throws: `ChainError.tooManyAdditions` above the bound.
-    public static func admit(_ additions: [ChainAddition], epoch: Int, firstList: [Data], vaultId: UUID,
+    public static func admit(_ additions: [ChainAddition], epoch: Int, firstList: [Data], home: Data, vaultId: UUID,
                              directory: DeviceDirectory) throws -> AdmittedAdditions {
         guard additions.count <= maxAdditions else { throw ChainError.tooManyAdditions(epoch: epoch) }
         var list = Set(firstList)
-        var admitted: [(fingerprint: Data, approver: Data?)] = []
+        var admitted: [(fingerprint: Data, approver: Data)] = []
         var rejected: [Int] = []
+        let homeKeys = directory.keys[home]
         for (i, a) in additions.enumerated() {
             let fp = a.fingerprint
-            let message = AuthorMessage.entry(vaultId: vaultId, a.claim)
-            guard a.claim.addedEpoch == epoch else { rejected.append(i); continue }
-            if a.addSig.verifies(message, keys: a.claim.sign) {
-                // Self-signed: a kit join, whatever the field says; it must say so.
-                if a.claim.claimsKitJoin {
-                    list.insert(fp); admitted.append((fp, nil))
-                } else {
-                    rejected.append(i)
-                }
-                continue
+            guard a.claim.addedEpoch == epoch, a.claim.addedBy == String(Hex.encode(home).prefix(8)), fp != home,
+                  let homeKeys, a.addSig.verifies(AuthorMessage.entry(vaultId: vaultId, a.claim), keys: homeKeys) else {
+                rejected.append(i); continue
             }
-            guard !a.claim.claimsKitJoin else { rejected.append(i); continue }
-            let approver = list.sorted { $0.lexicographicallyPrecedes($1) }.first { candidate in
-                guard Hex.encode(candidate).hasPrefix(a.claim.addedBy), a.claim.addedBy.utf8.count == 8,
-                      let keys = directory.keys[candidate] else { return false }
-                return a.addSig.verifies(message, keys: keys)
-            }
-            if let approver {
-                list.insert(fp); admitted.append((fp, approver))
-            } else {
-                rejected.append(i)
-            }
+            list.insert(fp); admitted.append((fp, home))
         }
         return AdmittedAdditions(list: list, admitted: admitted, rejected: rejected)
     }
@@ -299,30 +305,18 @@ public enum EpochChain {
         public var lists: [AdmittedAdditions]
         /// Per entry: the keys it removed (none at epoch 1), computed (design §4.1).
         public var removals: [Set<Data>]
-        /// Approver of every admitted addition (nil: a kit join).
-        public var approvers: [Data: Data?]
-        /// Epoch 1's first list.
-        public var founders: Set<Data>
+        /// Per entry: the home device after it (design §5.6).
+        public var homes: [Data] { entries.map(\.home) }
         /// Every recovery fingerprint the chain names (never re-applied, never a device).
         public var recoveryKeys: Set<Data> { Set(entries.map(\.recovery)) }
-
-        /// The `addedBy` chain of `fingerprint` (design §4.1): its approver, that approver's, and
-        /// so on, until a founder or a kit join. Empty for a founder or a kit join.
-        public func approverChain(of fingerprint: Data) -> [Data] {
-            var out: [Data] = []
-            var cur = fingerprint
-            var seen: Set<Data> = [cur]
-            while !founders.contains(cur), let next = approvers[cur] ?? nil, !seen.contains(next) {
-                out.append(next); seen.insert(next); cur = next
-            }
-            return out
-        }
     }
 
-    /// Checks `chain` from epoch 1 (design §4.3): rooted at `root`, each link under the previous
-    /// link keys, each author in its parent's list (first list plus admitted additions) and its
-    /// `epochSig` valid, each first list within the parent's list plus at most one new key in a
-    /// recovery replacement or re-encryption (never a known device).
+    /// Checks `chain` from epoch 1 (design §4.3, §5.6): rooted at `root`, each link under the previous
+    /// link keys; epoch 1 by its home, listed; every later epoch signed by its parent's home, except a
+    /// takeover, signed by its new home and (`recoverySig`) by the parent's recovery key; `home`
+    /// unchanged except in a handoff (a listed device) or a takeover; each first list within the
+    /// parent's list plus at most one new key in a recovery replacement or re-encryption, or the new
+    /// home of a takeover; additions approved by the epoch's home.
     ///
     /// - Parameter directory: devices known from elsewhere (a `vault.json`'s `keys[]`), added to
     ///   the chain's own authors and additions.
@@ -333,14 +327,16 @@ public enum EpochChain {
         directory.add(chain: chain)
         var lists: [AdmittedAdditions] = []
         var removals: [Set<Data>] = []
-        var approvers: [Data: Data?] = [:]
         for (i, e) in chain.enumerated() {
             guard e.epoch == i + 1 else { throw ChainError.badSequence(epoch: e.epoch) }
             guard let reason = EpochReason(rawValue: e.reason) else { throw ChainError.badReason(epoch: e.epoch) }
             guard let authorKeys = e.author.sign else { throw ChainError.badEpochSig(epoch: e.epoch) }
             let authorFP = e.author.fingerprint
             let first = Set(e.list)
-            guard e.rejected == nil || reason == .resolve else { throw ChainError.badReason(epoch: e.epoch) }
+            let message = e.epochMessage(vaultId: vaultId, root: root)
+            if reason != .takeover {
+                guard e.recoveryAuthor == nil, e.recoverySig == nil else { throw ChainError.badTakeover(epoch: e.epoch) }
+            }
             if i == 0 {
                 guard e.parent == nil, e.link == nil, e.parentList.isEmpty, reason == .create else {
                     throw ChainError.badSequence(epoch: 1)
@@ -349,6 +345,7 @@ public enum EpochChain {
                     throw ChainError.notRooted
                 }
                 guard first.contains(authorFP) else { throw ChainError.authorNotListed(epoch: 1) }
+                guard e.home == authorFP else { throw ChainError.badHome(epoch: 1) }
                 removals.append([])
             } else {
                 let prev = chain[i - 1]
@@ -356,33 +353,47 @@ public enum EpochChain {
                 guard EpochLinks.verify(e.link, keys: prev.linkPublicKeys, epoch: e.epoch, childEpochId: e.epochId,
                                         vaultId: vaultId) else { throw ChainError.brokenLink(epoch: e.epoch) }
                 let parentList = lists[i - 1].list
-                guard parentList.contains(authorFP) else { throw ChainError.authorNotListed(epoch: e.epoch) }
                 let new = first.subtracting(parentList)
-                if reason.mayAddRecovery {
-                    // A recovery replacement or re-encryption replaces the recovery key: the new one is
-                    // the only new fingerprint, and the old one is gone (review M1).
-                    guard new.isSubset(of: [e.recovery]) else { throw ChainError.introducesDevice(epoch: e.epoch) }
-                    guard new == [e.recovery], e.recovery != prev.recovery, !first.contains(prev.recovery) else {
-                        throw ChainError.badRecovery(epoch: e.epoch)
+                switch reason {
+                case .takeover:
+                    // Signed by the recovery key of the parent and by the new home, which may be a device
+                    // the parent never listed (a kit join); the list is the user's pick (design §5.6).
+                    guard authorFP == e.home else { throw ChainError.notHome(epoch: e.epoch) }
+                    guard let ra = e.recoveryAuthor, let rk = ra.sign, let rs = e.recoverySig,
+                          ra.recoveryFingerprint == prev.recovery, rs.verifies(message, keys: rk) else {
+                        throw ChainError.badTakeover(epoch: e.epoch)
                     }
-                } else {
-                    guard new.isEmpty else { throw ChainError.introducesDevice(epoch: e.epoch) }
+                    guard new.isSubset(of: [e.home]) else { throw ChainError.introducesDevice(epoch: e.epoch) }
                     guard e.recovery == prev.recovery else { throw ChainError.badRecovery(epoch: e.epoch) }
+                default:
+                    guard authorFP == prev.home else { throw ChainError.notHome(epoch: e.epoch) }
+                    if reason == .handoff {
+                        guard e.home != prev.home, e.home != e.recovery else { throw ChainError.badHome(epoch: e.epoch) }
+                    } else {
+                        guard e.home == prev.home else { throw ChainError.badHome(epoch: e.epoch) }
+                    }
+                    if reason.mayAddRecovery {
+                        // A recovery replacement or re-encryption replaces the recovery key: the new one is
+                        // the only new fingerprint, and the old one is gone (review M1).
+                        guard new.isSubset(of: [e.recovery]) else { throw ChainError.introducesDevice(epoch: e.epoch) }
+                        guard new == [e.recovery], e.recovery != prev.recovery, !first.contains(prev.recovery) else {
+                            throw ChainError.badRecovery(epoch: e.epoch)
+                        }
+                    } else {
+                        guard new.isEmpty else { throw ChainError.introducesDevice(epoch: e.epoch) }
+                        guard e.recovery == prev.recovery else { throw ChainError.badRecovery(epoch: e.epoch) }
+                    }
                 }
                 removals.append(Set(e.parentList).intersection(parentList).subtracting(first))
             }
+            guard first.contains(e.home) else { throw ChainError.badHome(epoch: e.epoch) }
             guard first.contains(e.recovery), directory.keys[e.recovery] == nil else {
                 throw ChainError.badRecovery(epoch: e.epoch)
             }
-            guard e.epochSig.verifies(e.epochMessage(vaultId: vaultId, root: root), keys: authorKeys) else {
-                throw ChainError.badEpochSig(epoch: e.epoch)
-            }
-            let admitted = try admit(e.additions, epoch: e.epoch, firstList: e.list, vaultId: vaultId,
-                                     directory: directory)
-            for a in admitted.admitted where approvers[a.fingerprint] == nil { approvers[a.fingerprint] = a.approver }
-            lists.append(admitted)
+            guard e.epochSig.verifies(message, keys: authorKeys) else { throw ChainError.badEpochSig(epoch: e.epoch) }
+            lists.append(try admit(e.additions, epoch: e.epoch, firstList: e.list, home: e.home, vaultId: vaultId,
+                                   directory: directory))
         }
-        return Verified(entries: chain, lists: lists, removals: removals, approvers: approvers,
-                        founders: Set(chain[0].list))
+        return Verified(entries: chain, lists: lists, removals: removals)
     }
 }

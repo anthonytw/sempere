@@ -189,9 +189,12 @@ export function deviceFingerprint(key: string, signP256: string, signMLDSA65: st
   return sha256(concat([encoder.encode("sempere/1 device"), lp(key), lp(signP256), lp(signMLDSA65)]));
 }
 
-/** `SHA-256("sempere/1 recovery" ‖ lp(key))`. */
-export function recoveryFingerprint(key: string): Uint8Array {
-  return sha256(concat([encoder.encode("sempere/1 recovery"), lp(key)]));
+/**
+ * `SHA-256("sempere/1 recovery" ‖ lp(key) ‖ lp(sign.p256) ‖ lp(sign.mldsa65))`: the recovery key and its signing
+ * keys (derived from it, design §5.6) as their hex text.
+ */
+export function recoveryFingerprint(key: string, signP256: string, signMLDSA65: string): Uint8Array {
+  return sha256(concat([encoder.encode("sempere/1 recovery"), lp(key), lp(signP256), lp(signMLDSA65)]));
 }
 
 /** One `keys[]` entry as listMessage covers it: each field's JSON text, "" when absent. */
@@ -240,13 +243,13 @@ export function entryMessage(vaultId: string, e: EntryClaim): Uint8Array {
 }
 
 /**
- * `epochSig`'s message; `root`, `epochId`, `parent`, `recovery`, `rejected` and fingerprints as 64 hex digits
- * (`parent` and `rejected` empty when absent), lists sorted.
+ * `epochSig`'s (and a takeover's `recoverySig`'s) message; `root`, `epochId`, `parent`, `recovery`, `home` and
+ * fingerprints as 64 hex digits (`parent` empty at epoch 1), lists sorted.
  */
 export function epochMessage(vaultId: string, root: string, epoch: number, epochId: string, parent: string,
-  reason: string, recovery: string, rejected: string, list: string[], parentList: string[]): Uint8Array {
+  reason: string, recovery: string, home: string, list: string[], parentList: string[]): Uint8Array {
   const parts = [encoder.encode("sempere/1 author epoch"), lp(vaultId.toLowerCase()), lp(root), lp(epoch), lp(epochId),
-    lp(parent), lp(reason), lp(recovery), lp(rejected)];
+    lp(parent), lp(reason), lp(recovery), lp(home)];
   for (const l of [list, parentList]) {
     const sorted = [...l].sort(byBytes);
     parts.push(lp(sorted.length));

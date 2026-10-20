@@ -3865,9 +3865,10 @@ a second implementation can rely on them. Vaults keep §2, §2.1, §3, §4's `va
 blob-name key and §11.1's input until phase KH2, which replaces them with this section in one change
 (no migration before v1). Where the design leaves an encoding open, this section decides it, and the
 shared vectors pin it: `Tests/SempereTests/Fixtures/epoch-vectors.json` (key schedule, wraps, lists,
-links, root, fingerprints, the three signatures, join codes; made by Swift and by
-`web/scripts/make-epoch-vectors.ts`), `epoch-chain-vectors.json` (a chain and its negative cases) and
-`epoch-fork-vectors.json` (fork trees). Code: `Sources/Sempere/Epoch*.swift`, `JoinCodes.swift`;
+links, root, fingerprints, the recovery key's signing pair, the three signatures, join codes; made by
+Swift and by `web/scripts/make-epoch-vectors.ts`), `epoch-chain-vectors.json` (a chain with a handoff
+and a takeover, and its negative cases) and `epoch-precedence-vectors.json` (the precedence rule's
+trees). Code: `Sources/Sempere/Epoch*.swift`, `JoinCodes.swift`;
 `web/src/vault/epoch.ts`.
 
 ### 15.1 Encodings
@@ -3916,33 +3917,40 @@ As the design's §3, with these rules for readers (a file breaking one is malfor
 
 - at most 16 MiB; `epoch` ≥ 1; `parent` and `epochLink` present exactly when `epoch` > 1;
   `epochRecord` is `epochs/` followed by §15.6's name for `epoch` and `epochId`;
-- exactly one entry with `role: "recovery"`, which has none of `id`, `sign`, `kind`, `addedEpoch`,
-  `addedBy`, `addSig`; every key `age1pq1…` and listed once;
+- exactly one entry with `role: "recovery"`, which has `sign` (the recovery key's derived signing
+  keys, §15.4) and none of `id`, `kind`, `addedEpoch`, `addedBy`, `addSig`; every key `age1pq1…` and
+  listed once;
 - every device entry has `id`, `sign`, `kind`, `addedEpoch`, `addedBy` and `addSig`, and `id` is the
   first 8 hex digits of its fingerprint (§15.4); a wrap is at most 16 KiB; at least one device entry;
-- `epochReason` is one of §15.7's reasons, `create` exactly at epoch 1; `rejected` (a fingerprint) is
-  present only when it is `resolve`, and there only when the user rejected an author; `parentList` (sorted fingerprints, the parent list as the epoch
-  author saw it) is present exactly when `epoch` > 1.
+- `epochReason` is one of §15.7's reasons, `create` exactly at epoch 1; `home` (a fingerprint, the
+  home device after this epoch, design §5.6) is the fingerprint of a device entry; `epochAuthor` is
+  home's id except in a `handoff`; `author` is home's id or `epochAuthor`; `recoverySig` (a signature
+  pair, §15.5) is present exactly in a `takeover`; `parentList` (sorted fingerprints, the parent list
+  as the epoch author saw it) is present exactly when `epoch` > 1.
 
 **`epochSig` from `vault.json` alone** (review H2: a direct child of the pinned epoch is taken before
-its record arrives, design §4.3). The epoch's **first list** is the recovery entry and every device
-entry with `addedEpoch` below `epoch` (at epoch 1: the recovery entry and the creating device,
-`epochAuthor`, added at epoch 1); its recovery fingerprint is the recovery entry's. With `epochReason`,
-`rejected` and `parentList`, that gives every field of §15.5's `epochSig` message, which must verify
-under the signing keys of the entry whose id is `epochAuthor` and which is in `parentList` (and, for a
-direct child, in the parent's list as the device verified it; at epoch 1, in the first list). The
-first list must be within that parent list except a new recovery key of a `recovery` or `reencrypt`
-epoch. Of the two ways to make `epochSig` checkable here, this one keeps the signed parent list (from
+its record arrives, design §4.3). The epoch's **first list** is the recovery entry, every device
+entry with `addedEpoch` below `epoch`, and the home entry (at epoch 1 the creating device; after a
+takeover possibly a device it introduced); its recovery fingerprint is the recovery entry's. With
+`epochReason`, `home` and `parentList`, that gives every field of §15.5's `epochSig` message. It must
+verify under the signing keys of the entry whose id is `epochAuthor`: at epoch 1 and in a `takeover`,
+that entry is the home (at epoch 1, in the verified first list); otherwise it is in `parentList` (and,
+for a direct child, in the parent's list as the device verified it), it is the parent's home when the
+device knows it, and it is the home itself except in a `handoff` (where the home is another device). A
+`takeover`'s `recoverySig` must also verify over the same message under the recovery entry's `sign`,
+whose recovery fingerprint is in the parent list. The first list must be within that parent list
+except a new recovery key of a `recovery` or `reencrypt` epoch, or a `takeover`'s home. Of the two ways to make `epochSig` checkable here, this one keeps the signed parent list (from
 which removals are computed) under the epoch author's own signature in every copy; dropping the
 parent list from the message would leave it signed only by whoever wrote a later copy of the chain.
 
-**Entries and additions** (review H1). The device checks a `vault.json` against the epoch's list as it
-verified it (the first list from the chain, or from this file once `epochSig` verified as above, plus
-the additions it already admitted). An entry in that list needs no new check of its `addSig`. Every
-other device entry must have `addedEpoch` = `epoch` and is admitted only against devices already
-admitted, starting from that list, never against entries of this file that are not admitted
-themselves; approvals inside the epoch may be listed in any order. An entry that is not admitted makes
-the file tampered. `authorSig` must verify under an admitted device whose id is `author`.
+**Entries and additions** (review H1, design §5.6). The device checks a `vault.json` against the
+epoch's list as it verified it (the first list from the chain, or from this file once `epochSig`
+verified as above, plus the additions it already admitted). An entry in that list needs no new check of
+its `addSig`. Every other device entry must have `addedEpoch` = `epoch`, `addedBy` = home's id and an
+`addSig` valid under home's signing keys: only home approves. A `takeover`'s home entry, when the
+takeover introduces it, has `addedBy: "recovery"` and an `addSig` valid under the recovery entry's
+`sign`. An entry that is not admitted makes the file tampered. `authorSig` must verify under home, or
+under `epochAuthor` when it is `author` (the old home writing its handoff).
 
 **Wrap plaintext** (an age file to the entry's key, armored, one stanza):
 
@@ -3970,18 +3978,22 @@ listMessage = "sempere/1 list" ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp
 
 **`markersTag`**: §2.1's message under `markersKey`.
 
-### 15.4 Fingerprints, entries and kit joins
+### 15.4 Fingerprints, entries and the recovery key's signing pair
 
 - device fingerprint = `SHA-256("sempere/1 device" ‖ lp(key) ‖ lp(sign.p256) ‖ lp(sign.mldsa65))`;
-- recovery fingerprint = `SHA-256("sempere/1 recovery" ‖ lp(key))`;
+- recovery fingerprint = `SHA-256("sempere/1 recovery" ‖ lp(key) ‖ lp(sign.p256) ‖ lp(sign.mldsa65))`,
+  over the recovery key's derived signing pair;
 - a device's `id` is the first 8 hex digits of its fingerprint.
 
-An entry's `addSig` (§15.5) is checked when the entry first appears as an addition:
+**The recovery key's signing pair** (design §5.6), from its 32-byte X-Wing seed (what
+`AGE-SECRET-KEY-PQ-1…` encodes), HKDF-SHA256 with an empty salt and `L = 32`: the P-256 scalar is the
+first `HKDF(seed, "sempere/1 recovery signing p256" ‖ c)`, `c` = 0, 1, … as one byte, with
+1 ≤ scalar < n; the ML-DSA-65 seed is `HKDF(seed, "sempere/1 recovery signing mldsa65")`.
 
-- it verifies under the entry's own signing keys: a **kit join**, and `addedBy` must be `recovery`;
-- otherwise it verifies under the signing keys of an already admitted device whose id is `addedBy`,
-  and `addedBy` is not `recovery`;
-- anything else is tampering.
+An entry's `addSig` (§15.5) is checked when the entry first appears as an addition: it verifies under
+the signing keys of the epoch's home, whose id is `addedBy`; or, for the new home a `takeover`
+introduces, under the recovery key's pair with `addedBy: "recovery"`. Anything else (a self-signed
+entry included) is tampering.
 
 The device that creates the vault writes its own entry with a self-signed `addSig` and its own id in
 `addedBy` (the design does not cover the creator's entry). It is in epoch 1's first list, so it is
@@ -3993,7 +4005,7 @@ that is not an addition of the current epoch (review M3).
 | Signature | Message |
 | --- | --- |
 | `addSig` | `"sempere/1 author entry"` ‖ lp(vaultId) ‖ lp(addedEpoch) ‖ lp(key) ‖ lp(sign.p256) ‖ lp(sign.mldsa65) ‖ lp(kind) ‖ lp(added) ‖ lp(addedBy) |
-| `epochSig` | `"sempere/1 author epoch"` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(parent) ‖ lp(reason) ‖ lp(recovery) ‖ lp(rejected) ‖ the first list ‖ the parent list as the author saw it (lists as §15.1; `parent` empty at epoch 1; `recovery` the epoch's recovery fingerprint; `rejected` the rejected author of a `resolve` epoch, otherwise empty; review M1, M2) |
+| `epochSig`, `recoverySig` | `"sempere/1 author epoch"` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(parent) ‖ lp(reason) ‖ lp(recovery) ‖ lp(home) ‖ the first list ‖ the parent list as the author saw it (lists as §15.1; `parent` empty at epoch 1; `recovery` the epoch's recovery fingerprint, review M1; `home` the home's fingerprint after the epoch). `recoverySig`, in a `takeover` only, is by the recovery key's pair over the same message |
 | `authorSig` | `"sempere/1 author manifest"` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(epochRecordHash) ‖ lp(SHA-256(listMessage)) ‖ lp(format) ‖ the distinct `features` (a list, §15.1) |
 
 ### 15.6 Epoch records
@@ -4026,14 +4038,15 @@ A **chain entry**:
   "link": { "ed25519": "…", "mldsa65": "…" }, "reason": "remove",
   "list": ["<fingerprint>", …], "parentList": ["<fingerprint>", …],
   "author": { "key": "age1pq1…", "p256": "…", "mldsa65": "…" }, "epochSig": { "p256": "…", "mldsa65": "…" },
-  "recovery": "<fingerprint>", "rejected": "<fingerprint>",
+  "recovery": "<fingerprint>", "home": "<fingerprint>",
+  "recoveryAuthor": { "key": "age1pq1…", "p256": "…", "mldsa65": "…" }, "recoverySig": { … },
   "additions": [ { "key": "age1pq1…", "sign": { "p256": "…", "mldsa65": "…" }, "kind": "iphone",
                    "added": "…", "addedEpoch": 2, "addedBy": "<id>", "addSig": { … } }, … ] }
 ```
 
-`parent` and `link` are absent at epoch 1; `recovery` is the epoch's recovery fingerprint; `rejected`
-is present only in a `resolve` epoch, when its user rejected an author; both are signed by
-`epochSig`. `additions` is written only when not empty (absent reads as empty) and holds the additions
+`parent` and `link` are absent at epoch 1; `recovery` is the epoch's recovery fingerprint and `home`
+the home after the epoch, both signed by `epochSig`; `recoveryAuthor` (the recovery key and its
+signing keys) and `recoverySig` are present exactly in a `takeover`. `additions` is written only when not empty (absent reads as empty) and holds the additions
 made during that epoch that the next epoch's author saw. Lists hold at
 most 4096 fingerprints; a chain at most 100,000 entries.
 
@@ -4042,27 +4055,31 @@ most 4096 fingerprints; a chain at most 100,000 entries.
 From epoch 1 (`EpochChain.verify`):
 
 1. Entry `i` has `epoch` = `i`; `reason` is one of `create`, `remove`, `recovery`, `reencrypt`,
-   `resolve`; `create` only at epoch 1; `rejected` present only in a `resolve` epoch (optional there).
+   `handoff`, `takeover`; `create` only at epoch 1; `recoveryAuthor` and `recoverySig` only in a
+   `takeover`.
 2. Epoch 1: no `parent`, `link` or parent list; `root` = SHA-256 of its link keys (design §4.2); its
-   author's fingerprint is in its first list.
-3. Epoch `e` > 1: `parent` is epoch `e−1`'s id; `link` verifies (§15.3) under `e−1`'s link keys; the
-   author's fingerprint is in `e−1`'s **list**; the first list is within `e−1`'s list. A `recovery` or
-   `reencrypt` epoch **replaces** the recovery key: its `recovery` is the one fingerprint not in
-   `e−1`'s list, and `e−1`'s `recovery` is not in its first list; any other epoch keeps `e−1`'s
-   `recovery` (review M1).
-4. `recovery` is in the first list and is no known device; `epochSig` verifies under the author's
-   signing keys.
+   author's fingerprint is in its first list and is its `home`.
+3. Epoch `e` > 1: `parent` is epoch `e−1`'s id; `link` verifies (§15.3) under `e−1`'s link keys.
+   - A `takeover`: the author is its `home`; `recoveryAuthor`'s recovery fingerprint is `e−1`'s
+     `recovery` and `recoverySig` verifies under its keys; the first list is within `e−1`'s list plus
+     the home; `recovery` is `e−1`'s.
+   - Any other epoch: the author is `e−1`'s `home`; `home` is unchanged, except in a `handoff`, which
+     names another device (not the recovery key); the first list is within `e−1`'s **list**. A
+     `recovery` or `reencrypt` epoch **replaces** the recovery key: its `recovery` is the one
+     fingerprint not in `e−1`'s list, and `e−1`'s `recovery` is not in its first list; any other epoch
+     keeps `e−1`'s `recovery` (review M1).
+4. `home` and `recovery` are in the first list, and `recovery` is no known device; `epochSig` verifies
+   under the author's signing keys.
 5. Epoch `e`'s **list** is its first list plus its admitted additions: at most 256 (more is
-   tampering), admitted in one pass in order, each with `addedEpoch` = `e` and an `addSig` valid as
-   §15.4 says against the devices admitted before it (the first list's, then earlier additions). An
-   addition that fails is not admitted; an epoch whose first list then holds it fails rule 3.
+   tampering), each with `addedEpoch` = `e`, `addedBy` = the id of `e`'s home and an `addSig` valid
+   under the home's keys (§15.4). An addition that fails is not admitted; an epoch whose first list
+   then holds it fails rule 3.
 6. The signing keys of devices come from the chain's authors and additions, and from the `keys` of
    the `vault.json` at hand; every one is checked against its fingerprint.
 
 **Removals are computed**: the keys epoch `x` removed are the fingerprints in both `x`'s signed parent
-list and the parent's list as verified, minus `x`'s first list. A device's **`addedBy` chain** follows
-admitted additions' approvers to a member of epoch 1's first list or a kit join. The chain's
-`recovery` fields are the vault's recovery keys: never a device, never re-applied.
+list and the parent's list as verified, minus `x`'s first list. The chain's `recovery` fields are
+the vault's recovery keys: never a device.
 
 ### 15.8 The re-encryption journal
 
@@ -4081,50 +4098,36 @@ the current epoch, `"sempere/1 reencrypt pending"` ‖ lp(vaultId) ‖ lp(SHA-25
 re-computed by every later epoch while the journal exists; §3.3.1's accepting and finishing rules
 apply. Bounded at 64 MiB.
 
-### 15.9 Fork resolution
+### 15.9 Precedence
 
-Over the tree of every verified epoch (`EpochForks.resolve`; design §5.6, the simple rule). Nothing
-is decided automatically:
+Over the tree of every epoch whose signatures verified (`EpochPrecedence.resolve`; design §5.6). No
+questions:
 
-1. **Linear following.** From the pinned chain's end (epoch 1 when unpinned), the device follows the
-   one child whose author is in the end's list and is neither removed on the chain nor rejected.
-2. **A branch is a question.** With more than one such child, the device asks, per side, about each
-   author of the side's continuation ("Did you make this change?", names from the branch epoch's
-   list). A question on the pinned chain does not stop linear following past it.
-3. **Answers** (trust record `forkAnswers`): the chosen child is followed; the removals by confirmed
-   authors on the other sides are the **re-application set**; rejected authors are ignored everywhere.
-   The device writes a `resolve` epoch at the chain's end that removes the re-application set still
-   listed there, minus the chain's recovery keys, and names one rejected author if any. After a
-   choice, an epoch on the chosen side by an author in the re-application set or rejected is not
-   followed, unless it is an ancestor of an epoch that removes that author (by an author not
-   rejected).
-4. **Resolve epochs of other devices.** At a branch on the chain, a resolve epoch whose path leaves the
-   chain there, below the branch's child, is followed (to the deepest such resolve) when: its author is
-   not rejected, not removed on the device's own side, not removed by an epoch on the chain or by an
-   author the chain does not remove and the user did not reject, and was not added (`addedBy` chain) by
-   a removed or rejected device; every author of an epoch on its path that is not on the chain is not
-   rejected and is removed only further down that path; and no such resolve leads to another side
-   (otherwise a question listing them). A resolve that fails only the path test puts its side into the
-   question, also at an answered branch. A resolve on the device's own side settles the branch.
-5. **Outcasts.** An epoch whose author the chain removed or the user rejected is ignored with its
-   subtree, except a rejected author's epoch that is an ancestor of an epoch (by an author not
-   rejected, or itself so kept) removing it.
-6. **Questions** list the sides with the authors still to answer for, the device's current side, any
-   conflicting resolves, and a suggested side: the most distinct listed, non-rejected authors, then the
-   smaller `epochId`.
+1. An epoch is **valid** under its parent when it is signed by the parent's home and keeps `home`
+   (a `handoff`: names another), or is a `takeover` whose `recoverySig` verifies under the parent's
+   recovery key, whose author is its home, whose first list is within the parent's list plus that
+   home, and whose `recovery` is the parent's. `home` is in the epoch's list. Every other epoch is
+   ignored with its subtree.
+2. From epoch 1, the device walks down the valid tree. If a valid `takeover` lies below the current
+   epoch with no takeover between, it goes to the one with the smallest `epochId` (bytes compared
+   lexicographically) and goes on from there; a takeover below a takeover is reached the same way.
+3. Otherwise it follows the one valid child. With more than one (home's key signed twice: a **home
+   conflict**), it follows the child on its pinned chain, or stops there when its pin holds none; it
+   reports the conflict either way.
+4. The pinned chain's epochs that the result leaves out (home epochs after a takeover's parent) are
+   **dropped**; files under their keys are set aside (§15.6 sealed sets do not apply to them).
 
-`EpochForkPropertyTests` checks invariants P1 to P6 on random trees with attacker coalitions and a
-truthful scripted user (600 seeds in `swift test`; `SEMPERE_FORK_PROPERTY_SEEDS` for more), and five
-test-only mutations must each fail it.
+`EpochPrecedenceTests` checks the rule against an independent oracle on random trees (2000 seeds in
+`swift test`; `SEMPERE_PRECEDENCE_PROPERTY_SEEDS` for more), and three test-only mutations must each
+fail it; `Fixtures/epoch-precedence-vectors.json` holds the shared cases.
 
 ### 15.10 Trust record v3
 
 `sempere-trust/3`, outside the vault: `vaultId`, `root`, `chain` (from epoch 1: `epoch`, `epochId`,
 `parent`, `linkPublicKeys`, `list` of the first list's fingerprints), `list` (the current list: `role`,
-`key`, `sign` for devices, `name`), `markers`, `reencryptFinished` (written only when true) and
-`forkAnswers` (written only when not empty): per answered branch, `branch` and `chosen` (epoch ids),
-`confirmed` and `rejected` (fingerprints). Readers refuse a chain that does not start at epoch 1 or
-whose `parent`s do not follow.
+`key`, `sign`, `name`), `markers`, `reencryptFinished` (written only when true) and `home` (the
+fingerprint of the pinned epoch's home). Readers refuse a chain that does not start at epoch 1 or
+whose `parent`s do not follow, and a missing or malformed `home`.
 
 ### 15.11 The passphrase copy
 
@@ -4155,15 +4158,16 @@ with the public key the identity's. Stock `age -i` reads it as an identity file.
 - The joining device's QR payload: the vault id's 16 bytes (RFC 4122 order), then `c`: 48 bytes.
 - Reverse code: six words of `SHA-256("sempere/1 join reply" ‖ lp(vaultId) ‖ lp(c) ‖ lp(root) ‖
   lp(frontier))` (`c` raw; `root` and `frontier`, the approver's current `epochId`, hex); its QR is
-  `sempere-reply:<vaultId>:<root hex>:<frontier hex>`. The joining device pins the chain up to the
-  frontier the words confirm.
+  `sempere-reply:<vaultId>:<root hex>:<frontier hex>`. The approver is home (design §5.6). The joining
+  device pins the chain up to the frontier the words confirm.
+- A join with the recovery key is a `takeover` (§15.7 rule 3, design §6.3).
 
 ### 15.13 The recovery kit
 
 The kit prints the recovery key (as `sempere keys paper`), the root as 16 groups of 4 hex digits each
 followed by its line checksum (the first 4 hex digits of SHA-256 of the group as typed), the QR code
 `sempere-root:<vaultId>:<64 hex>`, and this script (`KitRecovery.script`, byte for byte; tested in CI
-against stock `age` 1.3+ and `jq` on a vault with two removals, an orphan record, a lost fork and an
+against stock `age` 1.3+ and `jq` on a vault with two removals, an orphan record, a dropped epoch and an
 unfinished re-encryption, `EpochChainTests.testFrozenRecoveryScriptOpensEveryEpoch`):
 
 ```sh

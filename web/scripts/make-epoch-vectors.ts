@@ -101,19 +101,32 @@ const nobleLink = {
 };
 
 // listTag over a list at epoch 2: a device whose name has non-ASCII, a slash
-// and an emoji (review M2'), and the recovery entry with its absent fields
-// empty. The signing keys, addSig and wraps are fixed stand-ins: listMessage
+// and an emoji (review M2'), and the recovery entry (with its derived signing
+// keys) with its absent fields empty. The signing keys, addSig and wraps are fixed stand-ins: listMessage
 // covers them as hex text (SHA-256(wrap) as raw bytes).
 const recoverySeed = new Uint8Array(32).map((_, i) => 0xc0 + i);
-const recoveryRecipient = await identityToRecipient(bech32.encodeFromBytes("AGE-SECRET-KEY-PQ-", recoverySeed).toUpperCase());
-const recoveryFingerprint = hex(sha256(Buffer.concat([enc.encode("sempere/1 recovery"), lp(recoveryRecipient)])));
+const recoveryIdentity = bech32.encodeFromBytes("AGE-SECRET-KEY-PQ-", recoverySeed).toUpperCase();
+const recoveryRecipient = await identityToRecipient(recoveryIdentity);
+// Design §5.6: the recovery key's signing pair, derived from its X-Wing seed. The P-256 scalar is the
+// first HKDF output with info "sempere/1 recovery signing p256" ‖ c (c = 0, 1, …) that is a valid scalar.
+let recoveryScalar: Uint8Array | undefined;
+for (let c = 0; c < 256 && !recoveryScalar; c++) {
+  const candidate = hkdf(recoverySeed, Buffer.concat([enc.encode("sempere/1 recovery signing p256"), Uint8Array.of(c)]));
+  try { p256.getPublicKey(candidate); recoveryScalar = candidate; } catch { /* not a valid scalar: next c */ }
+}
+if (!recoveryScalar) throw new Error("recovery scalar");
+const recoverySignP256 = hex(p256.getPublicKey(recoveryScalar, false));
+const recoverySignMLDSA65 = hex(ml_dsa65.keygen(hkdf(recoverySeed, "sempere/1 recovery signing mldsa65")).publicKey);
+// SHA-256("sempere/1 recovery" ‖ lp(key) ‖ lp(sign.p256) ‖ lp(sign.mldsa65)).
+const recoveryFingerprint = hex(sha256(Buffer.concat([enc.encode("sempere/1 recovery"), lp(recoveryRecipient),
+  lp(recoverySignP256), lp(recoverySignMLDSA65)])));
 const entries = [
   { role: "device", key: deviceRecipient, id: deviceFingerprint.slice(0, 8), signP256: deviceSignP256,
     signMLDSA65: deviceSignMLDSA65, kind: "ipad", added: "2026-10-04T16:20:00Z", addedEpoch: "1",
-    addedBy: "recovery", addSigP256: stand("addSig p256", 64), addSigMLDSA65: stand("addSig mldsa65", 3309),
+    addedBy: "0a1b2c3d", addSigP256: stand("addSig p256", 64), addSigMLDSA65: stand("addSig mldsa65", 3309),
     name: "Ñandú's iPad / Café ☕️📓",
     wrap: "-----BEGIN AGE ENCRYPTED FILE-----\nZGV2aWNlIHdyYXAgc3RhbmQtaW4=\n-----END AGE ENCRYPTED FILE-----\n" },
-  { role: "recovery", key: recoveryRecipient, id: "", signP256: "", signMLDSA65: "", kind: "",
+  { role: "recovery", key: recoveryRecipient, id: "", signP256: recoverySignP256, signMLDSA65: recoverySignMLDSA65, kind: "",
     added: "2026-10-04T16:20:00Z", addedEpoch: "", addedBy: "", addSigP256: "", addSigMLDSA65: "",
     name: "Recovery kit",
     wrap: "-----BEGIN AGE ENCRYPTED FILE-----\ncmVjb3Zlcnkgd3JhcCBzdGFuZC1pbg==\n-----END AGE ENCRYPTED FILE-----\n" },
@@ -156,17 +169,17 @@ const signerFingerprint = hex(sha256(Buffer.concat([enc.encode("sempere/1 device
   lp(signerMLDSA65)])));
 const lpList = (l: string[]): Buffer => Buffer.concat([lp(String(l.length)), ...[...l].sort().map((f) => lp(f))]);
 const entryClaim = { key: deviceRecipient, signP256: signerP256, signMLDSA65: signerMLDSA65, kind: "ipad",
-  added: "2026-10-04T16:20:00Z", addedEpoch: 1, addedBy: "recovery" };
+  added: "2026-10-04T16:20:00Z", addedEpoch: 1, addedBy: "0a1b2c3d" };
 const entryMessage = Buffer.concat([enc.encode("sempere/1 author entry"), lp(vaultId), lp(String(entryClaim.addedEpoch)),
   lp(entryClaim.key), lp(entryClaim.signP256), lp(entryClaim.signMLDSA65), lp(entryClaim.kind), lp(entryClaim.added),
   lp(entryClaim.addedBy)]);
-// A resolve epoch, so that `recovery` and `rejected` (review M1, M2) are both in the signed bytes.
-const epochFields = { root: hex(root), epoch: 2, epochId: e2.epochId, parent: e1.epochId, reason: "resolve",
-  recovery: recoveryFingerprint, rejected: deviceFingerprint,
-  list: [signerFingerprint, recoveryFingerprint], parentList: [signerFingerprint, recoveryFingerprint] };
+// A takeover epoch (design §5.6), so that `recovery` (review M1) and `home` are both in the signed bytes.
+const epochFields = { root: hex(root), epoch: 2, epochId: e2.epochId, parent: e1.epochId, reason: "takeover",
+  recovery: recoveryFingerprint, home: signerFingerprint,
+  list: [signerFingerprint, recoveryFingerprint], parentList: [deviceFingerprint, recoveryFingerprint] };
 const epochMessage = Buffer.concat([enc.encode("sempere/1 author epoch"), lp(vaultId), lp(epochFields.root),
   lp(String(epochFields.epoch)), lp(epochFields.epochId), lp(epochFields.parent), lp(epochFields.reason),
-  lp(epochFields.recovery), lp(epochFields.rejected), lpList(epochFields.list), lpList(epochFields.parentList)]);
+  lp(epochFields.recovery), lp(epochFields.home), lpList(epochFields.list), lpList(epochFields.parentList)]);
 const features = ["zeta", "ñ/emoji ☕️", "zeta"];
 const distinct = [...new Set(features)].sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
 const manifestFields = { root: hex(root), epoch: 2, epochId: e2.epochId, epochRecordHash, format: "sempere/1", features };
@@ -180,7 +193,9 @@ const nobleSig = (m: Uint8Array): AuthorSig => ({
 });
 const signed = (name: "entry" | "epoch" | "manifest", m: Uint8Array): SignedMessage => ({
   message: hex(m),
-  signatures: [nobleSig(m), ...(previous?.signatures?.[name].signatures.filter((s) => s.by !== "noble") ?? [])],
+  // Signatures of other implementations are kept only while the message is unchanged.
+  signatures: [nobleSig(m), ...(previous?.signatures?.[name].message === hex(m)
+    ? previous.signatures[name].signatures.filter((s) => s.by !== "noble") : [])],
 });
 
 // Join codes (design §6.2): the signer's device joins.
@@ -203,7 +218,8 @@ const uuidBytes = Buffer.from(vaultId.replace(/-/g, ""), "hex");
 const vectors = {
   description: "key-hierarchy design §2–§4 (KH1): fixed vault epoch keys → identity seed → vault identity and "
     + "recipient → §2.2 derived keys → link public keys; the root fingerprint of epoch 1; an epochLink from epoch 1 "
-    + "into epoch 2 (both signatures must verify); device and recovery fingerprints; listMessage and listTag of an "
+    + "into epoch 2 (both signatures must verify); device and recovery fingerprints (the recovery key's signing pair "
+    + "derived from its seed, design §5.6); listMessage and listTag of an "
     + "epoch-2 list (lp() fields); wraps of K_2 to a fixed device key, made by two implementations; the three author "
     + "signatures (addSig, epochSig, authorSig) by a fixed signing pair, made by noble and swift-crypto; join codes. "
     + "Built to the "
@@ -212,7 +228,8 @@ const vectors = {
   device: { identity: deviceIdentity, recipient: deviceRecipient, signP256: deviceSignP256,
     signMLDSA65: deviceSignMLDSA65, fingerprint: deviceFingerprint, id: deviceFingerprint.slice(0, 8),
     captureFingerprint },
-  recovery: { recipient: recoveryRecipient, fingerprint: recoveryFingerprint },
+  recovery: { identity: recoveryIdentity, recipient: recoveryRecipient, signP256: recoverySignP256,
+    signMLDSA65: recoverySignMLDSA65, fingerprint: recoveryFingerprint },
   epochs,
   root: hex(root),
   link: {

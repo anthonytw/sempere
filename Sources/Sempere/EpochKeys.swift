@@ -333,11 +333,20 @@ package enum KeyFingerprint {
         return Data(SHA256.hash(data: m.bytes))
     }
 
-    /// `SHA-256("sempere/1 recovery" ‖ lp(key))`.
-    package static func recovery(key: String) -> Data {
+    /// `SHA-256("sempere/1 recovery" ‖ lp(key) ‖ lp(sign.p256) ‖ lp(sign.mldsa65))`: the recovery key and
+    /// its signing pair (derived from it, design §5.6), hex as in `vault.json`.
+    package static func recovery(key: String, signP256: String, signMLDSA65: String) -> Data {
         var m = LPMessage("sempere/1 recovery")
-        m.field(key)
+        m.field(key); m.field(signP256); m.field(signMLDSA65)
         return Data(SHA256.hash(data: m.bytes))
+    }
+
+    /// The recovery fingerprint of a recovery identity (its key and derived signing pair).
+    ///
+    /// - Throws: `AgeError.postQuantumUnavailable` where the platform has no ML-DSA.
+    package static func recovery(identity: MLKEM768X25519Identity) throws -> Data {
+        let keys = try DeviceSigningKeys.recovery(identity: identity).publicKeys()
+        return recovery(key: identity.recipient.string, signP256: keys.p256Hex, signMLDSA65: keys.mldsa65Hex)
     }
 
     /// A device's `id`: the first 8 hex digits of its fingerprint.
@@ -432,8 +441,7 @@ package enum EpochListTag {
 /// only. The vault id, the root, the kept chain this device has verified
 /// (each epoch's number, id, parent id, link public keys and first list of
 /// fingerprints), the current list, the markers, `reencryptFinished`, and
-/// the user's answers to fork questions (design §5.6: the authors the user
-/// rejected). Not wired to any store yet (KH2).
+/// the current home device (design §5.6). Not wired to any store yet (KH2).
 public struct EpochTrustRecord: Codable, Hashable, Sendable {
     /// The record format. A file of any other format does not decode.
     public static let formatName = "sempere-trust/3"
@@ -492,12 +500,9 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
     public var markers: VaultMarkers
     /// True once this device saw the pinned epoch with no re-encryption into it pending (design §7.1).
     public var reencryptFinished: Bool
-    /// The user's answers to fork questions (design §5.6): per branch, the child chosen, the authors
-    /// confirmed ("I made this change") and the authors rejected ("I did not").
-    public var forkAnswers: [ForkAnswer]
-
-    /// Every author the user rejected: ignored everywhere (design §5.6 rule 6).
-    public var rejectedAuthors: Set<Data> { forkAnswers.reduce(into: Set<Data>()) { $0.formUnion($1.rejected) } }
+    /// The home device of the pinned epoch (design §5.6): the only device whose epochs this device
+    /// follows, until a handoff or a takeover.
+    public var home: Data
 
     /// The pinned (last verified) epoch.
     public var pinned: ChainEpoch? { chain.last }
@@ -505,13 +510,11 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
     /// - Throws: `EpochKeyError.invalidKey` for a root that is not 32 bytes,
     ///   `.invalidEpoch` for a chain that is not well formed (`wellFormed`).
     public init(vaultId: UUID, root: Data, chain: [ChainEpoch], list: [Entry], markers: VaultMarkers,
-                reencryptFinished: Bool = false, forkAnswers: [ForkAnswer] = []) throws {
-        guard root.count == 32, forkAnswers.allSatisfy({ a in
-            ([a.branch, a.chosen] + Array(a.confirmed) + Array(a.rejected)).allSatisfy { $0.count == 32 }
-        }) else { throw EpochKeyError.invalidKey }
+                reencryptFinished: Bool = false, home: Data) throws {
+        guard root.count == 32, home.count == 32 else { throw EpochKeyError.invalidKey }
         guard Self.wellFormed(chain) else { throw EpochKeyError.invalidEpoch }
         self.vaultId = vaultId; self.root = root; self.chain = chain; self.list = list; self.markers = markers
-        self.reencryptFinished = reencryptFinished; self.forkAnswers = forkAnswers
+        self.reencryptFinished = reencryptFinished; self.home = home
     }
 
     /// Epochs 1, 2, … in order, each `parent` the previous `epochId` (none at
@@ -531,10 +534,7 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case format, vaultId, root, chain, list, markers, reencryptFinished, forkAnswers
-    }
-    enum AnswerKeys: String, CodingKey {
-        case branch, chosen, confirmed, rejected
+        case format, vaultId, root, chain, list, markers, reencryptFinished, home
     }
     enum ChainKeys: String, CodingKey { case epoch, epochId, parent, linkPublicKeys, list }
     enum LinkKeys: String, CodingKey { case ed25519, mldsa65 }
@@ -601,25 +601,7 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
         let m = try c.decode(VaultMarkers.self, forKey: .markers)
         markers = VaultMarkers(format: m.format, features: m.features)
         reencryptFinished = try c.decodeIfPresent(Bool.self, forKey: .reencryptFinished) ?? false
-        var answers: [ForkAnswer] = []
-        if c.contains(.forkAnswers) {
-            var list = try c.nestedUnkeyedContainer(forKey: .forkAnswers)
-            while !list.isAtEnd {
-                guard answers.count < EpochChain.maxEpochs else { throw EpochKeyError.invalidEpoch }
-                let a = try list.nestedContainer(keyedBy: AnswerKeys.self)
-                func set(_ key: AnswerKeys) throws -> Set<Data> {
-                    let strings = try a.decode([String].self, forKey: key)
-                    let out = strings.compactMap { Hex.decode($0) }
-                    guard out.count == strings.count else {
-                        throw DecodingError.dataCorruptedError(forKey: key, in: a, debugDescription: "not fingerprints")
-                    }
-                    return Set(out)
-                }
-                answers.append(ForkAnswer(branch: try Self.hex32(a, .branch), chosen: try Self.hex32(a, .chosen),
-                                          confirmed: try set(.confirmed), rejected: try set(.rejected)))
-            }
-        }
-        forkAnswers = answers
+        home = try Self.hex32(c, .home)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -627,16 +609,7 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
         try c.encode(Self.formatName, forKey: .format)
         try c.encode(LowercaseUUID(vaultId), forKey: .vaultId)
         try c.encode(Hex.encode(root), forKey: .root)
-        if !forkAnswers.isEmpty {
-            var list = c.nestedUnkeyedContainer(forKey: .forkAnswers)
-            for answer in forkAnswers {
-                var a = list.nestedContainer(keyedBy: AnswerKeys.self)
-                try a.encode(Hex.encode(answer.branch), forKey: .branch)
-                try a.encode(Hex.encode(answer.chosen), forKey: .chosen)
-                try a.encode(answer.confirmed.map { Hex.encode($0) }.sorted(), forKey: .confirmed)
-                try a.encode(answer.rejected.map { Hex.encode($0) }.sorted(), forKey: .rejected)
-            }
-        }
+        try c.encode(Hex.encode(home), forKey: .home)
         var cc = c.nestedUnkeyedContainer(forKey: .chain)
         for epoch in chain {
             var e = cc.nestedContainer(keyedBy: ChainKeys.self)

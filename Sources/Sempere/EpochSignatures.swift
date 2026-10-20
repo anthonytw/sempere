@@ -171,6 +171,32 @@ public struct DeviceSigningKeys: Sendable {
         return Data(rs.prefix(32)) + Data(out)
     }
 
+    /// The recovery key's signing pair, derived from its 32-byte X-Wing seed (design §5.6 "Takeover"):
+    /// the P-256 scalar is the first `HKDF-SHA256(seed, salt: "", info: "sempere/1 recovery signing p256"
+    /// ‖ c, L = 32)` for c = 0, 1, … (one byte) that is a valid scalar (1 ≤ s < n); the ML-DSA-65 seed
+    /// is `HKDF-SHA256(seed, salt: "", info: "sempere/1 recovery signing mldsa65", L = 32)`. Whoever holds
+    /// the recovery key (the kit or the passphrase copy) holds this pair; nothing else stores it.
+    public static func recovery(seed: Data) throws -> DeviceSigningKeys {
+        guard seed.count == 32 else { throw EpochKeyError.invalidKey }
+        let ikm = SymmetricKey(data: seed)
+        func hkdf(_ info: Data) -> Data {
+            HKDF<SHA256>.deriveKey(inputKeyMaterial: ikm, info: info, outputByteCount: 32).withUnsafeBytes { Data($0) }
+        }
+        let mldsa = hkdf(Data("sempere/1 recovery signing mldsa65".utf8))
+        for c in 0...255 {
+            let candidate = hkdf(Data("sempere/1 recovery signing p256".utf8) + [UInt8(c)])
+            if let key = try? P256.Signing.PrivateKey(rawRepresentation: candidate) {
+                return DeviceSigningKeys(p256: key, mldsa65Seed: mldsa)
+            }
+        }
+        throw EpochKeyError.invalidKey
+    }
+
+    /// The recovery key's signing pair, from the recovery identity.
+    public static func recovery(identity: MLKEM768X25519Identity) throws -> DeviceSigningKeys {
+        try recovery(seed: identity.seedBytes)
+    }
+
     /// The P-256 scalar (32 bytes), for storing a CLI device's keys.
     public var p256Scalar: Data { p256.rawRepresentation }
 
@@ -198,7 +224,7 @@ public struct DeviceSigningKeys: Sendable {
 
 // MARK: - The signed messages (design §4.1)
 
-/// The fields `addSig` covers: an entry as approved (design §4.1). Every
+/// The fields `addSig` covers: an entry as home approved it (design §4.1). Every
 /// value is the JSON text of `vault.json` (signing keys lowercase hex,
 /// `addedEpoch` decimal).
 public struct EntryClaim: Hashable, Sendable, Codable {
@@ -207,7 +233,8 @@ public struct EntryClaim: Hashable, Sendable, Codable {
     public var kind: String
     public var added: String
     public var addedEpoch: Int
-    /// The approver's id, or `recovery` for a kit join (self-signed).
+    /// The approving home's id (design §5.6: only home approves), or `recovery` for the new home a
+    /// takeover introduces (approved by the recovery key).
     public var addedBy: String
 
     public init(key: String, sign: DeviceSigningPublicKeys, kind: String, added: String, addedEpoch: Int,
@@ -221,9 +248,7 @@ public struct EntryClaim: Hashable, Sendable, Codable {
         KeyFingerprint.device(key: key, signP256: sign.p256Hex, signMLDSA65: sign.mldsa65Hex)
     }
 
-    /// True for `addedBy: "recovery"`.
-    public var claimsKitJoin: Bool { addedBy == EntryClaim.recovery }
-
+    /// `addedBy` of a takeover's new home.
     public static let recovery = "recovery"
 }
 
@@ -241,17 +266,17 @@ public enum AuthorMessage {
         return m.bytes
     }
 
-    /// `epochSig`: `epoch` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(parent) ‖ lp(reason)
-    /// ‖ lp(recovery) ‖ lp(rejected) ‖ lp(n) ‖ n fingerprints ‖ lp(m) ‖ m fingerprints. `root`,
-    /// `epochId`, `parent`, `recovery`, `rejected` and each fingerprint as 64 lowercase hex digits;
-    /// `parent` empty at epoch 1, `rejected` empty except in a `resolve` epoch; both lists sorted.
-    /// (`recovery` and `rejected` added after the KH1 code review, M1 and M2.)
+    /// `epochSig` (and a takeover's `recoverySig`): `epoch` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId)
+    /// ‖ lp(parent) ‖ lp(reason) ‖ lp(recovery) ‖ lp(home) ‖ lp(n) ‖ n fingerprints ‖ lp(m) ‖ m fingerprints.
+    /// `root`, `epochId`, `parent`, `recovery`, `home` and each fingerprint as 64 lowercase hex digits;
+    /// `parent` empty at epoch 1; both lists sorted. `home` is the home device after this epoch (design
+    /// §5.6). (`recovery` added after the KH1 code review, M1; `home` with the single writer.)
     public static func epoch(vaultId: UUID, root: Data, epoch: Int, epochId: Data, parent: Data?, reason: String,
-                             recovery: Data, rejected: Data?, list: [Data], parentList: [Data]) -> Data {
+                             recovery: Data, home: Data, list: [Data], parentList: [Data]) -> Data {
         var m = LPMessage("sempere/1 author epoch")
         m.field(vaultId.uuidString.lowercased()); m.field(Hex.encode(root)); m.field(epoch)
         m.field(Hex.encode(epochId)); m.field(parent.map { Hex.encode($0) } ?? ""); m.field(reason)
-        m.field(Hex.encode(recovery)); m.field(rejected.map { Hex.encode($0) } ?? "")
+        m.field(Hex.encode(recovery)); m.field(Hex.encode(home))
         for l in [list, parentList] {
             let sorted = l.map { Hex.encode($0) }.sorted { Array($0.utf8).lexicographicallyPrecedes(Array($1.utf8)) }
             m.field(sorted.count)

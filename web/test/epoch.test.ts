@@ -25,7 +25,7 @@ interface Vectors {
   vaultId: string;
   device: { identity: string; recipient: string; signP256: string; signMLDSA65: string; fingerprint: string; id: string;
     captureFingerprint: string };
-  recovery: { recipient: string; fingerprint: string };
+  recovery: { recipient: string; signP256: string; signMLDSA65: string; fingerprint: string };
   epochs: Epoch[];
   root: string;
   link: { epoch: number; message: string; links: { by: string; ed25519: string; mldsa65: string }[] };
@@ -70,7 +70,8 @@ describe("key hierarchy key schedule (design §2–§4)", () => {
     const d = v.device;
     expect(hex(deviceFingerprint(d.recipient, d.signP256, d.signMLDSA65))).toBe(d.fingerprint);
     expect(d.fingerprint.slice(0, 8)).toBe(d.id);
-    expect(hex(recoveryFingerprint(v.recovery.recipient))).toBe(v.recovery.fingerprint);
+    expect(hex(recoveryFingerprint(v.recovery.recipient, v.recovery.signP256, v.recovery.signMLDSA65)))
+      .toBe(v.recovery.fingerprint);
     expect(Array.from(lp("ab"))).toEqual([0, 0, 0, 2, 0x61, 0x62]);
     expect(Array.from(lp(12))).toEqual([0, 0, 0, 2, 0x31, 0x32]);
   });
@@ -147,7 +148,7 @@ interface Signatures {
     entry: { claim: { key: string; signP256: string; signMLDSA65: string; kind: string; added: string; addedEpoch: number;
       addedBy: string }; message: string; signatures: AuthorSig[] };
     epoch: { fields: { root: string; epoch: number; epochId: string; parent: string; reason: string; recovery: string;
-      rejected: string; list: string[]; parentList: string[] }; message: string; signatures: AuthorSig[] };
+      home: string; list: string[]; parentList: string[] }; message: string; signatures: AuthorSig[] };
     manifest: { fields: { root: string; epoch: number; epochId: string; epochRecordHash: string; format: string;
       features: string[] }; message: string; signatures: AuthorSig[] };
   };
@@ -166,10 +167,10 @@ describe("author signatures and join codes (design §4.1, §6.2)", () => {
     const entry = entryMessage(v.vaultId, c);
     expect(hex(entry)).toBe(s.signatures.entry.message);
     const f = s.signatures.epoch.fields;
-    const epoch = epochMessage(v.vaultId, f.root, f.epoch, f.epochId, f.parent, f.reason, f.recovery, f.rejected, f.list,
+    const epoch = epochMessage(v.vaultId, f.root, f.epoch, f.epochId, f.parent, f.reason, f.recovery, f.home, f.list,
       f.parentList);
     expect(hex(epoch)).toBe(s.signatures.epoch.message);
-    expect(hex(epochMessage(v.vaultId, f.root, f.epoch, f.epochId, f.parent, f.reason, f.recovery, f.rejected,
+    expect(hex(epochMessage(v.vaultId, f.root, f.epoch, f.epochId, f.parent, f.reason, f.recovery, f.home,
       [...f.list].reverse(), [...f.parentList].reverse()))).toBe(s.signatures.epoch.message);
     const m = s.signatures.manifest.fields;
     const manifest = manifestMessage(v.vaultId, m.root, m.epoch, m.epochId, m.epochRecordHash, bytes(v.listTag.message),
@@ -204,8 +205,9 @@ describe("author signatures and join codes (design §4.1, §6.2)", () => {
 interface ChainEntryJSON {
   epoch: number; epochId: string; parent?: string; linkPublicKeys: { ed25519: string; mldsa65: string };
   link?: { ed25519: string; mldsa65: string }; reason: string; list: string[]; parentList: string[];
-  recovery: string; rejected?: string;
+  recovery: string; home: string;
   author: { key: string; p256: string; mldsa65: string }; epochSig: { p256: string; mldsa65: string };
+  recoveryAuthor?: { key: string; p256: string; mldsa65: string }; recoverySig?: { p256: string; mldsa65: string };
   additions?: { key: string; sign: { p256: string; mldsa65: string }; kind: string; added: string; addedEpoch: number;
     addedBy: string; addSig: { p256: string; mldsa65: string } }[];
 }
@@ -217,20 +219,29 @@ describe("the shared chain vectors (design §4.1, §4.3)", () => {
   const linkKeys = (e: ChainEntryJSON): { ed25519: Uint8Array; mldsa65: Uint8Array } =>
     ({ ed25519: bytes(e.linkPublicKeys.ed25519), mldsa65: bytes(e.linkPublicKeys.mldsa65) });
 
-  it("verifies every link, epochSig and addSig of the chain that verifies in Swift", () => {
+  it("verifies every link, epochSig, recoverySig and addSig of the chain that verifies in Swift", () => {
     const ok = cv.cases[0];
     if (!ok) throw new Error("no case");
     expect(ok.expect.startsWith("ok")).toBe(true);
     const [first] = ok.chain;
     if (!first) throw new Error("empty chain");
     expect(hex(rootFingerprint(cv.vaultId, linkKeys(first)))).toBe(ok.root);
-    let additions = 0;
+    let additions = 0, takeovers = 0;
     ok.chain.forEach((e, i) => {
       const author = { p256: bytes(e.author.p256), mldsa65: bytes(e.author.mldsa65) };
-      const m = epochMessage(cv.vaultId, ok.root, e.epoch, e.epochId, e.parent ?? "", e.reason, e.recovery, e.rejected ?? "",
+      const m = epochMessage(cv.vaultId, ok.root, e.epoch, e.epochId, e.parent ?? "", e.reason, e.recovery, e.home,
         e.list, e.parentList);
       expect(verifyAuthorSignature(m, { p256: bytes(e.epochSig.p256), mldsa65: bytes(e.epochSig.mldsa65) }, author)).toBe(true);
       const prev = ok.chain[i - 1];
+      // A takeover (design §5.6) is also signed by the parent's recovery key.
+      expect(e.reason === "takeover").toBe(e.recoverySig !== undefined);
+      if (e.recoveryAuthor && e.recoverySig && prev) {
+        const ra = e.recoveryAuthor;
+        expect(hex(recoveryFingerprint(ra.key, ra.p256, ra.mldsa65))).toBe(prev.recovery);
+        expect(verifyAuthorSignature(m, { p256: bytes(e.recoverySig.p256), mldsa65: bytes(e.recoverySig.mldsa65) },
+          { p256: bytes(ra.p256), mldsa65: bytes(ra.mldsa65) })).toBe(true);
+        takeovers++;
+      }
       if (prev && e.link) {
         const link: SecretLink = { kind: "signed", ed25519: bytes(e.link.ed25519), mldsa65: bytes(e.link.mldsa65) };
         expect(verifyEpochLink(link, linkKeys(prev), e.epoch, bytes(e.epochId), cv.vaultId)).toBe(true);
@@ -238,15 +249,15 @@ describe("the shared chain vectors (design §4.1, §4.3)", () => {
       for (const a of e.additions ?? []) {
         const claim = { key: a.key, signP256: a.sign.p256, signMLDSA65: a.sign.mldsa65, kind: a.kind, added: a.added,
           addedEpoch: a.addedEpoch, addedBy: a.addedBy };
-        const own = { p256: bytes(a.sign.p256), mldsa65: bytes(a.sign.mldsa65) };
-        // In this vector the approver of every non-kit addition is epoch 1's author.
-        const signedBy = a.addedBy === "recovery" ? own : author;
+        // Only home approves (design §5.6); in this vector the additions are epoch 1's, whose home is its author.
+        expect(a.addedBy).toBe(e.home.slice(0, 8));
         expect(verifyAuthorSignature(entryMessage(cv.vaultId, claim), { p256: bytes(a.addSig.p256),
-          mldsa65: bytes(a.addSig.mldsa65) }, signedBy)).toBe(true);
+          mldsa65: bytes(a.addSig.mldsa65) }, author)).toBe(true);
         additions++;
       }
     });
     expect(additions).toBe(2);
+    expect(takeovers).toBe(1);
   });
 
   it("finds the broken link of the negative vector", () => {
