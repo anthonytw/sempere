@@ -233,10 +233,15 @@ public struct FolderRemote: SyncRemote {
         var availability = RemoteAvailability.available
         if manages {
             availability = provider.availability(of: u, stat: s)
-            // A folder that lists no file yet is listed before its files (iCloud lists a
-            // folder's contents after the folder), except the base.
-            if s.isDirectory, availability == .available, !path.isEmpty, !Self.listsAnything(u, provider) {
-                availability = .downloading
+            if s.isDirectory {
+                // A folder that lists files is listed, whatever status the provider gives it; one
+                // that lists none yet is listed before its files (iCloud lists a folder's contents
+                // after the folder), except an empty base the provider has (a new target).
+                if Self.listsAnything(u, provider) {
+                    availability = .available
+                } else if availability == .available, !path.isEmpty {
+                    availability = .downloading
+                }
             }
         }
         let stamp = Self.stamp(s, digest: digest(path, s, available: availability == .available))
@@ -336,8 +341,7 @@ public struct FolderRemote: SyncRemote {
         guard let s, s.isDirectory else { return nil }
         if path.isEmpty, manages {
             // The base itself not downloaded: nothing below it can be judged; a later run lists it.
-            let a = provider.availability(of: root, stat: s)
-            if a != .available {
+            if entry([], s, name: "").availability != .available {
                 try? provider.requestDownload(root)
                 throw FolderRemoteError.unavailable(root.path)
             }

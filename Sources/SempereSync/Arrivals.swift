@@ -61,7 +61,7 @@ extension SyncEngine {
     /// Asks the remote for `paths` not asked for yet this run, `arrivalWindow` at a time.
     /// Best effort: a refused request leaves the files to the wait and the next run.
     func request(_ paths: [[String]]) {
-        guard !options.dryRun, !options.pushOnly else { return }
+        guard !options.dryRun else { return }
         let fresh = locked { () -> [[String]] in
             let new = paths.filter { !arrivals.requested.contains($0) }
             arrivals.requested.formUnion(new)
@@ -93,8 +93,8 @@ extension SyncEngine {
         case .remoteOnly, .downloading:
             break
         }
-        // A dry run or a mirror reads nothing it would have to wait for.
-        guard !options.dryRun, !options.pushOnly else {
+        // A dry run asks for nothing (a mirror does: it still reads the root files it compares).
+        guard !options.dryRun else {
             noteArriving(path)
             return false
         }
@@ -171,7 +171,7 @@ extension SyncEngine {
         }
         request([path])
         // Asked for: a provider that has it at hand lists it now, before anything below is listed.
-        if !options.dryRun, !options.pushOnly, let now = try? transport.stat(path), now.isCollection, now.availability == .available {
+        if !options.dryRun, let now = try? transport.stat(path), now.isCollection, now.availability == .available {
             settled(path, folder: true)
             return false
         }
