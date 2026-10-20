@@ -114,6 +114,10 @@ struct StrokeLedger {
         /// Converts the canvas stroke; called only for strokes the ledger has
         /// not seen. Ids of the result are ignored.
         var make: () -> [Stroke]
+        /// The canvas stroke's `PKStroke.randomSeed` (texture grain). The ids given to the strokes made
+        /// carry it (`StrokeConversion.id(seed:)`), so a reload, which derives the seed from the id,
+        /// draws the grain the pen drew. Nil: any id.
+        var seed: UInt32? = nil
     }
 
     /// What one `update` changed.
@@ -284,7 +288,7 @@ struct StrokeLedger {
             let parents = parentCandidates(for: item.info, removed: removedEntries, index: &removedIndex)
             var strokes = item.make()
             for k in strokes.indices {
-                strokes[k].id = UUID()
+                strokes[k].id = item.seed.map(StrokeConversion.id(seed:)) ?? UUID()
                 strokes[k].origin = nil
                 let parent = choose(parents, for: strokes[k], index: k)
                 strokes[k].parent = resolveParent(parent)

@@ -92,6 +92,14 @@ final class InkInjector {
         apply(self.strokes + strokes.map { TS.canvasStroke($0, created: created) }, action: "Draw")
     }
 
+    /// Pen-up of strokes PencilKit made (`PencilTrace`): points with the pressure, azimuth, altitude and
+    /// timing a Pencil reports. `tool` becomes the canvas's tool first, as picking it in the palette
+    /// does, so its width reaches the stored stroke (the coordinator reads the tool at pen-up).
+    func drawCanvas(_ strokes: [PKStroke], tool: PKInkingTool? = nil) {
+        if let tool { host.canvas.tool = tool }
+        apply(self.strokes + strokes, action: "Draw")
+    }
+
     /// A lasso move of the strokes `ids` by (`dx`, `dy`): same ids, new transforms, brought to the top.
     func lassoMove(_ ids: Set<UUID>, dx: CGFloat, dy: CGFloat) {
         edit(ids, action: "Move") { $0.transform = $0.transform.concatenating(CGAffineTransform(translationX: dx, y: dy)) }

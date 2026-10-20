@@ -230,7 +230,10 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   `StrokeLedger`'s fingerprints, which are always taken from the `PKStroke`.
   A loaded stroke's `PKStroke.id` is its stored id; the ledger uses a canvas
   stroke's id only to name an edit's parent (PencilKit gives erased pieces
-  new ids), and never writes it.
+  new ids), and never writes it. What a stroke keeps through save and reload is its texture seed: a
+  canvas stroke is saved under an id whose first four bytes are its `PKStroke.randomSeed`
+  (`StrokeConversion.id(seed:)`), and a load takes the seed back from the id, so pencil, crayon and
+  watercolor grain does not change on reopening (`InkTextureReloadTests`).
 - `PKStrokePoint.size` is not the drawn width: a pen or monoline of size `s`
   is drawn `2s − 4` wide (invisible below 2), markers and textured inks
   differ again. Point sizes go through `NibSize` (StrokeConversion.swift);
