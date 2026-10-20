@@ -3925,21 +3925,25 @@ As the design's §3, with these rules for readers (a file breaking one is malfor
 - `epochReason` is one of §15.7's reasons, `create` exactly at epoch 1; `home` (a fingerprint, the
   home device after this epoch, design §5.6) is the fingerprint of a device entry; `epochAuthor` is
   home's id except in a `handoff`; `author` is home's id or `epochAuthor`; `recoverySig` (a signature
-  pair, §15.5) is present exactly in a `takeover`; `parentList` (sorted fingerprints, the parent list
+  pair, §15.5) is present in every `takeover`, may be present in a `recovery` or `reencrypt` epoch (the
+  old kit's agreement, verified when present), and in no other epoch; `parentList` (sorted fingerprints, the parent list
   as the epoch author saw it) is present exactly when `epoch` > 1.
 
 **`epochSig` from `vault.json` alone** (review H2: a direct child of the pinned epoch is taken before
 its record arrives, design §4.3). The epoch's **first list** is the recovery entry, every device
 entry with `addedEpoch` below `epoch`, and the home entry (at epoch 1 the creating device; after a
 takeover possibly a device it introduced); its recovery fingerprint is the recovery entry's. With
-`epochReason`, `home` and `parentList`, that gives every field of §15.5's `epochSig` message. It must
-verify under the signing keys of the entry whose id is `epochAuthor`: at epoch 1 and in a `takeover`,
-that entry is the home (at epoch 1, in the verified first list); otherwise it is in `parentList` (and,
-for a direct child, in the parent's list as the device verified it), it is the parent's home when the
-device knows it, and it is the home itself except in a `handoff` (where the home is another device). A
-`takeover`'s `recoverySig` must also verify over the same message under the recovery entry's `sign`,
-whose recovery fingerprint is in the parent list. The first list must be within that parent list
-except a new recovery key of a `recovery` or `reencrypt` epoch, or a `takeover`'s home. Of the two ways to make `epochSig` checkable here, this one keeps the signed parent list (from
+`epochReason`, `home` and `parentList`, that gives every field of §15.5's `epochSig` message. Above
+epoch 1 the device must supply **the parent as it verified it** (its list, home, recovery key and the
+lists of its ancestry: from the pinned epoch or the record's chain); the file's own `home` never
+stands in for the parent's (round 7, M3). `epochSig` must verify under the signing keys of the entry
+whose id is `epochAuthor`: at epoch 1 and in a `takeover`, that entry is the home (at epoch 1, in the
+verified first list); otherwise it is the parent's home, in `parentList` and in the parent's list, and
+it is the home itself except in a `handoff` (where the home is another device). A `takeover`'s
+`recoverySig` must also verify over the same message under the recovery entry's `sign`, whose
+recovery fingerprint is the one §15.7's takeover rule names for the parent. The first list must be
+within the parent's list except a new recovery key of a `recovery` or `reencrypt` epoch; a
+`takeover`'s may also hold its home and devices of its ancestry's lists. Of the two ways to make `epochSig` checkable here, this one keeps the signed parent list (from
 which removals are computed) under the epoch author's own signature in every copy; dropping the
 parent list from the message would leave it signed only by whoever wrote a later copy of the chain.
 
@@ -4046,7 +4050,8 @@ A **chain entry**:
 
 `parent` and `link` are absent at epoch 1; `recovery` is the epoch's recovery fingerprint and `home`
 the home after the epoch, both signed by `epochSig`; `recoveryAuthor` (the recovery key and its
-signing keys) and `recoverySig` are present exactly in a `takeover`. `additions` is written only when not empty (absent reads as empty) and holds the additions
+signing keys) and `recoverySig` are present in every `takeover` and optionally (the old key's) in a
+`recovery` or `reencrypt` epoch. `additions` is written only when not empty (absent reads as empty) and holds the additions
 made during that epoch that the next epoch's author saw. Lists hold at
 most 4096 fingerprints; a chain at most 100,000 entries.
 
@@ -4060,12 +4065,18 @@ From epoch 1 (`EpochChain.verify`):
 2. Epoch 1: no `parent`, `link` or parent list; `root` = SHA-256 of its link keys (design §4.2); its
    author's fingerprint is in its first list and is its `home`.
 3. Epoch `e` > 1: `parent` is epoch `e−1`'s id; `link` verifies (§15.3) under `e−1`'s link keys.
-   - A `takeover`: the author is its `home`; `recoveryAuthor`'s recovery fingerprint is `e−1`'s
-     `recovery` and `recoverySig` verifies under its keys; the first list is within `e−1`'s list plus
-     the home; `recovery` is `e−1`'s.
+   - A `takeover`: the author is its `home`; `recoveryAuthor`'s recovery fingerprint is the one the
+     **takeover rule** names and `recoverySig` verifies under its keys. The takeover rule
+     (`TakeoverRule.recoveryKey`): `e−1`'s `recovery`, unless the verifier's pinned chain replaced that
+     key (a `recovery` or `reencrypt` epoch) after the point where the takeover's ancestry leaves the
+     pinned chain; then no key is valid and the takeover is refused. A takeover's parent is the
+     taking-over device's pinned frontier; the first list holds the home and otherwise only fingerprints of the
+     lists of epochs 1 to `e−1` (a device a stolen home removed may be re-admitted), and no earlier
+     recovery key; `recovery` is `e−1`'s.
    - Any other epoch: the author is `e−1`'s `home`; `home` is unchanged, except in a `handoff`, which
      names another device (not the recovery key); the first list is within `e−1`'s **list**. A
-     `recovery` or `reencrypt` epoch **replaces** the recovery key: its `recovery` is the one
+     `recovery` or `reencrypt` epoch **replaces** the recovery key (its optional `recoveryAuthor` and
+     `recoverySig` are the old key's, whose recovery fingerprint must be `e−1`'s `recovery`): its `recovery` is the one
      fingerprint not in `e−1`'s list, and `e−1`'s `recovery` is not in its first list; any other epoch
      keeps `e−1`'s `recovery` (review M1).
 4. `home` and `recovery` are in the first list, and `recovery` is no known device; `epochSig` verifies
@@ -4104,21 +4115,27 @@ Over the tree of every epoch whose signatures verified (`EpochPrecedence.resolve
 questions:
 
 1. An epoch is **valid** under its parent when it is signed by the parent's home and keeps `home`
-   (a `handoff`: names another), or is a `takeover` whose `recoverySig` verifies under the parent's
-   recovery key, whose author is its home, whose first list is within the parent's list plus that
-   home, and whose `recovery` is the parent's. `home` is in the epoch's list. Every other epoch is
-   ignored with its subtree.
+   (a `handoff`: names another), or is a `takeover` whose `recoverySig` verifies under the recovery
+   key the takeover rule names for this device's pinned chain (§15.7; a kit the pinned chain retired
+   names none), whose author is its home, whose list holds only that home and
+   devices of its ancestry's lists, and whose `recovery` is the parent's. `home` is in the epoch's list
+   and is not its recovery key. Every other epoch is ignored with its subtree.
 2. From epoch 1, the device walks down the valid tree. If a valid `takeover` lies below the current
    epoch with no takeover between, it goes to the one with the smallest `epochId` (bytes compared
    lexicographically) and goes on from there; a takeover below a takeover is reached the same way.
 3. Otherwise it follows the one valid child. With more than one (home's key signed twice: a **home
-   conflict**), it follows the child on its pinned chain, or stops there when its pin holds none; it
-   reports the conflict either way.
+   conflict**), it follows the child on its pinned chain, or the child the user picked, or stops there;
+   never the smaller id. It reports the conflict with its children either way.
 4. The pinned chain's epochs that the result leaves out (home epochs after a takeover's parent) are
    **dropped**; files under their keys are set aside (§15.6 sealed sets do not apply to them).
+5. A malformed epoch 1 gives an empty chain with every epoch ignored: tampering, never an empty vault.
+
+**The write ledger** (KH3) prunes an entry only when its sealing record is on the pinned chain with a
+later pinned epoch above it (`LedgerRule.sealIsFinal`), and Repair's bulk Keep takes the set-aside
+files of dropped epochs that the ledger holds (`LedgerRule.keepable`).
 
 `EpochPrecedenceTests` checks the rule against an independent oracle on random trees (2000 seeds in
-`swift test`; `SEMPERE_PRECEDENCE_PROPERTY_SEEDS` for more), and three test-only mutations must each
+`swift test`; `SEMPERE_PRECEDENCE_PROPERTY_SEEDS` for more), and five test-only mutations must each
 fail it; `Fixtures/epoch-precedence-vectors.json` holds the shared cases.
 
 ### 15.10 Trust record v3

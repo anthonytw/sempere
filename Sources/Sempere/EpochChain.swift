@@ -26,13 +26,15 @@ public enum ChainError: Error, Hashable, Sendable {
     /// `home` is not listed, changes outside a handoff or takeover, or a handoff names the same home
     /// or no device (epoch 1: home is not its author).
     case badHome(epoch: Int)
-    /// A takeover without a valid `recoverySig` by the parent's recovery key, or a `recoverySig`
-    /// outside a takeover.
+    /// A takeover without a valid `recoverySig` by the recovery key `TakeoverRule` names (a kit the
+    /// verifier's pinned chain retired included), a kit replacement whose optional `recoverySig` by the
+    /// old kit does not verify, or a `recoverySig` in any other epoch.
     case badTakeover(epoch: Int)
     /// `epochSig` does not verify under the author's signing keys.
     case badEpochSig(epoch: Int)
-    /// The first list holds a device that is not in the parent's list (a takeover: other than its new
-    /// home), or more than one new key, or a new key outside a recovery replacement.
+    /// The first list holds a device that is not in the parent's list (a takeover: in no list of its
+    /// ancestry, other than its new home), or more than one new key, or a new key outside a recovery
+    /// replacement.
     case introducesDevice(epoch: Int)
     /// More than `EpochChain.maxAdditions` additions.
     case tooManyAdditions(epoch: Int)
@@ -320,8 +322,12 @@ public enum EpochChain {
     ///
     /// - Parameter directory: devices known from elsewhere (a `vault.json`'s `keys[]`), added to
     ///   the chain's own authors and additions.
+    ///   - pinned: the verifier's pinned chain (each epoch's id and recovery fingerprint): a takeover in
+    ///     `chain` must be signed by the recovery key `TakeoverRule` names for it (a kit this chain
+    ///     retired is refused, round 7 C1). Empty for a joiner.
     public static func verify(_ chain: [ChainEntry], vaultId: UUID, root: Data,
-                              directory extra: DeviceDirectory = DeviceDirectory()) throws -> Verified {
+                              directory extra: DeviceDirectory = DeviceDirectory(),
+                              pinned: [TakeoverRule.PinnedEpoch] = []) throws -> Verified {
         guard !chain.isEmpty, chain.count <= maxEpochs else { throw ChainError.empty }
         var directory = extra
         directory.add(chain: chain)
@@ -334,7 +340,7 @@ public enum EpochChain {
             let authorFP = e.author.fingerprint
             let first = Set(e.list)
             let message = e.epochMessage(vaultId: vaultId, root: root)
-            if reason != .takeover {
+            if reason != .takeover && !reason.mayAddRecovery {
                 guard e.recoveryAuthor == nil, e.recoverySig == nil else { throw ChainError.badTakeover(epoch: e.epoch) }
             }
             if i == 0 {
@@ -356,14 +362,20 @@ public enum EpochChain {
                 let new = first.subtracting(parentList)
                 switch reason {
                 case .takeover:
-                    // Signed by the recovery key of the parent and by the new home, which may be a device
-                    // the parent never listed (a kit join); the list is the user's pick (design §5.6).
+                    // Signed by the recovery key `TakeoverRule` names and by the new home, which may be a
+                    // device the parent never listed (a kit join); the list is the user's pick, from the
+                    // devices of the takeover's ancestry (design §5.6).
                     guard authorFP == e.home else { throw ChainError.notHome(epoch: e.epoch) }
-                    guard let ra = e.recoveryAuthor, let rk = ra.sign, let rs = e.recoverySig,
-                          ra.recoveryFingerprint == prev.recovery, rs.verifies(message, keys: rk) else {
+                    let required = TakeoverRule.recoveryKey(parentRecovery: prev.recovery,
+                                                            parentPath: chain[..<i].map(\.epochId), pinned: pinned)
+                    guard let ra = e.recoveryAuthor, let rk = ra.sign, let rs = e.recoverySig, let required,
+                          ra.recoveryFingerprint == required, rs.verifies(message, keys: rk) else {
                         throw ChainError.badTakeover(epoch: e.epoch)
                     }
-                    guard new.isSubset(of: [e.home]) else { throw ChainError.introducesDevice(epoch: e.epoch) }
+                    let ancestry = lists.reduce(into: Set<Data>()) { $0.formUnion($1.list) }
+                    let retiredKits = Set(chain[..<i].map(\.recovery)).subtracting([prev.recovery])
+                    guard TakeoverRule.listAllowed(first, home: e.home, ancestorLists: ancestry),
+                          first.isDisjoint(with: retiredKits) else { throw ChainError.introducesDevice(epoch: e.epoch) }
                     guard e.recovery == prev.recovery else { throw ChainError.badRecovery(epoch: e.epoch) }
                 default:
                     guard authorFP == prev.home else { throw ChainError.notHome(epoch: e.epoch) }
@@ -373,6 +385,14 @@ public enum EpochChain {
                         guard e.home == prev.home else { throw ChainError.badHome(epoch: e.epoch) }
                     }
                     if reason.mayAddRecovery {
+                        // When the user still holds the old kit, the replacement also carries the old key's
+                        // `recoverySig` (optional; verified when present, design §6.5).
+                        if e.recoveryAuthor != nil || e.recoverySig != nil {
+                            guard let ra = e.recoveryAuthor, let rk = ra.sign, let rs = e.recoverySig,
+                                  ra.recoveryFingerprint == prev.recovery, rs.verifies(message, keys: rk) else {
+                                throw ChainError.badTakeover(epoch: e.epoch)
+                            }
+                        }
                         // A recovery replacement or re-encryption replaces the recovery key: the new one is
                         // the only new fingerprint, and the old one is gone (review M1).
                         guard new.isSubset(of: [e.recovery]) else { throw ChainError.introducesDevice(epoch: e.epoch) }

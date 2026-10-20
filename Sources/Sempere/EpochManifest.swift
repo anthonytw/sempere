@@ -127,7 +127,8 @@ public struct EpochManifest: Hashable, Sendable {
         guard m.keys.filter({ $0.role == .recovery }).count == 1 else { throw EpochFileError.malformed("not one recovery entry") }
         guard m.keys.contains(where: { $0.role == .device }) else { throw EpochFileError.malformed("no device entry") }
         guard let reason = EpochReason(rawValue: m.epochReason), (m.epoch == 1) == (reason == .create),
-              (m.recoverySig != nil) == (reason == .takeover), (m.epoch == 1) == m.parentList.isEmpty else {
+              m.recoverySig != nil || reason != .takeover, m.recoverySig == nil || reason == .takeover || reason.mayAddRecovery,
+              (m.epoch == 1) == m.parentList.isEmpty else {
             throw EpochFileError.malformed("epochReason, recoverySig or parentList")
         }
         let homeId = String(Hex.encode(m.home).prefix(8))
@@ -193,25 +194,44 @@ public struct EpochManifest: Hashable, Sendable {
                                    parentList: parentList)
     }
 
+    /// The parent epoch as the device verified it (design §4.3): from its pinned epoch (a direct child
+    /// whose record has not arrived) or from the record's verified chain.
+    public struct VerifiedParent: Hashable, Sendable {
+        /// The parent's list (first list plus admitted additions).
+        public var list: Set<Data>
+        /// The parent's home.
+        public var home: Data
+        /// The parent's recovery fingerprint.
+        public var recovery: Data
+        /// The union of the lists of the parent's ancestry, the parent's included (a takeover may list
+        /// devices from it).
+        public var ancestry: Set<Data>
+        /// The parent's recovery signing keys, when known: a kit replacement's optional `recoverySig` by
+        /// the old kit is then checked here (otherwise by the chain).
+        public var recoverySign: DeviceSigningPublicKeys?
+
+        public init(list: Set<Data>, home: Data, recovery: Data, ancestry: Set<Data>? = nil,
+                    recoverySign: DeviceSigningPublicKeys? = nil) {
+            self.list = list; self.home = home; self.recovery = recovery; self.ancestry = ancestry ?? list
+            self.recoverySign = recoverySign
+        }
+    }
+
     /// The checks of design §4.3 that need no chain, for a reader holding `K_e` (from its own wrap):
     /// the key is this epoch's; `listTag` and `markersTag` verify; `epochSig` verifies over the first
     /// list and `parentList` by the parent's home (epoch 1: by its own home; a takeover: by the new home,
-    /// and `recoverySig` by the parent's recovery key), and the first list introduces no device; every
-    /// entry is in `verifiedList` or is an addition of this epoch approved by home; `authorSig` verifies
-    /// under home (design §5.6: only home writes the list).
+    /// and `recoverySig` by the recovery key `TakeoverRule` names), and the first list introduces no
+    /// device; every entry is in `verifiedList` or is an addition of this epoch approved by home;
+    /// `authorSig` verifies under home (design §5.6: only home writes the list).
     ///
     /// - Parameters:
     ///   - verifiedList: the epoch's list as the device verified it: the first list from the chain (or,
     ///     for a direct child of the pinned epoch, this file's first list once `epochSig` verified and
     ///     the parent list is the pinned one) plus the additions it already admitted.
-    ///   - verifiedParentList: the parent epoch's list as the device verified it, when known (a direct
-    ///     child of the pinned epoch): the first list must then be within it (and the signed
-    ///     `parentList`), except a new recovery key or a takeover's new home.
-    ///   - parentHome: the parent epoch's home as the device verified it, when known: a home-signed
-    ///     epoch's author must be it.
+    ///   - parent: the parent epoch as the device verified it. **Required above epoch 1** (round 7, M3):
+    ///     the file's own `home` and `parentList` never stand in for the parent's home or recovery key.
     /// - Returns: the entries admitted now, in admission order (each approved by home).
-    public func check(key: VaultEpochKey, verifiedList: Set<Data>, verifiedParentList: Set<Data>? = nil,
-                      parentHome: Data? = nil) throws -> [EpochKeyEntry] {
+    public func check(key: VaultEpochKey, verifiedList: Set<Data>, parent: VerifiedParent? = nil) throws -> [EpochKeyEntry] {
         guard key.epochId == epochId else { throw ProblemError(problem: .wrap) }
         guard EpochListTag.verify(listTag, key: key, vaultId: vaultId, root: Hex.encode(root), epoch: epoch,
                                   epochId: Hex.encode(epochId), epochRecordHash: Hex.encode(epochRecordHash),
@@ -222,19 +242,19 @@ public struct EpochManifest: Hashable, Sendable {
                   for: markers, using: SymmetricKey(data: key.markersKey)))) else {
             throw ProblemError(problem: .markersTag)
         }
+        guard epoch == 1 || parent != nil else { throw ProblemError(problem: .epochSig) }
         let reason = EpochReason(rawValue: epochReason)
         let first = Set(firstList)
-        let parentKnown = Set(parentList).intersection(verifiedParentList ?? Set(parentList))
+        let parentKnown = Set(parentList).intersection(parent?.list ?? [])
         let homeEntry = keys.first { $0.role == .device && $0.fingerprint == home }
         // epochSig (H2, design §5.6): epoch 1 and a takeover by the home itself; any other epoch by the
-        // parent's home (the device's verified one when known, else a device of the signed parent list
-        // until the record's chain is checked, design §4.3 step 2).
+        // parent's home as the device verified it.
         let signer: EpochKeyEntry?
         if epoch == 1 || reason == .takeover {
             signer = homeEntry.flatMap { $0.id == epochAuthor ? $0 : nil }
         } else {
             signer = devices(withId: epochAuthor).first { e in
-                parentKnown.contains(e.fingerprint) && (parentHome.map { $0 == e.fingerprint } ?? true)
+                e.fingerprint == parent?.home && parentKnown.contains(e.fingerprint)
                     && (reason == .handoff ? e.fingerprint != home : e.fingerprint == home)
             }
         }
@@ -243,14 +263,24 @@ public struct EpochManifest: Hashable, Sendable {
               epochSig.verifies(epochMessage, keys: signerKeys) else { throw ProblemError(problem: .epochSig) }
         let recoveryEntry = keys.first { $0.role == .recovery }
         if reason == .takeover {
-            guard let recoverySig, let rk = recoveryEntry?.sign, let rf = recoveryFingerprint, parentKnown.contains(rf),
+            // A direct child of the pinned epoch: the parent is the frontier, so the rule names its key.
+            guard let recoverySig, let rk = recoveryEntry?.sign, let rf = recoveryFingerprint, let parent,
+                  rf == TakeoverRule.recoveryKey(parentRecovery: parent.recovery),
                   recoverySig.verifies(epochMessage, keys: rk) else { throw ProblemError(problem: .epochSig) }
+        } else if let recoverySig, let old = parent?.recoverySign {
+            guard recoverySig.verifies(epochMessage, keys: old) else { throw ProblemError(problem: .epochSig) }
         }
         if epoch > 1 {
             let new = first.subtracting(parentKnown)
             let allowed: Set<Data>
             switch reason {
-            case .some(.takeover): allowed = [home]
+            case .some(.takeover):
+                // The new home, and devices of the takeover's ancestry the user re-admitted (round 7, M2).
+                guard TakeoverRule.listAllowed(first.subtracting([recoveryFingerprint].compactMap { $0 }), home: home,
+                                               ancestorLists: parent?.ancestry ?? []) else {
+                    throw ProblemError(problem: .introducesDevice)
+                }
+                allowed = new
             case .some(let r) where r.mayAddRecovery: allowed = Set([recoveryFingerprint].compactMap { $0 })
             default: allowed = []
             }

@@ -5,8 +5,9 @@ import Foundation
 // The key schedule of the key hierarchy (docs/design/key-hierarchy.md, phase
 // KH1a: K_e, the vault identity, the §2.2 derivations, the per-key wraps of
 // K_e, fingerprints, listTag, epochLink, the root fingerprint and trust
-// records v3). KH1b adds the author signatures, the chain, fork resolution,
-// join codes, the epoch record, the journal, the passphrase copy and the kit.
+// records v3). KH1b adds the author signatures, the chain, the single-writer
+// precedence rule (home, handoff, takeover), join codes, the epoch record, the
+// journal, the passphrase copy and the kit.
 //
 // Pure functions only: nothing here reads or writes a vault, and no `Vault`
 // path uses it yet (KH2 wires it in). Every primitive is swift-crypto's or

@@ -347,7 +347,46 @@ final class EpochChainTests: VaultTestCase {
         try kitJoin.next(author: k, reason: "takeover", list: [a.fingerprint, k.fingerprint, r],
                          parentList: [a.fingerprint, bDev.fingerprint, r], takeover: recovery)
         XCTAssertEqual(try kitJoin.verify().lists[1].list, [a.fingerprint, k.fingerprint, r])
-        // ... but it introduces no other device.
+        // Round 7, M2: it may re-admit a device of its ancestry that a (stolen) home removed.
+        var readmit = good
+        try readmit.next(author: a, list: [a.fingerprint, r], parentList: [a.fingerprint, bDev.fingerprint, r])
+        try readmit.next(author: k, reason: "takeover", list: [k.fingerprint, bDev.fingerprint, r],
+                         parentList: [a.fingerprint, r], takeover: recovery)
+        XCTAssertEqual(try readmit.verify().lists[2].list, [k.fingerprint, bDev.fingerprint, r])
+        // ... and never an earlier, retired recovery key as a device.
+        var oldKit = good
+        let r2 = try ChainTestRecovery("recovery-2")
+        try oldKit.next(author: a, reason: "recovery", list: [a.fingerprint, bDev.fingerprint, r2.fingerprint],
+                        parentList: [a.fingerprint, bDev.fingerprint, r], recovery: r2.fingerprint)
+        try oldKit.next(author: bDev, reason: "takeover", list: [bDev.fingerprint, r, r2.fingerprint],
+                        parentList: [a.fingerprint, bDev.fingerprint, r2.fingerprint], takeover: r2)
+        XCTAssertThrowsError(try oldKit.verify()) { XCTAssertEqual($0 as? ChainError, .introducesDevice(epoch: 3)) }
+        // Round 7, C1 (owner decision): a takeover is valid only under the kit current at the verifier's
+        // pinned frontier. A kit replacement (here R-signed by the old kit too, which is optional and
+        // verified when present) retires the old kit for every device that saw it.
+        var replaced = good
+        let kit2 = try ChainTestRecovery("new-kit")
+        try replaced.next(author: a, reason: "recovery", list: [a.fingerprint, bDev.fingerprint, kit2.fingerprint],
+                          parentList: [a.fingerprint, bDev.fingerprint, r], recovery: kit2.fingerprint, takeover: recovery)
+        XCTAssertNoThrow(try replaced.verify(), "the old kit's recoverySig on the replacement verifies")
+        var badOldSig = good
+        try badOldSig.next(author: a, reason: "recovery", list: [a.fingerprint, bDev.fingerprint, kit2.fingerprint],
+                           parentList: [a.fingerprint, bDev.fingerprint, r], recovery: kit2.fingerprint, takeover: other)
+        XCTAssertThrowsError(try badOldSig.verify()) { XCTAssertEqual($0 as? ChainError, .badTakeover(epoch: 2)) }
+        let pinnedAfter = replaced.entries.map { TakeoverRule.PinnedEpoch(epochId: $0.epochId, recovery: $0.recovery) }
+        var oldKitTakeover = good
+        try oldKitTakeover.next(author: k, reason: "takeover", list: [k.fingerprint, r], parentList: [a.fingerprint, bDev.fingerprint, r],
+                                takeover: recovery)
+        XCTAssertThrowsError(try EpochChain.verify(oldKitTakeover.entries, vaultId: good.vaultId, root: good.root,
+                                                   pinned: pinnedAfter)) {
+            XCTAssertEqual($0 as? ChainError, .badTakeover(epoch: 2), "a device that saw the replacement refuses it")
+        }
+        XCTAssertNoThrow(try oldKitTakeover.verify(), "a device that saw nothing (residual)")
+        var kit2Takeover = replaced
+        try kit2Takeover.next(author: k, reason: "takeover", list: [k.fingerprint, bDev.fingerprint, kit2.fingerprint],
+                                parentList: [a.fingerprint, bDev.fingerprint, kit2.fingerprint], takeover: kit2)
+        XCTAssertNoThrow(try EpochChain.verify(kit2Takeover.entries, vaultId: good.vaultId, root: good.root, pinned: pinnedAfter))
+        // ... but it introduces no device of no ancestor list.
         var intro = good
         try intro.next(author: k, reason: "takeover", list: [k.fingerprint, try ChainTestDevice("Z").fingerprint, r],
                        parentList: [a.fingerprint, bDev.fingerprint, r], takeover: recovery)
@@ -826,20 +865,45 @@ final class EpochChainTests: VaultTestCase {
         let m = try manifest(b, a: a, n: n, k: k, recovery: recovery, drop: [k.key])
         XCTAssertEqual(Set(m.firstList), [a.fingerprint, n.fingerprint, r])
         let pinned: Set<Data> = [a.fingerprint, n.fingerprint, k.fingerprint, r]
-        XCTAssertEqual(try m.check(key: b.keys[1], verifiedList: Set(m.firstList), verifiedParentList: pinned,
-                                   parentHome: a.fingerprint).count, 0)
+        let parent = EpochManifest.VerifiedParent(list: pinned, home: a.fingerprint, recovery: r)
+        XCTAssertEqual(try m.check(key: b.keys[1], verifiedList: Set(m.firstList), parent: parent).count, 0)
         // A parent home other than the signer: refused.
-        XCTAssertThrowsError(try m.check(key: b.keys[1], verifiedList: Set(m.firstList), verifiedParentList: pinned,
-                                         parentHome: n.fingerprint)) {
+        var otherHome = parent; otherHome.home = n.fingerprint
+        XCTAssertThrowsError(try m.check(key: b.keys[1], verifiedList: Set(m.firstList), parent: otherHome)) {
+            XCTAssertEqual(($0 as? EpochManifest.ProblemError)?.problem, .epochSig)
+        }
+        // Round 7, M3: without the parent as verified, the file's own home never stands in.
+        XCTAssertThrowsError(try m.check(key: b.keys[1], verifiedList: Set(m.firstList))) {
+            XCTAssertEqual(($0 as? EpochManifest.ProblemError)?.problem, .epochSig)
+        }
+        // ... so a listed device that is not home, naming itself home, is refused.
+        var byN = b
+        byN.entries.removeLast(); byN.keys.removeLast()
+        try byN.next(author: n, list: [a.fingerprint, n.fingerprint, r], parentList: [a.fingerprint, n.fingerprint, k.fingerprint, r],
+                     home: n.fingerprint)
+        let mN = try manifest(byN, a: a, n: n, k: k, recovery: recovery, writer: n, drop: [k.key])
+        XCTAssertThrowsError(try mN.check(key: byN.keys[1], verifiedList: Set(mN.firstList), parent: parent)) {
             XCTAssertEqual(($0 as? EpochManifest.ProblemError)?.problem, .epochSig)
         }
         // A device that never saw N added cannot take the epoch from vault.json alone.
         XCTAssertThrowsError(try m.check(key: b.keys[1], verifiedList: Set(m.firstList),
-                                         verifiedParentList: [a.fingerprint, k.fingerprint, r]))
+                                         parent: .init(list: [a.fingerprint, k.fingerprint, r], home: a.fingerprint, recovery: r)))
         // A forged parentList is refused: epochSig covers it.
         var forged = m; forged.parentList = [a.fingerprint, n.fingerprint, r]
         XCTAssertThrowsError(try Self.seal(m: &forged, key: b.keys[1], writer: a)
-            .check(key: b.keys[1], verifiedList: Set(m.firstList), verifiedParentList: pinned)) {
+            .check(key: b.keys[1], verifiedList: Set(m.firstList), parent: parent)) {
+            XCTAssertEqual(($0 as? EpochManifest.ProblemError)?.problem, .epochSig)
+        }
+        // A takeover's vault.json: by the new home N and the parent's recovery key (TakeoverRule).
+        let rk = try ChainTestRecovery(identity: recovery)
+        var tb = b
+        tb.entries.removeLast(); tb.keys.removeLast()
+        try tb.next(author: n, reason: "takeover", list: [n.fingerprint, r], parentList: [a.fingerprint, n.fingerprint, k.fingerprint, r],
+                    takeover: rk)
+        let mt = try manifest(tb, a: a, n: n, k: k, recovery: recovery, writer: n, drop: [a.key, k.key])
+        XCTAssertEqual(try mt.check(key: tb.keys[1], verifiedList: Set(mt.firstList), parent: parent).count, 0)
+        var wrongKit = parent; wrongKit.recovery = try ChainTestRecovery("other").fingerprint
+        XCTAssertThrowsError(try mt.check(key: tb.keys[1], verifiedList: Set(mt.firstList), parent: wrongKit)) {
             XCTAssertEqual(($0 as? EpochManifest.ProblemError)?.problem, .epochSig)
         }
     }
