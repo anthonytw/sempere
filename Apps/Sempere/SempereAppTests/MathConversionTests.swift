@@ -134,7 +134,7 @@ struct MathConversionTests {
     }
 
     @Test func theRecognizerOverrideReadsAndCandidatesComeBack() async throws {
-        let models = MathModels(root: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+        let models = MathModels(root: TestTemp.root.appendingPathComponent(UUID().uuidString),
                                 catalog: [], localFolder: nil)
         #expect(!models.isAvailable)
         await #expect(throws: (any Error).self) { _ = try await models.recognizer() }
@@ -155,7 +155,7 @@ struct MathConversionTests {
         func fetch(_ url: URL, maxBytes: Int64) async throws -> URL {
             let path = String(url.absoluteString.dropFirst(base.count))
             let source = folder.appendingPathComponent(path)
-            let copy = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            let copy = TestTemp.root.appendingPathComponent(UUID().uuidString)
             try FileManager.default.copyItem(at: source, to: copy)
             return copy
         }
@@ -163,7 +163,7 @@ struct MathConversionTests {
 
     /// A model folder with placeholder files (the store checks files, not Core ML) and its catalog entry.
     func fakeModel(corrupt: Bool = false) throws -> (URL, MathModelCatalogEntry) {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("model-\(UUID().uuidString)")
+        let folder = TestTemp.root.appendingPathComponent("model-\(UUID().uuidString)")
         let files = ["encoder.mlpackage/Manifest.json": "e", "decoder.mlpackage/Manifest.json": "d",
                      "tokenizer.json": #"["<s>", "</s>", "x"]"#]
         var listed: [MathModelManifest.File] = []
@@ -189,7 +189,7 @@ struct MathConversionTests {
 
     @Test func aDownloadIsCheckedAndInstalled() async throws {
         let (folder, entry) = try fakeModel()
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("models-\(UUID().uuidString)")
+        let root = TestTemp.root.appendingPathComponent("models-\(UUID().uuidString)")
         let models = MathModels(root: root, catalog: [entry], localFolder: nil,
                                 session: FolderFetcher(folder: folder, base: "https://example.org/m/"))
         #expect(models.status["fake"] == .notInstalled)
@@ -204,7 +204,7 @@ struct MathConversionTests {
 
     @Test func aFileThatDoesNotMatchStopsTheDownload() async throws {
         let (folder, entry) = try fakeModel(corrupt: true)
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("models-\(UUID().uuidString)")
+        let root = TestTemp.root.appendingPathComponent("models-\(UUID().uuidString)")
         let models = MathModels(root: root, catalog: [entry], localFolder: nil,
                                 session: FolderFetcher(folder: folder, base: "https://example.org/m/"))
         models.download(entry)
@@ -227,7 +227,7 @@ struct MathConversionTests {
         manifest.id = "second"
         manifest.name = "Second"
         try JSONEncoder().encode(manifest).write(to: other.appendingPathComponent("manifest.json"))
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("models-\(UUID().uuidString)")
+        let root = TestTemp.root.appendingPathComponent("models-\(UUID().uuidString)")
         let suite = "math-models-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -256,7 +256,7 @@ struct MathConversionTests {
 
     @Test func aModelThatDoesNotMatchItsManifestIsNotAdded() async throws {
         let (folder, _) = try fakeModel(corrupt: true)
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("models-\(UUID().uuidString)")
+        let root = TestTemp.root.appendingPathComponent("models-\(UUID().uuidString)")
         let suite = "math-models-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }

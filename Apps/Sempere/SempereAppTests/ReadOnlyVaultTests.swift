@@ -19,7 +19,7 @@ struct ReadOnlyVaultTests {
         guard let fixtures = bundle.url(forResource: "Fixtures", withExtension: nil) else {
             throw CocoaError(.fileNoSuchFile, userInfo: [NSLocalizedDescriptionKey: "Fixtures missing from test bundle"])
         }
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let dir = TestTemp.root.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let vault = dir.appendingPathComponent("newer.sempere")
         try FileManager.default.copyItem(at: fixtures.appendingPathComponent("newer.sempere"), to: vault)

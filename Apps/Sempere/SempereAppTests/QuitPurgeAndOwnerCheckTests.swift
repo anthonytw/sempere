@@ -42,14 +42,14 @@ struct QuitPurgeAndOwnerCheckTests {
         try Data("%PDF-1.4 plaintext".utf8).write(to: copy)
         SempereAppDelegate().applicationWillTerminate(UIApplication.shared)
         #expect(!fm.fileExists(atPath: copy.path))
-        #expect(!fm.fileExists(atPath: fm.temporaryDirectory.appendingPathComponent("SempereImport").path))
+        #expect(!fm.fileExists(atPath: TestTemp.systemTemporaryDirectory.appendingPathComponent("SempereImport").path))
     }
 
     /// Stress: two vaults' folders, a folder a vault close set aside, and files of a fetch
     /// that finished after the quit's purge (the process exits only after the delegate returns):
     /// the quit removes all it sees, and the next launch removes the late file.
     @Test func quitThenLaunchLeaveNothingOfTwoVaultsOrALateFetch() async throws {
-        let root = fm.temporaryDirectory.appendingPathComponent("QuitPurge-\(UUID().uuidString)", isDirectory: true)
+        let root = TestTemp.root.appendingPathComponent("QuitPurge-\(UUID().uuidString)", isDirectory: true)
         defer { try? fm.removeItem(at: root) }
         let first = try plant(in: root, "vault-a")
         let second = try plant(in: root, "vault-b")
@@ -100,7 +100,7 @@ struct QuitPurgeAndOwnerCheckTests {
         let (model, _) = try await KeyManagementTests.unlockedModel()
         let key = try await model.exportThisDeviceKey()
         #expect(model.deviceKeys.contains { $0.recipient == key.recipient && $0.isInUse })
-        let staged = try KeyShareFile.stage(key, in: fm.temporaryDirectory.appendingPathComponent("KS-\(UUID().uuidString)"))
+        let staged = try KeyShareFile.stage(key, in: TestTemp.root.appendingPathComponent("KS-\(UUID().uuidString)"))
         defer { KeyShareFile.purge(in: staged.deletingLastPathComponent().deletingLastPathComponent()) }
         for items in [[staged] as [Any], [key.secret] as [Any]] {
             let excluded = SecretSharing.controller(items: items).excludedActivityTypes ?? []

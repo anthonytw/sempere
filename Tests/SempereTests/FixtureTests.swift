@@ -1,3 +1,4 @@
+import TempDirSupport
 import Age
 import Foundation
 import XCTest
@@ -156,7 +157,7 @@ final class FixtureTests: XCTestCase {
                        [try vault.blobFileName(for: blob)])
 
         // Same content as a fresh generation (only ciphertext is random).
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("fixture-\(UUID().uuidString)")
+        let tmp = TestTemp.root.appendingPathComponent("fixture-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: tmp) }
         let fresh = tmp.appendingPathComponent("sample.sempere")
         try SampleFixture.generate(at: fresh, identity: identity)
@@ -192,7 +193,7 @@ final class FixtureTests: XCTestCase {
         XCTAssertNil(report.counts[.unreferenced], "the image blob is referenced")
         XCTAssertEqual(try vault.blobInventory(note: ItemsFixture.note).unreferenced.count, 0)
 
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("fixture-\(UUID().uuidString)")
+        let tmp = TestTemp.root.appendingPathComponent("fixture-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: tmp) }
         let fresh = tmp.appendingPathComponent("items.sempere")
         try ItemsFixture.generate(at: fresh, identity: identity)

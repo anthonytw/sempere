@@ -169,7 +169,7 @@ struct AudioItemAppTests {
                                               title: "Lecture", place: true)
         await model.transcribe(r, in: editor)
         await editor.flush()
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("audio-export-\(UUID().uuidString)")
+        let dir = TestTemp.root.appendingPathComponent("audio-export-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         for attach in [true, false] {
             let out = dir.appendingPathComponent(attach ? "with" : "without")
@@ -201,7 +201,7 @@ struct AudioItemAppTests {
                                               title: "Lecture", place: true)
         await model.transcribe(r, in: editor)
         await editor.flush()
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("media-export-\(UUID().uuidString)")
+        let dir = TestTemp.root.appendingPathComponent("media-export-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         #expect(model.canExport(.media, ids: [Self.lecture]))
         let result = try await model.exportNotes([Self.lecture], options: ShareOptions(format: .media), into: dir) { _ in }

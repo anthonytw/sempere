@@ -18,7 +18,7 @@ struct WebDAVPartialReviewTests {
     /// once, about 1300 times a second while the vault was open.
     @Test func aNoteThatNeverCompletesIsNotFetchedInATightLoop() async throws {
         let s = try WebDAVAppTests.setup()
-        let c = LocalCopy(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+        let c = LocalCopy(directory: TestTemp.root.appendingPathComponent(UUID().uuidString),
                                 folderName: "Notes.sempere")
         defer { try? c.remove() }
         #expect(try c.downloadMetadata(client: s.remote.folderClient()).errors.isEmpty)
@@ -42,7 +42,7 @@ struct WebDAVPartialReviewTests {
     /// was): the other notes are fetched all the same.
     @Test func aStuckNoteAskedForDoesNotStarveTheOthers() async throws {
         let s = try WebDAVAppTests.setup()
-        let c = LocalCopy(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+        let c = LocalCopy(directory: TestTemp.root.appendingPathComponent(UUID().uuidString),
                                 folderName: "Notes.sempere")
         defer { try? c.remove() }
         #expect(try c.downloadMetadata(client: s.remote.folderClient()).errors.isEmpty)

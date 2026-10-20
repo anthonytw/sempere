@@ -119,6 +119,31 @@ suites() { if $narrowed; then only=(); else only=("$@"); fi; }
 perf_suites=(-skip-testing:SempereAppTests/DensePerformanceTests)
 only=()
 
+# Temp-folder guard (docs/ci.md "Temp-folder guard"): a Mac Catalyst run must leave the sandboxed app
+# container's tmp as it found it. Tests that leaked there piled up 195,000 folders and hit APFS's 65,535
+# subfolder limit, which failed every later run with Cocoa error 512. Prints before/after counts; leaving
+# more than SEMPERE_TMP_LEAK_MAX (default 20) entries behind warns, and fails the step when
+# SEMPERE_TMP_GUARD_FAIL=1 (local-ci sets it). The iOS simulator runs are not covered: their tmp is
+# inside a throwaway simulator clone.
+container_tmp="${SEMPERE_CONTAINER_TMP:-$HOME/Library/Containers/io.github.anthonytw.sempere/Data/tmp}"
+tmp_count() { ls -A "$container_tmp" 2>/dev/null | wc -l | tr -d ' '; }
+tmp_guard_start() {
+  tmp_before=$(tmp_count)
+  trap 'tmp_guard_report $?' EXIT
+}
+tmp_guard_report() {
+  local rc=$1 after delta max=${SEMPERE_TMP_LEAK_MAX:-20}
+  trap - EXIT
+  after=$(tmp_count)
+  delta=$((after - tmp_before))
+  echo "tmp-guard: app container tmp entries before=$tmp_before after=$after (delta $delta, limit $max)"
+  if (( delta > max )); then
+    echo "tmp-guard: WARNING: this run left $delta entries in $container_tmp; a test or code path is not cleaning up (use TestTemp, docs/ci.md)" >&2
+    if [[ "${SEMPERE_TMP_GUARD_FAIL:-}" == 1 && $rc -eq 0 ]]; then rc=1; fi
+  fi
+  exit "$rc"
+}
+
 case "${1:-}" in
   simulator)
     pick_simulator "${2:-}" "${3:-}"
@@ -212,6 +237,7 @@ case "${1:-}" in
     ;;
   test-mac)
     shutdown_simulators
+    tmp_guard_start
     # Ad-hoc signed: a sandboxed Catalyst test host has to be signed to launch.
     suites -only-testing:SempereAppTests
     skip=("${perf_suites[@]}"); $narrowed && skip=()
@@ -231,6 +257,7 @@ case "${1:-}" in
     ;;
   test-mac-ui)
     shutdown_simulators
+    tmp_guard_start
     # The UI tests live in the SempereScreenshots scheme (never built by `test`).
     suites -only-testing:SempereAppUITests/MacWindowUITests -only-testing:SempereAppUITests/MacItemUITests \
       -only-testing:SempereAppUITests/SidebarDropUITests -only-testing:SempereAppUITests/MacFocusUITests \
@@ -245,6 +272,7 @@ case "${1:-}" in
     ;;
   test-mac-smoke)
     shutdown_simulators
+    tmp_guard_start
     # Fresh-state launches, every column layout, every window and sheet (docs/ci.md).
     suites -only-testing:SempereAppUITests/LaunchSmokeUITests
     xcb test -project "$project" -scheme SempereScreenshots -derivedDataPath "$derived" \

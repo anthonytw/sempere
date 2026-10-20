@@ -18,6 +18,9 @@ class EngineScenarioCase: SyncTestCase {
     /// The transport under test, on a fresh base. Subclasses override it.
     func transport() throws -> TransportUnderTest { throw XCTSkip("abstract") }
 
+    /// Applied to the options of every run (a transport's own needs).
+    func tune(_ options: inout SyncOptions) {}
+
     private(set) var t: TransportUnderTest!
     private var label: String { t.kind }
     private var id: String { noteID.uuidString.lowercased() }
@@ -36,6 +39,7 @@ class EngineScenarioCase: SyncTestCase {
         if let vault { v = vault } else { v = exists ? try openVault(name) : nil }
         var o = SyncOptions(deviceLabel: name)
         o.firstPullIdentities = [identity]
+        tune(&o)
         edit(&o)
         return try SyncEngine(directory: dir(name), vault: v, remote: remote ?? t.remote,
                               stateURL: tmp.appendingPathComponent("state-\(name).json"), options: o).run()
@@ -401,6 +405,7 @@ class EngineScenarioCase: SyncTestCase {
 
 // MARK: - Each transport
 
+
 final class EngineOverMemoryTests: EngineScenarioCase {
     override func transport() throws -> TransportUnderTest { .memory() }
     func testFirstUploadPullAndIdle() throws { try scenarioFirstUploadPullAndIdle() }
@@ -437,6 +442,66 @@ final class EngineOverWebDAVMockTests: EngineScenarioCase {
     func testSkipUnchangedNotesSeesEveryChange() throws { try scenarioSkipUnchangedNotesSeesEveryChange() }
     func testManifestStampChangeIsNoConflict() throws { try scenarioManifestStampChangeIsNoConflict() }
     func testQuarantineKeepsEveryCopy() throws { try scenarioQuarantineKeepsEveryCopy() }
+}
+
+/// `FolderRemote` on a plain folder.
+final class EngineOverFolderTests: EngineScenarioCase {
+    override func transport() throws -> TransportUnderTest { .folder(tmp.appendingPathComponent("remote")) }
+
+    func testFirstUploadPullAndIdle() throws { try scenarioFirstUploadPullAndIdle() }
+    func testConcurrentDeltasConverge() throws { try scenarioConcurrentDeltasConverge() }
+    func testNeverOverwritesExistingFiles() throws { try scenarioNeverOverwritesExistingFiles() }
+    func testHostileFileIsQuarantined() throws { try scenarioHostileFileIsQuarantined() }
+    func testCompactionDeletesPropagate() throws { try scenarioCompactionDeletesPropagate() }
+    func testUnexplainedRemoteDeletionIsRestored() throws { try scenarioUnexplainedRemoteDeletionIsRestored() }
+    func testWipedRemoteNeverDeletesHistory() throws { try scenarioWipedRemoteNeverDeletesHistory() }
+    func testRefusesAnotherVault() throws { try scenarioRefusesAnotherVault() }
+    func testManifestConflictKeepsBothCopies() throws { try scenarioManifestConflictKeepsBothCopies() }
+    func testSettingsMergePerKey() throws { try scenarioSettingsMergePerKey() }
+    func testCutBlobDownloadFinishesNextRun() throws { try scenarioCutBlobDownloadFinishesNextRun() }
+    func testTransientFaultsConverge() throws { try scenarioTransientFaultsConverge() }
+    func testSkipUnchangedNotesSeesEveryChange() throws { try scenarioSkipUnchangedNotesSeesEveryChange() }
+}
+
+/// `FolderRemote` on a folder a simulated provider holds (nothing evicted: the provider paths with the
+/// scenarios' own expectations). A folder emptied by a test is taken as listed at once (`unlistedTimeout` 0),
+/// as the scenarios expect of a store with no arrivals; `FolderHazardTests` test the timeout.
+final class EngineOverEvictingFolderTests: EngineScenarioCase {
+    override func transport() throws -> TransportUnderTest { TransportUnderTest.evictingFolder(tmp.appendingPathComponent("remote")).0 }
+    override func tune(_ options: inout SyncOptions) { options.unlistedTimeout = 0 }
+
+    func testFirstUploadPullAndIdle() throws { try scenarioFirstUploadPullAndIdle() }
+    func testConcurrentDeltasConverge() throws { try scenarioConcurrentDeltasConverge() }
+    func testNeverOverwritesExistingFiles() throws { try scenarioNeverOverwritesExistingFiles() }
+    func testHostileFileIsQuarantined() throws { try scenarioHostileFileIsQuarantined() }
+    func testCompactionDeletesPropagate() throws { try scenarioCompactionDeletesPropagate() }
+    func testUnexplainedRemoteDeletionIsRestored() throws { try scenarioUnexplainedRemoteDeletionIsRestored() }
+    func testWipedRemoteNeverDeletesHistory() throws { try scenarioWipedRemoteNeverDeletesHistory() }
+    func testRefusesAnotherVault() throws { try scenarioRefusesAnotherVault() }
+    func testManifestConflictKeepsBothCopies() throws { try scenarioManifestConflictKeepsBothCopies() }
+    func testSettingsMergePerKey() throws { try scenarioSettingsMergePerKey() }
+    func testCutBlobDownloadFinishesNextRun() throws { try scenarioCutBlobDownloadFinishesNextRun() }
+    func testTransientFaultsConverge() throws { try scenarioTransientFaultsConverge() }
+    func testSkipUnchangedNotesSeesEveryChange() throws { try scenarioSkipUnchangedNotesSeesEveryChange() }
+}
+
+/// `MemoryRemote` in evicted mode: every file read is first asked for and waited for (`Arrivals.swift`).
+final class EngineOverEvictedMemoryTests: EngineScenarioCase {
+    override func transport() throws -> TransportUnderTest { .evictedMemory() }
+
+    func testFirstUploadPullAndIdle() throws { try scenarioFirstUploadPullAndIdle() }
+    func testConcurrentDeltasConverge() throws { try scenarioConcurrentDeltasConverge() }
+    func testNeverOverwritesExistingFiles() throws { try scenarioNeverOverwritesExistingFiles() }
+    func testHostileFileIsQuarantined() throws { try scenarioHostileFileIsQuarantined() }
+    func testCompactionDeletesPropagate() throws { try scenarioCompactionDeletesPropagate() }
+    func testUnexplainedRemoteDeletionIsRestored() throws { try scenarioUnexplainedRemoteDeletionIsRestored() }
+    func testWipedRemoteNeverDeletesHistory() throws { try scenarioWipedRemoteNeverDeletesHistory() }
+    func testRefusesAnotherVault() throws { try scenarioRefusesAnotherVault() }
+    func testManifestConflictKeepsBothCopies() throws { try scenarioManifestConflictKeepsBothCopies() }
+    func testSettingsMergePerKey() throws { try scenarioSettingsMergePerKey() }
+    func testCutBlobDownloadFinishesNextRun() throws { try scenarioCutBlobDownloadFinishesNextRun() }
+    func testTransientFaultsConverge() throws { try scenarioTransientFaultsConverge() }
+    func testSkipUnchangedNotesSeesEveryChange() throws { try scenarioSkipUnchangedNotesSeesEveryChange() }
 }
 
 /// Against wsgidav (`scripts/test-webdav.sh`, CI's `webdav` job); skipped without it.

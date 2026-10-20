@@ -112,3 +112,196 @@ struct TransportUnderTest {
         return t
     }
 }
+
+// MARK: - The folder transport and the evicted modes
+
+extension TransportUnderTest {
+    /// `FolderRemote` on a plain folder below `parent`, its base two levels down (not made yet).
+    static func folder(_ parent: URL) -> TransportUnderTest {
+        let base = parent.appendingPathComponent("dav").appendingPathComponent("vault-\(UUID().uuidString.prefix(8).lowercased())")
+        let remote = FolderRemote(root: base, provider: PlainFolder())
+        return TransportUnderTest(kind: "folder", remote: remote, inspector: remote, faulty: { seed, f in
+            FaultyRemote(remote, seed: seed, faults: f)
+        }, unreachable: FaultyRemote(remote, seed: 1, faults: TransportFaults(dropBefore: 1)))
+    }
+
+    /// `FolderRemote` on a folder a simulated provider holds (`EvictingFolderProvider`, nothing
+    /// evicted unless a test does it): every provider path (stand-in mapping, availability,
+    /// coordination, folders listed before their files) runs. The inspector sees the plain folder.
+    static func evictingFolder(_ parent: URL) -> (TransportUnderTest, EvictingFolderProvider) {
+        let base = parent.appendingPathComponent("icloud").appendingPathComponent("vault-\(UUID().uuidString.prefix(8).lowercased())")
+        let provider = EvictingFolderProvider(root: base, cloud: parent.appendingPathComponent("cloud-side"))
+        let remote = FolderRemote(root: base, provider: provider)
+        let inspector = FolderRemote(root: base, provider: PlainFolder())
+        let t = TransportUnderTest(kind: "evicting-folder", remote: remote, inspector: inspector, faulty: { seed, f in
+            FaultyRemote(remote, seed: seed, faults: f)
+        }, unreachable: FaultyRemote(remote, seed: 1, faults: TransportFaults(dropBefore: 1)))
+        return (t, provider)
+    }
+
+    /// `MemoryRemote` in evicted mode: every file is evicted as it is written and arrives one
+    /// store operation after it is asked for, so every read the engine makes goes through
+    /// its arrival rules (`Arrivals.swift`). The inspector reads evicted files too.
+    static func evictedMemory() -> TransportUnderTest {
+        let store = MemoryStore(name: "evicted", behavior: MemoryStore.Behavior(evictOnWrite: true))
+        store.arrivalDelay = 1
+        let base = ["dav", "vault-\(UUID().uuidString.prefix(8).lowercased())"]
+        let remote = MemoryRemote(store: store, base: base)
+        var inspector = remote
+        inspector.readsEvicted = true
+        let memory = TransportUnderTest.memory()
+        return TransportUnderTest(kind: "evicted-memory", remote: remote, inspector: inspector, faulty: { seed, f in
+            var rates = MemoryFaults.Rates()
+            rates[.dropBefore] = f.dropBefore
+            rates[.loseAnswer] = f.loseAnswer
+            rates[.serverError] = f.serverError
+            rates[.cutBody] = f.cutBody
+            let faults = MemoryFaults(seed: seed, rates: rates)
+            if let only = f.only { faults.eligible = { _, _, path in only(path) } }
+            return remote.with(faults: faults)
+        }, unreachable: memory.unreachable)
+    }
+}
+
+/// A failure `FaultyRemote` injects.
+enum InjectedFault: Error, TransientRemoteError {
+    case dropped(String), refused(String), answerLost(String), cut(String)
+    var isTransient: Bool { if case .refused = self { return false } else { return true } }
+}
+
+/// Any remote with seeded transport faults, for transports that have none of
+/// their own (the folder): a request dropped before it is made, refused, made
+/// with the answer lost, or cut midway (a download keeps a prefix of the file;
+/// a write is atomic, so a cut one leaves nothing). Decisions come from the
+/// seed and a call counter.
+struct FaultyRemote: SyncRemote {
+    var inner: any SyncRemote
+    let seed: UInt64
+    let faults: TransportFaults
+    private let calls = CallCounter()
+    /// How many faults were injected.
+    let injected = CallCounter()
+
+    init(_ inner: any SyncRemote, seed: UInt64, faults: TransportFaults) {
+        self.inner = inner; self.seed = seed; self.faults = faults
+    }
+
+    var location: String { inner.location }
+    var capabilities: RemoteCapabilities { inner.capabilities }
+    var interrupt: (@Sendable () -> (any Error)?)? {
+        get { inner.interrupt }
+        set { inner.interrupt = newValue }
+    }
+
+    private enum Fault { case drop, refuse, lose, cut }
+
+    /// A value in [0, 1) from the seed and the call count (splitmix64).
+    private func roll() -> Double {
+        let n = calls.next()
+        var z = seed &+ n &* 0x9E37_79B9_7F4A_7C15
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        z ^= z >> 31
+        return Double(z >> 11) / Double(1 << 53)
+    }
+
+    private func decide(_ path: [String], body: Bool) -> Fault? {
+        if let only = faults.only, !only(path) { return nil }
+        var x = roll()
+        if x < faults.dropBefore { return .drop }
+        x -= faults.dropBefore
+        if x < faults.serverError { return .refuse }
+        x -= faults.serverError
+        if x < faults.loseAnswer { return .lose }
+        x -= faults.loseAnswer
+        if body, x < faults.cutBody { return .cut }
+        return nil
+    }
+
+    private func decideCounted(_ path: [String], body: Bool) -> Fault? {
+        let f = decide(path, body: body)
+        if f != nil { _ = injected.next() }
+        return f
+    }
+
+    /// Runs `op` on `path` under the faults decided for it.
+    private func faulted<T>(_ verb: String, _ path: [String], body: Bool = false, _ op: () throws -> T) throws -> T {
+        let shown = "\(verb) /\(path.joined(separator: "/"))"
+        switch decideCounted(path, body: body) {
+        case .drop?: throw InjectedFault.dropped(shown)
+        case .refuse?: throw InjectedFault.refused(shown)
+        case .lose?:
+            _ = try op()
+            throw InjectedFault.answerLost(shown)
+        case .cut?: throw InjectedFault.cut(shown)
+        case nil: return try op()
+        }
+    }
+
+    func list(_ path: [String]) throws -> [RemoteEntry]? { try faulted("list", path) { try inner.list(path) } }
+    func listTree(_ path: [String], maxBytes: Int) throws -> RemoteTree? {
+        try faulted("listTree", path) { try inner.listTree(path, maxBytes: maxBytes) }
+    }
+    func stat(_ path: [String]) throws -> RemoteEntry? { try faulted("stat", path) { try inner.stat(path) } }
+    func read(_ path: [String], maxBytes: Int) throws -> (data: Data, etag: String?) {
+        try faulted("read", path) { try inner.read(path, maxBytes: maxBytes) }
+    }
+
+    func download(_ path: [String], to file: URL, resumeFrom: Int, ifETag: String?, maxBytes: Int, segmentBytes: Int,
+                  progress: ((Int) throws -> Void)?) throws -> DownloadResult {
+        let shown = "download /\(path.joined(separator: "/"))"
+        switch decideCounted(path, body: true) {
+        case .drop?: throw InjectedFault.dropped(shown)
+        case .refuse?: throw InjectedFault.refused(shown)
+        case .lose?:
+            _ = try inner.download(path, to: file, resumeFrom: resumeFrom, ifETag: ifETag, maxBytes: maxBytes,
+                                   segmentBytes: segmentBytes, progress: progress)
+            throw InjectedFault.answerLost(shown)
+        case .cut?:
+            // The body stops partway: what arrived (a prefix) stays in the file.
+            _ = try inner.download(path, to: file, resumeFrom: resumeFrom, ifETag: ifETag, maxBytes: maxBytes,
+                                   segmentBytes: segmentBytes, progress: progress)
+            let size = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.intValue ?? 0
+            let keep = resumeFrom + Int(Double(max(size - resumeFrom, 0)) * roll())
+            let h = try FileHandle(forWritingTo: file)
+            try h.truncate(atOffset: UInt64(min(keep, max(size - 1, 0))))
+            try h.close()
+            throw InjectedFault.cut(shown)
+        case nil:
+            return try inner.download(path, to: file, resumeFrom: resumeFrom, ifETag: ifETag, maxBytes: maxBytes,
+                                      segmentBytes: segmentBytes, progress: progress)
+        }
+    }
+
+    func write(_ path: [String], _ body: RemoteBody, condition: PutCondition) throws -> Bool {
+        var isFile = false
+        if case .file = body { isFile = true }
+        return try faulted("write", path, body: isFile) { try inner.write(path, body, condition: condition) }
+    }
+    func moveNoOverwrite(_ path: [String], to destination: [String]) throws -> Bool {
+        try faulted("move", path) { try inner.moveNoOverwrite(path, to: destination) }
+    }
+    func makeCollection(_ path: [String]) throws -> CollectionResult {
+        try faulted("mkcol", path) { try inner.makeCollection(path) }
+    }
+    func createBase() throws { try faulted("createBase", []) { try inner.createBase() } }
+    func delete(_ path: [String], ifETag: String?) throws -> Bool {
+        try faulted("delete", path) { try inner.delete(path, ifETag: ifETag) }
+    }
+    func missingCollectionError(_ path: [String]) -> any Error { inner.missingCollectionError(path) }
+    func requestDownload(_ paths: [[String]]) throws { try inner.requestDownload(paths) }
+    func conflictVersions(_ path: [String]) -> [RemoteVersion] { inner.conflictVersions(path) }
+    func readVersion(_ path: [String], _ version: RemoteVersion, maxBytes: Int) throws -> Data {
+        try inner.readVersion(path, version, maxBytes: maxBytes)
+    }
+    func resolveConflicts(_ path: [String], _ versions: [RemoteVersion]) throws { try inner.resolveConflicts(path, versions) }
+    func changes() -> AsyncStream<RemoteChange>? { inner.changes() }
+}
+
+/// A thread-safe counter.
+final class CallCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var n: UInt64 = 0
+    func next() -> UInt64 { lock.lock(); defer { lock.unlock() }; n += 1; return n }
+    var value: UInt64 { lock.lock(); defer { lock.unlock() }; return n }
+}

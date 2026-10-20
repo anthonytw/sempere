@@ -39,7 +39,7 @@ final class FakeBlobStore: @unchecked Sendable {
 /// `CachedBlobSource` checks content against the reference.
 struct BlobCacheTests {
     static func root() -> URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("blobcache-" + UUID().uuidString, isDirectory: true)
+        TestTemp.root.appendingPathComponent("blobcache-" + UUID().uuidString, isDirectory: true)
     }
 
     let note = UUID()
@@ -175,7 +175,7 @@ struct BlobCacheTests {
     @Test func cachedSourceChecksContent() throws {
         let data = Data("content".utf8)
         let ref = BlobRef(content: data, type: "image/png")
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let file = TestTemp.root.appendingPathComponent(UUID().uuidString)
         try data.write(to: file)
         let source = CachedBlobSource(files: [ref.sha256: file])
         #expect(try source.data(for: ref, maxBytes: 100) == data)

@@ -15,9 +15,13 @@ extension SyncEngine {
         let localDir = root.appendingPathComponent(folder, isDirectory: true)
         let local = Set(try LocalFS.entries(localDir).filter { NotebookRecords.id(ofFileName: $0) != nil })
         var remote: Set<String> = []
+        var listed: [String: RemoteEntry] = [:]
+        // A folder a provider listed before its files is left for a later run (`Arrivals.swift`).
+        if let dir = remoteRoot[folder], dir.isCollection, folderArriving([folder], entry: dir) { return }
         if remoteRoot[folder]?.isCollection == true, let entries = try transport.list([folder]) {
             try budget.list(entries.count)
-            remote = Set(entries.filter { !$0.isCollection && NotebookRecords.id(ofFileName: $0.name) != nil }.map(\.name))
+            for e in entries where !e.isCollection && NotebookRecords.id(ofFileName: e.name) != nil { listed[e.name] = e }
+            remote = Set(listed.keys)
         }
         for name in local.subtracting(remote).sorted() {
             let path = "\(folder)/\(name)"
@@ -29,7 +33,12 @@ extension SyncEngine {
         guard !options.pushOnly else { return }
         for name in remote.subtracting(local).sorted() {
             let path = "\(folder)/\(name)"
-            let got = try transport.read([folder, name], maxBytes: NotebookRecords.maxFileBytes)
+            if try !available([folder, name], entry: listed[name]) { continue }
+            let got: (data: Data, etag: String?)
+            do { got = try transport.read([folder, name], maxBytes: NotebookRecords.maxFileBytes) } catch where Self.isUnavailable(error) {
+                noteArriving([folder, name])
+                continue
+            }
             try budget.downloaded(got.data.count)
             if let vault, vault.canRead {
                 do { _ = try vault.openNotebookRecord(got.data, fileName: name) } catch {

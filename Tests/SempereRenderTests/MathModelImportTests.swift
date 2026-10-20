@@ -1,3 +1,4 @@
+import TempDirSupport
 import Foundation
 import Sempere
 import XCTest
@@ -10,7 +11,7 @@ final class MathModelImportTests: XCTestCase {
     func tinyFolder() throws -> URL { try T.fixtureURL("math-tiny") }
 
     func tempRoot() -> URL {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("import-\(UUID().uuidString)")
+        let root = TestTemp.root.appendingPathComponent("import-\(UUID().uuidString)")
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         return root
     }
@@ -51,7 +52,7 @@ final class MathModelImportTests: XCTestCase {
         var end = Data()
         put32(&end, 0x0605_4b50); put16(&end, 0); put16(&end, 0); put16(&end, items.count); put16(&end, items.count)
         put32(&end, directory.count); put32(&end, body.count); put16(&end, 0)
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("model-\(UUID().uuidString).zip")
+        let url = TestTemp.root.appendingPathComponent("model-\(UUID().uuidString).zip")
         try (body + directory + end).write(to: url)
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }
         return url
@@ -103,7 +104,7 @@ final class MathModelImportTests: XCTestCase {
     /// A zip pick that is a FIFO (or a device) is refused at once, as every reader of picked bytes does
     /// (`BoundedRead.openRegularFile`); opening it for reading would block until a writer appeared.
     func testANonRegularFileInPlaceOfAZipIsRefusedWithoutBlocking() throws {
-        let fifo = FileManager.default.temporaryDirectory.appendingPathComponent("fifo-\(UUID().uuidString).zip")
+        let fifo = TestTemp.root.appendingPathComponent("fifo-\(UUID().uuidString).zip")
         XCTAssertEqual(mkfifo(fifo.path, 0o600), 0)
         addTeardownBlock { try? FileManager.default.removeItem(at: fifo) }
         let done = expectation(description: "install returned")
@@ -122,14 +123,14 @@ final class MathModelImportTests: XCTestCase {
         // Compressed entries are not supported.
         XCTAssertThrowsError(try MathModelImport.install(from: zip(of: tinyFolder(), method: 8), root: root))
         // Not a zip, an empty folder, a missing file, a changed file.
-        let junk = FileManager.default.temporaryDirectory.appendingPathComponent("junk-\(UUID().uuidString).zip")
+        let junk = TestTemp.root.appendingPathComponent("junk-\(UUID().uuidString).zip")
         try Data("not a zip".utf8).write(to: junk)
         addTeardownBlock { try? FileManager.default.removeItem(at: junk) }
         XCTAssertThrowsError(try MathModelImport.install(from: junk, root: root))
-        XCTAssertThrowsError(try MathModelImport.install(from: FileManager.default.temporaryDirectory, root: root)) { error in
+        XCTAssertThrowsError(try MathModelImport.install(from: TestTemp.root, root: root)) { error in
             XCTAssertEqual(error as? MathModelImport.Failure, .noManifest)
         }
-        let copy = FileManager.default.temporaryDirectory.appendingPathComponent("copy-\(UUID().uuidString)")
+        let copy = TestTemp.root.appendingPathComponent("copy-\(UUID().uuidString)")
         try FileManager.default.copyItem(at: tinyFolder(), to: copy)
         addTeardownBlock { try? FileManager.default.removeItem(at: copy) }
         let tokenizer = copy.appendingPathComponent("tokenizer.json")
@@ -156,8 +157,8 @@ final class MathModelImportTests: XCTestCase {
     /// a picked folder, stop being readable once the import's access ends.
     func testSymlinkedFilesAreCopiedNotLinked() throws {
         let fm = FileManager.default
-        let copy = fm.temporaryDirectory.appendingPathComponent("linked-\(UUID().uuidString)")
-        let blobs = fm.temporaryDirectory.appendingPathComponent("blobs-\(UUID().uuidString)")
+        let copy = TestTemp.root.appendingPathComponent("linked-\(UUID().uuidString)")
+        let blobs = TestTemp.root.appendingPathComponent("blobs-\(UUID().uuidString)")
         try fm.copyItem(at: tinyFolder(), to: copy)
         try fm.createDirectory(at: blobs, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: copy); try? FileManager.default.removeItem(at: blobs) }
@@ -195,7 +196,7 @@ final class MathModelImportTests: XCTestCase {
                            ("\"id\": \"", "\"id\": \"../")] {
             let hostile = original.replacingOccurrences(of: from, with: to)
             XCTAssertNotEqual(hostile, original, "the fixture manifest has \(from)")
-            let copy = fm.temporaryDirectory.appendingPathComponent("hostile-\(UUID().uuidString)")
+            let copy = TestTemp.root.appendingPathComponent("hostile-\(UUID().uuidString)")
             try fm.copyItem(at: tinyFolder(), to: copy)
             addTeardownBlock { try? FileManager.default.removeItem(at: copy) }
             try Data(hostile.utf8).write(to: copy.appendingPathComponent("manifest.json"))
@@ -213,7 +214,7 @@ final class MathModelImportTests: XCTestCase {
     func testAZipEntryOfAnotherSizeIsRefused() throws {
         let fm = FileManager.default
         for delta in [-1, 1] {
-            let copy = fm.temporaryDirectory.appendingPathComponent("size-\(UUID().uuidString)")
+            let copy = TestTemp.root.appendingPathComponent("size-\(UUID().uuidString)")
             try fm.copyItem(at: tinyFolder(), to: copy)
             addTeardownBlock { try? FileManager.default.removeItem(at: copy) }
             let tokenizer = copy.appendingPathComponent("tokenizer.json")
@@ -233,7 +234,7 @@ final class MathModelImportTests: XCTestCase {
     #if os(macOS)
     /// The zip the maintainer is told to make: `zip -0 -r` (what Finder's Compress would deflate, so stored).
     func testAZipMadeByTheZipToolInstalls() throws {
-        let out = FileManager.default.temporaryDirectory.appendingPathComponent("tool-\(UUID().uuidString).zip")
+        let out = TestTemp.root.appendingPathComponent("tool-\(UUID().uuidString).zip")
         addTeardownBlock { try? FileManager.default.removeItem(at: out) }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/zip")

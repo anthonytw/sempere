@@ -30,7 +30,7 @@ struct PseudoLanguageLayoutTests {
 
     static func demoVault() async throws -> DemoVault.Built {
         if let demo { return demo }
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("SemperePseudoLayout", isDirectory: true)
+        let dir = TestTemp.root.appendingPathComponent("SemperePseudoLayout", isDirectory: true)
         let built = try await DemoVault.build(in: dir)
         demo = built
         return built
@@ -62,7 +62,7 @@ struct PseudoLanguageLayoutTests {
         default: break
         }
         if model.selectedNoteID != nil { await model.showSelectedNote() }
-        let library = VaultLibrary(storeURL: FileManager.default.temporaryDirectory
+        let library = VaultLibrary(storeURL: TestTemp.root
             .appendingPathComponent(UUID().uuidString).appendingPathComponent("recents.json"))
         let keys = RememberedKeys(store: FakeKeyStore())
         let suite = "SemperePseudoLayout-\(UUID().uuidString)"

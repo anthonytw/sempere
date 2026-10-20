@@ -12,7 +12,7 @@ import Testing
 @MainActor
 struct QuickCaptureTests {
     static func temp(_ name: String) -> URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("\(name)-\(UUID().uuidString)", isDirectory: true)
+        TestTemp.root.appendingPathComponent("\(name)-\(UUID().uuidString)", isDirectory: true)
     }
 
     /// A fixture vault copy, its key, and a quick-capture instance whose
