@@ -111,6 +111,7 @@ struct SyncFolderCommand: ParsableCommand {
         }
 
         var options = SyncOptions(dryRun: dryRun)
+        options.deviceID = SyncCLI.deviceID()
         options.pushOnly = pushOnly
         options.keepServerChanges = keepServerChanges
         options.deleteExtraneous = deleteExtraneous

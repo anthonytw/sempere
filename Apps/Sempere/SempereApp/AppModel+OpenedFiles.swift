@@ -91,7 +91,7 @@ extension AppModel {
     }
 
     /// A URL the system opened the app with: a PDF is queued for import
-    /// (`receiveOpenedPDF`), anything else opened as a vault. A vault that
+    /// (`receiveOpenedPDF`), anything else copied into the store as a vault and opened (`copyIn`). A vault that
     /// would replace the open one is not opened unless `confirmed`: the
     /// confirmation to ask for comes back instead.
     @discardableResult
@@ -106,7 +106,8 @@ extension AppModel {
                 return OpenedVaultConfirmation(url: url, name: name.isEmpty ? url.lastPathComponent : name,
                                                current: vaultName ?? String(localized: "Vault", comment: "Name shown for a vault that has none"))
             }
-            await report { try await open(picked: url, library: library, external: true) }
+            // Copied onto this device like "Open Vault…" (the folder handed over is only read).
+            await report { try await copyIn(picked: url, library: library, external: true) }
         }
         return nil
     }

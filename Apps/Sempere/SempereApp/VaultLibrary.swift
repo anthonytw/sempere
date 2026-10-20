@@ -72,14 +72,15 @@ enum VaultLocator {
     }
 }
 
-/// A vault the app has opened before, reachable through a bookmark, or a
-/// WebDAV location's local copy.
+/// A vault the app has opened before: a vault of the in-app store (`storeID`), a WebDAV
+/// location's local copy (`webdav`), or a folder opened in place by an earlier build, reachable
+/// through a bookmark (read until P7 of docs/design/device-first-sync.md; no new ones are made).
 struct RecentVault: Codable, Identifiable, Hashable, Sendable {
     var id: UUID
     /// Folder name without `.sempere`, for display.
     var name: String
     /// Bookmark of the vault folder. On iOS a bookmark made from a
-    /// document-picker URL carries its security scope. Empty for a WebDAV vault.
+    /// document-picker URL carries its security scope. Empty for a WebDAV or store vault.
     var bookmark: Data
     var lastOpened: Date
     /// The WebDAV location (`WebDAVLocationStore`) whose local copy this is;
@@ -89,6 +90,9 @@ struct RecentVault: Codable, Identifiable, Hashable, Sendable {
     /// say what it waits for (iCloud Drive, a provider) and drop duplicates without resolving every
     /// bookmark; nil for a WebDAV vault and for entries saved before it was kept.
     var path: String?
+    /// The vault id of a vault in the in-app store (`VaultLibrary.vaultStore`), opened by its id, never
+    /// through a bookmark (the container's path changes when iOS moves it); nil for any other vault.
+    var storeID: UUID?
 }
 
 /// Whether the app may use a folder it was given access to (a picked folder,
@@ -187,9 +191,6 @@ struct NewVaultRequest: Sendable {
     /// Also keep a copy of the recovery key in the vault's `keys/` under this
     /// passphrase (format.md §15.11); it must pass `PassphraseStrength`.
     var passphrase: String?
-    /// A new folder (one level, `VaultLibrary.subfolderName`) to create in the
-    /// picked location and put the vault in; nil puts it in the location itself.
-    var subfolder: String?
     /// This device's name and kind in the vault's list (format.md §15.3).
     var deviceName = "This device"
     var deviceKind = "ipad"
@@ -214,8 +215,7 @@ struct CreatedVault: Sendable {
     var unlockKey: String?
     /// This device's keys (the vault's home).
     var device: DeviceKeys
-    /// The recents entry saved for it, whose bookmark carries the access the
-    /// app needs to reopen it; nil when saving it failed.
+    /// The recents entry saved for it; nil when saving it failed.
     var recentID: UUID?
 }
 
@@ -226,7 +226,6 @@ final class VaultLibrary {
     enum LibraryError: Error, Equatable, CustomStringConvertible {
         case invalidName
         case cannotResolve(name: String)
-        case invalidFolderName
         /// The existing recovery key is not a post-quantum one.
         case classicIdentity
         /// The passphrase of the recovery key's copy is too easy to guess (`PassphraseStrength`).
@@ -236,8 +235,6 @@ final class VaultLibrary {
             switch self {
             case .invalidName: return String(localized: "Give the vault a name without slashes, leading dots or control characters.")
             case .weakPassphrase(let why): return why
-            case .invalidFolderName:
-                return String(localized: "Give the new folder a name without slashes, colons, leading dots or control characters, not ending in .sempere.")
             case .classicIdentity:
                 return String(localized: "That is a classic AGE-SECRET-KEY-1… key, which is not quantum-safe. Use a post-quantum recovery key (AGE-SECRET-KEY-PQ-1…) or generate one.")
             case .cannotResolve(let name):
@@ -251,6 +248,11 @@ final class VaultLibrary {
     // Not `private(set)`: `RecentVaultAvailability.swift` refreshes bookmarks and paths.
     var recents: [RecentVault] = []
     let storeURL: URL
+    /// Where every vault this device creates or copies in lives (docs/design/device-first-sync.md §2):
+    /// `Application Support/Sempere/Vaults` for the app, next to `storeURL` in tests.
+    let vaultStore: VaultStore
+    /// The store's vaults, as last listed (`refreshStoredVaults`).
+    var storedVaults: [VaultStore.Entry] = []
 
     /// Where each recent vault stands (`RecentVaultAvailability.swift`); missing means not checked yet.
     var states: [UUID: RecentVaultState] = [:]
@@ -269,14 +271,21 @@ final class VaultLibrary {
     @ObservationIgnored var checkAttempt = 0
     @ObservationIgnored var identityObserver: (any NSObjectProtocol)?
 
+    /// - Parameter vaultStore: the in-app vault store; by default the `Vaults` folder next to `storeURL`
+    ///   (`Application Support/Sempere/Vaults` for the app's own `storeURL`).
     init(storeURL: URL = VaultLibrary.defaultStoreURL,
-         probe: @escaping @Sendable (Data) -> RecentVaultProbe = RecentVaultCheck.probe) {
+         probe: @escaping @Sendable (Data) -> RecentVaultProbe = RecentVaultCheck.probe,
+         vaultStore: VaultStore? = nil) {
         self.storeURL = storeURL
         self.probe = probe
+        self.vaultStore = vaultStore
+            ?? VaultStore(root: storeURL.deletingLastPathComponent().appendingPathComponent("Vaults", isDirectory: true))
         if let data = try? Data(contentsOf: storeURL),
            let list = try? JSONDecoder().decode([RecentVault].self, from: data) {
             recents = list
         }
+        // Read at once (one small vault.json per vault), so the first frame lists them.
+        storedVaults = self.vaultStore.list()
     }
 
     // MARK: - Places
@@ -284,7 +293,14 @@ final class VaultLibrary {
     /// `Application Support/Sempere/recents.json`.
     static var defaultStoreURL: URL { AppSupport.sempere.appendingPathComponent("recents.json") }
 
-    /// The app container's Documents folder, where "On This Device" vaults live.
+    /// The in-app vault store's folder: `Application Support/Sempere/Vaults`.
+    ///
+    /// P6 of docs/design/device-first-sync.md moves it into the App Group container (quick capture
+    /// writes to the inbox from there); no vault is carried over (there is no version 1 yet).
+    static var defaultVaultStoreRoot: URL { AppSupport.folder("Vaults") }
+
+    /// The app container's Documents folder, where earlier builds kept "On This Device" vaults (opened
+    /// in place). New vaults go into `vaultStore` instead.
     static var onDeviceFolder: URL {
         (try? FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true))
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
@@ -299,9 +315,11 @@ final class VaultLibrary {
 
     // MARK: - Recents
 
-    /// Records that the vault at `url` was opened. Access to it must be active.
+    /// Records that the vault at `url` was opened. Access to it must be active. A vault of the
+    /// in-app store is recorded by its id, with no bookmark.
     @discardableResult
     func remember(_ url: URL) throws -> RecentVault {
+        if let stored = vaultStore.entry(containing: url) { return rememberStored(stored) }
         let data = try VaultBookmark.make(for: url)
         let path = url.standardizedFileURL.path
         let replaced = recents.filter { entry in
@@ -318,6 +336,20 @@ final class VaultLibrary {
         if recents.count > Self.maxRecents { recents.removeLast(recents.count - Self.maxRecents) }
         save()
         return entry
+    }
+
+    /// Records that the store vault `entry` was opened.
+    @discardableResult
+    func rememberStored(_ entry: VaultStore.Entry) -> RecentVault {
+        recents.removeAll { $0.storeID == entry.vaultId }
+        let recent = RecentVault(id: UUID(), name: entry.name, bookmark: Data(), lastOpened: Date(),
+                                 path: entry.url.standardizedFileURL.path, storeID: entry.vaultId)
+        recents.insert(recent, at: 0)
+        states[recent.id] = .available
+        if recents.count > Self.maxRecents { recents.removeLast(recents.count - Self.maxRecents) }
+        save()
+        if !storedVaults.contains(where: { $0.vaultId == entry.vaultId }) { storedVaults.append(entry) }
+        return recent
     }
 
     /// Records that the local copy of the WebDAV location `location` was opened.
@@ -345,6 +377,10 @@ final class VaultLibrary {
     /// A WebDAV entry has no bookmark: `AppModel.open(recent:)` opens it by its
     /// location. Blocking; `resolved(_:)` does it off the main actor.
     func resolve(_ entry: RecentVault) throws -> URL {
+        if let id = entry.storeID {
+            guard let stored = vaultStore.entry(id: id) else { throw LibraryError.cannotResolve(name: entry.name) }
+            return stored.url
+        }
         if entry.webdav != nil { throw LibraryError.cannotResolve(name: entry.name) }
         guard let resolved = try? VaultBookmark.resolve(entry.bookmark) else {
             throw LibraryError.cannotResolve(name: entry.name)
@@ -355,6 +391,7 @@ final class VaultLibrary {
 
     /// `resolve(_:)` with the bookmark resolved off the main actor (it waits on the file provider).
     func resolved(_ entry: RecentVault) async throws -> URL {
+        if entry.storeID != nil { return try resolve(entry) }
         if entry.webdav != nil { throw LibraryError.cannotResolve(name: entry.name) }
         let bookmark = entry.bookmark
         guard let resolved = await Task.detached(priority: .userInitiated, operation: {
@@ -408,48 +445,23 @@ final class VaultLibrary {
         return trimmed + ".sempere"
     }
 
-    /// Creates a vault named `request.name` inside `parent`. For a folder from
-    /// the document picker, the caller keeps the vault's own bookmark
-    /// (`remember`) while access to `parent` is active, which this does.
+    /// Creates a vault named `request.name` in the in-app store (`vaultStore`) and remembers it.
+    /// The vault is built in the store's staging folder and appears only once complete.
     ///
     /// Runs the blocking work (scrypt, file I/O) off the main actor.
     /// - Parameter trust: this device's trust records; the new vault's is saved there (format.md §15.10).
-    func create(_ request: NewVaultRequest, in parent: URL, trust: (any EpochTrustStore)? = nil) async throws -> CreatedVault {
+    func create(_ request: NewVaultRequest, trust: (any EpochTrustStore)? = nil) async throws -> CreatedVault {
         let folder = try Self.folderName(for: request.name)
-        let subfolder = try request.subfolder.map(Self.subfolderName)
-        let scoped = parent.startAccessingSecurityScopedResource()
-        defer { if scoped { parent.stopAccessingSecurityScopedResource() } }
-        var created = try await Task.detached(priority: .userInitiated) {
-            let location = subfolder.map { parent.appendingPathComponent($0, isDirectory: true) } ?? parent
-            // In iCloud Drive, a coordinated write so the new folder is uploaded.
-            let target = (subfolder != nil ? location : location.appendingPathComponent(folder, isDirectory: true))
-            return try CloudVault.coordinatedWrite(CloudVault.isUbiquitous(parent) ? target : nil) {
-                // A folder of that name already there is used (the vault's own name is still checked).
-                if subfolder != nil, !Self.isDirectory(location) {
-                    try FileManager.default.createDirectory(at: location, withIntermediateDirectories: false,
-                                                            attributes: nil)
-                }
-                return try Self.createVault(request, folder: folder, in: location, trust: trust)
+        let store = vaultStore
+        let (entry, built) = try await Task.detached(priority: .userInitiated) {
+            try store.create(name: VaultStore.displayName(of: URL(fileURLWithPath: folder))) { url in
+                try Self.createVault(request, folder: folder, in: url.deletingLastPathComponent(), trust: trust)
             }
         }.value
-        created.recentID = try? remember(created.url).id
+        var created = built
+        created.url = entry.url
+        created.recentID = rememberStored(entry).id
         return created
-    }
-
-    nonisolated private static func isDirectory(_ url: URL) -> Bool {
-        var directory: ObjCBool = false
-        return FileManager.default.fileExists(atPath: url.path, isDirectory: &directory) && directory.boolValue
-    }
-
-    /// A new folder's name, typed in the New Vault sheet: trimmed, one path
-    /// level, no leading dot (hidden), not a vault (`.sempere`).
-    nonisolated static func subfolderName(_ typed: String) throws -> String {
-        let trimmed = typed.trimmingCharacters(in: .whitespacesAndNewlines)
-        let bad = trimmed.isEmpty || trimmed.hasPrefix(".") || trimmed.lowercased().hasSuffix(".sempere")
-            || trimmed.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
-            || trimmed.contains { $0 == "/" || $0 == ":" || $0 == "\0" || $0.isNewline } || trimmed.utf8.count > 255
-        if bad { throw LibraryError.invalidFolderName }
-        return trimmed
     }
 
     /// Synchronous core of `create` (testable without the main actor): a new

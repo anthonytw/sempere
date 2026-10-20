@@ -98,9 +98,11 @@ enum RecentVaultCheck {
 }
 
 extension VaultLibrary {
-    /// Where `entry` stands. A WebDAV entry is always available (its copy is local).
+    /// Where `entry` stands. A WebDAV entry is always available (its copy is local); a store vault is
+    /// available while the store lists it, else it was removed.
     func state(of entry: RecentVault) -> RecentVaultState {
         if entry.webdav != nil { return .available }
+        if let id = entry.storeID { return storedVaults.contains { $0.vaultId == id } ? .available : .missing }
         return states[entry.id] ?? .unknown
     }
 
@@ -156,7 +158,7 @@ extension VaultLibrary {
         retryTask?.cancel()
         retryTask = nil
         let probe = self.probe
-        let inputs = recents.filter { $0.webdav == nil }.map { (id: $0.id, bookmark: $0.bookmark) }
+        let inputs = recents.filter { $0.webdav == nil && $0.storeID == nil }.map { (id: $0.id, bookmark: $0.bookmark) }
         let results = await Task.detached(priority: .utility) {
             inputs.map { (id: $0.id, probe: probe($0.bookmark)) }
         }.value

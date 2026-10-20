@@ -39,11 +39,9 @@ struct BrowserTests {
     }
 
     @Test func createsGeneratedKeyVaultAndOpensUnlocked() async throws {
-        let parent = try Self.tempDir()
         let library = try Self.library()
         let model = AppModel(deviceStateURL: try Self.tempDir().appendingPathComponent("device.json"))
-        let created = try await model.createVault(NewVaultRequest(name: "Fresh", keySource: .generate, passphrase: nil),
-                                                  in: parent, library: library)
+        let created = try await model.createVault(NewVaultRequest(name: "Fresh", keySource: .generate, passphrase: nil), library: library)
         #expect(created.url.lastPathComponent == "Fresh.sempere")
         // Generated keys are post-quantum (docs/post-quantum.md).
         #expect(created.secretKey?.hasPrefix("AGE-SECRET-KEY-PQ-1") == true)
@@ -157,25 +155,22 @@ struct BrowserTests {
         #expect(VaultLibrary(storeURL: store).recents.isEmpty)
     }
 
-    @Test func newVaultReopensThroughItsOwnBookmarkNotAnotherWithTheSameName() async throws {
+    @Test func newVaultReopensByItsOwnIdNotAnotherWithTheSameName() async throws {
         let library = try Self.library()
         let model = AppModel(deviceStateURL: try Self.tempDir().appendingPathComponent("device.json"))
-        let first = try await model.createVault(NewVaultRequest(name: "Notes", keySource: .generate, passphrase: nil),
-                                                in: try Self.tempDir(), library: library)
-        let second = try await model.createVault(NewVaultRequest(name: "Notes", keySource: .generate, passphrase: nil),
-                                                 in: try Self.tempDir(), library: library)
+        let first = try await model.createVault(NewVaultRequest(name: "Notes", keySource: .generate, passphrase: nil), library: library)
+        let second = try await model.createVault(NewVaultRequest(name: "Notes", keySource: .generate, passphrase: nil), library: library)
         #expect(first.recentID != nil && second.recentID != nil && first.recentID != second.recentID)
         #expect(model.vaultURL?.standardizedFileURL.path == second.url.standardizedFileURL.path)
         #expect(model.phase == .unlocked)
         #expect(library.recents.map(\.name) == ["Notes", "Notes"])
     }
 
-    @Test func reopensARecentVaultFromItsBookmark() async throws {
+    @Test func reopensARecentStoreVaultByItsId() async throws {
         let parent = try Self.tempDir()
         let library = try Self.library()
         let first = AppModel(deviceStateURL: try Self.tempDir().appendingPathComponent("device.json"))
-        let created = try await first.createVault(NewVaultRequest(name: "Again", keySource: .generate, passphrase: nil),
-                                                  in: parent, library: library)
+        let created = try await first.createVault(NewVaultRequest(name: "Again", keySource: .generate, passphrase: nil), library: library)
         first.close()
         let second = AppModel(deviceStateURL: try Self.tempDir().appendingPathComponent("device.json"))
         try await second.open(recent: try #require(library.recents.first), library: library)

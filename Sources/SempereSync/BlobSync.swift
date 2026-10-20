@@ -303,7 +303,7 @@ extension SyncEngine {
     /// a temporary upload even if this one is killed. A killed run's other
     /// progress is not saved: the next run finds it on both sides. Best
     /// effort.
-    private func checkpoint() {
+    func checkpoint() {
         guard !options.dryRun else { return }
         locked { _ = try? state.saveTransfers(stateURL) }
     }

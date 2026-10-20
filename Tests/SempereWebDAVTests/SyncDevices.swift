@@ -105,10 +105,53 @@ final class SyncDevice: @unchecked Sendable {
         return try results.first?.result.get().plan.deletions ?? []
     }
 
+    /// Records a voice note into the inbox with this device's capture profile (quick capture,
+    /// format.md §11); returns its capture id.
+    @discardableResult
+    func captureVoiceNote(_ audio: Data, id: UUID = UUID()) throws -> UUID {
+        let v = try vault()
+        let w = try CaptureWriter(profile: try v.captureProfile(device: device))
+        try CaptureWriter.store(try w.seal(audio: audio, started: now, id: id, created: now), in: v.inboxURL)
+        return id
+    }
+
+    /// Adopts every capture in the inbox (`sempere inbox import`); returns how many were adopted.
+    @discardableResult
+    func adoptInbox() throws -> Int {
+        let v = try vault()
+        var n = 0
+        for e in try v.inboxEntries() where v.adoptCapture(e.id, deviceState: deviceStateURL, app: "stress/\(name)").error == nil {
+            n += 1
+        }
+        return n
+    }
+
+    /// Writes this device's `summaries/<device>.sealed` from its own listing (format.md §12.5).
+    @discardableResult
+    func publishSummaries() throws -> Data {
+        let v = try vault()
+        let data = try v.sealPublishedSummaries(try v.publishedSummaryEntries().entries)
+        let url = v.devicePublishedSummariesURL(device)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: url, options: .atomic)
+        return data
+    }
+
+    /// The visible files of a root folder (`inbox`, `summaries`) with their bytes.
+    func rootFolderFiles(_ folder: String) -> [String: Data] {
+        let d = self.folder.appendingPathComponent(folder)
+        var out: [String: Data] = [:]
+        for n in (try? FileManager.default.contentsOfDirectory(atPath: d.path)) ?? [] where !n.hasPrefix(".") {
+            out[n] = try? Data(contentsOf: d.appendingPathComponent(n))
+        }
+        return out
+    }
+
     // MARK: Sync
 
     func options(_ edit: (inout SyncOptions) -> Void = { _ in }) -> SyncOptions {
         var o = SyncOptions(deviceLabel: name, now: now)
+        o.deviceID = device
         if !hasVault { o.firstPullIdentities = [identity] }
         tune(&o)
         edit(&o)

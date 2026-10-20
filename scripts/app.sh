@@ -11,7 +11,8 @@
 #   scripts/app.sh pseudo-mac # the same as the Mac Catalyst app, at a narrow and a wide window (takes over the screen)
 #   scripts/app.sh test-mac   # every app suite on Mac Catalyst, ad-hoc signed and sandboxed
 #   scripts/app.sh test-mac-ui # the Mac UI tests (MacWindowUITests, MacItemUITests, SidebarDropUITests, MacFocusUITests,
-#                              # KeyShareMacUITests, QuitPurgeMacUITests, NewVaultSheetUITests, MacImportUITests, MacExportUITests, MacRealMouseUITests) on Mac Catalyst
+#                              # KeyShareMacUITests, QuitPurgeMacUITests, NewVaultSheetUITests, MacImportUITests, MacExportUITests, MacRealMouseUITests,
+#                              # VaultStoreUITests) on Mac Catalyst
 #   scripts/app.sh test-mac-perf # the dense-note performance suite (DensePerformanceTests) on Mac Catalyst: open time, scroll and zoom
 #                              # frame hitches, memory, against baselines (slow; test-mac leaves it out)
 #   scripts/app.sh test-ui    # the iPad UI tests (SidebarDropUITests: real drags; the launch smoke tests) on an iPad simulator
@@ -265,7 +266,8 @@ case "${1:-}" in
       -only-testing:SempereAppUITests/NewVaultSheetUITests -only-testing:SempereAppUITests/MacImportUITests \
       -only-testing:SempereAppUITests/MacExportUITests -only-testing:SempereAppUITests/MacRealMouseUITests \
       -only-testing:SempereAppUITests/FolderPickerUITests \
-      -only-testing:SempereAppUITests/MacNoteModeUITests -only-testing:SempereAppUITests/NoteToolbarUITests
+      -only-testing:SempereAppUITests/MacNoteModeUITests -only-testing:SempereAppUITests/NoteToolbarUITests \
+      -only-testing:SempereAppUITests/VaultStoreUITests
     xcb test -project "$project" -scheme SempereScreenshots -derivedDataPath "$derived" \
       -destination 'platform=macOS,variant=Mac Catalyst' ${only[@]+"${only[@]}"} \
       "${mac_ui_signing[@]}" ${ui_retry[@]+"${ui_retry[@]}"} ${extra[@]+"${extra[@]}"}
@@ -293,7 +295,8 @@ case "${1:-}" in
       -only-testing:SempereAppUITests/LaunchSmokeUITests/testFirstUnlockShowsKeyNoticeThenTour \
       -only-testing:SempereAppUITests/NewVaultSheetUITests -only-testing:SempereAppUITests/MacImportUITests \
       -only-testing:SempereAppUITests/MacExportUITests -only-testing:SempereAppUITests/FolderPickerUITests \
-      -only-testing:SempereAppUITests/PhoneCanvasModeUITests -only-testing:SempereAppUITests/NoteToolbarUITests
+      -only-testing:SempereAppUITests/PhoneCanvasModeUITests -only-testing:SempereAppUITests/NoteToolbarUITests \
+      -only-testing:SempereAppUITests/VaultStoreUITests
     xcb test -project "$project" -scheme SempereScreenshots -derivedDataPath "$derived" \
       -destination "platform=iOS Simulator,id=$sim" ${only[@]+"${only[@]}"} \
       -parallel-testing-enabled NO ${ui_retry[@]+"${ui_retry[@]}"} CODE_SIGNING_ALLOWED=NO ${extra[@]+"${extra[@]}"}

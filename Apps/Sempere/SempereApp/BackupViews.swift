@@ -198,23 +198,20 @@ struct BackupProblemList: View {
     }
 }
 
-/// Restore from Backup: choose a backup folder, see what it holds, then
-/// restore it into a new vault (never over the open one) and open it.
+/// Restore from Backup: choose a backup folder, see what it holds, then restore it into the in-app vault
+/// store. When that vault is on this device already, the sheet asks whether to replace it.
 struct RestoreBackupView: View {
     @AppModelEnvironment private var model
     @AppEnvironmentObject private var library: VaultLibrary
     @Environment(\.dismiss) private var dismiss
 
-    private enum Location: Hashable { case onDevice, folder }
-
     @State private var picked: URL?
     @State private var source: URL?
     @State private var preview: RestorePreview?
-    @State private var pickingFolder = false
     @State private var importerShown = false
     @State private var name = ""
-    @State private var location = Location.onDevice
-    @State private var folder: URL?
+    /// The vault on this device the restore would replace, while the sheet asks.
+    @State private var replacing: VaultStore.Entry?
     @State private var working = false
     @State private var failure: String?
     @State private var outcome: RestoreOutcome?
@@ -261,17 +258,21 @@ struct RestoreBackupView: View {
             }
         }
         .interactiveDismissDisabled(working)
-        // The backup is only opened: the system's file importer. The new vault's folder is written
-        // into: the folder picker with New Folder (`FolderPicker`), on a view of its own (two
-        // importers on one view can hide each other).
+        // The backup is only opened: the system's file importer.
         .fileImporter(isPresented: $importerShown, allowedContentTypes: [.folder, .sempere]) { result in
             Task { await choose(result) }
         }
-        .background {
-            SwiftUI.Color.clear.folderPicker(isPresented: $pickingFolder) { result in
-                folder = try? result.get()
-                if folder == nil { location = .onDevice }
+        .alert(Text("Replace “\(replacing?.name ?? "")”?", comment: "%@ is the name of the vault on this device"),
+               isPresented: Binding(get: { replacing != nil }, set: { if !$0 { replacing = nil } }),
+               presenting: replacing) { _ in
+            Button("Replace", role: .destructive) {
+                replacing = nil
+                run(replace: true)
             }
+            .accessibilityIdentifier("restore.replace")
+            Button("Cancel", role: .cancel) { replacing = nil }
+        } message: { _ in
+            Text("This vault is already on this device. Replacing it puts the backup in its place: changes made since the backup are lost.")
         }
     }
 
@@ -290,24 +291,16 @@ struct RestoreBackupView: View {
             }
             Section {
                 TextField("Name", text: $name).autocorrectionDisabled()
-                Picker("Location", selection: $location) {
-                    Text("On This Device").tag(Location.onDevice)
-                    Text("Choose Folder…").tag(Location.folder)
-                }
-                .onChange(of: location) { _, new in if new == .folder { pickingFolder = true } }
-                if location == .folder, let folder { LabeledContent("Folder", value: folder.lastPathComponent) }
             } header: {
-                Text("Restore As a New Vault")
+                Text("Restore onto This Device")
             } footer: {
-                Text("The backup is copied into a new vault; the vault you have open is never changed. It opens with the same key as the vault that was backed up.")
+                Text("The backup is restored onto this device, inside the app, and opens with the same key as the vault that was backed up. If that vault is on this device already, you are asked before it is replaced.")
             }
         }
     }
 
-    private var parent: URL? { location == .folder ? folder : VaultLibrary.onDeviceFolder }
-
     private var canRestore: Bool {
-        guard !working, preview != nil, parent != nil else { return false }
+        guard !working, preview != nil else { return false }
         return (try? VaultLibrary.folderName(for: name)) != nil
     }
 
@@ -325,14 +318,26 @@ struct RestoreBackupView: View {
         }
     }
 
+    /// Restore: asks first when the vault is on this device already.
     private func restore() {
-        guard let picked, let source, let parent else { return }
+        guard let picked, let source else { return }
+        failure = nil
+        working = true
+        Task {
+            let existing = await model.restoreConflict(source: source, picked: picked, library: library)
+            working = false
+            if let existing { replacing = existing } else { run(replace: false) }
+        }
+    }
+
+    private func run(replace: Bool) {
+        guard let picked, let source else { return }
         failure = nil
         working = true
         Task {
             defer { working = false }
             do {
-                outcome = try await model.restoreBackup(picked: picked, source: source, into: parent, name: name,
+                outcome = try await model.restoreBackup(picked: picked, source: source, name: name, replace: replace,
                                                         library: library)
             } catch {
                 failure = "\(error)"

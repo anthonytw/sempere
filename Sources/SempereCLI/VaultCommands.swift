@@ -18,24 +18,37 @@ struct VaultInit: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "init",
         abstract: "Create a new vault directory (its name must end in .sempere), with this machine as its home device.",
-        discussion: """
-            The vault is created with one epoch key, wrapped to this machine's new device key and to a new \
-            recovery key (format.md §15). This machine is the vault's home: it approves and renames devices \
-            (sempere devices). Its device key and signing keys are written to \
-            $XDG_STATE_HOME/sempere/devices/<vault id>/device.key (mode 0600); with --passphrase they are \
-            passphrase-wrapped there instead. They never leave this machine.
-
-            The recovery key is the printed kit: it is written to --recovery-out (mode 0600; print it with \
-            `sempere keys paper --vault PATH --identity FILE`, then delete the file) and no device keeps it. \
-            With --recovery-key the given identity is the recovery key instead. --recovery-passphrase also \
-            writes the passphrase copy of the recovery key into keys/ (scrypt work factor 20, a passphrase \
-            of at least about 70 bits; the passphrase comes from the variable named by --passphrase-env, else \
-            $SEMPERE_PASSPHRASE, else the terminal).
-            """
+        discussion: VaultInitOptions.discussion
     )
 
     @Argument(help: ArgumentHelp("The new vault directory.", valueName: "path"))
     var path: String
+
+    @OptionGroup var spec: VaultInitOptions
+    @OptionGroup var output: OutputOptions
+
+    func run() throws {
+        let created = try spec.create(at: URL(fileURLWithPath: path))
+        try created.report(path: path, output: output)
+    }
+}
+
+/// What a new vault is made with: `vault init` and `store create`.
+struct VaultInitOptions: ParsableArguments {
+    static let discussion = """
+        The vault is created with one epoch key, wrapped to this machine's new device key and to a new \
+        recovery key (format.md §15). This machine is the vault's home: it approves and renames devices \
+        (sempere devices). Its device key and signing keys are written to \
+        $XDG_STATE_HOME/sempere/devices/<vault id>/device.key (mode 0600); with --passphrase they are \
+        passphrase-wrapped there instead. They never leave this machine.
+
+        The recovery key is the printed kit: it is written to --recovery-out (mode 0600; print it with \
+        `sempere keys paper --vault PATH --identity FILE`, then delete the file) and no device keeps it. \
+        With --recovery-key the given identity is the recovery key instead. --recovery-passphrase also \
+        writes the passphrase copy of the recovery key into keys/ (scrypt work factor 20, a passphrase \
+        of at least about 70 bits; the passphrase comes from the variable named by --passphrase-env, else \
+        $SEMPERE_PASSPHRASE, else the terminal).
+        """
 
     @Option(name: .long, help: ArgumentHelp("This device's name (at most 40 characters).", valueName: "text"))
     var name = "sempere CLI"
@@ -72,8 +85,6 @@ struct VaultInit: ParsableCommand {
                                                                   visibility: .private))
     var workFactor = RecoveryPassphraseCopy.workFactor
 
-    @OptionGroup var output: OutputOptions
-
     func validate() throws {
         guard JoinRequest.isValidKind(kind) else { throw ValidationError("--kind must be a lowercase word of 1 to 32 letters") }
         guard recoveryOut != nil || recoveryKey != nil else {
@@ -84,7 +95,15 @@ struct VaultInit: ParsableCommand {
         }
     }
 
-    func run() throws {
+    /// The keys and passphrases, read and checked before anything is written.
+    struct Prepared {
+        var recovery: MLKEM768X25519Identity
+        var copyPassphrase: String?
+        var deviceKeyPassphrase: String?
+    }
+
+    /// Reads the recovery key (or makes one) and asks for the passphrases.
+    func prepare() throws -> Prepared {
         let recovery: MLKEM768X25519Identity
         if let recoveryKey {
             guard case .mlkem768x25519(let pq) = try readIdentityFile(recoveryKey) else {
@@ -101,43 +120,70 @@ struct VaultInit: ParsableCommand {
             try requireStoredKeyPassphrase(pass)
             copyPassphrase = pass
         }
-        let device: DeviceKeys
-        do { device = try DeviceKeys.generate() } catch { throw CLIError.failure("\(error)") }
-        let vaultId = UUID()
         let deviceKeyPassphrase = passphrase
             ? try obtainPassphrase(envName: passphraseEnv, prompt: "Device key passphrase: ", confirm: true,
                                    asError: CLIError.failure) : nil
-        // The device key first: a vault this machine cannot open later is no use. A failed init removes
-        // what it wrote (the device key of a vault that does not exist, the unused recovery key).
+        if let deviceKeyPassphrase, deviceKeyPassphrase.isEmpty { throw CLIError.usage("the passphrase is empty") }
+        return Prepared(recovery: recovery, copyPassphrase: copyPassphrase, deviceKeyPassphrase: deviceKeyPassphrase)
+    }
+
+    /// Creates the vault at `url` from `prepared` (`prepare()`): this machine's device key first (a vault
+    /// it cannot open later is no use), then the recovery key file, then the vault. A failure removes what
+    /// it wrote (the device key of a vault that does not exist, the unused recovery key).
+    func create(at url: URL, prepared: Prepared) throws -> Created {
+        let device: DeviceKeys
+        do { device = try DeviceKeys.generate() } catch { throw CLIError.failure("\(error)") }
+        let vaultId = UUID()
         var wroteRecovery = false
-        let keyPath: String
-        let vault: Vault
         do {
-            keyPath = try DeviceKeyStore.save(device, vaultId: vaultId, passphrase: deviceKeyPassphrase)
+            let keyPath = try DeviceKeyStore.save(device, vaultId: vaultId, passphrase: prepared.deviceKeyPassphrase)
             if let recoveryOut {
-                try writeNewSecretFile(IdentityFile.render(.mlkem768x25519(recovery), created: Date()), to: recoveryOut)
+                try writeNewSecretFile(IdentityFile.render(.mlkem768x25519(prepared.recovery), created: Date()),
+                                       to: recoveryOut)
                 wroteRecovery = true
             }
-            vault = try Vault.create(at: URL(fileURLWithPath: path), device: device, deviceName: name, kind: kind,
-                                     recovery: recovery, recoveryPassphrase: copyPassphrase, workFactor: workFactor,
-                                     vaultId: vaultId, trust: trustStore(), label: vaultLabel)
+            let vault = try Vault.create(at: url, device: device, deviceName: name, kind: kind,
+                                         recovery: prepared.recovery, recoveryPassphrase: prepared.copyPassphrase,
+                                         workFactor: workFactor, vaultId: vaultId, trust: trustStore(), label: vaultLabel)
+            return Created(vaultId: vault.vaultId, root: vault.root, device: device.id, deviceKey: keyPath,
+                           recoveryKey: recoveryOut,
+                           passphraseCopy: vault.passphraseCopyNames().first.map { "keys/\($0)" })
         } catch {
             try? FileManager.default.removeItem(at: DeviceKeyStore.directory(vaultId: vaultId))
             if wroteRecovery, let recoveryOut { try? FileManager.default.removeItem(atPath: recoveryOut) }
             throw error
         }
-        let root = Hex.encode(vault.root)
-        if output.json {
-            try output.emitJSON(InitOutput(path: path, vaultId: vault.vaultId.uuidString.lowercased(), root: root,
-                                           device: device.id, deviceKey: keyPath, recoveryKey: recoveryOut,
-                                           passphraseCopy: vault.passphraseCopyNames().first.map { "keys/\($0)" }))
-        } else {
-            output.info("Created \(path)\nVault id: \(vault.vaultId.uuidString.lowercased())")
-            output.info("Root:     \(KitRecovery.rootGroups(vault.root).map(\.group).joined(separator: " "))")
-            output.info("This device (home): \(device.id), keys in \(keyPath)")
-            if let recoveryOut {
-                output.info("Recovery key: \(recoveryOut). Print the kit (sempere keys paper --vault \(path) --identity "
-                    + "\(recoveryOut)), keep it offline, then delete the file: no device keeps it.")
+    }
+
+    /// `prepare()`, then `create(at:prepared:)`.
+    func create(at url: URL) throws -> Created {
+        try create(at: url, prepared: try prepare())
+    }
+
+    struct Created {
+        var vaultId: UUID
+        var root: Data
+        var device: String
+        /// This machine's device key file.
+        var deviceKey: String
+        /// Where the recovery key was written (nil: `--recovery-key` was given).
+        var recoveryKey: String?
+        /// The passphrase copy, relative to the vault (`keys/recovery-….key.age`).
+        var passphraseCopy: String?
+
+        func report(path: String, output: OutputOptions) throws {
+            if output.json {
+                try output.emitJSON(InitOutput(path: path, vaultId: vaultId.uuidString.lowercased(), root: Hex.encode(root),
+                                               device: device, deviceKey: deviceKey, recoveryKey: recoveryKey,
+                                               passphraseCopy: passphraseCopy))
+            } else {
+                output.info("Created \(path)\nVault id: \(vaultId.uuidString.lowercased())")
+                output.info("Root:     \(KitRecovery.rootGroups(root).map(\.group).joined(separator: " "))")
+                output.info("This device (home): \(device), keys in \(deviceKey)")
+                if let recoveryKey {
+                    output.info("Recovery key: \(recoveryKey). Print the kit (sempere keys paper --vault \(path) --identity "
+                        + "\(recoveryKey)), keep it offline, then delete the file: no device keeps it.")
+                }
             }
         }
     }

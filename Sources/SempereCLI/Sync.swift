@@ -171,6 +171,7 @@ struct SyncWebDAVCommand: ParsableCommand {
         if metadataOnly || fetch || noBlobs { return try runPartial(remote) }
         if !fetchNotes.isEmpty { throw CLIError.usage("--note needs --fetch") }
         var options = SyncOptions(dryRun: dryRun)
+        options.deviceID = SyncCLI.deviceID()
         if deleteExtraneous && !pushOnly { throw CLIError.usage("--delete-extraneous needs --push-only") }
         if keepServerChanges && !pushOnly { throw CLIError.usage("--keep-server-changes needs --push-only") }
         options.pushOnly = pushOnly
@@ -314,6 +315,14 @@ struct SyncWebDAVCommand: ParsableCommand {
 
 /// What the sync commands share: bounds from the command line, the report, the exit code.
 enum SyncCLI {
+    /// This machine's device id when it has one (`DeviceState.defaultURL`, made by the first write):
+    /// its own `summaries/<device>.sealed` is then never taken from the remote (format.md §12.5).
+    static func deviceID() -> DeviceID? {
+        let url = DeviceState.defaultURL(environment: Env.vars)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return try? DeviceState.loadOrCreate(at: url).device
+    }
+
     /// `--max-blob-mib`, `--max-notes`, `--max-entries`, `--max-download-mib`, `--max-minutes`.
     static func applyLimits(_ options: inout SyncOptions, maxBlobMiB: Int?, maxNotes: Int?, maxEntries: Int?,
                             maxDownloadMiB: Int?, maxMinutes: Int?) throws {

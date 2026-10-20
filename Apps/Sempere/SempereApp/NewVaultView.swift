@@ -4,26 +4,19 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// Creates a vault: name, location, and where its recovery key comes from: a
-/// new key (default) or a key the user already has (pasted, or a key file,
-/// maybe passphrase-wrapped: `ExistingKeyInput`). This device is the vault's
-/// home, with a device key made here and remembered in its Keychain.
+/// Creates a vault in the in-app store (docs/design/device-first-sync.md §2): name, and where its
+/// recovery key comes from: a new key (default) or a key the user already has (pasted, or a key
+/// file, maybe passphrase-wrapped: `ExistingKeyInput`). This device is the vault's home, with a
+/// device key made here and remembered in its Keychain.
 struct NewVaultView: View {
     @AppModelEnvironment private var model
     @AppEnvironmentObject private var library: VaultLibrary
     @AppEnvironmentObject private var keys: RememberedKeys
     @Environment(\.dismiss) private var dismiss
 
-    private enum Location: Hashable { case onDevice, folder }
     enum Source: Hashable { case generate, existing }
 
     @State private var name = ""
-    @State private var location = Location.onDevice
-    @State private var folder: URL?
-    @State private var subfolder: String?
-    @State private var pickingFolder = false
-    @State private var namingFolder = false
-    @State private var newFolderName = ""
     @State private var source = Source.generate
     @State private var existingText = ""
     @State private var existingFile: String?
@@ -66,38 +59,19 @@ struct NewVaultView: View {
         }
         .interactiveDismissDisabled(created != nil || working)
         .holdsOnboarding()
-        // A folder picker with New Folder (`FolderPicker`).
-        .folderPicker(isPresented: $pickingFolder) { result in
-            switch result {
-            case .success(let url):
-                folder = url
-                subfolder = nil
-            case .failure(let error): failure = "\(error)"
-            }
-            if folder == nil { location = .onDevice }
-        }
-        .alert(String(localized: "New Folder", comment: "Title of the alert that names a new folder for the vault"),
-               isPresented: $namingFolder) {
-            TextField(String(localized: "Folder name", comment: "Placeholder of the new folder name"), text: $newFolderName)
-                .autocorrectionDisabled()
-                .accessibilityIdentifier("newVault.newFolderName")
-            Button("Cancel", role: .cancel) {}
-            Button(String(localized: "Create Folder", comment: "Confirms the new folder for the vault")) { nameNewFolder() }
-        } message: {
-            if let folder {
-                Text("The vault goes into a new folder inside “\(folder.lastPathComponent)”. It is made when you create the vault.")
-            }
-        }
     }
 
     private var form: some View {
         Form {
-            Section("Name") {
+            Section {
                 TextField("Notes", text: $name)
                     .autocorrectionDisabled()
                     .accessibilityIdentifier("newVault.name")
+            } header: {
+                Text("Name")
+            } footer: {
+                Text("Sempere keeps the vault on this device, inside the app, so it opens without a connection.")
             }
-            whereSection
             keySection
             storeSection
             if let failure {
@@ -107,53 +81,6 @@ struct NewVaultView: View {
         }
         .disabled(working)
         .overlay { if working { ProgressView() } }
-    }
-
-    // MARK: - Where
-
-    private var whereSection: some View {
-        Section {
-            Picker("Location", selection: $location) {
-                Text("On This Device").tag(Location.onDevice)
-                Text("Choose Folder…").tag(Location.folder)
-            }
-            .accessibilityIdentifier("newVault.location")
-            .onChange(of: location) { _, new in
-                if new == .folder { pickingFolder = true }
-            }
-            if location == .folder, let folder {
-                LabeledContent("Folder", value: subfolder.map { "\(folder.lastPathComponent) / \($0)" } ?? folder.lastPathComponent)
-                    .accessibilityIdentifier("newVault.folder")
-                // The folder picker has New Folder too; this names one inside the chosen folder, made with the vault.
-                Button(subfolder == nil ? String(localized: "New Folder…", comment: "Button: put the vault into a new folder")
-                                        : String(localized: "Rename New Folder…", comment: "Button: rename the new folder for the vault"),
-                       systemImage: "folder.badge.plus") {
-                    newFolderName = subfolder ?? ""
-                    namingFolder = true
-                }
-                .help(String(localized: "Make a new folder for the vault inside the chosen one"))
-                .accessibilityIdentifier("newVault.newFolder")
-                if subfolder != nil {
-                    Button(String(localized: "No New Folder", comment: "Button: put the vault directly in the chosen folder"),
-                           systemImage: "folder") { subfolder = nil }
-                        .help(String(localized: "Put the vault directly in the chosen folder"))
-                }
-            }
-            ICloudDriveHelpButton()
-        } header: {
-            Text("Where")
-        } footer: {
-            Text("To keep a vault in iCloud Drive, choose a folder inside it. Any Files location works.")
-        }
-    }
-
-    private func nameNewFolder() {
-        do {
-            subfolder = try VaultLibrary.subfolderName(newFolderName)
-            failure = nil
-        } catch {
-            failure = "\(error)"
-        }
     }
 
     // MARK: - Key
@@ -315,7 +242,6 @@ struct NewVaultView: View {
 
     private var canCreate: Bool {
         guard !working, !name.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
-        if location == .folder && folder == nil { return false }
         let passphraseOK = !wrap || (!passphrase.isEmpty && passphrase == confirmation && StoredKeyPassphrase.accepts(passphrase))
         switch source {
         case .generate: return passphraseOK
@@ -341,15 +267,12 @@ struct NewVaultView: View {
             name: name,
             keySource: keySource,
             passphrase: wrap ? passphrase : nil,
-            subfolder: location == .folder ? subfolder : nil,
             deviceName: ThisDevice.name,
             deviceKind: ThisDevice.kind)
-        let parent = location == .folder ? folder : VaultLibrary.onDeviceFolder
         Task {
             defer { working = false }
             do {
-                guard let parent else { return }
-                let result = try await model.createVault(request, in: parent, library: library)
+                let result = try await model.createVault(request, library: library)
                 await rememberDeviceKey(result)
                 if result.secretKey == nil { dismiss() } else { created = result }
             } catch {

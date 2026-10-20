@@ -83,10 +83,12 @@ struct RootView: View {
         @Bindable var model = model
         return Group {
             if model.phase == .noVault {
-                WelcomeView(openFolder: { pickingVault = true },
+                WelcomeView(openFolder: { pickVault() },
                             newVault: { creatingVault = true },
                             openRecent: { entry in Task { await reopen(entry) } },
-                            openURL: { url in Task { await open(url) } })
+                            openStored: { entry in
+                                Task { await model.report { try await model.openStored(entry, library: library) } }
+                            })
             } else {
                 splitView
                 .onAppear {
@@ -101,10 +103,11 @@ struct RootView: View {
                 }
             }
         }
+        // "Open Vault…" copies the picked vault onto this device (docs/design/device-first-sync.md §8.1).
         .fileImporter(isPresented: $pickingVault, allowedContentTypes: UTType.vaultPickerTypes) { result in
             Task {
                 await model.report {
-                    try await model.open(picked: try result.get(), library: library)
+                    try await model.copyIn(picked: try result.get(), library: library)
                 }
             }
         }
@@ -170,6 +173,9 @@ struct RootView: View {
             if let status = model.webdavDownload {
                 WebDAVDownloadOverlay(status: status) { model.cancelWebDAVDownload() }
             }
+            if let copy = model.vaultCopy {
+                VaultCopyOverlay(progress: copy)
+            }
         }
         .sheet(isPresented: $creatingVault) {
             NewVaultView()
@@ -202,7 +208,7 @@ struct RootView: View {
                     pickAfterAlert = false
                     Task {
                         try? await Task.sleep(for: .milliseconds(400))
-                        pickingVault = true
+                        pickVault()
                     }
                 }
             }
@@ -344,7 +350,7 @@ struct RootView: View {
                                               storedColumns: storedColumns)
         if let columns = outcome.columns { storedColumns = columns }
         switch outcome.effect {
-        case .pickVault: pickingVault = true
+        case .pickVault: pickVault()
         case .createVault: creatingVault = true
         case .openNoteWindow(let value): openWindow(id: NoteWindowValue.sceneID, value: value)
         case .reopen(let last): Task { await reopen(last) }
@@ -359,6 +365,20 @@ struct RootView: View {
         #endif
         UIApplication.shared.isIdleTimerDisabled = KeepScreenOn.idleTimerDisabled(
             enabled: keepScreenOn, noteOpen: model.editor != nil, active: scenePhase == .active, debugLaunch: debug)
+    }
+
+    /// "Open Vault…": the folder picker (in debug builds, `SEMPERE_DEBUG_PICK_VAULT` stands in for it).
+    private func pickVault() {
+        #if DEBUG
+        if DebugLaunch.environment["SEMPERE_DEBUG_PICK_VAULT"] != nil {
+            Task {
+                guard let picked = await DebugLaunch.vaultPick() else { return }
+                await model.report { try await model.copyIn(picked: picked, library: library) }
+            }
+            return
+        }
+        #endif
+        pickingVault = true
     }
 
     private func open(_ url: URL) async {

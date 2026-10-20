@@ -19,7 +19,8 @@ import Foundation
 /// (an app update, a restore), and the vault with it, though nothing about
 /// the vault changed and no other app can put a folder there. A vault folder
 /// the user moves or renames elsewhere is a new location, as is any folder
-/// handed over from outside. Keys arriving through iCloud Keychain from another
+/// handed over from outside. A vault of the in-app store (`VaultLibrary.vaultStore`) is located the same
+/// way, by its path inside the store (`<vault id>/<name>.sempere`). Keys arriving through iCloud Keychain from another
 /// device have no location here yet: they are offered for vaults the user
 /// opened in the app (recents, the picker), never for one handed to the app
 /// from outside, and bound to the first location they unlock.
@@ -29,11 +30,14 @@ final class RememberedKeyLocations {
     let url: URL?
     /// Where "On This Device" vaults are (`VaultLibrary.onDeviceFolder`).
     let onDeviceFolder: URL
+    /// The in-app vault store (`VaultLibrary.defaultVaultStoreRoot`).
+    let storeFolder: URL
     private var byVault: [UUID: Set<String>]?
 
-    init(url: URL? = nil, onDeviceFolder: URL? = nil) {
+    init(url: URL? = nil, onDeviceFolder: URL? = nil, storeFolder: URL? = nil) {
         self.url = url
         self.onDeviceFolder = onDeviceFolder ?? VaultLibrary.onDeviceFolder
+        self.storeFolder = storeFolder ?? VaultLibrary.defaultVaultStoreRoot
     }
 
     /// The app's file, in Application Support next to the device state, excluded from backups.
@@ -44,16 +48,19 @@ final class RememberedKeyLocations {
 
     /// The location of the vault folder `folder`.
     func location(of folder: URL) -> String {
-        Self.location(of: folder, onDeviceFolder: onDeviceFolder)
+        Self.location(of: folder, onDeviceFolder: onDeviceFolder, storeFolder: storeFolder)
     }
 
     /// The location of the vault folder `folder`: its resolved path, or its
-    /// path inside `onDeviceFolder` when it is there.
-    nonisolated static func location(of folder: URL, onDeviceFolder: URL) -> String {
+    /// path inside `onDeviceFolder` or `storeFolder` when it is there.
+    nonisolated static func location(of folder: URL, onDeviceFolder: URL, storeFolder: URL? = nil) -> String {
         let path = folder.standardizedFileURL.resolvingSymlinksInPath().path
         let root = onDeviceFolder.standardizedFileURL.resolvingSymlinksInPath().path
+        let store = storeFolder?.standardizedFileURL.resolvingSymlinksInPath().path
         let name: String
-        if path.hasPrefix(root + "/") {
+        if let store, path.hasPrefix(store + "/") {
+            name = "store|" + path.dropFirst(store.count + 1)
+        } else if path.hasPrefix(root + "/") {
             name = "on-device|" + path.dropFirst(root.count + 1)
         } else {
             name = "path|" + path
@@ -72,6 +79,15 @@ final class RememberedKeyLocations {
         let here = location(of: folder)
         guard all[vault]?.contains(here) != true else { return }
         all[vault, default: []].insert(here)
+        save(all)
+    }
+
+    /// Unbinds `vault`'s key from the folder `folder` (the vault was removed from it): a vault copied
+    /// in there later, even under the same id and name, does not get the key offered by itself.
+    func unbind(_ vault: UUID, from folder: URL) {
+        var all = load()
+        guard all[vault]?.remove(location(of: folder)) != nil else { return }
+        if all[vault]?.isEmpty == true { all[vault] = nil }
         save(all)
     }
 

@@ -284,39 +284,57 @@ extension AppModel {
         return (source, preview)
     }
 
-    /// Restores the backup at `source` (inside `picked`, whose access covers
-    /// it) into a new vault "<name>.sempere" in `parent`, never over or
-    /// inside the open vault (`Backup.restore(protecting:)`), and remembers
-    /// it in the recents. Every file is checked against `backup.json`; the
-    /// restored vault is checked for structure (no key is needed). The open
-    /// vault stays open.
-    func restoreBackup(picked: URL, source: URL, into parent: URL, name: String,
+    /// The store vault that restoring `source` would replace (its vault id is already on this device), if any:
+    /// the sheet asks before replacing it. Nil when there is none or `source`'s `vault.json` cannot be read
+    /// (the restore then reports why).
+    func restoreConflict(source: URL, picked: URL, library: VaultLibrary) async -> VaultStore.Entry? {
+        let scoped = picked.startAccessingSecurityScopedResource()
+        defer { if scoped { picked.stopAccessingSecurityScopedResource() } }
+        guard let id = try? await offMain({ try Vault.open(at: source).vaultId }) else { return nil }
+        return library.vaultStore.entry(id: id)
+    }
+
+    /// Restores the backup at `source` (inside `picked`, whose access covers it) into the in-app vault store
+    /// as "<name>" (`VaultStore.restore`), and remembers it. Every file is checked against `backup.json`; the
+    /// restore is built in the store's staging folder and appears only complete. When the store holds the
+    /// vault already, the restore is refused unless `replace` (the sheet asks first, `restoreConflict`):
+    /// then the copy on this device is replaced as a whole, keeping its name, after the open vault is closed
+    /// if it is that one. Any other open vault stays open.
+    func restoreBackup(picked: URL, source: URL, name: String, replace: Bool = false,
                        library: VaultLibrary) async throws -> RestoreOutcome {
         guard backupProgress == nil else { throw BackupAppError.busy }
-        let target = parent.appendingPathComponent(try VaultLibrary.folderName(for: name), isDirectory: true)
-        let protecting = [vaultURL].compactMap { $0 }
+        _ = try VaultLibrary.folderName(for: name)
         backupProgress = BackupProgress(stage: .restoring)
         defer { backupProgress = nil }
         let scopedSource = picked.startAccessingSecurityScopedResource()
         defer { if scopedSource { picked.stopAccessingSecurityScopedResource() } }
-        let scopedParent = parent.startAccessingSecurityScopedResource()
-        defer { if scopedParent { parent.stopAccessingSecurityScopedResource() } }
-        // Refused before anything is downloaded or written.
-        try await offMain { _ = try Backup.checkRestoreTarget(target, from: source, protecting: protecting) }
         // A backup whose vault.json does not open (one listing a classic key included) is refused here.
         try await offMain { _ = try Backup.preview(of: source) }
-        if cloudHooks.isUbiquitous(source) {
+        let cloud = cloudHooks.isUbiquitous(source)
+        if cloud {
             try await downloadEverythingForBackup(source, gen: generation)
             backupProgress = BackupProgress(stage: .restoring)
         }
-        let cloudTarget = CloudVault.isUbiquitous(parent)
-        let report = try await offMain(priority: .utility) {
-            try CloudVault.coordinatedWrite(cloudTarget ? target : nil) {
-                try Backup.restore(from: source, to: target, protecting: protecting)
-            }
+        if replace, let open = vault?.vaultId, let replaced = library.vaultStore.entry(id: open),
+           vaultURL?.standardizedFileURL == replaced.url.standardizedFileURL,
+           (try? await offMain({ try Vault.open(at: source).vaultId })) == open {
+            // The vault being replaced is the open one: closed first, its last saves written.
+            close()
+            await closingEditor?.value
         }
-        let recent = report.verify == nil ? nil : try? library.remember(target)
-        return RestoreOutcome(url: target, report: report, recentID: recent?.id)
+        let store = library.vaultStore
+        let options = VaultStore.RestoreOptions(name: replace ? nil : name, replace: replace)
+        let (entry, report): (VaultStore.Entry, RestoreReport)
+        do {
+            (entry, report) = try await offMain(priority: .utility) {
+                try CloudVault.coordinatedRead(cloud ? source : nil) { try store.restore(from: source, options: options) }
+            }
+        } catch let error as VaultStoreError {
+            throw VaultStoreProblem(error: error)
+        }
+        library.storedVaults.removeAll { $0.vaultId == entry.vaultId }
+        let recent = library.rememberStored(entry)
+        return RestoreOutcome(url: entry.url, report: report, recentID: recent.id)
     }
 }
 

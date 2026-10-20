@@ -70,7 +70,7 @@ enum CLIError: Error {
              VaultError.keyNotListed, VaultError.wrongPassphrase,
              VaultError.locked, VaultError.classicIdentity:
             return .cannotDecrypt(text)
-        case VaultError.classicRecipient, VaultError.emptyPassphrase:
+        case VaultError.classicRecipient, VaultError.emptyPassphrase, VaultStoreError.invalidName:
             return .usage(text)
         case VaultError.untrustedList:
             return .untrustedList(text)

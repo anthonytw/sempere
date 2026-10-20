@@ -180,6 +180,7 @@ final class StressTarget {
             // is merged or reported, one about the rewrap journal judged under §3.3.1.
             faults.eligible = { kind, _, path in
                 MemoryFaults.Kind.transport.contains(kind) || path.first == Vault.notesName || path == [Vault.manifestName]
+                    || path.first == CaptureFile.folderName || path.first == PublishedSummaries.deviceFolderName
             }
             var rates = MemoryFaults.Rates.transport(transportRate)
             for k in MemoryFaults.Kind.hostile { rates[k] = hostileRate }
@@ -238,10 +239,15 @@ final class StressWorld {
     private(set) var links: [[StressLink]] = []
     /// Every write-once file written, by vault path, as its writer wrote it.
     private var written: [String: Data] = [:]
+    /// Further bytes written at a blob path by another device (`recordWrites`).
+    private var alsoWritten: [String: Set<Data>] = [:]
     /// Every file seen in a quarantine folder, with its bytes' SHA-256.
     private var quarantined: [URL: String] = [:]
     private let tick = Locked(0)
     private var counts: [String: Int] = [:]
+    /// Every capture recorded, and each device's own summaries file as it last wrote it.
+    private var captures = Set<UUID>()
+    private var published: [String: Data] = [:]
     private static let epoch = Date(timeIntervalSince1970: 1_790_000_000)
 
     /// Whether devices other than the first may bridge both remotes (the default; each one
@@ -318,16 +324,28 @@ final class StressWorld {
 
     /// Records the files a local edit on `d` wrote.
     private func recordWrites(_ d: SyncDevice) {
-        for p in files(d) where written[p] == nil {
-            written[p] = try? Data(contentsOf: d.folder.appendingPathComponent(p))
+        for p in files(d) {
+            guard let data = try? Data(contentsOf: d.folder.appendingPathComponent(p)) else { continue }
+            guard let first = written[p] else { written[p] = data; continue }
+            // Two devices adopting one capture each write its audio under the same keyed name (format.md §11.3):
+            // the same content, encrypted twice. Neither copy replaces the other; both are the writers' bytes.
+            if first != data, p.split(separator: "/").dropLast().last == Substring(Vault.attachmentsName) {
+                alsoWritten[p, default: []].insert(data)
+            }
         }
+    }
+
+    /// Whether `data` is what some device wrote at `p`.
+    private func isWritten(_ p: String, _ data: Data?) -> Bool {
+        guard let data else { return false }
+        return written[p] == data || alsoWritten[p]?.contains(data) == true
     }
 
     /// Every note file on `d` was written by some device, with the same bytes.
     private func checkPlaced(_ d: SyncDevice, _ when: String) {
         for p in files(d) {
-            guard let want = written[p] else { fail("\(d.name) \(when): \(p) appeared, but no device wrote it"); continue }
-            if (try? Data(contentsOf: d.folder.appendingPathComponent(p))) != want { fail("\(d.name) \(when): \(p) altered") }
+            guard written[p] != nil else { fail("\(d.name) \(when): \(p) appeared, but no device wrote it"); continue }
+            if !isWritten(p, try? Data(contentsOf: d.folder.appendingPathComponent(p))) { fail("\(d.name) \(when): \(p) altered") }
         }
     }
 
@@ -336,9 +354,9 @@ final class StressWorld {
         let all = try SyncDevices.remoteFiles(t.inspector)
         let visible = all.filter { !($0.split(separator: "/").last ?? "").hasPrefix(".") }
         for p in visible {
-            guard let want = written[p] else { fail("\(t.name): \(p) is on the remote, but no device wrote it"); continue }
+            guard written[p] != nil else { fail("\(t.name): \(p) is on the remote, but no device wrote it"); continue }
             let comps = p.split(separator: "/").map(String.init)
-            if (try? t.inspector.read(comps, maxBytes: 1 << 26).data) != want { fail("\(t.name): \(p) altered on the remote") }
+            if !isWritten(p, try? t.inspector.read(comps, maxBytes: 1 << 26).data) { fail("\(t.name): \(p) altered on the remote") }
         }
         return visible
     }
@@ -390,7 +408,7 @@ final class StressWorld {
             let i = Int(rng.next() % UInt64(devices.count))
             let d = devices[i]
             let known = (try? d.vault().noteIDs()) ?? []
-            let roll = rng.next() % 20
+            let roll = rng.next() % 23
             do {
                 switch roll {
                 case 0, 1, 2:
@@ -451,6 +469,17 @@ final class StressWorld {
                     }
                     counts["simultaneous", default: 0] += 1
                     checkPlaced(devices[j], "after a simultaneous run")
+                case 20:
+                    // A voice note recorded into the inbox (quick capture), adopted later by any device.
+                    var audio = Data(count: 1000 + Int(rng.next() % 3000))
+                    for k in audio.indices { audio[k] = UInt8(truncatingIfNeeded: rng.next()) }
+                    captures.insert(try d.captureVoiceNote(audio, id: seededUUID()))
+                    counts["capture", default: 0] += 1
+                case 21:
+                    counts["adopted", default: 0] += try d.adoptInbox()
+                case 22:
+                    published[d.name] = try d.publishSummaries()
+                    counts["publish", default: 0] += 1
                 default:
                     guard let link = pick(links[i]) else { continue }
                     _ = sync(i, link)
@@ -458,7 +487,7 @@ final class StressWorld {
             } catch {
                 fail("step \(step) on \(d.name): \(error)")
             }
-            if roll <= 9 { recordWrites(d) } else { checkPlaced(d, "after step \(step)") }
+            if roll <= 9 || roll >= 20 { recordWrites(d) } else { checkPlaced(d, "after step \(step)") }
         }
 
         // Faults off: rounds of every device on every target it uses, until one changes nothing.
@@ -563,6 +592,31 @@ final class StressWorld {
                      + "(title \(actual.meta.title) vs \(full.meta.title))")
             }
             try? fm.removeItem(at: ideal)
+        }
+
+        // The inbox and the per-device summaries are the same everywhere; no capture is lost
+        // (it is in every inbox, or its note is on every device); each device's own file is what it wrote.
+        let inbox = a.rootFolderFiles(CaptureFile.folderName), summaries = a.rootFolderFiles(PublishedSummaries.deviceFolderName)
+        for d in devices {
+            if Set(d.rootFolderFiles(CaptureFile.folderName).keys) != Set(inbox.keys) { fail("\(d.name) holds another inbox than A") }
+            if d.rootFolderFiles(PublishedSummaries.deviceFolderName) != summaries { fail("\(d.name) holds other summaries than A") }
+            if let mine = published[d.name], summaries[PublishedSummaries.deviceFileName(d.device)] != mine {
+                fail("\(d.name)'s own summaries file is not the one it wrote")
+            }
+        }
+        for t in targets {
+            for (folder, want) in [(CaptureFile.folderName, inbox), (PublishedSummaries.deviceFolderName, summaries)] {
+                let names = Set((try t.inspector.list([folder]) ?? []).map(\.name).filter { !$0.hasPrefix(".") })
+                if names != Set(want.keys) { fail("\(t.name): \(folder)/ holds \(names.sorted()), A \(want.keys.sorted())") }
+                for n in names where (try? t.inspector.read([folder, n], maxBytes: 1 << 28).data) != want[n] {
+                    if folder != CaptureFile.folderName { fail("\(t.name): \(folder)/\(n) differs from A's") }
+                }
+            }
+        }
+        for id in captures {
+            let waiting = inbox.keys.contains(CaptureFile.name(id, .capture))
+            let note = CaptureAdoption.ids(for: id).note
+            if !waiting, states[note]?.recordings.isEmpty != false { fail("capture \(id) lost: not in the inbox and not adopted") }
         }
 
         // Quarantine never deletes or replaces.
