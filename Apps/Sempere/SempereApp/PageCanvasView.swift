@@ -1010,6 +1010,11 @@ final class PageCanvasHost: UIView, UIPointerInteractionDelegate, UIDropInteract
         // two always agree; the object eraser and the math lasso take two while they hold the finger.
         if Platform.isPhone, !isEmbedded, !ours, !lasso {
             canvas.panGestureRecognizer.minimumNumberOfTouches = Self.phonePanTouches(fingerDraws: phoneFingersDraw)
+        } else if NoteDevice.current == .pad, !isEmbedded, !ours, !lasso {
+            // The iPad's one-page canvas: two fingers scroll while one draws (Draw with Finger, or the system's
+            // setting), else one. The object eraser saves and restores the count around its turn, and it could
+            // restore the two of Annotate once the note was back in reading (one finger no longer scrolled).
+            canvas.panGestureRecognizer.minimumNumberOfTouches = ObjectEraserController.fingersDraw(canvas) ? 2 : 1
         }
     }
 
