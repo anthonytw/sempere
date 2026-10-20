@@ -13,7 +13,7 @@ only after every step passed), and something enforces each one:
 |---|---|---|---|---|
 | PR gate | `scripts/local-ci.sh` | the tooltip lint (`scripts/check-help.py`), package tests (`swift build --build-tests && swift test --parallel`), Mac Catalyst unit tests (`scripts/app.sh test-mac`, the pseudo-language layout check `PseudoLanguageLayoutTests` among them), iOS compile check (`scripts/app.sh build-ios`: the app, its unit tests and its UI tests built for an iOS simulator, nothing run) | `local/app-tests` | the `main` ruleset (required) |
 | Author's targeted tests | whatever the change calls for | e.g. `scripts/app.sh test-mac-ui -only-testing:SempereAppUITests/MacItemUITests` | the PR's `## Tests run` section | the `PR lists tests run` job (`.github/workflows/pr-description.yml`) |
-| Pre-TestFlight | `scripts/local-ci.sh --testflight` | the gate, then every Mac UI test (`test-mac-ui`) and the Mac launch smoke tests (`test-mac-smoke`) | `local/testflight-suite` | the TestFlight upload script checks it on the commit it builds |
+| Pre-TestFlight | `scripts/local-ci.sh --testflight` | the gate, then every Mac UI test (`test-mac-ui`), the Mac launch smoke tests (`test-mac-smoke`) and the dense-note performance suite (`test-mac-perf`, [Performance tests](#performance-tests)) | `local/testflight-suite` | the TestFlight upload script checks it on the commit it builds |
 | Release sweep | `scripts/local-ci.sh --release` | all of `--testflight`, then the iPad unit suite (`test`), the iPhone suites (`test-phone`), the iPhone canvas UI tests (`test-phone-ui`: tap selects, hold menu, finger draws, reading mode), the iPad UI tests (`test-ui`) and the pseudo-language UI test on the iPad (`pseudo`) | `local/release-sweep` | `release.yml`'s `prepare` job: a `vX.Y.Z` tag fails without it (a `-rc` prerelease only warns) |
 
 - **The gate never needs the screen** and runs no simulator, so it can run on a Mac someone is
@@ -204,6 +204,8 @@ in the gate (`test-mac`), named after their check (`c4…`, `c54…`):
 
 | Suite | Checks |
 | --- | --- |
+| `InkRoundTripTests` | synthetic Pencil strokes (`PencilTrace`: pressure ramp, azimuth sweep, tilt, 120 Hz timing; all seven inks, each at its own width and color) through the canvas, saved, read back from the vault and reloaded: every point's force, azimuth, altitude, opacity, size and time, the ink, color and the tool's width; two reloads draw the same pixels, a reload draws what the pen drew |
+| `RecordingRelaunchTests` | a recording on an audio file (no microphone) while strokes are written through the canvas, with a call in the middle; stop, save, relaunch (a second `AppModel` on the vault): each stroke still linked to the recording at its second, Tap Ink to Play seeks to it, playback highlights exactly the ink around the position |
 | `InkDeviceCheckTests` (and `EraserPreferenceTests.c5…`) | c4 edited strokes on two vault copies, c5 eraser mode across notes, c11 pen-up and edits on a 20 000-stroke page, c12 and c50 the object eraser, c52 the ink's extent |
 | `LoadDeviceCheckTests` | c14 playback highlights and Tap Ink to Play, c20 summary-cache saves while recognizing, c21 a 120-page note to PDF on every path, c42 PDF export right after drawing, c54 browser actions and Version History on 400 revisions |
 | `SearchDeviceCheckTests` (and `TranscriptSearchAppTests.c15…`) | c15 stepping on a large note, typing during Recognize All and sync, 600 transcripts |
@@ -217,3 +219,32 @@ generator behind `sempere pages scribble` (`InkFixture`). Timing bounds are gene
 catch a return to the whole-drawing paths, not device speed) and the measured numbers print as
 `PERF-REPORT` lines; the `ink.change` and `index.save` signposts give the same phases on a
 device.
+
+## Performance tests
+
+The owner's complaint on dense notes was jerky scroll and zoom next to Notability's, and slow opens; PR #38 drew
+the ruling of a long page only near the screen. `DensePerformanceTests` (`scripts/app.sh test-mac-perf`, in
+`local-ci.sh --testflight` and `--release`, not in the gate: about two minutes) keeps it that way. It writes
+dense notes with `DenseNote` (what `sempere notes dense` writes, [cli.md](cli.md): a paged note of 40 pages,
+30 000 strokes and 16 pictures; a pageless one of 20 000 strokes, ruled, with pictures; a tenth of the strokes on
+the simulator) and measures, through the app's real paths:
+
+| Metric | How |
+| --- | --- |
+| `open.*.read_ms`, `open.*.firstScreen_ms` | `NoteEditor.open` (read, decrypt, reduce), then the first screen of the stack (paged: the visible pages' canvases ready) or of the one-page canvas; median of three. The `note.open` and `note.firstRender` signposts (`Perf`) show the same phases in Instruments |
+| `scroll.*.hitch*_ms`, `framesOver` | a scripted scroll of the whole note and back, one 80-point step per 60 Hz frame (layout, Core Animation commit, then the run loop turns until the frame budget ends, so background loads and callbacks count). A hitch is a frame's time beyond 16.7 ms; p95 and worst are compared, and the frames that cost more than a whole frame extra |
+| `zoom.*.hitch*_ms` | a pinch out to 2x and back below the fit, one step a frame (the paged stack bakes the scale at its end) |
+| `scroll.pageless.paperLayers` | the most ruling layers any screen held (deterministic: a regression of PR #38 holds a layer per band of the whole note, 28 instead of 5) |
+| `memory.*_mb` | the process footprint a scenario added (open, then a full scroll); a second pass over the same pages must not grow it (recycled canvases, bounded caches) |
+
+Baselines are in `PerfBaselines.mac` (`DensePerformanceTests.swift`), the worst of two runs on an Apple silicon
+Mac. A value fails when it exceeds `baseline * 3 + slack` (`SEMPERE_PERF_FACTOR` changes the factor; the slack is a few
+milliseconds for hitches, 200 ms for opens, 60 MB for memory), so a slower or busier Mac does not trip it and
+a per-frame cost that grows with the note does. Only Mac Catalyst enforces them: the simulator draws ink without the
+GPU, so there the numbers print as `PERF-REPORT dense` lines and nothing fails. Re-record after an intended change
+(or on another Mac) with `TEST_RUNNER_SEMPERE_PERF_RECORD=1 scripts/app.sh test-mac-perf`, which prints a
+`PERF-BASELINE "key": value,` line per metric to paste into `PerfBaselines`, and say so in the PR.
+The headless window records no Core Animation rendering, so frame hitches there catch main-thread work (layout,
+layer creation, ink preparation), not GPU time. The structural `paperLayers` metric is what catches a return of
+the paper regression (checked by reverting the banding: 28 layers against 5; the hitches and the footprint did not
+move); the pinch and scroll feel on a device stays the owner's.

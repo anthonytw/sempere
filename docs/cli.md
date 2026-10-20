@@ -1269,6 +1269,22 @@ and `files` (the revisions written). A dense page for the app's checks:
 A deleted note is refused (exit 1), as is a page number out of range.
 `--json` as for the editing commands.
 
+`notes dense` makes a whole dense note for performance work (the app's `DensePerformanceTests` write the same
+note in process, `DenseNote` in SempereRender):
+
+```
+sempere notes dense TITLE [--pages N] [--strokes N] [--points N] [--images N] [--image-size PX]
+                          [--seed N] [--notebook PATH] [--pageless]
+```
+
+It writes a new note of `--pages` pages (1–500, default 40; `--pageless`: one long page instead) holding
+`--strokes` strokes in all (0–500 000, default 20 000; the same generator as `pages scribble`, spread evenly over
+the pages, `--points` control points each, default 16) and `--images` pictures (0–500, default 12; seeded noise
+PNGs of `--image-size` pixels, default 480, stored as blobs and placed down the pages). One delta makes the
+note and its pages, then one delta per page holds its strokes and pictures. The same `--seed` gives the same
+geometry and pictures; ids are new each run. Prints the note's id; `--json` gives `note`, `pages`, `strokes`,
+`images` and `files`.
+
 ### Items
 
 ```
