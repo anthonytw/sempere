@@ -708,8 +708,10 @@ change weeks late (a stale copy, or a target replaying an old `vault.json`)
 therefore does not open a fresh window; the hour of slack covers a changing
 device whose clock runs ahead.
 
-- A late file that **this device wrote** (its device id names the revision or
-  blob) is rewritten as in step 3 above, from the keyring's secret.
+- A revision that **this device wrote** (its device id names it), and any blob
+  already in this device's copy, is rewritten as in step 3 above, from the
+  keyring's secret. (A blob is inert until a current revision references it,
+  and whoever can write such a revision can upload the blob as well.)
 - A late file that **arrives** from elsewhere, or that another device wrote
   into this copy, is taken in (rewritten as in step 3, then placed) only until
   the earliest end of the late-file windows of the change away from its

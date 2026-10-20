@@ -355,6 +355,7 @@ extension SyncEngine {
                 }
                 let l = v.classifyRevision(local, note: uuid, name: n), r = v.classifyRevision(remote, note: uuid, name: n)
                 try settleCopies(path: path, key: key(id, n), local: l, remote: r,
+                                 ownAfterMissedRotation: options.ownDevices.contains(n.device) && missedRotation(v),
                                  localHash: FileDigest.sha256(local), remoteHash: FileDigest.sha256(remote),
                                  entry: entries[n], etag: etag, remoteData: remote,
                                  replaceRemote: { cond in
@@ -421,7 +422,15 @@ extension SyncEngine {
     }
 
     /// Rules 2 to 4 of design §5.2 for two differing copies of one path.
+    /// True when this device took its current list on the user's confirmation without a link: it missed a
+    /// rotation, so secrets other devices hold are unknown to it (`SecretKeyring.Entry.confirmedUnlinked`).
+    func missedRotation(_ v: Vault) -> Bool {
+        guard let current = v.currentSecret, let ring = locked({ kc.ring }) else { return false }
+        return ring.entry(for: current)?.confirmedUnlinked == true
+    }
+
     private func settleCopies(path: String, key: String, local: Vault.CopyStatus, remote: Vault.CopyStatus,
+                              ownAfterMissedRotation: Bool = false,
                               localHash: String, remoteHash: String, entry: RemoteEntry?, etag: String?, remoteData: Data,
                               replaceRemote: (PutCondition) throws -> Bool, replaceLocal: () throws -> Void,
                               settled: (String?) -> Void) throws {
@@ -430,6 +439,15 @@ extension SyncEngine {
         guard let rb = remote.body else {
             if case .invalid(let why) = remote {
                 quarantine(key, path: path, entry: entry, reason: "rewrap-replace: the server's copy \(why)", data: remoteData)
+                // This device's own revision, current here, after it missed a rotation (the user confirmed its
+                // list): the server's copy under a secret it never held is its own write rewrapped by another
+                // device in between (or a forgery). It is kept above; the current copy takes its place. Never
+                // otherwise: a copy under an unknown secret may be a newer one whose vault.json has not
+                // arrived yet (F6).
+                if ownAfterMissedRotation, local.isCurrent {
+                    return try replaceRemoteCopy(path: path, entry: entry, etag: etag, replaceRemote: replaceRemote,
+                                                 settled: settled)
+                }
             }
             return unsettled("the server's copy does not verify here")
         }
@@ -448,17 +466,7 @@ extension SyncEngine {
         case (false, false): return unsettled("neither copy is current yet")
         }
         if localWins {
-            guard let etag = (etag ?? entry?.etag), Self.isStrong(etag) else {
-                // No unconditional replace: another device's replace could be lost under it (review finding 7).
-                keyChangeActivity { $0.weakStamps = true }
-                return unsettled("the server gives no strong version token to replace its copy under")
-            }
-            if try replaceRemote(.replace(etag: etag)) {
-                keyChangeActivity { $0.replaced.append(.init(side: "remote", path: path)) }
-                settled(nil)
-            } else {
-                unsettled("the server's copy changed while it was replaced")
-            }
+            try replaceRemoteCopy(path: path, entry: entry, etag: etag, replaceRemote: replaceRemote, settled: settled)
         } else {
             try options.beforeLocalReplace?(path)
             try replaceLocal()
@@ -467,6 +475,24 @@ extension SyncEngine {
             // A revision now current here may reference blobs R3 left under an older name: look again.
             locked { state.lateRewrapFor = nil }
             settled(etag ?? entry?.etag)
+        }
+    }
+}
+
+extension SyncEngine {
+    /// Replaces the server's copy by this device's, only under its strong version token.
+    func replaceRemoteCopy(path: String, entry: RemoteEntry?, etag: String?,
+                           replaceRemote: (PutCondition) throws -> Bool, settled: (String?) -> Void) throws {
+        guard let etag = (etag ?? entry?.etag), Self.isStrong(etag) else {
+            // No unconditional replace: another device's replace could be lost under it (review finding 7).
+            keyChangeActivity { $0.weakStamps = true }
+            return notSettled(path, "the server gives no strong version token to replace its copy under")
+        }
+        if try replaceRemote(.replace(etag: etag)) {
+            keyChangeActivity { $0.replaced.append(.init(side: "remote", path: path)) }
+            settled(nil)
+        } else {
+            notSettled(path, "the server's copy changed while it was replaced")
         }
     }
 }

@@ -520,12 +520,16 @@ final class KCWorld: @unchecked Sendable {
         let current = oracle.identities.filter { listedKeys.contains($0.recipient.string) }
         var found = Set<String>()
         var copies = everyCopy().map { ($0.0, $0.1, $0.2) }
+        // A late file a listed device kept aside is recoverable there: Adopt rewraps it from its keyring
+        // (design §6.2 F9), so it counts when that device's own keys open it with the body written.
+        var adoptable: [(String, String, Data, [NativeIdentity])] = []
         for d in devices {
             for (full, data) in d.quarantined() {
                 guard let r = full.range(of: "/notes/") else { continue }
                 var p = "notes/" + full[r.upperBound...]
                 if let c = p.range(of: ".copy-") { p = String(p[..<c.lowerBound]) }
                 copies.append(("\(d.name) quarantine", p, data))
+                if !d.removed, full.contains("/\(LateFiles.folder)/notes/") { adoptable.append((d.name, p, data, d.identities)) }
             }
         }
         var blobsFound = Set<String>()
@@ -546,6 +550,9 @@ final class KCWorld: @unchecked Sendable {
                 XCTAssertEqual(b, want, "\(loc) \(path): another body (I3)", file: file, line: line)
             }
             if let b = oracle.body(data, path: path, keys: current), b == want { found.insert(path) }
+        }
+        for (_, path, data, keys) in adoptable {
+            if let want = oracle.written[path], let b = oracle.body(data, path: path, keys: keys), b == want { found.insert(path) }
         }
         let listedWriters = Set(devices.filter { !$0.removed }.map(\.name))
         let lost = oracle.written.keys.filter { listedWriters.contains(oracle.writer[$0] ?? "") && !found.contains($0) }

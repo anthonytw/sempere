@@ -297,8 +297,8 @@ extension Vault {
     }
 
     /// Finishes an interrupted change (`resumeRewrap`) with the keyring's older secrets, as R3 handles
-    /// them: a file under one of them is rewrapped only when it is this device's (`ownDevices`; a blob,
-    /// when a readable revision references it), otherwise left as it is and listed in `lateSkipped`,
+    /// them: a revision under one of them is rewrapped only when it is this device's (`ownDevices`; every
+    /// blob is: it is inert until a current revision references it), otherwise left and listed in `lateSkipped`,
     /// which does not keep the change from completing.
     public mutating func resumeRewrap(keyring: SecretKeyring?, ownDevices: Set<DeviceID>) throws -> RewrapReport {
         let saved = (olderSecrets, lateOwnDevices)
@@ -324,7 +324,7 @@ extension Vault {
     /// - Throws: the checks of `requireWritable`; `partialCopy`.
     ///
     /// - Parameter ownDevices: the device ids this device writes as. Only their revisions under a keyring
-    ///   secret are rewrapped, and only blobs one of its readable revisions references; another device's
+    ///   secret are rewrapped, and every blob (inert until a current revision references it); another device's
     ///   (a removed device's above all) is left as it is and listed in `lateSkipped`.
     @discardableResult
     public func rewrapLateFiles(ownDevices: Set<DeviceID>) throws -> RewrapReport {
@@ -639,13 +639,15 @@ extension Vault {
         }
         ring.remember(own, now: now)
         let known = ring.secrets(excluding: other)
-        guard confirmed || RecipientsAuth.constantTimeEqual(other.bytes, own.bytes)
-                || known.contains(where: { RecipientsAuth.linkConnects(m.secretLink, from: $0, to: other, vaultId: vaultId) }) else {
+        let linked = RecipientsAuth.constantTimeEqual(other.bytes, own.bytes)
+            || known.contains(where: { RecipientsAuth.linkConnects(m.secretLink, from: $0, to: other, vaultId: vaultId) })
+        guard confirmed || linked else {
             throw VaultError.untrustedRecipients(.init(reason: .secretUnconfirmed, current: m.recipients.map(\.key),
                                                        restore: nil, record: nil))
         }
         if !RecipientsAuth.constantTimeEqual(other.bytes, own.bytes) { ring.noteReplaced(own, now: now) }
         ring.remember(other, now: now)
+        if !linked { ring.noteConfirmedUnlinked(other) }
         try store.save(ring)
         // This device's own journal (its change, finished or not) gives way. Its outgoing secret goes
         // into the keyring first (a change made without one, e.g. by the CLI, kept it only there), and the

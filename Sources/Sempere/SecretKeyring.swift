@@ -49,6 +49,10 @@ public struct SecretKeyring: Hashable, Sendable, Codable {
         /// `rewrapPending`): its window ends at most `policy`'s days after it, however late this device
         /// first saw the change. Nil: unknown (the window is then 0 days).
         public var changedAt: Date?
+        /// True when this device took the list under this secret on the user's confirmation, with no
+        /// link from a secret it held (it missed a rotation in between): a copy elsewhere of one of its
+        /// own revisions under a secret it never held is then its own file rewrapped there, not a newer one.
+        public var confirmedUnlinked: Bool?
     }
 
     public var format: String
@@ -100,6 +104,13 @@ public struct SecretKeyring: Hashable, Sendable, Codable {
         guard let i = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[i].policy = entries[i].policy.map { $0.stricter(policy) } ?? policy
         if let changedAt { entries[i].changedAt = entries[i].changedAt.map { min($0, changedAt) } ?? changedAt }
+    }
+
+    /// Records that this device took `secret`'s list on the user's confirmation without a link (`Entry.confirmedUnlinked`).
+    public mutating func noteConfirmedUnlinked(_ secret: VaultSecret) {
+        let id = Self.id(of: secret)
+        guard let i = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[i].confirmedUnlinked = true
     }
 
     /// How far a change time may be behind this device's clock and still count (clock skew between devices).

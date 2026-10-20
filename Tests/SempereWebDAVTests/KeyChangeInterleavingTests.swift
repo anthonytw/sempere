@@ -431,9 +431,9 @@ final class KeyChangeRun: @unchecked Sendable {
 
     // MARK: Quiescence
 
-    /// Uploads held back: a revision as its writer wrote it, delivered later to one of the writer's targets
-    /// (a device only ever uploads there), possibly after a key change, as a late file to the others (F9).
-    /// The writer keeps its own copy, as a device always does: R3 makes it current there.
+    /// Revisions written offline elsewhere (taken out of their writer's copy, as from another install of
+    /// it), delivered later to one of the writer's targets (a device only ever uploads there), possibly
+    /// after a key change: late files to every device, the writer included (F9).
     var offline: [(path: [String], data: Data, targets: [KCTarget])] = []
 
     func offlineWrite() throws {
@@ -446,6 +446,7 @@ final class KeyChangeRun: @unchecked Sendable {
         let p = [Vault.notesName, note.uuidString.lowercased(), n.filename]
         let url = d.folder.appendingPathComponent(p.joined(separator: "/"))
         guard let data = try? Data(contentsOf: url) else { return }
+        try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
         offline.append((p, data, d.targets))
         count("offline write")
     }
@@ -459,12 +460,16 @@ final class KeyChangeRun: @unchecked Sendable {
     }
 
     func quiesce() throws {
+        // What is still held back arrives after every window of the run (the longest is 7 days): taken in
+        // only if no change since it was written replaced its secret; otherwise kept aside (I6).
+        if !offline.isEmpty { w.tick(8 * 86_400) }
         while !offline.isEmpty { deliverOffline() }
         for t in w.targets { t.offline.value = false }
         for d in w.devices { d.faults = [:] }
         // Every device sees what the targets hold, then a day passes: claims a crashed change left there
         // are no longer in flight (format.md §3.3.1 "Refused journals") and give way to live changes.
-        for d in listed { _ = d.syncAll(now: w.now); w.tick() }
+        recordJournals()
+        for d in listed { for r in d.syncAll(now: w.now) { checkLate(r, d) }; w.tick() }
         w.tick(Vault.inFlightJournalWindow + 3600)
         // Changes that met (F7): the user keeps the other change where they did.
         for _ in 0..<3 {
@@ -580,6 +585,18 @@ final class KeyChangeRun: @unchecked Sendable {
             ignored.formUnion(t.noteFiles().keys.filter { p in
                 p.contains("/att/") && !held.contains(p) && leftoverNotes.contains(p.split(separator: "/").prefix(2).joined(separator: "/"))
             })
+        }
+        if let watch = ProcessInfo.processInfo.environment["SEMPERE_KEYCHANGE_WATCH"] {   // DEBUG-TEMP
+            for t in w.targets {
+                for (p, data) in t.noteFiles() where p.contains(watch) && !p.contains("/att/") {
+                    let parts = p.split(separator: "/").map(String.init)
+                    for d in w.devices {
+                        guard let v = try? d.vault(), let ring = try? d.keyring.load(vaultId: v.vaultId) else { continue }
+                        let c = v.withOlderSecrets(from: ring).classifyRevision(data, note: UUID(uuidString: parts[1])!, name: RevisionName(parts[2])!)
+                        print("DEBUG-TEMP \(t.name) \(p): \(d.name) says \(c) (ring \(ring.entries.count), removed \(d.removed))")
+                    }
+                }
+            }
         }
         w.assertConverged(ignoring: ignored)
         let stillListed = Set((try? VaultManifest.decode(listed[0].manifest() ?? Data()))?.recipients.map(\.key) ?? [])

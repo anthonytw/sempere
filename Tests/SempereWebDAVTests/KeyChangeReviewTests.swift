@@ -351,7 +351,7 @@ final class KeyChangeReviewTests: TempDirTestCase {
     /// A blob under a secret two changes old, which no revision here references (another device's
     /// leftover, kept stale on both sides), sits in this device's copy when its next change stops in K3.
     /// Before: resuming without the keyring failed on it (tag mismatch), so the change never finished
-    /// (property seed 74). Now the resume handles it as R3 does: left as it is, reported, not blocking.
+    /// (property seed 74). Now the resume handles it as R3 does: made current under its current name.
     func testAnOlderStaleBlobDoesNotHoldAChangeBack() throws {
         let w = try world("stale-blob")
         try w.write(w.a, n1, "one")
@@ -378,7 +378,8 @@ final class KeyChangeReviewTests: TempDirTestCase {
         w.tick()
         _ = try? w.a.sync("T0", now: w.now)
         XCTAssertFalse(try w.a.vault().pendingRewrap, "the change finished locally")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: planted.path), "the stale copy is left as it is")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: planted.path), "the stale copy moved to its current name")
+        XCTAssertTrue(try w.a.vault().verify().isHealthy)
         try? w.converge()
         XCTAssertFalse(w.a.coordinator.inProgress, "and propagated")
     }
