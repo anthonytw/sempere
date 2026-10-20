@@ -474,7 +474,11 @@ final class KeyChangeRun: @unchecked Sendable {
         let removedNames = Set(w.devices.filter(\.removed).map(\.name))
         let held = Set(listed[0].noteFiles().keys)
         // (One the vault took in within its window is the vault's like any other.)
+        // (Revisions name their writer's device id: attachments' revisions are not in the oracle.)
+        let removedIds = w.devices.filter(\.removed).map { "-\($0.device.description)-" }
+        let onTargets = Set(w.targets.flatMap { $0.noteFiles().keys })
         var ignored = afterRemoval.union(w.oracle.written.keys.filter { removedNames.contains(w.oracle.writer[$0] ?? "") })
+            .union(onTargets.filter { p in !p.contains("/att/") && removedIds.contains { p.contains($0) } })
             .subtracting(held)
         // Those revisions keep their note's blobs on the targets from being collected (format.md §8.1.6
         // rule 1: a revision the collector cannot read may reference them): an older name of a blob
