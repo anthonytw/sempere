@@ -1,26 +1,27 @@
-// The key schedule of the key hierarchy (docs/design/key-hierarchy.md, KH1):
-// a vault epoch key K_e, the vault identity derived from it, the §2.2
-// derivations, the wrap plaintext a reader opens, listTag, epochLink and the
-// root fingerprint. Mirrors Sources/Sempere/EpochKeys.swift; the shared
-// vectors are Tests/SempereTests/Fixtures/epoch-vectors.json.
+// The key hierarchy (docs/design/key-hierarchy.md, KH1; format.md §15): a
+// vault epoch key K_e, the vault identity derived from it, the §2.2
+// derivations, the wrap plaintext a reader opens, fingerprints, listTag,
+// epochLink, the root fingerprint, the three author signatures (lp()
+// messages, P-256 + ML-DSA-65) and the join codes. Mirrors
+// Sources/Sempere/Epoch*.swift and JoinCodes.swift; the shared vectors are
+// Tests/SempereTests/Fixtures/epoch-vectors.json and epoch-chain-vectors.json.
 //
-// The viewer reads only: it opens wraps (never makes one) and keeps no trust
-// record, so trust records v3 and wrap sealing are Swift-only. Nothing here is
-// wired into the reader yet (KH2). Pure JavaScript (@noble, @scure), so it runs
-// under the strict CSP (no WebAssembly).
-//
-// Provisional, as in the Swift file: the wrap plaintext (the kit reads it,
-// review M8'), fingerprints and listMessage's field encoding (every vault.json
-// value as its JSON text inside lp(), SHA-256(wrap) as its 32 raw bytes).
-// Built to docs/design/key-hierarchy.md as merged (#61).
+// Swift-only for now, because the viewer reads and never decides: wrap
+// sealing, trust records v3, the chain check, fork resolution, and writing
+// epoch records, the journal and the passphrase copy. KH2's viewer port reads
+// the records and the journal for older keys. Nothing here is wired into the
+// reader yet. Pure JavaScript (@noble, @scure), so it runs under the strict
+// CSP (no WebAssembly).
 
 import { ed25519 } from "@noble/curves/ed25519.js";
+import { p256 } from "@noble/curves/nist.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
 import { hmac } from "@noble/hashes/hmac.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { ml_dsa65 } from "@noble/post-quantum/ml-dsa.js";
 import { bech32 } from "@scure/base";
 import { identityToRecipient } from "age-encryption";
+import { bip39English } from "./bip39.ts";
 import { concat } from "./bytes.ts";
 import { type LinkPublicKeys, type SecretLink, sizes, unhex } from "./link.ts";
 
@@ -219,4 +220,87 @@ export function listTag(key: Uint8Array, vaultId: string, root: string, epoch: n
   epochRecordHash: string, entries: ListTagEntry[]): string {
   return hexOf(hmac(sha256, epochKeys(key).listKey,
     listTagMessage(vaultId, root, epoch, epochId, epochRecordHash, entries)));
+}
+
+/** The fields `addSig` covers (design §4.1), as their JSON text. */
+export interface EntryClaim {
+  key: string; signP256: string; signMLDSA65: string; kind: string; added: string; addedEpoch: number; addedBy: string;
+}
+
+const byBytes = (a: string, b: string): number => {
+  const x = encoder.encode(a), y = encoder.encode(b);
+  for (let i = 0; i < Math.min(x.length, y.length); i++) if (x[i] !== y[i]) return (x[i] ?? 0) - (y[i] ?? 0);
+  return x.length - y.length;
+};
+
+/** `addSig`'s message: `"sempere/1 author entry"` ‖ lp() of the claim's fields. */
+export function entryMessage(vaultId: string, e: EntryClaim): Uint8Array {
+  return concat([encoder.encode("sempere/1 author entry"), lp(vaultId.toLowerCase()), lp(e.addedEpoch), lp(e.key),
+    lp(e.signP256), lp(e.signMLDSA65), lp(e.kind), lp(e.added), lp(e.addedBy)]);
+}
+
+/** `epochSig`'s message; `root`, `epochId`, `parent` and fingerprints as 64 hex digits, lists sorted. */
+export function epochMessage(vaultId: string, root: string, epoch: number, epochId: string, parent: string,
+  reason: string, list: string[], parentList: string[]): Uint8Array {
+  const parts = [encoder.encode("sempere/1 author epoch"), lp(vaultId.toLowerCase()), lp(root), lp(epoch), lp(epochId),
+    lp(parent), lp(reason)];
+  for (const l of [list, parentList]) {
+    const sorted = [...l].sort(byBytes);
+    parts.push(lp(sorted.length));
+    for (const f of sorted) parts.push(lp(f));
+  }
+  return concat(parts);
+}
+
+/** `authorSig`'s message; the list digest raw, the features distinct and sorted. */
+export function manifestMessage(vaultId: string, root: string, epoch: number, epochId: string, epochRecordHash: string,
+  listMessage: Uint8Array, format: string, features: string[]): Uint8Array {
+  const distinct = [...new Set(features)].sort(byBytes);
+  return concat([encoder.encode("sempere/1 author manifest"), lp(vaultId.toLowerCase()), lp(root), lp(epoch), lp(epochId),
+    lp(epochRecordHash), lp(sha256(listMessage)), lp(format), lp(distinct.length), ...distinct.map((f) => lp(f))]);
+}
+
+/**
+ * True when BOTH signatures verify: P-256 ECDSA over SHA-256 of the message (`r ‖ s`, 64 bytes; a
+ * high `s` is accepted) under the uncompressed key, and ML-DSA-65 over the message.
+ */
+export function verifyAuthorSignature(message: Uint8Array, sig: { p256: Uint8Array; mldsa65: Uint8Array },
+  keys: { p256: Uint8Array; mldsa65: Uint8Array }): boolean {
+  const check = (f: () => boolean): boolean => {
+    try {
+      return f();
+    } catch {
+      return false;
+    }
+  };
+  const p = check(() => sig.p256.length === 64 && keys.p256.length === 65
+    && p256.verify(sig.p256, message, keys.p256, { prehash: true, lowS: false }));
+  const m = check(() => sig.mldsa65.length === 3309 && keys.mldsa65.length === 1952
+    && ml_dsa65.verify(sig.mldsa65, message, keys.mldsa65));
+  return p && m;
+}
+
+/** The join commitment `c` (design §6.2). */
+export function joinCommitment(vaultId: string, key: string, signP256: string, signMLDSA65: string, kind: string): Uint8Array {
+  return sha256(concat([encoder.encode("sempere/1 join"), lp(vaultId.toLowerCase()), lp(key), lp(signP256),
+    lp(signMLDSA65), lp(kind)]));
+}
+
+/** The reverse code's digest: `c` raw, `root` as 64 hex digits. */
+export function joinReply(vaultId: string, commitment: Uint8Array, root: string): Uint8Array {
+  return sha256(concat([encoder.encode("sempere/1 join reply"), lp(vaultId.toLowerCase()), lp(commitment), lp(root)]));
+}
+
+/** Six BIP-39 English words from the first 66 bits of `digest`. */
+export function sixWords(digest: Uint8Array): string[] {
+  const out: string[] = [];
+  for (let w = 0; w < 6; w++) {
+    let v = 0;
+    for (let b = 0; b < 11; b++) {
+      const bit = w * 11 + b;
+      v = (v << 1) | (((digest[bit >> 3] ?? 0) >> (7 - (bit & 7))) & 1);
+    }
+    out.push(bip39English[v] ?? "");
+  }
+  return out;
 }

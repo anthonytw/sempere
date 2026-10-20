@@ -1,0 +1,200 @@
+{
+  "description": "key-hierarchy design §5.6 fork resolution as trees (KH1): each case is a tree of verified epochs (ids, authors, lists and computed removals as labels; a label stands for its UTF-8 bytes, so epochId order is byte order), what the device brings (me, its stored answers, addedBy chains, recovery keys), and the expected kept chain, losses (child, winner, rule), re-application set, open question and contradictions. Scenarios from design §11.1.",
+  "cases": [
+    {
+      "name": "honest concurrent removals: rule 4 and re-application",
+      "nodes": [
+        { "id": "e1", "author": "A", "list": ["A", "B", "C", "X", "Y", "R"], "removes": [], "reason": "create" },
+        { "id": "2a", "parent": "e1", "author": "A", "list": ["A", "B", "C", "Y", "R"], "removes": ["X"], "reason": "remove" },
+        { "id": "2b", "parent": "e1", "author": "B", "list": ["A", "B", "C", "X", "R"], "removes": ["Y"], "reason": "remove" }
+      ],
+      "context": { "me": "C", "rejected": [], "approverChains": {}, "recovery": ["R"] },
+      "expect": { "kept": ["e1", "2a"], "losses": [["2b", "2a", "rule4"]], "reapply": ["Y"], "question": null, "contradictions": [] }
+    },
+    {
+      "name": "two re-appliers at once: the second finds nothing left to remove",
+      "nodes": [
+        { "id": "e1", "author": "A", "list": ["A", "B", "C", "X", "Y", "R"], "removes": [], "reason": "create" },
+        { "id": "2a", "parent": "e1", "author": "A", "list": ["A", "B", "C", "Y", "R"], "removes": ["X"], "reason": "remove" },
+        { "id": "2b", "parent": "e1", "author": "B", "list": ["A", "B", "C", "X", "R"], "removes": ["Y"], "reason": "remove" },
+        { "id": "r3a", "parent": "2a", "author": "A", "list": ["A", "B", "C", "R"], "removes": ["Y"], "reason": "reapply" },
+        { "id": "r3b", "parent": "2a", "author": "C", "list": ["A", "B", "C", "R"], "removes": ["Y"], "reason": "reapply" }
+      ],
+      "context": { "me": "B", "rejected": [], "approverChains": {}, "recovery": ["R"] },
+      "expect": { "kept": ["e1", "2a", "r3a"], "losses": [["2b", "2a", "rule3"], ["r3b", "r3a", "rule4"]], "reapply": [], "question": null, "contradictions": [] }
+    },
+    {
+      "name": "honest fork at a non-frontier level: rule 3, keys removed after the branch stay removed",
+      "nodes": [
+        { "id": "e1", "author": "A", "list": ["A", "B", "X", "Y", "Z", "W", "R"], "removes": [], "reason": "create" },
+        { "id": "e2", "parent": "e1", "author": "A", "list": ["A", "B", "Y", "Z", "W", "R"], "removes": ["X"], "reason": "remove" },
+        { "id": "e3", "parent": "e2", "author": "A", "list": ["A", "B", "Y", "W", "R"], "removes": ["Z"], "reason": "remove" },
+        { "id": "e4", "parent": "e3", "author": "A", "list": ["A", "B", "Y", "R"], "removes": ["W"], "reason": "remove" },
+        { "id": "0b2", "parent": "e1", "author": "B", "list": ["A", "B", "X", "Z", "W", "R"], "removes": ["Y"], "reason": "remove" }
+      ],
+      "context": { "me": "A", "rejected": [], "approverChains": {}, "recovery": ["R"] },
+      "expect": { "kept": ["e1", "e2", "e3", "e4"], "losses": [["0b2", "e2", "rule3"]], "reapply": ["Y"], "question": null, "contradictions": [] }
+    },
+    {
+      "name": "removed X forks from an older epoch with a ground epochId and descendants: rule 1 over the subtree",
+      "nodes": [
+        { "id": "e1", "author": "A", "list": ["A", "B", "C", "X", "R"], "removes": [], "reason": "create" },
+        { "id": "e2", "parent": "e1", "author": "A", "list": ["A", "B", "X", "R"], "removes": ["C"], "reason": "remove" },
+        { "id": "e3", "parent": "e2", "author": "A", "list": ["A", "B", "R"], "removes": ["X"], "reason": "remove" },
+        { "id": "00x", "parent": "e1", "author": "X", "list": ["A", "C", "X", "R"], "removes": ["B"], "reason": "remove" },
+        { "id": "01x", "parent": "00x", "author": "X", "list": ["A", "X", "R"], "removes": ["C"], "reason": "remove" }
+      ],
+      "context": { "me": "B", "rejected": [], "approverChains": {}, "recovery": ["R"] },
+      "expect": { "kept": ["e1", "e2", "e3"], "losses": [["00x", "e2", "rule1"]], "reapply": [], "question": null, "contradictions": [] }
+    },
+    {
+      "name": "mutual removal: a non-author device is asked, names from the parent list",
+      "nodes": [
+        { "id": "e1", "author": "A", "list": ["A", "B", "C", "X", "R"], "removes": [], "reason": "create" },
+        { "id": "2a", "parent": "e1", "author": "A", "list": ["A", "B", "C", "R"], "removes": ["X"], "reason": "remove" },
+        { "id": "2x", "parent": "e1", "author": "X", "list": ["B", "C", "X", "R"], "removes": ["A"], "reason": "remove" }
+      ],
+      "context": { "me": "B", "rejected": [], "approverChains": {}, "recovery": ["R"] },
+      "expect": { "kept": ["e1"], "losses": [], "reapply": [], "question": { "branch": "e1", "sides": ["2a", "2x"], "authors": ["A", "X"], "asked": ["B", "C"], "resolves": {} }, "contradictions": [] }
+    },
+    {
+      "name": "mutual removal answered: the rejected author loses (rule 2), nothing re-applied",
+      "nodes": [
+        { "id": "e1", "author": "A", "list": ["A", "B", "C", "X", "R"], "removes": [], "reason": "create" },
+        { "id": "2a", "parent": "e1", "author": "A", "list": ["A", "B", "C", "R"], "removes": ["X"], "reason": "remove" },
+        { "id": "2x", "parent": "e1", "author": "X", "list": ["B", "C", "X", "R"], "removes": ["A"], "reason": "remove" }
+      ],
+      "context": { "me": "B", "rejected": ["X"], "approverChains": {}, "recovery": ["R"] },
+      "expect": { "kept": ["e1", "2a"], "losses": [["2x", "2a", "rule2"]], "reapply": [], "question": null, "contradictions": [] }
+    },
+    {
+      "name": "mutual removal, no answer yet: an author keeps its own side (A)",
+      "nodes": [
+        { "id": "e1", "author": "A", "list": ["A", "B", "C", "X", "R"], "removes": [], "reason": "create" },
+        { "id": "2a", "parent": "e1", "author": "A", "list": ["A", "B", "C", "R"], "removes": ["X"], "reason": "remove" },
+        { "id": "2x", "parent": "e1", "author": "X", "list": ["B", "C", "X", "R"], "removes": ["A"], "reason": "remove" }
+      ],
+      "context": { "me": "A", "rejected": [], "approverChains": {}, "recovery": ["R"] },
+      "expect": { "kept": ["e1", "2a"], "losses": [["2x", "2a", "rule2"]], "reapply": [], "question": null, "contradictions": [] }
+    },
+    {
+      "name": "mutual removal, no answer yet: an author keeps its own side (X)",
+      "nodes": [
+        { "id": "e1", "author": "A", "list": ["A", "B", "C", "X", "R"], "removes": [], "reason": "create" },
+        { "id": "2a", "parent": "e1", "author": "A", "list": ["A", "B", "C", "R"], "removes": ["X"], "reason": "remove" },
+        { "id": "2x", "parent": "e1", "author": "X", "list": ["B", "C", "X", "R"], "removes": ["A"], "reason": "remove" }
+      ],
+      "context": { "me": "X", "rejected": [], "approverChains": {}, "recovery": ["R"] },
+      "expect": { "kept": ["e1", "2x"], "losses": [["2a", "2x", "rule2"]], "reapply": [], "question": null, "contradictions": [] }
+    },
+    {
+      "name": "a resolve epoch by a founder binds the authors (X follows it)",
+      "nodes": [
+        { "id": "e1", "author": "A", "list": ["A", "B", "C", "X", "R"], "removes": [], "reason": "create" },
+        { "id": "2a", "parent": "e1", "author": "A", "list": ["A", "B", "C", "R"], "removes": ["X"], "reason": "remove" },
+        { "id": "2x", "parent": "e1", "author": "X", "list": ["B", "C", "X", "R"], "removes": ["A"], "reason": "remove" },
+        { "id": "r3", "parent": "2a", "author": "C", "list": ["A", "B", "C", "R"], "removes": [], "reason": "resolve", "rejected": "X" }
+      ],
+      "context": { "me": "X", "rejected": [], "approverChains": { "C": [] }, "recovery": ["R"] },
+      "expect": { "kept": ["e1", "2a", "r3"], "losses": [["2x", "2a", "rule2"]], "reapply": [], "question": null, "contradictions": [] }
+    },
+    {
+      "name": "a resolve epoch does not bind a non-author: it is still asked, with the resolve as context",
+      "nodes": [
+        { "id": "e1", "author": "A", "list": ["A", "B", "C", "X", "R"], "removes": [], "reason": "create" },
+        { "id": "2a", "parent": "e1", "author": "A", "list": ["A", "B", "C", "R"], "removes": ["X"], "reason": "remove" },
+        { "id": "2x", "parent": "e1", "author": "X", "list": ["B", "C", "X", "R"], "removes": ["A"], "reason": "remove" },
+        { "id": "r3", "parent": "2a", "author": "C", "list": ["A", "B", "C", "R"], "removes": [], "reason": "resolve", "rejected": "X" }
+      ],
+      "context": { "me": "B", "rejected": [], "approverChains": { "C": [] }, "recovery": ["R"] },
+      "expect": { "kept": ["e1"], "losses": [], "reapply": [], "question": { "branch": "e1", "sides": ["2a", "2x"], "authors": ["A", "X"], "asked": ["B", "C"], "resolves": { "r3": "X" } }, "contradictions": [] }
+    },
+    {
+      "name": "a puppet's resolve (N, added by X) does not bind the authors: A keeps its side",
+      "nodes": [
+        { "id": "e1", "author": "A", "list": ["A", "B", "C", "N", "X", "R"], "removes": [], "reason": "create" },
+        { "id": "2a", "parent": "e1", "author": "A", "list": ["A", "B", "C", "N", "R"], "removes": ["X"], "reason": "remove" },
+        { "id": "2x", "parent": "e1", "author": "X", "list": ["B", "C", "N", "X", "R"], "removes": ["A"], "reason": "remove" },
+        { "id": "r3", "parent": "2x", "author": "N", "list": ["B", "C", "N", "X", "R"], "removes": [], "reason": "resolve", "rejected": "A" }
+      ],
+      "context": { "me": "A", "rejected": [], "approverChains": { "N": ["X"] }, "recovery": ["R"] },
+      "expect": { "kept": ["e1", "2a"], "losses": [["2x", "2a", "rule2"]], "reapply": [], "question": null, "contradictions": [] }
+    },
+    {
+      "name": "a puppet's resolve does not bind X either: X keeps its own side; a non-author is asked",
+      "nodes": [
+        { "id": "e1", "author": "A", "list": ["A", "B", "C", "N", "X", "R"], "removes": [], "reason": "create" },
+        { "id": "2a", "parent": "e1", "author": "A", "list": ["A", "B", "C", "N", "R"], "removes": ["X"], "reason": "remove" },
+        { "id": "2x", "parent": "e1", "author": "X", "list": ["B", "C", "N", "X", "R"], "removes": ["A"], "reason": "remove" },
+        { "id": "r3", "parent": "2x", "author": "N", "list": ["B", "C", "N", "X", "R"], "removes": [], "reason": "resolve", "rejected": "A" }
+      ],
+      "context": { "me": "C", "rejected": [], "approverChains": { "N": ["X"] }, "recovery": ["R"] },
+      "expect": { "kept": ["e1"], "losses": [], "reapply": [], "question": { "branch": "e1", "sides": ["2a", "2x"], "authors": ["A", "X"], "asked": ["B", "C", "N"], "resolves": { "r3": "A" } }, "contradictions": [] }
+    },
+    {
+      "name": "a resolve by a device added after the branch (D, approved by C) binds the authors",
+      "nodes": [
+        { "id": "e1", "author": "A", "list": ["A", "B", "C", "X", "R"], "removes": [], "reason": "create" },
+        { "id": "2a", "parent": "e1", "author": "A", "list": ["A", "B", "C", "D", "R"], "removes": ["X"], "reason": "remove" },
+        { "id": "2x", "parent": "e1", "author": "X", "list": ["B", "C", "X", "R"], "removes": ["A"], "reason": "remove" },
+        { "id": "r3", "parent": "2a", "author": "D", "list": ["A", "B", "C", "D", "R"], "removes": [], "reason": "resolve", "rejected": "X" }
+      ],
+      "context": { "me": "X", "rejected": [], "approverChains": { "D": ["C"] }, "recovery": ["R"] },
+      "expect": { "kept": ["e1", "2a", "r3"], "losses": [["2x", "2a", "rule2"]], "reapply": [], "question": null, "contradictions": [] }
+    },
+    {
+      "name": "a device added after the branch is among those asked",
+      "nodes": [
+        { "id": "e1", "author": "A", "list": ["A", "B", "C", "X", "R"], "removes": [], "reason": "create" },
+        { "id": "2a", "parent": "e1", "author": "A", "list": ["A", "B", "C", "D", "R"], "removes": ["X"], "reason": "remove" },
+        { "id": "2x", "parent": "e1", "author": "X", "list": ["B", "C", "X", "R"], "removes": ["A"], "reason": "remove" },
+        { "id": "r3", "parent": "2a", "author": "D", "list": ["A", "B", "C", "D", "R"], "removes": [], "reason": "resolve", "rejected": "X" }
+      ],
+      "context": { "me": "B", "rejected": [], "approverChains": { "D": ["C"] }, "recovery": ["R"] },
+      "expect": { "kept": ["e1"], "losses": [], "reapply": [], "question": { "branch": "e1", "sides": ["2a", "2x"], "authors": ["A", "X"], "asked": ["B", "C", "D"], "resolves": { "r3": "X" } }, "contradictions": [] }
+    },
+    {
+      "name": "three children: the pre-pass discards X's ground-id fork (rule 1), no question, B's stale side is re-applied",
+      "nodes": [
+        { "id": "e1", "author": "A", "list": ["A", "B", "X", "Y", "R"], "removes": [], "reason": "create" },
+        { "id": "2a", "parent": "e1", "author": "A", "list": ["A", "B", "Y", "R"], "removes": ["X"], "reason": "remove" },
+        { "id": "2b", "parent": "e1", "author": "B", "list": ["A", "B", "X", "R"], "removes": ["Y"], "reason": "remove" },
+        { "id": "20", "parent": "e1", "author": "X", "list": ["A", "X", "Y", "R"], "removes": ["B"], "reason": "remove" }
+      ],
+      "context": { "me": "B", "rejected": [], "approverChains": {}, "recovery": ["R"] },
+      "expect": { "kept": ["e1", "2a"], "losses": [["20", "2a", "rule1"], ["2b", "2a", "rule4"]], "reapply": ["Y"], "question": null, "contradictions": [] }
+    },
+    {
+      "name": "a rejected author's later forks lose without asking again",
+      "nodes": [
+        { "id": "e1", "author": "A", "list": ["A", "B", "C", "X", "R"], "removes": [], "reason": "create" },
+        { "id": "2a", "parent": "e1", "author": "A", "list": ["A", "B", "C", "R"], "removes": ["X"], "reason": "remove" },
+        { "id": "2x", "parent": "e1", "author": "X", "list": ["B", "C", "X", "R"], "removes": ["A"], "reason": "remove" },
+        { "id": "2y", "parent": "e1", "author": "X", "list": ["C", "X", "R"], "removes": ["A", "B"], "reason": "remove" }
+      ],
+      "context": { "me": "B", "rejected": ["X"], "approverChains": {}, "recovery": ["R"] },
+      "expect": { "kept": ["e1", "2a"], "losses": [["2x", "2a", "rule2"], ["2y", "2a", "rule2"]], "reapply": [], "question": null, "contradictions": [] }
+    },
+    {
+      "name": "contradicting answers: the device follows its own and reports the resolve epoch",
+      "nodes": [
+        { "id": "e1", "author": "A", "list": ["A", "B", "C", "X", "R"], "removes": [], "reason": "create" },
+        { "id": "2a", "parent": "e1", "author": "A", "list": ["A", "B", "C", "R"], "removes": ["X"], "reason": "remove" },
+        { "id": "2x", "parent": "e1", "author": "X", "list": ["B", "C", "X", "R"], "removes": ["A"], "reason": "remove" },
+        { "id": "r3", "parent": "2x", "author": "C", "list": ["B", "C", "X", "R"], "removes": [], "reason": "resolve", "rejected": "A" }
+      ],
+      "context": { "me": "B", "rejected": ["X"], "approverChains": { "C": [] }, "recovery": ["R"] },
+      "expect": { "kept": ["e1", "2a"], "losses": [["2x", "2a", "rule2"]], "reapply": [], "question": null, "contradictions": [["r3", "A"]] }
+    },
+    {
+      "name": "a losing recovery replacement: its removal of the old recovery key is never re-applied",
+      "nodes": [
+        { "id": "e1", "author": "A", "list": ["A", "B", "C", "R1"], "removes": [], "reason": "create" },
+        { "id": "2a", "parent": "e1", "author": "A", "list": ["A", "B", "R1"], "removes": ["C"], "reason": "remove" },
+        { "id": "2r", "parent": "e1", "author": "B", "list": ["A", "B", "C", "R2"], "removes": ["R1"], "reason": "recovery" }
+      ],
+      "context": { "me": "A", "rejected": [], "approverChains": {}, "recovery": ["R1", "R2"] },
+      "expect": { "kept": ["e1", "2a"], "losses": [["2r", "2a", "rule4"]], "reapply": [], "question": null, "contradictions": [] }
+    }
+  ]
+}

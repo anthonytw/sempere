@@ -49,7 +49,14 @@ Do not use features newer than Swift 6.0 in `Sources/`.
   `age -d -i key FILE.age | tail -c +38 | gunzip | jq .` (with `age` 1.3+ for
   post-quantum keys), and for blobs
   `age -d -i key notes/ID/att/NAME.KIND.age | tail -c +46 | head -c LEN`
-  (`format.md` §8.1.7).
+  (`format.md` §8.1.7). Under the key hierarchy (KH2 on, `format.md` §15) the key is `vault-keys.txt`
+  from the kit's frozen script (`KitRecovery.script`, §15.13): never change it, the record and journal
+  framing, the wrap or the passphrase copy without `EpochChainTests.testFrozenRecoveryScriptOpensEveryEpoch`
+  and `testRecoveryScriptMatchesTheDocuments` passing. KH1's pure key-hierarchy code is
+  `Sources/Sempere/Epoch*.swift` and `JoinCodes.swift`, mirrored in `web/src/vault/epoch.ts`; vectors in
+  `Fixtures/epoch-vectors.json` (`web/scripts/make-epoch-vectors.ts`, then
+  `SEMPERE_WRITE_EPOCH_VECTORS=1 swift test --filter "EpochKeysTests|EpochChainTests"`),
+  `epoch-chain-vectors.json` and `epoch-fork-vectors.json`.
 
 ## Optional importers
 

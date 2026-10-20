@@ -37,6 +37,33 @@ final class EpochKeysTests: VaultTestCase {
             var epoch: Int; var root, epochId, epochRecordHash: String; var entries: [Entry]; var message, tag: String
         }
         struct Wrap: Codable { var by: String; var epoch: Int; var armored: String }
+        struct Signer: Codable { var p256Scalar, mldsa65Seed, p256, mldsa65, key, fingerprint: String }
+        struct AuthorSig: Codable { var by, p256, mldsa65: String }
+        struct Claim: Codable {
+            var key, signP256, signMLDSA65, kind, added: String; var addedEpoch: Int; var addedBy: String
+        }
+        struct EpochFields: Codable {
+            var root: String; var epoch: Int; var epochId, parent, reason: String; var list, parentList: [String]
+        }
+        struct ManifestFields: Codable {
+            var root: String; var epoch: Int; var epochId, epochRecordHash, format: String; var features: [String]
+        }
+        struct EntrySigned: Codable { var claim: Claim; var message: String; var signatures: [AuthorSig] }
+        struct EpochSigned: Codable { var fields: EpochFields; var message: String; var signatures: [AuthorSig] }
+        struct ManifestSigned: Codable { var fields: ManifestFields; var message: String; var signatures: [AuthorSig] }
+        struct Signatures: Codable { var entry: EntrySigned; var epoch: EpochSigned; var manifest: ManifestSigned }
+        struct JoinRequestFields: Codable {
+            struct Sign: Codable { var p256, mldsa65: String }
+            var vaultId, key: String; var sign: Sign; var name, kind, created: String
+        }
+        struct Join: Codable {
+            var request: JoinRequestFields
+            var commitment: String; var words: [String]; var qr, root, reply: String; var replyWords: [String]
+            var replyQR: String
+        }
+        var signer: Signer?
+        var signatures: Signatures?
+        var join: Join?
         var description, vaultId: String
         var device: Device
         var recovery: Recovery
@@ -156,7 +183,7 @@ final class EpochKeysTests: VaultTestCase {
                                                  vaultId: vaultId), name)
             }
             if ProcessInfo.processInfo.environment["SEMPERE_WRITE_EPOCH_VECTORS"] == "1" {
-                try updateVectors {
+                try Self.updateVectors {
                     $0.link.links.removeAll { $0.by == "swift-crypto" }
                     $0.link.links.append(.init(by: "swift-crypto", ed25519: Hex.encode(ed), mldsa65: Hex.encode(ml)))
                 }
@@ -213,7 +240,7 @@ final class EpochKeysTests: VaultTestCase {
         let mine = try EpochKeyWrap.seal(k2, vaultId: vaultId, epoch: 2, to: device.recipient)
         XCTAssertEqual(try EpochKeyWrap.open(mine, with: [device], vaultId: vaultId, epoch: 2), k2)
         if ProcessInfo.processInfo.environment["SEMPERE_WRITE_EPOCH_VECTORS"] == "1" {
-            try updateVectors {
+            try Self.updateVectors {
                 $0.wraps.removeAll { $0.by == "swift" }
                 $0.wraps.append(.init(by: "swift", epoch: 2, armored: mine))
             }
@@ -222,7 +249,7 @@ final class EpochKeysTests: VaultTestCase {
 
     /// Rewrites the source fixture (not the copy the test bundle was built
     /// with), so the two writers above do not undo each other.
-    func updateVectors(_ change: (inout Vectors) -> Void) throws {
+    static func updateVectors(_ change: (inout Vectors) -> Void) throws {
         let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("Fixtures/epoch-vectors.json")
         var v = try JSONDecoder().decode(Vectors.self, from: Data(contentsOf: source))

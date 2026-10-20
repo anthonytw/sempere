@@ -13,8 +13,8 @@ import Foundation
 // the Age module's: HKDF-SHA256, HMAC-SHA256, SHA-256, X-Wing, Ed25519 and
 // ML-DSA-65 (the secret link's `LinkSigningKeys`).
 //
-// Byte layouts that the design text leaves open are marked **provisional**
-// below and decided here; format.md §15 (KH1b) states them normatively.
+// Byte layouts the design leaves open are decided here and stated
+// normatively in format.md §15.
 
 /// Errors of the key schedule.
 public enum EpochKeyError: Error, Hashable, Sendable {
@@ -176,7 +176,7 @@ public enum EpochLinks {
     /// `vaultId` lowercase, `e` in decimal ASCII without leading zeros (as in
     /// `vault.json`), `epochId` its 32 raw bytes.
     ///
-    /// **Provisional**: the design (§4 table) still gives this
+    /// The design (§4 table) gives this
     /// NUL-separated message, today's secret-link encoding, while its other
     /// signed messages moved to `lp()` (§4.1). Built to the text as written.
     static func message(vaultId: UUID, epoch: Int, epochId: Data) -> Data {
@@ -210,7 +210,7 @@ public enum EpochLinks {
     }
 }
 
-// MARK: - Wraps of K_e (design §3), provisional plaintext
+// MARK: - Wraps of K_e (design §3; format.md §15.3)
 
 /// A wrap: `K_e` and `V_e` age-encrypted (armored, one stanza) to one listed
 /// key. Its plaintext is an age identity file, so stock `age -d -i` reads it:
@@ -221,9 +221,8 @@ public enum EpochLinks {
 /// AGE-SECRET-KEY-PQ-1…
 /// ```
 ///
-/// **Provisional** (KH1a): the plaintext is exactly the design's, but the
-/// printed kit's script reads it (review M8'), so its final form is frozen
-/// with the kit. Readers here are strict: exactly these three lines, the
+/// Frozen with the kit (format.md §15.3): the printed script reads it.
+/// Readers here are strict: exactly these three lines, the
 /// first naming the vault and epoch the reader expects, and the identity the
 /// one derived from the key (design §4.3: anything else is tampering).
 package enum EpochKeyWrap {
@@ -318,7 +317,7 @@ package struct LPMessage {
 /// key and its signing keys; its `id` is the first 8 hex digits.
 /// (format.md §11.1's fingerprint stays what capture keys use.)
 ///
-/// **Provisional encoding** (KH1a): the design writes `lp(sign.p256)`
+/// The encoding (format.md §15.1): the design writes `lp(sign.p256)`
 /// without saying whether that is the hex text of `vault.json` or the raw
 /// key. Here, as everywhere in this file, a value that `vault.json` holds is
 /// taken as the UTF-8 of its JSON text (so signing keys as lowercase hex),
@@ -386,7 +385,7 @@ package struct EpochListEntry: Hashable, Sendable {
 ///
 /// `vaultId` lowercase; `root`, `epochId` and `epochRecordHash` their 64 hex
 /// digits as written; numbers decimal ASCII; `SHA-256(wrap)` the 32 raw bytes
-/// of the digest of the wrap string's UTF-8 (**provisional** encoding, see
+/// of the digest of the wrap string's UTF-8 (format.md §15.1, see
 /// `KeyFingerprint`). `authorSig` signs `SHA-256(listMessage)` (not here).
 package enum EpochListTag {
     package static func message(vaultId: UUID, root: String, epoch: Int, epochId: String, epochRecordHash: String,
@@ -477,18 +476,7 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
     }
 
     /// A device's signing public keys (design §4.1).
-    public struct SigningKeys: Hashable, Sendable {
-        public static let p256Size = 65
-        public static let mldsa65Size = 1952
-        public let p256: Data
-        public let mldsa65: Data
-
-        /// Nil unless both have their exact sizes.
-        public init?(p256: Data, mldsa65: Data) {
-            guard p256.count == Self.p256Size, mldsa65.count == Self.mldsa65Size else { return nil }
-            self.p256 = p256; self.mldsa65 = mldsa65
-        }
-    }
+    public typealias SigningKeys = DeviceSigningPublicKeys
 
     public var vaultId: UUID
     /// The root fingerprint (32 bytes).

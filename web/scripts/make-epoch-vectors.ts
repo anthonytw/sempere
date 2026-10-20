@@ -13,6 +13,7 @@
 // Run: node scripts/make-epoch-vectors.ts (from web/).
 
 import { ed25519 } from "@noble/curves/ed25519.js";
+import { p256 } from "@noble/curves/nist.js";
 import { ml_dsa65 } from "@noble/post-quantum/ml-dsa.js";
 import { bech32 } from "@scure/base";
 import { Encrypter, armor, identityToRecipient } from "age-encryption";
@@ -134,16 +135,74 @@ const typageWrap = armor.encode(await e2Encrypter.encrypt(e2.wrapPlaintext));
 
 type Signed = { by: string; ed25519: string; mldsa65: string };
 type Wrap = { by: string; epoch: number; armored: string };
+type AuthorSig = { by: string; p256: string; mldsa65: string };
+type SignedMessage = { message: string; signatures: AuthorSig[] };
 const previous = existsSync(out)
-  ? JSON.parse(readFileSync(out, "utf8")) as { link: { links: Signed[] }; wraps: Wrap[] }
+  ? JSON.parse(readFileSync(out, "utf8")) as {
+    link: { links: Signed[] }; wraps: Wrap[];
+    signatures?: { entry: SignedMessage; epoch: SignedMessage; manifest: SignedMessage };
+  }
   : undefined;
+
+// The three author signatures of design §4.1, by a fixed software signing pair (P-256 scalar and
+// ML-DSA-65 seed). "noble" signatures are deterministic (RFC 6979, low-S; ML-DSA without hedging);
+// the Swift test appends swift-crypto's.
+const signerScalar = new Uint8Array(32).map((_, i) => 0x20 + i);
+const signerSeed = new Uint8Array(32).map((_, i) => 0x60 + i);
+const signerML = ml_dsa65.keygen(signerSeed);
+const signerP256 = hex(p256.getPublicKey(signerScalar, false));
+const signerMLDSA65 = hex(signerML.publicKey);
+const signerFingerprint = hex(sha256(Buffer.concat([enc.encode("sempere/1 device"), lp(deviceRecipient), lp(signerP256),
+  lp(signerMLDSA65)])));
+const lpList = (l: string[]): Buffer => Buffer.concat([lp(String(l.length)), ...[...l].sort().map((f) => lp(f))]);
+const entryClaim = { key: deviceRecipient, signP256: signerP256, signMLDSA65: signerMLDSA65, kind: "ipad",
+  added: "2026-10-04T16:20:00Z", addedEpoch: 1, addedBy: "recovery" };
+const entryMessage = Buffer.concat([enc.encode("sempere/1 author entry"), lp(vaultId), lp(String(entryClaim.addedEpoch)),
+  lp(entryClaim.key), lp(entryClaim.signP256), lp(entryClaim.signMLDSA65), lp(entryClaim.kind), lp(entryClaim.added),
+  lp(entryClaim.addedBy)]);
+const epochFields = { root: hex(root), epoch: 2, epochId: e2.epochId, parent: e1.epochId, reason: "remove",
+  list: [signerFingerprint, recoveryFingerprint], parentList: [signerFingerprint, recoveryFingerprint, deviceFingerprint] };
+const epochMessage = Buffer.concat([enc.encode("sempere/1 author epoch"), lp(vaultId), lp(epochFields.root),
+  lp(String(epochFields.epoch)), lp(epochFields.epochId), lp(epochFields.parent), lp(epochFields.reason),
+  lpList(epochFields.list), lpList(epochFields.parentList)]);
+const features = ["zeta", "ñ/emoji ☕️", "zeta"];
+const distinct = [...new Set(features)].sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
+const manifestFields = { root: hex(root), epoch: 2, epochId: e2.epochId, epochRecordHash, format: "sempere/1", features };
+const manifestMessage = Buffer.concat([enc.encode("sempere/1 author manifest"), lp(vaultId), lp(manifestFields.root),
+  lp("2"), lp(manifestFields.epochId), lp(epochRecordHash), lp(sha256(listMessage)), lp("sempere/1"),
+  lp(String(distinct.length)), ...distinct.map((f) => lp(f))]);
+const nobleSig = (m: Uint8Array): AuthorSig => ({
+  by: "noble",
+  p256: hex(p256.sign(m, signerScalar, { prehash: true })),
+  mldsa65: hex(ml_dsa65.sign(m, signerML.secretKey, { extraEntropy: false })),
+});
+const signed = (name: "entry" | "epoch" | "manifest", m: Uint8Array): SignedMessage => ({
+  message: hex(m),
+  signatures: [nobleSig(m), ...(previous?.signatures?.[name].signatures.filter((s) => s.by !== "noble") ?? [])],
+});
+
+// Join codes (design §6.2): the signer's device joins.
+const words = readFileSync(join(import.meta.dirname, "..", "src", "vault", "bip39.ts"), "utf8")
+  .split("\n").filter((l) => l.startsWith("  \"")).map((l) => l.trim().replace(/^"|",?$/g, "")).join(" ").split(" ");
+if (words.length !== 2048) throw new Error("word list");
+const sixWords = (d: Uint8Array): string[] => {
+  const bits = Array.from(d.subarray(0, 9), (b) => b.toString(2).padStart(8, "0")).join("");
+  return [0, 1, 2, 3, 4, 5].map((i) => words[parseInt(bits.slice(i * 11, i * 11 + 11), 2)] ?? "");
+};
+const joinKind = "iphone";
+const commitment = sha256(Buffer.concat([enc.encode("sempere/1 join"), lp(vaultId), lp(deviceRecipient), lp(signerP256),
+  lp(signerMLDSA65), lp(joinKind)]));
+const reply = sha256(Buffer.concat([enc.encode("sempere/1 join reply"), lp(vaultId), lp(commitment), lp(hex(root))]));
+const uuidBytes = Buffer.from(vaultId.replace(/-/g, ""), "hex");
 
 const vectors = {
   description: "key-hierarchy design §2–§4 (KH1): fixed vault epoch keys → identity seed → vault identity and "
     + "recipient → §2.2 derived keys → link public keys; the root fingerprint of epoch 1; an epochLink from epoch 1 "
     + "into epoch 2 (both signatures must verify); device and recovery fingerprints; listMessage and listTag of an "
-    + "epoch-2 list (lp() fields); wraps of K_2 to a fixed device key, made by two implementations. Built to the "
-    + "merged design (#61); field encodings marked provisional in EpochKeys.swift.",
+    + "epoch-2 list (lp() fields); wraps of K_2 to a fixed device key, made by two implementations; the three author "
+    + "signatures (addSig, epochSig, authorSig) by a fixed signing pair, made by noble and swift-crypto; join codes. "
+    + "Built to the "
+    + "merged design (#61); the encodings it leaves open are format.md §15.1.",
   vaultId,
   device: { identity: deviceIdentity, recipient: deviceRecipient, signP256: deviceSignP256,
     signMLDSA65: deviceSignMLDSA65, fingerprint: deviceFingerprint, id: deviceFingerprint.slice(0, 8),
@@ -158,6 +217,20 @@ const vectors = {
   },
   listTag: { epoch: 2, root: hex(root), epochId: e2.epochId, epochRecordHash, entries, message: hex(listMessage), tag },
   wraps: [{ by: "typage", epoch: 2, armored: typageWrap }, ...(previous?.wraps.filter((w) => w.by !== "typage") ?? [])],
+  signer: { p256Scalar: hex(signerScalar), mldsa65Seed: hex(signerSeed), p256: signerP256, mldsa65: signerMLDSA65,
+    key: deviceRecipient, fingerprint: signerFingerprint },
+  signatures: {
+    entry: { claim: entryClaim, ...signed("entry", entryMessage) },
+    epoch: { fields: epochFields, ...signed("epoch", epochMessage) },
+    manifest: { fields: manifestFields, ...signed("manifest", manifestMessage) },
+  },
+  join: {
+    request: { vaultId, key: deviceRecipient, sign: { p256: signerP256, mldsa65: signerMLDSA65 }, name: "Ñandú's iPhone",
+      kind: joinKind, created: "2026-10-20T16:20:00Z" },
+    commitment: hex(commitment), words: sixWords(commitment), qr: hex(Buffer.concat([uuidBytes, commitment])),
+    root: hex(root), reply: hex(reply), replyWords: sixWords(reply),
+    replyQR: `sempere-root:${vaultId}:${hex(root)}`,
+  },
 };
 writeFileSync(out, JSON.stringify(vectors, null, 2) + "\n");
 console.log(`wrote ${out}`);
