@@ -1,3 +1,4 @@
+import TempDirSupport
 import Foundation
 import FuzzSupport
 import Sempere
@@ -23,7 +24,7 @@ struct MemoryBlobs: BlobSource {
 
     func withFile<T>(for ref: BlobRef, _ body: (URL) throws -> T) throws -> T {
         guard let d = contents[ref.sha256] else { throw BlobError.missing(ref.sha256) }
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("blob-\(UUID().uuidString).pdf")
+        let url = TestTemp.root.appendingPathComponent("blob-\(UUID().uuidString).pdf")
         try d.write(to: url)
         defer { try? FileManager.default.removeItem(at: url) }
         return try body(url)
@@ -81,7 +82,7 @@ enum Poppler {
     static func render(_ pdf: URL, page: Int = 1, dpi: Double = 72, size: (Int, Int)? = nil,
                        cropBox: Bool = true) throws -> Image {
         let tool = try require()
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ppm-\(UUID().uuidString)")
+        let dir = TestTemp.root.appendingPathComponent("ppm-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         var args = ["-f", "\(page)", "-l", "\(page)", "-singlefile", "-aa", "yes", "-aaVector", "yes"]
@@ -174,7 +175,7 @@ enum PDFFixture {
     }
 
     static func write(_ data: Data) throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("export-\(UUID().uuidString).pdf")
+        let url = TestTemp.root.appendingPathComponent("export-\(UUID().uuidString).pdf")
         try data.write(to: url)
         return url
     }

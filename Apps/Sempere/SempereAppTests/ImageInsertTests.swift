@@ -72,7 +72,7 @@ struct ImageInsertTests {
     /// A dropped image file is read with a bound (format.md §9): one over
     /// `maxInputBytes` is refused by its size before its bytes are read.
     @Test func aDroppedFileIsReadWithABound() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let dir = TestTemp.root.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let small = dir.appendingPathComponent("small.png")

@@ -67,7 +67,7 @@ struct TwoDeviceVaultTests {
     /// Creates a vault the way the New Vault sheet does (generated key), in a
     /// fresh parent folder; returns its folder and the generated key.
     static func createVault() throws -> (url: URL, key: NativeIdentity) {
-        let parent = FileManager.default.temporaryDirectory.appendingPathComponent("c30-\(UUID().uuidString)", isDirectory: true)
+        let parent = TestTemp.root.appendingPathComponent("c30-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
         let created = try VaultLibrary.createVault(NewVaultRequest(name: "Shared", keySource: .generate, passphrase: nil),
                                                    folder: "Shared.sempere", in: parent)
@@ -153,7 +153,7 @@ struct TwoDeviceVaultTests {
         b.model.webdavPasswords = MemoryWebDAVPasswordStore()
         b.model.webdavTick = .milliseconds(20)
         b.model.webdavWriteDelay = 0.05
-        let library = VaultLibrary(storeURL: FileManager.default.temporaryDirectory
+        let library = VaultLibrary(storeURL: TestTemp.root
             .appendingPathComponent("recents-\(UUID().uuidString).json"))
         let vaultId = try Vault.open(at: server).vaultId.uuidString.lowercased()
         let listing = WebDAVVaultListing(path: [], name: "Shared", vaultId: vaultId, format: "sempere/1",

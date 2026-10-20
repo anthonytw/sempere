@@ -130,7 +130,7 @@ struct WebDAVPartialAppTests {
 
     @Test func aNoteOpenedFirstIsFetchedFirst() async throws {
         let s = try WebDAVAppTests.setup()
-        let c = LocalCopy(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+        let c = LocalCopy(directory: TestTemp.root.appendingPathComponent(UUID().uuidString),
                                 folderName: "Notes.sempere")
         #expect(try c.downloadMetadata(client: s.remote.folderClient()).errors.isEmpty)
         // Asked for the second note before it starts: that note is the first fetch.

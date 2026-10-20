@@ -17,7 +17,7 @@ struct MacCatalystPDFTests {
     static func pdfNote() async throws -> (AppModel, UUID, NoteState) {
         let model = try await BrowserTests.unlockedFixtureModel()
         // A cache folder of this test's own: tests run in parallel, and each model empties its cache when done.
-        model.blobCacheFolder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        model.blobCacheFolder = TestTemp.root.appendingPathComponent(UUID().uuidString)
         let vault = try #require(model.vault)
         let url = try PDFImportTests.makePDF(pages: 1)
         guard case .done(let id) = await model.importPDF(copy: url, to: .newNote(notebook: nil), password: nil) else {

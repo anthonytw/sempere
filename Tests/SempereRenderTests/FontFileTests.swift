@@ -1,3 +1,4 @@
+import TempDirSupport
 import Foundation
 import Sempere
 import XCTest
@@ -15,7 +16,7 @@ import Darwin
 /// folders): read as bounded regular files, never blocking (format.md §9).
 final class FontFileTests: XCTestCase {
     func testAFIFONamedLikeAFontIsRefusedWithoutBlocking() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("sempere-fonts-\(UUID().uuidString)")
+        let dir = TestTemp.root.appendingPathComponent("sempere-fonts-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let fifo = dir.appendingPathComponent("Trap-Regular.ttf")

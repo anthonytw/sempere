@@ -1,3 +1,4 @@
+import TempDirSupport
 import Age
 import Foundation
 import ImportTestSupport
@@ -55,7 +56,7 @@ final class UntrustedImportTests: XCTestCase {
     /// it is not followed, and a file over the size limit is refused before
     /// it is read into memory.
     func testPackageDirectoryIgnoresSymlinksAndCapsReads() throws {
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("untrusted-pkg-\(UUID().uuidString)")
+        let tmp = TestTemp.root.appendingPathComponent("untrusted-pkg-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: tmp) }
         let pkg = tmp.appendingPathComponent("Shared.note")
         try SyntheticNote.writeDirectory(pkg)
@@ -102,7 +103,7 @@ final class UntrustedImportTests: XCTestCase {
             let note = try NotabilityBundle.parse(bundle: bundle)
             XCTAssertNil(note.metadata.created, "\(ms)")
         }
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("untrusted-ntb-\(UUID().uuidString)")
+        let tmp = TestTemp.root.appendingPathComponent("untrusted-ntb-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
         let file = tmp.appendingPathComponent("x.ntb")

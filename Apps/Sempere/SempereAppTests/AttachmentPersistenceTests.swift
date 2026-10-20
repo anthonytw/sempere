@@ -14,7 +14,7 @@ struct AttachmentPersistenceTests {
     static let lecture = AppModelTests.lecture
 
     static func root() -> URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("persist-" + UUID().uuidString, isDirectory: true)
+        TestTemp.root.appendingPathComponent("persist-" + UUID().uuidString, isDirectory: true)
     }
 
     // MARK: blob cache

@@ -52,7 +52,7 @@ enum TS {
 
     /// A temporary device-state file.
     static func deviceStateURL() -> URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        TestTemp.root.appendingPathComponent(UUID().uuidString)
             .appendingPathComponent("device.json")
     }
 

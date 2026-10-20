@@ -1,3 +1,4 @@
+import TempDirSupport
 import Foundation
 import XCTest
 @testable import SempereSync
@@ -31,7 +32,7 @@ final class TransportChallengeTests: XCTestCase {
     func testSlowStreamedUploadIsNotCappedByTheResourceTimeout() throws {
         let server = try SlowHTTPServer(bytesPerSecond: 256 << 10)
         defer { server.stop() }
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent("sempere-slow-\(UUID().uuidString)")
+        let file = TestTemp.root.appendingPathComponent("sempere-slow-\(UUID().uuidString)")
         try Data(count: 640 << 10).write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
         let transport = URLSessionTransport(timeout: 30, resourceTimeout: 1)
@@ -63,7 +64,7 @@ final class TransportChallengeTests: XCTestCase {
     func testStalledStreamedUploadTimesOut() throws {
         let server = try SlowHTTPServer(bytesPerSecond: 0)
         defer { server.stop() }
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent("sempere-stall-\(UUID().uuidString)")
+        let file = TestTemp.root.appendingPathComponent("sempere-stall-\(UUID().uuidString)")
         try Data(count: 64 << 20).write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
         let transport = URLSessionTransport(timeout: 1, resourceTimeout: 600)

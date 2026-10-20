@@ -1,3 +1,4 @@
+import TempDirSupport
 import FuzzSupport
 import Foundation
 import Sempere
@@ -320,7 +321,7 @@ final class ShareExportBackgroundTests: XCTestCase {
                                   strokes: 0, modified: nil, problem: nil)
         let source = blobs
         for format in [ShareFormat.pdf, .png] {
-            let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("share-\(UUID().uuidString)")
+            let scratch = TestTemp.root.appendingPathComponent("share-\(UUID().uuidString)")
             defer { try? FileManager.default.removeItem(at: scratch) }
             let with = try ShareExport.run([(summary, state)], options: ShareOptions(format: format, dpi: 36), into: scratch,
                                            vaultSource: "test", blobs: { _ in source },

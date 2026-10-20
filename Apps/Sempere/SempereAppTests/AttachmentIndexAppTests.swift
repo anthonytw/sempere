@@ -223,7 +223,7 @@ struct AttachmentIndexAppTests {
 
     @Test func entriesPersistPerVaultAcrossModels() async throws {
         let clock = IndexTestClock(t0)
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = TestTemp.root.appendingPathComponent(UUID().uuidString)
         let (url, key, _, _) = try AttachmentCloudTests.vaultWithBlobs()
         let first = AppModel(deviceStateURL: TS.deviceStateURL(), attachmentIndexRoot: root)
         first.attachmentIndexDelay = .zero

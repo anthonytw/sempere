@@ -21,7 +21,7 @@ struct IndexTests {
     }
 
     static func tempDir() -> URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("sempere-index-\(UUID().uuidString)")
+        TestTemp.root.appendingPathComponent("sempere-index-\(UUID().uuidString)")
     }
 
     /// The reference: every note's summary from a full read and reconstruction.

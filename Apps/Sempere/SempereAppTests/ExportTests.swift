@@ -32,7 +32,7 @@ struct ExportTests {
     static let lectureStem = "Fixture-lecture-11111111"
 
     func scratch() throws -> URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("export-test-\(UUID().uuidString)")
+        TestTemp.root.appendingPathComponent("export-test-\(UUID().uuidString)")
     }
 
     /// Paths of every file below `dir`, relative to it.

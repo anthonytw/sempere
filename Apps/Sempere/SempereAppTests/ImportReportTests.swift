@@ -110,7 +110,7 @@ struct ImportReportTests {
         let (model, _) = try await NoteWindowTests.unlockedModel()
         let fake = FakeImporter(notes: [ImporterNoteOutcome(source: "/a/One.note", noteID: nil, status: .imported)],
                                 imported: [ImporterCount(id: "images", english: "Images", count: 1)])
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent("x-\(UUID().uuidString).fake")
+        let file = TestTemp.root.appendingPathComponent("x-\(UUID().uuidString).fake")
         try Data().write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
         try await model.importFromApp(fake, urls: [file], notebook: nil)
@@ -124,7 +124,7 @@ struct ImportReportTests {
     @Test func recognitionAfterTheImportIsReported() async throws {
         let (model, _) = try await NoteWindowTests.unlockedModel()
         model.recognizer = FakeRecognizer()
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent("x-\(UUID().uuidString).fake")
+        let file = TestTemp.root.appendingPathComponent("x-\(UUID().uuidString).fake")
         try Data().write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
         var options = ImportOptions()

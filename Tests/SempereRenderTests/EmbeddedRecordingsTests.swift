@@ -1,3 +1,4 @@
+import TempDirSupport
 import Foundation
 import Sempere
 @testable import SempereRender
@@ -93,7 +94,7 @@ final class EmbeddedRecordingsTests: XCTestCase {
         state.recordings[0].blob = BlobRef(content: long, type: "audio/mp4")
         var options = RenderOptions(compress: false, blobs: MemoryBlobSource([long]))
         options.embedRecordings = true
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("long-\(UUID().uuidString).pdf")
+        let url = TestTemp.root.appendingPathComponent("long-\(UUID().uuidString).pdf")
         defer { try? FileManager.default.removeItem(at: url) }
         var report = RenderReport()
         try PDFWriter.write(note: state, options: options, report: &report, to: url)
