@@ -122,6 +122,8 @@ public struct SyncOptions: Sendable {
     /// or a late file would replace or place; what it throws stops there, as
     /// a crash would.
     public var beforeLocalReplace: (@Sendable (String) throws -> Void)?
+    /// Tests: false skips R3 (this device's late files rewrapped from its keyring), so a sweep meets stale local copies.
+    var lateRewrap = true
 
     /// A partial pull instead of a sync (format.md §1.2, docs/io.md "Partial
     /// copies"): `.metadata` makes or continues a partial copy, `.fetch`

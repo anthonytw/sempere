@@ -98,7 +98,7 @@ extension SyncEngine {
               vault != nil, let local = try? localMutable(Vault.manifestName),
               let fingerprint = Vault.listFingerprint(local) else { return }
         // R3: this device's late files (and stale copies) rewrapped from its keyring.
-        if state.lateRewrapFor != fingerprint, let v = keyChangeVault() {
+        if options.lateRewrap, state.lateRewrapFor != fingerprint, let v = keyChangeVault() {
             do {
                 let r = try v.rewrapLateFiles()
                 if !r.rewrapped.isEmpty {

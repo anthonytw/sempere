@@ -75,7 +75,10 @@ final class KCTarget: @unchecked Sendable {
     }
 
     func file(_ path: [String]) -> Data? { try? inspector.read(path, maxBytes: 1 << 26).data }
-    func put(_ path: [String], _ data: Data) { _ = try? inspector.write(path, .data(data), condition: .unconditional) }
+    /// Puts a file there directly (making its parents), as a server or another writer would.
+    func put(_ path: [String], _ data: Data) {
+        if let store { store.putDirect(["vault"] + path, data) } else { dav?.putDirect(path.joined(separator: "/"), data) }
+    }
     func remove(_ path: [String]) { _ = try? inspector.delete(path) }
 
     /// Every file under `notes/`, as `notes/...` → bytes.
@@ -299,12 +302,12 @@ final class KCWorld: @unchecked Sendable {
     func tick(_ seconds: TimeInterval = 1) { now = now.addingTimeInterval(seconds) }
 
     /// Every (still listed) device syncs every target in turn until a whole round changes nothing.
-    func converge(rounds: Int = 10, file: StaticString = #filePath, line: UInt = #line) throws {
+    func converge(rounds: Int = 10, skip: Set<String> = [], file: StaticString = #filePath, line: UInt = #line) throws {
         var last: [String] = []
         for _ in 0..<rounds {
             last = []
-            for d in devices where !d.removed {
-                for t in d.targets {
+            for d in devices where !d.removed && !skip.contains(d.name) {
+                for t in d.targets where !t.offline.value {
                     tick()
                     do {
                         let r = try d.sync(t.name, now: now)
@@ -369,7 +372,7 @@ final class KCWorld: @unchecked Sendable {
     // MARK: Invariants (design §6.4)
 
     /// I2: every listed device and every target hold the same `vault.json` and the same bytes for every note file.
-    func assertConverged(file: StaticString = #filePath, line: UInt = #line) {
+    func assertConverged(ignoring: Set<String> = [], file: StaticString = #filePath, line: UInt = #line) {
         let listed = devices.filter { !$0.removed }
         guard let reference = listed.first?.manifest() else { return XCTFail("no vault.json", file: file, line: line) }
         let files = listed[0].noteFiles()
@@ -386,7 +389,7 @@ final class KCWorld: @unchecked Sendable {
         for t in targets {
             XCTAssertEqual(t.file([Vault.manifestName]), reference, "\(t.name): another vault.json", file: file, line: line)
             XCTAssertNil(t.file([Vault.journalName]), "\(t.name): a journal is left (I5)", file: file, line: line)
-            let there = t.noteFiles()
+            let there = t.noteFiles().filter { !ignoring.contains($0.key) }
             XCTAssertEqual(Set(there.keys), Set(files.keys), "\(t.name): other files: "
                 + "\(Set(there.keys).symmetricDifference(files.keys).sorted().prefix(4))", file: file, line: line)
             let differ = there.filter { files[$0.key] != nil && files[$0.key] != $0.value }.keys.sorted()
@@ -397,15 +400,15 @@ final class KCWorld: @unchecked Sendable {
     /// Every note file on every device and target, by location.
     func everyCopy() -> [(String, String, Data)] {
         var out: [(String, String, Data)] = []
-        for d in devices { for (p, data) in d.noteFiles() { out.append((d.name, p, data)) } }
+        for d in devices where !d.removed { for (p, data) in d.noteFiles() { out.append((d.name, p, data)) } }
         for t in targets { for (p, data) in t.noteFiles() { out.append((t.name, p, data)) } }
         return out
     }
 
     /// I4: no file anywhere (quarantines aside) opens with a removed key, and every one has one stanza per listed key.
-    func assertRevoked(_ removed: [NativeIdentity], file: StaticString = #filePath, line: UInt = #line) {
+    func assertRevoked(_ removed: [NativeIdentity], ignoring: Set<String> = [], file: StaticString = #filePath, line: UInt = #line) {
         guard let m = devices.first(where: { !$0.removed })?.manifest(), let manifest = try? VaultManifest.decode(m) else { return }
-        for (loc, path, data) in everyCopy() {
+        for (loc, path, data) in everyCopy() where !ignoring.contains(path) {
             if let header = try? AgeFile.parseHeader(data).header {
                 XCTAssertEqual(header.stanzas.count, manifest.recipients.count, "\(loc) \(path): stanzas", file: file, line: line)
             }
@@ -439,5 +442,15 @@ final class KCWorld: @unchecked Sendable {
         let listedWriters = Set(devices.filter { !$0.removed }.map(\.name))
         let lost = oracle.written.keys.filter { listedWriters.contains(oracle.writer[$0] ?? "") && !found.contains($0) }
         XCTAssertTrue(lost.isEmpty, "lost (I1): \(lost.sorted().prefix(4))", file: file, line: line)
+    }
+}
+
+extension KCDevice {
+    /// Each note's title, as this device reads it.
+    func notes() throws -> [UUID: String] {
+        let v = try vault()
+        var out: [UUID: String] = [:]
+        for id in try v.noteIDs() { out[id] = try v.reconstruct(noteId: id).meta.title }
+        return out
     }
 }

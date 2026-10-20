@@ -338,7 +338,18 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
                    faults: KeyChangeFaults) throws -> KeyChangePropagation {
         guard var ledger = load().change else { return KeyChangePropagation() }
         var out = KeyChangePropagation(step: ledger.steps[t.id], conflict: ledger.conflicts[t.id])
-        guard out.conflict == nil, let step2 = ledger.step2, let step4 = ledger.step4 else { return out }
+        guard let step2 = ledger.step2, let step4 = ledger.step4 else { return out }
+        if out.conflict != nil {
+            // Looked at again: the other change may have given way there (the other device kept this one).
+            guard let (there, _) = try? t.remote.read([Vault.manifestName], maxBytes: BoundedRead.maxManifestBytes),
+                  Vault.sameList(there, step2) || Vault.sameList(there, ledger.base) else { return out }
+            if let (j, _) = try? t.remote.read([Vault.journalName], maxBytes: BoundedRead.maxManifestBytes), j != ledger.journal {
+                return out
+            }
+            ledger.conflicts[t.id] = nil
+            out.conflict = nil
+            try update { $0.change = ledger }
+        }
         func done(_ step: KeyChangeStep) throws {
             ledger.steps[t.id] = step
             out.step = step

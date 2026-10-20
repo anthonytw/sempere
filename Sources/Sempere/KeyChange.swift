@@ -394,7 +394,7 @@ extension Vault {
         let header: BlobHeader
         do {
             (header, _) = try Self.readBlobFile(url, identities: identities, secrets: secrets, expected: nil,
-                                                maxContent: BlobRef.maxSize)
+                                                maxContent: BlobRef.maxSize, name: fileName)
         } catch {
             return .invalid("not a valid blob here: \(error)")
         }
@@ -416,7 +416,7 @@ extension Vault {
         guard let current = secret, let parsed = BlobName.parse(fileName) else { return nil }
         let secrets = [current] + (previousSecret.map { [$0] } ?? []) + olderSecrets
         guard let (header, _) = try? Self.readBlobFile(url, identities: identities, secrets: secrets, expected: nil,
-                                                       maxContent: BlobRef.maxSize) else { return nil }
+                                                       maxContent: BlobRef.maxSize, name: fileName) else { return nil }
         return BlobName.fileName(name: BlobName.name(digest: header.digest, secret: current), kind: parsed.kind)
     }
 
