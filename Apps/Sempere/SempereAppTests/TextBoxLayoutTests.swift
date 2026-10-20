@@ -203,6 +203,31 @@ struct TextBoxLayoutTests {
         #expect(TextBoxEditorController.fits(full, replacing: NSRange(location: 0, length: 10), with: ""), "deleting always works")
     }
 
+    /// Multi-scalar emoji (flag, skin tone, ZWJ family, keycap) typed into a box commit as written,
+    /// wrap only between clusters, and count in UTF-8 bytes against the text limit.
+    @Test func emojiCommitAsWrittenAndWrapBetweenClusters() throws {
+        let emoji = ["\u{1F1FA}\u{1F1F8}", "\u{1F44D}\u{1F3FD}", "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}",
+                     "1\u{FE0F}\u{20E3}", "\u{1F600}"]
+        let text = emoji.map { "hi " + $0 }.joined(separator: " ")
+        let style = TextBoxEditing.BoxStyle(TextContent(size: 14, color: .black, runs: []))
+        let typed = NSAttributedString(string: text, attributes: TextBoxEditing.typingAttributes(style))
+        let (content, _) = TextBoxEditing.content(from: typed, style: style, original: nil, keyboardLanguage: "en-US",
+                                                  frame: Rect(x: 0, y: 0, w: 60, h: 16.8))
+        #expect(content.string.unicodeScalars.map(\.value) == text.unicodeScalars.map(\.value))
+        #expect(content.limitViolation == nil)
+        let scalars = Array(content.string.unicodeScalars)
+        for b in try #require(content.breaks) {
+            // A break never falls inside a flag, a ZWJ sequence, a modifier or a keycap.
+            #expect(![0x200D, 0xFE0F, 0x20E3, 0x1F3FD].contains(scalars[b].value), "break \(b) before a joiner or modifier")
+            #expect(scalars[b - 1].value != 0x200D, "break \(b) after a ZWJ")
+        }
+        // The limit counts every byte: a 25-byte family does not fit where 24 bytes are left.
+        let family = emoji[2]
+        let nearlyFull = String(repeating: "a", count: TextContent.Limits.utf8Bytes - 24)
+        #expect(TextBoxEditorController.fits(nearlyFull, replacing: NSRange(location: 0, length: 0), with: family) == false)
+        #expect(TextBoxEditorController.fits(String(nearlyFull.dropLast()), replacing: NSRange(location: 0, length: 0), with: family))
+    }
+
     @Test func newBoxesStartWhereTapped() {
         let f = TextBoxPlacement.newFrame(at: ItemFrames.Point(x: 100, y: 200), pageWidth: 612, size: 20)
         #expect(f == Rect(x: 100, y: 188, w: 320, h: 24))
