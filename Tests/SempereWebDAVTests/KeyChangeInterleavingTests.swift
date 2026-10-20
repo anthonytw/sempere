@@ -373,6 +373,10 @@ final class KeyChangeRun: @unchecked Sendable {
     func quiesce() throws {
         for t in w.targets { t.offline.value = false }
         for d in w.devices { d.faults = [:] }
+        // Every device sees what the targets hold, then a day passes: claims a crashed change left there
+        // are no longer in flight (format.md §3.3.1 "Refused journals") and give way to live changes.
+        for d in listed { _ = d.syncAll(now: w.now); w.tick() }
+        w.tick(Vault.inFlightJournalWindow + 3600)
         // Changes that met (F7): the user keeps the other change where they did.
         for _ in 0..<3 {
             for d in listed {
