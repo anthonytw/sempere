@@ -1223,7 +1223,9 @@ deleted, and an unlocked run places a downloaded record only once it opens),
 `notes/<uuid>/att/<64 hex>.<kind>.age` (below). Remote entries that are not a lowercase-UUID note
 directory, a canonical revision file name (format.md §5), an `att`
 collection or a canonical blob name (format.md §8.1.2) are ignored and
-listed, never downloaded, so a hostile name cannot escape the vault. `keys/`
+listed, never downloaded, so a hostile name cannot escape the vault. The
+capture inbox `inbox/<captureId>.<kind>.age` and the per-device published
+summaries `summaries/<device>.sealed` are synced too (below). `keys/`
 and unknown files are not synced. A downloaded revision must start with the
 age header or it is rejected, and before it is placed it is checked as
 format.md §9.1 says (tag, note and name with the vault unlocked; age
@@ -1415,6 +1417,36 @@ it never brings back or changes `rewrapPending` (a `vault.json` put back to
 replay a finished change's journal). Otherwise it is listed in
 `rejected`, the local file stays and the sync state is not updated, so the
 next run reports it again.
+
+**The capture inbox** (`InboxSync.swift`, format.md §11.4, design §5.3). Inbox files are deleted
+once adopted and re-sealed by a key change, so they are not write-once. A file on one side only is
+copied over (create only; on a remote without atomic creates, through a temporary name and a move,
+as blobs are, so a reader never sees half of a 256 MiB capture), and a received one is downloaded into
+a hidden staging folder in `inbox/`, checked there (unlocked: `Vault.checkIncomingInboxFile`, the tag
+under the capture key ring and the manifest, as adoption reads it; locked: its age structure) and
+linked into place, or quarantined. A file on one side only that adoption explains is deleted from that
+side, never copied: the note derived from its capture id has a revision here, is complete, and adoption
+deletes that file after it (`CaptureAdoption.consumed`; for a transcript, judged with its bytes).
+Adoption would delete it there anyway, and two devices that bridge two targets would otherwise hand an
+adopted capture back and forth for ever (found by the N-device stress run). A file both sides held at
+the last run (`SyncState.inbox`) that one side lacks now, and that adoption does not explain, is copied
+back. A locked run uploads (quick captures into a closed vault) and downloads files never synced, but judges no deletion. The
+inbox is synced after the notes, so an adopted note reaches each side before its inbox files go. A
+file on both sides with different bytes (a key change re-sealed one) is reported in `skipped` and
+neither copy is replaced (that is rewrap-replace, key hierarchy KH6). Unchanged files are recognized
+by the remote's version token and the local size and modification time, so a large capture is not
+hashed or fetched again every run. Push-only runs upload and follow explained deletions on the
+server, never write locally.
+
+**Per-device summaries** (`DeviceSummariesSync.swift`, format.md §12.5). `summaries/<device>.sealed`
+is written only by its device. This device's own file (`SyncOptions.deviceID`; the CLI's device id
+when it has one) replaces the remote's whenever they differ and is never taken from the remote.
+Another device's file is copied to the side that lacks it; when both sides hold different copies,
+the side that changed since the last run (`SyncState.deviceSummaries`) wins, the remote's if both did,
+so a device with two targets carries a newer copy from one to the other. A received file is placed
+only when it starts with `SMPU` `0x01` and, unlocked, opens under the vault's secret; otherwise it is
+listed in `skipped` (a hint, not quarantined: after a key change an older file is only stale).
+Nothing is deleted.
 
 **Push-only mirror** (`--push-only`, `SyncOptions.pushOnly`). A two-way
 sync rejects a `vault.json` whose recipients changed without a valid tag

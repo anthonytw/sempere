@@ -97,6 +97,28 @@ struct SyncState: Codable, Equatable {
     /// how long they count as arriving.
     var arriving: [String: Date]?
 
+    /// Capture inbox files (format.md §11) both sides held at the end of the
+    /// last run, keyed by file name: a file one side lacks since is deleted on
+    /// the other only when adoption explains it (`InboxSync.swift`). Nil in
+    /// older state files and when there were none.
+    var inbox: [String: InboxRecord]?
+    /// Per-device published summaries (`summaries/<device>.sealed`, format.md
+    /// §12.5) as both sides held them at the end of the last run, keyed by file
+    /// name (`DeviceSummariesSync.swift`). Nil in older state files.
+    var deviceSummaries: [String: MutableRecord]?
+
+    /// An inbox file as both sides held it.
+    struct InboxRecord: Codable, Equatable {
+        /// SHA-256 (hex) of its bytes.
+        var hash: String
+        /// The remote's version token for it.
+        var stamp: String?
+        /// The local file's size and modification time then: unchanged, the
+        /// local copy is not hashed again (a capture may be 256 MiB).
+        var size: Int
+        var modified: Double?
+    }
+
     /// What a run found about `Depth: infinity` listings.
     struct TreeListingRecord: Codable, Equatable {
         /// False once the server refused one (for good, until the state is deleted).

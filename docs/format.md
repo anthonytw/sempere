@@ -3499,6 +3499,35 @@ transcript file once the recording has a transcript (or is gone, or holds
 other audio than the transcript is bound to, §11.2). A
 transcript file whose capture has not arrived yet stays.
 
+### 11.4 Syncing the inbox
+
+Inbox files are not write-once, so a writer that keeps two copies of a vault
+in step (a sync, §1.3) does not follow the table of `notes/`. A file on one
+side only is deleted from that side when **adoption explains it**: the note
+derived from the capture id (§11.3) has a revision on the side that judges, is
+complete there (§1.2), and the file is one that adoption deletes after it (a
+capture once the note exists; a transcript once its recording has a
+transcript, is gone, or holds other audio, §11.2, judged with the
+transcript's bytes). Adoption would delete it there anyway, and a file it
+explains is never copied, so writers that bridge two copies cannot hand it
+back and forth. It is judged with the vault unlocked. Otherwise:
+
+- if both sides held it at the last sync, the other side deleted it without
+  adoption to explain it: it is copied back; locked, it is left alone (neither
+  deleted nor copied back) until an unlocked sync;
+- if not, it is copied to the other side, never over a file there, after the
+  checks of §9.1 (unlocked: as an adoption reads it, §11.2; locked: its age
+  structure). One that fails is quarantined, never placed and never deleted;
+- on both sides with other bytes (a recipient change re-sealed one copy,
+  §3.3.1 step 3): neither is replaced by a sync that does not implement the
+  replacement rules of a key change (the reference implementation reports it).
+
+A writer syncs the notes before the inbox, so an adopted note reaches the
+other side before its inbox files are deleted there. Two devices that adopt
+the same capture write the same note (§11.3) and both delete their copies;
+the audio blob they each wrote has the same name and content (§8.1.2) and
+neither replaces the other.
+
 
 ## 12. Published summaries
 
@@ -3651,6 +3680,14 @@ Writers write their own file when their listing is complete, not on every
 change (it is replaced whole), and leave other devices' files alone; a file
 that no longer opens (a secret rotation, §3.3) is rewritten by its device or
 ignored. A writer that no longer exists leaves a file that only goes stale.
+
+A sync (§1.3) copies every device's file to the side that lacks it, and when
+both sides hold different copies of another device's file, takes the side that
+changed since its last sync (the remote's if both did). A device's own file is
+only ever written by that device: a sync never replaces it with another copy.
+A received file is placed only when it starts with `SMPU` `0x01` and, with the
+vault unlocked, opens (§12.3); otherwise it is skipped (a hint, never
+quarantined). Nothing is ever deleted.
 
 ## 13. Shared settings
 

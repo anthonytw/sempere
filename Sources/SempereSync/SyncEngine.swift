@@ -6,6 +6,10 @@ import Sempere
 public struct SyncOptions: Sendable {
     /// Plan only: no request that changes the server, no local write.
     public var dryRun = false
+    /// This device's id (format.md §5): its own `summaries/<device>.sealed`
+    /// (§12.5) is only ever uploaded, never taken from the remote. Nil: every
+    /// per-device file is treated as another device's.
+    public var deviceID: DeviceID?
     /// Names this device in `vault.conflict-<device>-<time>.json`.
     public var deviceLabel = "device"
     /// The clock for conflict file names and compaction checks.
@@ -399,6 +403,21 @@ public final class SyncEngine {
             // Stop here: what was done is recorded below, the next run continues.
             report.stoppedEarly = Self.describe(e)
             report.errors.append(.init(path: Vault.notesName, message: Self.describe(e)))
+        }
+        if report.stoppedEarly == nil {
+            // After the notes: an adopted note reaches each side before its inbox files go (`InboxSync.swift`).
+            do { try syncInbox(remoteRoot: remoteRoot) } catch {
+                if let e = error as? SyncError, e.isRunLimit {
+                    report.stoppedEarly = Self.describe(e)
+                }
+                report.errors.append(.init(path: CaptureFile.folderName, message: Self.describe(error)))
+            }
+        }
+        if report.stoppedEarly == nil {
+            do { try syncDeviceSummaries(remoteRoot: remoteRoot) } catch {
+                if let e = error as? SyncError, e.isRunLimit { report.stoppedEarly = Self.describe(e) }
+                report.errors.append(.init(path: PublishedSummaries.deviceFolderName, message: Self.describe(error)))
+            }
         }
         if options.pushOnly { deleteRemoteJunk() }
         let hasIndex = remoteRoot[WebIndex.fileName].map { !$0.isCollection } ?? false
