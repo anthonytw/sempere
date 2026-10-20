@@ -388,7 +388,7 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
     /// locally is unbound and refused, and moved aside); one stopped in K3
     /// is finished (F3). Returns whether a change is still propagating.
     @discardableResult
-    public func recover(_ vault: inout Vault) throws -> Bool {
+    public func recover(_ vault: inout Vault, ownDevices: Set<DeviceID> = []) throws -> Bool {
         guard let ledger = try load().change else { return false }
         let local = try BoundedRead.contents(of: folder.appendingPathComponent(Vault.manifestName),
                                              maxBytes: BoundedRead.maxManifestBytes)
@@ -400,7 +400,11 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
             return false
         }
         if vault.pendingRewrap {
-            let r = try vault.resumeRewrap()
+            // With the keyring: a file left under an even older secret (another change's, kept stale on
+            // both sides) is handled as R3 does (this device's own made current, another's left and
+            // reported), so it never holds this change back for ever.
+            let ring = (try? keyring.load(vaultId: vault.vaultId)) ?? nil
+            let r = try vault.resumeRewrap(keyring: ring, ownDevices: ownDevices)
             guard r.isComplete else { return true }
         }
         try recordFinished(vault)
@@ -446,7 +450,7 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
             return (p, report)
         }
         if vault.canRead, file.change != nil {
-            try recover(&vault)
+            try recover(&vault, ownDevices: options.ownDevices)
             try dropIfSuperseded(vault)
             if try load().change != nil { propagation = try propagate(t, vault: &vault, options: options, faults: faults) }
         }

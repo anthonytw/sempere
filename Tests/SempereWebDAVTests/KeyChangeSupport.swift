@@ -236,6 +236,7 @@ final class KCDevice: @unchecked Sendable {
         let had = watch.map { w in noteFiles().keys.filter { $0.contains(w) } } ?? []
         let r = try coordinator.sync(target: t, vault: &v, options: o, faults: kf).report
         if let watch {
+            for q in r.quarantined where q.path.contains(watch) { print("WATCH-Q \(name)/\(t): \(q.path) \(q.message.prefix(300))") }
             let has = noteFiles().keys.filter { $0.contains(watch) }
             if Set(has) != Set(had) { print("WATCH \(name)/\(t) at \(now.timeIntervalSince1970 - 1_790_000_000): \(had.count) -> \(has.count): \(KCWorld.brief(r)) \(r.downloaded.filter { $0.contains(watch) }) \(r.deleted)") }
         }

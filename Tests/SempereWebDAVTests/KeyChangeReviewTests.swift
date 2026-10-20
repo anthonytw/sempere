@@ -345,6 +345,43 @@ final class KeyChangeReviewTests: TempDirTestCase {
         }
         return out
     }
+
+    // MARK: Found by the long property run: a stale file of an earlier change never holds a change back
+
+    /// A blob under a secret two changes old, which no revision here references (another device's
+    /// leftover, kept stale on both sides), sits in this device's copy when its next change stops in K3.
+    /// Before: resuming without the keyring failed on it (tag mismatch), so the change never finished
+    /// (property seed 74). Now the resume handles it as R3 does: left as it is, reported, not blocking.
+    func testAnOlderStaleBlobDoesNotHoldAChangeBack() throws {
+        let w = try world("stale-blob")
+        try w.write(w.a, n1, "one")
+        try w.write(w.b, n2, "two")
+        _ = try w.attach(w.b, n2, Data("pic".utf8))
+        try w.converge()
+        let first = try w.addSpare(on: w.a)
+        let second = try w.addSpare(on: w.a)
+        try w.converge()
+        let att = w.b.folder.appendingPathComponent("notes/\(n2.uuidString.lowercased())/att")
+        let name = try XCTUnwrap(try FileManager.default.contentsOfDirectory(atPath: att.path).first { $0.hasSuffix(".age") })
+        let stale = try Data(contentsOf: att.appendingPathComponent(name))
+        _ = try w.change(w.a) { try $0.prepareRemoveRecipient(first.recipient, now: w.now) }
+        try w.converge()
+        // The old-named copy, unreferenced in note one.
+        let planted = w.a.folder.appendingPathComponent("notes/\(n1.uuidString.lowercased())/att/\(name)")
+        try FileManager.default.createDirectory(at: planted.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try stale.write(to: planted)
+        XCTAssertThrowsError(try w.change(w.a, syncFirst: false,
+                                          faults: KeyChangeFaults(rewrap: RewrapFaults(stop: .afterFiles(0)))) {
+            try $0.prepareRemoveRecipient(second.recipient, now: w.now)
+        })
+        XCTAssertTrue(try w.a.vault().pendingRewrap)
+        w.tick()
+        _ = try? w.a.sync("T0", now: w.now)
+        XCTAssertFalse(try w.a.vault().pendingRewrap, "the change finished locally")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: planted.path), "the stale copy is left as it is")
+        try? w.converge()
+        XCTAssertFalse(w.a.coordinator.inProgress, "and propagated")
+    }
 }
 
 /// A remote whose version tokens are all weak (`W/"…"`): nothing can be replaced under `If-Match`.

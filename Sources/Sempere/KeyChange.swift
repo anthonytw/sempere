@@ -296,6 +296,18 @@ extension Vault {
         return v
     }
 
+    /// Finishes an interrupted change (`resumeRewrap`) with the keyring's older secrets, as R3 handles
+    /// them: a file under one of them is rewrapped only when it is this device's (`ownDevices`; a blob,
+    /// when a readable revision references it), otherwise left as it is and listed in `lateSkipped`,
+    /// which does not keep the change from completing.
+    public mutating func resumeRewrap(keyring: SecretKeyring?, ownDevices: Set<DeviceID>) throws -> RewrapReport {
+        let saved = (olderSecrets, lateOwnDevices)
+        if let keyring, let secret, keyring.vaultId == vaultId { olderSecrets = keyring.secrets(excluding: secret) }
+        lateOwnDevices = ownDevices
+        defer { olderSecrets = saved.0; lateOwnDevices = saved.1 }
+        return try resumeRewrap()
+    }
+
     /// The keyring's secrets this value holds (`withOlderSecrets`).
     public var olderSecretCount: Int { olderSecrets.count }
 

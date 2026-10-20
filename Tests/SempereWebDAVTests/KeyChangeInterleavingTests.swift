@@ -316,7 +316,8 @@ final class KeyChangeRun: @unchecked Sendable {
 
     /// Every change made, by the `secretId` of the secret it rotated away from: when it was made and its
     /// window, read from the journals themselves (I6 is checked against these, not the engine's deadline).
-    var changes: [String: (changedAt: Date, days: Int)] = [:]
+    /// Two devices may each rotate away from one secret at once (F7): both are kept.
+    var changes: [String: [(changedAt: Date, days: Int)]] = [:]
 
     func recordJournals() {
         var journals = w.targets.compactMap { $0.file([Vault.journalName]) }
@@ -330,7 +331,10 @@ final class KeyChangeRun: @unchecked Sendable {
                   let previous = try? Vault.decryptSecret(armored, with: w.oracle.identities),
                   let at = (o["changedAt"] as? String).flatMap(RFC3339.parse) else { continue }
             let days = (o["mode"] as? String) == "compromised" ? 0 : ((o["lateFileWindowDays"] as? Int) ?? 7)
-            changes[SecretKeyring.id(of: previous)] = (at, days)
+            let sid = SecretKeyring.id(of: previous)
+            if !(changes[sid] ?? []).contains(where: { $0.changedAt == at && $0.days == days }) {
+                changes[sid, default: []].append((at, days))
+            }
         }
     }
 
@@ -339,12 +343,14 @@ final class KeyChangeRun: @unchecked Sendable {
     func checkLate(_ r: SyncReport, _ d: KCDevice) {
         for late in r.keyChange?.lateAccepted ?? [] {
             if late.deadline <= w.now { fail("I6: \(d.name) took in \(late.path) after its own deadline (\(late.deadline))") }
-            guard let sid = late.secretId, let c = changes[sid] else {
+            guard let sid = late.secretId, let cs = changes[sid], !cs.isEmpty else {
                 fail("I6: \(d.name) took in \(late.path) under a secret no recorded change replaced")
                 continue
             }
-            let end = c.changedAt.addingTimeInterval(TimeInterval(c.days) * 86_400 + SecretKeyring.clockSlack)
-            if w.now > end { fail("I6: \(d.name) took in \(late.path) after its change's window (ended \(end))") }
+            // The device applies the window of the change it saw; with two changes away from one secret
+            // (they met, F7), it may have seen either first: never later than the later of the two ends.
+            let end = cs.map { $0.changedAt.addingTimeInterval(TimeInterval($0.days) * 86_400 + SecretKeyring.clockSlack) }.max()!
+            if w.now > end { fail("I6: \(d.name) took in \(late.path) after its change's window (ended \(end); changes \(cs))") }
             count("late taken in")
         }
         for _ in r.keyChange?.lateQuarantined ?? [] { count("late quarantined") }
@@ -425,9 +431,10 @@ final class KeyChangeRun: @unchecked Sendable {
 
     // MARK: Quiescence
 
-    /// Revisions written offline elsewhere (taken out of their writer's copy), waiting to reach a target:
-    /// they arrive later, possibly after a key change, as late files (F9).
-    var offline: [(path: [String], data: Data)] = []
+    /// Uploads held back: a revision as its writer wrote it, delivered later to one of the writer's targets
+    /// (a device only ever uploads there), possibly after a key change, as a late file to the others (F9).
+    /// The writer keeps its own copy, as a device always does: R3 makes it current there.
+    var offline: [(path: [String], data: Data, targets: [KCTarget])] = []
 
     func offlineWrite() throws {
         let d = rng.pick(listed)
@@ -439,8 +446,7 @@ final class KeyChangeRun: @unchecked Sendable {
         let p = [Vault.notesName, note.uuidString.lowercased(), n.filename]
         let url = d.folder.appendingPathComponent(p.joined(separator: "/"))
         guard let data = try? Data(contentsOf: url) else { return }
-        try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
-        offline.append((p, data))
+        offline.append((p, data, d.targets))
         count("offline write")
     }
 
@@ -448,7 +454,7 @@ final class KeyChangeRun: @unchecked Sendable {
         guard !offline.isEmpty else { return }
         let i = rng.int(offline.count)
         let f = offline.remove(at: i)
-        rng.pick(w.targets).put(f.path, f.data)
+        rng.pick(f.targets).put(f.path, f.data)
         count("offline delivered")
     }
 
