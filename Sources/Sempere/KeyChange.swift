@@ -495,7 +495,7 @@ extension Vault {
     package static func sameList(_ a: Data, _ b: Data) -> Bool {
         guard let x = try? readManifest(a), let y = try? readManifest(b) else { return false }
         return x.vaultId == y.vaultId && x.recipients.map(\.key) == y.recipients.map(\.key)
-            && x.vaultSecret == y.vaultSecret && x.recipientsTag == y.recipientsTag
+            && x.recipientsTag != nil && x.recipientsTag == y.recipientsTag
     }
 
     /// True when `a` and `b` hold the same list and exactly one of them
@@ -620,6 +620,9 @@ extension Vault {
         try rememberRecipients(replacing: true)
         var v = self
         v.olderSecrets = ring.secrets(excluding: other)
-        return try v.rewrapNotes(blobs: .reencrypt, stopAfter: nil)
+        let report = try v.rewrapNotes(blobs: .reencrypt, stopAfter: nil)
+        // Local files changed: every target's pair compares its copies again (`SecretKeyring.generation`).
+        if !report.rewrapped.isEmpty { try? store.update(vaultId: vaultId) { $0.generation = ($0.generation ?? 0) + 1 } }
+        return report
     }
 }

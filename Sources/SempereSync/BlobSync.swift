@@ -463,6 +463,7 @@ extension SyncEngine {
         locked { state.quarantined?[key] = nil }
         guard try LocalFS.placeNew(part, at: att.appendingPathComponent(name)) else { return nil }
         locked { report.downloaded.append(path) }
+        placedCopy(key, entry: entry, sameAsRemote: true) { $0.classifyBlob(at: att.appendingPathComponent(name), fileName: name).isCurrent }
         return size
     }
 

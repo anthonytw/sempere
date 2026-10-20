@@ -251,6 +251,18 @@ extension SyncEngine {
         return names.contains(name)
     }
 
+    /// After a received copy was placed (rewrap-replace on): its version is recorded when both sides
+    /// now hold the same current bytes; a copy that is not current (written under the list before an
+    /// addition) makes the next run rewrap this device's local files again (R3).
+    func placedCopy(_ k: String, entry: RemoteEntry?, sameAsRemote: Bool, isCurrent: (Vault) -> Bool) {
+        guard options.rewrapReplace, options.keyring != nil, let v = keyChangeVault() else { return }
+        if isCurrent(v) {
+            if sameAsRemote, let stamp = entry?.stamp { locked { state.files[k, default: .init()].stamp = stamp } }
+        } else {
+            locked { state.lateRewrapFor = nil }
+        }
+    }
+
     // MARK: Rewrap-replace (design §5.2)
 
     /// Compares every copy both sides hold of one note while the run sweeps.
@@ -262,7 +274,7 @@ extension SyncEngine {
         func due(_ k: String, _ entry: RemoteEntry?) -> Bool {
             if kc.sweeping { return true }
             // Never compared by this pair: once, after this device saw any key change.
-            guard let recorded = state.files[k]?.stamp else { return v.olderSecretCount > 0 }
+            guard let recorded = state.files[k]?.stamp else { return true }
             return entry?.stamp != recorded
         }
         /// Records the server's version once both copies are the same.

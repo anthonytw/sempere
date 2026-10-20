@@ -318,6 +318,18 @@ final class KeyChangeRun: @unchecked Sendable {
         }
     }
 
+    /// True when `theirs` is a change made alongside this device's (the same secret, or a rotation from a
+    /// secret this device held): two changes met (F7), as opposed to changes it only missed.
+    func concurrent(_ d: KCDevice, _ theirs: Data) -> Bool {
+        guard let v = try? d.vault(), let other = v.secret(ofManifest: theirs),
+              let m = try? VaultManifest.decode(theirs) else { return false }
+        if let own = v.currentSecret, own == other { return true }
+        let ring = (try? d.keyring.load(vaultId: v.vaultId)) ?? nil
+        return (ring?.secrets(excluding: other) ?? []).contains {
+            RecipientsAuth.linkConnects(m.secretLink, from: $0, to: other, vaultId: v.vaultId)
+        }
+    }
+
     /// After keeping another change: this device's own change is redone (spare keys it had added are
     /// added again; a dropped key of its own is simply not used).
     func redo(_ d: KCDevice, _ dropped: [String]) throws {
@@ -361,14 +373,22 @@ final class KeyChangeRun: @unchecked Sendable {
             for _ in 0..<2 {
                 for d in listed {
                     for (t, r) in zip(d.targets, d.syncAll(now: w.now)) {
-                        guard let why = r.rejected.first(where: { $0.path == Vault.manifestName })?.message,
-                              why.contains("cannot confirm") || why.contains("fewer devices under the same secret") else { continue }
+                        let conflict = r.conflicts.contains { $0.path == Vault.manifestName }
+                        guard let why = conflict ? "conflict" : r.rejected.first(where: { $0.path == Vault.manifestName })?.message,
+                              conflict || why.contains("cannot confirm") || why.contains("fewer devices under the same secret")
+                        else { continue }
                         // Missed two rotations (format.md §2.1): the user checks the list and confirms it.
                         // Two additions met (F7): the user keeps the other one and redoes this one.
-                        guard var v = try? d.vault(), v.canRead else { continue }
+                        // Users choose consistently: the list with the smaller tag is the one kept.
+                        guard var v = try? d.vault(), v.canRead, let theirsData = t.file([Vault.manifestName]),
+                              let theirs = Vault.listFingerprint(theirsData),
+                              let mine = d.manifest().flatMap(Vault.listFingerprint) else { continue }
+                        let met = concurrent(d, theirsData)
+                        // The other side keeps this one, when it can see it on a target.
+                        let visible = d.manifest().map { m in w.targets.contains { Vault.sameList($0.file([Vault.manifestName]) ?? Data(), m) } } ?? false
+                        if met && theirs > mine && visible { continue }
                         do {
-                            try redo(d, try d.coordinator.adoptOtherChange(from: t.name, vault: &v, now: w.now,
-                                                                          confirmed: why.contains("cannot confirm")))
+                            try redo(d, try d.coordinator.adoptOtherChange(from: t.name, vault: &v, now: w.now, confirmed: !met))
                             count("confirmed")
                         } catch {
                             note("confirm on \(d.name) failed: \(error)")
@@ -382,13 +402,22 @@ final class KeyChangeRun: @unchecked Sendable {
         if ProcessInfo.processInfo.environment["SEMPERE_KEYCHANGE_TRACE"] == "1" { dumpTrace() }
         try w.converge(rounds: 16)
         _ = before
+        if ProcessInfo.processInfo.environment["SEMPERE_KEYCHANGE_TRACE"] == "1" {
+            func h(_ x: Data?) -> String { x.map { String(FileDigest.sha256($0).prefix(6)) } ?? "-" }
+            for d in w.devices {
+                let f = d.coordinator.load()
+                print("FILE \(d.name): change \(h(f.change?.journal)) takeBack \(f.takeBack?.mapValues { $0.map(h) } ?? [:]) targets \(d.targets.map(\.name))")
+            }
+            print("JOURNALS " + w.targets.map { "\($0.name) \(h($0.file([Vault.journalName])))" }.joined(separator: " "))
+        }
         for d in listed {
             if d.coordinator.inProgress, let l = d.coordinator.load().change {
                 func fp(_ x: Data?) -> String { x.flatMap { Vault.listFingerprint($0) }.map { String($0.prefix(6)) } ?? "-" }
                 func h(_ x: Data?) -> String { x.map { String(FileDigest.sha256($0).prefix(6)) } ?? "-" }
                 print("LEDGER \(d.name): conflicts \(l.conflicts) journal \(h(l.journal)) base \(fp(l.base)) step2 \(fp(l.step2)) "
                       + "step4 \(fp(l.step4)) local \(fp(d.manifest())) "
-                      + w.targets.map { "\($0.name): \(fp($0.file([Vault.manifestName]))) j \(h($0.file([Vault.journalName])))" }.joined(separator: " "))
+                      + w.targets.map { "\($0.name): \(fp($0.file([Vault.manifestName]))) j \(h($0.file([Vault.journalName]))) "
+                          + "same \(Vault.sameList($0.file([Vault.manifestName]) ?? Data(), l.step2 ?? Data()))" }.joined(separator: " "))
             }
             if d.coordinator.inProgress { fail("I5: \(d.name) still has a change in progress (\(d.coordinator.steps))") }
         }
@@ -407,7 +436,18 @@ final class KeyChangeRun: @unchecked Sendable {
         // others) stays on the targets, never deleted, outside every working copy.
         let removedNames = Set(w.devices.filter(\.removed).map(\.name))
         let held = Set(listed[0].noteFiles().keys)
-        let ignored = afterRemoval.union(w.oracle.written.keys.filter { removedNames.contains(w.oracle.writer[$0] ?? "") && !held.contains($0) })
+        // (One the vault took in within its window is the vault's like any other.)
+        var ignored = afterRemoval.union(w.oracle.written.keys.filter { removedNames.contains(w.oracle.writer[$0] ?? "") })
+            .subtracting(held)
+        // Those revisions keep their note's blobs on the targets from being collected (format.md §8.1.6
+        // rule 1: a revision the collector cannot read may reference them): an older name of a blob
+        // there stays, readable to the keys of when it was written (no more than they could read then).
+        let leftoverNotes = Set(ignored.map { $0.split(separator: "/").prefix(2).joined(separator: "/") })
+        for t in w.targets {
+            ignored.formUnion(t.noteFiles().keys.filter { p in
+                p.contains("/att/") && !held.contains(p) && leftoverNotes.contains(p.split(separator: "/").prefix(2).joined(separator: "/"))
+            })
+        }
         w.assertConverged(ignoring: ignored)
         let stillListed = Set((try? VaultManifest.decode(listed[0].manifest() ?? Data()))?.recipients.map(\.key) ?? [])
         w.assertRevoked(revoked.filter { !stillListed.contains($0.recipient.string) }, ignoring: ignored)

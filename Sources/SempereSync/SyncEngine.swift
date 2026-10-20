@@ -1265,6 +1265,9 @@ public final class SyncEngine {
         if try !LocalFS.write(placed, to: url, replacing: false) { return false }
         locked { report.downloaded.append(path) }
         if let late { tookLateRevision(id, n, path: path, placed: placed, entry: entry, deadline: late) }
+        placedCopy(key(id, n), entry: entry, sameAsRemote: late == nil) {
+            $0.classifyRevision(placed, note: UUID(uuidString: id) ?? UUID(), name: n).isCurrent
+        }
         return true
     }
 

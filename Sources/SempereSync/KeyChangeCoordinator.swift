@@ -204,13 +204,14 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
                                             maxBytes: BoundedRead.maxManifestBytes)
         var ledger = KeyChangeLedger(journal: prepared.journal, policy: prepared.keyChange, base: base)
         // C1: claim every target with the journal's exact bytes.
+        // Every target written to, claimed or not: a write whose answer was lost may have landed.
         var claimed: [KeyChangeTarget] = []
         for t in targets {
+            claimed.append(t)
             do {
                 switch try claim(t, journal: prepared.journal, vault: vault, now: now) {
                 case .claimed:
                     ledger.steps[t.id] = .claimed
-                    claimed.append(t)
                 case .taken:
                     takeBack(claimed, journal: prepared.journal)
                     throw KeyChangeError.anotherChangeInFlight(target: t.id)
@@ -435,6 +436,20 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
                 _ = try t.remote.write(journalPath, .data(ledger.journal), condition: .create)
             }
             try done(.manifest)
+        }
+        // The target may have moved on since (a): another device's later change made on top of this one.
+        if ledger.steps[t.id]! < .journalRemoved,
+           let (there, _) = try? t.remote.read(manifestPath, maxBytes: BoundedRead.maxManifestBytes),
+           !Vault.sameList(there, step2) {
+            let local = try? BoundedRead.contents(of: folder.appendingPathComponent(Vault.manifestName),
+                                                  maxBytes: BoundedRead.maxManifestBytes)
+            if Vault.incomingManifestProblem(there, local: local, vault: vault) == nil {
+                // This device would take it: the later change carries this one; its own work is over.
+                takeBack(targets, journal: ledger.journal)
+                try update { $0.change = nil }
+                return out
+            }
+            return try conflict("the target holds another device list (two key changes met, design §6.2 F7)")
         }
         if ledger.steps[t.id]! < .files {
             var o = options
