@@ -439,10 +439,16 @@ public final class KeyChangeCoordinator: @unchecked Sendable {
             }
             try done(.manifest)
         }
-        // The target may have moved on since (a): another device's later change made on top of this one.
+        // The target may have moved on since (a): another device's later change made on top of this one;
+        // or back (its vault.json put back, a hostile target): then (a) is done again next time.
         if ledger.steps[t.id]! < .journalRemoved,
            let (there, _) = try? t.remote.read(manifestPath, maxBytes: BoundedRead.maxManifestBytes),
            !Vault.sameList(there, step2) {
+            if replaces(there, ledger, vault) {
+                ledger.steps[t.id] = .claimed
+                try update { $0.change = ledger }
+                return out
+            }
             let local = try? BoundedRead.contents(of: folder.appendingPathComponent(Vault.manifestName),
                                                   maxBytes: BoundedRead.maxManifestBytes)
             if Vault.incomingManifestProblem(there, local: local, vault: vault) == nil {

@@ -505,7 +505,8 @@ extension Vault {
     }
 
     /// True when the two `vault.json`s hold the same list (design §5.2 rule
-    /// 1): the same recipients, the same sealed secret and the same tag.
+    /// 1): the same recipients and the same tag (which binds the secret: the
+    /// sealed copy of the secret may differ between two writes of one list).
     /// `rewrapPending` and the label do not count: a change's step-2 and
     /// step-4 copies hold the same list.
     package static func sameList(_ a: Data, _ b: Data) -> Bool {

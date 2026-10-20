@@ -448,10 +448,8 @@ final class KeyChangeRun: @unchecked Sendable {
                 }
             }
         }
-        let before = Date()
         if ProcessInfo.processInfo.environment["SEMPERE_KEYCHANGE_TRACE"] == "1" { dumpTrace() }
         try w.converge(rounds: 16)
-        _ = before
         if ProcessInfo.processInfo.environment["SEMPERE_KEYCHANGE_TRACE"] == "1" {
             func h(_ x: Data?) -> String { x.map { String(FileDigest.sha256($0).prefix(6)) } ?? "-" }
             for d in w.devices {

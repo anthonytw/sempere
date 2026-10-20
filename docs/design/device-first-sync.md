@@ -601,7 +601,17 @@ The user picks the mode in the key-change sheet:
   device's replacement of it; a `vault.json` under the same secret with fewer keys (an older list, or
   a concurrent addition) was taken by bridges in turn for ever; claims whose write answer was lost
   were never taken back; a leftover old blob name came back as a download; a confirmed "keep the
-  other change" could roll back to a list under a secret this device had replaced.
+  other change" could roll back to a list under a secret this device had replaced; **blob collection
+  ran while the two sides held different lists**, so a device deleted from a target blobs named under
+  the other list's secret (unreferenced as far as it could tell), which their holder uploaded again
+  (no loss in the run, but a target whose only holder was gone would have lost them): collection now
+  waits until both sides hold the same list; a stale journal left by a finished change blocked later
+  changes (it now gives way to a claim after the in-flight day).
+- **Two changes that met (F7) resolve in one direction**: a rotation is never undone. A device whose
+  change rotated away from the secret of the other change keeps its own (`keepThisList`), and the
+  other device redoes its addition on top; when neither rotated from the other, the user keeps
+  one (`adoptOtherChange`), and the keys it dropped are added again or the secret rotates
+  (`prepareRotation`), since stanza counts cannot tell a dropped key's files from current ones.
 - **Not in P4a**: inbox, `keys/`, `summaries/` and notebook records are not rewrap-replaced (P4);
   F16 runs over a target whose `vault.json` is replaced underneath and over P3's provider folder
   (`EvictingFolderProvider` conflict versions); F11 runs over `MemoryRemote` faults and the WebDAV mock, not wsgidav behind the fault
