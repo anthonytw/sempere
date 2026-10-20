@@ -15,13 +15,13 @@ struct SempereCLI: ParsableCommand {
             4 cannot decrypt (wrong key or passphrase), 6 untrusted device list (`sempere vault recipients \
             repair`), 7 read-only vault (newer format).
 
-            Environment (docs/cli.md, "Environment"): SEMPERE_VAULT, SEMPERE_IDENTITY, SEMPERE_PASSPHRASE, \
+            Environment (docs/cli.md, "Environment"): SEMPERE_VAULT, SEMPERE_STORE, SEMPERE_IDENTITY, SEMPERE_PASSPHRASE, \
             SEMPERE_TITLE_FORMAT, SEMPERE_PDFTOPPM, SEMPERE_PDFTOTEXT, SEMPERE_WEBDAV_PASSWORD, \
             SEMPERE_BUNDLED_FONTS, SEMPERE_FONT_DIR, XDG_STATE_HOME, XDG_CACHE_HOME, XDG_DATA_HOME.
             """,
         version: SempereAbout.versionText(program: "sempere", version: sempereVersion),
         subcommands: [
-            KeysCommand.self, VaultCommand.self, NotesCommand.self, NotebooksCommand.self, TagsCommand.self,
+            KeysCommand.self, VaultCommand.self, StoreCommand.self, NotesCommand.self, NotebooksCommand.self, TagsCommand.self,
             PagesCommand.self, AttachCommand.self, ItemsCommand.self, RecordingsCommand.self, ExportCommand.self,
             RecoverCommand.self, BlobsCommand.self, CompactCommand.self, SnapshotCommand.self, ImportCommand.self, SearchCommand.self, RecognizeCommand.self, RecognizeMathCommand.self, TranscribeCommand.self, InboxCommand.self,
             BackupCommand.self, RestoreCommand.self, SettingsCommand.self,

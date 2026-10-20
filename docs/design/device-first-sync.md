@@ -3,7 +3,10 @@
 Status: **design approved by the owner on 2026-10-19** (answers in §11). P1 (`SempereSync` behind
 `SyncRemote`) and P2 (`MemoryRemote`, the transport conformance suite, the engine over every
 transport, N-device stress; docs/ci.md "Transports", "Sync stress") are implemented. The
-key-change review (§6) is a gate that must pass before P4 and P10 land.
+key-change review (§6) is a gate that must pass before P4 and P10 land. P5a, the in-app vault store
+(the part of P5 that needs no engine work: `VaultStore`, a per-vault `VaultFileLock`, `sempere store`, New
+Vault and "Open Vault…" copying into the store), is implemented; until P6 the store is
+`Application Support/Sempere/Vaults`, not yet the App Group container.
 
 Owner's decision (2026-10-19):
 

@@ -624,6 +624,14 @@ final class AppModel {
     /// rewrap journal moved aside first); the key window shows it.
     var keyChangeNote: String?
     private var scopedURL: URL?
+    /// The in-app vault store (`VaultLibrary.vaultStore`): the app sets it, so an open store vault
+    /// holds a lease (`storeLease`); nil in tests that need none.
+    @ObservationIgnored var vaultStore: VaultStore?
+    /// Held while a vault of `vaultStore` is open: removing it from the store is refused meanwhile
+    /// (by the app, or `sempere store remove`). Released once the editors' last saves are written.
+    @ObservationIgnored private var storeLease: VaultStore.Lease?
+    /// "Open Vault…" copying a vault onto this device (`copyIn`), for the progress overlay.
+    var vaultCopy: VaultCopyProgress?
     /// Bumped by `close()` (and so by every `openVault`): async work started
     /// under an older generation must not publish its result (the vault it
     /// read is gone).
@@ -787,6 +795,9 @@ final class AppModel {
             try ensureCurrent(gen)
             Perf.end(interval, "cloud=\(cloud)")
             if scoped { scopedURL = holder }
+            if let store = vaultStore, let stored = store.entry(containing: url) {
+                storeLease = try? store.lease(stored.vaultId)
+            }
             isCloudVault = cloud
             vault = opened
             vaultURL = url
@@ -1166,10 +1177,12 @@ final class AppModel {
         windowEditors = [:]
         windowClaims = []
         let scoped = scopedURL
+        let lease = storeLease
+        storeLease = nil
         self.editor = nil
         exportEpoch.bump()
         NotePDFExport.purge(in: exportFolder, olderThan: 0)   // plaintext PDFs dragged out of this vault
-        if editor != nil || scoped != nil || !windowed.isEmpty {
+        if editor != nil || scoped != nil || !windowed.isEmpty || lease != nil {
             let earlier = closingEditor
             let gate = editGate
             closingEditor = Task {
@@ -1180,6 +1193,7 @@ final class AppModel {
                 await gate.acquire()
                 gate.release()
                 scoped?.stopAccessingSecurityScopedResource()
+                lease?.release()
             }
         }
         scopedURL = nil

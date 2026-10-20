@@ -32,6 +32,11 @@ import UIKit
 ///   directory, as if that folder had been picked (`importPick`, `MacImportUITests`: the panel
 ///   cannot open a folder in the test runner's container).
 ///
+/// - `SEMPERE_DEBUG_PICK_VAULT`: `demo`. "Open Vault…" skips the folder picker (another process, which a
+///   UI test cannot drive on the iPad) and takes the demo vault (`DemoVault`, its key stored under
+///   `SEMPERE_DEMO_PASSPHRASE`), built in the app's temporary folder once per launch, as if it had been
+///   picked: the copy-in itself is the real one (`vaultPick`, `VaultStoreUITests`).
+///
 /// Release builds compile none of this.
 enum DebugLaunch {
     static var environment: [String: String] { ProcessInfo.processInfo.environment }
@@ -112,6 +117,27 @@ enum DebugLaunch {
         }
         return [top]
     }
+
+    /// `SEMPERE_DEBUG_PICK_VAULT=demo`: the demo vault to copy in, built on the first call of a launch
+    /// and the same folder after (so picking it twice picks the same vault); nil when not asked for or
+    /// when it cannot be built.
+    @MainActor
+    static func vaultPick() async -> URL? {
+        guard environment["SEMPERE_DEBUG_PICK_VAULT"] == "demo" else { return nil }
+        if let built = pickedDemo { return built }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("SempereDebugPick", isDirectory: true)
+        let passphrase = environment["SEMPERE_DEMO_PASSPHRASE"]
+        do {
+            let url = try await Task.detached { try await DemoVault.build(in: dir, passphrase: passphrase).url }.value
+            pickedDemo = url
+            return url
+        } catch {
+            NSLog("SempereDebug vaultPick failed: %@", "\(error)")
+            return nil
+        }
+    }
+
+    @MainActor private static var pickedDemo: URL?
 
     static var scrollY: Double? { environment["SEMPERE_DEBUG_SCROLL_Y"].flatMap(Double.init) }
 

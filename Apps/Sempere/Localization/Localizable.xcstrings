@@ -789,6 +789,54 @@
         }
       }
     },
+    "%lld files of this vault are not on this device yet. Download the vault (in Files, choose Download Now) and try again." : {
+      "comment" : "%lld is a number of files",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld file of this vault is not on this device yet. Download the vault (in Files, choose Download Now) and try again."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld files of this vault are not on this device yet. Download the vault (in Files, choose Download Now) and try again."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld archivos de esta bóveda aún no están en este dispositivo. Descarga la bóveda (en Archivos, elige Descargar ahora) y vuelve a intentarlo."
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld archivo de esta bóveda aún no está en este dispositivo. Descarga la bóveda (en Archivos, elige Descargar ahora) y vuelve a intentarlo."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld archivos de esta bóveda aún no están en este dispositivo. Descarga la bóveda (en Archivos, elige Descargar ahora) y vuelve a intentarlo."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld files or folders chosen" : {
       "comment" : "Notability import options: what was picked",
       "extractionState" : "manual",
@@ -4978,6 +5026,18 @@
         }
       }
     },
+    "Copying “%@” onto this device: %lld of %lld files…" : {
+      "comment" : "Copy-in progress: %1$@ is the vault's name, then files copied of all files",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiando «%1$@» en este dispositivo: %2$lld de %3$lld archivos…"
+          }
+        }
+      }
+    },
     "Cornell" : {
       "comment" : "Paper kind: Cornell notes layout (a name, usually not translated)",
       "extractionState" : "manual",
@@ -5767,6 +5827,18 @@
         }
       }
     },
+    "Delete from This Device…" : {
+      "comment" : "Removes a vault from the in-app store",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminar de este dispositivo…"
+          }
+        }
+      }
+    },
     "Delete this notebook?" : {
       "comment" : "Confirmation title before deleting an empty notebook",
       "extractionState" : "manual",
@@ -5775,6 +5847,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "¿Eliminar este cuaderno?"
+          }
+        }
+      }
+    },
+    "Delete “%@” from this device?" : {
+      "comment" : "%@ is the vault's name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Eliminar «%@» de este dispositivo?"
           }
         }
       }
@@ -6320,6 +6404,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Descargando «%@» del servidor…"
+          }
+        }
+      }
+    },
+    "Downloading “%@”: %lld of %lld files…" : {
+      "comment" : "Copy-in progress: %1$@ is the vault's name, then files downloaded of all files",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descargando «%1$@»: %2$lld de %3$lld archivos…"
           }
         }
       }
@@ -8779,6 +8875,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sus últimos cambios no se han podido guardar, así que no se ha exportado."
+          }
+        }
+      }
+    },
+    "Its notes are deleted from this device. Unless you have a backup or another copy, they cannot be recovered." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sus notas se eliminan de este dispositivo. Si no tienes una copia de seguridad u otra copia, no se podrán recuperar."
           }
         }
       }
@@ -15380,6 +15487,18 @@
         }
       }
     },
+    "Sempere could not copy the vault: %@" : {
+      "comment" : "%@ is the reason, in English",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sempere no ha podido copiar la bóveda: %@"
+          }
+        }
+      }
+    },
     "Sempere could not read that file: %@" : {
       "comment" : "%@ is the error",
       "extractionState" : "manual",
@@ -15457,6 +15576,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sempere no tiene permiso para usar el micrófono. Permítelo en Ajustes ▸ Privacidad y seguridad ▸ Micrófono."
+          }
+        }
+      }
+    },
+    "Sempere keeps the vault on this device, inside the app, so it opens without a connection." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sempere guarda la bóveda en este dispositivo, dentro de la app, para que se abra sin conexión."
+          }
+        }
+      }
+    },
+    "Sempere keeps your vaults on this device, inside the app, so they open without a connection. Open Vault… copies a vault (a .sempere item in Files, iCloud Drive, a backup or an export) onto this device; the original is not changed." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sempere guarda tus bóvedas en este dispositivo, dentro de la app, para que se abran sin conexión. Abrir bóveda… copia una bóveda (un ítem .sempere en Archivos, iCloud Drive, una copia de seguridad o una exportación) en este dispositivo; el original no cambia."
           }
         }
       }
@@ -17596,6 +17737,62 @@
         }
       }
     },
+    "That vault holds “%@”, a link or special file. A vault holds only folders and regular files." : {
+      "comment" : "%@ is a path inside the vault",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esa bóveda contiene «%@», un enlace o un archivo especial. Una bóveda solo contiene carpetas y archivos normales."
+          }
+        }
+      }
+    },
+    "That vault is a restore that did not finish. Finish the restore, then open it again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esa bóveda es una restauración que no terminó. Termina la restauración y vuelve a abrirla."
+          }
+        }
+      }
+    },
+    "That vault is an incomplete copy. Finish downloading or syncing it, then open it again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esa bóveda es una copia incompleta. Termina de descargarla o sincronizarla y vuelve a abrirla."
+          }
+        }
+      }
+    },
+    "That vault is busy. Try again in a moment." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esa bóveda está ocupada. Vuelve a intentarlo en un momento."
+          }
+        }
+      }
+    },
+    "That vault is open. Close it first." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esa bóveda está abierta. Ciérrala primero."
+          }
+        }
+      }
+    },
     "The AGE-SECRET-KEY-PQ-1… key is incomplete or mistyped. Copy all of it." : {
       "comment" : "Existing key does not decode",
       "extractionState" : "manual",
@@ -17757,6 +17954,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La copia ya estaba al día."
+          }
+        }
+      }
+    },
+    "The copy did not match the original, so nothing was added. Try again; if it happens again, check the storage the vault is on." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La copia no coincidía con el original, así que no se añadió nada. Vuelve a intentarlo; si vuelve a ocurrir, revisa el almacenamiento en el que está la bóveda."
           }
         }
       }
@@ -18309,6 +18517,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No se ha podido leer la transcripción."
+          }
+        }
+      }
+    },
+    "The vault changed while it was being copied, so nothing was added. Try again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La bóveda cambió mientras se copiaba, así que no se añadió nada. Vuelve a intentarlo."
           }
         }
       }
@@ -19153,6 +19372,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Esta bóveda no tiene ningún archivo de clave protegido con frase de contraseña."
+          }
+        }
+      }
+    },
+    "This vault is already on this device as “%@”. Open it from the list." : {
+      "comment" : "%@ is the vault's name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta bóveda ya está en este dispositivo como «%@». Ábrela desde la lista."
           }
         }
       }
@@ -21581,6 +21812,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "«%@» es una bóveda. Elige una carpeta fuera de ella (un disco externo, otra carpeta en la nube)."
+          }
+        }
+      }
+    },
+    "“%@” is not a Sempere vault (it has no readable vault.json)." : {
+      "comment" : "%@ is a folder's name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "«%@» no es una bóveda de Sempere (no tiene un vault.json legible)."
           }
         }
       }

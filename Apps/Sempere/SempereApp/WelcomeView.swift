@@ -1,15 +1,15 @@
+import Sempere
 import SwiftUI
 
-/// Shown while no vault is open: recents, vaults on this device, and the
-/// ways to open or create one.
+/// Shown while no vault is open: the vaults on this device (the in-app store), other recent vaults
+/// (WebDAV copies, folders earlier builds opened in place), and the ways to open or create one.
 struct WelcomeView: View {
     @AppEnvironmentObject private var library: VaultLibrary
     var openFolder: () -> Void
     var newVault: () -> Void
     var openRecent: (RecentVault) -> Void
-    var openURL: (URL) -> Void
+    var openStored: (VaultStore.Entry) -> Void
 
-    @State private var onDevice: [URL] = []
     @State private var restoring = false
     @State private var connectingWebDAV = false
 
@@ -24,11 +24,13 @@ struct WelcomeView: View {
                     Button("Restore from Backup…", systemImage: "clock.arrow.circlepath") { restoring = true }
                     ICloudDriveHelpButton()
                 } footer: {
-                    Text("A vault is one .sempere item in Files: on this device, in iCloud Drive, or anywhere else. Choose the .sempere item itself (a plain folder works too).")
+                    Text("Sempere keeps your vaults on this device, inside the app, so they open without a connection. Open Vault… copies a vault (a .sempere item in Files, iCloud Drive, a backup or an export) onto this device; the original is not changed.")
                 }
-                if !library.recents.isEmpty {
+                StoredVaultsSection(open: openStored)
+                let others = library.recents.filter { $0.storeID == nil }
+                if !others.isEmpty {
                     Section("Recent") {
-                        ForEach(library.recents) { entry in
+                        ForEach(others) { entry in
                             Button { openRecent(entry) } label: {
                                 RecentVaultRow(entry: entry, state: library.state(of: entry),
                                                opensWhenReady: library.pendingOpen == entry.id)
@@ -39,19 +41,11 @@ struct WelcomeView: View {
                     }
                 }
                 WebDAVLocationsSection()
-                if !onDevice.isEmpty {
-                    Section("On This Device") {
-                        ForEach(onDevice, id: \.self) { url in
-                            Button(VaultLibrary.displayName(of: url), systemImage: "ipad") { openURL(url) }
-                                .help("Open this vault")
-                        }
-                    }
-                }
             }
             .navigationTitle("Sempere")
-            .onAppear { onDevice = VaultLibrary.vaults(in: VaultLibrary.onDeviceFolder) }
+            .task { await library.refreshStoredVaults() }
             .sheet(isPresented: $connectingWebDAV) { WebDAVConnectSheet() }
-            .sheet(isPresented: $restoring, onDismiss: { onDevice = VaultLibrary.vaults(in: VaultLibrary.onDeviceFolder) }) {
+            .sheet(isPresented: $restoring) {
                 RestoreBackupView()
             }
         }

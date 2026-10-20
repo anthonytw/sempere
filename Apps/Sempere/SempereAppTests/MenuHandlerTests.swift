@@ -82,8 +82,7 @@ struct MenuHandlerTests {
     @Test func reopeningARecentVaultOpensItLocked() async throws {
         let library = try BrowserTests.library()
         let first = AppModel(deviceStateURL: try BrowserTests.tempDir().appendingPathComponent("device.json"))
-        let created = try await first.createVault(NewVaultRequest(name: "Menu", keySource: .generate, passphrase: nil),
-                                                  in: try BrowserTests.tempDir(), library: library)
+        let created = try await first.createVault(NewVaultRequest(name: "Menu", keySource: .generate, passphrase: nil), library: library)
         first.close()
 
         let model = AppModel(deviceStateURL: try BrowserTests.tempDir().appendingPathComponent("device.json"))
