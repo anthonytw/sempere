@@ -12,7 +12,7 @@ import XCTest
 /// Each shot is a fresh launch whose state comes from the environment, so the
 /// test taps nothing: a change to the UI cannot break a shot's navigation.
 final class ScreenshotTests: XCTestCase {
-    /// One screenshot: its file name, the launch variables, and the label to wait for.
+    /// One screenshot: its file name, the launch variables, and the label (or accessibility identifier) to wait for.
     struct Shot {
         let name: String
         let environment: [String: String]
@@ -48,7 +48,7 @@ final class ScreenshotTests: XCTestCase {
             Shot(name: "02-sketch", environment: env(["SEMPERE_DEMO_NOTE": "atlas"]), waitFor: "Annotate"),
             Shot(name: "03-notes", environment: env(["SEMPERE_DEMO_SIDEBAR": "all"]), waitFor: "New Note"),
             Shot(name: "04-tags", environment: env(["SEMPERE_DEMO_SIDEBAR": "tag:lecture"]), waitFor: "#lecture"),
-            Shot(name: "05-library", environment: env([:]), waitFor: "Recently Deleted"),
+            Shot(name: "05-library", environment: env([:]), waitFor: "sidebar-notebook-School"),
             Shot(name: "06-unlock", environment: env(["SEMPERE_DEMO_LOCKED": "1"]), waitFor: "Unlock My Notes"),
         ]
     }
@@ -71,7 +71,7 @@ final class ScreenshotTests: XCTestCase {
             Shot(name: "02-sketch", environment: env(all, ["SEMPERE_DEMO_NOTE": "atlas"]), waitFor: atlas),
             Shot(name: "03-notes", environment: env("doubleColumn", ["SEMPERE_DEMO_NOTE": "respiration"]), waitFor: respiration),
             Shot(name: "04-tags", environment: env("all", ["SEMPERE_DEMO_NOTE": "respiration", "SEMPERE_DEMO_SIDEBAR": "tag:lecture"]),
-                 waitFor: "Tools"),
+                 waitFor: "#lecture"),
             Shot(name: "05-paper", environment: env(all, ["SEMPERE_DEMO_NOTE": "atlas", "SEMPERE_DEMO_PAPER_PICKER": "1"]),
                  waitFor: "Apply to This Page"),
             Shot(name: "06-unlock", environment: env("all", ["SEMPERE_DEMO_LOCKED": "1"]), waitFor: "Unlock My Notes"),
@@ -98,7 +98,7 @@ final class ScreenshotTests: XCTestCase {
         // UTC: the note list shows dates, and the demo dates are fractions of a day before noon UTC.
         app.launchEnvironment = shot.environment.merging(["TZ": "UTC"]) { mine, _ in mine }
         app.launch()
-        let label = NSPredicate(format: "label CONTAINS %@", shot.waitFor)
+        let label = NSPredicate(format: "label CONTAINS %@ OR identifier == %@", shot.waitFor, shot.waitFor)
         let found = app.descendants(matching: .any).matching(label).firstMatch.waitForExistence(timeout: 45)
         XCTAssertTrue(found, "\(shot.name): never showed “\(shot.waitFor)”")
         if !found {
