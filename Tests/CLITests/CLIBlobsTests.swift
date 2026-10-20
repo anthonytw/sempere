@@ -260,31 +260,28 @@ final class CLIBlobsTests: CLITestCase {
         var r = try cli(["vault", "recipients", "add", other.recipient.string, "--json"] + access(vault, key))
         XCTAssertEqual(r.status, 0, r.err)
         XCTAssertEqual((r.json as? [String: Any])?["blobs"] as? String, "header")
-        r = try cli(["vault", "recipients", "remove", other.recipient.string, "--rewrap", "header", "--json"]
+        r = try cli(["vault", "recipients", "remove", other.recipient.string, "--accept-unsynced", "--rewrap", "header", "--json"]
             + access(vault, key))
         XCTAssertEqual(r.status, 0, r.err)
         XCTAssertEqual((r.json as? [String: Any])?["blobs"] as? String, "header")
         r = try cli(["vault", "recipients", "add", other.recipient.string, "--rewrap", "reencrypt", "--json"]
             + access(vault, key))
         XCTAssertEqual((r.json as? [String: Any])?["blobs"] as? String, "reencrypt")
-        r = try cli(["vault", "recipients", "remove", other.recipient.string, "--json"] + access(vault, key))
+        r = try cli(["vault", "recipients", "remove", other.recipient.string, "--accept-unsynced", "--json"] + access(vault, key))
         XCTAssertEqual((r.json as? [String: Any])?["blobs"] as? String, "reencrypt")
         r = try cli(["vault", "recipients", "add", other.recipient.string, "--rewrap", "sideways"] + access(vault, key))
         XCTAssertEqual(r.status, 2)
 
-        // The key-change mode and late-file window the journal records (format.md §3.3.1).
-        r = try cli(["vault", "recipients", "add", other.recipient.string, "--late-file-window", "3", "--json"] + access(vault, key))
+        // Every key change is immediate: the retired policy flags are gone; a removal needs --accept-unsynced.
+        r = try cli(["vault", "recipients", "add", other.recipient.string, "--json"] + access(vault, key))
         XCTAssertEqual(r.status, 0, r.err)
-        XCTAssertEqual((r.json as? [String: Any])?["mode"] as? String, "routine")
-        XCTAssertEqual((r.json as? [String: Any])?["lateFileWindowDays"] as? Int, 3)
-        for bad in [["--compromised", "--late-file-window", "2"], ["--late-file-window", "400"], ["--late-file-window", "-1"]] {
+        for bad in [["--compromised", "--accept-unsynced"], ["--late-file-window", "3", "--accept-unsynced"], [String]()] {
             r = try cli(["vault", "recipients", "remove", other.recipient.string] + bad + access(vault, key))
-            XCTAssertNotEqual(r.status, 0, "\(bad)")
+            XCTAssertEqual(r.status, 2, "\(bad)")
         }
-        r = try cli(["vault", "recipients", "remove", other.recipient.string, "--compromised", "--json"] + access(vault, key))
+        r = try cli(["vault", "recipients", "remove", other.recipient.string, "--accept-unsynced", "--json"] + access(vault, key))
         XCTAssertEqual(r.status, 0, r.err)
-        XCTAssertEqual((r.json as? [String: Any])?["mode"] as? String, "compromised")
-        XCTAssertEqual((r.json as? [String: Any])?["lateFileWindowDays"] as? Int, 0)
+        XCTAssertEqual((r.json as? [String: Any])?["lastKnownSync"] as? String, "unknown")
 
         // recover: the content, the name checked inside the vault
         let reopened = try Vault.open(at: vault.url, identities: [try IdentityFile.parse(String(contentsOfFile: key, encoding: .utf8))])

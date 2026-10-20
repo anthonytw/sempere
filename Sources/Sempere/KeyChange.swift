@@ -202,6 +202,9 @@ extension Vault {
         return try resumeRewrap()
     }
 
+    /// The outgoing secret of the change pending here (its journal's), if any.
+    package var pendingPreviousSecret: VaultSecret? { previousSecret }
+
     /// The keyring's secrets this value holds (`withOlderSecrets`).
     public var olderSecretCount: Int { olderSecrets.count }
 
@@ -230,6 +233,7 @@ extension Vault {
         var v = self
         v.lateOwnDevices = ownDevices
         v.lateReceivedOwn = receivedOwn
+        v.lateOwnPrevious = true
         return try v.rewrapNotes(blobs: .reencrypt, stopAfter: nil)
     }
 

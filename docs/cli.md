@@ -43,6 +43,7 @@ printed only by `keys generate`, `keys export` and `keys paper` (into its PDF).
 | 4 | Cannot decrypt: wrong key or passphrase, or no key available (no identity, no passphrase and no terminal to ask, or a `--passphrase-env` variable that is not set). |
 | 6 | Untrusted device list: `vault.json`'s recipients do not check (`format.md` §2.1: changed without the vault's key, its tag removed, or the vault secret replaced in a way this machine cannot confirm). Every command that would encrypt to the list refuses (nothing is written), `vault verify` reports it, and `sync webdav` exits 6 when it rejected a remote `vault.json`. The message names the unexpected keys and `sempere vault recipients repair`. Reading notes still works. |
 | 7 | Read-only vault: it holds content of a newer format version (format.md §7), so this version may read it but not change it. The message says why (`format`, `features`, or notes a newer version wrote). |
+| 8 | `sync webdav`: this device was removed from the vault; it syncs it no more (`--export-unsynced`). |
 
 Exit code 5 is unused. A `vault.json` that lists a classic X25519 key is
 invalid (`format.md` §2, §3.1): every command that opens the vault fails with
@@ -209,10 +210,10 @@ sempere vault init PATH --recipient age1pq1... [--recipient ...] [--label TEXT .
                          [--store-key FILE [--passphrase-env VAR] [--work-factor 15...18] [--allow-weak-passphrase]]
 sempere vault info
 sempere vault label [TEXT | --clear] [--json]
-sempere vault recipients add age1pq1... [--label TEXT] [--rewrap header|reencrypt] [--compromised | --late-file-window DAYS] [--store-key FILE [--store-passphrase-env VAR] [--work-factor 15...18]]
-sempere vault recipients remove age1... [--force] [--rewrap header|reencrypt] [--compromised | --late-file-window DAYS]
-sempere vault recipients replace age1old... age1pq1new... [--label TEXT] [--rewrap header|reencrypt] [--compromised | --late-file-window DAYS] [--store-key FILE ...]
-sempere vault recipients repair [--keep age1pq1... ...] [--dry-run] [--rewrap header|reencrypt] [--compromised | --late-file-window DAYS]
+sempere vault recipients add age1pq1... [--label TEXT] [--rewrap header|reencrypt] [--store-key FILE [--store-passphrase-env VAR] [--work-factor 15...18]]
+sempere vault recipients remove age1... --accept-unsynced [--force] [--rewrap header|reencrypt]
+sempere vault recipients replace age1old... age1pq1new... [--label TEXT] [--rewrap header|reencrypt] [--store-key FILE ...]
+sempere vault recipients repair [--keep age1pq1... ...] [--dry-run] [--rewrap header|reencrypt]
 sempere vault recipients confirm
 sempere vault markers [status|repair]
 sempere vault rewrap-resume
@@ -260,6 +261,13 @@ sempere vault merge-copy FROM [--dry-run] [--json]
   `rewrap-resume`. Removing a key does not revoke what it already decrypted.
   `remove` refuses (exit 2) the key the command unlocked with, unless another
   key it unlocked with stays listed: unlock with another key, or pass `--force`.
+- Every key change takes effect at once (`format.md` §3.3.2): from the moment a
+  removal reaches a target, syncing devices set aside what the removed device
+  writes. A vault does not record when the device using a key last synced, so
+  `remove` asks for `--accept-unsynced` (exit 2 without it): what that device
+  wrote and did not sync then stays only on it, which can export it (`sync
+  webdav ... --export-unsynced`). Sync that device first when you can.
+  `--json` reports `lastKnownSync` (`"unknown"`).
 - Attachment blobs (`notes/<id>/att/`, `format.md` §8.1.5) are rewrapped
   too. By default an `add` rewrites each blob's age header only (same file
   key, payload copied), and a `remove` or `replace` re-encrypts each blob under a new file key; a removal also renames every
@@ -269,14 +277,7 @@ sempere vault merge-copy FROM [--dry-run] [--json]
   file with the removed key. The method is recorded in the journal, so
   `rewrap-resume` (from any device) finishes with the same one. `--json`
   reports it as `blobs`.
-- The journal also records the key change's **mode** and **late-file window**
-  (`format.md` §3.3.1, design `docs/design/device-first-sync.md` §6.5): for how
-  many days after a syncing device first sees the change it still takes in a
-  file another device wrote under the outgoing secret (default 7,
-  `--late-file-window 0...365`). `--compromised` ("my key may be compromised")
-  records 0 days: such late files are kept aside, never placed. `--json`
-  reports them as `mode` and `lateFileWindowDays`. Key changes of a vault the
-  app syncs are not offered in the app yet.
+- Key changes of a vault the app syncs are not offered in the app yet.
 - Voice notes waiting in `inbox/` (`format.md` §11) are re-encrypted to the
   new set and re-tagged under the new capture key, so they are still adopted
   after a removal. One that verifies under neither the current nor the
@@ -2296,10 +2297,20 @@ sempere sync webdav URL --vault V [--user U --password-env VAR] [--device NAME]
                          [--max-blob-mib N] [--web-viewer] [--dry-run] [--json] [--identity FILE | --passphrase-env VAR]
                          [--push-only [--delete-extraneous] [--keep-server-changes]] [--retry-quarantined]
                          [--skip-unchanged] [--no-deep-listing] [--max-notes N] [--max-entries N] [--max-download-mib N]
-                         [--max-minutes N] [--jobs N]
+                         [--max-minutes N] [--jobs N] [--export-unsynced FOLDER]
 sempere sync webdav URL --vault V [--user U --password-env VAR] [--identity FILE]
                          (--metadata-only | --fetch [--note ID]... [--no-blobs] | --no-blobs) [--jobs N]
 ```
+
+**Removed from the vault.** A sync that finds a `vault.json` listing none of the
+keys it unlocked with (this device was removed, `format.md` §3.3.2) stops
+before writing anything, records it, and from then on syncs that vault no more:
+every later run stops at once, whatever the server holds. It exits 8, prints
+which files this device wrote that the server never recorded (`--json`:
+`"removedFromVault": true`, `unsynced`), and keeps the local copy readable.
+`--export-unsynced FOLDER` copies those files and `vault.json` into a new
+folder: a vault folder its key opens, to keep or to bring into the vault from a
+listed device. A device that is added back joins again in a new folder.
 
 Mirrors the vault folder with a WebDAV collection (`docs/io.md`, "WebDAV
 sync"); the server needs no logic. `URL` must be `https://`, or `http://` to

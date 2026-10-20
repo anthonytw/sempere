@@ -117,7 +117,9 @@ extension SyncEngine {
               vault != nil, let local = try? localMutable(Vault.manifestName),
               let fingerprint = Vault.listFingerprint(local) else { return }
         // R3: this device's late files (and stale copies) rewrapped from its keyring.
-        if options.lateRewrap, state.lateRewrapFor != fingerprint, let v = keyChangeVault() {
+        // Once per list, and once more when a pending change finished (its outgoing secret then joins the keyring).
+        let r3Key = fingerprint + ((keyChangeVault()?.pendingRewrap ?? false) ? "#pending" : "")
+        if options.lateRewrap, state.lateRewrapFor != r3Key, let v = keyChangeVault() {
             do {
                 let r = try v.rewrapLateFiles(ownDevices: options.ownDevices,
                                               receivedOwn: locked({ kc.ring?.receivedOwnNames }) ?? [])
@@ -125,8 +127,10 @@ extension SyncEngine {
                     keyChangeActivity { $0.rewrapped += r.rewrapped.count }
                     bumpGeneration(store)
                 }
-                setAsideLateFiles(r.lateSkipped, vault: v)
-                if r.isComplete, r.lateSkipped.isEmpty || kc.listAgreed { state.lateRewrapFor = fingerprint }
+                let allAside = setAsideLateFiles(r.lateSkipped, vault: v)
+                // Done for this list once every file was rewrapped or set aside; a keep that failed is tried
+                // again next run.
+                if r.isComplete, r.lateSkipped.isEmpty || (kc.listAgreed && allAside) { state.lateRewrapFor = r3Key }
             } catch {
                 report.skipped.append(.init(path: Vault.notesName, message: "late files not rewrapped: \(Self.describe(error))"))
             }
@@ -199,15 +203,21 @@ extension SyncEngine {
     /// has not arrived yet. When the target holds the current copy, that copy is taken; otherwise the file
     /// is moved to the late-file quarantine (kept, never deleted; resolved when its current copy arrives,
     /// else Adopt or Export), never made current here. Removed only once the keep succeeded (round 2).
-    func setAsideLateFiles(_ paths: [String], vault v: Vault) {
+    /// Returns false when a file could not be set aside (the quarantine did not keep it).
+    @discardableResult
+    func setAsideLateFiles(_ paths: [String], vault v: Vault) -> Bool {
         // Only while both sides hold the same list: the target's copy is then judged under this list.
-        guard !options.dryRun, kc.listAgreed else { return }
+        guard !options.dryRun, kc.listAgreed else { return false }
+        var all = true
         for p in paths {
             let parts = p.split(separator: "/").map(String.init)
             guard parts.count == 2, let n = RevisionName(parts[1]), let note = UUID(uuidString: parts[0]) else { continue }
             let url = root.appendingPathComponent(Vault.notesName).appendingPathComponent(p)
             guard let data = try? BoundedRead.contents(of: url, maxBytes: options.maxFileBytes),
-                  v.lateSecret(ofRevision: data, note: note, name: n) != nil else { continue }
+                  let s = v.lateSecret(ofRevision: data, note: note, name: n) else { continue }
+            // Under a pending change's outgoing secret: it waits (the change's maker sends the current copy, which
+            // rewrap-replace takes); set aside only once the change finished and that secret is a keyring one.
+            if s == v.pendingPreviousSecret { all = false; continue }
             // The target holds the current copy (its writer or the change's maker rewrapped it), with the
             // same body: take that one.
             if let remote = try? transport.read([Vault.notesName, parts[0], n.filename], maxBytes: options.maxFileBytes).data,
@@ -225,12 +235,14 @@ extension SyncEngine {
                                       data: data)
             guard kept else {
                 notSettled(path, "not set aside: the quarantine could not keep it; left in place, unreadable here")
+                all = false
                 continue
             }
             try? LocalFS.remove(url)
             let dir = url.deletingLastPathComponent()
             if (try? LocalFS.entries(dir))?.isEmpty == true { try? FileManager.default.removeItem(at: dir) }
         }
+        return all
     }
 
     // MARK: Late files (F9, F17 to F19)

@@ -59,9 +59,9 @@ opens with everything it had, on any device, online or not.
 5. **The engine gains what parity needs**: sync of `inbox/`, `keys/` and `summaries/<device>.sealed`;
    **rewrap-replace**, so key changes propagate through any target; and a **key-change claim**, a
    device-local **secret keyring** and **late-file handling**, so that no key-change failure loses data
-   (§6). A key change is routine (late files accepted for a window chosen at change time, 7 days by
-   default) or "my key may be compromised" (0 days, pushed first). New writes use the new key at once
-   in both modes.
+   (§6). Every key change takes effect at once and is pushed first (decided 2026-10-20, §6.5); a device
+   that was away catches up without loss, and a removed device stops syncing and exports what it had
+   not synced.
 6. **Arrivals reuse what exists**: the engine reports changed notes into `noteFoldersChanged`, which
    drives reconcile and then `AppModel+RemoteMerge`.
 7. **iCloud and other providers get the WebDAV guarantees**: every received file is checked before it is
@@ -476,9 +476,9 @@ On device A, which makes the change (format.md §3.3.1, plus the new steps C0, C
 
 | Step | What happens |
 | --- | --- |
-| C0 | Preconditions. The working copy is complete; the list verifies; no journal is pending; A's keyring stores the current secret. The user has chosen the mode and the late-file window (§6.5). In **routine** mode every target must have synced cleanly within the last minute. In **compromised** mode this is not required. |
-| C1 | **Claim** (new). Write `rewrap-journal.json` create-only (`If-None-Match: *`, or `link(2)`) to **every** target. If any target already has a journal (another device's change in flight), abort, delete A's own claims (with `If-Match`) and report. If a target is unreachable, routine mode refuses (the user can override for one target, and is warned). Compromised mode proceeds, and claims that target when it comes back. |
-| K1 | Write the journal locally. It holds the outgoing secret, encrypted to the new set, when the secret rotates, plus the **mode** and the **late-file window** in days (§6.5). |
+| C0 | Preconditions. The working copy is complete; the list verifies; no journal is pending; no rotation is owed; A's keyring stores the current secret. Every key change takes effect at once (§6.5): nothing waits for the other devices. |
+| C1 | **Claim** (new). Write `rewrap-journal.json` create-only (`If-None-Match: *`, or `link(2)`) to **every** target. If any target already has a journal (another device's change in flight), abort, delete A's own claims (with `If-Match`) and report (an owed rotation goes on: it never waits on another journal, §6.6). A target out of reach is claimed when it comes back. |
+| K1 | Write the journal locally. It holds the outgoing secret, encrypted to the new set, when the secret rotates. |
 | K2 | Write `vault.json` locally (new list, secret, tags, `secretLink`, `rewrapPending`). **From this moment every new write on A (notes, blobs, captures, settings) is encrypted to the new list and tagged under the new secret, in both modes.** |
 | K3 | Rewrap every file locally (revisions, blobs, inbox, `settings.age`, notebook records, summaries). On a removal, blobs move to new names and the old names go only when K4 completes. |
 | K4 | Clear `rewrapPending` locally and delete the local journal (only when every file is complete). |
@@ -490,7 +490,7 @@ On device B, which receives the change:
 | --- | --- |
 | R1 | Take the journal (held as in flight while unbound) and `vault.json` (verified by tag and `secretLink`). B's keyring stores B's **old** secret before its `vault.json` is replaced. |
 | R2 | Take the rewritten files by rewrap-replace (only while both sides hold the same `vault.json`). |
-| R3 | B's own files that never reached a target (late files written under the old list) are rewrapped by B from its keyring, then uploaded. |
+| R3 | B's own files that never reached a target (late files written under the old list) are rewrapped by B from its keyring, then uploaded. "Own" is decided from B's provenance (names that carry B's id but came from elsewhere are recorded in the keyring), never from a file name. Other devices that set aside B's late copies resolve them when the current copies arrive. |
 | R4 | The journal disappears from the target; B refuses it from then on (existing rule). |
 
 ### 6.2 Failures, outcomes and invariants
@@ -503,18 +503,17 @@ On device B, which receives the change:
 | F4 | Replace, where the old key is the only one able to read pending files, and the old key is lost mid-change | the pending files are unreadable until the old key returns | **the app refuses to forget, delete or overwrite the outgoing identity (Keychain, remembered keys) while any target or the working copy has a pending replace**; the CLI already warns | `replaceKeepsOldKey` (app) |
 | F5 | A goes offline after C5(a) (`vault.json` uploaded, files not yet) | B takes the new `vault.json` and journal. B's files are not current and the remote copies are not current either, so nothing is replaced, and everything still verifies under the journal's previous secret. B may finish the rewrap itself (add or remove); both-current copies converge by the tie-break | the remote journal stays until a run confirms every remote file current (C5(d)) | `partialUploadThenOtherDeviceFinishes` |
 | F6 | A uploads the files before `vault.json` (a bug, or a transport that reorders) | B holds the old list and sees remote copies current under a list it does not hold. Under rule 1, nothing is replaced because the `vault.json` versions differ once A's arrives; before that, B judges remote copies "not current" and does **not** push its own over them, since replacement needs exactly one current copy under a shared list | rule 1 plus rule 4: a stale list never overwrites | `filesBeforeManifest` |
-| F7 | Two devices change keys at once, and one target is unreachable at C1 | Without the override, the change is refused (C1). With it, both changes complete locally. Then `vault.json` conflicts on the shared target: a conflict copy plus a report, and **no file is replaced** (rule 1). The user picks "Keep the other change" on one device, which rewraps that device's files from its own list to the other list using its keyring (it knows both secrets), then redoes its change | a device never discards a secret it has written files under until those files are verified current under the adopted list | `concurrentChangesWithOverride` |
+| F7 | Two devices change keys at once, and one target is unreachable at C1 | Both changes complete locally (every change is immediate). Then `vault.json` conflicts on the shared target: a conflict copy plus a report, and **no file is replaced** (rule 1). The user picks "Keep the other change" on one device, which rewraps that device's files from its own list to the other list using its keyring (it knows both secrets), then redoes its change | a device never discards a secret it has written files under until those files are verified current under the adopted list | `concurrentChanges` |
 | F8 | A stale device returns after the change finished (journal gone everywhere) | R1: B's keyring keeps its old secret before taking the new `vault.json` (B can confirm the rotation through `secretLink`). R3: B rewraps its own late files and uploads them. Others' stale copies on B are replaced by the current remote copies | late files are never dropped: they are rewrapped by their writer, or held (F9) | `staleDeviceReturns(days:)` |
-| F9 | Files under the old secret that A never saw arrive on a target after the change finished (written by C, offline) | If the receiving device's keyring verifies them **and** they arrive within the late-file window **recorded in the journal** (counted from the receiver's first sighting of the new `vault.json`), they are rewrapped and uploaded. The window is 7 days by default, and 0 days in compromised mode. Later ones are **quarantined as late files**, never deleted, and shown in "Changes from before a key change" with "Adopt" and "Export". The window exists because a removed device also knows the old secret | old-secret files are never placed silently after the window, and never deleted | `lateFilesWithinWindow`, `lateFilesAfterWindowQuarantined` |
-| F10 | A removed device keeps writing | It cannot tag under the new secret, so its new files either fail verification (quarantined at once) or carry the old secret's tag (late files: F9's window and quarantine). Its own working copy keeps its notes, and its UI says "This device was removed. N changes were not uploaded", with Export | a removed device's local data stays readable to it; it never reaches others silently | `removedDeviceWrites` |
+| F9 | Files under the old secret that A never saw arrive on a target after the change (written by C, offline) | Every key change takes effect at once: a receiving device never takes them in. They are **set aside as late files**, never deleted, shown in "Changes from before a key change" with "Adopt" and "Export". When C (still listed) comes back, it rewraps what it wrote (R3) and uploads current copies; a receiver that takes the current copy with the same body resolves its late copy. A removed device also knows the old secret, so nothing else may take them in | old-secret files are never placed, never deleted; a listed writer's are never lost (its catch-up) | `lateFileSetAsideThenResolvedByTheWritersCatchUp`, `lateFilesSetAsideAdoptAndExport` |
+| F10 | A removed device keeps writing | It finds out at its next sync (a `vault.json` without its keys) and **stops syncing the vault for good**: no file read or written on any target from then on, whatever list a target shows later (a hostile target may hand it an old list that still names it). Its copy stays readable; it lists the files it wrote that no target recorded and offers to export them (`sync webdav --export-unsynced`, exit 8). Whatever it puts on a target directly is set aside by everyone (F9) | a removed device's local data stays readable to it; it never reaches others silently | `removedDeviceStopsSyncing` |
 | F11 | A partial upload of one file (a cut connection) | WebDAV uploads go to a temporary name and then `MOVE` (blobs), or a conditional PUT (revisions). Folder writes use a temporary file then rename. A receiver either sees the old file or the complete new one | atomic replace on every transport; rewrap-replace re-checks both copies every run | `cutDuringReplace` (fault proxy and Memory faults) |
 | F12 | A receiver crashes while replacing a local file | `LocalFS` atomic replace leaves the old or the new complete file. The candidate is judged again next run | the same | `crashDuringLocalReplace` |
 | F13 | The vault is locked on a receiver | rewrap-replace waits; staged downloads wait; the status says "Waiting for unlock" | nothing is replaced without the key | `lockedReceiver` |
 | F14 | Blob rename on removal is interrupted | Both names exist. Lookups try the current name, then the previous one (existing). The old name is collected only by GC after the journal is gone on both sides and the retention has passed | a blob is never deleted while any copy of its note could still reference the old name | `blobRenameInterrupted` |
 | F15 | A hostile or broken target serves an older copy (an old recipient set, or a removed stanza re-added) | not current under the shared list, so it is never taken; a copy that fails verification is quarantined | rule 4; §9.1 | `hostileDowngrade`, `hostileStanzaReadd` |
-| F17 | Compromised mode: the old key (or a device holding it) is in an attacker's hands | The window is 0 days, so every file sealed or tagged under the old secret or the old capture key that arrives after the receiver sees the change is quarantined at once: never placed, never deleted, offered with Adopt and Export. The change uploads ahead of all other sync work, to every target, as targets become reachable (C1, C5 first in every run; claims retried on reachability). Old copies on a target stay readable to the old key until rewrap-replace replaces them, which the UI states | the owner keeps every byte (quarantine), the attacker's later writes never enter the vault silently, and new writes use the new key from K2 | `compromisedQuarantinesAtOnce`, `compromisedPushesFirst`, `compromisedWithTargetOffline` |
-| F18 | A stale device returns after the journal is gone everywhere, so it never saw the recorded window | It falls back to the **strictest** policy (0 days) for other devices' late files: quarantine, Adopt or Export. Its own late files are still rewrapped (R3) | an unknown policy never widens acceptance | `policyUnknownDefaultsStrict` |
-| F19 | Devices see the journal at different times and so start their windows differently | Decisions may differ by device, but a file accepted anywhere is rewrapped and uploaded as current, and current copies are taken everywhere (§5.2). A file quarantined on one device and accepted on another converges to the current copy. The quarantined original stays until Adopt or Export | acceptance is monotone (a current copy wins) and quarantine never deletes | `windowDecisionsConverge` |
+| F17 | The old key (or a device holding it) is in an attacker's hands | Every change takes effect at once: every file sealed or tagged under the old secret or the old capture key that arrives after the receiver sees the change is set aside: never placed, never deleted, offered with Adopt and Export. The change uploads ahead of all other sync work, to every target, as targets become reachable (C1, C5 first in every run; claims retried on reachability). Old copies on a target stay readable to the old key until rewrap-replace replaces them, which the UI states | the owner keeps every byte (quarantine), the attacker's later writes never enter the vault silently, and new writes use the new key from K2 | `lateFileSetAsideWhileTheJournalIsPending`, `changePushesFirst`, `changeWithTargetOffline` |
+| F18 | A device's own late files and another device's, side by side | Its own (by provenance) are rewrapped (R3) and uploaded; another device's, and any carrying its id that came from elsewhere (a forgery, another install with the same id), are set aside | "own" never comes from a file name | `ownLateFileRewrappedOthersSetAside` |
 | F16 | A provider forks `vault.json` (iCloud conflict versions) during a change | the transport presents both versions; the engine treats it as a `vault.json` conflict (F7) unless the versions differ only in label | no blind pick, ever | `providerForksManifest` (EvictingFolderRemote) |
 
 ### 6.3 New mechanisms this requires
@@ -527,8 +526,10 @@ On device B, which receives the change:
 - **Claims** (C1), with create-only writes on every target.
 - **No upload of refused journals** (F2), and **remote journal delete only when the target is
   confirmed current** (C5(d)).
-- **The late-file window and the mode**, recorded in the journal and copied into each device's keyring
-  entry when it first sees the change, plus the quarantine view (F9, F17 to F19).
+- **Provenance** of this device's own files (names received from elsewhere recorded in the keyring), the
+  late-file quarantine and its resolution, plus the quarantine view (F9, F17, F18).
+- **The removed state** (F10): recorded in the keyring and each target's sync state, never cleared by a
+  target.
 - **The app guard against forgetting the outgoing identity** while a replace is pending (F4).
 
 ### 6.4 Fault injection (the P4a gate)
@@ -536,7 +537,7 @@ On device B, which receives the change:
 - **`RewrapFaults`** (core, test-only injection): it fails or crashes (simulated by abandoning the
   `Vault` mid-operation) after C1, after K1, after K2, after file n of K3, and before K4. The engine
   gets the same hooks for C5(a) to C5(d) and for local replaces.
-- **`KeyChangeScenarioTests`**: one test per row F1 to F19 above, over `MemoryRemote` and the
+- **`KeyChangeScenarioTests`**: one test per row F1 to F18 above, over `MemoryRemote` and the
   WebDAV mock. F11 also runs against wsgidav behind `dav-fault-proxy.py` (rules that cut the `MOVE` and
   PUT bodies). F16 runs over `EvictingFolderRemote`.
 - **`KeyChangeInterleavingTests`** (property test, seeded, in `scripts/sync-stress.sh`): 3 devices and
@@ -551,43 +552,41 @@ On device B, which receives the change:
   - **I4, revocation.** After convergence and GC retention, no file in any working copy or target
     (excluding provider version history and the quarantine) has a stanza for a removed recipient.
   - **I5, liveness.** Every pending journal is finished or reported within a bounded number of runs.
-  - **I6, policy.** No file tagged under an old secret is placed by a device after that device's
-    recorded window has passed (0 in compromised mode), and none is ever deleted from quarantine
-    without Adopt or Export.
+  - **I6, immediacy.** No file written under a replaced secret is ever current anywhere unless its own
+    writer, still listed, made it current (its catch-up); a removed device's writes after its removal
+    (under its own id or a listed device's) never become current through any path; nothing leaves a
+    quarantine except by Adopt, Export, or the arrival of the current copy with the same body.
+  - **I7, catch-up.** At quiescence no late copy of a listed writer's write is left aside.
 - **Gate:** P4 and P10 merge only when these suites are green, the sync-stress run passes with 60 or
   more seeds, and a security review of §5.2 and §6 has signed off.
 
-### 6.5 Key-change modes and the late-file window
+### 6.5 Every key change takes effect at once
 
-The user picks the mode in the key-change sheet:
+**Decided 2026-10-20 (owner):** there is one mode. Every add, remove or replace takes effect at once, as the
+"my key may be compromised" mode of the earlier design did; there is no routine mode and no late-file window.
 
-| | Routine (default) | My key may be compromised |
-| --- | --- | --- |
-| Late-file window | chosen in the sheet, **7 days** by default | **0 days**: applied immediately |
-| Preconditions | every target synced within the last minute; an unreachable target refuses (override per target) | none; unreachable targets are claimed and updated when they come back |
-| Late files from other devices | rewrapped and uploaded within the window, quarantined after it | quarantined at once (never deleted; Adopt or Export) |
-| Propagation | normal scheduling | ahead of all other sync work, on every target, retried on reachability |
-| New writes on this device | under the new key from K2 | under the new key from K2 |
-| Suggested change | add, remove or replace a device | remove or replace the suspect device's key (rotation) |
-
-- The journal records `mode` and `lateFileWindowDays`. They are bound by `rewrapPending`, so every
-  device applies the same policy and a target cannot change it.
-- Each device copies the policy into its keyring entry when it first sees the change, so the policy
-  survives the journal's deletion on that device. A device that never saw it uses 0 (F18).
-- format.md §3.3.1 gains the two journal fields, with absent meaning routine and 7 days. This is an
-  additive field; pre-1.0, so no compatibility concern.
+- New writes on the changing device use the new key from K2. The change propagates ahead of all other sync
+  work, on every target, as targets become reachable.
+- A file under a replaced secret that arrives from elsewhere is never taken in: it is set aside (Adopt,
+  Export), and resolved when its listed writer catches up and sends the current copy.
+- The cost of immediacy falls on devices that were away: a still-listed device rewraps and uploads what it
+  wrote (R3) when it is back, so it loses nothing; a removed device keeps its copy and exports its unsynced
+  changes. Removing a key whose device's last sync is unknown asks for confirmation (CLI
+  `--accept-unsynced`; the app in P10).
+- The journal carries no policy: a journal with the retired `mode`, `lateFileWindowDays` or `changedAt`
+  fields is refused (format.md §3.3.1; pre-1.0, no compatibility).
 
 ### 6.6 As implemented (P4a)
 
-- **Core** (`Sources/Sempere/KeyChange.swift`, `SecretKeyring.swift`): `KeyChangePolicy` (the journal's
-  `mode` and `lateFileWindowDays`, format.md §3.3.1), `RewrapFaults`, `PreparedKeyChange` (the checks
+- **Core** (`Sources/Sempere/KeyChange.swift`, `SecretKeyring.swift`): `RewrapFaults`, `PreparedKeyChange` (the checks
   and the journal's exact bytes before anything is written, so the claim carries them) and
   `Vault.commit`, the keyring and its sealed stores (`SymmetricKeyringSealer` for a Keychain key,
   `AgeKeyringSealer` for the CLI's identity), `rewrapLateFiles` (R3), the copy classification of §5.2,
   `adoptConcurrentChange` (F7's "Keep the other change") and `OutgoingKeyGuard` (F4, used by the app's
   `RememberedKeys`).
-- **Engine** (`Sources/SempereSync/KeyChangeSync.swift`): with `SyncOptions.keyring`, R1, the policy
-  copy, late-file windows and quarantine under `late/` (`LateFiles` lists, adopts, exports); always,
+- **Engine** (`Sources/SempereSync/KeyChangeSync.swift`): with `SyncOptions.keyring`, R1, provenance
+  of received names, the late-file quarantine under `late/` and its resolution (`LateFiles` lists, adopts,
+  exports); always, the removed state (`SyncReport.removedFromVault`, `unsynced`) and
   never uploading a journal this device refuses; with `rewrapReplace` (off by default, P4 turns it
   on), R3 and rewrap-replace for revisions and same-name blobs. Rule 1 compares lists by keys and
   `recipientsTag` (a change's step-2 and step-4 `vault.json` differ only in `rewrapPending`, and C5
@@ -612,14 +611,12 @@ The user picks the mode in the key-change sheet:
   other device redoes its addition on top; when neither rotated from the other, the user keeps
   one (`adoptOtherChange`), and the keys it dropped are added again or the secret rotates
   (`prepareRotation`), since stanza counts cannot tell a dropped key's files from current ones.
-- **Fixed after the adversarial review** (`Tests/SempereWebDAVTests/KeyChangeReviewTests.swift`):
-  the window ends at `min(firstSeen, changedAt + 1 h) + days` (the journal's `changedAt`, bound by
-  `rewrapPending`), so a device shown the change late opens no fresh window; R3 rewraps only this
+- **Fixed after the first adversarial review** (`Tests/SempereWebDAVTests/KeyChangeReviewTests.swift`;
+  the late-file window it bounded is gone since, §6.5): R3 rewraps only this
   device's own files (`SyncOptions.ownDevices`), others' are set aside once the lists agree; a "keep
   the other change" under the same secret that drops keys records a **rotation owed**, which blocks
-  C0 and the coordinator runs itself (compromised mode); the oracle checks blobs and attachment
-  revisions with the current keys only, and I6 is checked from the journals the test recorded, not
-  from the device's own policy; an unreadable ledger fails closed (reported, `repairLedger()`), the
+  C0 and the coordinator runs itself; the oracle checks blobs and attachment
+  revisions with the current keys only; an unreadable ledger fails closed (reported, `repairLedger()`), the
   ledger is written before the claims and claims are taken back if the save fails; any device
   removes a journal older than the in-flight day with If-Match; targets without strong ETags are
   reported (`weakStamps`) and never replaced or settled; the keyring is written 0600 before the
@@ -631,10 +628,20 @@ The user picks the mode in the key-change sheet:
   readable to removed keys if left); a device that took its list on the user's confirmation without
   a link (it missed a rotation) replaces a server copy of its own revision that verifies under no
   secret it holds (kept in quarantine first); otherwise such a copy is never pushed over (F6).
+- **Second review and the immediate design** (2026-10-20): every key change takes effect at once
+  (§6.5); "own" comes from provenance, never a name (a removed device forging a listed device's id is
+  set aside like any late file); the owed rotation is recorded in the keyring before the adopted
+  `vault.json` is written and survives `repairLedger()`; a planted claim cannot hold an owed rotation
+  back (it goes on without that target, F7 rules where they meet); setting a late file aside, or
+  replacing a server copy after a missed rotation, only once the quarantine kept the bytes (a full
+  disk or the copy cap leaves the file in place, reported); a server copy under a missed secret is
+  replaced only when its body is this device's own (two installs with one device id never overwrite
+  each other); a removed device stops syncing for good and exports its unsynced changes; a
+  revision never goes up in a run where an attachment of its note failed to upload (#59, found as
+  property seed 88; it was on `main` too).
 - **Not in P4a**: inbox, `keys/`, `summaries/` and notebook records are not rewrap-replaced (P4);
   F16 runs over a target whose `vault.json` is replaced underneath and over P3's provider folder
-  (`EvictingFolderProvider` conflict versions); F11 runs over `MemoryRemote` faults and the WebDAV mock, not wsgidav behind the fault
-  proxy; the app neither syncs key changes nor shows late files (P10, P9).
+  (`EvictingFolderProvider` conflict versions); the app neither syncs key changes nor shows late files (P10, P9).
 
 ## 7. What gets deleted, what stays (revised for placed vaults)
 
@@ -784,7 +791,7 @@ parallel after P5. Removing migration made P5 and P6 smaller (about 1 session le
 | Q9 | A push-only mirror target in the app? | Recommended: the CLI only, until the web viewer ships |
 | Q10 | Key changes while other devices are offline? | **Decided:** allowed, subject to the §6 review and its gate (P4a) |
 | Q11 | Other providers? | **Decided:** "Other Folder…" for now, with the protocol extensible (§3.4) |
-| Q12 | How long is the late-file window? | **Decided:** chosen at key-change time, 7 days by default, recorded in the journal. "My key may be compromised" means 0 days and priority propagation (§6.5). Late files are quarantined, never deleted |
+| Q12 | How long is the late-file window? | **Decided 2026-10-20: every key change is immediate; no late-file window** (§6.5). Late files from other devices are set aside, never deleted, and resolved when their listed writer catches up |
 | Q13 | Several vaults on one device? | **Decided:** all of them stay current, each isolated (§4.2) |
 
 ## 12. Alternatives considered

@@ -42,7 +42,7 @@ final class CLIRewrapDiscardTests: CLITestCase {
         try v.addRecipient(lost.recipient, label: "lost")
         let journal = vault.url.appendingPathComponent("rewrap-journal.json")
         try Data("{".utf8).write(to: journal)
-        let r = try cli(["vault", "recipients", "remove", lost.recipient.string, "--vault", vault.url.path, "--identity", key])
+        let r = try cli(["vault", "recipients", "remove", lost.recipient.string, "--accept-unsynced", "--vault", vault.url.path, "--identity", key])
         XCTAssertEqual(r.status, 0, r.err)
         XCTAssertTrue(r.out.contains("Moved rewrap-journal.json aside"), r.out + r.err)
         XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))

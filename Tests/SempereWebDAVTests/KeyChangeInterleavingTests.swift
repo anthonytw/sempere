@@ -425,6 +425,12 @@ final class KeyChangeRun: @unchecked Sendable {
                     guard let r = p.range(of: "/\(LateFiles.folder)/notes/") else { return false }
                     var rel = "notes/" + p[r.upperBound...]
                     if let c = rel.range(of: ".copy-") { rel = String(rel[..<c.lowerBound]) }
+                    if rel.contains("/att/") {
+                        // A late blob: resolved when the device holds its content (any name).
+                        let note = rel.split(separator: "/").prefix(2).joined(separator: "/")
+                        guard let want = blobHash(data) else { return false }
+                        return d.noteFiles().contains { $0.key.hasPrefix(note + "/att/") && blobHash($0.value) == want }
+                    }
                     guard let held = d.noteFiles()[rel], let cur = try? d.vault().currentSecret,
                           w.oracle.tagged(held, path: rel, under: cur) else { return false }
                     return w.oracle.body(held, path: rel) == w.oracle.body(data, path: rel)
@@ -436,6 +442,16 @@ final class KeyChangeRun: @unchecked Sendable {
                 quarantined[p] = data
             }
         }
+    }
+
+    /// The content hash of a blob file, opened with any key ever (nil when none opens it).
+    func blobHash(_ data: Data) -> String? {
+        let scratch = TestTemp.url("kc-hash")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        guard (try? data.write(to: scratch)) != nil,
+              let (header, _) = try? Vault.readBlobFile(scratch, identities: w.oracle.identities, secrets: [], expected: nil,
+                                                        maxContent: BlobRef.maxSize) else { return nil }
+        return header.sha256
     }
 
     func checkBodies() {

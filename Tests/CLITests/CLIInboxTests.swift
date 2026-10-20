@@ -122,7 +122,7 @@ final class CLIInboxTests: CLITestCase {
         XCTAssertEqual(added.status, 0, added.err)
         let capture = try XCTUnwrap(try json(try cli(["inbox", "capture", Self.tone, "--json"] + locked))["capture"] as? String)
 
-        let removed = try json(try cli(["vault", "recipients", "remove", other, "--json"] + unlocked))
+        let removed = try json(try cli(["vault", "recipients", "remove", other, "--accept-unsynced", "--json"] + unlocked))
         XCTAssertEqual(removed["complete"] as? Bool, true)
         XCTAssertEqual(removed["inboxSkipped"] as? [String], [])
         let imported = try json(try cli(["inbox", "import", "--json"] + unlocked))
@@ -202,7 +202,7 @@ final class CLIInboxTests: CLITestCase {
         _ = first
 
         // The iPad is removed; its profile keeps capturing.
-        XCTAssertEqual(try cli(["vault", "recipients", "remove", ipad.recipient.string] + mine).status, 0)
+        XCTAssertEqual(try cli(["vault", "recipients", "remove", ipad.recipient.string, "--accept-unsynced"] + mine).status, 0)
         let late = try XCTUnwrap(try json(try cli(["inbox", "capture", Self.tone, "--json"] + locked))["capture"] as? String)
         let refused = try cli(["inbox", "import", late, "--json"] + mine)
         XCTAssertEqual(refused.status, 1)

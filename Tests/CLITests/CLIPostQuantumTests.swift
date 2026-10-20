@@ -170,7 +170,7 @@ final class CLIPostQuantumTests: CLITestCase {
                      ["notes", "list", "--vault", vault],
                      ["notes", "show", note, "--vault", vault],
                      ["vault", "verify", "--vault", vault],
-                     ["vault", "recipients", "remove", classic, "--vault", vault],
+                     ["vault", "recipients", "remove", classic, "--accept-unsynced", "--vault", vault],
                      ["keys", "paper", "--vault", vault, "--out", path("kit.pdf")],
                      ["backup", vault, "--to", path("bk")],
                      ["restore", vault, "--to", path("restored.sempere")]] {

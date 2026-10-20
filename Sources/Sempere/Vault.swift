@@ -167,6 +167,9 @@ public struct Vault: Sendable {
     /// With `lateOwnDevices`: names that carry one of those ids but came from elsewhere (provenance,
     /// `SecretKeyring.receivedOwnNames`): not this device's, whatever the name says.
     var lateReceivedOwn: Set<String> = []
+    /// With `lateOwnDevices`: the journal's outgoing secret is judged like the keyring's (R3 on a device that
+    /// did not make the pending change).
+    var lateOwnPrevious = false
     /// The notes whose newer revisions this vault (or a copy) has read
     /// (format.md §7.3); shared by every copy.
     let readOnlyLatch = ReadOnlyLatch()
@@ -1048,6 +1051,14 @@ public struct Vault: Sendable {
                 } catch BodyFramingError.tagMismatch {
                     // The journal's outgoing secret, then (a late file's rewrap, design §6.3) the keyring's.
                     var old = previousSecret.flatMap { try? BodyFraming.unframe(plain, noteId: note, filename: name, secret: $0) }
+                    // R3 on a device that did not make the pending change: the journal's outgoing secret is
+                    // judged like the keyring's (a file another device put here under it, a removed device's
+                    // above all, is never made current here; its writer, or the change's maker, sends the
+                    // current copy). The device that made the change rewraps everything it held (K3).
+                    if old != nil, lateOwnPrevious, let own = lateOwnDevices,
+                       !(RevisionName(name).map { own.contains($0.device) } ?? false) || lateReceivedOwn.contains(path) {
+                        report.lateSkipped.append(path); continue
+                    }
                     if old == nil, let fromKeyring = olderSecrets.lazy.compactMap({
                         try? BodyFraming.unframe(plain, noteId: note, filename: name, secret: $0)
                     }).first {

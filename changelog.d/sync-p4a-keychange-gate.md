@@ -1,8 +1,10 @@
 ### Added
 
-- CLI: `sempere vault recipients add|remove|replace|repair` take `--compromised` ("my key may be
-  compromised") and `--late-file-window DAYS`, recorded in the key change's journal for devices that
-  sync; `--json` reports them as `mode` and `lateFileWindowDays`.
+- Sync: a device removed from a vault notices at its next sync and stops syncing that vault for good (no
+  upload, whatever a server later shows); its copy stays readable. `sempere sync webdav` exits 8, lists the
+  files it wrote that no server holds, and `--export-unsynced FOLDER` copies them out.
+- CLI: `sempere vault recipients remove` asks for `--accept-unsynced`: a vault does not record when the
+  removed key's device last synced, and every key change takes effect at once.
 
 ### Changed
 
