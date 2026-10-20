@@ -114,6 +114,7 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
     static let spareWarmCount = 5
     /// How long nothing moved before a spare is built, and between two.
     static let warmDelay: TimeInterval = 0.15
+    static let warmGap: TimeInterval = 0.6
     private var warmWork: DispatchWorkItem?
     private(set) var layout = PageStackLayout(pageWidth: 612, pageHeight: 792, count: 0)
     /// Screen points per page point; 0 before the first layout.
@@ -363,7 +364,7 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
 
     /// Builds the missing spares one at a time once the stack has been quiet for `warmDelay`
     /// (every scroll or pinch step calls `updateSlots`, which pushes the next one back).
-    private func scheduleWarming() {
+    private func scheduleWarming(after delay: TimeInterval = PageStackHost.warmDelay) {
         warmWork?.cancel()
         warmWork = nil
         guard window != nil, spares.count < Self.spareWarmCount else { return }
@@ -376,22 +377,17 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
             }
             let spare = self.buildSlot()
             // The first layout of a canvas is the costly one (about 35 ms): done here, in the stack where it
-            // will sit, hidden from view, rather than in the pinch that needs the page.
-            spare.host.frame = self.layout.pageFrame(0, scale: Double(self.scale))
+            // will sit, hidden from view, rather than in the pinch that needs the page. A layout allocates the canvas's
+            // tiles (about 80 MB each, freed a moment after), so the spares come a few tenths of a second apart.
+            spare.host.frame = CGRect(x: 0, y: 0, width: 120, height: 160)
             self.content.insertSubview(spare.host, belowSubview: self.footerButton)
             spare.host.layoutIfNeeded()
-            let pts = [PKStrokePoint(location: CGPoint(x: 20, y: 20), timeOffset: 0, size: CGSize(width: 4, height: 4), opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2),
-                       PKStrokePoint(location: CGPoint(x: 60, y: 40), timeOffset: 0.05, size: CGSize(width: 4, height: 4), opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2)]
-            let path = PKStrokePath(controlPoints: pts, creationDate: Date())
-            spare.host.canvas.drawing = PKDrawing(strokes: [PKStroke(ink: PKInk(.pen, color: .black), path: path)])
-            CATransaction.flush()
-            spare.host.canvas.drawing = PKDrawing()
             spare.host.removeFromSuperview()
             self.spares.append(spare)
-            self.scheduleWarming()
+            self.scheduleWarming(after: Self.warmGap)
         }
         warmWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.warmDelay, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     /// PencilKit's ruler, when the palette's is on, shows on one page only: the one with the focus, else

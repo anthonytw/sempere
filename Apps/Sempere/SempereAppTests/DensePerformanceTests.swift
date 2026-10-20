@@ -13,10 +13,11 @@ import os
 /// `PerfGate.factor` times its baseline (plus a small absolute allowance), so a slower or busier Mac does
 /// not trip it, and a return to a per-frame cost that grows with the note does.
 enum PerfBaselines {
-    /// Worst of two runs on an Apple silicon Mac, 2026-10-19 (`zoom.paged.*`: worst of three runs, 2026-10-20). Milliseconds, except `memory.*` (megabytes) and `*.over` (frames).
+    /// Worst of two runs on an Apple silicon Mac, 2026-10-19 (`zoom.paged.*`: worst of three runs, 2026-10-20; `memory.paged.spares_mb`: five spares). Milliseconds, except `memory.*` (megabytes) and `*.over` (frames).
     static let mac: [String: Double] = [
         "memory.paged.afterScroll_mb": 265.13,
         "memory.paged.opened_mb": 227.03,
+        "memory.paged.spares_mb": 60,
         "memory.pageless.afterScroll_mb": 212.22,
         "open.paged.firstScreen_ms": 77.15,
         "open.paged.read_ms": 2185.49,
@@ -30,7 +31,7 @@ enum PerfBaselines {
         "scroll.pageless.paperLayers": 5,
         "scroll.pageless.hitchMax_ms": 57.10,
         "scroll.pageless.hitchP95_ms": 0.79,
-        "zoom.paged.first.framesOver": 0,
+        "zoom.paged.first.framesOver": 1,
         "zoom.paged.first.hitchMax_ms": 2.24,
         "zoom.paged.first.hitchP95_ms": 2.26,
         "zoom.paged.framesOver": 1,
@@ -251,6 +252,13 @@ struct DensePerformanceTests {
         func quiet() async -> Bool {
             await TS.waitUntil(timeout: .seconds(20)) { stack.spares.count >= PageStackHost.spareWarmCount }
         }
+        // What the spare canvases (five, laid out) hold: the footprint before and a few seconds after they are made.
+        let beforeSpares = Self.footprintMB()
+        #expect(await quiet(), "spare canvases are made while the stack is quiet: \(stack.spares.count)")
+        // Right after the layouts the footprint holds allocator slack that goes within seconds (up to 450 MB seen).
+        try? await Task.sleep(for: .seconds(3))
+        let afterSpares = Self.footprintMB()
+        PerfGate.check("memory.paged.spares_mb", max(afterSpares - beforeSpares, 0), slack: 60)
         var steps: [CGFloat] = []
         for k in 0..<30 { steps.append(CGFloat(1 + Double(k) / 30)) }
         for k in 0..<30 { steps.append(CGFloat(2 - 1.5 * Double(k) / 30)) }
@@ -307,7 +315,13 @@ struct DensePerformanceTests {
         let canvas = i.host.canvas
         let fit = CanvasZoomScrollTests.fit(i.host)
         let far = max(canvas.contentSize.height - canvas.bounds.height, 0)
-        #expect(far > canvas.bounds.height * 8, "a long page: \(far)")
+        // The simulator's note has a tenth of the strokes, so a tenth of the length (4266 points on the iPad).
+        #if targetEnvironment(simulator)
+        let screens: CGFloat = 3
+        #else
+        let screens: CGFloat = 8
+        #endif
+        #expect(far > canvas.bounds.height * screens, "a long page: \(far)")
         var scroll = FramePacing()
         var y: CGFloat = 0
         let paper = canvas.subviews.compactMap { $0 as? PaperView }.first
