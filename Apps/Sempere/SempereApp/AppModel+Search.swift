@@ -195,8 +195,11 @@ extension AppModel {
             return
         }
         pendingJump = nil
-        editor.showPage(id: jump.page)
         if let query = jump.query { editor.highlightSearch(query: query, page: jump.page) }
+        // A highlighted match shows its page and scrolls to it (`revealCurrentMatch`); a page jump on top of
+        // that would send a match low on the page back off screen. Otherwise (no word with a box, or the note
+        // still opening) the page is shown now.
+        if editor.searchCursor == nil { editor.showPage(id: jump.page) }
     }
 
     // MARK: - Recognition

@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import Sempere
+import SempereSync
 import SempereWebDAV
 
 struct SyncCommand: ParsableCommand {
@@ -170,7 +171,7 @@ struct SyncWebDAVCommand: ParsableCommand {
         guard let remote = URL(string: url) else { throw CLIError.usage("not a URL: \(url)") }
         if metadataOnly || fetch || noBlobs { return try runPartial(remote) }
         if !fetchNotes.isEmpty { throw CLIError.usage("--note needs --fetch") }
-        var options = WebDAVSyncOptions(dryRun: dryRun)
+        var options = SyncOptions(dryRun: dryRun)
         if deleteExtraneous && !pushOnly { throw CLIError.usage("--delete-extraneous needs --push-only") }
         if keepServerChanges && !pushOnly { throw CLIError.usage("--keep-server-changes needs --push-only") }
         options.pushOnly = pushOnly
@@ -203,9 +204,9 @@ struct SyncWebDAVCommand: ParsableCommand {
         // A first pull checks what it downloads under the vault.json it pulls (format.md §9.1).
         if vault == nil { options.firstPullIdentities = try access.explicitIdentities() }
         options.deviceLabel = device ?? ProcessInfo.processInfo.hostName
-        let sync = WebDAVSync(
+        let sync = SyncEngine(
             directory: dir, vault: vault, client: client,
-            stateURL: WebDAVSync.defaultStateURL(remote: remote, vault: dir, environment: Env.vars),
+            stateURL: SyncEngine.defaultStateURL(remote: remote, vault: dir, environment: Env.vars),
             options: options)
         let report: SyncReport
         do { report = try sync.run() } catch { meter?.finish(); throw error }
@@ -222,7 +223,7 @@ struct SyncWebDAVCommand: ParsableCommand {
     }
 
     /// The size and run bounds given on the command line.
-    private func applyLimits(_ options: inout WebDAVSyncOptions) throws {
+    private func applyLimits(_ options: inout SyncOptions) throws {
         if let maxBlobMiB {
             guard (1...(1 << 20)).contains(maxBlobMiB) else { throw CLIError.usage("--max-blob-mib must be 1 to 1048576") }
             options.maxBlobBytes = maxBlobMiB << 20
@@ -250,7 +251,7 @@ struct SyncWebDAVCommand: ParsableCommand {
                             (skipUnchanged, "--skip-unchanged"), (noDeepListing, "--no-deep-listing")] where set {
             throw CLIError.usage("\(flag) does not go with a partial pull (--metadata-only, --fetch, --no-blobs)")
         }
-        var options = WebDAVSyncOptions()
+        var options = SyncOptions()
         try applyLimits(&options)
         if let jobs, !(1...TransferPool.maxWidth).contains(jobs) {
             throw CLIError.usage("--jobs must be 1 to \(TransferPool.maxWidth)")
@@ -262,12 +263,12 @@ struct SyncWebDAVCommand: ParsableCommand {
         options.deviceLabel = device ?? ProcessInfo.processInfo.hostName
         let client = try login.client(remote)
         let dir = try access.vaultURL()
-        let stateURL = WebDAVSync.defaultStateURL(remote: remote, vault: dir, environment: Env.vars)
+        let stateURL = SyncEngine.defaultStateURL(remote: remote, vault: dir, environment: Env.vars)
         let hasManifest = FileManager.default.fileExists(atPath: dir.appendingPathComponent(Vault.manifestName).path)
         OpenedVaults.shared.forget(dir)   // a partial copy's own index and summaries would leave notes out
 
         var reports: [SyncReport] = []
-        if metadataOnly || (noBlobs && !fetch && !WebDAVPartialCopy.isUsable(dir)) {
+        if metadataOnly || (noBlobs && !fetch && !PartialCopyState.isUsable(dir)) {
             if hasManifest && !PartialCopy.isPartial(dir) {
                 throw CLIError.usage("\(dir.path) holds a complete vault: a partial pull only makes or continues a partial copy "
                                      + "(run an ordinary sync instead)")
@@ -275,7 +276,7 @@ struct SyncWebDAVCommand: ParsableCommand {
             var o = options
             o.partial = .metadata
             o.firstPullIdentities = try access.explicitIdentities()
-            reports.append(try WebDAVSync(directory: dir, vault: nil, client: client, stateURL: stateURL, options: o).run())
+            reports.append(try SyncEngine(directory: dir, vault: nil, client: client, stateURL: stateURL, options: o).run())
         }
         if fetch || noBlobs, reports.allSatisfy({ $0.errors.isEmpty }) {
             guard FileManager.default.fileExists(atPath: dir.appendingPathComponent(Vault.manifestName).path) else {
@@ -294,10 +295,10 @@ struct SyncWebDAVCommand: ParsableCommand {
                 }
             }
             var o = options
-            o.partial = .fetch(WebDAVFetchScope(notes: notes, blobs: noBlobs ? .none : .all,
-                                                concurrency: jobs ?? WebDAVFetchScope.defaultConcurrency))
+            o.partial = .fetch(FetchScope(notes: notes, blobs: noBlobs ? .none : .all,
+                                                concurrency: jobs ?? FetchScope.defaultConcurrency))
             o.firstPullIdentities = vault.canRead ? [] : try access.explicitIdentities()
-            reports.append(try WebDAVSync(directory: dir, vault: vault.canRead ? vault : nil, client: client,
+            reports.append(try SyncEngine(directory: dir, vault: vault.canRead ? vault : nil, client: client,
                                           stateURL: stateURL, options: o).run())
         }
         meter?.finish()   // the progress line ends before the report is printed

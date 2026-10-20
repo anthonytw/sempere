@@ -2,6 +2,7 @@ import FuzzSupport
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// Blob sync against a real WebDAV server through `URLSessionTransport`
@@ -23,9 +24,9 @@ final class BlobIntegrationTests: BlobSyncTestCase {
     private func run(_ name: String, _ c: WebDAVClient, now: Date = Date()) throws -> SyncReport {
         let v = FileManager.default.fileExists(atPath: dir(name).appendingPathComponent("vault.json").path)
             ? try openVault(name) : nil
-        return try WebDAVSync(directory: dir(name), vault: v, client: c,
+        return try SyncEngine(directory: dir(name), vault: v, client: c,
                               stateURL: tmp.appendingPathComponent("state-\(name).json"),
-                              options: WebDAVSyncOptions(deviceLabel: name, now: now, blobSegmentBytes: Self.segment)).run()
+                              options: SyncOptions(deviceLabel: name, now: now, blobSegmentBytes: Self.segment)).run()
     }
 
     func testStreamingVerbsAgainstRealServer() throws {

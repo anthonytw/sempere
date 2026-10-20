@@ -714,6 +714,16 @@ final class NoteEditor {
         Task { await flush() }
     }
 
+    /// Makes page `id` the current one for a search match without a page jump: the paged stack
+    /// scrolls to the match itself (`PageStackHost.performReveal`), and a jump to the top of the page
+    /// that reached the stack after the reveal scrolled the match back off screen (SwiftUI may hand
+    /// the stack the new `revealToken` and the new `pageJump` in two updates). Saves like `selectPage`.
+    func showPageOfMatch(id: UUID) {
+        guard let index = pages.firstIndex(where: { $0.id == id }), index != pageIndex else { return }
+        pageIndex = index
+        Task { await flush() }
+    }
+
     /// The paged canvas scrolled so that page `index` is the current one
     /// (`PageStackLayout.currentPage`). Nothing is saved for it: every page
     /// on screen is live, and autosave writes after its pause as usual.

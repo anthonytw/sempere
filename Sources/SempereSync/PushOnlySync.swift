@@ -30,7 +30,7 @@ import Sempere
 //   and only when an earlier sync's state exists (on a first run every server
 //   file looks never synced, including the notes a local listing missed).
 
-extension WebDAVSync {
+extension SyncEngine {
     /// A path component that is safe to send in a DELETE (a name chosen by the server).
     private static func safeComponent(_ c: String) -> Bool {
         !c.isEmpty && c != "." && c != ".." && !c.contains("/") && !c.contains("\0")
@@ -162,7 +162,7 @@ extension WebDAVSync {
                     report.skipped.append(.init(path: path, message: "missing locally and not explained by compaction, kept on the server"))
                     return
                 }
-                if !options.dryRun { try client.delete([Vault.notesName, id, n.filename]) }
+                if !options.dryRun { try transport.delete([Vault.notesName, id, n.filename]) }
                 report.deleted.append(.init(side: "remote", path: path))
                 R.remove(n)
             }
@@ -201,7 +201,7 @@ extension WebDAVSync {
         }
         report.deleted.append(.init(side: "remote", path: SyncReport.printable(path)))
         if !options.dryRun {
-            do { try client.delete(components) } catch {
+            do { try transport.delete(components) } catch {
                 report.deleted.removeLast()
                 report.errors.append(.init(path: SyncReport.printable(path), message: Self.describe(error)))
                 return false

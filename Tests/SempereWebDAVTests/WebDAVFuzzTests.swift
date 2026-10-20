@@ -4,6 +4,7 @@ import FuzzSupport
 import XCTest
 
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// A server that answers every request through `inner` and then mutates the
@@ -139,7 +140,7 @@ final class WebDAVFuzzTests: SyncTestCase {
                 try input.write(to: url)
                 _ = try SyncState.load(url)
             } catch is DecodingError {
-            } catch is WebDAVError {
+            } catch is SyncError {
             } catch { return "untyped error \(type(of: error)): \(error)" }
             return nil
         })
@@ -172,9 +173,9 @@ final class WebDAVFuzzTests: SyncTestCase {
                 let c = try WebDAVClient(baseURL: URL(string: "https://dav.example.com\(MockDAV.base)/")!, transport: hostile)
                 for _ in 0..<2 {
                     let v = try? Vault.open(at: local, identities: [identity])
-                    _ = try? WebDAVSync(directory: local, vault: v, client: c,
+                    _ = try? SyncEngine(directory: local, vault: v, client: c,
                                         stateURL: root.appendingPathComponent("state-pull-\(n).json"),
-                                        options: WebDAVSyncOptions(deviceLabel: "fuzz")).run()
+                                        options: SyncOptions(deviceLabel: "fuzz")).run()
                 }
                 if let v = try? Vault.open(at: local, identities: [identity]) {
                     _ = v.verify()

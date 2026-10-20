@@ -1,7 +1,7 @@
 import Foundation
 import Sempere
 
-// MARK: - One listing for every note folder (`WebDAVSyncOptions.deepListing`)
+// MARK: - One listing for every note folder (`SyncOptions.deepListing`)
 //
 // A run lists every note folder on the server, and each `att/`, one PROPFIND
 // (`Depth: 1`) each: ~685 requests for a vault of 640 notes, every run, even
@@ -34,7 +34,7 @@ import Sempere
 // uploaded again, or, for a revision, deleted here only when a snapshot the
 // server lists covers it and compaction allows it).
 
-extension WebDAVSync {
+extension SyncEngine {
     /// How a run lists the note folders.
     enum TreeMode: Equatable {
         /// One by one (`Depth: 1`).
@@ -44,6 +44,9 @@ extension WebDAVSync {
         /// From the tree.
         case use
     }
+
+    /// The bound of the tree's answer (16 MiB, the bound of any listing).
+    static let maxTreeBytes = 16 << 20
 
     /// Note folder counts for which the tree is used (or checked).
     static let deepListingNotes = 8...5_000
@@ -68,7 +71,7 @@ extension WebDAVSync {
         try checkCancelled()
         try budget.checkTime()
         do {
-            switch try client.listTree([Vault.notesName]) {
+            switch try transport.listTree([Vault.notesName], maxBytes: Self.maxTreeBytes) {
             case .listed(let tree)?:
                 try budget.list(tree.values.reduce(0) { $0 + $1.count })
                 let top = Set((tree[[]] ?? []).filter(\.isCollection).map(\.name))

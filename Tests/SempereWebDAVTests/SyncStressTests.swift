@@ -2,6 +2,7 @@ import Foundation
 import TempDirSupport
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// The heavy sync stress run (docs/ci.md "Sync stress"): the seeded 640-note

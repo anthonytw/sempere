@@ -2,10 +2,11 @@ import Foundation
 import TempDirSupport
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// Local writes of a sync run follow the vault's write contract (`FileIO`),
-/// and report its failures as `WebDAVError.io` sentences.
+/// and report its failures as `SyncError.io` sentences.
 final class LocalFSTests: TempDirTestCase {
     func temps(_ dir: URL) throws -> [String] {
         try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.hasPrefix(FileIO.tempPrefix) }
@@ -36,12 +37,12 @@ final class LocalFSTests: TempDirTestCase {
         try Data("x".utf8).write(to: part)
         let url = tmp.appendingPathComponent("missing/x.age")
         XCTAssertThrowsError(try LocalFS.placeNew(part, at: url)) { error in
-            guard case WebDAVError.io(let why) = error else { return XCTFail("\(error)") }
+            guard case SyncError.io(let why) = error else { return XCTFail("\(error)") }
             XCTAssertTrue(why.contains(url.path), why)
             XCTAssertTrue(why.contains(String(cString: strerror(ENOENT))), why)
         }
         XCTAssertThrowsError(try LocalFS.remove(url)) { error in
-            guard case WebDAVError.io = error else { return XCTFail("\(error)") }
+            guard case SyncError.io = error else { return XCTFail("\(error)") }
         }
     }
 }

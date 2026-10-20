@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// P83: uploads `concurrency` at a time (`preuploadNewFiles`), keeping every
@@ -40,11 +41,11 @@ final class ConcurrentUploadTests: BlobSyncTestCase {
     }
 
     func push(_ name: String, _ server: MockDAV, pushOnly: Bool = false,
-              configure: (inout WebDAVSyncOptions) -> Void = { _ in }) throws -> SyncReport {
-        var o = WebDAVSyncOptions(deviceLabel: name)
+              configure: (inout SyncOptions) -> Void = { _ in }) throws -> SyncReport {
+        var o = SyncOptions(deviceLabel: name)
         o.pushOnly = pushOnly
         configure(&o)
-        return try WebDAVSync(directory: dir(name), vault: try openVault(name), client: try client(server),
+        return try SyncEngine(directory: dir(name), vault: try openVault(name), client: try client(server),
                               stateURL: tmp.appendingPathComponent("state-\(name).json"), options: o).run()
     }
 
@@ -92,9 +93,9 @@ final class ConcurrentUploadTests: BlobSyncTestCase {
             // The server copy reads back whole.
             try? FileManager.default.removeItem(at: dir("B"))
             try? FileManager.default.removeItem(at: tmp.appendingPathComponent("state-B.json"))
-            var o = WebDAVSyncOptions(deviceLabel: "B")
+            var o = SyncOptions(deviceLabel: "B")
             o.firstPullIdentities = [identity]
-            let pulled = try WebDAVSync(directory: dir("B"), vault: nil, client: try client(parallelServer),
+            let pulled = try SyncEngine(directory: dir("B"), vault: nil, client: try client(parallelServer),
                                         stateURL: tmp.appendingPathComponent("state-B.json"), options: o).run()
             XCTAssertTrue(pulled.errors.isEmpty && pulled.quarantined.isEmpty, "\(pulled)")
             for note in notes { XCTAssertTrue(try title(try openVault("B"), note).hasPrefix("note")) }

@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// The sync-state file and the views a run builds of it.
@@ -43,7 +44,7 @@ final class SyncStateTests: BlobSyncTestCase {
         let server = MockDAV()
         let a = try makeVault("A")
         let d = try delta(a, device: devA, t: 0, title: "one")
-        let s = WebDAVSync(directory: dir("A"), vault: a, client: try client(server),
+        let s = SyncEngine(directory: dir("A"), vault: a, client: try client(server),
                            stateURL: tmp.appendingPathComponent("state-A.json"))
         let id = noteID.uuidString.lowercased()
         s.state.files["\(id)/\(d.name.filename)"] = .init()

@@ -1,4 +1,5 @@
 import Foundation
+import SempereSync
 import SempereWebDAV
 
 /// An in-memory WebDAV server: PROPFIND (Depth 0/1), GET (with `Range` /

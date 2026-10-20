@@ -15,7 +15,7 @@ import Sempere
 // locked, they upload the local copy. A file that needs a newer reader
 // (`$minReaderVersion`) is left alone on both sides.
 
-extension WebDAVSync {
+extension SyncEngine {
     func syncSharedSettings(remote: RemoteEntry?) throws {
         let name = SharedSettings.fileName
         guard let vault, vault.canRead, !options.pushOnly || vault.keysMatchManifestOnDisk() else {
@@ -34,7 +34,7 @@ extension WebDAVSync {
         var remoteData: Data?
         var etag: String?
         if remote != nil {
-            let got = try client.get([name], maxBytes: SharedSettings.maxFileBytes)
+            let got = try transport.read([name], maxBytes: SharedSettings.maxFileBytes)
             try budget.downloaded(got.data.count)
             remoteData = got.data
             etag = remote?.etag ?? got.etag
@@ -87,7 +87,13 @@ extension WebDAVSync {
             try take(remoteData ?? Data())
         case (let m?, let t?):
             let merged = m.merging(t)
-            if merged == t {
+            if m == t {
+                // The same settings sealed twice (two devices merged the same change): different
+                // bytes, nothing to take or give. Taking the server's bytes here made a device
+                // that syncs with two remotes holding such copies download one, then the
+                // other, on every run (NDeviceStressTests).
+                state.mutable[name] = .init(hash: FileDigest.sha256(local ?? Data()), stamp: stamp)
+            } else if merged == t {
                 try take(remoteData ?? Data())
             } else if merged == m {
                 try upload(name, local: local ?? Data(), over: remote, etag: etag)

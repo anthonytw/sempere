@@ -1,12 +1,12 @@
 import Foundation
 
-/// How far a sync run is (`WebDAVSyncOptions.progress`, `SyncReport.progress`).
+/// How far a sync run is (`SyncOptions.progress`, `SyncReport.progress`).
 ///
 /// Totals are known once the server is listed: `notesTotal` after the
 /// `notes/` listing, `filesTotal` and `bytesTotal` once every note folder
 /// was listed and compared with the local vault. Until then they are 0.
 /// Downloads only: uploads are counted in `uploaded`, without a total.
-public struct WebDAVSyncProgress: Codable, Hashable, Sendable {
+public struct SyncProgress: Codable, Hashable, Sendable {
     /// What the run is doing.
     public enum Stage: String, Codable, Sendable {
         /// Listing the server (the root, `notes/`, each note folder and its `att/`).

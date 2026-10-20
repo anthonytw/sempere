@@ -90,24 +90,48 @@ popover belongs to another process that XCUITest cannot see.
 
 ## Sync stress
 
-WebDAV sync is stressed at three levels (and timed at a fourth); all three share a two-device harness
+Sync is stressed at four levels (and timed at a fifth); all share a multi-device harness
 (`Tests/SempereWebDAVTests/SyncDevices.swift`: `SyncDevice` is one device with its own vault
-folder, key, device clock (`device.json`, with an optional wall-clock skew) and sync state;
-`SyncDevices` makes two or more on one remote, the first creating the vault with every device's
-key, and checks convergence: every device and the server hold the same note files, nothing written
-was lost, nothing is left in flight, every device reads the same notes).
+folder, key, device clock (`device.json`, with an optional wall-clock skew or a virtual clock) and
+sync state, on any `SyncRemote`, or on several with a state each; `SyncDevices` makes two or more
+on one remote, the first creating the vault with every device's key, and checks convergence: every
+device and the server hold the same note files, nothing written was lost, nothing is left in
+flight, every device reads the same notes).
 
 | Level | Runs in | What |
 | --- | --- | --- |
 | `TwoDeviceStressTests` | every `swift test` (6 seeds; `SEMPERE_STRESS_SEEDS=N` for more) | devices on the in-memory `MockDAV`, each through a `FaultyTransport` (seeded: requests dropped, answered 503, applied with the answer lost, downloads cut midway), interleaving notes, renames, tags, blobs, shared settings, two-way runs, pushes and simultaneous runs; request counts of idle and catching-up runs; label-only `vault.json` changes; per-device summaries; merge-copy round trips |
+| `NDeviceStressTests` | every `swift test` (quick: 3 seeds of 90 steps, 3 devices, a few seconds); `SEMPERE_SYNC_STRESS_LONG=1` (60 seeds of 300 steps, 3 to 5 devices, simultaneous runs; `SEMPERE_SYNC_STRESS_SEEDS=N`; `scripts/sync-stress.sh`) | devices on one or two remotes (a `MemoryRemote`, plus a second one or the WebDAV mock, by seed), the first bridging both, the others on one (`SEMPERE_SYNC_STRESS_BRIDGES=many`: a random subset, which shows a known cycle, below); new notes, renames, tags, attachments, deletes, thinning and shared settings, synced in random order through transport faults and, on in-memory remotes, a hostile server (wrong bytes, listings that drop or invent entries or misreport sizes, version tokens changing underneath). Checks as it goes and at the end: no note file on any device or remote differs from what its writer wrote or appears unwritten; every attachment and revision is everywhere, or (thinned) the note reads the same with all of them put back; every quarantined file is still kept; with faults off, a few rounds (retrying quarantined files, as Repair does) converge every device and remote with no conflict copy and nothing in flight. `SEMPERE_SYNC_STRESS_SEED=N` replays one seed; prints `NDEVICE` lines |
 | `SyncFaultProxyTests` | `scripts/test-webdav.sh` (CI's `webdav` job) | real sockets: wsgidav behind `scripts/dav-fault-proxy.py`; a reset mid-download resumes with `Range`, a reset mid-upload leaves no partial blob, random 5xx and resets converge, a stalled request ends at the idle timeout, a dripping download ends at the run's time bound, request counts over latency and a bandwidth cap |
 | `SyncStressTests` | `scripts/sync-stress.sh` only (about five minutes) | the seeded 640-note vault the CLI builds (`scripts/make-stress-vault.sh`: notebooks, tags, text boxes, edits from a second device, small and 3 MB images), uploaded and pulled through faults, 240 concurrent edits from both devices, idle request counts, a fresh pull canceled at random points, a merge-copy round trip; prints `STRESS` lines (times, requests by method, faults) |
 | `SyncTimingTests` | `scripts/sync-stress.sh` only | the same vault without faults at `SEMPERE_STRESS_LATENCIES` ms per request (default `0,20`): first upload, first pull, two idle runs (the first checks the deep listing, the second uses it), the app's push after one edit; prints `TIMING` lines (wall time, requests by method, client connections) for before/after numbers in performance PRs |
 
-`scripts/sync-stress.sh` runs all four (60 seeds) against a local wsgidav and the proxy, building
+**Known: two bridges cycle.** With two devices that both sync the same two remotes, a delta that
+thinning made deletable can circle for ever: one bridge deletes it from a remote (explained by the
+snapshot there) while the other uploads it there again from the other remote, and a round later the
+reverse. Nothing is lost, but the runs are never quiet. `NDeviceStressTests` therefore uses one
+bridge by default; `SEMPERE_SYNC_STRESS_BRIDGES=many SEMPERE_SYNC_STRESS_LONG=1` reproduces it
+within a few seeds. It belongs to the multi-target phases (docs/design/device-first-sync.md §5.6).
+
+`scripts/sync-stress.sh` runs all five (60 seeds each), and the transport suites below over wsgidav, against a local wsgidav and the proxy, building
 the vault once per seed and size in `build/sync-stress/` (`SEMPERE_STRESS_SEED`,
-`SEMPERE_STRESS_NOTES`). Run it after a change to `Sources/SempereWebDAV`; it is not part of CI or
+`SEMPERE_STRESS_NOTES`). Run it after a change to `Sources/SempereSync` or `Sources/SempereWebDAV`; it is not part of CI or
 the PR gate, so list it under `## Tests run`.
+
+### Transports
+
+Every `SyncRemote` (docs/io.md "Sync engine and transports") is held to one contract and runs the
+engine's core rules, over each transport (`Tests/SempereWebDAVTests/TransportFixtures.swift`:
+`TransportUnderTest.memory()`, `.mockDAV()`, `.wsgidav()`, each a fresh base plus an unfaulted
+inspector, seeded fault injection and an unreachable remote):
+
+| Suite | Transports | What |
+| --- | --- | --- |
+| `SyncRemoteConformanceCase` (`MemoryRemoteConformanceTests`, `WebDAVMockConformanceTests`, `WsgidavConformanceTests`) | `MemoryRemote`; `WebDAVSyncRemote` on `MockDAV`; on wsgidav (`scripts/test-webdav.sh`) | listings and stat, bounded reads, create-only and conditional writes, a write needing its parent, a create-only race of 8 writers, moves that never overwrite, collections and the base, deletes with version tokens, downloads in pieces, resumed and restarted, deep listings matching per-collection ones, error classification (unreachable, dropped and lost answers transient; bounds, missing files and refusals not), capability flags held where observable, unusable path components refused. Known server deviations are pinned per fixture (`TransportUnderTest.Deviation`: wsgidav's whole-second ETags, `If-Match` creating a missing file, unquoted `getetag`) |
+| `EngineScenarioCase` (`EngineOverMemoryTests`, `EngineOverWebDAVMockTests`, `EngineOverWsgidavTests`) | the same three | first upload, pull and idle runs; concurrent deltas; never overwriting write-once files; quarantine; compaction deletes; unexplained and wiped remote deletions put back; another vault refused; `vault.json` conflict copies; settings merged per key; a cut blob download finished next run; random transport faults converging; `skipUnchangedNotes` |
+| `MemoryRemoteTests` | `MemoryRemote` | each injected fault does what it says; faults replay from the seed whatever the call order; an evicted file is listed, unreadable (transient) and arrives after `requestDownload`; an arriving folder lists empty; latency is interruptible |
+
+A new transport gets a fixture and a subclass of each case with the same test methods.
 
 **The fault proxy** (`scripts/dav-fault-proxy.py`, standard library only) forwards to the server
 and, as each test configures it (`POST /__proxy__/config`, Swift: `FaultProxy`), adds latency,

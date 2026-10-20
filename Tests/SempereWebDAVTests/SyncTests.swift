@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 final class SyncTests: SyncTestCase {
@@ -26,13 +27,13 @@ final class SyncTests: SyncTestCase {
         server.requiredAuthorization = "Basic " + Data("me:s3cret".utf8).base64EncodedString()
         _ = try makeVault()
         let report = try {
-            let s = WebDAVSync(directory: dir("A"), vault: try openVault("A"),
+            let s = SyncEngine(directory: dir("A"), vault: try openVault("A"),
                                client: try client(server, auth: .init(user: "me", password: "s3cret")),
                                stateURL: tmp.appendingPathComponent("st.json"))
             return try s.run()
         }()
         XCTAssertEqual(report.uploaded, ["vault.json"])
-        let bad = WebDAVSync(directory: dir("A"), vault: nil, client: try client(server, auth: .init(user: "me", password: "no")),
+        let bad = SyncEngine(directory: dir("A"), vault: nil, client: try client(server, auth: .init(user: "me", password: "no")),
                              stateURL: tmp.appendingPathComponent("st2.json"))
         XCTAssertThrowsError(try bad.run()) {
             guard case WebDAVError.http(_, _, let status) = $0 else { return XCTFail("\($0)") }
@@ -120,9 +121,9 @@ final class SyncTests: SyncTestCase {
         XCTAssertEqual((try? FileManager.default.contentsOfDirectory(atPath: noteDir.path)) ?? [], [])
         // A transport failure mid-download behaves the same.
         server.interceptor = { r in r.method == "GET" && r.url.path.hasSuffix(".age") ? WebDAVResponse(status: 500) : nil }
-        var options = WebDAVSyncOptions(deviceLabel: "B")
+        var options = SyncOptions(deviceLabel: "B")
         options.retryQuarantined = true
-        let report2 = try WebDAVSync(directory: dir("B"), vault: try openVault("B"), client: try client(server),
+        let report2 = try SyncEngine(directory: dir("B"), vault: try openVault("B"), client: try client(server),
                                      stateURL: tmp.appendingPathComponent("state-B.json"), options: options).run()
         XCTAssertEqual(report2.errors.count, 1)
         XCTAssertEqual((try? FileManager.default.contentsOfDirectory(atPath: noteDir.path)) ?? [], [])
@@ -166,7 +167,7 @@ final class SyncTests: SyncTestCase {
         try sync("A", server)
         server.putDirect("vault.json", Data(#"{"vaultId":"0123abcd"}"#.utf8))
         XCTAssertThrowsError(try sync("A", server)) {
-            guard case WebDAVError.malformedResponse = $0 else { return XCTFail("\($0)") }
+            guard case SyncError.malformedResponse = $0 else { return XCTFail("\($0)") }
         }
     }
 
@@ -177,7 +178,7 @@ final class SyncTests: SyncTestCase {
         _ = try makeVault("B")
         _ = try delta(try openVault("B"), device: devB, t: 0, title: "x")
         XCTAssertThrowsError(try sync("B", server)) {
-            guard case WebDAVError.vaultMismatch = $0 else { return XCTFail("\($0)") }
+            guard case SyncError.vaultMismatch = $0 else { return XCTFail("\($0)") }
         }
         XCTAssertTrue(server.names(under: "notes").isEmpty)
     }
@@ -476,21 +477,21 @@ final class SyncTests: SyncTestCase {
         server.interceptor = { r in
             guard r.method == "GET", r.url.path.hasSuffix(d.name.filename) else { return nil }
             limits.value.append(r.maxResponseBytes)
-            return WebDAVResponse(status: 200, body: WebDAVSync.ageMagic + Data(count: 4096))
+            return WebDAVResponse(status: 200, body: SyncEngine.ageMagic + Data(count: 4096))
         }
         try FileManager.default.createDirectory(at: dir("B"), withIntermediateDirectories: true)
-        let report = try WebDAVSync(directory: dir("B"), vault: nil, client: try client(server),
+        let report = try SyncEngine(directory: dir("B"), vault: nil, client: try client(server),
                                     stateURL: tmp.appendingPathComponent("state-B.json"),
-                                    options: WebDAVSyncOptions(maxFileBytes: 3000)).run()
+                                    options: SyncOptions(maxFileBytes: 3000)).run()
         XCTAssertEqual(limits.value, [3000], "the transport is told the limit")
         XCTAssertEqual(report.errors.map(\.path), ["notes/\(id)/\(d.name.filename)"], "\(report)")
         XCTAssertFalse(FileManager.default.fileExists(
             atPath: dir("B").appendingPathComponent("notes/\(id)/\(d.name.filename)").path))
         // Over the limit by the listing's size: the same error, nothing fetched.
         server.interceptor = nil
-        let listed = try WebDAVSync(directory: dir("B"), vault: nil, client: try client(server),
+        let listed = try SyncEngine(directory: dir("B"), vault: nil, client: try client(server),
                                     stateURL: tmp.appendingPathComponent("state-B.json"),
-                                    options: WebDAVSyncOptions(maxFileBytes: 10)).run()
+                                    options: SyncOptions(maxFileBytes: 10)).run()
         XCTAssertEqual(listed.errors.map(\.message),
                        ["the response for notes/\(id)/\(d.name.filename) is over 10 bytes; not read"], "\(listed)")
         // Listings and manifests have a limit too.

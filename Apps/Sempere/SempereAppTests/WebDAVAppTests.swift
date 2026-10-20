@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import Sempere
+import SempereSync
 import SempereWebDAV
 import Testing
 @testable import SempereApp
@@ -25,7 +26,7 @@ final class FakeWebDAVRemote: WebDAVRemote, @unchecked Sendable {
     var redownloadReplaces = true
     /// When set, a download reports these as its progress, then waits for `downloadGate`
     /// (or a cancellation) before it places the copy.
-    var downloadSteps: [WebDAVSyncProgress] = []
+    var downloadSteps: [SyncProgress] = []
     var downloadGate: DispatchSemaphore?
     private var _optionsSeen: [Int] = []
     /// The concurrency each download was given.
@@ -35,7 +36,7 @@ final class FakeWebDAVRemote: WebDAVRemote, @unchecked Sendable {
     /// When set, a fetch waits for it before it starts (a slow server).
     var fetchGate: DispatchSemaphore?
     var fetchError: (any Error)?
-    private var _fetchScopes: [WebDAVFetchScope] = []
+    private var _fetchScopes: [FetchScope] = []
     private var _fetchedUnlocked: [Bool] = []
     private var _inFlight = 0, _mostInFlight = 0
     var probe: WebDAVProbe = .reachable(WebDAVCheckResult(outcome: .noVault, vaults: [], foldersChecked: 0,
@@ -53,7 +54,7 @@ final class FakeWebDAVRemote: WebDAVRemote, @unchecked Sendable {
     /// How many identities each re-download was given (the new copy is checked under them).
     var redownloadKeys: [Int] { lock.lock(); defer { lock.unlock() }; return _redownloadKeys }
     /// Every fetch's scope, in order.
-    var fetchScopes: [WebDAVFetchScope] { lock.lock(); defer { lock.unlock() }; return _fetchScopes }
+    var fetchScopes: [FetchScope] { lock.lock(); defer { lock.unlock() }; return _fetchScopes }
     /// Whether each fetch was given the unlocked vault (checks under the key).
     var fetchedUnlocked: [Bool] { lock.lock(); defer { lock.unlock() }; return _fetchedUnlocked }
 
@@ -64,7 +65,7 @@ final class FakeWebDAVRemote: WebDAVRemote, @unchecked Sendable {
                          transport: FolderDAVTransport(root: server, base: "/notes"))
     }
 
-    func downloadMetadata(_ endpoint: WebDAVEndpoint, into copy: WebDAVLocalCopy, options: WebDAVSyncOptions) throws -> SyncReport {
+    func downloadMetadata(_ endpoint: WebDAVEndpoint, into copy: LocalCopy, options: SyncOptions) throws -> SyncReport {
         lock.lock(); _downloads += 1; let error = downloadError, report = downloadReport
         let steps = downloadSteps, gate = downloadGate
         _optionsSeen.append(options.concurrency)
@@ -76,7 +77,7 @@ final class FakeWebDAVRemote: WebDAVRemote, @unchecked Sendable {
             while gate.wait(timeout: .now() + .milliseconds(10)) == .timedOut {
                 if options.isCancelled?() == true {
                     var stopped = report
-                    stopped.stoppedEarly = WebDAVError.cancelled.errorDescription
+                    stopped.stoppedEarly = SyncError.cancelled.errorDescription
                     return stopped
                 }
             }
@@ -85,7 +86,7 @@ final class FakeWebDAVRemote: WebDAVRemote, @unchecked Sendable {
         return report.errors.isEmpty ? pulled : report
     }
 
-    func fetch(_ endpoint: WebDAVEndpoint, copy: WebDAVLocalCopy, vault: Vault?, scope: WebDAVFetchScope) throws -> SyncReport {
+    func fetch(_ endpoint: WebDAVEndpoint, copy: LocalCopy, vault: Vault?, scope: FetchScope) throws -> SyncReport {
         lock.lock(); _fetchScopes.append(scope); _fetchedUnlocked.append(vault?.canRead == true)
         let gate = fetchGate, error = fetchError; lock.unlock()
         gate?.wait()
@@ -107,7 +108,7 @@ final class FakeWebDAVRemote: WebDAVRemote, @unchecked Sendable {
         return probe
     }
 
-    func download(_ endpoint: WebDAVEndpoint, into copy: WebDAVLocalCopy) throws -> SyncReport {
+    func download(_ endpoint: WebDAVEndpoint, into copy: LocalCopy) throws -> SyncReport {
         lock.lock(); _downloads += 1; let error = downloadError, report = downloadReport
         passwordsSeen.append(endpoint.password); lock.unlock()
         if let error { throw error }
@@ -118,7 +119,7 @@ final class FakeWebDAVRemote: WebDAVRemote, @unchecked Sendable {
     private func enter() { lock.lock(); _inFlight += 1; _mostInFlight = max(_mostInFlight, _inFlight); lock.unlock() }
     private func leave() { lock.lock(); _inFlight -= 1; lock.unlock() }
 
-    func push(_ endpoint: WebDAVEndpoint, copy: WebDAVLocalCopy, vault: Vault?, options: WebDAVSyncOptions) throws -> SyncReport {
+    func push(_ endpoint: WebDAVEndpoint, copy: LocalCopy, vault: Vault?, options: SyncOptions) throws -> SyncReport {
         enter()
         defer { leave() }
         lock.lock()
@@ -131,8 +132,8 @@ final class FakeWebDAVRemote: WebDAVRemote, @unchecked Sendable {
         return report
     }
 
-    func redownload(_ endpoint: WebDAVEndpoint, copy: WebDAVLocalCopy, identities: [any AgeIdentity],
-                    partial: Bool, options: WebDAVSyncOptions) throws -> (report: SyncReport, replaced: Bool) {
+    func redownload(_ endpoint: WebDAVEndpoint, copy: LocalCopy, identities: [any AgeIdentity],
+                    partial: Bool, options: SyncOptions) throws -> (report: SyncReport, replaced: Bool) {
         enter()
         defer { leave() }
         lock.lock(); _redownloads += 1; _redownloadKeys.append(identities.count); let replaces = redownloadReplaces; lock.unlock()
@@ -140,7 +141,7 @@ final class FakeWebDAVRemote: WebDAVRemote, @unchecked Sendable {
         return try copy.redownload(client: try folderClient(), identities: identities, partial: partial, options: options)
     }
 
-    private func place(into copy: WebDAVLocalCopy) throws {
+    private func place(into copy: LocalCopy) throws {
         let fm = FileManager.default
         try fm.createDirectory(at: copy.directory, withIntermediateDirectories: true)
         try? fm.removeItem(at: copy.folder)
@@ -322,10 +323,10 @@ struct WebDAVAppTests {
     /// copy that the next open continues.
     @Test func downloadShowsProgressAndCancelKeepsAResumableCopy() async throws {
         let s = try Self.setup()
-        var listing = WebDAVSyncProgress()
+        var listing = SyncProgress()
         listing.notesTotal = 4
         listing.notesListed = 2
-        var downloading = WebDAVSyncProgress()
+        var downloading = SyncProgress()
         downloading.stage = .downloading
         downloading.notesTotal = 4
         downloading.notesListed = 4
@@ -420,7 +421,7 @@ struct WebDAVAppTests {
         let box = SeenProgress()
         let relay = WebDAVProgressRelay { box.files.append($0.filesDone) }
         DispatchQueue.concurrentPerform(iterations: 50) { i in
-            var p = WebDAVSyncProgress()
+            var p = SyncProgress()
             p.filesDone = i
             relay.send(p)
         }
@@ -428,7 +429,7 @@ struct WebDAVAppTests {
         try await Task.sleep(for: .milliseconds(50))
         #expect(box.files.count < 50, "coalesced, one main-actor task at a time")
         relay.close()
-        relay.send(WebDAVSyncProgress())
+        relay.send(SyncProgress())
         let count = box.files.count
         try await Task.sleep(for: .milliseconds(50))
         #expect(box.files.count == count)

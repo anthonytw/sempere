@@ -11,7 +11,7 @@ import Sempere
 // change; the listing it was last written for is kept in the sync state when
 // every note there got an entry, so an unchanged server then costs no request.
 
-extension WebDAVSync {
+extension SyncEngine {
     func refreshRemoteSummaries(exists: Bool) {
         let name = PublishedSummaries.fileName
         guard exists || options.publishForWebViewer else { return }
@@ -34,14 +34,14 @@ extension WebDAVSync {
         if exists, state.publishedSummaries == listing { return }
         do {
             var current: [UUID: PublishedSummaries.Entry]?
-            if exists, let data = try? client.get([name], maxBytes: PublishedSummaries.maxFileBytes).data {
+            if exists, let data = try? transport.read([name], maxBytes: PublishedSummaries.maxFileBytes).data {
                 current = try? vault.openPublishedSummaries(data)
             }
             let cache = options.summaryCacheDirectory.flatMap { try? SummaryCache(directory: $0, vault: vault) }
             let (entries, _) = try vault.publishedSummaryEntries(for: remoteRevisions, reuse: current ?? [:], cache: cache)
             if current != entries {
                 try ensureCollection([])
-                guard try client.put([name], try vault.sealPublishedSummaries(entries), condition: .unconditional) else { return }
+                guard try transport.write([name], .data(try vault.sealPublishedSummaries(entries)), condition: .unconditional) else { return }
                 report.uploaded.append(name)
             }
             // A note without an entry (unreadable here, or different here) is tried again next run.

@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// A transfer is listed in `uploaded`, `downloaded` or `deleted` only once
@@ -64,10 +65,10 @@ final class TransferReportTests: BlobSyncTestCase {
         _ = try a.snapshot(noteId: noteID, device: devA, clock: &clock,
                            wall: Date(timeIntervalSince1970: Double(baseMillis + 30) / 1000), app: "test/0")
         let unused = try a.writeBlob(note: noteID, syntheticBlob(100), type: "image/png")
-        var o = WebDAVSyncOptions(deviceLabel: "A")
+        var o = SyncOptions(deviceLabel: "A")
         o.pushOnly = true
         func push() throws -> SyncReport {
-            try WebDAVSync(directory: dir("A"), vault: try openVault("A"), client: try client(server),
+            try SyncEngine(directory: dir("A"), vault: try openVault("A"), client: try client(server),
                            stateURL: tmp.appendingPathComponent("state-A.json"), options: o).run()
         }
         XCTAssertTrue(try push().errors.isEmpty)

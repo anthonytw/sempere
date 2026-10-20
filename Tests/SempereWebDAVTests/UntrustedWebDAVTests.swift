@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// Regression tests for hostile WebDAV responses (see `WebDAVFuzzTests`).
@@ -56,5 +57,23 @@ final class UntrustedWebDAVTests: XCTestCase {
         let items = try PropfindParser.parse(Data(body.utf8))
         XCTAssertEqual(items.map(\.href), ["/dav/vault/caf%C3%A9/"])
         XCTAssertEqual(items.first?.isCollection, true)
+    }
+
+    /// A path component a URL segment cannot carry (`..`, `.`, empty, a `/`)
+    /// is refused before any request: `notes/../x` reached the collection
+    /// above (and `..` at the base, the one above the base) on wsgidav
+    /// (found by the transport conformance suite, `checkHostileNamesAreRefused`).
+    func testUnusablePathComponentsAreRefusedBeforeAnyRequest() throws {
+        let server = MockDAV()
+        let client = try WebDAVClient(baseURL: URL(string: "https://dav.example.com\(MockDAV.base)/")!, transport: server)
+        for bad in [[".."], ["notes", ".."], ["notes", "."], ["notes", ""], ["a/b"], ["nul\u{0}"]] {
+            XCTAssertThrowsError(try client.put(bad + ["x.age"], Data([1]), condition: .unconditional), "\(bad)") {
+                guard case WebDAVError.malformedResponse? = $0 as? WebDAVError else { return XCTFail("\($0)") }
+            }
+            XCTAssertThrowsError(try client.list(bad), "\(bad)")
+            XCTAssertThrowsError(try client.move(["notes", "x.age"], to: bad, overwrite: false), "\(bad)")
+        }
+        XCTAssertTrue(server.requestLog.isEmpty, "\(server.requestLog)")
+        XCTAssertThrowsError(try client.descendant([".."]))
     }
 }

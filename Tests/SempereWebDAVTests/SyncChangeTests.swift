@@ -1,17 +1,18 @@
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// What a run skips when nothing changed, and that it still sees every change.
 final class SyncChangeTests: BlobSyncTestCase {
     func syncer(_ name: String, _ server: MockDAV, vault: Vault?? = nil, pushOnly: Bool = false,
-                skip: Bool = false, now: Date = Date()) throws -> WebDAVSync {
-        var o = WebDAVSyncOptions(deviceLabel: name, now: now)
+                skip: Bool = false, now: Date = Date()) throws -> SyncEngine {
+        var o = SyncOptions(deviceLabel: name, now: now)
         o.pushOnly = pushOnly
         o.skipUnchangedNotes = skip
         let v: Vault? = vault ?? (try? openVault(name))
-        return WebDAVSync(directory: dir(name), vault: v, client: try client(server),
+        return SyncEngine(directory: dir(name), vault: v, client: try client(server),
                           stateURL: tmp.appendingPathComponent("state-\(name).json"), options: o)
     }
 

@@ -557,6 +557,9 @@ final class PageStackHost: UIView, UIScrollViewDelegate, UIGestureRecognizerDele
         if scrollView.isDragging || scrollView.isDecelerating {
             for slot in slots.values { slot.host.itemSelection.viewMoved() }
         }
+        #if DEBUG
+        for slot in slots.values { slot.host.itemSelection.debugRefreshReport() }   // `hlRect` moved with the stack
+        #endif
     }
 
     /// A scroll or a pinch of the pages starts: every menu on them goes at once

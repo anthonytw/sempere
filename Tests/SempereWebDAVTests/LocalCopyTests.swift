@@ -2,25 +2,26 @@ import Age
 import Foundation
 import XCTest
 @testable import Sempere
+@testable import SempereSync
 @testable import SempereWebDAV
 
 /// The app's WebDAV vaults: a local copy downloaded once, pushed with
 /// push-only runs that keep other writers' manifests, and downloaded again on
 /// demand (docs/io.md, "WebDAV vaults in the app").
 final class LocalCopyTests: BlobSyncTestCase {
-    func copy(_ name: String) -> WebDAVLocalCopy {
-        WebDAVLocalCopy(directory: tmp.appendingPathComponent("loc-\(name)"), folderName: "V.sempere")
+    func copy(_ name: String) -> LocalCopy {
+        LocalCopy(directory: tmp.appendingPathComponent("loc-\(name)"), folderName: "V.sempere")
     }
 
-    func openCopy(_ c: WebDAVLocalCopy) throws -> Vault { try Vault.open(at: c.folder, identities: [identity]) }
+    func openCopy(_ c: LocalCopy) throws -> Vault { try Vault.open(at: c.folder, identities: [identity]) }
 
     /// Pushes vault `name` the way `sempere sync webdav --push-only` does.
     @discardableResult
     func mirror(_ name: String, _ server: MockDAV, keep: Bool = false) throws -> SyncReport {
-        var o = WebDAVSyncOptions(deviceLabel: name)
+        var o = SyncOptions(deviceLabel: name)
         o.pushOnly = true
         o.keepServerChanges = keep
-        return try WebDAVSync(directory: dir(name), vault: try openVault(name), client: try client(server),
+        return try SyncEngine(directory: dir(name), vault: try openVault(name), client: try client(server),
                               stateURL: tmp.appendingPathComponent("state-\(name).json"), options: o).run()
     }
 
@@ -136,7 +137,7 @@ final class LocalCopyTests: BlobSyncTestCase {
         let server = MockDAV()
         let c = copy("iPad")
         XCTAssertThrowsError(try c.download(client: try client(server))) {
-            guard case WebDAVError.io = $0 else { return XCTFail("\($0)") }
+            guard case SyncError.io = $0 else { return XCTFail("\($0)") }
         }
         XCTAssertFalse(FileManager.default.fileExists(atPath: c.folder.path), "nothing is created")
         XCTAssertFalse(server.requestLog.contains { $0.method != "PROPFIND" })

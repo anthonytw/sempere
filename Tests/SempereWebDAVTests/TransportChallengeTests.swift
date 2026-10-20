@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+@testable import SempereSync
 @testable import SempereWebDAV
 #if canImport(FoundationNetworking)
 import FoundationNetworking
@@ -84,8 +85,8 @@ final class TransportChallengeTests: XCTestCase {
         let transport = URLSessionTransport(timeout: 60)
         let start = Date()
         let request = WebDAVRequest(method: "GET", url: URL(string: "http://127.0.0.1:\(server.port)/blob")!,
-                                    interrupt: { Date().timeIntervalSince(start) > 0.5 ? .cancelled : nil })
-        XCTAssertThrowsError(try transport.send(request)) { XCTAssertEqual($0 as? WebDAVError, .cancelled) }
+                                    interrupt: { Date().timeIntervalSince(start) > 0.5 ? SyncError.cancelled : nil })
+        XCTAssertThrowsError(try transport.send(request)) { XCTAssertEqual($0 as? SyncError, .cancelled) }
         XCTAssertLessThan(Date().timeIntervalSince(start), 10)
     }
 }

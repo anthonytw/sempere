@@ -1,4 +1,5 @@
 import Foundation
+import SempereSync
 #if canImport(FoundationXML)
 import FoundationXML
 #endif
@@ -9,33 +10,6 @@ public struct WebDAVCredentials: Sendable {
     public var password: String
 
     public init(user: String, password: String) { self.user = user; self.password = password }
-}
-
-/// One child of a collection, from PROPFIND.
-public struct RemoteEntry: Hashable, Sendable {
-    public var name: String
-    public var isCollection: Bool
-    public var etag: String?
-    public var lastModified: String?
-    public var size: Int?
-
-    public init(name: String, isCollection: Bool, etag: String? = nil, lastModified: String? = nil, size: Int? = nil) {
-        self.name = name; self.isCollection = isCollection
-        self.etag = etag; self.lastModified = lastModified; self.size = size
-    }
-
-    /// What identifies this version of the file: the ETag, else the modification time.
-    public var stamp: String? { etag ?? lastModified }
-}
-
-/// How a PUT is made conditional.
-public enum PutCondition: Sendable, Equatable {
-    /// `If-None-Match: *`: only create, never replace.
-    case create
-    /// `If-Match: <etag>`: replace only that version.
-    case replace(etag: String)
-    /// No precondition (the server gave no ETag).
-    case unconditional
 }
 
 /// The minimal WebDAV verbs the sync needs: PROPFIND (Depth 1), GET, PUT,
@@ -50,7 +24,7 @@ public struct WebDAVClient: Sendable {
     /// Passed with every request (`WebDAVRequest.interrupt`): an error it
     /// returns cancels the request in flight. The sync sets it to its run
     /// bound and cancellation.
-    public var interrupt: (@Sendable () -> WebDAVError?)?
+    public var interrupt: (@Sendable () -> (any Error)?)?
 
     /// Largest response body read for listings, manifests and status replies (16 MiB).
     public static let defaultMaxResponseBytes = 16 << 20
@@ -97,8 +71,7 @@ public struct WebDAVClient: Sendable {
     /// credentials and transport (a vault found one level down).
     public func descendant(_ path: [String]) throws -> WebDAVClient {
         guard !path.isEmpty else { return self }
-        guard path.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." && !$0.contains("/") && !$0.contains("\0") }),
-              let url = url(for: path, collection: true) else {
+        guard let url = url(for: path, collection: true) else {
             throw WebDAVError.malformedResponse("not a usable folder name: \(SyncReport.printable(path.joined(separator: "/")))")
         }
         var c = self
@@ -254,13 +227,14 @@ public struct WebDAVClient: Sendable {
         public var etag: String?
     }
 
-    /// The default size of one `Range` request in `download` (2 MiB). On
-    /// Linux, URLSession queues every 16 KiB delivery for its delegate with
-    /// no flow control, so a server faster than the disk piles up to one
-    /// response in memory; measured against a local server, 2 MiB segments
-    /// kept resident memory flat (about 20 MiB) for blobs of 300 MB to 1 GB
-    /// at about 5 % more time than 8 MiB ones, which grew to 85 MiB.
-    public static let defaultSegmentBytes = 2 << 20
+    /// The default size of one `Range` request in `download` (2 MiB, the
+    /// sync's `SyncOptions.defaultSegmentBytes`). On Linux, URLSession
+    /// queues every 16 KiB delivery for its delegate with no flow control, so
+    /// a server faster than the disk piles up to one response in memory;
+    /// measured against a local server, 2 MiB segments kept resident memory
+    /// flat (about 20 MiB) for blobs of 300 MB to 1 GB at about 5 % more time
+    /// than 8 MiB ones, which grew to 85 MiB.
+    public static let defaultSegmentBytes = SyncOptions.defaultSegmentBytes
 
     /// Downloads one file into `file` in `Range` requests of at most
     /// `segmentBytes`, each streamed to the file, so memory stays bounded by
@@ -288,7 +262,7 @@ public struct WebDAVClient: Sendable {
                          maxBytes: Int, segmentBytes: Int = defaultSegmentBytes,
                          progress: ((Int) throws -> Void)? = nil) throws -> Download {
         let shown = "/" + path.joined(separator: "/")
-        var offset = ifRange.map(WebDAVSync.isStrong) == true ? max(resumeFrom, 0) : 0
+        var offset = ifRange.map(SyncEngine.isStrong) == true ? max(resumeFrom, 0) : 0
         try Self.truncate(file, to: offset)
         let segment = max(segmentBytes, 1)
         var resumed = offset > 0
@@ -297,7 +271,7 @@ public struct WebDAVClient: Sendable {
             var h = ["Accept-Encoding": "identity", "Range": "bytes=\(offset)-\(offset + segment - 1)"]
             // A weak ETag is never sent in If-Range (RFC 9110 §13.1.5); the segments
             // are then unvalidated, as with a server that sends no ETag.
-            if let validator = ifRange ?? etag, WebDAVSync.isStrong(validator) { h["If-Range"] = validator }
+            if let validator = ifRange ?? etag, SyncEngine.isStrong(validator) { h["If-Range"] = validator }
             let r = try send("GET", path, collection: false, headers: h, maxResponseBytes: maxBytes, responseFile: file)
             etag = etag ?? r.headers["etag"]
             switch r.status {
@@ -428,7 +402,17 @@ public struct WebDAVClient: Sendable {
         <d:getetag/><d:getlastmodified/><d:getcontentlength/><d:resourcetype/></d:prop></d:propfind>
         """
 
+    /// A path component a URL can carry as one segment below the base:
+    /// never empty, `.`, `..` (a server or URL normalization would resolve
+    /// those to another collection, even above the base), or holding a `/` or a NUL.
+    static func isUsableComponent(_ c: String) -> Bool {
+        !c.isEmpty && c != "." && c != ".." && !c.contains("/") && !c.contains("\0")
+    }
+
+    /// The URL of `path` below the base; nil when a component is not usable
+    /// (`isUsableComponent`): the request is refused, never sent elsewhere.
     func url(for path: [String], collection: Bool) -> URL? {
+        guard path.allSatisfy(Self.isUsableComponent) else { return nil }
         let all = (baseComponents + path).map { $0.addingPercentEncoding(withAllowedCharacters: Self.segmentAllowed) ?? $0 }
         var s = origin + "/" + all.joined(separator: "/")
         if collection && !all.isEmpty { s += "/" }

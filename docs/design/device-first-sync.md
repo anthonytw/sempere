@@ -1,6 +1,8 @@
 # Device-first vaults with two-way sync (design)
 
-Status: **design approved by the owner on 2026-10-19** (answers in §11). Nothing is implemented yet. The
+Status: **design approved by the owner on 2026-10-19** (answers in §11). P1 (`SempereSync` behind
+`SyncRemote`) and P2 (`MemoryRemote`, the transport conformance suite, the engine over every
+transport, N-device stress; docs/ci.md "Transports", "Sync stress") are implemented. The
 key-change review (§6) is a gate that must pass before P4 and P10 land.
 
 Owner's decision (2026-10-19):
@@ -389,6 +391,10 @@ This is new for iCloud and other providers, whose daemons used to write into the
   target to any device, or bridging with the CLI, converges them by union.
 - A device with two targets **bridges** them. Compaction deletes cross a bridge only when explained on
   each hop. Rewrap-replace converges across bridges because of the tie-break in §5.2.
+  **Open (found by P2's N-device stress):** two devices bridging the same two targets can circle a
+  deletable delta for ever (one deletes it from a target while the other uploads it there again; never
+  lost, never quiet; docs/ci.md "Known: two bridges cycle"). The engine needs a rule for it before
+  P6 offers several targets per vault.
 - The UI lists the devices seen through each target, from the trust record and from the device ids in
   revision names (no format change).
 
