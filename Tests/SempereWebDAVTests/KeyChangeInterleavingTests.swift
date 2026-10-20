@@ -193,7 +193,7 @@ final class KeyChangeRun: @unchecked Sendable {
         let d = rng.pick(listed)
         guard !notes.isEmpty, (try? d.vault())?.canRead == true else { return }
         w.tick()
-        _ = try? d.attach(rng.pick(notes), Data("blob \(rng.next())".utf8), now: w.now)
+        _ = try? w.attach(d, rng.pick(notes), Data("blob \(rng.next())".utf8))
         count("attach")
     }
 

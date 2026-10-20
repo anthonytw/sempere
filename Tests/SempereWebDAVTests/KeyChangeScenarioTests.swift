@@ -133,7 +133,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
     func testCrashDuringRewrap() throws {
         for n in 0...3 {
             let w = try seeded()
-            try w.a.attach(n1, Data("blob \(n)".utf8), now: w.now)
+            try w.attach(w.a, n1, Data("blob \(n)".utf8))
             try w.converge()
             let spare = try w.addSpare(on: w.a)
             try w.converge()
@@ -445,7 +445,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
     /// collected only once no journal is left and the retention passed.
     func testBlobRenameInterrupted() throws {
         let w = try seeded()
-        let blob = try w.a.attach(n1, Data("picture".utf8), now: w.now)
+        let blob = try w.attach(w.a, n1, Data("picture".utf8))
         try w.converge()
         let spare = try w.addSpare(on: w.a)
         try w.converge()
@@ -659,7 +659,7 @@ final class KeyChangeScenarioTests: TempDirTestCase {
     /// F3, F9 and F12 over a plain folder and a provider folder (both targets folders).
     func testCrashesAndLateFilesOverFolderTargets() throws {
         let w = try seeded(kinds: [.folder, .evicting])
-        try w.a.attach(n1, Data("folder blob".utf8), now: w.now)
+        try w.attach(w.a, n1, Data("folder blob".utf8))
         try w.converge()
         _ = try w.addSpare(on: w.a)
         try w.converge()

@@ -141,6 +141,8 @@ final class KCDevice: @unchecked Sendable {
     /// Removed from the vault (it keeps its working copy and keys).
     var removed = false
     let device: DeviceID
+    /// The revision the last `attach` wrote.
+    var lastAttachRevision: Revision?
 
     init(name: String, root: URL, targets: [KCTarget], device: DeviceID) throws {
         self.name = name
@@ -180,7 +182,7 @@ final class KCDevice: @unchecked Sendable {
         let v = try vault()
         let ref = try v.writeBlob(note: id, bytes, type: "image/png")
         let page = UUID()
-        try v.apply([.addPage(Page(id: page, order: "z\(UUID().uuidString.prefix(8))")),
+        lastAttachRevision = try v.apply([.addPage(Page(id: page, order: "z\(UUID().uuidString.prefix(8))")),
                      .addItem(page: page, item: .image(blob: ref, pixelSize: Size(w: 4, h: 3),
                                                        frame: Rect(x: 10, y: 10, w: 40, h: 30), z: "a"))],
                     to: id, deviceState: deviceStateURL, app: "kc/\(name)", wall: now)
@@ -274,6 +276,8 @@ final class KCOracle: @unchecked Sendable {
     var written: [String: Data] = [:]
     /// The device that wrote each revision.
     var writer: [String: String] = [:]
+    /// Every attachment written: `notes/<note>` → content hashes, with their writer.
+    var attached: [String: [String: String]] = [:]
 
     func learn(_ d: KCDevice) {
         for i in d.identities where !identities.contains(where: { $0.recipient.string == i.recipient.string }) { identities.append(i) }
@@ -284,10 +288,11 @@ final class KCOracle: @unchecked Sendable {
         if let v = try? d.vault(), let s = v.currentSecret, !secrets.contains(s) { secrets.append(s) }
     }
 
-    /// The body of a revision file under any key and secret ever, nil when none opens it.
-    func body(_ data: Data, path: String) -> Data? {
+    /// The body of a revision file under any secret ever, opened with `keys` (default: every key ever),
+    /// nil when none opens it.
+    func body(_ data: Data, path: String, keys: [NativeIdentity]? = nil) -> Data? {
         let parts = path.split(separator: "/").map(String.init)
-        guard parts.count == 3, let plain = try? AgeFile.decrypt(data, with: identities) else { return nil }
+        guard parts.count == 3, let plain = try? AgeFile.decrypt(data, with: keys ?? identities) else { return nil }
         for s in secrets {
             if let u = try? BodyFraming.unframe(plain, noteId: parts[1], filename: parts[2], secret: s) { return u.gzip }
         }
@@ -386,6 +391,16 @@ final class KCWorld: @unchecked Sendable {
         return parts.joined(separator: "; ")
     }
 
+    /// Attaches `bytes` to `note` on `d` (blob and revision) and records both for I1.
+    @discardableResult
+    func attach(_ d: KCDevice, _ note: UUID, _ bytes: Data) throws -> String {
+        tick()
+        let name = try d.attach(note, bytes, now: now)
+        if let r = d.lastAttachRevision { oracle.wrote(d, note: note, name: r.name) }
+        oracle.attached["notes/\(note.uuidString.lowercased())", default: [:]][FileDigest.sha256(bytes)] = d.name
+        return name
+    }
+
     /// Writes a revision on `d` and records it for I1.
     @discardableResult
     func write(_ d: KCDevice, _ note: UUID, _ title: String) throws -> RevisionName {
@@ -479,6 +494,10 @@ final class KCWorld: @unchecked Sendable {
     /// with its body; no copy of a path anywhere has another body.
     func assertNoLoss(file: StaticString = #filePath, line: UInt = #line) {
         for d in devices { oracle.learn(d) }
+        // Recoverable means readable with the keys the vault lists NOW, not with a removed one.
+        let listedKeys = Set(devices.first(where: { !$0.removed })?.manifest()
+            .flatMap { try? VaultManifest.decode($0) }?.recipients.map(\.key) ?? [])
+        let current = oracle.identities.filter { listedKeys.contains($0.recipient.string) }
         var found = Set<String>()
         var copies = everyCopy().map { ($0.0, $0.1, $0.2) }
         for d in devices {
@@ -489,16 +508,40 @@ final class KCWorld: @unchecked Sendable {
                 copies.append(("\(d.name) quarantine", p, data))
             }
         }
+        var blobsFound = Set<String>()
+        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("kc-blob-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: scratch) }
         for (loc, path, data) in copies {
+            if path.contains("/att/") {
+                // A blob: its content hash, opened with the listed keys (framing and padding checked).
+                try? data.write(to: scratch)
+                if let (header, _) = try? Vault.readBlobFile(scratch, identities: current, secrets: [], expected: nil,
+                                                             maxContent: BlobRef.maxSize) {
+                    blobsFound.insert(path.split(separator: "/").prefix(2).joined(separator: "/") + "#" + header.sha256)
+                }
+                continue
+            }
             guard let want = oracle.written[path] else { continue }
             if let b = oracle.body(data, path: path) {
                 XCTAssertEqual(b, want, "\(loc) \(path): another body (I3)", file: file, line: line)
-                if b == want { found.insert(path) }
             }
+            if let b = oracle.body(data, path: path, keys: current), b == want { found.insert(path) }
         }
         let listedWriters = Set(devices.filter { !$0.removed }.map(\.name))
         let lost = oracle.written.keys.filter { listedWriters.contains(oracle.writer[$0] ?? "") && !found.contains($0) }
         XCTAssertTrue(lost.isEmpty, "lost (I1): \(lost.sorted().prefix(4))", file: file, line: line)
+        let lostBlobs = oracle.attached.flatMap { note, hashes in
+            hashes.filter { listedWriters.contains($0.value) }.keys.map { note + "#" + $0 }
+        }.filter { !blobsFound.contains($0) }
+        XCTAssertTrue(lostBlobs.isEmpty, "attachments lost (I1): \(lostBlobs.sorted().prefix(4))", file: file, line: line)
+        // Every reference a listed device reads resolves there.
+        for d in devices where !d.removed {
+            guard let v = try? d.vault(), let ids = try? v.noteIDs() else { continue }
+            for id in ids {
+                let missing = (try? v.blobInventory(note: id))?.missing ?? []
+                XCTAssertTrue(missing.isEmpty, "\(d.name): \(id) references attachments it lacks (I1)", file: file, line: line)
+            }
+        }
     }
 }
 

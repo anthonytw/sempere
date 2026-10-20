@@ -112,7 +112,7 @@ extension SyncEngine {
                     bumpGeneration(store)
                 }
                 setAsideLateFiles(r.lateSkipped, vault: v)
-                if r.isComplete { state.lateRewrapFor = fingerprint }
+                if r.isComplete, r.lateSkipped.isEmpty || kc.listAgreed { state.lateRewrapFor = fingerprint }
             } catch {
                 report.skipped.append(.init(path: Vault.notesName, message: "late files not rewrapped: \(Self.describe(error))"))
             }
@@ -183,26 +183,39 @@ extension SyncEngine {
     }
 
     /// Another device's revisions under a keyring secret held here (R3 skipped them) whose names say they
-    /// were written after the change away from that secret: received here before this device learned of
-    /// the change (a removed device's write to a target the change had not reached, review finding 2).
+    /// were written after the change away from that secret (or all of them when this device never saw the
+    /// change's time): received here before this device learned of the change (a removed device's write to a target the change had not reached, review finding 2).
     /// They are moved to the late-file quarantine (kept, never deleted; Adopt or Export), never made
     /// current here. One whose name claims an earlier time stays as it is, under its old wrap, unreadable
     /// until its writer or a current copy from a target replaces it.
     func setAsideLateFiles(_ paths: [String], vault v: Vault) {
-        guard !options.dryRun, let ring = locked({ kc.ring }) else { return }
+        // Only while both sides hold the same list: the target's copy is then judged under this list.
+        guard !options.dryRun, kc.listAgreed, let ring = locked({ kc.ring }) else { return }
         for p in paths {
             let parts = p.split(separator: "/").map(String.init)
             guard parts.count == 2, let n = RevisionName(parts[1]), let note = UUID(uuidString: parts[0]) else { continue }
             let url = root.appendingPathComponent(Vault.notesName).appendingPathComponent(p)
             guard let data = try? BoundedRead.contents(of: url, maxBytes: options.maxFileBytes),
-                  let s = v.lateSecret(ofRevision: data, note: note, name: n),
-                  let changedAt = ring.entry(for: s)?.changedAt ?? ring.entry(for: s)?.replaced,
-                  Double(n.hlc.millis) / 1000 > changedAt.timeIntervalSince1970 else { continue }
+                  let s = v.lateSecret(ofRevision: data, note: note, name: n) else { continue }
+            // The target holds the current copy (the change's maker rewrapped it): take that one.
+            if let remote = try? transport.read([Vault.notesName, parts[0], n.filename], maxBytes: options.maxFileBytes).data,
+               v.classifyRevision(remote, note: note, name: n).isCurrent {
+                if (try? options.beforeLocalReplace?("notes/\(p)")) != nil, (try? LocalFS.write(remote, to: url, replacing: true)) != nil {
+                    keyChangeActivity { $0.replaced.append(.init(side: "local", path: "notes/\(p)")) }
+                }
+                continue
+            }
+            // With the change's time known, only what was written after it; unknown (the journal never seen
+            // here), every such file: fail closed.
+            if let changedAt = ring.entry(for: s)?.changedAt,
+               Double(n.hlc.millis) / 1000 <= changedAt.timeIntervalSince1970 { continue }
             let path = "notes/\(p)"
             quarantineLate(key(parts[0], n), path: path, entry: nil,
                            reason: "another device's file under a replaced secret, written after the change; set aside, "
                                + "never made current here (adopt or export it)", data: data)
             try? LocalFS.remove(url)
+            let dir = url.deletingLastPathComponent()
+            if (try? LocalFS.entries(dir))?.isEmpty == true { try? FileManager.default.removeItem(at: dir) }
         }
     }
 
