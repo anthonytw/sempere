@@ -16,6 +16,31 @@ enum SyncRunMode: Sendable, Equatable {
     case uploadOnly
 }
 
+/// One run a `SyncSession` asks for: its mode, and the bounds a background task gives it.
+struct SyncRunRequest: Sendable {
+    var mode: SyncRunMode
+    /// The run's time bound (`SyncLimits.maxDuration`); nil: the default. A background task shares its
+    /// time out this way (`SyncCoordinator.runBackgroundRefresh`, design §4.2).
+    var maxDuration: TimeInterval?
+    /// Stops the run between files (`SyncOptions.isCancelled`): iOS took the task's time back.
+    var cancel: SyncRunCancel?
+
+    /// Applies the bounds to a run's options.
+    func apply(to options: inout SyncOptions) {
+        if let maxDuration { options.limits.maxDuration = maxDuration }
+        if let cancel { options.isCancelled = { cancel.isSet } }
+    }
+}
+
+/// A cancellation flag a run polls between files (a background task's expiry sets it).
+final class SyncRunCancel: @unchecked Sendable {
+    private let lock = NSLock()
+    private var set = false
+
+    var isSet: Bool { lock.lock(); defer { lock.unlock() }; return set }
+    func cancel() { lock.lock(); set = true; lock.unlock() }
+}
+
 /// One (vault, target) pair's sync (docs/design/device-first-sync.md §4, docs/io.md "Sync targets in the
 /// app"): when to run (`SyncSchedule`), one run at a time, and its status (`SyncStatus`). The app's
 /// `SyncCoordinator` owns one per in-app vault with a target, open or not; the open vault's session runs
@@ -57,7 +82,7 @@ final class SyncSession {
 
     /// Runs one sync off the main actor and returns its report (the coordinator supplies it: endpoint,
     /// copy, vault, options).
-    @ObservationIgnored let run: @Sendable (SyncRunMode) async throws -> SyncReport
+    @ObservationIgnored let run: @Sendable (SyncRunRequest) async throws -> SyncReport
     /// Counts the copy's unconfirmed files off the main actor.
     @ObservationIgnored let countUnconfirmed: @Sendable () async -> Int
     /// Told when a run ends without problems (the coordinator stores the date).
@@ -86,7 +111,7 @@ final class SyncSession {
     var currentRun: Task<SyncReport?, Never>? { running }
 
     init(locationID: UUID, vaultID: UUID?, name: String, lastSuccess: Date?,
-         run: @escaping @Sendable (SyncRunMode) async throws -> SyncReport,
+         run: @escaping @Sendable (SyncRunRequest) async throws -> SyncReport,
          countUnconfirmed: @escaping @Sendable () async -> Int) {
         self.locationID = locationID
         self.vaultID = vaultID
@@ -155,11 +180,29 @@ final class SyncSession {
         return await runOnce()
     }
 
+    /// One run for a background task (`SyncCoordinator`): bounded by `maxDuration`, stopped between files when
+    /// `cancel` is set. A run already going is waited for instead (its own bounds hold). Returns whether the
+    /// run ended without problems, and whether it changed anything.
+    func runInBackground(maxDuration: TimeInterval?, cancel: SyncRunCancel?) async -> (ok: Bool, changed: Bool) {
+        let report = await runOnce(maxDuration: maxDuration, cancel: cancel)
+        guard let report else { return (false, false) }
+        let changed = !report.uploaded.isEmpty || !report.downloaded.isEmpty || !report.deleted.isEmpty
+            || !report.arriving.isEmpty || !report.merged.isEmpty
+        return (problems.isEmpty, changed)
+    }
+
+    /// The network came back: a run soon, without waiting out the backoff of earlier failures.
+    func networkReturned() {
+        schedule.resetBackoff()
+        schedule.demand()
+    }
+
     // MARK: - Runs
 
-    private func runOnce() async -> SyncReport? {
+    private func runOnce(maxDuration: TimeInterval? = nil, cancel: SyncRunCancel? = nil) async -> SyncReport? {
         if let running { return await running.value }
         let mode: SyncRunMode = twoWay ? .twoWay : .uploadOnly
+        let request = SyncRunRequest(mode: mode, maxDuration: maxDuration, cancel: cancel)
         let task = Task { () -> SyncReport? in
             await admit { [weak self] in mode == .twoWay || self?.isOpenVault == true }
             defer { release() }
@@ -171,7 +214,7 @@ final class SyncSession {
                 running = nil   // cleared by the run itself, so a waiter never takes a finished run for a current one
             }
             do {
-                let report = try await run(mode)
+                let report = try await run(request)
                 lastReport = report
                 // An upload-only run keeps a device list another device changed (`keepServerChanges`):
                 // it arrives at the next unlocked run, so it is no problem then.

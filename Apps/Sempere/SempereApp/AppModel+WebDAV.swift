@@ -262,7 +262,7 @@ extension AppModel {
         let session = SyncSession(
             locationID: id, vaultID: UUID(uuidString: location.vaultId), name: location.name,
             lastSuccess: location.lastPush,
-            run: { [weak self] mode in
+            run: { [weak self] request in
                 let (current, vault) = await MainActor.run { () -> (WebDAVLocation?, Vault?) in
                     // Two-way only with the open vault as the disk says it is: while a reopen after another
                     // device's key change is pending (or failed), runs only upload (review of #70, F1).
@@ -277,9 +277,10 @@ extension AppModel {
                     options.localWriteLock = lock
                     options.deviceID = FileManager.default.fileExists(atPath: deviceState.path)
                         ? (try? DeviceState.loadOrCreate(at: deviceState))?.device : nil
+                    request.apply(to: &options)
                     let endpoint = try Self.endpoint(current, passwords: passwords)
                     guard copy.exists else { throw WebDAVVaultError.noSuchLocation }
-                    if mode == .twoWay, let vault, vault.canRead {
+                    if request.mode == .twoWay, let vault, vault.canRead {
                         return try remote.sync(endpoint, copy: copy, vault: vault, options: options)
                     }
                     return try remote.push(endpoint, copy: copy, vault: nil, options: options)

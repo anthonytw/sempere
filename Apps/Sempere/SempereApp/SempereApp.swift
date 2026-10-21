@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// The app entry point. The model, the library (recent vaults) and the
 /// remembered keys are app state, shared by every window, so edits from two
@@ -58,7 +59,11 @@ struct SempereApp: App {
             // quarantine carried over, nothing of an old copy deleted (docs/io.md "Sync targets in the app").
             await model.convertLegacyWebDAV(library: library)
             await model.recoverWebDAVLeftovers()
+            // Launched by iOS for a background task: closed vaults' sessions wait for the task's budget
+            // (`runBackgroundTask`) instead of each starting a run of its own.
+            model.syncCoordinator.setInBackground(UIApplication.shared.applicationState == .background)
             model.syncCoordinator.start()
+            model.startReachability()
         }
         // Staged exports are plaintext copies of notes: none survives a launch.
         ExportJob.purgeStale()
@@ -116,8 +121,8 @@ struct SempereApp: App {
             .commands { ExportMenuCommands(model: model) }
             // Background sync: iOS launches these for the requests `BGTaskSyncScheduler`
             // submits. The Mac schedules nothing.
-            .backgroundTask(.appRefresh(BackgroundSync.refreshIdentifier)) { await BackgroundSync.run() }
-            .backgroundTask(.processingTask(BackgroundSync.processingIdentifier)) { await BackgroundSync.run() }
+            .backgroundTask(.appRefresh(BackgroundSync.refreshIdentifier)) { await BackgroundSync.run(.refresh) }
+            .backgroundTask(.processingTask(BackgroundSync.processingIdentifier)) { await BackgroundSync.run(.processing) }
         #endif
     }
 
