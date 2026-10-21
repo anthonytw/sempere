@@ -30,8 +30,9 @@ public enum ChainError: Error, Hashable, Sendable {
     /// verifier's pinned chain retired included), a kit replacement whose optional `recoverySig` by the
     /// old kit does not verify, or a `recoverySig` in any other epoch.
     case badTakeover(epoch: Int)
-    /// A takeover signed by a kit that an epoch below the verifier's pinned frontier introduced
-    /// (`TakeoverRule.kitNotYetPinned`): not tampering. The device follows the chain up to the epoch
+    /// A takeover whose `recoverySig` verifies under its parent's kit, a kit that an epoch below the
+    /// verifier's pinned frontier introduced (`TakeoverRule.kitNotYetPinned`): not tampering. A takeover
+    /// whose signature does not verify is `badTakeover` whatever the pin (round 9, L3). The device follows the chain up to the epoch
     /// before the takeover, pins it, and verifies again (round 8, C1-b).
     case kitNotPinned(epoch: Int)
     /// `epochSig` does not verify under the author's signing keys.
@@ -370,14 +371,19 @@ public enum EpochChain {
                     // device the parent never listed (a kit join); the list is the user's pick, from the
                     // devices of the takeover's ancestry (design §5.6).
                     guard authorFP == e.home else { throw ChainError.notHome(epoch: e.epoch) }
-                    let required = TakeoverRule.recoveryKey(parentRecovery: prev.recovery,
-                                                            parentPath: chain[..<i].map(\.epochId), pinned: pinned)
-                    if required == nil, TakeoverRule.kitNotYetPinned(parentRecovery: prev.recovery,
-                                                                      parentPath: chain[..<i].map(\.epochId), pinned: pinned) {
-                        throw ChainError.kitNotPinned(epoch: e.epoch)
+                    // First the signature under the parent's own kit (round 9, L3): a bad or wrong-kit
+                    // signature is tampering at once, and only a valid one whose kit this device has not
+                    // pinned yet is `kitNotPinned` (`TakeoverRule.recoveryKey` names the parent's kit or none).
+                    guard let ra = e.recoveryAuthor, let rk = ra.sign, let rs = e.recoverySig,
+                          ra.recoveryFingerprint == prev.recovery, rs.verifies(message, keys: rk) else {
+                        throw ChainError.badTakeover(epoch: e.epoch)
                     }
-                    guard let ra = e.recoveryAuthor, let rk = ra.sign, let rs = e.recoverySig, let required,
-                          ra.recoveryFingerprint == required, rs.verifies(message, keys: rk) else {
+                    let parentPath = chain[..<i].map(\.epochId)
+                    guard TakeoverRule.recoveryKey(parentRecovery: prev.recovery, parentPath: parentPath, pinned: pinned)
+                            == prev.recovery else {
+                        if TakeoverRule.kitNotYetPinned(parentRecovery: prev.recovery, parentPath: parentPath, pinned: pinned) {
+                            throw ChainError.kitNotPinned(epoch: e.epoch)
+                        }
                         throw ChainError.badTakeover(epoch: e.epoch)
                     }
                     let ancestry = lists.reduce(into: Set<Data>()) { $0.formUnion($1.list) }

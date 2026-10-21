@@ -1,5 +1,5 @@
 {
-  "description": "key-hierarchy design §5.6 (single writer): trees of epochs whose signatures verified (labels stand for their UTF-8 bytes; signer, reason, home after the epoch, list, recovery fingerprint, and for a takeover whether its recoverySig verified under the parent's recovery key), the device's pinned chain, and the expected chain, the pinned epochs a takeover dropped, the ignored epochs and the home conflicts.",
+  "description": "key-hierarchy design §5.6 (single writer): trees of epochs whose signatures verified (labels stand for their UTF-8 bytes; signer, reason, home after the epoch, list, recovery fingerprint, and for a takeover whether its recoverySig verified under the parent's recovery key), the device's pinned chain, and the expected chain, the pinned epochs a takeover dropped, the ignored epochs and the home conflicts. A takeover signed by its parent's kit but refused only because that kit was introduced below the pinned frontier is \"deferred\" (round 9, L3), not ignored; absent means none.",
   "cases": [
     {
       "name": "home-signed epochs are followed linearly; a handoff moves home",
@@ -1879,11 +1879,12 @@
           "t"
         ],
         "dropped": [],
-        "ignored": [
-          "0tx"
-        ],
+        "ignored": [],
         "homeConflicts": [],
-        "stopped": []
+        "stopped": [],
+        "deferred": [
+          "0tx"
+        ]
       }
     },
     {
@@ -2116,11 +2117,12 @@
           "t-o"
         ],
         "dropped": [],
-        "ignored": [
-          "0tx"
-        ],
+        "ignored": [],
         "homeConflicts": [],
-        "stopped": []
+        "stopped": [],
+        "deferred": [
+          "0tx"
+        ]
       }
     },
     {
@@ -2442,11 +2444,12 @@
           "e3"
         ],
         "dropped": [],
-        "ignored": [
-          "u"
-        ],
+        "ignored": [],
         "homeConflicts": [],
-        "stopped": []
+        "stopped": [],
+        "deferred": [
+          "u"
+        ]
       }
     },
     {
