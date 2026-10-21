@@ -11261,6 +11261,18 @@
         }
       }
     },
+    "Not Downloaded" : {
+      "comment" : "Files of a folder target its provider has not downloaded",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin descargar"
+          }
+        }
+      }
+    },
     "Not Imported" : {
       "comment" : "Notability import report: section of what was left out",
       "extractionState" : "manual",
@@ -19642,6 +19654,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La clave guardada no ha desbloqueado esta bóveda: %@"
+          }
+        }
+      }
+    },
+    "The server folder holds another vault or other files. Choose an empty or new folder." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La carpeta del servidor contiene otra bóveda u otros archivos. Elige una carpeta vacía o nueva."
           }
         }
       }

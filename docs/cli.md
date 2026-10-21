@@ -456,7 +456,7 @@ sempere store import SOURCE [--name NAME] [--keep-syncing] [--store DIR] [--json
 sempere store restore BACKUP [--name NAME] [--replace] [--store DIR] [--json]
 sempere store remove VAULT --yes [--store DIR] [--json]
 sempere store target list VAULT [--store DIR] [--json]
-sempere store target add VAULT (--folder PATH | --webdav URL [--user NAME] [--check [--password-env VAR]])
+sempere store target add VAULT (--folder PATH | --webdav URL [--user NAME] [--password-env VAR | --no-check])
                          [--name NAME] [--store DIR] [--json]
 sempere store target remove VAULT TARGET [--store DIR] [--json]
 sempere store sync VAULT [--target TARGET ...] [--identity FILE | --passphrase-env VAR] [--password-env VAR]
@@ -524,10 +524,11 @@ a unique id prefix (4 characters or more), its name, path or URL.
   deleted); it must not overlap the store and must not be a file (exit 1). `--webdav URL [--user NAME]`: https,
   or http to localhost (exit 2 otherwise); no password is stored. A target at the same place (the same
   folder, or the same server folder and user) is refused (exit 1). `--json` prints the new target; `-q` only
-  its id. `--check` (WebDAV) first lists the server folder, with the password from `--password-env`
-  (default `SEMPERE_WEBDAV_PASSWORD`, needed with `--user`), and refuses one that holds another vault or
-  other files (exit 1): it must be empty, missing (the first sync creates it) or hold this vault
-  (`WebDAVConnection.checkTargetFolder`, which the app's Add WebDAV Server… uses).
+  its id. A WebDAV target's server folder is listed first, with the password from `--password-env`
+  (default `SEMPERE_WEBDAV_PASSWORD`, needed with `--user`), and one that holds another vault or other files
+  is refused (exit 1): it must be empty, missing (the first sync creates it) or hold this vault
+  (`WebDAVConnection.checkTargetFolder`, which the app's Add WebDAV Server… runs too). `--no-check` adds it
+  without contacting the server.
 - `target remove` forgets a target and deletes its sync state on this machine; the folder or server is not
   touched.
 - `sync` runs the vault with each target in turn (or only the `--target` ones): the two-way sync of

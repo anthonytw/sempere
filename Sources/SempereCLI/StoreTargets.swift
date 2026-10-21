@@ -58,8 +58,9 @@ struct StoreTargetAdd: ParsableCommand {
             sync copies the vault into it), or hold the same vault (the first sync is a union). It must not overlap \
             the store. --webdav URL [--user NAME]: a server folder (https, or http to localhost); the password is \
             never stored, `store sync` takes it from the environment. A target at the same place is refused (exit 1).
-            With --webdav, --check first lists the server folder (password from --password-env) and refuses one that \
-            holds anything but this vault (exit 1); a missing folder is made by the first sync.
+            With --webdav the server folder is listed first (password from --password-env) and one that holds \
+            anything but this vault is refused (exit 1); a missing folder is made by the first sync. --no-check \
+            skips that (no request is made).
             """
     )
 
@@ -75,8 +76,8 @@ struct StoreTargetAdd: ParsableCommand {
     @Option(name: .long, help: ArgumentHelp("With --webdav: the user name for HTTP Basic auth.", valueName: "name"))
     var user: String?
 
-    @Flag(name: .long, help: "With --webdav: check that the server folder is empty, missing or holds this vault.")
-    var check = false
+    @Flag(inversion: .prefixedNo, help: "With --webdav: check that the server folder is empty, missing or holds this vault (default).")
+    var check = true
 
     @Option(name: .customLong("password-env"),
             help: ArgumentHelp("With --check: the environment variable holding the WebDAV password.", valueName: "var"))
@@ -92,7 +93,7 @@ struct StoreTargetAdd: ParsableCommand {
     func validate() throws {
         if (folder == nil) == (webdav == nil) { throw ValidationError("give one of --folder PATH or --webdav URL") }
         if user != nil && webdav == nil { throw ValidationError("--user goes with --webdav") }
-        if (check || passwordEnv != nil) && webdav == nil { throw ValidationError("--check and --password-env go with --webdav") }
+        if passwordEnv != nil && webdav == nil { throw ValidationError("--password-env goes with --webdav") }
     }
 
     func run() throws {

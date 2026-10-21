@@ -36,8 +36,15 @@ extension AppModel {
         guard let entry = store.entry(id: vaultID) else { throw SyncTargetProblem.notAStoreVault }
         let device = try? deviceClockForWriting().device
         return try await offMain(priority: .utility) {
-            VaultDetailsSnapshot(storage: TargetInspection.storage(of: entry.url),
-                                 targets: try store.targetDetails(entry, thisDevice: device, measureFolders: measureFolders))
+            // A folder target is measured through its bookmark (its path alone is outside the sandbox on iOS).
+            var opened: [FolderTargetAccess] = []
+            defer { opened.forEach { $0.close() } }
+            let targets = try store.targetDetails(entry, thisDevice: device, measureFolders: measureFolders) { target in
+                guard let access = try? FolderTargetAccess.open(target) else { return nil }
+                opened.append(access)
+                return access.folder
+            }
+            return VaultDetailsSnapshot(storage: TargetInspection.storage(of: entry.url), targets: targets)
         }
     }
 
@@ -49,10 +56,10 @@ extension AppModel {
         let store = syncStore
         guard let entry = store.entry(id: vaultID) else { throw SyncTargetProblem.notAStoreVault }
         let quarantine = store.quarantine(target, of: vaultID), lock = store.writeLock(for: vaultID)
-        let report = try await offMain {
+        let changed = try await offMain {
             try quarantine.adopt(path, vaultFolder: entry.url, vault: vault, writeLock: lock)
         }
-        if let changed = report?.changed { applySyncChanges(changed) }
+        if let changed { applySyncChanges(changed) }
     }
 
     /// Repair ▸ Export: a copy of the quarantined file in `folder` (picked: its security scope is held for the
@@ -92,6 +99,12 @@ extension AppModel {
         let text = url.absoluteString
         if syncStore.targets.targets(of: vaultID).contains(where: { $0.kind == .webdav && SyncTarget.sameCollection($0.url ?? "", text) }) {
             throw SyncTargetProblem.duplicate
+        }
+        // Checked again here, whatever the sheet found: the folder may have changed since.
+        switch await probeWebDAVTarget(url: url, user: user, password: password, pin: pin, vaultID: vaultID) {
+        case .checked(let found) where found.acceptable: break
+        case .checked: throw SyncTargetProblem.other(String(localized: "The server folder holds another vault or other files. Choose an empty or new folder."))
+        case .failed(_, let message, _): throw SyncTargetProblem.other(message)
         }
         var location = WebDAVLocation(id: UUID(), url: text, user: user, vaultId: vaultID.uuidString.lowercased(),
                                       name: entry.label ?? entry.name, folderName: entry.url.lastPathComponent)

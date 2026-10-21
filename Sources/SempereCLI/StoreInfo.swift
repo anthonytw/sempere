@@ -18,7 +18,7 @@ struct StoreInfo: ParsableCommand {
 
             --json: {vault, name, storage: {notes, attachments, other, total}, targets: [{target, syncedFiles, \
             devices: [{device, revisions, newest, publishesSummaries, isThisDevice}], quarantined: [{path, \
-            vaultPath, size, quarantined, adoptable}], staged, stateBytes, folderBytes}]}.
+            vaultPath, size, quarantined, adoptable}], staged, stateBytes, folderBytes, folderNotDownloaded}]}.
             """
     )
 
@@ -55,7 +55,8 @@ struct StoreInfo: ParsableCommand {
             print("")
             print("  \(t.kind.rawValue) \(t.name): \(t.path ?? t.url ?? "")")
             print("    last sync: \(t.lastSuccess.map(Format.utc) ?? "never"); \(d.syncedFiles) files in step; "
-                  + "sync state \(Format.bytes(Int(d.stateBytes)))" + (d.folderBytes.map { "; folder \(Format.bytes(Int($0)))" } ?? ""))
+                  + "sync state \(Format.bytes(Int(d.stateBytes)))" + (d.folderBytes.map { "; folder \(Format.bytes(Int($0)))" } ?? "")
+                  + ((d.folderNotDownloaded ?? 0) > 0 ? " (\(d.folderNotDownloaded ?? 0) files not downloaded)" : ""))
             if d.staged > 0 { print("    staged for the next unlock: \(d.staged) files") }
             if !d.quarantined.isEmpty { print("    quarantined: \(d.quarantined.count) files (sempere store quarantine list)") }
             var rows = [["DEVICE", "REVISIONS", "NEWEST", "SUMMARIES"]]

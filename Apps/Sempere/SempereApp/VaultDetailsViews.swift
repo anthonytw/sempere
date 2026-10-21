@@ -77,6 +77,9 @@ private struct TargetDetailsSection: View {
             LabeledContent("Sync State", value: StorageText.bytes(details.stateBytes))
             if let bytes = details.folderBytes {
                 LabeledContent("Folder Copy", value: StorageText.bytes(bytes))
+                if let pending = details.folderNotDownloaded, pending > 0 {
+                    LabeledContent("Not Downloaded", value: String(localized: "\(pending) files", comment: "Files a provider has not downloaded"))
+                }
             }
             NavigationLink {
                 RepairView(vaultID: vaultID, targetID: target.id, targetName: target.name, changed: changed)

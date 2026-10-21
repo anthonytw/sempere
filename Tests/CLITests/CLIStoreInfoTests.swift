@@ -24,6 +24,8 @@ final class CLIStoreInfoTests: CLITestCase {
 
     func testInfoShowsStorageAndTheDevicesATargetHeld() throws {
         let v = try syncedVault()
+        // A provider's stand-in for a file it has not downloaded is counted, not measured.
+        try Data("x".utf8).write(to: URL(fileURLWithPath: v.folder).appendingPathComponent(".later.age.icloud"))
         let r = try cli(["store", "info", "Notes", "--measure-folders", "--store", store, "--json"])
         XCTAssertEqual(r.status, 0, r.err)
         let o = try XCTUnwrap(r.json as? [String: Any])
@@ -34,6 +36,7 @@ final class CLIStoreInfoTests: CLITestCase {
         XCTAssertEqual(targets.count, 1)
         XCTAssertGreaterThan(targets[0]["syncedFiles"] as? Int ?? 0, 0)
         XCTAssertGreaterThan(targets[0]["folderBytes"] as? Int ?? 0, 0)
+        XCTAssertEqual(targets[0]["folderNotDownloaded"] as? Int, 1)
         let devices = try XCTUnwrap(targets[0]["devices"] as? [[String: Any]])
         XCTAssertFalse(devices.isEmpty, "the vault's writer is listed")
         XCTAssertGreaterThan(devices[0]["revisions"] as? Int ?? 0, 0)

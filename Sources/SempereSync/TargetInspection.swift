@@ -70,8 +70,10 @@ public struct TargetDetails: Codable, Hashable, Sendable, Identifiable {
     public var staged: Int
     /// Bytes of the target's state folder on this device (sync state, quarantine, staging).
     public var stateBytes: Int64
-    /// Bytes of a folder target's copy, when measured.
+    /// Bytes of a folder target's copy that are on this device, when measured.
     public var folderBytes: Int64?
+    /// Files of that copy its provider has not downloaded (`.<name>.icloud` stand-ins), when measured.
+    public var folderNotDownloaded: Int?
 
     public var id: UUID { target.id }
 }
@@ -179,35 +181,47 @@ public struct TargetQuarantine: Sendable {
     }
 
     /// Places the file in the vault at `vaultFolder` if it now passes every check a download gets, under the
-    /// vault's current keys (`vault` unlocked): one pull-only engine run from a scratch folder that holds the
-    /// vault's root files and this file only, a union that deletes nothing (as `LockedStaging.place` places).
-    /// Adopted, it leaves the quarantine; the report's `changed` names what arrived. A file the vault already
+    /// vault's current keys (`vault` unlocked). The check is one pull-only engine run confined to that file:
+    /// from a scratch folder holding the vault's root files and the file, into a scratch working copy holding
+    /// the root files and (hard links of) the one note folder or file the file belongs with, so the run never
+    /// walks the rest of the vault. A file that passes is then copied into the vault under `writeLock`, never
+    /// over a file there, and leaves the quarantine; the result names what arrived. A file the vault already
     /// holds with the same bytes leaves it too (nil); one that differs is refused, and so is a root file.
     @discardableResult
-    public func adopt(_ path: String, vaultFolder: URL, vault: Vault, writeLock: VaultFileLock? = nil) throws -> SyncReport? {
+    public func adopt(_ path: String, vaultFolder: URL, vault: Vault, writeLock: VaultFileLock? = nil) throws -> LocalChanges? {
         let (url, item) = try file(path)
         guard item.adoptable else { throw QuarantineError.notAdoptable(item.vaultPath) }
         guard vault.canRead else { throw QuarantineError.locked }
         let rel = item.vaultPath.split(separator: "/").map(String.init)
         let local = rel.reduce(vaultFolder) { $0.appendingPathComponent($1) }
         let fm = FileManager.default
+        func same(_ a: URL, _ b: URL) -> Bool { (try? FileDigest.sha256(of: a).hex) == (try? FileDigest.sha256(of: b).hex) }
         if fm.fileExists(atPath: local.path) {
-            guard (try? FileDigest.sha256(of: local).hex) == (try? FileDigest.sha256(of: url).hex) else {
-                throw QuarantineError.differentFileInVault(item.vaultPath)
-            }
+            guard same(local, url) else { throw QuarantineError.differentFileInVault(item.vaultPath) }
             try delete(path)
             return nil
         }
         let scratch = directory.deletingLastPathComponent()
             .appendingPathComponent(".adopt-\(UUID().uuidString.lowercased())", isDirectory: true)
         defer { try? fm.removeItem(at: scratch) }
-        let source = scratch.appendingPathComponent("copy.sempere", isDirectory: true)
+        let source = scratch.appendingPathComponent("source.sempere", isDirectory: true)
+        let work = scratch.appendingPathComponent("work.sempere", isDirectory: true)
+        // The folder the file belongs with: its note (`notes/<id>`, blobs and revisions together), else its own folder.
+        let group = Array(rel.prefix(rel.first == Vault.notesName ? 2 : rel.count - 1))
         do {
             try FileIO.createPrivateDirectory(scratch)
-            try fm.createDirectory(at: source, withIntermediateDirectories: true)
+            for dir in [source, work] { try fm.createDirectory(at: dir, withIntermediateDirectories: true) }
             for name in [Vault.manifestName, Vault.journalName, SharedSettings.fileName] {
                 let from = vaultFolder.appendingPathComponent(name)
-                if fm.fileExists(atPath: from.path) { try fm.copyItem(at: from, to: source.appendingPathComponent(name)) }
+                guard fm.fileExists(atPath: from.path) else { continue }
+                try fm.copyItem(at: from, to: source.appendingPathComponent(name))
+                try fm.copyItem(at: from, to: work.appendingPathComponent(name))
+            }
+            let localGroup = group.reduce(vaultFolder) { $0.appendingPathComponent($1) }
+            let workGroup = group.reduce(work) { $0.appendingPathComponent($1) }
+            try fm.createDirectory(at: workGroup, withIntermediateDirectories: true)
+            if group.first == Vault.notesName, fm.fileExists(atPath: localGroup.path) {
+                try Self.link(localGroup, into: workGroup)
             }
             let placed = rel.reduce(source) { $0.appendingPathComponent($1) }
             try fm.createDirectory(at: placed.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -220,18 +234,56 @@ public struct TargetQuarantine: Sendable {
         o.keepServerChanges = true
         o.retryQuarantined = true
         o.quarantineDirectory = scratch.appendingPathComponent("refused", isDirectory: true)
-        o.localWriteLock = writeLock
-        let report = try SyncEngine(directory: vaultFolder, vault: vault, remote: FolderRemote(root: source),
+        let report = try SyncEngine(directory: work, vault: vault, remote: FolderRemote(root: source),
                                     stateURL: scratch.appendingPathComponent("state.json"), options: o).run()
-        guard fm.fileExists(atPath: local.path) else {
+        let checked = rel.reduce(work) { $0.appendingPathComponent($1) }
+        guard fm.fileExists(atPath: checked.path) else {
             let why = report.quarantined.first { $0.path == item.vaultPath }?.message
                 ?? report.errors.first { $0.path.hasSuffix(rel.last ?? "") }?.message
                 ?? report.skipped.first { $0.path.hasSuffix(rel.last ?? "") }?.message
                 ?? "it was not placed"
             throw QuarantineError.stillRefused(why)
         }
+        // Into the vault: a temporary name beside it, then a link that never replaces a file there.
+        func place() throws {
+            try fm.createDirectory(at: local.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let temp = local.deletingLastPathComponent().appendingPathComponent(".sempere-tmp-adopt-\(UUID().uuidString.lowercased())")
+            defer { try? fm.removeItem(at: temp) }
+            try fm.copyItem(at: checked, to: temp)
+            do { try fm.linkItem(at: temp, to: local) } catch {
+                guard fm.fileExists(atPath: local.path), same(local, checked) else {
+                    throw QuarantineError.differentFileInVault(item.vaultPath)
+                }
+            }
+        }
+        do {
+            if let writeLock { try writeLock.withLock(timeout: 30, place) } else { try place() }
+        } catch let e as QuarantineError {
+            throw e
+        } catch {
+            throw QuarantineError.io("\(item.vaultPath): \(error.localizedDescription)")
+        }
         try delete(path)
-        return report
+        var changes = LocalChanges()
+        if rel.first == Vault.notesName, rel.count > 1 { changes.notes = [rel[1].lowercased()] }
+        if rel.first == CaptureFile.folderName { changes.inbox = true }
+        if rel.first == NotebookRecords.folderName { changes.notebooks = true }
+        if rel.first == PublishedSummaries.deviceFolderName { changes.summaries = true }
+        return changes
+    }
+
+    /// Hard links of every file below `from` at the same paths below `to` (copies where a link fails).
+    private static func link(_ from: URL, into to: URL) throws {
+        let fm = FileManager.default
+        guard let e = fm.enumerator(at: from, includingPropertiesForKeys: [.isRegularFileKey]) else { return }
+        let base = from.standardizedFileURL.pathComponents.count
+        for case let file as URL in e {
+            guard (try? file.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true else { continue }
+            let rel = file.standardizedFileURL.pathComponents.dropFirst(base)
+            let target = rel.reduce(to) { $0.appendingPathComponent($1) }
+            try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            do { try fm.linkItem(at: file, to: target) } catch { try fm.copyItem(at: file, to: target) }
+        }
     }
 }
 
@@ -286,6 +338,17 @@ public enum TargetInspection {
         return total
     }
 
+    /// A folder target's copy: the bytes of the files on this device, and how many are stand-ins of files a
+    /// provider has not downloaded (`.<name>.icloud`, `CloudScan`), which are not counted as bytes.
+    public static func measureFolder(_ folder: URL) -> (bytes: Int64, notDownloaded: Int) {
+        var total: Int64 = 0, pending = 0
+        walk(folder) { url, size in
+            let name = url.lastPathComponent
+            if name.hasPrefix("."), name.hasSuffix(".icloud") { pending += 1 } else { total += size }
+        }
+        return (total, pending)
+    }
+
     private static func walk(_ folder: URL, _ body: (URL, Int64) -> Void) {
         let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey]
         guard let e = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: keys) else { return }
@@ -298,21 +361,22 @@ public enum TargetInspection {
 
 extension VaultStore {
     /// Every target of the store vault `entry` with what this device knows of it (no network).
-    /// `measureFolders`: also measure each folder target's copy (in a provider, that may take a while).
-    public func targetDetails(_ entry: Entry, thisDevice: DeviceID? = nil, measureFolders: Bool = false) throws -> [TargetDetails] {
+    /// `measureFolders`: also measure each folder target's copy (in a provider, that may take a while), at the
+    /// folder `folder` gives for it (the app resolves its bookmark; default: its path).
+    public func targetDetails(_ entry: Entry, thisDevice: DeviceID? = nil, measureFolders: Bool = false,
+                              folder: (SyncTarget) -> URL? = { $0.path.map { URL(fileURLWithPath: $0, isDirectory: true) } })
+        throws -> [TargetDetails] {
         let registry = targets
         return try registry.load(entry.vaultId).map { t in
             let stateURL = registry.stateURL(t.id, of: entry.vaultId)
-            var folderBytes: Int64?
-            if measureFolders, t.kind == .folder, let path = t.path {
-                folderBytes = TargetInspection.bytes(of: URL(fileURLWithPath: path, isDirectory: true))
-            }
+            var measured: (bytes: Int64, notDownloaded: Int)?
+            if measureFolders, t.kind == .folder, let url = folder(t) { measured = TargetInspection.measureFolder(url) }
             return TargetDetails(target: t, syncedFiles: TargetInspection.syncedFiles(stateURL: stateURL),
                                  devices: TargetInspection.devices(stateURL: stateURL, thisDevice: thisDevice),
                                  quarantined: quarantine(t.id, of: entry.vaultId).list(),
                                  staged: LockedStaging(targetState: stateURL).pending(vaultFolder: entry.url).count,
                                  stateBytes: TargetInspection.bytes(of: registry.stateDirectory(t.id, of: entry.vaultId)),
-                                 folderBytes: folderBytes)
+                                 folderBytes: measured?.bytes, folderNotDownloaded: measured?.notDownloaded)
         }
     }
 
