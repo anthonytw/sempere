@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+import VaultTestSupport
 @testable import Sempere
 @testable import SempereSync
 @testable import SempereWebDAV
@@ -71,7 +72,7 @@ final class WebDAVIntegrationTests: SyncTestCase {
     func testLocalCopyLifecycle() throws {
         let parent = try realClient(path: "it-\(UUID().uuidString.lowercased())")
         let c = try parent.descendant(["Notes.sempere"])
-        let a = try makeVault("A")
+        var a = try makeVault("A")
         _ = try delta(a, device: devA, t: 0, title: "from the CLI")
         var o = SyncOptions(deviceLabel: "A")
         o.pushOnly = true
@@ -92,11 +93,10 @@ final class WebDAVIntegrationTests: SyncTestCase {
         XCTAssertEqual(up.uploaded.filter { $0.hasPrefix("notes/") }.count, 1, "\(up)")
         XCTAssertEqual(ipad.unconfirmedChanges(), 0)
 
-        // The CLI device writes a note and changes the server's manifest: kept, reported.
+        // The CLI device (home) writes a note and approves a device, so the server's manifest is a later
+        // version by home: a push-only copy keeps it there and reports it; Download Again takes it.
         let theirs = try delta(a, device: devA, t: 9, title: "later from the CLI", note: UUID())
-        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: try vaultJSON("A")) as? [String: Any])
-        json["x-test"] = "changed on the CLI device"   // an unknown key, ignored by readers
-        try JSONSerialization.data(withJSONObject: json).write(to: dir("A").appendingPathComponent("vault.json"))
+        try a.approveDevice(TestVaults.device(pqIdentity()).joinRequest(vaultId: a.vaultId, name: "Phone", kind: "iphone"))
         _ = try SyncEngine(directory: dir("A"), vault: try openVault("A"), client: c,
                            stateURL: tmp.appendingPathComponent("state-A.json"), options: o).run()
         let kept = try ipad.push(client: vaultClient, vault: v)

@@ -1401,7 +1401,7 @@ rename on removal; journal fallback lookup; resumable), `features` in
 device-local state (`$XDG_STATE_HOME/sempere/blobs/<vaultId>.json`; the app
 keeps its own in Application Support). CLI: `sempere blobs list [NOTE…] | verify
 | extract NOTE SHA256 [--out] | add | copy | unused [NOTE…] | gc [--dry-run] [--file NAME…] [--retention DAYS] [NOTE…] |
-repair [NOTE…]`, `vault recipients add|remove … [--rewrap header|reencrypt]`, `recover`
+repair [NOTE…]`, `recover`
 extracting a note's attachments with the stock framing.
 *Code:* `Sources/Sempere/Blob.swift` (names, framing, Padmé, streaming
 checker), `BlobStore.swift` (write, read, copy, `withBlobFile`, `BlobSource`),

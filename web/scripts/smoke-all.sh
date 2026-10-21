@@ -22,9 +22,13 @@ trap 'rm -rf "$work"' EXIT
 
 # A copy of the sample vault with what a synced vault has: sealed summaries and the index.
 # `vault summaries` and `vault index` write into the vault, so never into the committed fixture.
+# This machine never joined the fixture vault: its root (the kit's, design §4.3) confirms the copy, with
+# trust records kept in the scratch folder.
 cp -R "$fixtures/sample.sempere" "$work/sample.sempere"
-SEMPERE_IDENTITY="$key" "$sempere" vault summaries --vault "$work/sample.sempere"
-SEMPERE_IDENTITY="$key" "$sempere" vault index --vault "$work/sample.sempere"
+export XDG_STATE_HOME="$work/state"
+sample_root="$("$sempere" vault info --vault "$work/sample.sempere" --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).root))')"
+SEMPERE_IDENTITY="$key" "$sempere" vault summaries --vault "$work/sample.sempere" --root "$sample_root"
+SEMPERE_IDENTITY="$key" "$sempere" vault index --vault "$work/sample.sempere" --root "$sample_root"
 test -f "$work/sample.sempere/sempere-summaries.sealed" || { echo "no summaries written" >&2; exit 1; }
 test -f "$work/sample.sempere/sempere-index.json" || { echo "no index written" >&2; exit 1; }
 shots="$work/shots"; mkdir -p "$shots"

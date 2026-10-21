@@ -4,7 +4,7 @@ import Foundation
 import Sempere
 import XCTest
 
-/// `sempere blobs …`, `vault recipients … --rewrap`, `recover` on a blob
+/// `sempere blobs …`, `recover` on a blob
 /// (docs/cli.md "Attachments"), end to end through the binary.
 final class CLIBlobsTests: CLITestCase {
     let n1 = "aaaaaaaa-1111-4111-8111-000000000001"

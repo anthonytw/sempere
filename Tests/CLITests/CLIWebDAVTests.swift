@@ -420,14 +420,14 @@ final class CLIWebDAVTests: CLITestCase {
         let b = path("b.sempere")
         XCTAssertEqual(try cli(["sync", "webdav", url, "--vault", a] + common, env: e).status, 0)
         XCTAssertEqual(try cli(["sync", "webdav", url, "--vault", b] + common, env: e).status, 0)
-        // Each machine adds a different recipient: vault.json changed on both sides.
-        func addRecipient(_ vault: String, _ name: String) throws {
-            let pub = try cli(["keys", "generate", "--out", path(name), "-q"]).out.trimmingCharacters(in: .whitespacesAndNewlines)
-            let r = try cli(["vault", "recipients", "add", pub, "--vault", vault, "--identity", Self.fixtureKey], env: e)
+        // Each copy renames the home device (the fixture's) differently: vault.json changed on both sides.
+        // The runs below are locked (no key), so neither side can tell which version is later.
+        func rename(_ vault: String, _ name: String) throws {
+            let r = try cli(["devices", "rename", "e6f8004e", name, "--vault", vault, "--identity", Self.fixtureKey], env: e)
             XCTAssertEqual(r.status, 0, r.err)
         }
-        try addRecipient(a, "one.key")
-        try addRecipient(b, "two.key")
+        try rename(a, "one")
+        try rename(b, "two")
         XCTAssertEqual(try cli(["sync", "webdav", url, "--vault", a] + common, env: e).status, 0)
         let r = try cli(["sync", "webdav", url, "--vault", b, "--device", "laptop-b"] + common, env: e)
         XCTAssertEqual(r.status, 3, "a conflict exits 3: \(r.err)")

@@ -484,7 +484,7 @@ final class CLICommandTests: CLITestCase {
                        "sempere: give the content's SHA-256: 8 to 64 lowercase hex digits (see 'sempere blobs copy --help')\n")
         XCTAssertEqual(try cli(["notes", "list", "--bogus"]).err,
                        "sempere: Unknown option '--bogus' (see 'sempere notes list --help')\n")
-        for sub in [["keys", "generate"], ["vault", "init"], ["vault", "recipients", "add"], ["export"], ["recover"],
+        for sub in [["keys", "generate"], ["vault", "init"], ["devices", "approve"], ["export"], ["recover"],
                     ["compact"], ["snapshot"], ["notes", "show"], ["vault", "verify"]] {
             let h = try cli(sub + ["--help"])
             XCTAssertEqual(h.status, 0, "\(sub)")
