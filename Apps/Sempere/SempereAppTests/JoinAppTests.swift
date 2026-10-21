@@ -209,4 +209,15 @@ struct JoinAppTests {
         #expect(!s.b.pendingNoteIDs.contains(s.big))
         await Self.close(s)
     }
+
+    /// Review of #77: device A's app keeps the server's sealed summaries current, so device B lists A's notes
+    /// with their titles at once, before any of them arrived (no placeholder rows).
+    @Test func aJoiningDeviceListsTheNotesFromTheAppsPublishedSummaries() async throws {
+        let s = try await Self.setup()
+        #expect(await TS.waitUntil { s.b.listLoaded && s.b.pendingNoteIDs.contains(s.big) })
+        #expect(await TS.waitUntil { s.b.notes.first { $0.id == s.big }?.title == "Big" }, "the title before the note arrived")
+        #expect(s.b.pendingNoteIDs.contains(s.big))
+        #expect(s.b.placeholderNoteIDs.isEmpty, "every pending note has its row")
+        await Self.close(s)
+    }
 }

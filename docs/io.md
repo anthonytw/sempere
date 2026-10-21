@@ -1521,17 +1521,25 @@ syncs with both ways.
   a session whose run is already going is skipped by the task, never waited for. Each run's errors, bound
   and backoff are its own session's (`BackgroundTargetsTests`).
 - **Locked staging** (P8b, design §4.1, `LockedStaging` in `SempereSync`). A closed or locked vault's
-  upload-only run also stages what other devices wrote: the target is synced, without a key, with a shadow
-  of the working copy (`<target state dir>/incoming/copy.sempere`, hard links of the copy's files, so it
-  costs little space), so received files are checked for their structure only, nothing is deleted, and
-  nothing reaches the working copy. Every background task's run stages; in the foreground at most every
-  15 minutes (`SyncSession.stageInterval`). The bar and the library say "n files from other devices are on
-  this device and arrive when the vault is unlocked" (`SyncSession.staged`). The first two-way run after the
-  unlock places them: one engine run of the working copy against the shadow as a local folder, with the
-  key, so every file is checked fully and placed or quarantined as any download is (format.md §9.1), its
-  state fresh (a union that deletes nothing); what it placed reaches the model with the run's arrivals,
-  then the staging is removed. The place needs no network: a vault opened offline is current up to its
-  last staging. Tests: `LockedStagingTests` (package), `FolderTargetAppTests.aClosedVaultStages…`.
+  upload-only run also stages what other devices wrote: a **pull-only** run (`SyncOptions.pullOnly`,
+  `PullOnlyRemote`: nothing is ever written to the target) without a key, into a shadow of the working copy
+  (`<target state dir>/incoming/copy.sempere`, hard links of the copy's write-once files; its root files are
+  copied once, when it is made, and never rewritten). Received files are checked for their structure only,
+  nothing is deleted, and nothing reaches the working copy. Every background task's run stages; in the
+  foreground at most every 15 minutes (`SyncSession.stageInterval`); never for a partial copy. The bar and
+  the library say "n files from other devices are on this device and arrive when the vault is unlocked"
+  (`SyncSession.staged`). The first two-way run after the unlock places them: a pull-only engine run of the
+  working copy against the shadow as a local folder, with the key, so every write-once file is checked
+  fully and placed or quarantined as any download is (format.md §9.1). Root files are never placed (the
+  shadow's are set to the copy's first): they come only through the two-way run and its checks. What the
+  target's sync state shows this device removed on purpose (thinned or collected files, adopted voice
+  notes) is dropped from the shadow first, so nothing comes back. What it placed reaches the model with the
+  run's arrivals; the staging is removed after every placing attempt. The place needs no network: a vault
+  opened offline is current up to its last staging. Tests: `LockedStagingTests` (package),
+  `FolderTargetAppTests.aClosedVaultStages…`.
+- **Published summaries.** An unlocked two-way run of a complete copy creates and keeps current the
+  target's `sempere-summaries.sealed` (`SyncOptions.publishSummaries`, without the web index): a device
+  joining the vault lists the notes from it before they arrive (`JoinAppTests`). Never from a partial copy.
 - **Network (WebDAV).** `WebDAVReachability` (`NWPathMonitor`, which only watches the device's interfaces)
   reports the network coming back: every WebDAV session forgets its backoff and runs soon
   (`SyncCoordinator.networkChanged`). Folder targets follow their provider instead.

@@ -238,16 +238,20 @@ extension AppModel {
                     if request.mode == .twoWay, let vault, vault.canRead {
                         // The unlock places what locked runs staged (checked under the key), then the run goes on.
                         let placed = try staging.place(vaultFolder: copy.folder, vault: vault, options: options)
-                        var report = try remote.sync(endpoint, copy: copy, vault: vault, options: options)
+                        // A complete copy keeps the server's sealed summaries current (a joining device lists the
+                        // notes from them before they arrive); never a partial copy (its list is not whole).
+                        var twoWayOptions = options
+                        twoWayOptions.publishSummaries = !copy.isPartial
+                        var report = try remote.sync(endpoint, copy: copy, vault: vault, options: twoWayOptions)
                         if let placed { report.changed = Self.union(placed.changed, report.changed) }
                         return report
                     }
                     let report = try remote.push(endpoint, copy: copy, vault: nil, options: options)
                     if request.stage, !copy.isPartial {   // a join fills itself once unlocked
                         // Locked: what other devices wrote is staged, never placed (design §4.1). Best effort.
-                        _ = try? staging.stage(vaultFolder: copy.folder) { shadow, _ in
+                        _ = try? staging.stage(vaultFolder: copy.folder, options: options) { shadow, _, pullOnly in
                             try remote.sync(endpoint, copy: LocalCopy(folder: shadow, stateDirectory: staging.directory),
-                                            vault: nil, options: options)
+                                            vault: nil, options: pullOnly)
                         }
                     }
                     return report

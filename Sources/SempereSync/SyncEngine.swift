@@ -50,6 +50,13 @@ public struct SyncOptions: Sendable {
     /// none; existing ones are kept current either way (the summaries need the
     /// vault unlocked).
     public var publishForWebViewer = false
+    /// Create the server's `sempere-summaries.sealed` (format.md §12) when it has none, and keep it current,
+    /// without the web index: what a device joining the vault lists its notes from before they arrive
+    /// (`AppModel+Join`). The app sets it on unlocked two-way runs of a complete copy.
+    public var publishSummaries = false
+    /// Never write anything to the remote (`PullOnlyRemote`): the run only downloads. A locked vault's
+    /// staging run (`LockedStaging`, review of #77, S1).
+    public var pullOnly = false
     /// Where notes are summarized for that file through the summary cache
     /// (format.md §10); nil reads every changed note.
     public var summaryCacheDirectory: URL?
@@ -278,7 +285,7 @@ public final class SyncEngine {
                 options: SyncOptions = SyncOptions()) {
         self.root = directory
         self.vault = (vault?.canRead == true) ? vault : nil
-        self.transport = remote
+        self.transport = options.pullOnly ? PullOnlyRemote(base: remote) : remote
         self.stateURL = stateURL
         self.options = options
         self.report = SyncReport(dryRun: options.dryRun)
@@ -464,7 +471,7 @@ public final class SyncEngine {
         if !options.dryRun, !notesListed {
             // Published from a partial listing, they would leave notes out.
             for (name, kept) in [(WebIndex.fileName, hasIndex), (PublishedSummaries.fileName, hasSummaries)]
-            where kept || options.publishForWebViewer {
+            where kept || options.publishForWebViewer || (name == PublishedSummaries.fileName && options.publishSummaries) {
                 report.skipped.append(.init(path: name, message: "the notes on the server were not all listed; not updated"))
             }
         }
@@ -474,7 +481,7 @@ public final class SyncEngine {
             }
         }
         let incompleteNotes = PartialCopyState.incompleteNotes(root)
-        if !options.dryRun, notesListed, !incompleteNotes.isEmpty, hasSummaries || options.publishForWebViewer {
+        if !options.dryRun, notesListed, !incompleteNotes.isEmpty, hasSummaries || options.publishForWebViewer || options.publishSummaries {
             // Entries come from the local notes: the ones not fetched yet would be dropped (format.md §1.2).
             report.skipped.append(.init(path: PublishedSummaries.fileName,
                                         message: "\(incompleteNotes.count) notes are not downloaded yet (partial copy); not updated"))

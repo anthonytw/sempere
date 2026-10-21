@@ -34,9 +34,8 @@ final class LockedStagingTests: SyncTestCase {
     }
 
     func stage(_ w: World) throws -> SyncReport {
-        try w.staging.stage(vaultFolder: w.bFolder) { shadow, state in
-            try SyncEngine(directory: shadow, vault: nil, remote: w.remote, stateURL: state,
-                           options: SyncOptions(deviceLabel: "B")).run()
+        try w.staging.stage(vaultFolder: w.bFolder, options: SyncOptions(deviceLabel: "B")) { shadow, state, options in
+            try SyncEngine(directory: shadow, vault: nil, remote: w.remote, stateURL: state, options: options).run()
         }
     }
 
@@ -99,5 +98,63 @@ final class LockedStagingTests: SyncTestCase {
         XCTAssertTrue(LockedStaging.isWriteOnce(["inbox", "x.capture.age"]))
         XCTAssertFalse(LockedStaging.isWriteOnce(["vault.json"]))
         XCTAssertFalse(LockedStaging.isWriteOnce(["notes", "id", ".sempere-pending"]))
+    }
+
+    func pushA(_ w: World) throws {
+        _ = try SyncEngine(directory: dir("A"), vault: w.a, remote: w.remote, stateURL: tmp.appendingPathComponent("a.json"),
+                           options: SyncOptions(deviceLabel: "A")).run()
+    }
+
+    func remoteFile(_ w: World, _ name: String) throws -> Data {
+        try w.remote.read([name], maxBytes: 1 << 20).data
+    }
+
+    /// Review of #77, S1: staging never uploads. Another device's settings and label changed after the shadow
+    /// was made survive two staging runs (the shadow's older copies stay where they are).
+    func testStagingNeverUploadsOverAnotherDevicesChanges() throws {
+        let w = try world()
+        _ = try stage(w)   // the shadow is made with B's root files, before A's changes
+        var settings = try w.a.readSharedSettings() ?? SharedSettings()
+        try settings.set(SettingSlotKey("eraser.mode"), to: .string("pixel"), type: .mac,
+                         now: Date(timeIntervalSince1970: Double(baseMillis) / 1000))
+        try w.a.writeSharedSettings(settings)
+        var a = w.a
+        try a.setLabel("Renamed on A")
+        try pushA(w)
+        let settingsOnServer = try remoteFile(w, SharedSettings.fileName)
+        let manifestOnServer = try remoteFile(w, Vault.manifestName)
+        for _ in 0..<2 { _ = try stage(w) }
+        XCTAssertEqual(try remoteFile(w, SharedSettings.fileName), settingsOnServer, "another device's settings survive")
+        XCTAssertEqual(try remoteFile(w, Vault.manifestName), manifestOnServer, "another device's vault.json survives")
+    }
+
+    /// Review of #77, S2: what this device removed on purpose (here a revision it no longer holds, as after
+    /// thinning) is not brought back by a placing, and the staging is gone after any placing.
+    func testAPlacingNeverBringsBackWhatThisDeviceRemoved() throws {
+        let w = try world()
+        let b = try openVault("B")
+        let removed = try XCTUnwrap(try fileNames(b).first)
+        let path = w.bFolder.appendingPathComponent("notes/\(noteID.uuidString.lowercased())/\(removed)")
+        _ = try stage(w)
+        try FileManager.default.removeItem(at: path)
+        _ = try stage(w)
+        _ = try w.staging.place(vaultFolder: w.bFolder, vault: b)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path.path), "not brought back")
+        XCTAssertFalse(w.staging.exists, "the staging goes after any placing")
+    }
+
+    /// Review of #77, S3: a placing never takes the root files; they come only through the two-way run.
+    func testAPlacingLeavesTheRootFilesAlone() throws {
+        let w = try world()
+        var a = w.a
+        try a.setLabel("Renamed on A")
+        try delta(w.a, device: devA, t: 3, title: "new", note: UUID())
+        try pushA(w)
+        _ = try stage(w)
+        let before = try Data(contentsOf: w.bFolder.appendingPathComponent(Vault.manifestName))
+        let placed = try XCTUnwrap(try w.staging.place(vaultFolder: w.bFolder, vault: try openVault("B")))
+        XCTAssertFalse(placed.downloaded.contains(Vault.manifestName), "\(placed.downloaded)")
+        XCTAssertEqual(try Data(contentsOf: w.bFolder.appendingPathComponent(Vault.manifestName)), before)
+        XCTAssertFalse(placed.downloaded.filter { $0.hasPrefix("notes/") }.isEmpty, "the new note is placed")
     }
 }

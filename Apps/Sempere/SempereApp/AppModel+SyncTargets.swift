@@ -339,6 +339,9 @@ extension AppModel {
                     options.deviceID = FileManager.default.fileExists(atPath: deviceState.path)
                         ? (try? DeviceState.loadOrCreate(at: deviceState))?.device : nil
                     let twoWay = request.mode == .twoWay && vault?.canRead == true
+                    // A complete copy keeps the target's sealed summaries current, so a device joining lists
+                    // the notes before they arrive; never a partial copy (its list is not whole).
+                    options.publishSummaries = twoWay && !PartialCopy.isPartial(entry.url)
                     let folderProvider = provider?(access.folder)
                     let staging = LockedStaging(targetState: stateURL)
                     // The unlock places what locked runs staged (checked under the key), then the run goes on.
@@ -348,9 +351,9 @@ extension AppModel {
                     if let placed { report.changed = Self.union(placed.changed, report.changed) }
                     if !twoWay, request.stage, !PartialCopy.isPartial(entry.url) {
                         // Locked: what other devices wrote is staged, never placed (design §4.1). Best effort.
-                        _ = try? staging.stage(vaultFolder: entry.url) { shadow, state in
+                        _ = try? staging.stage(vaultFolder: entry.url, options: options) { shadow, state, pullOnly in
                             try FolderTargetRun.run(vaultFolder: shadow, folder: access.folder, provider: folderProvider,
-                                                    vault: nil, stateURL: state, twoWay: true, options: options)
+                                                    vault: nil, stateURL: state, twoWay: true, options: pullOnly)
                         }
                     }
                     return report
