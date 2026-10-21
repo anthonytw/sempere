@@ -618,7 +618,12 @@ the **home**, changes the list, and the recovery key takes over when home is gon
    final for every device that has seen it**, and **a kit introduced below the frontier signs nothing
    for the device until it has followed and pinned the epoch that introduced it** (a run later, since
    the frontier is read when a run starts; `EpochChain.verify` reports such a takeover as
-   `kitNotPinned`, not as tampering). An unpinned device (a joiner) takes the parent's kit. The rule is
+   `kitNotPinned` and the precedence rule lists it as **deferred**, not as tampering, but only when its
+   `recoverySig` verifies under its parent's kit: a bad or wrong-kit signature is tampering at once,
+   round 9 L3). If the chain before such a takeover ends in a home conflict, the device cannot pin the
+   replacement without the user's pick, so the takeover stays deferred until the user picks a branch
+   (or another takeover settles the conflict); the engine shows the conflict, never a retry loop
+   (round 9 L4). An unpinned device (a joiner) takes the parent's kit. The rule is
    one function, `TakeoverRule.recoveryKey`. The recovery key does not change in a takeover (a new kit is a
    later `recovery` epoch by the new home).
 4. **Precedence (the only branch rule).** A device follows epochs that extend its chain linearly and
@@ -682,9 +687,11 @@ takeover did not see are covered by unchecking those devices.
 - **A stolen, unlocked home whose thief knows the passcode can replace the kit** before the owner's
   takeover reaches a device (Replace Kit asks for device-owner authentication, §6.5, which the passcode
   satisfies). Devices that pinned that replacement then refuse the owner's old-kit takeover and take
-  the thief's takeover under its own kit. Devices pinned before it take the owner's takeover and refuse
-  the thief's (its kit is not their frontier's, round 8 C1-b), so the thief does not win them by
-  grinding an id. An unpinned joiner sees both takeovers as valid and takes the smaller `epochId`, so
+  the thief's takeover under its own kit. Devices that see the owner's takeover **before they have
+  pinned the thief's replacement** take it and refuse the thief's (its kit is not their frontier's,
+  round 8 C1-b), so the thief does not win them by grinding an id. It is a race, not a property of the
+  device (round 9 L1): the thief usually acts first, so the owner's takeover typically wins only devices
+  that were offline while the thief acted, or that it reaches first. An unpinned joiner sees both takeovers as valid and takes the smaller `epochId`, so
   the thief can win joiners. The defense is the passcode on home, and taking over the moment home is
   lost: the kit is the longer-lived secret, so its retirement is final.
 - **Re-encrypt Everything is a kit replacement too** (§7: it replaces `R`). A thief's re-encryption on
@@ -693,7 +700,11 @@ takeover did not see are covered by unchecking those devices.
 - **A kit joiner on a chain where `R` was retired cannot take over at all**: its takeover is signed by
   `R`, and every device that pinned the retirement refuses it. Only the current kit joins.
 - **A home conflict stops joiners** until the user picks a branch or a takeover settles it. Approval
-  joiners start pinned at the approver's frontier (§6.2), which settles it for them.
+  joiners start pinned at the approver's frontier (§6.2), which settles it for them. **A kit joiner
+  whose conflict's branches both carry takeovers never gets to pick** (round 9 L2): precedence jumps to
+  the smallest takeover below the conflict, as for any unpinned device. The kit joiner's takeover
+  screen therefore lists the competing takeovers' branches (author, date, list) before it signs its
+  own, so the user sees what it is about to follow; it changes nothing the rule decides.
 - A device that has not seen a kit replacement (pinned before it, or a joiner that saw nothing) still
   takes a takeover by the retired kit; approval joiners are pinned at home's frontier, which closes it
   for them.
@@ -840,7 +851,8 @@ unwraps the recovery entry and checks that the chain is rooted at that root (§4
 is a takeover** (§5.6): the takeover screen lists the devices of the current list with a checkbox each
 (checked by default, "Uncheck any device you no longer have"), and the devices of earlier lists that a
 later epoch removed (unchecked by default); at a home conflict it shows both branches and the user
-picks the parent; and N signs a `takeover` epoch that
+picks the parent (when both branches already carry takeovers, the smallest one wins without a pick,
+§5.6 "Residual", and the screen shows those takeovers first); and N signs a `takeover` epoch that
 makes N home, with N's entry (`addedBy: "recovery"`, `addSig` by the recovery key's pair) and the
 checked devices. N derives the recovery key's signing pair for that one signature and drops it and
 the recovery identity from memory. The recovery key is never stored on a device.
@@ -1551,3 +1563,15 @@ everything, and a takeover by an attacker who holds it is total compromise.
 | L1 a takeover listing a retired kit passed the precedence layer | `listAllowed` takes the ancestry's retired kits (precedence and chain alike); a vector and the oracle |
 | L2 `check` and the pin | comment: the record-less direct child's parent is the frontier |
 | L3 §6.3 alert | "replace the recovery kit on a device that still manages devices" |
+
+### 16.9 Round 9
+
+The ninth review judged KH1 ready to merge (#65) and left five low follow-ups:
+
+| Finding | Change |
+| --- | --- |
+| L1 "devices pinned before it take the owner's takeover" read as a property of the device | §5.6 "Residual": a race; the owner wins only devices it reaches before they pin the thief's replacement |
+| L2 a kit joiner at a conflict whose branches both carry takeovers never picks | stated in §5.6 "Residual" and §6.3; the takeover screen shows those takeovers first |
+| L3 a forged takeover behind an unpinned replacement read as "not yet pinned" for a run | `EpochChain.verify` checks `recoverySig` under the parent's kit first (`badTakeover` at once); `EpochPrecedence` reports a takeover refused only by the pin as `deferred`, not `ignored` (format.md §15.7, §15.9; a vector change and two tests) |
+| L4 `kitNotPinned` behind a home conflict | one line in §5.6 rule 3: deferred until the user's pick |
+| L5 `sealIsFinal` relies on the chain check | stated in its comment and format.md §15.9 |

@@ -395,6 +395,22 @@ final class EpochChainTests: VaultTestCase {
         XCTAssertNoThrow(try EpochChain.verify(replaced.entries, vaultId: good.vaultId, root: good.root, pinned: pinnedBefore),
                          "it follows and pins the replacement first")
         XCTAssertNoThrow(try kit2Takeover.verify(), "a joiner takes it at once")
+        // Round 9, L3: behind the same unpinned replacement, a takeover whose signature is by another kit,
+        // or forged, is tampering at once, never "not yet pinned".
+        var wrongKitBehind = replaced
+        try wrongKitBehind.next(author: k, reason: "takeover", list: [k.fingerprint, bDev.fingerprint, kit2.fingerprint],
+                                parentList: [a.fingerprint, bDev.fingerprint, kit2.fingerprint], takeover: other)
+        XCTAssertThrowsError(try EpochChain.verify(wrongKitBehind.entries, vaultId: good.vaultId, root: good.root,
+                                                   pinned: pinnedBefore)) {
+            XCTAssertEqual($0 as? ChainError, .badTakeover(epoch: 3))
+        }
+        var forgedBehind = kit2Takeover
+        forgedBehind.entries[2].recoverySig = try other.signing.sign(
+            forgedBehind.entries[2].epochMessage(vaultId: good.vaultId, root: good.root))
+        XCTAssertThrowsError(try EpochChain.verify(forgedBehind.entries, vaultId: good.vaultId, root: good.root,
+                                                   pinned: pinnedBefore)) {
+            XCTAssertEqual($0 as? ChainError, .badTakeover(epoch: 3))
+        }
         // ... but it introduces no device of no ancestor list.
         var intro = good
         try intro.next(author: k, reason: "takeover", list: [k.fingerprint, try ChainTestDevice("Z").fingerprint, r],

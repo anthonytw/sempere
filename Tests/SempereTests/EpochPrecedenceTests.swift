@@ -11,7 +11,11 @@ final class EpochPrecedenceTests: XCTestCase {
             var id: String; var parent: String?; var signer: String; var reason: String; var home: String
             var list: [String]; var recovery: String; var recoverySigner: String?
         }
-        struct Expect: Decodable { var kept, dropped, ignored, homeConflicts, stopped: [String] }
+        struct Expect: Decodable {
+            var kept, dropped, ignored, homeConflicts, stopped: [String]
+            /// Absent: none (round 9, L3).
+            var deferred: [String]?
+        }
         struct Case: Decodable {
             var name: String; var nodes: [Node]; var pinned: [String]; var picked: [String: String]?; var expect: Expect
         }
@@ -36,6 +40,7 @@ final class EpochPrecedenceTests: XCTestCase {
             XCTAssertEqual(r.keptChain.map(Self.s), c.expect.kept, c.name)
             XCTAssertEqual(r.dropped.map(Self.s), c.expect.dropped, c.name)
             XCTAssertEqual(r.ignored.map(Self.s), c.expect.ignored, c.name)
+            XCTAssertEqual(r.deferred.map(Self.s), c.expect.deferred ?? [], c.name)
             XCTAssertEqual(r.homeConflicts.map { Self.s($0.epoch) }, c.expect.homeConflicts, c.name)
             XCTAssertEqual(r.homeConflicts.filter { $0.followed == nil }.map { Self.s($0.epoch) }, c.expect.stopped, c.name)
             var rng = SystemRandomNumberGenerator()
@@ -120,6 +125,30 @@ final class EpochPrecedenceTests: XCTestCase {
         XCTAssertFalse(TakeoverRule.kitNotYetPinned(parentRecovery: Self.d("R"), parentPath: ["e1", "e2"].map(Self.d), pinned: pinnedX))
         XCTAssertNil(TakeoverRule.recoveryKey(parentRecovery: Self.d("R"), parentPath: ["z1"].map(Self.d), pinned: pinned),
                      "another vault")
+    }
+
+    /// Round 9, L3: behind a kit replacement the device has not pinned, a takeover signed by that new kit
+    /// is deferred (with its subtree); one signed by another kit is ignored (tampering) at once.
+    func testDeferredTakeoversAreNotIgnored() throws {
+        let n = { (id: String, parent: String?, signer: String, reason: EpochReason, home: String, list: [String], kit: String,
+                   rs: String?) in
+            EpochNode(epochId: Self.d(id), parent: parent.map(Self.d), signer: Self.d(signer), reason: reason, home: Self.d(home),
+                      list: Set(list.map(Self.d)), recovery: Self.d(kit), recoverySigner: rs.map(Self.d))
+        }
+        let tree = [n("e1", nil, "A", .create, "A", ["A", "B", "R"], "R", nil),
+                    n("e2", "e1", "A", .remove, "A", ["A", "B", "R"], "R", nil),
+                    n("x1", "e2", "A", .recovery, "A", ["A", "B", "Rx"], "Rx", nil),
+                    n("t-new", "x1", "B", .takeover, "B", ["B", "Rx"], "Rx", "Rx"),
+                    n("t-new-child", "t-new", "B", .remove, "B", ["B", "Rx"], "Rx", nil),
+                    n("t-bad", "x1", "B", .takeover, "B", ["B", "Rx"], "Rx", "Ry")]
+        let before = try EpochPrecedence.resolve(tree, pinned: ["e1", "e2"].map(Self.d))
+        XCTAssertEqual(before.keptChain.map(Self.s), ["e1", "e2", "x1"])
+        XCTAssertEqual(before.deferred.map(Self.s), ["t-new", "t-new-child"])
+        XCTAssertEqual(before.ignored.map(Self.s), ["t-bad"])
+        let after = try EpochPrecedence.resolve(tree, pinned: ["e1", "e2", "x1"].map(Self.d))
+        XCTAssertEqual(after.keptChain.map(Self.s), ["e1", "e2", "x1", "t-new", "t-new-child"], "the next run takes it")
+        XCTAssertEqual(after.deferred, [])
+        XCTAssertEqual(after.ignored.map(Self.s), ["t-bad"])
     }
 
     // MARK: - Property test
