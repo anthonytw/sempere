@@ -233,22 +233,6 @@
             48000
           ]
         },
-        "rewrap.onAdd" : {
-          "default" : "header",
-          "description" : "Rewrap attachments when adding a device.",
-          "enum" : [
-            "header",
-            "reencrypt"
-          ]
-        },
-        "rewrap.onRemove" : {
-          "default" : "reencrypt",
-          "description" : "Rewrap attachments when removing a device or upgrading keys.",
-          "enum" : [
-            "header",
-            "reencrypt"
-          ]
-        },
         "search.transcripts" : {
           "default" : false,
           "description" : "Search recording transcripts.",

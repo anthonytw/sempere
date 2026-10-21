@@ -39,6 +39,16 @@ extension Vault {
             guard record.pinned?.epochId == manifest.epochId else {
                 return .refused(ListProblem(.otherEpoch, "another epoch than the one this device pinned"))
             }
+            // The pinned epoch's home and first list come from the record, never from the file (design
+            // §4.3): within one epoch only home's additions and renames change the list. With them fixed,
+            // `epochSig` and every `addSig` verify under the home this device verified.
+            guard record.home == manifest.home else {
+                return .refused(ListProblem(.entriesChanged, "the home device is not the one this device verified: "
+                    + "only a handoff (a new epoch) changes it"))
+            }
+            guard let pinned = record.pinned, Set(pinned.list) == Set(manifest.firstList) else {
+                return .refused(ListProblem(.entriesChanged, "the epoch's first list is not the one this device verified"))
+            }
             verified = Set(record.list.map(\.fingerprint))
         } else {
             verified = Set(manifest.firstList)
@@ -141,6 +151,12 @@ extension Vault {
         guard let secret, newer.vaultId == older.vaultId, newer.vaultId == vaultId, newer.root == older.root,
               newer.epoch == older.epoch, newer.epochId == older.epochId, newer.epochId == secret.epochId,
               Self.readOnlyReasons(newer).isEmpty else { return false }
+        // The epoch's head is fixed (design §4.3, §5.1): the same home, first list, parent, reason, author and
+        // signature. Only the home of `older` may add devices or rename them in a later version.
+        guard newer.home == older.home, Set(newer.firstList) == Set(older.firstList), newer.parent == older.parent,
+              newer.epochReason == older.epochReason, newer.epochAuthor == older.epochAuthor,
+              newer.epochSig == older.epochSig, newer.recoverySig == older.recoverySig,
+              newer.homeEntry?.fingerprint == older.homeEntry?.fingerprint else { return false }
         let base = Set(older.keys.map(\.fingerprint))
         guard base.isSubset(of: Set(newer.keys.map(\.fingerprint))), (try? newer.check(key: secret, verifiedList: base)) != nil,
               VaultMarkers(older).isCovered(by: newer) else { return false }

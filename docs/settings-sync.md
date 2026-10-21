@@ -241,8 +241,6 @@ which devices use it. Any key may also appear in a type block.
 | `photos.removeMetadata` | Photos ▸ Remove Location and Camera Data | `true`, `false` | `true` |
 | `history.thinAfterDays` | Version History ▸ Thin Autosaves Older Than | 7, 14, 30, 90, 365, 0 (never) | 30 |
 | `search.transcripts` | Audio & Transcription ▸ Search Recording Transcripts (also the search field) | `true`, `false` | `false` |
-| `rewrap.onAdd` | (none: no effect in this version) | `header`, `reencrypt` | `header` |
-| `rewrap.onRemove` | (none: no effect in this version) | `header`, `reencrypt` | `reencrypt` |
 | `quickCapture.notebook` | Quick Voice Notes ▸ Notebook | a notebook path | `Inbox` |
 | `quickCapture.transcribe` | Quick Voice Notes ▸ Transcribe Voice Notes | `true`, `false` | `true` |
 | `backup.reminderDays` | Backups ▸ Remind Me (once the device has a backup folder) | 0 (off), 1, 3, 7, 14, 30 | 0 |
@@ -250,10 +248,9 @@ which devices use it. Any key may also appear in a type block.
 | `appearance.notePages` | General ▸ Appearance ▸ Note Pages (dark: on screen only) | `light`, `dark`, `matchApp` | `light` |
 
 Recognition and transcription still run on each device: one without the language model
-does what it can. The two `rewrap.*` keys are still in the registry (`SharedSettingsCatalog`)
-but nothing reads them: under the key hierarchy adding a device rewraps no file, and
-removal is a new epoch (key hierarchy KH3) whose rewrite rules come with re-encryption
-(KH6).
+does what it can. (The `rewrap.*` keys of earlier builds are gone: under the key hierarchy adding
+a device rewraps no file, and removal is a new epoch, KH3. A file that still holds them keeps
+them as unknown keys.)
 
 ### 5.2 Used by some device types
 

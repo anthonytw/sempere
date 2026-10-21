@@ -59,6 +59,23 @@ final class BackupTests: VaultTestCase {
         XCTAssertTrue(Backup.verify(at: dest, identities: [id]).isHealthy)
     }
 
+    /// Notebook records (format.md §14) are vault files: a backup keeps them, and a restore brings an
+    /// empty notebook back.
+    func testNotebookRecordsAreBackedUpAndRestored() throws {
+        let record = try XCTUnwrap(try vault.createNotebook("Empty/Shelf"))
+        let path = "notebooks/\(NotebookRecords.fileName(record.id))"
+        let first = try Backup.run(source: vault, to: dest)
+        XCTAssertTrue(first.copied.contains(path), "\(first.copied)")
+        XCTAssertEqual(first.copied.last, "vault.json")
+        XCTAssertEqual(try contents(dest), try contents(vault.url))
+        XCTAssertTrue(Backup.verify(at: dest, identities: [id]).isHealthy)
+
+        let target = tmp.appendingPathComponent("Restored.sempere")
+        _ = try Backup.restore(from: dest, to: target, identities: [id])
+        let restored = try Vault.open(at: target, identities: [id])
+        XCTAssertEqual(NotebookRecords.declared(try restored.readNotebookRecords().records), ["Empty/Shelf"])
+    }
+
     func testRefusesForeignOrOverlappingDestinations() throws {
         let other = try makeVault(pqIdentity(), name: "Other")
         _ = try Backup.run(source: vault, to: dest)

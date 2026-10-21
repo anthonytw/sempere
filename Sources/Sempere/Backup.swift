@@ -647,8 +647,10 @@ public enum Backup {
         }
         // Revisions first, the small mutable files last, so a backup whose
         // run was cut short never holds a vault.json newer than its notes.
-        // The epoch record goes before the vault.json that names it (format.md §15.6).
+        // The epoch record goes before the vault.json that names it (format.md §15.6); notebook records
+        // (§14) are write-once like revisions.
         let ordered = sourceFiles.filter { $0.hasPrefix(Vault.notesName + "/") }
+            + sourceFiles.filter { $0.hasPrefix(NotebookRecords.folderName + "/") }
             + sourceFiles.filter { $0.hasPrefix(Vault.epochsName + "/") }
             + sourceFiles.filter { $0.hasPrefix(Vault.keysName + "/") }
             + [SharedSettings.fileName, Vault.journalName, Vault.manifestName].filter(sourceFiles.contains)
@@ -698,8 +700,8 @@ public enum Backup {
             }
         }
 
-        // A finished recipient change removes the journal: so does the
-        // backup, keeping its last copy under versions/.
+        // A finished re-encryption removes its journal (format.md §15.8): so
+        // does the backup, keeping its last copy under versions/.
         if !sourceFiles.contains(Vault.journalName), FileIO.exists(url(dest, Vault.journalName))
             || BoundedRead.firstLink(under: dest, Vault.journalName) != nil {
             do {

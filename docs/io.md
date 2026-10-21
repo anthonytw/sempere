@@ -1342,8 +1342,9 @@ Before a remote `vault.json` replaces the local one, it is checked
 (`Vault.incomingManifestProblem`, format.md §1.3, §2.1): one that differs only in
 its label passes without a key; any other passes only when the vault is
 unlocked and it is a later version of the local one by the home device (the
-same vault, root, epoch and `epochId`, every tag and signature verifying, the
-local list's entries all still there). Another epoch (KH3), an older version or
+same vault, root, epoch, `epochId` and epoch head — the same home, first list and
+`epochSig` — every tag and signature verifying, the local list's entries all
+still there). Another epoch (KH3), an older version or
 a list that does not hold the local one is never taken. Otherwise it is listed in
 `rejected`, the local file stays and the sync state is not updated, so the
 next run reports it again.

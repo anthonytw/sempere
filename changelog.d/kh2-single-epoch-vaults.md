@@ -23,7 +23,13 @@
 - CLI: `--recovery-key FILE [--root HEX]` reads a vault with the recovery key (or its passphrase copy),
   read-only.
 
+### Fixed
+
+- Backups copy the notebook records (`notebooks/`), so a restore keeps empty notebooks.
+
 ### Removed
+
+- Settings: the two "rewrap attachments" settings (they have no effect under the key hierarchy).
 
 - CLI: `vault recipients`, `vault markers`, the rewrap commands, `keys export` and the stored key files
   in `keys/`. Removing devices and replacing keys come back as new epochs (phases KH3 to KH5).

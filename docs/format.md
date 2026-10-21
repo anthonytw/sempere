@@ -132,9 +132,10 @@ kept, and is the same whatever the order of copies merged:
   versions of one epoch follow each other. Two versions that differ only in
   `label` (§2, covered by no tag or signature) are the same vault. Otherwise
   a writer holding the key takes the other version only when it is a later
-  one by home: the same vault, root, epoch and `epochId`, every check of
-  §15.3 passes against the list it holds, that list's entries are all still
-  there, and it adds a device or renames one. Anything else is never merged:
+  one by home: the same vault, root, epoch and `epochId`, the same epoch head
+  (`home`, first list, `parent`, `epochReason`, `epochAuthor`, `epochSig`,
+  `recoverySig`), every check of §15.3 passes against the list it holds,
+  that list's entries are all still there, and it adds a device or renames one. Anything else is never merged:
   a writer keeps its own version and reports the other.
 - **Published summaries** (§12): the version kept stays; they are hints and
   are rewritten by their writers.
@@ -258,9 +259,12 @@ it verified before. This version reads vaults of one epoch:
    must be the one `K_1` gives (§15.7 rule 2), the trust record's, and the
    root given by the user when one is (the kit's, the join's reply code,
    `--root`): otherwise `rootMismatch`.
-2. With a trust record (§15.10): `epochId` is the pinned one; every check of
-   §15.3 passes against the list the device verified (plus home's additions,
-   each with a valid `addSig`); every entry it verified is still there with
+2. With a trust record (§15.10): `epochId` is the pinned one; `home` and the
+   epoch's first list are the record's, never the file's (another home is
+   only a handoff, a new epoch: `entriesChanged` otherwise), so `epochSig`
+   and every `addSig` verify under the home the device verified; every check
+   of §15.3 passes against the list the device verified (plus home's
+   additions, each with a valid `addSig`); every entry it verified is still there with
    the same key and signing keys (`entriesChanged` otherwise: a removal always
    starts a new epoch; only `name` may change); and the version markers are
    at least those it verified (below).

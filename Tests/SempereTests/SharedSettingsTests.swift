@@ -279,10 +279,7 @@ final class SharedSettingsTests: VaultTestCase {
         let catalog = SharedSettingsCatalog.allKeyNames
         // Settings with no row of their own in these views: the eraser and palette are bound in the editor.
         XCTAssertEqual(Set(shown.keys).subtracting(catalog), [], "bound in the app but not in the catalog")
-        // `rewrap.*` (docs/settings-sync.md) have no effect since KH2 (no recipient changes); they stay in the
-        // catalog so that synced values round-trip, and come back with key changes (KH5).
-        XCTAssertEqual(catalog.subtracting(shown.keys).subtracting(["rewrap.onAdd", "rewrap.onRemove"]), [],
-                       "in the catalog but shown nowhere")
+        XCTAssertEqual(catalog.subtracting(shown.keys), [], "in the catalog but shown nowhere")
         for spec in SharedSettingsCatalog.specs {
             guard let types = spec.types else { continue }
             // Within the 8 lines before the row there is a platform check naming the same side.
