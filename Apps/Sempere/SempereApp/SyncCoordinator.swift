@@ -106,6 +106,7 @@ final class SyncCoordinator {
         configure(&made.schedule)
         made.admit = { [weak self] priority in await self?.admit(priority: priority) }
         made.release = { [weak self] in self?.releaseRun() }
+        made.periodicPaused = inBackground && ref.vaultID != openVault
         sessions[ref.id] = made
         made.start()
         return made
@@ -123,7 +124,7 @@ final class SyncCoordinator {
         openUnlocked = false
         for ref in targets() where ref.vaultID == id { session(for: ref) }
         let open = sessions(of: id)
-        for s in open { s.isOpenVault = true }
+        for s in open { s.isOpenVault = true; s.periodicPaused = false }
         wakeWaiters()   // a run of it queued as a background one takes the open vault's slot now
         return open
     }
@@ -146,6 +147,7 @@ final class SyncCoordinator {
         for session in sessions(of: id) {
             session.vaultClosed()
             session.isOpenVault = false
+            session.periodicPaused = inBackground
             session.onChanges = { _ in }
             if !runsAll {
                 if let task = stop(session.locationID) { running.append(task) }
@@ -162,6 +164,14 @@ final class SyncCoordinator {
         guard let session = sessions.removeValue(forKey: id) else { return nil }
         return session.stop()
     }
+
+    /// The app went to the background (or came back): closed vaults' sessions stop their periodic runs
+    /// meanwhile; writes into them (a voice note) and demands still run. The open vault's are untouched.
+    func setInBackground(_ background: Bool) {
+        inBackground = background
+        for s in sessions.values { s.periodicPaused = background && !s.isOpenVault }
+    }
+    @ObservationIgnored private var inBackground = false
 
     /// Asks every session for a run soon (the app became active, the network came back).
     func demandAll() {

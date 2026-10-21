@@ -1737,8 +1737,11 @@ syncs with both ways.
   kept and resolved; docs/io.md "Folder targets in providers"), two-way while the vault is open and
   unlocked here, upload-only otherwise, waiting at most `folderArrivalWait` (10 s) per run for files a
   provider is downloading. A folder synced before that is gone is not recreated ("The folder is gone…
-  Choose it again", nothing deleted here); one whose parent is gone (a drive not connected, a dead
-  bookmark) is offline. Folder targets run 2 s after a write and every minute.
+  Choose it again", nothing deleted here); one whose saved permission no longer opens it (a dead bookmark) says the same, with
+  "Choose Again…" in Sync Targets (the run then starts over as a union); one whose parent is gone while no
+  bookmark is involved (the CLI's paths) is offline. A stale bookmark (the folder moved or was renamed) is
+  saved again. Closed vaults' periodic runs pause while the app is in the background (a voice note into
+  one still uploads). Folder targets run 2 s after a write and every minute.
 - **Voice notes** go to the one vault their capture profile names: straight into its in-app inbox,
   found in the store by vault id whatever the profile's bookmark says, open or not; its targets upload
   them at once (`QuickCapture.deliveredNotification` → `SyncCoordinator.captureDelivered`).
@@ -1827,11 +1830,18 @@ its sessions invalidate in `deinit` (`finishTasksAndInvalidate`). "Test Connecti
 vault (`<store>/<vault id>/<name>.sempere`) and the server one of its targets (`WebDAVLocationStore` is
 the WebDAV view of the target registry; sync state and quarantine in the target's own folder). The first
 download builds it in the store. WebDAV copies of earlier builds (`Application Support/Sempere/WebDAV/`,
-`webdav.json`) become store vaults at launch (`LegacyWebDAV`): the copy moves into the store, its sync state
-and quarantine to the target's folder (so the first run neither uploads nor checks everything again), and the
-target keeps the location's id, so the Keychain password still applies; a copy whose vault the store already
-holds becomes one more target of that vault, and an old copy holding changes the server never confirmed is
-left where it was. Connecting to a server whose vault is already on this device adds the server as a
+`webdav.json`) become store vaults at launch, before anything syncs (`LegacyWebDAV`,
+`AppModel.convertLegacyWebDAV`), and nothing an old copy holds is ever deleted. What an interrupted "Download
+Again" left is recovered first. When the store does not hold the vault, the location's sync state, quarantine
+and transfers move to the target's folder first, then the copy into the store (`<folder>.*` leftovers next to
+it), so the first run neither uploads nor checks everything again; a marker in the target's folder lets a
+launch that stopped midway finish the same way. When the store already holds the vault, the old copy is
+uploaded once (upload-only, its Keychain password), then set aside in `<store>/.sync/legacy-kept/<id>/` and
+the server becomes one more target of the store vault (a union); if that upload fails while the old copy holds
+files the store lacks or the server never confirmed (`LocalCopy.unconfirmedChanges` counts revisions, blobs,
+`vault.json`, the journal, `settings.age` and inbox files), it stays where it was, an alert names it (Show in
+Finder, Share) and the next launch tries again. The target keeps the location's id, so the Keychain password
+still applies. Connecting to a server whose vault is already on this device adds the server as a
 target of that vault (the first run is a union). Every read and
 write goes to that copy through the usual plain-folder paths (no iCloud
 code runs for it), so the app works offline exactly as with a vault on the

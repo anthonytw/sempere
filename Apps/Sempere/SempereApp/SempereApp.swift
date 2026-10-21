@@ -41,14 +41,6 @@ struct SempereApp: App {
                              automaticThinning: true,
                              recipientsTrust: AppModel.defaultRecipientsTrust,
                              backupNotifier: UserNotificationBackupNotifier())
-        // WebDAV vaults of earlier builds become store vaults with a WebDAV target, their sync state and
-        // quarantine carried over (docs/io.md "Sync targets in the app").
-        let converted = LegacyWebDAV.convert(list: AppSupport.sempere.appendingPathComponent("webdav.json"),
-                                             root: AppSupport.folder("WebDAV"), store: library.vaultStore)
-        if !converted.isEmpty {
-            library.convertWebDAVRecents(converted)
-            library.storedVaults = library.vaultStore.list()
-        }
         // An open vault of the in-app store holds a lease, so it is never removed while open. Its sync
         // targets (folder and WebDAV) are in the store's registry.
         model.vaultStore = library.vaultStore
@@ -62,6 +54,9 @@ struct SempereApp: App {
         // Every in-app vault with a sync target keeps syncing, open or not (`SyncCoordinator`), once what an
         // interrupted "Download Again" of an earlier build left is recovered.
         Task { @MainActor in
+            // WebDAV vaults of earlier builds become store vaults with a WebDAV target, their sync state and
+            // quarantine carried over, nothing of an old copy deleted (docs/io.md "Sync targets in the app").
+            await model.convertLegacyWebDAV(library: library)
             await model.recoverWebDAVLeftovers()
             model.syncCoordinator.start()
         }

@@ -123,11 +123,38 @@ struct FolderTargetAppTests {
         #expect(session.headline.contains("folder is gone"))
         #expect(!FileManager.default.fileExists(atPath: w.shared.path))
         #expect(Self.noteFiles(w.a.folder) == before)
+        // The folder the user picked gone too: its saved permission no longer opens anything, so the user
+        // chooses the folder again (review of #72, G5), never "unavailable" for ever.
         try FileManager.default.removeItem(at: w.shared.deletingLastPathComponent())
         await session.syncNow()
-        #expect(session.status.kind == .offline)
-        #expect(session.headline.contains("cannot be reached"))
+        #expect(session.status.kind == .problem(.notFound))
+        #expect(session.headline.contains("Choose it again"))
         #expect(Self.noteFiles(w.a.folder) == before)
+        // Choose Again: a new folder; the run starts over as a union and fills it.
+        let elsewhere = TestTemp.root.appendingPathComponent("again-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        let target = try #require(w.a.model.openVaultTargets.first)
+        try w.a.model.rechooseFolderTarget(target.id, of: w.a.vaultID, picked: elsewhere)
+        let refreshed = try #require(w.a.model.syncSessions.first)
+        await refreshed.syncNow()
+        #expect(!refreshed.needsAttention, "\(refreshed.headline)")
+        let copy = elsewhere.appendingPathComponent(w.a.folder.lastPathComponent)
+        #expect(Self.noteFiles(copy) == before)
+        w.a.model.close(); w.b.model.close()
+    }
+
+    /// A target folder moved or renamed: its bookmark still finds it (and is saved again when stale).
+    @Test func aMovedTargetFolderIsFollowed() async throws {
+        let w = try await Self.world()
+        let drive = w.shared.deletingLastPathComponent()
+        let moved = drive.deletingLastPathComponent().appendingPathComponent("moved-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.moveItem(at: drive, to: moved)
+        let note = try await w.a.model.createNote(title: "After the move", paper: .ruled, notebook: nil)
+        let session = try #require(w.a.model.syncSessions.first)
+        await session.syncNow()
+        #expect(!session.needsAttention, "\(session.headline)")
+        let names = Self.noteFiles(moved.appendingPathComponent(w.shared.lastPathComponent))
+        #expect(names.contains { $0.hasPrefix(note.uuidString.lowercased()) })
         w.a.model.close(); w.b.model.close()
     }
 
@@ -268,7 +295,7 @@ struct FolderTargetAppTests {
         let store = VaultStore(root: root.appendingPathComponent("Vaults", isDirectory: true))
 
         let converted = LegacyWebDAV.convert(list: listURL, root: legacy, store: store)
-        #expect(converted == [id: vaultId])
+        #expect(converted.converted == [id: vaultId])
         let entry = try #require(store.entry(id: vaultId))
         #expect(entry.name == "Shared")
         let target = try #require(store.targets.targets(of: vaultId).first)
@@ -284,6 +311,102 @@ struct FolderTargetAppTests {
         #expect(locations.copy(of: location).folder.standardizedFileURL == entry.url.standardizedFileURL)
         #expect(locations.copy(of: location).stateURL.standardizedFileURL
                 == state.appendingPathComponent("sync-state.json").standardizedFileURL)
+    }
+
+    /// A legacy location and its copy (the fixture vault), as an earlier build left them.
+    static func legacySetup(unconfirmedCapture: Bool = false) throws
+        -> (root: URL, list: URL, legacy: URL, dir: URL, id: UUID, vaultId: UUID, vault: URL) {
+        let (vault, _) = try AppModelTests.fixtureVault()
+        let root = TestTemp.root.appendingPathComponent("legacy-\(UUID().uuidString)", isDirectory: true)
+        let legacy = root.appendingPathComponent("WebDAV", isDirectory: true)
+        let id = UUID()
+        let dir = legacy.appendingPathComponent(id.uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: vault, to: dir.appendingPathComponent("Shared.sempere"))
+        if unconfirmedCapture {
+            let inbox = dir.appendingPathComponent("Shared.sempere/inbox", isDirectory: true)
+            try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+            try Data("sealed voice note".utf8).write(to: inbox.appendingPathComponent("\(UUID().uuidString.lowercased()).capture.age"))
+        }
+        let vaultId = try Vault.open(at: vault).vaultId
+        let list: [[String: Any]] = [["id": id.uuidString, "url": "https://dav.example.org/shared/", "vaultId": vaultId.uuidString,
+                                      "name": "Shared", "folderName": "Shared.sempere", "downloaded": true]]
+        let listURL = root.appendingPathComponent("webdav.json")
+        try JSONSerialization.data(withJSONObject: list).write(to: listURL)
+        return (root, listURL, legacy, dir, id, vaultId, vault)
+    }
+
+    /// The store already holds the vault and the old copy holds a voice note the server never got (review
+    /// of #72, G1/G2): the upload fails, so nothing is converted and nothing is deleted; it is reported.
+    /// Once an upload works, the old copy is set aside (never deleted) and the server becomes a target.
+    @Test func anOldCopyWithAnUnuploadedCaptureIsNeverDeleted() throws {
+        let l = try Self.legacySetup(unconfirmedCapture: true)
+        let store = VaultStore(root: l.root.appendingPathComponent("Vaults", isDirectory: true))
+        try store.importVault(from: l.vault)
+        let copy = l.dir.appendingPathComponent("Shared.sempere")
+        let capture = try #require(try FileManager.default.contentsOfDirectory(atPath: copy.appendingPathComponent("inbox").path).first)
+
+        let failed = LegacyWebDAV.convert(list: l.list, root: l.legacy, store: store) { _, _ in false }
+        #expect(failed.converted.isEmpty)
+        #expect(failed.kept.first?.notUploaded == true)
+        #expect(FileManager.default.fileExists(atPath: copy.appendingPathComponent("inbox/\(capture)").path), "left in place")
+        #expect(FileManager.default.fileExists(atPath: l.list.path), "tried again at the next launch")
+        #expect(store.targets.targets(of: l.vaultId).isEmpty)
+
+        var uploaded = 0
+        let done = LegacyWebDAV.convert(list: l.list, root: l.legacy, store: store) { _, _ in uploaded += 1; return true }
+        #expect(uploaded == 1)
+        #expect(done.converted == [l.id: l.vaultId])
+        let aside = store.targets.root.appendingPathComponent("legacy-kept/\(l.id.uuidString.lowercased())/Shared.sempere/inbox/\(capture)")
+        #expect(FileManager.default.fileExists(atPath: aside.path), "set aside, never deleted")
+        #expect(done.kept.first?.notUploaded == false, "named: it holds a file the store's copy lacks")
+        #expect(store.targets.targets(of: l.vaultId).first?.id == l.id)
+        #expect(!FileManager.default.fileExists(atPath: l.list.path))
+    }
+
+    /// A launch that stopped midway (state moved, the copy moved, the target not saved yet) finishes the
+    /// same way at the next launch (review of #72, G4), and Download Again leftovers never go into the
+    /// target's state (G3).
+    @Test func aConversionThatStoppedMidwayFinishes() throws {
+        let l = try Self.legacySetup()
+        let store = VaultStore(root: l.root.appendingPathComponent("Vaults", isDirectory: true))
+        try Data("{\"version\":1}".utf8).write(to: l.dir.appendingPathComponent("sync-state.json"))
+        // What the first launch got done: the state moved, the marker written, the copy in the store.
+        let stateDir = store.targets.stateDirectory(l.id, of: l.vaultId)
+        try FileManager.default.createDirectory(at: stateDir, withIntermediateDirectories: true)
+        try FileManager.default.moveItem(at: l.dir.appendingPathComponent("sync-state.json"), to: stateDir.appendingPathComponent("sync-state.json"))
+        try Data().write(to: stateDir.appendingPathComponent(LegacyWebDAV.movedMarker))
+        let vaultDir = store.root.appendingPathComponent(l.vaultId.uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: vaultDir, withIntermediateDirectories: true)
+        try FileManager.default.moveItem(at: l.dir.appendingPathComponent("Shared.sempere"), to: vaultDir.appendingPathComponent("Shared.sempere"))
+
+        let out = LegacyWebDAV.convert(list: l.list, root: l.legacy, store: store) { _, _ in
+            Issue.record("the store copy is this location's own: nothing to upload first")
+            return false
+        }
+        #expect(out.converted == [l.id: l.vaultId])
+        #expect(store.targets.targets(of: l.vaultId).first?.id == l.id)
+        #expect(FileManager.default.fileExists(atPath: stateDir.appendingPathComponent("sync-state.json").path), "the state carried over")
+        #expect(!FileManager.default.fileExists(atPath: stateDir.appendingPathComponent(LegacyWebDAV.movedMarker).path))
+        #expect(!FileManager.default.fileExists(atPath: l.list.path))
+    }
+
+    @Test func downloadAgainLeftoversGoNextToTheVault() throws {
+        let l = try Self.legacySetup()
+        let store = VaultStore(root: l.root.appendingPathComponent("Vaults", isDirectory: true))
+        // An interrupted Download Again's previous copy with a file the copy lacks: kept, next to the vault.
+        let old = l.dir.appendingPathComponent("Shared.sempere.old", isDirectory: true)
+        try FileManager.default.copyItem(at: l.dir.appendingPathComponent("Shared.sempere"), to: old)
+        let notebooks = old.appendingPathComponent("notebooks", isDirectory: true)
+        try FileManager.default.createDirectory(at: notebooks, withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: notebooks.appendingPathComponent("\(UUID().uuidString.lowercased()).notebook.age"))
+        _ = LegacyWebDAV.convert(list: l.list, root: l.legacy, store: store)
+        let stateDir = store.targets.stateDirectory(l.id, of: l.vaultId)
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: stateDir.path)) ?? []
+        #expect(!names.contains { $0.hasPrefix("Shared.sempere") }, "\(names)")
+        let vaultDir = store.root.appendingPathComponent(l.vaultId.uuidString.lowercased(), isDirectory: true)
+        let besides = (try? FileManager.default.contentsOfDirectory(atPath: vaultDir.path)) ?? []
+        #expect(besides.contains("Shared.sempere.old") || !FileManager.default.fileExists(atPath: old.path), "\(besides)")
     }
 
     /// An earlier build's store moves into the App Group container once; a failed move keeps it in use.

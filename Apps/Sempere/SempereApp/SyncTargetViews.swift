@@ -11,6 +11,8 @@ struct SyncTargetsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var pickingFolder = false
     @State private var removing: SyncTarget?
+    /// The folder target whose folder is being chosen again ("Choose Again…").
+    @State private var rechoosing: SyncTarget?
     @State private var problem: String?
 
     var body: some View {
@@ -28,9 +30,8 @@ struct SyncTargetsSheet: View {
                                 .foregroundStyle(.secondary)
                         }
                         ForEach(model.openVaultTargets) { target in
-                            SyncTargetRow(target: target, session: model.syncSessions.first { $0.locationID == target.id }) {
-                                removing = target
-                            }
+                            SyncTargetRow(target: target, session: model.syncSessions.first { $0.locationID == target.id },
+                                          rechoose: { rechoosing = target }, remove: { removing = target })
                         }
                     } footer: {
                         Text("Every target gets the same two-way sync. Adding one to a vault with notes copies what either side lacks; nothing is deleted. Removing one never deletes anything there.")
@@ -71,6 +72,17 @@ struct SyncTargetsSheet: View {
                 Text(problem ?? "")
             }
         }
+        // Its own view: a second picker on the form would take the first one's place.
+        .background {
+            Color.clear.fileImporter(isPresented: Binding(get: { rechoosing != nil }, set: { if !$0 { rechoosing = nil } }),
+                                     allowedContentTypes: [.folder]) { result in
+                guard case .success(let url) = result, let target = rechoosing, let vault = model.vault?.vaultId else { return }
+                rechoosing = nil
+                do { try model.rechooseFolderTarget(target.id, of: vault, picked: url) } catch {
+                    problem = String(describing: error)
+                }
+            }
+        }
         .accessibilityIdentifier("syncTargetsSheet")
     }
 }
@@ -79,6 +91,7 @@ struct SyncTargetsSheet: View {
 private struct SyncTargetRow: View {
     let target: SyncTarget
     let session: SyncSession?
+    let rechoose: () -> Void
     let remove: () -> Void
 
     var body: some View {
@@ -92,6 +105,14 @@ private struct SyncTargetRow: View {
                 if let session {
                     Text(session.headline).font(.caption)
                         .foregroundStyle(session.needsAttention ? .orange : .secondary)
+                    // A folder that went away, or a saved permission that no longer opens it (review of #72, G5).
+                    if target.kind == .folder, session.status.kind == .problem(.notFound) {
+                        Button("Choose Again…", action: rechoose)
+                            .font(.caption)
+                            .buttonStyle(.borderless)
+                            .help("Choose the folder of this sync target again")
+                            .accessibilityIdentifier("syncTargetRechoose")
+                    }
                 }
             }
             Spacer(minLength: 0)

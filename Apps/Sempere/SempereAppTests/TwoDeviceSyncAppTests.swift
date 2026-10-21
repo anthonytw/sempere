@@ -521,6 +521,33 @@ struct SyncCoordinatorTests {
         for l in [blocked, queued] { _ = coordinator.stop(l.id) }
     }
 
+    /// Review of #72: in the background, closed vaults' periodic runs pause, but a write into one (a voice
+    /// note) still runs; the open vault's sessions keep their pace; back in the foreground all run again.
+    @Test func closedVaultsPauseTheirPaceInTheBackground() async throws {
+        let runs = RunCounter()
+        let closed = SyncTargetRef(vaultID: UUID(), vaultName: "Closed",
+                                   target: { var t = SyncTarget.webdav("https://dav.example.org/c/", user: nil, name: "C"); t.joined = true; return t }())
+        let coordinator = SyncCoordinator(targets: { [closed] }, makeSession: { l in
+            SyncSession(locationID: l.id, vaultID: l.vaultID, name: l.vaultName, lastSuccess: nil,
+                        run: { _ in _ = runs.add(1); return SyncReport() }, countUnconfirmed: { 0 })
+        })
+        coordinator.tick = .milliseconds(10)
+        coordinator.configure = { $0.idleInterval = 0.05; $0.maxIdleInterval = 0.05; $0.arrivingInterval = 0.05; $0.writeDelay = 0.01 }
+        coordinator.start()
+        #expect(await TS.waitUntil { runs.value >= 2 }, "the idle pace runs")
+        coordinator.setInBackground(true)
+        try await Task.sleep(for: .milliseconds(100))   // a run already going ends
+        let paused = runs.value
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(runs.value == paused, "no periodic run in the background")
+        coordinator.sessions[closed.id]?.noteWrite()
+        #expect(await TS.waitUntil { runs.value > paused }, "a write still runs")
+        coordinator.setInBackground(false)
+        let after = runs.value
+        #expect(await TS.waitUntil { runs.value > after + 1 }, "the pace is back")
+        _ = coordinator.stop(closed.id)
+    }
+
     /// The reviewer's Q4: a voice note delivered into a closed vault's copy asks its session for a run
     /// soon (a write), not at the idle pace.
     @Test func aCaptureIntoAClosedVaultAsksForARun() async throws {

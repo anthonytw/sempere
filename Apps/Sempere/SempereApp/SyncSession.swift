@@ -74,6 +74,9 @@ final class SyncSession {
     @ObservationIgnored var isOpenVault = false
     /// Runs automatically at all (the coordinator's background sessions; the open vault's always do).
     @ObservationIgnored var runsAutomatically = true
+    /// The periodic pace is paused (a closed vault while the app is in the background): only a write
+    /// (a voice note delivered into it) or a demand starts a run (review of #72).
+    @ObservationIgnored var periodicPaused = false
     @ObservationIgnored var now: () -> Date = { Date() }
     /// How often the loop looks at the schedule.
     @ObservationIgnored var tick = Duration.seconds(1)
@@ -101,7 +104,10 @@ final class SyncSession {
         loop = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
-                if self.runsAutomatically, self.schedule.isDue(now: self.now()) { _ = await self.runOnce() }
+                if self.runsAutomatically, self.schedule.isDue(now: self.now()),
+                   !self.periodicPaused || self.schedule.pendingWrite != nil || self.schedule.demanded {
+                    _ = await self.runOnce()
+                }
                 try? await Task.sleep(for: self.tick)
             }
         }
@@ -290,7 +296,7 @@ struct SyncStatus: Equatable, Sendable {
             return String(localized: "Changes from other devices arrive when the vault is unlocked")
         case .problem(let p):
             if folder, p == .notFound {
-                return String(localized: "The folder is gone. Nothing was synced. Choose it again, or remove it from Sync Targets.")
+                return String(localized: "The folder is gone or can no longer be opened. Nothing was synced. Choose it again, or remove it from Sync Targets.")
             }
             if folder, p == .offline {
                 return String(localized: "The folder cannot be reached now. Changes are kept on this device and sync when it is back.")
