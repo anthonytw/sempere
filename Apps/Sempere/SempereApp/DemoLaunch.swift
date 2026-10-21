@@ -26,6 +26,9 @@ import UIKit
 ///   their search highlights (`ItemSelectionController.debugReport`'s `hl=`).
 /// - `SEMPERE_DEMO_PDF`: also import a synthetic PDF as a new note and open it (Mac UI tests).
 /// - `SEMPERE_DEMO_MAC_WINDOW`: `WIDTHxHEIGHT` in points, Mac Catalyst only.
+/// - `SEMPERE_DEMO_STORE`: copy the built vault into the in-app store (`VaultStore`, replacing an earlier
+///   launch's demo copy) and open that copy, so store-only controls show (Sync Targets ▸ Add WebDAV Server…,
+///   Details and Repair; `LaunchSmokeUITests`). The demo data is the same.
 /// - `SEMPERE_DEBUG_COLUMNS`: `all`, `doubleColumn`, `detailOnly`, or `stored` to keep the
 ///   stored (with `SEMPERE_DEBUG_FRESH`, the default) layout (`DebugLaunch`).
 /// - `SEMPERE_DEBUG_PENCIL_ONLY`: the canvases draw with the Pencil only, as on an iPad with a
@@ -60,7 +63,7 @@ enum DemoLaunch {
                 try await DemoVault.build(in: dir, passphrase: passphrase, itemsImage: png, denseStrokes: dense,
                                           searchNotes: search)
             }.value
-            try await model.openVault(at: built.url)
+            try await model.openVault(at: try await storeCopy(of: built.url, model: model, env: env))
             if passphrase != nil {
                 // Unlocked by the test through the unlock sheet; then the choices below.
                 await selectAfterUnlock(model, keys: keys, built: built, env: env)
@@ -70,6 +73,19 @@ enum DemoLaunch {
             select(model, built: built, env: env)
         }
         if env["SEMPERE_DEMO_PDF"] != nil, env["SEMPERE_DEMO_LOCKED"] == nil { await importDemoPDF(model) }
+    }
+
+    /// The store copy's name: an earlier launch's copy under it is removed first (each build has a new id).
+    static let storeName = "Sempere Demo"
+
+    /// `SEMPERE_DEMO_STORE`: the built vault copied into the model's store, the copy opened instead; else `url`.
+    @MainActor
+    static func storeCopy(of url: URL, model: AppModel, env: [String: String]) async throws -> URL {
+        guard env["SEMPERE_DEMO_STORE"] != nil, let store = model.vaultStore else { return url }
+        return try await Task.detached {
+            for old in store.list() where old.name == storeName { try? store.remove(old.vaultId) }
+            return try store.importVault(from: url, options: VaultStore.ImportOptions(name: storeName)).url
+        }.value
     }
 
     /// The `SEMPERE_DEMO_SIDEBAR` and `SEMPERE_DEMO_NOTE` choices.

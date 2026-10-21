@@ -144,19 +144,17 @@ final class LaunchSmokeUITests: XCTestCase {
         require(targets, "File > Sync Targets…", in: app)
         targets.click()
         requireSheet("syncTargetsSheet", titled: "Sync Targets", "sync targets sheet", in: app)
-        // Add WebDAV Server… and Details and Repair (P9) exist only for a vault in the in-app store; the demo
-        // vault opens from a debug folder, so they run when a launch gives it a store copy.
+        // Add WebDAV Server… and Details and Repair (P9), for a store vault (`SEMPERE_DEMO_STORE`).
         let addServer = app.descendants(matching: .any)["syncTargetsAddServer"].firstMatch
-        if addServer.waitForExistence(timeout: 3) {
-            addServer.click()
-            requireSheet("webdavConnectSheet", titled: "Add WebDAV Server", "Add WebDAV Server sheet", in: app)
-            app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
-            requireRunning(app, "add webdav server sheet")
-            let details = app.descendants(matching: .any)["syncTargetsDetails"].firstMatch
-            require(details, "Details and Repair link", in: app)
-            details.click()
-            require(app.descendants(matching: .any)["vaultDetails"].firstMatch, "Vault Details", in: app)
-        }
+        require(addServer, "Add WebDAV Server… button", in: app)
+        addServer.click()
+        requireSheet("webdavConnectSheet", titled: "Add WebDAV Server", "Add WebDAV Server sheet", in: app)
+        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+        requireRunning(app, "add webdav server sheet")
+        let details = app.descendants(matching: .any)["syncTargetsDetails"].firstMatch
+        require(details, "Details and Repair link", in: app)
+        details.click()
+        require(app.descendants(matching: .any)["vaultDetails"].firstMatch, "Vault Details", in: app)
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
         requireRunning(app, "sync targets sheet")
 
@@ -243,7 +241,8 @@ final class LaunchSmokeUITests: XCTestCase {
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                // No windows from an earlier run.
                                "-ApplePersistenceIgnoreState", "YES"]
-        var env = ["SEMPERE_DEBUG_FRESH": "1", "SEMPERE_DEMO": "1", "SEMPERE_DEMO_PASSPHRASE": Self.passphrase,
+        var env = ["SEMPERE_DEBUG_FRESH": "1", "SEMPERE_DEMO": "1", "SEMPERE_DEMO_STORE": "1",
+                   "SEMPERE_DEMO_PASSPHRASE": Self.passphrase,
                    "SEMPERE_DEBUG_COLUMNS": columns, "SEMPERE_DEMO_SIDEBAR": "all", "SEMPERE_DEMO_NOTE": "respiration",
                    "TZ": "UTC"]
         #if targetEnvironment(macCatalyst)
