@@ -23,17 +23,12 @@ struct TwoDeviceVaultTests {
         let keys = FakeKeyStore()
         var identity: NativeIdentity
 
-        init(_ name: String, identity: NativeIdentity, cloud: FakeCloud?) {
+        init(_ name: String, identity: NativeIdentity) {
             self.name = name
             self.identity = identity
             let trust = MemoryRecipientsTrustStore()
             self.trust = trust
             model = AppModel(deviceStateURL: TS.deviceStateURL(), recipientsTrust: trust)
-            if let cloud {
-                model.cloudHooks = cloud.hooks
-                model.cloudPollInterval = .milliseconds(10)
-                model.cloudIdleInterval = .milliseconds(20)
-            }
         }
 
         /// Opens and unlocks (from scratch, as after a lock), then checks the list.
@@ -74,16 +69,13 @@ struct TwoDeviceVaultTests {
         return (created.url, try IdentityFile.parse(try #require(created.secretKey)))
     }
 
-    /// c30 on a local folder and in (faked) iCloud Drive.
-    @Test(arguments: Storage.allCases)
-    func c30NewVaultSharedWithASecondDeviceShowsNoListWarning(_ storage: Storage) async throws {
+    /// c30 (every vault is an in-app copy since P7; in iCloud Drive a folder is a sync target).
+    @Test func c30NewVaultSharedWithASecondDeviceShowsNoListWarning() async throws {
         let (url, keyA) = try Self.createVault()
-        let cloud = storage == .iCloudDrive ? FakeCloud(vault: url) : nil
-        cloud?.autoDeliver = true
-        let a = Device("A", identity: keyA, cloud: cloud)
+        let a = Device("A", identity: keyA)
         try await a.unlock(url)
         try await a.rememberAndReadKey()
-        let b = Device("B", identity: try NativeIdentity.generate(.postQuantum), cloud: cloud)
+        let b = Device("B", identity: try NativeIdentity.generate(.postQuantum))
         try await a.model.addDeviceKey(recipient: b.identity.recipient.string, label: "B's iPad",
                                        authenticator: PassingOwnerAuthenticator())
         a.expectNoListWarning()
@@ -112,9 +104,9 @@ struct TwoDeviceVaultTests {
     /// B's record follows the rotation through the vault's signed secret link.
     @Test func c30ThreeDevicesRemoveAndReAddShowNoListWarning() async throws {
         let (url, keyA) = try Self.createVault()
-        let a = Device("A", identity: keyA, cloud: nil)
-        let b = Device("B", identity: try NativeIdentity.generate(.postQuantum), cloud: nil)
-        let c = Device("C", identity: try NativeIdentity.generate(.postQuantum), cloud: nil)
+        let a = Device("A", identity: keyA)
+        let b = Device("B", identity: try NativeIdentity.generate(.postQuantum))
+        let c = Device("C", identity: try NativeIdentity.generate(.postQuantum))
         try await a.unlock(url)
         try await a.model.addDeviceKey(recipient: b.identity.recipient.string, label: "B", authenticator: PassingOwnerAuthenticator())
         try await b.unlock(url)
@@ -142,12 +134,12 @@ struct TwoDeviceVaultTests {
     @Test func c30AWebDAVCopySharedWithASecondDeviceShowsNoListWarning() async throws {
         let (server, keyA) = try Self.createVault()
         let keyB = try NativeIdentity.generate(.postQuantum)
-        let a = Device("A", identity: keyA, cloud: nil)
+        let a = Device("A", identity: keyA)
         try await a.unlock(server)
         try await a.model.addDeviceKey(recipient: keyB.recipient.string, label: "B", authenticator: PassingOwnerAuthenticator())
         a.model.close()
 
-        let b = Device("B", identity: keyB, cloud: nil)
+        let b = Device("B", identity: keyB)
         let remote = FakeWebDAVRemote(server: server)
         b.model.webdavRemote = remote
         b.model.webdavPasswords = MemoryWebDAVPasswordStore()

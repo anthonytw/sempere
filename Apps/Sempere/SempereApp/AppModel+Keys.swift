@@ -324,7 +324,6 @@ extension AppModel {
         await closeWindowEditors()
         try ensureCurrent(gen)
         let coordinate = coordinationURL
-        if isCloudVault { try await downloadEverything(start.url, gen: gen) { _ in } }
         let (next, report) = try await offMain { () throws -> (Vault, Vault.RewrapReport) in
             try CloudVault.coordinatedWrite(coordinate) { () throws -> (Vault, Vault.RewrapReport) in
                 var copy = start

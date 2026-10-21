@@ -47,9 +47,8 @@ enum DebugLaunch {
         path.hasPrefix("~/") ? NSHomeDirectory() + "/" + path.dropFirst(2) : path
     }
 
-    /// True when the launch environment names a vault (or asks for the most
-    /// recent one, `SEMPERE_DEBUG_RECENT=1`).
-    static var isActive: Bool { environment["SEMPERE_DEBUG_VAULT"] != nil || environment["SEMPERE_DEBUG_RECENT"] != nil
+    /// True when the launch environment names a vault (or the demo).
+    static var isActive: Bool { environment["SEMPERE_DEBUG_VAULT"] != nil
         || DemoLaunch.isActive }
 
     /// `SEMPERE_DEBUG_FRESH`: deletes the app's own state before anything reads
@@ -206,10 +205,6 @@ enum DebugLaunch {
             await DemoLaunch.run(model, keys: keys)
             return
         }
-        if env["SEMPERE_DEBUG_RECENT"] != nil {
-            await runRecent(model, library: library)
-            return
-        }
         guard let vaultPath = env["SEMPERE_DEBUG_VAULT"] else { return }
         await model.report {
             let url = URL(fileURLWithPath: expand(vaultPath))
@@ -224,76 +219,6 @@ enum DebugLaunch {
                let match = model.notes.first(where: { $0.id.uuidString.lowercased().hasPrefix(note) }) {
                 model.selectedNoteID = match.id
             }
-        }
-    }
-
-    /// Opens the most recent vault through its bookmark, as a relaunch does
-    /// (the only way a debug run reaches a vault in iCloud Drive, which needs
-    /// the picker's security scope). `SEMPERE_DEBUG_PROBE=1` logs how iCloud
-    /// presents the files first, `SEMPERE_DEBUG_EVICT=1` evicts the notes'
-    /// files from this device beforehand (they stay in iCloud), and
-    /// `SEMPERE_DEBUG_OPEN_ALL=N` opens the first N notes one by one and logs
-    /// page and stroke counts (never titles or content). Never draws.
-    @MainActor
-    static func runRecent(_ model: AppModel, library: VaultLibrary) async {
-        let env = environment
-        guard let entry = library.recents.first else { DebugProbe.log("no recent vault"); return }
-        let clock = ContinuousClock()
-        let start = clock.now
-        func t() -> String { String(format: "t=%.1fs", Double((clock.now - start).components.attoseconds) / 1e18
-                                    + Double((clock.now - start).components.seconds)) }
-        do {
-            let url = try library.resolve(entry)
-            let scoped = url.startAccessingSecurityScopedResource()
-            DebugProbe.log("\(t()) recent resolved scoped=\(scoped)")
-            if let mode = env["SEMPERE_DEBUG_EVICT"] {
-                await Task.detached { DebugProbe.evictNotes(url, mode: mode) }.value
-                DebugProbe.log("\(t()) evict done")
-            }
-            if env["SEMPERE_DEBUG_PROBE"] != nil { await Task.detached { DebugProbe.probe(url, label: "before-open") }.value }
-            if scoped { url.stopAccessingSecurityScopedResource() }
-            try await model.open(recent: entry, library: library)
-            DebugProbe.log("\(t()) opened phase=\(model.phase) cloud=\(model.isCloudVault)")
-            guard let keyPath = env["SEMPERE_DEBUG_IDENTITY"] else { return }
-            let text = try String(contentsOfFile: expand(keyPath), encoding: .utf8)
-            try await model.unlock(identityText: text)
-            DebugProbe.log("\(t()) unlocked notes=\(model.notes.count) pending=\(model.pendingNoteIDs.count) "
-                           + "placeholders=\(model.placeholderNoteIDs.count) syncing=\(model.cloudSyncTask != nil) "
-                           + "sync=\(model.cloudSync.map { "\($0.readyNotes)/\($0.notes)" } ?? "nil")")
-            let watch = Int(env["SEMPERE_DEBUG_WATCH"] ?? "") ?? 20
-            for _ in 0..<watch {
-                try await Task.sleep(for: .seconds(1))
-                DebugProbe.log("\(t()) notes=\(model.notes.count) pending=\(model.pendingNoteIDs.count) "
-                               + "placeholders=\(model.placeholderNoteIDs.count) "
-                               + "sync=[\(model.cloudSync.map { "\($0.readyNotes)/\($0.notes) notes \($0.localFiles)/\($0.files) files bar=\($0.isDownloading) problem=\($0.problem != nil)" } ?? "nil")] error=\(model.errorMessage != nil)")
-            }
-            if let vault = model.vaultURL, env["SEMPERE_DEBUG_PROBE"] != nil { DebugProbe.probe(vault, label: "after-sync") }
-            let n = Int(env["SEMPERE_DEBUG_OPEN_ALL"] ?? "") ?? 0
-            var empty = 0, mismatched = 0, opened = 0
-            for note in model.visibleNotes.prefix(n) {
-                model.selectedNoteID = note.id
-                let id = String(note.id.uuidString.prefix(8)).lowercased()
-                await model.showSelectedNote()
-                if let failure = model.editorFailure { DebugProbe.log("\(t()) \(id) shown failure: \(failure.message)") }
-                guard let editor = model.editor else { DebugProbe.log("\(t()) \(id) no editor"); continue }
-                await editor.loaded()   // opened from the drawing cache: its strokes arrive in the background
-                opened += 1
-                let strokes = editor.pages.reduce(0) { $0 + editor.liveStrokes(of: $1.id).count }
-                let summary = model.notes.first { $0.id == note.id }
-                if strokes == 0 { empty += 1 }
-                if strokes != summary?.strokes { mismatched += 1 }
-                DebugProbe.log("\(t()) \(id) pages=\(editor.pages.count) strokes=\(strokes) "
-                               + "summaryStrokes=\(summary?.strokes ?? -1) listed=\(note.strokes) "
-                               + "readOnly=\(editor.isReadOnly) reason=\(editor.readOnlyReason ?? "none")")
-            }
-            if n > 0 { DebugProbe.log("\(t()) opened=\(opened) empty=\(empty) mismatched=\(mismatched)") }
-            if let pick = env["SEMPERE_DEBUG_NOTE"]?.lowercased(),
-               let match = model.notes.first(where: { $0.id.uuidString.lowercased().hasPrefix(pick) }) {
-                model.selectedNoteID = match.id
-            }
-        } catch {
-            DebugProbe.log("\(t()) failed: \(error)")
-            model.errorMessage = "\(error)"
         }
     }
 

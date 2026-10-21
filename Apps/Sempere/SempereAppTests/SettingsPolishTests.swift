@@ -57,22 +57,6 @@ struct SettingsPolishTests {
         #expect(!SyncBarPolicy.shows(pending: 0, wasShown: true))
     }
 
-    @Test func statusLatchesTheBarAcrossPasses() {
-        var first = CloudSyncStatus(notes: 100, readyNotes: 10)
-        first.carryBarState(from: nil)
-        #expect(first.showsBar)
-        var late = CloudSyncStatus(notes: 100, readyNotes: 98)
-        late.carryBarState(from: first)
-        #expect(late.showsBar)
-        var done = CloudSyncStatus(notes: 100, readyNotes: 100)
-        done.carryBarState(from: late)
-        #expect(!done.showsBar)
-        // One edited note arriving from another device: no bar.
-        var edit = CloudSyncStatus(notes: 100, readyNotes: 99)
-        edit.carryBarState(from: done)
-        #expect(!edit.showsBar)
-    }
-
     @Test func refreshingFewNotesShowsNoBarButOpeningAVaultDoes() {
         #expect(!NoteLoading(done: 0, total: 1, refreshing: true).showsBar)
         #expect(NoteLoading(done: 0, total: 50, refreshing: true).showsBar)

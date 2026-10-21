@@ -364,26 +364,6 @@ struct RecordingTests {
         #expect(player.transcript?.position(at: player.position)?.word == 1)
     }
 
-    /// iCloud: the note's revisions were evicted while the transcription ran.
-    /// The transcript is stored once they are downloaded again, rather than
-    /// being refused by the write's `requireLocal`.
-    @Test func aTranscriptIsStoredIntoANoteEvictedMeanwhile() async throws {
-        let (url, key) = try AppModelTests.fixtureVault()
-        let identity = try IdentityFile.parse(try String(contentsOf: key, encoding: .utf8))
-        let direct = try Vault.open(at: url, identities: [identity])
-        let ref = try direct.writeBlob(note: Self.lecture, try Data(contentsOf: Self.tone), type: "audio/mp4")
-        let r = NoteOps.recording(blob: ref, started: Date(timeIntervalSince1970: 1_800_000_000))
-        try TS.writeAsAnotherDevice(try NoteOps.addRecording(r, to: []), to: Self.lecture, vault: url, key: key)
-        let cloud = FakeCloud(vault: url)
-        cloud.autoDeliver = true
-        let model = try await ProgressiveLoadTests.cloudModel(cloud, key: key)
-        try cloud.evictDataless(Self.lecture)
-        let transcript = try await FakeTranscriber().transcribe(file: Self.tone, recording: r.id, noteLanguage: nil)
-        let stored = try await model.storeTranscript(transcript, note: Self.lecture)
-        #expect(cloud.requestedNotes.contains(Self.lecture.uuidString.lowercased()))
-        #expect(try direct.reconstruct(noteId: Self.lecture).recordings.first { $0.id == r.id }?.transcript == stored)
-    }
-
     @Test func savedRecordingsAreTranscribedWhenTheSettingIsOn() async throws {
         let defaults = UserDefaults.standard
         let old = defaults.object(forKey: TranscriptionPreference.key)

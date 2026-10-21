@@ -319,25 +319,4 @@ struct HistoryTests {
         #expect(HistoryEntry.compactionNotice(withSnapshot) != nil)
     }
 
-    @Test func restoreRefusesANoteWhoseFilesAreNotAllLocal() async throws {
-        let (url, key) = try AppModelTests.fixtureVault()
-        let identity = try IdentityFile.parse(try String(contentsOf: key, encoding: .utf8))
-        let vault = try Vault.open(at: url, identities: [identity])
-        let points = try vault.restorePoints(noteId: Self.lecture)
-        let target = try #require(points.first)
-        let count = try vault.revisionNames(of: Self.lecture).count
-        let cloud = FakeCloud(vault: url)
-        try cloud.evictDataless(Self.lecture)
-        let hooks = cloud.hooks
-        let clock = try DeviceClock(url: TS.deviceStateURL())
-        let note = Self.lecture
-        let refused = await Self.thrown {
-            try await NoteWriter.restore(note, to: target.name, vault: vault, clock: clock,
-                                         verify: { try CloudVault.requireLocal(note: note, vault: url, hooks: hooks) })
-        }
-        #expect(refused is CloudVault.CloudError)
-        let folder = url.appendingPathComponent("notes/\(note.uuidString.lowercased())")
-        let files = try FileManager.default.contentsOfDirectory(atPath: folder.path).filter { $0.hasSuffix(".age") }
-        #expect(files.count == count)
-    }
 }

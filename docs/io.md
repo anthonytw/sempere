@@ -49,272 +49,28 @@ parent levels. The app renames or moves a notebook as one `setMeta` of
 `notebook` per affected note (deleted notes included) and writes canonical
 names for new edits; it never rewrites names it does not touch.
 
-## iCloud Drive (app only)
+## Every vault is an in-app copy (app)
 
-`Sources/` reads a vault with plain `FileManager` calls and stays portable.
-On iPadOS, a file iCloud Drive has not downloaded is only a placeholder: a
-hidden `.<name>.icloud` stand-in (or, with newer File Provider versions, the
-real name with status "not downloaded"). A listing skips the stand-ins, so an
-evicted vault looks empty. The app (`Apps/Sempere/SempereApp/CloudVault.swift`,
-`CloudScan.swift`, `AppModel+Cloud.swift`) therefore, when the vault folder is
-ubiquitous (`FileManager.isUbiquitousItem(at:)`):
+The app reads and writes only vaults in its own store (`VaultStore`, docs/design/device-first-sync.md
+§2; "Sync targets in the app" below). It never reads a vault in place in iCloud Drive or another
+provider's folder (removed in P7): such a folder is copied in, and may stay a sync target, whose provider
+hazards (evicted files, folders listed before their files, conflict versions) the sync engine's folder
+transport handles ("Folder targets in providers"). So `Sources/` and the app read every vault with plain
+`FileManager` calls, without file coordination.
 
-1. lists `vault.json`, `rewrap-journal.json`, `keys/*.age` and
-   `notes/<id>/*.age`, mapping `.<name>.icloud` to `<name>` (other files are
-   not fetched; unknown files are ignored anyway, §1);
-2. calls `startDownloadingUbiquitousItem(at:)` on the real URL of every file
-   whose `ubiquitousItemDownloadingStatus` is not `.current`;
-3. polls (fresh resource values every 0.4 s) until each file that was only a
-   placeholder is local, showing "Downloading from iCloud… n/m files" with a
-   Cancel button. Files that are local but out of date are requested and
-   not waited for. A download error fails the open with the file name; 90 s
-   without any file completing fails it with a "check that this device is
-   online" message. Cancel stops the wait (`CancellationError`, no alert);
-4. reads (`Vault.open`, `summaries`, `summary`, `identityFiles`, the
-   note an editor opens) inside an `NSFileCoordinator` coordinated read of
-   the vault folder, and writes each delta (browser edits and canvas
-   autosave, both through `NoteWriter`) inside a coordinated write of its
-   `notes/<id>/` folder (vault creation: of the new vault folder), so iCloud
-   sees and uploads the new revision files.
+- **Open Vault…** (`AppModel.copyIn`): a picked folder in iCloud Drive (or another provider that reports
+  its files as ubiquitous) is downloaded first, every file (`downloadSourceFolder`, `CloudVault.download`:
+  `.<name>.icloud` stand-ins and dataless files mapped to their names, `startDownloadingUbiquitousItem`, a
+  stall after 90 s without progress), then copied in under one coordinated read (`StorageLocation`:
+  provider storage that does not report ubiquitous files is coordinated too). A restore from a backup in
+  iCloud Drive does the same.
+- **Recents of earlier builds** that opened a vault in place (a bookmark, no store id) copy that folder in
+  when chosen, as Open Vault… does; the folder is left as it was (Q5: no migration).
+- **A WebDAV join** opens a partial copy at once and fills it ("WebDAV vaults in the app" below).
+- **Background sync** is the sync targets' ("Sync targets in the app", "Background (iOS)").
 
-Attachments (`notes/<id>/att/`, `format.md` §8.1) are never fetched with
-the note: the vault scan, `downloadNote` and `CloudVault.requireLocal` list
-only a note's revision files, so an evicted, unlisted or missing `att/`
-never makes a note look empty or pending (`docs/attachments.md` §4). When
-the canvas shows a page, the `image` and `pdf` blobs its items reference are
-requested without waiting (`BlobFetchPolicy`, `AppModel.prefetchBlobs`);
-other kinds (audio, video, transcripts) only when used. Drawing an item reads
-its blob through the model's `BlobCache` (`AppModel+Attachments`): that one
-file is downloaded and awaited (`CloudVault.downloadBlob`), then read inside a
-coordinated read that checks it is local (`CloudVault.requireBlob`) and
-streamed through the vault's checks into a private temporary file (mode
-0600, Data Protection `complete`), least recently used files dropped beyond
-512 MB, everything deleted when the vault closes or changes. Meanwhile the
-item shows a placeholder with a download symbol. Blobs are written
-(`NoteWriter.addBlob`, `copyBlob`) inside the same coordinated write of the
-note's folder as deltas. Before a blob is written or copied into a note, that
-note's copy of it, if iCloud lists one, is downloaded first
-(`NoteEditor.prepareBlobWrite`, `AppModel.blobWritePreparer`): blob names
-depend only on the content, so an evicted copy is the same blob and is
-reused, never written a second time beside iCloud's placeholder (blob files
-are write-once).
-
-Progressive loading: only the small unlocking files (`vault.json`, the
-rewrap journal, `keys/`) are awaited before the unlock sheet; the notes are
-not. As soon as the vault opens (still locked) `AppModel.startCloudSync`
-starts passing over the notes. On iPadOS a file
-iCloud has not downloaded may keep its real name and is *dataless*:
-`ubiquitousItemDownloadingStatus` is "not downloaded", it allocates no
-blocks, and no `.icloud` stand-in exists; both forms count as not local. A
-note folder that lists no revision file at all is "not listed yet", never an
-empty note: every note has at least one revision, and iCloud lists a
-folder's contents after the folder itself. The app asks for the folder
-(`startDownloadingUbiquitousItem` on it) and waits.
-
-Each pass is change-driven (`AppModel.reconcile`; see "Opening a vault fast"
-below): it lists the note folders by name, and only notes whose revision
-names differ from those their shown summary was made from are checked with
-iCloud (`ProgressiveLoad.pass(notes:)`, one state query per file), sorted
-into *ready* (all files local: read at once) and *pending* (some file not
-local), and pending ones requested at most 64 notes at a time, the note the
-user selected first. A note first seen changed (or reported by the file
-presenter, unless its names are the indexed ones: iCloud evicting a note's
-files is reported too) is checked at once; notes already known to be arriving are
-re-checked at most 64 per pass, in rotation (`cloudCheckLimit`,
-`nextPendingChecks`), so N notes arriving over many passes cost
-O(N + passes × 64) state queries, not O(N × passes) (a mass re-import can
-change every note of a vault at once). A note whose files iCloud evicted but whose names are
-unchanged is not pending: its row comes from the index and it is downloaded
-only when opened (`downloadNote`). While locked, a device that already has an
-index of the vault fetches nothing (the index will show which notes changed);
-a device opening the vault for the first time requests every note, so they
-download while the key is typed.
-
-A folder that lists something but no revision (an `att/` folder: the
-writer writes blobs before the revision that names them, so an import in
-progress on another device, or one interrupted for good, leaves such
-folders) is not a note yet and not pending (`ProgressiveLoad.Pass.orphans`).
-A folder that lists nothing at all is pending for `cloudUnlistedTimeout`
-(120 s) and then set aside the same way (`emptyNoteFolders`): neither is a
-row or counted in the bar, so "Downloading" cannot wait on them forever.
-Every pass still looks at them, and a revision that appears makes them notes.
-
-Pending notes appear in the list with their indexed summary and a small
-spinner, or, when nothing is indexed, with their row from the other
-devices' published summaries (below), or else as "Downloading from iCloud…"
-rows with a spinner.
-
-**Listing before the notes arrive** (`AppModel+PublishedSummaries`,
-`format.md` §12.5). Every device with a complete listing writes the
-summaries of the notes it read to its own sealed file,
-`summaries/<device>.sealed` (at most every 2 minutes, only when they
-changed; it is the only device that writes that file, so it never
-conflicts). A device on which notes are still arriving asks iCloud for
-those files (not waited for) and, once they are here, lists the pending
-notes from them: title, notebook, tags, dates and page text for search,
-the entry whose revisions match the listing, else the one made from the
-most revisions. Such a row is replaced when the note's own revisions are
-read; it is never used to write (an edit downloads the note first). A bar under the list shows "Downloading from iCloud: n of m
-notes", a progress bar and "n of m files" (`CloudSyncStatus`); it disappears
-when no note is pending. While notes are pending the loop re-checks just
-those every second (and lists every folder every 15 s); once settled it lists
-every folder every 15 s, doubling while nothing changes, at most every 60 s,
-for as long as the vault is open, so revisions other devices write arrive
-without a pull to refresh. A file presenter on `notes/`
-(`NotesFolderPresenter`) wakes the loop early for the notes it names. The
-loop pauses while the app is in the background, restarts when the app
-becomes active and on every reopen, and a pass of a loop replaced or paused
-meanwhile publishes nothing. 90 s without progress shows a problem line in
-the bar (not an alert) and the loop keeps trying; the line clears when files
-arrive.
-
-Listing (any vault, `AppModel+Loading`): unlocking only checks the key; the
-note list is then read by a task the model owns (`startLoadingNotes`), so the
-unlock sheet closes at once and no view going away can cancel the listing.
-Summaries are read without stroke geometry, on up to four threads, in
-batches of 24 (an eighth of the notes, at most 96, when many changed) that are
-queued for the list as they finish (applied at most four times a second,
-`queueListUpdate`); the bar under the list shows "Opening vault: n of m notes"
-(or "Updating 640 changed notes: n done" when the list already shows every
-note) next to the iCloud progress. On a reopen the indexed
-summaries are shown before anything is read, and only notes whose revision
-file names changed are read at all. Listings never overlap (`loadGate`), and
-the cache file is written once per listing, not per batch, and while notes
-keep arriving from iCloud at most every 20 s (`summaryCacheSaveInterval`;
-also when they have all arrived, when the app goes to the background and when
-the vault closes): every save re-encrypts the whole index. The list is usable
-while it loads, so edits never decide from a summary not read in this session
-(`verifiedNoteIDs`: one shown from an earlier launch's cache is re-read
-first), a notebook rename waits until every note was read, a batch read
-before an edit's own re-read does not merge over it (`summaryEpochs`), and a
-listing only removes notes it saw before its scan (a note created meanwhile
-stays, and stays selected). An
-empty list always says why: loading (with the count), downloading from
-iCloud, the listing failed (with Try Again), no search match, nothing in the
-selected notebook or tag, or an empty vault (`EmptyListReason`).
-
-Opening a note, and every browser edit of one (rename, tags, move, delete,
-restore), first lists that note's folder afresh and downloads whatever is
-missing, repeating until a listing shows every revision file local
-(`downloadNote`; the detail pane shows "n of m files" meanwhile): a delta
-must never be written on top of a partial log, nor computed from a
-placeholder's empty summary. The editor's coordinated read checks again,
-before and after loading, that every listed file is local
-(`CloudVault.requireLocal`): a plain read skips `.icloud` stand-ins and an
-unlisted folder reads as a note without pages, which the user would see as
-a blank, editable note. Every browser edit's append (`NoteWriter.append`,
-which picks the delta's `seq` and observes the note's clock readings) runs
-the same check inside its coordinated read and writes nothing when a file
-is not local. A note that cannot be made local is shown as an
-error with Try Again in the detail pane, never as a blank canvas. Renaming
-a notebook waits until no note is pending.
-
-Every reload (pull to refresh) repeats this, so revisions other devices
-synced since appear as placeholders, are fetched, and then read. Vaults
-outside iCloud skip all of this: no scan, no coordination.
-
-### Background sync (iOS)
-
-Locking an iPhone or iPad mid-sync does not stop the sync
-(`AppModel+Background`, `BackgroundSync.swift`):
-
-- **A sync in flight finishes.** When the app goes to the background with
-  notes still downloading or listed as placeholders (`syncInFlight`), the
-  loop keeps running under a `beginBackgroundTask` assertion and pauses
-  once nothing is pending (`finishBackgroundSync`). The summary cache
-  is saved when the app leaves the screen and again when it settles.
-- **When iOS takes the time back** with notes still pending (the expiration
-  handler, `backgroundTimeExpired`), or gives none, the loop pauses and a
-  `BGProcessingTask` (`io.github.anthonytw.sempere.sync.processing`,
-  network required, no external power required) is requested to continue.
-- **Otherwise** a `BGAppRefreshTask` (`…sync.refresh`, not before 15
-  minutes) is requested whenever the app leaves the screen with an iCloud
-  vault open, so revisions other devices wrote are fetched and read before
-  the app is opened again.
-- A scheduled task runs passes over every note folder
-  (`runScheduledSync`, `cloudPollInterval` apart) until nothing is pending
-  or iOS takes the time back (SwiftUI's `.backgroundTask` cancels it; it
-  also completes the task), then requests the next refresh.
-
-What iOS does not allow, so the app cannot promise it:
-
-- Background time after leaving the screen is short (about 30 seconds on
-  current iOS) and is not guaranteed; a large first sync does not finish in it.
-- Scheduled tasks run when iOS decides: it weighs battery, charging, network,
-  thermal state and how often the app is used. A refresh gets about 30
-  seconds; a processing task a few minutes, usually while charging and idle.
-  Background App Refresh switched off (Settings ▸ General, or for the app),
-  Low Power Mode, or force-quitting the app from the app switcher stop both
-  until the app is opened again. The simulator runs neither unless debugged.
-- They sync only a vault that is still open in the suspended app. A task that
-  launches the app afresh (iOS terminated it meanwhile) finds no unlocked
-  vault, since the key is behind Face ID, and ends at once; the next launch
-  syncs as usual.
-- iCloud Drive itself keeps downloading files that were already requested
-  while the app is suspended; what stops is the app asking for the next
-  window of notes and reading the ones that arrived.
-
-The Mac (Catalyst) keeps apps running when their windows are in the
-background, so it schedules nothing.
-
-Sync targets (every in-app vault, open or not) have their own background tasks: "Sync targets in the
-app", "Background (iOS)". The same task identifiers serve both; a task runs the in-place iCloud passes
-first while such a vault is open (until P7 removes that path).
-
-## Other Files providers (Proton Drive) (app only)
-
-Privacy first: the only cloud providers the project targets are iCloud Drive
-(the system's) and Proton Drive; others may work through the same code but
-are not tested on purpose. A vault in a provider's storage is opened like any
-picked folder (`VaultLocator`, a security-scoped bookmark), and what happens
-next depends on how the provider presents its files.
-
-**Code paths that assume local files:**
-
-| Path | Assumes | With a provider |
-| --- | --- | --- |
-| `VaultLocator.resolve`, `FolderAccess.check` | the picked folder lists its files | a provider that has not listed the folder yet makes a vault look like a plain folder ("not a vault"); try again once Files shows the contents |
-| `VaultBookmark` (recents, backups, quick capture) | bookmarks of the folder resolve later | a provider that renames or re-creates its root gives a stale bookmark (refreshed) or a dead one ("choose it again") |
-| `CloudVault.download` / `ProgressiveLoad` / `requireLocal` | files report a downloading status (`ubiquitousItemDownloadingStatus`), placeholders are `.<name>.icloud` or dataless files | used only when the folder is ubiquitous (`isUbiquitousItem`): iCloud Drive and replicated File Provider extensions (every `~/Library/CloudStorage` provider on a Mac) report it; then `startDownloadingUbiquitousItem` and the dataless check apply unchanged |
-| `CloudVault.coordinatedRead` / `coordinatedWrite`, `NoteWriter(coordinated:)` | — | a provider fetches a file it holds only remotely for a coordinated read, and sees a new file through a coordinated write |
-| `NotesFolderPresenter` | a file presenter hears of other devices' revisions | the same for any provider that coordinates; otherwise the list changes only on reload (pull to refresh) |
-| `Vault` writes (`rename(2)`, `link(2)` for blobs, `fsync`) | a POSIX file system | File Provider storage is a local file system (APFS); `link(2)` falls back to rename where refused (above) |
-| Error texts in `CloudVault.CloudError` | iCloud | they name iCloud Drive even for another provider (only shown when a ubiquitous provider stalls or fails a download) |
-
-**Provider storage is coordinated** (`StorageLocation`): a vault whose path is another app's
-provider storage (`~/Library/CloudStorage/<Provider>-…` on a Mac; a shared
-app-group container or `File Provider Storage` on iPadOS) is treated like an
-iCloud vault for coordination even when it does not report its files as
-ubiquitous: every read and write is coordinated, so a non-replicated provider
-fetches and uploads what the vault needs. Download requests and the
-downloading status stay off for such a folder (there is nothing to wait
-for); a ubiquitous provider takes the whole iCloud path. Vaults in
-the app's own container (on this device, WebDAV copies) and on external
-drives are not coordinated. `StorageLocationTests` pin the
-classification.
-
-**Verified** (without a device): the classification of iCloud Drive, Mac
-`CloudStorage` provider, iPadOS app-group and app-container paths; that the
-iCloud path keys on `isUbiquitousItem` and so already covers replicated
-providers; that coordination is a no-op cost for local files.
-
-**Not verified; needs a test on a device** (with
-`SEMPERE_DEBUG_PROBE=1`, which logs how the files present, never names):
-
-1. Proton Drive on iPadOS: whether its Files location lets the folder picker
-   choose a folder at all (the location is reported to be unavailable while
-   Proton's app lock (PIN or Face ID) is on, and that some folders fail to list),
-   whether it opens in place with write access, and whether its files report
-   `isUbiquitousItem`.
-2. Creating a vault there, writing notes, quitting, reopening from Recents
-   (bookmark), and a second device seeing the notes after Proton syncs.
-3. Proton Drive for Mac (`~/Library/CloudStorage/ProtonDrive-…`) with the
-   sandboxed Catalyst build: open, write, evict a note in Finder ("Remove
-   Download") and reopen it (dataless path).
-4. A blob write (`link(2)`) in Proton's storage on both platforms.
-
-If 1 fails, Proton Drive on iPadOS cannot hold a vault through Files, and the
-alternatives are iCloud Drive or a WebDAV server (above).
+What the copy-in cannot promise: a provider that does not list a folder (or reports files it never
+delivers) makes the copy wait until the stall error; try again once Files shows the contents.
 
 ## Opening a vault fast (app)
 
@@ -362,18 +118,11 @@ tombstones and lineage records than a full reduction, as a compacted vault's
 snapshot would, which no summary field reads (`IncrementalSummaryTests`,
 `MergeTests.testIncrementalReductionEqualsReconstruct`).
 
-Passes run when the vault opens, when the app becomes active, at the loop's
-idle pace and, for the notes named, when the file presenter reports a change.
+Passes run when the vault opens, on a reload and, for the notes named, when a sync run reports what it
+changed (`applySyncChanges`).
 Every pass waits for the index to be loaded first, so it never mistakes an
 unloaded index for a vault where everything changed. A pull to refresh also
 re-reads notes the index file does not hold (a summary with a problem).
-
-A **full validation** (`validateVault`, phase `reconcile.validate`) asks
-iCloud for the state of every file (slow on a device: one round trip per
-file), refreshes out-of-date local copies, reports download errors in the
-bar and drops index entries of notes that are gone. It runs at background
-priority, outside the listing lock, once the list has settled and then every
-30 minutes, and never blocks the list.
 
 **List updates** are batched and throttled: queued summaries are applied at
 most every 250 ms (`listUpdateInterval`) as differences (`NoteListDiff`: a
@@ -444,11 +193,10 @@ edits) in place, without being reopened (`AppModel+RemoteMerge`,
 - **Detection** is the change-driven listing (above): each pass lists the
   note folders by name, and an open editor whose folder holds a revision file
   name it has neither read nor written (`NoteEditor.knownRevisionNames`) gets
-  a merge. In iCloud Drive the file presenter wakes the sync loop for that
-  note, so a delivered revision is merged within a poll interval. A local
-  vault is listed again on a reload. At most one merge runs per note.
-- **Before reading**, every revision of the note is made local
-  (`downloadNote`); the editor never writes while one is missing. The merge
+  a merge. A sync run that took a revision lists that note again at once
+  (`applySyncChanges`); a reload lists every note. At most one merge runs per note.
+- **Before reading**, a partial copy's note is fetched (`downloadNote`); the editor never writes to a
+  note still marked incomplete. The merge
   waits while a canvas is mid-stroke or mid-erase (at most `inkWaitLimit`,
   30 s, then it gives up and the next listing tries again: a canvas that never
   reports a stroke's end cannot stall the note's merges), then saves what is pending
@@ -523,7 +271,9 @@ drawing cache, for comparisons.
 
 ## Recent vaults after a restart
 
-Right after a device restarts, iCloud Drive (and other providers) can take a
+Recents are store vaults (by id) and WebDAV locations; a bookmark recent is an earlier build's in-place
+vault, which is copied in when chosen ("Every vault is an in-app copy"). For those bookmarks, and folder
+targets' bookmarks: right after a device restarts, iCloud Drive (and other providers) can take a
 while to come up: a recent vault's bookmark does not resolve yet, or it
 resolves to a folder iCloud has not listed. Before this was handled, the launch
 reopen took the failed resolve for a dead bookmark and dropped the entry, so
@@ -627,9 +377,8 @@ manifest.
   toolbar and context menu, the note toolbar and the Catalyst menu bar
   (`ExportMenuCommands`, File menu) all build from it.
 - **Off the main actor, with cancel.** `AppModel.exportNotes` reads each note
-  (iCloud notes are downloaded first, reads are coordinated and re-check
-  `CloudVault.requireLocal`, so a note missing a revision is reported as a
-  failure, never exported stale; same rules as opening a note) and renders in a detached task, checking cancellation between
+  (a partial copy's notes are fetched first and refused while still incomplete, so a note missing a
+  revision is reported as a failure, never exported stale; same rules as opening a note) and renders in a detached task, checking cancellation between
   notes. `ExportJob` drives it for the export sheet: progress over both phases,
   Cancel, failures listed per note while the others are exported (also in a
   merged PDF, which leaves out a note that cannot be rendered). One export at a
@@ -681,8 +430,7 @@ sidebar's notebook, else the vault). iPad, iPhone and Mac share the sheet
   `tmp/SempereBulkExports/<uuid>` (file protection "complete"), then Share…
   or Save to Files…; deleted when the sheet closes and at launch.
 - **One note at a time, bounded memory.** `AppModel.runBulkExport` loops over
-  the jobs: download (iCloud), read (coordinated, `requireLocal` before and
-  after, as for the share export), fetch embedded media for PDF + attachments
+  the jobs: fetch (a partial copy), read (as for the share export), fetch embedded media for PDF + attachments
   (every file it writes for Media),
   render and write in a detached task, then let go. Only one note's state is
   held; PDFs stream (clips never in memory) to `<name>.pdf.partial` and are
@@ -691,7 +439,7 @@ sidebar's notebook, else the vault). iPad, iPhone and Mac share the sheet
   staged files deleted. A 1.4 GB vault takes the memory of its largest note.
 - **Read ahead, bounded by bytes.** While a note renders, the next ones (at most two)
   are downloaded and read (`LoadAhead`, SempereRender): one read at a time and in job
-  order, so iCloud downloads still happen in the order the jobs run, and wall time
+  order, so fetches still happen in the order the jobs run, and wall time
   approaches the longer of the read and render phases instead of their sum. The
   estimated memory of the note being rendered plus those read ahead stays under 256 MiB
   (`ByteBudget`; a note's estimate is 8 × its revision files on disk, 64 MiB when they
@@ -812,28 +560,11 @@ from iCloud's version history) into a new vault without losing a file.
 
 ## Conflicting versions (app)
 
-iCloud Drive keeps a *conflict version* of a file two devices replaced at
-once (`NSFileVersion.unresolvedConflictVersionsOfItem`). Before every full pass
-of the sync loop (`AppModel.resolveCloudConflicts`, `CloudConflicts.swift`) the
-app looks for them on the vault folder itself (a vault that conflicted while it
-was a package), `vault.json`, `rewrap-journal.json`, `settings.age`, the
-published summaries and `keys/`, merges them by the rules of `format.md` §1.3,
-marks them resolved and removes them, so the system never has to ask the user
-to pick a version:
-
-- the vault folder: `Vault.mergeCopy` (the library code behind `sempere vault
-  merge-copy`): every write-once file the kept version lacks is checked and
-  copied in, so a note written on either device is listed (the notes it brought
-  back are looked at by the same pass); its `settings.age` waits for the key;
-- `settings.age`: merged per key once the vault is unlocked (while locked the
-  conflict stays until the unlock);
-- `vault.json` and the journal: the current version stays when the other is the
-  same or differs only in the label; otherwise (both devices changed the keys)
-  it is left unresolved and the list's bar says so;
-- published summaries and key files: the current version stays.
-
-Revisions and blobs are write-once under unique names and never conflict.
-Tests fake versions with `FakeCloud.addConflict` (`CloudConflictTests`).
+The app never reads a vault in place, so it resolves no provider conflict versions itself. A folder target
+in iCloud Drive or another provider gets them merged by the sync engine (`ConflictVersions.swift`, by the
+rules of `format.md` §1.3: write-once files are a union, `settings.age` is merged per key, a `vault.json` or
+journal both devices changed is kept and reported); see "Folder targets in providers". `sempere vault
+merge-copy` merges any whole copy of a vault into another without losing a file.
 
 ## Atomic writes
 
@@ -931,9 +662,9 @@ maps each control to its command.
   file errors or cut short is none). A bookmark that no longer
   resolves, or a folder that is gone, is reported by name ("choose it again").
 - **Back Up Now** is `Backup.run` off the main actor, with the picked folder's
-  security scope held for the run. An iCloud Drive vault is made local first,
-  every note (`downloadEverything`) and every attachment blob: a placeholder
-  is not a file `Backup.run` sees, so it would be missing from the backup.
+  security scope held for the run. A partial copy (a join not finished) is
+  completed first (`completePartialCopy`: one run of its server), or the backup
+  is refused: a note not downloaded would be missing from it.
   The run's `afterEachFile` counts files for the progress line and stops the
   run when the user taps Stop or the vault closes (the backup holds only
   complete files; the next run finishes it). The run counts as the last
@@ -1940,9 +1671,8 @@ continues. The fill
 that follows has no second overlay: it shows as
 the note list's spinners on the pending rows. Offline, a usable copy opens from what it holds.
 
-The rest arrives without the iCloud machinery (P7a, `AppModel+Join`, docs/design/device-first-sync.md
-§8.2). The copy is a store vault like any other (`isCloudVault` is false, no `CloudVault.Hooks`); while it
-is partial (`partialCopyRoot`):
+The rest arrives through the vault's own sync (`AppModel+Join`, docs/design/device-first-sync.md §8.2).
+The copy is a store vault like any other; while it is partial (`partialCopyRoot`):
 
 - *The fill.* Once the vault is unlocked, its two-way runs (`SyncSession`, "Sync targets in the app")
   complete the copy: every note, then every attachment (design Q3: always). What a run completed reaches the
@@ -1951,18 +1681,21 @@ is partial (`partialCopyRoot`):
   row's spinner) with its row from the server's sealed summaries (`.sempere-partial/summaries.sealed`, opened
   with the key at the unlock, `webdavUnlocked`), or a placeholder row without them, until it is complete.
 - *Opening a note* not downloaded yet fetches just that note (`downloadNote` → `downloadPartialNote`:
-  `LocalCopy.fetch` with a one-note `FetchScope`, revisions only), then reads it; the editor's re-check
-  refuses a note still marked incomplete (`partialNoteVerifier`), and core refuses any write to one anyway
-  (format.md §1.2). Offline, it fails at once with "not downloaded from <server> yet" and the note stays
-  pending. Fetches run one at a time (`joinFetch`).
+  `LocalCopy.fetch` with a one-note `FetchScope`, revisions only), then reads it. The note pane says
+  "Downloading this note from <server>…" with a Cancel (`cancelNoteDownload`), and the wait is bounded
+  (`noteFetchTimeout`, 60 s: a fetch may queue behind a long fill run); past it, or offline, it fails with
+  "not downloaded from <server> yet" and the note stays pending. The fetch itself goes on, and lists the
+  note once it is in. Fetches run one at a time (`joinFetch`). The editor's re-check, and every model
+  write (`commit(ids:)`), refuse a note still marked incomplete (`partialNoteVerifier`); core refuses any
+  write to one anyway (format.md §1.2).
+- *The bar* says "Downloading from <server>: n of m notes…" over a progress bar while the fill goes
+  (`joinProgress`, `JoinProgress`, from each listing pass), and the empty list says the same.
 - *Attachments* a page shows, a recording plays or a paste copies that are still stand-ins are fetched alone
   (`partialBlobFetcher`, through the attachment cache, `ensureBlobLocal`, `blobWritePreparer`).
 - *Waiting while partial:* a backup first runs the server once and refuses if the copy is still partial
   (`completePartialCopy`); thinning waits (automatic thinning skips, a manual run says the vault is not
   downloaded yet); key changes stay refused for any vault with a target. Export and history fetch the note
   first (`downloadNote`).
-- The "Download Attachments in the Background" setting no longer changes anything (the runs take every
-  attachment); it goes with `WebDAVFetcher` in P7b.
 
 **When it syncs, the status, other writers**: "Sync targets in the app" below.
 

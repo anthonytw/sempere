@@ -10,9 +10,9 @@ import Sempere
 /// note's revision file names with the names its shown summary was made from
 /// (`indexedNames`, `IndexDiff`). Revision files are write-once, so equal
 /// names mean an equal summary: nothing is downloaded, coordinated or
-/// decrypted for those notes. Only changed notes are checked with iCloud,
-/// downloaded and read, and their summaries reach the list in throttled
-/// batches (`queueListUpdate`).
+/// decrypted for those notes. Only changed notes are read, and their
+/// summaries reach the list in throttled batches (`queueListUpdate`). In a
+/// partial copy (a join, `AppModel+Join`) notes marked incomplete are pending.
 extension AppModel {
     /// One pass over the note folders: every folder, or only `scope`.
     ///
@@ -22,7 +22,7 @@ extension AppModel {
     ///   - full: also re-read notes whose summary is not backed by the index
     ///     file (a summary with a problem, or no index at all): a reload
     ///     ("pull to refresh") gives such notes another chance.
-    /// - Returns: how many notes are still downloading.
+    /// - Returns: how many notes are still pending (a partial copy).
     @discardableResult
     func reconcile(scope: Set<UUID>? = nil, full: Bool = false) async throws -> Int {
         guard let vault else { throw ModelError.noVaultOpen }
@@ -36,9 +36,7 @@ extension AppModel {
         defer { Perf.end(interval, "scope=\(scope.map { "\($0.count)" } ?? "all") read=\(readCount)") }
 
         let url = vault.url
-        let cloud = isCloudVault
         let partialRoot = partialCopyRoot
-        let hooks = cloudHooks
         let canRead = vault.canRead && phase == .unlocked
         // Changes are judged against the index: never before it is loaded.
         if canRead {
@@ -56,8 +54,6 @@ extension AppModel {
         let known = before.union(indexed.keys)
         // Notes still arriving that this pass does not look at stay pending.
         var pendingElsewhere = scope.map { pendingNoteIDs.subtracting($0) } ?? []
-        let reported = reportedNoteIDs
-        reportedNoteIDs = []
 
         // 1. Names only.
         let listings = try await offMain(priority: .utility) {
@@ -66,17 +62,6 @@ extension AppModel {
         try ensureCurrent(gen)
         try Task.checkCancellation()
         var diff = IndexDiff.compute(listings: listings, indexed: indexed, known: known, scope: scope)
-        if let fetcher = webdavFetcher, !diff.unchanged.isEmpty {
-            // A partial WebDAV copy's note marked incomplete (format.md §1.2; after "Download Again" it
-            // may hold the very files its summary was made from) is never unchanged: it is pending.
-            let candidates = diff.unchanged
-            let incomplete = try await offMain(priority: .utility) { fetcher.incomplete(among: candidates) }
-            try ensureCurrent(gen)
-            if !incomplete.isEmpty {
-                diff.unchanged.removeAll { incomplete.contains($0) }
-                diff.changed.append(contentsOf: incomplete.sorted { $0.uuidString < $1.uuidString })
-            }
-        }
         let present = Set(listings.map(\.id))
         let names = Dictionary(listings.map { ($0.id, $0.names) }, uniquingKeysWith: { a, _ in a })
         #if DEBUG
@@ -84,71 +69,10 @@ extension AppModel {
               diff.unchanged.count, diff.changed.count, diff.removed.count)
         #endif
 
-        // 2. iCloud state, only for notes that must be read (or are still arriving).
+        // 2. A partial copy's notes still arriving: pending, never read.
         var ready: [UUID]
         var pending: [UUID] = []
-        if cloud {
-            var focus: Set<UUID> = []
-            if canRead || !hasLocalIndex {
-                // Asking iCloud for a file's state costs a round trip on a device. A note seen
-                // for the first time (or reported changed) is checked now; notes already known
-                // to be arriving are re-checked `cloudCheckLimit` at a time, in rotation, so a
-                // pass over N arriving notes costs O(limit), not O(N), and N notes arriving
-                // over many passes cost O(N + passes × limit) in all, not O(N × passes).
-                let arriving = pendingNoteIDs.intersection(present)
-                // A reported note whose names are the indexed ones is not checked: the report is
-                // often iCloud evicting its files (placeholders, dataless files), and a check
-                // would request them, downloading back every note iCloud evicts. Its row comes
-                // from the index; opening it downloads it (`downloadNote`).
-                let reportedNow = reported.intersection(present).subtracting(diff.unchanged)
-                let fresh = Set(diff.changed).subtracting(arriving).union(reportedNow)
-                let rotation = nextPendingChecks(arriving.subtracting(fresh), limit: cloudCheckLimit)
-                focus = fresh.union(rotation)
-                if let selected = selectedNoteID, arriving.contains(selected) { focus.insert(selected) }
-                pendingElsewhere.formUnion(arriving.subtracting(focus))
-            }   // else locked, with an index: nothing to fetch before the key shows what changed
-            let toCheck = focus
-            let priority = selectedNoteID
-            let window = cloudWindow
-            let pass = toCheck.isEmpty ? ProgressiveLoad.Pass() : try await offMain(priority: .utility) {
-                try Perf.measure(.reconcileDownload, "notes=\(toCheck.count)") {
-                    try ProgressiveLoad.pass(vault: url, notes: toCheck, priority: priority, window: window, hooks: hooks)
-                }
-            }
-            try ensureCurrent(gen)
-            // A replaced (or paused) sync loop's pass is stale: never publish it over a newer one.
-            try Task.checkCancellation()
-            ready = pass.ready
-            // Folders that are not notes for now: one holding only `att/` (its first revision not
-            // written yet), or one listing nothing for longer than `cloudUnlistedTimeout`. Waiting on
-            // them kept the bar on "Downloading" for good (TestFlight 1.0.0, an import interrupted on
-            // another device); they are looked at again by every pass and read once they list a revision.
-            let now = ContinuousClock.now
-            var setAside = Set(pass.orphans)
-            let unlisted = Set(pass.unlisted)
-            for id in unlisted {
-                let since = unlistedSince[id] ?? now
-                unlistedSince[id] = since
-                // A partial WebDAV copy's folder is listed by the fetcher itself: it waits for it.
-                if webdavFetcher == nil, now - since >= cloudUnlistedTimeout { setAside.insert(id) }
-            }
-            for id in toCheck where !unlisted.contains(id) { unlistedSince[id] = nil }
-            emptyNoteFolders.subtract(toCheck)
-            emptyNoteFolders.formUnion(setAside)
-            if let scope { emptyNoteFolders.subtract(scope.subtracting(present)) } else { emptyNoteFolders.formIntersection(present) }
-            pendingElsewhere.subtract(emptyNoteFolders)
-            pending = pass.pending.filter { !setAside.contains($0) }
-            let total = scope == nil ? listings.count - emptyNoteFolders.count : max(cloudSync?.notes ?? 0, notes.count)
-            let arriving = pendingElsewhere.union(pending).count
-            var status = CloudSyncStatus(notes: total, readyNotes: max(0, total - arriving), files: pass.files,
-                                         localFiles: pass.localFiles,
-                                         unlistedNotes: unlisted.subtracting(setAside).count)
-            status.problem = cloudSync?.problem
-            status.serverName = cloudSource.serverName
-            status.carryBarState(from: cloudSync)
-            if let failure = pass.failures.first?.value { status.problem = cloudSource.problem(failure) }
-            cloudSync = status
-        } else if let partialRoot {
+        if let partialRoot {
             // A partial copy (a join, `AppModel+Join`): a note marked incomplete is never read; it is
             // pending, listed from the server's summaries, until a run or an open completes it.
             let incomplete = try await offMain(priority: .utility) { Self.incompleteNoteIDs(partialRoot) }
@@ -157,11 +81,15 @@ extension AppModel {
             ready = diff.changed.filter { !incomplete.contains($0) }
             pending = (scope.map { incomplete.intersection($0) } ?? incomplete).sorted { $0.uuidString < $1.uuidString }
             pendingElsewhere.subtract(present.subtracting(incomplete))
+            // The bar's fill line (`JoinProgress`): every note listed, how many are still to come.
+            let total = scope == nil ? listings.count : max(joinProgress?.notes ?? 0, notes.count, incomplete.count)
+            joinProgress = incomplete.isEmpty ? nil
+                : JoinProgress(notes: total, pending: incomplete.count, server: joinLocation?.host ?? "")
         } else {
             ready = diff.changed
+            joinProgress = nil
         }
-        // Locked, or a key change unfinished (no note is read before it is):
-        // the downloads are requested and the progress shown, nothing is read.
+        // Locked, or a key change unfinished (no note is read before it is): nothing is read.
         guard canRead else {
             pendingNoteIDs = pendingElsewhere.union(pending)
             return pendingNoteIDs.count
@@ -181,12 +109,6 @@ extension AppModel {
         let shown = before.subtracting(gone)
         var added: [NoteSummary] = []
         var placeholders = placeholderNoteIDs.intersection(present)
-        // A "Downloading…" row of a folder set aside since (no revision after all) goes.
-        let notNotes = placeholders.intersection(emptyNoteFolders)
-        if !notNotes.isEmpty {
-            queueListUpdate(removals: notNotes)
-            placeholders.subtract(notNotes)
-        }
         for id in diff.unchanged where !shown.contains(id) {
             // Indexed but not shown yet: its summary is current.
             if let s = summaryCache?.summary(for: id, names: names[id] ?? []) { added.append(s) }
@@ -240,25 +162,7 @@ extension AppModel {
         return pendingNoteIDs.count
     }
 
-    /// Up to `limit` of `arriving`, continuing in id order from where the
-    /// previous pass stopped (`pendingCheckCursor`), so every arriving note is
-    /// checked once every `arriving.count / limit` passes.
-    func nextPendingChecks(_ arriving: Set<UUID>, limit: Int) -> Set<UUID> {
-        guard arriving.count > limit else { return arriving }
-        let order = arriving.sorted { $0.uuidString < $1.uuidString }
-        let start = order.firstIndex { $0.uuidString > pendingCheckCursor } ?? 0
-        var out: [UUID] = []
-        out.reserveCapacity(limit)
-        var i = start
-        while out.count < max(1, limit) {
-            out.append(order[i])
-            i = (i + 1) % order.count
-        }
-        pendingCheckCursor = out.last?.uuidString ?? ""
-        return Set(out)
-    }
-
-    /// The row of a note iCloud has not delivered and nothing is known about.
+    /// The row of a pending note nothing is known about yet (no published summary).
     nonisolated static func placeholderSummary(_ id: UUID) -> NoteSummary {
         NoteSummary(id: id, title: "", tags: [], notebook: nil, deleted: false, pages: 0, strokes: 0, modified: nil,
                     problem: nil)
@@ -288,52 +192,5 @@ extension AppModel {
     func markIndexed() {
         guard summaryCache != nil, let marker = indexMarkerURL, !FileManager.default.fileExists(atPath: marker.path) else { return }
         _ = FileManager.default.createFile(atPath: marker.path, contents: Data())
-    }
-
-    // MARK: - Background validation
-
-    /// One background validation in this many asks iCloud about every
-    /// file; the others skip notes an earlier one saw entirely local.
-    static let fullValidationEvery = 6
-
-    /// The low-priority full pass: asks iCloud for the state of every file
-    /// of every note (slow on a device, one round trip per file; except, in
-    /// all but every `fullValidationEvery`-th pass, the notes the last pass
-    /// saw entirely local whose listing did not change), refreshes
-    /// local copies iCloud reports out of date, reports download errors in
-    /// the status bar, and drops index entries of notes that are gone.
-    /// Evicted notes are not downloaded: their rows come from the index, and
-    /// opening one downloads it (`downloadNote`). Never blocks the list: it
-    /// runs at background priority, outside `loadGate`, and publishes only
-    /// the status and what a following `reconcile` reads.
-    func validateVault() async throws {
-        guard let vault, isCloudVault, phase == .unlocked else { return }
-        let gen = generation
-        let url = vault.url
-        let hooks = cloudHooks
-        // Every `fullValidationEvery`-th pass (and the first) asks about every
-        // file, so an eviction that keeps a note's listing the same is seen too.
-        let full = validationsSinceFull == 0 || validationsSinceFull >= Self.fullValidationEvery
-        let settled = full ? [:] : settledCloudNotes
-        let pass = try await offMain(priority: .background) {
-            try Perf.measure(.reconcileValidate, "") {
-                try ProgressiveLoad.pass(vault: url, requestMissing: false, settled: settled, hooks: hooks)
-            }
-        }
-        try ensureCurrent(gen)
-        try Task.checkCancellation()
-        settledCloudNotes = pass.settled
-        validationsSinceFull = full ? 1 : validationsSinceFull + 1
-        if var status = cloudSync {
-            status.files = pass.files
-            status.localFiles = pass.localFiles
-            if let failure = pass.failures.first?.value { status.problem = cloudSource.problem(failure) }
-            cloudSync = status
-        }
-        // Folders the index does not list as they are on disk are read by the next pass.
-        let present = Set(pass.all)
-        summaryCache?.retain(only: present.union(notes.map(\.id)))
-        saveSummaryCache()
-        lastValidation = .now
     }
 }

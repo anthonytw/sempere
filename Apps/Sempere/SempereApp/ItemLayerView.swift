@@ -7,7 +7,7 @@ struct ItemLayerSource {
     var cache: BlobCache?
     /// Pictures and PDF page previews drawn before, kept across note opens and launches.
     var renders: RenderCache?
-    /// Asks iCloud for the image and PDF blobs of the items shown (`AppModel.prefetchBlobs`).
+    /// Fetches the image and PDF blobs of the items shown when a partial copy lacks them (`AppModel.prefetchBlobs`).
     var prefetch: @MainActor (_ note: UUID, _ items: [Item]) -> Void = { _, _ in }
 }
 

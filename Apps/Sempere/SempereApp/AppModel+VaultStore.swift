@@ -174,20 +174,26 @@ extension AppModel {
     /// Everything of an iCloud Drive vault, before it is copied: root files, notes, attachments and the
     /// quick-capture inbox (a copy-in must be complete: `VaultStore.importVault` refuses placeholders).
     private func downloadForCopyIn(_ url: URL, hooks: CloudVault.Hooks) async throws {
+        try await downloadSourceFolder(url, hooks: hooks) { [weak self] progress in
+            await self?.showCopyDownload(progress)
+        }
+    }
+
+    /// Downloads every file of the vault folder `url` in iCloud Drive (or another provider that reports its
+    /// files): what a copy-in or a restore reads (`CloudVault.download`). The only iCloud reading the app
+    /// does: every vault it opens is an in-app copy.
+    func downloadSourceFolder(_ url: URL, hooks: CloudVault.Hooks,
+                              progress: @escaping @Sendable (CloudProgress) async -> Void) async throws {
         let stall = cloudStallTimeout
         let poll = cloudPollInterval
         _ = try await CloudVault.download(vault: url, scope: .everything, hooks: hooks, stallTimeout: stall,
-                                          pollInterval: poll) { [weak self] progress in
-            await self?.showCopyDownload(progress)
-        }
+                                          pollInterval: poll, progress: progress)
         let extra = try await offMain {
             try CloudScan.inboxItems(inVault: url).map(\.item)
                 + CloudScan.noteGroups(inVault: url).compactMap(\.id)
                     .flatMap { try CloudScan.blobItems(inVault: url, id: $0).map(\.item) }
         }
-        try await CloudVault.download(items: extra, hooks: hooks, stallTimeout: stall, pollInterval: poll) { [weak self] progress in
-            await self?.showCopyDownload(progress)
-        }
+        try await CloudVault.download(items: extra, hooks: hooks, stallTimeout: stall, pollInterval: poll, progress: progress)
     }
 
     private func showCopyDownload(_ progress: CloudProgress) {

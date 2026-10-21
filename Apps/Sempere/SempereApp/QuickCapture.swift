@@ -907,9 +907,7 @@ final class QuickCapture {
             if Self.acceptsCaptures(at: url, vaultId: stored.profile.vaultId) {
                 let inbox = url.appendingPathComponent(CaptureFile.folderName, isDirectory: true)
                 do {
-                    try CloudVault.coordinatedWrite(CloudVault.isUbiquitous(url) ? inbox : nil) {
-                        try CaptureWriter.store(sealed, in: inbox)
-                    }
+                    try CaptureWriter.store(sealed, in: inbox)
                     // A synced copy runs soon, open or not (`SyncCoordinator.captureDelivered`).
                     NotificationCenter.default.post(name: Self.deliveredNotification, object: nil,
                                                     userInfo: ["vault": stored.profile.vaultId])
@@ -987,7 +985,7 @@ final class QuickCapture {
         guard let url = vaultFolder(stored) else { return 0 }
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        let moved = flushQueue(into: url, vaultId: stored.profile.vaultId, coordinated: CloudVault.isUbiquitous(url))
+        let moved = flushQueue(into: url, vaultId: stored.profile.vaultId, coordinated: false)
         if moved > 0 {
             NotificationCenter.default.post(name: Self.deliveredNotification, object: nil,
                                             userInfo: ["vault": stored.profile.vaultId])

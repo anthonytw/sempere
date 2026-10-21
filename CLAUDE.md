@@ -208,26 +208,15 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   `NotebookPath` / `NotebookNode` (`Sources/Sempere/Notebooks.swift`), never
   `==` on raw names (`" A//B "` and `A/B` are the same notebook; `A/Bc` is not
   inside `A/B`).
-- iCloud Drive vaults: evicted files are `.<name>.icloud` placeholders or
-  dataless files under their real names with status "not downloaded" (`FakeCloud.evictDataless` in tests). A plain
-  listing skips the stand-ins, so the vault or a note looks empty; a note
-  folder iCloud has not listed yet is empty too and must be treated as
-  pending, never as an empty note (`FakeCloud.unlist`), but only for
-  `cloudUnlistedTimeout`, and a folder holding only `att/` (an import's blobs
-  before its revision) is not a note and not pending (`emptyNoteFolders`):
-  "Downloading" must never wait forever. iCloud conflict versions of the
-  vault's mutable files (and of a vault that conflicted as a package) are
-  merged and resolved by `CloudConflicts` (`Vault.mergeCopy`, format.md §1.3)
-  before each full pass; never pick a version by last-writer-wins. Tests use
-  `FakeCloud.addConflict`. Each device publishes its own
-  `summaries/<device>.sealed` (format.md §12.5) and lists arriving notes from
-  every device's file (`publishedRows`); never write another device's file. The app downloads them first and coordinates
-  reads/writes (`CloudVault.swift`, `docs/io.md` "iCloud Drive"); this is
-  app-only code, `Sources/` stays plain `FileManager`. The simulator has no
-  iCloud: only the pure logic (`CloudScan.swift`) is tested there; the
-  Linux scratch package needs shims for `isUbiquitousItem`,
-  `startDownloadingUbiquitousItem`, `ubiquitousItemDownloading*` resource
-  values and `NSFileCoordinator` as well.
+- Every vault the app opens is an in-app copy (`VaultStore`; P7 removed reading vaults in place). iCloud
+  Drive and other providers reach the app only as a folder copied in (`copyIn`, a restore: every file
+  downloaded first, `downloadSourceFolder`, `CloudVault.download`, `CloudScan` maps `.<name>.icloud` and
+  dataless stand-ins) or as a folder sync target, whose provider hazards (evicted files, unlisted folders,
+  conflict versions) belong to the sync engine (`FolderRemote`, `UbiquitousFolderHooks`, `ConflictVersions`;
+  docs/io.md "Folder targets in providers"). Never add code that reads a vault in a provider in place, and
+  never add file coordination around reads of the open vault: it is local. The simulator has no iCloud:
+  copy-in is tested with fake hooks; the Linux scratch package needs shims for `isUbiquitousItem`,
+  `startDownloadingUbiquitousItem`, `ubiquitousItemDownloading*` resource values and `NSFileCoordinator`.
 - The app's deployment target is iPadOS/iOS 27 and Mac Catalyst 27: iOS 27 APIs
   are used directly in `Apps/`, with no `#available` gate. The package keeps its own minimum
   (`Package.swift`: macOS 14 / iOS 17) so the CLI builds on older macOS and
@@ -315,23 +304,18 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   copies the picked vault in and opens the copy, or opens the copy already there) and Restore from Backup
   (`VaultStore.restore`, `--replace` swaps a copy: old aside, new in, `sweep` restores an interrupted one) put every vault in `VaultLibrary.vaultStore`
   (`Application Support/Sempere/Vaults/<vaultId>/<name>.sempere`; tests get one next to their
-  `recents.json`). Nothing creates an in-place vault any more; the in-place reading paths stay until P7. A
+  `recents.json`). Nothing creates or reads an in-place vault (a recent of an earlier build is copied in). A
   vault appears in the store only complete (built or copied under `.staging`, checked, one `rename`;
   `sweep` removes leftovers), so never write into a store folder by hand. One copy per vault id. Recents
   of store vaults carry `storeID` and no bookmark; an open store vault holds a `VaultStore.Lease`, and every
   writer of a vault's files shares its `VaultFileLock` (`VaultStore.writeLock(for:)`). CLI: `sempere store` (list, path, create, import, restore, remove).
-- iCloud notes load progressively (`ProgressiveLoad`, `AppModel+Cloud`): never
-  await the whole vault before listing. Tests fake placeholders with
-  `FakeCloud` (`ProgressiveLoadTests.swift`) and `CloudVault.Hooks`; the model
-  takes `cloudHooks`, `cloudPollInterval`, `cloudWindow`. Anything that opens or
-  edits one note calls `downloadNote` first (a fresh listing of its folder, not
-  `pendingNoteIDs`): never write a delta while any of its revisions is missing.
-  The editor's read re-checks with `CloudVault.requireLocal`, and a note that
-  cannot be opened shows `editorFailure` in the detail pane, never a blank
-  canvas. The sync loop never ends while a vault is open (idle pace after it
-  settles) and starts when the vault opens, before unlocking; stalls go to
-  `cloudSync.problem` (the list's bar), not an alert. Set
-  `cloudIdleInterval` short in tests that wait for a recovery.
+- A WebDAV join opens a partial copy (format.md §1.2) at once (`AppModel+Join`, docs/io.md "WebDAV vaults in
+  the app"): notes marked incomplete are pending rows (`pendingNoteIDs`, from published summaries) and never
+  read; the vault's two-way runs fill the copy. Anything that opens or edits one note calls `downloadNote`
+  first (a one-note `LocalCopy.fetch`, bounded by `noteFetchTimeout`, cancellable), and every write re-checks
+  with `partialNoteVerifier` (`commit(ids:)`, the editor's read): never write a delta to an incomplete note.
+  A note that cannot be opened shows `editorFailure` in the detail pane, never a blank canvas. Tests:
+  `JoinAppTests` (real engine, `EngineWebDAVRemote.gating`/`gatingFetches`), `WebDAVPartialAppTests`.
 - Note listings (`AppModel+Loading`): `unlock` only checks the key and starts
   `startLoadingNotes`, a task the model owns (UI callers pass `awaitNotes:
   false`; a view's `.task` must never own a listing, SwiftUI cancels it when
@@ -347,11 +331,7 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   and they feed a writer's readings and `seq` (`Vault.writeReadings`). Tests get no cache unless they pass `summaryCacheDirectory`.
 - The list is change-driven (`AppModel+Reconcile`, docs/io.md "Opening a vault
   fast"): passes list note folders by NAME (`VaultEnumeration`) and read only
-  notes whose names differ from `indexedNames` (`IndexDiff`); never ask iCloud
-  for every file's state in a foreground pass (`ProgressiveLoad.pass(notes:)`
-  for the changed ones; the full scan is `validateVault`, background only).
-  An evicted note with unchanged names is NOT pending and is not downloaded
-  for the list. Apply summaries through `queueListUpdate` (throttled) or
+  notes whose names differ from `indexedNames` (`IndexDiff`). Apply summaries through `queueListUpdate` (throttled) or
   `merge` (an edit's own re-read, immediate), never by assigning `notes`
   wholesale. Tests that need "another device wrote a revision" use
   `TS.writeAsAnotherDevice` (an eviction alone changes nothing).
@@ -415,13 +395,6 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
 - Timing: wrap new slow phases in `Perf` (os_signpost in every build; debug log
   `Library/Logs/SemperePerf.log`), counts and 8-hex id prefixes only.
   `PerformanceReportTests` prints `PERF-REPORT` lines in the CI `app` log.
-- Debug device runs against an iCloud vault: `SEMPERE_DEBUG_RECENT=1`
-  opens the most recent vault through its bookmark (the picker's scope), with
-  `SEMPERE_DEBUG_PROBE=1` (log how iCloud presents the files),
-  `SEMPERE_DEBUG_EVICT=1|dirs|notes` (evict from this device first),
-  `SEMPERE_DEBUG_WATCH=<s>` and `SEMPERE_DEBUG_OPEN_ALL=<n>` (open n notes,
-  log page and stroke counts only). Read the log with `devicectl device
-  process launch --console`. Never put note titles or content in logs.
 - Infinite pages scroll one screen beyond both their ink and their stored
   height (`PageExtent.scrollHeight`). Their paper is drawn in bands near the screen
   (`PaperView.setVisible`, fed by the canvas's scroll): never one layer the height of the note.
@@ -650,7 +623,7 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   `summariesRead`); never add a whole-vault pass outside Settings' explicit
   "Check". Numbers come from `AttachmentStorageReport` (app and `sempere blobs
   unused` alike). Delete only through `collectBlobs(note:records:only:)` with the
-  entry's `unusedSince`; iCloud notes not local decide nothing (`local: false`).
+  entry's `unusedSince`; a partial copy's notes not downloaded decide nothing (`local: false`).
   Bump `AttachmentIndexEntry.schemaVersion` when the entry changes. App tests
   set `attachmentIndexDelay = .zero`, `attachmentNow`, and count reads with an
   `attachmentIndexSource`.
@@ -790,7 +763,7 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   (`completeUntilFirstUserAuthentication`, `QuickCapture.protection`: Lock Screen notes are sealed from closed
   files before any unlock, which `completeUnlessOpen` forbids) until sealed and transcribed; running out of
   background time leaves it for `sweep()` rather than losing the note. A recipient change rewraps and re-tags
-  `inbox/` too (`Vault.rewrapInbox`; in iCloud `downloadEverything` fetches it first) and the app refreshes the
+  `inbox/` too (`Vault.rewrapInbox`) and the app refreshes the
   profile after it. A note "exists" for adoption once it has a revision (a folder holding only `att/` is still
   new), and a waiting transcript writes nothing. Quick-capture segments are ADTS (`QuickCapture.segmentExtension`:
   an MPEG-4 segment cut off by a restart or force quit does not decode at all), and a start activates the audio
@@ -805,7 +778,7 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   Markdown/HTML copies with `ExportVideos.write`. Renderers and the app's item
   layer draw a video as its `poster` (an image blob, a register; `ItemRendering`
   acquires the poster, never the clip) under the play mark; the clip is fetched
-  from iCloud only to play (`AppModel.acquireVideo`, `releaseVideo` after).
+  only to play (`AppModel.acquireVideo`, `releaseVideo` after; a partial copy fetches it then).
   Posters come from `VideoPoster` (AVFoundation, shared by the app and the CLI
   on macOS); the Linux CLI stores none without `--poster`.
 - Equations (`math` items, `format.md` §8.2.8, task G1): the whole `math` object is ONE register
@@ -871,8 +844,8 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   `TwoDeviceSyncAppTests`), folders under `EvictingFolderProvider` (`AppModel.folderProvider`:
   `FolderTargetAppTests`) and `MemoryWebDAVPasswordStore`; the library's sync runs against wsgidav
   (`scripts/test-webdav.sh`).
-- Vaults in another app's provider storage (`StorageLocation`) are coordinated like iCloud ones
-  (`isCloudVault`), even when the provider does not report its files as ubiquitous.
+- A folder copied in from another app's provider storage (`StorageLocation`) is read under one coordinated
+  read, even when the provider does not report its files as ubiquitous.
 - Folder targets (`FolderRemote`, `sempere sync folder`, docs/io.md "Folder targets in providers"): a
   provider's evicted file or a folder listed before its files is *arriving* (`RemoteEntry.availability`,
   `SyncReport.arriving`), never missing: the engine asks for it and waits at most `arrivalWait` per run,

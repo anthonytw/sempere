@@ -55,10 +55,6 @@ extension AppModel {
             keyChangeResume = plan
         }
         do {
-            if isCloudVault {
-                show(String(localized: "Downloading every note from iCloud Drive…"))
-                try await downloadEverything(url, gen: gen) { text in show(text) }
-            }
             if current.pendingRewrap, current.journalRefused {
                 // Not this vault's change (format.md §3.3.1): nothing to finish, it only blocks the next one.
                 let v = current

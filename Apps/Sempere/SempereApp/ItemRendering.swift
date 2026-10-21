@@ -211,11 +211,12 @@ enum ItemRendering {
         }
     }
 
-    /// Whether fetching a blob failed for now only: iCloud has not delivered
-    /// it (or stalled), the cache was cleared, or the draw was canceled. The
+    /// Whether fetching a blob failed for now only: a partial copy's server has not delivered
+    /// it yet, the cache was cleared, or the draw was canceled. The
     /// item layer tries such an item again instead of keeping a placeholder.
     nonisolated static func isTransient(_ error: any Error) -> Bool {
-        error is CloudVault.CloudError || error is CancellationError || (error as? BlobCache.CacheError) == .cleared
+        (error as? AppModel.ModelError)?.isNotDownloaded == true || error is CancellationError
+            || (error as? BlobCache.CacheError) == .cleared
     }
 
     /// What the off-main part hands back.

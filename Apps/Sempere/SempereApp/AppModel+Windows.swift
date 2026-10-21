@@ -53,14 +53,9 @@ extension AppModel {
         guard notes.contains(where: { $0.id == noteID }) else { throw ModelError.noteNotFound }
         try await downloadNote(noteID)
         let clock = try deviceClockForWriting()
-        var verify: (@Sendable () throws -> Void)? = partialNoteVerifier(noteID)
-        if isCloudVault, let url = vaultURL {
-            let hooks = cloudHooks
-            verify = { try CloudVault.requireLocal(note: noteID, vault: url, hooks: hooks) }
-        }
         let opened = try await NoteEditor.open(vault: vault, noteID: noteID, clock: clock, debounce: editorDebounce,
                                                recognizer: recognizer, recognitionDelay: recognitionDelay,
-                                               coordinated: isCloudVault, verify: verify)
+                                               verify: partialNoteVerifier(noteID))
         try ensureCurrent(gen)
         if let open = windowEditors[noteID] {   // a concurrent call won
             Task { await opened.close() }
@@ -198,7 +193,7 @@ extension AppModel {
         try ensureCurrent(gen)
         try await downloadNote(noteID)
         try ensureCurrent(gen)
-        return PreparedExport(vault: vault, noteID: noteID, coordinate: coordinationURL, folder: exportFolder,
+        return PreparedExport(vault: vault, noteID: noteID, folder: exportFolder,
                               epoch: exportEpoch, generation: gen, startEpoch: exportEpoch.value)
     }
 }
@@ -218,8 +213,6 @@ final class ExportEpoch: @unchecked Sendable {
 struct PreparedExport: Sendable {
     let vault: Vault
     let noteID: UUID
-    /// The vault folder to read under coordination (iCloud Drive), nil otherwise.
-    let coordinate: URL?
     let folder: URL
     let epoch: ExportEpoch
     /// The model's generation when prepared (`ensureCurrent`).
@@ -231,7 +224,7 @@ struct PreparedExport: Sendable {
     /// that prepared it has closed.
     func write() throws -> URL {
         guard epoch.value == startEpoch else { throw CancellationError() }
-        let rendered = try CloudVault.coordinatedRead(coordinate) { try NotePDFExport.render(vault: vault, noteID: noteID) }
+        let rendered = try NotePDFExport.render(vault: vault, noteID: noteID)
         guard epoch.value == startEpoch else { throw CancellationError() }
         NotePDFExport.purge(olderThan: 3600)   // folders of earlier runs that never closed a vault
         let url = try NotePDFExport.write(rendered, in: folder)

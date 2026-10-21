@@ -202,8 +202,8 @@ extension AppModel {
     /// Imports `urls` (security-scoped, from the file picker) into the open vault with `importer`, filing every
     /// note under `notebook` (nil: the importer's own rule).
     ///
-    /// Writes through the model's one `DeviceClock` (`withClock`) under the edit gate, like every other write; in
-    /// iCloud Drive the writes are one coordinated write on `notes/`. Existing notes are never overwritten, so no
+    /// Writes through the model's one `DeviceClock` (`withClock`) under the edit gate, like every other write.
+    /// Existing notes are never overwritten, so no
     /// open editor's note changes. The result is in `importSummary`.
     func importFromApp(_ importer: any VaultImporter, urls: [URL], notebook: String?,
                        options: ImportOptions = ImportOptions()) async throws {
@@ -230,18 +230,13 @@ extension AppModel {
             try ensureCurrent(gen)
             let clock = try deviceClockForWriting()
             let device = clock.device
-            let notes = isCloudVault ? vault.url.appendingPathComponent("notes", isDirectory: true) : nil
             let extractor: (any PDFTextExtracting)? = importer.usesPDFText && options.pdfText ? PDFKitTextExtractor() : nil
             let request = ImporterRequest(paths: urls, vault: vault, device: device, options: options.appValues(for: importer),
                                           pdfText: extractor, notebook: NotebookPath.canonical(notebook),
                                           progress: { relay.post($0) }, cancellation: cancellation)
             let scoped = urls.map { $0.startAccessingSecurityScopedResource() }
             defer { for (url, s) in zip(urls, scoped) where s { url.stopAccessingSecurityScopedResource() } }
-            result = try await clock.withClock(save: true) { c in
-                try CloudVault.coordinatedWrite(notes) {
-                    try importer.run(request, clock: &c)
-                }
-            }
+            result = try await clock.withClock(save: true) { c in try importer.run(request, clock: &c) }
             try ensureCurrent(gen)
         }
         let written = result.writtenNotes
