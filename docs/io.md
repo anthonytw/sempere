@@ -1738,7 +1738,8 @@ syncs with both ways.
   unlocked here, upload-only otherwise, waiting at most `folderArrivalWait` (10 s) per run for files a
   provider is downloading. A folder synced before that is gone is not recreated ("The folder is gone…
   Choose it again", nothing deleted here); one whose saved permission no longer opens it (a dead bookmark) says the same, with
-  "Choose Again…" in Sync Targets (the run then starts over as a union); one whose parent is gone while no
+  "Choose Again…" in Sync Targets (the run then starts over as a union: chosen on an old backup, it brings
+  back revisions thinned since, so nothing is lost but the vault grows); one whose parent is gone while no
   bookmark is involved (the CLI's paths) is offline. A stale bookmark (the folder moved or was renamed) is
   saved again. Closed vaults' periodic runs pause while the app is in the background (a voice note into
   one still uploads). Folder targets run 2 s after a write and every minute.
