@@ -20,7 +20,8 @@ extension AppModel {
     func enterBackground() {
         // A synced copy tries to send the last edits in the seconds iPadOS leaves the app;
         // a run cut off by the suspension is retried when the app comes back.
-        webdav?.demand()
+        syncSessions.forEach { $0.demand() }
+        syncCoordinator.setInBackground(true)   // closed vaults' periodic runs pause meanwhile
         guard isCloudVault, cloudSyncTask != nil, syncInFlight, backgroundSyncToken == nil else {
             pauseCloudSync()
             scheduleBackgroundRefresh()
@@ -43,6 +44,7 @@ extension AppModel {
     func enterForeground() {
         syncingInBackground = false
         endBackgroundTime()
+        syncCoordinator.setInBackground(false)
         syncCoordinator.demandAll()   // every synced vault runs when the app comes back
     }
 

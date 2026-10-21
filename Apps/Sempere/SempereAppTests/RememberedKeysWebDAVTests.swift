@@ -47,8 +47,7 @@ struct RememberedKeysWebDAVTests {
         func launch() -> (AppModel, RememberedKeys) {
             model?.close()
             let next = AppModel(deviceStateURL: scratch.appendingPathComponent("device.json"), recipientsTrust: trust,
-                                webdavLocations: WebDAVLocationStore(storeURL: scratch.appendingPathComponent("webdav.json"),
-                                                                     root: scratch.appendingPathComponent("WebDAV", isDirectory: true)))
+                                webdavLocations: WebDAVLocationStore(store: VaultStore(root: scratch.appendingPathComponent("Vaults", isDirectory: true))))
             next.webdavRemote = remote
             next.webdavPasswords = MemoryWebDAVPasswordStore()
             next.webdavTick = .milliseconds(20)
@@ -61,7 +60,7 @@ struct RememberedKeysWebDAVTests {
 
         /// Opens the WebDAV vault from the recents, as the welcome screen does after a relaunch.
         func openRecent(_ model: AppModel, _ library: VaultLibrary) async throws {
-            let entry = try #require(library.recents.first { $0.webdav != nil })
+            let entry = try #require(library.recents.first { $0.webdav != nil || $0.storeID != nil })
             try await model.open(recent: entry, library: library)
         }
 
@@ -198,8 +197,9 @@ struct RememberedKeysWebDAVTests {
         model.close()
     }
 
-    /// Removing the WebDAV vault and connecting it again makes a new location (a new copy
-    /// folder) for the same vault id: the key is offered there once remembered again.
+    /// Removing the WebDAV vault and connecting it again makes a new location (a new target) for the
+    /// same vault id. Its copy is the store vault of that id again, the folder the key was remembered
+    /// for, so the remembered key applies at once.
     @Test func aWebDAVVaultRemovedAndAddedAgain() async throws {
         let device = try Device()
         var (model, keys) = device.launch()
@@ -212,8 +212,7 @@ struct RememberedKeysWebDAVTests {
         (model, keys) = device.launch()
         let second = try await model.connectWebDAV(device.listing, user: nil, password: "", pin: nil, library: library)
         #expect(second != first)
-        #expect(try await Self.unlockAsTheSheetDoes(model, keys, key: device.key) == .notHere)
-        try await keys.answer(try #require(keys.offer), storage: .thisDevice)
+        #expect(try await Self.unlockAsTheSheetDoes(model, keys, key: device.key) == .unlocked)
 
         (model, keys) = device.launch()
         try await device.openRecent(model, device.library)

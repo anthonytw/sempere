@@ -427,7 +427,7 @@ final class AppModel {
     /// The WebDAV locations of this device (`AppModel+WebDAV`, docs/io.md
     /// "WebDAV vaults in the app"). The app passes the default store; without
     /// one (tests) a store in a folder of this model alone.
-    let webdavLocations: WebDAVLocationStore
+    @ObservationIgnored var webdavLocations: WebDAVLocationStore
 
     /// The folder holding this model's default (not injected) scratch locations; nothing is created in it until
     /// one is used, and `deinit` removes it.
@@ -437,6 +437,9 @@ final class AppModel {
     /// The sync session of the open vault when it is a WebDAV location's local copy (the
     /// coordinator's, two-way while the vault is unlocked); nil for any other vault.
     var webdav: SyncSession?
+    /// The open vault's sync sessions, one per target (folder and WebDAV), in the order they were added
+    /// (`AppModel+SyncTargets`); empty for a vault without targets.
+    var syncSessions: [SyncSession] = []
     /// The open vault's `vault.json` changed on disk (a sync took another device's key change) and the
     /// open `Vault` has not been opened again under it yet: its runs only upload (review of #70, F1).
     var syncVaultStale = false
@@ -446,9 +449,8 @@ final class AppModel {
     @ObservationIgnored private var coordinatorStorage: SyncCoordinator?
     var syncCoordinator: SyncCoordinator {
         if let coordinatorStorage { return coordinatorStorage }
-        let store = webdavLocations
-        let made = SyncCoordinator(locations: { store.locations },
-                                   makeSession: { [weak self] location in self?.makeSyncSession(location) })
+        let made = SyncCoordinator(targets: { [weak self] in self?.allSyncTargets() ?? [] },
+                                   makeSession: { [weak self] ref in self?.makeSession(for: ref) })
         made.tick = webdavTick
         coordinatorStorage = made
         return made
@@ -465,6 +467,13 @@ final class AppModel {
     /// write it pushes (`WebDAVPushSchedule.writeDelay`); tests shorten both.
     @ObservationIgnored var webdavTick = Duration.seconds(1)
     @ObservationIgnored var webdavWriteDelay: TimeInterval = 10
+    /// How long after a write a folder target syncs (`AppModel+SyncTargets`); tests shorten it.
+    @ObservationIgnored var folderWriteDelay: TimeInterval = 2
+    /// Longest a folder target's run waits for files a provider is downloading.
+    @ObservationIgnored var folderArrivalWait: TimeInterval = 10
+    /// The provider of a folder target's folder; nil detects it (`FolderProviders.detect`). Tests pass
+    /// `EvictingFolderProvider`s.
+    @ObservationIgnored var folderProvider: (@Sendable (URL) -> (any FolderProvider)?)?
     /// Listings and downloads at once in a WebDAV download (`SyncOptions.concurrency`).
     @ObservationIgnored var webdavConcurrency = TransferPool.defaultWidth
     /// The running Back Up Now, Verify Backup or restore (`AppModel+Backup`),
@@ -648,7 +657,16 @@ final class AppModel {
     private var scopedURL: URL?
     /// The in-app vault store (`VaultLibrary.vaultStore`): the app sets it, so an open store vault
     /// holds a lease (`storeLease`); nil in tests that need none.
-    @ObservationIgnored var vaultStore: VaultStore?
+    @ObservationIgnored var vaultStore: VaultStore? {
+        didSet {
+            // WebDAV targets live in the store's target registry.
+            if let vaultStore, vaultStore.root != webdavLocations.store.root {
+                webdavLocations = WebDAVLocationStore(store: vaultStore)
+            }
+        }
+    }
+    /// The store whose vaults have sync targets: the app's, else (tests) the model's own scratch store.
+    var syncStore: VaultStore { vaultStore ?? webdavLocations.store }
     /// Held while a vault of `vaultStore` is open: removing it from the store is refused meanwhile
     /// (by the app, or `sempere store remove`). Released once the editors' last saves are written.
     @ObservationIgnored private var storeLease: VaultStore.Lease?
@@ -688,10 +706,8 @@ final class AppModel {
         let scratch = FileManager.default.temporaryDirectory
             .appendingPathComponent("SempereModel-\(UUID().uuidString)", isDirectory: true)
         ownedScratch = scratch
-        let webdavScratch = scratch.appendingPathComponent("WebDAV", isDirectory: true)
         self.webdavLocations = webdavLocations
-            ?? WebDAVLocationStore(storeURL: webdavScratch.appendingPathComponent("webdav.json"),
-                                   root: webdavScratch.appendingPathComponent("WebDAV", isDirectory: true))
+            ?? WebDAVLocationStore(store: VaultStore(root: scratch.appendingPathComponent("Vaults", isDirectory: true)))
         self.deviceStateURL = deviceStateURL
         activityRoot = deviceStateURL.deletingLastPathComponent().appendingPathComponent("Activity", isDirectory: true)
         inboxBackoff = InboxBackoff(fileURL: deviceStateURL.deletingLastPathComponent().appendingPathComponent("InboxBackoff.json"))
@@ -827,6 +843,8 @@ final class AppModel {
             vault = opened
             vaultURL = url
             phase = .locked
+            // A store vault's targets: their sessions are the open ones (two-way once unlocked).
+            attachSyncTargets(vaultID: opened.vaultId, at: url)
             // The notes start downloading while the user enters the key.
             startCloudSync()
         } catch {
@@ -902,7 +920,8 @@ final class AppModel {
     /// quick-capture profile (a finished removal rotated the capture key),
     /// adopts the inbox, reschedules the backup reminder and syncs settings.
     private func didUnlock(awaitNotes: Bool) async throws {
-        webdav?.vaultUnlocked()
+        // The open store vault's targets run two-way from now on (also those added while it is open).
+        syncCoordinator.openVaultUnlocked()
         await webdavUnlocked()   // a partial copy's rows come from the server's summaries: before the listing
         loadActivity()
         startLoadingNotes(reportErrors: !awaitNotes)
@@ -1169,7 +1188,7 @@ final class AppModel {
         let clock = try DeviceClock(url: deviceStateURL) { [weak self] id in
             Task { @MainActor in
                 self?.noteWritten(id)
-                self?.webdav?.noteWrite()   // a WebDAV copy pushes shortly after a write
+                self?.syncSessions.forEach { $0.noteWrite() }   // every target syncs shortly after a write
             }
         }
         deviceClock = clock

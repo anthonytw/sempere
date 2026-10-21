@@ -2739,6 +2739,17 @@
         }
       }
     },
+    "A one-time copy: the folder is never written, and the copy on this device is the only one." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una copia única: nunca se escribe en la carpeta, y la copia de este dispositivo es la única."
+          }
+        }
+      }
+    },
     "A passphrase can only wrap a key this device has, not a public key." : {
       "comment" : "Error when a passphrase is given with a public key only",
       "extractionState" : "manual",
@@ -2977,6 +2988,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Añadir clave de dispositivo…"
+          }
+        }
+      }
+    },
+    "Add Folder…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir carpeta…"
           }
         }
       }
@@ -3393,6 +3415,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Un adjunto se puede eliminar 30 días después de que este dispositivo lo encontrara sin usar por primera vez. Antes de eliminar, se vuelve a leer su nota y se conserva todo lo que aún use alguna versión."
+          }
+        }
+      }
+    },
+    "An earlier version's copy of “%@” holds notes or attachments the copy on this device lacks. They were uploaded to the server, and the old copy was kept at %@. Merge it in with the sempere command-line tool (vault merge-copy) before removing it." : {
+      "comment" : "First %@ is the vault's name, the second a folder path",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La copia de «%1$@» de una versión anterior tiene notas o adjuntos que faltan en la copia de este dispositivo. Se subieron al servidor y la copia antigua se conservó en %2$@. Fusiónala con la herramienta de línea de comandos sempere (vault merge-copy) antes de borrarla."
           }
         }
       }
@@ -4347,6 +4381,17 @@
         }
       }
     },
+    "Changes go both ways between the copy and the folder, so other devices that use the folder stay current." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los cambios van en ambos sentidos entre la copia y la carpeta, así que los otros dispositivos que usan la carpeta están al día."
+          }
+        }
+      }
+    },
     "Channels" : {
       "comment" : "Settings ▸ Recording: mono or stereo picker",
       "extractionState" : "manual",
@@ -4538,6 +4583,17 @@
         }
       }
     },
+    "Choose Again…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a elegir…"
+          }
+        }
+      }
+    },
     "Choose Another Backup Folder" : {
       "comment" : "Alert title: the picked backup folder cannot be used",
       "extractionState" : "manual",
@@ -4558,6 +4614,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Elegir otra copia…"
+          }
+        }
+      }
+    },
+    "Choose Another Folder…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elegir otra carpeta…"
           }
         }
       }
@@ -4633,7 +4700,6 @@
       }
     },
     "Choose Folder…" : {
-      "comment" : "New vault location option: pick a folder",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
@@ -4663,6 +4729,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Elige antes una carpeta de copia."
+          }
+        }
+      }
+    },
+    "Choose a folder outside Sempere's own storage." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige una carpeta fuera del almacenamiento propio de Sempere."
           }
         }
       }
@@ -4752,6 +4829,17 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "Choose the folder of this sync target again" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a elegir la carpeta de este destino de sincronización"
           }
         }
       }
@@ -5099,6 +5187,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copiar la clave secreta al portapapeles"
+          }
+        }
+      }
+    },
+    "Copy the vault onto this device" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar la bóveda en este dispositivo"
           }
         }
       }
@@ -5995,6 +6094,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Las claves de dispositivo de una bóveda WebDAV no se pueden cambiar en la app: el servidor conservaría archivos que una clave quitada puede leer. Cámbialas con la herramienta de línea de comandos sempere en una copia en carpeta y sube esa copia a una carpeta nueva del servidor."
+          }
+        }
+      }
+    },
+    "Device keys of a vault with sync targets cannot be changed in the app yet: the targets would keep files a removed key can read. Remove its sync targets first, or change the keys with the sempere command-line tool." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las claves de dispositivo de una bóveda con destinos de sincronización todavía no se pueden cambiar en la app: los destinos conservarían archivos que una clave eliminada puede leer. Quita primero sus destinos de sincronización o cambia las claves con la herramienta de línea de comandos sempere."
           }
         }
       }
@@ -7059,6 +7169,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Toda historia deja su rastro."
+          }
+        }
+      }
+    },
+    "Every target gets the same two-way sync. Adding one to a vault with notes copies what either side lacks; nothing is deleted. Removing one never deletes anything there." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todos los destinos tienen la misma sincronización en ambos sentidos. Añadir uno a una bóveda con notas copia lo que le falta a cada lado; no se borra nada. Quitar uno nunca borra nada allí."
           }
         }
       }
@@ -9086,6 +9207,18 @@
         }
       }
     },
+    "Keep a Copy In" : {
+      "comment" : "New vault: section header for a folder the vault also syncs with",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar una copia en"
+          }
+        }
+      }
+    },
     "Keep an unconfirmed device key in “%@”" : {
       "comment" : "Face ID prompt before a repair keeps an unconfirmed key; the value is the vault name",
       "extractionState" : "manual",
@@ -9106,6 +9239,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Haz copias de seguridad"
+          }
+        }
+      }
+    },
+    "Keep no copy outside the app" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No guardar ninguna copia fuera de la app"
+          }
+        }
+      }
+    },
+    "Keep syncing with this folder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seguir sincronizando con esta carpeta"
           }
         }
       }
@@ -10377,6 +10532,17 @@
         }
       }
     },
+    "New notebook, settings, sync targets and closing the vault" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuevo cuaderno, ajustes, destinos de sincronización y cerrar la bóveda"
+          }
+        }
+      }
+    },
     "New tag" : {
       "comment" : "Text field placeholder",
       "extractionState" : "manual",
@@ -10810,6 +10976,17 @@
         }
       }
     },
+    "None: the vault is only on this device. Choose a folder, for example in iCloud Drive, to sync it with your other devices." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ninguna: la bóveda solo está en este dispositivo. Elige una carpeta, por ejemplo en iCloud Drive, para sincronizarla con tus otros dispositivos."
+          }
+        }
+      }
+    },
     "Not Imported" : {
       "comment" : "Notability import report: section of what was left out",
       "extractionState" : "manual",
@@ -11161,6 +11338,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No se ha podido leer nada. Escribe la ecuación abajo."
+          }
+        }
+      }
+    },
+    "Nothing in the folder or on the server is deleted. This device stops syncing with it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se borra nada de la carpeta ni del servidor. Este dispositivo deja de sincronizarse con él."
           }
         }
       }
@@ -11564,6 +11752,28 @@
         }
       }
     },
+    "Only a vault kept on this device can have sync targets." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo una bóveda guardada en este dispositivo puede tener destinos de sincronización."
+          }
+        }
+      }
+    },
+    "Only a vault kept on this device can have sync targets. Open the vault from the list first." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo una bóveda guardada en este dispositivo puede tener destinos de sincronización. Abre primero la bóveda desde la lista."
+          }
+        }
+      }
+    },
     "Only an empty notebook can be deleted. Move or delete its notes first." : {
       "comment" : "Error: Delete Notebook on a notebook with notes",
       "extractionState" : "manual",
@@ -11809,6 +12019,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abrir Ajustes del sistema"
+          }
+        }
+      }
+    },
+    "Open Vault" : {
+      "comment" : "Title of the sheet after picking a vault folder",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir bóveda"
           }
         }
       }
@@ -14253,6 +14475,28 @@
         }
       }
     },
+    "Remove this sync target" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quitar este destino de sincronización"
+          }
+        }
+      }
+    },
+    "Remove this sync target?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Quitar este destino de sincronización?"
+          }
+        }
+      }
+    },
     "Remove this tag from the note" : {
       "comment" : "Help tag in the tag editor",
       "extractionState" : "manual",
@@ -15906,6 +16150,18 @@
         }
       }
     },
+    "Sempere will copy “%@” onto this device. You always work on that copy, online or not." : {
+      "comment" : "%@ is the picked folder's name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sempere copiará «%@» en este dispositivo. Siempre trabajas en esa copia, con o sin conexión."
+          }
+        }
+      }
+    },
     "Serif" : {
       "comment" : "Typeface",
       "extractionState" : "manual",
@@ -17317,6 +17573,30 @@
         }
       }
     },
+    "Sync Targets" : {
+      "comment" : "Title of the sync targets sheet",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronizar con"
+          }
+        }
+      }
+    },
+    "Sync Targets…" : {
+      "comment" : "Menu item: the open vault's sync targets",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronizar con…"
+          }
+        }
+      }
+    },
     "Sync failed: %@" : {
       "comment" : "The value is an error message (English)",
       "extractionState" : "manual",
@@ -17325,6 +17605,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Falló la sincronización: %@"
+          }
+        }
+      }
+    },
+    "Synced with the folder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronizado con la carpeta"
           }
         }
       }
@@ -17384,6 +17675,18 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "Syncing with the folder…" : {
+      "comment" : "Sync status of a folder target",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronizando con la carpeta…"
           }
         }
       }
@@ -18458,6 +18761,40 @@
         }
       }
     },
+    "The folder cannot be reached now. Changes are kept on this device and sync when it is back." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ahora no se puede acceder a la carpeta. Los cambios se guardan en este dispositivo y se sincronizan cuando vuelva."
+          }
+        }
+      }
+    },
+    "The folder could not be added: %@" : {
+      "comment" : "The value is the reason (English)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo añadir la carpeta: %@"
+          }
+        }
+      }
+    },
+    "The folder is gone or can no longer be opened. Nothing was synced. Choose it again, or remove it from Sync Targets." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La carpeta ya no está o ya no se puede abrir. No se sincronizó nada. Vuelve a elegirla o quítala en Sincronizar con."
+          }
+        }
+      }
+    },
     "The format gives no text." : {
       "comment" : "Title pattern field: the pattern produces only spaces",
       "extractionState" : "manual",
@@ -19053,6 +19390,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La bóveda se ha abierto, pero Sempere no ha podido guardar el acceso a ella para la próxima vez: %@"
+          }
+        }
+      }
+    },
+    "The vault syncs both ways with a copy in this folder. Add or remove folders later in Sync Targets." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La bóveda se sincroniza en ambos sentidos con una copia en esta carpeta. Añade o quita carpetas más tarde en Sincronizar con."
           }
         }
       }
@@ -19832,6 +20180,17 @@
         }
       }
     },
+    "This vault already syncs with that folder." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta bóveda ya se sincroniza con esa carpeta."
+          }
+        }
+      }
+    },
     "This vault has no notes yet. Create one with the New Note button." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -19873,6 +20232,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Esta bóveda ya está en este dispositivo. Al reemplazarla, la copia de seguridad ocupa su lugar: se pierden los cambios hechos después de la copia de seguridad."
+          }
+        }
+      }
+    },
+    "This vault is only on this device. Add a folder, for example in iCloud Drive, to keep a copy there and sync it with your other devices." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta bóveda solo está en este dispositivo. Añade una carpeta, por ejemplo en iCloud Drive, para guardar allí una copia y sincronizarla con tus otros dispositivos."
           }
         }
       }
@@ -22187,6 +22557,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "“%@” ya existe: se seleccionará."
+          }
+        }
+      }
+    },
+    "“%@” from an earlier version holds notes the server has not received, and it could not be uploaded now. It was kept as it is, at %@. Sempere tries again at the next launch; you can also share it or merge it in with the sempere command-line tool (vault merge-copy)." : {
+      "comment" : "First %@ is the vault's name, the second a folder path",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "«%1$@», de una versión anterior, tiene notas que el servidor no ha recibido y ahora no se pudo subir. Se conservó tal cual, en %2$@. Sempere lo vuelve a intentar al abrirse de nuevo; también puedes compartirla o fusionarla con la herramienta de línea de comandos sempere (vault merge-copy)."
           }
         }
       }

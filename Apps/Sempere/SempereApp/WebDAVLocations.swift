@@ -3,10 +3,12 @@ import Observation
 import Security
 import SempereSync
 import SempereWebDAV
+import Sempere
 
-/// A vault on a WebDAV server that this device keeps a local copy of
-/// (docs/io.md, "WebDAV vaults in the app"). Holds no secret: the password
-/// is in the Keychain (`WebDAVPasswordStore`), under `id`.
+/// A WebDAV target of a store vault, as the WebDAV code sees it (docs/io.md "WebDAV vaults in the
+/// app", docs/design/device-first-sync.md §2): a `SyncTarget` of kind `.webdav` in the store's registry,
+/// whose in-app copy is the store vault. Holds no secret: the password is in the Keychain
+/// (`WebDAVPasswordStore`), under `id` (the target's id).
 struct WebDAVLocation: Codable, Identifiable, Hashable, Sendable {
     var id: UUID
     /// The collection holding the vault (`vault.json` at its root).
@@ -21,44 +23,60 @@ struct WebDAVLocation: Codable, Identifiable, Hashable, Sendable {
     var vaultId: String
     /// For display (the folder name without `.sempere`, escaped, bounded).
     var name: String
-    /// The local copy's folder name inside the location's directory.
+    /// The in-app copy's folder name, used until the store lists the vault.
     var folderName: String
     /// True once a download run finished without errors: the copy may be opened.
     var downloaded = false
-    /// When the last push finished without problems.
+    /// When the last run finished without problems.
     var lastPush: Date?
+    /// When it was set up (the list's order).
+    var added = Date()
 
     /// The host, for display.
     var host: String { URL(string: url)?.host ?? url }
 }
 
-/// The WebDAV locations of this device: `Application Support/Sempere/webdav.json`
-/// for the list and `Application Support/Sempere/WebDAV/<id>/` for each local
-/// copy (`LocalCopy`).
+/// The WebDAV targets of this device's store vaults: a view of the store's target registry
+/// (`<store>/.sync/<vault id>/targets.json`, shared with `sempere store target`). Each location's copy
+/// is its store vault (`<store>/<vault id>/<name>.sempere`, created by the first download), and its sync
+/// state is the target's own (`<store>/.sync/<vault id>/<target id>/`).
 @MainActor
 @Observable
 final class WebDAVLocationStore {
     private(set) var locations: [WebDAVLocation] = []
-    let storeURL: URL
-    /// The folder holding one directory per location.
-    let root: URL
+    /// The in-app vault store.
+    let store: VaultStore
 
-    init(storeURL: URL = WebDAVLocationStore.defaultStoreURL, root: URL = WebDAVLocationStore.defaultRoot) {
-        self.storeURL = storeURL
-        self.root = root
-        if let data = try? Data(contentsOf: storeURL),
-           let list = try? JSONDecoder().decode([WebDAVLocation].self, from: data) {
-            locations = list
-        }
+    init(store: VaultStore) {
+        self.store = store
+        reload()
     }
 
-    static var defaultStoreURL: URL { AppSupport.sempere.appendingPathComponent("webdav.json") }
-    static var defaultRoot: URL { AppSupport.folder("WebDAV") }
+    /// Reads the registry again (after another part of the app or the CLI changed it).
+    func reload() {
+        let all = store.targets.all()
+        locations = all.flatMap { vaultId, targets in
+            targets.filter { $0.kind == .webdav }.map { Self.location($0, vault: vaultId) }
+        }.sorted { $0.added < $1.added }
+    }
 
-    /// The local copy of `location`.
+    private static func location(_ t: SyncTarget, vault: UUID) -> WebDAVLocation {
+        var l = WebDAVLocation(id: t.id, url: t.url ?? "", user: t.user, pinnedCertificate: t.pinnedCertificate,
+                               vaultId: vault.uuidString.lowercased(), name: t.name,
+                               folderName: WebDAVLocationStore.folderName(for: t.name))
+        l.downloaded = t.joined ?? false
+        l.lastPush = t.lastSuccess
+        l.added = t.added
+        return l
+    }
+
+    /// The local copy of `location`: its store vault, with the target's own sync state.
     nonisolated func copy(of location: WebDAVLocation) -> LocalCopy {
-        LocalCopy(directory: root.appendingPathComponent(location.id.uuidString.lowercased(), isDirectory: true),
-                        folderName: location.folderName)
+        let vault = UUID(uuidString: location.vaultId) ?? UUID()
+        let folder = store.entry(id: vault)?.url
+            ?? store.root.appendingPathComponent(vault.uuidString.lowercased(), isDirectory: true)
+                .appendingPathComponent(location.folderName, isDirectory: true)
+        return LocalCopy(folder: folder, stateDirectory: store.targets.stateDirectory(location.id, of: vault))
     }
 
     func location(_ id: UUID) -> WebDAVLocation? { locations.first { $0.id == id } }
@@ -68,53 +86,44 @@ final class WebDAVLocationStore {
         locations.first { Self.sameFolder($0.url, url) && ($0.user ?? "") == (user ?? "") }
     }
 
-    /// Adds or replaces (same id) a location.
+    /// Adds or replaces (same id) a location: a WebDAV target of its vault.
     func save(_ location: WebDAVLocation) {
-        if let i = locations.firstIndex(where: { $0.id == location.id }) {
-            locations[i] = location
-        } else {
-            locations.append(location)
-        }
-        persist()
+        guard let vault = UUID(uuidString: location.vaultId) else { return }
+        var t = store.targets.targets(of: vault).first { $0.id == location.id }
+            ?? SyncTarget.webdav(location.url, user: location.user, name: location.name, id: location.id)
+        t.url = location.url
+        t.user = location.user
+        t.name = location.name
+        t.pinnedCertificate = location.pinnedCertificate
+        t.joined = location.downloaded
+        t.lastSuccess = location.lastPush
+        try? store.targets.save(t, to: vault)
+        reload()
     }
 
     func update(_ id: UUID, _ change: (inout WebDAVLocation) -> Void) {
-        guard let i = locations.firstIndex(where: { $0.id == id }) else { return }
-        change(&locations[i])
-        persist()
+        guard var l = location(id) else { return }
+        change(&l)
+        save(l)
     }
 
-    /// Forgets the location and deletes its local copy and sync state.
+    /// Forgets the location and its sync state. Its vault stays on this device, unless the first
+    /// download never completed it (a partial copy is useless without its server).
     func remove(_ id: UUID) throws {
-        guard let location = location(id) else { return }
-        try copy(of: location).remove()
-        locations.removeAll { $0.id == id }
-        persist()
-    }
-
-    private func persist() {
-        do {
-            try FileManager.default.createDirectory(at: storeURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try JSONEncoder().encode(locations).write(to: storeURL, options: .atomic)
-        } catch {
-            // The list is rebuilt by connecting again; the copies stay on disk.
+        guard let location = location(id), let vault = UUID(uuidString: location.vaultId) else { return }
+        let copy = copy(of: location)
+        try store.targets.remove(id, of: vault)
+        if !copy.exists || copy.isPartial, store.targets.targets(of: vault).isEmpty {
+            if store.entry(id: vault) != nil { try? store.remove(vault) } else {
+                try? FileManager.default.removeItem(at: copy.folder.deletingLastPathComponent())
+            }
         }
+        reload()
     }
 
     /// Two collection URLs naming the same folder (trailing slash and case of
     /// scheme and host aside).
-    nonisolated static func sameFolder(_ a: String, _ b: String) -> Bool {
-        func key(_ s: String) -> String {
-            guard var c = URLComponents(string: s) else { return s }
-            c.scheme = c.scheme?.lowercased()
-            c.host = c.host?.lowercased()
-            var path = c.percentEncodedPath
-            while path.hasSuffix("/") { path.removeLast() }
-            c.percentEncodedPath = path
-            return c.string ?? s
-        }
-        return key(a) == key(b)
-    }
+    nonisolated static func sameFolder(_ a: String, _ b: String) -> Bool { SyncTarget.sameCollection(a, b) }
 
     /// The local copy's folder name for a vault called `name`: `<name>.sempere`
     /// when that is a valid name, else `Vault.sempere`.

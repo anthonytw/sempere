@@ -1705,20 +1705,58 @@ a regression the Linux job cannot.
 
 ## Sync targets in the app
 
-Every in-app vault with a sync target keeps syncing, open or not, each isolated from the others
-(docs/design/device-first-sync.md §4.2). In P5 the targets are the WebDAV locations (one local copy
-and its server each); folder targets and several targets per vault come with P6.
+Every in-app vault (the store, docs/design/device-first-sync.md §2) can have any number of sync
+targets, and every vault with one keeps syncing, open or not, each isolated from the others (§4.2).
+The app only ever reads and writes the in-app copy, on every platform; targets are outside copies it
+syncs with both ways.
 
-- **`SyncCoordinator`** (one per app, started at launch) owns one `SyncSession` per location. The
-  open vault's session runs two-way while the vault is unlocked here; every other session runs
+- **Targets** are `SyncTarget`s in the store's registry (`SyncTargetRegistry`,
+  `<store>/.sync/<vault id>/targets.json`, shared with `sempere store target`): a **folder** (iCloud
+  Drive, another provider's folder, a drive, a share, any folder; the app keeps a bookmark of the folder
+  the user picked, `options: []`, and the copy's subfolder) or a **WebDAV** server folder (its password in
+  the Keychain under the target's id). The kind is an open string, so a later transport (§3.4) adds a
+  kind, and a target of a kind this version does not know is listed, never run. Each target's sync
+  state, quarantine and transfers live in `<store>/.sync/<vault id>/<target id>/`; removing the vault
+  removes them, removing a target never touches the folder or server.
+- **The store's place**: on an iPhone or iPad `<App Group>/Library/Application Support/Sempere/Vaults`
+  (`VaultStoreRoot`, `completeUntilFirstUserAuthentication`), so voice notes reach the inbox from the
+  Lock Screen; on a Mac `Application Support/Sempere/Vaults` in the app's container (no App Group
+  entitlement there). A store an earlier build left in Application Support moves over once.
+- **Setting up.** New Vault's "Keep a Copy In" (none, or a folder), "Open Vault…" (`OpenVaultSheet`:
+  the vault is copied in; "Keep syncing with this folder", on by default for iCloud Drive and other
+  providers' folders, off for a local folder such as an export, makes the folder a target; on a vault
+  already in the store it adds the folder to that copy), connecting to a WebDAV server (a store vault
+  with a WebDAV target, below), and File ▸ Sync Targets… / the sidebar's More menu (`SyncTargetsSheet`:
+  every target with its status, Add Folder…, Sync Now, Remove). A picked folder that holds a vault is
+  the target; any other folder gets the copy in `<picked>/<name>.sempere`, made by the first run. Adding
+  a target to a vault that has notes is a union: the first run copies what either side lacks and
+  deletes nothing. The same place twice is refused, and so is a folder inside the store.
+- **Folder runs** (`FolderTargetRun`, the same as `sempere store sync`): the engine over `FolderRemote`
+  with the provider's hooks (`FolderProviders.detect`: iCloud Drive and other providers are coordinated,
+  evicted files and folders listed before their files are *arriving*, conflict versions are merged or
+  kept and resolved; docs/io.md "Folder targets in providers"), two-way while the vault is open and
+  unlocked here, upload-only otherwise, waiting at most `folderArrivalWait` (10 s) per run for files a
+  provider is downloading. A folder synced before that is gone is not recreated ("The folder is gone…
+  Choose it again", nothing deleted here); one whose saved permission no longer opens it (a dead bookmark) says the same, with
+  "Choose Again…" in Sync Targets (the run then starts over as a union); one whose parent is gone while no
+  bookmark is involved (the CLI's paths) is offline. A stale bookmark (the folder moved or was renamed) is
+  saved again. Closed vaults' periodic runs pause while the app is in the background (a voice note into
+  one still uploads). Folder targets run 2 s after a write and every minute.
+- **Voice notes** go to the one vault their capture profile names: straight into its in-app inbox,
+  found in the store by vault id whatever the profile's bookmark says, open or not; its targets upload
+  them at once (`QuickCapture.deliveredNotification` → `SyncCoordinator.captureDelivered`).
+- **Key changes** are refused in the app for a vault with any target (`requireLocalKeyChanges`) until the
+  key hierarchy's phases land: a rewrap in place reaches no target.
+- **`SyncCoordinator`** (one per app, started at launch) owns one `SyncSession` per (vault, target). The
+  open vault's sessions run two-way while the vault is unlocked here; every other session runs
   upload-only. At most two runs go at once across the app (`maxConcurrentRuns`), at most one per
   session, and one slot is kept for the open vault: background runs take at most one, so slow uploads
   of closed vaults never hold up the open vault's runs or Sync Now (a run queued before its vault was
   opened takes that slot as soon as it is: priority is asked again whenever slots are handed out). The
   closed vaults share the other slot: one closed vault's slow upload holds up the others' runs until it
-  ends (bounded by the run's limits); per-vault slots are a follow-up. A voice note delivered into a
-  closed vault's copy asks its session for a run (`QuickCapture.deliveredNotification`). Each session has its own copy, sync state, quarantine,
-  credentials (the Keychain item of its location), schedule, backoff and status: one vault's wrong
+  ends (bounded by the run's limits); per-vault slots are a follow-up. Two targets of one vault take
+  turns on the vault's write lock, and a device with two targets bridges them. Each session has its own
+  sync state, quarantine, credentials, schedule, backoff and status: one vault's wrong
   password, hung server (bounded by the run's limits) or full disk never delays or fails another
   (`SyncCoordinatorTests`).
 - **When** (`SyncSchedule`, pure, in `SempereSync`): once at the start and after the unlock (two-way
@@ -1744,7 +1782,8 @@ and its server each); folder targets and several targets per vault come with P6.
   and a quarantine record names the key the file was checked under (`checkerKeyID`), so a run under
   another key checks it again (review of #70: a stale vault had kept another device's new notes out
   for good).
-- **The write lock** (`VaultFileLock`, `<location>/vault.write`): a run holds it while it settles and
+- **The write lock** (`VaultStore.writeLock`, `<store>/.locks/<vault id>.write`, the lock every writer of
+  the vault on the device takes, the CLI's included): a run holds it while it settles and
   replaces the copy's mutable files (`vault.json`, the journal, `settings.age`;
   `SyncOptions.localWriteLock`), and the model holds it while it writes `settings.age`, so a merge
   never interleaves with the app's own write. A run that cannot take it within 30 s leaves those
@@ -1765,7 +1804,12 @@ and its server each); folder targets and several targets per vault come with P6.
   are reported. Tests: `TwoDeviceSyncAppTests` (two `AppModel`s on one in-memory server running the
   real engine: a note and a rename reaching the other device's list and open editor, edits made
   offline on both, settings, a 6 MB attachment, runs cut midway, a server folder that vanishes and
-  comes back empty, a vault reopened while a run goes, a closed vault that only uploads).
+  comes back empty, a vault reopened while a run goes, a closed vault that only uploads);
+  `FolderTargetAppTests` (two devices through one folder under `EvictingFolderProvider`: notes and an
+  open editor's merge, a target folder deleted or unreachable, files evicted while runs go, a
+  provider's conflict copy, two targets bridged by one device and a new target that gets every note,
+  a voice note recorded while its vault is closed, the store's move and old WebDAV copies carried
+  over).
 
 ## WebDAV vaults in the app
 
@@ -1782,9 +1826,23 @@ TCP/TLS connections. A different key replaces it (trust is decided by that trans
 its sessions invalidate in `deinit` (`finishTasksAndInvalidate`). "Test Connection" builds its own transport
 (it needs the certificate recorder).
 
-**Model: a local copy, synced both ways.** The vault the app opens is a local
-copy in the app's container (`Application Support/Sempere/WebDAV/<location
-id>/<name>.sempere`, sync state and quarantine beside it). Every read and
+**Model: a store vault with a WebDAV target, synced both ways.** The vault the app opens is a store
+vault (`<store>/<vault id>/<name>.sempere`) and the server one of its targets (`WebDAVLocationStore` is
+the WebDAV view of the target registry; sync state and quarantine in the target's own folder). The first
+download builds it in the store. WebDAV copies of earlier builds (`Application Support/Sempere/WebDAV/`,
+`webdav.json`) become store vaults at launch, before anything syncs (`LegacyWebDAV`,
+`AppModel.convertLegacyWebDAV`), and nothing an old copy holds is ever deleted. What an interrupted "Download
+Again" left is recovered first. When the store does not hold the vault, the location's sync state, quarantine
+and transfers move to the target's folder first, then the copy into the store (`<folder>.*` leftovers next to
+it), so the first run neither uploads nor checks everything again; a marker in the target's folder lets a
+launch that stopped midway finish the same way. When the store already holds the vault, the old copy is
+uploaded once (upload-only, its Keychain password), then set aside in `<store>/.sync/legacy-kept/<id>/` and
+the server becomes one more target of the store vault (a union); if that upload fails while the old copy holds
+files the store lacks or the server never confirmed (`LocalCopy.unconfirmedChanges` counts revisions, blobs,
+`vault.json`, the journal, `settings.age` and inbox files), it stays where it was, an alert names it (Show in
+Finder, Share) and the next launch tries again. The target keeps the location's id, so the Keychain password
+still applies. Connecting to a server whose vault is already on this device adds the server as a
+target of that vault (the first run is a union). Every read and
 write goes to that copy through the usual plain-folder paths (no iCloud
 code runs for it), so the app works offline exactly as with a vault on the
 device. The server is kept in step by two-way runs of the engine
@@ -1801,11 +1859,11 @@ and what other devices wrote arrives at the next unlock.
 - `https` only; plain `http` is accepted for `localhost` alone (as the CLI).
   Credentials in the URL are refused.
 - The password is stored only in the Keychain (generic password, service
-  `io.github.anthonytw.sempere.webdav`, account the location id,
+  `io.github.anthonytw.sempere.webdav`, account the target id,
   `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, never synchronizable), is
   never logged and never written to a file or `UserDefaults`. The rest of the
-  location (URL, user, certificate pin, folder name) is in
-  `Application Support/Sempere/webdav.json`, holding no secret.
+  target (URL, user, certificate pin) is in the store's target registry
+  (`<store>/.sync/<vault id>/targets.json`), holding no secret.
 - The test lists the URL (PROPFIND, Depth 1) and says what it found:
   reachable and a vault; reachable with vaults one level below; reachable
   with no vault; or why not (offline, wrong user or password, not found, not

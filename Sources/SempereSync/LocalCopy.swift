@@ -26,6 +26,13 @@ public struct LocalCopy: Sendable {
         self.folder = directory.appendingPathComponent(folderName, isDirectory: true)
     }
 
+    /// A copy at `folder` whose sync state lives in `stateDirectory`: a store vault and one of its
+    /// targets (`SyncTargetRegistry.stateDirectory`). `remove()` then deletes only the state.
+    public init(folder: URL, stateDirectory: URL) {
+        self.directory = stateDirectory
+        self.folder = folder
+    }
+
     /// The sync-state file of the copy.
     public var stateURL: URL { directory.appendingPathComponent("sync-state.json") }
     var stagingFolder: URL { folder.appendingPathExtension("download") }
@@ -179,6 +186,21 @@ public struct LocalCopy: Sendable {
             let url = folder.appendingPathComponent(name)
             guard let data = try? BoundedRead.contents(of: url, maxBytes: BoundedRead.maxManifestBytes) else { continue }
             if state?.mutable[name]?.hash != FileDigest.sha256(data) { count += 1 }
+        }
+        // Shared settings changed here since the last run (review of #72, G1).
+        if let data = try? BoundedRead.contents(of: folder.appendingPathComponent(SharedSettings.fileName),
+                                                maxBytes: SharedSettings.maxFileBytes),
+           state?.mutable[SharedSettings.fileName]?.hash != FileDigest.sha256(data) {
+            count += 1
+        }
+        // Quick-capture inbox files no run recorded, or changed since (a voice note recorded into the copy
+        // and not uploaded yet; review of #72, G1). Every visible file counts, whatever its name.
+        let inbox = folder.appendingPathComponent(CaptureFile.folderName)
+        for f in (try? LocalFS.entries(inbox)) ?? [] where !f.hasPrefix(".") {
+            let url = inbox.appendingPathComponent(f)
+            guard let record = state?.inbox?[f] else { count += 1; continue }
+            let values = try? url.resourceValues(forKeys: [.fileSizeKey])
+            if values?.fileSize != record.size { count += 1 }
         }
         let notes = folder.appendingPathComponent(Vault.notesName)
         for id in ((try? LocalFS.entries(notes)) ?? []) where Vault.isNoteDirectoryName(id) {
@@ -450,7 +472,7 @@ extension LocalCopy {
     }
 
     /// The revisions, blobs, inbox files and notebook records of a vault folder, as paths below it.
-    static func vaultFiles(in root: URL) -> Set<String> {
+    public static func vaultFiles(in root: URL) -> Set<String> {
         var out = Set<String>()
         let notes = root.appendingPathComponent(Vault.notesName)
         for id in ((try? LocalFS.entries(notes)) ?? []) where Vault.isNoteDirectoryName(id) {

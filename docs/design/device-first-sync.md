@@ -26,7 +26,17 @@ upload-only, which also covers §4.1 until P8's locked staging), `SyncSchedule`,
 arrivals (`LocalChanges`) into reconcile and RemoteMerge, settings merged locally, the copy's `VaultFileLock`
 around the engine's and the app's writes of mutable files, and two-device app tests. "Download Again" is gone
 (Sync Now takes what the server has). WebDAV copies stay where they were (`Application Support/Sempere/WebDAV/`);
-moving them into the store as a target of a store vault is P6.
+moving them into the store as a target of a store vault is P6. P6 is implemented (docs/io.md "Sync targets in
+the app"): folder targets through `FolderTargetRun` (`FolderRemote` with the provider hooks), any number of
+targets per vault in the store's registry (`SyncTargetRegistry`, `<store>/.sync/<vault id>/`, shared with
+`sempere store target` and `store sync`), New Vault's "Keep a Copy In", "Open Vault…" with "Keep syncing with this
+folder", Sync Targets…, the store in the App Group container on iPhone and iPad (the Mac keeps Application
+Support: it has no App Group entitlement), quick capture into the in-app inbox by vault id, and WebDAV vaults as
+store vaults with a WebDAV target (earlier copies carried over with their sync state and quarantine). Not in P6:
+an iCloud Drive default folder (`iCloud Drive/Sempere/<name>.sempere` needs an iCloud container entitlement; the
+user picks a folder in iCloud Drive instead), adding a WebDAV target to an existing vault from the app (connecting
+to a server whose vault is already on the device does it), provider change hints (`changes()`; folder targets run
+every minute instead), and one status bar per vault rather than per target.
 
 **Superseded in part (2026-10-20):** key changes now follow `docs/design/key-hierarchy.md` (a vault
 key per epoch, per-device keys, one recovery key, immediate changes with no late-file window). §6

@@ -270,6 +270,7 @@ struct WebDAVStatusBar: View {
     @AppModelEnvironment private var model
     let session: SyncSession
     @State private var editing: WebDAVLocation?
+    @State private var showingTargets = false
     /// A partial copy fetches attachments in the background once every note is in (`AppModel.webdavFillsBlobs`).
     @AppStorage(AppModel.webdavFillsBlobsKey) private var fillsBlobs = true
 
@@ -277,6 +278,9 @@ struct WebDAVStatusBar: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: icon).foregroundStyle(tint)
             VStack(alignment: .leading, spacing: 2) {
+                if model.syncSessions.count > 1 {
+                    Text(session.targetName).font(.caption2.weight(.semibold))
+                }
                 Text(session.headline).font(.caption)
                 if let last = session.lastSuccess, !session.isSyncing {
                     Text("Last sync \(last, format: .relative(presentation: .named))")
@@ -287,17 +291,20 @@ struct WebDAVStatusBar: View {
             if session.isSyncing { ProgressView().controlSize(.small) }
             Menu {
                 Button("Sync Now", systemImage: "arrow.triangle.2.circlepath") {
-                    Task { await model.webdavSyncNow() }
+                    Task { await session.syncNow() }
                 }
                 .disabled(session.isSyncing)
-                Button("Server Settings…", systemImage: "server.rack") {
-                    editing = model.webdavLocations.location(session.locationID)
+                Button("Sync Targets…", systemImage: "externaldrive.connected.to.line.below") { showingTargets = true }
+                if session.kind == .webdav {
+                    Button("Server Settings…", systemImage: "server.rack") {
+                        editing = model.webdavLocations.location(session.locationID)
+                    }
+                    Toggle("Download Attachments in the Background", isOn: $fillsBlobs)
                 }
-                Toggle("Download Attachments in the Background", isOn: $fillsBlobs)
             } label: {
                 Image(systemName: "ellipsis.circle")
             }
-            .help("WebDAV sync")
+            .help("Sync")
             .accessibilityIdentifier("webdavMenu")
         }
         .padding(.horizontal, 16)
@@ -308,6 +315,7 @@ struct WebDAVStatusBar: View {
         .sheet(item: $editing) { location in
             WebDAVConnectSheet(editing: location)
         }
+        .sheet(isPresented: $showingTargets) { SyncTargetsSheet() }
         .onChange(of: fillsBlobs) { _, on in model.webdavFillsBlobs = on }
     }
 

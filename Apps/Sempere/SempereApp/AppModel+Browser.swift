@@ -35,6 +35,9 @@ extension AppModel {
             }
             return try await openWebDAV(location, library: library)
         }
+        if let id = entry.storeID, let joining = joiningWebDAVLocation(of: id) {
+            return try await openWebDAV(joining, library: library)
+        }
         let url = try await library.resolved(entry)
         try await openVault(at: url)
         remember(in: library)

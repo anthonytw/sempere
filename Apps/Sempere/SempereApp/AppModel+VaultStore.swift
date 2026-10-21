@@ -2,13 +2,19 @@ import Foundation
 import Sempere
 
 /// What "Open Vault…" does with the folder it copied a vault from (docs/design/device-first-sync.md §8.1).
-///
-/// P6 adds `keepSyncing`: the source folder (or server) becomes a sync target of the in-app copy, the
-/// default for iCloud Drive, provider folders and WebDAV ("Keep syncing with this folder"). Until then
-/// every copy-in is a one-time import.
 enum CopyInFollowUp: Sendable, Equatable {
     /// A one-time import: the source is never written, and the in-app copy is the only one from then on.
     case importOnly
+    /// "Keep syncing with this folder": the source becomes a folder target of the in-app copy.
+    case keepSyncing
+
+    /// The default for a picked folder: keep syncing with iCloud Drive and other providers' folders, a
+    /// one-time import for a local folder (an export, a backup).
+    static func suggested(for url: URL, hooks: CloudVault.Hooks = .live) -> CopyInFollowUp {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        return hooks.isUbiquitous(url) || StorageLocation.classify(url).needsCoordination ? .keepSyncing : .importOnly
+    }
 }
 
 /// A copy-in in progress, for the overlay (`VaultCopyOverlay`).
@@ -111,7 +117,8 @@ extension AppModel {
         // A vault already on this device opens its copy, before anything is downloaded or copied.
         let sourceID = try? await offMain { try CloudVault.coordinatedRead(coordinated ? source : nil) { try Vault.open(at: source).vaultId } }
         if let sourceID, let existing = library.vaultStore.entry(id: sourceID) {
-            return try await openExistingCopy(existing, from: source, library: library, external: external)
+            return try await openExistingCopy(existing, from: source, scope: url, library: library, external: external,
+                                              followUp: followUp)
         }
         vaultCopy = VaultCopyProgress(name: VaultLibrary.displayName(of: source), stage: .copying(done: 0, total: 0))
         defer { vaultCopy = nil }
@@ -125,13 +132,14 @@ extension AppModel {
             // Its vault.json could not be read up front (iCloud had not delivered it yet).
             guard let existing = library.vaultStore.entry(id: id) else { throw VaultStoreProblem(error: .notFound(id.uuidString)) }
             vaultCopy = nil
-            return try await openExistingCopy(existing, from: source, library: library, external: external)
+            return try await openExistingCopy(existing, from: source, scope: url, library: library, external: external,
+                                              followUp: followUp)
         } catch let error as VaultStoreError {
             throw VaultStoreProblem(error: error)
         }
-        switch followUp {
-        case .importOnly:
-            break   // P6: `.keepSyncing` adds `source` as a folder target of `entry` here.
+        if followUp == .keepSyncing {
+            // The two are equal now: the first run finds nothing to do.
+            try addFolderTarget(source, scope: url, to: entry.vaultId)
         }
         try await openVault(at: entry.url, external: external)
         remember(in: library)
@@ -140,10 +148,14 @@ extension AppModel {
     /// "Open Vault…" on a vault whose id the store already holds: opens that copy (the store keeps one
     /// copy per vault id), and leaves `source` as it is.
     ///
-    /// The P6 hook: here the app offers to sync the copy with `source` ("Keep syncing with this folder",
-    /// docs/design/device-first-sync.md §8.1), which also brings in what `source` has that the copy lacks.
-    private func openExistingCopy(_ entry: VaultStore.Entry, from source: URL, library: VaultLibrary,
-                                  external: Bool) async throws {
+    /// With "Keep syncing with this folder" (`.keepSyncing`, docs/design/device-first-sync.md §8.1) `source`
+    /// becomes a target of that copy (unless it already is one): the first run is a union, which brings in
+    /// what `source` has that the copy lacks, and the other way round.
+    private func openExistingCopy(_ entry: VaultStore.Entry, from source: URL, scope: URL, library: VaultLibrary,
+                                  external: Bool, followUp: CopyInFollowUp) async throws {
+        if followUp == .keepSyncing {
+            do { try addFolderTarget(source, scope: scope, to: entry.vaultId) } catch SyncTargetProblem.duplicate {}
+        }
         if vaultURL?.standardizedFileURL != entry.url.standardizedFileURL {
             try await openVault(at: entry.url, external: external)
         }
@@ -152,6 +164,9 @@ extension AppModel {
 
     /// Opens a vault of the in-app store (the welcome list) and remembers it.
     func openStored(_ entry: VaultStore.Entry, library: VaultLibrary) async throws {
+        if let joining = joiningWebDAVLocation(of: entry.vaultId) {
+            return try await openWebDAV(joining, library: library)
+        }
         try await openVault(at: entry.url)
         library.rememberStored(entry)
     }

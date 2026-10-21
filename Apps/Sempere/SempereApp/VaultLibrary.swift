@@ -268,7 +268,9 @@ final class VaultLibrary {
         self.storeURL = storeURL
         self.probe = probe
         self.vaultStore = vaultStore
-            ?? VaultStore(root: storeURL.deletingLastPathComponent().appendingPathComponent("Vaults", isDirectory: true))
+            ?? VaultStore(root: storeURL == Self.defaultStoreURL
+                ? Self.defaultVaultStoreRoot
+                : storeURL.deletingLastPathComponent().appendingPathComponent("Vaults", isDirectory: true))
         if let data = try? Data(contentsOf: storeURL),
            let list = try? JSONDecoder().decode([RecentVault].self, from: data) {
             recents = list
@@ -279,14 +281,41 @@ final class VaultLibrary {
 
     // MARK: - Places
 
+    /// Forgets a store vault that is gone from the store (its recent entries and list row).
+    func forgetStored(_ vault: UUID) {
+        storedVaults.removeAll { $0.vaultId == vault }
+        let gone = recents.filter { $0.storeID == vault }.map(\.id)
+        guard !gone.isEmpty else { return }
+        recents.removeAll { gone.contains($0.id) }
+        for id in gone { states[id] = nil }
+        save()
+    }
+
+    /// Recent WebDAV entries of locations that became store vaults (`LegacyWebDAV.convert`): each now
+    /// names its store vault.
+    func convertWebDAVRecents(_ vaults: [UUID: UUID]) {
+        guard !vaults.isEmpty else { return }
+        var changed = false
+        for i in recents.indices {
+            guard let location = recents[i].webdav, let vault = vaults[location] else { continue }
+            recents[i].webdav = nil
+            recents[i].storeID = vault
+            changed = true
+        }
+        if changed { save() }
+    }
+
     /// `Application Support/Sempere/recents.json`.
     static var defaultStoreURL: URL { AppSupport.sempere.appendingPathComponent("recents.json") }
 
-    /// The in-app vault store's folder: `Application Support/Sempere/Vaults`.
-    ///
-    /// P6 of docs/design/device-first-sync.md moves it into the App Group container (quick capture
-    /// writes to the inbox from there); no vault is carried over (there is no version 1 yet).
-    static var defaultVaultStoreRoot: URL { AppSupport.folder("Vaults") }
+    /// The in-app vault store's folder (docs/design/device-first-sync.md §2): on an iPhone or iPad
+    /// `<App Group container>/Library/Application Support/Sempere/Vaults`, so quick capture and widgets
+    /// reach the inbox; on a Mac (no App Group entitlement) `Application Support/Sempere/Vaults` in the
+    /// app's container. A store left in Application Support by an earlier build is moved over once
+    /// (`VaultStoreRoot.prepare`).
+    static let defaultVaultStoreRoot: URL = VaultStoreRoot.prepare(
+        appGroup: Platform.isMac ? nil : FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: VaultStoreRoot.appGroup),
+        legacy: AppSupport.folder("Vaults"))
 
     /// The app container's Documents folder, where earlier builds kept "On This Device" vaults (opened
     /// in place). New vaults go into `vaultStore` instead.

@@ -41,8 +41,12 @@ struct SempereApp: App {
                              automaticThinning: true,
                              recipientsTrust: AppModel.defaultRecipientsTrust,
                              backupNotifier: UserNotificationBackupNotifier())
-        // An open vault of the in-app store holds a lease, so it is never removed while open.
+        // An open vault of the in-app store holds a lease, so it is never removed while open. Its sync
+        // targets (folder and WebDAV) are in the store's registry.
         model.vaultStore = library.vaultStore
+        // Voice notes go straight into their vault's in-app inbox, and its targets upload them
+        // (`QuickCapture.deliveredNotification`).
+        model.quickCapture.vaultStore = library.vaultStore
         AppModel.current = model
         _model = State(initialValue: model)
         // Background sync (iOS): the model the scheduled tasks sync (`.backgroundTask` below).
@@ -50,6 +54,9 @@ struct SempereApp: App {
         // Every in-app vault with a sync target keeps syncing, open or not (`SyncCoordinator`), once what an
         // interrupted "Download Again" of an earlier build left is recovered.
         Task { @MainActor in
+            // WebDAV vaults of earlier builds become store vaults with a WebDAV target, their sync state and
+            // quarantine carried over, nothing of an old copy deleted (docs/io.md "Sync targets in the app").
+            await model.convertLegacyWebDAV(library: library)
             await model.recoverWebDAVLeftovers()
             model.syncCoordinator.start()
         }
