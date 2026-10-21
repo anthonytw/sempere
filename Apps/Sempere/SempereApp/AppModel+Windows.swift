@@ -53,7 +53,7 @@ extension AppModel {
         guard notes.contains(where: { $0.id == noteID }) else { throw ModelError.noteNotFound }
         try await downloadNote(noteID)
         let clock = try deviceClockForWriting()
-        var verify: (@Sendable () throws -> Void)?
+        var verify: (@Sendable () throws -> Void)? = partialNoteVerifier(noteID)
         if isCloudVault, let url = vaultURL {
             let hooks = cloudHooks
             verify = { try CloudVault.requireLocal(note: noteID, vault: url, hooks: hooks) }

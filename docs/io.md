@@ -1907,63 +1907,32 @@ a re-download pulls), an overlay shows a bar with the stage and counts
 `WebDAVProgressRelay`) and a Cancel: the run stops after the requests in
 flight, nothing is reported as an error, and opening the vault again
 continues. The fill
-that follows has no second overlay: it shows in the note list's bar as
-"Downloading from <server>: n of m notes" (fed by the listing passes). Offline, a usable copy opens
-from what it holds.
+that follows has no second overlay: it shows as
+the note list's spinners on the pending rows. Offline, a usable copy opens from what it holds.
 
-The rest arrives through the iCloud machinery, not a second one:
-`WebDAVFetcher` provides the `CloudVault.Hooks` while the copy is open
-(`AppModel.cloudHooks`), so the copy is an `isCloudVault` and
-`ProgressiveLoad`, `downloadNote`, `CloudVault.requireLocal`, `CloudBlobs` and
-`downloadEverything` work on it unchanged. The hooks read the copy's markers:
-every revision of a note marked incomplete is `missing` (even those already
-there: the note is read only once all are), a blob with a stand-in is
-`missing`, a fetch that failed is `failed` (with the server's error); a
-download request asks the fetcher for that note or blob first. The fetcher
-runs library fetches (`LocalCopy.fetch`) in a background loop: notes
-asked for (the one opened or selected, the ones a pass looks at) first, then
-every incomplete note in batches of 12 (each run lists its notes and fetches
-their small revisions four at a time), then, with "Download Attachments in
-the Background" on (the WebDAV menu; on unless turned off,
-`Sempere.webdavFetchAttachments`), the attachment blobs. A run that fails
-waits 2 s, doubling up to a minute; asking for something wakes it. A note a run leaves as it was (still incomplete, or its blobs still pending, with or without an error) is parked: left out of the next runs for 2 s, doubling up to 10 minutes, so it is never fetched in a loop and never holds the others back, even when it is the one asked for; a new fetcher (reopening the vault, "Download Again") starts afresh. An attachment asked for that a run leaves pending is not asked for again by itself: whoever waits for it asks again or reports the stall. Each run
-tells the sync loop which notes it touched (`noteFoldersChanged`), so their
-rows stop spinning as soon as they are read. Fetches are checked for their
-age structure while the vault is locked and fully under the key once it is
-unlocked (format.md §9.1).
+The rest arrives without the iCloud machinery (P7a, `AppModel+Join`, docs/design/device-first-sync.md
+§8.2). The copy is a store vault like any other (`isCloudVault` is false, no `CloudVault.Hooks`); while it
+is partial (`partialCopyRoot`):
 
-- *The list.* After the unlock the server's sealed summaries
-  (`.sempere-partial/summaries.sealed`, opened with the key) give every note
-  not downloaded yet its row (title, notebook, tags, dates, page texts, so
-  search finds it), with the iCloud spinner, and the list's bar says
-  "Downloading from <server>: n of m notes". Without the file (a server that
-  never published it, or one this key cannot open), notes not downloaded yet
-  are placeholder rows ("Downloading from <server>…") until they arrive. A
-  note marked incomplete is never taken as unchanged from the device's index
-  (after a re-download its folder may hold the files its indexed summary
-  came from).
-- *Opening and editing* a note not downloaded yet fetches it first
-  (`downloadNote`), exactly as for iCloud, and the editor refuses to show a
-  note whose revisions are not all there (`requireLocal`); core refuses any
-  write to it anyway (format.md §1.2). Attachments are fetched when a page
-  shows them or a recording plays (`CloudBlobs`), the rest in the background
-  if the setting is on.
-- *Search, backup, export, Recognize All, blob collection.* Search covers notes
-  not downloaded yet through their published summaries; Recognize All skips
-  pending notes (as for iCloud); export and bulk export fetch each note first
-  (`loadNoteForExport`); a backup waits for every note and attachment
-  (`downloadEverything`, then the blobs); the unused-attachments index and
-  thinning decide nothing for notes not local, and core refuses blob
-  collection and compaction in an incomplete note. Key changes stay refused
-  for a WebDAV copy.
-- *Sync runs* on a partial copy: an unlocked two-way run downloads what the copy lacks and so
-  completes it ("Partial copies" above: "A two-way sync completes a partial copy"); an upload-only
-  run (locked) keeps on the server everything the copy has not fetched. Nothing is deleted on the
-  server because the copy lacks it. A fetch and a two-way run of the same copy never leave a blob's
-  stand-in beside the blob (the fetch checks again after writing one, and the copy's completion
-  removes any left).
-- *Texts.* The machinery's messages name the server instead of iCloud Drive
-  while a WebDAV copy is open (`CloudSource.current`).
+- *The fill.* Once the vault is unlocked, its two-way runs (`SyncSession`, "Sync targets in the app")
+  complete the copy: every note, then every attachment (design Q3: always). What a run completed reaches the
+  list through its report (`applySyncChanges`, which also looks again at the notes still pending).
+- *The list.* A note marked incomplete is never read: `reconcile` lists it as pending (`pendingNoteIDs`, the
+  row's spinner) with its row from the server's sealed summaries (`.sempere-partial/summaries.sealed`, opened
+  with the key at the unlock, `webdavUnlocked`), or a placeholder row without them, until it is complete.
+- *Opening a note* not downloaded yet fetches just that note (`downloadNote` → `downloadPartialNote`:
+  `LocalCopy.fetch` with a one-note `FetchScope`, revisions only), then reads it; the editor's re-check
+  refuses a note still marked incomplete (`partialNoteVerifier`), and core refuses any write to one anyway
+  (format.md §1.2). Offline, it fails at once with "not downloaded from <server> yet" and the note stays
+  pending. Fetches run one at a time (`joinFetch`).
+- *Attachments* a page shows, a recording plays or a paste copies that are still stand-ins are fetched alone
+  (`partialBlobFetcher`, through the attachment cache, `ensureBlobLocal`, `blobWritePreparer`).
+- *Waiting while partial:* a backup first runs the server once and refuses if the copy is still partial
+  (`completePartialCopy`); thinning waits (automatic thinning skips, a manual run says the vault is not
+  downloaded yet); key changes stay refused for any vault with a target. Export and history fetch the note
+  first (`downloadNote`).
+- The "Download Attachments in the Background" setting no longer changes anything (the runs take every
+  attachment); it goes with `WebDAVFetcher` in P7b.
 
 **When it syncs, the status, other writers**: "Sync targets in the app" below.
 

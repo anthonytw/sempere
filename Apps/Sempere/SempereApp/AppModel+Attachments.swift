@@ -24,6 +24,7 @@ extension AppModel {
               let key = try? LocalCacheKey(vault: vault, purpose: "blob-cache", magic: [0x53, 0x4D, 0x50, 0x42, 0x01])
         else { return nil }
         let cloud = isCloudVault, hooks = cloudHooks, stall = cloudStallTimeout, poll = cloudPollInterval
+        let partial = partialBlobFetcher()
         let folder = blobCacheFolder
         let root = folder.appendingPathComponent(key.name, isDirectory: true)
         // Renamed away before the cache writes there: the background delete below takes it.
@@ -32,6 +33,7 @@ extension AppModel {
         let cache = BlobCache(root: root,
                               maxBytes: BlobCache.configuredMaxBytes, naming: BlobCache.keyedNaming(key)) {
             note, ref, destination in
+            if let partial { try await partial(note, try vault.blobFileName(for: ref)) }
             try await Self.fetchBlob(ref, of: note, from: vault, to: destination, cloud: cloud, hooks: hooks,
                                      stallTimeout: stall, pollInterval: poll)
         }
@@ -87,6 +89,10 @@ extension AppModel {
     /// the blob, if iCloud lists one, is downloaded so the write reuses it
     /// (blob files are write-once, format.md §8.1.4); nil outside iCloud.
     func blobWritePreparer(note: UUID) -> (@Sendable (BlobRef) async throws -> Void)? {
+        if let partial = partialBlobFetcher(), let vault {
+            // A partial copy: this note's blob, if still a stand-in, is fetched so the write reuses it.
+            return { ref in try? await partial(note, try vault.blobFileName(for: ref)) }
+        }
         guard isCloudVault, let vault else { return nil }
         let hooks = cloudHooks, stall = cloudStallTimeout, poll = cloudPollInterval
         return { ref in
@@ -98,6 +104,7 @@ extension AppModel {
 
     /// Makes the blob `ref` of `note` local (iCloud Drive), waiting for it.
     func ensureBlobLocal(_ ref: BlobRef, of note: UUID) async throws {
+        if let partial = partialBlobFetcher(), let vault { return try await partial(note, try vault.blobFileName(for: ref)) }
         guard isCloudVault, let vault else { return }
         let name = try vault.blobFileName(for: ref)
         try await CloudVault.downloadBlob(note: note, fileName: name, vault: vault.url, hooks: cloudHooks,
@@ -114,8 +121,10 @@ extension AppModel {
                                               && actions.editor.items(on: page).contains { $0.id == entry.items.first?.id })
         let cloud = isCloudVault, hooks = cloudHooks, stall = cloudStallTimeout, poll = cloudPollInterval
         let vault = self.vault
+        let partial = partialBlobFetcher()
         do {
             return try await actions.paste(entry, on: page, offset: offset) { ref in
+                if let partial, let vault { return try await partial(entry.note, try vault.blobFileName(for: ref)) }
                 guard cloud, let vault else { return }
                 let name = try vault.blobFileName(for: ref)
                 try await CloudVault.downloadBlob(note: entry.note, fileName: name, vault: vault.url, hooks: hooks,

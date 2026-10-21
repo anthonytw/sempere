@@ -37,6 +37,7 @@ extension AppModel {
 
         let url = vault.url
         let cloud = isCloudVault
+        let partialRoot = partialCopyRoot
         let hooks = cloudHooks
         let canRead = vault.canRead && phase == .unlocked
         // Changes are judged against the index: never before it is loaded.
@@ -147,6 +148,15 @@ extension AppModel {
             status.carryBarState(from: cloudSync)
             if let failure = pass.failures.first?.value { status.problem = cloudSource.problem(failure) }
             cloudSync = status
+        } else if let partialRoot {
+            // A partial copy (a join, `AppModel+Join`): a note marked incomplete is never read; it is
+            // pending, listed from the server's summaries, until a run or an open completes it.
+            let incomplete = try await offMain(priority: .utility) { Self.incompleteNoteIDs(partialRoot) }
+            try ensureCurrent(gen)
+            diff.unchanged.removeAll { incomplete.contains($0) }
+            ready = diff.changed.filter { !incomplete.contains($0) }
+            pending = (scope.map { incomplete.intersection($0) } ?? incomplete).sorted { $0.uuidString < $1.uuidString }
+            pendingElsewhere.subtract(present.subtracting(incomplete))
         } else {
             ready = diff.changed
         }

@@ -148,6 +148,9 @@ extension AppModel {
         let interval = Perf.begin(.backup)
         var outcome = "failed"
         defer { Perf.end(interval, outcome) }
+        // A partial copy (a join not finished) is completed first: a backup holds the whole vault.
+        try await completePartialCopy()
+        try ensureCurrent(gen)
         if isCloudVault {
             try await downloadEverythingForBackup(vaultURL, gen: gen)
             backupProgress = BackupProgress(stage: .copying(files: 0))
