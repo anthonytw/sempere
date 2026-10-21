@@ -45,8 +45,10 @@ struct UnlockView: View {
                     .font(.body.monospaced())
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
+                    .accessibilityIdentifier("unlock.keyText")
                 Button("Unlock with Key") { unlock { try await keys.unlock(model, identityText: identityText) } }
                     .disabled(identityText.isEmpty)
+                    .accessibilityIdentifier("unlock.withKey")
             } header: {
                 Text("Paste a key")
             } footer: {
@@ -103,23 +105,16 @@ struct UnlockView: View {
     }
 }
 
-/// After a manual unlock: remember the key on this device (default on) and,
-/// optionally, in iCloud Keychain (default off).
+/// After a manual unlock: remember the key on this device (default on). A
+/// device key never goes to iCloud Keychain (design §6.1), so there is no
+/// sync choice. TODO(KH5): shown again once devices join in the app.
 private struct RememberKeyView: View {
     @AppModelEnvironment private var model
     @AppEnvironmentObject private var keys: RememberedKeys
     let offer: RememberedKeys.Offer
     @State private var remember = true
-    @State private var sync: Bool
     @State private var saving = false
     @State private var failure: String?
-
-    init(offer: RememberedKeys.Offer) {
-        self.offer = offer
-        // Replacing a key kept in iCloud Keychain keeps it there unless the user turns sync off:
-        // a device-only save deletes the synced copy on every device.
-        _sync = State(initialValue: offer.replacing == .iCloudKeychain)
-    }
 
     var body: some View {
         Form {
@@ -135,13 +130,6 @@ private struct RememberKeyView: View {
             } footer: {
                 Text(RememberedKeys.deviceOnlyFooter(vaultName: offer.vaultName, biometry: RememberedKeys.biometryName))
             }
-            Section {
-                Toggle("Also sync via iCloud Keychain", isOn: $sync)
-                    .disabled(!remember)
-            } footer: {
-                let biometry = RememberedKeys.biometryPhrase
-                Text("Your other devices signed in to the same Apple Account get the key too. The Keychain cannot require \(biometry) for synced items, so Sempere asks for \(biometry) or your passcode itself before using it; the key is otherwise protected by iCloud Keychain's end-to-end encryption and your device passcode. Synced keys may not be listed in the Passwords app.")
-            }
             if let failure {
                 Text(failure).foregroundStyle(.red)
             }
@@ -153,7 +141,7 @@ private struct RememberKeyView: View {
                     .help("Do not save the key on this device")
             }
             ToolbarItem(placement: .confirmationAction) {
-                Button("Done") { answer(remember ? (sync ? .iCloudKeychain : .thisDevice) : nil) }
+                Button("Done") { answer(remember ? .thisDevice : nil) }
             }
         }
         .disabled(saving)

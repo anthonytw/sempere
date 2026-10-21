@@ -81,6 +81,13 @@ struct RememberedKeysWebDAVTests {
         return attempt
     }
 
+    /// Remembers the open vault's device key here, on this device only (`rememberThisDeviceKey`, what a
+    /// vault this device created gets). TODO(KH5): the remember sheet after a join, once there is one.
+    static func remember(_ model: AppModel, _ keys: RememberedKeys, key: String) async throws {
+        try await keys.rememberThisDeviceKey(try DeviceKeys.parse(key), vaultID: try #require(model.vault?.vaultId),
+                                             vaultName: model.vaultName ?? "Notes", folder: model.vaultURL)
+    }
+
     // MARK: - The report
 
     @Test func aWebDAVVaultsRememberedKeyIsUsedAfterARelaunch() async throws {
@@ -89,9 +96,8 @@ struct RememberedKeysWebDAVTests {
         let library = device.library
         _ = try await model.connectWebDAV(device.listing, user: nil, password: "", pin: nil, library: library)
         #expect(try await Self.unlockAsTheSheetDoes(model, keys, key: device.key) == .noKey)
-        let offer = try #require(keys.offer, "a first unlock offers to remember the key")
-        #expect(offer.replacing == nil)
-        try await keys.answer(offer, storage: .thisDevice)
+        #expect(keys.offer == nil, "a pasted device key is not offered to remember (TODO(KH5))")
+        try await Self.remember(model, keys, key: device.key)
 
         (model, keys) = device.launch()
         try await device.openRecent(model, device.library)
@@ -103,104 +109,7 @@ struct RememberedKeysWebDAVTests {
         model.close()
     }
 
-    /// The regression: a key remembered for this vault at another folder (here the same vault
-    /// opened as a folder) is not offered at the WebDAV copy, and the pasted key used to bring
-    /// no offer either, so every launch needed the key. Now the sheet offers to remember it here.
-    @Test func aKeyRememberedForAnotherCopyIsOfferedForTheWebDAVCopyAfterAManualUnlock() async throws {
-        let device = try Device()
-        var (model, keys) = device.launch()
-        let library = device.library
-        let (folder, _) = try AppModelTests.fixtureVault()   // the same vault id, another folder
-        try await model.openVault(at: folder)
-        #expect(try await Self.unlockAsTheSheetDoes(model, keys, key: device.key) == .noKey)
-        try await keys.answer(try #require(keys.offer), storage: .thisDevice)
-        let id = try #require(model.vault?.vaultId)
-
-        (model, keys) = device.launch()
-        _ = try await model.connectWebDAV(device.listing, user: nil, password: "", pin: nil, library: library)
-        #expect(model.vault?.listStatus == .notChecked)
-        #expect(try await Self.unlockAsTheSheetDoes(model, keys, key: device.key) == .notHere)
-        #expect(model.vault?.listStatus == .verified(.firstUse), "nothing confirms the copy's list yet")
-        #expect(await device.store.reads == 0, "no Face ID prompt for a folder the key never opened")
-        let offer = try #require(keys.offer, "the remember sheet must come, or the key is needed at every launch")
-        #expect(offer.replacing == .thisDevice)
-        #expect(keys.holdsUnlockSheet(model))
-        try await keys.answer(offer, storage: .thisDevice)
-        #expect(keys.locations.locations(for: id).count == 2, "offered at both folders now")
-
-        (model, keys) = device.launch()
-        try await device.openRecent(model, device.library)
-        #expect(await keys.unlockWithRememberedKey(model) == .unlocked)
-        #expect(await device.store.reads == 1)
-        // The other folder keeps its key.
-        try await model.openVault(at: folder)
-        #expect(await keys.unlockWithRememberedKey(model) == .unlocked)
-        model.close()
-    }
-
-    @Test func notNowKeepsTheKeyAndAsksAgainNextTime() async throws {
-        let device = try Device()
-        var (model, keys) = device.launch()
-        let library = device.library
-        let (folder, _) = try AppModelTests.fixtureVault()
-        try await model.openVault(at: folder)
-        _ = try await Self.unlockAsTheSheetDoes(model, keys, key: device.key)
-        try await keys.answer(try #require(keys.offer), storage: .iCloudKeychain)
-        let id = try #require(model.vault?.vaultId)
-
-        (model, keys) = device.launch()
-        _ = try await model.connectWebDAV(device.listing, user: nil, password: "", pin: nil, library: library)
-        #expect(try await Self.unlockAsTheSheetDoes(model, keys, key: device.key) == .notHere)
-        let offer = try #require(keys.offer)
-        #expect(offer.replacing == .iCloudKeychain, "the sheet starts on iCloud Keychain: a device-only save would delete the synced copy")
-        try await keys.answer(offer, storage: nil)
-        #expect(await device.store.items[id]?.storage == .iCloudKeychain)
-        #expect(keys.locations.locations(for: id).count == 1)
-
-        (model, keys) = device.launch()
-        try await device.openRecent(model, device.library)
-        #expect(try await Self.unlockAsTheSheetDoes(model, keys, key: device.key) == .notHere)
-        #expect(keys.offer != nil)
-        model.close()
-    }
-
     // MARK: - Stress
-
-    /// Remember, relaunch, then a manual unlock again (Face ID cancelled): no second offer;
-    /// a key that no longer opens the vault is offered for replacement, the new one then works.
-    @Test func rememberRelaunchRememberAgain() async throws {
-        let device = try Device()
-        var (model, keys) = device.launch()
-        let library = device.library
-        _ = try await model.connectWebDAV(device.listing, user: nil, password: "", pin: nil, library: library)
-        _ = try await Self.unlockAsTheSheetDoes(model, keys, key: device.key)
-        try await keys.answer(try #require(keys.offer), storage: .thisDevice)
-        let id = try #require(model.vault?.vaultId)
-
-        (model, keys) = device.launch()
-        try await device.openRecent(model, device.library)
-        await device.store.setAuthError(.cancelled)
-        #expect(try await Self.unlockAsTheSheetDoes(model, keys, key: device.key) == .cancelled)
-        #expect(keys.offer == nil, "remembered and offered here already")
-        await device.store.setAuthError(nil)
-
-        // The saved key went bad (another vault's key): the sheet replaces it.
-        await device.store.put(try NativeIdentity.generate(.postQuantum).string, for: id)
-        (model, keys) = device.launch()
-        try await device.openRecent(model, device.library)
-        guard case .failed = try await Self.unlockAsTheSheetDoes(model, keys, key: device.key) else {
-            Issue.record("a key that opens nothing must fail")
-            return
-        }
-        let offer = try #require(keys.offer)
-        try await keys.answer(offer, storage: .thisDevice)
-        #expect(Device.publicKey(await device.store.items[id]?.identity) == Device.publicKey(device.key))
-
-        (model, keys) = device.launch()
-        try await device.openRecent(model, device.library)
-        #expect(await keys.unlockWithRememberedKey(model) == .unlocked)
-        model.close()
-    }
 
     /// Removing the WebDAV vault and connecting it again makes a new location (a new copy
     /// folder) for the same vault id: the key is offered there once remembered again.
@@ -210,14 +119,14 @@ struct RememberedKeysWebDAVTests {
         let library = device.library
         let first = try await model.connectWebDAV(device.listing, user: nil, password: "", pin: nil, library: library)
         _ = try await Self.unlockAsTheSheetDoes(model, keys, key: device.key)
-        try await keys.answer(try #require(keys.offer), storage: .thisDevice)
+        try await Self.remember(model, keys, key: device.key)
         try await model.removeWebDAVLocation(first, library: library)
 
         (model, keys) = device.launch()
         let second = try await model.connectWebDAV(device.listing, user: nil, password: "", pin: nil, library: library)
         #expect(second != first)
         #expect(try await Self.unlockAsTheSheetDoes(model, keys, key: device.key) == .notHere)
-        try await keys.answer(try #require(keys.offer), storage: .thisDevice)
+        try await Self.remember(model, keys, key: device.key)
 
         (model, keys) = device.launch()
         try await device.openRecent(model, device.library)
@@ -233,7 +142,7 @@ struct RememberedKeysWebDAVTests {
         let library = device.library
         _ = try await model.connectWebDAV(device.listing, user: nil, password: "", pin: nil, library: library)
         _ = try await Self.unlockAsTheSheetDoes(model, keys, key: device.key)
-        try await keys.answer(try #require(keys.offer), storage: .thisDevice)
+        try await Self.remember(model, keys, key: device.key)
         #expect(await TS.waitUntil { device.remote.pushes >= 1 && model.webdav?.isPushing == false })
         try await model.downloadWebDAVAgain(library: library)
         #expect(model.phase == .unlocked)
@@ -251,16 +160,20 @@ struct RememberedKeysWebDAVTests {
         let library = device.library
         _ = try await model.connectWebDAV(device.listing, user: nil, password: "", pin: nil, library: library)
         _ = try await Self.unlockAsTheSheetDoes(model, keys, key: device.key)
-        try await keys.answer(try #require(keys.offer), storage: .thisDevice)
+        try await Self.remember(model, keys, key: device.key)
         let webdavID = try #require(model.vault?.vaultId)
 
         let otherURL = device.scratch.appendingPathComponent("Other.sempere")
         let other = try TS.makeVault(at: otherURL).device
+        let otherKey = other.fileText(created: Date())
         try await model.openVault(at: otherURL)
         let otherID = try #require(model.vault?.vaultId)
         #expect(otherID != webdavID)
-        #expect(try await Self.unlockAsTheSheetDoes(model, keys, key: other.fileText(created: Date())) == .noKey)
-        try await keys.answer(try #require(keys.offer), storage: .iCloudKeychain)
+        #expect(try await Self.unlockAsTheSheetDoes(model, keys, key: otherKey) == .noKey)
+        // Asked for iCloud Keychain: a device key stays on this device all the same (design §6.1).
+        let id = try #require(model.vault?.vaultId)
+        try await keys.answer(RememberedKeys.Offer(vaultID: id, vaultName: "Other", identity: otherKey, folder: model.vaultURL),
+                              storage: .iCloudKeychain)
 
         (model, keys) = device.launch()
         try await device.openRecent(model, device.library)
@@ -268,34 +181,9 @@ struct RememberedKeysWebDAVTests {
         try await model.openVault(at: otherURL)
         #expect(await keys.unlockWithRememberedKey(model) == .unlocked)
         #expect(await device.store.items[webdavID]?.storage == .thisDevice)
-        #expect(await device.store.items[otherID]?.storage == .iCloudKeychain)
+        #expect(await device.store.items[otherID]?.storage == .thisDevice)
         #expect(Device.publicKey(await device.store.items[otherID]?.identity) == other.key)
         model.close()
     }
 
-    /// A key that arrived through iCloud Keychain (no location on this device) unlocks the
-    /// WebDAV copy opened in the app and is bound to it; a device-only key saved later works too.
-    @Test func iCloudKeychainAndDeviceOnlyKeys() async throws {
-        let device = try Device()
-        var (model, keys) = device.launch()
-        let library = device.library
-        _ = try await model.connectWebDAV(device.listing, user: nil, password: "", pin: nil, library: library)
-        let id = try #require(model.vault?.vaultId)
-        await device.store.put(try device.identity(), for: id, storage: .iCloudKeychain)
-        #expect(await keys.unlockWithRememberedKey(model) == .unlocked)
-        #expect(keys.storage(for: model) == .iCloudKeychain)
-        #expect(keys.locations.locations(for: id).count == 1)
-
-        (model, keys) = device.launch()
-        try await device.openRecent(model, device.library)
-        #expect(await keys.unlockWithRememberedKey(model) == .unlocked)
-        // Moved to this device only (the remember sheet with sync off, after a broken key): still offered.
-        try await keys.answer(RememberedKeys.Offer(vaultID: id, vaultName: "Notes", identity: try device.identity(),
-                                                   folder: model.vaultURL), storage: .thisDevice)
-        (model, keys) = device.launch()
-        try await device.openRecent(model, device.library)
-        #expect(await keys.unlockWithRememberedKey(model) == .unlocked)
-        #expect(keys.storage(for: model) == .thisDevice)
-        model.close()
-    }
 }

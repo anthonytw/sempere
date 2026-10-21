@@ -141,19 +141,6 @@ struct SettingsTests {
         #expect(!PhotoPrivacy.isOn(d))
     }
 
-    // MARK: Device keys
-
-    /// The old format's `rewrap.*` shared settings round-trip as plain strings (nothing reads them).
-    @Test func legacyRewrapSettingsKeepTheirDefaults() {
-        let d = scratch()
-        #expect(LegacyRewrapSettings.onAdd(d) == "header")
-        #expect(LegacyRewrapSettings.onRemove(d) == "reencrypt")
-        d.set("garbage", forKey: LegacyRewrapSettings.onAddKey)
-        #expect(LegacyRewrapSettings.onAdd(d) == "header")
-        d.set("header", forKey: LegacyRewrapSettings.onRemoveKey)
-        #expect(LegacyRewrapSettings.onRemove(d) == "header")
-    }
-
     // MARK: New notes
 
     @Test func titleFormatDefaultsToDateAndTime() {

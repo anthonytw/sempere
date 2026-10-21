@@ -3,8 +3,8 @@ import Sempere
 import Testing
 @testable import SempereApp
 
-/// The unlock sheet goes away (or shows the remember offer) as soon as the
-/// key is accepted, while the notes are still being read.
+/// The unlock sheet goes away as soon as the key is accepted, while the
+/// notes are still being read.
 @MainActor
 struct UnlockLoadingTests {
     static func gatedModel() async throws -> (AppModel, Gate, key: String) {
@@ -39,7 +39,7 @@ struct UnlockLoadingTests {
         #expect(await TS.waitUntil { model.listLoaded && model.notes.count == 2 })
     }
 
-    @Test func manualUnlockShowsTheOfferBeforeTheNotesAreRead() async throws {
+    @Test func manualUnlockReleasesTheSheetBeforeTheNotesAreRead() async throws {
         let (model, gate, key) = try await Self.gatedModel()
         let keys = RememberedKeys(store: FakeKeyStore())
         await gate.close()
@@ -49,7 +49,8 @@ struct UnlockLoadingTests {
         await gate.releaseOne()
         try await unlocking.value
         #expect(model.phase == .unlocked)
-        #expect(keys.offer != nil)          // the sheet now asks to remember the key
+        #expect(keys.offer == nil)          // a pasted device key is not offered to remember (TODO(KH5))
+        #expect(!keys.holdsUnlockSheet(model))
         #expect(!model.listLoaded)
         await gate.open()
         #expect(await TS.waitUntil { model.listLoaded && model.notes.count == 2 })

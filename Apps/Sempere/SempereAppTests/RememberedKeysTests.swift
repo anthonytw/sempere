@@ -68,38 +68,43 @@ struct RememberedKeysTests {
         return (model, try String(contentsOf: keyURL, encoding: .utf8))
     }
 
-    @Test func manualUnlockOffersToRememberThenRemembers() async throws {
+    /// A pasted device key unlocks, and nothing is offered to remember (M1, design §6.1): a device
+    /// key file carries its signing seeds and stays where it was made. TODO(KH5): offered again once
+    /// devices join in the app.
+    @Test func aPastedDeviceKeyIsNotOfferedToRemember() async throws {
         let (model, key) = try await Self.lockedModel()
         let store = FakeKeyStore()
         let keys = RememberedKeys(store: store)
         #expect(await keys.unlockWithRememberedKey(model) == .noKey)
         #expect(model.phase == .locked)
-
         try await keys.unlock(model, identityText: key)
         #expect(model.phase == .unlocked)
-        let offer = try #require(keys.offer)
-        let vaultID = try #require(model.vault?.vaultId)
-        #expect(offer.vaultID == vaultID)
-        #expect(offer.vaultName == "sample")
-        // The device key file, signing keys included (`DeviceKeys.fileText`).
-        #expect(DeviceKeys.isDeviceKeyFile(offer.identity))
-        #expect(try DeviceKeys.parse(offer.identity).key == (try DeviceKeys.parse(key)).key)
-        #expect(keys.holdsUnlockSheet(model))
-
-        try await keys.answer(offer, storage: .thisDevice)
         #expect(keys.offer == nil)
-        #expect(!keys.holdsUnlockSheet(model))
-        #expect(await store.items[vaultID] == FakeKeyStore.Item(identity: offer.identity, name: "sample", storage: .thisDevice))
-        #expect(keys.storage(for: model) == .thisDevice)
+        #expect(!keys.holdsUnlockSheet(model), "the sheet closes")
+        #expect(await store.items.isEmpty)
     }
 
-    @Test func declinedOfferStoresNothing() async throws {
+    /// A device key is never stored synchronizable, whatever is asked: not through the remember
+    /// sheet's answer, and not by the Keychain store itself (M1, design §6.1).
+    @Test func aDeviceKeyIsNeverStoredInICloudKeychain() async throws {
         let (model, key) = try await Self.lockedModel()
         let store = FakeKeyStore()
         let keys = RememberedKeys(store: store)
         try await keys.unlock(model, identityText: key)
-        try await keys.answer(try #require(keys.offer), storage: nil)
-        #expect(keys.offer == nil)
+        let id = try #require(model.vault?.vaultId)
+        let offer = RememberedKeys.Offer(vaultID: id, vaultName: "sample", identity: key, folder: model.vaultURL)
+        try await keys.answer(offer, storage: .iCloudKeychain)
+        #expect(await store.items[id]?.storage == .thisDevice)
+        #expect(keys.storage(for: model) == .thisDevice)
+        // The Keychain store's own rule (it is what the app saves through).
+        #expect(KeychainVaultKeyStore.storage(for: key, asked: .iCloudKeychain) == .thisDevice)
+        #expect(KeychainVaultKeyStore.storage(for: try DeviceKeys.generate().fileText(created: Date()),
+                                              asked: .iCloudKeychain) == .thisDevice)
+        // Only text that is not a device key file (none the app makes now) may sync.
+        #expect(KeychainVaultKeyStore.storage(for: "AGE-SECRET-KEY-PQ-1X", asked: .iCloudKeychain) == .iCloudKeychain)
+        // Declining stores nothing.
+        try await keys.forget(model)
+        try await keys.answer(offer, storage: nil)
         #expect(await store.items.isEmpty)
     }
 
@@ -144,9 +149,9 @@ struct RememberedKeysTests {
         }
         #expect(model.phase == .locked)
         try await keys.unlock(model, identityText: key)
-        let offer = try #require(keys.offer)   // replaces the broken one
-        try await keys.answer(offer, storage: .thisDevice)
-        #expect(await store.items[vaultID]?.identity == offer.identity)
+        #expect(model.phase == .unlocked)
+        // TODO(KH5): offered for replacement again once devices join in the app.
+        #expect(keys.offer == nil)
     }
 
     /// The passphrase opens the recovery key's copy (`sempere-test`, Fixtures/README.md): read-only,
@@ -170,7 +175,7 @@ struct RememberedKeysTests {
         let device = try DeviceKeys.generate()
         let id = UUID()
         let folder = TestTemp.root.appendingPathComponent("Made-\(UUID().uuidString).sempere", isDirectory: true)
-        try await keys.rememberCreatedVaultKey(device, vaultID: id, vaultName: "Made", folder: folder)
+        try await keys.rememberThisDeviceKey(device, vaultID: id, vaultName: "Made", folder: folder)
         let item = try #require(await store.items[id])
         #expect(item.storage == .thisDevice)
         #expect(try DeviceKeys.parse(item.identity).key == device.key)
@@ -182,7 +187,9 @@ struct RememberedKeysTests {
         let store = FakeKeyStore()
         let keys = RememberedKeys(store: store)
         try await keys.unlock(model, identityText: key)
-        try await keys.answer(try #require(keys.offer), storage: .thisDevice)
+        let id = try #require(model.vault?.vaultId)
+        try await keys.rememberThisDeviceKey(try DeviceKeys.parse(key), vaultID: id, vaultName: "sample", folder: model.vaultURL)
+        #expect(await store.items[id] != nil)
         try await keys.forget(model)
         #expect(await store.items.isEmpty)
         #expect(keys.storage(for: model) == nil)
@@ -190,6 +197,7 @@ struct RememberedKeysTests {
         // An offer left open when the vault closes is dropped (the key leaves memory).
         let (other, otherKey) = try await Self.lockedModel()
         try await keys.unlock(other, identityText: otherKey)
+        keys.offer = RememberedKeys.Offer(vaultID: try #require(other.vault?.vaultId), vaultName: "sample", identity: otherKey)
         #expect(keys.offer != nil)
         other.close()
         keys.discardStaleOffer(other)

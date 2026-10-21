@@ -8,7 +8,7 @@ import Sempere
 /// still missing as the user types (`requirements`, `hints`).
 enum StoredKeyPassphrase {
     static var footnote: String {
-        String(localized: "The copy is kept in the vault, on its storage: anyone who can read the storage can try passphrases on it offline. Use six or more random words, a password from your password manager, or about 16 random characters.",
+        String(localized: "The copy is kept in the vault, on its storage: anyone who can read the storage can try passphrases on it offline. Use Suggest a Passphrase (seven random words), six or more random words of your own, a password from your password manager, or about 16 random characters.",
                comment: "Footnote under the toggle that stores the key in the vault under a passphrase")
     }
 

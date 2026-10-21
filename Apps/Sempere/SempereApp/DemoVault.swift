@@ -80,13 +80,17 @@ enum DemoVault {
     ///
     /// `trust`: the trust records of the model that opens it (`AppModel.trust`): the vault's is saved
     /// there, as for any vault this device creates, so its list checks when it is unlocked.
+    ///
+    /// `device`: the home device's keys (UI tests, `SEMPERE_DEMO_DEVICE_KEY`: a key file the test also
+    /// pastes into the unlock sheet, so the vault opens writable the way a user unlocks it); a fresh
+    /// one when nil.
     static func build(in directory: URL, specs: [Spec] = DemoVault.specs, passphrase: String? = nil,
                       itemsImage: Data? = nil, denseStrokes: Int? = nil, searchNotes: Bool = false,
-                      trust: (any EpochTrustStore)? = nil) async throws -> Built {
+                      trust: (any EpochTrustStore)? = nil, device given: DeviceKeys? = nil) async throws -> Built {
         let fm = FileManager.default
         if fm.fileExists(atPath: directory.path) { try fm.removeItem(at: directory) }
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
-        let device = try DeviceKeys.generate()
+        let device = try given ?? DeviceKeys.generate()
         let recovery = try MLKEM768X25519Identity()
         let created = anchor.addingTimeInterval(-40 * 86_400)
         let vaultURL = directory.appendingPathComponent(folderName, isDirectory: true)

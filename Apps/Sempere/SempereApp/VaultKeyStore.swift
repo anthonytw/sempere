@@ -1,4 +1,5 @@
 import Foundation
+import Sempere
 import LocalAuthentication
 import Security
 
@@ -145,7 +146,14 @@ struct KeychainVaultKeyStore: VaultKeyStore {
         }.value
     }
 
-    func save(_ identity: String, for vaultID: UUID, vaultName: String, storage: KeyStorage) async throws {
+    /// Where `text` may be kept when `asked` is wanted: a device key file (`DeviceKeys`, with its
+    /// signing seeds) stays on this device, never in iCloud Keychain (key-hierarchy design §6.1).
+    nonisolated static func storage(for text: String, asked: KeyStorage) -> KeyStorage {
+        DeviceKeys.isDeviceKeyFile(text) ? .thisDevice : asked
+    }
+
+    func save(_ identity: String, for vaultID: UUID, vaultName: String, storage asked: KeyStorage) async throws {
+        let storage = Self.storage(for: identity, asked: asked)
         let canBiometrics = LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
         let hasPasscode = LAContext().canEvaluatePolicy(.deviceOwnerAuthentication, error: nil)
         guard hasPasscode else { throw KeyStoreError.noPasscode }

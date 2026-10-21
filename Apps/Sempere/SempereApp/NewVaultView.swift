@@ -218,6 +218,16 @@ struct NewVaultView: View {
                                     passphrase: $passphrase, confirmation: $confirmation, revealed: $revealed,
                                     identifier: "newVault.passphrase", confirmationIdentifier: "newVault.confirmation")
                 PassphraseRequirementsView(passphrase: passphrase, confirmation: confirmation)
+                // Seven random words (77 bits) instead of one the user invents: shown, to write down.
+                Button(String(localized: "Suggest a Passphrase", comment: "New Vault: fill in seven random words"),
+                       systemImage: "dice") {
+                    let suggested = GeneratedPassphrase.make()
+                    passphrase = suggested
+                    confirmation = suggested
+                    revealed = true
+                }
+                .help(String(localized: "Fill in seven random words as the passphrase"))
+                .accessibilityIdentifier("newVault.suggestPassphrase")
             }
         } footer: {
             if wrap { Text(StoredKeyPassphrase.footnote) }
@@ -231,7 +241,7 @@ struct NewVaultView: View {
     /// the recovery key. A failure says so (the vault stays open until it closes).
     private func rememberDeviceKey(_ created: CreatedVault) async {
         do {
-            try await keys.rememberCreatedVaultKey(created.device, vaultID: created.vaultID,
+            try await keys.rememberThisDeviceKey(created.device, vaultID: created.vaultID,
                                                    vaultName: VaultLibrary.displayName(of: created.url),
                                                    folder: model.vault?.vaultId == created.vaultID ? model.vaultURL : nil)
         } catch {

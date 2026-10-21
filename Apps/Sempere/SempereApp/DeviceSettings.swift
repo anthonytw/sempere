@@ -243,27 +243,6 @@ enum TranscriptionSettings {
     }
 }
 
-// MARK: - Device keys
-
-/// The two `rewrap.*` shared settings (docs/settings-sync.md) of the old
-/// recipients format, which re-encrypted attachments on key changes. Key
-/// changes no longer rewrap (format.md §15), so nothing reads them; they are
-/// still in `SharedSettingsCatalog`, and are kept as plain strings so a
-/// synced value round-trips. TODO(KH5): drop them with the catalog's entries.
-enum LegacyRewrapSettings {
-    static let onAddKey = "Sempere.rewrap.onAdd"
-    static let onRemoveKey = "Sempere.rewrap.onRemove"
-    static let values: Set<String> = ["header", "reencrypt"]
-
-    static func onAdd(_ defaults: UserDefaults) -> String {
-        defaults.string(forKey: onAddKey).flatMap { values.contains($0) ? $0 : nil } ?? "header"
-    }
-
-    static func onRemove(_ defaults: UserDefaults) -> String {
-        defaults.string(forKey: onRemoveKey).flatMap { values.contains($0) ? $0 : nil } ?? "reencrypt"
-    }
-}
-
 // MARK: - New notes
 
 /// *New notes*: the title a note gets when the user gives none and (with

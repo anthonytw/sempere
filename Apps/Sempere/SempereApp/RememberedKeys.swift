@@ -19,7 +19,8 @@ import Observation
 @MainActor
 @Observable
 final class RememberedKeys {
-    /// An unlock the user may want remembered.
+    /// An unlock the user may want remembered (the remember sheet, `RememberKeyView`).
+    /// TODO(KH5): made again once devices join in the app; nothing makes one now.
     struct Offer: Identifiable, Equatable {
         let vaultID: UUID
         let vaultName: String
@@ -211,11 +212,27 @@ final class RememberedKeys {
 
     /// Unlocks with pasted key text, then offers to remember it when it is
     /// a device key file of a listed device (a recovery key is never offered).
+    ///
+    /// TODO(KH5): offer to remember a pasted device key once devices join in
+    /// the app. Until then nothing is offered: a device key file carries its
+    /// signing seeds and stays on its device (design §6.1); only the key of a
+    /// vault this device created is remembered (`rememberThisDeviceKey`). A
+    /// key remembered already is bound to this folder when the list checks.
     func unlock(_ model: AppModel, identityText: String) async throws {
         isManualUnlocking = true
         defer { isManualUnlocking = false }
         let device = try await model.unlock(identityText: identityText, awaitNotes: false)
-        if let device, !(model.vault?.isRecoveryOpen ?? true) { offerToRemember(device, model) }
+        if device != nil, !(model.vault?.isRecoveryOpen ?? true) { bindConfirmedLocation(model) }
+    }
+
+    /// A key remembered for the open vault but not offered at its folder: the
+    /// folder becomes a place to offer it once this device's trust record
+    /// confirms the list (not a first use, S16).
+    private func bindConfirmedLocation(_ model: AppModel) {
+        guard let id = model.vault?.vaultId, storageVaultID == id, storage != nil, brokenVaultID != id,
+              !offersSavedKey(for: model), let folder = model.vaultURL,
+              Self.listIsConfirmed(model.vault?.listStatus) else { return }
+        locations.bind(id, to: folder)
     }
 
     /// Unlocks read-only with the passphrase of the recovery key's copy in
@@ -230,7 +247,7 @@ final class RememberedKeys {
     /// other copy of the device key exists, and without it this device could
     /// only read the vault with the recovery key. Kept in this device's
     /// Keychain only (`thisDevice`), bound to the vault's folder.
-    func rememberCreatedVaultKey(_ device: DeviceKeys, vaultID: UUID, vaultName: String, folder: URL?) async throws {
+    func rememberThisDeviceKey(_ device: DeviceKeys, vaultID: UUID, vaultName: String, folder: URL?) async throws {
         try await store.save(device.fileText(created: Date()), for: vaultID, vaultName: vaultName, storage: .thisDevice)
         if let folder { locations.bind(vaultID, to: folder) }
         storageVaultID = vaultID
@@ -246,30 +263,6 @@ final class RememberedKeys {
         return model.phase == .unlocked && offer.vaultID == model.vault?.vaultId
     }
 
-    /// Offers to remember `device` unless a working key is already
-    /// remembered and offered at this folder.
-    func offerToRemember(_ device: DeviceKeys, _ model: AppModel) {
-        guard model.phase == .unlocked, let id = model.vault?.vaultId else { return }
-        var replacing: KeyStorage?
-        if storageVaultID == id, let stored = storage, brokenVaultID != id {
-            // A key is remembered already, and offered here: nothing to ask.
-            if offersSavedKey(for: model) { return }
-            // A pasted key that opened this folder, whose list this device's trust record
-            // confirms (not a first use), makes it a place to offer that key.
-            if let folder = model.vaultURL, Self.listIsConfirmed(model.vault?.listStatus) {
-                locations.bind(id, to: folder)
-                return
-            }
-            // Not offered here, and nothing confirms this folder (a WebDAV copy or a vault added
-            // again, whose list is a first use until this device writes to it): ask, as for a
-            // first key. Without this the saved key was never offered here and never offered to
-            // remember either, so every launch needed the key (TestFlight 1.0.0, Mac).
-            replacing = stored
-        }
-        offer = Offer(vaultID: id, vaultName: model.vaultName ?? String(localized: "Vault", comment: "Name shown for a vault that has none"),
-                      identity: device.fileText(created: Date()), folder: model.vaultURL, replacing: replacing)
-    }
-
     /// The device list verified against this device's trust record (design §4.3), not on first use.
     nonisolated static func listIsConfirmed(_ status: ListStatus?) -> Bool {
         switch status {
@@ -283,7 +276,9 @@ final class RememberedKeys {
     /// Answers the offer: nil does not remember the key. Clears the offer.
     func answer(_ offer: Offer, storage: KeyStorage?) async throws {
         if self.offer?.vaultID == offer.vaultID { self.offer = nil }
-        guard let storage else { return }
+        guard let asked = storage else { return }
+        // A device key never goes to iCloud Keychain (design §6.1).
+        let storage = KeychainVaultKeyStore.storage(for: offer.identity, asked: asked)
         try await store.save(offer.identity, for: offer.vaultID, vaultName: offer.vaultName, storage: storage)
         if let folder = offer.folder { locations.bind(offer.vaultID, to: folder) }
         storageVaultID = offer.vaultID

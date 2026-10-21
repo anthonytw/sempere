@@ -3107,18 +3107,6 @@
         }
       }
     },
-    "Also sync via iCloud Keychain" : {
-      "comment" : "Toggle",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sincronizar también con el Llavero de iCloud"
-          }
-        }
-      }
-    },
     "An attachment can be deleted 30 days after this device first found it unused. Deleting reads its note again first and keeps anything a version still uses." : {
       "comment" : "Footer of Unused Attachments",
       "extractionState" : "manual",
@@ -6924,6 +6912,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Archivos en una carpeta"
+          }
+        }
+      }
+    },
+    "Fill in seven random words as the passphrase" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rellenar con siete palabras al azar como frase de contraseña"
           }
         }
       }
@@ -16009,6 +16008,18 @@
         }
       }
     },
+    "Suggest a Passphrase" : {
+      "comment" : "New Vault: fill in seven random words",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sugerir una frase de contraseña"
+          }
+        }
+      }
+    },
     "Summary area" : {
       "comment" : "Paper parameter",
       "extractionState" : "manual",
@@ -17029,14 +17040,14 @@
         }
       }
     },
-    "The copy is kept in the vault, on its storage: anyone who can read the storage can try passphrases on it offline. Use six or more random words, a password from your password manager, or about 16 random characters." : {
+    "The copy is kept in the vault, on its storage: anyone who can read the storage can try passphrases on it offline. Use Suggest a Passphrase (seven random words), six or more random words of your own, a password from your password manager, or about 16 random characters." : {
       "comment" : "Footnote under the toggle that stores the key in the vault under a passphrase",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La copia se guarda en la bóveda, en su almacenamiento: quien pueda leer el almacenamiento puede probar frases de contraseña sin conexión. Usa seis o más palabras al azar, una contraseña de tu gestor de contraseñas o unos 16 caracteres al azar."
+            "value" : "La copia se guarda en la bóveda, en su almacenamiento: quien pueda leer el almacenamiento puede probar frases de contraseña sin conexión. Usa Sugerir una frase de contraseña (siete palabras al azar), seis o más palabras al azar elegidas por ti, una contraseña de tu gestor de contraseñas o unos 16 caracteres al azar."
           }
         }
       }
@@ -20009,30 +20020,6 @@
         }
       }
     },
-    "When Adding a Device" : {
-      "comment" : "Settings ▸ Device Keys picker",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Al añadir un dispositivo"
-          }
-        }
-      }
-    },
-    "When Removing or Replacing a Device" : {
-      "comment" : "Settings ▸ Device Keys picker",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Al quitar o sustituir un dispositivo"
-          }
-        }
-      }
-    },
     "Where" : {
       "comment" : "New vault form: section header for the vault's location",
       "extractionState" : "manual",
@@ -20255,18 +20242,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tus notas se pueden seguir leyendo. No se escribe nada en esta bóveda hasta que se corrija la lista."
-          }
-        }
-      }
-    },
-    "Your other devices signed in to the same Apple Account get the key too. The Keychain cannot require %@ for synced items, so Sempere asks for %@ or your passcode itself before using it; the key is otherwise protected by iCloud Keychain's end-to-end encryption and your device passcode. Synced keys may not be listed in the Passwords app." : {
-      "comment" : "Unlock sheet footer of the iCloud Keychain switch; both values are the biometry (Face ID, Touch ID, or “Face ID or Touch ID”)",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tus otros dispositivos con sesión iniciada en la misma cuenta de Apple también reciben la clave. El Llavero no puede exigir %1$@ para los elementos sincronizados, así que Sempere pide %2$@ o tu código antes de usarla; por lo demás, la clave está protegida por el cifrado de extremo a extremo del Llavero de iCloud y por el código de tu dispositivo. Puede que las claves sincronizadas no aparezcan en la app Contraseñas."
           }
         }
       }
