@@ -100,9 +100,8 @@ struct ItemLayerTests {
         }
         let attempts = Attempts()
         let cache = BlobCache(root: TestTemp.root.appendingPathComponent(UUID().uuidString)) { note, ref, dest in
-            if attempts.next() == 1 { throw CloudVault.CloudError.blobNotLocal(name: "x") }
-            try await AppModel.fetchBlob(ref, of: note, from: vault, to: dest, cloud: false, hooks: .live,
-                                         stallTimeout: .seconds(5), pollInterval: .milliseconds(10))
+            if attempts.next() == 1 { throw AppModel.ModelError.noteNotDownloadedFromServer("dav.example.org") }
+            try await AppModel.fetchBlob(ref, of: note, from: vault, to: dest)
         }
         let image = AttachmentEditorTests.imageItem(ref)
         let layer = ItemLayerView(frame: CGRect(x: 0, y: 0, width: 600, height: 800))
@@ -110,7 +109,7 @@ struct ItemLayerTests {
         layer.show([image], note: Self.lecture, paper: .blank, source: ItemLayerSource(cache: cache))
         #expect(await TS.waitUntil { if case .image? = layer.picture(of: image.id) { true } else { false } })
         #expect(attempts.count == 2)
-        #expect(ItemRendering.isTransient(CloudVault.CloudError.blobNotLocal(name: "x")))
+        #expect(ItemRendering.isTransient(AppModel.ModelError.noteNotDownloadedFromServer("dav.example.org")))
         #expect(ItemRendering.isTransient(BlobCache.CacheError.cleared))
         #expect(!ItemRendering.isTransient(BlobError.missing("x")))
     }
@@ -132,8 +131,7 @@ struct ItemLayerTests {
     /// A blob cache over the vault, as the model makes it (no iCloud).
     static func cache(_ vault: Vault) -> BlobCache {
         BlobCache(root: TestTemp.root.appendingPathComponent(UUID().uuidString)) { note, ref, dest in
-            try await AppModel.fetchBlob(ref, of: note, from: vault, to: dest, cloud: false, hooks: .live,
-                                         stallTimeout: .seconds(5), pollInterval: .milliseconds(10))
+            try await AppModel.fetchBlob(ref, of: note, from: vault, to: dest)
         }
     }
 

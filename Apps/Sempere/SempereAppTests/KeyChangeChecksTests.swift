@@ -285,31 +285,6 @@ struct KeyChangeChecksTests {
         try Self.expectFinished(url, opens: [own], locksOut: [other])
     }
 
-    /// c24 stress: removing a key from an iCloud Drive vault while a note is
-    /// still evicted: the change downloads everything first, then finishes.
-    @Test func c24RemovingAKeyWhileANoteIsStillDownloading() async throws {
-        let (url, key) = try AppModelTests.fixtureVault()
-        let trust = MemoryRecipientsTrustStore()
-        let cloud = FakeCloud(vault: url)
-        let model = Self.model(trust: trust)
-        model.cloudHooks = cloud.hooks
-        model.cloudPollInterval = .milliseconds(10)
-        model.cloudIdleInterval = .milliseconds(20)
-        try await model.openVault(at: url)
-        #expect(model.isCloudVault)
-        try await model.unlock(identityText: String(contentsOf: key, encoding: .utf8))
-        let other = try NativeIdentity.generate(.postQuantum)
-        try await model.addDeviceKey(recipient: other.recipient.string, label: "B", authenticator: PassingOwnerAuthenticator())
-        try cloud.evict(AppModelTests.deleted)
-        cloud.autoDeliver = true
-        try await model.removeDeviceKey(other.recipient.string)
-        let vaultId = try #require(model.vault?.vaultId)
-        #expect(try trust.record(for: vaultId)?.rewrapFinished == true)
-        model.close()
-        try Self.expectFinished(url, opens: [try IdentityFile.parse(String(contentsOf: key, encoding: .utf8))],
-                                locksOut: [other])
-    }
-
     // MARK: - c25: junk rewrap journal
 
     /// A journal of another vault's interrupted change (it decodes, but its
@@ -420,25 +395,6 @@ struct KeyChangeChecksTests {
         model.close()
     }
 
-    /// c25 in iCloud Drive (the checklist's setting): the same, coordinated.
-    @Test func c25AJunkJournalInAnICloudVault() async throws {
-        let (url, key) = try AppModelTests.fixtureVault()
-        try Data("{\"junk\":true}".utf8).write(to: url.appendingPathComponent(Self.journalName))
-        let cloud = FakeCloud(vault: url)
-        cloud.autoDeliver = true
-        let model = Self.model()
-        model.cloudHooks = cloud.hooks
-        model.cloudPollInterval = .milliseconds(10)
-        model.cloudIdleInterval = .milliseconds(20)
-        try await model.openVault(at: url)
-        #expect(model.isCloudVault)
-        try await model.unlock(identityText: String(contentsOf: key, encoding: .utf8))
-        #expect(model.phase == .unlocked)
-        #expect(!Self.exists(url, Self.journalName))
-        #expect(Self.exists(url, Self.refusedName))
-        model.close()
-    }
-
     // MARK: - c38: key added mid-change
 
     /// c38 stress: another device adds a key and removes it again (a
@@ -482,40 +438,4 @@ struct KeyChangeChecksTests {
         try Self.expectFinished(url, opens: [own, x1, x2], locksOut: [z])
     }
 
-    /// c38 in iCloud Drive, truly mid-change: the other device's addition
-    /// lands while this device's change is downloading the vault (after it
-    /// started from the vault it had open). The change reopens and retries.
-    @Test func c38AKeyAddedWhileThisChangeIsDownloading() async throws {
-        let (url, key) = try AppModelTests.fixtureVault()
-        let own = try IdentityFile.parse(String(contentsOf: key, encoding: .utf8))
-        let cloud = FakeCloud(vault: url)
-        cloud.autoDeliver = true
-        let x = try NativeIdentity.generate(.postQuantum), y = try NativeIdentity.generate(.postQuantum)
-        let armed = Flag(), done = Flag()
-        var hooks = cloud.hooks
-        let request = hooks.request
-        hooks.request = { item in
-            if armed.isSet, !done.isSet {
-                done.set()
-                var elsewhere = try? Vault.open(at: url, identities: [own])
-                try? elsewhere?.addRecipient(x.recipient, label: "X")
-            }
-            try request(item)
-        }
-        let model = Self.model()
-        model.cloudHooks = hooks
-        model.cloudPollInterval = .milliseconds(10)
-        model.cloudIdleInterval = .milliseconds(20)
-        try await model.openVault(at: url)
-        try await model.unlock(identityText: String(contentsOf: key, encoding: .utf8))
-        try cloud.evict(AppModelTests.deleted)   // so the change has something to download
-        armed.set()
-        try await model.addDeviceKey(recipient: y.recipient.string, label: "Y", authenticator: PassingOwnerAuthenticator())
-        #expect(done.isSet, "the other device's change happened during this one")
-        let keys = try Set(Vault.open(at: url).recipients.map(\.key))
-        #expect(keys == [own.recipient.string, x.recipient.string, y.recipient.string])
-        #expect(model.recipientsAlert == nil)
-        model.close()
-        try Self.expectFinished(url, opens: [own, x, y])
-    }
 }

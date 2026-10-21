@@ -206,19 +206,9 @@ extension AppModel {
     private func settingsPass(enabling: Bool, _ step: SettingsStep) async {
         guard phase == .unlocked, let vault, !isChangingKeys, enabling || settingsSync.enabled else { return }
         let gen = generation
-        let coordinate = coordinationURL
-        let hooks = cloudHooks
-        let cloud = isCloudVault
-        let url = vault.url
         let file: SharedSettings?
         do {
-            if cloud {
-                let items = try await offMain {
-                    try CloudScan.essentialItems(inVault: url).filter { $0.url.lastPathComponent == SharedSettings.fileName }
-                }
-                try await CloudVault.download(items: items, hooks: hooks, stallTimeout: .seconds(30)) { _ in }
-            }
-            file = try await offMain { try CloudVault.coordinatedRead(coordinate) { try vault.readSharedSettings() } }
+            file = try await offMain { try vault.readSharedSettings() }
         } catch SharedSettingsError.needsNewerReader {
             // Rule 4: not read, applied or written; the values last applied stay.
             if (try? ensureCurrent(gen)) != nil { settingsSyncProblem = .needsNewerApp }
@@ -272,12 +262,10 @@ extension AppModel {
             let lock = vaultWriteLock
             let started = file
             let written = try await offMain { () throws -> Bool in
-                try Self.withWriteLock(lock) {
-                    try CloudVault.coordinatedWrite(coordinate) { () throws -> Bool in
-                        if lock != nil, ((try? vault.readSharedSettings()) ?? nil) != started { return false }
-                        try vault.writeSharedSettings(write)
-                        return true
-                    }
+                try Self.withWriteLock(lock) { () throws -> Bool in
+                    if lock != nil, ((try? vault.readSharedSettings()) ?? nil) != started { return false }
+                    try vault.writeSharedSettings(write)
+                    return true
                 }
             }
             if !written {

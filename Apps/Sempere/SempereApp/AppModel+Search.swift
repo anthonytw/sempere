@@ -272,14 +272,11 @@ extension AppModel {
         guard let vault, phase == .unlocked else { throw ModelError.noVaultOpen }
         try await downloadNote(id)
         try ensureCurrent(gen)
-        let coordinate = coordinationURL
-        let state: NoteState? = try await offMain {
-            try CloudVault.coordinatedRead(coordinate) { () throws -> NoteState? in
-                let loaded = try vault.loadNote(id)
-                guard loaded.failures.isEmpty, !loaded.revisions.isEmpty else { return nil }   // read-only
-                let state = try NoteReducer.reconstruct(loaded.revisions)
-                return state.deleted ? nil : state
-            }
+        let state: NoteState? = try await offMain { () throws -> NoteState? in
+            let loaded = try vault.loadNote(id)
+            guard loaded.failures.isEmpty, !loaded.revisions.isEmpty else { return nil }   // read-only
+            let state = try NoteReducer.reconstruct(loaded.revisions)
+            return state.deleted ? nil : state
         }
         try ensureCurrent(gen)
         guard let state else { return nil }

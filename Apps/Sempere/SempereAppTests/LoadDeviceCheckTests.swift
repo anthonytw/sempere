@@ -310,7 +310,7 @@ struct LoadDeviceCheckTests {
         // Version History.
         let n = try vault.revisionNames(of: made.note).count
         before = counter.count
-        let data = try AppModel.readHistory(made.note, vault: vault, cloud: false, hooks: .live, thisDevice: nil)
+        let data = try AppModel.readHistory(made.note, vault: vault, thisDevice: nil)
         #expect(counter.count - before == n, "history: each revision once")
         let complete = data.points.filter(\.complete)
         #expect(complete.count >= 2)

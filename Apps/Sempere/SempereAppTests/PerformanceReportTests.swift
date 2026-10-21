@@ -117,7 +117,7 @@ struct PerformanceReportTests {
         let cache = try SummaryCache(directory: cacheDir, vault: vault)
         let ids = try vault.noteIDs()
         let (_, onePass) = try Self.time {
-            _ = try ProgressiveLoad.pass(vault: url, hooks: .live)
+            _ = try VaultEnumeration.listNotes(vault: url, only: nil)
             _ = try vault.summaries(of: ids, cache: cache, saveCache: false)
         }
         let before = onePass * 4

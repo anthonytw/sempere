@@ -15,13 +15,40 @@ import SempereSync
 ///   `FetchScope`, `downloadNote`); an attachment a page shows that is still a stand-in is fetched alone the
 ///   same way (`fetchBlob`). Offline, both fail with "not downloaded yet", and nothing is waited for.
 ///
-/// A vault in the app's own store is never in iCloud or a provider, so `isCloudVault` is false for it:
-/// nothing here goes through `CloudVault.Hooks`.
+/// Every vault the app opens is an in-app copy (P7b removed reading vaults in place), so nothing here
+/// goes through iCloud's calls.
 extension AppModel {
     /// The open vault's folder while it is a partial copy (a join not finished); nil otherwise.
     var partialCopyRoot: URL? {
-        guard !isCloudVault, let url = vaultURL, PartialCopy.isPartial(url) else { return nil }
+        guard let url = vaultURL, PartialCopy.isPartial(url) else { return nil }
         return url
+    }
+
+    /// Every vault is an in-app copy, so nothing is coordinated: nil. Kept for the key-change paths that still
+    /// pass it to `CloudVault.coordinatedWrite` (a no-op with nil) until the coordination plumbing goes after
+    /// the key hierarchy's changes to them land.
+    var coordinationURL: URL? { nil }
+
+    /// Makes note `id` complete before it is opened or edited: in a partial copy it is fetched first
+    /// (`downloadPartialNote`); anywhere else every note is here, and nothing happens.
+    func downloadNote(_ id: UUID) async throws {
+        if let root = partialCopyRoot { try await downloadPartialNote(id, root: root) }
+    }
+
+    /// The note pane's Cancel while a note is fetched: stops waiting (the open fails quietly, the fetch goes
+    /// on and the note opens at once next time if it arrived).
+    func cancelNoteDownload() {
+        noteDownloadCancel?()
+    }
+
+    /// The vault closed: the join's state goes with it.
+    func stopJoin() {
+        noteDownloadCancel?()
+        noteDownloadCancel = nil
+        noteDownload = nil
+        joinProgress = nil
+        pendingNoteIDs = []
+        placeholderNoteIDs = []
     }
 
     /// The WebDAV location whose copy is the open partial copy.
@@ -54,7 +81,7 @@ extension AppModel {
     /// location as stored now (an edited password or pin applies at once), checked under the key once the
     /// vault is unlocked. One fetch at a time (`joinFetchTail`).
     func joinFetch(_ scope: FetchScope) async throws -> SyncReport {
-        guard let location = joinLocation else { throw noteNotDownloadedError }
+        guard let location = joinLocation else { throw joinNotDownloadedError }
         let remote = webdavRemote, passwords = webdavPasswords
         let copy = webdavLocations.copy(of: location)
         let vault = phase == .unlocked ? self.vault : nil
@@ -69,22 +96,52 @@ extension AppModel {
         return try await task.value
     }
 
-    /// `downloadNote` for a partial copy: fetches note `id` when it is incomplete, then reads it. Throws
-    /// "not downloaded yet" when it is still incomplete afterwards (offline, a server error).
+    /// `downloadNote` for a partial copy: fetches note `id` when it is incomplete, then reads it. The note pane
+    /// shows "Downloading this note…" with a Cancel (`noteDownload`, `cancelNoteDownload`), and the wait is
+    /// bounded by `noteFetchTimeout` (a fetch may queue behind a long fill run): past it, or when the note is
+    /// still incomplete afterwards (offline, a server error), it throws "not downloaded yet"; Cancel throws
+    /// `CancellationError`. Either way the fetch goes on, and the note opens once it is in.
     func downloadPartialNote(_ id: UUID, root: URL) async throws {
         let gen = generation
-        guard try await offMain(priority: .userInitiated, { Self.incompleteNoteIDs(root).contains(id) }) else { return }
-        noteDownload = (id, CloudProgress(total: 1, downloaded: 0))
-        defer { if noteDownload?.id == id { noteDownload = nil } }
-        let report = try? await joinFetch(FetchScope(notes: [id], revisions: true, blobs: .none, maxNotes: 1))
+        guard try await offMain(priority: .userInitiated, { Self.incompleteNoteIDs(root).contains(id) }) else {
+            // Arrived meanwhile (a fetch that outlived its wait, a run): its row is read now.
+            if pendingNoteIDs.contains(id) { try await reconcile(scope: [id]) }
+            return
+        }
+        noteDownload = id
+        let fetch = Task { [weak self] () -> Void in
+            _ = try? await self?.joinFetch(FetchScope(notes: [id], revisions: true, blobs: .none, maxNotes: 1))
+            // A fetch that outlived its wait (timed out, Cancel) still lists the note once it is in.
+            guard let self, self.generation == gen, self.pendingNoteIDs.contains(id) else { return }
+            _ = try? await self.reconcile(scope: [id])
+        }
+        let outcome = await Self.waitBounded(fetch, timeout: noteFetchTimeout) { [weak self] cancel in
+            self?.noteDownloadCancel = cancel
+        }
+        if noteDownload == id { noteDownload = nil }
+        noteDownloadCancel = nil
         try ensureCurrent(gen)
+        if outcome == .cancelled { throw CancellationError() }
         let still = try await offMain(priority: .userInitiated) { Self.incompleteNoteIDs(root).contains(id) }
         try ensureCurrent(gen)
-        guard !still else {
-            _ = report
-            throw joinNotDownloadedError
-        }
+        if still { throw joinNotDownloadedError }
         try await reconcile(scope: [id])
+    }
+
+    /// How a bounded wait ended.
+    enum BoundedWait: Equatable { case finished, timedOut, cancelled }
+
+    /// Waits for `task` at most `timeout`, or until the cancel handed to `register` is called. The task
+    /// itself is never cancelled.
+    static func waitBounded(_ task: Task<Void, Never>, timeout: Duration,
+                            register: (@escaping () -> Void) -> Void) async -> BoundedWait {
+        let box = BoundedWaitBox()
+        register { box.finish(.cancelled) }
+        return await withCheckedContinuation { (c: CheckedContinuation<BoundedWait, Never>) in
+            box.set(c)
+            Task { await task.value; box.finish(.finished) }
+            Task { try? await Task.sleep(for: timeout); box.finish(.timedOut) }
+        }
     }
 
     /// The blob fetch of a partial copy for the attachment cache (`fetchBlob`): nil when no partial copy is
@@ -114,5 +171,48 @@ extension AppModel {
         guard let root = partialCopyRoot else { return }
         if let session = syncSessions.first(where: { $0.kind == .webdav }) { _ = await session.syncNow() }
         if PartialCopy.isPartial(root) { throw joinNotDownloadedError }
+    }
+}
+
+/// The first of finished, timed out or cancelled resumes the wait (`AppModel.waitBounded`).
+final class BoundedWaitBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<AppModel.BoundedWait, Never>?
+    private var result: AppModel.BoundedWait?
+
+    func set(_ c: CheckedContinuation<AppModel.BoundedWait, Never>) {
+        lock.lock()
+        if let result { lock.unlock(); c.resume(returning: result); return }
+        continuation = c
+        lock.unlock()
+    }
+
+    func finish(_ r: AppModel.BoundedWait) {
+        lock.lock()
+        guard result == nil else { lock.unlock(); return }
+        result = r
+        let c = continuation
+        continuation = nil
+        lock.unlock()
+        c?.resume(returning: r)
+    }
+}
+
+/// How far a join's fill got, for the note list's bar (`AppModel.joinProgress`).
+struct JoinProgress: Equatable, Sendable {
+    /// Notes in the copy (listed by the metadata pull).
+    var notes: Int
+    /// Notes not downloaded yet.
+    var pending: Int
+    /// The server's host.
+    var server: String
+
+    var readyNotes: Int { max(notes - pending, 0) }
+    var fractionCompleted: Double { notes == 0 ? 1 : Double(readyNotes) / Double(notes) }
+
+    /// The bar's line: "Downloading from <server>: n of m notes…".
+    var headline: String {
+        String(localized: "Downloading from \(server): \(readyNotes) of \(notes) notes…",
+               comment: "Progress: %@ is a server's host name, then notes downloaded so far of all notes")
     }
 }

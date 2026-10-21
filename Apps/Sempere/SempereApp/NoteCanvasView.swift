@@ -36,14 +36,14 @@ struct NoteCanvasView: View {
                     } actions: {
                         Button("Try Again") { Task { await model.showSelectedNote() } }
                     }
-                } else if let download = model.noteDownload, download.id == note.id {
-                    VStack(spacing: 10) {
-                        ProgressView(value: download.progress.fractionCompleted).frame(width: 240)
-                        Text("Downloading this note from iCloud: \(download.progress.downloaded) of \(String(localized: "\(download.progress.total) files"))")
-                            .font(.callout).monospacedDigit().foregroundStyle(.secondary)
+                } else if model.noteDownload == note.id || model.pendingNoteIDs.contains(note.id) {
+                    // A partial copy (a join): the note is fetched alone; Cancel stops waiting for it.
+                    VStack(spacing: 12) {
+                        ProgressView("Downloading this note from \(model.joinLocation?.host ?? "")…")
+                        if model.noteDownload == note.id {
+                            Button("Cancel") { model.cancelNoteDownload() }
+                        }
                     }
-                } else if model.pendingNoteIDs.contains(note.id) {
-                    ProgressView("Downloading this note from iCloud…")
                 } else {
                     ProgressView("Opening…")
                 }

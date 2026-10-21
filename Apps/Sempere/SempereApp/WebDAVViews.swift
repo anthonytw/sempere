@@ -271,8 +271,6 @@ struct WebDAVStatusBar: View {
     let session: SyncSession
     @State private var editing: WebDAVLocation?
     @State private var showingTargets = false
-    /// A partial copy fetches attachments in the background once every note is in (`AppModel.webdavFillsBlobs`).
-    @AppStorage(AppModel.webdavFillsBlobsKey) private var fillsBlobs = true
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -299,7 +297,6 @@ struct WebDAVStatusBar: View {
                     Button("Server Settings…", systemImage: "server.rack") {
                         editing = model.webdavLocations.location(session.locationID)
                     }
-                    Toggle("Download Attachments in the Background", isOn: $fillsBlobs)
                 }
             } label: {
                 Image(systemName: "ellipsis.circle")
@@ -316,7 +313,6 @@ struct WebDAVStatusBar: View {
             WebDAVConnectSheet(editing: location)
         }
         .sheet(isPresented: $showingTargets) { SyncTargetsSheet() }
-        .onChange(of: fillsBlobs) { _, on in model.webdavFillsBlobs = on }
     }
 
     private var icon: String {
@@ -396,7 +392,7 @@ struct WebDAVLocationsSection: View {
 }
 
 /// Shown over everything while a WebDAV vault downloads (`AppModel.webdavDownload`):
-/// the same bar and Cancel as iCloud's `CloudProgressView`, with files and bytes.
+/// a bar and Cancel, with files and bytes.
 struct WebDAVDownloadOverlay: View {
     let status: WebDAVDownloadStatus
     let cancel: () -> Void

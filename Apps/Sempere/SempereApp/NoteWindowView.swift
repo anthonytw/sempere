@@ -33,7 +33,7 @@ struct NoteWindowView: View {
     /// What the window does with its note (`SceneRestoration.noteWindow`).
     private var fate: SceneRestoration.NoteWindow {
         SceneRestoration.noteWindow(unlocked: model.phase == .unlocked, sameVault: !otherVault, listLoaded: model.listLoaded,
-                                    listed: note != nil, cloud: model.isCloudVault)
+                                    listed: note != nil, cloud: model.partialCopyRoot != nil)
     }
 
     private struct LoadKey: Hashable {

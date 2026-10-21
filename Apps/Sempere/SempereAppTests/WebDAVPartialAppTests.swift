@@ -92,11 +92,8 @@ struct WebDAVPartialAppTests {
         #expect(c.isPartial && c.isUsable)
         #expect(s.remote.downloads == 1, "one metadata pull")
         #expect(Set(PartialCopyState.incompleteNotes(c.folder)) == [first.uuidString.lowercased(), second.uuidString.lowercased()])
-        // P7a: no iCloud machinery: the join is `AppModel+Join`.
-        #expect(!s.model.isCloudVault)
-        #expect(s.model.webdavFetcher == nil)
         #expect(s.model.partialCopyRoot != nil)
-        #expect(s.model.cloudSource == .server("dav.example.org"))
+        #expect(s.model.joinLocation?.host == "dav.example.org")
 
         try await s.model.unlock(identityText: s.key)
         #expect(await TS.waitUntil { s.model.pendingNoteIDs == [first, second] })
@@ -108,7 +105,7 @@ struct WebDAVPartialAppTests {
         #expect(s.model.pendingNoteIDs.isEmpty)
         #expect(s.model.notes.allSatisfy { !$0.title.isEmpty || $0.problem == nil })
         s.model.close()
-        #expect(s.model.cloudSource == .iCloudDrive)
+        #expect(s.model.joinLocation == nil)
     }
 
     @Test func rowsComeFromTheServersSummaries() async throws {
@@ -130,28 +127,6 @@ struct WebDAVPartialAppTests {
         try await s.model.downloadNote(second)
         #expect(s.model.pendingNoteIDs.isEmpty)
         s.model.close()
-    }
-
-    @Test func aNoteOpenedFirstIsFetchedFirst() async throws {
-        let s = try WebDAVAppTests.setup()
-        let c = LocalCopy(directory: TestTemp.root.appendingPathComponent(UUID().uuidString),
-                                folderName: "Notes.sempere")
-        #expect(try c.downloadMetadata(client: s.remote.folderClient()).errors.isEmpty)
-        // Asked for the second note before it starts: that note is the first fetch.
-        let recorded = ScopeLog()
-        let remote = s.remote
-        let fetcher = WebDAVFetcher(copy: c, serverName: "dav.example.org", fillsBlobs: true, fetch: { scope, vault in
-            recorded.append(scope)
-            return try remote.fetch(WebDAVEndpoint(url: URL(string: "https://dav.example.org/notes/")!),
-                                    copy: c, vault: vault, scope: scope)
-        }, changed: { _, _, _ in })
-        fetcher.want(note: second)
-        fetcher.start()
-        #expect(await TS.waitUntil(timeout: .seconds(10)) { !c.isPartial })
-        #expect(recorded.scopes.first?.notes == [second], "\(recorded.scopes)")
-        #expect(recorded.scopes.count >= 3, "then the rest, then the attachments in the background")
-        fetcher.stop()
-        try? c.remove()
     }
 
     /// An attachment still a stand-in is fetched alone when a page needs it (`partialBlobFetcher`).
@@ -192,12 +167,4 @@ struct WebDAVPartialAppTests {
         s.model.close()
     }
 
-}
-
-/// The scopes a fetcher asked for.
-final class ScopeLog: @unchecked Sendable {
-    private let lock = NSLock()
-    private var stored: [FetchScope] = []
-    var scopes: [FetchScope] { lock.lock(); defer { lock.unlock() }; return stored }
-    func append(_ s: FetchScope) { lock.lock(); stored.append(s); lock.unlock() }
 }

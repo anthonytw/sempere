@@ -94,8 +94,6 @@ struct JoinAppTests {
         let s = try await Self.setup()
         #expect(s.joinTime < .seconds(10), "opened after the metadata pull, not the whole vault")
         #expect(s.b.partialCopyRoot != nil)
-        #expect(!s.b.isCloudVault)
-        #expect(s.b.webdavFetcher == nil, "no iCloud machinery")
         #expect(await TS.waitUntil { s.b.listLoaded })
         let everyNote = Set(try #require(s.a.vault).noteIDs())
         #expect(await TS.waitUntil { Set(s.b.notes.map(\.id)) == everyNote }, "every note has a row")
@@ -152,6 +150,63 @@ struct JoinAppTests {
         #expect(try Data(contentsOf: file).count == s.bigBytes.count)
         #expect(!AppModel.blobIsPending(root, note: s.big, name: name))
         await cache.release(note: s.big, ref: s.bigRef)
+        await Self.close(s)
+    }
+
+    /// Review of #75: the bar says how far the fill got.
+    @Test func theBarShowsTheFillProgress() async throws {
+        let s = try await Self.setup()
+        #expect(await TS.waitUntil { s.b.joinProgress != nil })
+        let progress = try #require(s.b.joinProgress)
+        #expect(progress.pending == progress.notes && progress.notes > 0)
+        #expect(progress.headline.contains("dav.example.org"))
+        #expect(s.a.joinProgress == nil, "a complete copy has no fill line")
+        try await s.b.downloadNote(s.big)
+        #expect(await TS.waitUntil { s.b.joinProgress?.readyNotes == 1 })
+        Self.release(s)
+        #expect(await TS.waitUntil(timeout: .seconds(20)) { s.b.joinProgress == nil })
+        await Self.close(s)
+    }
+
+    /// Review of #75: a write to a note still pending is refused (`commit(ids:)`'s check).
+    @Test func aWriteToAPendingNoteIsRefused() async throws {
+        let s = try await Self.setup()
+        #expect(await TS.waitUntil { s.b.pendingNoteIDs.contains(s.big) })
+        await #expect(throws: AppModel.ModelError.noteNotDownloadedFromServer("dav.example.org")) {
+            try await s.b.commit(ids: [s.big]) { _, _, _, verifier in try verifier(s.big)?() }
+        }
+        try await s.b.downloadNote(s.big)
+        try await s.b.commit(ids: [s.big]) { _, _, _, verifier in try verifier(s.big)?() }
+        await Self.close(s)
+    }
+
+    /// Review of #75: opening a pending note behind a long fill waits a bounded time, and Cancel stops waiting.
+    @Test func openingAPendingNoteBehindALongFillIsBoundedAndCancellable() async throws {
+        let s = try await Self.setup()
+        #expect(await TS.waitUntil { s.b.pendingNoteIDs.contains(s.big) })
+        let gate = DispatchSemaphore(value: 0)
+        s.server.gatingFetches(gate)
+        s.b.noteFetchTimeout = .milliseconds(300)
+        let start = ContinuousClock.now
+        await #expect(throws: AppModel.ModelError.noteNotDownloadedFromServer("dav.example.org")) {
+            try await s.b.downloadNote(s.big)
+        }
+        #expect(ContinuousClock.now - start < .seconds(5), "bounded")
+        #expect(s.b.noteDownload == nil)
+        // Cancel while it waits.
+        s.b.noteFetchTimeout = .seconds(60)
+        let waiting = Task { try await s.b.downloadNote(s.big) }
+        #expect(await TS.waitUntil { s.b.noteDownload == s.big })
+        s.b.cancelNoteDownload()
+        await #expect(throws: CancellationError.self) { try await waiting.value }
+        // Let the queued fetches through: the note arrives and opens at once next time.
+        s.server.gatingFetches(nil)
+        for _ in 0..<8 { gate.signal() }
+        #expect(await TS.waitUntil(timeout: .seconds(10)) {
+            !AppModel.incompleteNoteIDs(s.b.partialCopyRoot ?? URL(fileURLWithPath: "/")).contains(s.big)
+        })
+        try await s.b.downloadNote(s.big)
+        #expect(!s.b.pendingNoteIDs.contains(s.big))
         await Self.close(s)
     }
 }

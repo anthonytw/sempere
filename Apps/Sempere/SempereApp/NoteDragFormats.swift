@@ -18,9 +18,7 @@ extension PreparedExport {
         let dir = folder.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let url: URL
         do {
-            url = try CloudVault.coordinatedRead(coordinate) {
-                try NoteDragExport.write(vault: vault, noteID: noteID, format: format, into: dir)
-            }
+            url = try NoteDragExport.write(vault: vault, noteID: noteID, format: format, into: dir)
         } catch {
             try? FileManager.default.removeItem(at: dir)
             throw error

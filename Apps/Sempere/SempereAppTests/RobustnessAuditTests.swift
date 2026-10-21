@@ -80,39 +80,6 @@ struct RobustnessAuditTests {
         #expect(ExportVideos.clock(1e300) == "277777:46:40")
     }
 
-    /// Opening or editing a note in iCloud lists its folder and asks each file's
-    /// state (a file-system query per revision): off the main actor, never on it.
-    @Test func downloadingANoteAsksFileStatesOffTheMainThread() async throws {
-        final class Calls: @unchecked Sendable {
-            let lock = NSLock()
-            var armed = false, onMain = 0, offMain = 0
-        }
-        let calls = Calls()
-        let (url, key) = try AppModelTests.fixtureVault()
-        let cloud = FakeCloud(vault: url)
-        let model = CloudSyncTests.model(cloud)
-        var hooks = cloud.hooks
-        let state = hooks.state
-        hooks.state = { item in
-            calls.lock.withLock {
-                if calls.armed { if Thread.isMainThread { calls.onMain += 1 } else { calls.offMain += 1 } }
-            }
-            return state(item)
-        }
-        model.cloudHooks = hooks
-        try await model.openVault(at: url)
-        try await model.unlock(identityText: try String(contentsOf: key, encoding: .utf8))
-        let loop = model.cloudSyncTask
-        model.pauseCloudSync()
-        await loop?.value
-        calls.lock.withLock { calls.armed = true }
-        try await model.downloadNote(CloudSyncTests.lecture)
-        calls.lock.withLock { calls.armed = false }
-        #expect(calls.lock.withLock { calls.offMain } > 0)
-        #expect(calls.lock.withLock { calls.onMain } == 0)
-        model.close()
-    }
-
     /// A drop's file request whose preparation never ends (the main-actor work
     /// cannot run while the system holds the main thread for the file) fails
     /// after the timeout instead of hanging the Mac app.

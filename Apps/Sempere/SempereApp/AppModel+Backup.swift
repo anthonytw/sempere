@@ -151,10 +151,6 @@ extension AppModel {
         // A partial copy (a join not finished) is completed first: a backup holds the whole vault.
         try await completePartialCopy()
         try ensureCurrent(gen)
-        if isCloudVault {
-            try await downloadEverythingForBackup(vaultURL, gen: gen)
-            backupProgress = BackupProgress(stage: .copying(files: 0))
-        }
         let ticker = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(250))
@@ -215,26 +211,6 @@ extension AppModel {
         record.lastVerifyHealthy = report.isHealthy
         backupStore.save(record, for: vault.vaultId)
         return report
-    }
-
-    /// Every note's revisions (`downloadEverything`), then every attachment.
-    private func downloadEverythingForBackup(_ url: URL, gen: Int) async throws {
-        do {
-            try await downloadEverything(url, gen: gen) { _ in }
-        } catch CloudDownloadError.notDownloaded(let n) {
-            throw BackupAppError.notDownloaded(n)
-        } catch CloudDownloadError.notDownloadedFromServer(let n, let server) {
-            throw BackupAppError.notDownloadedFromServer(n, server)
-        }
-        let blobs = try await offMain {
-            try CloudScan.noteGroups(inVault: url).compactMap(\.id)
-                .flatMap { try CloudScan.blobItems(inVault: url, id: $0).map(\.item) }
-        }
-        try await CloudVault.download(items: blobs, hooks: cloudHooks, stallTimeout: cloudStallTimeout,
-                                      pollInterval: cloudPollInterval) { [weak self] progress in
-            await self?.showDownload(progress)
-        }
-        try ensureCurrent(gen)
     }
 
     private func showDownload(_ p: CloudProgress) {
@@ -313,9 +289,13 @@ extension AppModel {
         defer { if scopedSource { picked.stopAccessingSecurityScopedResource() } }
         // A backup whose vault.json does not open (one listing a classic key included) is refused here.
         try await offMain { _ = try Backup.preview(of: source) }
-        let cloud = cloudHooks.isUbiquitous(source)
+        // A backup in iCloud Drive: every file is downloaded first (a restore reads them all).
+        let hooks = iCloudHooks
+        let cloud = hooks.isUbiquitous(source)
         if cloud {
-            try await downloadEverythingForBackup(source, gen: generation)
+            try await downloadSourceFolder(source, hooks: hooks) { [weak self] progress in
+                await self?.showDownload(progress)
+            }
             backupProgress = BackupProgress(stage: .restoring)
         }
         if replace, let open = vault?.vaultId, let replaced = library.vaultStore.entry(id: open),

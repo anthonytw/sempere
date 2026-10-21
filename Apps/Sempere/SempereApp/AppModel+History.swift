@@ -180,9 +180,7 @@ struct HistoryGroupRow: Identifiable, Hashable, Sendable {
 extension AppModel {
     /// Reads every revision of note `id` for the history browser. The open
     /// canvas's pending changes are saved first, so the newest row ("Current")
-    /// is what the canvas shows. In iCloud Drive the note is downloaded first
-    /// and the read, coordinated, refuses a note whose files are not all local
-    /// (`CloudVault.requireLocal`).
+    /// is what the canvas shows. In a partial copy the note is fetched first (`downloadNote`).
     func loadHistory(for id: UUID) async throws -> HistoryData {
         guard let vault, phase == .unlocked else { throw ModelError.noVaultOpen }
         let gen = generation
@@ -190,29 +188,19 @@ extension AppModel {
         await windowEditors[id]?.flush()   // a note window's pending ink
         try ensureCurrent(gen)
         try await downloadNote(id)
-        let cloud = isCloudVault
-        let hooks = cloudHooks
         let device = try? deviceClockForWriting().device
-        let data = try await offMain {
-            try Self.readHistory(id, vault: vault, cloud: cloud, hooks: hooks, thisDevice: device)
-        }
+        let data = try await offMain { try Self.readHistory(id, vault: vault, thisDevice: device) }
         try ensureCurrent(gen)
         return data
     }
 
     /// `loadHistory`'s read, off the main actor: every revision of `id`, on
-    /// several cores, inside one coordinated read in iCloud Drive (`cloud`).
-    nonisolated static func readHistory(_ id: UUID, vault: Vault, cloud: Bool, hooks: CloudVault.Hooks,
-                                        thisDevice: DeviceID?) throws -> HistoryData {
-        let url = vault.url
-        return try Perf.measure(.historyRead) {
-            try CloudVault.coordinatedRead(cloud ? url : nil) { () throws -> HistoryData in
-                if cloud { try CloudVault.requireLocal(note: id, vault: url, hooks: hooks) }
-                let loaded = try vault.loadNoteConcurrently(id)
-                if cloud { try CloudVault.requireLocal(note: id, vault: url, hooks: hooks) }
-                return HistoryData(noteID: id, revisions: loaded.revisions, unreadable: Array(loaded.failures.keys),
-                                   thisDevice: thisDevice)
-            }
+    /// several cores.
+    nonisolated static func readHistory(_ id: UUID, vault: Vault, thisDevice: DeviceID?) throws -> HistoryData {
+        try Perf.measure(.historyRead) { () throws -> HistoryData in
+            let loaded = try vault.loadNoteConcurrently(id)
+            return HistoryData(noteID: id, revisions: loaded.revisions, unreadable: Array(loaded.failures.keys),
+                               thisDevice: thisDevice)
         }
     }
 

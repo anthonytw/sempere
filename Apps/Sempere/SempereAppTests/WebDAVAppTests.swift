@@ -206,7 +206,6 @@ struct WebDAVAppTests {
         // The copy is partial (W2): its background fetch marks a note complete as it places its
         // revisions but records them as synced only when the run ends, so mid-run the count is
         // higher. Let the run in flight end first, so the count read here is the one the model reads.
-        await s.model.webdavFetcher?.stop()?.value
         #expect(copy.unconfirmedChanges() > 0, "the fake push records no sync: the new note is unconfirmed")
         var other = s.listing
         other.vaultId = UUID().uuidString.lowercased()

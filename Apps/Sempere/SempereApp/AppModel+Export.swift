@@ -191,24 +191,16 @@ extension AppModel {
         }
     }
 
-    /// Reads one note for an export: downloaded first in iCloud Drive, read
-    /// inside one coordinated read that checks every revision is local before
-    /// and after (an evicted or newly listed revision would export an older
-    /// note without a word).
+    /// Reads one note for an export: fetched first in a partial copy (`downloadNote`), which refuses a note
+    /// still incomplete (an export of a partial note would be an older note without a word).
     func loadNoteForExport(_ id: UUID, vault: Vault) async throws -> LoadedForExport {
         try await downloadNote(id)
-        let coordinate = coordinationURL
-        let cloud = isCloudVault
-        let hooks = cloudHooks
-        let url = vault.url
-        return try await offMain {
-            try CloudVault.coordinatedRead(coordinate) { () throws -> LoadedForExport in
-                if cloud { try CloudVault.requireLocal(note: id, vault: url, hooks: hooks) }
-                let note = try vault.loadNote(id)
-                if cloud { try CloudVault.requireLocal(note: id, vault: url, hooks: hooks) }
-                return LoadedForExport(summary: vault.summary(of: id, loaded: note), state: try vault.reconstruct(note),
-                                       version: BulkExportPlan.version(of: note))
-            }
+        let verify = partialNoteVerifier(id)
+        return try await offMain { () throws -> LoadedForExport in
+            try verify?()
+            let note = try vault.loadNote(id)
+            return LoadedForExport(summary: vault.summary(of: id, loaded: note), state: try vault.reconstruct(note),
+                                   version: BulkExportPlan.version(of: note))
         }
     }
 }

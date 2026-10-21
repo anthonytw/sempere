@@ -104,7 +104,7 @@ struct WriterReadCostTests {
         let (vault, counter) = try Self.vault()
         let n = try vault.revisionNames(of: Self.lecture).count
         let before = counter.count
-        let data = try AppModel.readHistory(Self.lecture, vault: vault, cloud: false, hooks: .live, thisDevice: nil)
+        let data = try AppModel.readHistory(Self.lecture, vault: vault, thisDevice: nil)
         #expect(counter.count - before == n)
         let plain = try vault.loadNote(Self.lecture)
         #expect(data.points == NoteHistory.restorePoints(plain.revisions, unreadable: Array(plain.failures.keys)))

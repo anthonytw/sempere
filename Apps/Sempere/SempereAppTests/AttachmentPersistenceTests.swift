@@ -499,8 +499,7 @@ struct AttachmentPersistenceTests {
         let blobs = Self.root(), renders = Self.root()
         func blobCache() -> BlobCache {
             BlobCache(root: blobs) { note, ref, dest in
-                try await AppModel.fetchBlob(ref, of: note, from: vault, to: dest, cloud: false, hooks: .live,
-                                             stallTimeout: .seconds(5), pollInterval: .milliseconds(10))
+                try await AppModel.fetchBlob(ref, of: note, from: vault, to: dest)
             }
         }
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 820, height: 1061))

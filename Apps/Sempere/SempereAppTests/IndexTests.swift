@@ -125,21 +125,6 @@ struct IndexTests {
 
     // MARK: - Pieces
 
-    @Test func enumerationListsNamesOnlyAndMapsPlaceholders() throws {
-        let (url, _) = try AppModelTests.fixtureVault()
-        let cloud = FakeCloud(vault: url)
-        let all = try VaultEnumeration.listNotes(vault: url)
-        #expect(all.map(\.id) == [AppModelTests.lecture, AppModelTests.deleted])
-        #expect(all.allSatisfy { !$0.isUnlisted && $0.names == $0.names.sorted() })
-        try cloud.evict(AppModelTests.lecture)
-        let evicted = try VaultEnumeration.listNotes(vault: url, only: [AppModelTests.lecture, UUID()])
-        #expect(evicted.map(\.id) == [AppModelTests.lecture], "a folder that is not there is left out")
-        #expect(evicted.first?.names == all.first?.names, "placeholders count under their real names")
-        try cloud.unlist(AppModelTests.lecture)
-        #expect(try VaultEnumeration.listNotes(vault: url, only: [AppModelTests.lecture]).first?.isUnlisted == true)
-        #expect(VaultEnumeration.revisionNames(in: ["x.age", ".hidden.age", "notes.txt"]).isEmpty)
-    }
-
     @Test func diffSortsNotesIntoUnchangedChangedAndRemoved() {
         let a = UUID(), b = UUID(), c = UUID(), d = UUID()
         let listings = [NoteListing(id: a, names: ["1"]), NoteListing(id: b, names: ["1", "2"]), NoteListing(id: c, names: [])]
@@ -176,40 +161,6 @@ struct IndexTests {
             let applied = NoteListDiff.apply(upserts: upserts, removals: removals, to: list) ?? list
             #expect(applied == expected)
         }
-    }
-
-    @Test func presenterReportsTheNoteAPathBelongsTo() {
-        let notes = URL(fileURLWithPath: "/v/Vault.sempere/notes")
-        let id = UUID()
-        let folder = notes.appendingPathComponent(id.uuidString.lowercased())
-        #expect(NotesFolderPresenter.noteID(for: folder, notesFolder: notes) == id)
-        #expect(NotesFolderPresenter.noteID(for: folder.appendingPathComponent("1-a-1.delta.age"), notesFolder: notes) == id)
-        #expect(NotesFolderPresenter.noteID(for: notes, notesFolder: notes) == nil)
-        #expect(NotesFolderPresenter.noteID(for: notes.appendingPathComponent("not-a-note"), notesFolder: notes) == nil)
-        #expect(NotesFolderPresenter.noteID(for: URL(fileURLWithPath: "/v/Other/notes/\(id)"), notesFolder: notes) == nil)
-    }
-
-    /// A reported change wakes the loop for that note only.
-    @Test func aReportedChangeWakesTheLoopForThatNote() async throws {
-        let model = AppModel(deviceStateURL: TS.deviceStateURL())
-        let id = UUID()
-        let woke = Flag()
-        let sleeper = Task { @MainActor in
-            try? await model.syncWakeup.sleep(for: .seconds(30))
-            woke.set()
-        }
-        try await Task.sleep(for: .milliseconds(20))
-        model.noteFoldersChanged([id])
-        #expect(await TS.waitUntil(timeout: .seconds(2)) { woke.isSet })
-        _ = await sleeper.value
-        #expect(model.nextSyncScope(lastFullPass: .now) == [id])
-        #expect(model.nextSyncScope(lastFullPass: .now) == nil, "reported once")
-        model.noteFoldersChanged(nil)
-        #expect(model.nextSyncScope(lastFullPass: .now) == nil, "unplaced: everything")
-        // A wake while nobody sleeps ends the next sleep at once.
-        let start = ContinuousClock.now
-        try await model.syncWakeup.sleep(for: .seconds(30))
-        #expect(ContinuousClock.now - start < .seconds(5))
     }
 
     /// Opening and listing a vault never blocks the main actor for long:

@@ -188,9 +188,6 @@ extension AppModel {
             for e in windowEditors.values { await e.flush() }
         }
         let clock = try deviceClockForWriting()
-        let cloud = isCloudVault
-        let hooks = cloudHooks
-        let url = vault.url
         let cache = summaryCache
         let mode = rule.mode
         let titles = Dictionary(notes.map { ($0.id, $0.title) }, uniquingKeysWith: { a, _ in a })
@@ -211,8 +208,6 @@ extension AppModel {
         defer { if !dryRun { editGate.release() } }
         try ensureCurrent(gen)
         let tasks = work.map { id in
-            let verify: (@Sendable () throws -> Void)? = cloud
-                ? { @Sendable in try CloudVault.requireLocal(note: id, vault: url, hooks: hooks) } : nil
             // A note opened since the run started is left alone too (asked again before anything is written).
             let isOpen: (@Sendable () async -> Bool)? = skipOpen
                 ? { @Sendable [weak self] in await self?.isNoteOpen(id) ?? true } : nil
@@ -220,7 +215,7 @@ extension AppModel {
                 do {
                     if let isOpen, await isOpen() { throw ThinningSkippedOpen() }
                     return (id, .success(try await NoteWriter.thin(id, mode: mode, vault: vault, clock: clock, cache: cache,
-                                                                  coordinated: cloud, verify: verify, dryRun: dryRun, now: now,
+                                                                  coordinated: false, verify: nil, dryRun: dryRun, now: now,
                                                                   isOpen: isOpen)))
                 } catch is CancellationError {
                     throw CancellationError()

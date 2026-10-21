@@ -112,18 +112,6 @@ struct CloudTests {
         #expect(throws: VaultError.locked) { try CloudVault.coordinatedRead(dir) { throw VaultError.locked } }
     }
 
-    @MainActor
-    @Test func modelOpensLocalVaultWithoutCloudState() async throws {
-        let model = try await BrowserTests.unlockedFixtureModel()
-        #expect(!model.isCloudVault)
-        #expect(model.coordinationURL == nil)
-        #expect(model.cloudProgress == nil)
-        try await model.reload()
-        #expect(model.cloudProgress == nil)
-        model.cancelCloudDownload()   // nothing running: harmless
-        #expect(model.phase == .unlocked)
-    }
-
     @Test func timeoutMessageSaysWhatIsMissing() {
         let e = CloudVault.CloudError.timedOut(CloudProgress(total: 10, downloaded: 4), seconds: 90)
         #expect(e.description.contains("6 of 10"))

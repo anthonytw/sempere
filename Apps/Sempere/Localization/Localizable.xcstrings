@@ -6548,6 +6548,18 @@
         }
       }
     },
+    "Downloading this note from %@…" : {
+      "comment" : "%@ is a server's host name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descargando esta nota de %@…"
+          }
+        }
+      }
+    },
     "Downloading this note from iCloud: %lld of %@" : {
       "comment" : "Progress; %@ is “N files”",
       "extractionState" : "manual",

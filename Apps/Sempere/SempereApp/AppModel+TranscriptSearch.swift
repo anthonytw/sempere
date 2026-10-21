@@ -87,30 +87,21 @@ final class TranscriptSearchCache: @unchecked Sendable {
 }
 
 /// Reads transcript blobs for the search straight into memory (no decrypted file in the blob
-/// cache): iCloud downloads the file first, as `AppModel.fetchBlob` does, then
+/// cache): a partial copy fetches the file first (`fetch`), as the attachment cache does, then
 /// `Vault.readBlob` checks framing, padding, the content hash and size against the reference
 /// and the keyed name before anything is decoded; the transcript must name its recording
 /// (format.md §8.3.2).
 struct TranscriptReader: Sendable {
     let vault: Vault
-    let cloud: Bool
-    let hooks: CloudVault.Hooks
-    let stallTimeout: Duration
-    let pollInterval: Duration
+    /// A partial copy's blob fetch (`AppModel.partialBlobFetcher`); nil otherwise.
+    var fetch: (@Sendable (UUID, String) async throws -> Void)?
 
     func read(ref: BlobRef, recording: UUID, note: UUID) async -> Transcript? {
         guard ref.size <= Int64(Transcript.maxSize), let name = try? vault.blobFileName(for: ref) else { return nil }
-        if cloud {
-            guard (try? await CloudVault.downloadBlob(note: note, fileName: name, vault: vault.url, hooks: hooks,
-                                                      stallTimeout: stallTimeout, pollInterval: pollInterval)) != nil
-            else { return nil }
-        }
-        let vault = self.vault, cloud = self.cloud, hooks = self.hooks
+        if let fetch { guard (try? await fetch(note, name)) != nil else { return nil } }
+        let vault = self.vault
         return await Task.detached(priority: .userInitiated) { () -> Transcript? in
-            let data = try? CloudVault.coordinatedRead(cloud ? vault.url : nil) { () throws -> Data in
-                if cloud { try CloudVault.requireBlob(note: note, fileName: name, vault: vault.url, hooks: hooks) }
-                return try vault.readBlob(note: note, ref, maxBytes: Transcript.maxSize)
-            }
+            let data = try? vault.readBlob(note: note, ref, maxBytes: Transcript.maxSize)
             guard let data, let decoded = try? Transcript.decode(data), decoded.recording == recording else { return nil }
             return decoded
         }.value
@@ -210,8 +201,7 @@ extension AppModel {
     /// The in-memory transcript reader of the open, unlocked vault; nil otherwise.
     func transcriptReader() -> TranscriptReader? {
         guard let vault, phase == .unlocked else { return nil }
-        return TranscriptReader(vault: vault, cloud: isCloudVault, hooks: cloudHooks, stallTimeout: cloudStallTimeout,
-                                pollInterval: cloudPollInterval)
+        return TranscriptReader(vault: vault, fetch: partialBlobFetcher())
     }
 
     /// Opens the note of `hit` and moves its player to the segment (paused: a search result does not

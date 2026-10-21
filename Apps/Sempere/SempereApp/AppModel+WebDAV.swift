@@ -174,56 +174,9 @@ extension AppModel {
         }?.id
     }
 
-    // MARK: - Filling a partial copy
+    // MARK: - Filling a partial copy (`AppModel+Join`)
 
-    /// Where the open vault's missing files come from, for the download texts:
-    /// the server of a partial WebDAV copy, else iCloud Drive.
-    var cloudSource: CloudSource {
-        webdavFetcher.map { .server($0.serverName) } ?? joinLocation.map { .server($0.host) } ?? .iCloudDrive
-    }
-
-    /// `ModelError.noteNotDownloaded`, naming the server for a WebDAV copy.
-    var noteNotDownloadedError: ModelError {
-        cloudSource.serverName.map(ModelError.noteNotDownloadedFromServer) ?? .noteNotDownloaded
-    }
-
-    /// `UserDefaults` key of "Download Attachments in the Background" (on unless turned off).
-    static let webdavFillsBlobsKey = "Sempere.webdavFetchAttachments"
-
-    /// Whether a partial WebDAV copy fetches its attachments in the
-    /// background once every note is in (otherwise only when shown or played).
-    var webdavFillsBlobs: Bool {
-        get { UserDefaults.standard.object(forKey: Self.webdavFillsBlobsKey) as? Bool ?? true }
-        set {
-            UserDefaults.standard.set(newValue, forKey: Self.webdavFillsBlobsKey)
-            webdavFetcher?.setFillsBlobs(newValue)
-        }
-    }
-
-    /// The fetcher of a partial copy: fetches run off the main actor with the
-    /// location as stored at that moment (an edited password or pin applies at once).
-    private func makeFetcher(_ location: WebDAVLocation, copy: LocalCopy) -> WebDAVFetcher {
-        let remote = webdavRemote, passwords = webdavPasswords, store = webdavLocations, id = location.id
-        return WebDAVFetcher(copy: copy, serverName: location.host, fillsBlobs: webdavFillsBlobs, fetch: { scope, vault in
-            let current = await MainActor.run { store.location(id) }
-            guard let current else { throw WebDAVVaultError.noSuchLocation }
-            return try await Task.detached(priority: .utility) {
-                try remote.fetch(try Self.endpoint(current, passwords: passwords), copy: copy, vault: vault, scope: scope)
-            }.value
-        }, changed: { [weak self] fetcher, notes, complete in
-            self?.webdavFetched(fetcher, notes: notes, complete: complete)
-        })
-    }
-
-    /// A fetch run ended: the sync loop looks at the notes it touched now, so
-    /// their rows stop spinning as soon as they are in.
-    func webdavFetched(_ fetcher: WebDAVFetcher, notes: Set<UUID>, complete: Bool) {
-        guard webdavFetcher === fetcher else { return }
-        if !notes.isEmpty { noteFoldersChanged(notes) }
-    }
-
-    /// The vault was unlocked: a partial copy's fetches check each file under
-    /// the key from now on, and the notes not downloaded yet get their rows
+    /// The vault was unlocked: a partial copy's notes not downloaded yet get their rows
     /// from the server's sealed summaries (opened with the key, format.md §12;
     /// a missing or unreadable file only means they are listed as they arrive).
     func webdavUnlocked() async {
@@ -319,16 +272,12 @@ extension AppModel {
         }
         var ids = changes.noteIDs
         // A partial copy's pending notes a run may have completed are looked at again (`AppModel+Join`).
-        if !isCloudVault, !ids.isEmpty || changes.summaries { ids.formUnion(pendingNoteIDs) }
+        if !ids.isEmpty || changes.summaries { ids.formUnion(pendingNoteIDs) }
         if !ids.isEmpty {
-            if isCloudVault {
-                noteFoldersChanged(ids)
-            } else {
-                let gen = generation
-                Task { [weak self] in
-                    guard let self, self.generation == gen else { return }
-                    _ = try? await self.reconcile(scope: ids)
-                }
+            let gen = generation
+            Task { [weak self] in
+                guard let self, self.generation == gen else { return }
+                _ = try? await self.reconcile(scope: ids)
             }
         }
         if changes.settings { scheduleSettingsSync() }
@@ -395,23 +344,20 @@ extension AppModel {
         await syncedVaultFileArrived()
     }
 
-    /// Stops the open WebDAV vault's fetches and puts its session back to upload-only (the coordinator
+    /// Puts the open vault's sessions back to upload-only (the coordinator
     /// keeps it running when every vault syncs). Whatever run is in progress finishes; nothing replaces
     /// or removes the copy before it has (`stoppingWebDAV`).
     func stopWebDAV() {
-        let fetching = webdavFetcher?.stop()
-        webdavFetcher = nil
         syncVaultStale = false
         if !syncSessions.isEmpty {
             for session in syncSessions { session.afterTwoWayRun = {} }
             let running = syncCoordinator.detachOpen()
-            if !running.isEmpty || fetching != nil {
+            if !running.isEmpty {
                 for session in syncSessions {
                     let earlier = stoppingWebDAV[session.locationID]
                     stoppingWebDAV[session.locationID] = Task {
                         await earlier?.value
                         for run in running { _ = await run.value }
-                        await fetching?.value
                     }
                 }
             }
