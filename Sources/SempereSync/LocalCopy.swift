@@ -417,8 +417,8 @@ extension LocalCopy {
     /// - the copy missing and `<copy>.old` there (a crash between the two moves): it is put back;
     /// - `<copy>.download` and its sync state (a re-download that never replaced the copy): removed, the
     ///   copy is the one in use;
-    /// - `<copy>.old` beside the copy (a crash before it was removed): removed when every revision, blob
-    ///   and inbox file in it is in the copy too; otherwise kept, with its extra files listed for the
+    /// - `<copy>.old` beside the copy (a crash before it was removed): removed when every revision, blob,
+    ///   inbox file and notebook record in it is in the copy too; otherwise kept, with its extra files listed for the
     ///   caller to show. It is never deleted with something only it holds.
     ///
     /// It holds the copy's state file (`SyncRunLock`), so no run of the copy goes meanwhile.
@@ -449,7 +449,7 @@ extension LocalCopy {
         }
     }
 
-    /// The revisions, blobs and inbox files of a vault folder, as paths below it.
+    /// The revisions, blobs, inbox files and notebook records of a vault folder, as paths below it.
     static func vaultFiles(in root: URL) -> Set<String> {
         var out = Set<String>()
         let notes = root.appendingPathComponent(Vault.notesName)
@@ -464,6 +464,10 @@ extension LocalCopy {
         for f in (try? LocalFS.entries(root.appendingPathComponent(CaptureFile.folderName))) ?? []
         where CaptureFile.parse(name: f) != nil {
             out.insert("inbox/\(f)")
+        }
+        for f in (try? LocalFS.entries(root.appendingPathComponent(NotebookRecords.folderName))) ?? []
+        where NotebookRecords.id(ofFileName: f) != nil {
+            out.insert("\(NotebookRecords.folderName)/\(f)")
         }
         return out
     }

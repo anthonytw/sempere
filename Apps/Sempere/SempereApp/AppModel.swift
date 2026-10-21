@@ -440,6 +440,8 @@ final class AppModel {
     /// The open vault's `vault.json` changed on disk (a sync took another device's key change) and the
     /// open `Vault` has not been opened again under it yet: its runs only upload (review of #70, F1).
     var syncVaultStale = false
+    /// A previous copy kept at launch (`recoverWebDAVLeftovers`), for its alert; nil when there is none.
+    var webdavLeftover: WebDAVLeftover?
     /// Every in-app vault's sync sessions (`SyncCoordinator`, made on first use).
     @ObservationIgnored private var coordinatorStorage: SyncCoordinator?
     var syncCoordinator: SyncCoordinator {
