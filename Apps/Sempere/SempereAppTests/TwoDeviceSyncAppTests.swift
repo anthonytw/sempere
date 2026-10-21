@@ -491,14 +491,14 @@ struct SyncCoordinatorTests {
     /// priority, so the unlock's run and Sync Now waited behind another closed vault's slow upload.
     /// Priority is asked again when slots are handed out, and opening the vault hands them out.
     @Test func aRunQueuedBeforeItsVaultOpenedTakesTheOpenVaultsSlot() async throws {
-        func location() -> WebDAVLocation {
-            WebDAVLocation(id: UUID(), url: "https://dav.example.org/\(UUID().uuidString)/", user: nil,
-                           vaultId: UUID().uuidString.lowercased(), name: "V", folderName: "V.sempere")
+        func location() -> SyncTargetRef {
+            SyncTargetRef(vaultID: UUID(), vaultName: "V",
+                          target: .webdav("https://dav.example.org/\(UUID().uuidString)/", user: nil, name: "V"))
         }
         let blocked = location(), queued = location()
         let released = RunCounter()
-        let coordinator = SyncCoordinator(locations: { [blocked, queued] }, makeSession: { loc in
-            SyncSession(locationID: loc.id, vaultID: nil, name: loc.name, lastSuccess: nil, run: { _ in
+        let coordinator = SyncCoordinator(targets: { [blocked, queued] }, makeSession: { loc in
+            SyncSession(locationID: loc.id, vaultID: loc.vaultID, name: loc.vaultName, lastSuccess: nil, run: { _ in
                 if loc.id == blocked.id {
                     // A slow upload of a closed vault, until the test releases it.
                     while released.value == 0 { try await Task.sleep(for: .milliseconds(10)) }
@@ -512,7 +512,7 @@ struct SyncCoordinatorTests {
         let waiting = try #require(coordinator.session(for: queued))
         try await Task.sleep(for: .milliseconds(100))
         #expect(waiting.lastSuccess == nil, "queued behind the background slot")
-        let open = try #require(coordinator.attachOpen(queued))
+        let open = try #require(coordinator.attachOpen(queued.vaultID).first)
         open.vaultUnlocked()
         let finished = RunCounter()
         Task { _ = await open.syncNow(); _ = finished.add(1) }
