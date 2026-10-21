@@ -399,7 +399,9 @@ extension AppModel {
             LegacyWebDAV.convert(list: list, root: root, store: store) { location, copy in
                 guard let endpoint = try? Self.endpoint(location.webdav, passwords: passwords) else { return false }
                 var options = SyncOptions(deviceLabel: "app")
-                options.limits.maxDuration = 120
+                // Bounded: a server that answers slowly must not hold up the launch for long (it is retried
+                // at the next launch).
+                options.limits.maxDuration = 15
                 guard let report = try? remote.push(endpoint, copy: copy, vault: nil, options: options) else { return false }
                 return report.errors.isEmpty && report.stoppedEarly == nil
             }
@@ -485,8 +487,7 @@ extension AppModel {
         } catch {
             throw SyncTargetProblem.other(String(describing: error))
         }
-        let state = store.targets.stateURL(id, of: vaultID)
-        try? FileManager.default.removeItem(at: state)
+        store.targets.resetState(id, of: vaultID)
         syncTargetsChanged()
         syncCoordinator.sessions[id]?.demand()
     }
