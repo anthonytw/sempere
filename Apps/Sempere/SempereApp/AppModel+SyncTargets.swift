@@ -346,7 +346,7 @@ extension AppModel {
                     var report = try FolderTargetRun.run(vaultFolder: entry.url, folder: access.folder, provider: folderProvider,
                                                          vault: vault, stateURL: stateURL, twoWay: twoWay, options: options)
                     if let placed { report.changed = Self.union(placed.changed, report.changed) }
-                    if !twoWay, request.stage {
+                    if !twoWay, request.stage, !PartialCopy.isPartial(entry.url) {
                         // Locked: what other devices wrote is staged, never placed (design §4.1). Best effort.
                         _ = try? staging.stage(vaultFolder: entry.url) { shadow, state in
                             try FolderTargetRun.run(vaultFolder: shadow, folder: access.folder, provider: folderProvider,

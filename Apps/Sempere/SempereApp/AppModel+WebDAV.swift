@@ -243,7 +243,7 @@ extension AppModel {
                         return report
                     }
                     let report = try remote.push(endpoint, copy: copy, vault: nil, options: options)
-                    if request.stage {
+                    if request.stage, !copy.isPartial {   // a join fills itself once unlocked
                         // Locked: what other devices wrote is staged, never placed (design §4.1). Best effort.
                         _ = try? staging.stage(vaultFolder: copy.folder) { shadow, _ in
                             try remote.sync(endpoint, copy: LocalCopy(folder: shadow, stateDirectory: staging.directory),
