@@ -17,7 +17,7 @@ struct StoreCommand: ParsableCommand {
             once. Any other command works on a store vault through --vault "$(sempere store path NAME)".
             """,
         subcommands: [StoreList.self, StorePath.self, StoreCreate.self, StoreImport.self, StoreRestore.self, StoreRemove.self,
-                      StoreTargetCommand.self, StoreSync.self]
+                      StoreTargetCommand.self, StoreSync.self, StoreInfo.self, StoreQuarantineCommand.self]
     )
 }
 

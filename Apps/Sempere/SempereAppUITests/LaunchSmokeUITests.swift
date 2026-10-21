@@ -144,6 +144,18 @@ final class LaunchSmokeUITests: XCTestCase {
         require(targets, "File > Sync Targets…", in: app)
         targets.click()
         requireSheet("syncTargetsSheet", titled: "Sync Targets", "sync targets sheet", in: app)
+        // Add WebDAV Server… (P9): the connect sheet in its add-target mode, over Sync Targets.
+        let addServer = app.buttons["syncTargetsAddServer"].firstMatch
+        require(addServer, "Add WebDAV Server… button", in: app)
+        addServer.click()
+        requireSheet("webdavConnectSheet", titled: "Add WebDAV Server", "Add WebDAV Server sheet", in: app)
+        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+        requireRunning(app, "add webdav server sheet")
+        // Details and Repair: Vault Details pushed in the same sheet.
+        let details = app.buttons["syncTargetsDetails"].firstMatch
+        require(details, "Details and Repair link", in: app)
+        details.click()
+        require(app.descendants(matching: .any)["vaultDetails"].firstMatch, "Vault Details", in: app)
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
         requireRunning(app, "sync targets sheet")
 

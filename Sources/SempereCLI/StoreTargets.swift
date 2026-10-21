@@ -58,6 +58,8 @@ struct StoreTargetAdd: ParsableCommand {
             sync copies the vault into it), or hold the same vault (the first sync is a union). It must not overlap \
             the store. --webdav URL [--user NAME]: a server folder (https, or http to localhost); the password is \
             never stored, `store sync` takes it from the environment. A target at the same place is refused (exit 1).
+            With --webdav, --check first lists the server folder (password from --password-env) and refuses one that \
+            holds anything but this vault (exit 1); a missing folder is made by the first sync.
             """
     )
 
@@ -73,6 +75,13 @@ struct StoreTargetAdd: ParsableCommand {
     @Option(name: .long, help: ArgumentHelp("With --webdav: the user name for HTTP Basic auth.", valueName: "name"))
     var user: String?
 
+    @Flag(name: .long, help: "With --webdav: check that the server folder is empty, missing or holds this vault.")
+    var check = false
+
+    @Option(name: .customLong("password-env"),
+            help: ArgumentHelp("With --check: the environment variable holding the WebDAV password.", valueName: "var"))
+    var passwordEnv: String?
+
     @Option(name: .long, help: ArgumentHelp("The target's display name (default: the folder's name or the host).",
                                             valueName: "name"))
     var name: String?
@@ -83,6 +92,7 @@ struct StoreTargetAdd: ParsableCommand {
     func validate() throws {
         if (folder == nil) == (webdav == nil) { throw ValidationError("give one of --folder PATH or --webdav URL") }
         if user != nil && webdav == nil { throw ValidationError("--user goes with --webdav") }
+        if (check || passwordEnv != nil) && webdav == nil { throw ValidationError("--check and --password-env go with --webdav") }
     }
 
     func run() throws {
@@ -98,6 +108,21 @@ struct StoreTargetAdd: ParsableCommand {
             guard let url = URL(string: text) else { throw CLIError.usage("\(text) is not a URL") }
             do { _ = try WebDAVClient(baseURL: url, credentials: nil) } catch {
                 throw CLIError.usage(CLIError.from(error).message)
+            }
+            if check {
+                var login = WebDAVLoginOptions()
+                login.user = user
+                login.passwordEnv = passwordEnv
+                let found: WebDAVTargetFolder
+                do { found = try WebDAVConnection.checkTargetFolder(try login.client(url), vaultId: entry.vaultId) } catch let e as CLIError {
+                    throw e
+                } catch {
+                    throw CLIError.failure(CLIError.from(error).message)
+                }
+                guard found.acceptable else {
+                    throw CLIError.failure("\(text) holds \(found == .otherVault ? "another vault" : "other files"): "
+                                           + "choose an empty or new folder")
+                }
             }
             target = .webdav(text, user: user, name: name ?? url.host ?? text)
         }

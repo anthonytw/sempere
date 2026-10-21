@@ -10,6 +10,7 @@ struct SyncTargetsSheet: View {
     @AppModelEnvironment private var model
     @Environment(\.dismiss) private var dismiss
     @State private var pickingFolder = false
+    @State private var addingServer = false
     @State private var removing: SyncTarget?
     /// The folder target whose folder is being chosen again ("Choose Again…").
     @State private var rechoosing: SyncTarget?
@@ -39,10 +40,24 @@ struct SyncTargetsSheet: View {
                     Section {
                         Button("Add Folder…", systemImage: "folder.badge.plus") { pickingFolder = true }
                             .accessibilityIdentifier("syncTargetsAddFolder")
+                        Button("Add WebDAV Server…", systemImage: "server.rack") { addingServer = true }
+                            .accessibilityIdentifier("syncTargetsAddServer")
                         if !model.syncSessions.isEmpty {
                             Button("Sync Now", systemImage: "arrow.triangle.2.circlepath") {
                                 Task { await model.syncAllTargetsNow() }
                             }
+                        }
+                    }
+                    if let vault = model.vault?.vaultId {
+                        Section {
+                            NavigationLink {
+                                VaultDetailsView(vaultID: vault)
+                            } label: {
+                                Label("Details and Repair", systemImage: "info.circle")
+                            }
+                            .accessibilityIdentifier("syncTargetsDetails")
+                        } footer: {
+                            Text("Storage on this device, the devices each target holds, and files a sync refused.")
                         }
                     }
                 }
@@ -52,6 +67,9 @@ struct SyncTargetsSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }.accessibilityIdentifier("syncTargetsDone")
                 }
+            }
+            .sheet(isPresented: $addingServer) {
+                if let vault = model.vault?.vaultId { WebDAVConnectSheet(addingTo: vault) }
             }
             .fileImporter(isPresented: $pickingFolder, allowedContentTypes: [.folder]) { result in
                 guard case .success(let url) = result, let vault = model.vault?.vaultId else { return }

@@ -1,8 +1,8 @@
 import Sempere
 import SwiftUI
 
-/// Shown while no vault is open: the vaults on this device (the in-app store), other recent vaults
-/// (WebDAV copies, folders earlier builds opened in place), and the ways to open or create one.
+/// Shown while no vault is open: the vaults on this device (the in-app store, with WebDAV vaults still
+/// joining, one list with each vault's sync status), other recent vaults, and the ways to open or create one.
 struct WelcomeView: View {
     @AppEnvironmentObject private var library: VaultLibrary
     var openFolder: () -> Void
@@ -40,7 +40,6 @@ struct WelcomeView: View {
                         }
                     }
                 }
-                WebDAVLocationsSection()
             }
             .navigationTitle("Sempere")
             .task { await library.refreshStoredVaults() }

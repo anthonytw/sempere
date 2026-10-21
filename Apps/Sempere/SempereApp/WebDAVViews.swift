@@ -12,6 +12,9 @@ struct WebDAVConnectSheet: View {
     @AppEnvironmentObject private var library: VaultLibrary
     @Environment(\.dismiss) private var dismiss
     var editing: WebDAVLocation?
+    /// Add WebDAV Server… (P9): the store vault this server folder becomes a target of. The same server check
+    /// and certificate trust; the folder must be empty, new or hold this vault.
+    var addingTo: UUID?
 
     @State private var urlText = ""
     @State private var user = ""
@@ -20,6 +23,7 @@ struct WebDAVConnectSheet: View {
     @State private var pin: String?
     @State private var testing = false
     @State private var probe: WebDAVProbe?
+    @State private var targetProbe: WebDAVTargetProbe?
     @State private var trusting: ServerCertificate?
     @State private var working = false
     @State private var failure: String?
@@ -43,7 +47,11 @@ struct WebDAVConnectSheet: View {
                                 text: $password)
                         .accessibilityIdentifier("webdavPassword")
                 } footer: {
+                    if addingTo != nil {
+                        Text("An empty or new WebDAV folder (https://…) for this vault, or one that already holds it. The password is kept only in this device's Keychain. The first sync uploads the vault; after that, changes go both ways.")
+                    } else {
                     Text("A WebDAV folder (https://…) that holds a vault, or the folder above your vaults. The password is kept only in this device's Keychain. Sempere keeps a copy of the vault on this device and only uploads to the server: it never takes changes from it.")
+                    }
                 }
                 Section {
                     Button {
@@ -63,6 +71,7 @@ struct WebDAVConnectSheet: View {
                     }
                 }
                 if let probe { results(probe) }
+                if let targetProbe { targetResults(targetProbe) }
                 if let pin {
                     Section {
                         Label {
@@ -74,6 +83,7 @@ struct WebDAVConnectSheet: View {
                         Button("Stop Trusting This Certificate", role: .destructive) {
                             self.pin = nil
                             probe = nil
+                            targetProbe = nil
                         }
                     } header: {
                         Text("Certificate You Trusted")
@@ -90,7 +100,7 @@ struct WebDAVConnectSheet: View {
                 }
             }
             .accessibilityIdentifier("webdavConnectSheet")
-            .navigationTitle(editing == nil ? Text("Open from WebDAV") : Text("Server Settings"))
+            .navigationTitle(addingTo != nil ? Text("Add WebDAV Server") : editing == nil ? Text("Open from WebDAV") : Text("Server Settings"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -155,6 +165,44 @@ struct WebDAVConnectSheet: View {
                 }
             }
         case .failed(let problem, let message, let certificate):
+            failureSection(problem, message: message, certificate: certificate)
+        }
+    }
+
+    /// Add WebDAV Server…: what the folder holds, and Add when the vault may sync with it.
+    @ViewBuilder
+    private func targetResults(_ probe: WebDAVTargetProbe) -> some View {
+        switch probe {
+        case .checked(let found):
+            Section {
+                switch found {
+                case .missing: Text("The folder does not exist yet: the first sync creates it.")
+                case .empty: Text("The folder is empty.")
+                case .sameVault: Text("The folder already holds this vault: the first sync copies what either side lacks.")
+                case .otherVault: Text("The folder holds another vault. Choose an empty or new folder.").foregroundStyle(.red)
+                case .notEmpty: Text("The folder holds other files. Choose an empty or new folder.").foregroundStyle(.red)
+                }
+                if found.acceptable {
+                    Button {
+                        Task { await addTarget() }
+                    } label: {
+                        HStack {
+                            Text("Add This Server")
+                            if working { Spacer(); ProgressView() }
+                        }
+                    }
+                    .disabled(working)
+                    .accessibilityIdentifier("webdavAddTarget")
+                }
+            }
+        case .failed(let problem, let message, let certificate):
+            failureSection(problem, message: message, certificate: certificate)
+        }
+    }
+
+    /// Why the check failed and, for a certificate the system does not trust, the opt-in.
+    @ViewBuilder
+    private func failureSection(_ problem: WebDAVSyncProblem, message: String, certificate: ServerCertificate?) -> some View {
             Section {
                 Label {
                     VStack(alignment: .leading, spacing: 4) {
@@ -170,7 +218,6 @@ struct WebDAVConnectSheet: View {
                         .accessibilityIdentifier("webdavTrust")
                 }
             }
-        }
     }
 
     // MARK: - Actions
@@ -214,7 +261,23 @@ struct WebDAVConnectSheet: View {
         testing = true
         failure = nil
         defer { testing = false }
-        probe = await model.probeWebDAV(url: url, user: userName, password: testPassword(), pin: pin)
+        if let addingTo {
+            targetProbe = await model.probeWebDAVTarget(url: url, user: userName, password: testPassword(), pin: pin, vaultID: addingTo)
+        } else {
+            probe = await model.probeWebDAV(url: url, user: userName, password: testPassword(), pin: pin)
+        }
+    }
+
+    private func addTarget() async {
+        guard let addingTo, let url = parsedURL else { return }
+        working = true
+        defer { working = false }
+        do {
+            try await model.addWebDAVTarget(url: url, user: userName, password: password, pin: pin, to: addingTo)
+            dismiss()
+        } catch {
+            failure = String(describing: error)
+        }
     }
 
     private func open(_ vault: WebDAVVaultListing) async {
@@ -332,23 +395,24 @@ struct WebDAVStatusBar: View {
     }
 }
 
-/// The welcome screen's WebDAV vaults: open (offline too, once downloaded) or remove.
-struct WebDAVLocationsSection: View {
+/// WebDAV vaults still joining (no copy on this device yet), as rows of the welcome list's vaults: open
+/// (the join continues) or remove.
+struct JoiningWebDAVRows: View {
     @AppModelEnvironment private var model
     @AppEnvironmentObject private var library: VaultLibrary
+    let locations: [WebDAVLocation]
     @State private var removing: WebDAVLocation?
     @State private var removingUnconfirmed = 0
 
     var body: some View {
-        if !model.webdavLocations.locations.isEmpty {
-            Section("WebDAV") {
-                ForEach(model.webdavLocations.locations) { location in
+                ForEach(locations) { location in
                     Button {
                         Task { await model.report { try await model.openWebDAV(location.id, library: library) } }
                     } label: {
-                        VStack(alignment: .leading) {
+                        VStack(alignment: .leading, spacing: 2) {
                             Text(verbatim: location.name).font(.headline)
-                            Text(verbatim: location.host).font(.caption).foregroundStyle(.secondary)
+                            Text("Joining from \(location.host)", comment: "Welcome list: a WebDAV vault whose first download is not finished")
+                                .font(.caption).foregroundStyle(.secondary)
                         }
                     }
                     .swipeActions {
@@ -386,8 +450,6 @@ struct WebDAVLocationsSection: View {
                         }
                     }
                 }
-            }
-        }
     }
 }
 
