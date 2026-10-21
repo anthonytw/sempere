@@ -434,9 +434,25 @@ final class AppModel {
     private let ownedScratch: URL
 
     deinit { try? FileManager.default.removeItem(at: ownedScratch) }
-    /// The push-only sync of the open vault when it is a WebDAV location's
-    /// local copy; nil for any other vault.
-    var webdav: WebDAVSession?
+    /// The sync session of the open vault when it is a WebDAV location's local copy (the
+    /// coordinator's, two-way while the vault is unlocked); nil for any other vault.
+    var webdav: SyncSession?
+    /// The open vault's `vault.json` changed on disk (a sync took another device's key change) and the
+    /// open `Vault` has not been opened again under it yet: its runs only upload (review of #70, F1).
+    var syncVaultStale = false
+    /// A previous copy kept at launch (`recoverWebDAVLeftovers`), for its alert; nil when there is none.
+    var webdavLeftover: WebDAVLeftover?
+    /// Every in-app vault's sync sessions (`SyncCoordinator`, made on first use).
+    @ObservationIgnored private var coordinatorStorage: SyncCoordinator?
+    var syncCoordinator: SyncCoordinator {
+        if let coordinatorStorage { return coordinatorStorage }
+        let store = webdavLocations
+        let made = SyncCoordinator(locations: { store.locations },
+                                   makeSession: { [weak self] location in self?.makeSyncSession(location) })
+        made.tick = webdavTick
+        coordinatorStorage = made
+        return made
+    }
     /// The WebDAV vault being downloaded and how far it is, for the overlay; nil when none is.
     var webdavDownload: WebDAVDownloadStatus?
     /// The Cancel of that download (`cancelWebDAVDownload`).
@@ -853,11 +869,14 @@ final class AppModel {
             // whose vault.json has not synced in yet (`automatic`); the vault
             // then opens normally, without it.
             let start = opened
+            let lock = vaultWriteLock   // never interleaved with a sync run replacing the journal or vault.json
             if let discarded = try? await Task.detached(priority: .userInitiated, operation: { () throws -> Vault in
-                try CloudVault.coordinatedWrite(coordinate) { () throws -> Vault in
-                    var v = start
-                    try v.discardRefusedJournal(automatic: true)
-                    return v
+                try Self.withWriteLock(lock) {
+                    try CloudVault.coordinatedWrite(coordinate) { () throws -> Vault in
+                        var v = start
+                        try v.discardRefusedJournal(automatic: true)
+                        return v
+                    }
                 }
             }).value {
                 try ensureCurrent(gen)

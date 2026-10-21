@@ -158,7 +158,7 @@ struct WebDAVConnectSheet: View {
             Section {
                 Label {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(WebDAVSession.text(for: problem))
+                        Text(SyncStatus.text(for: problem))
                         Text(verbatim: message).font(.caption).foregroundStyle(.secondary)
                     }
                 } icon: {
@@ -264,13 +264,11 @@ private struct CertificateWarning: View {
     }
 }
 
-/// The note list's bar for a WebDAV vault: uploading, up to date, offline,
-/// or what went wrong, with Sync Now, Download Again… and Server Settings….
+/// The note list's bar for a WebDAV vault (`SyncStatus`): syncing, synced, offline, waiting for the
+/// unlock, or what went wrong, with Sync Now and Server Settings….
 struct WebDAVStatusBar: View {
     @AppModelEnvironment private var model
-    @AppEnvironmentObject private var library: VaultLibrary
-    let session: WebDAVSession
-    @State private var confirmingDownload = false
+    let session: SyncSession
     @State private var editing: WebDAVLocation?
     /// A partial copy fetches attachments in the background once every note is in (`AppModel.webdavFillsBlobs`).
     @AppStorage(AppModel.webdavFillsBlobsKey) private var fillsBlobs = true
@@ -280,24 +278,18 @@ struct WebDAVStatusBar: View {
             Image(systemName: icon).foregroundStyle(tint)
             VStack(alignment: .leading, spacing: 2) {
                 Text(session.headline).font(.caption)
-                if let last = session.lastPush, !session.isPushing {
-                    Text("Last upload \(last, format: .relative(presentation: .named))")
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
-                if session.otherWriterFiles > 0 {
-                    Text("The server has notes from another device. Download the vault again to see them.")
+                if let last = session.lastSuccess, !session.isSyncing {
+                    Text("Last sync \(last, format: .relative(presentation: .named))")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
             }
             Spacer(minLength: 0)
-            if session.isPushing { ProgressView().controlSize(.small) }
+            if session.isSyncing { ProgressView().controlSize(.small) }
             Menu {
                 Button("Sync Now", systemImage: "arrow.triangle.2.circlepath") {
                     Task { await model.webdavSyncNow() }
                 }
-                .disabled(session.isPushing || model.phase != .unlocked)
-                Button("Download Again…", systemImage: "arrow.down.circle") { confirmingDownload = true }
-                    .disabled(model.phase != .unlocked)
+                .disabled(session.isSyncing)
                 Button("Server Settings…", systemImage: "server.rack") {
                     editing = model.webdavLocations.location(session.locationID)
                 }
@@ -313,14 +305,6 @@ struct WebDAVStatusBar: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.bar)
         .accessibilityIdentifier("webdavStatus")
-        .confirmationDialog("Download the vault again?", isPresented: $confirmingDownload, titleVisibility: .visible) {
-            Button("Download Again") {
-                Task { await model.report { try await model.downloadWebDAVAgain(library: library) } }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This device's changes are uploaded first. Then the vault is downloaded from the server, with the notes other devices uploaded, and replaces this device's copy. Open notes close meanwhile.")
-        }
         .sheet(item: $editing) { location in
             WebDAVConnectSheet(editing: location)
         }
@@ -328,10 +312,14 @@ struct WebDAVStatusBar: View {
     }
 
     private var icon: String {
-        if session.isPushing { return "arrow.up.circle" }
-        if session.problems.contains(.offline) { return "wifi.slash" }
-        if session.needsAttention { return "exclamationmark.triangle.fill" }
-        return session.unconfirmed > 0 ? "arrow.up.circle" : "checkmark.circle"
+        switch session.status.kind {
+        case .syncing: return "arrow.triangle.2.circlepath"
+        case .offline: return "wifi.slash"
+        case .problem: return "exclamationmark.triangle.fill"
+        case .pending: return "arrow.up.circle"
+        case .waitingForUnlock: return "lock"
+        case .synced: return "checkmark.circle"
+        }
     }
 
     private var tint: SwiftUI.Color {

@@ -16,6 +16,8 @@ struct RootView: View {
     @AppStorage(ColumnLayout.key) private var storedColumns = "all"
     /// Set when a failed reopen should end in the folder picker.
     @State private var pickAfterAlert = false
+    /// The kept previous copy being shared (not on a Mac, where Show in Finder opens it).
+    @State private var sharingLeftover: WebDAVLeftover?
     @State private var triedAutoOpen = false
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(KeepScreenOn.key) private var keepScreenOn = KeepScreenOn.defaultValue
@@ -221,6 +223,22 @@ struct RootView: View {
             }
         } message: {
             Text(model.errorMessage ?? "")
+        }
+        // A previous copy an interrupted "Download Again" left with files the vault lacks: kept, and shown.
+        .alert("Sempere", isPresented: Binding(get: { model.webdavLeftover != nil },
+                                                set: { if !$0 { model.webdavLeftover = nil } }),
+               presenting: model.webdavLeftover) { leftover in
+            if Platform.isMac {
+                Button("Show in Finder") { UIApplication.shared.open(leftover.folder) }
+            } else {
+                Button("Share…") { sharingLeftover = leftover }
+            }
+            Button("OK", role: .cancel) {}
+        } message: { leftover in
+            Text(leftover.message)
+        }
+        .sheet(item: $sharingLeftover) { leftover in
+            ShareSheet(items: [leftover.folder]) { sharingLeftover = nil }
         }
         // format.md §2.1: never write to a list nobody with the key wrote.
         .alert(model.recipientsAlert?.displayTitle ?? RecipientsAlert.title, isPresented: Binding(get: { model.recipientsAlert != nil },

@@ -1556,7 +1556,7 @@ fetches and the notes it went through; a fetch stops between notes on a
 cancellation.
 
 **Unchanged notes.** With `skipUnchangedNotes` (`--skip-unchanged`; the
-app's pushes) a run does not list a note folder whose ETag in the `notes/`
+app's runs) a run does not list a note folder whose ETag in the `notes/`
 listing is the one recorded when the last run left that note in step on
 both sides, when the local folder holds exactly the recorded revisions (and
 no blob when the server had no `att/`); it takes the recorded revisions as
@@ -1619,7 +1619,7 @@ kinds of run (`SyncOptions.partial`, `LocalCopy`):
   nothing is uploaded or deleted. The copy is *usable* once a run listed every
   note folder (`record.json` `listed`); until then it is not opened and no
   fetch runs. Until then every server note is marked whatever its folder
-  holds, so files already there (linked in by "Download Again", or left by an
+  holds, so files already there (linked in by a re-download, `LocalCopy.redownload`, or left by an
   unfinished full download) are only a head start; a later metadata pull marks
   only notes it has no folder for. It refuses a complete vault (marking its
   notes would block edits to them).
@@ -1703,6 +1703,70 @@ FoundationNetworking on Linux sends no such header. The transport keeps no
 cache, and the pinned 4.3.5 refuses such a request, so the macOS job catches
 a regression the Linux job cannot.
 
+## Sync targets in the app
+
+Every in-app vault with a sync target keeps syncing, open or not, each isolated from the others
+(docs/design/device-first-sync.md §4.2). In P5 the targets are the WebDAV locations (one local copy
+and its server each); folder targets and several targets per vault come with P6.
+
+- **`SyncCoordinator`** (one per app, started at launch) owns one `SyncSession` per location. The
+  open vault's session runs two-way while the vault is unlocked here; every other session runs
+  upload-only. At most two runs go at once across the app (`maxConcurrentRuns`), at most one per
+  session, and one slot is kept for the open vault: background runs take at most one, so slow uploads
+  of closed vaults never hold up the open vault's runs or Sync Now (a run queued before its vault was
+  opened takes that slot as soon as it is: priority is asked again whenever slots are handed out). The
+  closed vaults share the other slot: one closed vault's slow upload holds up the others' runs until it
+  ends (bounded by the run's limits); per-vault slots are a follow-up. A voice note delivered into a
+  closed vault's copy asks its session for a run (`QuickCapture.deliveredNotification`). Each session has its own copy, sync state, quarantine,
+  credentials (the Keychain item of its location), schedule, backoff and status: one vault's wrong
+  password, hung server (bounded by the run's limits) or full disk never delays or fails another
+  (`SyncCoordinatorTests`).
+- **When** (`SyncSchedule`, pure, in `SempereSync`): once at the start and after the unlock (two-way
+  from then on), `writeDelay` (10 s) after the last write (every `NoteWriter` delta and blob counts),
+  when the app becomes active (every session) and when it goes to the background, and on "Sync Now".
+  Otherwise every 30 s while the last run brought something or left files arriving, then 5 minutes,
+  doubling with each run that changed nothing up to 15 minutes. After a failure, 30 s doubling up to
+  15 minutes; a write or a demand still runs sooner. At most one run at a time; a write during a run
+  schedules another. Background tasks for closed vaults come with P8.
+- **Arrivals** (`LocalChanges`, the report's `changed`): what a two-way run wrote in the copy. The
+  notes it touched are listed again (`reconcile(scope:)`, only those), and an open editor of one
+  merges the new revisions in place (`AppModel+RemoteMerge`, as for any listing); `settings.age`
+  taken or merged runs the settings pass (`SettingsSyncBridge` applies it); inbox files start
+  adoption; notebook records reload the tree; other devices' published summaries refresh the rows of
+  notes not here yet. A new `vault.json` with another device list or secret (a key change made with
+  the CLI elsewhere) saves and closes every editor and opens the vault again with this device's keys,
+  as after a key change made here (`keyEpoch`), then opens again the notes that were open (they say
+  "Updated from another device"); if this device's key is no longer listed, the vault closes and says
+  so. A label alone changes nothing. Until the vault is open under the new `vault.json`, or for good
+  when that fails, its runs only upload (`syncVaultStale`), and after every two-way run (also one that
+  stopped or threw) the open vault is compared with the disk. The engine never checks files under a
+  stale vault either: a run whose `Vault` no longer matches `vault.json` on disk opens it again first,
+  and a quarantine record names the key the file was checked under (`checkerKeyID`), so a run under
+  another key checks it again (review of #70: a stale vault had kept another device's new notes out
+  for good).
+- **The write lock** (`VaultFileLock`, `<location>/vault.write`): a run holds it while it settles and
+  replaces the copy's mutable files (`vault.json`, the journal, `settings.age`;
+  `SyncOptions.localWriteLock`), and the model holds it while it writes `settings.age`, so a merge
+  never interleaves with the app's own write. A run that cannot take it within 30 s leaves those
+  files to the next run (listed as skipped). Revisions and blobs are write-once and need no lock.
+- **Leftovers of "Download Again"** (earlier builds): at launch, before any session runs,
+  `LocalCopy.recoverInterruptedRedownload` puts a copy back from `<copy>.old` when the copy is missing,
+  removes an unfinished `<copy>.download` and its state, and removes `<copy>.old` only when the copy
+  holds every revision, blob, inbox file and notebook record in it; otherwise it is kept and named in an
+  alert, which offers Show in Finder on a Mac and Share… elsewhere.
+- **Status** (`SyncStatus`, the note list's bar): syncing; synced (and how many files a provider
+  still delivers); "n changes not synced yet"; offline ("Changes are kept on this device and sync
+  when the server can be reached", not an error); waiting for the unlock (a closed or locked vault);
+  or the problem and what to do (wrong password, certificate, the folder gone or holding another
+  vault, a device list changed on both sides, files that failed). The menu has Sync Now and Server
+  Settings…; "Download Again" is gone, since a run takes what the server has.
+- **Other writers.** Several devices write to one server folder; their files meet by the engine's
+  union rules (docs/design/device-first-sync.md §5), conflicts on `vault.json` keep both copies and
+  are reported. Tests: `TwoDeviceSyncAppTests` (two `AppModel`s on one in-memory server running the
+  real engine: a note and a rename reaching the other device's list and open editor, edits made
+  offline on both, settings, a 6 MB attachment, runs cut midway, a server folder that vanishes and
+  comes back empty, a vault reopened while a run goes, a closed vault that only uploads).
+
 ## WebDAV vaults in the app
 
 For people with no Mac and no iCloud, the app keeps a vault on a WebDAV
@@ -1711,24 +1775,26 @@ server it talks to itself (`Open Vault ▸ WebDAV…`). It wraps the same
 side changes, and any server the CLI works with works here.
 
 **One transport per connection.** `LiveWebDAVRemote` keeps a single `URLSessionTransport` in a
-`WebDAVTransportPool`, keyed by URL, user, password and pin, so consecutive pushes and fetches reuse its
+`WebDAVTransportPool`, keyed by URL, user, password and pin, so consecutive runs and fetches reuse its
 TCP/TLS connections. A different key replaces it (trust is decided by that transport's own
 `PinnedServerTrust`, built from the key's pin, so a pin is never evaluated under another); closing the vault
 (`stopWebDAV`) empties the pool. A dropped transport is not killed: operations still holding it finish, and
 its sessions invalidate in `deinit` (`finishTasksAndInvalidate`). "Test Connection" builds its own transport
 (it needs the certificate recorder).
 
-**Model: a local copy that is pushed.** The vault the app opens is a local
+**Model: a local copy, synced both ways.** The vault the app opens is a local
 copy in the app's container (`Application Support/Sempere/WebDAV/<location
 id>/<name>.sempere`, sync state and quarantine beside it). Every read and
 write goes to that copy through the usual plain-folder paths (no iCloud
 code runs for it), so the app works offline exactly as with a vault on the
-device. The server is updated by a **push-only** run (`SyncOptions.pushOnly`,
-"Push-only mirror" above): it uploads what the server lacks, removes there
-what local compaction or blob collection explains, and never downloads,
-writes or deletes anything in the local copy. A server can therefore never
-feed a revision, a blob or a changed device list into the vault the app is
-editing.
+device. The server is kept in step by two-way runs of the engine
+(`LocalCopy.sync`, "Sync targets in the app" below) while the vault is open
+and unlocked: they take what other devices wrote (every file checked before
+it is placed, format.md §9.1), merge `settings.age`, upload what this device
+wrote and follow the deletions the rules explain. While the vault is closed
+or locked, its runs only upload (`SyncOptions.pushOnly` with
+`keepServerChanges`): nothing unverified is placed in a copy nobody unlocked,
+and what other devices wrote arrives at the next unlock.
 
 **Connecting** (`WebDAVConnectSheet`, logic in `WebDAVLocation`,
 `WebDAVConnection`): URL, user name, password, "Test Connection".
@@ -1750,7 +1816,7 @@ editing.
   one, else by its folder: a server folder called `dav` says nothing. The
   location and its recent-vault row take the label of the copy each time it
   is opened, so a label set later (`sempere vault label`, then a sync)
-  arrives with the next fresh pull or Download Again.
+  arrives with the next two-way run.
   Names and ids from the server are untrusted: control characters are
   escaped and lengths bounded before display.
 - **Self-signed certificates** need an explicit, loud opt-in. When the
@@ -1776,12 +1842,12 @@ locked with the usual unlock sheet. It is opened only once a metadata pull
 finished without errors and listed every note (`WebDAVLocation.downloaded`,
 `LocalCopy.isUsable`); one that stopped continues when the vault is
 opened again. While the pull runs (and while
-Download Again pulls), an overlay shows a bar with the stage and counts
+a re-download pulls), an overlay shows a bar with the stage and counts
 ("Connecting to the server…", then "Listing the server: n of n notes")
 (`WebDAVDownloadStatus`, from the run's `SyncProgress` through
 `WebDAVProgressRelay`) and a Cancel: the run stops after the requests in
 flight, nothing is reported as an error, and opening the vault again
-continues; a canceled Download Again leaves the copy as it was. The fill
+continues. The fill
 that follows has no second overlay: it shows in the note list's bar as
 "Downloading from <server>: n of m notes" (fed by the listing passes). Offline, a usable copy opens
 from what it holds.
@@ -1815,7 +1881,7 @@ unlocked (format.md §9.1).
   never published it, or one this key cannot open), notes not downloaded yet
   are placeholder rows ("Downloading from <server>…") until they arrive. A
   note marked incomplete is never taken as unchanged from the device's index
-  (after "Download Again" its folder may hold the files its indexed summary
+  (after a re-download its folder may hold the files its indexed summary
   came from).
 - *Opening and editing* a note not downloaded yet fetches it first
   (`downloadNote`), exactly as for iCloud, and the editor refuses to show a
@@ -1831,74 +1897,16 @@ unlocked (format.md §9.1).
   thinning decide nothing for notes not local, and core refuses blob
   collection and compaction in an incomplete note. Key changes stay refused
   for a WebDAV copy.
-- *Pushes* run as for a complete copy (push-only, `keepServerChanges`, `skipUnchanged`) and
-  keep on the server everything the copy has not fetched ("Partial copies"
-  above): nothing is deleted there because the copy lacks it, and it is never
-  counted as another writer's files.
+- *Sync runs* on a partial copy: an unlocked two-way run downloads what the copy lacks and so
+  completes it ("Partial copies" above: "A two-way sync completes a partial copy"); an upload-only
+  run (locked) keeps on the server everything the copy has not fetched. Nothing is deleted on the
+  server because the copy lacks it. A fetch and a two-way run of the same copy never leave a blob's
+  stand-in beside the blob (the fetch checks again after writing one, and the copy's completion
+  removes any left).
 - *Texts.* The machinery's messages name the server instead of iCloud Drive
   while a WebDAV copy is open (`CloudSource.current`).
 
-**When it pushes** (`WebDAVPushSchedule`, pure logic): once after the vault
-is unlocked, 10 s after the last write (every `NoteWriter` delta and blob
-counts), when the app becomes active and when it goes to the background (in
-the seconds iPadOS leaves it; a push cut off there is retried when the app
-comes back), every 5 minutes while the vault is open and on "Sync Now".
-Never while locked (deletions need the vault unlocked), no background task
-or scheduled refresh, at most one run at a time; a write during a run
-schedules another. Closing the vault lets a run in progress finish, and the
-copy is not synced, downloaded again or removed until it has (runs on one
-sync-state file also take turns in `SyncEngine`). After a failure the next automatic try waits 30 s,
-doubling up to 15 minutes; "Sync Now" (and unlocking or the app becoming
-active) retries at once, and a write still runs 10 s after the last write.
-
-**Status** (`WebDAVSession`, `WebDAVSyncProblem`): the note list shows a bar
-for a WebDAV vault (`WebDAVStatusBar`): uploading, up to date, the number of
-changes the server has not confirmed (`LocalCopy.unconfirmedChanges`),
-or the problem and what to do, with the last successful push time and a menu
-(Sync Now, Download Again…, Server Settings… to change the password or the
-certificate pin). Offline is not an error: "Offline. Changes are kept on this device
-and uploaded when the server can be reached." Wrong password, a changed
-certificate and the problems below are shown with what to do.
-
-**Conflicts and other writers.** A push-only run never takes anything from
-the server, so the cases are:
-
-| On the server | What the app does |
-| --- | --- |
-| another vault (`vaultId` differs) | stops before any change (`vaultMismatch`) and says so; nothing is uploaded |
-| `vault.json` or `rewrap-journal.json` changed since this device's last sync (another device or the CLI wrote it) | kept, not overwritten (`SyncOptions.keepServerChanges`, CLI `--keep-server-changes`), reported as a conflict: "The vault's device list on the server was changed elsewhere." Notes still upload |
-| `vault.json` differs but was not changed since the last sync (only this device changed it) | replaced by the local copy, as any push-only run |
-| `settings.age` changed by another device | merged per key with this device's copy and the merge uploaded (nothing written locally); not a conflict |
-| revisions or blobs this device never had (another writer) | kept and listed (`extraneous`); never deleted by the app (`deleteExtraneous` is off) |
-
-The intended use is one writing device per server folder, plus readers (the
-web viewer). A second device may download the same vault and write to it:
-both devices' files then coexist on the server and nothing is lost, but
-neither sees the other's notes until it downloads the vault again. "Download
-Again" does that: it first pushes (and refuses if that push did not finish
-cleanly, so no change of this device is lost), then makes a new partial copy
-of the server's vault (its root files and note list; every note marked to be
-fetched again, the old copy's files linked in as a head start, so it takes a
-few requests and the notes refill in the background, other devices' changes
-included), which replaces the old one only once its metadata pull finished
-without errors and only when its `vault.json` passes `Vault.incomingManifestProblem` against the
-old copy's under the vault's key (the same vault, a list and secret written
-with the vault's key: another device's key change passes, another vault or a
-secret the server chose does not). The server's `rewrap-journal.json` is
-judged the same way, under the new `vault.json` and the vault's key
-(`Vault.incomingJournalProblem`): one this device refuses is left out of the
-new copy, and the old copy's own journal is carried over unless this device
-accepts the server's in its place (format.md §3.3.1). Conflict copies
-(`vault.conflict-…`, above) are carried over too; they never go to the
-server. The device list of the new copy is also
-checked against this device's trust record when it is unlocked (format.md
-§2.1), so a server cannot slip in a key this way either.
-
-Connecting again to an address whose folder now holds another vault starts a
-new copy. The old copy (and its Keychain password) is deleted only when it
-holds nothing the server never confirmed; otherwise nothing changes and the
-app says how many changes would be lost (remove the location from the welcome
-screen first, whose confirmation says the same).
+**When it syncs, the status, other writers**: "Sync targets in the app" below.
 
 **Not offered for a WebDAV vault in the app**: changing the vault's keys
 (adding, removing or replacing a device, finishing an interrupted change). A recipient change

@@ -216,20 +216,6 @@ struct WebDAVPartialAppTests {
         s.model.close()
     }
 
-    @Test func downloadingAgainMakesAPartialCopy() async throws {
-        let s = try WebDAVAppTests.setup()
-        let id = try await s.model.connectWebDAV(s.listing, user: nil, password: "", pin: nil, library: s.library)
-        let c = try copy(s, id)
-        try await s.model.unlock(identityText: s.key)
-        #expect(await TS.waitUntil(timeout: .seconds(10)) { !c.isPartial })
-        s.remote.set { $0.fetchGate = DispatchSemaphore(value: 0) }
-        try await s.model.downloadWebDAVAgain(library: s.library)
-        #expect(c.isPartial, "every note is checked against the server again")
-        #expect(s.model.phase == .unlocked)
-        s.remote.openFetchGate()
-        #expect(await TS.waitUntil(timeout: .seconds(10)) { !c.isPartial && s.model.pendingNoteIDs.isEmpty })
-        s.model.close()
-    }
 }
 
 /// The scopes a fetcher asked for.

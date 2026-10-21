@@ -77,6 +77,8 @@ public struct SyncReport: Codable, Hashable, Sendable {
     /// How far the run got (`SyncProgress`, stage `done`): notes listed
     /// and synced, files and bytes downloaded of those it found to download, uploads.
     public var progress: SyncProgress?
+    /// What the run wrote in the local vault folder (`LocalChanges`): set by `SyncEngine.run`.
+    public var changed: LocalChanges?
     /// Set when the local folder is a partial copy (format.md §1.2): what it
     /// still lacks after the run, and what a push-only run left on the server
     /// because the copy has not fetched it yet.

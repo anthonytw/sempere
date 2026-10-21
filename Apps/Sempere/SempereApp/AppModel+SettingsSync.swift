@@ -266,7 +266,24 @@ extension AppModel {
         if isVaultReadOnly { settingsSyncProblem = .readOnly; return }
         if recipientsAlert != nil || vault.recipientsStatus.problem != nil { settingsSyncProblem = .untrustedRecipients; return }
         do {
-            try await offMain { try CloudVault.coordinatedWrite(coordinate) { try vault.writeSharedSettings(write) } }
+            // Under the copy's write lock: a sync run merging `settings.age` never interleaves (`VaultFileLock`).
+            // Read again under the lock (F3): a sync run that merged another device's change since this pass
+            // read the file is never overwritten; the pass runs again on what is there now.
+            let lock = vaultWriteLock
+            let started = file
+            let written = try await offMain { () throws -> Bool in
+                try Self.withWriteLock(lock) {
+                    try CloudVault.coordinatedWrite(coordinate) { () throws -> Bool in
+                        if lock != nil, ((try? vault.readSharedSettings()) ?? nil) != started { return false }
+                        try vault.writeSharedSettings(write)
+                        return true
+                    }
+                }
+            }
+            if !written {
+                scheduleSettingsSync()
+                return
+            }
             if (try? ensureCurrent(gen)) != nil { settingsSyncProblem = nil }
         } catch VaultError.readOnly {
             settingsSyncProblem = .readOnly
