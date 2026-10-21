@@ -339,6 +339,7 @@ extension AppModel {
     ///   `ModelError.noteNotDownloaded` when new files keep appearing or the
     ///   folder stays unlisted, `CancellationError` when the vault closed meanwhile.
     func downloadNote(_ id: UUID) async throws {
+        if let root = partialCopyRoot { return try await downloadPartialNote(id, root: root) }
         guard isCloudVault, let url = vaultURL else { return }
         let gen = generation
         let hooks = cloudHooks

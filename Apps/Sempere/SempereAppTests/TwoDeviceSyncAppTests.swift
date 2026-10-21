@@ -12,7 +12,7 @@ import Testing
 final class EngineWebDAVRemote: WebDAVRemote, @unchecked Sendable {
     let store: MemoryStore
     private let lock = NSLock()
-    private var _runs = 0, _twoWay = 0
+    private var _runs = 0, _twoWay = 0, _fetches = 0
     private var _failure: (any Error)?
     private var _gate: DispatchSemaphore?
     private var _faults: MemoryFaults?
@@ -48,8 +48,12 @@ final class EngineWebDAVRemote: WebDAVRemote, @unchecked Sendable {
         try copy.downloadMetadata(remote: remote, options: options)
     }
     func fetch(_ endpoint: WebDAVEndpoint, copy: LocalCopy, vault: Vault?, scope: FetchScope) throws -> SyncReport {
-        try copy.fetch(remote: remote, vault: vault, scope: scope)
+        lock.lock(); let failure = _failure; _fetches += 1; lock.unlock()
+        if let failure { throw failure }   // offline: an on-demand fetch fails like a run (not gated)
+        return try copy.fetch(remote: remote, vault: vault, scope: scope)
     }
+    /// On-demand fetches made (`AppModel+Join`).
+    var fetches: Int { lock.lock(); defer { lock.unlock() }; return _fetches }
     func push(_ endpoint: WebDAVEndpoint, copy: LocalCopy, vault: Vault?, options: SyncOptions) throws -> SyncReport {
         try copy.push(remote: try enter(twoWay: false), vault: vault, options: options)
     }

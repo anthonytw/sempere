@@ -151,9 +151,9 @@ extension AppModel {
             }
             webdavLocations.update(id) { $0.downloaded = true }
         }
-        let fetcher = copy.isPartial ? makeFetcher(location, copy: copy) : nil
-        try await openVault(at: copy.folder, fetcher: fetcher)
-        fetcher?.start()
+        // A partial copy opens at once: its two-way runs fill it, a note opened first is fetched alone
+        // (`AppModel+Join`).
+        try await openVault(at: copy.folder)
         // The vault's own label (vault.json, format.md §2) names it in the lists, not the server folder.
         let named = await Task.detached(priority: .utility) { copy.label }.value
         if let named, named != location.name { webdavLocations.update(id) { $0.name = named } }
@@ -178,7 +178,9 @@ extension AppModel {
 
     /// Where the open vault's missing files come from, for the download texts:
     /// the server of a partial WebDAV copy, else iCloud Drive.
-    var cloudSource: CloudSource { webdavFetcher.map { .server($0.serverName) } ?? .iCloudDrive }
+    var cloudSource: CloudSource {
+        webdavFetcher.map { .server($0.serverName) } ?? joinLocation.map { .server($0.host) } ?? .iCloudDrive
+    }
 
     /// `ModelError.noteNotDownloaded`, naming the server for a WebDAV copy.
     var noteNotDownloadedError: ModelError {
@@ -225,10 +227,9 @@ extension AppModel {
     /// from the server's sealed summaries (opened with the key, format.md §12;
     /// a missing or unreadable file only means they are listed as they arrive).
     func webdavUnlocked() async {
-        guard let fetcher = webdavFetcher, let vault, vault.canRead else { return }
-        fetcher.setVault(vault)
+        guard let root = partialCopyRoot, let vault, vault.canRead else { return }
         let gen = generation
-        let url = PartialCopyState.summariesURL(fetcher.copy.folder)
+        let url = PartialCopyState.summariesURL(root)
         let rows = await Task.detached(priority: .userInitiated) { () -> [UUID: NoteSummary] in
             guard let data = try? BoundedRead.contents(of: url, maxBytes: PublishedSummaries.maxFileBytes),
                   let entries = try? vault.openPublishedSummaries(data) else { return [:] }
@@ -316,7 +317,9 @@ extension AppModel {
             syncVaultStale = true
             Task { await syncedVaultFileArrived() }
         }
-        let ids = changes.noteIDs
+        var ids = changes.noteIDs
+        // A partial copy's pending notes a run may have completed are looked at again (`AppModel+Join`).
+        if !isCloudVault, !ids.isEmpty || changes.summaries { ids.formUnion(pendingNoteIDs) }
         if !ids.isEmpty {
             if isCloudVault {
                 noteFoldersChanged(ids)

@@ -412,6 +412,8 @@ final class AppModel {
     @ObservationIgnored var lastConflictOutcome: CloudConflicts.Outcome?
     /// The bar's line while a conflict no rule can merge is left unresolved (kept over "settled").
     @ObservationIgnored var conflictProblem: String?
+    /// The last on-demand fetch into the open partial copy (`joinFetch`): the next waits for it.
+    @ObservationIgnored var joinFetchTail: Task<Void, Never>?
     /// Fills the open WebDAV vault's partial copy (`AppModel+WebDAV`); nil
     /// for any other vault, and for a complete copy.
     @ObservationIgnored var webdavFetcher: WebDAVFetcher?
@@ -1084,7 +1086,7 @@ final class AppModel {
         let listed = cache == nil ? nil : try? await offMain {
             try VaultEnumeration.listNotes(vault: url, only: [noteID]).first?.names
         }
-        var verify: (@Sendable () throws -> Void)?
+        var verify: (@Sendable () throws -> Void)? = partialNoteVerifier(noteID)
         if isCloudVault, let url = vaultURL {
             let hooks = cloudHooks
             verify = { try CloudVault.requireLocal(note: noteID, vault: url, hooks: hooks) }
