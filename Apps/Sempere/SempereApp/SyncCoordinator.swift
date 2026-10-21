@@ -27,8 +27,10 @@ struct SyncTargetRef: Hashable, Sendable, Identifiable {
 /// - Isolation: each session has its own sync state, quarantine, credentials (Keychain item by target
 ///   id), schedule, backoff and status. A failure (a hung server bounded by the run's limits, a wrong
 ///   password, a folder that went away, a full disk) marks only its own session.
-/// - Budget: at most `maxConcurrentRuns` runs at once across the app, at most one per session; the open
-///   vault's runs go first. Two targets of one vault take turns on the vault's write lock.
+/// - Budget: at most `maxConcurrentRuns` runs at once across the app, at most one per session. One slot is
+///   kept for the open vault: background runs take at most `maxConcurrentRuns - 1`, so slow uploads of
+///   closed vaults never hold up the open vault's runs or Sync Now (review of #70, F2). Two targets of one
+///   vault take turns on the vault's write lock.
 @MainActor
 @Observable
 final class SyncCoordinator {
@@ -58,7 +60,16 @@ final class SyncCoordinator {
          makeSession: @escaping @MainActor (SyncTargetRef) -> SyncSession?) {
         self.targets = targets
         self.makeSession = makeSession
+        // Quick capture writes into a vault's copy from outside the model (`QuickCapture.deliver`).
+        captureObserver = NotificationCenter.default.addObserver(forName: QuickCapture.deliveredNotification, object: nil,
+                                                                 queue: .main) { [weak self] note in
+            guard let id = note.userInfo?["vault"] as? UUID else { return }
+            MainActor.assumeIsolated { self?.captureDelivered(vault: id) }
+        }
     }
+
+    /// The observer of `QuickCapture.deliveredNotification` (it holds the coordinator weakly; one per app).
+    @ObservationIgnored private var captureObserver: (any NSObjectProtocol)?
 
     // MARK: - Sessions
 
@@ -69,14 +80,19 @@ final class SyncCoordinator {
     }
 
     /// Makes sessions for new targets (every vault's when `runsAll`, else only the open vault's) and
-    /// stops those of removed ones.
+    /// stops those of removed ones. The model calls it when a target is added or removed. A WebDAV target
+    /// whose first download has not finished has no copy to sync yet (`openWebDAV` makes it).
     func refresh() {
         let now = targets()
         let ids = Set(now.map { $0.id })
         for id in sessions.keys where !ids.contains(id) { _ = stop(id) }
         for ref in now where sessions[ref.id] == nil && (runsAll || ref.vaultID == openVault) {
+            if ref.target.kind == .webdav, ref.target.joined != true, ref.vaultID != openVault { continue }
             let made = session(for: ref)
-            if ref.vaultID == openVault, openUnlocked { made?.vaultUnlocked() }
+            if ref.vaultID == openVault {
+                made?.isOpenVault = true
+                if openUnlocked { made?.vaultUnlocked() }
+            }
         }
     }
 
@@ -105,7 +121,9 @@ final class SyncCoordinator {
         openVault = id
         openUnlocked = false
         for ref in targets() where ref.vaultID == id { session(for: ref) }
-        return sessions(of: id)
+        let open = sessions(of: id)
+        for s in open { s.isOpenVault = true }
+        return open
     }
 
     /// The open vault was unlocked here: its sessions run two-way from now on, and run now.
@@ -125,6 +143,7 @@ final class SyncCoordinator {
         var running: [Task<SyncReport?, Never>] = []
         for session in sessions(of: id) {
             session.vaultClosed()
+            session.isOpenVault = false
             session.onChanges = { _ in }
             if !runsAll {
                 if let task = stop(session.locationID) { running.append(task) }
@@ -142,12 +161,6 @@ final class SyncCoordinator {
         return session.stop()
     }
 
-    /// Something wrote into vault `id` outside the open vault's writers (a quick capture into a closed
-    /// vault): its sessions upload soon.
-    func vaultWritten(_ id: UUID) {
-        for s in sessions(of: id) { s.noteWrite() }
-    }
-
     /// Asks every session for a run soon (the app became active, the network came back).
     func demandAll() {
         for s in sessions.values { s.demand() }
@@ -155,8 +168,13 @@ final class SyncCoordinator {
 
     // MARK: - Budget
 
+    /// Background runs may hold at most this many slots; the open vault's may use them all.
+    private func fits(priority: Bool) -> Bool {
+        active < (priority ? max(maxConcurrentRuns, 1) : max(maxConcurrentRuns - 1, 1))
+    }
+
     private func admit(priority: Bool) async {
-        if active < maxConcurrentRuns {
+        if waiting.isEmpty || priority, fits(priority: priority) {
             active += 1
             return
         }
@@ -170,11 +188,25 @@ final class SyncCoordinator {
     }
 
     private func releaseRun() {
-        if waiting.isEmpty {
-            active = max(active - 1, 0)
-        } else {
-            // The slot passes to the next waiter (the open vault's first).
-            waiting.removeFirst().resume.resume()
+        active = max(active - 1, 0)
+        // Each waiter that fits now takes a slot, the open vault's first.
+        var i = 0
+        while i < waiting.count {
+            if fits(priority: waiting[i].priority) {
+                active += 1
+                waiting.remove(at: i).resume.resume()
+            } else {
+                i += 1
+            }
         }
+    }
+
+    /// The number of runs going now (tests).
+    var runsGoing: Int { active }
+
+    /// A voice note was delivered into vault `id`'s copy (quick capture, open or not): its sessions run soon
+    /// rather than at the idle pace.
+    func captureDelivered(vault id: UUID) {
+        for s in sessions.values where s.vaultID == id { s.noteWrite() }
     }
 }

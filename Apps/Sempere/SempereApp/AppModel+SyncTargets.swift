@@ -84,11 +84,14 @@ enum LegacyWebDAV {
                             try fm.moveItem(at: oldCopy.folder, to: vaultDir.appendingPathComponent(l.folderName, isDirectory: true))
                         }
                     }
-                    // Everything else in the location's folder is sync state: the state file, its quarantine,
-                    // transfers in progress.
+                    // Everything else in the location's folder is sync state (the state file, its quarantine,
+                    // transfers in progress), except an interrupted "Download Again"'s staged copy, which
+                    // goes next to the vault (`LocalCopy.recoverInterruptedRedownload` looks for it there).
                     try fm.createDirectory(at: stateDir, withIntermediateDirectories: true)
+                    let vaultDir = store.root.appendingPathComponent(vault.uuidString.lowercased(), isDirectory: true)
                     for name in (try? fm.contentsOfDirectory(atPath: dir.path)) ?? [] where name != l.folderName {
-                        let to = stateDir.appendingPathComponent(name)
+                        let to = name.hasPrefix(l.folderName + ".") && fm.fileExists(atPath: vaultDir.path)
+                            ? vaultDir.appendingPathComponent(name) : stateDir.appendingPathComponent(name)
                         try? fm.removeItem(at: to)
                         try fm.moveItem(at: dir.appendingPathComponent(name), to: to)
                     }
@@ -229,7 +232,9 @@ extension AppModel {
             locationID: targetID, vaultID: vaultID, name: ref.vaultName, lastSuccess: ref.target.lastSuccess,
             run: { [weak self] mode in
                 let (target, vault) = await MainActor.run { () -> (SyncTarget?, Vault?) in
+                    // Two-way only with the open vault as the disk says it is (review of #70, F1).
                     let open = self?.syncSessions.contains { $0.locationID == targetID } == true && self?.phase == .unlocked
+                        && self?.syncVaultStale == false
                     return (store.targets.targets(of: vaultID).first { $0.id == targetID }, open ? self?.vault : nil)
                 }
                 guard let target else { throw SyncTargetError.notFound(targetID.uuidString) }
@@ -271,6 +276,12 @@ extension AppModel {
             s.onChanges = { [weak self] changes in
                 guard let self, self.generation == gen else { return }
                 self.applySyncChanges(changes)
+            }
+            // After every two-way run, whatever it reported (a run that stopped or threw may still have
+            // taken a new vault.json): the open vault is compared with the disk (review of #70, F6).
+            s.afterTwoWayRun = { [weak self] in
+                guard let self, self.generation == gen else { return }
+                Task { await self.checkOpenVaultAgainstDisk() }
             }
         }
         syncSessions = sessions

@@ -222,7 +222,6 @@ struct FolderTargetAppTests {
         qc.showsActivity = false
         qc.vaultStore = w.b.store
         let coordinator = w.b.model.syncCoordinator
-        qc.delivered = { id in coordinator.vaultWritten(id) }
         coordinator.start()   // every vault syncs, as in the app
         w.b.model.close()
 

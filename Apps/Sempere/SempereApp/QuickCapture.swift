@@ -235,9 +235,6 @@ final class QuickCapture {
     /// The in-app vault store (the app sets it at launch): a voice note for a store vault goes straight into
     /// its in-app inbox, found by vault id, open or not (docs/design/device-first-sync.md §5.3).
     @ObservationIgnored var vaultStore: VaultStore?
-    /// Told when a voice note was written into a vault's inbox (its sync targets then upload it soon,
-    /// whether or not the vault is open: `SyncCoordinator.vaultWritten`).
-    @ObservationIgnored var delivered: @MainActor (UUID) -> Void = { _ in }
     /// Starts a Live Activity while recording (off in tests).
     @ObservationIgnored var showsActivity = true
     /// Where the widgets read `VoiceNoteStatus` (the App Group; nil without one, and in tests unless set).
@@ -913,8 +910,9 @@ final class QuickCapture {
                     try CloudVault.coordinatedWrite(CloudVault.isUbiquitous(url) ? inbox : nil) {
                         try CaptureWriter.store(sealed, in: inbox)
                     }
-                    let id = stored.profile.vaultId, told = delivered
-                    Task { @MainActor in told(id) }
+                    // A synced copy runs soon, open or not (`SyncCoordinator.captureDelivered`).
+                    NotificationCenter.default.post(name: Self.deliveredNotification, object: nil,
+                                                    userInfo: ["vault": stored.profile.vaultId])
                     return .vault
                 } catch {
                     // Not reachable now: queued below.
@@ -933,6 +931,9 @@ final class QuickCapture {
         guard let vault = try? Vault.open(at: url) else { return false }
         return vault.vaultId == vaultId && !vault.isReadOnly
     }
+
+    /// Posted (userInfo `vault`: the vault id) when a voice note was written into a vault's inbox.
+    nonisolated static let deliveredNotification = Notification.Name("io.github.anthonytw.sempere.captureDelivered")
 
     func queueFolder(_ vault: UUID) -> URL { queueRoot.appendingPathComponent(vault.uuidString.lowercased(), isDirectory: true) }
 
@@ -988,8 +989,8 @@ final class QuickCapture {
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         let moved = flushQueue(into: url, vaultId: stored.profile.vaultId, coordinated: CloudVault.isUbiquitous(url))
         if moved > 0 {
-            let id = stored.profile.vaultId, told = delivered
-            Task { @MainActor in told(id) }
+            NotificationCenter.default.post(name: Self.deliveredNotification, object: nil,
+                                            userInfo: ["vault": stored.profile.vaultId])
         }
         return moved
     }

@@ -860,7 +860,8 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   go through `FolderTargetRun` (the CLI's `store sync`); never open a target folder in place. What a two-way run
   wrote locally (`SyncReport.changed`, `LocalChanges`) goes through `applySyncChanges`: `reconcile(scope:)` for the
   notes (open editors merge in place, RemoteMerge), the settings pass, inbox adoption, notebooks; a new device list
-  or secret reopens the vault like a key change. Never write a store vault's `vault.json` or `settings.age` without
+  or secret reopens the vault like a key change, and until that reopen is applied (or for good if it fails) the open
+  vault's runs only upload (`syncVaultStale`). Never write a store vault's `vault.json` or `settings.age` without
   its `VaultStore.writeLock` (`vaultWriteLock`; the engine holds it through `SyncOptions.localWriteLock`). The
   WebDAV password is only in the Keychain (`KeychainWebDAVPasswordStore`, keyed by target id); certificate pins
   are checked by `PinnedServerTrust` (Security, app only) behind the library's `WebDAVServerTrust` hook, never by

@@ -240,11 +240,14 @@ extension AppModel {
         await closeWindowEditors()
         try ensureCurrent(gen)
         let coordinate = coordinationURL
+        let lock = vaultWriteLock   // never interleaved with a sync run replacing vault.json
         let next = try await offMain { () throws -> Vault in
-            try CloudVault.coordinatedWrite(coordinate) { () throws -> Vault in
-                var copy = start
-                try copy.confirmRecipients()
-                return copy
+            try Self.withWriteLock(lock) {
+                try CloudVault.coordinatedWrite(coordinate) { () throws -> Vault in
+                    var copy = start
+                    try copy.confirmRecipients()
+                    return copy
+                }
             }
         }
         try ensureCurrent(gen)

@@ -171,7 +171,9 @@ public final class SyncEngine {
     static let maxMutableReadBytes = 16 << 20
 
     let root: URL
-    let vault: Vault?
+    /// The vault the run checks against: the caller's, or (when the caller's no longer matches the
+    /// `vault.json` on disk, a key change another run took) the same vault opened again (`runLocked`).
+    private(set) var vault: Vault?
     /// The run's remote: `interrupt` set to the run's bound and cancellation (`runLocked`).
     private(set) var transport: any SyncRemote
     let stateURL: URL
@@ -337,6 +339,18 @@ public final class SyncEngine {
             // What the copy has not fetched yet looks extraneous to a mirror (format.md §1.2).
             throw SyncError.io("--delete-extraneous refused: \(root.path) is a partial copy; fetch the rest first (--fetch)")
         }
+        // A caller may hold a `Vault` opened before an earlier run took another device's key change (the
+        // app reopens its own a moment later): checked under it, the new secret's files would be refused and
+        // quarantined. The run uses the vault as `vault.json` on disk says it is now.
+        if let v = vault, !v.keysMatchManifestOnDisk() {
+            if let fresh = try? v.reopened(), fresh.canRead {
+                vault = fresh
+            } else {
+                vault = nil
+                report.skipped.append(.init(path: Vault.manifestName, message: "the vault's keys changed and this device's "
+                    + "key does not open it: files are checked for their structure only, nothing is deleted"))
+            }
+        }
         checkerBaseManifest = manifestHash()
         budget = RunBudget(options.limits)
         let rootEntries = try transport.list([]) ?? []
@@ -379,12 +393,17 @@ public final class SyncEngine {
         }
 
         // Notebook records (format.md §14): write-once, so the union of both sides.
+        // A run bound reached here stops the run like one reached in the notes below: reported (`stoppedEarly`),
+        // never thrown, so what the run already replaced (vault.json, settings) still reaches the caller.
+        var stoppedBefore: SyncError?
         do { try syncNotebookRecords(remoteRoot: remoteRoot) } catch {
-            try rethrowRunLimit(error)
-            report.errors.append(.init(path: NotebookRecords.folderName, message: Self.describe(error)))
+            if let e = error as? SyncError, e.isRunLimit { stoppedBefore = e } else {
+                report.errors.append(.init(path: NotebookRecords.folderName, message: Self.describe(error)))
+            }
         }
 
         do {
+            if let stoppedBefore { throw stoppedBefore }
             recordedFiles = state.fileNamesByNote()
             thinnedFiles = SyncState.namesByNote(state.thinned?.keys.map { $0 } ?? [])
             // Note folders a provider listed before their `att/` are left out until they arrive (`Arrivals.swift`).

@@ -52,15 +52,19 @@ struct SempereApp: App {
         // An open vault of the in-app store holds a lease, so it is never removed while open. Its sync
         // targets (folder and WebDAV) are in the store's registry.
         model.vaultStore = library.vaultStore
-        // Voice notes go straight into their vault's in-app inbox, and its targets upload them.
+        // Voice notes go straight into their vault's in-app inbox, and its targets upload them
+        // (`QuickCapture.deliveredNotification`).
         model.quickCapture.vaultStore = library.vaultStore
-        model.quickCapture.delivered = { [weak model] id in model?.syncCoordinator.vaultWritten(id) }
         AppModel.current = model
         _model = State(initialValue: model)
         // Background sync (iOS): the model the scheduled tasks sync (`.backgroundTask` below).
         BackgroundSync.model = model
-        // Every in-app vault with a sync target keeps syncing, open or not (`SyncCoordinator`).
-        model.syncCoordinator.start()
+        // Every in-app vault with a sync target keeps syncing, open or not (`SyncCoordinator`), once what an
+        // interrupted "Download Again" of an earlier build left is recovered.
+        Task { @MainActor in
+            await model.recoverWebDAVLeftovers()
+            model.syncCoordinator.start()
+        }
         // Staged exports are plaintext copies of notes: none survives a launch.
         ExportJob.purgeStale()
         BulkExportRun.purgeStale()

@@ -62,11 +62,14 @@ extension AppModel {
             if current.pendingRewrap, current.journalRefused {
                 // Not this vault's change (format.md §3.3.1): nothing to finish, it only blocks the next one.
                 let v = current
+                let lock = vaultWriteLock
                 current = try await offMain {
-                    try CloudVault.coordinatedWrite(coordinate) { () throws -> Vault in
-                        var copy = v
-                        try copy.discardRefusedJournal()
-                        return copy
+                    try Self.withWriteLock(lock) {
+                        try CloudVault.coordinatedWrite(coordinate) { () throws -> Vault in
+                            var copy = v
+                            try copy.discardRefusedJournal()
+                            return copy
+                        }
                     }
                 }
                 try ensureCurrent(gen)

@@ -251,6 +251,8 @@ struct EditorView: View {
         .onChange(of: editor.remoteUpdates) { _, new in
             withAnimation { remoteNoticeFor = new }
         }
+        // An editor opened again after another device's key change says so from its first frame.
+        .onAppear { if editor.remoteUpdates > 0 { remoteNoticeFor = editor.remoteUpdates } }
         .inspector(isPresented: Binding(get: { stripVisible && !editor.isPageless }, set: { stripVisible = $0 })) {
             // On a phone the inspector is a sheet: picking a page closes it.
             PageStripView(editor: editor, onPicked: { if Platform.isPhone { stripVisible = false } })

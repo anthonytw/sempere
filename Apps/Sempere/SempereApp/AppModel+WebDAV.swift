@@ -99,6 +99,7 @@ extension AppModel {
             try await offMain { try passwords.save(password, for: id, label: label) }
         }
         webdavLocations.save(location)
+        syncCoordinator.refresh()
         try await openWebDAV(location.id, library: library)
         return location.id
     }
@@ -144,7 +145,6 @@ extension AppModel {
         }
         let fetcher = copy.isPartial ? makeFetcher(location, copy: copy) : nil
         try await openVault(at: copy.folder, fetcher: fetcher)
-        try ensureCurrent(generation)
         fetcher?.start()
         // The vault's own label (vault.json, format.md §2) names it in the lists, not the server folder.
         let named = await Task.detached(priority: .utility) { copy.label }.value
@@ -256,7 +256,10 @@ extension AppModel {
             lastSuccess: location.lastPush,
             run: { [weak self] mode in
                 let (current, vault) = await MainActor.run { () -> (WebDAVLocation?, Vault?) in
+                    // Two-way only with the open vault as the disk says it is: while a reopen after another
+                    // device's key change is pending (or failed), runs only upload (review of #70, F1).
                     let open = self?.syncSessions.contains { $0.locationID == id } == true && self?.phase == .unlocked
+                        && self?.syncVaultStale == false
                     return (store.location(id), open ? self?.vault : nil)
                 }
                 guard let current else { throw WebDAVVaultError.noSuchLocation }
@@ -300,6 +303,8 @@ extension AppModel {
     func applySyncChanges(_ changes: LocalChanges) {
         guard phase == .unlocked, vault != nil else { return }
         if changes.manifest || changes.journal {
+            // Upload-only until the vault is opened again under what arrived (F1).
+            syncVaultStale = true
             Task { await syncedVaultFileArrived() }
         }
         let ids = changes.noteIDs
@@ -327,11 +332,18 @@ extension AppModel {
     /// read it (its key was removed) closes it and says so.
     func syncedVaultFileArrived() async {
         guard let start = vault, phase == .unlocked, !isChangingKeys else { return }
-        let same = (try? await offMain { start.keysMatchManifestOnDisk() }) ?? true
-        if same { return }
+        let same = (try? await offMain { start.keysMatchManifestOnDisk() }) ?? false
+        if same {
+            syncVaultStale = false
+            return
+        }
+        syncVaultStale = true
         await editGate.acquire()
         defer { editGate.release() }
         let gen = generation
+        // What was open is opened again under the new keys (F4).
+        let shown = editor?.noteID
+        let windows = Array(windowEditors.keys)
         try? await openEditor(for: nil)
         await closeWindowEditors()
         guard generation == gen else { return }
@@ -344,10 +356,31 @@ extension AppModel {
                 return
             }
             adoptRewrapped(next)
+            syncVaultStale = false
+            syncSessions.forEach { $0.demand() }   // two-way again, under the new keys
+            if let shown {
+                try? await openEditor(for: shown)
+                editor?.noteReopenedForRemoteChange()
+            }
+            for id in windows {
+                _ = try? await openWindowNote(id)
+                windowEditors[id]?.noteReopenedForRemoteChange()
+            }
         } catch {
+            // Never two-way again under the old keys: runs stay upload-only until the vault is opened anew.
             errorMessage = String(localized: "The vault's device list changed on another device and could not be read here: \(String(describing: error))",
                                   comment: "The value is the error (English)")
         }
+    }
+
+    /// After a two-way run of the open vault: when its `vault.json` no longer matches the open `Vault`
+    /// (whatever the run reported), runs go upload-only and the vault is opened again (review of #70, F6).
+    func checkOpenVaultAgainstDisk() async {
+        guard let start = vault, phase == .unlocked, !syncVaultStale else { return }
+        let same = (try? await offMain { start.keysMatchManifestOnDisk() }) ?? false
+        guard !same else { return }
+        syncVaultStale = true
+        await syncedVaultFileArrived()
     }
 
     /// Stops the open WebDAV vault's fetches and puts its session back to upload-only (the coordinator
@@ -356,7 +389,9 @@ extension AppModel {
     func stopWebDAV() {
         let fetching = webdavFetcher?.stop()
         webdavFetcher = nil
+        syncVaultStale = false
         if !syncSessions.isEmpty {
+            for session in syncSessions { session.afterTwoWayRun = {} }
             let running = syncCoordinator.detachOpen()
             if !running.isEmpty || fetching != nil {
                 for session in syncSessions {
@@ -443,6 +478,20 @@ extension AppModel {
         // A copy the first download never completed goes with its only target.
         if let vault, syncStore.entry(id: vault) == nil { library.forgetStored(vault) }
         syncTargetsChanged()
+    }
+
+    /// At launch, before any copy syncs: what an interrupted "Download Again" of an earlier build left in
+    /// each copy is recovered or removed (`LocalCopy.recoverInterruptedRedownload`). A previous copy that
+    /// holds files the copy lacks is kept where it is and named in an alert, never deleted.
+    func recoverWebDAVLeftovers() async {
+        let copies = webdavLocations.locations.map { (name: $0.name, copy: webdavLocations.copy(of: $0)) }
+        guard !copies.isEmpty else { return }
+        let found = await Task.detached(priority: .utility) {
+            copies.map { (name: $0.name, leftovers: $0.copy.recoverInterruptedRedownload()) }
+        }.value
+        guard let kept = found.first(where: { $0.leftovers.keptOld != nil }), let folder = kept.leftovers.keptOld else { return }
+        errorMessage = String(localized: "An earlier “Download Again” of “\(kept.name)” was interrupted. The previous copy holds notes or attachments that are not in the vault, so it was kept, at \(folder.path). Merge it in with the sempere command-line tool (vault merge-copy) before removing it.",
+                              comment: "First %@ is the vault's name, the second a folder path")
     }
 
     /// Files of the location's copy the server has not confirmed (the remove

@@ -318,6 +318,96 @@ struct TwoDeviceSyncAppTests {
         _ = coordinator.stop(location.id)
         w.b.model.close()
     }
+
+    /// Review of #70, F1 and F4: another device (the CLI) rotates the vault's secret. B's run takes the new
+    /// `vault.json`; B runs upload-only until it has opened the vault again under it, reopens the note it
+    /// had open (and says so), and the notes the other device writes under the new secret arrive.
+    @Test func aRemoteKeyChangeIsAppliedAndNotesWrittenAfterItArrive() async throws {
+        let w = try await Self.world()
+        let note = try #require(w.b.model.notes.first?.id)
+        w.b.model.selectedNoteID = note
+        try await w.b.model.openEditor(for: note)
+        let before = try #require(w.b.model.editor)
+
+        // Another device, with the CLI: a folder copy of the server, a key added, then removed (rotation).
+        let identity = try IdentityFile.parse(w.key)
+        let cliDir = TestTemp.root.appendingPathComponent(UUID().uuidString).appendingPathComponent("cli.sempere")
+        let cliState = cliDir.deletingLastPathComponent().appendingPathComponent("state.json")
+        func cliSync(_ v: Vault?) throws {
+            var o = SyncOptions(deviceLabel: "cli")
+            o.firstPullIdentities = [identity]
+            _ = try SyncEngine(directory: cliDir, vault: v, remote: w.server.remote, stateURL: cliState, options: o).run()
+        }
+        try cliSync(nil)
+        var cli = try Vault.open(at: cliDir, identities: [identity])
+        // 1. A key added (the list changes, the secret stays): B reopens the vault and the note it had open.
+        let other = try NativeIdentity.generate(.postQuantum)
+        _ = try cli.addRecipient(other.recipient, label: "other")
+        try cliSync(cli)
+        await w.b.model.webdav?.syncNow()
+        #expect(await TS.waitUntil(timeout: .seconds(10)) {
+            !w.b.model.syncVaultStale && w.b.model.vault?.keysMatchManifestOnDisk() == true
+        }, "B opened the vault again under the new list")
+        #expect(await TS.waitUntil { w.b.model.editor?.noteID == note }, "the open note was opened again")
+        #expect(w.b.model.editor !== before)
+        #expect((w.b.model.editor?.remoteUpdates ?? 0) >= 1, "and says it was updated from another device")
+
+        // 2. That key removed: the secret rotates. (B's older files stay under the old secret until
+        // rewrap-replace, KH6; what matters here is what is written from now on.)
+        _ = try cli.removeRecipient(other.recipient)
+        try cliSync(cli)
+        await w.b.model.webdav?.syncNow()
+        #expect(await TS.waitUntil(timeout: .seconds(10)) {
+            !w.b.model.syncVaultStale && w.b.model.vault?.keysMatchManifestOnDisk() == true
+        }, "B opened the vault again under the new secret")
+
+        // A note written under the new secret arrives.
+        let fresh = UUID()
+        _ = try cli.apply([.setMeta(.title("After the key change"))], to: fresh, deviceState: TS.deviceStateURL(), app: "cli/0")
+        try cliSync(cli)
+        await w.b.model.webdav?.syncNow()
+        let report = await w.b.model.webdav?.syncNow()
+        #expect(report?.quarantined.isEmpty == true, "\(String(describing: report?.quarantined))")
+        #expect(await TS.waitUntil { w.b.model.notes.contains { $0.id == fresh } })
+        w.a.model.close(); w.b.model.close()
+    }
+
+    /// While the open vault is stale (a new `vault.json` arrived and the reopen has not been applied, or
+    /// failed), its runs only upload.
+    @Test func aStaleOpenVaultOnlyUploads() async throws {
+        let w = try await Self.world()
+        let runs = w.server.twoWayRuns
+        w.b.model.syncVaultStale = true
+        await w.b.model.webdav?.syncNow()
+        #expect(w.server.twoWayRuns == runs, "no two-way run with a vault that may not match the disk")
+        w.b.model.syncVaultStale = false
+        await w.b.model.webdav?.syncNow()
+        #expect(w.server.twoWayRuns == runs + 1)
+        w.a.model.close(); w.b.model.close()
+    }
+
+    /// Review of #70, F3 (its probe): a settings pass that read `settings.age` before a two-way run merged
+    /// another device's change never writes its stale result over it; it runs again on what is there.
+    @Test func aSettingsPassNeverOverwritesAMergeThatLandedMeanwhile() async throws {
+        let w = try await Self.world()
+        let vb = try #require(w.b.model.vault)
+        var sb = try vb.readSharedSettings() ?? SharedSettings()
+        try sb.set(SettingSlotKey("photos.removeMetadata"), to: .bool(false), type: nil, now: Date())
+        try vb.writeSharedSettings(sb)
+        await w.b.model.webdav?.syncNow()
+        await w.a.model.runSettingsStep(enabling: true) { _, _, file, _, now in
+            _ = await w.a.model.webdav?.syncNow()
+            var write = file ?? SharedSettings()
+            try write.set(SettingSlotKey("history.thinAfterDays"), to: .number(7), type: nil, now: now)
+            return SettingsSyncState.Pass(write: write)
+        }
+        try await TwoDeviceSyncAppTests.settle(w)
+        let onA = try #require(w.a.model.vault).readSharedSettings()?.value(SettingSlotKey("photos.removeMetadata"))
+        let onB = try #require(w.b.model.vault).readSharedSettings()?.value(SettingSlotKey("photos.removeMetadata"))
+        #expect(onA == .bool(false), "A lost B's setting: \(String(describing: onA))")
+        #expect(onB == .bool(false), "B lost its own setting: \(String(describing: onB))")
+        w.a.model.close(); w.b.model.close()
+    }
 }
 
 /// The app's session and coordinator logic without a server (`SyncSchedule`, `SyncStatus`, budget).
@@ -336,12 +426,14 @@ struct SyncCoordinatorTests {
         #expect(s.kind == .waitingForUnlock && !s.needsAttention)
     }
 
-    /// One vault's failing target never delays or fails another's, and at most two runs go at once.
+    /// One vault's failing target never delays or fails another's, and background runs leave the open
+    /// vault's slot free (at most `maxConcurrentRuns - 1` of them at once).
     @Test func vaultsAreIsolatedAndTheBudgetHolds() async throws {
         let inFlight = RunCounter(), most = RunCounter()
         func location() -> SyncTargetRef {
-            SyncTargetRef(vaultID: UUID(), vaultName: "V",
-                          target: .webdav("https://dav.example.org/\(UUID().uuidString)/", user: nil, name: "V"))
+            var t = SyncTarget.webdav("https://dav.example.org/\(UUID().uuidString)/", user: nil, name: "V")
+            t.joined = true
+            return SyncTargetRef(vaultID: UUID(), vaultName: "V", target: t)
         }
         let failing = location(), fine = [location(), location(), location()]
         let all = [failing] + fine
@@ -360,9 +452,58 @@ struct SyncCoordinatorTests {
         #expect(await TS.waitUntil(timeout: .seconds(5)) { fine.allSatisfy { coordinator.sessions[$0.id]?.lastSuccess != nil } })
         #expect(coordinator.sessions[failing.id]?.lastSuccess == nil)
         #expect(coordinator.sessions[failing.id]?.needsAttention == true)
-        #expect(most.value <= 2)
+        #expect(most.value <= coordinator.maxConcurrentRuns - 1)
         for l in all { _ = coordinator.stop(l.id) }
         #expect(coordinator.sessions.isEmpty)
+    }
+
+    /// Review of #70, F2 (its probe): two closed vaults whose runs take long held both slots, and the open
+    /// vault's Sync Now waited for them. One slot is the open vault's.
+    @Test func theOpenVaultIsNeverStarvedBySlowBackgroundRuns() async throws {
+        func location() -> SyncTargetRef {
+            SyncTargetRef(vaultID: UUID(), vaultName: "V",
+                          target: .webdav("https://dav.example.org/\(UUID().uuidString)/", user: nil, name: "V"))
+        }
+        let slow = [location(), location()], open = location()
+        let slowIDs = Set(slow.map(\.id))
+        let inFlight = RunCounter()
+        let coordinator = SyncCoordinator(targets: { slow + [open] }, makeSession: { loc in
+            SyncSession(locationID: loc.id, vaultID: loc.vaultID, name: loc.vaultName, lastSuccess: nil, run: { _ in
+                _ = inFlight.add(1)
+                defer { _ = inFlight.add(-1) }
+                if slowIDs.contains(loc.id) { try await Task.sleep(for: .seconds(4)) }
+                return SyncReport()
+            }, countUnconfirmed: { 0 })
+        })
+        coordinator.tick = .milliseconds(10)
+        for l in slow { coordinator.session(for: l) }
+        #expect(await TS.waitUntil(timeout: .seconds(3)) { inFlight.value >= 1 })
+        let session = try #require(coordinator.attachOpen(open.vaultID).first)
+        session.vaultUnlocked()
+        let finished = RunCounter()
+        Task { _ = await session.syncNow(); _ = finished.add(1) }
+        #expect(await TS.waitUntil(timeout: .seconds(2)) { finished.value == 1 }, "the open vault's run waited behind background runs")
+        #expect(coordinator.runsGoing <= coordinator.maxConcurrentRuns)
+        for l in slow + [open] { _ = coordinator.stop(l.id) }
+    }
+
+    /// The reviewer's Q4: a voice note delivered into a closed vault's copy asks its session for a run
+    /// soon (a write), not at the idle pace.
+    @Test func aCaptureIntoAClosedVaultAsksForARun() async throws {
+        let vault = UUID()
+        var target = SyncTarget.webdav("https://dav.example.org/x/", user: nil, name: "V")
+        target.joined = true
+        let loc = SyncTargetRef(vaultID: vault, vaultName: "V", target: target)
+        let coordinator = SyncCoordinator(targets: { [loc] }, makeSession: { l in
+            SyncSession(locationID: l.id, vaultID: l.vaultID, name: l.vaultName, lastSuccess: nil,
+                        run: { _ in SyncReport() }, countUnconfirmed: { 0 })
+        })
+        coordinator.tick = .seconds(60)   // the loop does not run meanwhile
+        let session = try #require(coordinator.session(for: loc))
+        #expect(session.schedule.pendingWrite == nil)
+        NotificationCenter.default.post(name: QuickCapture.deliveredNotification, object: nil, userInfo: ["vault": vault])
+        #expect(await TS.waitUntil { session.schedule.pendingWrite != nil })
+        _ = coordinator.stop(loc.id)
     }
 }
 
