@@ -136,6 +136,11 @@ public struct PrecedenceResult: Hashable, Sendable {
     /// Epochs ignored with their subtrees: not signed by the home of their parent, or a takeover
     /// without the recovery key's signature.
     public var ignored: [Data]
+    /// Takeovers (with their subtrees) refused only because their kit was introduced below this
+    /// device's pinned frontier (`TakeoverRule.kitNotYetPinned`; round 9, L3): signed by their parent's
+    /// kit and otherwise valid, so not tampering. The device pins the replacement and resolves again on
+    /// its next run. Never in `ignored`.
+    public var deferred: [Data] = []
     /// Home conflicts on the way: settled by the pinned chain or the user's pick, or where the device
     /// stopped (then a takeover, or the user's pick, goes on).
     public var homeConflicts: [HomeConflict]
@@ -188,10 +193,16 @@ public enum EpochPrecedence {
 
         // The valid tree: from epoch 1 down, each epoch valid under its parent. `homeBefore` is the home
         // in force before the last takeover above (for the `olderHomeKept` mutation only).
-        func valid(_ c: EpochNode, under p: EpochNode, olderHome: Data?, ancestorLists: Set<Data>, kits: Set<Data>) -> Bool {
-            guard c.list.contains(c.home), c.home != c.recovery else { return false }
+        enum Validity { case valid, invalid, deferred }
+        func validity(_ c: EpochNode, under p: EpochNode, olderHome: Data?, ancestorLists: Set<Data>, kits: Set<Data>) -> Validity {
+            guard c.list.contains(c.home), c.home != c.recovery else { return .invalid }
             if c.reason == .takeover {
-                if mut.contains(.takeoverIgnored) { return false }
+                if mut.contains(.takeoverIgnored) { return .invalid }
+                // Signed by the parent's kit and otherwise well formed (round 9, L3: checked first, so a
+                // takeover with a bad or wrong-kit signature is tampering at once, never "not yet pinned").
+                guard c.recoverySigner == p.recovery, c.signer == c.home, c.recovery == p.recovery,
+                      TakeoverRule.listAllowed(c.list, home: c.home, ancestorLists: ancestorLists,
+                                               retiredKits: kits.subtracting([p.recovery])) else { return .invalid }
                 let required: Data?
                 if mut.contains(.retiredKitAccepted) {
                     required = p.recovery
@@ -200,15 +211,15 @@ public enum EpochPrecedence {
                 } else {
                     required = TakeoverRule.recoveryKey(parentRecovery: p.recovery, parentPath: path(p.epochId), pinned: pinnedEpochs)
                 }
-                return required != nil && c.recoverySigner == required && c.signer == c.home && c.recovery == p.recovery
-                    && TakeoverRule.listAllowed(c.list, home: c.home, ancestorLists: ancestorLists,
-                                                retiredKits: kits.subtracting([p.recovery]))
+                if required == p.recovery { return .valid }
+                return TakeoverRule.kitNotYetPinned(parentRecovery: p.recovery, parentPath: path(p.epochId), pinned: pinnedEpochs)
+                    ? .deferred : .invalid
             }
             let signerOK = c.signer == p.home || (mut.contains(.nonHomeSignerAccepted) && p.list.contains(c.signer))
                 || (mut.contains(.olderHomeKept) && olderHome == c.signer)
-            guard signerOK, c.reason != .create else { return false }
-            if c.reason == .handoff { return c.home != c.signer }
-            return c.home == c.signer
+            guard signerOK, c.reason != .create else { return .invalid }
+            if c.reason == .handoff { return c.home != c.signer ? .valid : .invalid }
+            return c.home == c.signer ? .valid : .invalid
         }
         let rootNode = byId[root]
         guard let rootNode, rootNode.reason == .create, rootNode.signer == rootNode.home, rootNode.list.contains(rootNode.home) else {
@@ -216,6 +227,7 @@ public enum EpochPrecedence {
                                     homeConflicts: [])
         }
         var validSet: Set<Data> = [root]
+        var deferredRoots: Set<Data> = []
         var olderHome: [Data: Data?] = [root: nil]
         var lists: [Data: Set<Data>] = [root: rootNode.list]   // the union of the lists of an epoch's ancestry, itself included
         var kits: [Data: Set<Data>] = [root: [rootNode.recovery]]   // the recovery keys of an epoch's ancestry, itself included
@@ -223,9 +235,11 @@ public enum EpochPrecedence {
         while let x = todo.popLast() {
             guard let p = byId[x] else { continue }
             for c in children[x] ?? [] {
-                guard let n = byId[c], valid(n, under: p, olderHome: olderHome[x] ?? nil, ancestorLists: lists[x] ?? [],
-                                             kits: kits[x] ?? []) else {
-                    continue
+                guard let n = byId[c] else { continue }
+                switch validity(n, under: p, olderHome: olderHome[x] ?? nil, ancestorLists: lists[x] ?? [], kits: kits[x] ?? []) {
+                case .valid: break
+                case .deferred: deferredRoots.insert(c); continue
+                case .invalid: continue
                 }
                 validSet.insert(c)
                 olderHome[c] = n.reason == .takeover ? p.home : olderHome[x] ?? nil
@@ -234,7 +248,11 @@ public enum EpochPrecedence {
                 todo.append(c)
             }
         }
-        let ignored = byId.keys.filter { !validSet.contains($0) }.sorted { $0.lexicographicallyPrecedes($1) }
+        // A deferred takeover's subtree waits with it; everything else not valid is ignored.
+        func isDeferred(_ id: Data) -> Bool { path(id).contains { deferredRoots.contains($0) } }
+        let notValid = byId.keys.filter { !validSet.contains($0) }.sorted { $0.lexicographicallyPrecedes($1) }
+        let ignored = notValid.filter { !isDeferred($0) }
+        let deferred = notValid.filter(isDeferred)
         func validChildren(_ x: Data) -> [Data] { (children[x] ?? []).filter { validSet.contains($0) } }
         /// The takeovers below `x` with no takeover between `x` and them.
         func topTakeovers(below x: Data) -> [Data] {
@@ -280,7 +298,7 @@ public enum EpochPrecedence {
         }
         let kept = Set(chain)
         return PrecedenceResult(keptChain: chain, dropped: pin.filter { !kept.contains($0) }, ignored: ignored,
-                                homeConflicts: conflicts)
+                                deferred: deferred, homeConflicts: conflicts)
     }
 }
 
@@ -303,6 +321,11 @@ public enum LedgerRule {
     /// drop the sealer for this device (`TakeoverRule.recoveryKey` wants the frontier's kit, which no
     /// epoch before the replacement has). Until then a takeover may still drop it (any number of pinned
     /// home epochs above it notwithstanding), and the entry stays so the device re-encrypts its own file.
+    ///
+    /// It detects a replacement as `recovery` differing from the previous pinned epoch's (round 9, L5).
+    /// That is sound only because the chain check (`EpochChain.verify`, format.md §15.7 rule 3) refuses a
+    /// `recovery` or `reencrypt` epoch that keeps its parent's kit and any other epoch that changes it:
+    /// a pinned chain's `recovery` changes exactly at its kit replacements.
     public static func sealIsFinal(sealer: Data, pinned: [TakeoverRule.PinnedEpoch]) -> Bool {
         guard let i = pinned.firstIndex(where: { $0.epochId == sealer }) else { return false }
         return pinned.indices.contains { k in k >= max(i, 1) && pinned[k].recovery != pinned[k - 1].recovery }
