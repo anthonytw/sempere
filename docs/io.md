@@ -1539,7 +1539,11 @@ syncs with both ways.
   `FolderTargetAppTests.aClosedVaultStages…`.
 - **Published summaries.** An unlocked two-way run of a complete copy creates and keeps current the
   target's `sempere-summaries.sealed` (`SyncOptions.publishSummaries`, without the web index): a device
-  joining the vault lists the notes from it before they arrive (`JoinAppTests`). Never from a partial copy.
+  joining the vault lists the notes from it before they arrive (`JoinAppTests`). Never from a partial copy,
+  and never from a run that took another `vault.json` (the next run publishes). The write is conditional on
+  the version the run read (ETag, or the folder's stamp); when another device replaced it meanwhile the run
+  reads it again and keeps that copy's entries for notes it has none for, up to three times, so two devices
+  never leave the older, smaller copy (`SyncFollowUpTests`).
 - **Network (WebDAV).** `WebDAVReachability` (`NWPathMonitor`, which only watches the device's interfaces)
   reports the network coming back: every WebDAV session forgets its backoff and runs soon
   (`SyncCoordinator.networkChanged`). Folder targets follow their provider instead.
