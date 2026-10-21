@@ -1,7 +1,8 @@
 import Age
 import CLITestSupport
 import Foundation
-import Sempere
+@testable import Sempere
+import VaultTestSupport
 import XCTest
 
 /// `sempere inbox`: quick capture without the key (format.md §11,
@@ -82,10 +83,10 @@ final class CLIInboxTests: CLITestCase {
         XCTAssertEqual(none.status, 1)
         XCTAssertTrue(none.err.contains("inbox enable"), none.err)
 
-        // A profile with the right recipients but a made-up capture key.
-        let profile = CaptureProfile(vaultId: vault.vaultId, recipients: vault.recipients.map(\.key),
+        // A profile with the right recipient (the vault identity) but a made-up capture key.
+        let profile = CaptureProfile(vaultId: vault.vaultId, recipients: [try vault.vaultRecipient().string],
                                      key: Data(repeating: 1, count: 32), device: "0badf00d", notebook: "Inbox",
-                                     recipient: CaptureKey.fingerprint(of: vault.recipients[0].key))
+                                     recipient: CaptureKey.fingerprint(of: vault.devices[0].key))
         let forged = path("forged.json")
         try JSONEncoder().encode(profile).write(to: URL(fileURLWithPath: forged))
         XCTAssertEqual(try cli(["inbox", "capture", Self.tone, "--profile", forged] + locked).status, 0)
@@ -107,29 +108,6 @@ final class CLIInboxTests: CLITestCase {
         let byID = try cli(["inbox", "import", try XCTUnwrap(first["capture"] as? String), "--json", "--identity", keyPath] + locked)
         let fourth = try XCTUnwrap(((byID.json as? [String: Any])?["captures"] as? [[String: Any]])?.first)
         XCTAssertTrue((fourth["error"] as? String)?.contains("does not verify") == true, "\(fourth)")
-    }
-
-    /// A capture waiting in the inbox survives `vault recipients remove`: the
-    /// rewrap re-tags it under the new secret's capture key (format.md
-    /// §3.3.1), so `inbox import` still adopts it afterwards.
-    func testWaitingCapturesSurviveARecipientRemoval() throws {
-        let (vault, _, keyPath) = try makeVault()
-        let unlocked = ["--vault", vault.url.path, "--identity", keyPath]
-        let locked = ["--vault", vault.url.path]
-        XCTAssertEqual(try cli(["inbox", "enable"] + unlocked).status, 0)
-        let other = try NativeIdentity.generate(.postQuantum).recipient.string
-        let added = try cli(["vault", "recipients", "add", other, "--label", "old phone"] + unlocked)
-        XCTAssertEqual(added.status, 0, added.err)
-        let capture = try XCTUnwrap(try json(try cli(["inbox", "capture", Self.tone, "--json"] + locked))["capture"] as? String)
-
-        let removed = try json(try cli(["vault", "recipients", "remove", other, "--json"] + unlocked))
-        XCTAssertEqual(removed["complete"] as? Bool, true)
-        XCTAssertEqual(removed["inboxSkipped"] as? [String], [])
-        let imported = try json(try cli(["inbox", "import", "--json"] + unlocked))
-        let result = try XCTUnwrap((imported["captures"] as? [[String: Any]])?.first)
-        XCTAssertEqual(result["capture"] as? String, capture)
-        XCTAssertNil(result["error"])
-        XCTAssertEqual(result["created"] as? Bool, true)
     }
 
     /// An enable that cannot write the new profile (a full disk here) keeps
@@ -156,12 +134,12 @@ final class CLIInboxTests: CLITestCase {
     /// and `vault info` show such a device: "Device".
     func testCaptureFromAnUnlabelledDeviceSaysDevice() throws {
         try XCTSkipUnless(postQuantumAvailable)
-        let (vault, _, keyPath) = try makeVault()
+        var (vault, _, keyPath) = try makeVault()
         let other = try NativeIdentity.generate(.postQuantum)
         let otherKey = path("other.key")
-        try IdentityFile.render(other, created: Date()).write(toFile: otherKey, atomically: true, encoding: .utf8)
+        try TestVaults.deviceKeyFile(other).write(toFile: otherKey, atomically: true, encoding: .utf8)
         let mine = ["--vault", vault.url.path, "--identity", keyPath]
-        XCTAssertEqual(try cli(["vault", "recipients", "add", other.recipient.string] + mine).status, 0)
+        try TestVaults.approve(other, into: &vault, name: "")
         let profile = path("other-profile.json")
         let enabled = try cli(["inbox", "enable", "--profile", profile, "--vault", vault.url.path, "--identity", otherKey])
         XCTAssertEqual(enabled.status, 0, enabled.err)
@@ -172,16 +150,16 @@ final class CLIInboxTests: CLITestCase {
     }
 
     /// Captures name the device whose key made the profile (format.md §11.1,
-    /// security review 2026-10, C2); a device removed since cannot add any
-    /// (C3): its profile's key is revoked and it has no key under the new one.
-    func testCapturesAreAttributedAndARemovedDevicesAreRefused() throws {
+    /// security review 2026-10, C2). (That a removed device cannot add any, C3, comes with removal: a new
+    /// epoch, phase KH3.)
+    func testCapturesAreAttributedToTheirDevice() throws {
         try XCTSkipUnless(postQuantumAvailable)
-        let (vault, identity, keyPath) = try makeVault()
+        var (vault, identity, keyPath) = try makeVault()
         let ipad = try NativeIdentity.generate(.postQuantum)
         let ipadKey = path("ipad.key")
-        try IdentityFile.render(ipad, created: Date()).write(toFile: ipadKey, atomically: true, encoding: .utf8)
+        try TestVaults.deviceKeyFile(ipad).write(toFile: ipadKey, atomically: true, encoding: .utf8)
         let mine = ["--vault", vault.url.path, "--identity", keyPath]
-        XCTAssertEqual(try cli(["vault", "recipients", "add", ipad.recipient.string, "--label", "iPad"] + mine).status, 0)
+        try TestVaults.approve(ipad, into: &vault, name: "iPad")
         let profile = path("ipad-profile.json")
         let enabled = try json(try cli(["inbox", "enable", "--profile", profile, "--json", "--vault", vault.url.path,
                                         "--identity", ipadKey]))
@@ -197,17 +175,8 @@ final class CLIInboxTests: CLITestCase {
         let r = try XCTUnwrap((imported["captures"] as? [[String: Any]])?.first)
         XCTAssertEqual(r["capturedBy"] as? String, "iPad")
         let note = try XCTUnwrap(UUID(uuidString: r["note"] as? String ?? ""))
-        let rec = try XCTUnwrap(try Vault.open(at: vault.url, identities: [identity]).reconstruct(noteId: note).recordings.first)
+        let rec = try XCTUnwrap(try TestVaults.open(at: vault.url, identity: identity).reconstruct(noteId: note).recordings.first)
         XCTAssertEqual(rec.captured?.recipient, CaptureKey.fingerprint(of: ipad.recipient.string))
         _ = first
-
-        // The iPad is removed; its profile keeps capturing.
-        XCTAssertEqual(try cli(["vault", "recipients", "remove", ipad.recipient.string] + mine).status, 0)
-        let late = try XCTUnwrap(try json(try cli(["inbox", "capture", Self.tone, "--json"] + locked))["capture"] as? String)
-        let refused = try cli(["inbox", "import", late, "--json"] + mine)
-        XCTAssertEqual(refused.status, 1)
-        XCTAssertTrue(((refused.json as? [String: Any])?["captures"] as? [[String: Any]])?.first?["error"] as? String
-                      == CaptureError.badTag.description)
-        XCTAssertEqual((try cli(["inbox", "list", "--json"] + mine).json as? [[String: Any]])?.count, 1, "kept, not adopted")
     }
 }

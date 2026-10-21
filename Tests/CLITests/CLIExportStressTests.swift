@@ -2,6 +2,7 @@ import Age
 import CLITestSupport
 import Foundation
 import FuzzSupport
+import VaultTestSupport
 import Sempere
 import XCTest
 
@@ -104,7 +105,7 @@ final class CLIExportStressTests: CLITestCase {
         keyPath = path("stress.key")
         try IdentityFile.render(id, created: Date()).write(toFile: keyPath, atomically: true, encoding: .utf8)
         vaultPath = path("stress-\(UUID().uuidString.prefix(6)).sempere")
-        return try Vault.create(at: URL(fileURLWithPath: vaultPath), recipients: [id.recipient], identities: [id])
+        return try TestVaults.create(at: URL(fileURLWithPath: vaultPath), identities: [id])
     }
 
     func tool(_ name: String, _ arguments: [String]) throws -> String? {

@@ -1,6 +1,7 @@
 import TempDirSupport
 import Foundation
 import Age
+import VaultTestSupport
 @testable import Sempere
 import FuzzSupport
 import XCTest
@@ -587,7 +588,7 @@ final class VaultImageExportTests: XCTestCase {
         let dir = TestTemp.root.appendingPathComponent("sempere-vimg-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         let id = try NativeIdentity.generate(.postQuantum)
-        let vault = try Vault.create(at: dir.appendingPathComponent("V.sempere"), recipients: [id.recipient], identities: [id])
+        let vault = try TestVaults.create(at: dir.appendingPathComponent("V.sempere"), identities: [id])
         let note = UUID(), other = UUID()
         let jpeg = try ImageCodecTests.fixture("metadata.jpg")
         let ref = try vault.writeBlob(note: note, jpeg, type: "image/jpeg")

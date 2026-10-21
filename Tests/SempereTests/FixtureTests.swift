@@ -2,6 +2,7 @@ import TempDirSupport
 import Age
 import Foundation
 import XCTest
+import VaultTestSupport
 @testable import Sempere
 
 /// The committed sample vault under `Fixtures/sample.sempere` (see
@@ -26,6 +27,24 @@ enum SampleFixture {
     static let attachmentType = "text/plain"
 
     static func id(_ n: Int) -> UUID { UUID(uuidString: String(format: "f1c70000-0000-4000-8000-%012ld", n))! }
+
+    /// The committed test-only keys in `dir`: `sample.key`, the fixture device's key file (its age identity
+    /// and signing seeds, `DeviceKeys`), and `sample-recovery.key`, the fixtures' recovery key. The device
+    /// keys are registered with `TestVaults`, so vaults made for the sample identity use its signing pair.
+    static func keys(in dir: URL) throws -> (device: DeviceKeys, recovery: MLKEM768X25519Identity) {
+        let device = try DeviceKeys.parse(String(contentsOf: dir.appendingPathComponent("sample.key"), encoding: .utf8))
+        TestVaults.register(device)
+        guard case .mlkem768x25519(let recovery) = try IdentityFile.parse(
+            String(contentsOf: dir.appendingPathComponent("sample-recovery.key"), encoding: .utf8)) else {
+            throw NSError(domain: "fixture", code: 2, userInfo: [NSLocalizedDescriptionKey: "sample-recovery.key is not post-quantum"])
+        }
+        return (device, recovery)
+    }
+
+    /// `keys(in:)` of the bundled fixtures.
+    static func bundledKeys() throws -> (device: DeviceKeys, recovery: MLKEM768X25519Identity) {
+        try keys(in: FixtureTests.bundled("sample.key").deletingLastPathComponent())
+    }
     static func at(_ offset: Int64) -> Date { Date(timeIntervalSince1970: Double(baseMillis + offset) / 1000) }
 
     static func stroke(_ n: Int, tool: InkTool = .pen, color: Color = Color(r: 0x1A, g: 0x1A, b: 0x1A)) -> Stroke {
@@ -42,12 +61,13 @@ enum SampleFixture {
                  wall: at(offset), app: app, body: .delta(ops: ops))
     }
 
-    /// Writes the fixture vault (`sample.sempere`) at `url`, which must not
-    /// exist yet.
-    static func generate(at url: URL, identity: NativeIdentity) throws {
-        let vault = try Vault.create(at: url, recipients: [identity.recipient],
-                                     labels: ["Sempere test fixture (throwaway, test-only key)"],
-                                     identities: [identity], vaultId: vaultId, created: at(0))
+    /// Writes the fixture vault (`sample.sempere`) at `url`, which must not exist yet: the fixture device
+    /// (`identity`, registered with `TestVaults`) as its home, the fixture recovery key (bundled unless
+    /// given), and the passphrase copy under `passphrase` (scrypt work factor 15: test-only).
+    static func generate(at url: URL, identity: NativeIdentity, recovery: MLKEM768X25519Identity? = nil) throws {
+        let vault = try TestVaults.create(at: url, identities: [identity], names: ["Sempere test fixture (throwaway, test-only key)"],
+                                          recovery: try recovery ?? bundledKeys().recovery, recoveryPassphrase: passphrase,
+                                          workFactor: 15, vaultId: vaultId, created: at(0))
         let p1 = id(1), p2 = id(2), q1 = id(3)
         // Lecture: devices A and B, a snapshot by A, then one uncovered delta.
         try vault.write(delta(lecture, devA, 1, 1000, [
@@ -72,7 +92,6 @@ enum SampleFixture {
         ]))
         try vault.write(delta(deleted, devB, 1, 7000, [.deleteNote]))
         try vault.writeBlob(note: lecture, attachment, type: attachmentType)
-        try vault.writeIdentityFile(identity, passphrase: passphrase, workFactor: 15, created: at(0))
     }
 }
 
@@ -89,10 +108,11 @@ enum ItemsFixture {
     /// A 1 x 1 PNG, synthetic.
     static let picture = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")!
 
-    static func generate(at url: URL, identity: NativeIdentity) throws {
-        let vault = try Vault.create(at: url, recipients: [identity.recipient],
-                                     labels: ["Sempere test fixture (throwaway, test-only key)"],
-                                     identities: [identity], vaultId: vaultId, created: SampleFixture.at(0))
+    static func generate(at url: URL, identity: NativeIdentity, recovery: MLKEM768X25519Identity? = nil) throws {
+        let vault = try TestVaults.create(at: url, identities: [identity], names: ["Sempere test fixture (throwaway, test-only key)"],
+                                          recovery: try recovery ?? SampleFixture.bundledKeys().recovery,
+                                          recoveryPassphrase: SampleFixture.passphrase, workFactor: 15, vaultId: vaultId,
+                                          created: SampleFixture.at(0))
         let blob = try vault.writeBlob(note: note, picture, type: "image/png")
         let text = try NoteOps.text("Fixture text box")
         let math = try NoteOps.math("e^{i\\pi}+1=0")
@@ -104,7 +124,6 @@ enum ItemsFixture {
             .addItem(page: page, item: .math(id: mathItem, math, frame: Rect(x: 36, y: 260, w: 160, h: 32), z: "a2")),
             .addStroke(page: page, stroke: SampleFixture.stroke(7)),
         ]))
-        try vault.writeIdentityFile(identity, passphrase: SampleFixture.passphrase, workFactor: 15, created: SampleFixture.at(0))
     }
 }
 
@@ -122,11 +141,13 @@ final class FixtureTests: XCTestCase {
     }
 
     func testFixtureOpensAndReconstructs() throws {
-        let keyText = try String(contentsOf: Self.bundled("sample.key"), encoding: .utf8)
-        let identity = try IdentityFile.parse(keyText)
-        let vault = try Vault.open(at: Self.bundled("sample.sempere"), identities: [identity])
+        let (device, recovery) = try SampleFixture.bundledKeys()
+        let identity = device.nativeIdentity
+        let vault = try Vault.open(at: Self.bundled("sample.sempere"), identities: [identity], signing: device.signing)
         XCTAssertEqual(vault.vaultId, SampleFixture.vaultId)
-        XCTAssertEqual(vault.recipients.map(\.key), [identity.recipient.string])
+        XCTAssertEqual(vault.devices.map(\.key), [identity.recipient.string])
+        XCTAssertEqual(vault.manifest.recoveryEntry?.key, recovery.recipient.string)
+        XCTAssertTrue(vault.isHome, "the fixture device created the vault")
         XCTAssertEqual(try vault.noteIDs(), [SampleFixture.lecture, SampleFixture.deleted])
         XCTAssertEqual(try vault.revisionNames(of: SampleFixture.lecture).map(\.kind),
                        [.delta, .delta, .delta, .snapshot, .delta])
@@ -147,10 +168,10 @@ final class FixtureTests: XCTestCase {
 
         let report = vault.verify()
         XCTAssertTrue(report.isHealthy, "\(report)")
-        XCTAssertEqual(report.counts[.ok], 8)   // 7 revisions + 1 identity file
+        XCTAssertEqual(report.counts[.ok], 9)   // 7 revisions, the passphrase copy, the epoch record
         XCTAssertEqual(report.counts[.unreferenced], 1)   // the attachment blob
         XCTAssertEqual(vault.manifest.features, [], "this version writes no features (format.md §2)")
-        XCTAssertEqual(vault.recipientsStatus, .verified(.firstUse), "the committed list is tagged (format.md §2.1)")
+        XCTAssertEqual(vault.listStatus, .verified(.firstUse), "the committed vault.json checks (format.md §15.3)")
         let blob = BlobRef(content: SampleFixture.attachment, type: SampleFixture.attachmentType)
         XCTAssertEqual(try vault.readBlob(note: SampleFixture.lecture, blob), SampleFixture.attachment)
         XCTAssertEqual(try vault.blobInventory(note: SampleFixture.lecture).unreferenced.map(\.fileName),
@@ -174,7 +195,7 @@ final class FixtureTests: XCTestCase {
     /// GA-63: a committed vault whose note has items. It reads back as generated, its blob verifies and
     /// is referenced, and a fresh generation has the same content.
     func testItemsFixtureHoldsTextImageAndEquation() throws {
-        let identity = try IdentityFile.parse(String(contentsOf: Self.bundled("sample.key"), encoding: .utf8))
+        let identity = try SampleFixture.bundledKeys().device.nativeIdentity
         let vault = try Vault.open(at: Self.bundled("items.sempere"), identities: [identity])
         XCTAssertEqual(vault.vaultId, ItemsFixture.vaultId)
         XCTAssertEqual(try vault.noteIDs(), [ItemsFixture.note])
@@ -202,35 +223,54 @@ final class FixtureTests: XCTestCase {
         XCTAssertEqual(try regenerated.reconstruct(noteId: ItemsFixture.note).pages, state.pages)
     }
 
-    func testFixtureIdentityFileOpensWithPassphrase() throws {
-        let identity = try IdentityFile.parse(String(contentsOf: Self.bundled("sample.key"), encoding: .utf8))
+    /// The passphrase copy opens to the fixture recovery key, with the vault's id and root; the recovery
+    /// key opens the vault read-only, checked against that root.
+    func testFixturePassphraseCopyOpensToTheRecoveryKey() throws {
+        let (_, recovery) = try SampleFixture.bundledKeys()
         let locked = try Vault.open(at: Self.bundled("sample.sempere"))
-        XCTAssertEqual(try locked.identityFiles(), [identity.recipient])
-        let read = try locked.readIdentityFile(recipient: identity.recipient, passphrase: SampleFixture.passphrase)
-        XCTAssertEqual(read.string, identity.string)
+        XCTAssertEqual(locked.passphraseCopyNames().count, 1)
+        let copy = try locked.openPassphraseCopy(passphrase: SampleFixture.passphrase)
+        XCTAssertEqual(copy.identity.string, recovery.string)
+        XCTAssertEqual(copy.vaultId, SampleFixture.vaultId)
+        XCTAssertEqual(copy.root, locked.root)
+        XCTAssertThrowsError(try locked.openPassphraseCopy(passphrase: "wrong")) {
+            XCTAssertEqual($0 as? VaultError, .wrongPassphrase)
+        }
+        let read = try Vault.open(at: Self.bundled("sample.sempere"), identities: [NativeIdentity.mlkem768x25519(recovery)],
+                                  root: copy.root)
+        XCTAssertTrue(read.isRecoveryOpen)
+        XCTAssertEqual(read.listStatus, .verified(.firstUse))
+        XCTAssertEqual(try read.reconstruct(noteId: SampleFixture.lecture).meta.title, "Fixture lecture")
+        XCTAssertThrowsError(try read.requireWritable()) { XCTAssertEqual($0 as? VaultError, .recoveryKeyReadOnly) }
     }
 
-    /// Rewrites Fixtures/sample.sempere in the source tree, reusing
-    /// sample.key (or creating it on first run).
+    /// Rewrites Fixtures/sample.sempere in the source tree, reusing sample.key (the fixture device's key
+    /// file) and sample-recovery.key, or creating them when they are missing or not of the key hierarchy.
     func testRegenerateFixture() throws {
         guard ProcessInfo.processInfo.environment["SEMPERE_REGENERATE_FIXTURE"] == "1" else {
             throw XCTSkip("set SEMPERE_REGENERATE_FIXTURE=1 to rewrite the fixture vault")
         }
         let dir = Self.sourceFixtures
-        let keyURL = dir.appendingPathComponent("sample.key")
-        let identity: NativeIdentity
-        if let text = try? String(contentsOf: keyURL, encoding: .utf8) {
-            identity = try IdentityFile.parse(text)
-        } else {
-            identity = try NativeIdentity.generate(.postQuantum)
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            try ("# TEST-ONLY throwaway identity for Tests/SempereTests/Fixtures. Never use it for real notes.\n"
-                + IdentityFile.render(identity, created: SampleFixture.at(0)))
-                .write(to: keyURL, atomically: true, encoding: .utf8)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let keyURL = dir.appendingPathComponent("sample.key"), recoveryURL = dir.appendingPathComponent("sample-recovery.key")
+        if (try? DeviceKeys.parse(String(contentsOf: keyURL, encoding: .utf8))) == nil {
+            // Keeps the age identity of an older sample.key, so stock-age commands in docs keep working.
+            let old = (try? String(contentsOf: keyURL, encoding: .utf8)).flatMap { try? IdentityFile.parse($0) }
+            let identity: MLKEM768X25519Identity
+            if case .mlkem768x25519(let pq)? = old { identity = pq } else { identity = try MLKEM768X25519Identity() }
+            let device = try DeviceKeys(identity: identity, signing: .generate())
+            try ("# TEST-ONLY throwaway device key for Tests/SempereTests/Fixtures. Never use it for real notes.\n"
+                + device.fileText(created: SampleFixture.at(0))).write(to: keyURL, atomically: true, encoding: .utf8)
         }
+        if (try? IdentityFile.parse(String(contentsOf: recoveryURL, encoding: .utf8))) == nil {
+            try ("# TEST-ONLY throwaway recovery key for Tests/SempereTests/Fixtures. Never use it for real notes.\n"
+                + IdentityFile.render(.mlkem768x25519(try MLKEM768X25519Identity()), created: SampleFixture.at(0)))
+                .write(to: recoveryURL, atomically: true, encoding: .utf8)
+        }
+        let (device, recovery) = try SampleFixture.keys(in: dir)
         let vaultURL = dir.appendingPathComponent("sample.sempere")
         try? FileManager.default.removeItem(at: vaultURL)
-        try SampleFixture.generate(at: vaultURL, identity: identity)
+        try SampleFixture.generate(at: vaultURL, identity: device.nativeIdentity, recovery: recovery)
     }
 
     /// Rewrites Fixtures/items.sempere only (the sample vault keeps its tagged manifest).
@@ -239,9 +279,9 @@ final class FixtureTests: XCTestCase {
             throw XCTSkip("set SEMPERE_REGENERATE_ITEMS_FIXTURE=1 to rewrite Fixtures/items.sempere")
         }
         let dir = Self.sourceFixtures
-        let identity = try IdentityFile.parse(String(contentsOf: dir.appendingPathComponent("sample.key"), encoding: .utf8))
+        let (device, recovery) = try SampleFixture.keys(in: dir)
         let url = dir.appendingPathComponent("items.sempere")
         try? FileManager.default.removeItem(at: url)
-        try ItemsFixture.generate(at: url, identity: identity)
+        try ItemsFixture.generate(at: url, identity: device.nativeIdentity, recovery: recovery)
     }
 }

@@ -304,26 +304,6 @@ final class BlobSyncTests: BlobSyncTestCase {
         XCTAssertEqual(try openVault("B").readBlob(note: noteID, blob), syntheticBlob(100))
     }
 
-    /// Rule 2: a pending recipient change (on either side) stops deletions.
-    func testRewrapJournalBlocksBlobDeletion() throws {
-        let server = MockDAV()
-        let a = try makeVault("A")
-        _ = try delta(a, device: devA, t: 0, title: "n")
-        let unused = try a.writeBlob(note: noteID, syntheticBlob(100), type: "image/png")
-        let name = try blobFile(a, unused)
-        try sync("A", server); try sync("B", server)
-        // An addition interrupted on A: its journal is bound by vault.json (format.md §3.3.1).
-        var changing = try openVault("A")
-        XCTAssertThrowsError(try changing.addRecipient(pqIdentity().recipient, label: "x", added: Date(), stopAfter: 0))
-        try sync("A", server)
-        XCTAssertNotNil(server.file("rewrap-journal.json"))
-        server.removeDirect("notes/\(id)/att/\(name)")
-        let report = try sync("B", server)
-        XCTAssertTrue(report.deleted.isEmpty, "\(report)")
-        XCTAssertTrue(report.uploaded.contains("notes/\(id)/att/\(name)"), "\(report)")
-        XCTAssertEqual(attEntries("B"), [name])
-    }
-
     /// Without an unlocked vault nothing can be checked: a dropped blob is
     /// neither deleted nor copied back, only reported.
     func testLockedVaultNeitherDeletesNorRestoresBlobs() throws {

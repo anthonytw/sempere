@@ -5,7 +5,7 @@
 // cleared from the field, handed to the key worker and never stored.
 
 import { type VaultManifest } from "../vault/vault.ts";
-import { KeyFileError, keyFileName, maxKeyFileBytes, workFactor, wrappedBytes } from "../vault/keyfile.ts";
+import { KeyFileError, maxKeyFileBytes, recoveryKeyFileName, workFactor, wrappedBytes } from "../vault/keyfile.ts";
 import { type VaultSource, readOptional } from "../vault/source.ts";
 import { t } from "../i18n/index.ts";
 import { h } from "./dom.ts";
@@ -24,34 +24,33 @@ export function workNote(logN: number): string {
   return ` ${logN >= 19 ? t("Deriving the key from the passphrase takes a few seconds and up to 1 GiB of memory.") : t("Deriving the key from the passphrase takes a few seconds.")}`;
 }
 
-/** A stored key file of one of the vault's recipients. */
+/** The vault's stored passphrase copy of its recovery key. */
 interface StoredKey {
   label: string;
   path: string;
   file: Uint8Array;
 }
 
-/** The vault's passphrase-wrapped key files, for its current recipients only (as the CLI offers them). */
+/** The vault's passphrase copy of the recovery key (`keys/recovery-<fingerprint>.key.age`, format.md §15.11), if it is there. */
 export async function storedKeys(src: VaultSource, m: VaultManifest): Promise<StoredKey[]> {
-  const out: StoredKey[] = [];
-  for (const r of m.recipients) {
-    const path = `keys/${await keyFileName(r.key)}`;
-    let bytes: Uint8Array | undefined;
-    try {
-      bytes = await readOptional(src, path, maxKeyFileBytes);
-    } catch {
-      bytes = undefined;
-    }
-    if (!bytes) continue;
-    try {
-      const file = wrappedBytes(bytes);
-      workFactor(file);
-      out.push({ label: r.label.trim() || `${r.key.slice(0, 16)}…`, path, file });
-    } catch {
-      // Not a usable key file: not offered.
-    }
+  const name = recoveryKeyFileName(m);
+  if (!name) return [];
+  const path = `keys/${name}`;
+  let bytes: Uint8Array | undefined;
+  try {
+    bytes = await readOptional(src, path, maxKeyFileBytes);
+  } catch {
+    return [];
   }
-  return out;
+  if (!bytes) return [];
+  try {
+    const file = wrappedBytes(bytes);
+    workFactor(file);
+    return [{ label: t("Recovery key"), path, file }];
+  } catch {
+    // Not a usable key file: not offered.
+    return [];
+  }
 }
 
 /**
@@ -88,10 +87,10 @@ export function storedKeyCard(src: VaultSource, m: VaultManifest,
     card.append(
       h("h2", { text: t("Unlock with your passphrase") }),
       ...(keys.length > 1 ? [h("label", { text: t("Key") }, select)] : []),
-      h("label", { text: t("Passphrase of the vault's stored key") }, pass),
+      h("label", { text: t("Passphrase of the vault's recovery key") }, pass),
       remember.element,
       h("div", { class: "row" }, button),
-      h("p", { class: "hint", text: `${t("The vault keeps this key locked with your passphrase ({paths}). The passphrase is used once, in this tab, and never stored or sent.", { paths: keys.map((k) => k.path).join(", ") })}${workNote(logN)}` }));
+      h("p", { class: "hint", text: `${t("The vault keeps its recovery key locked with your passphrase ({paths}). The passphrase is used once, in this tab, and never stored or sent.", { paths: keys.map((k) => k.path).join(", ") })}${workNote(logN)}` }));
     card.removeAttribute("hidden");
     pass.focus();
   });

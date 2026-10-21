@@ -25,9 +25,13 @@ final class CLIBackupTests: CLITestCase {
 
     // MARK: - keys paper
 
+    private func recoveryIdentity() throws -> NativeIdentity {
+        try IdentityFile.parse(String(contentsOfFile: Self.fixtureRecoveryKey, encoding: .utf8))
+    }
+
     func testPaperKitPlain() throws {
         let out = path("kit.pdf")
-        let r = try cli(["keys", "paper", "--identity", Self.fixtureKey, "--vault", Self.fixtureVault,
+        let r = try cli(["keys", "paper", "--identity", Self.fixtureRecoveryKey, "--vault", Self.fixtureVault,
                          "--out", out, "--json"])
         XCTAssertEqual(r.status, 0, r.err)
         let json = try XCTUnwrap(r.json as? [String: Any])
@@ -36,29 +40,34 @@ final class CLIBackupTests: CLITestCase {
         XCTAssertEqual(json["qrErrorCorrection"] as? String, "Q")
         XCTAssertEqual(json["vaultId"] as? String, "5a3b1e00-1000-4000-8000-000000000001")
         XCTAssertEqual(try mode(out) & 0o777, 0o600)
-        let key = try fixtureIdentity().string
+        let key = try recoveryIdentity().string
         let text = try pdfText(out)
         for l in PaperKey.identityLines(key) { XCTAssertTrue(text.contains(l.groups.joined(separator: " "))) }
         XCTAssertTrue(text.contains("Vault:      sample"))
 
-        let again = try cli(["keys", "paper", "--identity", Self.fixtureKey, "--out", out])
+        let again = try cli(["keys", "paper", "--identity", Self.fixtureRecoveryKey, "--out", out])
         XCTAssertEqual(again.status, 1)
         XCTAssertTrue(again.err.contains("refusing to overwrite"), again.err)
     }
 
-    func testPaperKitRefusesAKeyThatDoesNotOpenTheVault() throws {
+    /// Only the vault's recovery key gets a kit for it: a device key (or any other key) is refused.
+    func testPaperKitRefusesAKeyThatIsNotTheRecoveryKey() throws {
         let other = path("other.key")
         try IdentityFile.render(try NativeIdentity.generate(.postQuantum), created: Date()).write(toFile: other, atomically: true, encoding: .utf8)
-        let r = try cli(["keys", "paper", "--identity", other, "--vault", Self.fixtureVault, "--out", path("k.pdf")])
-        XCTAssertEqual(r.status, 4, r.err)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: path("k.pdf")))
+        for key in [other, Self.fixtureKey] {
+            let r = try cli(["keys", "paper", "--identity", key, "--vault", Self.fixtureVault, "--out", path("k.pdf")])
+            XCTAssertEqual(r.status, 4, r.err)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: path("k.pdf")))
+        }
         let none = try cli(["keys", "paper", "--out", path("k.pdf")])
-        XCTAssertEqual(none.status, 4, none.err)
+        XCTAssertEqual(none.status, 2, none.err)
+        XCTAssertTrue(none.err.contains("no device keeps it"), none.err)
     }
 
-    func testPaperKitFromTheVaultsStoredKeyFile() throws {
+    func testPaperKitWrappedWithAPassphrase() throws {
         let out = path("locked.pdf")
-        let r = try cli(["keys", "paper", "--passphrase", "--vault", Self.fixtureVault, "--out", out],
+        let r = try cli(["keys", "paper", "--passphrase", "--identity", Self.fixtureRecoveryKey, "--vault", Self.fixtureVault,
+                         "--work-factor", "15", "--out", out],
                         env: ["SEMPERE_PASSPHRASE": Self.passphrase])
         XCTAssertEqual(r.status, 0, r.err)
         let raw = String(decoding: try Data(contentsOf: URL(fileURLWithPath: out)), as: UTF8.self)
@@ -71,22 +80,17 @@ final class CLIBackupTests: CLITestCase {
         let armored = lockedFile(text, begin, end)
         let plain = try AgeFile.decrypt(Data(armored.utf8), with: [ScryptIdentity(passphrase: Self.passphrase)])
         XCTAssertEqual(try IdentityFile.parse(String(decoding: plain, as: UTF8.self)).recipient,
-                       try fixtureIdentity().recipient)
+                       try recoveryIdentity().recipient)
         XCTAssertFalse(String(decoding: plain, as: UTF8.self).contains("age1pq1"))
-        XCTAssertEqual(r.status, 0)
-
-        let wrong = try cli(["keys", "paper", "--passphrase", "--vault", Self.fixtureVault, "--out", path("w.pdf")],
-                            env: ["SEMPERE_PASSPHRASE": "wrong"])
-        XCTAssertEqual(wrong.status, 4, wrong.err)
     }
 
     /// A post-quantum kit never prints the 1959-character recipient (only a
     /// fingerprint); a classic key gets no kit ("create a new key").
     func testPaperKitIsPostQuantumOnly() throws {
         let out = path("pq.pdf")
-        let r = try cli(["keys", "paper", "--identity", Self.fixtureKey, "--vault", Self.fixtureVault, "--out", out])
+        let r = try cli(["keys", "paper", "--identity", Self.fixtureRecoveryKey, "--vault", Self.fixtureVault, "--out", out])
         XCTAssertEqual(r.status, 0, r.err)
-        let recipient = try fixtureIdentity().recipient.string
+        let recipient = try recoveryIdentity().recipient.string
         XCTAssertEqual(recipient.count, 1959)
         let text = try pdfText(out).joined(separator: "\n")
         let raw = String(decoding: try Data(contentsOf: URL(fileURLWithPath: out)), as: UTF8.self)
@@ -98,25 +102,6 @@ final class CLIBackupTests: CLITestCase {
         let refused = try cli(["keys", "paper", "--identity", classic, "--out", path("c.pdf")])
         XCTAssertEqual(refused.status, 2, refused.err)
         XCTAssertTrue(refused.err.contains("create a new key"), refused.err)
-        for f in ["c.pdf"] { XCTAssertFalse(FileManager.default.fileExists(atPath: path(f))) }
-    }
-
-    func testPaperKitWithANewPassphrase() throws {
-        let out = path("new.pdf")
-        let r = try cli(["keys", "paper", "--passphrase", "--identity", Self.fixtureKey, "--work-factor", "15",
-                         "--paper", "a4", "--out", out, "--passphrase-env", "KIT_PASS"],
-                        env: ["KIT_PASS": "correct horse"])
-        XCTAssertEqual(r.status, 0, r.err)
-        let text = try pdfText(out)
-        let begin = try XCTUnwrap(text.firstIndex(of: "-----BEGIN AGE ENCRYPTED FILE-----"))
-        let end = try XCTUnwrap(text.firstIndex(of: "-----END AGE ENCRYPTED FILE-----"))
-        let plain = try AgeFile.decrypt(Data(lockedFile(text, begin, end).utf8),
-                                        with: [ScryptIdentity(passphrase: "correct horse")])
-        XCTAssertEqual(try IdentityFile.parse(String(decoding: plain, as: UTF8.self)).string, try fixtureIdentity().string)
-        XCTAssertTrue(String(decoding: try Data(contentsOf: URL(fileURLWithPath: out)), as: UTF8.self)
-            .contains("/MediaBox [0 0 595.28 841.89]"))
-        let bad = try cli(["keys", "paper", "--identity", Self.fixtureKey, "--paper", "a3", "--out", path("x.pdf")])
-        XCTAssertEqual(bad.status, 2)
     }
 
     // MARK: - backup, verify, restore
@@ -127,10 +112,11 @@ final class CLIBackupTests: CLITestCase {
         let first = try cli(["backup", vault, "--to", dir, "--json"])
         XCTAssertEqual(first.status, 0, first.err)
         let report = try XCTUnwrap(first.json as? [String: Any])
-        XCTAssertEqual((report["copied"] as? [String])?.count, 10)   // 7 revisions, key file, blob, vault.json
+        // 7 revisions, the recovery passphrase copy, a blob, the epoch record and vault.json
+        XCTAssertEqual((report["copied"] as? [String])?.count, 11)
         let second = try cli(["backup", "--vault", vault, "--to", dir, "--json"])
         XCTAssertEqual(second.status, 0, second.err)
-        XCTAssertEqual((second.json as? [String: Any])?["unchanged"] as? Int, 10)
+        XCTAssertEqual((second.json as? [String: Any])?["unchanged"] as? Int, 11)
 
         let locked = try cli(["backup", "verify", dir])
         XCTAssertEqual(locked.status, 0, locked.out + locked.err)
@@ -138,8 +124,10 @@ final class CLIBackupTests: CLITestCase {
         let full = try cli(["backup", "verify", dir, "--identity", Self.fixtureKey, "--json"])
         XCTAssertEqual(full.status, 0, full.out + full.err)
         XCTAssertEqual((full.json as? [String: Any])?["decrypted"] as? Bool, true)
-        // A scripted passphrase unlocks the key file the backup holds.
-        let viaPass = try cli(["backup", "verify", dir], env: ["SEMPERE_PASSPHRASE": Self.passphrase])
+        // A scripted passphrase unlocks the recovery passphrase copy the backup holds.
+        let copy = try XCTUnwrap(try FileManager.default.contentsOfDirectory(atPath: dir + "/keys").first { $0.hasPrefix("recovery-") })
+        let viaPass = try cli(["backup", "verify", dir, "--recovery-key", dir + "/keys/" + copy],
+                              env: ["SEMPERE_PASSPHRASE": Self.passphrase])
         XCTAssertEqual(viaPass.status, 0, viaPass.out + viaPass.err)
         XCTAssertTrue(viaPass.out.contains("decrypted and verified"), viaPass.out)
 
@@ -232,7 +220,7 @@ final class CLIBackupTests: CLITestCase {
         XCTAssertEqual(status.status, 0, status.err)
         let json = try XCTUnwrap(status.json as? [String: Any])
         XCTAssertEqual(json["vaultId"] as? String, "5a3b1e00-1000-4000-8000-000000000001")
-        XCTAssertEqual(json["files"] as? Int, 10)
+        XCTAssertEqual(json["files"] as? Int, 11)
         XCTAssertEqual(json["versionFiles"] as? Int, 0)
         XCTAssertEqual(json["totalBytes"] as? Int, json["bytes"] as? Int)
         XCTAssertNotNil(json["updated"] as? String)
@@ -321,7 +309,7 @@ final class CLIBackupTests: CLITestCase {
         let tar = path("notes.tar")
         let r = try cli(["backup", vault, "--archive", tar, "--json"])
         XCTAssertEqual(r.status, 0, r.err)
-        XCTAssertEqual((r.json as? [String: Any])?["files"] as? Int, 10)
+        XCTAssertEqual((r.json as? [String: Any])?["files"] as? Int, 11)
         XCTAssertEqual(try cli(["backup", vault, "--archive", tar]).status, 1, "refuses to overwrite")
         let bytes = try Data(contentsOf: URL(fileURLWithPath: tar))
         XCTAssertNil(String(decoding: bytes, as: UTF8.self).range(of: "Fixture lecture"), "no plaintext in the archive")

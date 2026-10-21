@@ -24,6 +24,8 @@ struct VaultStoreAppTests {
         #expect(entry.url.path.hasPrefix(library.vaultStore.root.path + "/" + entry.vaultId.uuidString.lowercased() + "/"))
         #expect(model.vaultURL?.standardizedFileURL == entry.url.standardizedFileURL)
         #expect(model.phase == .unlocked)
+        #expect(model.vault?.isHome == true, "this device is the new vault's home, unlocked with its device key")
+        #expect(model.vault?.devices.first?.key == created.device.key)
         let recent = try #require(library.recents.first)
         #expect(recent.storeID == entry.vaultId)
         #expect(recent.bookmark.isEmpty)
@@ -41,7 +43,7 @@ struct VaultStoreAppTests {
         try await second.open(recent: try #require(relaunched.recents.first), library: relaunched)
         #expect(second.vaultURL?.standardizedFileURL == entry.url.standardizedFileURL)
         #expect(second.phase == .locked)
-        try await second.unlock(identityText: try #require(created.secretKey))
+        try await second.unlock(identityText: try #require(created.unlockKey))
         #expect(second.phase == .unlocked)
     }
 

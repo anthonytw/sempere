@@ -40,7 +40,7 @@ struct SempereApp: App {
                              renderCacheRoot: AppModel.drawingCacheEnabled ? RenderCache.defaultRoot : nil,
                              attachmentIndexRoot: AppModel.defaultAttachmentIndexRoot,
                              automaticThinning: true,
-                             recipientsTrust: AppModel.defaultRecipientsTrust,
+                             trust: AppModel.defaultTrust,
                              backupNotifier: UserNotificationBackupNotifier())
         // An open vault of the in-app store holds a lease, so it is never removed while open. Its sync
         // targets (folder and WebDAV) are in the store's registry.

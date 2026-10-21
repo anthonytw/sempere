@@ -4,6 +4,7 @@ import Age
 import Foundation
 import Sempere
 import TempDirSupport
+import VaultTestSupport
 import XCTest
 
 /// Result of one `sempere` run.
@@ -20,7 +21,10 @@ open class CLITestCase: TempDirTestCase {
     public static let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         .appendingPathComponent("SempereTests/Fixtures")
     public static var fixtureVault: String { fixtures.appendingPathComponent("sample.sempere").path }
+    /// The fixture vault's device key file (`DeviceKeys.fileText`: the age identity plus its signing seeds).
     public static var fixtureKey: String { fixtures.appendingPathComponent("sample.key").path }
+    /// The fixture vault's recovery key (an `age-keygen -pq` style identity file).
+    public static var fixtureRecoveryKey: String { fixtures.appendingPathComponent("sample-recovery.key").path }
     public static let passphrase = "sempere-test"
     public static let lecture = "11111111-1111-4111-8111-111111111111"
 
@@ -92,25 +96,66 @@ open class CLITestCase: TempDirTestCase {
         #endif
     }
 
-    /// A writable copy of the fixture vault.
+    /// This test's CLI trust records (`$XDG_STATE_HOME/sempere/trust` of `cli`).
+    public var cliTrustStore: FileEpochTrustStore {
+        FileEpochTrustStore(directory: FileEpochTrustStore.cliDirectory(
+            environment: ["XDG_STATE_HOME": tmp.appendingPathComponent("state").path]))
+    }
+
+    /// A writable copy of the fixture vault. The CLI's trust record for it is saved as `sempere device
+    /// confirm` would (the fixture device's join confirmed against the fixture's root), so the CLI writes
+    /// to it with `--identity` the fixture key.
     public func copyFixtureVault(as name: String = "copy.sempere") throws -> String {
         let dest = tmp.appendingPathComponent(name)
         try FileManager.default.copyItem(at: URL(fileURLWithPath: Self.fixtureVault), to: dest)
+        try trustFixtureCopy(dest.path)
         return dest.path
+    }
+
+    /// Saves the CLI's trust record for a copy of a vault the fixture device belongs to (as `sempere
+    /// device confirm` would), so the CLI writes to it.
+    public func trustFixtureCopy(_ path: String) throws {
+        let keys = try fixtureDeviceKeys()
+        let url = URL(fileURLWithPath: path)
+        let vault = try Vault.open(at: url, identities: [keys.nativeIdentity], signing: keys.signing, trust: cliTrustStore,
+                                   root: try Vault.open(at: url).root)
+        if !vault.isReadOnly { try vault.requireWritable() }   // saves the record
+    }
+
+    /// Writes the vault keys of the vault at `vault` (what the kit's script puts in vault-keys.txt,
+    /// format.md §15.13), unwrapped from vault.json with the device key file `keyFile`; returns the path.
+    public func vaultKeysFile(vault: String, keyFile: String) throws -> String {
+        let identity = try DeviceKeys.parse(String(contentsOfFile: keyFile, encoding: .utf8)).nativeIdentity
+        let manifest = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: vault)
+            .appendingPathComponent("vault.json"))) as? [String: Any]
+        let wraps = ((manifest?["keys"] as? [[String: Any]]) ?? []).compactMap { $0["wrap"] as? String }
+        for wrap in wraps {
+            guard let plain = try? AgeFile.decrypt(Data(wrap.utf8), with: [identity]) else { continue }
+            let out = path("vault-keys-\(UUID().uuidString.prefix(8)).txt")
+            try plain.write(to: URL(fileURLWithPath: out))
+            return out
+        }
+        throw XCTSkip("no wrap in \(vault) opens with \(keyFile)")
     }
 
     public func fixtureIdentity() throws -> NativeIdentity {
         try IdentityFile.parse(String(contentsOfFile: Self.fixtureKey, encoding: .utf8))
     }
 
-    /// Creates a vault through the library and writes a two-page note plus a
-    /// one-page note. Returns the vault, the identity and the key file path.
+    /// The fixture device's keys (its decryption key and signing pair).
+    public func fixtureDeviceKeys() throws -> DeviceKeys {
+        try DeviceKeys.parse(String(contentsOfFile: Self.fixtureKey, encoding: .utf8))
+    }
+
+    /// Creates a vault through the library, with this test's CLI as its home device (its trust record
+    /// saved), and writes a two-page note plus a one-page note. Returns the vault, the identity and the
+    /// device key file's path (`--identity`).
     public func makeVault(named name: String = "mine.sempere") throws -> (vault: Vault, identity: NativeIdentity, keyPath: String) {
         let id = try NativeIdentity.generate(.postQuantum)
         let keyPath = path("\(name).key")
-        try IdentityFile.render(id, created: Date()).write(toFile: keyPath, atomically: true, encoding: .utf8)
-        let vault = try Vault.create(at: tmp.appendingPathComponent(name), recipients: [id.recipient],
-                                     labels: ["laptop"], identities: [id])
+        try TestVaults.deviceKeyFile(id).write(toFile: keyPath, atomically: true, encoding: .utf8)
+        let vault = try TestVaults.create(at: tmp.appendingPathComponent(name), identities: [id], names: ["laptop"],
+                                          trust: cliTrustStore)
         let device = DeviceID("abcdef01")!
         func stroke(_ n: Double) -> Stroke {
             var pts: [StrokePoint] = []

@@ -76,6 +76,12 @@ public enum RFC3339 {
         return date
     }
 
+    /// `string(from:)` for a date a writer stamps (now, or a fixed test date): the Unix epoch's stamp for
+    /// a date outside 0001...9999, which no clock gives.
+    public static func string(_ date: Date) -> String {
+        string(from: date) ?? "1970-01-01T00:00:00.000Z"
+    }
+
     /// `YYYY-MM-DDTHH:MM:SS.mmmZ`, or nil for a date outside 0001...9999
     /// (or not finite).
     public static func string(from date: Date) -> String? {

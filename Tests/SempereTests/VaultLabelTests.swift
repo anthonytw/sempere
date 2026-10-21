@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import XCTest
+import VaultTestSupport
 @testable import Sempere
 
 /// vault.json's optional `label` (format.md §2): the vault's display name,
@@ -9,9 +10,8 @@ final class VaultLabelTests: VaultTestCase {
     let a = pqIdentity(), b = pqIdentity()
 
     func testCreateSetClearAndKeptAcrossRewrites() throws {
-        let store = MemoryRecipientsTrustStore()
-        var vault = try Vault.create(at: vaultURL(), recipients: [a.recipient], identities: [a], trust: store,
-                                     label: "  My notes\n(work) ")
+        let store = MemoryEpochTrustStore()
+        var vault = try TestVaults.create(at: vaultURL(), identities: [a], trust: store, label: "  My notes\n(work) ")
         XCTAssertEqual(vault.label, "My notes (work)", "one line, trimmed")
         XCTAssertEqual(try Vault.open(at: vault.url).label, "My notes (work)", "readable without the key")
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: vault.url.appendingPathComponent("vault.json")))
@@ -20,11 +20,11 @@ final class VaultLabelTests: VaultTestCase {
 
         try vault.setLabel("Notes")
         XCTAssertEqual(try Vault.open(at: vault.url, identities: [a], trust: store).label, "Notes")
-        XCTAssertEqual(try Vault.open(at: vault.url, identities: [a], trust: store).recipientsStatus, .verified(.unchanged),
+        XCTAssertEqual(try Vault.open(at: vault.url, identities: [a], trust: store).listStatus, .verified(.unchanged),
                        "the tags still check")
-        try vault.addRecipient(b.recipient, label: "B")
-        XCTAssertEqual(try Vault.open(at: vault.url).label, "Notes", "a recipient change keeps it")
-        try vault.removeRecipient(b.recipient)
+        try TestVaults.approve(b, into: &vault, name: "B")
+        XCTAssertEqual(try Vault.open(at: vault.url).label, "Notes", "an approval keeps it")
+        try vault.renameDevice(id: try XCTUnwrap(vault.devices.last?.id), to: "B2")
         XCTAssertEqual(try Vault.open(at: vault.url).label, "Notes")
 
         try vault.setLabel(nil)
@@ -37,12 +37,12 @@ final class VaultLabelTests: VaultTestCase {
     }
 
     func testSettingNeedsTheKeyAndAnUnchangedManifest() throws {
-        let vault = try Vault.create(at: vaultURL(), recipients: [a.recipient], identities: [a])
+        let vault = try TestVaults.create(at: vaultURL(), identities: [a])
         var locked = try Vault.open(at: vault.url)
         XCTAssertThrowsError(try locked.setLabel("x"))
         var stale = try Vault.open(at: vault.url, identities: [a])
-        var other = try Vault.open(at: vault.url, identities: [a])
-        try other.addRecipient(b.recipient, label: "B")
+        var other = try TestVaults.open(at: vault.url, identity: a)
+        try TestVaults.approve(b, into: &other, name: "B")
         XCTAssertThrowsError(try stale.setLabel("x")) { error in
             guard case VaultError.manifestCorrupt = error else { return XCTFail("\(error)") }
         }
@@ -50,23 +50,23 @@ final class VaultLabelTests: VaultTestCase {
 
     /// The label is the server's to change (no tag covers it): readers clean whatever they find.
     func testHostileLabelsAreCleanedOrIgnored() throws {
-        let vault = try Vault.create(at: vaultURL(), recipients: [a.recipient], identities: [a])
+        let vault = try TestVaults.create(at: vaultURL(), identities: [a])
         let url = vault.url.appendingPathComponent("vault.json")
         func write(_ value: Any) throws -> String? {
             var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
             json["label"] = value
             try JSONSerialization.data(withJSONObject: json).write(to: url)
-            XCTAssertEqual(try Vault.open(at: vault.url, identities: [a]).recipientsStatus, .verified(.firstUse),
+            XCTAssertEqual(try Vault.open(at: vault.url, identities: [a]).listStatus, .verified(.firstUse),
                            "not covered by the tags")
             return try Vault.open(at: vault.url).label
         }
         XCTAssertEqual(try write("evil\u{1B}[2Jname\u{07}"), "evil [2Jname")
-        XCTAssertEqual(try write(String(repeating: "x", count: 500))?.count, VaultManifest.Recipient.maxLabelLength)
+        XCTAssertEqual(try write(String(repeating: "x", count: 500))?.count, VaultLabelText.maxLength)
         XCTAssertNil(try write(42))
         XCTAssertNil(try write(["a"]))
         XCTAssertNil(try write(""))
         XCTAssertNil(try write(NSNull()))
-        XCTAssertEqual(VaultManifest.peekLabel(Data("{\"label\":\"Notes\"}".utf8)), "Notes", "from bytes that are no manifest")
-        XCTAssertNil(VaultManifest.peekLabel(Data("not json".utf8)))
+        XCTAssertEqual(VaultLabelText.peekLabel(Data("{\"label\":\"Notes\"}".utf8)), "Notes", "from bytes that are no manifest")
+        XCTAssertNil(VaultLabelText.peekLabel(Data("not json".utf8)))
     }
 }

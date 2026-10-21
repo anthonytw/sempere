@@ -2,6 +2,7 @@ import Age
 import Foundation
 import FuzzSupport
 import XCTest
+import VaultTestSupport
 @testable import Sempere
 
 final class BackupTests: VaultTestCase {
@@ -33,7 +34,7 @@ final class BackupTests: VaultTestCase {
 
     func testFirstRunCopiesEverythingThenOnlyWhatIsNew() throws {
         let first = try Backup.run(source: vault, to: dest)
-        XCTAssertEqual(first.copied.count, 7)   // six revisions and vault.json
+        XCTAssertEqual(first.copied.count, 8)   // six revisions, the epoch record and vault.json
         XCTAssertEqual(first.copied.last, "vault.json", "vault.json is written after the notes")
         XCTAssertTrue(first.errors.isEmpty)
         XCTAssertEqual(try contents(dest), try contents(vault.url))
@@ -41,22 +42,38 @@ final class BackupTests: VaultTestCase {
         let again = try Backup.run(source: vault, to: dest)
         XCTAssertEqual(again.copied, [])
         XCTAssertEqual(again.replaced, [])
-        XCTAssertEqual(again.unchanged, 7)
+        XCTAssertEqual(again.unchanged, 8)
 
         var clock = HybridClock()
         let snap = try vault.snapshot(noteId: testNote, device: devC, clock: &clock, wall: wallAt(baseMillis + 50),
                                       app: "test/0")
-        try vault.writeIdentityFile(id, passphrase: "pw", workFactor: 15)
+        try addKeyFile(vault)
         let third = try Backup.run(source: vault, to: dest)
-        XCTAssertEqual(Set(third.copied), [revisionPath(testNote, snap.name),
-                                           "keys/\(IdentityFile.fileName(for: id.recipient))"])
-        XCTAssertEqual(third.unchanged, 7)
+        XCTAssertEqual(Set(third.copied), [revisionPath(testNote, snap.name), "keys/\(Self.keyFileName)"])
+        XCTAssertEqual(third.unchanged, 8)
         XCTAssertEqual(try contents(dest), try contents(vault.url))
 
         // The backup is a vault: it opens and reads with the same key.
         let mirror = try Vault.open(at: dest, identities: [id])
         XCTAssertEqual(try mirror.reconstruct(noteId: testNote), try vault.reconstruct(noteId: testNote))
         XCTAssertTrue(Backup.verify(at: dest, identities: [id]).isHealthy)
+    }
+
+    /// Notebook records (format.md §14) are vault files: a backup keeps them, and a restore brings an
+    /// empty notebook back.
+    func testNotebookRecordsAreBackedUpAndRestored() throws {
+        let record = try XCTUnwrap(try vault.createNotebook("Empty/Shelf"))
+        let path = "notebooks/\(NotebookRecords.fileName(record.id))"
+        let first = try Backup.run(source: vault, to: dest)
+        XCTAssertTrue(first.copied.contains(path), "\(first.copied)")
+        XCTAssertEqual(first.copied.last, "vault.json")
+        XCTAssertEqual(try contents(dest), try contents(vault.url))
+        XCTAssertTrue(Backup.verify(at: dest, identities: [id]).isHealthy)
+
+        let target = tmp.appendingPathComponent("Restored.sempere")
+        _ = try Backup.restore(from: dest, to: target, identities: [id])
+        let restored = try Vault.open(at: target, identities: [id])
+        XCTAssertEqual(NotebookRecords.declared(try restored.readNotebookRecords().records), ["Empty/Shelf"])
     }
 
     func testRefusesForeignOrOverlappingDestinations() throws {
@@ -105,24 +122,31 @@ final class BackupTests: VaultTestCase {
         try m.write(to: dest.appendingPathComponent(BackupManifest.fileName))
 
         let resumed = try Backup.run(source: vault, to: dest)
-        XCTAssertEqual(resumed.copied.count, 4)
+        XCTAssertEqual(resumed.copied.count, 5)
         XCTAssertEqual(resumed.unchanged, 3, "files already copied are hashed against the source, not copied again")
         XCTAssertFalse(FileManager.default.fileExists(atPath: leftover.path))
         XCTAssertEqual(try contents(dest), try contents(vault.url))
         let report = Backup.verify(at: dest, identities: [id])
         XCTAssertTrue(report.isHealthy, "\(report)")
-        XCTAssertEqual(report.files.filter { $0.status == .ok }.count, 7, "every file is indexed again")
+        XCTAssertEqual(report.files.filter { $0.status == .ok }.count, 8, "every file is indexed again")
+    }
+
+    /// A `keys/` file as the passphrase copy is named (format.md §15.11); backups never decrypt it.
+    static let keyFileName = "recovery-" + String(repeating: "ab", count: 32) + ".key.age"
+
+    func addKeyFile(_ vault: Vault) throws {
+        try Data("synthetic key file".utf8).write(to: vault.url.appendingPathComponent("keys/\(Self.keyFileName)"))
     }
 
     // MARK: - Changed files
 
-    func testRecipientChangeReplacesFilesAndKeepsPreviousVersions() throws {
+    func testAChangedVaultJsonIsReplacedAndItsPreviousVersionKept() throws {
         _ = try Backup.run(source: vault, to: dest, options: BackupOptions(now: wallAt(baseMillis)))
-        let before = try contents(dest)
+        let before = try contents(dest).filter { $0.key == "vault.json" }
         var v = vault!
-        _ = try v.addRecipient(pqIdentity().recipient, label: "second")
+        try v.renameDevice(id: try XCTUnwrap(v.devices.first?.id), to: "renamed")
         let report = try Backup.run(source: v, to: dest, options: BackupOptions(now: wallAt(baseMillis + 60_000)))
-        XCTAssertEqual(Set(report.replaced), Set(before.keys), "a rewrap changes every file")
+        XCTAssertEqual(Set(report.replaced), Set(before.keys), "a rename changes vault.json only")
         XCTAssertEqual(report.copied, [])
         XCTAssertEqual(try contents(dest), try contents(v.url))
         let stamp = Backup.stamp(wallAt(baseMillis + 60_000))
@@ -134,14 +158,14 @@ final class BackupTests: VaultTestCase {
     }
 
     func testFinishedJournalLeavesTheMirrorButIsKept() throws {
-        let journal = vault.url.appendingPathComponent("rewrap-journal.json")
+        let journal = vault.url.appendingPathComponent("reencrypt-journal.age")
         try Data("{\"format\": \"sempere/1\"}\n".utf8).write(to: journal)
         _ = try Backup.run(source: vault, to: dest)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: dest.appendingPathComponent("rewrap-journal.json").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dest.appendingPathComponent("reencrypt-journal.age").path))
         try FileManager.default.removeItem(at: journal)
         let report = try Backup.run(source: vault, to: dest, options: BackupOptions(now: wallAt(baseMillis)))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: dest.appendingPathComponent("rewrap-journal.json").path))
-        XCTAssertEqual(report.versioned, ["versions/\(Backup.stamp(wallAt(baseMillis)))/rewrap-journal.json"])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dest.appendingPathComponent("reencrypt-journal.age").path))
+        XCTAssertEqual(report.versioned, ["versions/\(Backup.stamp(wallAt(baseMillis)))/reencrypt-journal.age"])
         XCTAssertTrue(Backup.verify(at: dest).isHealthy)
     }
 
@@ -204,7 +228,7 @@ final class BackupTests: VaultTestCase {
     // MARK: - Restore
 
     func testRestoreRoundTripEqualsSource() throws {
-        try vault.writeIdentityFile(id, passphrase: "pw", workFactor: 15)
+        try addKeyFile(vault)
         _ = try Backup.run(source: vault, to: dest)
         let target = tmp.appendingPathComponent("Restored.sempere")
         let report = try Backup.restore(from: dest, to: target, identities: [id])
@@ -264,10 +288,10 @@ final class BackupTests: VaultTestCase {
         XCTAssertEqual(first.totalBytes, first.bytes)
 
         // A later run moves `updated` even when nothing changed; a replaced file counts its previous copy.
-        try vault.writeIdentityFile(id, passphrase: "pw", workFactor: 15)
+        try addKeyFile(vault)
         _ = try Backup.run(source: vault, to: dest, options: BackupOptions(now: t0.addingTimeInterval(60)))
         var other = vault!
-        _ = try other.addRecipient(pqIdentity().recipient, label: "second")
+        try other.renameDevice(id: try XCTUnwrap(other.devices.first?.id), to: "renamed")
         _ = try Backup.run(source: other, to: dest, options: BackupOptions(now: t0.addingTimeInterval(120)))
         let later = try Backup.status(at: dest)
         XCTAssertEqual(later.created, t0)
@@ -291,7 +315,7 @@ final class BackupTests: VaultTestCase {
         XCTAssertEqual(try Backup.status(at: dest).completed, t0.addingTimeInterval(60))
 
         // A file that cannot be written (a directory in its place) is an error: `completed` stays.
-        try vault.writeIdentityFile(id, passphrase: "pw", workFactor: 15)
+        try addKeyFile(vault)
         let key = try XCTUnwrap(try Backup.formatFiles(in: vault.url).first { $0.hasPrefix("keys/") })
         try FileManager.default.createDirectory(at: Backup.url(dest, key), withIntermediateDirectories: true)
         let failed = try Backup.run(source: vault, to: dest, options: BackupOptions(now: t0.addingTimeInterval(120)))
@@ -512,16 +536,20 @@ final class BackupTests: VaultTestCase {
 
     // MARK: - Review regressions
 
-    /// Replacing one key by another keeps every revision file the same size
-    /// (one stanza either way) but rewrites it: a size-only shortcut
-    /// would leave the backup encrypted to the key that was removed.
-    func testSameSizeRewrapIsNotSkippedBySizeShortcut() throws {
+    /// Files rewritten in place keep their size (one stanza either way, as a re-encryption makes them,
+    /// KH6) but change their bytes, while vault.json changes too: a size-only shortcut would keep the old
+    /// bytes in the backup.
+    func testSameSizeRewriteIsNotSkippedBySizeShortcut() throws {
         _ = try Backup.run(source: vault, to: dest, options: BackupOptions(now: wallAt(baseMillis)))
         let before = try contents(dest)
-        let b = pqIdentity()
-        var v = try Vault.open(at: vault.url, identities: [id])
-        _ = try v.addRecipient(b.recipient, label: "new")
-        _ = try v.removeRecipient(id.recipient)
+        var v = try TestVaults.open(at: vault.url, identity: id)
+        for p in before.keys where p.hasPrefix("notes/") {
+            let url = v.url.appendingPathComponent(p)
+            let plain = try AgeFile.decrypt(try Data(contentsOf: url), with: v.identities)
+            try v.encrypt(plain).write(to: url)
+        }
+        try v.renameDevice(id: try XCTUnwrap(v.devices.first?.id), to: "renamed")
+        let b: NativeIdentity = id
         let after = try contents(v.url)
         for p in before.keys where p.hasPrefix("notes/") {
             XCTAssertEqual(before[p]?.count, after[p]?.count, "premise: same size, different bytes")
@@ -823,10 +851,10 @@ final class BackupTests: VaultTestCase {
     // MARK: - Archive
 
     func testArchiveHoldsExactlyTheEncryptedFiles() throws {
-        try vault.writeIdentityFile(id, passphrase: "pw", workFactor: 15)
+        try addKeyFile(vault)
         let file = tmp.appendingPathComponent("out/notes.tar")
         let report = try Backup.writeArchive(source: vault, to: file)
-        XCTAssertEqual(report.files, 8)
+        XCTAssertEqual(report.files, 9)
         let members = try TarReader.files(try Data(contentsOf: file))
         var expected: [String: Data] = [:]
         for (p, d) in try contents(vault.url) { expected["Test.sempere/\(p)"] = d }
@@ -873,7 +901,7 @@ final class BackupTests: VaultTestCase {
     /// Per-kind read limits for backed-up files, also under `versions/`.
     func testReadLimitsByFileKind() {
         XCTAssertEqual(Backup.maxBytes(forPath: "vault.json"), BoundedRead.maxManifestBytes)
-        XCTAssertEqual(Backup.maxBytes(forPath: "rewrap-journal.json"), BoundedRead.maxManifestBytes)
+        XCTAssertEqual(Backup.maxBytes(forPath: "reencrypt-journal.age"), BoundedRead.maxManifestBytes)
         XCTAssertEqual(Backup.maxBytes(forPath: "keys/a.key.age"), BoundedRead.maxSmallFileBytes)
         XCTAssertEqual(Backup.maxBytes(forPath: "notes/n/att/\(String(repeating: "a", count: 64)).image.age"),
                        BoundedRead.maxBlobFileBytes)

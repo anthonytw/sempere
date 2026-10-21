@@ -102,7 +102,7 @@ public enum WebDAVSyncProblem: Hashable, Sendable {
     case notFound
     /// The server redirects; the URL must be changed.
     case redirect(String)
-    /// The server's `vault.json` (or rewrap journal) was changed elsewhere and kept.
+    /// The server's `vault.json` was changed elsewhere and kept.
     case serverChangedManifest
     /// Some files could not be uploaded or removed (first messages).
     case failures([String])
@@ -147,7 +147,7 @@ public enum WebDAVSyncProblem: Hashable, Sendable {
     /// The problems a finished push reports (empty: all is well).
     public static func from(report: SyncReport) -> [WebDAVSyncProblem] {
         var out: [WebDAVSyncProblem] = []
-        if report.conflicts.contains(where: { $0.path == Vault.manifestName || $0.path == Vault.journalName }) {
+        if report.conflicts.contains(where: { $0.path == Vault.manifestName }) {
             out.append(.serverChangedManifest)
         }
         if !report.errors.isEmpty {

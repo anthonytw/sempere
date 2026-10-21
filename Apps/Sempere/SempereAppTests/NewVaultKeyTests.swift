@@ -11,26 +11,31 @@ import Testing
 struct NewVaultKeyTests {
     // MARK: - Existing key
 
-    @Test func anExistingKeyMakesAVaultThatOpensWithIt() async throws {
+    static let strong = "lunar-pickle-tundra-mosaic-quiver-banjo"
+
+    /// An existing key becomes the vault's recovery key; this device still gets its own key.
+    @Test func anExistingKeyBecomesTheRecoveryKey() async throws {
         let identity = try NativeIdentity.generate(.postQuantum)
         let pasted = IdentityFile.render(identity, created: Date()).replacingOccurrences(of: "\n", with: "\r\n")
         let status = ExistingKeyInput.status(ofText: "  " + pasted + "\n\n")
         #expect(status == .ready(identity))
-        let parent = try BrowserTests.tempDir()
         let library = try BrowserTests.library()
         let model = AppModel(deviceStateURL: try BrowserTests.tempDir().appendingPathComponent("device.json"))
-        let created = try await model.createVault(
-            NewVaultRequest(name: "Reused", keySource: .identity(identity), passphrase: "lunar-pickle-tundra-mosaic-quiver"), library: library)
+        var request = NewVaultRequest(name: "Reused", keySource: .identity(identity), passphrase: Self.strong)
+        request.workFactor = 10
+        let created = try await model.createVault(request, library: library)
         // No receipt: the user already has the key.
         #expect(created.secretKey == nil)
-        #expect(created.unlockKey == identity.string)
+        #expect(created.recoveryKey == nil)
+        #expect(created.unlockKey != nil)
         #expect(model.phase == .unlocked)
+        #expect(!model.isRecoveryOpen, "unlocked with this device's own key")
         let vault = try Vault.open(at: created.url)
-        #expect(vault.recipients.map(\.key) == [identity.recipient.string])
+        #expect(vault.manifest.recoveryEntry?.key == identity.recipient.string)
+        #expect(vault.devices.map(\.key) == [created.device.key])
         // The stored copy opens with the passphrase and is the same key.
-        let stored = try vault.readIdentityFile(recipient: identity.recipient, passphrase: "lunar-pickle-tundra-mosaic-quiver",
-                                                maxWorkFactor: 18)
-        #expect(stored == identity)
+        let stored = try vault.openPassphraseCopy(passphrase: Self.strong)
+        #expect(NativeIdentity.mlkem768x25519(stored.identity) == identity)
     }
 
     @Test func aClassicIdentityIsRefusedByTheLibraryToo() throws {
@@ -65,15 +70,17 @@ struct NewVaultKeyTests {
 
     @Test func aPassphraseWrappedKeyFileOpensWithItsPassphrase() throws {
         let identity = try NativeIdentity.generate(.postQuantum)
-        let vault = try BrowserTests.tempDir().appendingPathComponent("Other.sempere")
-        let other = try Vault.create(at: vault, recipients: [identity.recipient], identities: [identity])
-        let file = try other.writeIdentityFile(identity, passphrase: "orbit falcon", workFactor: 15)
-        let data = try Data(contentsOf: file)
+        // Another vault's passphrase copy of its recovery key (format.md §15.11).
+        var request = NewVaultRequest(name: "Other", keySource: .identity(identity), passphrase: Self.strong)
+        request.workFactor = 10
+        let other = try VaultLibrary.createVault(request, folder: "Other.sempere", in: try BrowserTests.tempDir())
+        let name = try #require(try Vault.open(at: other.url).passphraseCopyNames().first)
+        let data = try Data(contentsOf: other.url.appendingPathComponent("keys").appendingPathComponent(name))
         guard case .needsPassphrase(let wrapped) = ExistingKeyInput.status(ofFile: data) else {
             Issue.record("not recognised as a wrapped key file")
             return
         }
-        #expect(ExistingKeyInput.unwrap(wrapped, passphrase: "orbit falcon") == .ready(identity))
+        #expect(ExistingKeyInput.unwrap(wrapped, passphrase: Self.strong) == .ready(identity))
         if case .problem(let m) = ExistingKeyInput.unwrap(wrapped, passphrase: "orbit") {
             #expect(m.contains("passphrase"))
         } else {
@@ -97,7 +104,6 @@ struct NewVaultKeyTests {
         #expect(NewVaultView.keyFooter(.existing).contains("AGE-SECRET-KEY-PQ-1"))
         #expect(NewVaultView.keyFooter(.existing).contains("age1pq1"))
         #expect(NewVaultView.keyFooter(.existing).contains("AGE-SECRET-KEY-1"))
-        #expect(NewVaultView.keyFooter(.recipient).contains("age1pq1"))
     }
 
     // MARK: - Passphrase checklist
@@ -106,22 +112,22 @@ struct NewVaultKeyTests {
         func met(_ p: String, _ c: String) -> [Bool] { StoredKeyPassphrase.requirements(p, confirmation: c).map(\.met) }
         #expect(met("", "") == [false, false])
         #expect(met("lunar", "lunar") == [false, true])
-        #expect(met("lunar-pickle-tundra-mosaic-quiver", "") == [true, false])
-        #expect(met("lunar-pickle-tundra-mosaic-quiver", "lunar-pickle-tundra-mosaic-quiver") == [true, true])
+        #expect(met(Self.strong, "") == [true, false])
+        #expect(met(Self.strong, Self.strong) == [true, true])
         // Apple's generated passwords (c26) pass.
         #expect(met("vuspot-Bekfu4-qobqag", "vuspot-Bekfu4-qobqag") == [true, true])
         let line = StoredKeyPassphrase.requirements("lunar", confirmation: "").first?.text ?? ""
-        #expect(line.contains("60"))
+        #expect(line.contains("70"))
         #expect(StoredKeyPassphrase.progress("") == 0)
-        #expect(StoredKeyPassphrase.progress("lunar-pickle-tundra-mosaic-quiver") == 1)
+        #expect(StoredKeyPassphrase.progress(Self.strong) == 1)
     }
 
     @Test func hintsSayWhyWhileItIsWeak() {
         #expect(StoredKeyPassphrase.hints("").isEmpty)
         #expect(StoredKeyPassphrase.hints("qwertyuiop").contains { $0.contains("keyboard") })
         #expect(StoredKeyPassphrase.hints("password1").contains { $0.contains("common") })
-        #expect(StoredKeyPassphrase.hints("lunar pickle").contains { $0.contains("five or more") })
-        #expect(StoredKeyPassphrase.hints("lunar-pickle-tundra-mosaic-quiver").isEmpty, "strong: no hints")
+        #expect(StoredKeyPassphrase.hints("lunar pickle").contains { $0.contains("six or more") })
+        #expect(StoredKeyPassphrase.hints(Self.strong).isEmpty, "strong: no hints")
     }
 
     @Test func autoFillIsAskedForAPasswordThatPasses() {

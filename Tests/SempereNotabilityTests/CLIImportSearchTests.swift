@@ -94,7 +94,7 @@ final class CLIImportSearchTests: CLITestCase {
         XCTAssertTrue(r.out.contains("would import"), r.out)
         XCTAssertTrue(r.out.contains("Dry run: 1 would be imported"), r.out)
         XCTAssertEqual(listing(vault), before)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: path("state")), "dry run created device state")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path("state/sempere/device.json")), "dry run created device state")
         XCTAssertEqual((try cli(["search", "cd", "--json"] + vaultArgs(vault)).json as? [Any])?.count, 0)
         // A real import does create it.
         XCTAssertEqual(try cli(["import", "notability", Self.packageNote] + vaultArgs(vault)).status, 0)

@@ -32,7 +32,7 @@ extension AppModel {
         }
         switch phase {
         case .unlocked: return .create
-        case .locked, .finishingKeyChange: return .waitForUnlock
+        case .locked: return .waitForUnlock
         case .noVault:
             menuBarNewNoteRequest = nil
             return .none

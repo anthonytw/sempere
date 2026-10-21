@@ -41,17 +41,17 @@ describe("format identifiers", () => {
   });
 
   it("opens a later major's manifest and reports why it is read-only", () => {
+    const base = JSON.parse(readFileSync(join(fixtures, "sample.sempere", "vault.json"), "utf8")) as Record<string, unknown>;
     const m = (format: string, features?: string[]): Uint8Array => new TextEncoder().encode(JSON.stringify({
-      format, vaultId: "5a3b1e00-1000-4000-8000-000000000002", created: "2026-10-04T16:20:00Z",
-      recipients: [{ key: "age1future1qqqq", label: "", added: "2026-10-04T16:20:00Z" }], vaultSecret: "x",
-      ...(features ? { features } : {}),
+      ...base, format, ...(features ? { features } : {}),
     }));
     expect(readOnlyReasons(parseManifest(m("sempere/2", ["tables"])))).toHaveLength(2);
     expect(readOnlyReasons(parseManifest(m("sempere/2", [])))).toHaveLength(1);
     // This version defines no extension (format.md §2): any feature is newer content.
     expect(manifestReadOnlyReasons("sempere/1", [])).toEqual([]);
     expect(manifestReadOnlyReasons("sempere/1", ["attachments"])).toHaveLength(1);
-    expect(() => parseManifest(m("sempere/1"))).toThrow(VaultError);
+    expect(readOnlyReasons(parseManifest(m("sempere/1")))).toEqual([]);
+    expect(() => parseManifest(new TextEncoder().encode(JSON.stringify({ ...base, format: "sempere/1", keys: [] })))).toThrow(VaultError);
     for (const bad of ["sempere/0", "other/2"]) {
       expect(() => parseManifest(m(bad))).toThrow(expect.objectContaining({ code: "unsupportedFormat" }));
     }

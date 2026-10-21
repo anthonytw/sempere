@@ -2,6 +2,7 @@ import Age
 import CZlib
 import Foundation
 import ImportTestSupport
+import VaultTestSupport
 import Sempere
 import TempDirSupport
 import XCTest
@@ -12,8 +13,7 @@ import XCTest
 class NotabilityTestCase: TempDirTestCase {
     func makeVault() throws -> Vault {
         let identity = try NativeIdentity.generate(.postQuantum)
-        return try Vault.create(at: tmp.appendingPathComponent("V-\(UUID().uuidString).sempere"),
-                                recipients: [identity.recipient], identities: [identity])
+        return try TestVaults.create(at: tmp.appendingPathComponent("V-\(UUID().uuidString).sempere"), identities: [identity])
     }
 
     /// Writes `data` as a `.<ext>` file and imports it, expecting one note that imports cleanly.

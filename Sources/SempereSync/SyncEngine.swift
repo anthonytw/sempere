@@ -11,7 +11,7 @@ public struct SyncOptions: Sendable {
     /// per-device file is treated as another device's.
     public var deviceID: DeviceID?
     /// The vault's write lock on this device (`VaultFileLock`, docs/design/device-first-sync.md §4): held
-    /// while the run settles and replaces the local mutable files (`vault.json`, the rewrap journal,
+    /// while the run settles and replaces the local mutable files (`vault.json`,
     /// `settings.age`), so a writer of them in the same process (the app's settings) or another (the
     /// CLI) never interleaves with the read, merge and write. Nil: no lock.
     public var localWriteLock: VaultFileLock?
@@ -198,8 +198,6 @@ public final class SyncEngine {
     /// What the server holds after this run, per note (revision file names):
     /// the listing a server-side `sempere-index.json` must show.
     var remoteRevisions: [String: [String]] = [:]
-    /// True when the server holds a `rewrap-journal.json` (format.md §8.1.6 rule 2).
-    var remoteJournal = false
     /// Push-only: remote entries that are not vault files (the `ignored` ones), as paths.
     var remoteJunk: [[String]] = []
     /// False on a first sync (no readable state): then nothing on the server
@@ -366,8 +364,6 @@ public final class SyncEngine {
         // A provider's evicted root files are asked for at once; vault.json is waited for (`Arrivals.swift`).
         try awaitRootFiles(remoteRoot)
         try checkSameVault(remoteRoot)
-        remoteJournal = remoteRoot[Vault.journalName] != nil
-        if !remoteJournal { state.inFlightJournal = nil }
         removeLeftoverRemoteTemps()
         // The local mutable files are judged and replaced under the vault's write lock (`localWriteLock`).
         do {
@@ -375,7 +371,7 @@ public final class SyncEngine {
                 // A provider's conflict versions of the root files, merged or kept, then resolved (`ConflictVersions.swift`).
                 settleConflictVersions(remoteRoot)
 
-                for name in [Vault.manifestName, Vault.journalName] {
+                for name in [Vault.manifestName] {
                     let remote = remoteRoot[name].flatMap { $0.isCollection ? nil : $0 }
                     do {
                         // Listed but not downloaded yet: neither taken nor replaced this run.
@@ -394,12 +390,13 @@ public final class SyncEngine {
             }
         } catch {
             // Another writer held the lock for the whole wait: the mutable files wait for the next run.
-            for name in [Vault.manifestName, Vault.journalName, SharedSettings.fileName] {
+            for name in [Vault.manifestName, SharedSettings.fileName] {
                 report.skipped.append(.init(path: name, message: "not synced this run: \(Self.describe(error))"))
             }
         }
 
-        // Notebook records (format.md §14): write-once, so the union of both sides.
+        // Notebook records (format.md §14): write-once, so the union of both sides. (Epoch records, §15.6,
+        // go to every target from KH4, key-hierarchy design §12; a vault of one epoch opens without them.)
         // A run bound reached here stops the run like one reached in the notes below: reported (`stoppedEarly`),
         // never thrown, so what the run already replaced (vault.json, settings) still reaches the caller.
         var stoppedBefore: SyncError?
@@ -568,31 +565,12 @@ public final class SyncEngine {
 
         guard let local else {
             guard let remote else { return }
-            // A rewrap journal removed locally is finished business, not a missing file.
-            if name == Vault.journalName, let record, record.stamp != nil, record.stamp == remote.stamp {
-                try settleRemovedJournal(remote: remote, record: record)
-                return
-            }
             try pullMutable(name, remote: remote)
             return
         }
         let localHash = FileDigest.sha256(local)
 
         guard let remote else {
-            // A rewrap journal this device synced that is now gone from the server was removed there when its
-            // change finished. If this device refuses it too (vault.json no longer binds it), it is finished
-            // business here as well: dropped, never put back (putting it back made two devices that had both
-            // taken a pending change's journal hand a stale one to each other for ever).
-            if name == Vault.journalName, record != nil, let vault, let manifest = try localMutable(Vault.manifestName),
-               case .refused? = Vault.incomingJournalProblem(local, local: nil, manifest: manifest, vault: vault) {
-                if !options.dryRun {
-                    try requireLocalWrite("remove \(name)")
-                    try FileManager.default.removeItem(at: root.appendingPathComponent(name))
-                    state.mutable[name] = nil
-                }
-                report.deleted.append(.init(side: "local", path: name))
-                return
-            }
             // Never on the server, or wiped there: (re)create it, never overwriting.
             if try push(name, local, condition: .create) { try recordMutable(name, hash: localHash) }
             return
@@ -623,10 +601,20 @@ public final class SyncEngine {
     /// Both sides changed a mutable file since the last sync (or there is no record).
     private func bothChanged(_ name: String, local: Data, remoteData: Data, stamp: String?,
                              record: SyncState.MutableRecord?) throws {
-        if name == Vault.manifestName && VaultManifest.sameExceptLabel(local, remoteData) {
+        if name == Vault.manifestName && EpochManifest.sameExceptLabel(local, remoteData) {
             // Only the display label differs: the same vault (format.md §1.3). The server's copy is
             // the one every device shares, so it stays, as iCloud Drive's current version does.
             return try accept(name, remoteData, stamp: stamp)
+        }
+        if name == Vault.manifestName, let vault {
+            // One writer (design §5.1): two versions of one epoch are home's, one after the other, and the
+            // newer one's list holds the older one's. The newer stays, on both sides; anything else is a
+            // conflict, never merged.
+            if vault.laterVersion(remoteData) != nil { return try accept(name, remoteData, stamp: stamp) }
+            if let remote = try? EpochManifest.parse(remoteData), vault.isLaterVersion(vault.manifest, of: remote) {
+                if try push(name, local, condition: .unconditional) { return try recordMutable(name, hash: FileDigest.sha256(local)) }
+                return
+            }
         }
         try conflict(name, remote: remoteData,
                      detail: record == nil ? "both sides differ and there is no common ancestor" : "changed on both sides since the last sync")
@@ -688,34 +676,8 @@ public final class SyncEngine {
 
     private func accept(_ name: String, _ data: Data, stamp: String?) throws {
         try requireLocalWrite("write \(name)")
-        if name == Vault.journalName {
-            // A local journal may hold the only copy of an unfinished change's outgoing
-            // secret, and one this device refuses is never taken (format.md §3.3.1,
-            // security review 2026-10, S9, S4).
-            let local = try localMutable(name)
-            // Judged under the vault.json it belongs with: none here yet (a first pull whose
-            // vault.json did not arrive) means it waits, never taken unjudged.
-            guard let manifest = try? localMutable(Vault.manifestName) else {
-                report.skipped.append(.init(path: name, message: "no local vault.json to judge it under yet; not taken"))
-                return
-            }
-            // A first pull has no opened vault: judge under the pulled vault.json with its identities.
-            let judge = vault ?? checker()
-            switch Vault.incomingJournalProblem(data, local: local, manifest: manifest, vault: judge) {
-            case nil: break
-            case .refused(let why)?:
-                if holdInFlightJournal(data, manifest: manifest, vault: judge) { return }
-                remoteJournal = false
-                report.rejected.append(.init(path: name, message: SyncReport.printable(IncomingJournalProblem.refused(why).message)))
-                return
-            case .keepLocal(let why)?:
-                try conflict(name, remote: data, detail: why)
-                return
-            }
-            state.inFlightJournal = nil
-        }
         if name == Vault.manifestName {
-            // Never let a list nobody with the key wrote replace ours (format.md §2.1).
+            // Never let a list nobody with the key wrote replace ours (design §4.3, §5.1).
             let local = try localMutable(name)
             if let why = Vault.incomingManifestProblem(data, local: local, vault: vault) {
                 report.rejected.append(.init(path: name, message: SyncReport.printable(why)))
@@ -726,65 +688,6 @@ public final class SyncEngine {
         guard !options.dryRun else { return }
         try LocalFS.write(data, to: root.appendingPathComponent(name), replacing: true)
         state.mutable[name] = .init(hash: FileDigest.sha256(data), stamp: stamp)
-    }
-
-    /// A refused server journal that may be step 1 of a recipient change
-    /// whose `vault.json` has not reached the server yet
-    /// (`Vault.incomingJournalMayBeInFlight`, format.md §3.3.1 "Refused
-    /// journals"): for `Vault.inFlightJournalWindow` from when this device
-    /// first saw it, it is not taken and not reported as rejected, still
-    /// holds blob collection back (rule 2), and is judged again every run, so
-    /// it is taken once its `vault.json` arrives. True while it is so held.
-    private func holdInFlightJournal(_ data: Data, manifest: Data, vault judge: Vault?) -> Bool {
-        guard Vault.incomingJournalMayBeInFlight(data, manifest: manifest, vault: judge) else {
-            state.inFlightJournal = nil
-            return false
-        }
-        let hash = FileDigest.sha256(data)
-        if state.inFlightJournal?.hash != hash { state.inFlightJournal = .init(hash: hash, firstSeen: options.now) }
-        let since = state.inFlightJournal?.firstSeen ?? options.now
-        guard options.now.timeIntervalSince(since) < Vault.inFlightJournalWindow else { return false }
-        report.skipped.append(.init(path: Vault.journalName, message: "refused for now: it may belong to a recipient change "
-            + "whose vault.json has not reached the server yet (seen since \(Self.compactUTC(since))); judged again next run"))
-        return true
-    }
-
-    /// The server still holds the rewrap journal this device synced and has
-    /// since removed (its change finished here). When this device now refuses
-    /// it (format.md §3.3.1: nothing binds it any more) and the server's
-    /// `vault.json` is the local one, it is deleted there (only that version:
-    /// `If-Match` with its strong ETag), so it holds no device's blob
-    /// collection back and no reader has to judge it again. Otherwise it is
-    /// left: locked, an accepted journal (unfinished change) or one changed
-    /// on the server is never deleted. One this device refuses never holds
-    /// its own collection back (S19).
-    private func settleRemovedJournal(remote: RemoteEntry, record: SyncState.MutableRecord) throws {
-        let name = Vault.journalName
-        func leave(_ why: String) {
-            report.skipped.append(.init(path: name, message: "removed locally; left on the server (\(why))"))
-        }
-        guard vault != nil else { return leave("the vault is locked: it cannot be judged") }
-        let (data, getETag) = try transport.read([name], maxBytes: BoundedRead.maxManifestBytes)
-        try budget.downloaded(data.count)
-        let manifest = try? localMutable(Vault.manifestName)
-        guard case .refused(let why)? = Vault.incomingJournalProblem(data, local: nil, manifest: manifest, vault: vault) else {
-            return leave("this device still accepts it: its recipient change is unfinished")
-        }
-        remoteJournal = false
-        guard FileDigest.sha256(data) == record.hash else {
-            return leave("refused: \(why); it is not the copy this device synced")
-        }
-        guard let manifest, state.mutable[Vault.manifestName]?.hash == FileDigest.sha256(manifest) else {
-            return leave("refused: \(why); the server's vault.json is not this device's yet")
-        }
-        if !options.dryRun {
-            let etag = (remote.etag ?? getETag).flatMap { Self.isStrong($0) ? $0 : nil }
-            guard try transport.delete([name], ifETag: etag) else {
-                return leave("it changed on the server while being removed")
-            }
-            state.mutable[name] = nil
-        }
-        report.deleted.append(.init(side: "remote", path: name))
     }
 
     /// The precondition for replacing a server copy that was just fetched

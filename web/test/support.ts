@@ -19,6 +19,14 @@ export function sampleIdentity(): string {
   return line;
 }
 
+/** The recovery key of the committed fixtures (`sample-recovery.key`): the recovery entry's identity. */
+export function recoveryIdentity(): string {
+  const text = readFileSync(join(fixtures, "sample-recovery.key"), "utf8");
+  const line = text.split("\n").find((l) => l.startsWith("AGE-SECRET-KEY-PQ-"));
+  if (!line) throw new Error("no key in sample-recovery.key");
+  return line;
+}
+
 export class NodeDirSource implements VaultSource {
   constructor(readonly root: string, readonly label = root) {}
 
@@ -55,7 +63,9 @@ export async function sealFor(vault: UnlockedVault, json: unknown, vaultId = vau
 
 export async function unlockFixture(dir: string): Promise<{ source: NodeDirSource; vault: UnlockedVault }> {
   const source = new NodeDirSource(dir);
-  const vault = await UnlockedVault.unlock(parseManifest(await source.read("vault.json", 1 << 24)), sampleIdentity());
+  const manifest = parseManifest(await source.read("vault.json", 1 << 24));
+  const record = await source.read(manifest.epochRecord, 1 << 26).catch(() => undefined);
+  const vault = await UnlockedVault.unlock(manifest, sampleIdentity(), record);
   return { source, vault };
 }
 

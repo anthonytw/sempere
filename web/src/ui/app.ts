@@ -10,8 +10,8 @@ import { CachingSource, cacheNamespace } from "../vault/cache.ts";
 import { type ViewerConfig, loadConfig } from "../vault/config.ts";
 import { type ListingProgress, listVault } from "../vault/listing.ts";
 import { HTTPSource, type HTTPMode, SourceError, type VaultSource, readOptional } from "../vault/source.ts";
-import { type RecipientsStatus, UnlockedVault, VaultError, limits, parseIdentity, parseManifest, readOnlyReasons,
-  recipientsWarningText, type VaultManifest } from "../vault/vault.ts";
+import { type ListStatus, UnlockedVault, VaultError, deviceEntries, limits, listWarningText, parseIdentity, parseManifest,
+  readOnlyReasons, type VaultManifest } from "../vault/vault.ts";
 import { newerSummary } from "../format/newer.ts";
 import { clear, formatDate, h } from "./dom.ts";
 import { NoteView, hasUnknownPaper } from "./noteview.ts";
@@ -183,16 +183,10 @@ export class App {
     }
     this.location = vaultLocation(src);
     // Encrypted revisions and blobs fetched over HTTP are kept in the browser (write-once files),
-    // under the vault's key state: a recipient change or a finished rewrap drops the old copies (P4).
+    // under the vault's key state: a new epoch or a finished re-encryption drops the old copies (P4).
     if (src instanceof HTTPSource) {
-      let journal: Uint8Array | undefined;
-      try {
-        journal = await readOptional(src, "rewrap-journal.json", limits.manifestBytes);
-      } catch {
-        journal = undefined;
-      }
       const caching = new CachingSource(src, await fileCache(),
-        await cacheNamespace(src.label, manifest.vaultId, manifest.vaultSecret, journal));
+        await cacheNamespace(src.label, manifest.vaultId, manifest.epochId, manifest.reencryptPending));
       await caching.dropOtherNamespaces();
       this.source = caching;
     } else {
@@ -213,8 +207,14 @@ export class App {
     const button = h("button", { text: t("Unlock"), attrs: { type: "submit" } });
     const unlock = async (text: string): Promise<string> => {
       const identity = parseIdentity(text);
-      const journal = await readOptional(src, "rewrap-journal.json", limits.manifestBytes);
-      this.vault = await UnlockedVault.unlock(m, identity, journal);
+      // The epoch record (format.md §15.6) lets the unlock check root and link; without it the list is reported.
+      let record: Uint8Array | undefined;
+      try {
+        record = await readOptional(src, m.epochRecord, limits.epochRecordBytes);
+      } catch {
+        record = undefined;
+      }
+      this.vault = await UnlockedVault.unlock(m, identity, record);
       return identity;
     };
     const failed = (err: unknown) =>
@@ -314,7 +314,7 @@ export class App {
     clear(this.root);
     this.root.append(h("div", { class: "welcome" },
       h("h1", { text: t("Unlock vault") }),
-      h("p", { class: "lede" }, `${t("Vault")} `, h("code", { text: src.label }), ` · ${tn("{count} keys", m.recipients.length)}`),
+      h("p", { class: "lede" }, `${t("Vault")} `, h("code", { text: src.label }), ` · ${tn("{count} keys", m.keys.length)}`),
       error ? h("p", { class: "error", text: error, attrs: { role: "alert" } }) : null,
       remembered,
       stored,
@@ -364,7 +364,7 @@ export class App {
         h("strong", { text: "Sempere" }), h("span", { class: "vault-label", text: src.label, title: src.label }), this.status,
         clearCacheButton(), languagePicker(() => this.changedLanguage()),
         h("button", { text: t("Lock"), class: "secondary", attrs: { type: "button" }, title: t("Forget the key and close the vault"), on: { click: () => this.lock() } })),
-      ...recipientsWarning(this.vault?.recipientsStatus),
+      ...listWarning(this.vault?.listStatus),
       h("div", { class: "columns" }, this.sidebar,
         h("div", { class: "list-column" }, h("div", { class: "search" }, searchBox, this.transcripts?.element), this.list),
         this.detail)));
@@ -700,7 +700,7 @@ export class App {
     const blobs = this.source && this.vault ? new NoteBlobs(this.source, this.vault, note.id) : undefined;
     const videos = new VideosPanel(state, blobs);
     this.videos = videos;
-    const recordings = new RecordingsPanel(state.recordings, blobs, this.vault?.manifest.recipients);
+    const recordings = new RecordingsPanel(state.recordings, blobs, this.vault ? deviceEntries(this.vault.manifest) : undefined);
     this.recordings = recordings;
     this.view = new NoteView(state, blobs, (id) => void videos.play(id), (id) => recordings.play(id));
     this.detail.replaceChildren(
@@ -723,8 +723,8 @@ interface ListRow {
   button: HTMLElement;
 }
 
-/** A banner when vault.json's device list does not check (format.md §2.1). */
-function recipientsWarning(status: RecipientsStatus | undefined): HTMLElement[] {
-  const text = recipientsWarningText(status);
+/** A banner when vault.json does not check by itself (format.md §15.3). */
+function listWarning(status: ListStatus | undefined): HTMLElement[] {
+  const text = listWarningText(status);
   return text ? [h("p", { class: "warning", attrs: { role: "alert" }, text })] : [];
 }

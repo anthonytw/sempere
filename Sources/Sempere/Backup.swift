@@ -170,7 +170,7 @@ public struct BackupVerifyReport: Hashable, Sendable {
     }
     /// Every problem `isHealthy` counts, one line each ("modified  notes/…
     /// (detail)"): `backup.json`, the mirrored vault, its `vault.json` and
-    /// rewrap journal, then files. Unindexed files are not problems. Empty
+    /// re-encryption journal, then files. Unindexed files are not problems. Empty
     /// for a healthy backup; for display (the app's Verify Backup).
     public var problemLines: [String] {
         func line(_ status: String, _ path: String, _ detail: String?) -> String {
@@ -180,7 +180,6 @@ public struct BackupVerifyReport: Hashable, Sendable {
         if let vaultProblem { out.append("vault: \(vaultProblem)") }
         if let vault {
             out += vault.manifestProblems.map { "vault.json: \($0)" }
-            if let j = vault.journalProblem { out.append("rewrap journal: \(j)") }
         }
         out += files.filter { $0.status != .ok && $0.status != .unindexed }
             .map { line($0.status.rawValue, $0.path, $0.detail) }
@@ -320,8 +319,10 @@ public enum Backup {
     // MARK: - Listing
 
     /// Relative paths of the vault's format files: `vault.json`,
-    /// `rewrap-journal.json`, `settings.age` (format.md §13), `keys/*.key.age`,
-    /// `notebooks/*.notebook.age` (§14), `notes/<id>/<revision>`.
+    /// `reencrypt-journal.age` (format.md §15.8), `settings.age` (§13), the
+    /// passphrase copy `keys/recovery-*.key.age` (§15.11), the epoch records
+    /// `epochs/*.epoch.age` (§15.6), `notebooks/*.notebook.age` (§14),
+    /// `notes/<id>/<revision>`.
     /// Temporary and unknown files are skipped.
     static func formatFiles(in root: URL) throws -> [String] {
         var out: [String] = []
@@ -333,6 +334,11 @@ public enum Backup {
         for e in try FileIO.entries(keys)
         where isKeyFileName(e) && !FileIO.isDirectory(keys.appendingPathComponent(e)) {
             out.append("\(Vault.keysName)/\(e)")
+        }
+        let epochs = root.appendingPathComponent(Vault.epochsName)
+        for e in try FileIO.entries(epochs)
+        where Vault.isEpochRecordFileName(e) && !FileIO.isDirectory(epochs.appendingPathComponent(e)) {
+            out.append("\(Vault.epochsName)/\(e)")
         }
         let notebooks = root.appendingPathComponent(NotebookRecords.folderName)
         for e in try FileIO.entries(notebooks)
@@ -366,6 +372,7 @@ public enum Backup {
         if last == Vault.manifestName || last == Vault.journalName { return BoundedRead.maxManifestBytes }
         if parts.count == 1, last == SharedSettings.fileName { return SharedSettings.maxFileBytes }
         if parts.count >= 2, parts[parts.count - 2] == Vault.keysName { return BoundedRead.maxSmallFileBytes }
+        if parts.count >= 2, parts[parts.count - 2] == Vault.epochsName { return EpochRecord.maxBytes }
         if parts.count >= 2, parts[parts.count - 2] == NotebookRecords.folderName { return NotebookRecords.maxFileBytes }
         if parts.count >= 2, parts[parts.count - 2] == Vault.attachmentsName { return BoundedRead.maxBlobFileBytes }
         return BoundedRead.maxRevisionBytes
@@ -640,7 +647,11 @@ public enum Backup {
         }
         // Revisions first, the small mutable files last, so a backup whose
         // run was cut short never holds a vault.json newer than its notes.
+        // The epoch record goes before the vault.json that names it (format.md §15.6); notebook records
+        // (§14) are write-once like revisions.
         let ordered = sourceFiles.filter { $0.hasPrefix(Vault.notesName + "/") }
+            + sourceFiles.filter { $0.hasPrefix(NotebookRecords.folderName + "/") }
+            + sourceFiles.filter { $0.hasPrefix(Vault.epochsName + "/") }
             + sourceFiles.filter { $0.hasPrefix(Vault.keysName + "/") }
             + [SharedSettings.fileName, Vault.journalName, Vault.manifestName].filter(sourceFiles.contains)
         for path in ordered {
@@ -689,8 +700,8 @@ public enum Backup {
             }
         }
 
-        // A finished recipient change removes the journal: so does the
-        // backup, keeping its last copy under versions/.
+        // A finished re-encryption removes its journal (format.md §15.8): so
+        // does the backup, keeping its last copy under versions/.
         if !sourceFiles.contains(Vault.journalName), FileIO.exists(url(dest, Vault.journalName))
             || BoundedRead.firstLink(under: dest, Vault.journalName) != nil {
             do {
@@ -708,7 +719,7 @@ public enum Backup {
         let gone = goneAll.filter { !isBlobPath($0) }
         report.kept += goneAll.filter(isBlobPath).sorted()
         if options.prune && !gone.isEmpty {
-            let backupVault = try? Vault.open(at: dest, identities: source.identities)
+            let backupVault = try? Vault.open(at: dest, identities: source.unlockIdentities)
             let byNote = Dictionary(grouping: gone) { $0.split(separator: "/")[1] }
             for (note, paths) in byNote.sorted(by: { $0.key < $1.key }) {
                 let allowed = prunable(note: String(note), paths: paths, source: source, backup: backupVault,

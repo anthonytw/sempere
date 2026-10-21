@@ -327,18 +327,20 @@ struct TwoDeviceSyncAppTests {
         w.b.model.close()
     }
 
-    /// Review of #70, F1 and F4: another device (the CLI) rotates the vault's secret. B's run takes the new
-    /// `vault.json`; B runs upload-only until it has opened the vault again under it, reopens the note it
-    /// had open (and says so), and the notes the other device writes under the new secret arrive.
+    /// Review of #70, F1 and F4: home (here the CLI, with the fixture's device keys) approves a device.
+    /// B's run takes the new `vault.json`; B runs upload-only until it has opened the vault again under
+    /// it, reopens the note it had open (and says so), and the notes written afterwards arrive.
+    /// TODO(KH3): a removal (a new epoch, its key rotated) arriving the same way.
     @Test func aRemoteKeyChangeIsAppliedAndNotesWrittenAfterItArrive() async throws {
         let w = try await Self.world()
         let note = try #require(w.b.model.notes.first?.id)
         w.b.model.selectedNoteID = note
         try await w.b.model.openEditor(for: note)
-        let before = try #require(w.b.model.editor)
+        let editorBefore = try #require(w.b.model.editor)
 
-        // Another device, with the CLI: a folder copy of the server, a key added, then removed (rotation).
-        let identity = try IdentityFile.parse(w.key)
+        // Another device, with the CLI: a folder copy of the server, opened as home, approves a device.
+        let home = try DeviceKeys.parse(w.key)
+        let identity = home.nativeIdentity
         let cliDir = TestTemp.root.appendingPathComponent(UUID().uuidString).appendingPathComponent("cli.sempere")
         let cliState = cliDir.deletingLastPathComponent().appendingPathComponent("state.json")
         func cliSync(_ v: Vault?) throws {
@@ -347,29 +349,23 @@ struct TwoDeviceSyncAppTests {
             _ = try SyncEngine(directory: cliDir, vault: v, remote: w.server.remote, stateURL: cliState, options: o).run()
         }
         try cliSync(nil)
-        var cli = try Vault.open(at: cliDir, identities: [identity])
-        // 1. A key added (the list changes, the secret stays): B reopens the vault and the note it had open.
-        let other = try NativeIdentity.generate(.postQuantum)
-        _ = try cli.addRecipient(other.recipient, label: "other")
+        var cli = try Vault.open(at: cliDir, identities: [identity], signing: home.signing)
+        #expect(cli.isHome)
+        // A device approved (the list grows, the epoch stays): B reopens the vault and the note it had open.
+        let before = w.b.model.vault?.devices.count ?? 0
+        let other = try DeviceKeys.generate()
+        _ = try cli.approveDevice(other.joinRequest(vaultId: cli.vaultId, name: "Other", kind: "ipad"))
         try cliSync(cli)
         await w.b.model.webdav?.syncNow()
         #expect(await TS.waitUntil(timeout: .seconds(10)) {
-            !w.b.model.syncVaultStale && w.b.model.vault?.keysMatchManifestOnDisk() == true
+            !w.b.model.syncVaultStale && w.b.model.vault?.devices.count == before + 1
         }, "B opened the vault again under the new list")
+        #expect(w.b.model.listAlert == nil, "the later version by home checks")
         #expect(await TS.waitUntil { w.b.model.editor?.noteID == note }, "the open note was opened again")
-        #expect(w.b.model.editor !== before)
+        #expect(w.b.model.editor !== editorBefore)
         #expect((w.b.model.editor?.remoteUpdates ?? 0) >= 1, "and says it was updated from another device")
 
-        // 2. That key removed: the secret rotates. (B's older files stay under the old secret until
-        // rewrap-replace, KH6; what matters here is what is written from now on.)
-        _ = try cli.removeRecipient(other.recipient)
-        try cliSync(cli)
-        await w.b.model.webdav?.syncNow()
-        #expect(await TS.waitUntil(timeout: .seconds(10)) {
-            !w.b.model.syncVaultStale && w.b.model.vault?.keysMatchManifestOnDisk() == true
-        }, "B opened the vault again under the new secret")
-
-        // A note written under the new secret arrives.
+        // A note written after the change arrives.
         let fresh = UUID()
         _ = try cli.apply([.setMeta(.title("After the key change"))], to: fresh, deviceState: TS.deviceStateURL(), app: "cli/0")
         try cliSync(cli)

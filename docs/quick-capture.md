@@ -15,17 +15,17 @@ it is ready, its transcript in that card. Format: `format.md` §11. Code: core
 
 ## Why a capture key and an inbox
 
-Age encryption needs only the public recipients, but the format's integrity
-layer needs the vault secret:
+Age encryption needs only a public key (the vault identity's `v_e`, §15.2),
+but the format's integrity layer needs the vault key `K_e`:
 
-- every revision body carries HMAC-SHA256(vaultSecret, …) (§4);
-- every blob's file name is HMAC-SHA256(vaultSecret, sha256) (§8.1.2).
+- every revision body carries HMAC-SHA256(tagKey, …) (§4);
+- every blob's file name is HMAC-SHA256(blobNameKey, sha256) (§8.1.2);
 
-The secret is age-encrypted to the recipients, so a device that cannot
-decrypt cannot write a valid revision or blob. Two designs allow capture
-anyway:
+both keys derived from `K_e`, which `vault.json` wraps only to listed keys, so
+a device that cannot unwrap it cannot write a valid revision or blob. Two
+designs allow capture anyway:
 
-1. **Keep the vault secret on the device, outside Face ID** (Keychain,
+1. **Keep the vault key on the device, outside Face ID** (Keychain,
    readable after the first unlock), and write ordinary revisions. Whoever
    extracts it (a forensic dump of a phone after its first unlock, malware
    running as the app) would get the per-device summary and drawing caches
@@ -33,7 +33,7 @@ anyway:
    recently opened notes, and could forge revisions into any note. The
    caches are otherwise protected by Face ID.
 2. **A capture key and an inbox (used).** The device keeps a key derived
-   from the secret that can only *add voice notes to the inbox*. Captures are
+   from `K_e` that can only *add voice notes to the inbox*, and `v_e`. Captures are
    sealed into `inbox/`, and a device that can read the vault adopts them as
    ordinary revisions. A capture can only be read by a device that can
    unlock the vault, and adoption happens exactly then.
@@ -45,13 +45,13 @@ vault, and the vault's integrity.
 
 | Adversary | What they get |
 | --- | --- |
-| Storage (iCloud, a WebDAV host, a stolen backup) | Inbox files are age-encrypted to the recipients. Without the capture key they cannot add a capture that verifies. They see that captures exist, their sizes and times. A junk file costs each device one streamed pass in constant memory (the tag is checked before the file is read whole; a transcript file is bounded at about 64 MiB), and it is then not read again for an hour, doubling up to a week, while it does not change (`format.md` §11.2). |
-| Storage that rewrites `vault.json` (adds its own recipient) | A capture is sealed to the capture profile's recipients only, never to the list in `vault.json`, and a profile is only made or refreshed from a list that checks (`format.md` §2.1): a planted recipient never receives a voice note. The app refuses to enable or refresh quick capture while the list does not check. |
+| Storage (iCloud, a WebDAV host, a stolen backup) | Inbox files are age-encrypted to the vault identity. Without the capture key they cannot add a capture that verifies. They see that captures exist, their sizes and times. A junk file costs each device one streamed pass in constant memory (the tag is checked before the file is read whole; a transcript file is bounded at about 64 MiB), and it is then not read again for an hour, doubling up to a week, while it does not change (`format.md` §11.2). |
+| Storage that rewrites `vault.json` (adds its own key) | A capture is sealed to the capture profile's `v_e` only, never to anything read from `vault.json`, and a profile is only made or refreshed from a `vault.json` that checks (`format.md` §2.1): a planted key never receives a voice note. The app refuses to enable or refresh quick capture while the list does not check. |
 | A thief with the locked device, before its first unlock after boot | Nothing. The profile is a Keychain item readable only after the first unlock, and audio on disk (a recording interrupted by a crash or a restart) is protected until the first unlock. |
 | Someone holding the locked device after its first unlock | They can record voice notes from the Lock Screen widget, Control Center, the Action button or Siri without unlocking (the intents need no authentication), and those notes look like the owner's. They cannot listen to any. |
-| Forensic extraction after the first unlock (or code running as the app) | The capture profile: public recipients (public anyway) and the capture key. With it they can put voice notes in the inbox, under any title (at most 300 characters) and in any notebook (the manifest names both), but only as that device: each profile holds its own device's capture key (`format.md` §11.1), so the note says "Voice note from <that device>" (`captured`, §8.3.1) and cannot pass as another device's, and they cannot add a transcript to another device's voice note. Removing the device's key (Keys) stops them at once (next row). They cannot read any capture, any note, or the caches, and cannot change existing notes: a transcript is bound to its capture's audio (`format.md` §11.2), which they never see. A voice note being recorded or sealed at that moment is plaintext in the app's container until it is sealed (seconds after it stops). |
+| Forensic extraction after the first unlock (or code running as the app) | The capture profile: `v_e` (a public key) and the capture key. With it they can put voice notes in the inbox, under any title (at most 300 characters) and in any notebook (the manifest names both), but only as that device: each profile holds its own device's capture key (`format.md` §11.1), so the note says "Voice note from <that device>" (`captured`, §8.3.1) and cannot pass as another device's, and they cannot add a transcript to another device's voice note. Removing the device (a new epoch, key hierarchy KH3; not in this version) will stop them (next row). They cannot read any capture, any note, or the caches, and cannot change existing notes: a transcript is bound to its capture's audio (`format.md` §11.2), which they never see. A voice note being recorded or sealed at that moment is plaintext in the app's container until it is sealed (seconds after it stops). |
 | Someone using the unlocked device | They can record voice notes, which is the feature. They cannot listen to past ones without unlocking the vault. |
-| A removed device (its key taken off the vault) | Removing a recipient rotates the vault secret (§3.3), so the old capture key no longer verifies. Captures already in the inbox at that moment are re-tagged and re-encrypted by the recipient change (`format.md` §3.3.1), so they are still adopted, and the removed key cannot open them any more; its later captures are reported, kept in the inbox and never adopted, also while the recipient change is unfinished: a reader derives device capture keys only for devices still listed. Captures it sealed before its removal are refused the same way. A removed device that held the vault key itself (not only a profile) knows the outgoing secret, and can seal voice notes attributed to a listed device until that rewrap finishes, as it can tag revisions (`format.md` §3.3.1). The same holds for a device that is still authorized but has not unlocked the vault since the key change (its profile still has the old capture key): voice notes it records in that window stay in the inbox unadopted, readable only with the stock-CLI recipe (`format.md` §11.2). Its profile also encrypts to the old recipient list: re-enable quick capture after key changes (the app refreshes the profile at every unlock and right after a key change on that device; the CLI needs `sempere inbox enable` again). |
+| A removed device (key hierarchy KH3; not in this version) | Removing a device starts a new epoch with a new vault key, so the old capture keys no longer verify, and a reader derives device capture keys only for devices still listed: its later captures are reported, kept in the inbox and never adopted. What happens to captures already in the inbox at that moment is specified with KH3 (`docs/design/key-hierarchy.md` §5.7). A device whose profile is of an older epoch seals voice notes that stay unadopted, readable only with the stock-CLI recipe (`format.md` §11.2): its profile must be made again after a new epoch (the CLI: `sempere inbox enable`). |
 
 ### Plaintext audio
 
@@ -64,7 +64,7 @@ vault, and the vault's integrity.
   unlocked, and a voice note started and stopped on the Lock Screen is
   assembled from its closed segment files and read back to be sealed before
   any unlock; it would fail to seal, and the voice note would be lost.
-- On stop, the audio is read into memory, sealed (age, to the recipients),
+- On stop, the audio is read into memory, sealed (age, to the vault identity),
   and written to the vault inbox or the queue.
 - If transcription is on, the transcript is made on device from that file
   (SpeechTranscriber, else SFSpeechRecognizer on device only; never a server)

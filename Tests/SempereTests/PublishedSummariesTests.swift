@@ -7,7 +7,7 @@ import XCTest
 /// secret opens, entries keyed by revision names, never created behind the
 /// user's back, and bounded and typed on hostile bytes.
 final class PublishedSummariesTests: VaultTestCase {
-    static let vectorSecret = try! VaultSecret(bytes: Data(0..<32))
+    static let vectorSecret = try! VaultEpochKey(bytes: Data(0..<32))
     static let vectorVault = UUID(uuidString: "0d1c6a1e-9a44-4a6c-8a6b-0e2a0e9b1f3c")!
     static let vectorNonce = Data(0xa0...0xab)
 

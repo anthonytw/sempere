@@ -34,8 +34,9 @@ struct VaultIndex: ParsableCommand {
             FileHandle.standardOutput.write(data)
             return
         }
-        // Into the vault only if it may be written (format.md §7.3: exit 7).
-        if out == nil { try vault.requireWritable() }
+        // Into the vault only if it may be written (format.md §7.3: exit 7). The listing holds no content and
+        // needs no key; with one, the usual write checks apply.
+        if out == nil { try vault.isLocked ? vault.requireNotReadOnly() : vault.requireWritable() }
         let url = out.map { URL(fileURLWithPath: $0) } ?? vault.webIndexURL
         try data.write(to: url, options: .atomic)
         if output.json {

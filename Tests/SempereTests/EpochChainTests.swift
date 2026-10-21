@@ -118,7 +118,7 @@ final class EpochChainTests: VaultTestCase {
     }
 
     typealias V = EpochKeysTests.Vectors
-    static func unhex(_ s: String) -> Data { SecretLinkTests.unhex(s) }
+    static func unhex(_ s: String) -> Data { EpochKeysTests.unhex(s) }
 
     // MARK: - Shared signature and join vectors
 
@@ -1173,7 +1173,7 @@ final class EpochChainTests: VaultTestCase {
             let folder = dir.appendingPathComponent("notes/\(note)")
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let json = Data(#"{"epoch":\#(e)}"#.utf8)
-            let body = try BodyFraming.frame(json: json, noteId: note, filename: name, secret: VaultSecret(bytes: k[e - 1].tagKey))
+            let body = try BodyFraming.frame(json: json, noteId: note, filename: name, secret: k[e - 1])
             try AgeFile.encrypt(body, to: [try k[e - 1].vaultIdentity().recipient]).write(to: folder.appendingPathComponent(name))
             expected["notes/\(note)/\(name)"] = #"{"epoch":\#(e)}"#
         }

@@ -139,14 +139,14 @@ public enum KeyText {
                 return .failure(.damagedSecretKey)
             }
             if let declared, declared != identity.recipient.string {
-                return .failure(.mismatchedPublicKey(RecipientsProblem.abbreviate(declared)))
+                return .failure(.mismatchedPublicKey(ListProblem.abbreviate(declared)))
             }
             return .success(.identity(identity))
         }
         if damaged { return .failure(.damagedSecretKey) }
         if classicSecrets > 0 { return .failure(.classicSecretKey) }
-        if let key = publicKeys.first { return .failure(.publicKey(RecipientsProblem.abbreviate(key))) }
-        if let key = classicPublicKeys.first { return .failure(.classicPublicKey(RecipientsProblem.abbreviate(key))) }
+        if let key = publicKeys.first { return .failure(.publicKey(ListProblem.abbreviate(key))) }
+        if let key = classicPublicKeys.first { return .failure(.classicPublicKey(ListProblem.abbreviate(key))) }
         return .failure(size == 0 || text.trimmingCharacters(in: ignorable).isEmpty ? .empty : .notAKey)
     }
 

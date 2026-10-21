@@ -155,7 +155,7 @@ struct RecordingsMenu: View {
                 Divider()
                 ForEach(editor.recordings) { r in
                     Menu(Self.title(r)) {
-                        if let by = Self.capturedBy(r, recipients: model.vault?.recipients ?? []) {
+                        if let manifest = model.vault?.manifest, let by = Self.capturedBy(r, manifest: manifest) {
                             Text(by)   // who recorded a voice note adopted from the inbox (format.md §8.3.1)
                         }
                         Button("Play", systemImage: "play") { Task { await model.play(r, in: editor) } }
@@ -194,9 +194,9 @@ struct RecordingsMenu: View {
     /// Who captured a voice note adopted from the inbox (format.md §8.3.1,
     /// §11.3): the device's name while it is in the vault; nil for other
     /// recordings.
-    static func capturedBy(_ r: Recording, recipients: [VaultManifest.Recipient]) -> String? {
+    static func capturedBy(_ r: Recording, manifest: EpochManifest) -> String? {
         guard let c = r.captured else { return nil }
-        guard let label = c.label(in: recipients) else {
+        guard let label = c.label(in: manifest) else {
             return String(localized: "Voice note from a device no longer in this vault", comment: "The capturing device's key was removed from the vault")
         }
         // A key without a label shows as "Device", as the CLI lists it.

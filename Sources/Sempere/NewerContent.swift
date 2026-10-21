@@ -307,7 +307,7 @@ struct RevisionMarkers: Decodable {
             }
         }
         if let format, SempereFormat.isNewer(format) { return true }
-        return !(features ?? []).allSatisfy(VaultManifest.knownFeatures.contains)
+        return !(features ?? []).allSatisfy(EpochManifest.knownFeatures.contains)
     }
 
     /// Peeks `json`'s markers: true for a newer revision, false otherwise or

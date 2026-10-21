@@ -109,7 +109,7 @@ public enum PublishedSummaries {
     }
 
     /// The key for `secret`.
-    static func key(_ secret: VaultSecret) -> SymmetricKey {
+    static func key(_ secret: VaultEpochKey) -> SymmetricKey {
         HKDF<SHA256>.deriveKey(inputKeyMaterial: secret.key, info: Data(keyInfo.utf8), outputByteCount: 32)
     }
 
@@ -120,7 +120,7 @@ public enum PublishedSummaries {
     // MARK: - Sealing
 
     /// `SMPU 0x01 ‖ nonce ‖ AES-256-GCM(plaintext) ‖ tag`; `nonce` is random unless given (test vectors).
-    static func seal(_ plaintext: Data, secret: VaultSecret, vaultId: UUID, nonce: Data? = nil) throws -> Data {
+    static func seal(_ plaintext: Data, secret: VaultEpochKey, vaultId: UUID, nonce: Data? = nil) throws -> Data {
         let n = try nonce.map { try AES.GCM.Nonce(data: $0) } ?? AES.GCM.Nonce()
         let box = try AES.GCM.seal(plaintext, using: key(secret), nonce: n, authenticating: aad(vaultId: vaultId))
         guard let combined = box.combined else { throw PublishedSummariesError.damaged("cannot seal") }
@@ -128,7 +128,7 @@ public enum PublishedSummaries {
     }
 
     /// The plaintext of a sealed file; throws `damaged` for anything that is not one of this vault's.
-    static func open(_ data: Data, secret: VaultSecret, vaultId: UUID) throws -> Data {
+    static func open(_ data: Data, secret: VaultEpochKey, vaultId: UUID) throws -> Data {
         guard data.count <= maxFileBytes else { throw PublishedSummariesError.damaged("larger than \(maxFileBytes) bytes") }
         guard data.count >= magic.count + nonceSize + tagSize, data.prefix(magic.count).elementsEqual(magic) else {
             throw PublishedSummariesError.damaged("not a published summaries file")
@@ -346,7 +346,8 @@ extension Vault {
     public func refreshPublishedSummaries(cacheDirectory: URL? = nil, ownListing: [String: [String]]? = nil) throws -> Bool {
         // A read-only vault is never written, not even its summaries (format.md §7.3).
         guard FileIO.exists(publishedSummariesURL), canRead, !isReadOnly,
-              let vault = try? Vault.open(at: url, identities: identities) else { return false }
+              let vault = try? Vault.open(at: url, identities: unlockIdentities, signing: signing, trust: trustStore,
+                                            root: manifest.root) else { return false }
         return try vault.refreshOpenedPublishedSummaries(
             cache: cacheDirectory.flatMap { try? SummaryCache(directory: $0, vault: vault) }, ownListing: ownListing)
     }

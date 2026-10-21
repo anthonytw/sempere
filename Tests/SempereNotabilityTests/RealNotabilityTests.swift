@@ -3,6 +3,7 @@ import Age
 import Foundation
 import ImportTestSupport
 import SempereRender
+import VaultTestSupport
 import Sempere
 import XCTest
 @testable import SempereImport
@@ -282,8 +283,7 @@ final class RealNotabilityTests: XCTestCase {
         }
         guard let samples = Self.samples else { throw XCTSkip("SEMPERE_NOTABILITY_SAMPLES not set") }
         let identity = try NativeIdentity.generate(.postQuantum)
-        let vault = try Vault.create(at: URL(fileURLWithPath: target), recipients: [identity.recipient],
-                                     identities: [identity])
+        let vault = try TestVaults.create(at: URL(fileURLWithPath: target), identities: [identity])
         var clock = HybridClock()
         let started = Date()
         let report = try NotabilityImporter.import(paths: samples, into: vault, device: DeviceID("1a2b3c4d")!,

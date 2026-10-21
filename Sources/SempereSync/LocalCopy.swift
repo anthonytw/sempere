@@ -43,7 +43,7 @@ public struct LocalCopy: Sendable {
     public var label: String? {
         let url = folder.appendingPathComponent(Vault.manifestName)
         guard let data = try? BoundedRead.contents(of: url, maxBytes: BoundedRead.maxManifestBytes) else { return nil }
-        return VaultManifest.peekLabel(data)
+        return VaultLabelText.peekLabel(data)
     }
 
     /// True when the copy holds a vault (`vault.json`).
@@ -141,7 +141,7 @@ public struct LocalCopy: Sendable {
 
     /// Uploads what the server lacks and removes there what local
     /// compaction or blob collection explains; never changes the copy
-    /// (`SyncOptions.pushOnly`). A `vault.json` or rewrap journal the
+    /// (`SyncOptions.pushOnly`). A `vault.json` the
     /// server got from someone else since this copy's last sync is kept and
     /// reported in `conflicts` (`keepServerChanges`).
     ///
@@ -176,13 +176,13 @@ public struct LocalCopy: Sendable {
     }
 
     /// Files of the copy the server has not confirmed: revisions and blobs
-    /// never recorded by a sync, plus `vault.json` / `rewrap-journal.json`
-    /// when they differ from what was last synced. Zero after a clean push.
+    /// never recorded by a sync, plus `vault.json` when it differs from
+    /// what was last synced. Zero after a clean push.
     /// Notes a partial copy has not fetched in full are not counted.
     public func unconfirmedChanges() -> Int {
         let state = (try? SyncState.load(stateURL)) ?? nil
         var count = 0
-        for name in [Vault.manifestName, Vault.journalName] {
+        for name in [Vault.manifestName] {
             let url = folder.appendingPathComponent(name)
             guard let data = try? BoundedRead.contents(of: url, maxBytes: BoundedRead.maxManifestBytes) else { continue }
             if state?.mutable[name]?.hash != FileDigest.sha256(data) { count += 1 }
@@ -284,45 +284,8 @@ public struct LocalCopy: Sendable {
             refused.errors.append(.init(path: Vault.manifestName, message: SyncReport.printable(why)))
             return (refused, false)
         }
-        try settleJournal(identities: identities, report: &report)
         try swapIn()
         return (report, true)
-    }
-
-    /// Decides which `rewrap-journal.json` the new copy gets, as a sync does
-    /// (format.md §3.3.1): the staging run had no journal and no unlocked
-    /// vault, so it took the server's unjudged. It is judged now under the
-    /// downloaded `vault.json` and `identities`: one this device refuses is
-    /// dropped (reported in `rejected`), and the copy's own journal, which
-    /// may hold the only copy of an unfinished change's outgoing secret, is
-    /// kept unless this device accepts the server's in its place. One the
-    /// server lacks stays too.
-    private func settleJournal(identities: [any AgeIdentity], report: inout SyncReport) throws {
-        let name = Vault.journalName
-        let staged = stagingFolder.appendingPathComponent(name)
-        let max = BoundedRead.maxManifestBytes
-        let incoming = FileManager.default.fileExists(atPath: staged.path) ? try BoundedRead.contents(of: staged, maxBytes: max) : nil
-        let ownURL = folder.appendingPathComponent(name)
-        let own = FileManager.default.fileExists(atPath: ownURL.path) ? try BoundedRead.contents(of: ownURL, maxBytes: max) : nil
-        func keepOwn() throws {
-            guard let own else { return }
-            _ = try LocalFS.write(own, to: staged, replacing: true)
-        }
-        guard let incoming else { return try keepOwn() }
-        if incoming == own { return }
-        let manifest = try? BoundedRead.contents(of: stagingFolder.appendingPathComponent(Vault.manifestName), maxBytes: max)
-        let current = try? Vault.open(at: folder, identities: identities)
-        switch Vault.incomingJournalProblem(incoming, local: own, manifest: manifest, vault: current) {
-        case nil:
-            return
-        case .refused(let why)?:
-            report.rejected.append(.init(path: name, message: SyncReport.printable(IncomingJournalProblem.refused(why).message)))
-            try LocalFS.remove(staged)
-            try keepOwn()
-        case .keepLocal(let why)?:
-            report.conflicts.append(.init(path: name, remoteCopy: nil, detail: SyncReport.printable(why)))
-            try keepOwn()
-        }
     }
 
     /// Why the downloaded `vault.json` may not replace the copy's, or nil (`Vault.incomingManifestProblem`
@@ -350,16 +313,18 @@ public struct LocalCopy: Sendable {
         }
         // A conflict copy (`<name>.conflict-…`, `SyncEngine.conflict`) is this device's only record of
         // what the server held when both sides changed; it never goes to the server.
-        let mutableBases = [Vault.manifestName, Vault.journalName, SharedSettings.fileName]
+        let mutableBases = [Vault.manifestName, SharedSettings.fileName]
             .map { ($0 as NSString).deletingPathExtension + ".conflict-" }
         for f in (try? LocalFS.entries(folder)) ?? [] where mutableBases.contains(where: { f.hasPrefix($0) }) {
             let from = folder.appendingPathComponent(f)
             guard !FileIO.isDirectory(from) else { continue }
             try place(from, target.appendingPathComponent(f))
         }
-        let keys = folder.appendingPathComponent(Vault.keysName)
-        for f in (try? LocalFS.entries(keys)) ?? [] where !f.hasPrefix(".") {
-            try place(keys.appendingPathComponent(f), target.appendingPathComponent(Vault.keysName).appendingPathComponent(f))
+        for sub in [Vault.keysName, Vault.epochsName] {
+            let dir = folder.appendingPathComponent(sub)
+            for f in (try? LocalFS.entries(dir)) ?? [] where !f.hasPrefix(".") {
+                try place(dir.appendingPathComponent(f), target.appendingPathComponent(sub).appendingPathComponent(f))
+            }
         }
         let notes = folder.appendingPathComponent(Vault.notesName)
         for id in (try? LocalFS.entries(notes)) ?? [] where Vault.isNoteDirectoryName(id) {

@@ -59,7 +59,9 @@ final class PushOnlyTests: BlobSyncTestCase {
         _ = try delta(a, device: devA, t: 0, title: "one")
         try push(server)
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: try vaultJSON("A")) as? [String: Any])
-        json["recipients"] = (json["recipients"] as? [String] ?? []) + ["age1attacker"]
+        var keys = try XCTUnwrap(json["keys"] as? [[String: Any]])
+        keys.append(["type": "device", "id": "attacker"])
+        json["keys"] = keys
         server.putDirect("vault.json", try JSONSerialization.data(withJSONObject: json))
         let before = try tree("A")
         let r = try push(server)
@@ -105,18 +107,17 @@ final class PushOnlyTests: BlobSyncTestCase {
         XCTAssertFalse(server.requestLog.dropFirst(log).contains { $0.method == "PUT" || $0.method == "DELETE" })
     }
 
-    func testServerOnlyJournalAndInjectedRevisionAreExtraneous() throws {
+    func testInjectedRevisionIsExtraneous() throws {
         let server = MockDAV()
         let a = try makeVault("A")
         let d = try delta(a, device: devA, t: 0, title: "one")
         try push(server)
         let evil = try foreignRevision()
         server.putDirect(noteRel(evil.name), evil.data)
-        server.putDirect("rewrap-journal.json", Data("{}".utf8))
         let before = try tree("A")
 
         let r = try push(server)
-        XCTAssertEqual(Set(r.extraneous), [noteRel(evil.name), "rewrap-journal.json"], "\(r)")
+        XCTAssertEqual(Set(r.extraneous), [noteRel(evil.name)], "\(r)")
         XCTAssertTrue(r.downloaded.isEmpty && r.deleted.isEmpty && r.errors.isEmpty)
         XCTAssertNotNil(server.file(noteRel(evil.name)))
         XCTAssertEqual(try tree("A"), before)
@@ -130,7 +131,6 @@ final class PushOnlyTests: BlobSyncTestCase {
         XCTAssertEqual(Set(gone.deleted.map(\.path)), Set(r.extraneous))
         XCTAssertTrue(gone.deleted.allSatisfy { $0.side == "remote" })
         XCTAssertNil(server.file(noteRel(evil.name)))
-        XCTAssertNil(server.file("rewrap-journal.json"))
         XCTAssertEqual(try tree("A"), before)
     }
 
@@ -254,32 +254,6 @@ final class PushOnlyTests: BlobSyncTestCase {
         XCTAssertThrowsError(try push("C", server, vault: .some(nil), deleteExtraneous: true))
         XCTAssertEqual(server.requestLog.count, log, "nothing is sent")
         XCTAssertNotNil(server.file("vault.json"))
-    }
-
-    /// A stray server journal blocks blob collection there (§8.1.6 rule 2)
-    /// until it is actually gone: a failed DELETE of it keeps the blobs.
-    func testStrayJournalStillBlocksBlobDeletionWhenItsRemovalFails() throws {
-        let server = MockDAV()
-        let a = try makeVault("A")
-        _ = try delta(a, device: devA, t: 0, title: "1")
-        let unused = try a.writeBlob(note: noteID, syntheticBlob(100), type: "image/png")
-        let blob = try blobFile(a, unused)
-        try push(server)
-        var state = BlobCollectorState()
-        let t0 = Date(timeIntervalSince1970: 1_800_000_000)
-        _ = try a.collectBlobs(note: noteID, state: &state, now: t0)
-        XCTAssertEqual(try a.collectBlobs(note: noteID, state: &state, now: t0.addingTimeInterval(31 * 86400)).deleted, [blob])
-        server.putDirect("rewrap-journal.json", Data("{}".utf8))
-        server.interceptor = { r in
-            r.method == "DELETE" && r.url.lastPathComponent == "rewrap-journal.json" ? WebDAVResponse(status: 503) : nil
-        }
-        let r = try push(server, deleteExtraneous: true)
-        XCTAssertTrue(r.errors.contains { $0.path == "rewrap-journal.json" }, "\(r)")
-        XCTAssertNotNil(server.file("notes/\(id)/att/\(blob)"), "\(r)")
-        server.interceptor = nil
-        let ok = try push(server, deleteExtraneous: true)
-        XCTAssertNil(server.file("rewrap-journal.json"))
-        XCTAssertNil(server.file("notes/\(id)/att/\(blob)"), "\(ok)")
     }
 
     func testDryRunChangesNothingAnywhere() throws {

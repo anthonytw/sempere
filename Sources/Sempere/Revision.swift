@@ -431,7 +431,7 @@ extension Revision: Codable {
             var found = NewerContent()
             found.revisions = 1
             if let f = markers.format, SempereFormat.isNewer(f) { NewerContent.count(f, in: &found.formats) }
-            for f in markers.features ?? [] where !VaultManifest.knownFeatures.contains(f) {
+            for f in markers.features ?? [] where !EpochManifest.knownFeatures.contains(f) {
                 NewerContent.count(f, in: &found.features)
             }
             context?.lenient = true

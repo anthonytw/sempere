@@ -54,9 +54,9 @@ struct OpenedVaultTests {
         let keys = RememberedKeys(store: store)
         try await model.openVault(at: mine)
         let id = try #require(model.vault?.vaultId)
-        // Remembered after a manual unlock here: bound to this folder.
+        // Remembered here (as for a vault this device created): bound to this folder.
         try await keys.unlock(model, identityText: key)
-        try await keys.answer(try #require(keys.offer), storage: .thisDevice)
+        try await keys.rememberThisDeviceKey(try DeviceKeys.parse(key), vaultID: id, vaultName: "sample", folder: mine)
         #expect(keys.locations.locations(for: id) == [keys.locations.location(of: mine)])
 
         // A lookalike with the same id, opened from outside or in the app: no offer, no Face ID prompt.
@@ -85,7 +85,7 @@ struct OpenedVaultTests {
         try await model.openVault(at: received, external: true)
         let id = try #require(model.vault?.vaultId)
         // Arrived through iCloud Keychain from another device: no location here yet.
-        await store.put((try IdentityFile.parse(key)).string, for: id)
+        await store.put(key, for: id)
         let keys = RememberedKeys(store: store)
         #expect(await keys.unlockWithRememberedKey(model) == .notHere)
         #expect(await store.reads == 0)
@@ -99,7 +99,8 @@ struct OpenedVaultTests {
 
     @Test func onlyAListThisDeviceConfirmedBindsAPastedKeysLocation() {
         #expect(RememberedKeys.listIsConfirmed(.verified(.unchanged)))
-        #expect(RememberedKeys.listIsConfirmed(.verified(.rotated)))
+        #expect(RememberedKeys.listIsConfirmed(.verified(.added)))
+        #expect(RememberedKeys.listIsConfirmed(.verified(.renamed)))
         #expect(!RememberedKeys.listIsConfirmed(.verified(.firstUse)))
         #expect(!RememberedKeys.listIsConfirmed(.notChecked))
         #expect(!RememberedKeys.listIsConfirmed(nil))

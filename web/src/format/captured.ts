@@ -35,7 +35,7 @@ export type CapturedBy =
   | { kind: "removed" };
 
 /**
- * Who captured `recording`, against `recipients` (the vault's list as read):
+ * Who captured `recording`, against `recipients` (the vault's device entries as read, by name):
  * undefined for a recording that is not a capture (or whose `captured` is malformed).
  */
 export async function capturedBy(recording: JSONObject, recipients: readonly { key: string; label: string }[]):

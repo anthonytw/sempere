@@ -29,8 +29,8 @@ final class SecretKeySharingTests: XCTestCase {
                 XCTAssertFalse(text.contains(".textSelection(.enabled)"), "\(name): a key's text must not be selectable")
             }
         }
-        let window = try source("KeysWindowView.swift")
-        XCTAssertTrue(window.contains("Text(generated.secret).font(.caption.monospaced())\n"), "the secret is plain text")
+        // The key window shows no secret key since KH2 (device keys never leave the device; TODO(KH5)).
+        XCTAssertFalse(try source("KeysWindowView.swift").contains("secret"), "the key window shows no secret key")
         // The general pasteboard is written in one place (SecretPasteboard) plus the public key's Copy.
         var writes: [String] = []
         for name in try FileManager.default.contentsOfDirectory(atPath: Self.appSources.path) where name.hasSuffix(".swift") {

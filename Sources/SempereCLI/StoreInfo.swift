@@ -185,6 +185,9 @@ struct StoreQuarantineAdopt: ParsableCommand {
         access.vault = entry.url.path
         access.identity = identity
         access.passphraseEnv = passphraseEnv
+        // Every option of a hand-made OptionGroup is set: reading an unset one traps.
+        access.recoveryKey = nil
+        access.root = nil
         let vault = try access.openVault(.required)
         let lease = try store.lease(entry.vaultId)
         defer { lease.release() }

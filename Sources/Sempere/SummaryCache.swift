@@ -12,7 +12,7 @@ import Foundation
 /// unreadable note, or one a newer version wrote, is read again next time.
 ///
 /// The file holds titles, tags and notebooks, so it is encrypted
-/// (ChaCha20-Poly1305) under a key derived from the vault secret with HKDF;
+/// (ChaCha20-Poly1305) under a key derived from the vault key (K_e) with HKDF;
 /// its name is derived the same way and says nothing about the vault without
 /// the secret. It never lives in the vault folder: the app keeps it in
 /// Application Support, the CLI in `~/.cache/sempere`.
@@ -90,14 +90,14 @@ public final class SummaryCache: @unchecked Sendable {
         self.init(directory: directory, secret: try vault.requireSecret())
     }
 
-    init(directory: URL, secret: VaultSecret) {
+    init(directory: URL, secret: VaultEpochKey) {
         key = Self.derive(secret, info: Self.keyInfo, bytes: 32)
         let name = Hex.encode(Self.derive(secret, info: Self.nameInfo, bytes: 16))
         fileURL = directory.appendingPathComponent("\(name).summaries")
         load()
     }
 
-    static func derive(_ secret: VaultSecret, info: String, bytes: Int) -> Data {
+    static func derive(_ secret: VaultEpochKey, info: String, bytes: Int) -> Data {
         HKDF<SHA256>.deriveKey(inputKeyMaterial: secret.key, info: Data(info.utf8), outputByteCount: bytes)
             .withUnsafeBytes { Data($0) }
     }

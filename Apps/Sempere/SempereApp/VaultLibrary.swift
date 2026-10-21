@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import Sempere
+import SempereRender
 import Observation
 import UniformTypeIdentifiers
 
@@ -174,31 +175,46 @@ enum VaultBookmark {
 
 /// What the "new vault" form produces.
 struct NewVaultRequest: Sendable {
+    /// Where the vault's recovery key comes from (design §8): this device is
+    /// always its home, with a device key generated here.
     enum KeySource: Sendable {
-        /// Generate a post-quantum MLKEM768-X25519 key on this device
+        /// Generate a post-quantum MLKEM768-X25519 recovery key, shown once
         /// (docs/post-quantum.md).
         case generate
-        /// Use a post-quantum secret key the user already has (`KeyText`):
-        /// the vault is encrypted to it and opens with it.
+        /// Use a post-quantum secret key the user already has (`KeyText`) as
+        /// the recovery key.
         case identity(NativeIdentity)
-        /// Encrypt to an existing post-quantum `age1pq1…` recipient; this device gets no key.
-        case recipient(String)
     }
 
     var name: String
     var keySource: KeySource
-    /// Wrap the vault's key with this passphrase into `keys/` (a generated or existing key, not a recipient).
+    /// Also keep a copy of the recovery key in the vault's `keys/` under this
+    /// passphrase (format.md §15.11); it must pass `PassphraseStrength`.
     var passphrase: String?
+    /// This device's name and kind in the vault's list (format.md §15.3).
+    var deviceName = "This device"
+    var deviceKind = "ipad"
+    /// The passphrase copy's scrypt work factor: writers use 20; tests less.
+    var workFactor = RecoveryPassphraseCopy.workFactor
 }
 
 /// The outcome of creating a vault.
 struct CreatedVault: Sendable {
     var url: URL
-    /// The new secret key (`AGE-SECRET-KEY-PQ-1…`) when one was generated; the
-    /// user must save it, nothing else holds it unless a passphrase wrapped it.
+    var vaultID: UUID
+    /// The new recovery key's secret (`AGE-SECRET-KEY-PQ-1…`) when one was
+    /// generated: the user must save it (or print the kit), no device keeps it.
     var secretKey: String?
-    /// The key that opens the vault, generated or given (nil for a recipient only).
+    /// The recovery key as a key file (`KeyFile`) when it was generated, for
+    /// Save to Files, Share and the kit.
+    var recoveryKey: KeyFile?
+    /// The vault as the kit prints it (id, creation date, root).
+    var kitVault: RecoveryKit.VaultInfo
+    /// This device's key file (`DeviceKeys.fileText`): it opens the vault to
+    /// read and write, and nothing else holds it once the app remembers it.
     var unlockKey: String?
+    /// This device's keys (the vault's home).
+    var device: DeviceKeys
     /// The recents entry saved for it; nil when saving it failed.
     var recentID: UUID?
 }
@@ -209,23 +225,18 @@ struct CreatedVault: Sendable {
 final class VaultLibrary {
     enum LibraryError: Error, Equatable, CustomStringConvertible {
         case invalidName
-        case invalidRecipient
-        /// A classic X25519 `age1…` key: vaults take only post-quantum keys.
-        case classicRecipient
-        case passphraseNeedsGeneratedKey
         case cannotResolve(name: String)
-        /// The existing key is not a post-quantum one.
+        /// The existing recovery key is not a post-quantum one.
         case classicIdentity
+        /// The passphrase of the recovery key's copy is too easy to guess (`PassphraseStrength`).
+        case weakPassphrase(String)
 
         var description: String {
             switch self {
             case .invalidName: return String(localized: "Give the vault a name without slashes, leading dots or control characters.")
-            case .invalidRecipient: return String(localized: "That text is not an age1pq1… recipient.")
-            case .classicRecipient:
-                return String(localized: "That is a classic age1… key, which is not quantum-safe. Create a new key instead (here, or with age-keygen -pq) and use its age1pq1… recipient.")
-            case .passphraseNeedsGeneratedKey: return String(localized: "A passphrase can only wrap a key this device has, not a public key.")
+            case .weakPassphrase(let why): return why
             case .classicIdentity:
-                return String(localized: "That is a classic AGE-SECRET-KEY-1… key, which is not quantum-safe. Use a post-quantum key (AGE-SECRET-KEY-PQ-1…) or generate one.")
+                return String(localized: "That is a classic AGE-SECRET-KEY-1… key, which is not quantum-safe. Use a post-quantum recovery key (AGE-SECRET-KEY-PQ-1…) or generate one.")
             case .cannotResolve(let name):
                 return String(localized: "“\(name)” can't be found any more. It may have been moved or deleted, or access to it expired. Choose its folder again.")
             }
@@ -467,12 +478,13 @@ final class VaultLibrary {
     /// The vault is built in the store's staging folder and appears only once complete.
     ///
     /// Runs the blocking work (scrypt, file I/O) off the main actor.
-    func create(_ request: NewVaultRequest) async throws -> CreatedVault {
+    /// - Parameter trust: this device's trust records; the new vault's is saved there (format.md §15.10).
+    func create(_ request: NewVaultRequest, trust: (any EpochTrustStore)? = nil) async throws -> CreatedVault {
         let folder = try Self.folderName(for: request.name)
         let store = vaultStore
         let (entry, built) = try await Task.detached(priority: .userInitiated) {
             try store.create(name: VaultStore.displayName(of: URL(fileURLWithPath: folder))) { url in
-                try Self.createVault(request, folder: folder, in: url.deletingLastPathComponent())
+                try Self.createVault(request, folder: folder, in: url.deletingLastPathComponent(), trust: trust)
             }
         }.value
         var created = built
@@ -481,35 +493,36 @@ final class VaultLibrary {
         return created
     }
 
-    /// Synchronous core of `create` (testable without the main actor).
-    nonisolated static func createVault(_ request: NewVaultRequest, folder: String, in parent: URL) throws -> CreatedVault {
+    /// Synchronous core of `create` (testable without the main actor): a new
+    /// device key for this device, the vault's home, and the recovery key
+    /// (generated or given), with its passphrase copy when a passphrase is given.
+    nonisolated static func createVault(_ request: NewVaultRequest, folder: String, in parent: URL,
+                                        trust: (any EpochTrustStore)? = nil) throws -> CreatedVault {
         let url = parent.appendingPathComponent(folder, isDirectory: true)
+        let recovery: MLKEM768X25519Identity
+        var generated = false
         switch request.keySource {
         case .generate:
-            let identity = try NativeIdentity.generate(.postQuantum)
-            let vault = try Vault.create(at: url, recipients: [identity.recipient], labels: ["This device"],
-                                         identities: [identity])
-            if let passphrase = request.passphrase, !passphrase.isEmpty {
-                try vault.writeIdentityFile(identity, passphrase: passphrase)
-            }
-            return CreatedVault(url: url, secretKey: identity.string, unlockKey: identity.string)
+            recovery = try MLKEM768X25519Identity()
+            generated = true
         case .identity(let identity):
-            guard identity.isPostQuantum else { throw LibraryError.classicIdentity }
-            let vault = try Vault.create(at: url, recipients: [identity.recipient], labels: ["This device"],
-                                         identities: [identity])
-            if let passphrase = request.passphrase, !passphrase.isEmpty {
-                try vault.writeIdentityFile(identity, passphrase: passphrase)
-            }
-            return CreatedVault(url: url, secretKey: nil, unlockKey: identity.string)
-        case .recipient(let text):
-            guard request.passphrase?.isEmpty ?? true else { throw LibraryError.passphraseNeedsGeneratedKey }
-            let recipient: NativeRecipient
-            do { recipient = try NativeRecipient(string: text.trimmingCharacters(in: .whitespacesAndNewlines)) } catch {
-                throw LibraryError.invalidRecipient
-            }
-            guard recipient.isPostQuantum else { throw LibraryError.classicRecipient }
-            _ = try Vault.create(at: url, recipients: [recipient])
-            return CreatedVault(url: url, secretKey: nil)
+            guard case .mlkem768x25519(let pq) = identity else { throw LibraryError.classicIdentity }
+            recovery = pq
         }
+        let passphrase = request.passphrase.flatMap { $0.isEmpty ? nil : $0 }
+        if let passphrase, let problem = PassphraseStrength.storedKeyProblem(passphrase) {
+            throw LibraryError.weakPassphrase(problem)
+        }
+        let device = try DeviceKeys.generate()
+        let vault = try Vault.create(at: url, device: device, deviceName: request.deviceName, kind: request.deviceKind,
+                                     recovery: recovery, recoveryPassphrase: passphrase, workFactor: request.workFactor,
+                                     trust: trust)
+        let identity = NativeIdentity.mlkem768x25519(recovery)
+        let name = Self.displayName(of: url)
+        return CreatedVault(url: url, vaultID: vault.vaultId, secretKey: generated ? identity.string : nil,
+                            recoveryKey: generated ? KeyFile(identity: identity, label: String(localized: "Recovery key of \(name)",
+                                                                                                 comment: "Label of a vault's recovery key; the value is the vault's name")) : nil,
+                            kitVault: RecoveryKit.VaultInfo(vault: vault, name: name),
+                            unlockKey: device.fileText(created: Date()), device: device)
     }
 }

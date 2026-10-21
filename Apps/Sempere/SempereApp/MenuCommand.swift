@@ -276,7 +276,7 @@ enum MenuCommand: String, CaseIterable, Sendable {
 
     /// What the focused window is showing, as far as menu enabling goes.
     struct Context: Equatable, Sendable {
-        enum Vault: Equatable, Sendable { case none, locked, finishingKeyChange, unlocked }
+        enum Vault: Equatable, Sendable { case none, locked, unlocked }
         enum Window: Equatable, Sendable { case library, note, other }
         /// What the recorder is doing, as far as File > Start/Stop Voice Note goes.
         enum VoiceNote: Equatable, Sendable { case idle, recording, busy }

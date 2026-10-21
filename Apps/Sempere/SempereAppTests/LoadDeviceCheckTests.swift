@@ -274,8 +274,8 @@ struct LoadDeviceCheckTests {
     @Test func c54BrowserActionsAndHistoryOnANoteOfHundredsOfRevisions() async throws {
         let (url, key) = try AppModelTests.fixtureVault()
         let made = try InkFixture.denseNote(strokes: 400, points: 40, perRevision: 1, in: (url, key))
-        let counter = CountingIdentity(try IdentityFile.parse(try String(contentsOf: key, encoding: .utf8)))
-        let vault = try Vault.open(at: url, identities: [counter])
+        let vault = try Vault.open(at: url, identities: [try IdentityFile.parse(try String(contentsOf: key, encoding: .utf8))])
+        let counter = DecryptCounter(vault: vault)
         let names = try vault.revisionNames(of: made.note)
         #expect(names.count == 401)
 

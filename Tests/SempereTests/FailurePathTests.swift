@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import XCTest
+import VaultTestSupport
 @testable import Sempere
 
 /// "Could not read" must never look like "nothing there" (review of #6).
@@ -45,36 +46,6 @@ final class FailurePathTests: VaultTestCase {
         }
     }
 
-    func testUnreadableFileKeepsJournalUntilRetrySucceeds() throws {
-        let a = pqIdentity(), b = pqIdentity()
-        var vault = try Vault.create(at: vaultURL(), recipients: [a.recipient, b.recipient], identities: [a])
-        let revs = try populate(vault)
-        let oldSecret = try XCTUnwrap(vault.secret)
-        let victim = fileURL(vault, revs[1].noteId, revs[1].name)
-        let undo = try makeUnreadable(victim)
-
-        let report = try vault.removeRecipient(b.recipient)
-        XCTAssertFalse(report.isComplete)
-        guard case .unreadable = report.failures.values.first else { return XCTFail("\(report.failures)") }
-        XCTAssertEqual(report.failures.count, 1)
-        XCTAssertEqual(report.rewrapped.count, revs.count - 1)
-        XCTAssertTrue(vault.pendingRewrap, "journal survives a failed file")
-        XCTAssertEqual(vault.previousSecret, oldSecret)
-
-        // A fresh process still has the outgoing secret, via the journal.
-        try undo()
-        var again = try Vault.open(at: vault.url, identities: [a])
-        XCTAssertNil(again.journalProblem)
-        XCTAssertEqual(again.previousSecret, oldSecret)
-        XCTAssertEqual(try again.readRevision(noteId: revs[1].noteId, name: revs[1].name), revs[1])
-        let retry = try again.resumeRewrap()
-        XCTAssertTrue(retry.isComplete)
-        XCTAssertEqual(retry.rewrapped, ["\(revs[1].noteId.uuidString.lowercased())/\(revs[1].name.filename)"])
-        XCTAssertFalse(again.pendingRewrap)
-        try assertReadable(revs, at: vault.url, by: a)
-        XCTAssertThrowsError(try Vault.open(at: vault.url, identities: [b]))
-    }
-
     func testUnlistableNotesDirectoryIsNeverHealthy() throws {
         let a = pqIdentity()
         let vault = try makeVault(a)
@@ -88,37 +59,6 @@ final class FailurePathTests: VaultTestCase {
         let report = vault.verify()
         XCTAssertFalse(report.isHealthy)
         XCTAssertEqual(report.counts[.unlistable], 1)
-        var v = vault
-        XCTAssertThrowsError(try v.addRecipient(pqIdentity().recipient, label: "x"))
-    }
-
-    func testUnreadableJournalIsRecordedAndSurfaced() throws {
-        let a = pqIdentity(), b = pqIdentity()
-        var vault = try Vault.create(at: vaultURL(), recipients: [a.recipient, b.recipient], identities: [a])
-        let revs = try populate(vault)
-        XCTAssertThrowsError(try vault.removeRecipient(b.recipient, stopAfter: 2))
-        try Data("{".utf8).write(to: vault.url.appendingPathComponent("rewrap-journal.json"))
-
-        var again = try Vault.open(at: vault.url, identities: [a])
-        XCTAssertNotNil(again.journalProblem)
-        XCTAssertNil(again.previousSecret)
-        // Files still tagged with the outgoing secret say why they fail.
-        let stale = revs.filter { r in
-            (try? again.readRevision(noteId: r.noteId, name: r.name)) == nil
-        }
-        XCTAssertEqual(stale.count, revs.count - 2)
-        XCTAssertThrowsError(try again.readRevision(noteId: stale[0].noteId, name: stale[0].name)) {
-            guard case .tagMismatchJournalUnreadable(let why) = $0 as? RevisionReadError else { return XCTFail("\($0)") }
-            XCTAssertTrue(why.hasPrefix("a pending rewrap journal could not be read"))
-        }
-        let report = again.verify()
-        XCTAssertFalse(report.isHealthy)
-        XCTAssertNotNil(report.journalProblem)
-        XCTAssertEqual(report.counts[.tagMismatch], revs.count - 2)
-        XCTAssertThrowsError(try again.resumeRewrap()) {
-            guard case .rewrapJournalUnreadable = $0 as? VaultError else { return XCTFail("\($0)") }
-        }
-        XCTAssertTrue(again.pendingRewrap)
     }
 
     func testNextSeqRefusesUnreadableSnapshot() throws {
@@ -141,38 +81,14 @@ final class FailurePathTests: VaultTestCase {
         }
     }
 
-    func testWriteOnlyVaultCannotRead() throws {
-        let a = pqIdentity()
-        let vault = try Vault.create(at: vaultURL(), recipients: [a.recipient])
-        XCTAssertFalse(vault.isLocked)
-        XCTAssertFalse(vault.canRead)
-        let log = sampleLog()
-        for r in log { try vault.write(r) }
-        XCTAssertThrowsError(try vault.readRevision(noteId: testNote, name: log[0].name)) {
-            XCTAssertEqual($0 as? VaultError, .noIdentities)
-        }
-        XCTAssertThrowsError(try vault.reconstruct(noteId: testNote)) { XCTAssertEqual($0 as? VaultError, .noIdentities) }
-        XCTAssertThrowsError(try vault.history(noteId: testNote)) { XCTAssertEqual($0 as? VaultError, .noIdentities) }
-        let report = vault.verify()
-        XCTAssertEqual(report.counts[.notChecked], log.count)
-        XCTAssertTrue(report.files.filter { $0.status == .notChecked }.allSatisfy { $0.detail == "no identities" })
-        var v = vault
-        XCTAssertThrowsError(try v.addRecipient(pqIdentity().recipient, label: "x")) {
-            XCTAssertEqual($0 as? VaultError, .noIdentities)
-        }
-        // Another device with the identity reads everything.
-        let reader = try Vault.open(at: vault.url, identities: [a])
-        XCTAssertTrue(reader.canRead)
-        XCTAssertEqual(try reader.reconstruct(noteId: testNote), try NoteReducer.reconstruct(log))
-    }
-
-    func testMalformedVaultSecretArmorIsReported() throws {
+    func testMalformedWrapArmorIsReported() throws {
         let a = pqIdentity()
         let vault = try makeVault(a)
         var m = vault.manifest
-        m.vaultSecret = "-----BEGIN AGE ENCRYPTED FILE-----\nnot base64!\n-----END AGE ENCRYPTED FILE-----\n"
+        let i = try XCTUnwrap(m.keys.firstIndex { $0.role == .recovery })
+        m.keys[i].wrap = "-----BEGIN AGE ENCRYPTED FILE-----\nnot base64!\n-----END AGE ENCRYPTED FILE-----\n"
         try m.encoded().write(to: vault.url.appendingPathComponent("vault.json"))
         let problems = vault.verify().manifestProblems
-        XCTAssertTrue(problems.contains { $0.hasPrefix("vaultSecret is not an armored age file") }, "\(problems)")
+        XCTAssertTrue(problems.contains { $0.hasPrefix("the wrap of recovery is not an armored age file") }, "\(problems)")
     }
 }

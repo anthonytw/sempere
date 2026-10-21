@@ -63,7 +63,9 @@ final class CLIReadOnlyTests: CLITestCase {
         let svg = try cli(["export", Self.body2, "--format", "svg", "--pdf-renderer", "none", "--out", path("svg"), "-q"] + key)
         XCTAssertEqual(svg.status, 0, svg.err)
 
-        let verify = try cli(["vault", "verify", "--json"] + key)
+        // This machine never confirmed the copy (it cannot write it): the root is given (design §4.3).
+        let root = try XCTUnwrap((try cli(["vault", "info", "--json"] + key).json as? [String: Any])?["root"] as? String)
+        let verify = try cli(["vault", "verify", "--json", "--root", root] + key)
         XCTAssertEqual(verify.status, 0, verify.err)
         let v = try XCTUnwrap(verify.json as? [String: Any])
         XCTAssertEqual(v["readOnly"] as? Bool, true)
@@ -89,7 +91,7 @@ final class CLIReadOnlyTests: CLITestCase {
             ["compact", "--all", "--thin-all"],
             ["blobs", "gc", "--retention", "0"],
             ["blobs", "add", Self.mixed, text, "--type", "text/plain"],
-            ["vault", "recipients", "add", try NativeIdentity.generate(.postQuantum).recipient.string],
+            ["vault", "label", "Renamed vault"],
             ["inbox", "enable", "--profile", path("profile")],
             // Security review 2026-10 (N2): captures are refused before any profile is read.
             ["inbox", "capture", text, "--profile", path("profile")],
@@ -125,13 +127,15 @@ final class CLIReadOnlyTests: CLITestCase {
         // The fixture's notes under a version-1 manifest: the revisions alone are newer.
         let vault = try copyNewerVault()
         let manifestURL = URL(fileURLWithPath: vault).appendingPathComponent("vault.json")
-        var manifest = try VaultManifest.decode(Data(contentsOf: manifestURL))
+        _ = manifestURL
+        // Tagged and signed by the vault's home, as a version-1 writer would.
+        let keys = try fixtureDeviceKeys()
+        let home = try Vault.open(at: URL(fileURLWithPath: vault), identities: [keys.nativeIdentity], signing: keys.signing)
+        var manifest = home.manifest
         manifest.format = "sempere/1"
         manifest.features = []
-        // Tagged under the vault's secret, as a version-1 writer would.
-        let identity = try IdentityFile.parse(String(contentsOfFile: Self.fixtureKey, encoding: .utf8))
-        manifest.tagMarkers(secret: try VaultSecret(bytes: AgeFile.decrypt(Data(manifest.vaultSecret.utf8), with: [identity])))
-        try manifest.encoded().write(to: manifestURL)
+        try home.writeResealedManifest(manifest)
+        try trustFixtureCopy(vault)
         let key = ["--vault", vault, "--identity", Self.fixtureKey]
         let info = try cli(["vault", "info", "--json"] + key)
         XCTAssertEqual((info.json as? [String: Any])?["readOnly"] as? Bool, false, "not seen by info")

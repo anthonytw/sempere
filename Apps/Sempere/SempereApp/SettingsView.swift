@@ -704,55 +704,26 @@ private struct HistorySettingsSection: View {
 
 private struct DeviceKeySettingsSection: View {
     @AppModelEnvironment private var model
-    @State private var onAdd = RewrapSettings.onAdd()
-    @State private var onRemove = RewrapSettings.onRemove()
-    @State private var confirming = false
-    @State private var savingKey = false
-    @State private var creatingKey = false
 
     var body: some View {
         Section {
-            // Each presentation on the control that owns it, not the section: a section's modifier
-            // is on each of its rows, and several rows presenting at once can close it again on Mac
-            // Catalyst 27.
-            Button("Save Key…", systemImage: "key") { savingKey = true }
-                .disabled(model.phase != .unlocked || model.heldIdentity == nil)
-                .sheet(isPresented: $savingKey) { SaveKeyView() }
-            Button("New Key…", systemImage: "key.badge.plus") { creatingKey = true }
-                .disabled(model.phase != .unlocked)
-                .sheet(isPresented: $creatingKey) { NewKeyView() }
-            Picker("When Adding a Device", selection: $onAdd) {
-                ForEach(RewrapMethod.allCases, id: \.self) { Text(RewrapSettings.title($0)).tag($0) }
-            }
-            .onChange(of: onAdd) { RewrapSettings.setOnAdd(onAdd) }
-            .syncedSetting("rewrap.onAdd")
-            Picker("When Removing or Replacing a Device", selection: Binding(
-                get: { onRemove },
-                set: { chosen in
-                    switch RewrapSettings.removalStep(choosing: chosen, current: onRemove) {
-                    case .confirm:
-                        confirming = true
-                    case .apply:
-                        onRemove = chosen
-                        RewrapSettings.setOnRemove(chosen)
-                    }
-                })) {
-                ForEach(RewrapMethod.allCases, id: \.self) { Text(RewrapSettings.title($0)).tag($0) }
-            }
-            .syncedSetting("rewrap.onRemove")
-            .confirmationDialog("Rewrite headers only after a removal?", isPresented: $confirming, titleVisibility: .visible) {
-                Button("Rewrite Headers Only", role: .destructive) {
-                    onRemove = .headerOnly
-                    RewrapSettings.setOnRemove(.headerOnly)
+            if let this = model.vaultDevices.first(where: \.isThisDevice) {
+                LabeledContent("This Device", value: "\(this.name) (\(this.deviceID))")
+                if this.isHome {
+                    Text("This device is the vault's home: it manages the vault's devices.")
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
-                Button("Keep Re-encrypting Everything", role: .cancel) {}
-            } message: {
-                Text("A removed device key, or a copy of the vault from before an upgrade, could still open attachments it could open before. Only choose this if you accept that.")
+            } else if model.isRecoveryOpen {
+                Text("Unlocked with the recovery key: this device is not one of the vault's devices.")
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Unlock a vault to see this device's key.").foregroundStyle(.secondary)
             }
         } header: {
             Text("Device Keys")
         } footer: {
-            Text("Save Key exports this device's key, after \(RememberedKeys.biometryPhrase), to Files or a password manager, with its paper recovery kit. New Key makes a key for another device and encrypts the vault to it. Devices here are the keys this vault is encrypted to (this iPad, that Mac, the paper backup), not people: to share a note, export it. “Rewrite headers only” is fast but leaves old copies of an attachment openable with a key that was removed. “Re-encrypt everything” takes longer in a vault with many attachments.")
+            // TODO(KH5): join another device, save or replace this device's key, manage the devices.
+            Text("Each device has its own key, kept in its Keychain. Adding and removing devices is not available in the app yet; from a terminal: sempere device.")
         }
     }
 }

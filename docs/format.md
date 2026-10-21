@@ -9,9 +9,13 @@ A vault is a directory whose name ends in `.sempere`.
 
 ```
 Notes.sempere/
-  vault.json                              plaintext manifest (§2)
+  vault.json                              plaintext manifest: the device list and the wrapped vault key (§2, §15.3)
+  epochs/
+    <e>-<idprefix>.epoch.age              the epoch record, written once at creation (§15.6)
+  joins/
+    <id>.join.json                        a device's request to join, until the home device approves it (§15.12)
   keys/
-    <key-name>.key.age                    optional passphrase-wrapped identity (§3.2)
+    recovery-<fingerprint>.key.age        optional passphrase copy of the recovery key (§3.2, §15.11)
   notes/
     <noteId>/
       <hlc>-<device>-<seq>.delta.age      append-only revision (§5)
@@ -29,9 +33,10 @@ Notes.sempere/
     <recordId>.notebook.age               optional notebook record: keeps empty notebooks (§14)
 ```
 
-Everything under `notes/` (revisions and `att/` blobs alike) and `notebooks/` is written once
-and never modified (`settings.age`, at the root, is a mutable file, §13). The only exception is a recipient change (§3.3), which
-rewrites files in place (and renames blobs, §8.1.5).
+Everything under `notes/` (revisions and `att/` blobs alike), `notebooks/` and `epochs/` is
+written once and never modified (`settings.age`, at the root, is a mutable file, §13). This version
+rewrites no vault file in place; re-encrypting everything (key-hierarchy design §7, phase KH6) will be
+the one exception.
 
 A vault is a plain directory, never a package (a bundle that file-sync
 services such as iCloud Drive treat as one document): such a service syncs
@@ -52,7 +57,7 @@ linked into place, docs/io.md "Atomic writes") and for the markers below.
 ### 1.2 Partial copies
 
 A *partial copy* is a vault folder that holds the root files (`vault.json`,
-`rewrap-journal.json`, `settings.age`, and the notebook records of §14) of the vault it copies, and a folder
+`settings.age`, and the notebook records of §14) of the vault it copies, and a folder
 for each of its notes, but not yet every revision or blob: the rest is
 fetched later (the WebDAV app copies and `sempere sync webdav
 --metadata-only`, docs/io.md "Partial copies"). Three markers, all hidden
@@ -91,8 +96,8 @@ copy valid once the rest arrives:
    stamped (§5.1) and sequenced without the revisions still missing, and
    computed from a state that lacks them.
 2. No blob of an incomplete note is collected (§8.1.6 rule 1 cannot hold).
-3. No recipient change (§3.3) starts or resumes in a partial copy: a rewrap
-   must see every file.
+3. No re-encryption of the vault (§15.8, KH6) starts or resumes in a partial
+   copy: it must see every file.
 4. Whatever the copy lacks is never taken as deleted. A sync from a partial
    copy (docs/io.md "WebDAV sync") never removes, nor reports as unexplained,
    a file of an incomplete note or a blob with a stand-in.
@@ -104,9 +109,7 @@ except these, which are replaced whole (atomically):
 
 | File | Written by | When |
 | --- | --- | --- |
-| `vault.json` | any writer | creation, a recipient change (§3.3), a label change (§2), a markers repair (§2.1) |
-| `rewrap-journal.json` | the writer changing recipients | during a recipient change only (§3.3.1) |
-| `keys/<name>.key.age` | any writer | when a passphrase-wrapped key is stored; its name is its key's (§3.2), so a rewrite holds the same key |
+| `vault.json` | the home device (§15.3); for `label` alone, any listed device | creation, a device approved or renamed (§2), a label change (§2) |
 | `settings.age` | devices that opted in | when a shared setting changes, or a device's merged copy is newer (§13.3) |
 | `sempere-summaries.sealed` | the CLI and the WebDAV sync | when a listed note changed (§12.4) |
 | `summaries/<device>.sealed` | that device only | when its listing changed (§12.5) |
@@ -117,17 +120,23 @@ the vault may turn up (another device's copy, a restored backup). Merging
 another copy into a vault keeps everything a reader needs, whichever copy is
 kept, and is the same whatever the order of copies merged:
 
-- **Write-once files** (revisions, blobs, inbox files, key files, notebook records, §14): the union.
+- **Write-once files** (revisions, blobs, inbox files, epoch records, join requests, the passphrase
+  copy, notebook records, §14): the union.
   A file the vault lacks is checked like any received file (§9.1) and copied
   in under its name; nothing is overwritten or deleted. A revision a
   compaction deleted on one side may come back; it is covered by the snapshot
   that let it go (§5.3), so notes read the same, and the next compaction
   deletes it again.
-- **`settings.age`**: merged per key (§13.3); this needs the vault secret.
-- **`vault.json` and `rewrap-journal.json`**: the vault's own stay. Two
-  versions that differ only in `label` (§2, covered by no tag) are the same
-  vault; any other difference means both sides changed the keys, which no
-  rule merges: a writer keeps its own version and reports the other.
+- **`settings.age`**: merged per key (§13.3); this needs the vault key.
+- **`vault.json`**: one writer, the home device, writes it (§15.3), so two
+  versions of one epoch follow each other. Two versions that differ only in
+  `label` (§2, covered by no tag or signature) are the same vault. Otherwise
+  a writer holding the key takes the other version only when it is a later
+  one by home: the same vault, root, epoch and `epochId`, the same epoch head
+  (`home`, first list, `parent`, `epochReason`, `epochAuthor`, `epochSig`,
+  `recoverySig`), every check of §15.3 passes against the list it holds,
+  that list's entries are all still there, and it adds a device or renames one. Anything else is never merged:
+  a writer keeps its own version and reports the other.
 - **Published summaries** (§12): the version kept stays; they are hints and
   are rewritten by their writers.
 
@@ -137,293 +146,201 @@ rules, which lose notes.
 
 ## 2. vault.json
 
+`vault.json` is the plaintext manifest of the key hierarchy (§15; design in
+`docs/design/key-hierarchy.md`). It lists the vault's devices and its one
+recovery key, and wraps the epoch's vault key `K_e` (§15.2) once to each of
+them. This version writes vaults of one epoch, epoch 1:
+
 ```json
 {
   "format": "sempere/1",
   "vaultId": "0d1c6a1e-9a44-4a6c-8a6b-0e2a0e9b1f3c",
-  "created": "2026-10-04T16:20:00Z",
-  "recipients": [
-    { "key": "age1pq1…(1959 characters)…",
-      "label": "Alex's iPad", "added": "2026-10-04T16:20:00Z" }
+  "created": "2026-10-20T16:20:00.000Z",
+  "root": "…(64 hex digits)…",
+  "epoch": 1,
+  "epochId": "…(64 hex digits)…",
+  "epochRecord": "epochs/1-5b0e6f1a2c3d4e5f.epoch.age",
+  "epochRecordHash": "…(64 hex digits)…",
+  "keys": [
+    { "role": "device", "key": "age1pq1…(1959 characters)…", "id": "a1b2c3d4",
+      "sign": { "p256": "…(130 hex)…", "mldsa65": "…(3904 hex)…" },
+      "kind": "ipad", "added": "2026-10-20T16:20:00.000Z", "addedEpoch": 1, "addedBy": "a1b2c3d4",
+      "addSig": { "p256": "…(128 hex)…", "mldsa65": "…(6618 hex)…" },
+      "name": "Alex's iPad",
+      "wrap": "-----BEGIN AGE ENCRYPTED FILE-----\n…\n-----END AGE ENCRYPTED FILE-----\n" },
+    { "role": "recovery", "key": "age1pq1…", "sign": { "p256": "…", "mldsa65": "…" },
+      "name": "Recovery kit", "added": "2026-10-20T16:20:00.000Z",
+      "wrap": "-----BEGIN AGE ENCRYPTED FILE-----\n…" }
   ],
-  "vaultSecret": "-----BEGIN AGE ENCRYPTED FILE-----\n...\n-----END AGE ENCRYPTED FILE-----\n",
-  "recipientsTag": "5b0e6f…(64 hex digits)…",
-  "markersTag": "9c41d2…(64 hex digits)…"
+  "listTag": "…(64 hex digits)…",
+  "epochAuthor": "a1b2c3d4",
+  "epochReason": "create",
+  "home": "…(64 hex digits: the home device's fingerprint)…",
+  "epochSig": { "p256": "…", "mldsa65": "…" },
+  "markersTag": "…(64 hex digits)…",
+  "author": "a1b2c3d4",
+  "authorSig": { "p256": "…", "mldsa65": "…" }
 }
 ```
 
 - `format`: the format identifier, `sempere/<major>` (§7.1); `sempere/1`
   for this version. A reader opens a vault of a later major read-only or not
   at all (§7.3).
-- `recipients[].key`: an age MLKEM768-X25519 recipient (§3.1, Bech32, HRP
-  `age1pq`). At least one. Every recipient is MLKEM768-X25519: a `vault.json`
-  of this major that lists any other key, a classic X25519 one (HRP `age`)
-  included, is invalid, and readers MUST refuse to open it. Writers MUST NOT
-  create a vault with, or add, such a key.
-- `vaultSecret`: 32 random bytes, age-encrypted and armored, to exactly the
-  listed recipients. It keys the inner authentication tag (§4) and the blob
-  names (§8.1.2), and nothing else in the vault; outside it, a reader may
-  derive a per-device summary cache key from it (§10). It is rotated
-  whenever a recipient is removed.
+- `vaultId`, `created`: the vault's id (a lowercase UUID) and when it was
+  created (§6).
+- `root`: the vault's root fingerprint (§15.7 rule 2, design §4.2). It never
+  changes and is printed on the recovery kit (§15.13).
+- `epoch`, `epochId`, `epochRecord`, `epochRecordHash`: the epoch's number,
+  its id (§15.2), the path of its record in `epochs/` (§15.6) and the
+  record's SHA-256. Epoch 1 has a record too, written at creation.
+- `keys`: exactly one entry with `role: "recovery"` and at least one with
+  `role: "device"`. Every `key` is an age MLKEM768-X25519 recipient (§3.1,
+  Bech32, HRP `age1pq`), listed once. A `vault.json` of this major that lists
+  any other key, a classic X25519 one (HRP `age`) included, is invalid, and
+  readers MUST refuse to open it.
+  - A device entry: `id` (the first 8 hex digits of its fingerprint, §15.4;
+    for names and display only: no security decision reads it), `sign` (its signing
+    public keys), `kind` (`ipad`, `iphone`, `mac`, `cli`, or another lowercase
+    word of 1 to 32 letters), `added`, `addedEpoch`, `addedBy` (the home
+    device that approved it) and `addSig` (home's signature over them, §15.5),
+    `name`, `wrap`.
+  - The recovery entry: the recovery key (printed in the kit, §3), the
+    signing keys derived from it (§15.4), `added`, `name`, `wrap`.
+  - `name`: a device's display name, at most 40 characters, cleaned as
+    `label` (below). Unlike `label` it is covered by `listTag` and `authorSig`,
+    so storage cannot rename a device; only home renames one.
+  - `wrap`: `K_e` and the vault identity, age-encrypted (armored, one stanza)
+    to the entry's key (§15.3 "Wrap plaintext").
+- `listTag`, `markersTag`: HMACs under keys derived from `K_e` over the list
+  and over the version markers (§15.3, §2.1).
+- `epochAuthor`, `epochReason`, `home`, `epochSig`: who created the epoch,
+  why, which device is home (the one device that changes the list, §15.3),
+  and the author's signature (§15.5). `author`, `authorSig`: the device that
+  wrote this version of `vault.json` (home) and its signature.
+- `parent`, `epochLink`, `parentList`, `recoverySig` and `reencryptPending`
+  appear only above epoch 1 or during a re-encryption (§15.3, §15.8); this
+  version writes none of them.
 - `features` (optional): array of strings naming format extensions the vault
   uses. This version defines none: its writers write no `features`, and
   absent means `[]`. A later version adds an extension's name here so that
   readers that do not implement it stop writing: a writer that finds a
   feature it does not implement must not write to the vault (it may still
   read it: read-only access, §7.3).
-- `recipientsTag` (required) and `secretLink` (present after the first secret
-  rotation): §2.1. A `vault.json` without `recipientsTag` has had it removed
-  (§2.1 "Checking").
-- `markersTag` (required): §2.1 "Version markers".
-- `rewrapPending` (optional): present only while a recipient change is
-  unfinished; it binds `rewrap-journal.json` to this `vault.json` (§3.3.1
-  "Binding the journal").
 - `label` (optional): the vault's display name, for lists where the folder
   name says nothing (a WebDAV server's `dav/`). It is stored **unencrypted**:
   anyone who can read the vault folder or the server can read it, and anyone
   who can write there can change it, so it must hold nothing private. A
   string; writers store it on one line (control characters become spaces,
   invisible format characters such as bidi overrides and isolates, Unicode
-  Cf, are removed), trimmed, at most 80 characters, and omit it when empty. Like a recipient's `label` it is
-  informational and covered by no tag: a reader may show it (cleaned the same way) and must not act
+  Cf, are removed), trimmed, at most 80 characters, and omit it when empty. It is
+  informational and covered by no tag or signature: a reader may show it (cleaned the same way) and must not act
   on it; anything but a non-empty string reads as absent.
 
-### 2.1 Authenticated recipients
+**Writers.** Only the home device writes `vault.json` (design §5.6): at
+creation, when it approves a device (one entry appended with a wrap of the
+current `K_e`; no file is re-encrypted) and when it renames one. Each such
+write re-computes `listTag` and `markersTag` and re-signs `authorSig`, in one
+atomic write. The one exception is `label`: any listed device whose list
+checks (§2.1) may set or clear it, writing every other member back as it is.
+A writer starts from the `vault.json` on disk and stops if it is no longer
+the version it opened (but for `label`). Removing a device, handing the home
+role to another device, a takeover with the recovery key and replacing the
+recovery key each start a new epoch (key-hierarchy design §5, phases KH3 and
+KH4); this version writes none of them.
 
-`vault.json` is plaintext, and everything a
-writer encrypts goes to the keys in `recipients`. Without this section,
-anyone who can write the vault folder (a sync server, a shared folder, a
-stolen backup put back) could add their own recipient, and every writer would
-encrypt new revisions, blobs and captures to it. Revisions and blobs are
-authenticated by the vault secret (§4, §8.1.2), which such an attacker does
-not know; `recipientsTag` extends that to the recipients list, and
-`secretLink` to the secret itself.
+### 2.1 Checking `vault.json`
 
-**Keys.** With `vaultSecret` (§2) as HKDF-SHA256 input key material
-(RFC 5869, empty salt), as for the other derived keys (§10, §11.1):
+`vault.json` is plaintext that anyone who can write the folder (a sync
+server, a shared folder, a backup put back) can change. A device holding
+`K_e` (from its own wrap) checks it before it writes anything, against what
+it verified before. This version reads vaults of one epoch:
 
-```
-recipientsKey = HKDF-SHA256(ikm = vaultSecret, salt = "", info = "sempere/1 recipients key", L = 32)
-secretId      = HKDF-SHA256(ikm = vaultSecret, salt = "", info = "sempere/1 secret id", L = 32)
-linkEdSeed    = HKDF-SHA256(ikm = vaultSecret, salt = "", info = "sempere/1 secret link ed25519 seed", L = 32)
-linkMLSeed    = HKDF-SHA256(ikm = vaultSecret, salt = "", info = "sempere/1 secret link ml-dsa-65 seed", L = 32)
-```
+1. `epoch` must be 1 (a later epoch is refused: `otherEpoch`), and `root`
+   must be the one `K_1` gives (§15.7 rule 2), the trust record's, and the
+   root given by the user when one is (the kit's, the join's reply code,
+   `--root`): otherwise `rootMismatch`.
+2. With a trust record (§15.10): `epochId` is the pinned one; `home` and the
+   epoch's first list are the record's, never the file's (another home is
+   only a handoff, a new epoch: `entriesChanged` otherwise), so `epochSig`
+   and every `addSig` verify under the home the device verified; every check
+   of §15.3 passes against the list the device verified (plus home's
+   additions, each with a valid `addSig`); every entry it verified is still there with
+   the same key and signing keys (`entriesChanged` otherwise: a removal always
+   starts a new epoch; only `name` may change); and the version markers are
+   at least those it verified (below).
+3. Without one: the checks of §15.3 against epoch 1's first list. A device
+   that keeps trust records and was given no root cannot tell this vault from
+   one storage built around its public key (`rootUnconfirmed`): it reads, and
+   writes once the home device's reply code confirmed its join (§15.12) or
+   the user gave the kit's root.
+4. A record that exists but cannot be read is never taken as "no record"
+   (`recordUnreadable`).
 
-and two **link signing key pairs**, deterministic functions of the secret
-(security review 2026-10, R2):
+A list that fails any check is **refused for writing**: the device writes
+nothing to the vault (no revision, blob, inbox file, settings, notebook
+record or `vault.json`), and reports why. Reading still works: every file
+carries its own tag. A device that writes saves what it verified as its trust
+record (§15.10) before it writes; a device that only reads keeps none. The
+reference implementation keeps the record in
+`$XDG_STATE_HOME/sempere/trust/<vaultId>.json` (CLI, mode 0600 in a 0700
+folder) and in the app's Application Support folder. It holds public keys
+only, is kept private (it names the vault's devices) and is never copied
+between devices.
+
+A vault opened with the recovery key (§3) reads everything and writes
+nothing; it keeps no trust record and is checked against the root given with
+it (step 1), or against none.
+
+**Link key pairs.** `epochLink` (§15.3) is a pair of signatures by keys
+derived from the parent epoch's `K`, deterministic functions of it:
 
 | Key pair | Derivation | Public key | Signature |
 | --- | --- | --- | --- |
-| Ed25519 (RFC 8032, pure, no context) | private key = `linkEdSeed` (the RFC 8032 32-byte seed) | 32 bytes | 64 bytes |
-| ML-DSA-65 (FIPS 204) | `ML-DSA.KeyGen_internal(ξ = linkMLSeed)` (FIPS 204 Algorithm 16) | 1952 bytes (`pk`) | 3309 bytes |
+| Ed25519 (RFC 8032, pure, no context) | private key = the `epoch link ed25519 seed` of §15.2 (the RFC 8032 32-byte seed) | 32 bytes | 64 bytes |
+| ML-DSA-65 (FIPS 204) | `ML-DSA.KeyGen_internal(ξ = ` the `epoch link ml-dsa-65 seed` of §15.2`)` (FIPS 204 Algorithm 16) | 1952 bytes (`pk`) | 3309 bytes |
 
 ML-DSA-65 signatures are made with `ML-DSA.Sign` (pure, hedged or
 deterministic: both verify the same) with an **empty context string**, and
 checked with `ML-DSA.Verify` with an empty context. The private keys and
-seeds are never stored; whoever holds the secret derives them again.
-`linkPublicKeys(secret)` names the pair of public keys. Test vectors (fixed
-secrets → seeds → public keys → links that verify, made by two
-implementations) are in `Tests/SempereTests/Fixtures/secret-link-vectors.json`.
-
-**Tag.** `recipientsTag` is the lowercase hex (64 digits) of
-
-```
-HMAC-SHA256(key = recipientsKey,
-            message = "sempere/1" ‖ 0x00 ‖ "recipients" ‖ 0x00 ‖ vaultId
-                      ‖ 0x00 ‖ key₁ ‖ 0x00 ‖ key₂ … ‖ 0x00 ‖ keyₙ)
-```
-
-over `vaultId` and every `recipients[].key`, in list order, each exactly as
-written in `vault.json` (UTF-8; neither contains `0x00`). These are the fields
-that decide who can decrypt: adding, removing, replacing or reordering a key
-changes the tag. `label` and `added` are informational and not covered.
-The tag also covers `vaultSecret` implicitly: under another secret it does
-not verify.
-
-**Secret link.** Anyone can encrypt a secret of their own to public keys, so
-a forged `vault.json` could carry a fresh secret, the attacker's recipient and
-a tag that verifies under that secret. Whenever a writer rotates the secret
-(§3.3) it therefore writes `secretLink`: two signatures, by the **outgoing**
-secret's link signing keys, over the link message
-
-```
-linkMessage = "sempere/1" ‖ 0x00 ‖ "secret link" ‖ 0x00 ‖ vaultId ‖ 0x00 ‖ secretId(new secret)
-```
-
-(`vaultId` lowercase, UTF-8; `secretId` the 32 raw bytes), as a JSON object
-of lowercase hex strings:
-
-```json
-"secretLink": { "ed25519": "…(128 hex digits)…", "mldsa65": "…(6618 hex digits)…" }
-```
-
-A link is valid only when **both** signatures verify under the public keys
-the reader holds for the outgoing secret; one valid signature alone (the
-other missing, malformed, of another message or by another key) is
-invalid. Two independent schemes are required so that the link stays
-unforgeable while either one does (Ed25519 against classical attacks,
-ML-DSA-65 against a quantum computer). Only a holder of the outgoing secret
-can make the link, and a reader checks it with public keys alone. A value
-of any other shape (a missing member, uppercase hex, a wrong length, a
-string, not an object) never verifies, and writers drop it. `secretLink` is kept, unchanged,
-by changes that do not rotate the secret, and replaced by the next rotation.
+seeds are never stored. `linkPublicKeys(K)` names the pair of public keys;
+epoch 1's are what `root` is computed from, and the trust record keeps each
+pinned epoch's. A link is valid only when **both** signatures verify; one
+valid signature alone is invalid, so the link stays unforgeable while either
+scheme does. Vectors: `Tests/SempereTests/Fixtures/epoch-vectors.json`.
 
 **Version markers.** (Security review 2026-10, N3.) `format` and `features` decide whether a reader may
 write at all (§2, §7.3), and like everything in `vault.json` they are
-plaintext: without this tag, whoever can write the folder could set `format`
+plaintext: without a tag, whoever can write the folder could set `format`
 back to `sempere/1` or drop a feature this reader does not implement, and it
 would write to a vault it must only read. `markersTag` is the lowercase hex
 (64 digits) of
 
 ```
-markersKey = HKDF-SHA256(ikm = vaultSecret, salt = "", info = "sempere/1 markers key", L = 32)
 HMAC-SHA256(key = markersKey,
             message = "sempere/1" ‖ 0x00 ‖ "markers" ‖ 0x00 ‖ vaultId ‖ 0x00 ‖ format
                       ‖ 0x00 ‖ feature₁ ‖ 0x00 ‖ feature₂ … ‖ 0x00 ‖ featureₙ)
 ```
 
-over `vaultId` (lowercase), `format` exactly as written, and the distinct
-`features` sorted by their UTF-8 bytes (so their order and repetitions in
-the file do not matter), each UTF-8. A marker containing `0x00` never
-verifies. Every writer that writes `vault.json` (any change of §2.1 or §3.3,
-or a feature added, §2) writes `markersTag` for what it writes, under the
-secret written with it, in the same atomic write.
+with `markersKey` of §15.2, over `vaultId` (lowercase), `format` exactly as
+written, and the distinct `features` sorted by their UTF-8 bytes (so their
+order and repetitions in the file do not matter), each UTF-8. A marker
+containing `0x00` never verifies. Every writer of `vault.json` writes
+`markersTag` for what it writes, in the same atomic write. `authorSig` covers
+`format` and `features` too (§15.5).
 
-A reader holding the secret checks the markers once the list checks
-(steps 1–4 below give verified):
+A reader holding `K_e` refuses the vault for writing (above) when
+`markersTag` does not verify (`markersTag`), and when the trust record holds
+markers and `format` names a lower major or `features` lacks one of the
+record's (`markersRolledBack`: an older `vault.json` put back; markers only
+grow, since no writer lowers `format` or removes a feature). Newer markers
+still make the vault read-only (§7.3) whatever their tag. This version has no
+repair: the user puts back the home device's `vault.json` (a backup, another
+copy).
 
-- `markersTag` present: if it does not verify, the markers were changed
-  without the key (**markers mismatch**);
-- absent: every `vault.json` carries it, so it was removed (**markers
-  removed**: a downgrade);
-- the trust record holds markers and `format` names a lower major, or
-  `features` lacks one of the record's features (**markers rolled back**:
-  an older `vault.json` put back; markers only grow, since no writer lowers
-  `format` or removes a feature).
-
-Any of the three makes the vault **tampered** for writing exactly as a
-tampered list does (nothing is written, not even an inbox file or a tag),
-and is reported as such; reading still works, and newer markers still make
-the vault read-only (§7.3) whatever their tag. A key holder **repairs** the
-markers explicitly (`sempere vault markers repair`) by writing the larger of
-the markers on disk and those of its trust record (the higher major, every
-feature of either), tagged under the current secret; a repair that would
-name a format or feature it does not implement is refused (restore
-`vault.json` with that version instead). Confirming the recipients list
-(§2.1 "Repair") never clears a markers problem: it is refused for each of
-the three, and when it confirms a list problem while the markers do not
-check either (the list's problems are decided first), it writes the
-markers back the same way as a repair, never the ones on disk as they are.
-
-**Trust record.** A reader that writes keeps, per device and per vault,
-outside the vault and never in it (like §10): the vault id,
-`linkPublicKeys` of the last secret it verified, the keys of the last
-recipients list it verified, and the version markers it last verified. The reference implementation keeps it in
-`$XDG_STATE_HOME/sempere/trust/<vaultId>.json` (CLI) and in the app's
-Application Support folder, as
-
-```json
-{ "format": "sempere-trust/2", "vaultId": "…",
-  "linkPublicKeys": { "ed25519": "…(64 hex digits)…", "mldsa65": "…(3904 hex digits)…" },
-  "recipients": ["age1pq1…", …],
-  "markers": { "format": "sempere/1", "features": [] },
-  "rewrapFinished": true }
-```
-
-`markers` (required) are the version markers the device last verified:
-`format` and the canonical `features` (distinct, sorted by UTF-8 bytes). A
-writer never stores fewer markers than the record held: it keeps the higher
-major and every feature of either. A record of any other `format`, or
-missing a member, does not parse (step 5 below).
-
-`rewrapFinished` (optional) is `true` once
-this device has seen the secret named by `linkPublicKeys` with no rotation
-into it pending (§3.3.1 "Finished rotations"). While the record names the
-same secret it never goes back; a record saved for another secret starts
-without it.
-
-It holds no secret and no key that can make a link or decrypt anything:
-whoever reads it can check a `secretLink` but not forge one. It is still
-kept private (it names the vault's devices; the CLI creates it mode 0600 in
-a 0700 folder, the app excludes it from backups) and never copied between
-devices.
-
-**Writing.** Every write of `recipients` (creating a vault, adding, removing
-or replacing a recipient, finishing an interrupted change, a repair) writes
-`recipientsTag` under the secret written with it, in the same atomic write of
-`vault.json` (§3.3.1 step 2), and, when the secret rotated, `secretLink`.
-
-**Checking.** A reader holding the secret classifies the list:
-
-1. `recipientsTag` present: if it is not 64 lowercase hex digits or does not
-   verify, the list is **tampered**.
-2. `recipientsTag` absent: every `vault.json` carries it, so it was removed
-   (a **downgrade**) and the list is tampered.
-3. The device has a trust record: this step is decided **before** steps 1
-   and 2, whatever the tag says. If `linkPublicKeys` of the current secret
-   equal the record's (both keys), the secret is the one the device verified;
-   otherwise, if `secretLink` is a signed link whose two signatures verify
-   under the record's public keys over `linkMessage` for the current secret,
-   it is a rotation by a key holder. Steps 1 and 2 then apply, and a list
-   whose tag verifies is **verified**. If neither holds, the change is **unconfirmed**
-   and the list is tampered, whatever keys it holds and whether its tag is
-   present, absent or wrong (a tag is never judged, and no shorter list is
-   searched, under a secret the device cannot link to its record): the new secret may be an attacker's,
-   and a device that accepted it would also accept any later `secretLink`
-   made under it, including one that adds the attacker's key. A device that
-   missed two or more rotations therefore sees a tampered list, even when
-   they only removed keys; it can confirm the list explicitly (below). A
-   device never updates its trust record to an unconfirmed secret.
-4. The tag verifies and the device has no trust record: verified (first use
-   on this device).
-5. A trust record that exists but cannot be read (it does not parse, names
-   another vault, or is not a readable file) is never taken as "no record":
-   that would make the next write a first use and replace the record. The
-   list is then tampered (**record unreadable**) unless steps 1–2 already
-   found it so, with no restore list, until the user checks it and confirms
-   it (below), which writes the record again.
-
-A writer that finds the list verified saves it as its trust record before it
-writes (a reader that only reads keeps none); a record it cannot save stops
-the write, and is tried again by the next one. A tampered list is **refused for
-writing**: a writer encrypts nothing to it, neither revisions, blobs, inbox
-files (§11), `vaultSecret` nor rewraps (§3.3.1, which it must not resume), and
-reports the keys that are not in the last verified list (the **unexpected**
-keys). Reading notes still works: revisions and blobs carry their own tags.
-The last verified list is, when the current secret verifies a tag over the
-current list with up to three entries deleted (order kept), that shorter
-list: an attacker who only inserted keys is undone exactly, including keys
-another device added since this one last checked. Otherwise it is the trust
-record's list, if the device has one. The search runs only under a secret
-that step 3 accepted (or with no record): under an attacker's secret it
-would return a list holding the attacker's own key.
-
-**Repair.** A key holder repairs a list whose tag does not verify, or was
-removed, by writing the last verified list (keeping the labels the current
-entries have; a key the attacker deleted comes back with an empty label) as a
-recipient removal (§3.3): the secret rotates and every file is rewrapped, so
-no file stays encrypted to an unexpected key. An unconfirmed secret change
-cannot be repaired this way: the files are tagged under a secret the device
-no longer holds, so the user restores `vault.json` from a backup or another
-device, or, when the device only missed a legitimate change, confirms the
-current list explicitly after checking it (the tag must be present and verify
-under the current secret; the trust record is updated, nothing in the vault
-changes). A list whose tag does not verify, or was removed, is never
-confirmed, and nothing here is ever done implicitly.
-
-**Limits.** The check is only as fresh as the trust record. Signed links
-protect against whoever reads a device's trust record (or a backup of it),
-which holds public keys only; they do not protect against whoever held the
-outgoing secret itself. A device that
-opens a vault for the first time trusts the list it finds; a removed device,
-which knew the outgoing secret, can still forge a `secretLink` for devices
-that have not seen its removal; and an attacker who removes keys from the
-list (without adding any) can stop those devices' keys from receiving new
-files, which is reported as tampering but cannot be prevented. A device with no
-trust record cannot tell a replaced secret from the real one (step 4); an
-attacker who replaced it knows it and can plant revisions tagged under it,
-and the vault's earlier revisions then fail their tags under it, which
-readers report (§4).
+**Limits.** The check is only as fresh as the trust record. A device that
+opens a vault for the first time with no root to check trusts the list it
+finds; that is why a joining device confirms home's reply code (§15.12) and
+the kit carries the root.
 
 ## 3. Keys
 
@@ -445,6 +362,19 @@ it (c2sp.org/age, "Native recipient types"), of type MLKEM768-X25519:
   "harvest now, decrypt later" by a future quantum computer, provided no
   stanza of another type sits next to it.
 
+Three kinds of key are such identities:
+
+- the **vault identity** `V_e`, derived from `K_e` (§15.2). Every vault file
+  (revisions, blobs, inbox files, `settings.age`, notebook and epoch records)
+  is encrypted to its recipient `v_e`, in exactly one stanza;
+- a **device key**: generated by each device, listed in `keys` with its
+  signing keys (§2). Its private half never leaves the device and is never
+  stored in a vault. The reference CLI keeps it in
+  `$XDG_STATE_HOME/sempere/devices/<vaultId>/device.key` (mode 0600), or
+  passphrase-wrapped as `device.key.age`;
+- the **recovery key**: one per vault, printed in the recovery kit (§15.13)
+  and kept by no device. It opens the vault read-only.
+
 A classic X25519 identity (`age-keygen` without `-pq`, `AGE-SECRET-KEY-1…`)
 never opens a vault; implementations should say so rather than only report
 that no key matches.
@@ -453,219 +383,37 @@ The corresponding recipient is derived from the identity. Reading files
 encrypted to an MLKEM768-X25519 recipient with the stock CLI needs `age` 1.3
 or later.
 
-### 3.2 Passphrase-wrapped identity file
+### 3.2 The passphrase copy
 
-`keys/<key-name>.key.age` is an age file encrypted with a single scrypt
-(passphrase) recipient. `<key-name>` is `age1pq-` followed by the lowercase
-hex SHA-256 of the recipient string (64 digits): the recipient itself is too
-long for a file name. Readers find such a file by computing the name for each
-recipient in `vault.json`. Its plaintext is an `age-keygen` style file:
+`keys/recovery-<fingerprint>.key.age` (optional) is the recovery key,
+age-encrypted with a single scrypt (passphrase) recipient, with the vault id
+and root inside (§15.11). It is the only file in `keys/`. Writers use scrypt
+work factor 20; readers must accept any work factor up to 20 and may refuse
+larger with an error. The cap exists because scrypt at work factor w needs
+2^w × 1 KiB of memory (20 → 1 GiB), the most the iPad target can allocate.
 
-```
-# created: 2026-10-04T16:20:00Z
-# public key: age1pq1...
-AGE-SECRET-KEY-PQ-1...
-```
+It sits with the vault, so whoever can read the vault's storage can try
+passphrases on it offline: writers MUST refuse a passphrase that is easy to
+guess (the reference implementation refuses one estimated below about 70
+bits, `PassphraseStrength`, with no override; key-hierarchy design §8.2).
+`age -d keys/recovery-<fingerprint>.key.age` with the passphrase gives an
+identity file stock `age -i` reads.
 
-`age -d keys/<key-name>.key.age` with the passphrase must work. Writers
-use an scrypt work factor between 15 and 18; readers must accept any work
-factor up to 20, may accept up to 22, and may refuse larger with an error.
-The reader cap exists because scrypt at work factor w needs 2^w × 1 KiB of
-memory (20 → 1 GiB, 22 → 4 GiB), beyond what the iPad target can allocate.
+### 3.3 Key changes
 
-The file is optional. A vault may be used with an identity that is only
-in a device Keychain or supplied externally. It sits with the vault, so
-whoever can read the vault's storage can try passphrases on it offline:
-writers SHOULD refuse a passphrase that is easy to guess (the reference
-implementation refuses one estimated below 60 bits, `PassphraseStrength`,
-unless the user insists; security review 2026-10, stage 4, S5).
-
-### 3.3 Changing recipients
-
-Before any change a writer checks the current list (§2.1) and refuses
-a tampered one (a repair, §2.1, starts from the last verified list instead).
-It builds the new list from the `vault.json` on disk: one whose `recipients`
-or `vaultSecret` changed since the writer read it (another device's change)
-stops the change before step 1 of §3.3.1, so that change is never undone.
-Adding a recipient: append it to `recipients`, re-encrypt `vaultSecret`
-to the new set, then re-encrypt every revision under `notes/` to the new set
-(new file key and header), and rewrap every blob under `notes/<id>/att/`
-(§8.1.5). Removing a recipient: the same, with a freshly generated
-`vaultSecret`, which also renames every blob (§8.1.5). These are the only in-place
-rewrites in the format; do them from one device while others are idle.
-
-In both cases the `gzip(JSON)` bytes of every body (§4) are unchanged. On
-removal each body is also re-tagged under the new `vaultSecret`, after its
-existing tag has been verified under the outgoing secret. A file whose tag
-does not verify is left as it is and reported; it is never re-tagged.
-
-#### 3.3.1 Resumable procedure
-
-Implementations SHOULD change recipients as follows, so that an interrupted
-change can be finished by any device holding an identity of the new set:
-
-1. Write `rewrap-journal.json` at the vault root (atomically, and durably
-   before step 2):
-
-   ```json
-   { "format": "sempere/1",
-     "previousVaultSecret": "-----BEGIN AGE ENCRYPTED FILE-----\n...\n",
-     "rekeyBlobs": true }
-   ```
-
-   - `format`: `sempere/1`.
-   - `previousVaultSecret`: present only when the secret is rotated
-     (removal): the outgoing 32-byte vault secret, age-encrypted and
-     armored to the **new** recipient set. Absent when adding.
-   - `rekeyBlobs` (required): how blobs are rewrapped (§8.1.5): `true`
-     re-encrypts each under a new file key, `false` rewrites only its
-     header. A journal without it is unreadable. A device finishing an
-     interrupted change uses the recorded value.
-2. Write `vault.json` with the new `recipients` and `vaultSecret`, and with
-   `recipientsTag` (and, when the secret rotates, `secretLink`) for them
-   (§2.1), and `rewrapPending` for the journal of step 1 (below), in one
-   atomic write.
-3. For every file under `notes/` (revisions and `att/` blobs), skip it if it is already
-   complete (below); otherwise rewrite it as described above, verifying its
-   tag under the current secret or, failing that, under
-   `previousVaultSecret`, and replace it atomically (temporary file in the
-   same directory, then rename; blobs: §8.1.5). Files waiting in `inbox/`
-   (§11) are rewritten the same way, re-tagged under the current secret's
-   key of the same kind (§11.1): a file tagged with a device capture key
-   under the current device capture key of that device, which must still
-   be listed. One that cannot be decrypted or verified that way
-   is left as it is, reported, and does not keep the journal. So is
-   `settings.age` (§13): re-encrypted and re-tagged like a revision, its JSON
-   unchanged whatever its `$minReaderVersion`; one that cannot be decrypted
-   or verified
-   is left as it is, reported, and does not keep the journal. Notebook records
-   (§14) are rewritten like revisions (re-encrypted, re-tagged under their own
-   label); one that cannot be decrypted or verified is left as it is, reported,
-   and does not keep the journal either.
-4. Once every file is complete, rewrite `vault.json` without
-   `rewrapPending` (one atomic write that tags its markers as every write
-   does, §2.1, and only over a `vault.json` whose recipients, `vaultSecret`
-   and markers are still the ones this writer holds; otherwise stop and keep
-   the journal), then delete `rewrap-journal.json`. If any file could not be
-   read or verified, keep the journal (it is the only copy of the outgoing
-   secret) and `rewrapPending`, report those files, and retry step 3 later.
-
-A file is complete when its age header has exactly one `mlkem768x25519`
-stanza per current recipient and no other stanzas,
-and its tag verifies under the current `vaultSecret` (for a blob: its name
-verifies, §8.1.5). Neither stanza type names its recipient, so these counts
-are the only header-level check; while a journal exists no other recipient
-change is started, so counts from two changes never mix.
-
-If `rewrap-journal.json` exists when a vault is opened and is accepted
-(below), the change is unfinished: a writer whose list checks (§2.1)
-finishes steps 3 and 4 before any other recipient change, and may verify
-tags under `previousVaultSecret` meanwhile. Readers
-that do not implement this procedure treat the journal as an unknown file
-(§1).
-
-**Accepting the journal.** The journal is plaintext that anyone who can
-write the folder can plant or put back, and anyone can encrypt a secret of
-their own to the public keys. A removed device even holds a real outgoing
-secret, and `secretLink` stays in `vault.json` until the next rotation
-(§2.1), so a link alone cannot tell an unfinished rotation from a finished
-one (security review 2026-10, S0). A reader therefore accepts the journal
-only when:
-
-1. **Bound:** `vault.json`'s `rewrapPending` verifies over the journal's
-   bytes under the current secret (below); and, when it holds a
-   `previousVaultSecret` other than the current secret,
-2. **Linked:** `vault.json`'s `secretLink` (§2.1) verifies a rotation from
-   that secret to the current one, and
-3. **Not finished:** the reader's trust record does not say that the
-   rotation into the current secret finished (`rewrapFinished`, below).
-
-Otherwise the journal is **refused**: it gives no secret, a writer does not
-resume from it, and files tagged under its secret fail their tags. A journal
-that does not parse, or whose previous secret this reader's keys do not
-decrypt, is refused too. A journal left by a change interrupted before step
-2 is not bound: it is refused, which loses nothing, since `vault.json` did
-not change.
-
-**Binding the journal.** The writer of a recipient change writes, in step 2,
-the lowercase hex (64 digits) of
-
-```
-pendingKey    = HKDF-SHA256(ikm = vaultSecret, salt = "", info = "sempere/1 rewrap pending key", L = 32)
-rewrapPending = HMAC-SHA256(key = pendingKey,
-                            message = "sempere/1" ‖ 0x00 ‖ "rewrap pending" ‖ 0x00 ‖ vaultId
-                                      ‖ 0x00 ‖ SHA-256(journal))
-```
-
-with `vaultSecret` the **new** secret (the current one when it does not
-rotate), `vaultId` lowercase UTF-8, and `journal` the exact bytes of
-`rewrap-journal.json` written in step 1 (32 raw bytes of digest). Only
-holders of the current secret can compute it, so a removed device, which
-holds the outgoing secret only, can neither bind a journal of its own nor
-bind the genuine one again once step 4 removed the field. The field is
-covered by neither `recipientsTag` nor `markersTag`; removing it only makes
-readers refuse the journal, which is no more than deleting the journal does.
-Every other write of `vault.json` (a feature added, markers repaired)
-keeps it unchanged.
-
-**Finished rotations.** A `vault.json` from step 2, put back after step 4
-(same secret), still binds the genuine journal, which whoever saved both can
-replay; no field of `vault.json` can tell the two apart. Each device that
-keeps a trust record (§2.1) therefore remembers that the rotation into its
-current secret finished: it sets `rewrapFinished` when it saves its record
-for the current secret (at any write), or opens the vault with a list that
-checks against a record of that same secret, while `vault.json` carries no
-`rewrapPending` and no `rewrap-journal.json` exists, and when it completes
-step 4 itself. From then on it refuses every journal whose previous secret
-is not the current one (rule 3). A device without a record (first use, a
-record lost) applies rules 1 and 2 only.
-
-**Refused journals.** A refused journal gives no secret, and no other
-recipient change resumes from it. A writer whose list checks (§2.1) takes it
-away, judged against the `vault.json` on disk at that moment, only when it
-refuses it: never one it accepts or cannot read (an I/O error, a file not yet
-downloaded), which are always kept. A refused journal is taken away:
-
-- when the user asks (`sempere vault rewrap-discard`);
-- when the user starts a recipient change (adding, removing or replacing a
-  key, in the CLI or the app), whatever the journal's age: the change takes
-  it away first and reports that it did, so a journal planted again and
-  again cannot stop the removal of a lost device;
-- when the app unlocks the vault, except that this discard nobody asked for
-  keeps a journal written in the last 24 hours while `vault.json` carries no
-  `rewrapPending`, unless its `previousVaultSecret` decrypts to a secret
-  other than the current one. Such a journal may be step 1 of a change
-  another device is making, synced in before the `vault.json` of its step 2
-  (a rotation starting now moves away from the current secret); it is still
-  refused meanwhile.
-
-The reference implementation moves it to `rewrap-journal.refused.json`, an
-unknown file (§1) that nothing reads, replacing an earlier one. When its trust
-record says the rotation finished, it also removes a `rewrapPending` that
-`vault.json` still carries (a put-back copy), as in step 4. Sync never
-replaces a local journal with another copy unless the local one is refused
-and the other accepted (without the key, the other is kept as a conflict
-copy), and never takes a `vault.json` that, under the same secret and
-recipients, brings back or changes `rewrapPending` (only step 4's removal is
-legitimate there).
-
-**Limits.** A device with no trust record that is given both a `vault.json`
-put back from step 2 and the genuine journal accepts the outgoing secret, as
-it would have during the rotation. A backup taken while a
-rotation was unfinished, restored after the rotation finished, looks like a
-put-back copy to a device that saw it finish: that device refuses its
-journal (and moves it aside), and the rotation is finished from a device
-without that record.
-
-A change may also **replace** one recipient by another in a single pass
-(steps 1–4 as for a removal: the secret rotates). Until it finishes, files
-not yet rewrapped are encrypted only to the outgoing recipient, so finishing
-it needs an identity of the outgoing key as well as one of the new set.
+In this version the list changes in two ways only, both by home and both
+within epoch 1 (§2): approving a device that asked to join (§15.12) and
+renaming a device. Neither re-encrypts a file. Removing or replacing a key,
+handing the home role over, a takeover and replacing the recovery key start a
+new epoch (key-hierarchy design §5, §6; phases KH3 to KH5), and re-encrypting
+every file is phase KH6. Earlier drafts of this format changed recipients by
+rewrapping every file; that mechanism is gone, with no migration.
 
 ## 4. Encrypted file bodies
 
-Every revision file (`notes/<noteId>/*.age`) is an age v1 file whose
-plaintext is (blobs in `att/` use their own framing, §8.1.3):
+Every revision file (`notes/<noteId>/*.age`) is an age v1 file with exactly
+one `mlkem768x25519` stanza, to the vault identity's recipient `v_e` (§3.1,
+§15.2), whose plaintext is (blobs in `att/` use their own framing, §8.1.3):
 
 | Offset | Size | Content |
 | --- | --- | --- |
@@ -674,9 +422,9 @@ plaintext is (blobs in `att/` use their own framing, §8.1.3):
 | 5 | 32 | HMAC-SHA256 tag (below) |
 | 37 | rest | `gzip(JSON)` (§5), gzip framing so `gunzip` reads it |
 
-Tag = HMAC-SHA256(key = vaultSecret,
+Tag = HMAC-SHA256(key = tagKey,
 message = `"sempere/1" ‖ 0x00 ‖ noteId ‖ 0x00 ‖ filename ‖ 0x00 ‖ gzipBytes`),
-where `filename` is the file's base name (e.g. `00017596...-a1b2c3d4-12.delta.age`)
+where `tagKey` is derived from the epoch's key `K_e` (§15.2), `filename` is the file's base name (e.g. `00017596...-a1b2c3d4-12.delta.age`)
 and `noteId` is the note directory name. Binding the file name stops a
 revision being replayed under another note or name. The label `sempere/1`
 names this framing (body version `0x01`), not the vault's `format`: it stays
@@ -685,15 +433,19 @@ the same in a vault of a later major (§7.6).
 A body version higher than the reader implements is newer content (§7.2):
 the file is reported as newer, not as corrupt.
 
-Readers must verify the tag when the vault secret is available and must
-report, not silently drop, files that fail. Recovery without the app:
+Readers must verify the tag when the vault key is available and must
+report, not silently drop, files that fail. Recovery without the app takes
+the vault identity out of the recovery entry first (the kit's script,
+§15.13), then reads any file with it:
 
 ```
-age -d -i key.txt FILE.age | tail -c +38 | gunzip | jq .
+jq -r '.keys[] | select(.role == "recovery") | .wrap' vault.json | age -d -i recovery.txt > vault-keys.txt
+age -d -i vault-keys.txt FILE.age | tail -c +38 | gunzip | jq .
 ```
 
-With a post-quantum key (`AGE-SECRET-KEY-PQ-1...`) this needs `age` 1.3 or
-later; older `age` reports that no identity matched.
+A device key file opens its own entry's wrap the same way. This needs `age`
+1.3 or later (post-quantum keys); older `age` reports that no identity
+matched.
 
 ## 5. Revisions
 
@@ -1720,7 +1472,8 @@ A reader has seen **newer content** when any of these holds:
 A `vault.json` whose `format` is not a format identifier, or names major 0,
 is not a vault this reader can open: it refuses it (`unsupportedFormat`).
 So does a reader that cannot decode a newer `vault.json` well enough to
-decrypt `vaultSecret` (§2: `vaultId`, `recipients`, `vaultSecret`). A
+unwrap its key (§2: `vaultId`, `epoch`, `keys` and the reader's own entry's
+`wrap`). A
 revision whose `format` is present but not a format identifier (or names
 major 0), or whose `features` is present but not an array of strings, is
 invalid and rejected like any undecodable revision (§5).
@@ -1740,10 +1493,10 @@ open (and, for markers 1 and 2, whenever it opens it), it:
   checkpoints) and no snapshot;
 - deletes no revision: no compaction and no thinning (§5.3, §5.8.4);
 - writes, copies, renames, collects or repairs no blob (§8.1);
-- starts, resumes or finishes no recipient change and rewraps nothing
-  (§3.3), and writes no identity file (§3.2);
-- does not change `vault.json` (not even `features`, §2), and keeps no
-  trust record for it (§2.1);
+- changes no key: approves, renames or removes no device and re-encrypts
+  nothing (§3.3), and writes no passphrase copy (§3.2);
+- does not change `vault.json` (not even `features` or `label`, §2), and
+  keeps no trust record for it (§2.1);
 - writes nothing to and deletes nothing from `inbox/` (§11): it adopts no
   capture and enables no capture profile;
 - does not write `settings.age` (§13);
@@ -1757,7 +1510,7 @@ files byte for byte without changing or deleting any by its own decision
 The rule holds per vault, not per note: a newer revision in one note makes
 the whole vault read-only. A reader must at least refuse every write to a
 note whose revisions it has read and found newer, and every vault-wide
-change (recipients, `vault.json`, `inbox/`) once it has seen newer content
+change (the device list, `vault.json`, `inbox/`) once it has seen newer content
 anywhere. A reader that offers no read-only access refuses to open a vault
 with marker 1, and treats a revision with marker 3 or 4 as unreadable
 (reported, §4); it must still never write to a vault with marker 2 (§2).
@@ -1843,19 +1596,18 @@ implements a later major N:
   "sempere/N"` in every revision it writes from then on (a revision that
   uses an extension, `features`, lists it in the revision's `features`
   too);
-- keeps `vaultId`, `recipients` and `vaultSecret` in `vault.json` (§2), and
-  `recipientsTag`, `secretLink` and `markersTag` as §2.1 defines them, the
-  latter over the markers it writes (a reader of this version that finds a
-  tag removed reports tampering, §2.1), the key files
-  (§3), the revision file names (§5) and the envelope fields of
-  §5.1, with their meaning;
+- keeps `vaultId`, `root`, `epoch`, `epochId` and each listed key's `wrap`
+  in `vault.json` (§2, §15.3), so that a reader of this version still finds
+  its own entry and unwraps the key, and `markersTag` over the markers it
+  writes (§2.1), the passphrase copy (§3.2), the revision file names (§5) and
+  the envelope fields of §5.1, with their meaning;
 - keeps the body framing of §4, version byte `0x01` and tag label
   `sempere/1`, unless it must change them: the label names the framing, not
   the vault's format. A new body version makes its files unreadable to
   older readers (marker 3), and breaks the stock-CLI recovery path, which
   must then be documented anew.
 
-The recovery path of §4 (`age -d … | tail -c +38 | gunzip | jq .`) and of
+The recovery path of §4 and §15.13 (`age -d -i vault-keys.txt … | tail -c +38 | gunzip | jq .`) and of
 §8.1.7 therefore reads newer revisions too.
 
 ## 8. Attachments
@@ -1903,17 +1655,17 @@ A blob of note `noteId` is stored as
 `notes/<noteId>/att/<blobName>.<kind>.age`, where
 
 ```
-blobName = lowercase hex of HMAC-SHA256(key = vaultSecret,
+blobName = lowercase hex of HMAC-SHA256(key = blobNameKey,
              message = "sempere/1" ‖ 0x00 ‖ "blob" ‖ 0x00 ‖ sha256)
 ```
 
-and `sha256` is the content hash as 32 raw bytes. Names are 64 hex digits.
+`blobNameKey` is derived from the epoch's key `K_e` (§15.2), and `sha256`
+is the content hash as 32 raw bytes. Names are 64 hex digits.
 They are keyed so that storage never shows a plaintext content hash: anyone
 could otherwise confirm that a vault holds a known file by hashing it. The
 name doubles as the blob's authentication tag: only a holder of the vault
-secret can produce the name that matches a content hash, and a reader checks
-it (§8.1.4). There is no tag inside the blob, so a secret rotation renames
-blobs instead of re-encrypting them (§8.1.5). The name does not depend on the
+key can produce the name that matches a content hash, and a reader checks
+it (§8.1.4). There is no tag inside the blob. The name does not depend on the
 note, so a blob file copied byte for byte into another note's `att/` is valid
 there.
 
@@ -1941,8 +1693,8 @@ Revision listings (§5) never look inside `att/`.
 
 #### 8.1.3 Framing
 
-A blob file is a binary age v1 file, encrypted to the vault's recipients like
-a revision. Its plaintext is:
+A blob file is a binary age v1 file, encrypted to the vault identity in one
+stanza like a revision (§4). Its plaintext is:
 
 | Offset | Size | Content |
 | --- | --- | --- |
@@ -1965,13 +1717,14 @@ padme(n) = n                                  if n < 2
 
 Readers accept any amount of padding but reject non-zero padding bytes.
 
-Test vector: vault secret bytes `00 01 02 … 1f`, content the 16 ASCII bytes
+Test vector: epoch key `K_e` bytes `00 01 02 … 1f` (so `blobNameKey` is its
+§15.2 derivation), content the 16 ASCII bytes
 `hello, sempere!\n`, type `text/plain` (kind `bin`):
 
 ```
 sha256    8ff2ca4079cee96a407a038a996ef5d0dd317f201fddc04174f0d89b763add65
-blobName  13ddeae851cf51d7e9a970d82ca2c99f1dbaa3efaf792248da32b8374d6869af
-path      notes/<noteId>/att/13ddeae8…69af.bin.age
+blobName  540202258da1b7aa71188692543fcd1704765f5f52a89f9a7649e6d36878dda9
+path      notes/<noteId>/att/54020225…dda9.bin.age
 header    494e4b4201 8ff2…dd65 0000000000000010   (45 bytes)
 padme     61 → 64 (3 zero bytes); 1000 → 1024; 482158 → 483328; 28311597 → 28835840
 ```
@@ -1984,7 +1737,7 @@ A writer that adds content to note N:
 2. if that file exists and its first STREAM chunk decrypts to a valid header
    (magic, version, the same `sha256`, a name that verifies), reuses it; if
    it exists but fails that check, may replace it atomically with a valid
-   encryption (the only replacement of a blob outside §8.1.5);
+   encryption (the only replacement of a blob);
 3. otherwise writes it with the atomic-write procedure (`docs/io.md`),
    never replacing an existing file of that name;
 4. only after the blob is durable, writes the revision that references it.
@@ -1996,10 +1749,10 @@ writes a reference in M that relies on a blob of N.
 
 A blob is valid when its framing is well formed, `L` and the content fit the
 file, the padding is zero, the SHA-256 of the content equals the header's,
-and `blobName` computed from the header's hash under the vault secret equals
+and `blobName` computed from the header's hash under the vault key equals
 its file name. Read through a reference, the header's hash and `L` must also
 equal the reference's `sha256` and `size`. Readers must check the name when
-the vault secret is available and must always check the content hash. A
+the vault key is available and must always check the content hash. A
 reader that hands out content before the hash is complete (streaming audio,
 a large PDF) must stop and report on a mismatch. Failures are reported like
 unreadable revisions and the blob is treated as missing (§8.5.2).
@@ -2010,51 +1763,18 @@ not to the blob. Implementations may hold a blob of at most 16 MiB in memory
 whole; larger blobs must be streamed (to a private temporary file where
 random access is needed, e.g. reading a PDF, deleted when done).
 
-#### 8.1.5 Recipient changes
+#### 8.1.5 Key changes
 
-The recipients of a vault are its **device keys**: one age recipient per
-device (or paper backup key) that may open the vault (§2, §3). Adding a
-recipient means letting a new device open the vault; removing one means
-locking out a lost or retired device. Recipients have nothing to do with
-sharing a note with another person: that is an export (PDF, SVG, PNG, or a
-copy), never a change of recipients.
+Blobs are never rewrapped or renamed in this version: adding a device wraps
+the vault key to it and touches no file (§3.3). A blob keeps the name it got
+under the key of the epoch it was written in. How files of earlier epochs are
+read after a removal, and how re-encrypting everything rewrites blobs, come
+with the key hierarchy's later phases (key-hierarchy design §5, §7; KH3,
+KH6).
 
-The procedure of §3.3.1 covers blobs. A blob is complete when its age header
-has exactly one recipient stanza per current recipient, of that recipient's
-type (and no others), and its name verifies under the current `vaultSecret`
-using the hash in its header (only the first STREAM chunk needs decrypting).
-
-A blob is rewrapped in one of two ways:
-
-- **Header-only rewrite** (keep the file key): a new age header (one stanza
-  per current recipient wrapping the same file key, new header MAC) followed
-  by the unchanged nonce and payload bytes.
-- **Full re-encryption** (new file key): the content is decrypted and
-  encrypted again under a fresh file key and nonce.
-
-Default policy, chosen automatically by the kind of change:
-
-| Change | Default | Why |
-| --- | --- | --- |
-| a recipient is added (and none removed) | header-only rewrite | everyone who could read a blob still can; nothing becomes readable to anyone who could not read it before |
-| a recipient is removed | full re-encryption | every old copy of a blob's header (backups, file-version history, another device's cache) has a stanza the removed key opens; with the same file key it would open the current file too |
-
-A change that both adds and removes (a replacement) follows the removal row.
-Implementations may let the user choose the other method for each of the two
-cases (adding; removing); the default is the table above. The method in
-force is written to `rewrap-journal.json` as `rekeyBlobs` (§3.3.1) before the
-first blob is rewritten. Revisions are always fully re-encrypted (§3.3).
-
-On a recipient addition the name is unchanged and the file is replaced
-atomically. On a removal the vault secret changes and so does the name: the
-writer writes the rewrapped file under the new name in the same `att/`
-(atomically, never replacing an existing valid file) and then deletes the old
-one; if a valid file already exists under the new name (an interrupted run),
-it only deletes the old one. A blob whose name verifies under neither the
-current secret nor `previousVaultSecret` is left untouched and reported,
-never rewrapped or renamed, so a rewrap cannot launder a planted file. While
-`rewrap-journal.json` exists, a reader looking up a reference tries the name
-under the current secret, then under `previousVaultSecret`.
+The vault's keys have nothing to do with sharing a note with another person:
+that is an export (PDF, SVG, PNG, or a copy), never a change of the device
+list.
 
 #### 8.1.6 Collection
 
@@ -2064,7 +1784,8 @@ blob in `notes/<N>/att/` may be deleted only when all of these hold:
 1. every revision file of note N was listed, read and verified (one
    unreadable or unlistable revision of N stops collection for N: it may
    hold the only reference);
-2. no `rewrap-journal.json` exists;
+2. no re-encryption of the vault is unfinished (no `reencrypt-journal.age`,
+   §15.8);
 3. no revision of N present, snapshot or delta, contains a blob reference
    (§8.1.1) with the blob's content hash (a deleted note, §5.2, still has
    its revisions, so its blobs stay);
@@ -2075,7 +1796,7 @@ blob in `notes/<N>/att/` may be deleted only when all of these hold:
 
 No other note is read: references never cross notes (§8.1.1). Blob files
 that cannot be decrypted or verified (as a whole, §8.1.4, with the name
-checked under the current secret) are never deleted by collection; they
+checked under the current key) are never deleted by collection; they
 are reported. Because every surviving revision keeps its blobs, history
 (§5.7) never loses an attachment that a restore point needs.
 
@@ -2697,10 +2418,10 @@ A recording belongs to the note, not to a page (`recordings`, §5.4):
   note adopted from the inbox (§11.3), who captured it:
   `{ "device": "a1b2c3d4", "recipient": "…(64 hex digits)…" }`. `device` is
   the capturing device's id (§5) as its capture named it; `recipient` the
-  fingerprint (§11.1) of the vault recipient whose device capture key sealed
+  fingerprint (§11.1) of the key of the listed device whose device capture key sealed
   the capture. Both are required. A reader that finds a value of
   another shape treats it as absent; it never rejects the revision for it.
-  Readers show the recipient's `label` while it is listed, and that the
+  Readers show that device's `name` (§2) while it is listed, and that the
   device is no longer in the vault otherwise.
 - Registers: `title` (string; absent means `""`) and `transcript` (a blob
   reference or `null`), changed with `setRecording` and merged LWW per
@@ -3064,7 +2785,7 @@ every text escaped; formulas as their source between `\(`…`\)` or
 
 Everything in a vault folder may come from a hostile sync server, a shared
 folder or a crafted import, and is untrusted until its age header, body tag
-(§4) and content have been checked; even then a recipient may be malicious.
+(§4) and content have been checked; even then a listed device may be malicious.
 A reader must fail on bad input with an error it reports (§4, §5), never by
 crashing, hanging, or allocating without a bound. Concretely, readers:
 
@@ -3085,9 +2806,10 @@ where the table says how they degrade.
 | What | Limit | Where |
 | --- | --- | --- |
 | revision file, sync state | 256 MiB on disk, 256 MiB after gunzip | `BoundedRead`, `Gzip.defaultMaxOutput` |
-| `vault.json`, `rewrap-journal.json` | 16 MiB | `BoundedRead` |
-| `recipientsTag`, `secretLink` (§2.1) | a value that is not a string of 64 lowercase hex digits is a tag that does not verify (tampered), never a parse error | `VaultManifest` |
-| subsets tried to find the last verified list (§2.1) | up to 3 entries deleted, lists of at most 16 keys (C(16, ≤3) = 696 tags) | `RecipientsAuth.maxSearchDeletions` |
+| `vault.json` | 16 MiB; a wrap 16 KiB; at most 4096 entries and 256 additions per epoch (§15.3, §15.7) | `EpochManifest.maxBytes` |
+| `vault.json` `label` (§2) | anything but a string reads as absent, never a parse error | `EpochManifest` |
+| epoch record, re-encryption journal (§15.6, §15.8) | 64 MiB on disk and after gunzip | `EpochRecord.maxBytes` |
+| join request, passphrase copy, device key file (§15.11, §15.12) | 16 KiB | `JoinRequest.maxBytes`, `RecoveryPassphraseCopy.maxBytes`, `DeviceKeys.maxBytes` |
 | blob collector state (device-local, §8.1.6) | 64 MiB | `BlobCollectorState` |
 | identity file, device state | 1 MiB | `BoundedRead` |
 | attachment blob file (§8) | 1 GiB of content plus 64 MiB of framing and age overhead (padme of a 1 GiB blob adds up to 32 MiB) | `BoundedRead` |
@@ -3098,7 +2820,7 @@ where the table says how they degrade.
 | unknown fields kept verbatim (§7.5, §8) | 24 levels deep from the document root; 16 384 values per file | `JSONValue.maxDepth`, `.maxValues` |
 | `seq`, `included` `upTo` / `extra` | 1 … 2^53 − 1 | `RevisionName.maxSeq` |
 | age header | 2 MiB, 1024 stanzas | Age `HeaderCodec` |
-| scrypt work factor (identity files) | 2^20 by default (1 GiB), at most 2^22 | `IdentityFile` |
+| scrypt work factor (the passphrase copy, a passphrase-wrapped identity) | 2^20 (1 GiB) | `ScryptIdentity`, `IdentityFile` |
 | WebDAV response | 256 MiB for a revision, 16 MiB otherwise; a blob is fetched in 2 MiB segments, up to the blob file limit above; PROPFIND bodies must be UTF-8 with no DTD or processing instruction | `WebDAVClient` |
 | WebDAV sync run (§9.1) | 100 000 note folders, 10⁶ listed entries, 64 GiB downloaded, 12 hours; the run stops there with an error and the next one continues | `SyncLimits` |
 | zip entry (import) | 1 GiB uncompressed, CRC and size checked; a stored entry's two sizes equal, a deflated one at most its size + 0.1 % + 64 bytes; no two entries of one name, and no two whose header and data overlap (else the archive is refused); all reads of one archive, repeated and failed ones included, at most 32 × its size and at least 2 GiB uncompressed (an unzipped package: 4 GiB read); a read that failed is not repeated; thumbnails: 8, 16 MiB each | `ZipArchive`, `NotePackage` |
@@ -3145,20 +2867,17 @@ server, a shared folder it pulls from) checks each file **before** it places
 it, because a placed file is write-once and every later reader trusts its
 name:
 
-- **With the vault unlocked**, a revision must decrypt with the device's
-  identity, its tag (§4) must verify under the vault secret (or the previous
-  one of an unfinished rotation, §3.3.1), and it must decode as a revision of
+- **With the vault unlocked**, a revision must decrypt with the vault
+  identity, its tag (§4) must verify under the epoch's key, and it must decode as a revision of
   that note and file name; a revision marked as written by a later version
   (§7) passes, as it would when read. A blob must decrypt whole, with valid
   framing, zero padding and content hash (§8.1.3, §8.1.4), and its file name
   must be the keyed name of its hash (§8.1.2). The checks are those of a read
-  under the secret `vault.json` holds once any `vault.json` received in the
-  same run has been taken (§2.1), so a rotation arriving with its first
-  revisions is not mistaken for forgery.
+  under the key `vault.json` holds once any `vault.json` received in the
+  same run has been taken (§1.3, §2.1).
 - **Locked** (no identity, or a first pull without one), only structure can
-  be checked: an age header that parses, whose stanzas are all of a type the
-  vault's recipients use and no more numerous than its recipients, and a
-  payload long enough for one chunk.
+  be checked: an age header that parses, with exactly one stanza, of type
+  `mlkem768x25519`, and a payload long enough for one chunk.
 
 A file that fails is **quarantined**: never placed under `notes/`, kept
 outside the vault (the reference implementation: next to the sync state,
@@ -3169,10 +2888,10 @@ webdav --retry-quarantined` fetches it again). It is never deleted silently.
 
 **One bad file never blocks a note.** Readers already skip a revision they
 cannot read (§5, reported). A writer choosing its next `seq` (§5) skips a
-snapshot whose tag does not verify: it decrypted with the device's key but
-was not written under the vault secret, so no writer of the vault made it and
+snapshot whose tag does not verify: it decrypted with the vault identity but
+was not written under the vault key, so no writer of the vault made it and
 its `included` covers nothing; skipping it can never reuse a `seq`. A
-snapshot that does not decrypt (or whose journal is unreadable) may be a real
+snapshot that does not decrypt may be a real
 one whose coverage is unknown, so a writer still refuses to pick a `seq`
 until it can be read or is removed. A locked sync places such well-formed
 forgeries (it cannot tell), and they then fail only their own reads.
@@ -3186,19 +2905,19 @@ again does not decrypt every note. The reference implementation keeps it in
 the app's Application Support folder and, for the CLI, in
 `$XDG_CACHE_HOME/sempere/` (default `~/.cache/sempere/`). Other readers need
 not read or write it; it is documented because it is derived from the vault
-secret and holds note metadata.
+key and holds note metadata.
 
-**Key and name.** With `vaultSecret` (§2) as HKDF-SHA256 input key material
-(RFC 5869, empty salt):
+**Key and name.** With the epoch's key `K_e` (§15.2) as HKDF-SHA256 input key
+material (RFC 5869, empty salt):
 
 ```
-key  = HKDF-SHA256(ikm = vaultSecret, salt = "", info = "sempere/1 summary-cache key",  L = 32)
-name = HKDF-SHA256(ikm = vaultSecret, salt = "", info = "sempere/1 summary-cache name", L = 16)
+key  = HKDF-SHA256(ikm = K_e, salt = "", info = "sempere/1 summary-cache key",  L = 32)
+name = HKDF-SHA256(ikm = K_e, salt = "", info = "sempere/1 summary-cache name", L = 16)
 file = lowercase hex(name) ‖ ".summaries"
 ```
 
-The file name says nothing about the vault without its secret; a vault whose
-secret rotates (§3.3) gets a new, empty cache, and the old file is never read
+The file name says nothing about the vault without its key; a vault that
+starts a new epoch gets a new, empty cache, and the old file is never read
 again.
 
 **File.** `SMPS` ‖ `0x01` ‖ ChaCha20-Poly1305 sealed box (12-byte random
@@ -3225,18 +2944,21 @@ is opened, not in the listing.
 
 A reader may keep other caches derived from a vault on a device, under the
 same rules as §10: never in the vault, unreadable and unlinkable to the vault
-without its secret, and never trusted over the vault. Each cache has a
+without its key, and never trusted over the vault. Each cache has a
 *purpose* (lowercase ASCII letters and digits in hyphen-separated words, at
-most 64 bytes) and a 5-byte magic. The purposes `summary-cache`,
-`recipients` and `capture` are reserved: with them the derivations below
-would give the keys of §10, §2.1 and §11.1 (the other info strings of §2.1
-contain a space, which no purpose can). With `vaultSecret` as
+most 64 bytes) and a 5-byte magic. The purposes `summary-cache`, `capture`,
+`list`, `markers`, `blob` and `recipients` are reserved: with them the
+derivations below would give the keys of §10, §11.1 and §15.2 (`list key`,
+`markers key`; `blob name`, whose first 16 bytes a cache folder's name would
+show), and `recipients` that of an earlier draft of this format. Every other
+info string of §15.2 either has a space where `<purpose>` would be, which no
+purpose can, or does not end in ` key`, ` entry` or ` name`. With the epoch's key `K_e` as
 HKDF-SHA256 input key material (empty salt):
 
 ```
-key      = HKDF-SHA256(ikm = vaultSecret, salt = "", info = "sempere/1 <purpose> key",   L = 32)
-entryKey = HKDF-SHA256(ikm = vaultSecret, salt = "", info = "sempere/1 <purpose> entry", L = 32)
-name     = HKDF-SHA256(ikm = vaultSecret, salt = "", info = "sempere/1 <purpose> name",  L = 16)
+key      = HKDF-SHA256(ikm = K_e, salt = "", info = "sempere/1 <purpose> key",   L = 32)
+entryKey = HKDF-SHA256(ikm = K_e, salt = "", info = "sempere/1 <purpose> entry", L = 32)
+name     = HKDF-SHA256(ikm = K_e, salt = "", info = "sempere/1 <purpose> name",  L = 16)
 folder   = lowercase hex(name)
 entry    = lowercase hex(first 16 bytes of HMAC-SHA256(entryKey, label)) ‖ suffix
 ```
@@ -3246,8 +2968,8 @@ a note id and its revision file names). Each entry file is `magic` ‖
 ChaCha20-Poly1305 sealed box (12-byte random nonce ‖ ciphertext ‖ 16-byte
 tag) under `key`, with associated data `magic` ‖ the entry's file name
 (UTF-8), so an entry renamed or copied over another fails to open. A file that
-is missing, too large or fails to open is a miss. A vault whose secret rotates
-(§3.3) derives another folder; the old one is never read again and may be
+is missing, too large or fails to open is a miss. A vault that starts a new
+epoch derives another folder; the old one is never read again and may be
 deleted.
 
 The reference app keeps one such cache, the **drawing cache** (purpose
@@ -3292,7 +3014,7 @@ It keeps four more, under the same derivation:
   reference again; the folder is deleted when the vault is closed. Audio, video
   and transcripts are not kept: their files are deleted as soon as nothing plays
   or reads them, carry a name prefix (`t-`) so that a launch deletes any a
-  killed session left without knowing the secret, and are never adopted. Where the
+  killed session left without knowing the key, and are never adopted. Where the
   system does not encrypt files at rest (Mac Catalyst has no data protection
   class), files are never kept across launches: quitting the app deletes them,
   and a launch (after a crash) deletes what an earlier one left before any vault
@@ -3301,8 +3023,8 @@ It keeps four more, under the same derivation:
 ## 11. Capture inbox
 
 A device may add voice notes to a vault without its
-identity and without the vault secret: it keeps the vault's public
-recipients and a **capture key**, and seals each voice note into `inbox/`.
+device key and without the vault key: it keeps the vault identity's public
+recipient `v_e` and a **capture key**, and seals each voice note into `inbox/`.
 Any device that can read the vault later **adopts** it: it becomes a note,
 written as ordinary revisions and blobs (§5, §8). Files under `inbox/` are
 not revisions and are not write-once: they are deleted once adopted. Readers
@@ -3313,16 +3035,18 @@ is needed, since nothing under `notes/` changes. Rationale and threat model:
 ### 11.1 Capture key
 
 ```
-fingerprint(r)      = lowercase hex of SHA-256(UTF-8 of r)       r: a recipient key as written in vault.json
-deviceCaptureKey(r) = HKDF-SHA256(ikm = vaultSecret, salt = "",
+fingerprint(r)      = lowercase hex of SHA-256(UTF-8 of r)       r: a device's key as written in vault.json
+deviceCaptureKey(r) = HKDF-SHA256(ikm = K_e, salt = "",
                                   info = "sempere/1 device capture key" ‖ 0x00 ‖ fingerprint(r), L = 32)
 ```
 
-(the fingerprint is the one in the names of post-quantum key files, §3.2).
+with `K_e` the epoch's key (§15.2). `fingerprint(r)` is not the device
+fingerprint of §15.4, which also covers the signing keys: capture keys and
+capture attributions keep this one.
 Captures are attributed (security review 2026-10, C2, C3). A capture
-profile is made by a device that unlocked the vault with the identity of a
-listed recipient `r`, and holds `deviceCaptureKey(r)` and `fingerprint(r)`:
-besides that profile, only a holder of the vault secret itself (a listed
+profile is made by a listed device `r` that unlocked the vault, and holds
+`v_e`, `deviceCaptureKey(r)` and `fingerprint(r)`:
+besides that profile, only a holder of `K_e` itself (a listed
 device that unlocks, which can also write revisions as anyone, §4) can seal a
 capture that verifies as coming from `r`, so captures are **attributed** to a
 device of the authenticated list (§2.1), and a holder of another device's
@@ -3332,29 +3056,20 @@ vault-wide capture key: every capture is sealed with a device capture key.
 
 Each device capture key authenticates inbox files and nothing else. It cannot decrypt anything,
 tag a revision (§4), name a blob (§8.1.2) or derive a per-device cache key
-(§10), and HKDF does not reveal the secret. It changes whenever the secret
-rotates (a recipient is removed, §3.3), which revokes every capture key handed
-out before. Inbox files already there when the secret rotates are not lost:
-the recipient change re-tags each one that verifies under an outgoing
-capture key, under the current key of the same kind (the same device's,
-which must still be listed), and re-encrypts it to the new recipients
-(§3.3.1 step 3), as it does when a recipient is added; a file sealed with a
-revoked key after that never verifies, and neither does one sealed by a
-device that was removed. A removed device that held the vault secret itself
-(not only a profile) still holds the outgoing secret, and can seal captures
-attributed to a listed device under it until the rewrap of its removal
-finishes, as it can tag revisions under it (§3.3.1). A capturing device stores the key and the recipients list (a
-*capture profile*); how it stores them is up to the implementation. The list
-comes from a vault whose recipients checked (§2.1) when the profile was made
-or refreshed; a tampered list is never put in a profile, and a capturing
-device seals to its profile's list only, never to the `recipients` it may
-read from `vault.json` without the secret.
+(§10), and HKDF does not reveal `K_e`. It changes with the epoch: removing a
+device starts a new one (KH3), which revokes every capture key handed out
+before; what then happens to inbox files sealed under the old epoch is
+specified with that phase. A capturing device stores the key and `v_e` (a
+*capture profile*); how it stores them is up to the implementation. The
+profile is made only from a vault whose `vault.json` checked (§2.1) when it
+was made or refreshed, and a capturing device seals to its profile's `v_e`
+only, never to anything it reads from `vault.json` without the key.
 
 ### 11.2 Inbox files
 
 `inbox/<captureId>.<kind>.age`, with `<captureId>` a lowercase UUID and
 `<kind>` `capture` or `transcript`. Other names are unknown files. Each file is
-an age v1 file encrypted to the vault's recipients, like a revision. Its
+an age v1 file encrypted to `v_e` in one stanza, like a revision. Its
 plaintext is:
 
 | Offset | Size | Content |
@@ -3367,14 +3082,11 @@ plaintext is:
 `filename` is the file's base name, so a file renamed to another capture id or
 kind does not verify. A reader verifies the tag before it parses anything
 after it, under each key of its **key ring**, in the same streamed pass:
-the device capture key of every recipient listed
+the device capture key of every device listed
 in a `vault.json` whose list checks (§2.1; a reader refuses to read
-captures against a tampered one), under the current secret, and, during an
-unfinished rewrap (§3.3.1), the device capture keys of the same listed
-recipients under the outgoing secret. The key that verifies attributes the
-file to that recipient. A recipient no longer listed has no key in the
-ring, so the captures of a removed device never verify, also while the
-rewrap of its removal is unfinished. A file that fails is untrusted
+captures against a refused one), under the epoch's key. The key that verifies attributes the
+file to that device. A device no longer listed has no key in the
+ring, so the captures of a removed device never verify. A file that fails is untrusted
 input (§9): reported, kept, never adopted.
 
 So that the work does not grow with the list, a reader tries for a
@@ -3387,9 +3099,8 @@ such claims. Writers therefore write `recipient` without escapes and keep
 what sorts before it short (the `notebook` at most 300 characters and 1200
 scalars, as adopted). The claim only chooses keys: the tag decides, and a
 manifest whose parsed `recipient` is not the verifying key's is rejected
-(above); a wrong or missing claim only makes the file fail. That is at most
-two streamed HMACs per claim (the current and, during a rewrap, the
-outgoing secret's) whatever the list's length. A `transcript`
+(above); a wrong or missing claim only makes the file fail. That is one
+streamed HMAC per claim whatever the list's length. A `transcript`
 file names no device and is tried under the whole ring; its bound (below)
 keeps that cost small. The whole plaintext is at
 most 256 MiB for a `capture` and, for a `transcript`, 37 bytes plus one JSON
@@ -3425,7 +3136,7 @@ iCloud) are not recorded.
   `id` must equal `<captureId>` and `vault` the vault's `vaultId`. `audio` is
   a blob reference (§8.1.1) of the payload: its size and SHA-256 must match.
   `device` is the capturing device's id (§5). `recipient` (required, 64
-  lowercase hex digits) is `fingerprint(r)` of the profile's recipient; a
+  lowercase hex digits) is `fingerprint(r)` of the profile's device key; a
   reader rejects a manifest without it, or whose `recipient` is not that of
   the key that verified the file. `title`, `notebook` (absent:
   `Inbox`) and the informational fields become the note's; the title and
@@ -3440,7 +3151,7 @@ iCloud) are not recorded.
   only to the recording whose blob has that hash, and never one whose
   payload is anything else: such a transcript is deleted once its note exists, never adopted. It is
   also adopted only when it is attributed like its capture (the same
-  recipient; for a capture adopted earlier, the recording's
+  device; for a capture adopted earlier, the recording's
   `captured.recipient`, §8.3.1). The JSON
   is a transcript (§8.3.2) whose `recording` is the
   capture's recording id (§11.3).
@@ -3475,7 +3186,7 @@ itself (its own device id and clock):
   with the derived page id, the reader's default paper and page size) and
   `addRecording` (the derived recording id, the blob, `started`, the
   informational fields, and `captured`: the manifest's `device` and the
-  recipient the file is attributed to, §8.3.1), with `transcript` set when a
+  device key fingerprint the file is attributed to, §8.3.1), with `transcript` set when a
   transcript file attributed like it is there; writers should also add, in
   the same delta, the recording's `audio` item (§8.2.9) on that page with the
   derived `card` id, placed as a new card is on an empty page (300 × 96
@@ -3491,7 +3202,7 @@ itself (its own device id and clock):
 The delta is the adopter's, not the capturing device's: revision names carry
 a per-device `seq` (§5) that two devices adopting the same capture, or the
 capturing device editing the note afterwards, would both use, and the
-capturing device holds no vault secret to tag a revision with. Attribution
+capturing device holds no vault key to tag a revision with. Attribution
 is therefore `captured`, which the adopter writes after verifying it.
 
 Afterwards the capture file is deleted once the note exists, and the
@@ -3518,8 +3229,8 @@ back and forth. It is judged with the vault unlocked. Otherwise:
 - if not, it is copied to the other side, never over a file there, after the
   checks of §9.1 (unlocked: as an adoption reads it, §11.2; locked: its age
   structure). One that fails is quarantined, never placed and never deleted;
-- on both sides with other bytes (a recipient change re-sealed one copy,
-  §3.3.1 step 3): neither is replaced by a sync that does not implement the
+- on both sides with other bytes (a re-encryption re-sealed one copy, §15.8,
+  KH6): neither is replaced by a sync that does not implement the
   replacement rules of a key change (the reference implementation reports it).
 
 A writer syncs the notes before the inbox, so an adopted note reaches the
@@ -3550,7 +3261,7 @@ with one `PUT`). It needs no `features` entry (§2).
 ### 12.1 Key and file
 
 ```
-key = HKDF-SHA256(ikm = vaultSecret, salt = "", info = "sempere/1 published summaries key", L = 32)
+key = HKDF-SHA256(ikm = K_e, salt = "", info = "sempere/1 published summaries key", L = 32)
 ```
 
 | Offset | Size | Content |
@@ -3564,13 +3275,12 @@ The associated data is the first 5 bytes ‖ `"sempere/1"` ‖ `0x00` ‖ the
 vault's `vaultId` (§2, lowercase, ASCII). The plaintext is `gzip(JSON)`
 (UTF-8). AES-GCM rather than the ChaCha20-Poly1305 of §10 because browsers
 provide it (WebCrypto); with a random 96-bit nonce per write and one write per
-change of the vault's listing, nonce reuse is not a concern. Only holders of
-the vault secret (the vault's recipients) can write or read the file. A
-vault whose secret rotates (§3.3) derives another key, so its old file no
-longer opens and is ignored until rewritten; during an unfinished rewrap a
-reader may also try the previous secret's key.
+change of the vault's listing, nonce reuse is not a concern. `K_e` is the
+epoch's key (§15.2): only holders of it (the vault's listed keys) can write
+or read the file. A vault that starts a new epoch derives another key, so its
+old file no longer opens and is ignored until rewritten.
 
-Test vector (`vaultSecret` = 32 bytes `0x00 0x01 … 0x1f`, `vaultId`
+Test vector (`K_e` = 32 bytes `0x00 0x01 … 0x1f`, `vaultId`
 `0d1c6a1e-9a44-4a6c-8a6b-0e2a0e9b1f3c`, nonce 12 bytes `0xa0 0xa1 … 0xab`,
 plaintext the ASCII bytes `{}` (not gzip, to keep the vector short)):
 
@@ -3642,10 +3352,10 @@ does not start with `SMPU` `0x01`, fails to authenticate, does not gunzip or
 parse, or has another `format` or `vaultId`. An entry whose id, `revisions`
 or any field above is malformed is ignored alone.
 
-Trust. The file is authenticated under the vault secret, so a storage server
+Trust. The file is authenticated under the vault key, so a storage server
 cannot forge or alter an entry; it can withhold the file or serve an older
 one, whose entries then either still match (unchanged notes) or are read
-again. A malicious recipient, who can also write revisions, can write
+again. A malicious listed device, which can also write revisions, can write
 entries that disagree with the revisions; a reader shows what the revisions
 say once it opens a note, and prefers that summary from then on.
 
@@ -3674,11 +3384,11 @@ listed revision file names (§12.3), else, provisionally, the entry made from
 the most revisions, then with the latest `modified`, then with the greatest
 last revision name, so every reader picks the same one. A provisional entry is
 shown only until the note's revisions are read, which replaces it. Entries are
-hints from the vault's recipients (§12.3 "Trust"): never used to write.
+hints from the vault's devices (§12.3 "Trust"): never used to write.
 
 Writers write their own file when their listing is complete, not on every
 change (it is replaced whole), and leave other devices' files alone; a file
-that no longer opens (a secret rotation, §3.3) is rewritten by its device or
+that no longer opens (a new epoch) is rewritten by its device or
 ignored. A writer that no longer exists leaves a file that only goes stale.
 
 A sync (§1.3) copies every device's file to the side that lacks it, and when
@@ -3700,18 +3410,17 @@ section ignores it (§1).
 
 ### 13.1 File
 
-`settings.age` is an age file encrypted to the vault's recipients, whose plaintext
+`settings.age` is an age file encrypted to the vault identity (one stanza, §4), whose plaintext
 is the body framing of §4 with the label `settings` in place of the note id:
 
 ```
-Tag = HMAC-SHA256(key = vaultSecret,
+Tag = HMAC-SHA256(key = tagKey,
                   message = "sempere/1" ‖ 0x00 ‖ "settings" ‖ 0x00 ‖ "settings.age" ‖ 0x00 ‖ gzipBytes)
 ```
 
 (`settings` is never a note id, §6.) Recovery without the app is that of §4:
-`age -d -i key settings.age | tail -c +38 | gunzip | jq .` A reader verifies the tag
-under the current secret or, while a rewrap journal is pending, the previous one
-(§3.3.1); a file that does not verify is not read. Readers bound the file at 1 MiB
+`age -d -i vault-keys.txt settings.age | tail -c +38 | gunzip | jq .` A reader verifies the tag
+under the epoch's `tagKey` (§15.2); a file that does not verify is not read. Readers bound the file at 1 MiB
 on disk and after gunzip (§9).
 
 ### 13.2 JSON
@@ -3776,17 +3485,17 @@ reader of at least `$minReaderVersion` reads.
 `$minReaderVersion` is the oldest reader version that may read **and** write the
 file; it is raised only for a breaking change. A reader older than it (its version,
 1 for this document, is below the file's `$minReaderVersion`) does not apply, merge
-or write the file; it may still copy it byte for byte (a sync, a backup, a rewrap
-that re-encrypts it unchanged, §3.3.1). A reader at least as new, saving a file of a
+or write the file; it may still copy it byte for byte (a sync, a backup, a
+re-encryption that keeps its JSON unchanged, §15.8). A reader at least as new, saving a file of a
 later `$schemaVersion`, keeps everything it does not know verbatim, and both numbers.
 
 ### 13.5 Writers
 
 Writing `settings.age` is a write to the vault: refused for a read-only vault (§7.3)
-and a tampered recipients list (§2.1). A writer that replaces a file
-that does not verify first checks that `vault.json` on disk still lists the recipients and
-wraps the secret it holds: one that stayed open while another device changed the keys
-would otherwise overwrite the current file with one for the old recipients. WebDAV sync (`docs/io.md`)
+and a `vault.json` that does not check (§2.1). A writer that replaces a file
+that does not verify first checks that `vault.json` on disk is still of the epoch (`epochId`
+and `root`) whose key it holds: one that stayed open while another device started a new epoch
+would otherwise overwrite the current file with one under the old key. WebDAV sync (`docs/io.md`)
 merges the file when both sides changed and the vault is unlocked.
 
 ## 14. Notebook records
@@ -3805,8 +3514,7 @@ Notes.sempere/
 `<recordId>` is a random lowercase UUID (§6), new for every file. Records are
 written once under a name no other writer uses, so a file-sync service never
 has two versions of one, and merging another copy of the vault is the union
-of its records (§1.3). They are never modified, except rewritten in place by
-a recipient change (§3.3), and never deleted in this version (a record is a
+of its records (§1.3). They are never modified (§1), and never deleted in this version (a record is a
 few hundred bytes). A reader that does not implement this section ignores the
 folder (§1) and shows only the notebooks notes name; a notebook record needs
 no `features` entry (§2). Names in `notebooks/` that are not
@@ -3814,21 +3522,20 @@ no `features` entry (§2). Names in `notebooks/` that are not
 
 ### 14.1 File
 
-An age file encrypted to the vault's recipients, whose plaintext is the body
+An age file encrypted to the vault identity (one stanza, §4), whose plaintext is the body
 framing of §4 with the label `notebooks` in place of the note id and the
 record's file name:
 
 ```
-Tag = HMAC-SHA256(key = vaultSecret,
+Tag = HMAC-SHA256(key = tagKey,
                   message = "sempere/1" ‖ 0x00 ‖ "notebooks" ‖ 0x00 ‖ "<recordId>.notebook.age" ‖ 0x00 ‖ gzipBytes)
 ```
 
 (`notebooks` is never a note id, §6.) Binding the file name stops a record
 being replayed under another id, which another record's `remove` would not
 name. Recovery without the app is that of §4:
-`age -d -i key notebooks/F.notebook.age | tail -c +38 | gunzip | jq .`
-A reader verifies the tag under the current secret or, while a rewrap journal
-is pending, the previous one (§3.3.1).
+`age -d -i vault-keys.txt notebooks/F.notebook.age | tail -c +38 | gunzip | jq .`
+A reader verifies the tag under the epoch's `tagKey` (§15.2).
 
 ### 14.2 JSON
 
@@ -3876,7 +3583,7 @@ hide one.
 ### 14.4 Writing
 
 Writing a record is a write to the vault: refused for a read-only vault
-(§7.3) and a tampered recipients list (§2.1). Records are written whole under
+(§7.3) and a `vault.json` that does not check (§2.1). Records are written whole under
 their final name (atomically, docs/io.md "Atomic writes").
 
 - **Create** a notebook `P`: when `P` is not declared already, write a record
@@ -3896,11 +3603,14 @@ their final name (atomically, docs/io.md "Atomic writes").
 
 ## 15. Key hierarchy
 
-Status: **normative for KH1, written by no vault yet.** This section freezes the bytes of the key
-hierarchy designed in `docs/design/key-hierarchy.md` (phase KH1), so that the printed recovery kit and
-a second implementation can rely on them. Vaults keep §2, §2.1, §3, §4's `vaultSecret` key, §8.1.2's
-blob-name key and §11.1's input until phase KH2, which replaces them with this section in one change
-(no migration before v1). Where the design leaves an encoding open, this section decides it, and the
+Status: **normative. KH2: vaults of one epoch are written by this version** (§2, §2.1, §3, the tags
+of §4, §13.1 and §14.1, the blob names of §8.1.2 and the capture keys of §11.1 use it; vaults of the
+earlier format, with a recipients list and a vault secret, are not read, with no migration before v1).
+Later epochs (removal, handoff, takeover, recovery-kit replacement: KH3 and KH4) and the re-encryption
+journal (§15.8, KH6) are specified here but not written yet; a vault of a later epoch is never
+written (§2.1 step 1). This section freezes the bytes of the key
+hierarchy designed in `docs/design/key-hierarchy.md`, so that the printed recovery kit and
+a second implementation can rely on them. Where the design leaves an encoding open, this section decides it, and the
 shared vectors pin it: `Tests/SempereTests/Fixtures/epoch-vectors.json` (key schedule, wraps, lists,
 links, root, fingerprints, the recovery key's signing pair, the three signatures, join codes; made by
 Swift and by `web/scripts/make-epoch-vectors.ts`), `epoch-chain-vectors.json` (a chain with a handoff
@@ -3937,20 +3647,20 @@ trees). Code: `Sources/Sempere/Epoch*.swift`, `JoinCodes.swift`;
 | `tagKey` (body tags §4, §13.1, §14.1, epoch records, journal) | `sempere/1 body tag` |
 | `blobNameKey` (§8.1.2) | `sempere/1 blob name` |
 | `listKey` | `sempere/1 list key` |
-| `markersKey` (§2.1 "Version markers", same message) | `sempere/1 markers key` |
+| `markersKey` (§2.1 "Version markers") | `sempere/1 markers key` |
 | `epochId` (public) | `sempere/1 epoch id` |
 | link seeds | `sempere/1 epoch link ed25519 seed`, `sempere/1 epoch link ml-dsa-65 seed` |
 | `pendingKey` | `sempere/1 reencrypt pending key` |
-| capture keys (§11.1) | `sempere/1 device capture key` ‖ 0x00 ‖ fingerprint |
+| capture keys (§11.1) | `sempere/1 device capture key` ‖ 0x00 ‖ `fingerprint(r)` of §11.1 |
 
 The **vault identity** `V_e` is the MLKEM768-X25519 identity whose 32-byte seed is the identity seed
 (`AGE-SECRET-KEY-PQ-1…`); its recipient `v_e` (`age1pq1…`) is what every file of the epoch is
-encrypted to, in one stanza. The link key pairs are §2.1's (Ed25519 from the seed; ML-DSA-65
+encrypted to, in one stanza. The link key pairs are §2.1's "Link key pairs" (Ed25519 from the seed; ML-DSA-65
 `KeyGen_internal` from the seed). §10, §10.1 and §12.1 keep their `info` and take `K_e` as input.
 
 ### 15.3 vault.json
 
-As the design's §3, with these rules for readers (a file breaking one is malformed):
+As §2 (and the design's §3), with these rules for readers (a file breaking one is malformed):
 
 - at most 16 MiB; `epoch` ≥ 1; `parent` and `epochLink` present exactly when `epoch` > 1;
   `epochRecord` is `epochs/` followed by §15.6's name for `epoch` and `epochId`;
@@ -4013,11 +3723,11 @@ listMessage = "sempere/1 list" ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp
   ‖ lp(name) ‖ lp(SHA-256(wrap))
 ```
 
-**`epochLink`**: the link signatures (§2.1's pairs) of the parent epoch's key over
+**`epochLink`**: the link signatures (§2.1 "Link key pairs") of the parent epoch's key over
 `"sempere/1" ‖ 0x00 ‖ "epoch link" ‖ 0x00 ‖ vaultId ‖ 0x00 ‖ e ‖ 0x00 ‖ epochId(K_e)` (`e` decimal,
 `epochId` raw): the design keeps today's secret-link encoding for this one message.
 
-**`markersTag`**: §2.1's message under `markersKey`.
+**`markersTag`**: §2.1's "Version markers" message under `markersKey`.
 
 ### 15.4 Fingerprints, entries and the recovery key's signing pair
 
@@ -4148,8 +3858,9 @@ name `reencrypt-journal.age`, tagged under `tagKey` of `K_m`:
 Each key's `epochId` and `identity` are the ones derived from it, and its `epoch` is below the
 journal's. `vault.json` binds it with `reencryptPending` = lowercase hex of HMAC-SHA256(`pendingKey` of
 the current epoch, `"sempere/1 reencrypt pending"` ‖ lp(vaultId) ‖ lp(SHA-256(journal file bytes))),
-re-computed by every later epoch while the journal exists; §3.3.1's accepting and finishing rules
-apply. Bounded at 64 MiB.
+re-computed by every later epoch while the journal exists. Its accepting and finishing rules (an
+unbound or finished journal gives no key) are specified with phase KH6; this version writes no
+journal. Bounded at 64 MiB.
 
 ### 15.9 Precedence
 
@@ -4226,7 +3937,14 @@ with the public key the identity's. Stock `age -i` reads it as an identity file.
   lp(frontier))` (`c` raw; `root` and `frontier`, the approver's current `epochId`, hex); its QR is
   `sempere-reply:<vaultId>:<root hex>:<frontier hex>`. The approver is home (design §5.6). The joining
   device pins the chain up to the frontier the words confirm.
-- A join with the recovery key is a `takeover` (§15.7 rule 3, design §6.3).
+- The flow (design §6.2): the joining device writes its request (create-only; `<id>` is its id,
+  §15.4) and shows the six words of `c`; home finds the request whose commitment the typed words
+  give, appends the entry with a wrap of `K_e` and its `addSig` (§2), deletes the request and shows the
+  reverse code; the joining device types it. Until then it reads but does not write (§2.1
+  `rootUnconfirmed`). Home refuses a request of another vault, a key that is not `age1pq1…`, a bad
+  `kind`, a key already listed, or an `id` a listed device has (the joining device generates another
+  key).
+- A join with the recovery key is a `takeover` (§15.7 rule 3, design §6.3); not in this version (KH4).
 
 ### 15.13 The recovery kit
 

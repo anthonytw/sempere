@@ -239,19 +239,12 @@ final class PhoneParityUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"]
         app.launchEnvironment = ["SEMPERE_DEBUG_FRESH": "1", "SEMPERE_DEMO": "1",
-                                 "SEMPERE_DEMO_PASSPHRASE": Self.passphrase, "TZ": "UTC"]
+                                 "SEMPERE_DEMO_PASSPHRASE": Self.passphrase,
+                                 "SEMPERE_DEMO_DEVICE_KEY": DemoDeviceKey.text, "TZ": "UTC"]
         app.launch()
         guard unlock else { return app }
-        let field = app.secureTextFields["Passphrase"].firstMatch
-        require(field, "the unlock sheet's passphrase field", in: app, timeout: 90)
-        let focused = NSPredicate(format: "hasKeyboardFocus == true")
-        for _ in 0..<5 where !focused.evaluate(with: field) {
-            field.tap()
-            _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: focused, object: field)], timeout: 2)
-        }
-        field.typeText(Self.passphrase + "\n")
-        let notNow = app.buttons["Not Now"].firstMatch
-        if notNow.waitForExistence(timeout: 60) { notNow.tap() }
+        // Writable: the demo's device key pasted into the unlock sheet (the passphrase opens it read-only).
+        DemoDeviceKey.unlock(app)
         return app
     }
 

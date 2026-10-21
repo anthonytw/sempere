@@ -7,7 +7,7 @@ public struct CopyMergeReport: Hashable, Sendable, Codable {
     /// Files copied in (or that would be), as paths relative to the vault, sorted.
     public var added: [String] = []
     /// Write-once files both copies hold under one name with different bytes:
-    /// the vault's own is kept (a recipient change rewrites files in place, §3.3).
+    /// the vault's own is kept.
     public var differing: [String] = []
     /// Files of the other copy that failed the received-file checks (§9.1),
     /// with why; never copied.
@@ -17,15 +17,19 @@ public struct CopyMergeReport: Hashable, Sendable, Codable {
     /// The other copy's `settings.age` differs and could not be merged now
     /// (the vault is locked, or one of the files does not verify).
     public var settingsPending: String?
-    /// The other copy's `vault.json` or `rewrap-journal.json` differs from the
-    /// vault's; the vault's own is kept (format.md §1.3).
+    /// The other copy's `vault.json` differs from the vault's and was not taken: the vault's own is
+    /// kept (format.md §1.3).
     public var manifestDiffers = false
+    /// The other copy's `vault.json` was a later version of the vault's own by its home (the same
+    /// epoch, verified, its list holding the vault's: design §5.1) and was taken.
+    public var manifestUpdated = false
 
     public init() {}
 
     /// Nothing was (or would be) copied or merged, and nothing differs.
     public var isEmpty: Bool {
         added.isEmpty && differing.isEmpty && refused.isEmpty && !settingsMerged && settingsPending == nil && !manifestDiffers
+            && !manifestUpdated
     }
 }
 
@@ -48,11 +52,12 @@ extension Vault {
     /// Merges `other`, another copy of this vault (the same `vaultId`), into
     /// this one (format.md §1.3): every write-once file the vault lacks is
     /// copied in after the received-file checks (§9.1): revisions and blobs
-    /// under `notes/`, capture inbox files (§11) and identity files under
-    /// `keys/`. `settings.age` is merged per key (§13.3) when the vault is
-    /// unlocked and both copies verify. `vault.json` and `rewrap-journal.json`
-    /// are never taken from `other`: the vault's own stay, and a difference is
-    /// reported. Nothing is ever deleted or overwritten, so merging is
+    /// under `notes/`, capture inbox files (§11), epoch records (`epochs/`), join requests (`joins/`)
+    /// and the passphrase copy under `keys/`. `settings.age` is merged per key (§13.3) when the vault is
+    /// unlocked and both copies verify. `vault.json` is taken from `other` only when it is a later
+    /// version by the vault's home of the one here (one writer, design §5.1: the same epoch, every check
+    /// passes, and its list holds this one's); otherwise the vault's own stays and a difference is
+    /// reported. The two are never merged. Nothing is ever deleted or overwritten, so merging is
     /// idempotent and merging any number of copies in any order gives the same
     /// files. A file the vault already holds as an iCloud Drive placeholder
     /// (`.<name>.icloud`) counts as held.
@@ -71,7 +76,7 @@ extension Vault {
         do { otherManifestData = try BoundedRead.contents(of: otherManifestURL, maxBytes: BoundedRead.maxManifestBytes) } catch {
             throw CopyMergeError.notAVault("\(error)")
         }
-        let otherManifest: VaultManifest
+        let otherManifest: EpochManifest
         do { otherManifest = try Self.readManifest(otherManifestData) } catch {
             throw CopyMergeError.notAVault("\(error)")
         }
@@ -79,10 +84,30 @@ extension Vault {
 
         var report = CopyMergeReport()
         let ownManifest = try? FileIO.read(manifestURL, maxBytes: BoundedRead.maxManifestBytes)
-        let otherJournal = try? BoundedRead.contents(of: other.appendingPathComponent(Self.journalName),
-                                                     maxBytes: BoundedRead.maxManifestBytes)
-        let ownJournal = try? FileIO.read(journalURL, maxBytes: BoundedRead.maxManifestBytes)
-        report.manifestDiffers = ownManifest != otherManifestData || ownJournal != otherJournal
+        if let ownManifest, !EpochManifest.sameExceptLabel(ownManifest, otherManifestData) {
+            if laterVersion(otherManifestData) != nil {
+                report.manifestUpdated = true
+                if !dryRun { try FileIO.writeAtomically(otherManifestData, to: manifestURL, replacing: true) }
+            } else {
+                report.manifestDiffers = true
+            }
+        }
+
+        // epochs/<record>, joins/<request>: write-once, so the union (bounded; their readers check them).
+        for (folder, limit, valid) in [(Self.epochsName, EpochRecord.maxBytes, { (n: String) in n.hasSuffix(".epoch.age") }),
+                                       (Self.joinsName, JoinRequest.maxBytes, { (n: String) in n.hasSuffix(".join.json") })] {
+            let from = other.appendingPathComponent(folder, isDirectory: true)
+            for name in Self.visibleEntries(from) where valid(name) {
+                let to = url.appendingPathComponent(folder).appendingPathComponent(name)
+                if Self.holds(to) { continue }
+                if let size = FileIO.size(from.appendingPathComponent(name)), size > Int64(limit) {
+                    report.refused["\(folder)/\(name)"] = "too large"
+                    continue
+                }
+                report.added.append("\(folder)/\(name)")
+                if !dryRun { try Self.copyNew(from.appendingPathComponent(name), to: to) }
+            }
+        }
 
         // notes/<id>/<revision> and notes/<id>/att/<blob>
         let otherNotes = other.appendingPathComponent(Self.notesName, isDirectory: true)
@@ -169,9 +194,9 @@ extension Vault {
             }
         }
 
-        // keys/<identity file>: named by the recipient they hold (§3.2), never replaced.
+        // keys/recovery-<fingerprint>.key.age: named by the key it holds (§15.11), never replaced.
         let otherKeys = other.appendingPathComponent(Self.keysName, isDirectory: true)
-        for name in Self.visibleEntries(otherKeys) where name.hasSuffix(".key.age") {
+        for name in Self.visibleEntries(otherKeys) where name.hasPrefix("recovery-") && name.hasSuffix(".key.age") {
             let to = keysURL.appendingPathComponent(name)
             if Self.holds(to) { continue }
             let from = otherKeys.appendingPathComponent(name)

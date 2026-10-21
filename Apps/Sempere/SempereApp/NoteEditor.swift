@@ -289,6 +289,8 @@ final class NoteEditor {
         var newer: NewerContent?
         /// Why the vault is read-only, as of this read (format.md §7.3).
         var vaultReadOnly: ReadOnlyReasons
+        /// The vault was opened with its recovery key: read-only.
+        var vaultRecovery = false
         /// The revisions read, by file name, for the next read to reuse.
         var decoded: [String: Revision]
         /// A merge's read: the note reduced (`ReducedNote`), and the pages that
@@ -437,7 +439,7 @@ final class NoteEditor {
             return Loaded(state: state, failures: loaded.failures.count,
                           nextSeq: Vault.nextSeq(from: loaded.revisions, device: device),
                           readings: loaded.revisions.map(\.hlc), names: names, newer: loaded.newer,
-                          vaultReadOnly: vault.readOnlyReasons,
+                          vaultReadOnly: vault.readOnlyReasons, vaultRecovery: vault.isRecoveryOpen,
                           decoded: Dictionary(loaded.revisions.map { ($0.name.filename, $0) }) { a, _ in a },
                           reduced: update?.note, changedPages: update?.changedPages,
                           decodedCount: loaded.revisions.reduce(0) { $0 + (reuse[$1.name.filename] == nil ? 1 : 0) },
@@ -456,6 +458,8 @@ final class NoteEditor {
             return String(localized: "Parts of this note were written by a newer version of Sempere (\(summary)). It is shown as far as this version understands it, read-only: update Sempere to edit it.")
         } else if !loaded.vaultReadOnly.isEmpty {
             return AppModel.readOnlyText(loaded.vaultReadOnly)
+        } else if loaded.vaultRecovery {
+            return AppModel.recoveryReadOnlyText
         }
         return nil
     }

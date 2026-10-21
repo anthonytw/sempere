@@ -93,7 +93,7 @@ Marcador).
 | recovery kit | kit de recuperación | |
 | passphrase | frase de contraseña | |
 | password | contraseña | |
-| recipient | destinatario | a public key that can read the vault |
+| recipient | destinatario | an age public key (`age1pq1…`) a file is encrypted to |
 | device | dispositivo | |
 | Keychain | Llavero | Apple's term; Face ID, Touch ID, iCloud Drive, Finder, Apple Pencil stay as they are; Files is Apple’s Spanish name “Archivos” |
 | unlock / lock | desbloquear / bloquear | |
@@ -131,7 +131,7 @@ Marcador).
 | thin / thinning (history) | reducir / reducción (del historial) | |
 | zoom / fit width / actual size | zoom / ajustar al ancho / tamaño real | |
 | passkey | llave de acceso | Apple's Spanish term; a vault's *key* stays “clave”, never “llave” |
-| device list | lista de dispositivos | the vault's recipients |
+| device list | lista de dispositivos | the devices (and the recovery key) `vault.json` lists |
 | viewer (web) | visor | “Visor de Sempere” |
 | video / clip | vídeo | with the accent, as in the app; not “clip” |
 | layout (paged / infinite) | disposición (paginada / infinita) | |

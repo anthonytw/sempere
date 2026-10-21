@@ -13,9 +13,8 @@ final class CLIStoreTests: CLITestCase {
         return (r.json as? [String: Any]) ?? [:]
     }
 
-    private func newKey(_ name: String = "a.key") throws -> String {
-        try cli(["keys", "generate", "--out", path(name), "-q"]).out.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
+    /// `vault init`'s recovery option for a new recovery key file (each vault its own).
+    private func recovery() -> [String] { ["--recovery-out", path("recovery-\(UUID().uuidString.prefix(8)).key")] }
 
     /// Relative path → bytes of every regular file under `root` (hidden names skipped).
     private func files(_ root: String) throws -> [String: Data] {
@@ -32,9 +31,8 @@ final class CLIStoreTests: CLITestCase {
     }
 
     func testCreateListPathAndRemove() throws {
-        let pub = try newKey()
-        let created = object(try cli(["store", "create", "Notes", "--recipient", pub, "--vault-label", "Work",
-                                      "--store", store, "--json"]))
+        let created = object(try cli(["store", "create", "Notes", "--vault-label", "Work", "--store", store, "--json"]
+                                     + recovery()))
         let id = try XCTUnwrap(created["vaultId"] as? String)
         let vault = try XCTUnwrap(created["path"] as? String)
         XCTAssertEqual(vault, URL(fileURLWithPath: store).appendingPathComponent(id).appendingPathComponent("Notes.sempere").path)
@@ -50,15 +48,15 @@ final class CLIStoreTests: CLITestCase {
         XCTAssertEqual(rows[0]["path"] as? String, vault)
         XCTAssertTrue(try cli(["store", "list", "--store", store]).out.contains("Notes"))
 
-        // Every other command reaches it through its path.
+        // Every other command reaches it through its path, with this machine's device key (its home).
         XCTAssertEqual(try cli(["store", "path", "Notes", "--store", store]).out, vault + "\n")
         XCTAssertEqual(try cli(["store", "path", String(id.prefix(8)), "--store", store]).out, vault + "\n")
-        let note = try cli(["notes", "new", "Hello", "--vault", vault, "--identity", path("a.key")])
+        let note = try cli(["notes", "new", "Hello", "--vault", vault])
         XCTAssertEqual(note.status, 0, note.err)
-        XCTAssertTrue(try cli(["notes", "list", "--vault", vault, "--identity", path("a.key")]).out.contains("Hello"))
+        XCTAssertTrue(try cli(["notes", "list", "--vault", vault]).out.contains("Hello"))
 
         // A second vault of the same name: names are no longer unique, ids are.
-        _ = object(try cli(["store", "create", "Notes", "--recipient", pub, "--store", store, "--json"]))
+        _ = object(try cli(["store", "create", "Notes", "--store", store, "--json"] + recovery()))
         let ambiguous = try cli(["store", "path", "Notes", "--store", store])
         XCTAssertEqual(ambiguous.status, 1)
         XCTAssertTrue(ambiguous.err.contains("matches several vaults"), ambiguous.err)
@@ -76,24 +74,26 @@ final class CLIStoreTests: CLITestCase {
         XCTAssertTrue(missing.err.contains("no vault in the store matches"), missing.err)
     }
 
-    func testCreateStoresTheKeyAndChecksTheName() throws {
-        let pub = try newKey()
-        let created = object(try cli(["store", "create", "Keyed", "--recipient", pub, "--store-key", path("a.key"),
-                                      "--work-factor", "15", "--allow-weak-passphrase", "--store", store, "--json"],
-                                     env: ["SEMPERE_PASSPHRASE": "pass"]))
+    func testCreateWritesThePassphraseCopyAndChecksTheName() throws {
+        let pass = "correct horse battery staple orbit lantern"
+        let created = object(try cli(["store", "create", "Keyed", "--recovery-passphrase", "--work-factor", "10",
+                                      "--store", store, "--json"] + recovery(),
+                                     env: ["SEMPERE_PASSPHRASE": pass]))
         let vault = try XCTUnwrap(created["path"] as? String)
-        let keyFile = try XCTUnwrap(created["keyFile"] as? String)
-        XCTAssertTrue(keyFile.hasPrefix(vault + "/keys/"), keyFile)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: keyFile))
-        let info = try cli(["vault", "info", "--vault", vault], env: ["SEMPERE_PASSPHRASE": "pass"])
+        let copy = try XCTUnwrap(created["passphraseCopy"] as? String)
+        XCTAssertTrue(copy.hasPrefix("keys/recovery-"), copy)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: vault + "/" + copy))
+        let info = try cli(["vault", "info", "--vault", vault, "--recovery-key", vault + "/" + copy],
+                           env: ["SEMPERE_PASSPHRASE": pass])
         XCTAssertEqual(info.status, 0, info.err)
 
         for bad in [".hidden", "a/b", "x.sempere", ""] {
-            let r = try cli(["store", "create", bad, "--recipient", pub, "--store", store])
+            let r = try cli(["store", "create", bad, "--store", store] + recovery())
             XCTAssertEqual(r.status, 2, "\(bad): \(r.err)")
         }
-        // A classic or bad key: nothing is left in the store.
-        let r = try cli(["store", "create", "Bad", "--recipient", "age1nope", "--store", store])
+        // Not a key: nothing is left in the store.
+        try "age1nope\n".write(toFile: path("nope.key"), atomically: true, encoding: .utf8)
+        let r = try cli(["store", "create", "Bad", "--recovery-key", path("nope.key"), "--store", store])
         XCTAssertNotEqual(r.status, 0)
         XCTAssertEqual((try cli(["store", "list", "--store", store, "--json"]).json as? [Any])?.count, 1)
     }

@@ -162,7 +162,7 @@ extension Vault {
         }
     }
 
-    func decodeRevisionFile(_ data: Data, note: String, name: RevisionName, secret: VaultSecret,
+    func decodeRevisionFile(_ data: Data, note: String, name: RevisionName, secret: VaultEpochKey,
                             detail: RevisionDetail = .full) throws -> Revision {
         do {
             let json = try revisionJSON(data, note: note, name: name, secret: secret)
@@ -176,11 +176,10 @@ extension Vault {
         }
     }
 
-    /// Decrypts a revision file, verifies its tag (format.md §4, also under
-    /// the previous secret during an unfinished rotation) and gunzips it.
+    /// Decrypts a revision file, verifies its tag (format.md §4) and gunzips it.
     ///
     /// - Throws: `RevisionReadError`, one case per failing stage.
-    func revisionJSON(_ data: Data, note: String, name: RevisionName, secret: VaultSecret) throws -> Data {
+    func revisionJSON(_ data: Data, note: String, name: RevisionName, secret: VaultEpochKey) throws -> Data {
         let plain: Data
         revisionDecrypts.add()
         do { plain = try AgeFile.decrypt(data, with: identities) } catch {
@@ -188,15 +187,10 @@ extension Vault {
         }
         let unframed: BodyFraming.Unframed
         do {
-            unframed = try Self.unframe(plain, note: note, filename: name.filename, secret: secret,
-                                        previous: previousSecret)
+            unframed = try BodyFraming.unframe(plain, noteId: note, filename: name.filename, secret: secret)
         } catch BodyFramingError.unsupportedVersion(let v) where v > SempereFormat.bodyVersion {
             throw RevisionReadError.newer("body version \(v)")
         } catch BodyFramingError.tagMismatch {
-            if let journalProblem, pendingRewrap {
-                throw RevisionReadError.tagMismatchJournalUnreadable(
-                    "a pending rewrap journal could not be read: \(journalProblem)")
-            }
             throw RevisionReadError.tagMismatch
         } catch {
             throw RevisionReadError.corruptBody("\(error)")
@@ -224,19 +218,8 @@ extension Vault {
         return rev
     }
 
-    /// Verifies under the current secret, or, while a secret-rotating rewrap
-    /// is unfinished, under the previous one.
-    static func unframe(_ plain: Data, note: String, filename: String, secret: VaultSecret,
-                        previous: VaultSecret?) throws -> BodyFraming.Unframed {
-        do {
-            return try BodyFraming.unframe(plain, noteId: note, filename: filename, secret: secret)
-        } catch BodyFramingError.tagMismatch where previous != nil {
-            return try BodyFraming.unframe(plain, noteId: note, filename: filename, secret: previous)
-        }
-    }
-
     /// Writes a revision: JSON, gzip, frame and tag, age-encrypt to the
-    /// current recipients, then an atomic create of
+    /// vault identity, then an atomic create of
     /// `notes/<noteId>/<name>`.
     ///
     /// - Throws: `VaultError.locked`, `.alreadyExists` if the file exists
@@ -277,12 +260,12 @@ extension Vault {
 
     /// A revision as `write` stores it: JSON, gzip, frame and tag, encrypted
     /// to the current recipients.
-    func encodedRevision(_ revision: Revision, secret: VaultSecret? = nil) throws -> Data {
+    func encodedRevision(_ revision: Revision, secret: VaultEpochKey? = nil) throws -> Data {
         let secret = try secret ?? requireSecret()
         let json = try InkJSON.encoder().encode(revision)
         let body = try BodyFraming.frame(json: json, noteId: revision.noteId.uuidString.lowercased(),
                                          filename: revision.name.filename, secret: secret)
-        return try Self.encrypt(body, to: ageRecipients())
+        return try encrypt(body)
     }
 
     /// The next `seq` for `device` in this note (format.md §5): one more than

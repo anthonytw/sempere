@@ -26,7 +26,8 @@ final class CLISupportTests: XCTestCase {
         let ok = try Recovery.decrypt(data, noteId: note, filename: name, identities: [id], vault: vault)
         XCTAssertTrue(ok.verified)
         XCTAssertNotNil(try JSONSerialization.jsonObject(with: ok.json) as? [String: Any])
-        let bare = try Recovery.decrypt(data, noteId: note, filename: name, identities: [id], vault: nil)
+        // Without the vault: the vault identity (what the kit's script puts in vault-keys.txt).
+        let bare = try Recovery.decrypt(data, noteId: note, filename: name, identities: vault.identities, vault: nil)
         XCTAssertFalse(bare.verified)
         XCTAssertEqual(bare.json, ok.json)
         // A wrong file name breaks the tag.

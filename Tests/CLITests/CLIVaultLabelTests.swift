@@ -36,10 +36,8 @@ final class CLIVaultLabelTests: CLITestCase {
     }
 
     func testInitStoresIt() throws {
-        let key = path("a.key")
-        let pub = try cli(["keys", "generate", "--out", key, "-q"]).out.trimmingCharacters(in: .whitespacesAndNewlines)
         let vault = path("labelled.sempere")
-        let r = try cli(["vault", "init", vault, "--recipient", pub, "--vault-label", "Work notes"])
+        let r = try cli(["vault", "init", vault, "--recovery-out", path("recovery.key"), "--vault-label", "Work notes"])
         XCTAssertEqual(r.status, 0, r.err)
         XCTAssertEqual(try cli(["vault", "label", "--vault", vault]).out, "Work notes\n")
     }

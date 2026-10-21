@@ -13,24 +13,47 @@ talks to the terminal and sets exit codes; everything else lives in
 | Option | Meaning |
 | --- | --- |
 | `--vault PATH` | The vault directory (`*.sempere`). Env `SEMPERE_VAULT`. |
-| `--identity FILE` | An age identity file (`age-keygen` style). Repeatable. Env `SEMPERE_IDENTITY` (one path). |
-| `--passphrase-env VAR` | Name of the environment variable holding the passphrase of the vault's stored key file. |
-| `--json` | Machine-readable output where it makes sense (everything except `recover`, `keys generate` without `--out`, and `keys export` without `--out`). |
+| `--identity FILE` | This device's key file (`vault init`, `device init`), or any age identity file. Repeatable. Env `SEMPERE_IDENTITY` (one path). Default: this machine's device key for the vault. |
+| `--recovery-key FILE` | Read the vault with its recovery key: the kit's identity file, or the vault's passphrase copy `keys/recovery-*.key.age`. Read-only. |
+| `--root HEX` | The vault's root fingerprint (64 hex digits, or the kit's 16 groups; spaces and the groups' `(xxxx)` checksums are ignored) to check a `--recovery-key` read against. |
+| `--passphrase-env VAR` | Name of the environment variable holding the passphrase: of a passphrase-wrapped device key, or of the recovery key's passphrase copy. |
+| `--json` | Machine-readable output where it makes sense (everything except `recover` and `keys generate` without `--out`). |
 | `-q`, `-v` | Quieter (data only, or only problems) / more detail. |
 | `--version`, `--help` | On every command. `--version` prints `sempere VERSION`, then the copyright and the GPL notice (no warranty; free to redistribute under the GPL v3 or later) and links to the license and `SECURITY.md`; `sempere about` adds the rest. |
 
-`--vault`, `--identity` and `--passphrase-env` apply to the commands that open
-an existing vault. Times are printed in your local time zone with an offset;
+`--vault`, `--identity`, `--recovery-key`, `--root` and `--passphrase-env`
+apply to the commands that open an existing vault. Times are printed in your local time zone with an offset;
 `--json` uses UTC (`Z`).
 
-**Getting a key.** Commands that read notes need an identity. In order:
-`--identity` files (or `$SEMPERE_IDENTITY`); otherwise the passphrase-wrapped
-keys stored in the vault's `keys/` directory, unlocked with the passphrase from
-`--passphrase-env VAR`, else `$SEMPERE_PASSPHRASE`, else a no-echo prompt on
-the terminal. Every stored key the passphrase opens is used, as in the app
-(finishing an interrupted key change may need the old and the new key); a key file it
-does not open is skipped, and any other problem with one is an error. A passphrase never goes on the command line. Secret keys are
-printed only by `keys generate`, `keys export`, `keys paper` (into its PDF) and `keys derive` (from a key you give it).
+**Getting a key.** Every vault file is encrypted to the vault identity
+(`format.md` §3.1, §15.2), which the vault key `K_e` gives; `vault.json`
+wraps `K_e` once for each listed device and once for the recovery key. A
+command opens the vault with, in order:
+
+1. `--recovery-key FILE`: the recovery key (the kit's identity file, or the
+   passphrase copy, whose passphrase comes as below). It takes precedence over
+   `--identity`. The vault is then **read-only** (every write exits 7) and keeps
+   no trust record; `vault.json` is checked against `--root`, else the root in
+   the passphrase copy, else nothing (a warning says so), and exits 6 when it
+   does not check.
+2. `--identity` files (or `$SEMPERE_IDENTITY`): a device key file (its
+   signing keys come with it, which the home device needs to approve and
+   rename devices) or any age identity file whose key is listed.
+3. This machine's device key for the vault,
+   `$XDG_STATE_HOME/sempere/devices/<vault id>/device.key` (mode 0600 in a
+   0700 folder), written by `vault init` or `device init`. A
+   passphrase-wrapped one (`device.key.age`, scrypt work factor 18) is opened
+   with the passphrase from `--passphrase-env VAR`, else `$SEMPERE_PASSPHRASE`,
+   else a no-echo prompt on the terminal; commands that only may read notes
+   (`vault info`, `devices list`) ask for it only when it is scripted.
+
+A key that is not listed in `vault.json` exits 4 ("this device has not joined
+the vault"); with no key at all, a command that needs one exits 4 and says to
+join (`device init`), pass `--identity` or read with `--recovery-key`. A
+passphrase never goes on the command line. Device keys never leave the
+machine: no command prints or exports them. Secret keys are printed only by
+`keys generate`, `vault init --recovery-out` (into its file), `keys paper`
+(into its PDF) and `keys derive` (from a key you give it).
 
 **Exit codes**
 
@@ -38,11 +61,11 @@ printed only by `keys generate`, `keys export`, `keys paper` (into its PDF) and 
 | --- | --- |
 | 0 | Success. |
 | 1 | Generic failure (I/O, bad input, corrupt file, refusing to overwrite). |
-| 2 | Usage error (unknown option, missing vault, bad recipient string). |
-| 3 | `vault verify` or `backup verify` found problems, a restored vault is not healthy, a recipient change is incomplete, or `backup status --max-age` found no complete backup in that many days. |
-| 4 | Cannot decrypt: wrong key or passphrase, or no key available (no identity, no passphrase and no terminal to ask, or a `--passphrase-env` variable that is not set). |
-| 6 | Untrusted device list: `vault.json`'s recipients do not check (`format.md` §2.1: changed without the vault's key, its tag removed, or the vault secret replaced in a way this machine cannot confirm). Every command that would encrypt to the list refuses (nothing is written), `vault verify` reports it, and `sync webdav` exits 6 when it rejected a remote `vault.json`. The message names the unexpected keys and `sempere vault recipients repair`. Reading notes still works. |
-| 7 | Read-only vault: it holds content of a newer format version (format.md §7), so this version may read it but not change it. The message says why (`format`, `features`, or notes a newer version wrote). |
+| 2 | Usage error (unknown option, missing vault, a passphrase too easy to guess for the passphrase copy). |
+| 3 | `vault verify` or `backup verify` found problems, a restored vault is not healthy, or `backup status --max-age` found no complete backup in that many days. |
+| 4 | Cannot decrypt: wrong key or passphrase, no key available (no device key, no identity, no passphrase and no terminal to ask, or a `--passphrase-env` variable that is not set), or a key `vault.json` does not list (this machine has not joined, or its approval has not arrived). |
+| 6 | Untrusted device list: `vault.json` does not check on this machine (`format.md` §2.1: changed without the vault key, not signed by the home device, an entry gone under the same epoch, older version markers, another root or epoch than the one this machine pinned, a trust record that does not read, or a join this machine has not confirmed yet: `sempere device confirm`). Every command that would write refuses (nothing is written), `vault verify` exits 6, and `sync webdav` exits 6 when it rejected a remote `vault.json`. Reading notes still works. |
+| 7 | Read-only vault: it holds content of a newer format version (format.md §7), so this version may read it but not change it; or it was opened with the recovery key (`--recovery-key`), which never writes. The message says why (`format`, `features`, notes a newer version wrote, or the recovery key). |
 
 Exit code 5 is unused. A `vault.json` that lists a classic X25519 key is
 invalid (`format.md` §2, §3.1): every command that opens the vault fails with
@@ -59,7 +82,7 @@ fields and snapshot elements are skipped, a revision with a later body version
 is left out, and every such thing is reported. Every command that would write
 (`notes new`/`rename`/`tag`/`move`/`paper`/`delete`/…, `pages`, `items`,
 `attach`, `import`, `snapshot`, `compact`, `blobs add`/`copy`/`gc`/`repair`,
-`vault recipients …`, `vault rewrap-resume`, `inbox enable`/`import`,
+`devices approve`/`rename`, `vault label`, `inbox enable`/`import`,
 `recognize`, `transcribe`) exits 7 without changing a file. `vault index`
 exits 7 too unless it writes elsewhere (`--out FILE` or `-`). Newer
 *revisions* in a version-1 vault (a sync can deliver them before the new
@@ -91,7 +114,7 @@ Errors go to stderr, one line each, prefixed `sempere:`. A usage error (exit
 | `SEMPERE_VAULT` | Default for `--vault`. |
 | `SEMPERE_STORE` | Default for `--store` ([Vault store](#vault-store)). |
 | `SEMPERE_IDENTITY` | Default identity file. |
-| `SEMPERE_PASSPHRASE` | Passphrase for the vault's stored key file, for scripts and tests. |
+| `SEMPERE_PASSPHRASE` | Passphrase of a passphrase-wrapped device key, or of the recovery key's passphrase copy, for scripts and tests. |
 | `SEMPERE_TITLE_FORMAT` | Default for `notes new --title-format` ([Editing notes](#editing-notes)). |
 | `SEMPERE_PDFTOPPM` | Poppler's `pdftoppm` for PDF page backgrounds in SVG/PNG exports (default: `pdftoppm` on `PATH`; [PDF page backgrounds](#pdf-page-backgrounds)). |
 | `SEMPERE_PDFTOTEXT` | Poppler's `pdftotext` for the text of imported PDF pages (default: `pdftotext` on `PATH`; [`import pdf`](#import-pdf)). |
@@ -100,7 +123,7 @@ Errors go to stderr, one line each, prefixed `sempere:`. A usage error (exit
 | `VISUAL`, `EDITOR` | The editor `settings edit` opens (default `vi`; [Shared settings](#shared-settings)). |
 | `SEMPERE_BUNDLED_FONTS` | The directory of the fonts shipped with the CLI ([Text in exports](#text-in-exports)). |
 | `SEMPERE_FONT_DIR` | An extra directory of font packs, searched first ([Text in exports](#text-in-exports)). |
-| `XDG_STATE_HOME` | Where this machine's state lives under `sempere/` (`device.json`, recipient trust, sync and capture state; default `~/.local/state`). |
+| `XDG_STATE_HOME` | Where this machine's state lives under `sempere/` (`device.json`, device keys in `devices/<vault id>/`, trust records in `trust/`, sync and capture state; default `~/.local/state`). |
 | `XDG_CACHE_HOME` | Where the summary cache lives (default `~/.cache`; [Notes](#notes)). |
 | `XDG_DATA_HOME` | Font packs under `sempere/fonts` (default `~/.local/share`; [Text in exports](#text-in-exports)), and the default vault store `sempere/vaults` ([Vault store](#vault-store)). |
 
@@ -111,8 +134,7 @@ Errors go to stderr, one line each, prefixed `sempere:`. A usage error (exit
 ```
 sempere keys generate [--out FILE]
 sempere keys show FILE
-sempere keys export --vault V [--recipient age1...] [--out FILE]
-sempere keys paper --out KIT.pdf [--identity FILE] [--vault V] [--passphrase [--work-factor 15...18]]
+sempere keys paper --out KIT.pdf --identity RECOVERY.txt [--vault V] [--passphrase [--work-factor 15...20]]
                     [--paper letter|a4]
 sempere keys derive --epoch-key-file FILE [--epoch N] [--vault-id UUID] [--capture-fingerprint HEX]
 ```
@@ -123,288 +145,235 @@ sempere keys derive --epoch-key-file FILE [--epoch N] [--vault-id UUID] [--captu
   MLKEM768-X25519 (`AGE-SECRET-KEY-PQ-1...`, recipient `age1pq1...`, as
   `age-keygen -pq` makes); vaults take no other kind. Decrypting their files
   with the stock CLI needs `age` 1.3 or later; on Apple platforms the key
-  type needs macOS 26.
+  type needs macOS 26. Use it for a recovery key you choose yourself
+  (`vault init --recovery-key`); device keys are made by `vault init` and
+  `device init`.
 - `show` prints the public key (`age1...` or `age1pq1...`) of an identity file.
-- `export` decrypts the vault's passphrase-wrapped key file
-  (`keys/<key-name>.key.age`, format.md §3.2) to a plain identity file, to move a key to
-  another device. `--recipient` is needed only if the vault stores several.
-- `paper` writes a two-page printable PDF recovery kit (mode 0600, refuses to
-  overwrite). Page 1: the key as a QR code (byte mode, error correction Q,
-  version 7 for the `AGE-SECRET-KEY-PQ-1…` line), the key as text in numbered
-  lines grouped by 5 with a 4-digit checksum per line, the public key, and with
-  `--vault` the vault name, id and creation date; a boxed warning that **the
-  sheet is the key**. Page 2: recovery step by step with stock tools
-  (`age -d -i key.txt FILE.age | tail -c +38 | gunzip | jq .`, a loop that dumps
-  every note's newest snapshot) and with `sempere restore` / `export`.
+- `paper` writes a two-page printable PDF recovery kit for a vault's
+  **recovery key** (mode 0600, refuses to overwrite). The key is the one
+  `--identity` names (required, exactly one; exit 2 otherwise): the file
+  `vault init --recovery-out` wrote. No device
+  keeps the recovery key, so a kit can only be printed while you still have
+  that file; delete it, and the PDF, once the kit is printed. With `--vault`
+  the key must be the vault's recovery entry (`format.md` §2; else exit 4:
+  a device key is refused) and the kit carries the vault's name, id, creation
+  date and root fingerprint.
+  Page 1: the key as a QR code (byte mode, error correction Q, version 7 for
+  the `AGE-SECRET-KEY-PQ-1…` line), the key as text in numbered lines with a
+  4-digit checksum per line, the public key's length, first characters and
+  digest, a boxed warning that **the sheet is the vault's recovery key**, and
+  with `--vault` the root as 16 groups of 4 hex digits, each with its line
+  checksum. Page 2: recovery read-only with `sempere` (`vault verify` and
+  `export` with `--recovery-key key.txt --root …`), and with stock tools: the
+  frozen script of `format.md` §15.13 byte for byte, with the root's QR code
+  (`sempere-root:<vault id>:<64 hex>`) beside it.
   The line checksum is the first 4 hex digits of SHA-256 of the line as typed:
   `printf '%s' 'LINE' | sha256sum | cut -c1-4`. The key also carries its own
   Bech32 checksum (its last 6 characters, a BCH code over the whole key): any
   typo of up to 4 characters makes `age` reject it, but only the line checksums
-  say which line is wrong; `age-keygen -y key.txt` must print the public key on
-  the sheet. With `--vault` the key must be one of the vault's recipients
-  (else exit 4). Without `--identity` the key comes from the vault's stored key
-  file (passphrase as for any command).
+  say which line is wrong. The public key is 1959 characters and cannot be
+  read or typed from paper, so the sheet prints its first characters, its
+  length and the first 16 hex digits of its SHA-256; page 2 gives
+  `age-keygen -y key.txt | tr -d '\n' | sha256sum | cut -c1-16` to check the
+  rebuilt key against it. Kits are printed only for post-quantum keys: a
+  classic `AGE-SECRET-KEY-1…` key is refused ("create a new key", exit 2).
   `--passphrase` prints a passphrase-wrapped copy of the key instead (armored
-  age, scrypt, `--work-factor` default 18; QR error correction M). It wraps only
-  the secret key line, so a post-quantum key's 1959-character public key never
-  ends up in the QR code (it would not fit). The passphrase is the one of the
-  vault's stored key file for this key (checked by opening it), otherwise one
-  you choose (`--passphrase-env VAR` / `$SEMPERE_PASSPHRASE` / the terminal,
-  confirmed). Either way the command decrypts what it prints before writing the PDF.
-  That sheet is safe to store less carefully, but useless without the
-  passphrase. `--json` emits `path`, `variant` (`plain` or `passphrase`),
-  `publicKey`, `vaultId`, `qrVersion`, `qrErrorCorrection` and `lines`.
-  Delete the PDF once it is printed.
-
-  **Post-quantum keys** (`AGE-SECRET-KEY-PQ-1…`, 77 characters, from
-  `age-keygen -pq`): the same sheet. Kits are printed only for post-quantum
-  keys: a classic `AGE-SECRET-KEY-1…` key is refused ("create a new key", exit
-  2). The first line is the `AGE-SECRET-KEY-PQ-1`
-  prefix, then 58 characters in lines of 20, and the QR code is version 7 at
-  level Q (45×45 modules). The public key is 1959 characters and cannot be
-  read or typed from paper, so the sheet prints its first characters, its length and
-  the first 16 hex digits of its SHA-256 instead; page 2 gives
-  `age-keygen -y key.txt | tr -d '\n' | sha256sum | cut -c1-16` to check the rebuilt
-  key against it. Page 2 also says that `age` 1.3 or newer is needed (Ubuntu's apt
-  package is older). `backup`, `restore` and the archive copy `keys/*.key.age`
-  whatever the file name, so the hash-named key files of post-quantum recipients
-  (`age1pq-<64 hex>.key.age`) are included.
-
-- `derive` prints the key schedule of one vault epoch key `K_e` of the key-hierarchy design
-  (`docs/design/key-hierarchy.md` §2, §4; phase KH1, not used by vaults yet): the vault identity
-  (`AGE-SECRET-KEY-PQ-1…`) and its recipient, the derived keys of §2.2 (`tagKey`, `blobNameKey`,
+  age, scrypt, `--work-factor` 15 to 20, default 18; QR error correction M),
+  under a passphrase you choose (`--passphrase-env VAR` / `$SEMPERE_PASSPHRASE`
+  / the terminal, confirmed). It wraps only the secret key line, so the
+  public key never ends up in the QR code (it would not fit). The command
+  decrypts what it prints before writing the PDF. That sheet is safe to store
+  less carefully, but useless without the passphrase. `--json` emits `path`,
+  `variant` (`plain` or `passphrase`), `publicKey`, `vaultId`, `qrVersion`,
+  `qrErrorCorrection` and `lines`.
+- `derive` prints the key schedule of one vault epoch key `K_e` (`format.md`
+  §15.2; `docs/design/key-hierarchy.md` §2): the vault identity
+  (`AGE-SECRET-KEY-PQ-1…`) and its recipient, the derived keys (`tagKey`, `blobNameKey`,
   `listKey`, `markersKey`, `epochId`, `pendingKey`, the link seeds), the epoch link public keys, with
-  `--capture-fingerprint` that device's capture key, and with `--vault-id` the wrap plaintext (and at
+  `--capture-fingerprint` that device's capture key (`format.md` §11.1), and with `--vault-id` the wrap plaintext (and at
   `--epoch 1` the root fingerprint). `K_e` is read from a file of 64 lowercase hex digits (`-` for
   standard input), never from the command line. It reads and writes no vault; it exists so another
   implementation can be checked against this one, and `--json` uses the field names of
   `Tests/SempereTests/Fixtures/epoch-vectors.json`. The output holds secret keys.
 
-**The app's key actions and the CLI.** Settings ▸ Device Keys, the Vault
-Keys window and the recipients alert in the app do the same with the same
-code (`IdentityFile.render`, `RecoveryKit`, `Vault.addRecipient`,
-`replaceRecipient`, `repairRecipients`, `confirmRecipients`):
+**Removed.** `keys export` is gone: device keys never leave their device, and
+the vault holds no key file to export (`keys/` holds only the recovery key's
+passphrase copy). The app's key management (adding, removing and replacing
+keys, joining devices) is stubbed until phase KH5 of the key hierarchy; the
+CLI's `device` and `devices` commands are the way to join a device for now.
 
-| App | CLI |
-| --- | --- |
-| Save Key… (this device's key, after Face ID) to Files or the share sheet | the identity file you unlock with, or `sempere keys export --vault V --out key.txt` from the vault's passphrase-wrapped copy |
-| Save Key… → Print Recovery Kit / Save as PDF | `sempere keys paper --identity key.txt --vault V --out kit.pdf` |
-| New Key… (label) | `sempere keys generate --out new.txt`, then `sempere vault recipients add --vault V "$(sempere keys show new.txt)" --label LABEL` |
-| New Key… → Save to Files / Share / Recovery Kit | `new.txt` itself; `sempere keys paper --identity new.txt --vault V --out kit.pdf` |
-| Vault Keys ▸ Replace Key… (paste a public key, or generate one) | `sempere vault recipients replace --vault V OLD NEW [--label LABEL]` (`sempere keys generate --out new.txt` first to generate) |
-| Recipients alert → Remove | `sempere vault recipients repair --vault V` |
-| Recipients alert → Choose Devices to Keep… | `sempere vault recipients repair --vault V --keep KEY ...` |
-| Recipients alert → Trust This List | `sempere vault recipients confirm --vault V` |
+### Devices
 
-The app adds two rules to the CLI's `repair --keep`, since a wrong pick
-cannot be undone from the device that made it: the key the app unlocked with
-is always kept (and a repair is refused when that key is in neither the list
-nor this device's record), and keeping a key this device never confirmed asks
-for the owner check first (Face ID, Touch ID or the passcode), as adding a key does. Replace Key… refuses the key
-the app unlocked with (add a key for this device, unlock with it, then remove
-the old one): replacing it would lock the app out, and an interrupted replace
-of it can only be finished with both keys. Remove refuses that key too, and
-so does the CLI's `recipients remove` unless another key the command unlocked
-with stays listed (`--force` overrides).
+```
+sempere device init [--name TEXT] [--kind WORD] [--passphrase]
+sempere device confirm WORD WORD WORD WORD WORD WORD
+sempere devices list
+sempere devices approve WORD WORD WORD WORD WORD WORD
+sempere devices rename ID NAME
+```
 
-The app's key file is the CLI's (`age-keygen` style: `# created`, `# public
-key`, the `AGE-SECRET-KEY-PQ-1…` line), named `Sempere key - <label>.txt`.
-The app never writes it except where the user chooses: "Save to Files" writes
-it only into the picked folder, and the share sheet gets a copy in the app's
-temporary folder (file protection complete, mode 0600) that is deleted when
-the share sheet closes, when the sheet goes away, and at the next launch.
+A vault has one **home** device, the one that changes its device list: the
+machine that created it (`docs/design/key-hierarchy.md` §5.6). Joining another
+device takes words typed both ways (`format.md` §15.12, design §6.2):
+
+1. On the new machine, `device init --vault V` generates its device key and
+   signing keys into `$XDG_STATE_HOME/sempere/devices/<vault id>/device.key`
+   (mode 0600; with `--passphrase`, passphrase-wrapped as `device.key.age`,
+   work factor 18), writes the join request `joins/<id>.join.json` into the
+   vault folder (create-only; no key needed) and prints six words. `--name`
+   (at most 40 characters, default `sempere CLI`) and `--kind` (a lowercase
+   word, default `cli`) go into the request. It refuses (exit 1) when this
+   machine already has a device key for the vault. `--json`: `device`,
+   `deviceKey`, `request`, `words`.
+2. The request must reach the home device's copy of the folder (a shared
+   folder, or `vault merge-copy`; `sync webdav` and `sync folder` do not carry
+   `joins/` yet, key hierarchy KH4). There, `devices approve --vault V WORD…`
+   finds the request whose commitment the typed words give (typing, not
+   comparing, so a near match is not waved through), appends the device to
+   `vault.json` with a wrap of the vault key and home's signature, deletes the
+   request, and prints six words back. No file is re-encrypted. Only home
+   approves (exit 1 elsewhere, naming the home device). It refuses a request
+   of another vault, a key that is not post-quantum, a key already listed, or
+   one whose id is a listed device's. `--json`: `device`, `name`, `reply`.
+3. Once the new `vault.json` reaches the new machine, `device confirm --vault V
+   WORD…` checks the words against its own commitment and the vault's root and
+   epoch, and pins the vault in this machine's trust record: from then on it
+   writes to the vault. Exit 4 when this machine is not listed yet, 1 when the
+   words do not match. Until it confirms, the machine reads the vault but
+   every write exits 6 (`rootUnconfirmed`). `--json`: `device`, `root`.
+
+- `devices list` prints every device (id, kind, name, when it was added and
+  by whom, "manages devices" for home, "this device"), the recovery kit
+  (when it was created, and whether a passphrase copy is in `keys/`), and the
+  join requests waiting in `joins/`. It works without a key (names as stored,
+  unchecked); with one, `vault.json` is checked first and the `Device list:`
+  line says how. `--json`: `devices` (`[{device: {id, name, kind, added,
+  addedBy, home, fingerprint}, thisDevice}]`), `recovery` (`{added,
+  passphraseCopy}`), `joinRequests` (`[{file, id, name, kind, created,
+  problem}]`), `list` (as in `vault info`) and `thisDeviceIsHome`.
+- `devices rename ID NAME` renames a device (on home only); `ID` is the
+  device's id or 4 or more leading hex digits of it. Names are stored
+  unencrypted in `vault.json`, at most 40 characters, cleaned as the vault
+  label is, and covered by its tag and home's signature, so storage cannot
+  rename a device. `--json`: the device as in `devices list`.
+
+Device keys never leave the machine: there is no command to export them, and a
+copied state directory makes two installs one device. Removing a device,
+handing the home role to another device, taking over with the recovery key
+(when home is lost) and replacing the recovery kit start a new epoch of the
+vault key; they come with phases KH3 and KH4 of the key hierarchy and are not
+in this version.
 
 ### Vault
 
 ```
-sempere vault init PATH --recipient age1pq1... [--recipient ...] [--label TEXT ...] [--vault-label TEXT]
-                         [--store-key FILE [--passphrase-env VAR] [--work-factor 15...18] [--allow-weak-passphrase]]
+sempere vault init PATH (--recovery-out FILE | --recovery-key FILE) [--recovery-passphrase]
+                        [--name TEXT] [--kind WORD] [--passphrase] [--passphrase-env VAR] [--vault-label TEXT]
 sempere vault info
 sempere vault label [TEXT | --clear] [--json]
-sempere vault recipients add age1pq1... [--label TEXT] [--rewrap header|reencrypt] [--store-key FILE [--store-passphrase-env VAR] [--work-factor 15...18]]
-sempere vault recipients remove age1... [--force] [--rewrap header|reencrypt]
-sempere vault recipients replace age1old... age1pq1new... [--label TEXT] [--rewrap header|reencrypt] [--store-key FILE ...]
-sempere vault recipients repair [--keep age1pq1... ...] [--dry-run] [--rewrap header|reencrypt]
-sempere vault recipients confirm
-sempere vault markers [status|repair]
-sempere vault rewrap-resume
-sempere vault rewrap-discard
 sempere vault verify
 sempere vault index [--out PATH|-]
 sempere vault summaries [--out PATH|- | --device-file] [--plaintext] [--no-cache]
 sempere vault merge-copy FROM [--dry-run] [--json]
 ```
 
-- `init` creates the vault. `PATH` must end in `.sempere`. Give no `--label`
-  or one per `--recipient`. Labels (here and in `recipients add`/`replace`)
-  are stored as the app stores them: one line, trimmed, at most 80
-  characters; an empty one is shown as "Device". `--store-key` also writes that identity,
-  passphrase-wrapped, into `keys/`; its file must hold one post-quantum secret key
-  (`AGE-SECRET-KEY-PQ-1…`, alone or as `age-keygen -pq` writes it), and a public key, a
-  classic key or a passphrase-wrapped file is refused naming what it holds (`KeyText`, the
-  check behind the app's "Use an existing key") (the passphrase is confirmed when typed,
-  and an empty one is refused with exit 2, as in the app). That file is on the
-  vault's storage, where its passphrase can be guessed offline, so one estimated
-  below 60 bits (`PassphraseStrength`: five random words, or a long random
-  password, pass) is refused with exit 2 too, unless `--allow-weak-passphrase`
-  is given; the app refuses it with no override.
+- `init` creates the vault (`PATH` must end in `.sempere`), with this machine
+  as its home device: epoch 1 with a new vault key, its epoch record in
+  `epochs/`, and `vault.json` listing this machine's new device key and the
+  recovery key, each with a wrap of the vault key, signed by this machine
+  (`format.md` §2). The device key and signing keys go to
+  `$XDG_STATE_HOME/sempere/devices/<vault id>/device.key` (mode 0600; with
+  `--passphrase`, passphrase-wrapped as `device.key.age`) and never leave the
+  machine; `--name` and `--kind` describe it as for `device init`.
+  The **recovery key** is either new, written to `--recovery-out FILE` (mode
+  0600, refuses to overwrite), or the post-quantum identity `--recovery-key
+  FILE` names; one of the two is required. No device keeps it: print the kit
+  (`keys paper --vault PATH --identity FILE --out kit.pdf`), store it offline,
+  and delete the file. `--recovery-passphrase` also writes the recovery key's
+  **passphrase copy** into `keys/recovery-<fingerprint>.key.age` (scrypt work
+  factor 20, with the vault id and root inside; `format.md` §3.2). That file
+  is on the vault's storage, where its passphrase can be guessed offline, so a
+  passphrase estimated below about 70 bits (`PassphraseStrength`: six random
+  words, or a long random password, pass) is refused with exit 2, with no
+  override. Passphrases come from the variable named by `--passphrase-env`,
+  else `$SEMPERE_PASSPHRASE`, else the terminal (confirmed). A failed `init`
+  removes the device key and recovery key file it wrote.
+  Output: the path, the vault id, the root as 16 groups, this device's id and
+  key file. `--json`: `path`, `vaultId`, `root`, `device`, `deviceKey`,
+  `recoveryKey`, `passphraseCopy`.
 - `init --vault-label TEXT` and `label TEXT` store the vault's display name,
-  `vault.json`'s `label` (format.md §2), cleaned like a recipient label (one
-  line, trimmed, at most 80 characters, control characters replaced); `label
-  --clear` removes it, and `label` alone prints it (nothing when there is
-  none; `--json`: `{label}`, null when none). Reading needs no key; setting
-  does, like any write of `vault.json`. **The label is stored unencrypted in
-  `vault.json`**: anyone with access to the folder or the server can read it,
-  and anyone who can write there can change it, so put nothing private in it.
-  It is for display only and never trusted: the app names a WebDAV vault by
-  it in its lists (the server folder may be called anything), and nothing
-  acts on it. Invisible format characters (bidi overrides, zero-width
-  characters) are removed. Setting it refuses a `vault.json` whose markers no
-  longer check or that a newer version wrote since the vault was opened. A
-  WebDAV copy gets it with the next sync.
-- `info` prints vault id, label (when there is one), creation time, recipients with labels, number of
-  notes, stored key files, whether a recipient change is pending and whether
-  its journal is readable. It works without a key (the journal check then says
-  "not checked"); with an identity or a scripted passphrase it checks it.
-- `recipients add` / `remove` rewrap every file to the new recipient set
-  (`remove` also rotates the vault secret) and print a report. If any file
-  cannot be rewrapped the exit code is 3 and the message says to run
-  `rewrap-resume`. Removing a key does not revoke what it already decrypted.
-  `remove` refuses (exit 2) the key the command unlocked with, unless another
-  key it unlocked with stays listed: unlock with another key, or pass `--force`.
-- Attachment blobs (`notes/<id>/att/`, `format.md` §8.1.5) are rewrapped
-  too. By default an `add` rewrites each blob's age header only (same file
-  key, payload copied), and a `remove` or `replace` re-encrypts each blob under a new file key; a removal also renames every
-  blob under the new vault secret. `--rewrap header|reencrypt` overrides the
-  method for this change. `header` on a removal is faster but leaves every
-  old copy of a blob (backups, file-version history) able to open the current
-  file with the removed key. The method is recorded in the journal, so
-  `rewrap-resume` (from any device) finishes with the same one. `--json`
-  reports it as `blobs`.
-- Voice notes waiting in `inbox/` (`format.md` §11) are re-encrypted to the
-  new set and re-tagged under the new capture key, so they are still adopted
-  after a removal. One that verifies under neither the current nor the
-  outgoing capture key (forged, or sealed with a profile revoked earlier) is
-  left as it is, reported (`--json`: `inboxSkipped`) and does not make the
-  change incomplete. Run `inbox enable` again on machines that capture.
-- Recipients must be post-quantum (`age1pq1...`): `init`, `recipients add`
-  and the new key of `replace` refuse a classic `age1...` key with "create a
-  new key" (exit 2), before asking for any passphrase. A classic identity
-  fails with the same advice (exit 4).
-- `recipients add` / `replace --store-key FILE` also store the new
-  recipient's identity (FILE, which must be that key) passphrase-wrapped in
-  `keys/`, with the passphrase from `--store-passphrase-env VAR`, else
-  `$SEMPERE_PASSPHRASE`, else the terminal (confirmed; not empty; refused when
-  too easy to guess unless `--allow-weak-passphrase`, as for `init`). Use it when the
-  vault is unlocked by passphrase: only key files of current recipients are
-  offered for passphrase unlocking, so after a `replace` the old key file
-  (left in `keys/`) no longer is, except to finish the replace while it is
-  unfinished.
-- `recipients replace` swaps one recipient for another with a single rewrap
-  and a secret rotation (a key rotation, as a removal plus an addition). An
-  interrupted replace is finished by `rewrap-resume` with **both** keys
-  (`--identity OLD --identity NEW`, or the passphrase when both are stored in
-  `keys/` under it), so keep the old key until `info` shows no pending rewrap.
-- Recipient arguments may be the key itself or a file holding it: a
-  recipients file (first non-comment line) or an identity file, of which only
-  the `# public key:` line is read. Post-quantum recipients are 1959
-  characters, so files are handier.
-- `info` abbreviates the (1959-character) post-quantum keys.
-- **Authenticated device list** (`format.md` §2.1). `vault.json` carries
-  `recipientsTag`, an HMAC of the vault id and the recipient keys under a key
-  derived from the vault secret, so nobody without the key can add a device
-  (a sync server, a shared folder). `init` and every `recipients` command
-  write it in the same write as the list (a secret rotation also writes
-  `secretLink`, Ed25519 and ML-DSA-65 signatures by the old secret's keys,
-  which prove it was made with the old secret). With a key,
-  every command checks the list against this machine's trust record
-  (`$XDG_STATE_HOME/sempere/trust/<vault id>.json`, mode 0600, kept by
-  commands that write; it holds only the two public keys that check a link). A list that does not check is
-  refused for writing with exit 6 (see Exit codes); reading still works. A
-  `vault.json` without the tag has had it removed (`tagRemoved`): it is
-  repaired, never confirmed. Read-only commands never write `vault.json`.
-- `info` has a `Device list:` line and `recipientsAuth` in `--json`:
-  `status` (`verified`, `tampered`, or `not-checked` without a
-  key), `tagged`, and for `verified` a `verification` (`unchanged`,
-  `firstUse`, `rotated`: a secret rotation confirmed by its `secretLink`),
-  for `tampered` a `reason` (`tagMismatch`, `tagRemoved`,
-  `secretUnconfirmed`, `recordUnreadable`: this machine's trust record exists
-  but does not read, so nothing can be compared until `recipients confirm`),
-  `unexpected` (keys not in the last verified list),
-  `missing` and `restore` (what `repair` would write).
-- `recipients repair` undoes a tampered list: it writes the last verified
-  list (this machine's record, or the list the tag still verifies once the
-  inserted keys are deleted), keeping the current labels, as a recipient
-  removal: the vault secret rotates and every file is rewrapped, so nothing
-  stays encrypted to an unexpected key. `--keep KEY` (repeatable) names the
-  keys instead, needed when this machine never wrote to the vault. `--dry-run`
-  prints (`--json`: `reason`, `unexpected`, `keep`) and writes nothing. A
-  replaced vault secret cannot be repaired (the files are tagged under a
-  secret this machine no longer has): restore `vault.json` from a backup or
-  another device (exit 1 says so).
-- `recipients confirm` trusts the current list on this machine after you
-  have checked every key: for a secret change this machine missed (it was
-  offline for two or more key changes), or a trust record of this machine
-  that no longer reads (it is written again). The tag must be present and
-  verify: never for a tag that does not verify or was removed (repair those), and never for changed version markers
-  (`markersMismatch`, `markersRemoved`, `markersRolledBack`: exit 1, use
-  `markers repair`); markers that do not check behind a list problem are
-  written back as `markers repair` would. Confirming a list an attacker wrote
-  lets them read what this machine writes.
-- `markers` (or `markers status`) shows whether `vault.json`'s `format` and
-  `features` are authenticated (`format.md` §2.1 "Version markers") and check: `--json` gives `format`, `features`,
-  `tagged`, `status` (`verified`, `tampered`, `not-checked`
-  without a key), `reason` and `recorded` (the markers this machine last
-  verified). A vault whose markers were changed without the key
-  (`markersMismatch`), lost their tag (`markersRemoved`) or went back to an
-  older `vault.json` (`markersRolledBack`, which only a machine that wrote to
-  it can tell) is refused for every write (exit 6) and reported by `info`,
-  `verify` and the device-list lines; reading works. `markers repair` (needs the key)
-  writes the larger of the markers on disk and those this machine last verified
-  (the higher format, every feature of either), tagged; it refuses a result
-  naming a format or feature this version does not implement.
-- `rewrap-resume` finishes an interrupted change; it refuses (exit 6) a list
-  that does not check, so a planted journal cannot re-encrypt the vault to a
-  planted key. It also refuses a journal this machine does not accept
-  (`format.md` §3.3.1 "Accepting the journal": its secret is not linked, or
-  `vault.json` no longer binds it, or this machine saw the change to the
-  current secret finish): such a journal was planted, or put back after its
-  change finished, and gives no secret. `info` then says "REFUSED journal"
-  (`--json`: `journalRefused`).
-- `rewrap-discard` (needs the key, and a device list that checks: exit 6
-  otherwise) moves a journal this machine refuses to
-  `rewrap-journal.refused.json` (nothing reads it; the next discard replaces
-  it), so recipient changes,
-  `recipients repair` and blob collection run again; when this machine saw the
-  change to the current secret finish, it also removes a `rewrapPending` left in
-  `vault.json` (a put-back copy). It never deletes a journal it accepts (finish
-  that with `rewrap-resume`) or cannot read now (exit 1, the journal kept).
-  A backup restored from before a key change finished has a journal this
-  machine refuses if it saw that change finish: finish it from a machine
-  without that trust record (or put the moved journal back there).
-  `--json`: `discarded`, `reason`. `recipients add`, `remove` and `replace`
-  do the same first when such a journal is in their way, and say so ("Moved
-  rewrap-journal.json aside…"; `--json`: `discardedJournal`).
+  `vault.json`'s `label` (format.md §2), cleaned (one line, trimmed, at most
+  80 characters, control characters replaced, invisible format characters
+  such as bidi overrides and zero-width characters removed); `label --clear`
+  removes it, and `label` alone prints it (nothing when there is none;
+  `--json`: `{label}`, null when none). Reading needs no key; setting needs
+  the key of a listed device whose list checks (not only home's: the label is
+  covered by no signature), and writes the rest of `vault.json` back as it is.
+  **The label is stored unencrypted in `vault.json`**: anyone with access to
+  the folder or the server can read it, and anyone who can write there can
+  change it, so put nothing private in it. It is for display only and never
+  trusted: the app names a WebDAV vault by it in its lists (the server folder
+  may be called anything), and nothing acts on it. Setting it refuses a
+  `vault.json` that changed on disk since the vault was opened. A WebDAV copy
+  gets it with the next sync.
+- `info` prints the vault id, label (when there is one), creation time, root
+  (16 groups), epoch, format, number of notes, the devices (id, kind, name,
+  "manages devices" for home), whether a passphrase copy is in `keys/`, the
+  join requests waiting, what it was opened with, and a `Device list:` line:
+  `verified` (`first use on this machine` the first time), `not checked
+  (locked)` without a key, or `REFUSED (reason): …; nothing is written to the
+  vault`. It works without a key. `--json`: `path`, `vaultId`, `label`,
+  `created`, `root`, `epoch`, `epochId`, `home` (the home device's id),
+  `devices` (as in `devices list`), `notes`, `passphraseCopy`, `joinRequests`,
+  `unlocked`, `openedWith`, `format`, `features`, `readOnly`,
+  `readOnlyReasons` and `list`: `status` (`verified`, `refused`, or
+  `not-checked`), for `verified` a `verification` (`unchanged`, `firstUse`,
+  `added`: home approved devices since this machine's trust record, `renamed`),
+  for `refused` a `reason` (`listTag`, `markersTag`, `markersRolledBack`,
+  `authorSig`, `epochSig`, `introducesDevice`, `addSig`, `rootMismatch`,
+  `otherEpoch`, `entriesChanged`, `recordUnreadable`, `rootUnconfirmed`) and a
+  `detail`.
+- **The device list is authenticated** (`format.md` §2.1, §15.3).
+  `vault.json` carries `listTag` (an HMAC of the list under a key derived from
+  the vault key), `markersTag` (the same over `format` and `features`) and the
+  home device's signatures, so nobody without the key can add a device, and
+  nobody but home can change the list. With a key, every command checks it
+  against this machine's trust record (`$XDG_STATE_HOME/sempere/trust/<vault
+  id>.json`, `sempere-trust/3`, mode 0600, kept by commands that write; it
+  holds public keys only). A list that does not check is refused for writing
+  with exit 6 (see Exit codes); reading still works. There is no repair
+  command: put back the home device's `vault.json` (another copy, a backup).
 - `verify` decrypts, tag-checks and decodes every file and prints
-  `status  path` per file plus counts, and a `RECIPIENTS` line (the device
-  list, as in `info`). Exit 0 only if the vault is healthy, 6 when the device
-  list does not check, else 3. `-q` lists only the problem files (the healthy `unreferenced`,
+  `status  path` per file plus counts, a `MANIFEST` line per problem of
+  `vault.json` (each wrap must be an armored age file with one stanza), and a
+  `DEVICES` line (the device list, as in `info`). Every file must be encrypted
+  to the vault identity in one stanza: one with other stanzas is
+  `extraStanzas`. Exit 0 only if the vault is healthy, 6 when `vault.json`
+  does not check on this machine (including a join not confirmed yet), else
+  3. It works with the recovery key (`--recovery-key FILE --root HEX`,
+  read-only). `-q` lists only the problem files (the healthy `unreferenced`,
   `unknownFile`, `notChecked` and `newer` are not listed). `--json` emits
-  `healthy`, `manifestProblems`, `rewrapPending`, `journalProblem`, `counts`,
-  `files` and `recipientsAuth` (as in `info`).
+  `healthy`, `manifestProblems`, `counts`, `files` (`{path, status,
+  detail}`), `readOnly`, `readOnlyReasons` and `list` (as in `info`).
   Attachment blobs are decrypted and hashed in full: `ok`, `unreferenced`
   (healthy: no revision of its note uses it; `blobs gc` removes it later),
-  `invalid` (bad framing, padding, hash or name), `staleRecipients`, and a
+  `invalid` (bad framing, padding, hash or name), `extraStanzas`, and a
   `missing` line for each reference with no blob.
   Voice notes waiting in `inbox/` (`format.md` §11.2) are decrypted and
   tag-checked under the capture keys as adoption does: `ok`, `invalid` (fails
-  to verify: never adopted), `staleRecipients`, or `notChecked` when the
-  device list does not check; other names there are `unknownFile`.
+  to verify: never adopted), `extraStanzas`, or `notChecked` when the
+  device list does not check; other names there are `unknownFile`. The epoch
+  record named by `vault.json` must hash to `epochRecordHash`, open under the
+  key and carry a chain from the vault's root ending at this epoch (`ok` or
+  `invalid`; other names in `epochs/` are `unknownFile`). Join requests in
+  `joins/` are `ok` when they parse and name this vault under their own name,
+  else `invalid`. In `keys/`, only the passphrase copy's name is expected
+  (it is not decrypted: that needs its passphrase).
 - `index` writes `sempere-index.json` at the vault root (or `--out PATH`;
   `--out -` prints it): every note id and its revision file names, the
   listing the web viewer reads on a static server that cannot list folders
   (`docs/web-viewer.md` "Hosting"). It needs no key and holds only names that
-  storage already shows. Once it exists it is kept current automatically:
+  storage already shows; with a key, the usual write checks apply. Once it exists it is kept current automatically:
   every command that opens the vault rewrites it when the listing changed (a
   failure to do so is a warning), and `sync webdav` rewrites the server's
   copy when the server has one. A WebDAV share needs no index. `--json` emits `path`, `notes` and `revisions`.
@@ -415,7 +384,7 @@ sempere vault merge-copy FROM [--dry-run] [--json]
   notebook, favorite and deleted flags, created and modified dates, page count
   and each page's searchable text, with the revision file names it was made
   from; notes with an unreadable revision get no entry. Sealed with AES-256-GCM
-  under a key derived from the vault secret, so it needs the key (exit 4
+  under a key derived from the vault key, so it needs the key (exit 4
   without it) and only the vault's keys open it. Entries of an existing file
   whose notes did not change are reused (others go through the summary cache
   unless `--no-cache`), so a rerun reads only changed notes. Once it exists it
@@ -433,25 +402,38 @@ sempere vault merge-copy FROM [--dry-run] [--json]
 - `merge-copy FROM` merges another copy of the same vault into the vault
   (`format.md` §1.3): the losing side of an iCloud Drive conflict, a copy taken
   from another device, a folder restored from a backup. Every revision, blob,
-  inbox file and identity file the vault lacks is checked as a received file
+  inbox file, epoch record, join request and passphrase copy the vault lacks
+  is checked as a received file
   (`format.md` §9.1: with the key, decrypted and verified; without it, its age
   structure) and copied in; `settings.age` is merged per key (§13.3), which
-  needs the key (locked, it is reported as pending). `vault.json` and
-  `rewrap-journal.json` are never taken from `FROM`: a difference is only
-  reported. Nothing in the vault is overwritten or deleted, so a second run
+  needs the key (locked, it is reported as pending). `vault.json` is taken
+  from `FROM` only when it is a later version of the vault's own by its home
+  device (the same epoch, every check passing, its list holding this one's:
+  a device approved or renamed since; needs the key); otherwise a difference
+  is only reported, and a difference in `label` alone is none. Nothing in the
+  vault is deleted, so a second run
   does nothing; a file both copies hold with different bytes keeps the vault's
   and is listed. `FROM` must hold a `vault.json` of the same vault id (else exit
   1). Lines: `added PATH` (`would add` with `--dry-run`), `refused PATH: why`,
-  `differs PATH`, then the settings and manifest notes. Exit 1 when a file was
+  `differs PATH`, then the settings and manifest notes (`took vault.json (a
+  later version)` or `vault.json differs (kept the vault's)`). Exit 1 when a file was
   refused. `--json` emits `added`, `differing`, `refused` (path → why),
-  `settingsMerged`, `settingsPending` and `manifestDiffers`.
+  `settingsMerged`, `settingsPending`, `manifestUpdated` and `manifestDiffers`.
+
+**Removed with the key hierarchy** (no migration; vaults of the earlier
+format, with a recipients list and a vault secret, are not read): `vault
+recipients add|remove|replace|repair|confirm`, `vault markers`, `vault
+rewrap-resume`, `vault rewrap-discard`, `keys export`, and `vault init`'s
+`--recipient`, `--label`, `--store-key` and `--allow-weak-passphrase`. Adding a device is `device init` and `devices
+approve`; removing or replacing keys arrives with phases KH3 to KH5 of the key
+hierarchy (`docs/design/key-hierarchy.md` §12).
 
 ### Vault store
 
 ```
 sempere store list [--store DIR] [--json]
 sempere store path VAULT [--store DIR] [--json]
-sempere store create NAME --recipient age1pq1... [vault init's options] [--store DIR] [--json]
+sempere store create NAME (--recovery-out FILE | --recovery-key FILE) [vault init's options] [--store DIR] [--json]
 sempere store import SOURCE [--name NAME] [--keep-syncing] [--store DIR] [--json]
 sempere store restore BACKUP [--name NAME] [--replace] [--store DIR] [--json]
 sempere store remove VAULT --yes [--store DIR] [--json]
@@ -481,8 +463,8 @@ by its folder: `--vault "$(sempere store path Notes)"`.
   whose `vault.json` does not open or names another id is listed with a warning on stderr. `--json`: an
   array of `{vaultId, name, path, label, problem}`.
 - `path` prints the vault's folder (`--json`: the same object).
-- `create NAME` makes a new vault in the store, with `vault init`'s options (`--recipient`, `--label`,
-  `--vault-label`, `--store-key`, …; [Vault](#vault)). `NAME` is the folder name without `.sempere`: no
+- `create NAME` makes a new vault in the store, with `vault init`'s options (`--recovery-out` or
+  `--recovery-key`, `--name`, `--vault-label`, `--recovery-passphrase`, …; [Vault](#vault)): this machine is its home. `NAME` is the folder name without `.sempere`: no
   slashes, colons, leading dots or control characters (exit 2). Names need not be unique; ids are.
 - `import SOURCE` copies the vault folder `SOURCE` into the store, as the app's Open Vault… does. The
   source is only read. It must be a complete vault: a readable `vault.json`, no partial-copy markers
@@ -617,13 +599,13 @@ another note's blobs. NOTE is an id or a title; without one, every note.
   that used it, with its `wall` and a recording's `duration` and `title`),
   `held` (`note`, `title`, `file`, `kind`, `bytes`, `sha256`, `revisions`)
   and `unchecked` (note → why nothing could be decided: an unreadable
-  revision, a pending rewrap). Read only: the dates come from this device's
+  revision, a note not fully downloaded). Read only: the dates come from this device's
   record without updating it, so a blob never seen before shows today. Exit 3
   when a note could not be checked. The app keeps its own record, so the
   dates can differ between the app and the CLI on one Mac.
 - `gc` deletes those that have been unreferenced for `--retention` days
   (default 30), per `format.md` §8.1.6: per note, only when every revision of
-  the note was read and verified, no recipient change is pending, no revision
+  the note was read and verified, no revision
   (deleted notes and old restore points included) references the blob, and
   this device first found it so at least the window ago. The first sighting
   is recorded in `$XDG_STATE_HOME/sempere/blobs/<vaultId>.json` (default
@@ -634,14 +616,14 @@ another note's blobs. NOTE is an id or a title; without one, every note.
   "storage": <as unused>}`). A blob is decrypted and verified in full before it
   is deleted; one that cannot be is reported and kept. `--dry-run` deletes
   and records nothing. Exit 3 when a note could not be collected (unreadable
-  revision, pending rewrap) or a blob could not be verified.
+  revision, a note not fully downloaded) or a blob could not be verified.
   Collection never happens as a side effect of `compact`, `sync` or opening.
-- `repair` fixes blobs that do not match the vault's keys or their references
-  (still named under an old vault secret, encrypted to old recipients, or
-  under the wrong kind): each is verified, re-encrypted to the current
-  recipients and renamed. Only authentic blobs are touched (the name verifies
-  under the current secret, or a verified revision of the note references the
-  content); anything else is listed and left alone (exit 3).
+- `repair` fixes blobs that do not match the vault's key or their references
+  (named under another key, encrypted with other stanzas than the one to the
+  vault identity, or under the wrong kind): each is verified, re-encrypted to
+  the vault identity and renamed. Only authentic blobs are touched (the name
+  verifies under the current key, or a verified revision of the note
+  references the content); anything else is listed and left alone (exit 3).
 
 `recover` also reads a single blob file without the vault (see "Recover").
 
@@ -856,12 +838,14 @@ for `--prune` and for a full `verify`.
   and skips a file whose size and recorded hash already match (`--checksum`
   re-hashes them all). That size shortcut is switched off for a run whenever
   the vault's `vault.json` differs from the backed-up one or a
-  `rewrap-journal.json` exists on either side, because a recipient change
-  rewrites revision files without changing their size (replacing one key by
-  another); then every file is compared by hash. A file whose content changed (`vault.json`,
-  `rewrap-journal.json`, `keys/`, every revision after a recipient change) is
-  replaced and its previous copy kept under `DIR/versions/<UTC time>/<path>`;
-  a journal the vault no longer has moves there too. Nothing else is ever
+  re-encryption journal (`reencrypt-journal.age`, `format.md` §15.8; key
+  hierarchy KH6) exists on either side, because re-encrypting the vault
+  rewrites files without changing their size; then every file is compared by
+  hash. A file whose content changed (`vault.json`, `settings.age`, the
+  journal) is replaced and its previous copy kept under
+  `DIR/versions/<UTC time>/<path>`; a journal the vault no longer has moves
+  there too. The epoch records (`epochs/`) and the passphrase copy (`keys/`)
+  are copied like revisions. Nothing else is ever
   deleted: revisions the vault no longer has (compaction) stay, unless
   `--prune`, which deletes only those that a snapshot covers that the vault
   and the backup hold byte for byte identically (checked on disk, not from
@@ -895,13 +879,14 @@ for `--prune` and for a full `verify`.
 - `backup verify DIR` without a key checks every file in `backup.json` (present,
   same size and SHA-256: a flipped byte or a missing file is found; a symbolic
   link counts as missing and is not followed) and that
-  `vault.json` is well formed. With `--identity` (or a scripted passphrase for
-  the key file the backup holds) it also decrypts, tag-checks and decodes every
+  `vault.json` is well formed. With a key (`--identity`, `--recovery-key`,
+  or this machine's device key for the vault; a passphrase-wrapped one only
+  with a scripted passphrase) it also decrypts, tag-checks and decodes every
   revision like `vault verify`. Files on disk that `backup.json` does not list
   (`unindexed`, from a run cut short) are not problems. Exit 0 healthy, 3
   problems, 4 the key does not open the vault. `--json` emits `healthy`,
   `decrypted`, `backupProblems`, `vaultProblem`, `manifestProblems`,
-  `rewrapPending`, `counts` and `files` (`{path, status, detail}`; index
+  `counts` and `files` (`{path, status, detail}`; index
   statuses `ok`, `missing`, `modified`, `unindexed`, plus the vault check's
   problem statuses).
 - `backup status DIR` reads `DIR/backup.json` only (no key, no other file)
@@ -923,15 +908,15 @@ for `--prune` and for a full `verify`.
   `OVERDUE` on the `due` line; `--json` adds `maxAgeDays`, `due` and
   `overdue`. The rule is the app's (`BackupSchedule`), with "last complete
   run" for the app's "last backup".
-- `restore DIR --to NEWPATH` copies `vault.json`, `keys/` and `notes/` (not
+- `restore DIR --to NEWPATH` copies `vault.json`, `epochs/`, `keys/`, `notebooks/`, `settings.age` and `notes/` (not
   `versions/` or `backup.json`) into a new or empty folder ending in
   `.sempere`, checking every file against `backup.json`; a file that does not
   match, that `backup.json` does not list, or that is (or lies under) a
   symbolic link is not restored and is reported. `DIR` may also be any vault folder
   (say, an extracted tar). `vault.json` is written last, so an interrupted
   restore is never mistaken for a vault; the same command finishes it. The
-  result is then verified: every revision with `--identity`, structure only
-  without. Exit 0 ok, 1 files not restored, 2 usage (`NEWPATH` without
+  result is then verified: every revision with a key (as for `backup
+  verify`), structure only without. Exit 0 ok, 1 files not restored, 2 usage (`NEWPATH` without
   `.sempere`), 3 the restored vault is not healthy, 4 wrong key. `NEWPATH`
   may not be, hold or lie inside the vault named by `--vault` or
   `$SEMPERE_VAULT` (exit 1: restore never touches a vault in use).
@@ -1854,18 +1839,19 @@ sempere inbox import [CAPTURE...] [--dry-run] [--retry]          (needs the key)
 
 Voice notes without the key (`format.md` §11, `docs/quick-capture.md`), the
 same path as the app's widgets, Control Center control, Action button, Mac menu-bar item and Siri. `enable`
-writes this machine's **capture profile** (the vault's public recipients and
-the device capture key of the key it was unlocked with, which can only add
+writes this machine's **capture profile** (the vault identity's public key and
+the device capture key of the device it was unlocked as, which can only add
 captures and never reads anything) to
-`$XDG_STATE_HOME/sempere/capture/<vault id>.json`, mode 0600. Captures are
-**attributed** to that key's device (`format.md` §11.1): another machine's
-profile cannot seal one that passes as this one's. Run it again after a key is
-removed from the vault (that rotates the capture key). It refuses (exit
-6) a device list that does not check (`format.md` §2.1): captures are sealed to
-the profile's list and nothing else, so a profile is only ever made from a
-checked one. `capture` reads
+`$XDG_STATE_HOME/sempere/capture/<vault id>.json`, mode 0600. It needs a
+listed device's key (not the recovery key). Captures are
+**attributed** to that device (`format.md` §11.1): another machine's
+profile cannot seal one that passes as this one's. Run it again after the
+vault starts a new epoch (a device removed, key hierarchy KH3: that changes the
+capture key). It refuses (exit
+6) a device list that does not check (`format.md` §2.1), so a profile is only
+ever made from a checked one. `capture` reads
 only `vault.json` and the profile, no identity or passphrase. It seals the
-audio file into `inbox/<id>.capture.age` (encrypted to the recipients, tagged
+audio file into `inbox/<id>.capture.age` (encrypted to the vault identity, tagged
 with the capture key) and prints the capture id. `--transcript` seals a
 `sempere-transcript/1` file with it, and `transcript` seals one later; either
 way its recording id is replaced by the capture's, and it is bound to the
@@ -1874,10 +1860,10 @@ capture's audio (`format.md` §11.2): `transcript` needs that audio file
 audio is never adopted, nor is one sealed by another device than its
 capture's. Both refuse (exit 7) a vault of a newer format. `list` shows the inbox:
 ids and file kinds without a key, with one the titles, whether each verifies
-and who captured it (`from iPad (device 0b0b0b0b)`, `from Device (…)` for a
-key with no label, or `from a device no longer in this vault (…)`).
-A capture sealed by a device that is no longer in the vault never verifies,
-also while the rewrap of its removal is unfinished: it is reported and kept.
+and who captured it (`from iPad (device 0b0b0b0b)`, with the device's name
+in `vault.json`, or `from a device no longer in this vault (…)`).
+A capture sealed by a device that is no longer in the vault never verifies:
+it is reported and kept.
 `import` adopts each capture as a note in the capture's notebook ("Inbox"),
 titled from its date: the audio and transcript as blobs, then one delta as this
 machine (the note's page shows the recording's card, where its transcript reads, as a recording made
@@ -1895,7 +1881,7 @@ now. `--json`:
 `enable` gives `{profile, device, notebook, recipient}`; `capture` gives
 `{capture, note, files}`; `list` gives `[{capture, kinds, title, started,
 duration, device, recipient, capturedBy, error}]` (`recipient` is the
-fingerprint of the key the capture is attributed to, `capturedBy` its label);
+fingerprint of the key the capture is attributed to, `capturedBy` its device's name);
 `import` gives `{dryRun, captures: [{capture, note, title, created,
 transcript, card, file, removed, error, captured, capturedBy}]}` (`card`: the new note shows the
 recording's card on its page).
@@ -2337,21 +2323,28 @@ skipped note reports no placeholder warnings; they were printed when it was rend
 ### Recover
 
 ```
-sempere recover FILE.age [--note-id UUID] [--identity FILE ...] [--vault PATH] [--no-verify]
+sempere recover FILE.age [--note-id UUID] [--identity FILE ... | --recovery-key FILE] [--vault PATH] [--no-verify]
 ```
+
+Every vault file is encrypted to the vault identity (`format.md` §3.1). The
+key is either the vault keys the kit's script prints (`--identity
+vault-keys.txt`, `format.md` §15.13), which open any file on their own, or a
+key the vault lists (this machine's device key, `--identity FILE`, or
+`--recovery-key FILE`), which opens the file through the vault's
+`vault.json` (so the vault must be known, below). Without either it exits 4.
 
 Given an attachment blob (`notes/<id>/att/<name>.<kind>.age`) it prints the
 blob's content, byte for byte what
-`age -d -i KEY FILE | tail -c +46 | head -c LEN` prints (`format.md` §8.1.7).
+`age -d -i vault-keys.txt FILE | tail -c +46 | head -c LEN` prints (`format.md` §8.1.7).
 Framing, zero padding and the content hash are always checked; the file name
 too when a vault is known (a name that does not verify: exit 1, nothing
 printed); otherwise `UNVERIFIED NAME: ...` goes to stderr. Content streams as
 it is decrypted: if the command fails midway, discard the output.
 
 Decrypts one revision file and prints its JSON to stdout, byte for byte what
-`age -d -i KEY FILE | tail -c +38 | gunzip` prints. It needs only an identity
-file and the one `.age` file. If a vault is known (`--vault`, else `vault.json`
-found in a parent directory of the file, else `$SEMPERE_VAULT`) and the identity
+`age -d -i vault-keys.txt FILE | tail -c +38 | gunzip` prints. With the vault
+keys it needs only that file and the one `.age` file. If a vault is known (`--vault`, else `vault.json`
+found in a parent directory of the file, else `$SEMPERE_VAULT`) and the key
 opens it, the inner HMAC tag is verified (the note id is the
 file's directory name unless `--note-id` says otherwise); otherwise
 `UNVERIFIED: ...` is printed to stderr and the JSON is printed anyway. A tag
@@ -2450,18 +2443,26 @@ from the environment variable named by `--password-env` (default
 may be missing or empty: the first run pulls everything.
 
 Revision files are copied to the side that lacks them and never overwritten.
-`vault.json` and `rewrap-journal.json` are compared with the last sync (state
-in `$XDG_STATE_HOME/sempere/sync/`); a change on one side is copied over, a
-change on both keeps both copies (`vault.conflict-<device>-<time>.json` next to
+`vault.json` is compared with the last sync (state
+in `$XDG_STATE_HOME/sempere/sync/`); a change on one side is copied over. When
+both sides changed it, with the vault unlocked, the later version by the home
+device (the same epoch, every check passing, its list holding the other's:
+`format.md` §1.3) is kept on both sides; any other change on both keeps both
+copies (`vault.conflict-<device>-<time>.json` next to
 the local file; `--device` names this machine, default the host name) and exits
 3; a `vault.json` that differs only in its label (the vault renamed on both
-sides) is the same vault and is taken from the server. `settings.age` changed on both sides is merged per key with the
+sides) is the same vault and is taken from the server. The epoch records
+(`epochs/`), join requests (`joins/`) and the passphrase copy (`keys/`) are
+not synced yet (key hierarchy KH4): a vault of one epoch opens without its
+record, and a join request reaches the home device through a shared folder or
+`vault merge-copy`. `settings.age` changed on both sides is merged per key with the
 vault unlocked and the result written to both sides (listed in `merged`; `docs/settings-sync.md` §8); locked, both
 copies are kept and a conflict is reported, as for `vault.json`. The notebook records (`notebooks/`, `format.md` §14)
 are write-once, so both sides end with the union. Deletions follow only compaction: a file removed on one side is removed on
 the other only if the compaction rules (`docs/format.md` §5.3) allow it with
-the revisions held locally, which needs the vault unlocked (`--identity`, or
-`--passphrase-env`/`$SEMPERE_PASSPHRASE` for the stored key file); otherwise
+the revisions held locally, which needs the vault unlocked (this machine's
+device key, `--identity`, or `--passphrase-env`/`$SEMPERE_PASSPHRASE` for a
+passphrase-wrapped device key); otherwise
 it is restored, or, with the vault locked, left alone and listed as skipped.
 Each note's attachment blobs (`notes/<id>/att/`) are synced the same way:
 streamed from and to disk, a blob file over `--max-blob-mib` (default 1088,
@@ -2493,11 +2494,12 @@ it while listing) updates neither file and lists them as skipped. A `--push-only
 any push-only run it writes nothing in the vault, not even a refresh of a
 local `sempere-index.json` or `sempere-summaries.sealed`.
 A remote `vault.json` whose device list changed is copied over the local one
-only when it checks (`format.md` §2.1): its tag verifies under the secret it
-carries, and that secret is the local one or a rotation confirmed by its
-signed `secretLink` (checked with this machine's trust record's public keys,
-else the local vault's secret). That needs the key; without it only a list with the same keys is
-taken. Anything else is reported as `rejected` (stderr line and `--json`
+only when it is a later version of the local one by the home device and
+checks (`format.md` §1.3, §2.1): the same vault, root and epoch, every tag and
+signature verifying, and the local list's entries all still there. That needs
+the key; without it only a copy that differs in its label alone is taken.
+Another epoch, an older version, or a list that does not hold the local one
+is never taken (no merge). Anything else is reported as `rejected` (stderr line and `--json`
 `rejected: [{path, message}]`), the local copy stays, and the exit code is 6.
 Every downloaded revision and blob is checked before it is placed
 (`format.md` §9.1): with the vault unlocked (or, on a first pull, with
@@ -2531,8 +2533,8 @@ files it would first download, so it may under-report deletions.
 **`--push-only`** makes the run a one-way mirror, for a server that is not
 trusted to write back (for example a web server you control that serves the
 web viewer, fed from a local vault copy on a schedule). It uploads what the server lacks (revisions, blobs,
-`vault.json`, `rewrap-journal.json`, even files the server lost), replaces a
-differing server copy of `vault.json` / `rewrap-journal.json` with the local
+`vault.json`, even files the server lost), replaces a
+differing server copy of `vault.json` with the local
 one (listed in `overwritten` and `uploaded`; a server `vault.json` of another
 vault still aborts the run), and deletes on the server what local compaction
 or `blobs gc` explains (as above, which needs the vault unlocked). A
@@ -2541,11 +2543,11 @@ verifies) and the merge uploaded, with the vault unlocked; locked, the local
 copy replaces it (`docs/settings-sync.md` §8). It never
 downloads, and never writes, restores or deletes anything in the vault folder
 (it needs an existing vault: no `vault.json` is exit 2). The reason: a
-two-way sync rejects a `vault.json` whose recipients changed without a valid
-tag (`format.md` §2.1), but still takes everything else a server holds; a
+two-way sync rejects a `vault.json` whose device list changed without the
+home device's signature (`format.md` §2.1), but still takes everything else a server holds; a
 push-only mirror can be corrupted but never feeds anything back. Files only the server has:
 if they were never synced and no compaction explains them (injected files,
-junk names, a stray `rewrap-journal.json`) they are `extraneous`: listed, and
+junk names) they are `extraneous`: listed, and
 with `--delete-extraneous` removed from the server. One that was synced before
 but is missing locally without a compaction or collection to explain it (or
 with the vault locked) is kept and listed as skipped, never deleted, since the
@@ -2555,9 +2557,9 @@ local copy may merely be evicted from iCloud. On the first sync to a server
 run; use `--dry-run` first when the local vault may not be fully downloaded.
 `--delete-extraneous` needs `--push-only`, and `--push-only` an existing vault.
 
-**`--keep-server-changes`** (with `--push-only`) keeps a server `vault.json` or
-`rewrap-journal.json` that changed since this machine's last sync instead of
-replacing it: someone else wrote it (another device's key change, say), and a
+**`--keep-server-changes`** (with `--push-only`) keeps a server `vault.json`
+that changed since this machine's last sync instead of
+replacing it: someone else wrote it (the home device approving a device, say), and a
 mirror that replaced it would undo that on the server. It is reported as a
 conflict (`conflicts`, `remoteCopy` null: nothing is written locally) and the
 exit code is 3; revisions and blobs still upload. Without a sync state for the
@@ -2568,7 +2570,7 @@ app pushes a WebDAV vault (`docs/io.md`, "WebDAV vaults in the app").
 **Partial copies** (`format.md` §1.2, `docs/io.md` "Partial copies"): a vault
 is pulled in steps instead of all at once.
 - **`--metadata-only`** makes a partial copy in a new or empty folder (or
-  continues one): `vault.json`, `rewrap-journal.json`, `settings.age` and the
+  continues one): `vault.json`, `settings.age` and the
   server's `sempere-summaries.sealed` (kept in `.sempere-partial/`), plus one
   empty folder per note marked as not downloaded yet. A few requests whatever
   the vault's size; nothing is uploaded or deleted. It refuses a complete vault
@@ -2576,8 +2578,8 @@ is pulled in steps instead of all at once.
 - **`--fetch`** fetches what a partial copy lacks: every note not downloaded
   yet, or only those named with `--note` (an id or an id prefix, repeatable),
   as the server holds them now, then their attachment blobs; with
-  `--no-blobs`, revisions only (each missing blob keeps a stand-in). With
-  `--identity` (or the stored key's passphrase) each file is checked under the
+  `--no-blobs`, revisions only (each missing blob keeps a stand-in). With a
+  key (this machine's device key, `--identity`) each file is checked under the
   key, else for its age structure (as a first pull). It never uploads, never
   deletes and never changes `vault.json` or a note that is already complete,
   so it is safe while the vault is in use. When nothing is left, the copy is
@@ -2628,8 +2630,9 @@ sempere sync folder PATH --vault V [--identity FILE | --passphrase-env VAR] [--d
 The same two-way sync as `sync webdav`, with a folder as the other side (`docs/io.md`, "Folder
 targets"): a folder in iCloud Drive or another provider's storage, on a USB drive, a network share,
 anywhere. Every rule above applies unchanged: write-once files copied to the side that lacks them and
-never overwritten, `vault.json` and `rewrap-journal.json` compared with the last sync (conflict copies,
-exit 3; a label-only difference taken), `settings.age` merged per key, notebook records unioned,
+never overwritten, `vault.json` compared with the last sync (a later version by home taken, other
+conflicts kept as copies with exit 3; a label-only difference taken; `epochs/`, `joins/` and `keys/` not
+synced yet), `settings.age` merged per key, notebook records unioned,
 deletions only by compaction and blob collection (with the vault unlocked), every file taken from the
 folder checked before it is placed and quarantined otherwise (exit 1), a rejected `vault.json` exit 6,
 the run bounds, `--jobs`, `--dry-run`, `--push-only` (with `--delete-extraneous` and
@@ -2647,7 +2650,7 @@ Such files exist: nothing is uploaded over them and no deletion is judged from t
 arrived is printed as `arriving: PATH: why` on stderr, listed in the JSON `arriving` (`{path,
 message}`), and the exit code is 1: run again. One still arriving 15 minutes after the first request
 is an error instead. A `vault.json` in the folder that does not arrive stops the run before anything
-is copied (exit 1). The provider's conflict versions of `vault.json`, the journal and `settings.age`
+is copied (exit 1). The provider's conflict versions of `vault.json` and `settings.age`
 are merged, or kept as conflict copies, and removed, so no version picker appears.
 
 The folder is not trusted: symbolic links in it are never followed, FIFOs and names that are not vault
@@ -2733,65 +2736,72 @@ screen shows too. Exit 0.
 ### Prepare for a lost device or key
 
 ```bash
-sempere keys paper --identity ~/.config/sempere/key.txt --vault ~/Sync/notes.sempere --out kit.pdf
-lp kit.pdf && rm kit.pdf          # print it, keep it with your passport
+sempere vault init ~/Sync/notes.sempere --recovery-out recovery.txt --name "laptop" --kind cli
+sempere keys paper --identity recovery.txt --vault ~/Sync/notes.sempere --out kit.pdf
+lp kit.pdf && rm kit.pdf recovery.txt   # print it, keep it with your passport; no device keeps it
 sempere backup ~/Sync/notes.sempere --to /mnt/usb/notes-backup
-sempere backup verify /mnt/usb/notes-backup --identity ~/.config/sempere/key.txt
+sempere backup verify /mnt/usb/notes-backup   # this machine's device key opens it
 ```
 
 Later, on a new computer with only the sheet and the backup disk:
 
 ```bash
 # type the key lines into key.txt (or zbarimg --raw -q photo.png > key.txt)
-age-keygen -y key.txt                                  # prints the public key on the sheet
-sempere restore /mnt/usb/notes-backup --to ~/notes.sempere --identity key.txt
-sempere export --all --format pdf --out ~/notes-pdf --vault ~/notes.sempere --identity key.txt
+age-keygen -y key.txt | tr -d '\n' | sha256sum | cut -c1-16   # the digest on the sheet
+sempere restore /mnt/usb/notes-backup --to ~/notes.sempere --recovery-key key.txt
+sempere export --all --format pdf --out ~/notes-pdf --vault ~/notes.sempere \
+    --recovery-key key.txt --root "THE 16 GROUPS ON THE SHEET"
 ```
 
-### Move a key to a second device
+The recovery key reads; it never writes. Writing again from a new device
+needs that device to join (below), which needs the home device; a takeover
+with the recovery key, when home is lost, comes with key hierarchy KH4.
 
-The vault stores your identity passphrase-wrapped (`vault init --store-key`).
-On the second device, with the vault folder synced over:
+### Join a second device
+
+With the vault folder shared between the two machines (a synced folder, or
+copy `joins/` across with `vault merge-copy`):
 
 ```bash
-sempere keys export --vault ~/Sync/notes.sempere --out ~/.config/sempere/key.txt
-# Vault passphrase: ********
-export SEMPERE_IDENTITY=~/.config/sempere/key.txt
+# on the new machine:
+sempere device init --vault ~/Sync/notes.sempere --name "linux box"
+# On the home device, type these six words: …
+# on the home device (the machine that created the vault):
+sempere devices approve --vault ~/Sync/notes.sempere WORD WORD WORD WORD WORD WORD
+# On the new device, type these six words: …
+# back on the new machine, once the new vault.json has arrived:
+sempere device confirm --vault ~/Sync/notes.sempere WORD WORD WORD WORD WORD WORD
 sempere vault verify --vault ~/Sync/notes.sempere
 ```
 
-Prefer a key per device? Generate one there and add it from a device that
-already has access:
-
-```bash
-sempere keys generate --out ~/.config/sempere/key.txt        # prints age1new...
-# on the first device:
-sempere vault recipients add age1new... --label "linux box" \
-    --vault ~/Sync/notes.sempere --identity ~/.config/sempere/key.txt
-```
+Each device has its own key, kept in its own state folder; no key is copied
+between devices.
 
 ### Export everything to PDF on Linux from a backup
 
 ```bash
 tar xf notes-backup.tar            # from `sempere backup --archive`: contains notes.sempere/
 export SEMPERE_VAULT=$PWD/notes.sempere
-export SEMPERE_IDENTITY=~/key.txt
-sempere vault verify              # exit 0 = every file decrypts and its tag matches
-sempere export --all --format pdf --out ~/notes-pdf
-sempere export --all --merge --format pdf --out ~/all-notes.pdf
+sempere vault verify --recovery-key ~/key.txt     # exit 0 = every file decrypts and its tag matches
+sempere export --all --format pdf --out ~/notes-pdf --recovery-key ~/key.txt
+sempere export --all --merge --format pdf --out ~/all-notes.pdf --recovery-key ~/key.txt
 ```
 
-Add `--deleted` to include notes you deleted. With only the passphrase-wrapped
-key in the backup, drop `SEMPERE_IDENTITY` and run with
-`SEMPERE_PASSPHRASE` set (or answer the prompt).
+Add `--deleted` to include notes you deleted. With only the passphrase copy
+in the backup, pass it as the key (`--recovery-key
+notes.sempere/keys/recovery-*.key.age`) with `SEMPERE_PASSPHRASE` set (or
+answer the prompt); it carries the root, so no `--root` is needed.
 
 ### Recover one note with nothing but age
 
-You have `key.txt` and one file, `17600...-ab12cd34-3.snapshot.age`, and no
-`sempere` binary:
+You have the recovery key in `recovery.txt`, the vault's `vault.json` and one
+file, `17600...-ab12cd34-3.snapshot.age`, and no `sempere` binary. Files are
+encrypted to the vault identity, which the recovery entry's wrap holds
+(`docs/format.md` §15.13, the kit's script):
 
 ```bash
-age -d -i key.txt 17600...-ab12cd34-3.snapshot.age | tail -c +38 | gunzip | jq .
+jq -r '.keys[] | select(.role == "recovery") | .wrap' vault.json | age -d -i recovery.txt > vault-keys.txt
+age -d -i vault-keys.txt 17600...-ab12cd34-3.snapshot.age | tail -c +38 | gunzip | jq .
 ```
 
 A post-quantum key (`AGE-SECRET-KEY-PQ-1...`) needs `age` 1.3 or later (the
@@ -2800,5 +2810,6 @@ official release binaries; distribution packages may be older).
 The first 37 bytes of the decrypted body are the `SMPR` header and HMAC tag
 (`docs/format.md` §4); `tail -c +38` skips them. Newest snapshot first: it
 carries the whole note (title, pages, strokes). With the binary, the same
-thing is `sempere recover FILE.age --identity key.txt`, which also checks the
-tag when the vault folder is next to the file.
+thing is `sempere recover FILE.age --recovery-key recovery.txt` (or
+`--identity vault-keys.txt`), which also checks the tag when the vault folder
+is next to the file.

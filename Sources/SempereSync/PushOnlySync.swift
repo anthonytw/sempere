@@ -42,8 +42,8 @@ extension SyncEngine {
         let local = try localMutable(name)
         guard let local else {
             guard remote != nil else { return }
-            // Nothing is ever pulled; a stale journal also blocks blob collection, so it may go.
-            if reportExtraneous(name, remove: [name]) && name == Vault.journalName { remoteJournal = false }
+            // Nothing is ever pulled.
+            _ = reportExtraneous(name, remove: [name])
             return
         }
         let localHash = FileDigest.sha256(local)
@@ -57,12 +57,12 @@ extension SyncEngine {
             state.mutable[name] = .init(hash: localHash, stamp: remote.stamp)
             return
         }
-        if options.keepServerChanges, name == Vault.manifestName || name == Vault.journalName {
+        if options.keepServerChanges, name == Vault.manifestName {
             // Replace only what this device put there: a copy changed since its last
             // sync was written by someone else (another device's key change, say).
             let record = state.mutable[name]
             guard let record, let current, FileDigest.sha256(current) == record.hash else {
-                if name == Vault.manifestName, let current, VaultManifest.sameExceptLabel(local, current) {
+                if name == Vault.manifestName, let current, EpochManifest.sameExceptLabel(local, current) {
                     // Another device renamed the vault: the same vault (format.md §1.3), not a conflict.
                     report.skipped.append(.init(path: name, message: "the server copy differs only in its label; kept on the server"))
                     return

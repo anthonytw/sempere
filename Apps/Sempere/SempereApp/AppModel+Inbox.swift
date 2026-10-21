@@ -107,7 +107,7 @@ extension AppModel {
             inboxLog.error("quick capture profile not refreshed: \(String(describing: error), privacy: .public)")
             return
         }
-        guard let vault, vault.canRead, vault.recipientsStatus.allowsWriting, var stored = current,
+        guard let vault, vault.canRead, !vault.isRecoveryOpen, vault.listStatus.allowsWriting, var stored = current,
               stored.profile.vaultId == vault.vaultId, let device = DeviceID(stored.profile.device),
               let here = vaultURL, Self.isProfileFolder(stored.bookmark, here),
               let fresh = try? vault.captureProfile(device: device, notebook: stored.profile.notebook) else { return }

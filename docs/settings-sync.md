@@ -31,13 +31,14 @@ provider, WebDAV, a backup and restore).
 
 One file at the vault root, `settings.age`:
 
-- age-encrypted to the vault's recipients, like every revision;
+- age-encrypted to the vault identity (one stanza), like every revision;
 - inside, the revision body framing of `format.md` §4 (`SMPR`, version, HMAC tag under
-  the vault secret, `gzip(JSON)`), with `settings` where a revision has its note id. The
-  tag means only a holder of the vault secret can write a file the app accepts: anyone
-  can age-encrypt to the public recipients, nobody else can tag;
-- recoverable with stock tools, like a revision:
-  `age -d -i key settings.age | tail -c +38 | gunzip | jq .`
+  `tagKey`, derived from the vault key, `gzip(JSON)`), with `settings` where a revision has
+  its note id. The tag means only a holder of the vault key can write a file the app
+  accepts: anyone who knows the vault identity's public key can age-encrypt to it, nobody
+  else can tag;
+- recoverable with stock tools, like a revision (`vault-keys.txt` from the kit's script,
+  `format.md` §15.13): `age -d -i vault-keys.txt settings.age | tail -c +38 | gunzip | jq .`
 
 ### 2.2 The JSON
 
@@ -208,7 +209,7 @@ Overrides are chosen in Settings.
 ### 4.5 Read-only and untrusted vaults
 
 Writing `settings.age` is a vault write: it is refused where every write is (`format.md`
-§7.3 read-only vaults, §2.1 a tampered recipients list). The app
+§7.3 read-only vaults, §2.1 a `vault.json` that does not check). The app
 then pauses settings sync and says why under the switch; edits made meanwhile are written
 once the vault is writable again (they are detected against the last applied values).
 Reading and applying need the vault unlocked.
@@ -240,8 +241,6 @@ which devices use it. Any key may also appear in a type block.
 | `photos.removeMetadata` | Photos ▸ Remove Location and Camera Data | `true`, `false` | `true` |
 | `history.thinAfterDays` | Version History ▸ Thin Autosaves Older Than | 7, 14, 30, 90, 365, 0 (never) | 30 |
 | `search.transcripts` | Audio & Transcription ▸ Search Recording Transcripts (also the search field) | `true`, `false` | `false` |
-| `rewrap.onAdd` | Device Keys ▸ When Adding a Device | `header`, `reencrypt` | `header` |
-| `rewrap.onRemove` | Device Keys ▸ When Removing or Replacing a Device | `header`, `reencrypt` | `reencrypt` |
 | `quickCapture.notebook` | Quick Voice Notes ▸ Notebook | a notebook path | `Inbox` |
 | `quickCapture.transcribe` | Quick Voice Notes ▸ Transcribe Voice Notes | `true`, `false` | `true` |
 | `backup.reminderDays` | Backups ▸ Remind Me (once the device has a backup folder) | 0 (off), 1, 3, 7, 14, 30 | 0 |
@@ -249,9 +248,9 @@ which devices use it. Any key may also appear in a type block.
 | `appearance.notePages` | General ▸ Appearance ▸ Note Pages (dark: on screen only) | `light`, `dark`, `matchApp` | `light` |
 
 Recognition and transcription still run on each device: one without the language model
-does what it can. The rewrap modes are policies of the vault; choosing the
-weaker removal mode still asks for confirmation on the device where it is chosen, and
-the other devices follow it.
+does what it can. (The `rewrap.*` keys of earlier builds are gone: under the key hierarchy adding
+a device rewraps no file, and removal is a new epoch, KH3. A file that still holds them keeps
+them as unknown keys.)
 
 ### 5.2 Used by some device types
 
@@ -381,14 +380,14 @@ sempere settings schema
   applies settings, it edits the shared file that devices with sync on follow (their
   local overrides still win on them). Writes record no device type and follow the merge
   rule above. Exit codes as for every command (`docs/cli.md`): 6
-  untrusted recipients, 7 read-only.
+  untrusted device list, 7 read-only.
 
 ## 8. The rest of the vault
 
-- **Recipient changes** (`format.md` §3.3.1): `settings.age` is rewritten with the
-  revisions (new recipients; re-tagged under a rotated secret after verifying under the
-  previous one). A file that cannot be read or verified is reported, left as it is, and
-  does not keep the journal: the next settings write replaces it.
+- **Key changes**: adding a device does not touch `settings.age`. A new epoch (key
+  hierarchy KH3) changes the key it is tagged under; a writer replaces a file that does
+  not verify only while `vault.json` on disk is still of its own epoch (`format.md`
+  §13.5).
 - **Backups**: `sempere backup`, `restore` and the app's Backups copy `settings.age` like
   `vault.json`.
 - **WebDAV sync**: `settings.age` is synced as a mutable file. When both sides changed and
@@ -434,7 +433,7 @@ sempere settings schema
   and registry snapshot, loads every newer fixture and keeps what it does not know), the
   `$minReaderVersion` refusal and its doc row,
   invalid values fall back with a warning, limits and hostile files fail with typed errors
-  (and a fuzz target), the tag binds the file, recipient changes rewrap the file, read-only
+  (and a fuzz target), the tag binds the file, read-only
   vaults refuse writes; the schema file matches the registry; the migration
   machinery (renames, remaps, splits, a newer version left alone) and the v1 fixture.
 - Device logic (`SettingsSyncStateTests`): the pause when the file needs a newer reader

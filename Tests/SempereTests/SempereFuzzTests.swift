@@ -3,6 +3,7 @@ import Foundation
 import FuzzSupport
 import XCTest
 
+import VaultTestSupport
 @testable import Sempere
 
 /// Seeded mutation fuzzing of everything `Sources/Sempere` parses from a vault
@@ -356,7 +357,7 @@ final class SempereFuzzTests: VaultTestCase {
 
     func testFuzzBodyFramingAndGzip() throws {
         let log = try Self.seedLog()
-        let secret = VaultSecret.random()
+        let secret = VaultEpochKey.random()
         let note = testNote.uuidString.lowercased()
         let seeds = try log.map { r in
             try BodyFraming.frame(json: Self.json(r), noteId: note, filename: r.name.filename, secret: secret)
@@ -384,22 +385,20 @@ final class SempereFuzzTests: VaultTestCase {
 
     struct Invariant: Error { var text: String; init(_ t: String) { text = t } }
 
-    func testFuzzManifestJournalAndDeviceState() throws {
+    func testFuzzManifestAndDeviceState() throws {
+        try XCTSkipUnless(postQuantumAvailable, "X-Wing and ML-DSA need Apple OS 26 (always on Linux)")
         let id = pqIdentity(), other = pqIdentity()
-        let vault = try Vault.create(at: vaultURL(), recipients: [id.recipient, other.recipient], labels: ["a", "b"],
-                                     identities: [id])
+        let vault = try TestVaults.create(at: vaultURL(), identities: [id, other], names: ["a", "b"])
         let manifest = try Data(contentsOf: vault.url.appendingPathComponent("vault.json"))
-        let journal = try Self.json(Vault.RewrapJournal(format: "sempere/1",
-                                                        previousVaultSecret: try Vault.encryptSecret(.random(), to: [id.recipient]),
-                                                        rekeyBlobs: true))
         let device = try JSONEncoder().encode(DeviceState(device: devA, clock: HybridClock(millis: 5, counter: 3)))
-        assertClean(Fuzz.run("manifest", seeds: [manifest, journal, device], quick: 1500, text: true) { input in
+        let keyFile = Data(TestVaults.deviceKeyFile(id).utf8)
+        assertClean(Fuzz.run("manifest", seeds: [manifest, device, keyFile], quick: 600, text: true) { input in
             Self.typed {
                 if let m = try? Vault.readManifest(input) {
-                    _ = try? Vault.decryptSecret(m.vaultSecret, with: [id])
+                    _ = Vault.listStatus(m, key: try vault.requireSecret(), trust: nil, root: nil)
                     _ = try m.encoded()
                 }
-                _ = try? InkJSON.decoder().decode(Vault.RewrapJournal.self, from: input)
+                _ = try? DeviceKeys.parse(String(decoding: input, as: UTF8.self))
                 if let s = try? JSONDecoder().decode(DeviceState.self, from: input) {
                     var clock = s.clock
                     _ = clock.tick(wall: Self.wall)
@@ -458,47 +457,30 @@ final class SempereFuzzTests: VaultTestCase {
         })
     }
 
-    /// vault.json's `recipientsTag` / `secretLink` (format.md §2.1) and trust
-    /// records: a mutated manifest never verifies with keys other than the
-    /// real ones under the real secret, never verifies without its tags, and
-    /// never traps.
-    func testFuzzRecipientsTag() throws {
+    /// `vault.json` under the key hierarchy (format.md §15.3) checked against a trust record: a mutated
+    /// manifest never verifies with another list, another key or a stripped tag, and never traps; nor
+    /// does the incoming-manifest check.
+    func testFuzzListCheck() throws {
+        try XCTSkipUnless(postQuantumAvailable, "X-Wing and ML-DSA need Apple OS 26 (always on Linux)")
         let id = pqIdentity(), other = pqIdentity()
-        let store = MemoryRecipientsTrustStore()
-        let vault = try Vault.create(at: vaultURL(), recipients: [id.recipient, other.recipient], labels: ["a", "b"],
-                                     identities: [id], trust: store)
+        let store = MemoryEpochTrustStore()
+        let vault = try TestVaults.create(at: vaultURL(), identities: [id, other], names: ["a", "b"], trust: store)
+        try vault.requireWritable()
         let manifest = try Data(contentsOf: vault.url.appendingPathComponent("vault.json"))
         let secret = try XCTUnwrap(vault.secret)
-        let record = try XCTUnwrap(try store.record(for: vault.vaultId))
-        let recordJSON = try JSONEncoder().encode(record)
-        let keys = vault.recipients.map(\.key)
-        // A manifest with a signed `secretLink` (format.md §2.1), when ML-DSA is available.
-        var seeds = [manifest, recordJSON]
-        if postQuantumAvailable {
-            var rotated = try Vault.create(at: vaultURL("Rotated"), recipients: [id.recipient, other.recipient], identities: [id])
-            try rotated.removeRecipient(other.recipient)
-            seeds.append(try Data(contentsOf: rotated.url.appendingPathComponent("vault.json")))
-        }
-        assertClean(Fuzz.run("recipients-tag", seeds: seeds, quick: 600, text: true) { input in
-            if let r = try? JSONDecoder().decode(RecipientsTrustRecord.self, from: input) {
-                let k = r.linkPublicKeys
-                if k.ed25519.count != 32 || k.mldsa65.count != 1952 {
-                    return "a trust record with \(k.ed25519.count) + \(k.mldsa65.count)-byte public keys"
-                }
-            }
+        let recordJSON = try JSONEncoder().encode(try XCTUnwrap(try store.record(for: vault.vaultId)))
+        let keys = vault.manifest.keys.map(\.key)
+        assertClean(Fuzz.run("list-check", seeds: [manifest, recordJSON], quick: 400, text: true) { input in
+            _ = try? JSONDecoder().decode(EpochTrustRecord.self, from: input)
             guard let m = try? Vault.readManifest(input) else {
                 _ = Vault.incomingManifestProblem(input, local: manifest, vault: vault)
                 return nil
             }
-            _ = Hex.decode(m.recipientsTag ?? "")
-            for rec in [record, nil] as [RecipientsTrustRecord?] {
-                let status = RecipientsAuth.evaluate(m, secret: secret, record: rec)
-                if case .verified = status, m.vaultId == vault.vaultId, m.recipients.map(\.key) != keys {
-                    return "a changed list verified: \(status)"
-                }
-                if case .verified = status, m.recipientsTag == nil || m.markersTag == nil {
-                    return "verified without a tag: \(status)"
-                }
+            for trust in [store, nil] as [MemoryEpochTrustStore?] {
+                let status = Vault.listStatus(m, key: secret, trust: trust, root: nil)
+                guard case .verified = status, m.vaultId == vault.vaultId else { continue }
+                if !Set(keys).isSubset(of: Set(m.keys.map(\.key))) { return "a list that lost a key verified: \(status)" }
+                if m.listTag.isEmpty || m.markersTag.isEmpty { return "verified without a tag: \(status)" }
             }
             _ = Vault.incomingManifestProblem(input, local: manifest, vault: vault)
             _ = try? m.encoded()
@@ -615,7 +597,7 @@ final class SempereFuzzTests: VaultTestCase {
                 let gz = try Gzip.compress(input)
                 let body = BodyFraming.frame(gzip: gz, noteId: testNote.uuidString.lowercased(), filename: name.filename,
                                              secret: secret)
-                try AgeFile.encrypt(body, to: [id.recipient]).write(to: file)
+                try AgeFile.encrypt(body, to: [try vault.vaultRecipient()]).write(to: file)
                 let loaded = try vault.loadNote(testNote)
                 _ = vault.summary(of: testNote, loaded: loaded)
                 _ = loaded.restorePoints

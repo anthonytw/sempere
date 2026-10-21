@@ -37,7 +37,7 @@ describe("ciphertext cache", () => {
   it("caches only write-once vault files", () => {
     expect(isCacheablePath(`notes/${lecture}/17911308010000000-a1b2c3d4-1.delta.age`)).toBe(true);
     expect(isCacheablePath(`notes/${lecture}/att/${blobName}.image.age`)).toBe(true);
-    for (const p of ["vault.json", "rewrap-journal.json", "sempere-index.json", "sempere-summaries.sealed",
+    for (const p of ["vault.json", "sempere-index.json", "sempere-summaries.sealed",
       `notes/${lecture}/notes.txt`, "notes/7E57C0DE-0000-4000-8000-000000000001/17911308010000000-a1b2c3d4-1.delta.age",
       `notes/${lecture}/att/x.image.age`, `notes/${lecture}/att/${blobName}.image.age/x`, "inbox/x.capture.age"]) {
       expect(isCacheablePath(p), p).toBe(false);
@@ -130,18 +130,17 @@ describe("ciphertext cache", () => {
       `another vault\nnotes/${other}/17911308060000000-a1b2c3d4-1.delta.age`]);
   });
 
-  // Security review 2026-10, P4: a copy cached before a recipient change (or
-  // while its rewrap ran) is encrypted to the old recipients, a removed key
-  // among them; the new key state's namespace drops it.
+  // Security review 2026-10, P4: a copy cached before a re-encryption (or
+  // while it ran) is encrypted to the old epoch key, a removed device
+  // may have kept; the new key state's namespace drops it.
   it("drops copies cached under an earlier key state of the same vault", async () => {
     const cache = new FileCache(new MemoryFileStore());
     const path = `notes/${lecture}/17911308010000000-a1b2c3d4-1.delta.age`;
-    const before = await cacheNamespace("https://x/v", "vault-1", "sealed secret 1");
-    const journal = new TextEncoder().encode("{}");
-    const during = await cacheNamespace("https://x/v", "vault-1", "sealed secret 2", journal);
-    const after = await cacheNamespace("https://x/v", "vault-1", "sealed secret 2");
+    const before = await cacheNamespace("https://x/v", "vault-1", "epoch-1");
+    const during = await cacheNamespace("https://x/v", "vault-1", "epoch-2", "pending");
+    const after = await cacheNamespace("https://x/v", "vault-1", "epoch-2");
     expect(new Set([before, during, after]).size).toBe(3);
-    expect(await cacheNamespace("https://x/v", "vault-1", "sealed secret 1")).toBe(before);
+    expect(await cacheNamespace("https://x/v", "vault-1", "epoch-1")).toBe(before);
     expect(before.startsWith("https://x/v\nvault-1\n")).toBe(true);
     await cache.put(`${before}\n${path}`, new Uint8Array([1]));
     await cache.put(`https://x/v\nvault-1\n${path}`, new Uint8Array([2]));   // no key state: dropped
@@ -156,7 +155,7 @@ describe("ciphertext cache", () => {
     expect(await src.dropOtherNamespaces()).toBe(2);
     expect((await cache.keys("")).sort()).toEqual([`${during}\n${path}`, `https://x/v\nvault-2\n${path}`,
       `https://x/v2\nvault-1\n${path}`].sort());
-    // The rewrap finishes: what was cached during it goes too.
+    // The re-encryption finishes: what was cached during it goes too.
     expect(await new CachingSource(inner, cache, after).dropOtherNamespaces()).toBe(1);
   });
 

@@ -20,7 +20,7 @@ final class RecoveryKitTests: XCTestCase {
     private func kit(_ secret: RecoveryKit.Secret, vault: Bool = true) -> RecoveryKit {
         RecoveryKit(secret: secret, recipient: Self.recipient,
                     vault: vault ? .init(name: "School", id: "5a3b1e00-1000-4000-8000-000000000001",
-                                         created: Date(timeIntervalSince1970: 1_790_000_000), recipientCount: 2) : nil,
+                                         created: Date(timeIntervalSince1970: 1_790_000_000), root: Data(repeating: 0xab, count: 32)) : nil,
                     printed: Date(timeIntervalSince1970: 1_791_000_000))
     }
 
@@ -82,7 +82,7 @@ final class RecoveryKitTests: XCTestCase {
         let one = texts(pages[0]), two = texts(pages[1])
 
         // The warning, the vault, the public key.
-        XCTAssertTrue(one.contains("THIS SHEET IS YOUR KEY."))
+        XCTAssertTrue(one.contains("THIS SHEET IS YOUR VAULT'S RECOVERY KEY."))
         XCTAssertTrue(one.contains("Vault:      School"))
         XCTAssertTrue(one.contains("Vault id:   5a3b1e00-1000-4000-8000-000000000001"))
         XCTAssertTrue(one.contains("Public key: \(Self.recipient)"))
@@ -103,9 +103,10 @@ final class RecoveryKitTests: XCTestCase {
         XCTAssertEqual(code, try QRCode.encode(text: Self.key, correction: .quartile))
         XCTAssertEqual(try qrModules(pages[0], size: code.size), code.modules)
 
-        // Recovery steps with stock tools match docs/format.md framing.
-        XCTAssertTrue(two.contains { $0.contains("age -d -i key.txt FILE.age | tail -c +38 | gunzip | jq .") })
-        XCTAssertTrue(two.contains { $0.contains("sempere restore BACKUP_DIR") })
+        // Recovery with stock tools is the frozen script (format.md §15.13), line for line; with sempere, read-only.
+        for l in KitRecovery.script.split(separator: "\n") { XCTAssertTrue(two.contains(String(l)), String(l)) }
+        XCTAssertTrue(two.contains { $0.contains("age -d -i vault-keys.txt notes/ID/NAME.delta.age | tail -c +38 | gunzip | jq .") })
+        XCTAssertTrue(two.contains { $0.contains("sempere vault verify --vault $V --recovery-key key.txt") })
         XCTAssertTrue(two.contains { $0.contains("age-keygen -y key.txt") })
     }
 
@@ -119,7 +120,7 @@ final class RecoveryKitTests: XCTestCase {
     func testPostQuantumKitFitsThePage() throws {
         let k = RecoveryKit(secret: .identity(Self.pqKey), recipient: Self.pqRecipient,
                             vault: .init(name: "School", id: "5a3b1e00-1000-4000-8000-000000000001",
-                                         created: Date(timeIntervalSince1970: 1_790_000_000), recipientCount: 1),
+                                         created: Date(timeIntervalSince1970: 1_790_000_000), root: Data(repeating: 0xab, count: 32)),
                             printed: Date(timeIntervalSince1970: 1_791_000_000))
         let pages = streams(try k.pdf())
         let one = texts(pages[0]), two = texts(pages[1])
@@ -178,16 +179,22 @@ final class RecoveryKitTests: XCTestCase {
     }
 
     func testA4AndLongWrappedFileStayOnThePage() throws {
-        var k = kit(.passphraseWrapped("-----BEGIN AGE ENCRYPTED FILE-----\n"
+        let long = RecoveryKit.Secret.passphraseWrapped("-----BEGIN AGE ENCRYPTED FILE-----\n"
             + String(repeating: String(repeating: "A", count: 64) + "\n", count: 9)
-            + "-----END AGE ENCRYPTED FILE-----\n"))
-        k.pageWidth = 595.28
-        k.pageHeight = 841.89
-        for stream in streams(try k.pdf()) {
-            for line in stream.split(separator: "\n") where line.hasSuffix(" Td") {
-                let n = line.split(separator: " ").compactMap { Double($0) }
-                XCTAssertGreaterThan(n[1], 36, "text above the bottom margin: \(line)")
-                XCTAssertLessThan(n[0], 595.28 - 54)
+            + "-----END AGE ENCRYPTED FILE-----\n")
+        // A4 and US Letter, both variants (page 2 carries the frozen script and the root's QR code).
+        for (width, height) in [(595.28, 841.89), (612.0, 792.0)] {
+            for secret in [long, .identity(Self.key)] {
+                var k = kit(secret)
+                k.pageWidth = width
+                k.pageHeight = height
+                for (page, stream) in streams(try k.pdf()).enumerated() {
+                    for line in stream.split(separator: "\n") where line.hasSuffix(" Td") {
+                        let n = line.split(separator: " ").compactMap { Double($0) }
+                        XCTAssertGreaterThan(n[1], 36, "\(width)×\(height) page \(page + 1): text above the bottom margin: \(line)")
+                        XCTAssertLessThan(n[0], width - 54)
+                    }
+                }
             }
         }
     }

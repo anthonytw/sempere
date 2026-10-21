@@ -44,10 +44,9 @@ final class CLIMergeCopyTests: CLITestCase {
         XCTAssertEqual(r.status, 1, r.out + r.err)
         XCTAssertTrue(r.out.contains("refused notes/\(note)/17900000000000000-0000000a-9.delta.age"), r.out)
 
-        let key = path("b.key")
-        let pub = try cli(["keys", "generate", "--out", key, "-q"]).out.trimmingCharacters(in: .whitespacesAndNewlines)
         let stranger = path("stranger.sempere")
-        XCTAssertEqual(try cli(["vault", "init", stranger, "--recipient", pub]).status, 0)
+        let made = try cli(["vault", "init", stranger, "--recovery-out", path("stranger-recovery.key")])
+        XCTAssertEqual(made.status, 0, made.err)
         let foreign = try cli(["vault", "merge-copy", stranger, "--vault", vault])
         XCTAssertEqual(foreign.status, 1)
         XCTAssertTrue(foreign.err.contains("another vault"), foreign.err)

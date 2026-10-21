@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+import VaultTestSupport
 @testable import Sempere
 @testable import SempereSync
 
@@ -11,7 +12,7 @@ final class RedownloadLeftoversTests: SyncTestCase {
     func makeCopy() throws -> LocalCopy {
         let c = LocalCopy(directory: tmp.appendingPathComponent("loc"), folderName: "V.sempere")
         try FileManager.default.createDirectory(at: c.directory, withIntermediateDirectories: true)
-        let v = try Vault.create(at: c.folder, recipients: [identity.recipient], labels: ["t"], identities: [identity])
+        let v = try TestVaults.create(at: c.folder, identities: [identity], names: ["t"])
         _ = try delta(v, device: devA, t: 0, title: "one")
         return c
     }

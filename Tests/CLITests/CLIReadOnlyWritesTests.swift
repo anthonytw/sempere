@@ -60,9 +60,9 @@ final class CLIReadOnlyWritesTests: CLITestCase {
 
         // The vault is now written by a newer version: no more writes.
         let manifestURL = URL(fileURLWithPath: vault).appendingPathComponent("vault.json")
-        var manifest = try VaultManifest.decode(Data(contentsOf: manifestURL))
-        manifest.format = "sempere/2"
-        try manifest.encoded().write(to: manifestURL)
+        var obj = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any])
+        obj["format"] = "sempere/2"
+        try JSONSerialization.data(withJSONObject: obj).write(to: manifestURL)
         let before = try files(vault)
         let pq = try NativeIdentity.generate(.postQuantum).recipient.string
         let pq2 = try NativeIdentity.generate(.postQuantum).recipient.string

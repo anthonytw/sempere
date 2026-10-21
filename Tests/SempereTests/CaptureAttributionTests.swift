@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import XCTest
+import VaultTestSupport
 @testable import Sempere
 
 /// Capture attribution (format.md §8.3.1, §11.1–§11.3; security review
@@ -19,8 +20,7 @@ final class CaptureAttributionTests: VaultTestCase {
     /// rewrap has a file to stop at.
     func setUpVault() throws -> Vault {
         try XCTSkipUnless(postQuantumAvailable)
-        let v = try Vault.create(at: vaultURL(), recipients: [a.recipient, b.recipient, c.recipient],
-                                 labels: ["Mac", "iPad", "Phone"], identities: [a])
+        let v = try TestVaults.create(at: vaultURL(), identities: [a, b, c], names: ["Mac", "iPad", "Phone"])
         _ = try v.apply(NoteOps.newNote(title: "Plain"), to: UUID(), deviceState: deviceState(), app: "t")
         return v
     }
@@ -68,7 +68,7 @@ final class CaptureAttributionTests: VaultTestCase {
         XCTAssertTrue(r.transcript)
         let rec = try recording(vault, id)
         XCTAssertEqual(rec.captured, CaptureAttribution(device: "0b0b0b0b", recipient: p.recipient))
-        XCTAssertEqual(rec.captured?.label(in: vault.recipients), "iPad")
+        XCTAssertEqual(rec.captured?.label(in: vault.manifest), "iPad")
         // Round trip through a snapshot keeps it.
         let json = try InkJSON.encoder().encode(rec)
         XCTAssertEqual(try InkJSON.decoder().decode(Recording.self, from: json).captured, rec.captured)
@@ -141,49 +141,7 @@ final class CaptureAttributionTests: VaultTestCase {
         XCTAssertThrowsError(try RecordingChange(field: "captured", value: .string("x")), "immutable")
     }
 
-    // MARK: - C3: removed devices
-
-    /// Attack: B is removed (it was lost) and its rewrap is unfinished, so
-    /// the outgoing secret is still accepted for files not yet rewrapped.
-    /// B's profile (outgoing secret, B's key) keeps sealing: it is refused. A kept device's capture
-    /// sealed with its old profile meanwhile is still taken.
-    func testARemovedDevicesCapturesAreRefusedWhileItsRewrapIsUnfinished() throws {
-        var vault = try setUpVault()
-        let pb = try profile(vault, as: b), pc = try profile(vault, as: c)
-        XCTAssertThrowsError(try vault.removeRecipient(b.recipient, policy: RewrapPolicy(), stopAfter: 0))
-        XCTAssertTrue(vault.pendingRewrap)
-        let fromB = try store(pb, in: vault), fromC = try store(pc, in: vault)
-
-        let reader = try Vault.open(at: vault.url, identities: [a])
-        XCTAssertNotNil(reader.previousSecret, "the journal is accepted")
-        XCTAssertThrowsError(try reader.readCapture(fromB)) { XCTAssertEqual($0 as? CaptureError, .badTag) }
-        XCTAssertEqual(try reader.readCapture(fromC).recipient, pc.recipient)
-
-        // The resumed rewrap re-tags C's, and leaves the others as they are.
-        var resuming = reader
-        let report = try resuming.resumeRewrap()
-        XCTAssertTrue(report.isComplete)
-        XCTAssertEqual(report.inboxSkipped, ["inbox/\(CaptureFile.name(fromB, .capture))"])
-        XCTAssertTrue(report.rewrapped.contains("inbox/\(CaptureFile.name(fromC, .capture))"))
-        let after = try Vault.open(at: vault.url, identities: [a])
-        XCTAssertNil(after.adoptCapture(fromC, deviceState: deviceState(), app: "t").error)
-        XCTAssertEqual(try recording(after, fromC).captured?.label(in: after.recipients), "Phone")
-        XCTAssertNotNil(after.adoptCapture(fromB, deviceState: deviceState(), app: "t").error)
-    }
-
-    /// The captures a device sealed before it was removed are refused too:
-    /// the rotation re-tags only those of devices still listed.
-    func testTheRotationKeepsOnlyCapturesOfListedDevices() throws {
-        var vault = try setUpVault()
-        let pb = try profile(vault, as: b), pc = try profile(vault, as: c)
-        let fromB = try store(pb, in: vault), fromC = try store(pc, in: vault)
-        let report = try vault.removeRecipient(b.recipient)
-        XCTAssertTrue(report.isComplete)
-        XCTAssertEqual(report.inboxSkipped, ["inbox/\(CaptureFile.name(fromB, .capture))"])
-        let after = try Vault.open(at: vault.url, identities: [a])
-        XCTAssertEqual(after.adoptCapture(fromB, deviceState: deviceState(), app: "t").error, CaptureError.badTag.description)
-        XCTAssertNil(after.adoptCapture(fromC, deviceState: deviceState(), app: "t").error)
-    }
+    // MARK: - C3: removed devices (KH3: a removal starts a new epoch, and its capture keys change with it)
 
     /// A profile can only be made for a listed key, and never against a
     /// list that does not check (captures are attributed against it).
@@ -193,14 +151,16 @@ final class CaptureAttributionTests: VaultTestCase {
             XCTAssertEqual($0 as? CaptureError, .notARecipient)
         }
         let id = try store(try profile(vault, as: c), in: vault)
-        // An attacker inserts a key into vault.json.
+        // An attacker renames a device in vault.json (no key, so the list's tag no longer verifies).
         let url = vault.url.appendingPathComponent("vault.json")
-        var m = try VaultManifest.decode(Data(contentsOf: url))
-        m.recipients.append(.init(key: pqIdentity().recipient.string, label: "x", added: Date()))
-        try m.encoded().write(to: url)
+        var obj = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        var keys = try XCTUnwrap(obj["keys"] as? [[String: Any]])
+        keys[0]["name"] = "Mallory"
+        obj["keys"] = keys
+        try JSONSerialization.data(withJSONObject: obj).write(to: url)
         let tampered = try Vault.open(at: vault.url, identities: [a])
         XCTAssertThrowsError(try tampered.readCapture(id)) {
-            guard case .untrustedRecipients? = $0 as? VaultError else { return XCTFail("\($0)") }
+            guard case .untrustedList? = $0 as? VaultError else { return XCTFail("\($0)") }
         }
     }
 
@@ -210,8 +170,7 @@ final class CaptureAttributionTests: VaultTestCase {
     func testTheClaimBoundsTheKeysTried() throws {
         try XCTSkipUnless(postQuantumAvailable)
         let many = (0..<20).map { _ in pqIdentity() }
-        let v = try Vault.create(at: vaultURL("Many"), recipients: [a.recipient] + many.map(\.recipient),
-                                 labels: ["Mac"] + many.indices.map { "D\($0)" }, identities: [a])
+        let v = try TestVaults.create(at: vaultURL("Many"), identities: [a] + many, names: ["Mac"] + many.indices.map { "D\($0)" })
         let p = try profile(v, as: many[13])
         let id = try store(p, in: v)
         XCTAssertEqual(try v.readCapture(id).recipient, p.recipient)

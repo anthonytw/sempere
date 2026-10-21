@@ -90,21 +90,4 @@ struct QuitPurgeAndOwnerCheckTests {
         setenv("SEMPERE_DEBUG_OWNER_CHECK", "yes", 1)
         #expect(DebugLaunch.ownerCheck == nil)
     }
-
-    /// Save Key… through the key window's path: with the owner check passed, the key file the
-    /// share sheet gets is this device's key, and the share sheet leaves Copy out (key file
-    /// and key text alike).
-    @Test func savingFromTheKeyWindowSharesTheKeyFileWithoutCopy() async throws {
-        defer { unsetenv("SEMPERE_DEBUG_OWNER_CHECK") }
-        setenv("SEMPERE_DEBUG_OWNER_CHECK", "pass", 1)
-        let (model, _) = try await KeyManagementTests.unlockedModel()
-        let key = try await model.exportThisDeviceKey()
-        #expect(model.deviceKeys.contains { $0.recipient == key.recipient && $0.isInUse })
-        let staged = try KeyShareFile.stage(key, in: TestTemp.root.appendingPathComponent("KS-\(UUID().uuidString)"))
-        defer { KeyShareFile.purge(in: staged.deletingLastPathComponent().deletingLastPathComponent()) }
-        for items in [[staged] as [Any], [key.secret] as [Any]] {
-            let excluded = SecretSharing.controller(items: items).excludedActivityTypes ?? []
-            #expect(excluded.contains(.copyToPasteboard))
-        }
-    }
 }

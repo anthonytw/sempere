@@ -174,20 +174,20 @@ final class HistoryReadPerfTests: VaultTestCase {
         let revs = longNote(revisions: n, pages: 300, strokesPerRevision: 30, points: 60)
         let identity = pqIdentity()
         try makeVault(identity).writeAll(revs)
-        let counter = CountingIdentity(identity)
-        let vault = try Vault.open(at: vaultURL(), identities: [counter])
+        // Files are encrypted to the vault identity (format.md §15.2): the vault counts its revision decrypts.
+        let vault = try Vault.open(at: vaultURL(), identities: [identity])
         let bytes = try vault.revisionNames(of: testNote).reduce(0) {
             $0 + ((try? FileManager.default.attributesOfItem(atPath: fileURL(vault, testNote, $1).path)[.size] as? Int) ?? 0)
         }
         print("perf: P50/P53 note: \(n) revisions, 300 pages, \(30 * (n - 1)) strokes × 60 points, \(bytes >> 10) KiB on disk")
 
         func measure<T>(_ label: String, _ body: () throws -> T) rethrows -> (T, Int, Double) {
-            let before = counter.count
+            let before = vault.revisionDecrypts.value
             let t = Date()
             let out = try body()
             let ms = Date().timeIntervalSince(t) * 1000
-            print("perf: \(label): \(counter.count - before) decrypts, \(String(format: "%.1f", ms)) ms")
-            return (out, counter.count - before, ms)
+            print("perf: \(label): \(vault.revisionDecrypts.value - before) decrypts, \(String(format: "%.1f", ms)) ms")
+            return (out, vault.revisionDecrypts.value - before, ms)
         }
 
         // P50: what NoteWriter.append(_:to:) reads before writing.
