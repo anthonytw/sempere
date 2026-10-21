@@ -68,7 +68,7 @@ final class SyncSession {
     /// with the disk: a run that stopped may still have taken a new `vault.json`).
     @ObservationIgnored var afterTwoWayRun: () -> Void = {}
     /// Taken around each run: the coordinator's budget (at most a few runs at once app-wide).
-    @ObservationIgnored var admit: @MainActor (_ priority: Bool) async -> Void = { _ in }
+    @ObservationIgnored var admit: @MainActor (_ priority: @escaping @MainActor () -> Bool) async -> Void = { _ in }
     @ObservationIgnored var release: @MainActor () -> Void = {}
     /// The open vault's session (the coordinator sets it): its runs take the slot kept for it.
     @ObservationIgnored var isOpenVault = false
@@ -155,7 +155,7 @@ final class SyncSession {
         if let running { return await running.value }
         let mode: SyncRunMode = twoWay ? .twoWay : .uploadOnly
         let task = Task { () -> SyncReport? in
-            await admit(mode == .twoWay || isOpenVault)
+            await admit { [weak self] in mode == .twoWay || self?.isOpenVault == true }
             defer { release() }
             isSyncing = true
             schedule.started(at: now())

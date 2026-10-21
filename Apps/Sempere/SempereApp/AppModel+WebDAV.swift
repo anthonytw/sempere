@@ -4,6 +4,14 @@ import Sempere
 import SempereSync
 import SempereWebDAV
 
+/// A previous copy an interrupted "Download Again" left that holds files the copy lacks (kept, never
+/// deleted): the alert names it, and offers Show in Finder on a Mac, Share… elsewhere.
+struct WebDAVLeftover: Identifiable, Equatable, Sendable {
+    var folder: URL
+    var message: String
+    var id: URL { folder }
+}
+
 /// Why a WebDAV vault could not be opened or changed.
 enum WebDAVVaultError: Error, Equatable, CustomStringConvertible {
     case noSuchLocation
@@ -490,8 +498,9 @@ extension AppModel {
             copies.map { (name: $0.name, leftovers: $0.copy.recoverInterruptedRedownload()) }
         }.value
         guard let kept = found.first(where: { $0.leftovers.keptOld != nil }), let folder = kept.leftovers.keptOld else { return }
-        errorMessage = String(localized: "An earlier “Download Again” of “\(kept.name)” was interrupted. The previous copy holds notes or attachments that are not in the vault, so it was kept, at \(folder.path). Merge it in with the sempere command-line tool (vault merge-copy) before removing it.",
-                              comment: "First %@ is the vault's name, the second a folder path")
+        webdavLeftover = WebDAVLeftover(folder: folder, message: String(
+            localized: "An earlier “Download Again” of “\(kept.name)” was interrupted. The previous copy holds notes or attachments that are not in the vault, so it was kept, at \(folder.path). Merge it in with the sempere command-line tool (vault merge-copy) before removing it.",
+            comment: "First %@ is the vault's name, the second a folder path"))
     }
 
     /// Files of the location's copy the server has not confirmed (the remove

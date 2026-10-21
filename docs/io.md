@@ -1748,9 +1748,12 @@ syncs with both ways.
   open vault's sessions run two-way while the vault is unlocked here; every other session runs
   upload-only. At most two runs go at once across the app (`maxConcurrentRuns`), at most one per
   session, and one slot is kept for the open vault: background runs take at most one, so slow uploads
-  of closed vaults never hold up the open vault's runs or Sync Now. Two targets of one vault take turns
-  on the vault's write lock, and a device with two targets bridges them. Each session has its own sync
-  state, quarantine, credentials, schedule, backoff and status: one vault's wrong
+  of closed vaults never hold up the open vault's runs or Sync Now (a run queued before its vault was
+  opened takes that slot as soon as it is: priority is asked again whenever slots are handed out). The
+  closed vaults share the other slot: one closed vault's slow upload holds up the others' runs until it
+  ends (bounded by the run's limits); per-vault slots are a follow-up. Two targets of one vault take
+  turns on the vault's write lock, and a device with two targets bridges them. Each session has its own
+  sync state, quarantine, credentials, schedule, backoff and status: one vault's wrong
   password, hung server (bounded by the run's limits) or full disk never delays or fails another
   (`SyncCoordinatorTests`).
 - **When** (`SyncSchedule`, pure, in `SempereSync`): once at the start and after the unlock (two-way
@@ -1785,7 +1788,8 @@ syncs with both ways.
 - **Leftovers of "Download Again"** (earlier builds): at launch, before any session runs,
   `LocalCopy.recoverInterruptedRedownload` puts a copy back from `<copy>.old` when the copy is missing,
   removes an unfinished `<copy>.download` and its state, and removes `<copy>.old` only when the copy
-  holds every revision, blob and inbox file in it; otherwise it is kept and named in an alert.
+  holds every revision, blob, inbox file and notebook record in it; otherwise it is kept and named in an
+  alert, which offers Show in Finder on a Mac and Share… elsewhere.
 - **Status** (`SyncStatus`, the note list's bar): syncing; synced (and how many files a provider
   still delivers); "n changes not synced yet"; offline ("Changes are kept on this device and sync
   when the server can be reached", not an error); waiting for the unlock (a closed or locked vault);

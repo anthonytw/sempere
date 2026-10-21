@@ -487,6 +487,40 @@ struct SyncCoordinatorTests {
         for l in slow + [open] { _ = coordinator.stop(l.id) }
     }
 
+    /// Re-check of #70: a run queued as a background one before its vault was opened kept background
+    /// priority, so the unlock's run and Sync Now waited behind another closed vault's slow upload.
+    /// Priority is asked again when slots are handed out, and opening the vault hands them out.
+    @Test func aRunQueuedBeforeItsVaultOpenedTakesTheOpenVaultsSlot() async throws {
+        func location() -> WebDAVLocation {
+            WebDAVLocation(id: UUID(), url: "https://dav.example.org/\(UUID().uuidString)/", user: nil,
+                           vaultId: UUID().uuidString.lowercased(), name: "V", folderName: "V.sempere")
+        }
+        let blocked = location(), queued = location()
+        let released = RunCounter()
+        let coordinator = SyncCoordinator(locations: { [blocked, queued] }, makeSession: { loc in
+            SyncSession(locationID: loc.id, vaultID: nil, name: loc.name, lastSuccess: nil, run: { _ in
+                if loc.id == blocked.id {
+                    // A slow upload of a closed vault, until the test releases it.
+                    while released.value == 0 { try await Task.sleep(for: .milliseconds(10)) }
+                }
+                return SyncReport()
+            }, countUnconfirmed: { 0 })
+        })
+        coordinator.tick = .milliseconds(10)
+        let slow = try #require(coordinator.session(for: blocked))
+        #expect(await TS.waitUntil { slow.isSyncing })
+        let waiting = try #require(coordinator.session(for: queued))
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(waiting.lastSuccess == nil, "queued behind the background slot")
+        let open = try #require(coordinator.attachOpen(queued))
+        open.vaultUnlocked()
+        let finished = RunCounter()
+        Task { _ = await open.syncNow(); _ = finished.add(1) }
+        #expect(await TS.waitUntil(timeout: .seconds(2)) { finished.value == 1 }, "the open vault's runs wait for no background run")
+        _ = released.add(1)
+        for l in [blocked, queued] { _ = coordinator.stop(l.id) }
+    }
+
     /// The reviewer's Q4: a voice note delivered into a closed vault's copy asks its session for a run
     /// soon (a write), not at the idle pace.
     @Test func aCaptureIntoAClosedVaultAsksForARun() async throws {

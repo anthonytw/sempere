@@ -16509,6 +16509,18 @@
         }
       }
     },
+    "Show in Finder" : {
+      "comment" : "Button: opens a folder in the Finder (Mac)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar en el Finder"
+          }
+        }
+      }
+    },
     "Show in Menu Bar" : {
       "extractionState" : "manual",
       "localizations" : {

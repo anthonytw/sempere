@@ -47,4 +47,13 @@ final class RedownloadLeftoversTests: SyncTestCase {
         XCTAssertEqual(r.keptFiles, ["notes/\(noteID.uuidString.lowercased())/\(only.name.filename)"])
         XCTAssertTrue(FileManager.default.fileExists(atPath: c.oldFolder.path), "never deleted with something only it holds")
     }
+
+    func testAPreviousCopyHoldingANotebookRecordIsKept() throws {
+        let c = try makeCopy()
+        try FileManager.default.copyItem(at: c.folder, to: c.oldFolder)
+        let made = try XCTUnwrap(try Vault.open(at: c.oldFolder, identities: [identity]).createNotebook("Only in .old"))
+        let r = c.recoverInterruptedRedownload()
+        XCTAssertEqual(r.keptFiles, ["notebooks/\(made.fileName)"])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: c.oldFolder.path))
+    }
 }

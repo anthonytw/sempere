@@ -46,7 +46,7 @@ final class SyncCoordinator {
     /// At most this many runs at once across the app.
     @ObservationIgnored var maxConcurrentRuns = 2
     @ObservationIgnored private var active = 0
-    @ObservationIgnored private var waiting: [(priority: Bool, resume: CheckedContinuation<Void, Never>)] = []
+    @ObservationIgnored private var waiting: [(priority: @MainActor () -> Bool, resume: CheckedContinuation<Void, Never>)] = []
 
     /// Builds the session of a target (the model supplies the transport, copy and options).
     @ObservationIgnored var makeSession: @MainActor (SyncTargetRef) -> SyncSession?
@@ -91,6 +91,7 @@ final class SyncCoordinator {
             let made = session(for: ref)
             if ref.vaultID == openVault {
                 made?.isOpenVault = true
+                wakeWaiters()
                 if openUnlocked { made?.vaultUnlocked() }
             }
         }
@@ -123,6 +124,7 @@ final class SyncCoordinator {
         for ref in targets() where ref.vaultID == id { session(for: ref) }
         let open = sessions(of: id)
         for s in open { s.isOpenVault = true }
+        wakeWaiters()   // a run of it queued as a background one takes the open vault's slot now
         return open
     }
 
@@ -173,30 +175,36 @@ final class SyncCoordinator {
         active < (priority ? max(maxConcurrentRuns, 1) : max(maxConcurrentRuns - 1, 1))
     }
 
-    private func admit(priority: Bool) async {
-        if waiting.isEmpty || priority, fits(priority: priority) {
+    /// Takes a slot for a run. `priority` is asked again whenever slots are handed out, so a run queued
+    /// before its vault was opened takes the open vault's slot once it is (`attachOpen`).
+    private func admit(priority: @escaping @MainActor () -> Bool) async {
+        let now = priority()
+        if waiting.isEmpty || now, fits(priority: now) {
             active += 1
             return
         }
         await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-            if priority, let i = waiting.firstIndex(where: { !$0.priority }) {
-                waiting.insert((priority, c), at: i)
-            } else {
-                waiting.append((priority, c))
-            }
+            waiting.append((priority, c))
         }
     }
 
     private func releaseRun() {
         active = max(active - 1, 0)
-        // Each waiter that fits now takes a slot, the open vault's first.
-        var i = 0
-        while i < waiting.count {
-            if fits(priority: waiting[i].priority) {
-                active += 1
-                waiting.remove(at: i).resume.resume()
-            } else {
-                i += 1
+        wakeWaiters()
+    }
+
+    /// Hands free slots to waiters that fit now: the open vault's first, then the others in order.
+    private func wakeWaiters() {
+        for wantPriority in [true, false] {
+            var i = 0
+            while i < waiting.count {
+                let p = waiting[i].priority()
+                if p == wantPriority, fits(priority: p) {
+                    active += 1
+                    waiting.remove(at: i).resume.resume()
+                } else {
+                    i += 1
+                }
             }
         }
     }
