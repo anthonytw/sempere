@@ -17,7 +17,7 @@ struct StoreInfo: ParsableCommand {
             target's copy (slow for a folder in a provider).
 
             --json: {vault, name, storage: {notes, attachments, other, total}, targets: [{target, syncedFiles, \
-            devices: [{device, revisions, newest, publishesSummaries, isThisDevice}], quarantined: [{path, \
+            devices: [{device, name, revisions, newest, publishesSummaries, isThisDevice}], quarantined: [{path, \
             vaultPath, size, quarantined, adoptable}], staged, stateBytes, folderBytes, folderNotDownloaded}]}.
             """
     )
@@ -61,7 +61,7 @@ struct StoreInfo: ParsableCommand {
             if !d.quarantined.isEmpty { print("    quarantined: \(d.quarantined.count) files (sempere store quarantine list)") }
             var rows = [["DEVICE", "REVISIONS", "NEWEST", "SUMMARIES"]]
             for dev in d.devices {
-                rows.append([dev.device + (dev.isThisDevice ? " (this device)" : ""), "\(dev.revisions)",
+                rows.append([dev.device + (dev.name.map { " \($0)" } ?? "") + (dev.isThisDevice ? " (this device)" : ""), "\(dev.revisions)",
                              dev.newest.map(Format.utc) ?? "-", dev.publishesSummaries ? "yes" : "no"])
             }
             if d.devices.isEmpty {

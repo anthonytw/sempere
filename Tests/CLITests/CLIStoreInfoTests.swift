@@ -10,7 +10,13 @@ final class CLIStoreInfoTests: CLITestCase {
 
     /// A store vault with a folder target, synced once.
     private func syncedVault() throws -> (path: String, id: String, key: String, folder: String, target: String) {
-        let (_, _, key) = try makeVault(named: "a.sempere")
+        let (vault, _, key) = try makeVault(named: "a.sempere")
+        // One revision by the vault's listed device ("laptop"), beside the fixture writer's.
+        let listed = try XCTUnwrap(vault.devices.first?.id.flatMap(DeviceID.init))
+        let note = UUID()
+        try vault.write(Revision(noteId: note, device: listed, seq: 1, hlc: HLC(millis: 1_760_000_100_000, counter: 0)!,
+                                 wall: Date(timeIntervalSince1970: 1_760_000_100), app: "test/0",
+                                 body: .delta(ops: NoteOps.newNote(title: "Listed", pageId: UUID()))))
         let r = try cli(["store", "import", path("a.sempere"), "--name", "Notes", "--store", store, "--json"])
         XCTAssertEqual(r.status, 0, r.err)
         let o = try XCTUnwrap(r.json as? [String: Any])
@@ -40,6 +46,10 @@ final class CLIStoreInfoTests: CLITestCase {
         let devices = try XCTUnwrap(targets[0]["devices"] as? [[String: Any]])
         XCTAssertFalse(devices.isEmpty, "the vault's writer is listed")
         XCTAssertGreaterThan(devices[0]["revisions"] as? Int ?? 0, 0)
+        // Named from the vault's device list (KH2); a writer it does not list has no name.
+        let named = try XCTUnwrap(devices.first { $0["name"] as? String == "laptop" }, "\(devices)")
+        XCTAssertEqual(named["revisions"] as? Int, 1)
+        XCTAssertTrue(devices.contains { $0["device"] as? String == "abcdef01" && $0["name"] == nil })
         XCTAssertEqual((targets[0]["quarantined"] as? [Any])?.count, 0)
 
         let text = try cli(["store", "info", "Notes", "--store", store])
