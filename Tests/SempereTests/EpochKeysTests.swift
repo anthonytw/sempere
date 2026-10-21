@@ -80,7 +80,16 @@ final class EpochKeysTests: VaultTestCase {
         try JSONDecoder().decode(Vectors.self, from: Data(contentsOf: FixtureTests.bundled("epoch-vectors.json")))
     }
 
-    static func unhex(_ s: String) -> Data { SecretLinkTests.unhex(s) }
+    static func unhex(_ s: String) -> Data {
+        var out = Data()
+        var i = s.startIndex
+        while i < s.endIndex {
+            let j = s.index(i, offsetBy: 2)
+            out.append(UInt8(s[i..<j], radix: 16)!)
+            i = j
+        }
+        return out
+    }
 
     func key(_ e: Vectors.Epoch) throws -> VaultEpochKey { try VaultEpochKey(bytes: Self.unhex(e.key)) }
 
@@ -111,10 +120,6 @@ final class EpochKeysTests: VaultTestCase {
             XCTAssertEqual(try EpochKeyWrap.plaintext(k, vaultId: vaultId, epoch: e.epoch), e.wrapPlaintext, label)
             XCTAssertEqual(try EpochKeyWrap.parse(Data(e.wrapPlaintext.utf8), vaultId: vaultId, epoch: e.epoch), k, label)
         }
-        // The vault identity and the epoch keys are not today's secret-link
-        // keys of the same bytes: every label is new (design §2.2).
-        let k1 = try key(v.epochs[0])
-        XCTAssertNotEqual(try LinkPublicKeys(epochKey: k1), try LinkPublicKeys(secret: VaultSecret(bytes: k1.bytes)))
         XCTAssertEqual(v.device.captureFingerprint, CaptureKey.fingerprint(of: v.device.recipient))
     }
 
@@ -168,8 +173,6 @@ final class EpochKeysTests: VaultTestCase {
             XCTAssertFalse(EpochLinks.verify(link, keys: parent, epoch: 2, childEpochId: k2.epochId, vaultId: UUID()), l.by)
             XCTAssertFalse(EpochLinks.verify(link, keys: try LinkPublicKeys(epochKey: k2), epoch: 2,
                                              childEpochId: k2.epochId, vaultId: vaultId), l.by)
-            // A secret link is a different message: the same signatures never verify as one.
-            XCTAssertFalse(RecipientsAuth.verifyLink(link, keys: parent, to: try VaultSecret(bytes: k2.bytes), vaultId: vaultId))
         }
         let mine = try EpochLinks.link(from: k1, to: k2, epoch: 2, vaultId: vaultId)
         XCTAssertTrue(EpochLinks.verify(mine, keys: parent, epoch: 2, childEpochId: k2.epochId, vaultId: vaultId))

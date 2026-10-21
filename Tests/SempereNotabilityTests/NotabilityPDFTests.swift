@@ -2,6 +2,7 @@ import TempDirSupport
 import Age
 import Foundation
 import ImportTestSupport
+import VaultTestSupport
 import Sempere
 import XCTest
 @testable import SempereImport
@@ -106,8 +107,7 @@ final class NotabilityPDFTests: XCTestCase {
         XCTAssertEqual(note.pdfPageCount, 94)
 
         let identity = try NativeIdentity.generate(.postQuantum)
-        let vault = try Vault.create(at: tmp.appendingPathComponent("V.sempere"), recipients: [identity.recipient],
-                                     identities: [identity])
+        let vault = try TestVaults.create(at: tmp.appendingPathComponent("V.sempere"), identities: [identity])
         var clock = HybridClock()
         let report = try NotabilityImporter.import(paths: [path], into: vault, device: DeviceID("0a0b0c0d")!, clock: &clock)
         let r = try XCTUnwrap(report.notes.first)

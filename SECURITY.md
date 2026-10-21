@@ -27,8 +27,8 @@ This is a volunteer-run project, so these are aims, not promises:
    agreed with you; the default is publication with the fixed release.
 4. **Tell users.** The release notes and `CHANGELOG.md` say who is affected (which versions,
    platforms and settings), what could happen, and what to do (update; and, if keys or
-   content may be exposed, for example rotate the vault's key with `sempere vault recipients
-   replace`). The advisory links to them.
+   content may be exposed, for example move the notes to a new vault until key replacement ships
+   in a later version). The advisory links to them.
 
 You are credited in the advisory and the release notes unless you prefer not to be.
 

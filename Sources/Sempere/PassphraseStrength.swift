@@ -34,10 +34,10 @@ import Foundation
 /// is priced as words, so five random words are needed, and a random password
 /// needs about twelve to sixteen characters (fewer with more character classes).
 public enum PassphraseStrength {
-    /// The floor for a stored key copy: five random Diceware words, an Apple
-    /// generated password, or about twelve random characters of mixed
-    /// classes (sixteen lowercase letters), pass.
-    public static let storedKeyMinimumBits: Double = 60
+    /// The floor for the recovery key's passphrase copy, kept in the vault (key-hierarchy design §8.2,
+    /// format.md §15.11): about 70 bits, with no override. Six random Diceware words (77 bits), an Apple
+    /// generated password (about 71), or about fifteen random characters of mixed classes pass.
+    public static let storedKeyMinimumBits: Double = 70
 
     /// Something the estimate found that made a passphrase cheaper to guess,
     /// for a live list of hints. In display order.
@@ -95,7 +95,7 @@ public enum PassphraseStrength {
         guard bits < storedKeyMinimumBits else { return nil }
         return "the passphrase is too easy to guess for a key stored in the vault (about \(Int(bits)) bits, at least "
             + "\(Int(storedKeyMinimumBits)) needed): whoever can read the vault's storage can try passphrases offline. "
-            + "Use five or more random words, or a long random password"
+            + "Use six or more random words, or a long random password"
     }
 
     // MARK: - The estimate

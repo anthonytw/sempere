@@ -127,12 +127,10 @@ extension Vault {
         return BlobName.fileName(name: try blobName(sha256: digest), kind: ref.kind)
     }
 
-    /// The secrets a blob name may verify under: the current one and, while a
-    /// secret-rotating recipient change is unfinished, the previous one
-    /// (format.md §8.1.5).
-    var blobSecrets: [VaultSecret] {
+    /// The keys a blob name may verify under: the epoch's (format.md §8.1.2). Older epochs' come with
+    /// the acceptance rule (KH3).
+    var blobSecrets: [VaultEpochKey] {
         guard let secret else { return [] }
-        if let previousSecret, pendingRewrap { return [secret, previousSecret] }
         return [secret]
     }
 
@@ -427,7 +425,7 @@ extension Vault {
     ///   under (nil when not checked).
     /// `name` is the blob file name the keyed name is checked against;
     /// nil for `url`'s own (a download in a partial file passes its target's).
-    static func readBlobFile(_ url: URL, identities: [any AgeIdentity], secrets: [VaultSecret], expected: BlobRef?,
+    static func readBlobFile(_ url: URL, identities: [any AgeIdentity], secrets: [VaultEpochKey], expected: BlobRef?,
                              maxContent: Int64, name: String? = nil, sink: (Data) throws -> Void = { _ in },
                              raw: (Data) throws -> Void = { _ in }) throws -> (header: BlobHeader, secret: Int?) {
         // The decryptor is released before this returns, so `raw` does not
@@ -440,7 +438,7 @@ extension Vault {
         }
     }
 
-    private static func readBlob(_ decryptor: AgeDecryptor, fileName: String, secrets: [VaultSecret], expected: BlobRef?,
+    private static func readBlob(_ decryptor: AgeDecryptor, fileName: String, secrets: [VaultEpochKey], expected: BlobRef?,
                                  maxContent: Int64, sink: (Data) throws -> Void) throws -> (header: BlobHeader, secret: Int?) {
         var checker = BlobPlaintextChecker(expected: expected, maxContent: maxContent)
         var matched: Int?
@@ -503,5 +501,19 @@ extension Vault {
             try? handle.close()
             throw BlobError.undecryptable("\(error)")
         }
+    }
+}
+
+extension Vault {
+    /// True when `url` is a finished copy of the blob with `header`: its stanzas are `stanzas` and it
+    /// verifies **in full** (every chunk, framing, padding, content hash, its name under `secret`).
+    /// Callers delete the other copy on the strength of this, so the first chunk alone is not enough: a
+    /// file damaged past it would replace the only good copy (format.md §8.1.4 "valid").
+    func isCompleteBlob(_ url: URL, header: BlobHeader, stanzas: [String: Int], secret: VaultEpochKey) -> Bool {
+        guard Self.stanzaCounts(blob: url) == stanzas,
+              let (found, _) = try? Self.readBlobFile(url, identities: identities, secrets: [secret], expected: nil,
+                                                      maxContent: BlobRef.maxSize)
+        else { return false }
+        return found == header
     }
 }

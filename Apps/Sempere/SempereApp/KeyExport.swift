@@ -4,16 +4,16 @@ import LocalAuthentication
 import Sempere
 import SempereRender
 
-/// A secret key on its way out of the app (Settings → Device Keys: Save Key…,
-/// New Key…): the `age-keygen` style text `sempere keys generate` writes
-/// (`IdentityFile.render`), the name to suggest, and what the recovery kit
-/// needs. It lives in a view's state while the sheet is up and nowhere else.
+/// A secret key on its way out of the app (a new vault's recovery key, shown
+/// once): the `age-keygen` style text `sempere vault init --recovery-out`
+/// writes (`IdentityFile.render`), the name to suggest, and what the recovery
+/// kit needs. It lives in a view's state while the sheet is up and nowhere else.
 struct KeyFile: Sendable, Equatable {
     /// The `AGE-SECRET-KEY-PQ-1…` line.
     var secret: String
     /// The `age1pq1…` recipient.
     var recipient: String
-    /// The device label, as in the vault's key list.
+    /// What the key is, for file names ("Recovery key of Notes").
     var label: String
     /// The file's text: `# created`, `# public key`, the secret line.
     var text: String
@@ -30,7 +30,8 @@ struct KeyFile: Sendable, Equatable {
 }
 
 /// Asks the device owner to prove they are there before a secret key leaves
-/// the app. Tests inject a fake.
+/// the app, or another device is let into a vault. Tests inject a fake.
+/// TODO(KH5): asked before home approves a device (security review 2026-10, P1); unused until then.
 protocol OwnerAuthenticator: Sendable {
     func authenticate(reason: String) async throws
 }
@@ -137,34 +138,17 @@ extension AppModel {
         }
     }
 
-    /// The post-quantum key this vault was unlocked with (one of its recipients).
-    var heldIdentity: NativeIdentity? {
-        guard let vault else { return nil }
-        let listed = Set(vault.recipients.map(\.key))
-        return unlockIdentities.compactMap { $0 as? NativeIdentity }
-            .first { $0.isPostQuantum && listed.contains($0.recipient.string) }
-    }
+    /// The key of this device in the open vault's list (`age1pq1…`), when it
+    /// was unlocked as a listed device; nil when locked or opened with the
+    /// recovery key.
+    var heldDeviceKey: String? { vault?.deviceEntry?.key }
 
-    /// This device's key (the one the vault was unlocked with) as a key file,
-    /// after the owner authenticates. The CLI's counterpart is the identity file
-    /// itself, or `sempere keys export` from the vault's passphrase-wrapped copy.
-    func exportThisDeviceKey(authenticator: any OwnerAuthenticator = SystemOwnerAuthenticator()) async throws -> KeyFile {
-        guard let vault, phase == .unlocked, let identity = heldIdentity else {
-            throw phase == .unlocked ? KeyError.noIdentity : KeyError.notUnlocked
-        }
-        let vaultID = vault.vaultId
-        let gen = generation
-        try await authenticator.authenticate(reason: String(localized: "Save the key of “\(vaultName ?? String(localized: "Vault", comment: "Name shown for a vault that has none"))”"))
-        // Another vault opened, or this one locked, while the prompt was up.
-        guard gen == generation, self.vault?.vaultId == vaultID, phase == .unlocked else { throw KeyError.vaultChanged }
-        let label = vault.recipients.first { $0.key == identity.recipient.string }?.label ?? "Device"
-        return KeyFile(identity: identity, label: label)
-    }
-
-    /// The recovery kit of `key`, one of this vault's keys (`sempere keys paper --vault`).
-    func recoveryKitPDF(for key: KeyFile, a4: Bool = false) throws -> Data {
-        guard let vault, phase == .unlocked else { throw KeyError.notUnlocked }
-        guard vault.recipients.contains(where: { $0.key == key.recipient }) else { throw KeyError.notListed }
-        return try recoveryKit(secret: key.secret, recipient: key.recipient, a4: a4)
+    /// The recovery kit PDF (format.md §15.13) of a new vault's recovery key.
+    /// TODO(KH5): there is no kit for a vault opened later: no device keeps
+    /// the recovery key (a new one comes with a key rotation).
+    nonisolated static func recoveryKitPDF(for key: KeyFile, vault: RecoveryKit.VaultInfo, a4: Bool = false) throws -> Data {
+        var kit = RecoveryKit(secret: .identity(key.secret), recipient: key.recipient, vault: vault, printed: Date())
+        if a4 { kit.useA4() }
+        return try kit.pdf()
     }
 }

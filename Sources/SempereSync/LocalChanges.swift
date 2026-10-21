@@ -10,7 +10,7 @@ public struct LocalChanges: Codable, Hashable, Sendable {
     public var notes: [String] = []
     /// `vault.json` was replaced.
     public var manifest = false
-    /// `rewrap-journal.json` was replaced.
+    /// the re-encryption journal (format.md §15.8, KH6) was replaced.
     public var journal = false
     /// `settings.age` was replaced (taken or merged).
     public var settings = false

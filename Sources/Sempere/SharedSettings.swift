@@ -28,8 +28,8 @@ public enum SharedSettingsError: Error, Hashable, Sendable {
     case invalid(String)
     /// The file could not be decrypted with the identities held.
     case undecryptable(String)
-    /// Framing (format.md §4) failed: bad magic, version, or a tag that
-    /// verifies under neither the current nor (during a rewrap) the previous secret.
+    /// Framing (format.md §4) failed: bad magic, version, or a tag that does
+    /// not verify under the epoch's key.
     case framing(BodyFramingError)
     /// A slot cannot be written: its `modified` would pass the largest time
     /// the format allows.
@@ -445,7 +445,7 @@ extension Vault {
         }
         let unframed: BodyFraming.Unframed
         do {
-            unframed = try Self.unframeSettings(plain, secret: secret, previous: previousSecret)
+            unframed = try Self.unframeSettings(plain, secret: secret)
         } catch let e as BodyFramingError {
             throw SharedSettingsError.framing(e)
         }
@@ -460,27 +460,19 @@ extension Vault {
         return decoded
     }
 
-    /// True when `vault.json` on disk still lists this value's recipients and wraps the same
-    /// secret; false after another device changed the keys while this one stayed open (its
-    /// secret and recipients are then stale), or when the manifest cannot be read. A settings
-    /// file that does not verify is replaced only when this holds: a stale device must not
-    /// overwrite the current file with one encrypted to the old recipients (format.md §13.5).
+    /// True when `vault.json` on disk is still of this value's epoch; false after a key change while
+    /// this one stayed open (its key is then stale), or when the manifest cannot be read. A settings
+    /// file that does not verify is replaced only when this holds: a stale device must not overwrite
+    /// the current file with one under an old key (format.md §13.5).
     public func keysMatchManifestOnDisk() -> Bool {
         guard let data = try? FileIO.read(manifestURL, maxBytes: BoundedRead.maxManifestBytes),
               let onDisk = try? Self.readManifest(data) else { return false }
-        return onDisk.vaultSecret == manifest.vaultSecret && onDisk.recipients.map(\.key) == manifest.recipients.map(\.key)
+        return onDisk.epochId == manifest.epochId && onDisk.root == manifest.root
     }
 
-    /// Unframes under the current secret, or (a rewrap in progress) the previous one.
-    static func unframeSettings(_ plain: Data, secret: VaultSecret, previous: VaultSecret?) throws -> BodyFraming.Unframed {
-        do {
-            return try BodyFraming.unframe(plain, noteId: SharedSettings.tagScope, filename: SharedSettings.fileName,
-                                           secret: secret)
-        } catch BodyFramingError.tagMismatch {
-            guard let previous else { throw BodyFramingError.tagMismatch }
-            return try BodyFraming.unframe(plain, noteId: SharedSettings.tagScope, filename: SharedSettings.fileName,
-                                           secret: previous)
-        }
+    /// Unframes under the epoch's key.
+    static func unframeSettings(_ plain: Data, secret: VaultEpochKey) throws -> BodyFraming.Unframed {
+        try BodyFraming.unframe(plain, noteId: SharedSettings.tagScope, filename: SharedSettings.fileName, secret: secret)
     }
 
     /// Writes `settings` as `settings.age`, replacing the file atomically. A
@@ -498,7 +490,7 @@ extension Vault {
         let secret = try requireSecret()
         let body = try BodyFraming.frame(json: try settings.encoded(), noteId: SharedSettings.tagScope,
                                          filename: SharedSettings.fileName, secret: secret)
-        return try Self.encrypt(body, to: try ageRecipients())
+        return try encrypt(body)
     }
 
     /// Reads the file, lets `change` edit it, merges in whatever the file holds
@@ -528,41 +520,5 @@ extension Vault {
             if replacingUnreadable { return nil }
             throw e
         }
-    }
-
-    /// Rewrites `settings.age` for the current recipients during a recipient
-    /// change (format.md §3.3.1 step 3): re-encrypted, and re-tagged under the
-    /// current secret after verifying under it or the previous one. A file that
-    /// cannot be decrypted or verified is left as it is and listed in
-    /// `settingsSkipped`; it does not keep the journal. One that cannot be
-    /// read now (an I/O error) is a failure, which keeps it.
-    func rewrapSharedSettings(recipients: [NativeRecipient], report: inout RewrapReport, stopAfter: Int?) throws {
-        let file = sharedSettingsURL
-        guard FileIO.exists(file), !FileIO.isDirectory(file) else { return }
-        let name = SharedSettings.fileName
-        let current = try requireSecret()
-        let data: Data
-        do { data = try FileIO.read(file, maxBytes: SharedSettings.maxFileBytes) } catch VaultError.fileTooLarge {
-            report.settingsSkipped.append(name)
-            return
-        } catch {
-            report.failures[name] = .unreadable("\(error)")
-            return
-        }
-        guard let stanzas = try? Self.stanzaCounts(data),
-              let plain = try? AgeFile.decrypt(data, with: identities),
-              let unframed = try? Self.unframeSettings(plain, secret: current, previous: previousSecret) else {
-            report.settingsSkipped.append(name)
-            return
-        }
-        let tagged = (try? BodyFraming.unframe(plain, noteId: SharedSettings.tagScope, filename: name, secret: current)) != nil
-        if tagged, stanzas == Self.expectedStanzas(recipients) {
-            report.alreadyCurrent.append(name)
-            return
-        }
-        if let stopAfter, report.rewrapped.count >= stopAfter { throw VaultError.interrupted }
-        let body = BodyFraming.retag(unframed, noteId: SharedSettings.tagScope, filename: name, secret: current)
-        try FileIO.writeAtomically(try Self.encrypt(body, to: recipients), to: file, replacing: true)
-        report.rewrapped.append(name)
     }
 }

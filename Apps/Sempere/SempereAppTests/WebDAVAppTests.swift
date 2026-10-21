@@ -453,22 +453,6 @@ struct WebDAVAppTests {
         #expect(box.files.count == count)
     }
 
-    @Test func keyChangesAreRefusedForAWebDAVVault() async throws {
-        let s = try Self.setup()
-        _ = try await s.model.connectWebDAV(s.listing, user: nil, password: "", pin: nil, library: s.library)
-        try await s.model.unlock(identityText: s.key)
-        let other = try NativeIdentity.generate(.postQuantum)
-        await #expect(throws: WebDAVVaultError.keyChangesUnavailable) {
-            try await s.model.addDeviceKey(recipient: other.recipient.string, label: "Other",
-                                           authenticator: PassingOwnerAuthenticator())
-        }
-        await #expect(throws: WebDAVVaultError.keyChangesUnavailable) {
-            try await s.model.generateDeviceKey(label: "Other", authenticator: PassingOwnerAuthenticator())
-        }
-        #expect(throws: WebDAVVaultError.keyChangesUnavailable) { try s.model.requireLocalKeyChanges() }
-        #expect(s.model.vault?.recipients.count == 1)
-    }
-
     @Test func aRecentWebDAVVaultReopensFromItsCopy() async throws {
         let s = try Self.setup()
         let id = try await s.model.connectWebDAV(s.listing, user: "me", password: "pw", pin: nil, library: s.library)

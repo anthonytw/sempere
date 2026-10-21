@@ -1,8 +1,10 @@
 # Post-quantum recipients
 
 Why and how Sempere uses the age MLKEM768-X25519 recipient type. The
-normative text is `format.md` §2 and §3.1 (only MLKEM768-X25519 recipients),
-§3.2 (key file names), §3.3.1 (rewrap).
+normative text is `format.md` §2 and §3.1 (only MLKEM768-X25519 keys), §3.2
+(the passphrase copy) and §15 (the key hierarchy: every file is encrypted to
+the vault identity, itself an MLKEM768-X25519 identity derived from the vault
+key).
 
 ## Threat
 
@@ -81,22 +83,23 @@ The spec says a file SHOULD NOT be encrypted to both PQ and classic
 recipients (the classic stanza voids the protection), and `age` refuses to
 encrypt such a mix. `AgeFile.encrypt` refuses it too unless
 `allowMixedPostQuantum: true`, which only the Age module's interop tests
-pass. A vault lists only PQ recipients, so its files are never mixed.
+pass. Every vault file has one stanza, to the vault identity, so its files
+are never mixed.
 
 ## Policy: post-quantum only
 
-Vaults take only MLKEM768-X25519 recipients. `sempere keys generate` and the app's "generate
-a key" make only post-quantum keys (no classic option); `Vault.create`,
-`addRecipient` and the target of `replaceRecipient` throw
-`VaultError.classicRecipient` ("create a new key") for an `age1...` key, and
-so do `vault init`, `recipients add` / `replace` (exit 2) and the app's
-"use an existing recipient".
+Vaults take only MLKEM768-X25519 keys. `sempere keys generate` makes only
+post-quantum keys (no classic option), and so do `vault init` and `device
+init` for device keys and a new recovery key. `vault init --recovery-key`
+refuses a classic key (exit 2), the home device refuses a join request whose
+key is not `age1pq1…`, and `Vault.encrypt` throws
+`VaultError.classicRecipient` ("create a new key") for an `age1...` key.
 
 **A vault never lists a classic key.** `Vault.readManifest` refuses a
-`vault.json` (of this major) that lists any recipient other than
+`vault.json` (of this major) that lists any key other than
 MLKEM768-X25519 as damaged (`manifestCorrupt`, exit 1 in the CLI, an error in
 the app and the web viewer), so nothing is ever read under, or encrypted to,
-a classic key; `Vault.encrypt` checks the recipients again before each file.
+a classic key.
 A classic identity offered to unlock fails with `VaultError.classicIdentity`
 ("create a new key"). The Age module itself keeps full X25519 support, as the
 age spec requires.
@@ -109,28 +112,17 @@ release).
 
 ## Replacing a key
 
-```bash
-sempere keys generate --out ~/.config/sempere/new.key
-sempere vault recipients replace age1pq1old... ~/.config/sempere/new.key \
-    --vault notes.sempere --identity ~/.config/sempere/key.txt \
-    --store-key ~/.config/sempere/new.key   # only if you unlock with a passphrase
-```
-
-A rewrap gives every file a fresh file key and re-encrypts its payload;
-removal and replacement also rotate the vault secret. An interrupted
-`replace` needs both keys to finish (`rewrap-resume --identity OLD
---identity NEW`): keep the old key until no rewrap is pending. The app
-finishes an interrupted key change on a screen of its own before it shows
-any note.
+Not in this version. Removing or replacing a device key, and replacing the
+recovery key, start a new epoch of the vault key (key hierarchy phases KH3 to
+KH5, `docs/design/key-hierarchy.md` §12); files are never rewrapped. A device
+whose key should change leaves and joins again with a new one.
 
 ## Residual risk
 
-- **Removing a key does not revoke** what its holder already decrypted.
-- Passphrase-wrapped key files (`keys/*.key.age`) use scrypt. After a
-  `replace` the old key file stays in `keys/` until deleted, and is only as
-  safe as its passphrase. It is not offered for passphrase unlocking
-  (only key files of current recipients are), so a vault unlocked by
-  passphrase needs the new key stored too (`--store-key`).
+- **Removing a key will not revoke** what its holder already decrypted.
+- The recovery key's passphrase copy (`keys/recovery-*.key.age`) uses scrypt
+  (work factor 20) and is only as safe as its passphrase, which must be
+  estimated at about 70 bits or more.
 
 ## Recovery kit and QR codes
 
@@ -138,8 +130,9 @@ The PQ *identity* stays short: 77 characters (`AGE-SECRET-KEY-PQ-1` + 58),
 3 more than a classic identity, so a paper key or QR code of the identity stays small (all
 uppercase Bech32 is QR alphanumeric; a version 3 code at level M holds
 exactly 77 such characters). The *recipient* is 1959
-characters: do not print it as a QR code; derive it from the identity. Key
-file names under `keys/` use a SHA-256 hash of the recipient (`format.md` §3.2).
+characters: do not print it as a QR code; derive it from the identity. The
+passphrase copy's name uses the recovery key's fingerprint (`format.md`
+§15.11).
 
 [c2sp.org/age]: https://github.com/C2SP/C2SP/blob/main/age.md
 [age v1.3.0 release]: https://github.com/FiloSottile/age/releases/tag/v1.3.0

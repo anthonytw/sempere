@@ -8,11 +8,13 @@ struct RecoverCommand: ParsableCommand {
         commandName: "recover",
         abstract: "Decrypt one revision file and print its JSON, or one attachment blob and print its content.",
         discussion: """
-            Needs only an identity file and the .age file. The inner tag is verified when a vault is
+            Needs a key and the .age file. Files are encrypted to the vault identity (format.md §15.2):
+            give the vault keys the kit's script prints (--identity vault-keys.txt), or a key the vault
+            lists (this machine's device key, --identity FILE, or --recovery-key FILE) with the vault
             known (--vault, else a vault.json found in a parent directory of the file, else
-            $SEMPERE_VAULT) and the identity opens it; otherwise "UNVERIFIED" is printed to standard
-            error. The JSON goes to standard output exactly as
-            `age -d -i KEY FILE | tail -c +38 | gunzip` prints it.
+            $SEMPERE_VAULT). The inner tag is verified when the vault is known and opens; otherwise
+            "UNVERIFIED" is printed to standard error. The JSON goes to standard output exactly as
+            `age -d -i vault-keys.txt FILE | tail -c +38 | gunzip` prints it.
 
             A blob (notes/<id>/att/<name>.<kind>.age) prints its content exactly as
             `age -d -i KEY FILE | tail -c +46 | head -c LEN` does (format.md §8.1.7). Its framing,
@@ -44,12 +46,14 @@ struct RecoverCommand: ParsableCommand {
         let isBlob = BlobName.parse(url.lastPathComponent) != nil
 
         var ids: [any AgeIdentity] = try access.explicitIdentities()
+        if let (recovery, _) = try access.recoveryIdentity() { ids.append(recovery) }
         let vaultURL = access.vault.map { URL(fileURLWithPath: $0) } ?? findVault(above: url)
             ?? Env.vars["SEMPERE_VAULT"].map { URL(fileURLWithPath: $0) }
-        if ids.isEmpty {
-            guard let vaultURL else { throw CLIError.cannotDecrypt("no key: pass --identity FILE") }
-            ids = try access.identitiesFromKeyFiles(of: try Vault.open(at: vaultURL))
+        if ids.isEmpty, let vaultURL, let locked = try? Vault.open(at: vaultURL),
+           let device = try DeviceKeyStore.load(vaultId: locked.vaultId, passphraseEnv: access.passphraseEnv) {
+            ids = [device.nativeIdentity]
         }
+        guard !ids.isEmpty else { throw CLIError.cannotDecrypt("no key: pass --identity FILE or --recovery-key FILE") }
 
         var vault: Vault?
         var why = "no vault found: pass --vault or keep the file inside its vault"
@@ -96,7 +100,7 @@ struct RecoverCommand: ParsableCommand {
                 autoreleasing { FileHandle.standardOutput.write(piece) }
             }
         } catch BlobError.nameMismatch {
-            throw CLIError.failure("the blob's name does not match its content under this vault's secret: altered, "
+            throw CLIError.failure("the blob's name does not match its content under this vault's key: altered, "
                 + "planted, or from another vault (nothing was printed)")
         } catch {
             throw CLIError.failure("\(CLIError.from(error).message); discard the output printed so far")

@@ -3,7 +3,7 @@ import Foundation
 /// The app's attachment index on disk (docs/attachments.md §4): one sealed
 /// file per note, a per-device cache under format.md §10.1 (purpose
 /// `attachment-index`, magic `SMPX` ‖ `0x01`), in a folder whose name is
-/// derived from the vault secret. Updating one note writes that note's file
+/// derived from the vault key (K_e). Updating one note writes that note's file
 /// only. It holds the rule-4 records (`AttachmentIndexEntry.unusedSince`):
 /// losing a file only restarts its note's windows, which can never delete
 /// anything sooner.

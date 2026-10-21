@@ -83,6 +83,10 @@ public struct VaultEpochKey: Hashable, Sendable {
             .withUnsafeBytes { Data($0) }
     }
 
+    /// The key as HKDF input key material, for the derivations that keep their own `info` (format.md
+    /// §10, §10.1, §11.1, §12.1). Never an HMAC or cipher key itself.
+    var key: SymmetricKey { SymmetricKey(data: bytes) }
+
     /// `derive(info:count:)` with a UTF-8 `info`.
     public func derive(_ info: String, count: Int = 32) -> Data { derive(info: Data(info.utf8), count: count) }
 
@@ -262,7 +266,7 @@ package enum EpochKeyWrap {
         }
         let key = try VaultEpochKey(bytes: raw)
         // Compared in constant time (review L6).
-        guard RecipientsAuth.constantTimeEqual(Data(try key.vaultIdentity().string.utf8), Data(identity.string.utf8)) else {
+        guard VaultAuth.constantTimeEqual(Data(try key.vaultIdentity().string.utf8), Data(identity.string.utf8)) else {
             throw EpochKeyError.wrapIdentityMismatch
         }
         return key
@@ -431,7 +435,7 @@ package enum EpochListTag {
         guard let given = Hex.decode(tag) else { return false }
         let expected = tagBytes(key: key, message: message(vaultId: vaultId, root: root, epoch: epoch, epochId: epochId,
                                                            epochRecordHash: epochRecordHash, entries: entries))
-        return RecipientsAuth.constantTimeEqual(given, expected)
+        return VaultAuth.constantTimeEqual(given, expected)
     }
 }
 

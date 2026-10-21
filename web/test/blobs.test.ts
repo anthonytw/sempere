@@ -1,20 +1,17 @@
 // Blobs (format.md §8.1): names, kinds, Padmé, framing checks, and reading
-// through a reference from the fixture vault (missing, forged, previous
-// secret during a rewrap, size limits).
+// through a reference from the fixture vault (missing, forged, a name under
+// another key, size limits).
 
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash, createHmac } from "node:crypto";
-import { Decrypter, Encrypter, armor, identityToRecipient } from "age-encryption";
 import { describe, expect, it } from "vitest";
 import {
   BlobError, NoteBlobs, asBlobRef, blobKind, hexToBytes, maxFileBytes, padme, readBlob, verifyPlaintext,
 } from "../src/vault/blobs.ts";
-import { UnlockedVault, parseManifest, rewrapPendingTag } from "../src/vault/vault.ts";
-import { linkMessage, linkSeeds } from "../src/vault/link.ts";
-import { ed25519 } from "@noble/curves/ed25519.js";
-import { ml_dsa65 } from "@noble/post-quantum/ml-dsa.js";
+import { deriveEpoch, epochInfo } from "../src/vault/epoch.ts";
+import { UnlockedVault, parseManifest } from "../src/vault/vault.ts";
 import { NodeDirSource, sampleIdentity, webFixtures } from "./support.ts";
 
 const enc = new TextEncoder();
@@ -59,12 +56,14 @@ async function code(p: Promise<unknown>): Promise<string> {
 
 describe("blob names and framing", () => {
   it("matches the test vector of §8.1.3", () => {
-    const secret = Uint8Array.from({ length: 32 }, (_, i) => i);
+    // The epoch key K_e = 00 01 … 1f; the name is keyed by blobNameKey = HKDF-SHA256(K_e, "sempere/1 blob name").
+    const epochKey = Uint8Array.from({ length: 32 }, (_, i) => i);
     const content = enc.encode("hello, sempere!\n");
     const sha = createHash("sha256").update(content).digest();
     expect(sha.toString("hex")).toBe("8ff2ca4079cee96a407a038a996ef5d0dd317f201fddc04174f0d89b763add65");
-    const name = createHmac("sha256", secret).update(Buffer.concat([enc.encode("sempere/1"), Uint8Array.of(0), enc.encode("blob"), Uint8Array.of(0), sha])).digest("hex");
-    expect(name).toBe("13ddeae851cf51d7e9a970d82ca2c99f1dbaa3efaf792248da32b8374d6869af");
+    const name = createHmac("sha256", deriveEpoch(epochKey, epochInfo.blobNameKey)).update(Buffer.concat([enc.encode("sempere/1"), Uint8Array.of(0), enc.encode("blob"), Uint8Array.of(0), sha])).digest("hex");
+    // BlobStoreTests.testBlobNameKnownAnswer (Swift).
+    expect(name).toBe("540202258da1b7aa71188692543fcd1704765f5f52a89f9a7649e6d36878dda9");
     expect(blobKind("text/plain")).toBe("bin");
     expect([61, 1000, 482158, 28311597].map(padme)).toEqual([64, 1024, 483328, 28835840]);
     expect([0, 1, 2, 3].map(padme)).toEqual([0, 1, 2, 3]);
@@ -192,40 +191,16 @@ describe("reading blobs from a vault", async () => {
     expect(await code(readBlob(new NodeDirSource(tmp), vault, note, r))).toBe("undecryptable");
   });
 
-  it("finds a blob still named under the previous secret during a rewrap (§8.1.5)", async () => {
+  it("names a blob under the epoch's blobNameKey alone: a name under any other key is not found (§8.1.2)", async () => {
+    const r = ref(photo, "image/jpeg");
+    const names = await vault.blobNames(hexToBytes(r.sha256));
+    expect(names).toHaveLength(1);
     const tmp = mkdtempSync(join(tmpdir(), "sempere-blob-"));
     cpSync(dir, tmp, { recursive: true });
-    const previous = Uint8Array.from({ length: 32 }, (_, i) => 255 - i);
-    const e = new Encrypter();
-    e.addRecipient(await identityToRecipient(sampleIdentity()));
-    const journal = enc.encode(JSON.stringify({ previousVaultSecret: armor.encode(await e.encrypt(previous)) }));
-    const r = ref(photo, "image/jpeg");
-    // A journal's secret counts only when vault.json's secretLink links it to
-    // the current one (format.md §2.1; security review 2026-10, R4).
-    const unlinked = await UnlockedVault.unlock(manifest, sampleIdentity(), journal);
-    expect(await unlinked.blobNames(hexToBytes(r.sha256))).toHaveLength(1);
-    // Nor does it add a key for derived data such as published summaries (§12).
-    const gcm = { name: "AES-GCM", length: 256 } as const;
-    expect(await unlinked.derivedKeys("sempere/1 test", gcm, ["decrypt"])).toHaveLength(1);
-    const d = new Decrypter();
-    d.addIdentity(sampleIdentity());
-    const currentSecret = await d.decrypt(armor.decode(manifest.vaultSecret));
-    // The signed link the rotating writer left (format.md §2.1): both signatures by the previous secret's keys.
-    const seeds = await linkSeeds(previous);
-    const message = await linkMessage(currentSecret, manifest.vaultId);
-    const secretLink = { kind: "signed" as const, ed25519: ed25519.sign(message, seeds.ed25519),
-      mldsa65: ml_dsa65.sign(message, ml_dsa65.keygen(seeds.mldsa65).secretKey) };
-    const rewrapPending = await rewrapPendingTag(manifest.vaultId, journal, currentSecret);
-    const rewrapping = await UnlockedVault.unlock({ ...manifest, secretLink, rewrapPending }, sampleIdentity(), journal);
-    const [current, old] = await rewrapping.blobNames(hexToBytes(r.sha256));
-    expect(await rewrapping.derivedKeys("sempere/1 test", gcm, ["decrypt"])).toHaveLength(2);
-    expect(old).toBe(createHmac("sha256", previous).update(Buffer.concat([enc.encode("sempere/1"), Uint8Array.of(0), enc.encode("blob"), Uint8Array.of(0), hexToBytes(r.sha256)])).digest("hex"));
     const att = join(tmp, "notes", note, "att");
-    cpSync(join(att, `${current}.image.age`), join(att, `${old}.image.age`));
-    const { rmSync } = await import("node:fs");
-    rmSync(join(att, `${current}.image.age`));
-    const s = new NodeDirSource(tmp);
-    expect(await code(readBlob(s, vault, note, r))).toBe("missing");
-    expect(new Uint8Array(await (await readBlob(s, rewrapping, note, r)).arrayBuffer())).toEqual(photo);
+    const other = createHmac("sha256", deriveEpoch(new Uint8Array(32), epochInfo.blobNameKey))
+      .update(Buffer.concat([enc.encode("sempere/1"), Uint8Array.of(0), enc.encode("blob"), Uint8Array.of(0), hexToBytes(r.sha256)])).digest("hex");
+    renameSync(join(att, `${names[0]}.image.age`), join(att, `${other}.image.age`));
+    expect(await code(readBlob(new NodeDirSource(tmp), vault, note, r))).toBe("missing");
   });
 });

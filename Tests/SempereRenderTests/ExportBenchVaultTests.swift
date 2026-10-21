@@ -1,5 +1,6 @@
 import Age
 import Foundation
+import VaultTestSupport
 import Sempere
 import XCTest
 @testable import SempereRender
@@ -25,7 +26,7 @@ final class ExportBenchVaultTests: XCTestCase {
         let id = try NativeIdentity.generate(.postQuantum)
         try IdentityFile.render(id, created: Date(timeIntervalSince1970: 0))
             .write(toFile: path + ".key", atomically: true, encoding: .utf8)
-        let vault = try Vault.create(at: url, recipients: [id.recipient], labels: ["bench"], identities: [id])
+        let vault = try TestVaults.create(at: url, identities: [id], names: ["bench"])
         let note = UUID(uuidString: "bbbbbbbb-0000-4000-8000-000000000001")!
         let dense = RenderBenchmarkTests.denseNote(strokes: strokes, points: points).pages[0].strokes
         var seed: UInt64 = 7

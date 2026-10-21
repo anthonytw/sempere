@@ -34,23 +34,21 @@ extension AppModel {
         try await copyIn(picked: url, library: library)
     }
 
-    /// Creates a vault in the in-app store (`VaultLibrary.create`) and opens it: unlocked when a key was
-    /// generated or given, locked (asking for the key) when only a recipient was given.
+    /// Creates a vault in the in-app store (`VaultLibrary.create`), this device its home, and opens it
+    /// unlocked with this device's new key (`CreatedVault.device`).
     ///
     /// When another vault is opened or this one closed meanwhile, the vault
     /// is still created and returned (with its key, which nothing else holds)
     /// but not opened.
     func createVault(_ request: NewVaultRequest, library: VaultLibrary) async throws -> CreatedVault {
         let gen = generation
-        let created = try await library.create(request)
+        let created = try await library.create(request, trust: trust)
         guard gen == generation else { return created }
         do {
             try await openVault(at: created.url)
             let opened = generation
-            if let secret = created.unlockKey {
-                try ensureCurrent(opened)
-                try await unlock(identityText: secret)
-            }
+            try ensureCurrent(opened)
+            try await unlock(device: created.device)
             try ensureCurrent(opened)
         } catch is CancellationError {
             return created
@@ -262,7 +260,7 @@ extension AppModel {
         await editGate.acquire()
         defer { editGate.release() }
         guard let vault else { throw ModelError.noVaultOpen }
-        guard vault.canRead else { throw vault.isLocked ? VaultError.locked : VaultError.noIdentities }
+        guard vault.canRead else { throw VaultError.locked }
         try requireWritableVault()   // format.md §7.3
         let clock = try deviceClockForWriting()
         isEditing = true

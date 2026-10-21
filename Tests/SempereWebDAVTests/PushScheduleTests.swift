@@ -72,11 +72,9 @@ final class PushScheduleTests: XCTestCase {
         r.errors = (0..<5).map { .init(path: "p\($0)", message: "m") }
         XCTAssertEqual(WebDAVSyncProblem.from(report: r), [.serverChangedManifest, .failures(["p0: m", "p1: m", "p2: m"])])
         XCTAssertEqual(WebDAVSyncProblem.serverChangedManifest.code, "server-changed-manifest")
-        // Only vault.json and the rewrap journal are the device list.
+        // Only vault.json is the device list.
         r.errors = []
         r.conflicts = [.init(path: "settings.age", remoteCopy: nil, detail: "d")]
         XCTAssertEqual(WebDAVSyncProblem.from(report: r), [])
-        r.conflicts.append(.init(path: "rewrap-journal.json", remoteCopy: nil, detail: "d"))
-        XCTAssertEqual(WebDAVSyncProblem.from(report: r), [.serverChangedManifest])
     }
 }

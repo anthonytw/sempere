@@ -4,52 +4,16 @@ import Sempere
 import Testing
 @testable import SempereApp
 
-/// Gap audit GA-59: what the key export and key change paths leave behind or
-/// bump (`adoptRewrapped` / `keyEpoch`, the plaintext PDF drag-out folder, the
-/// import work folder). Printing the recovery kit (`UIPrintInteractionController`
-/// in `KeyFileActions`) needs a device and is not covered here.
+/// Gap audit GA-59: what the key export paths leave behind (the plaintext PDF
+/// drag-out folder, the key share folder, the import work folder). Printing the
+/// recovery kit (`UIPrintInteractionController` in `KeyFileActions`) needs a
+/// device and is not covered here.
 @MainActor
 struct KeyExportGapTests {
-    /// `adoptRewrapped` is how a recipient change made through the library
-    /// reaches the open model: the vault is replaced and every open note view
-    /// is told (through `keyEpoch`) to open its note again.
-    @Test func adoptingARewrappedVaultReplacesItAndBumpsTheEpoch() async throws {
-        let (model, url) = try await KeyManagementTests.unlockedModel()
-        #expect(model.keyEpoch == 0)
-        let id = try #require(model.vault?.vaultId)
-        let next = try Vault.open(at: url, identities: model.unlockIdentities)
-        model.adoptRewrapped(next)
-        #expect(model.keyEpoch == 1)
-        #expect(model.vault?.vaultId == id)
-        model.adoptRewrapped(next)
-        #expect(model.keyEpoch == 2, "every adoption is a new epoch")
-    }
-
-    /// A vault that is not the open one (another vault, or none open) is never adopted.
-    @Test func aStrangerVaultOrALockedModelAdoptsNothing() async throws {
-        let (model, url) = try await KeyManagementTests.unlockedModel()
-        let identity = try NativeIdentity.generate(.postQuantum)
-        let otherURL = TestTemp.root.appendingPathComponent(UUID().uuidString, isDirectory: true)
-            .appendingPathComponent("Other.sempere")
-        try FileManager.default.createDirectory(at: otherURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: otherURL.deletingLastPathComponent()) }
-        let other = try Vault.create(at: otherURL, recipients: [identity.recipient], labels: ["test"], identities: [identity])
-        let before = try #require(model.vault?.vaultId)
-        #expect(other.vaultId != before)
-        model.adoptRewrapped(other)
-        #expect(model.keyEpoch == 0)
-        #expect(model.vault?.vaultId == before)
-
-        let locked = AppModel(deviceStateURL: TS.deviceStateURL())
-        locked.adoptRewrapped(try Vault.open(at: url, identities: model.unlockIdentities))
-        #expect(locked.keyEpoch == 0)
-        #expect(locked.vault == nil)
-    }
-
     /// Closing the vault removes the plaintext PDFs dragged out of it.
     @Test func closingTheVaultDeletesItsDraggedOutPDFs() async throws {
-        let (model, _) = try await KeyManagementTests.unlockedModel()
-        let pdf = try await model.exportPDF(noteID: KeyManagementTests.lecture)
+        let (model, _) = try await NoteWindowTests.unlockedModel()
+        let pdf = try await model.exportPDF(noteID: AppModelTests.lecture)
         #expect(FileManager.default.fileExists(atPath: pdf.path))
         #expect(pdf.path.hasPrefix(model.exportFolder.path))
         model.close()

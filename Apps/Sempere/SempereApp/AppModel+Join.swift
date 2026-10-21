@@ -24,11 +24,6 @@ extension AppModel {
         return url
     }
 
-    /// Every vault is an in-app copy, so nothing is coordinated: nil. Kept for the key-change paths that still
-    /// pass it to `CloudVault.coordinatedWrite` (a no-op with nil) until the coordination plumbing goes after
-    /// the key hierarchy's changes to them land.
-    var coordinationURL: URL? { nil }
-
     /// Makes note `id` complete before it is opened or edited: in a partial copy it is fetched first
     /// (`downloadPartialNote`); anywhere else every note is here, and nothing happens.
     func downloadNote(_ id: UUID) async throws {

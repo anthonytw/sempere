@@ -1,14 +1,14 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "%@\nUse the passphrase or paste the key instead." : {
+    "%@\nPaste this device's key file instead, or read the vault with its recovery key." : {
       "comment" : "%@ is why the saved key could not be used",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@\nUsa la frase de contraseña o pega la clave."
+            "value" : "%@\nPega en su lugar el archivo de clave de este dispositivo o lee la bóveda con su clave de recuperación."
           }
         }
       }
@@ -25,14 +25,13 @@
         }
       }
     },
-    "%@ A password manager that takes files or text (for example from the share sheet) is the best place. The same file from a terminal: sempere keys generate / sempere keys export." : {
-      "comment" : "Footer under Save to Files and Share of a key; %@ is the plain-text warning before it; commands are not translated",
+    "%@ A password manager that takes files or text (for example from the share sheet) is the best place." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ El mejor lugar es un gestor de contraseñas que acepte archivos o texto (por ejemplo, desde el menú Compartir). El mismo archivo desde un terminal: sempere keys generate / sempere keys export."
+            "value" : "%@ El mejor lugar es un gestor de contraseñas que acepte archivos o texto (por ejemplo, desde la hoja de compartir)."
           }
         }
       }
@@ -45,78 +44,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Importación de %@"
-          }
-        }
-      }
-    },
-    "%@ did not deliver the vault's files: %lld of %lld are still not downloaded after %@ without progress. Check that this device is online, then try again." : {
-      "comment" : "First %@ is a server's host name; the numbers are files not downloaded and all files; last %@ is a number of seconds",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ no ha entregado los archivos de la bóveda (sin descargar: %2$lld de %3$lld) tras %4$@ sin avances. Comprueba que este dispositivo tiene conexión y vuelve a intentarlo."
-          }
-        }
-      }
-    },
-    "%@ has not delivered %@ for %@. Check that this device is online. Sempere keeps trying." : {
-      "comment" : "First %@ is a server's host name, second a number of notes, third a number of seconds",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ no ha entregado %2$@ en %3$@. Comprueba que este dispositivo tiene conexión. Sempere sigue intentándolo."
-          }
-        }
-      }
-    },
-    "%@ has not delivered %lld notes yet. Every note must be on this device first. Check that it is online and try again." : {
-      "comment" : "%@ is a server's host name, the number a count of notes",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%1$@ has not delivered %2$lld note yet. Every note must be on this device first. Check that it is online and try again."
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%1$@ has not delivered %2$lld notes yet. Every note must be on this device first. Check that it is online and try again."
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "plural" : {
-              "many" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%1$@ aún no ha entregado %2$lld notas. Todas las notas deben estar en este dispositivo antes. Comprueba que tiene conexión y vuelve a intentarlo."
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%1$@ aún no ha entregado %2$lld nota. Todas las notas deben estar en este dispositivo antes. Comprueba que tiene conexión y vuelve a intentarlo."
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%1$@ aún no ha entregado %2$lld notas. Todas las notas deben estar en este dispositivo antes. Comprueba que tiene conexión y vuelve a intentarlo."
-                }
-              }
-            }
           }
         }
       }
@@ -157,14 +84,14 @@
         }
       }
     },
-    "%@ is a public key: it can only encrypt to the key, not open the vault. Paste the secret key (AGE-SECRET-KEY-PQ-1…) instead, or choose “Public key only” to make a vault this device cannot open." : {
+    "%@ is a public key: it cannot open the vault. Paste the secret key (AGE-SECRET-KEY-PQ-1…) instead." : {
       "comment" : "%@ is the abbreviated age1pq1… public key the user pasted",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ es una clave pública: solo sirve para cifrar a esa clave, no para abrir la bóveda. Pega en su lugar la clave secreta (AGE-SECRET-KEY-PQ-1…) o elige «Solo clave pública» para crear una bóveda que este dispositivo no puede abrir."
+            "value" : "%@ es una clave pública: no puede abrir la bóveda. Pega en su lugar la clave secreta (AGE-SECRET-KEY-PQ-1…)."
           }
         }
       }
@@ -741,102 +668,6 @@
         }
       }
     },
-    "%lld files could not be re-encrypted. If this vault is in iCloud Drive, wait until it has downloaded and try again; otherwise unlock it with every key it was encrypted to before the change and try again." : {
-      "comment" : "Finishing an interrupted key change",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld file could not be re-encrypted. If this vault is in iCloud Drive, wait until it has downloaded and try again; otherwise unlock it with every key it was encrypted to before the change and try again."
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld files could not be re-encrypted. If this vault is in iCloud Drive, wait until it has downloaded and try again; otherwise unlock it with every key it was encrypted to before the change and try again."
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "plural" : {
-              "many" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld de archivos no se han podido volver a cifrar. Si esta bóveda está en iCloud Drive, espera a que se descargue y vuelve a intentarlo; si no, desbloquéala con todas las claves con las que estaba cifrada antes del cambio y vuelve a intentarlo."
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld archivo no se ha podido volver a cifrar. Si esta bóveda está en iCloud Drive, espera a que se descargue y vuelve a intentarlo; si no, desbloquéala con todas las claves con las que estaba cifrada antes del cambio y vuelve a intentarlo."
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld archivos no se han podido volver a cifrar. Si esta bóveda está en iCloud Drive, espera a que se descargue y vuelve a intentarlo; si no, desbloquéala con todas las claves con las que estaba cifrada antes del cambio y vuelve a intentarlo."
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "%lld files could not be re-encrypted. The change is saved and finishes the next time you try again." : {
-      "comment" : "Error after adding or removing a device key",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld file could not be re-encrypted. The change is saved and finishes the next time you try again."
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld files could not be re-encrypted. The change is saved and finishes the next time you try again."
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "plural" : {
-              "many" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld de archivos no se han podido volver a cifrar. El cambio está guardado y se termina la próxima vez que lo intentes."
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld archivo no se ha podido volver a cifrar. El cambio está guardado y se termina la próxima vez que lo intentes."
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld archivos no se han podido volver a cifrar. El cambio está guardado y se termina la próxima vez que lo intentes."
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "%lld files from other devices are on this device and arrive when the vault is unlocked" : {
       "comment" : "Sync status; the number is a count of files",
       "extractionState" : "manual",
@@ -1082,54 +913,6 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld archivos multimedia"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "%lld note folders not listed yet" : {
-      "comment" : "iCloud Drive has not listed these note folders yet",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld note folder not listed yet"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld note folders not listed yet"
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "plural" : {
-              "many" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld de carpetas de notas aún sin listar"
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld carpeta de nota aún sin listar"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld carpetas de notas aún sin listar"
                 }
               }
             }
@@ -1677,18 +1460,6 @@
         }
       }
     },
-    "%lld of %@, %@" : {
-      "comment" : "Download progress; first %@ is a number of files, second “2 note folders not listed yet”",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld de %@, %@"
-          }
-        }
-      }
-    },
     "%lld of %lld matches" : {
       "comment" : "Search highlights: current match of the total (never 1 match) [not-plural] (never 1: the 1-match case has its own string)",
       "extractionState" : "manual",
@@ -1697,18 +1468,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld de %lld coincidencias"
-          }
-        }
-      }
-    },
-    "%lld of this note's %@ are not downloaded from iCloud Drive yet, so it was not opened (it would look empty or incomplete). Try again in a moment." : {
-      "comment" : "%@ is a number of files, e.g. “3 of this note's 5 files”",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esta nota no se ha abierto porque aún faltan archivos por descargar de iCloud Drive (%1$lld de %2$@) y se vería vacía o incompleta. Vuelve a intentarlo en un momento."
           }
         }
       }
@@ -2551,17 +2310,6 @@
         }
       }
     },
-    "A change of this vault's keys was interrupted. Finish it to open your notes." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se interrumpió un cambio de las claves de esta bóveda. Termínalo para abrir tus notas."
-          }
-        }
-      }
-    },
     "A folder of PNG images per note." : {
       "comment" : "Export sheet footer",
       "extractionState" : "manual",
@@ -2693,26 +2441,13 @@
         }
       }
     },
-    "A key for a vault with this id is saved on %@, but it is offered only where it opened this vault before: any folder can claim a vault's id. Unlock this one with the passphrase or the key; Sempere then offers to remember the key here too." : {
-      "comment" : "Unlock sheet; the value is “this iPad”, “this iPhone” or “this Mac”",
+    "A key for a vault with this id is saved on %@, but it is offered only where it opened this vault before: any folder can claim a vault's id. Unlock this one with this device's key file; Sempere then offers to remember the key here too." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hay una clave de una bóveda con este identificador guardada en %@, pero solo se ofrece donde ya abrió esta bóveda: cualquier carpeta puede reclamar el identificador de una bóveda. Desbloquea esta con la frase de contraseña o con la clave; después Sempere ofrece recordar la clave también aquí."
-          }
-        }
-      }
-    },
-    "A key-change file this device does not accept was moved aside before the change (%@)." : {
-      "comment" : "Shown after a key change; the value is the reason in English",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Antes del cambio se apartó un archivo de cambio de claves que este dispositivo no acepta (%@)."
+            "value" : "En %@ hay guardada una clave para una bóveda con este identificador, pero solo se ofrece donde ya abrió esta bóveda: cualquier carpeta puede reclamar el identificador de una bóveda. Desbloquea esta con el archivo de clave de este dispositivo; Sempere te ofrecerá recordar la clave también aquí."
           }
         }
       }
@@ -2762,38 +2497,13 @@
         }
       }
     },
-    "A passphrase can only wrap a key this device has, not a public key." : {
-      "comment" : "Error when a passphrase is given with a public key only",
+    "A printed page with the recovery key as a QR code and checked text, the vault's root fingerprint, and how to open the vault with stock tools. Print it now and keep it somewhere safe: no device keeps the recovery key, so the kit cannot be printed later. Do not keep the PDF." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Una frase de contraseña solo puede proteger una clave que tenga este dispositivo, no una clave pública."
-          }
-        }
-      }
-    },
-    "A printed page with the key as a QR code and checked text, and how to open the vault with stock tools (sempere keys paper). Print it and keep it somewhere safe; do not keep the PDF." : {
-      "comment" : "Footer of the paper recovery kit section; the command is not translated",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Una página impresa con la clave como código QR y como texto con verificación, y cómo abrir la bóveda con herramientas estándar (sempere keys paper). Imprímela y guárdala en un lugar seguro; no conserves el PDF."
-          }
-        }
-      }
-    },
-    "A printed page with your key as a QR code and checked text, and how to open the vault with stock tools. The same kit from a terminal: sempere keys paper." : {
-      "comment" : "“sempere keys paper” is a command, not translated",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Una página impresa con tu clave como código QR y como texto con comprobación, y cómo abrir la bóveda con herramientas estándar. El mismo kit desde un terminal: sempere keys paper."
+            "value" : "Una página impresa con la clave de recuperación como código QR y como texto con comprobación, la huella raíz de la bóveda y cómo abrirla con herramientas estándar. Imprímela ahora y guárdala en un lugar seguro: ningún dispositivo guarda la clave de recuperación, así que el kit no se puede imprimir más tarde. No conserves el PDF."
           }
         }
       }
@@ -2818,17 +2528,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No se ha podido recuperar una grabación interrumpida al cerrarse la app: %@"
-          }
-        }
-      }
-    },
-    "A removed device key, or a copy of the vault from before an upgrade, could still open attachments it could open before. Only choose this if you accept that." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Una clave de dispositivo quitada, o una copia de la bóveda anterior a una actualización, aún podría abrir los adjuntos que ya podía abrir. Elige esto solo si lo aceptas."
           }
         }
       }
@@ -2980,30 +2679,6 @@
         }
       }
     },
-    "Add Device Key" : {
-      "comment" : "Sheet title",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Añadir clave de dispositivo"
-          }
-        }
-      }
-    },
-    "Add Device Key…" : {
-      "comment" : "Button",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Añadir clave de dispositivo…"
-          }
-        }
-      }
-    },
     "Add Folder…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3132,29 +2807,6 @@
         }
       }
     },
-    "Add a device by pasting its public key (age1pq1…) or by generating one for it. Replace swaps a device's key for a new one in a single re-encryption (for a lost or exposed key). A key that opened the vault here cannot be removed or replaced here." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Añade un dispositivo pegando su clave pública (age1pq1…) o generando una para él. «Sustituir» cambia la clave de un dispositivo por una nueva en un solo recifrado (para una clave perdida o expuesta). Una clave que abrió la bóveda aquí no se puede eliminar ni sustituir aquí."
-          }
-        }
-      }
-    },
-    "Add a device key to “%@”" : {
-      "comment" : "Face ID prompt reason; %@ is the vault's name",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Añadir una clave de dispositivo a «%@»"
-          }
-        }
-      }
-    },
     "Add a page after this one; press and hold to duplicate, delete or add at the end" : {
       "comment" : "Help tag of Add Page",
       "extractionState" : "manual",
@@ -3239,18 +2891,6 @@
         }
       }
     },
-    "Add this device's key to the vault" : {
-      "comment" : "Help tag",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Añadir la clave de este dispositivo a la bóveda"
-          }
-        }
-      }
-    },
     "Add this note to Favorites" : {
       "comment" : "Tooltip of the favorite button",
       "extractionState" : "manual",
@@ -3299,14 +2939,13 @@
         }
       }
     },
-    "Adding the key and re-encrypting every note…" : {
-      "comment" : "Progress",
+    "Adding, renaming and removing devices is not available in the app yet. From a terminal: sempere device." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Añadiendo la clave y volviendo a cifrar todas las notas…"
+            "value" : "Añadir, renombrar y quitar dispositivos aún no está disponible en la app. Desde un terminal: sempere device."
           }
         }
       }
@@ -3395,26 +3034,13 @@
         }
       }
     },
-    "Also store the key under a passphrase" : {
-      "comment" : "Toggle in the new vault form",
+    "Also store the recovery key under a passphrase" : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Guardar también la clave con una frase de contraseña"
-          }
-        }
-      }
-    },
-    "Also sync via iCloud Keychain" : {
-      "comment" : "Toggle",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sincronizar también con el Llavero de iCloud"
+            "value" : "Guardar también la clave de recuperación con una frase de contraseña"
           }
         }
       }
@@ -4665,41 +4291,6 @@
         }
       }
     },
-    "Choose Devices to Keep" : {
-      "comment" : "Recipients repair sheet title",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Elegir dispositivos que conservar"
-          }
-        }
-      }
-    },
-    "Choose Devices to Keep lets you pick the devices yourself; the others are removed and every note is re-encrypted with a new vault key." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Con «Elegir dispositivos que conservar» eliges tú los dispositivos; los demás se eliminan y todas las notas se vuelven a cifrar con una clave de bóveda nueva."
-          }
-        }
-      }
-    },
-    "Choose Devices to Keep…" : {
-      "comment" : "Recipients alert button: pick the keys a repair keeps",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Elegir dispositivos que conservar…"
-          }
-        }
-      }
-    },
     "Choose Folder and Export…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5681,30 +5272,6 @@
         }
       }
     },
-    "Create a device key for “%@”" : {
-      "comment" : "Face ID prompt reason; %@ is the vault's name",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Crear una clave de dispositivo para «%@»"
-          }
-        }
-      }
-    },
-    "Create the key file" : {
-      "comment" : "Help tag",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Crear el archivo de clave"
-          }
-        }
-      }
-    },
     "Create the note" : {
       "comment" : "Help tag",
       "extractionState" : "manual",
@@ -5737,30 +5304,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Crear la bóveda"
-          }
-        }
-      }
-    },
-    "Creates a new key, adds it to this vault's keys and re-encrypts every note to it, which can take a while. Then save or print it for the other device. From a terminal: sempere keys generate, then sempere vault recipients add." : {
-      "comment" : "Footer of New Key; commands are not translated",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Crea una clave nueva, la añade a las claves de esta bóveda y vuelve a cifrar todas las notas para ella, lo que puede tardar un rato. Después, guárdala o imprímela para el otro dispositivo. Desde un terminal: sempere keys generate y después sempere vault recipients add."
-          }
-        }
-      }
-    },
-    "Creating the key and re-encrypting every note…" : {
-      "comment" : "Progress while New Key works",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Creando la clave y volviendo a cifrar todas las notas…"
           }
         }
       }
@@ -6099,28 +5642,6 @@
         }
       }
     },
-    "Device keys of a WebDAV vault cannot be changed in the app: the server would keep files a removed key can read. Change them with the sempere command-line tool on a folder copy and upload that to a new server folder." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Las claves de dispositivo de una bóveda WebDAV no se pueden cambiar en la app: el servidor conservaría archivos que una clave quitada puede leer. Cámbialas con la herramienta de línea de comandos sempere en una copia en carpeta y sube esa copia a una carpeta nueva del servidor."
-          }
-        }
-      }
-    },
-    "Device keys of a vault with sync targets cannot be changed in the app yet: the targets would keep files a removed key can read. Remove its sync targets first, or change the keys with the sempere command-line tool." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Las claves de dispositivo de una bóveda con destinos de sincronización todavía no se pueden cambiar en la app: los destinos conservarían archivos que una clave eliminada puede leer. Quita primero sus destinos de sincronización o cambia las claves con la herramienta de línea de comandos sempere."
-          }
-        }
-      }
-    },
     "Devices here are the keys this vault is encrypted to (this iPad, that Mac, the paper backup), not people: to share a note, export it. “Rewrite headers only” is fast but leaves old copies of an attachment openable with a key that was removed. “Re-encrypt everything” takes longer in a vault with many attachments." : {
       "comment" : "The quoted names are the picker choices “Rewrite headers only” and “Re-encrypt everything”: use the same translations",
       "extractionState" : "manual",
@@ -6133,25 +5654,13 @@
         }
       }
     },
-    "Devices this device never confirmed: %@." : {
-      "comment" : "The value is a list of device names and abbreviated keys",
+    "Devices that can open this vault" : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dispositivos que este dispositivo nunca ha confirmado: %@."
-          }
-        }
-      }
-    },
-    "Devices to keep" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dispositivos que conservar"
+            "value" : "Dispositivos que pueden abrir esta bóveda"
           }
         }
       }
@@ -6358,18 +5867,6 @@
         }
       }
     },
-    "Download Attachments in the Background" : {
-      "comment" : "WebDAV menu toggle: attachments of a vault opened before it was fully downloaded arrive in the background (otherwise only when a page shows them)",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Descargar adjuntos en segundo plano"
-          }
-        }
-      }
-    },
     "Download Language Model" : {
       "comment" : "Button",
       "extractionState" : "manual",
@@ -6500,30 +5997,6 @@
         }
       }
     },
-    "Downloading from iCloud Drive: %lld of %lld notes…" : {
-      "comment" : "Progress: notes downloaded so far of all notes. [not-plural] (the English always says notes)",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Descargando de iCloud Drive: %1$lld de %2$lld notas…"
-          }
-        }
-      }
-    },
-    "Downloading from iCloud: %lld of %@" : {
-      "comment" : "Progress; %@ is a number of notes, e.g. “37 of 128 notes”",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Descargando de iCloud: %lld de %@"
-          }
-        }
-      }
-    },
     "Downloading from iCloud…" : {
       "comment" : "Note list row of a note not downloaded yet",
       "extractionState" : "manual",
@@ -6568,41 +6041,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Descargando esta nota de %@…"
-          }
-        }
-      }
-    },
-    "Downloading this note from iCloud: %lld of %@" : {
-      "comment" : "Progress; %@ is “N files”",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Descargando esta nota de iCloud: %lld de %@"
-          }
-        }
-      }
-    },
-    "Downloading this note from iCloud: %lld of %lld" : {
-      "comment" : "Progress: files of the note downloaded so far, of the total",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Descargando esta nota de iCloud: %lld de %lld"
-          }
-        }
-      }
-    },
-    "Downloading this note from iCloud…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Descargando esta nota de iCloud…"
           }
         }
       }
@@ -6810,6 +6248,17 @@
         }
       }
     },
+    "Each device has its own key, kept in its Keychain. Adding and removing devices is not available in the app yet; from a terminal: sempere device." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada dispositivo tiene su propia clave, guardada en su Llavero. Añadir y quitar dispositivos aún no está disponible en la app; desde un terminal: sempere device."
+          }
+        }
+      }
+    },
     "Earlier revisions were compacted away or cannot be read, so this version cannot be rebuilt." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6925,18 +6374,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sugerencias de emoji"
-          }
-        }
-      }
-    },
-    "Encrypt to someone's public key (age1pq1…). This device gets no key: only the matching secret key opens the vault, and you will be asked for it." : {
-      "comment" : "Footer of the key choice: public key only",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cifra a la clave pública de alguien (age1pq1…). Este dispositivo no recibe ninguna clave: solo la clave secreta correspondiente abre la bóveda, y se te pedirá."
           }
         }
       }
@@ -7126,50 +6563,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Todos los adjuntos están en uso."
-          }
-        }
-      }
-    },
-    "Every note is re-encrypted to the new key instead of the old one. Keep this vault open until it finishes." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Todas las notas se vuelven a cifrar para la clave nueva en lugar de la antigua. Mantén esta bóveda abierta hasta que termine."
-          }
-        }
-      }
-    },
-    "Every note is re-encrypted with a new vault key, to the new key instead of this one. The old key can no longer open new or changed notes; it keeps what it already copied." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Todas las notas se vuelven a cifrar con una clave de bóveda nueva, para la clave nueva en lugar de esta. La clave antigua ya no podrá abrir notas nuevas o modificadas; conserva lo que ya copió."
-          }
-        }
-      }
-    },
-    "Every note is re-encrypted with a new vault key. Devices you do not keep can no longer open new or changed notes; they keep what they already copied." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Todas las notas se vuelven a cifrar con una clave de bóveda nueva. Los dispositivos que no conserves ya no podrán abrir notas nuevas o modificadas; conservan lo que ya copiaron."
-          }
-        }
-      }
-    },
-    "Every note is re-encrypted without it. That device can no longer open new or changed files; it keeps what it already copied." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Todas las notas se vuelven a cifrar sin ella. Ese dispositivo ya no podrá abrir archivos nuevos ni modificados; conserva lo que ya haya copiado."
           }
         }
       }
@@ -7537,6 +6930,17 @@
         }
       }
     },
+    "Fill in seven random words as the passphrase" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rellenar con siete palabras al azar como frase de contraseña"
+          }
+        }
+      }
+    },
     "Find It Again" : {
       "comment" : "Quick tour page 4 title",
       "extractionState" : "manual",
@@ -7581,30 +6985,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fino"
-          }
-        }
-      }
-    },
-    "Finish" : {
-      "comment" : "Button: finish an interrupted change of the vault's keys",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Terminar"
-          }
-        }
-      }
-    },
-    "Finishing the interrupted key change…" : {
-      "comment" : "Progress",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Terminando el cambio de claves interrumpido…"
           }
         }
       }
@@ -7859,18 +7239,6 @@
         }
       }
     },
-    "Generate a Key" : {
-      "comment" : "Add Device Key: segment, generate a new key for another device",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Generar una clave"
-          }
-        }
-      }
-    },
     "Generate a new key" : {
       "comment" : "Key choice in New Vault",
       "extractionState" : "manual",
@@ -7879,18 +7247,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Generar una clave nueva"
-          }
-        }
-      }
-    },
-    "Generating the key and re-encrypting every note…" : {
-      "comment" : "Progress",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Generando la clave y volviendo a cifrar todas las notas…"
           }
         }
       }
@@ -8371,6 +7727,18 @@
         }
       }
     },
+    "Home" : {
+      "comment" : "Key window: the vault's home device",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Principal"
+          }
+        }
+      }
+    },
     "How to make iCloud Drive appear in the folder picker" : {
       "comment" : "Help tag of “Don’t see iCloud Drive?”",
       "extractionState" : "manual",
@@ -8415,30 +7783,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Si se pierden todas las copias de la clave, se pierden las notas"
-          }
-        }
-      }
-    },
-    "If every device listed is yours, Trust This List records it again on this device." : {
-      "comment" : "Recipients alert: explains the Trust This List button",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Si todos los dispositivos de la lista son tuyos, Confiar en esta lista la vuelve a registrar en este dispositivo."
-          }
-        }
-      }
-    },
-    "If you changed the vault's keys on another device, open the vault there, or check the list with `sempere vault recipients confirm`. Otherwise restore vault.json from a backup." : {
-      "comment" : "Device list alert; keep the command and vault.json as they are",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Si has cambiado las claves de la bóveda en otro dispositivo, abre la bóveda allí o comprueba la lista con `sempere vault recipients confirm`. Si no, restaura vault.json desde una copia de seguridad."
           }
         }
       }
@@ -9196,18 +8540,6 @@
         }
       }
     },
-    "Keep Re-encrypting Everything" : {
-      "comment" : "Cancel button in a confirmation: keep the safer choice",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Seguir cifrando todo de nuevo"
-          }
-        }
-      }
-    },
     "Keep Screen On" : {
       "comment" : "Toggle: keep the display awake while a note is open",
       "extractionState" : "manual",
@@ -9239,18 +8571,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Guardar una copia en"
-          }
-        }
-      }
-    },
-    "Keep an unconfirmed device key in “%@”" : {
-      "comment" : "Face ID prompt before a repair keeps an unconfirmed key; the value is the vault name",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Conservar una clave de dispositivo no confirmada en «%@»"
           }
         }
       }
@@ -9289,13 +8609,13 @@
         }
       }
     },
-    "Keep the key this device unlocked the vault with: without it, this device could not open the vault after the repair." : {
+    "Keep the recovery kit" : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conserva la clave con la que este dispositivo desbloqueó la bóveda: sin ella, este dispositivo no podría abrirla después de la reparación."
+            "value" : "Guarda el kit de recuperación"
           }
         }
       }
@@ -9360,18 +8680,6 @@
         }
       }
     },
-    "Key" : {
-      "comment" : "New vault form: section header and picker for where the vault's key comes from",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clave"
-          }
-        }
-      }
-    },
     "Key file" : {
       "comment" : "Section header: export a key as a file; also the label of a key file picked in New Vault",
       "extractionState" : "manual",
@@ -9380,18 +8688,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Archivo de clave"
-          }
-        }
-      }
-    },
-    "Key to replace" : {
-      "comment" : "Replace Device Key: section header",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clave que se sustituye"
           }
         }
       }
@@ -9432,18 +8728,6 @@
         }
       }
     },
-    "Keys this vault is encrypted to" : {
-      "comment" : "Section header",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Claves con las que se cifra esta bóveda"
-          }
-        }
-      }
-    },
     "Kind" : {
       "comment" : "Restore preview: what the picked folder is",
       "extractionState" : "manual",
@@ -9460,29 +8744,6 @@
       "comment" : "Equation sheet: header of the source field; a name, not translated",
       "extractionState" : "manual",
       "shouldTranslate" : false
-    },
-    "Label (empty: keep the current one)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Etiqueta (vacía: conservar la actual)"
-          }
-        }
-      }
-    },
-    "Label (for example, Anna's iPad)" : {
-      "comment" : "Text field: label of a device key",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nombre (por ejemplo, iPad de Ana)"
-          }
-        }
-      }
     },
     "Language" : {
       "comment" : "Settings ▸ Transcription: language picker",
@@ -10342,17 +9603,6 @@
         }
       }
     },
-    "Never confirmed by this device" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nunca confirmado por este dispositivo"
-          }
-        }
-      }
-    },
     "New Equation" : {
       "comment" : "Title of the equation sheet when adding one",
       "extractionState" : "manual",
@@ -10373,30 +9623,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nueva carpeta"
-          }
-        }
-      }
-    },
-    "New Key" : {
-      "comment" : "Section header",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clave nueva"
-          }
-        }
-      }
-    },
-    "New Key…" : {
-      "comment" : "Settings ▸ Device Keys: make a key for another device",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clave nueva…"
           }
         }
       }
@@ -10827,17 +10053,6 @@
         }
       }
     },
-    "No interrupted key change is being finished." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se está terminando ningún cambio de claves interrumpido."
-          }
-        }
-      }
-    },
     "No key is saved for this vault." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10915,18 +10130,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aún no hay etiquetas"
-          }
-        }
-      }
-    },
-    "No unknown device was added, but the list is not the one this device last checked." : {
-      "comment" : "Device list alert",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se ha añadido ningún dispositivo desconocido, pero la lista no es la que este dispositivo comprobó por última vez."
           }
         }
       }
@@ -11306,17 +10509,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Las notas ya escritas se quedan en la carpeta; al volver a exportar en ella se omiten."
-          }
-        }
-      }
-    },
-    "Notes appear here as iCloud Drive delivers them." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Las notas aparecen aquí a medida que iCloud Drive las entrega."
           }
         }
       }
@@ -11869,17 +11061,6 @@
         }
       }
     },
-    "Only the devices you keep can open the vault after the repair. Keep a device marked as never confirmed only if you know it is yours." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Solo los dispositivos que conserves podrán abrir la bóveda después de la reparación. Conserva un dispositivo marcado como nunca confirmado solo si sabes que es tuyo."
-          }
-        }
-      }
-    },
     "Only your key opens these notes" : {
       "comment" : "About Your Key: heading",
       "extractionState" : "manual",
@@ -12119,13 +11300,13 @@
         }
       }
     },
-    "Open and unlock a vault in the library window to manage its keys." : {
+    "Open and unlock a vault in the library window to see its devices." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre y desbloquea una bóveda en la ventana de la biblioteca para gestionar sus claves."
+            "value" : "Abre y desbloquea una bóveda en la ventana de la biblioteca para ver sus dispositivos."
           }
         }
       }
@@ -12270,18 +11451,6 @@
         }
       }
     },
-    "Opening the vault…" : {
-      "comment" : "Progress",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abriendo la bóveda…"
-          }
-        }
-      }
-    },
     "Opening vault: %lld of %@" : {
       "comment" : "Progress; %@ is a number of notes, e.g. “120 of 640 notes”",
       "extractionState" : "manual",
@@ -12342,14 +11511,13 @@
         }
       }
     },
-    "Or paste a secret key" : {
-      "comment" : "Unlock screen section header",
+    "Or the recovery key's passphrase" : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "O pega una clave secreta"
+            "value" : "O la frase de contraseña de la clave de recuperación"
           }
         }
       }
@@ -12808,18 +11976,6 @@
         }
       }
     },
-    "Passphrase of a stored key" : {
-      "comment" : "Unlock screen section header",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Frase de contraseña de una clave guardada"
-          }
-        }
-      }
-    },
     "Passphrase of the key file" : {
       "comment" : "Placeholder",
       "extractionState" : "manual",
@@ -12868,14 +12024,13 @@
         }
       }
     },
-    "Paste a Public Key" : {
-      "comment" : "Add Device Key: segment, paste another device's public key",
+    "Paste a key" : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pegar una clave pública"
+            "value" : "Pega una clave"
           }
         }
       }
@@ -12888,18 +12043,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pega una clave secreta o elige un archivo de clave."
-          }
-        }
-      }
-    },
-    "Paste a secret key that starts with AGE-SECRET-KEY-PQ-1 (the whole output of age-keygen -pq or sempere keys generate works too), or choose a key file: a saved key, or a passphrase-wrapped key file (keys/….key.age) from another vault. A public key (age1pq1…) cannot open a vault, and classic keys (AGE-SECRET-KEY-1…) are not accepted." : {
-      "comment" : "Footer of the key choice: use an existing key",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pega una clave secreta que empiece por AGE-SECRET-KEY-PQ-1 (también vale toda la salida de age-keygen -pq o sempere keys generate) o elige un archivo de clave: una clave guardada o un archivo de clave protegido con frase de contraseña (keys/….key.age) de otra bóveda. Una clave pública (age1pq1…) no puede abrir una bóveda, y las claves clásicas (AGE-SECRET-KEY-1…) no se admiten."
           }
         }
       }
@@ -13405,54 +12548,6 @@
         }
       }
     },
-    "Print the paper recovery kit, or keep the key in a password manager, somewhere apart from this device." : {
-      "comment" : "About Your Key",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Imprime el kit de recuperación en papel o guarda la clave en un gestor de contraseñas, en un lugar distinto de este dispositivo."
-          }
-        }
-      }
-    },
-    "Print the recovery kit of “%@”" : {
-      "comment" : "Face ID prompt reason; %@ is the vault's name",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Imprimir el kit de recuperación de «%@»"
-          }
-        }
-      }
-    },
-    "Print the recovery kit?" : {
-      "comment" : "Confirmation title",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "¿Imprimir el kit de recuperación?"
-          }
-        }
-      }
-    },
-    "Print…" : {
-      "comment" : "Button",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Imprimir…"
-          }
-        }
-      }
-    },
     "Privacy Policy" : {
       "comment" : "Link to the privacy policy",
       "extractionState" : "manual",
@@ -13485,30 +12580,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "PDF protegidos no importados (ábrelos de nuevo para introducir sus contraseñas): %@"
-          }
-        }
-      }
-    },
-    "Public key" : {
-      "comment" : "Label of a key's public part (age recipient)",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clave pública"
-          }
-        }
-      }
-    },
-    "Public key only" : {
-      "comment" : "Key choice in New Vault: encrypt to a public key; this device gets no key",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Solo clave pública"
           }
         }
       }
@@ -13605,18 +12676,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cita"
-          }
-        }
-      }
-    },
-    "Re-encrypt everything" : {
-      "comment" : "Settings ▸ Device Keys: how attachments are rewrapped (picker choice)",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Volver a cifrar todo"
           }
         }
       }
@@ -13729,6 +12788,17 @@
         }
       }
     },
+    "Read-only: unlocked with the recovery key. Open the vault with this device's key to change it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo lectura: desbloqueada con la clave de recuperación. Abre la bóveda con la clave de este dispositivo para modificarla."
+          }
+        }
+      }
+    },
     "Reading handwriting: %lld of %@" : {
       "comment" : "Progress of Recognize All; %@ is a number of notes, e.g. “80 notes”",
       "extractionState" : "manual",
@@ -13825,14 +12895,14 @@
         }
       }
     },
-    "Ready. The vault will be encrypted to %@." : {
+    "Ready. The recovery key is %@." : {
       "comment" : "%@ is the abbreviated public key of the existing key",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lista. La bóveda se cifrará a %@."
+            "value" : "Lista. La clave de recuperación es %@."
           }
         }
       }
@@ -14272,14 +13342,38 @@
         }
       }
     },
-    "Recovery Kit…" : {
-      "comment" : "Button: print or save the recovery kit",
+    "Recovery Key" : {
+      "comment" : "New Vault: where the vault's recovery key comes from",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kit de recuperación…"
+            "value" : "Clave de recuperación"
+          }
+        }
+      }
+    },
+    "Recovery key" : {
+      "comment" : "Key window: header of the recovery key's section",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clave de recuperación"
+          }
+        }
+      }
+    },
+    "Recovery key of %@" : {
+      "comment" : "Label of a vault's recovery key; the value is the vault's name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clave de recuperación de %@"
           }
         }
       }
@@ -14392,18 +13486,6 @@
         }
       }
     },
-    "Remove Key…" : {
-      "comment" : "Key window: a key row's button and context menu, remove a device key",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quitar clave…"
-          }
-        }
-      }
-    },
     "Remove Location and Camera Data" : {
       "comment" : "Settings ▸ Photos toggle",
       "extractionState" : "manual",
@@ -14459,30 +13541,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Quitar de este dispositivo…"
-          }
-        }
-      }
-    },
-    "Remove restores the last checked list and re-encrypts every note with a new vault key, so no other device can read them." : {
-      "comment" : "Device list alert: what its Remove button does",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quitar restaura la última lista comprobada y vuelve a cifrar todas las notas con una nueva clave de la bóveda, para que ningún otro dispositivo pueda leerlas."
-          }
-        }
-      }
-    },
-    "Remove this key?" : {
-      "comment" : "Confirmation title",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "¿Quitar esta clave?"
           }
         }
       }
@@ -14544,18 +13602,6 @@
         }
       }
     },
-    "Remove “%@”" : {
-      "comment" : "Button: remove a device key; the value is its label",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quitar «%@»"
-          }
-        }
-      }
-    },
     "Remove: %@." : {
       "comment" : "Repair confirmation; the value is a list of device names and abbreviated keys",
       "extractionState" : "manual",
@@ -14611,18 +13657,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Elimina todos los guardados automáticos, por recientes que sean. Conserva todos los puntos de control (versiones guardadas e importadas) y la versión más reciente de la nota."
-          }
-        }
-      }
-    },
-    "Removing the key and re-encrypting every note…" : {
-      "comment" : "Progress",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quitando la clave y volviendo a cifrar todas las notas…"
           }
         }
       }
@@ -14759,75 +13793,6 @@
         }
       }
     },
-    "Repair" : {
-      "comment" : "Recipients repair: destructive confirmation button",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reparar"
-          }
-        }
-      }
-    },
-    "Repair it with `sempere vault markers repair` on a computer that has opened this vault before, or restore vault.json from a backup." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Repáralo con `sempere vault markers repair` en un ordenador que ya haya abierto esta bóveda, o restaura vault.json de una copia de seguridad."
-          }
-        }
-      }
-    },
-    "Repair the device list?" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "¿Reparar la lista de dispositivos?"
-          }
-        }
-      }
-    },
-    "Repair the list of keys that can open this vault" : {
-      "comment" : "Help tag",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reparar la lista de claves que pueden abrir esta bóveda"
-          }
-        }
-      }
-    },
-    "Repairing the device list and re-encrypting every note…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reparando la lista de dispositivos y volviendo a cifrar todas las notas…"
-          }
-        }
-      }
-    },
-    "Repair…" : {
-      "comment" : "Recipients repair sheet: confirm button",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reparar…"
-          }
-        }
-      }
-    },
     "Repeat passphrase" : {
       "comment" : "Secure text field placeholder",
       "extractionState" : "manual",
@@ -14848,18 +13813,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reemplazar"
-          }
-        }
-      }
-    },
-    "Replace Device Key" : {
-      "comment" : "Key window: title of the sheet that replaces a device's key",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sustituir clave de dispositivo"
           }
         }
       }
@@ -14888,30 +13841,6 @@
         }
       }
     },
-    "Replace Key…" : {
-      "comment" : "Key window: a key row's button and context menu, replace a device's key",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sustituir clave…"
-          }
-        }
-      }
-    },
-    "Replace a device key of “%@”" : {
-      "comment" : "Face ID prompt before replacing a device key; the value is the vault name",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sustituir una clave de dispositivo de «%@»"
-          }
-        }
-      }
-    },
     "Replace the Vault's Settings with This Device's" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14935,29 +13864,6 @@
         }
       }
     },
-    "Replace this key?" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "¿Sustituir esta clave?"
-          }
-        }
-      }
-    },
-    "Replace “%@”" : {
-      "comment" : "Key window: confirm replacing the named device's key",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sustituir «%@»"
-          }
-        }
-      }
-    },
     "Replace “%@”?" : {
       "comment" : "%@ is the name of the vault on this device",
       "extractionState" : "manual",
@@ -14970,18 +13876,6 @@
         }
       }
     },
-    "Replace…" : {
-      "comment" : "Key window: confirm replacing a device's key",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sustituir…"
-          }
-        }
-      }
-    },
     "Replacing changes these settings on every device that syncs with this vault." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14989,17 +13883,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Al sustituirlos, estos ajustes cambian en todos los dispositivos que se sincronizan con esta bóveda."
-          }
-        }
-      }
-    },
-    "Replacing the key and re-encrypting every note…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sustituyendo la clave y volviendo a cifrar todas las notas…"
           }
         }
       }
@@ -15160,6 +14043,17 @@
         }
       }
     },
+    "Restore vault.json from a backup, or check the vault with sempere on a computer that has opened it before. Repairing the list in the app is not available yet." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restaura vault.json desde una copia de seguridad o comprueba la bóveda con sempere en un ordenador que ya la haya abierto. Reparar la lista en la app aún no está disponible."
+          }
+        }
+      }
+    },
     "Restored “%@”: %lld files." : {
       "comment" : "Restore from Backup finished; %1$@ is the new vault's name, %2$lld the files",
       "extractionState" : "manual",
@@ -15244,18 +14138,6 @@
         }
       }
     },
-    "Retry" : {
-      "comment" : "Button: retry the iCloud download",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reintentar"
-          }
-        }
-      }
-    },
     "Revisions removed by compaction are not restore points and are not listed. Versions that depend on them are grayed out and cannot be shown or restored." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -15263,42 +14145,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Las revisiones eliminadas al compactar no son puntos de restauración y no aparecen. Las versiones que dependen de ellas aparecen atenuadas y no se pueden mostrar ni restaurar."
-          }
-        }
-      }
-    },
-    "Rewrite Headers Only" : {
-      "comment" : "Button in a confirmation",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reescribir solo cabeceras"
-          }
-        }
-      }
-    },
-    "Rewrite headers only" : {
-      "comment" : "Settings ▸ Device Keys: how attachments are rewrapped (picker choice)",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reescribir solo las cabeceras"
-          }
-        }
-      }
-    },
-    "Rewrite headers only after a removal?" : {
-      "comment" : "Confirmation title",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "¿Reescribir solo las cabeceras tras quitar una clave?"
           }
         }
       }
@@ -15481,42 +14327,6 @@
         }
       }
     },
-    "Save Key" : {
-      "comment" : "Title of the sheet that exports this device's key",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Guardar clave"
-          }
-        }
-      }
-    },
-    "Save Key and Recovery Kit…" : {
-      "comment" : "About Your Key: button to the Save Key sheet (key file and paper recovery kit)",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Guardar clave y kit…"
-          }
-        }
-      }
-    },
-    "Save Key exports this device's key, after %@, to Files or a password manager, with its paper recovery kit. New Key makes a key for another device and encrypts the vault to it. Devices here are the keys this vault is encrypted to (this iPad, that Mac, the paper backup), not people: to share a note, export it. “Rewrite headers only” is fast but leaves old copies of an attachment openable with a key that was removed. “Re-encrypt everything” takes longer in a vault with many attachments." : {
-      "comment" : "Footer of Settings ▸ Device Keys; button and option names as translated; %@ is the biometry (Face ID, Touch ID, or “Face ID or Touch ID”)",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Guardar clave exporta la clave de este dispositivo, tras %@, a Archivos o a un gestor de contraseñas, con su kit de recuperación en papel. Clave nueva crea una clave para otro dispositivo y cifra la bóveda para ella. Los dispositivos de esta lista son las claves para las que está cifrada esta bóveda (este iPad, ese Mac, la copia en papel), no personas: para compartir una nota, expórtala. «Reescribir solo las cabeceras» es rápido, pero deja copias antiguas de un adjunto que se pueden abrir con una clave que se ha quitado. «Volver a cifrar todo» tarda más en una bóveda con muchos adjuntos."
-          }
-        }
-      }
-    },
     "Save Key…" : {
       "comment" : "Settings ▸ Device Keys: export this device's key",
       "extractionState" : "manual",
@@ -15565,18 +14375,6 @@
         }
       }
     },
-    "Save as PDF…" : {
-      "comment" : "Button",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Guardar como PDF…"
-          }
-        }
-      }
-    },
     "Save the equation" : {
       "comment" : "Help tag",
       "extractionState" : "manual",
@@ -15609,18 +14407,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Guardar el nombre nuevo"
-          }
-        }
-      }
-    },
-    "Save the recovery kit now" : {
-      "comment" : "About Your Key: heading",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Guarda ahora el kit de recuperación"
           }
         }
       }
@@ -15847,18 +14633,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Segundo intento: %@"
-          }
-        }
-      }
-    },
-    "Secret key for “%@”" : {
-      "comment" : "Section header; the value is a device label",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clave secreta para «%@»"
           }
         }
       }
@@ -16134,18 +14908,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sempere guarda tus bóvedas en este dispositivo, dentro de la app, para que se abran sin conexión. Abrir bóveda… copia una bóveda (un ítem .sempere en Archivos, iCloud Drive, una copia de seguridad o una exportación) en este dispositivo; el original no cambia."
-          }
-        }
-      }
-    },
-    "Sempere makes a new post-quantum key (AGE-SECRET-KEY-PQ-1…) on this device and shows it once, after the vault is created. Save it: without it, or a passphrase copy, the vault cannot be opened." : {
-      "comment" : "Footer of the key choice: generate a new key",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sempere crea una clave poscuántica nueva (AGE-SECRET-KEY-PQ-1…) en este dispositivo y la muestra una vez, después de crear la bóveda. Guárdala: sin ella, o sin una copia con frase de contraseña, la bóveda no se puede abrir."
           }
         }
       }
@@ -16685,18 +15447,6 @@
         }
       }
     },
-    "Shown once. Put it on the other device now (paste it when it asks for the key) or save it below; nothing here can show it again. The clipboard is cleared after three minutes." : {
-      "comment" : "Footer under a newly created secret key (Mac keys window)",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se muestra una sola vez. Llévala ahora al otro dispositivo (pégala cuando pida la clave) o guárdala abajo; aquí no se podrá volver a ver. El portapapeles se vacía a los tres minutos."
-          }
-        }
-      }
-    },
     "Shown once. Put it on the other device now (paste it when it asks for the key); nothing here can show it again. The clipboard is cleared after three minutes." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -16704,18 +15454,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Solo se muestra una vez. Ponla ahora en el otro dispositivo (pégala cuando pida la clave); aquí no se puede volver a mostrar. El portapapeles se vacía al cabo de tres minutos."
-          }
-        }
-      }
-    },
-    "Shown once: nothing here can show it again. Paste it on the other device when it asks for the key, or save it below. The clipboard is cleared after three minutes." : {
-      "comment" : "Footer under a newly created secret key",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se muestra una sola vez: aquí no se podrá volver a ver. Pégala en el otro dispositivo cuando pida la clave o guárdala abajo. El portapapeles se vacía a los tres minutos."
           }
         }
       }
@@ -17479,6 +16217,18 @@
         }
       }
     },
+    "Suggest a Passphrase" : {
+      "comment" : "New Vault: fill in seven random words",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sugerir una frase de contraseña"
+          }
+        }
+      }
+    },
     "Summary area" : {
       "comment" : "Paper parameter",
       "extractionState" : "manual",
@@ -17818,17 +16568,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hacer foto…"
-          }
-        }
-      }
-    },
-    "Taken off the list without the vault's key" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quitado de la lista sin la clave de la bóveda"
           }
         }
       }
@@ -18256,14 +16995,13 @@
         }
       }
     },
-    "That is a classic AGE-SECRET-KEY-1… key, which is not quantum-safe. Use a post-quantum key (AGE-SECRET-KEY-PQ-1…) or generate one." : {
-      "comment" : "Library error for a classic secret key",
+    "That is a classic AGE-SECRET-KEY-1… key, which is not quantum-safe. Use a post-quantum recovery key (AGE-SECRET-KEY-PQ-1…) or generate one." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Es una clave AGE-SECRET-KEY-1… clásica, que no es resistente a la computación cuántica. Usa una clave poscuántica (AGE-SECRET-KEY-PQ-1…) o genera una."
+            "value" : "Esa es una clave clásica AGE-SECRET-KEY-1…, que no es segura frente a ordenadores cuánticos. Usa una clave de recuperación poscuántica (AGE-SECRET-KEY-PQ-1…) o genera una."
           }
         }
       }
@@ -18280,17 +17018,6 @@
         }
       }
     },
-    "That is a classic age1… key, which is not quantum-safe. Create a new key instead (here, or with age-keygen -pq) and use its age1pq1… recipient." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Es una clave age1… clásica, que no es resistente a la computación cuántica. Crea una clave nueva (aquí o con age-keygen -pq) y usa su destinatario age1pq1…"
-          }
-        }
-      }
-    },
     "That is a folder inside the vault “%@”. Choose “%@” itself." : {
       "comment" : "Both %@ are the same vault folder name",
       "extractionState" : "manual",
@@ -18303,17 +17030,6 @@
         }
       }
     },
-    "That is not a post-quantum key. It must start with age1pq1…; create a new key on the other device." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No es una clave poscuántica. Debe empezar por age1pq1…; crea una clave nueva en el otro dispositivo."
-          }
-        }
-      }
-    },
     "That is not an age key. Paste the secret key, AGE-SECRET-KEY-PQ-1…, or choose a key file." : {
       "comment" : "Existing key input is not recognized",
       "extractionState" : "manual",
@@ -18322,28 +17038,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No es una clave de age. Pega la clave secreta, AGE-SECRET-KEY-PQ-1…, o elige un archivo de clave."
-          }
-        }
-      }
-    },
-    "That is the key this vault was unlocked with. To replace it, add a new key for this device, unlock with it, then remove this one." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Es la clave con la que se desbloqueó esta bóveda. Para sustituirla, añade una clave nueva para este dispositivo, desbloquea con ella y luego elimina esta."
-          }
-        }
-      }
-    },
-    "That is the key this vault was unlocked with. Unlock with another key to remove it." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Es la clave con la que se desbloqueó esta bóveda. Desbloquéala con otra clave para quitarla."
           }
         }
       }
@@ -18380,17 +17074,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ese archivo de clave está dañado."
-          }
-        }
-      }
-    },
-    "That key is not one of the vault's keys." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esa clave no es una de las claves de la bóveda."
           }
         }
       }
@@ -18452,24 +17135,13 @@
         }
       }
     },
-    "That text holds no AGE-SECRET-KEY-PQ-1… identity." : {
+    "That text holds no device key file and no AGE-SECRET-KEY-PQ-1… identity." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ese texto no contiene ninguna clave (AGE-SECRET-KEY-PQ-1…)."
-          }
-        }
-      }
-    },
-    "That text is not an age1pq1… recipient." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ese texto no es un destinatario age1pq1…"
+            "value" : "Ese texto no contiene ningún archivo de clave de dispositivo ni ninguna identidad AGE-SECRET-KEY-PQ-1…."
           }
         }
       }
@@ -18706,14 +17378,26 @@
         }
       }
     },
-    "The copy is kept in the vault, on its storage: anyone who can read the storage can try passphrases on it offline. Use five or more random words, a password from your password manager, or about 16 random characters." : {
+    "The copy is kept in the vault, on its storage: anyone who can read the storage can try passphrases on it offline. Use Suggest a Passphrase (seven random words), six or more random words of your own, a password from your password manager, or about 16 random characters." : {
       "comment" : "Footnote under the toggle that stores the key in the vault under a passphrase",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La copia se guarda en la bóveda, en su almacenamiento: quien pueda leer el almacenamiento puede probar frases de contraseña sin conexión. Usa cinco o más palabras al azar, una contraseña de tu gestor de contraseñas o unos 16 caracteres al azar."
+            "value" : "La copia se guarda en la bóveda, en su almacenamiento: quien pueda leer el almacenamiento puede probar frases de contraseña sin conexión. Usa Sugerir una frase de contraseña (siete palabras al azar), seis o más palabras al azar elegidas por ti, una contraseña de tu gestor de contraseñas o unos 16 caracteres al azar."
+          }
+        }
+      }
+    },
+    "The copy is kept in the vault, on its storage: anyone who can read the storage can try passphrases on it offline. Use six or more random words, a password from your password manager, or about 16 random characters." : {
+      "comment" : "Footnote under the toggle that stores the key in the vault under a passphrase",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La copia se guarda en la bóveda, en su almacenamiento: quien pueda leer el almacenamiento puede probar frases de contraseña sin conexión. Usa seis o más palabras al azar, una contraseña de tu gestor de contraseñas o unos 16 caracteres al azar."
           }
         }
       }
@@ -18937,17 +17621,6 @@
         }
       }
     },
-    "The key this device unlocked with is not in the list, so a repair from here could lock this device out. Repair it from another device, or with `sempere vault recipients repair --keep`." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La clave con la que se desbloqueó este dispositivo no está en la lista, así que una reparación desde aquí podría dejarlo sin acceso. Repárala desde otro dispositivo o con `sempere vault recipients repair --keep`."
-          }
-        }
-      }
-    },
     "The key this device unlocked “%@” with." : {
       "comment" : "Footer in Save Key; %@ is the vault's name",
       "extractionState" : "manual",
@@ -18984,17 +17657,6 @@
         }
       }
     },
-    "The kit contains this vault's secret key. Print it and keep it somewhere safe; do not leave the PDF in cloud storage." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El kit contiene la clave secreta de esta bóveda. Imprímelo y guárdalo en un lugar seguro; no dejes el PDF en un almacenamiento en la nube."
-          }
-        }
-      }
-    },
     "The language model could not be downloaded: %@" : {
       "comment" : "Settings ▸ Transcription; the error text follows (English)",
       "extractionState" : "manual",
@@ -19003,18 +17665,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No se ha podido descargar el modelo de idioma: %@"
-          }
-        }
-      }
-    },
-    "The list of devices lost its authentication: someone who can change the vault's folder removed it." : {
-      "comment" : "Device list alert: what happened",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La lista de dispositivos ha perdido su autenticación: alguien que puede cambiar la carpeta de la bóveda la ha quitado."
           }
         }
       }
@@ -19124,13 +17774,13 @@
         }
       }
     },
-    "The passphrase opens none of this vault's key files." : {
+    "The passphrase does not open this vault's recovery key copy." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La frase de contraseña no abre ningún archivo de clave de esta bóveda."
+            "value" : "La frase de contraseña no abre la copia de la clave de recuperación de esta bóveda."
           }
         }
       }
@@ -19143,6 +17793,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La grabación se conserva en este dispositivo, y Sempere vuelve a intentar guardarla cada vez que se abre."
+          }
+        }
+      }
+    },
+    "The recovery key is on the kit printed when the vault was created; no device keeps it. It opens the vault read-only." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La clave de recuperación está en el kit impreso al crear la bóveda; ningún dispositivo la guarda. Abre la bóveda solo para lectura."
           }
         }
       }
@@ -19373,17 +18034,6 @@
         }
       }
     },
-    "The vault is already encrypted to that key." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La bóveda ya está cifrada con esa clave."
-          }
-        }
-      }
-    },
     "The vault is not complete: restore again from another copy of the backup to finish it." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -19407,13 +18057,13 @@
         }
       }
     },
-    "The vault needs at least one key. Add another before removing this one." : {
+    "The vault keeps a copy of its recovery key under a passphrase when one was chosen at its creation. It opens the vault read-only. To write from this device, it must join the vault; that is not available in the app yet." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La bóveda necesita al menos una clave. Añade otra antes de quitar esta."
+            "value" : "La bóveda guarda una copia de su clave de recuperación con frase de contraseña si se eligió una al crearla. Abre la bóveda solo para lectura. Para escribir desde este dispositivo, este debe unirse a la bóveda; eso aún no está disponible en la app."
           }
         }
       }
@@ -19441,13 +18091,14 @@
         }
       }
     },
-    "The vault was closed before the change finished. It finishes when the vault is opened and its keys are changed again." : {
+    "The vault was created, but this device's key could not be saved in the Keychain: %@. Once the vault is closed, this device can only read it with the recovery key." : {
+      "comment" : "The error text follows (English)",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La bóveda se cerró antes de terminar el cambio. Se terminará cuando se abra la bóveda y se vuelvan a cambiar sus claves."
+            "value" : "La bóveda se ha creado, pero la clave de este dispositivo no se ha podido guardar en el Llavero: %@. Cuando se cierre la bóveda, este dispositivo solo podrá leerla con la clave de recuperación."
           }
         }
       }
@@ -19476,17 +18127,6 @@
         }
       }
     },
-    "The vault's device list checks, or it cannot be repaired from this device. Nothing was changed." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La lista de dispositivos de la bóveda es correcta o no se puede reparar desde este dispositivo. No se ha cambiado nada."
-          }
-        }
-      }
-    },
     "The vault's device list on the server was changed elsewhere. It was kept; notes still upload. Download the vault again to get the change." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -19509,14 +18149,35 @@
         }
       }
     },
-    "The vault's key was replaced in a way this device cannot confirm." : {
-      "comment" : "Device list alert: what happened",
+    "The vault's keys were changed in a way this version of Sempere cannot check yet, or an older list of devices was put back." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La clave de la bóveda se ha sustituido de una forma que este dispositivo no puede confirmar."
+            "value" : "Las claves de la bóveda se cambiaron de un modo que esta versión de Sempere aún no puede comprobar, o se ha vuelto a poner una lista de dispositivos anterior."
+          }
+        }
+      }
+    },
+    "The vault's list of devices does not belong to the vault this device knows by that name, or to its recovery kit." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La lista de dispositivos de la bóveda no pertenece a la bóveda que este dispositivo conoce con ese nombre, ni a su kit de recuperación."
+          }
+        }
+      }
+    },
+    "The vault's recovery key was shown once, when the vault was created: keep its printed kit, or the key in a password manager, somewhere apart from this device. No device keeps it; it opens the vault read-only." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La clave de recuperación de la bóveda se mostró una vez, al crear la bóveda: guarda su kit impreso, o la clave en un gestor de contraseñas, en un lugar aparte de este dispositivo. Ningún dispositivo la guarda; abre la bóveda solo para lectura."
           }
         }
       }
@@ -19816,29 +18477,6 @@
         }
       }
     },
-    "This attachment is not downloaded from %@ yet. Try again in a moment." : {
-      "comment" : "%@ is a server's host name",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Este adjunto aún no se ha descargado de %@. Vuelve a intentarlo en un momento."
-          }
-        }
-      }
-    },
-    "This attachment is not downloaded from iCloud Drive yet. Try again in a moment." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Este adjunto aún no se ha descargado de iCloud Drive. Vuelve a intentarlo en un momento."
-          }
-        }
-      }
-    },
     "This build of Sempere cannot use the Keychain (missing entitlement)." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -19896,6 +18534,63 @@
         }
       }
     },
+    "This device gets its own key, kept in its Keychain, and becomes the vault's home. Paste a secret key that starts with AGE-SECRET-KEY-PQ-1 to be the vault's recovery key (the whole output of age-keygen -pq works too), or choose a key file. A public key (age1pq1…) cannot open a vault, and classic keys (AGE-SECRET-KEY-1…) are not accepted." : {
+      "comment" : "Footer of the recovery key choice: use an existing key",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo recibe su propia clave, guardada en su Llavero, y pasa a ser el principal de la bóveda. Pega una clave secreta que empiece por AGE-SECRET-KEY-PQ-1 para que sea la clave de recuperación de la bóveda (también sirve toda la salida de age-keygen -pq) o elige un archivo de clave. Una clave pública (age1pq1…) no puede abrir una bóveda, y no se aceptan claves clásicas (AGE-SECRET-KEY-1…)."
+          }
+        }
+      }
+    },
+    "This device gets its own key, kept in its Keychain, and becomes the vault's home. Sempere also makes the vault's recovery key (AGE-SECRET-KEY-PQ-1…) and shows it once, after the vault is created: save it or print its kit. No device keeps it, and without it nobody can open the vault if this device is lost." : {
+      "comment" : "Footer of the recovery key choice: generate a new key",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo recibe su propia clave, guardada en su Llavero, y pasa a ser el principal de la bóveda. Sempere también crea la clave de recuperación de la bóveda (AGE-SECRET-KEY-PQ-1…) y la muestra una vez, después de crear la bóveda: guárdala o imprime su kit. Ningún dispositivo la guarda, y sin ella nadie podrá abrir la bóveda si se pierde este dispositivo."
+          }
+        }
+      }
+    },
+    "This device has no record of the vault's devices yet, and nothing to check the list against." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo aún no tiene registro de los dispositivos de la bóveda ni nada con lo que comprobar la lista."
+          }
+        }
+      }
+    },
+    "This device has not joined the vault: the key is neither one of its devices' keys nor its recovery key." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo no se ha unido a la bóveda: la clave no es la de ninguno de sus dispositivos ni su clave de recuperación."
+          }
+        }
+      }
+    },
+    "This device is the vault's home: it manages the vault's devices." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este dispositivo es el principal de la bóveda: gestiona sus dispositivos."
+          }
+        }
+      }
+    },
     "This device's changes are uploaded first. Then the vault is downloaded from the server, with the notes other devices uploaded, and replaces this device's copy. Open notes close meanwhile." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -19919,6 +18614,17 @@
         }
       }
     },
+    "This device's key file opens the vault to read and write. The recovery key opens it read-only." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El archivo de clave de este dispositivo abre la bóveda para leer y escribir. La clave de recuperación la abre solo para lectura."
+          }
+        }
+      }
+    },
     "This device's key is no longer one of the vault's keys, so the vault was closed. Ask a device that still has the vault to add this device again." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -19926,17 +18632,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La llave de este dispositivo ya no es una de las llaves de la bóveda, así que la bóveda se cerró. Pide a un dispositivo que aún tenga la bóveda que vuelva a añadir este dispositivo."
-          }
-        }
-      }
-    },
-    "This device's key: always kept" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clave de este dispositivo: siempre se conserva"
           }
         }
       }
@@ -20034,18 +18729,6 @@
         }
       }
     },
-    "This key unlocked the vault" : {
-      "comment" : "Badge next to a key in the key window",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esta clave ha desbloqueado la bóveda"
-          }
-        }
-      }
-    },
     "This note cannot be edited." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -20120,18 +18803,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Esta nota está en Eliminadas recientemente."
-          }
-        }
-      }
-    },
-    "This note is not downloaded from %@ yet, so it was not opened (it would look empty or incomplete). Try again in a moment." : {
-      "comment" : "%@ is a server's host name",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esta nota aún no se ha descargado de %@, así que no se ha abierto (se vería vacía o incompleta). Vuelve a intentarlo en un momento."
           }
         }
       }
@@ -20238,13 +18909,13 @@
         }
       }
     },
-    "This vault has no passphrase-protected key file." : {
+    "This vault has no passphrase copy of its recovery key." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esta bóveda no tiene ningún archivo de clave protegido con frase de contraseña."
+            "value" : "Esta bóveda no tiene ninguna copia de su clave de recuperación con frase de contraseña."
           }
         }
       }
@@ -20374,17 +19045,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Esta ventana es de una nota de otra bóveda. Ciérrala o vuelve a abrir esa bóveda."
-          }
-        }
-      }
-    },
-    "This window does not hold a key of the vault, so it cannot print a recovery kit." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esta ventana no tiene ninguna clave de la bóveda, así que no puede imprimir un kit de recuperación."
           }
         }
       }
@@ -20697,18 +19357,6 @@
         }
       }
     },
-    "Trust This List" : {
-      "comment" : "Recipients alert button: record the vault's current device list as trusted on this device",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Confiar en esta lista"
-          }
-        }
-      }
-    },
     "Trust it only if this fingerprint is exactly the one your server shows. Anyone who can intercept the connection could present a certificate like this one, and would then see your password and encrypted files.\n\n%@\n%@" : {
       "comment" : "The values are the certificate's subject and fingerprint",
       "extractionState" : "manual",
@@ -20966,6 +19614,17 @@
         }
       }
     },
+    "Unlock a vault to see this device's key." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desbloquea una bóveda para ver la clave de este dispositivo."
+          }
+        }
+      }
+    },
     "Unlock a vault to sync settings with it." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -20973,18 +19632,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Desbloquea una bóveda para sincronizar los ajustes con ella."
-          }
-        }
-      }
-    },
-    "Unlock a vault with its key on this device to save the key." : {
-      "comment" : "About Your Key: why Save Key is unavailable",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Desbloquea una bóveda con su clave en este dispositivo para guardar la clave."
           }
         }
       }
@@ -21108,14 +19755,13 @@
         }
       }
     },
-    "Unnamed device" : {
-      "comment" : "Repair: a key without a label",
+    "Unlocked with the recovery key: this device is not one of the vault's devices." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dispositivo sin nombre"
+            "value" : "Desbloqueada con la clave de recuperación: este dispositivo no es uno de los dispositivos de la bóveda."
           }
         }
       }
@@ -21824,30 +20470,6 @@
         }
       }
     },
-    "When Adding a Device" : {
-      "comment" : "Settings ▸ Device Keys picker",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Al añadir un dispositivo"
-          }
-        }
-      }
-    },
-    "When Removing or Replacing a Device" : {
-      "comment" : "Settings ▸ Device Keys picker",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Al quitar o sustituir un dispositivo"
-          }
-        }
-      }
-    },
     "Where" : {
       "comment" : "New vault form: section header for the vault's location",
       "extractionState" : "manual",
@@ -21908,14 +20530,13 @@
         }
       }
     },
-    "Words count as words, not as letters: use five or more random words." : {
-      "comment" : "Passphrase hint",
+    "Words count as words, not as letters: use six or more random words." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Las palabras cuentan como palabras, no como letras: usa cinco o más palabras al azar."
+            "value" : "Las palabras cuentan como palabras, no como letras: usa seis o más palabras al azar."
           }
         }
       }
@@ -22016,17 +20637,6 @@
         }
       }
     },
-    "You are keeping a device this device never confirmed. Keep it only if you know it is yours." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vas a conservar un dispositivo que este dispositivo nunca confirmó. Consérvalo solo si sabes que es tuyo."
-          }
-        }
-      }
-    },
     "You may use, study, share and change Sempere under the GPL v3 or any later version. An App Store exception lets the app be distributed under the App Store's terms." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -22086,29 +20696,6 @@
         }
       }
     },
-    "Your notes can still be read. Nothing is written to this vault until this is fixed." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tus notas se pueden seguir leyendo. No se escribe nada en esta bóveda hasta que se arregle."
-          }
-        }
-      }
-    },
-    "Your other devices signed in to the same Apple Account get the key too. The Keychain cannot require %@ for synced items, so Sempere asks for %@ or your passcode itself before using it; the key is otherwise protected by iCloud Keychain's end-to-end encryption and your device passcode. Synced keys may not be listed in the Passwords app." : {
-      "comment" : "Unlock sheet footer of the iCloud Keychain switch; both values are the biometry (Face ID, Touch ID, or “Face ID or Touch ID”)",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tus otros dispositivos con sesión iniciada en la misma cuenta de Apple también reciben la clave. El Llavero no puede exigir %1$@ para los elementos sincronizados, así que Sempere pide %2$@ o tu código antes de usarla; por lo demás, la clave está protegida por el cifrado de extremo a extremo del Llavero de iCloud y por el código de tu dispositivo. Puede que las claves sincronizadas no aparezcan en la app Contraseñas."
-          }
-        }
-      }
-    },
     "Zip Archive" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -22156,11 +20743,6 @@
         }
       }
     },
-    "age1pq1…" : {
-      "comment" : "Placeholder: the prefix of a post-quantum age recipient; not translated",
-      "extractionState" : "manual",
-      "shouldTranslate" : false
-    },
     "cannot write a copy" : {
       "comment" : "Why a PDF cannot be added: lower case, no final period (shown inside a sentence)",
       "extractionState" : "manual",
@@ -22202,66 +20784,6 @@
         }
       }
     },
-    "iCloud Drive has not delivered %@ for %@. Check that this device is online and signed in to iCloud Drive. Sempere keeps trying." : {
-      "comment" : "First %@ is a number of notes, second a number of seconds",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "iCloud Drive no ha entregado %@ en %@. Comprueba que este dispositivo tiene conexión y ha iniciado sesión en iCloud Drive. Sempere sigue intentándolo."
-          }
-        }
-      }
-    },
-    "iCloud Drive has not delivered %lld notes yet. Every note must be on this device before the vault can be re-encrypted. Check that it is online and try again." : {
-      "comment" : "Migration error",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "iCloud Drive has not delivered %lld note yet. Every note must be on this device before the vault can be re-encrypted. Check that it is online and try again."
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "iCloud Drive has not delivered %lld notes yet. Every note must be on this device before the vault can be re-encrypted. Check that it is online and try again."
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "plural" : {
-              "many" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "iCloud Drive aún no ha entregado %lld de notas. Todas las notas deben estar en este dispositivo antes de volver a cifrar la bóveda. Comprueba que tiene conexión y vuelve a intentarlo."
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "iCloud Drive aún no ha entregado %lld nota. Todas las notas deben estar en este dispositivo antes de volver a cifrar la bóveda. Comprueba que tiene conexión y vuelve a intentarlo."
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "iCloud Drive aún no ha entregado %lld notas. Todas las notas deben estar en este dispositivo antes de volver a cifrar la bóveda. Comprueba que tiene conexión y vuelve a intentarlo."
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "iCloud Drive has not delivered all of this note's files yet. Try again in a moment." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -22281,30 +20803,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "iCloud Drive aún no ha entregado todas las notas (faltan: %lld), y una copia debe contenerlas todas. Comprueba que este dispositivo tiene conexión y vuelve a intentarlo."
-          }
-        }
-      }
-    },
-    "iCloud Drive has not listed this note's files yet (%lld missing). Try again in a moment." : {
-      "comment" : "The number is files missing. [not-plural]: the Spanish avoids number agreement (sin listar: N)",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "iCloud Drive aún no ha listado los archivos de esta nota (sin listar: %lld). Vuelve a intentarlo en un momento."
-          }
-        }
-      }
-    },
-    "iCloud Drive holds two versions of “%@” that Sempere cannot merge (both devices changed the vault's keys). The version on this device is used." : {
-      "comment" : "%@ is a vault file name such as vault.json",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "iCloud Drive tiene dos versiones de «%@» que Sempere no puede combinar (los dos dispositivos cambiaron las claves de la bóveda). Se usa la versión de este dispositivo."
           }
         }
       }
@@ -22573,18 +21071,6 @@
         }
       }
     },
-    "“%@” could not be downloaded from %@: %@" : {
-      "comment" : "%1$@ is a file name, %2$@ a server's host name, %3$@ the reason",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se ha podido descargar “%1$@” de %2$@: %3$@"
-          }
-        }
-      }
-    },
     "“%@” exists already: it will be selected." : {
       "comment" : "New Notebook: the typed notebook exists; %@ is its path",
       "extractionState" : "manual",
@@ -22741,14 +21227,13 @@
         }
       }
     },
-    "“%@” is ready. Save this secret key now: anyone with it can read the vault, and without it (or a passphrase-wrapped copy) the vault cannot be opened again." : {
-      "comment" : "%@ is the new vault's name",
+    "“%@” is ready. Save its recovery key now, or print its kit: anyone with it can read the vault, and without it the vault cannot be opened if this device is lost." : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“%@” está lista. Guarda esta clave secreta ahora: cualquiera que la tenga puede leer la bóveda, y sin ella (o sin una copia protegida con frase de contraseña) la bóveda no se podrá volver a abrir."
+            "value" : "«%@» está lista. Guarda ahora su clave de recuperación o imprime su kit: cualquiera que la tenga puede leer la bóveda, y sin ella la bóveda no se podrá abrir si se pierde este dispositivo."
           }
         }
       }

@@ -88,7 +88,7 @@ extension Vault {
     @discardableResult
     public func checkpoint(_ noteId: UUID, name: String?, deviceState: URL, app: String,
                            wall: Date = Date()) throws -> Revision {
-        guard canRead else { throw isLocked ? VaultError.locked : VaultError.noIdentities }
+        guard canRead else { throw VaultError.locked }
         return try writeDelta([], to: noteId, loaded: try loadNote(noteId), deviceState: deviceState, app: app, wall: wall,
                               checkpoint: Checkpoint(name: name))
     }

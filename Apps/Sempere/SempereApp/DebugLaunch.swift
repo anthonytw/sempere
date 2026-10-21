@@ -9,7 +9,8 @@ import UIKit
 /// run can be scripted (`xcrun simctl launch` with `SIMCTL_CHILD_` prefixes):
 ///
 /// - `SEMPERE_DEBUG_VAULT`: path of a `.sempere` folder.
-/// - `SEMPERE_DEBUG_IDENTITY`: path of an age identity file.
+/// - `SEMPERE_DEBUG_IDENTITY`: path of a device key file (`DeviceKeys`, read-write), or of a plain
+///   age identity file (the recovery key: read-only).
 /// - `SEMPERE_DEBUG_NOTE`: note id (or a unique prefix of it) to open.
 /// - `SEMPERE_DEBUG_SCROLL_Y`: page y (points) to scroll the canvas to.
 /// - `SEMPERE_DEBUG_ZOOM`: zoom as a multiple of the fit-width zoom.

@@ -254,7 +254,7 @@ extension AppModel {
             return
         }
         if isVaultReadOnly { settingsSyncProblem = .readOnly; return }
-        if recipientsAlert != nil || vault.recipientsStatus.problem != nil { settingsSyncProblem = .untrustedRecipients; return }
+        if listAlert != nil || vault.listStatus.problem != nil { settingsSyncProblem = .untrustedRecipients; return }
         do {
             // Under the copy's write lock: a sync run merging `settings.age` never interleaves (`VaultFileLock`).
             // Read again under the lock (F3): a sync run that merged another device's change since this pass
@@ -275,7 +275,7 @@ extension AppModel {
             if (try? ensureCurrent(gen)) != nil { settingsSyncProblem = nil }
         } catch VaultError.readOnly {
             settingsSyncProblem = .readOnly
-        } catch VaultError.untrustedRecipients {
+        } catch VaultError.untrustedList {
             settingsSyncProblem = .untrustedRecipients
         } catch {
             settingsSyncProblem = .failed(String(describing: error))

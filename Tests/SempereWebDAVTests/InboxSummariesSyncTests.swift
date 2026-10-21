@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import XCTest
+import VaultTestSupport
 @testable import Sempere
 @testable import SempereSync
 @testable import SempereWebDAV
@@ -314,7 +315,7 @@ final class InboxSummariesOverMemoryTests: InboxSummariesScenarioCase {
                                device: DeviceID("aaaaaaaa"))
         let y = try SyncDevice(name: "Y", root: tmp.appendingPathComponent("Y"), identity: ids[1], remote: r0,
                                device: DeviceID("bbbbbbbb"))
-        _ = try Vault.create(at: x.folder, recipients: ids.map(\.recipient), labels: ["X", "Y"], identities: [x.identity])
+        _ = try TestVaults.create(at: x.folder, identities: ids, names: ["X", "Y"])
         let runs: [(SyncDevice, MemoryRemote, String)] = [(x, r0, "R0"), (x, r1, "R1"), (y, r1, "R1"), (y, r0, "R0")]
         func round() throws -> [String] {
             try runs.compactMap { d, r, name in

@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import XCTest
+import VaultTestSupport
 @testable import Sempere
 
 /// The committed fixture `Fixtures/newer.sempere`: a synthetic vault of a
@@ -69,9 +70,7 @@ enum NewerFixture {
     }
 
     static func generate(at url: URL, identity: NativeIdentity) throws {
-        let vault = try Vault.create(at: url, recipients: [identity.recipient],
-                                     labels: ["Sempere test fixture (throwaway, test-only key)"],
-                                     identities: [identity], vaultId: vaultId, created: SampleFixture.at(0))
+        let vault = try TestVaults.create(at: url, identities: [identity], names: ["Sempere test fixture (throwaway, test-only key)"], vaultId: vaultId, created: SampleFixture.at(0))
         let p1 = UUID(uuidString: id(1))!, p2 = UUID(uuidString: id(2))!, p3 = UUID(uuidString: id(3))!
         func v1Stroke(_ n: Int) -> Stroke { SampleFixture.stroke(n) }
 
@@ -129,13 +128,15 @@ enum NewerFixture {
         var m = vault.manifest
         m.format = format
         m.features = [feature]
-        _ = try Vault.writeManifest(m, to: vault.manifestURL, replacing: true, secret: try vault.requireSecret())
+        // As its home would write it: tagged and signed (format.md §15.3).
+        try Vault.seal(&m, key: try vault.requireSecret(), signing: TestVaults.signing(identity), author: m.author)
+        _ = try Vault.writeManifest(m, to: vault.manifestURL, replacing: true)
     }
 }
 
 final class NewerFormatTests: VaultTestCase {
     static func sampleIdentity() throws -> NativeIdentity {
-        try IdentityFile.parse(String(contentsOf: FixtureTests.bundled("sample.key"), encoding: .utf8))
+        try SampleFixture.bundledKeys().device.nativeIdentity
     }
 
     /// A private copy of the committed fixture.
@@ -244,9 +245,9 @@ final class NewerFormatTests: VaultTestCase {
             _ = try vault.collectBlobs(note: NewerFixture.mixed, state: &state, now: .distantFuture, retention: 0)
         }
         refused("blob repair") { _ = try vault.repairBlobs(note: NewerFixture.mixed) }
-        refused("add recipient") { try vault.addRecipient(pqIdentity().recipient, label: "x") }
-        refused("rewrap resume") { try vault.resumeRewrap() }
-        refused("identity file") { try vault.writeIdentityFile(identity, passphrase: "p", workFactor: 15, replace: true) }
+        refused("approve device") { try TestVaults.approve(pqIdentity(), into: &vault) }
+        refused("rename device") { try vault.renameDevice(id: vault.devices[0].id ?? "", to: "x") }
+        refused("label") { try vault.setLabel("x") }
         refused("capture profile") { _ = try vault.captureProfile(device: DeviceID("0f0f0f0f")!) }
         XCTAssertEqual(try snapshotOfFiles(url), before, "nothing in the vault changed")
     }
@@ -280,9 +281,8 @@ final class NewerFormatTests: VaultTestCase {
         }
     }
 
-    /// A version-1 vault whose tags were stripped (format.md §2.1) and whose
-    /// newer revision was read is read-only (§7.3): no write, not even a
-    /// repair, touches `vault.json`.
+    /// A version-1 vault whose tag was broken (format.md §15.3) and whose newer revision was read is
+    /// read-only (§7.3): no write touches `vault.json`.
     func testReadOnlyVaultIsNeverTagged() throws {
         let id = pqIdentity()
         let created = try makeVault(id)
@@ -292,25 +292,24 @@ final class NewerFormatTests: VaultTestCase {
         var d = NewerFixture.envelope(note, NewerFixture.devN, 1, Self.future, "delta")
         d["ops"] = [["op": "teleport"]]
         try NewerFixture.writeRaw(created, d, note: note, name: NewerFixture.name(NewerFixture.devN, 1, Self.future, .delta))
-        // Its tags stripped as well: tampered, and repaired by nobody here.
+        // Its list tag broken as well: refused for writing.
         let manifestURL = created.url.appendingPathComponent("vault.json")
-        var m = try VaultManifest.decode(Data(contentsOf: manifestURL))
-        m.recipientsTag = nil
-        m.markersTag = nil
-        try m.encoded().write(to: manifestURL)
+        var obj = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any])
+        obj["listTag"] = String(repeating: "0", count: 64)
+        try JSONSerialization.data(withJSONObject: obj).write(to: manifestURL)
         let untagged = try Data(contentsOf: manifestURL)
 
         var vault = try Vault.open(at: created.url, identities: [id])
-        XCTAssertEqual(vault.recipientsStatus.problem?.reason, .tagRemoved)
+        XCTAssertEqual(vault.listStatus.problem?.reason, .listTag)
         _ = try vault.reconstruct(noteId: note)   // reads the newer revision
         XCTAssertTrue(vault.isReadOnly)
         XCTAssertThrowsError(try vault.apply([.setMeta(.title("x"))], to: note, deviceState: device, app: "t")) {
             guard case .readOnly = $0 as? VaultError else { return XCTFail("\($0)") }
         }
-        XCTAssertThrowsError(try vault.repairRecipients(keeping: [id.recipient.string])) {
+        XCTAssertThrowsError(try vault.setLabel("x")) {
             guard case .readOnly = $0 as? VaultError else { return XCTFail("\($0)") }
         }
-        XCTAssertEqual(try Data(contentsOf: manifestURL), untagged, "vault.json is never tagged")
+        XCTAssertEqual(try Data(contentsOf: manifestURL), untagged, "vault.json is never rewritten")
     }
 
     func testUnmarkedRevisionWithUnknownOpStillFailsClosed() throws {
@@ -403,11 +402,14 @@ final class NewerFormatTests: VaultTestCase {
         XCTAssertEqual(v.readOnlyReasons.vaultFormat, "sempere/7")
         XCTAssertThrowsError(try v.writeBlob(note: UUID(), Data(), type: "text/plain"))
 
-        // A recipient type this version does not know: still opens (read-only).
+        // A key type this version does not know: still opens (read-only).
         try rewrite {
-            var r = $0["recipients"] as! [[String: Any]]
-            r.append(["key": "age1future1qqqq", "label": "", "added": "2026-10-04T16:20:00Z"])
-            $0["recipients"] = r
+            var r = $0["keys"] as! [[String: Any]]
+            var future = r[0]
+            future["key"] = "age1future1qqqq"
+            future["id"] = "ffffffff"
+            r.append(future)
+            $0["keys"] = r
         }
         v = try Vault.open(at: url, identities: [id])
         XCTAssertTrue(v.isReadOnly)
@@ -426,25 +428,24 @@ final class NewerFormatTests: VaultTestCase {
                 XCTAssertEqual($0 as? VaultError, .unsupportedFormat(format))
             }
         }
-        try rewrite { $0["format"] = "sempere/3"; $0["vaultSecret"] = nil }
+        try rewrite { $0["format"] = "sempere/3"; $0["keys"] = nil }
         XCTAssertThrowsError(try Vault.open(at: url, identities: [id])) {
             XCTAssertEqual($0 as? VaultError, .unsupportedFormat("sempere/3"))
         }
     }
 
-    func testRecipientChangeRefusesANewerManifestSyncedInAfterOpen() throws {
+    func testListChangeRefusesANewerManifestSyncedInAfterOpen() throws {
         let id = pqIdentity()
-        var vault = try makeVault(id)
+        var vault = try TestVaults.create(at: vaultURL(), identities: [id])
         let m = vault.url.appendingPathComponent("vault.json")
-        var manifest = try VaultManifest.decode(Data(contentsOf: m))
-        manifest.format = "sempere/2"
-        try manifest.encoded().write(to: m)
+        var obj = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: m)) as? [String: Any])
+        obj["format"] = "sempere/2"
+        try JSONSerialization.data(withJSONObject: obj).write(to: m)
         XCTAssertFalse(vault.isReadOnly, "the open value has the old manifest")
-        XCTAssertThrowsError(try vault.addRecipient(pqIdentity().recipient, label: "x")) {
+        XCTAssertThrowsError(try TestVaults.approve(pqIdentity(), into: &vault)) {
             guard case .readOnly = $0 as? VaultError else { return XCTFail("\($0)") }
         }
-        XCTAssertEqual(try VaultManifest.decode(Data(contentsOf: m)).recipients.count, 1)
-        XCTAssertFalse(vault.pendingRewrap)
+        XCTAssertEqual(try Vault.readManifest(Data(contentsOf: m)).devices.count, 1)
     }
 
     // MARK: - Bounds (format.md §9)
@@ -476,7 +477,7 @@ final class NewerFormatTests: VaultTestCase {
         }
         let target = FixtureTests.sourceFixtures.appendingPathComponent("newer.sempere")
         try? FileManager.default.removeItem(at: target)
-        try NewerFixture.generate(at: target, identity: try Self.sampleIdentity())
+        try NewerFixture.generate(at: target, identity: try SampleFixture.keys(in: FixtureTests.sourceFixtures).device.nativeIdentity)
     }
 
     func testFixtureMatchesAFreshGeneration() throws {

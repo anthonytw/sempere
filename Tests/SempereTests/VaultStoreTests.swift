@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import XCTest
+import VaultTestSupport
 @testable import Sempere
 
 final class VaultStoreTests: VaultTestCase {
@@ -8,67 +9,70 @@ final class VaultStoreTests: VaultTestCase {
         let id = pqIdentity()
         let created = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-04T16:20:00Z"))
         let vid = UUID(uuidString: "0D1C6A1E-9A44-4A6C-8A6B-0E2A0E9B1F3C")!
-        let vault = try Vault.create(at: vaultURL(), recipients: [id.recipient], labels: ["Anthony's iPad"],
-                                     identities: [id], vaultId: vid, created: created)
+        let vault = try TestVaults.create(at: vaultURL(), identities: [id], names: ["Anthony's iPad"], vaultId: vid, created: created)
         XCTAssertTrue(FileManager.default.fileExists(atPath: vault.url.appendingPathComponent("keys").path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: vault.url.appendingPathComponent("notes").path))
 
         let raw = try Data(contentsOf: vault.url.appendingPathComponent("vault.json"))
         let obj = try XCTUnwrap(JSONSerialization.jsonObject(with: raw) as? [String: Any])
-        XCTAssertEqual(Set(obj.keys), ["format", "vaultId", "created", "recipients", "vaultSecret",
-                                       "recipientsTag", "markersTag"], "no features: this version defines none")
-        XCTAssertEqual((obj["recipientsTag"] as? String)?.count, 64)
+        XCTAssertEqual(Set(obj.keys), ["format", "vaultId", "created", "root", "epoch", "epochId", "epochRecord",
+                                       "epochRecordHash", "keys", "listTag", "epochAuthor", "epochReason", "home",
+                                       "epochSig", "markersTag", "author", "authorSig"],
+                       "no features (this version defines none), no parent at epoch 1 (format.md §15.3)")
+        XCTAssertEqual((obj["listTag"] as? String)?.count, 64)
         XCTAssertEqual((obj["markersTag"] as? String)?.count, 64)
         XCTAssertEqual(obj["format"] as? String, "sempere/1")
         XCTAssertEqual(obj["vaultId"] as? String, "0d1c6a1e-9a44-4a6c-8a6b-0e2a0e9b1f3c")
         XCTAssertEqual(obj["created"] as? String, "2026-10-04T16:20:00.000Z")
-        let r = try XCTUnwrap((obj["recipients"] as? [[String: Any]])?.first)
+        let r = try XCTUnwrap((obj["keys"] as? [[String: Any]])?.first)
         XCTAssertEqual(r["key"] as? String, id.recipient.string)
-        XCTAssertEqual(r["label"] as? String, "Anthony's iPad")
-        let secretText = try XCTUnwrap(obj["vaultSecret"] as? String)
-        XCTAssertTrue(secretText.hasPrefix("-----BEGIN AGE ENCRYPTED FILE-----\n"))
-        XCTAssertEqual(try AgeFile.decrypt(Data(secretText.utf8), with: [id]).count, 32)
+        XCTAssertEqual(r["name"] as? String, "Anthony's iPad")
+        let wrap = try XCTUnwrap(r["wrap"] as? String)
+        XCTAssertTrue(wrap.hasPrefix("-----BEGIN AGE ENCRYPTED FILE-----\n"))
+        let plaintext = String(decoding: try AgeFile.decrypt(Data(wrap.utf8), with: [id]), as: UTF8.self)
+        XCTAssertTrue(plaintext.hasPrefix("# sempere vault key: vault 0d1c6a1e-9a44-4a6c-8a6b-0e2a0e9b1f3c, epoch 1\n"),
+                      "the wrap is an age identity file (format.md §15.3)")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: vault.url.appendingPathComponent(
+            try XCTUnwrap(obj["epochRecord"] as? String)).path))
 
         let reopened = try Vault.open(at: vault.url, identities: [id])
         XCTAssertEqual(reopened.manifest, vault.manifest)
         XCTAssertEqual(reopened.secret, vault.secret)
         XCTAssertFalse(reopened.isLocked)
 
-        XCTAssertThrowsError(try Vault.create(at: vault.url, recipients: [id.recipient])) {
+        XCTAssertThrowsError(try TestVaults.create(at: vault.url, identities: [id])) {
             guard case .alreadyExists = $0 as? VaultError else { return XCTFail("\($0)") }
         }
-        XCTAssertThrowsError(try Vault.create(at: tmp.appendingPathComponent("plain"), recipients: [id.recipient])) {
+        XCTAssertThrowsError(try TestVaults.create(at: tmp.appendingPathComponent("plain"), identities: [id])) {
             XCTAssertEqual($0 as? VaultError, .invalidVaultName("plain"))
         }
         XCTAssertThrowsError(try Vault.open(at: tmp, identities: [id])) {
             guard case .notAVault = $0 as? VaultError else { return XCTFail("\($0)") }
         }
         XCTAssertThrowsError(try Vault.open(at: vault.url, identities: [pqIdentity()])) {
-            guard case .vaultSecretUndecryptable = $0 as? VaultError else { return XCTFail("\($0)") }
+            guard case .keyNotListed = $0 as? VaultError else { return XCTFail("\($0)") }
         }
     }
 
-    /// The manifest example from format.md §2 decodes.
-    /// format.md §2's example, with a whole post-quantum key where the spec
-    /// shortens it.
-    func testSpecManifestExampleParses() throws {
-        let key = pqIdentity().recipient.string
-        let json = """
-        {
-          "format": "sempere/1",
-          "vaultId": "0d1c6a1e-9a44-4a6c-8a6b-0e2a0e9b1f3c",
-          "created": "2026-10-04T16:20:00Z",
-          "recipients": [
-            { "key": "\(key)",
-              "label": "Anthony's iPad", "added": "2026-10-04T16:20:00Z" }
-          ],
-          "vaultSecret": "-----BEGIN AGE ENCRYPTED FILE-----\\n...\\n-----END AGE ENCRYPTED FILE-----\\n"
-        }
-        """
-        let m = try Vault.readManifest(Data(json.utf8))
-        XCTAssertEqual(m.recipients.map(\.label), ["Anthony's iPad"])
+    /// A new vault's `vault.json` has the shape of format.md §15.3: one device (its home) and the
+    /// recovery entry, each with a wrap; epoch 1 and its record; and only `sempere/<major>` formats read.
+    func testNewManifestHasTheKeyHierarchyShape() throws {
+        let vault = try TestVaults.create(at: vaultURL(), identities: [pqIdentity()], names: ["Anthony's iPad"],
+                                          vaultId: UUID(uuidString: "0d1c6a1e-9a44-4a6c-8a6b-0e2a0e9b1f3c")!)
+        let data = try Data(contentsOf: vault.url.appendingPathComponent("vault.json"))
+        let m = try Vault.readManifest(data)
+        XCTAssertEqual(m.keys.map(\.role), [.device, .recovery])
+        XCTAssertEqual(m.devices.map(\.name), ["Anthony's iPad"])
+        XCTAssertEqual(m.epoch, 1)
+        XCTAssertEqual(m.epochReason, "create")
+        XCTAssertEqual(m.home, m.devices[0].fingerprint)
+        XCTAssertEqual(m.epochRecord, "epochs/" + EpochRecord.fileName(epoch: 1, epochId: m.epochId))
         XCTAssertEqual(m.vaultId, UUID(uuidString: "0d1c6a1e-9a44-4a6c-8a6b-0e2a0e9b1f3c"))
-        XCTAssertThrowsError(try Vault.readManifest(Data(json.replacingOccurrences(of: "sempere/1", with: "sempere/0").utf8))) {
+        let json = String(decoding: data, as: UTF8.self)
+        for gone in ["recipients", "vaultSecret", "recipientsTag", "secretLink", "rewrapPending"] {
+            XCTAssertFalse(json.contains("\"\(gone)\""), gone)
+        }
+        XCTAssertThrowsError(try Vault.readManifest(Data(json.replacingOccurrences(of: "\"sempere/1\"", with: "\"sempere/0\"").utf8))) {
             XCTAssertEqual($0 as? VaultError, .unsupportedFormat("sempere/0"))
         }
     }
@@ -165,7 +169,7 @@ final class VaultStoreTests: VaultTestCase {
         XCTAssertThrowsError(try locked.write(sampleLog()[0])) { XCTAssertEqual($0 as? VaultError, .locked) }
         XCTAssertThrowsError(try locked.reconstruct(noteId: testNote)) { XCTAssertEqual($0 as? VaultError, .locked) }
         let report = locked.verify()
-        XCTAssertEqual(report.counts[.notChecked], log.count)
+        XCTAssertEqual(report.counts[.notChecked], log.count + 1, "and the epoch record")
         XCTAssertTrue(report.manifestOK)
     }
 
@@ -201,11 +205,10 @@ final class VaultStoreTests: VaultTestCase {
         let vault = try makeVault(id)
         let log = sampleLog()
         for r in log { try vault.write(r) }
-        try vault.writeIdentityFile(id, passphrase: "pw", workFactor: 15)
 
         var report = vault.verify()
         XCTAssertTrue(report.isHealthy, "\(report)")
-        XCTAssertEqual(report.counts[.ok], log.count + 1)
+        XCTAssertEqual(report.counts[.ok], log.count + 1, "the revisions and the epoch record")
         XCTAssertEqual(report.counts.count, 1)
 
         // 1. Storage damage: a flipped ciphertext byte.
@@ -217,7 +220,7 @@ final class VaultStoreTests: VaultTestCase {
         forged.device = devC; forged.hlc = planted.hlc
         let body = try BodyFraming.frame(json: InkJSON.encoder().encode(forged), noteId: testNote.uuidString.lowercased(),
                                          filename: planted.filename, secret: .random())
-        try AgeFile.encrypt(body, to: [id.recipient]).write(to: fileURL(vault, testNote, planted))
+        try AgeFile.encrypt(body, to: [try vault.vaultRecipient()]).write(to: fileURL(vault, testNote, planted))
         // 3. A stray file.
         try Data("hi".utf8).write(to: fileURL(vault, testNote, log[0].name).deletingLastPathComponent()
             .appendingPathComponent("stray.txt"))
@@ -225,7 +228,7 @@ final class VaultStoreTests: VaultTestCase {
         let junkName = RevisionName(hlc: HLC(millis: baseMillis + 1000, counter: 0)!, device: devC, seq: 2, kind: .delta)
         let junk = BodyFraming.frame(gzip: Data("not gzip".utf8), noteId: testNote.uuidString.lowercased(),
                                      filename: junkName.filename, secret: try XCTUnwrap(vault.secret))
-        try AgeFile.encrypt(junk, to: [id.recipient]).write(to: fileURL(vault, testNote, junkName))
+        try AgeFile.encrypt(junk, to: [try vault.vaultRecipient()]).write(to: fileURL(vault, testNote, junkName))
 
         report = vault.verify()
         XCTAssertFalse(report.isHealthy)
@@ -265,7 +268,7 @@ final class VaultStoreTests: VaultTestCase {
         forged.body = .snapshot(included: Included([devA: .init(upTo: 1_000_000)]), state: try vault.reconstruct(noteId: testNote))
         let body = try BodyFraming.frame(json: InkJSON.encoder().encode(forged), noteId: testNote.uuidString.lowercased(),
                                          filename: planted.filename, secret: .random())
-        try AgeFile.encrypt(body, to: [id.recipient]).write(to: fileURL(vault, testNote, planted))
+        try AgeFile.encrypt(body, to: [try vault.vaultRecipient()]).write(to: fileURL(vault, testNote, planted))
         XCTAssertEqual(try vault.nextSeq(noteId: testNote, device: devA), expected, "its claimed coverage is ignored")
         XCTAssertNoThrow(try vault.apply([.setMeta(.title("still editable"))], to: testNote,
                                          deviceState: tmp.appendingPathComponent("dev.json"), app: "test/0"))

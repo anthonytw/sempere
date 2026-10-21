@@ -255,7 +255,7 @@ extension Vault {
     @discardableResult
     public func dedupeStrokes(of noteId: UUID, deviceState: URL, app: String,
                               wall: Date = Date()) throws -> (conflicts: StrokeConflicts, revision: Revision?) {
-        guard canRead else { throw isLocked ? VaultError.locked : VaultError.noIdentities }
+        guard canRead else { throw VaultError.locked }
         let loaded = try loadNote(noteId)
         let conflicts = try NoteReducer.strokeConflicts(Self.strictRevisions(of: loaded))
         guard !conflicts.isEmpty else { return (conflicts, nil) }

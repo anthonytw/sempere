@@ -21,7 +21,9 @@ function vaultError(e: VaultError): string {
     case "badIdentity": return t("No valid key was found. Paste the AGE-SECRET-KEY-PQ-1… line or the whole key file.");
     case "classicIdentity": return t("This is a classic (X25519) key; Sempere vaults use post-quantum keys (AGE-SECRET-KEY-PQ-1…).");
     case "wrongKey": return t("This key does not open the vault.");
-    case "invalidVaultSecret": return withDetail(t("The vault's secret is not valid."), e);
+    case "keyNotListed": return t("This key is not one of the vault's keys: this device has not joined the vault. Use a key of a device that has, or the recovery key.");
+    case "invalidWrap": return withDetail(t("This key's copy of the vault key is not valid for this vault."), e);
+    case "tamperedList": return withDetail(t("This vault's key list does not verify under the vault's key, so it was changed; the vault is not opened."), e);
   }
 }
 

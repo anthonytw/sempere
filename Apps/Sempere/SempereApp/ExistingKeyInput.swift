@@ -9,7 +9,7 @@ enum ExistingKeyInput {
     enum Status: Equatable {
         /// Nothing given yet.
         case empty
-        /// A post-quantum secret key: the vault will be encrypted to its recipient.
+        /// A post-quantum secret key: it becomes the vault's recovery key.
         case ready(NativeIdentity)
         /// A passphrase-wrapped key file: its passphrase opens it (`unwrap`).
         case needsPassphrase(Data)
@@ -63,7 +63,7 @@ enum ExistingKeyInput {
             return String(localized: "That is too large to be a key. A key file is a few kilobytes at most.",
                           comment: "Existing key input is too large")
         case .publicKey(let key):
-            return String(localized: "\(key) is a public key: it can only encrypt to the key, not open the vault. Paste the secret key (AGE-SECRET-KEY-PQ-1…) instead, or choose “Public key only” to make a vault this device cannot open.",
+            return String(localized: "\(key) is a public key: it cannot open the vault. Paste the secret key (AGE-SECRET-KEY-PQ-1…) instead.",
                           comment: "%@ is the abbreviated age1pq1… public key the user pasted")
         case .classicPublicKey(let key):
             return String(localized: "\(key) is a classic age1… public key, which is not quantum-safe. Vaults take only post-quantum keys (AGE-SECRET-KEY-PQ-1…, from age-keygen -pq or sempere keys generate).",

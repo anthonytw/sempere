@@ -11,6 +11,9 @@ final class KeyShareMacUITests: XCTestCase {
         #if !targetEnvironment(macCatalyst)
         throw XCTSkip("Mac Catalyst only")
         #endif
+        // TODO(KH5): the key window's Save Key… is gone with the recipients format (KH2); these come
+        // back with device management in the app.
+        throw XCTSkip("Save Key… is not in the app until KH5")
         continueAfterFailure = false
     }
 

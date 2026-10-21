@@ -120,14 +120,8 @@ struct BackupVerify: ParsableCommand {
         let hasManifest = FileManager.default.fileExists(atPath: url.appendingPathComponent(Vault.manifestName).path)
         // A damaged vault.json (a classic key included) is refused before any key is read.
         if hasManifest { _ = try Vault.open(at: url) }
-        var identities: [any AgeIdentity] = try access.explicitIdentities()
-        if identities.isEmpty, hasManifest {
-            // A scripted passphrase may unlock the key file stored in the backup.
-            let scripted = access.passphraseEnv != nil || Env.vars["SEMPERE_PASSPHRASE"] != nil
-            if scripted, let locked = try? Vault.open(at: url), !((try? locked.identityFiles()) ?? []).isEmpty {
-                identities = try access.identitiesFromKeyFiles(of: locked)
-            }
-        }
+        let identities = hasManifest ? try access.readingIdentities(vaultId: try Vault.open(at: url).vaultId)
+            : try access.explicitIdentities()
         // Fail early, with exit 4, when the key does not open this vault.
         if !identities.isEmpty, hasManifest { _ = try Vault.open(at: url, identities: identities) }
         let report = Backup.verify(at: url, identities: identities)
@@ -142,7 +136,6 @@ struct BackupVerify: ParsableCommand {
                 var backupProblems: [String]
                 var vaultProblem: String?
                 var manifestProblems: [String]
-                var rewrapPending: Bool
                 var counts: [String: Int]
                 var files: [File]
             }
@@ -153,8 +146,7 @@ struct BackupVerify: ParsableCommand {
                 + vaultProblems.map { File(path: $0.path, status: $0.status.rawValue, detail: $0.detail) }
             try output.emitJSON(Out(healthy: report.isHealthy, decrypted: report.decrypted,
                                     backupProblems: report.backupProblems, vaultProblem: report.vaultProblem,
-                                    manifestProblems: report.vault?.manifestProblems ?? [],
-                                    rewrapPending: report.vault?.rewrapPending ?? false, counts: counts, files: files))
+                                    manifestProblems: report.vault?.manifestProblems ?? [], counts: counts, files: files))
         } else {
             for p in report.backupProblems { print("backup.json: \(p)") }
             if let p = report.vaultProblem { print("vault: \(p)") }
@@ -300,7 +292,7 @@ struct RestoreCommand: ParsableCommand {
             }
             return
         }
-        let identities = try access.explicitIdentities()
+        let identities = try access.readingIdentities(vaultId: try Vault.open(at: source).vaultId)
         if !identities.isEmpty { _ = try Vault.open(at: source, identities: identities) }   // exit 4 early
         let report = try Backup.restore(from: source, to: URL(fileURLWithPath: to), identities: identities,
                                         protecting: protecting)

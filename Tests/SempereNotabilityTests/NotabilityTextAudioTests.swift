@@ -2,6 +2,7 @@ import TempDirSupport
 import Age
 import Foundation
 import ImportTestSupport
+import VaultTestSupport
 import Sempere
 import XCTest
 @testable import SempereImport
@@ -188,8 +189,7 @@ final class NotabilityTextAudioTests: XCTestCase {
         let tmp = TestTemp.root.appendingPathComponent("sempere-rec-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: tmp) }
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-        let vault = try Vault.create(at: tmp.appendingPathComponent("V.sempere"), recipients: [identity.recipient],
-                                     identities: [identity])
+        let vault = try TestVaults.create(at: tmp.appendingPathComponent("V.sempere"), identities: [identity])
         let path = tmp.appendingPathComponent("N.note")
         try pkg.write(to: path)
         var clock = HybridClock()
@@ -251,8 +251,7 @@ final class NotabilityTextAudioTests: XCTestCase {
         let tmp = TestTemp.root.appendingPathComponent("sempere-trn-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: tmp) }
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-        let vault = try Vault.create(at: tmp.appendingPathComponent("V.sempere"), recipients: [identity.recipient],
-                                     identities: [identity])
+        let vault = try TestVaults.create(at: tmp.appendingPathComponent("V.sempere"), identities: [identity])
         let path = tmp.appendingPathComponent("N.note")
         try pkg.write(to: path)
         var clock = HybridClock()

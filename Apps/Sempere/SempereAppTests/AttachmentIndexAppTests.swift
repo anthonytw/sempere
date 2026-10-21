@@ -22,7 +22,6 @@ final class CountingAttachmentSource: AttachmentIndexSource, @unchecked Sendable
     }
     func blobFiles(note: UUID) throws -> [AttachmentIndexEntry.Listed] { count(note); return try vault.blobFiles(note: note) }
     func blobNames(sha256: String) -> [String] { vault.blobNames(sha256: sha256) }
-    var pendingRewrap: Bool { vault.pendingRewrap }
 }
 
 /// A clock the tests move.

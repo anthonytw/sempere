@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+import VaultTestSupport
 @testable import Sempere
 @testable import SempereSync
 @testable import SempereWebDAV
@@ -203,10 +204,30 @@ final class SyncTests: SyncTestCase {
     private func editManifest(_ name: String, label: String) throws {
         let url = dir(name).appendingPathComponent("vault.json")
         var obj = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
-        var rec = obj["recipients"] as! [[String: Any]]
-        rec[0]["label"] = label
-        obj["recipients"] = rec
+        obj["label"] = label   // the vault's display label: not authenticated (format.md §1.1)
         try JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]).write(to: url)
+    }
+
+    /// Changes an authenticated field, so the two sides are no longer the same vault version.
+    private func editManifestTag(_ name: String, _ value: String) throws {
+        let url = dir(name).appendingPathComponent("vault.json")
+        var obj = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
+        obj["listTag"] = value
+        try JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]).write(to: url)
+    }
+
+    /// Two label edits are the same vault (format.md §1.3): the server's copy stays, no conflict.
+    func testManifestLabelOnlyEditsOnBothSidesConverge() throws {
+        let server = MockDAV()
+        _ = try makeVault("A")
+        try sync("A", server); try sync("B", server)
+        try editManifest("A", label: "A's idea")
+        try editManifest("B", label: "B's idea")
+        try sync("A", server)
+        let report = try sync("B", server)
+        XCTAssertTrue(report.conflicts.isEmpty, "\(report)")
+        XCTAssertEqual(try vaultJSON("B"), server.file("vault.json"))
+        XCTAssertEqual(try vaultJSON("A"), try vaultJSON("B"))
     }
 
     func testManifestOneSidedChangesPropagateBothWays() throws {
@@ -242,8 +263,8 @@ final class SyncTests: SyncTestCase {
         let server = MockDAV()
         _ = try makeVault("A")
         try sync("A", server); try sync("B", server)
-        try editManifest("A", label: "A's idea")
-        try editManifest("B", label: "B's idea")
+        try editManifestTag("A", String(repeating: "a", count: 64))
+        try editManifestTag("B", String(repeating: "b", count: 64))
         try sync("A", server)                                  // A wins the race to the server
         let before = try vaultJSON("B")
         let now = Date(timeIntervalSince1970: 1_760_000_000)
@@ -285,84 +306,6 @@ final class SyncTests: SyncTestCase {
         let report = try sync("A", server)
         XCTAssertEqual(report.conflicts.count, 1, "\(report)")
         XCTAssertEqual(server.file("vault.json"), Data("{\"vaultId\":\"x\"}".utf8))
-    }
-
-    /// A journal this device synced and then removed is never restored
-    /// here. Locked, nothing can judge it: it stays on the server.
-    func testRewrapJournalRemovedLocallyIsNotRestoredAndStaysWhileLocked() throws {
-        let server = MockDAV()
-        _ = try makeVault("A")
-        let journal = dir("A").appendingPathComponent("rewrap-journal.json")
-        try Data("{\"format\":\"sempere/1\"}".utf8).write(to: journal)
-        try sync("A", server, vault: .some(try Vault.open(at: dir("A"))))
-        XCTAssertNotNil(server.file("rewrap-journal.json"))
-        try FileManager.default.removeItem(at: journal)
-        let report = try sync("A", server, vault: .some(try Vault.open(at: dir("A"))))
-        XCTAssertTrue(report.downloaded.isEmpty && report.deleted.isEmpty, "\(report)")
-        XCTAssertEqual(report.skipped.count, 1)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
-        XCTAssertNotNil(server.file("rewrap-journal.json"))
-    }
-
-    /// Unlocked, a stale journal (synced, removed here, refused now: nothing
-    /// binds it) is deleted on the server, only in the version this device
-    /// synced, and no longer holds blob collection back anywhere.
-    func testAStaleServerJournalIsDeletedOnceThisDeviceRefusesIt() throws {
-        let server = MockDAV()
-        _ = try makeVault("A")
-        let journal = dir("A").appendingPathComponent("rewrap-journal.json")
-        try Data("{\"format\":\"sempere/1\"}".utf8).write(to: journal)
-        try sync("A", server, vault: .some(try Vault.open(at: dir("A"))))
-        try FileManager.default.removeItem(at: journal)
-        // The server's copy changing under its listing ETag (If-Match) is left alone.
-        server.interceptor = { [unowned server] r in
-            if r.method == "DELETE" {
-                server.interceptor = nil
-                server.putDirect("rewrap-journal.json", Data("{\"format\":\"sempere/1\",\"x\":1}".utf8))
-            }
-            return nil
-        }
-        let raced = try sync("A", server)
-        XCTAssertTrue(raced.deleted.isEmpty, "\(raced)")
-        XCTAssertNotNil(server.file("rewrap-journal.json"))
-        // Changed on the server: a new journal, judged as one (refused, never taken), not deleted.
-        let changed = try sync("A", server)
-        XCTAssertTrue(changed.deleted.isEmpty && changed.downloaded.isEmpty, "\(changed)")
-        XCTAssertEqual(changed.rejected.map(\.path), ["rewrap-journal.json"], "\(changed)")
-        XCTAssertNotNil(server.file("rewrap-journal.json"))
-
-        // The copy this device synced, unchanged: deleted there.
-        let again = try SyncTests.fresh(self, "C")
-        try Data("{\"format\":\"sempere/1\"}".utf8).write(to: again.journal)
-        try sync("C", again.server, vault: .some(try Vault.open(at: dir("C"))))
-        try FileManager.default.removeItem(at: again.journal)
-        let report = try sync("C", again.server)
-        XCTAssertEqual(report.deleted, [.init(side: "remote", path: "rewrap-journal.json")], "\(report)")
-        XCTAssertNil(again.server.file("rewrap-journal.json"))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: again.journal.path))
-        XCTAssertTrue(try sync("C", again.server).isEmpty)
-    }
-
-    private static func fresh(_ t: SyncTests, _ name: String) throws -> (server: MockDAV, journal: URL) {
-        _ = try Vault.create(at: t.dir(name), recipients: [t.identity.recipient], labels: ["t"], identities: [t.identity])
-        return (MockDAV(), t.dir(name).appendingPathComponent("rewrap-journal.json"))
-    }
-
-    /// A journal this device still accepts (its change is unfinished: the
-    /// local vault.json binds it) is never deleted, even when removed here.
-    func testAnAcceptedServerJournalIsNotDeleted() throws {
-        let server = MockDAV()
-        _ = try delta(try makeVault("A"), device: devA, t: 0, title: "n")
-        var changing = try openVault("A")
-        XCTAssertThrowsError(try changing.addRecipient(pqIdentity().recipient, label: "x", added: Date(), stopAfter: 0))
-        try sync("A", server)
-        let journal = dir("A").appendingPathComponent("rewrap-journal.json")
-        XCTAssertNotNil(server.file("rewrap-journal.json"))
-        try FileManager.default.removeItem(at: journal)
-        let report = try sync("A", server)
-        XCTAssertTrue(report.deleted.isEmpty, "\(report)")
-        XCTAssertEqual(report.skipped.map(\.path), ["rewrap-journal.json"], "\(report)")
-        XCTAssertNotNil(server.file("rewrap-journal.json"))
     }
 
     // MARK: compaction

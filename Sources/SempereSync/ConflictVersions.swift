@@ -27,7 +27,7 @@ import Sempere
 
 extension SyncEngine {
     /// Root files whose conflict versions a run settles.
-    static let versionedRootFiles = [Vault.manifestName, Vault.journalName, SharedSettings.fileName,
+    static let versionedRootFiles = [Vault.manifestName, SharedSettings.fileName,
                                      PublishedSummaries.fileName, WebIndex.fileName]
 
     func settleConflictVersions(_ remoteRoot: [String: RemoteEntry]) {
@@ -38,7 +38,7 @@ extension SyncEngine {
             guard !versions.isEmpty else { continue }
             do {
                 switch name {
-                case Vault.manifestName, Vault.journalName: try settleRootFileVersions(name, entry: entry, versions)
+                case Vault.manifestName: try settleRootFileVersions(name, entry: entry, versions)
                 case SharedSettings.fileName: try settleSettingsVersions(versions)
                 default:
                     try transport.resolveConflicts([name], versions)
@@ -51,8 +51,8 @@ extension SyncEngine {
         }
     }
 
-    /// `vault.json` or the rewrap journal: the same file (or label only) is
-    /// dropped, anything else kept as a local conflict copy and reported.
+    /// `vault.json`: the same file (or label only) is dropped, anything else kept as a local conflict
+    /// copy and reported.
     private func settleRootFileVersions(_ name: String, entry: RemoteEntry, _ versions: [RemoteVersion]) throws {
         // The current copy is compared against; one not downloaded yet waits for a later run.
         guard try available([name], entry: entry) else { return }
@@ -60,7 +60,7 @@ extension SyncEngine {
         var settled: [RemoteVersion] = []
         for v in versions {
             let data = try transport.readVersion([name], v, maxBytes: BoundedRead.maxManifestBytes)
-            if data == current || (name == Vault.manifestName && VaultManifest.sameExceptLabel(data, current)) {
+            if data == current || (name == Vault.manifestName && EpochManifest.sameExceptLabel(data, current)) {
                 settled.append(v)
                 continue
             }

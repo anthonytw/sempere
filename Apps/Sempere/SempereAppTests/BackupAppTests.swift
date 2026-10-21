@@ -151,7 +151,7 @@ struct BackupAppTests {
 
         let first = try await model.backUpNow()
         #expect(first.errors.isEmpty)
-        #expect(first.copied.count == 10)   // 7 revisions, key file, blob, vault.json
+        #expect(first.copied.count == 11)   // 7 revisions, the passphrase copy, blob, vault.json, the epoch record
         #expect(model.backupProgress == nil)
         let dest = drive.appendingPathComponent("sample Backup")
         #expect(Backup.verify(at: dest).isHealthy)
@@ -165,7 +165,7 @@ struct BackupAppTests {
         // Nothing new: nothing copied. A revision from another device: just that one.
         let second = try await model.backUpNow()
         #expect(second.copied.isEmpty && second.replaced.isEmpty)
-        #expect(second.unchanged == 10)
+        #expect(second.unchanged == 11)
         let note = try #require(model.notes.first?.id)
         try TS.writeAsAnotherDevice([.setMeta(.title("Backed up later"))], to: note, vault: url, key: key)
         let third = try await model.backUpNow()

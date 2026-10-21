@@ -267,7 +267,7 @@ extension SyncEngine {
     /// 1. every local revision of the note was listed, read and verified, and
     ///    every revision the server holds is one of them (byte-identical,
     ///    since revisions are write-once), so both sides' sets were read;
-    /// 2. no `rewrap-journal.json` exists on either side;
+    /// 2. no re-encryption is unfinished (format.md §8.1.6 rule 2; re-encryption comes with KH6);
     /// 3. no revision read references the blob's content hash: a blob is
     ///    collectable when its name is not the keyed name of any referenced
     ///    hash (in any kind).
@@ -278,7 +278,6 @@ extension SyncEngine {
         guard let vault, let note = UUID(uuidString: id) else {
             return .unknown("cannot check it against the collection rules (vault not unlocked)")
         }
-        guard !vault.pendingRewrap, !remoteJournal else { return .judged { _ in false } }
         let inventory: BlobInventory
         do { inventory = try vault.blobInventory(note: note) } catch { return .judged { _ in false } }
         let readable = Set(inventory.references.keys)

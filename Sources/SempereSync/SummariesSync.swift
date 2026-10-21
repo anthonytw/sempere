@@ -24,11 +24,11 @@ extension SyncEngine {
         }
         let listing: String
         do {
-            // The sealed vault secret too: a rotation (recipient removed) re-seals the file under a new key
-            // though no revision name changes (format.md §12.1).
+            // The epoch too: a new epoch re-seals the file under a new key though no revision name changes
+            // (format.md §12.1).
             var hashed = try encodedWebIndex()
             hashed.append(0)
-            hashed.append(Data(vault.manifest.vaultSecret.utf8))
+            hashed.append(vault.manifest.epochId)
             listing = FileDigest.sha256(hashed)
         } catch {
             report.errors.append(.init(path: name, message: Self.describe(error)))

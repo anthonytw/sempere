@@ -6,9 +6,9 @@ import { Encrypter, armor } from "age-encryption";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { KeyFileError, keyFileName, looksArmored, looksWrapped, maxWorkFactor, unwrapKey, workFactor, wrappedBytes } from "../src/vault/keyfile.ts";
+import { KeyFileError, looksArmored, looksWrapped, maxWorkFactor, recoveryKeyFileName, unwrapKey, workFactor, wrappedBytes } from "../src/vault/keyfile.ts";
 import { UnlockedVault, parseManifest } from "../src/vault/vault.ts";
-import { fixtures, sampleIdentity, webFixtures } from "./support.ts";
+import { fixtures, recoveryIdentity, sampleIdentity, webFixtures } from "./support.ts";
 
 const vaultDir = join(fixtures, "sample.sempere");
 const manifest = parseManifest(new Uint8Array(readFileSync(join(vaultDir, "vault.json"))));
@@ -34,26 +34,26 @@ async function wrapped(plain: string, logN = 10): Promise<Uint8Array> {
 }
 
 describe("passphrase-wrapped keys", () => {
-  it("names the stored key file as Swift does", async () => {
-    const [r] = manifest.recipients;
-    expect(await keyFileName(r?.key ?? "")).toBe(storedName);
-    expect(await keyFileName("age1abc")).toBe("age1abc.key.age");
+  it("names the passphrase copy of the recovery key as Swift does (format.md §15.11)", () => {
+    expect(recoveryKeyFileName(manifest)).toBe(storedName);
   });
 
-  it("opens the vault's stored key file with its passphrase", async () => {
+  it("opens the vault's passphrase copy with its passphrase: the recovery key, which opens the vault", async () => {
     expect(looksWrapped(stored)).toBe(true);
     expect(workFactor(wrappedBytes(stored))).toBe(15);
     const identity = await unwrapKey(wrappedBytes(stored), "sempere-test");
-    expect(identity).toBe(sampleIdentity());
+    expect(identity).toBe(recoveryIdentity());
     const vault = await UnlockedVault.unlock(manifest, identity);
     expect(vault.manifest.vaultId).toBe(manifest.vaultId);
+    expect(vault.openedWith).toBe("recovery");
+    expect(manifest.keys.find((k) => k.role === "recovery")?.key).toBe(vault.recipient);
   });
 
   it("opens a paper kit's armored copy, also pasted with indentation, blank lines and CRLF", async () => {
     expect(looksArmored(kit)).toBe(true);
-    expect(await unwrapKey(wrappedBytes(kit), "sempere-test")).toBe(sampleIdentity());
+    expect(await unwrapKey(wrappedBytes(kit), "sempere-test")).toBe(recoveryIdentity());
     const sloppy = "Key:\r\n" + kit.split("\n").map((l) => `   ${l}  `).join("\r\n\r\n");
-    expect(await unwrapKey(wrappedBytes(sloppy), "sempere-test")).toBe(sampleIdentity());
+    expect(await unwrapKey(wrappedBytes(sloppy), "sempere-test")).toBe(recoveryIdentity());
   });
 
   it("refuses a wrong passphrase, and an empty one", async () => {

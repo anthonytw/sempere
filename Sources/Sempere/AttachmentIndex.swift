@@ -25,11 +25,8 @@ public protocol AttachmentIndexSource: Sendable {
     func blobFacts(note: UUID, revision: RevisionName) throws -> AttachmentIndexEntry.RevisionFacts
     /// The blob files in the note's `att/` (one listing; none when it does not exist).
     func blobFiles(note: UUID) throws -> [AttachmentIndexEntry.Listed]
-    /// The name stems content with this hash has under each accepted secret
-    /// (format.md §8.1.2; two during an unfinished secret rotation).
+    /// The name stems content with this hash has under the epoch's key (format.md §8.1.2).
     func blobNames(sha256: String) -> [String]
-    /// True while a recipient change is unfinished (rule 2 of format.md §8.1.6).
-    var pendingRewrap: Bool { get }
 }
 
 /// One note's entry in the attachment index.
@@ -221,7 +218,6 @@ public enum AttachmentIndexer {
             }
         }
         e.revisions = revisions
-        if source.pendingRewrap { e.problem = "a recipient change is unfinished" }
 
         // Name stem → hash, and per hash the revisions that reference it (oldest first).
         var byName: [String: String] = [:]

@@ -199,10 +199,7 @@ extension SyncEngine {
         var record = PartialCopyState.readRecord(root) ?? .init()
         if PartialCopyState.readRecord(root) == nil { try PartialCopyState.writeRecord(record, root) }
         checkerBaseManifest = manifestHash()
-        remoteJournal = remoteRoot[Vault.journalName] != nil
-        if !remoteJournal { state.inFlightJournal = nil }
-
-        for name in [Vault.manifestName, Vault.journalName] {
+        for name in [Vault.manifestName] {
             let remote = remoteRoot[name].flatMap { $0.isCollection ? nil : $0 }
             do { try syncMutable(name, remote: remote) } catch {
                 report.errors.append(.init(path: name, message: Self.describe(error)))

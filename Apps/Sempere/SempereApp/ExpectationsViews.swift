@@ -64,7 +64,7 @@ struct ExpectationsSheets: ViewModifier {
             && ui.expectations == nil && OnboardingHold.shared.count == 0
         // The public key is derived from the identity (X-Wing): only when it is needed.
         guard ready else { return Trigger(ready: false) }
-        return Trigger(ready: true, vault: model.vault?.vaultId, recipient: model.heldIdentity?.recipient.string)
+        return Trigger(ready: true, vault: model.vault?.vaultId, recipient: model.heldDeviceKey)
     }
 
     func body(content: Content) -> some View {
@@ -148,10 +148,7 @@ struct KeyNoticeView: View {
     var firstRun: Bool
     /// Called after "I Understand" instead of closing the sheet (`ExpectationsSheets` shows the tour next).
     var onUnderstood: (() -> Void)?
-    @State private var savingKey = false
     @State private var showingBackups = false
-
-    private var canSaveKey: Bool { model.phase == .unlocked && model.heldIdentity != nil }
 
     var body: some View {
         NavigationStack {
@@ -165,15 +162,9 @@ struct KeyNoticeView: View {
                     Text("Nobody can recover them then, including the developer. There is no reset and no recovery service.")
                 }
                 Section {
-                    point(Text("Save the recovery kit now"), symbol: "printer")
-                    Text("Print the paper recovery kit, or keep the key in a password manager, somewhere apart from this device.")
-                    Button("Save Key and Recovery Kit…", systemImage: "key") { savingKey = true }
-                        .disabled(!canSaveKey)
-                        .accessibilityIdentifier("keyNoticeSaveKey")
-                    if !canSaveKey {
-                        Text("Unlock a vault with its key on this device to save the key.")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }
+                    point(Text("Keep the recovery kit"), symbol: "printer")
+                    // TODO(KH5): saving this device's key for another device (a device joins instead).
+                    Text("The vault's recovery key was shown once, when the vault was created: keep its printed kit, or the key in a password manager, somewhere apart from this device. No device keeps it; it opens the vault read-only.")
                 }
                 Section {
                     point(Text("Keep backups"), symbol: "externaldrive")
@@ -209,7 +200,6 @@ struct KeyNoticeView: View {
             }
         }
         .interactiveDismissDisabled(firstRun)
-        .sheet(isPresented: $savingKey) { SaveKeyView() }
         .sheet(isPresented: $showingBackups) { BackupSettingsSheet() }
     }
 
@@ -224,7 +214,7 @@ struct KeyNoticeView: View {
 
     private func acknowledge() {
         if let vault = model.vault?.vaultId {
-            OnboardingMemory().acknowledgeKeyNotice(vault: vault, recipient: model.heldIdentity?.recipient.string)
+            OnboardingMemory().acknowledgeKeyNotice(vault: vault, recipient: model.heldDeviceKey)
         }
         if let onUnderstood { onUnderstood() } else { dismiss() }
     }

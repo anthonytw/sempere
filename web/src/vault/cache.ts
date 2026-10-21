@@ -8,7 +8,6 @@
 // Nothing decrypted, and never the key, is stored (docs/web-viewer.md).
 
 import { isLowercaseUUID } from "../format/json.ts";
-import { concat } from "./bytes.ts";
 import { boundedStream, SourceError, type VaultSource, isRevisionFile } from "./source.ts";
 
 /** Where the cached bytes live: IndexedDB in the browser, memory in tests. */
@@ -170,21 +169,15 @@ export class FileCache {
 
 /**
  * The cache namespace of a vault: its URL (`label`), its id, and a
- * fingerprint of its key state, the SHA-256 of `vaultSecret` as sealed in
- * `vault.json` and of the rewrap journal if one is there (format.md §3.3.1).
- * Every recipient change re-encrypts the secret, and a rewrap rewrites the
- * write-once files in place under the same names, so after an addition, a
- * removal or the end of a rewrap the namespace changes, and the copies of
- * files encrypted to the old recipients (openable by a removed key) are
- * dropped by `dropOtherNamespaces` (security review 2026-10, P4).
+ * fingerprint of its key state: the epoch's id and, while a re-encryption is
+ * unfinished, `reencryptPending` (format.md §15.8). A removal or a
+ * re-encryption starts a new epoch and rewrites the write-once files in place
+ * under the same names, so after one the namespace changes, and the copies of
+ * files encrypted to the old epoch key (openable by a removed device that
+ * kept it) are dropped by `dropOtherNamespaces` (security review 2026-10, P4).
  */
-export async function cacheNamespace(label: string, vaultId: string, sealedSecret: string,
-  journal?: Uint8Array): Promise<string> {
-  const enc = new TextEncoder();
-  const secret = new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(sealedSecret)));
-  const parts = [secret];
-  if (journal) parts.push(new Uint8Array(await crypto.subtle.digest("SHA-256", journal as Uint8Array<ArrayBuffer>)));
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", concat(parts) as Uint8Array<ArrayBuffer>));
+export async function cacheNamespace(label: string, vaultId: string, epochId: string, reencryptPending = ""): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${epochId}\n${reencryptPending}`)));
   const fingerprint = [...digest].map((b) => b.toString(16).padStart(2, "0")).join("");
   return `${label}\n${vaultId}\n${fingerprint}`;
 }

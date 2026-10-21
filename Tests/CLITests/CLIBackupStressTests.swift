@@ -1,6 +1,7 @@
 import Age
 import CLITestSupport
 import Foundation
+import VaultTestSupport
 import Sempere
 import XCTest
 
@@ -17,9 +18,9 @@ final class CLIBackupStressTests: CLITestCase {
     func bigVault(notes: Int, kb: Int) throws -> Vault {
         let id = try NativeIdentity.generate(.postQuantum)
         keyPath = path("backup-stress.key")
-        try IdentityFile.render(id, created: Date()).write(toFile: keyPath, atomically: true, encoding: .utf8)
+        try TestVaults.deviceKeyFile(id).write(toFile: keyPath, atomically: true, encoding: .utf8)
         vaultPath = path("backup-stress.sempere")
-        let vault = try Vault.create(at: URL(fileURLWithPath: vaultPath), recipients: [id.recipient], identities: [id])
+        let vault = try TestVaults.create(at: URL(fileURLWithPath: vaultPath), identities: [id], trust: cliTrustStore)
         let side = Int((Double(kb * 1024) / 3).squareRoot())
         for n in 0..<notes {
             let note = UUID()

@@ -78,8 +78,6 @@ enum SettingsSyncBridge {
             guard let n = d.object(forKey: ThinningPreference.key) as? Int else { return .number(Double(ThinningPreference.defaultDays)) }
             return .number(Double(n <= 0 ? 0 : n))
         case "search.transcripts": return .bool(TranscriptSearchPreference.isOn(d))
-        case "rewrap.onAdd": return .string(RewrapSettings.onAdd(d).rawValue)
-        case "rewrap.onRemove": return .string(RewrapSettings.onRemove(d).rawValue)
         case "backup.reminderDays": return extras.backupReminderDays.map { .number(Double($0)) }
         case "editor.keepScreenOn": return .bool(KeepScreenOn.isOn(d))
         case "mouse.smoothing": return .string(d.string(forKey: MouseSmoothing.key).flatMap(StrokeSmoothing.Level.init(rawValue:))?.rawValue
@@ -128,8 +126,6 @@ enum SettingsSyncBridge {
             case ("math.recognize", .bool(let b)): d.set(b, forKey: MathRecognitionPreference.key)
             case ("photos.removeMetadata", .bool(let b)): d.set(b, forKey: photoPrivacyKey)
             case ("history.thinAfterDays", .number(let n)): d.set(max(Int(n), 0), forKey: ThinningPreference.key)
-            case ("rewrap.onAdd", .string(let s)): if let m = RewrapMethod(rawValue: s) { RewrapSettings.setOnAdd(m, in: d) }
-            case ("rewrap.onRemove", .string(let s)): if let m = RewrapMethod(rawValue: s) { RewrapSettings.setOnRemove(m, in: d) }
             case ("editor.keepScreenOn", .bool(let b)): d.set(b, forKey: KeepScreenOn.key)
             case ("mouse.smoothing", .string(let s)): d.set(s, forKey: MouseSmoothing.key)
             case ("appearance.theme", .string(let s)): if let t = AppTheme(rawValue: s) { AppTheme.save(t, to: d) }

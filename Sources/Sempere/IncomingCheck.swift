@@ -21,11 +21,11 @@ public struct IncomingFileProblem: Error, Hashable, Sendable, CustomStringConver
 }
 
 extension Vault {
-    /// The vault opened again from disk with the same identities and trust
-    /// store: after `vault.json` was replaced (a sync took a newer one), so
-    /// files are checked under the secret it carries now.
+    /// The vault opened again from disk with what opened it (the device key or recovery key, the
+    /// signing keys, the trust store and the given root): after `vault.json` was replaced (a sync took a
+    /// later version), so the list is checked again and files under the key it carries now.
     public func reopened() throws -> Vault {
-        try Vault.open(at: url, identities: identities, trust: trustStore)
+        try Vault.open(at: url, identities: unlockIdentities, signing: signing, trust: trustStore, root: givenRoot)
     }
 
     /// Checks a revision file received from elsewhere before it is placed as
@@ -132,12 +132,12 @@ extension Vault {
         do { parsed = try AgeFile.parseHeader(data) } catch {
             throw IncomingFileProblem("not an age file (\(error))")
         }
-        let types = Set(((try? ageRecipients()) ?? []).map(\.stanzaType))
+        // One stanza, to the vault identity (format.md §15.2).
         let stanzas = parsed.header.stanzas
-        guard !stanzas.isEmpty, stanzas.count <= max(recipients.count, 1) else {
-            throw IncomingFileProblem("encrypted to \(stanzas.count) recipients; the vault has \(recipients.count)")
+        guard stanzas.count == 1 else {
+            throw IncomingFileProblem("encrypted to \(stanzas.count) recipients; vault files have one stanza")
         }
-        if !types.isEmpty, let other = stanzas.first(where: { !types.contains($0.type) }) {
+        if let other = stanzas.first(where: { $0.type != "mlkem768x25519" }) {
             throw IncomingFileProblem("encrypted to a \(String(other.type.prefix(32))) recipient this vault does not have")
         }
         // A 16-byte nonce and at least one chunk with its 16-byte tag.
@@ -150,8 +150,7 @@ extension Vault {
         switch e {
         case .unreadable(let s): return "unreadable: \(s)"
         case .undecryptable(let s): return "does not decrypt with this vault's key: \(s)"
-        case .tagMismatch: return "its tag does not verify under the vault's secret (not written with the vault's key)"
-        case .tagMismatchJournalUnreadable(let s): return "its tag does not verify, and the rewrap journal is unreadable: \(s)"
+        case .tagMismatch: return "its tag does not verify under the vault's key (not written with it)"
         case .corruptBody(let s): return "corrupt body: \(s)"
         case .undecodable(let s): return "not a revision of this note and name: \(s)"
         case .newer(let s): return "written by a newer version: \(s)"

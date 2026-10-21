@@ -2,6 +2,7 @@ import Age
 import Foundation
 import TempDirSupport
 import XCTest
+import VaultTestSupport
 @testable import Sempere
 @testable import SempereSync
 @testable import SempereWebDAV
@@ -19,7 +20,7 @@ class SyncTestCase: TempDirTestCase {
     func dir(_ name: String) -> URL { tmp.appendingPathComponent("\(name).sempere") }
 
     func makeVault(_ name: String = "A") throws -> Vault {
-        try Vault.create(at: dir(name), recipients: [identity.recipient], labels: ["t"], identities: [identity])
+        try TestVaults.create(at: dir(name), identities: [identity], names: ["t"])
     }
 
     func openVault(_ name: String) throws -> Vault { try Vault.open(at: dir(name), identities: [identity]) }

@@ -107,13 +107,12 @@ struct StoreCreate: ParsableCommand {
 
     func run() throws {
         let prepared = try spec.prepare()
-        let (entry, created) = try location.open().create(name: name) { url -> (VaultInitOptions.Created, String?) in
-            let created = try spec.create(at: url, prepared: prepared)
-            // The key file's place inside the vault: the vault moves into the store afterwards.
-            let relative = created.keyFile.map { String($0.dropFirst(url.path.count)) }
-            return (created, relative)
+        // The vault is made in a staging folder and moves into the store afterwards; nothing the report
+        // names lies inside it but the passphrase copy, which is given relative to the vault.
+        let (entry, created) = try location.open().create(name: name) { url -> VaultInitOptions.Created in
+            try spec.create(at: url, prepared: prepared)
         }
-        try created.0.report(path: entry.url.path, output: output, keyFile: created.1.map { entry.url.path + $0 })
+        try created.report(path: entry.url.path, output: output)
     }
 }
 

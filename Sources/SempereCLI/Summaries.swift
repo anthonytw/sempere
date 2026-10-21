@@ -11,7 +11,7 @@ struct VaultSummaries: ParsableCommand {
         discussion: """
             The file (format.md §12) holds each note's title, tags, notebook, flags, page count and searchable
             text, with the names of the revision files it was made from, sealed (AES-256-GCM) under a key
-            derived from the vault secret: only the vault's keys open it. It is a hint: a reader uses an entry
+            derived from the vault key: only the vault's keys open it. It is a hint: a reader uses an entry
             only while the note's revision files are exactly those, and reads the note otherwise. Notes with
             unreadable revisions get no entry. An existing file's entries for unchanged notes are reused, so
             only changed notes are read (and the summary cache, unless --no-cache).

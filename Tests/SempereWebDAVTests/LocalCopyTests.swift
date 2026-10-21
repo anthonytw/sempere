@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import XCTest
+import VaultTestSupport
 @testable import Sempere
 @testable import SempereSync
 @testable import SempereWebDAV
@@ -292,83 +293,23 @@ final class LocalCopyTests: BlobSyncTestCase {
         XCTAssertNoThrow(try openCopy(ipad))
     }
 
-    /// A key change made on another device (written with the vault's key) still arrives by downloading again.
-    func testDownloadingAgainTakesAKeyChangeMadeElsewhere() throws {
+    /// A device approved on home (another copy) still arrives by downloading again: a later version of the
+    /// same epoch's vault.json (design §5.1).
+    func testDownloadingAgainTakesAnApprovalMadeElsewhere() throws {
         let server = MockDAV()
         _ = try makeVault("A")
         try mirror("A", server)
         let ipad = copy("iPad"), phone = copy("phone")
         _ = try ipad.download(client: try client(server))
         _ = try phone.download(client: try client(server))
-        var phoneVault = try openCopy(phone)
+        var phoneVault = try Vault.open(at: phone.folder, identities: [identity], signing: TestVaults.signing(identity))
         let added = pqIdentity()
-        _ = try phoneVault.addRecipient(added.recipient, label: "laptop")
+        try TestVaults.approve(added, into: &phoneVault, name: "laptop")
         let pushed = try phone.push(client: try client(server), vault: phoneVault)
         XCTAssertTrue(pushed.overwritten.contains("vault.json"), "\(pushed)")
         let again = try ipad.redownload(client: try client(server), identities: [identity])
         XCTAssertTrue(again.replaced, "\(again.report)")
-        XCTAssertTrue(try openCopy(ipad).recipients.contains { $0.key == added.recipient.string })
-    }
-
-    /// A vault of `identity` and `other` on the server, mirrored from A.
-    private func twoRecipientVault(_ server: MockDAV, other: NativeIdentity) throws -> Vault {
-        let v = try Vault.create(at: dir("A"), recipients: [identity.recipient, other.recipient], labels: ["t", "o"],
-                                 identities: [identity])
-        _ = try delta(v, device: devA, t: 0, title: "one")
-        _ = try delta(v, device: devA, t: 10, title: "two")
-        try mirror("A", server)
-        return v
-    }
-
-    /// A journal the copy's key refuses (here: the finished change's, put
-    /// back on the server) is judged before the swap and never lands in the
-    /// new copy (format.md §3.3.1).
-    func testDownloadingAgainRefusesAJournalTheCopyRefuses() throws {
-        let server = MockDAV()
-        let other = pqIdentity()
-        _ = try twoRecipientVault(server, other: other)
-        let ipad = copy("iPad")
-        _ = try ipad.download(client: try client(server))
-        var v = try openCopy(ipad)
-        XCTAssertThrowsError(try v.removeRecipient(other.recipient, policy: RewrapPolicy(), stopAfter: 1))
-        let journal = ipad.folder.appendingPathComponent("rewrap-journal.json")
-        let genuine = try Data(contentsOf: journal)
-        v = try openCopy(ipad)
-        XCTAssertTrue(try v.resumeRewrap().isComplete)
-        XCTAssertTrue(try ipad.push(client: try client(server), vault: try openCopy(ipad)).errors.isEmpty)
-        server.putDirect("rewrap-journal.json", genuine)
-
-        let again = try ipad.redownload(client: try client(server), identities: [identity])
-        XCTAssertTrue(again.replaced, "\(again.report)")
-        XCTAssertEqual(again.report.rejected.map(\.path), ["rewrap-journal.json"], "\(again.report)")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
-    }
-
-    /// The copy's own unfinished journal survives downloading again when the
-    /// server holds another one the push kept (keepServerChanges): it may
-    /// hold the only copy of the change's outgoing secret.
-    func testDownloadingAgainKeepsTheCopysUnfinishedJournal() throws {
-        let server = MockDAV()
-        let other = pqIdentity()
-        _ = try twoRecipientVault(server, other: other)
-        let ipad = copy("iPad")
-        _ = try ipad.download(client: try client(server))
-        var v = try openCopy(ipad)
-        XCTAssertThrowsError(try v.removeRecipient(other.recipient, policy: RewrapPolicy(), stopAfter: 1))
-        let journal = ipad.folder.appendingPathComponent("rewrap-journal.json")
-        let mine = try Data(contentsOf: journal)
-        XCTAssertTrue(try ipad.push(client: try client(server), vault: try openCopy(ipad)).errors.isEmpty)
-        // Another writer replaces the server's journal; the push keeps it there.
-        server.putDirect("rewrap-journal.json", Data("{\"format\":\"sempere/1\"}".utf8))
-        let pushed = try ipad.push(client: try client(server), vault: try openCopy(ipad))
-        XCTAssertTrue(pushed.errors.isEmpty && pushed.conflicts.map(\.path) == ["rewrap-journal.json"], "\(pushed)")
-
-        let again = try ipad.redownload(client: try client(server), identities: [identity])
-        XCTAssertTrue(again.replaced, "\(again.report)")
-        XCTAssertEqual(try Data(contentsOf: journal), mine, "the copy's journal is kept")
-        XCTAssertTrue(again.report.rejected.map(\.path).contains("rewrap-journal.json"), "\(again.report)")
-        var after = try openCopy(ipad)
-        XCTAssertTrue(try after.resumeRewrap().isComplete)
+        XCTAssertTrue(try openCopy(ipad).devices.contains { $0.key == added.recipient.string })
     }
 
     func testDownloadingAgainChecksWhatArrivesUnderTheKey() throws {

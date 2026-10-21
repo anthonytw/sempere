@@ -165,14 +165,14 @@ extension SyncEngine {
         return true
     }
 
-    /// Names the key a file was checked under (the vault secret the checker holds), so a quarantine
-    /// record made under one key never keeps a file out of a run under another: 16 hex digits of a
-    /// SHA-256 of a label and the secret, which reveal nothing about it. Nil when locked.
+    /// Names the key a file was checked under (the epoch key the checker holds, by its public `epochId`,
+    /// format.md §15.2), so a quarantine record made under one key never keeps a file out of a run under
+    /// another: 16 hex digits of a SHA-256 of a label and the epoch id. Nil when locked.
     static func checkerKeyID(_ checker: Vault?) -> String? {
         guard let checker, checker.canRead else { return nil }
         var data = Data("sempere/1 quarantine key id".utf8)
         data.append(0)
-        data.append(Data(checker.manifest.vaultSecret.utf8))
+        data.append(checker.manifest.epochId)
         return String(FileDigest.sha256(data).prefix(16))
     }
 

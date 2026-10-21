@@ -18,12 +18,8 @@ enum WebDAVVaultError: Error, Equatable, CustomStringConvertible {
     /// The download stopped before every file arrived (the first problems);
     /// opening it again continues.
     case downloadIncomplete(String)
-    /// Key changes rewrap files in place, which sync never propagates.
-    case keyChangesUnavailable
     /// Another vault now lives at a location whose copy holds changes the server never confirmed.
     case replacedWithChanges(Int)
-    /// Key changes rewrap files in place, which no sync target receives yet (folder targets too).
-    case keyChangesWithTargets
 
     var description: String {
         switch self {
@@ -32,10 +28,6 @@ enum WebDAVVaultError: Error, Equatable, CustomStringConvertible {
         case .downloadIncomplete(let detail):
             return String(localized: "The vault was not completely downloaded: \(detail)\n\nOpen it again to continue the download.",
                           comment: "The value is the first problems (English)")
-        case .keyChangesUnavailable:
-            return String(localized: "Device keys of a WebDAV vault cannot be changed in the app: the server would keep files a removed key can read. Change them with the sempere command-line tool on a folder copy and upload that to a new server folder.")
-        case .keyChangesWithTargets:
-            return String(localized: "Device keys of a vault with sync targets cannot be changed in the app yet: the targets would keep files a removed key can read. Remove its sync targets first, or change the keys with the sempere command-line tool.")
         case .replacedWithChanges(let n):
             return String(localized: "Another vault is now at this address, and this device has \(n) changes of the vault that was there which were never uploaded. Nothing was changed. To start over, remove that WebDAV vault on the welcome screen first.",
                           comment: "Connect to WebDAV: the folder holds another vault; the count is files not uploaded")
@@ -281,7 +273,7 @@ extension AppModel {
     /// What a two-way run of the open vault changed in its copy (design §4 "Arrivals"): the notes it
     /// touched are listed again, and an open editor of one merges the new revisions in place
     /// (`reconcile`, then `AppModel+RemoteMerge`); settings, the inbox, notebooks and the published
-    /// summaries follow; a new device list or secret reopens the vault.
+    /// summaries follow; a new `vault.json` (a device approved or renamed by home) reopens the vault.
     func applySyncChanges(_ changes: LocalChanges) {
         guard phase == .unlocked, vault != nil else { return }
         if changes.manifest || changes.journal {
@@ -305,14 +297,16 @@ extension AppModel {
         if changes.summaries, !pendingNoteIDs.isEmpty { Task { await refreshPublishedRows() } }
     }
 
-    /// A run replaced the open vault's `vault.json` (or journal). A new label changes nothing here. A new
-    /// device list or secret (another device's key change, made with the CLI) would leave the open
-    /// `Vault` writing under the old one: every editor is saved and closed, and the vault opened again
-    /// with this device's keys, as after a key change made here (`keyEpoch`). A device that can no longer
-    /// read it (its key was removed) closes it and says so.
+    /// A run replaced the open vault's `vault.json`. Under the key hierarchy (KH2) that is a later version
+    /// by home (a device approved or renamed, design §5.1) or a new label: the open `Vault` would keep the
+    /// old list (its checks, capture keys and trust record), so every editor is saved and closed and the
+    /// vault opened again with the keys it was unlocked with (`unlockKeys`), its list checked again, as
+    /// after a key change (`keyEpoch`). A device whose key is no longer listed closes it and says so.
+    /// TODO(KH3): a new epoch (a removal rotates the key) arrives the same way and is refused as
+    /// `otherEpoch` by this single-epoch reader until KH3 follows chains.
     func syncedVaultFileArrived() async {
         guard let start = vault, phase == .unlocked, !isChangingKeys else { return }
-        let same = (try? await offMain { start.keysMatchManifestOnDisk() }) ?? false
+        let same = (try? await offMain { !Self.manifestChangedOnDisk(start) }) ?? false
         if same {
             syncVaultStale = false
             return
@@ -327,15 +321,23 @@ extension AppModel {
         try? await openEditor(for: nil)
         await closeWindowEditors()
         guard generation == gen else { return }
+        let keys = unlockKeys
+        let trust = keys.root == nil ? self.trust : nil
+        let url = start.url
         do {
-            let next = try await offMain { try start.reopened() }
-            guard generation == gen else { return }
-            guard next.canRead else {
+            let next: Vault
+            do {
+                next = try await offMain {
+                    try Vault.open(at: url, identities: keys.identities, signing: keys.signing, trust: trust, root: keys.root)
+                }
+            } catch VaultError.keyNotListed {
+                guard generation == gen else { return }
                 errorMessage = String(localized: "This device's key is no longer one of the vault's keys, so the vault was closed. Ask a device that still has the vault to add this device again.")
                 close()
                 return
             }
-            adoptRewrapped(next)
+            guard generation == gen else { return }
+            adoptReopened(next)
             syncVaultStale = false
             syncSessions.forEach { $0.demand() }   // two-way again, under the new keys
             if let shown {
@@ -353,12 +355,18 @@ extension AppModel {
         }
     }
 
+    /// Whether `vault.json` on disk is not the manifest `vault` holds (or cannot be read).
+    nonisolated static func manifestChangedOnDisk(_ vault: Vault) -> Bool {
+        guard let disk = try? Vault.open(at: vault.url).manifest else { return true }
+        return disk != vault.manifest
+    }
+
     /// After a two-way run of the open vault: when its `vault.json` no longer matches the open `Vault`
     /// (whatever the run reported), runs go upload-only and the vault is opened again (review of #70, F6).
     func checkOpenVaultAgainstDisk() async {
         guard let start = vault, phase == .unlocked, !syncVaultStale else { return }
-        let same = (try? await offMain { start.keysMatchManifestOnDisk() }) ?? false
-        guard !same else { return }
+        let changed = (try? await offMain { Self.manifestChangedOnDisk(start) }) ?? true
+        guard changed else { return }
         syncVaultStale = true
         await syncedVaultFileArrived()
     }
@@ -479,12 +487,6 @@ extension AppModel {
         let copy = webdavLocations.copy(of: location)
         guard copy.exists else { return 0 }
         return await Task.detached(priority: .userInitiated) { copy.unconfirmedChanges() }.value
-    }
-
-    /// Throws when the open vault's keys must not be changed in the app (a WebDAV copy).
-    func requireLocalKeyChanges() throws {
-        if isWebDAVVault { throw WebDAVVaultError.keyChangesUnavailable }
-        if !syncSessions.isEmpty { throw WebDAVVaultError.keyChangesWithTargets }
     }
 
     nonisolated static func firstProblems(_ report: SyncReport) -> String {

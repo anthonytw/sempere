@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import XCTest
+import VaultTestSupport
 @testable import Sempere
 
 final class EditTests: VaultTestCase {
@@ -45,13 +46,16 @@ final class EditTests: VaultTestCase {
         XCTAssertGreaterThan(saved.millis, hlc.millis - 1)
     }
 
-    func testRefusesLockedAndWriteOnlyVaults() throws {
+    func testRefusesLockedAndRecoveryOpenedVaults() throws {
         let id = pqIdentity()
-        let vault = try makeVault(id)
+        let recovery = try MLKEM768X25519Identity()
+        let vault = try TestVaults.create(at: vaultURL(), identities: [id], recovery: recovery)
         let locked = try Vault.open(at: vault.url)
         XCTAssertThrowsError(try locked.apply([.deleteNote], to: UUID(), deviceState: stateURL, app: "t"))
-        let writeOnly = try Vault.create(at: vaultURL("W"), recipients: [id.recipient])
-        XCTAssertThrowsError(try writeOnly.apply([.deleteNote], to: UUID(), deviceState: stateURL, app: "t"))
+        let fromKit = try Vault.open(at: vault.url, identities: [NativeIdentity.mlkem768x25519(recovery)])
+        XCTAssertThrowsError(try fromKit.apply([.deleteNote], to: UUID(), deviceState: stateURL, app: "t")) {
+            XCTAssertEqual($0 as? VaultError, .recoveryKeyReadOnly)
+        }
     }
 
     func testNormalizers() {

@@ -261,7 +261,7 @@ describe("passkey-remembered keys", () => {
     const pv = new PasskeyVault(new MockAuthenticator({ prfAtCreate: true }), new MemoryKeyStorage());
     await pv.remember(sampleIdentity(), manifest.vaultId, here, "sample");
     const vault = await UnlockedVault.unlock(manifest, parseIdentity(await pv.unlock(manifest.vaultId, here)));
-    expect(manifest.recipients.map((r) => r.key)).toContain(vault.recipient);
+    expect(manifest.keys.map((k) => k.key)).toContain(vault.recipient);
   });
 });
 

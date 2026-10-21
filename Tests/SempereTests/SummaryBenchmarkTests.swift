@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import XCTest
+import VaultTestSupport
 @testable import Sempere
 
 /// Prints how long listing a vault takes, stage by stage. Quick mode (every
@@ -25,7 +26,7 @@ final class SummaryBenchmarkTests: VaultTestCase {
             identity = pqIdentity()
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             try identity.string.write(to: keyURL, atomically: true, encoding: .utf8)
-            let v = try Vault.create(at: url, recipients: [identity.recipient], labels: ["bench"], identities: [identity])
+            let v = try TestVaults.create(at: url, identities: [identity], names: ["bench"])
             let t = Date()
             try SyntheticVault.populate(v, notes: notes, strokes: strokes, points: points)
             print("bench: generated \(notes) notes × \(strokes) strokes × \(points) points in \(secs(t))")
@@ -45,13 +46,13 @@ final class SummaryBenchmarkTests: VaultTestCase {
         let bytes = files.reduce(0) { $0 + $1.2.count }
         print("bench: \(files.count) files, \(bytes >> 20) MiB; read \(secs(t))")
         t = Date()
-        let plains = try files.map { try AgeFile.decrypt($0.2, with: [identity]) }
+        let plains = try files.map { try AgeFile.decrypt($0.2, with: vault.identities) }
         print("bench: decrypt \(secs(t))")
         t = Date()
         var gz: [Data] = []
         for (f, p) in zip(files, plains) {
-            gz.append(try Vault.unframe(p, note: f.0.uuidString.lowercased(), filename: f.1.filename,
-                                        secret: secret, previous: nil).gzip)
+            gz.append(try BodyFraming.unframe(p, noteId: f.0.uuidString.lowercased(), filename: f.1.filename,
+                                              secret: secret).gzip)
         }
         print("bench: unframe (HMAC) \(secs(t))")
         t = Date()

@@ -1039,9 +1039,9 @@ public struct CaptureAttribution: Hashable, Sendable, Codable {
         }
     }
 
-    /// The recipient's label in `recipients` (vault.json), when it is still listed.
-    public func label(in recipients: [VaultManifest.Recipient]) -> String? {
-        recipients.first { CaptureKey.fingerprint(of: $0.key) == recipient }?.label
+    /// The name of the device the capture is attributed to, when it is still listed (format.md §11.1).
+    public func label(in manifest: EpochManifest) -> String? {
+        manifest.devices.first { CaptureKey.fingerprint(of: $0.key) == recipient }?.name
     }
 }
 

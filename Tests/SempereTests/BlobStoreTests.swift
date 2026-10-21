@@ -1,6 +1,7 @@
 import Age
 import Foundation
 import XCTest
+import VaultTestSupport
 @testable import Sempere
 
 /// The blob store (format.md §8.1): names, framing, Padmé, write, read,
@@ -11,13 +12,14 @@ final class BlobStoreTests: VaultTestCase {
 
     /// The test vector of format.md §8.1.3.
     func testSpecVector() throws {
-        let secret = try VaultSecret(bytes: Data(0..<32))
+        let secret = try VaultEpochKey(bytes: Data(0..<32))
         let content = Data("hello, sempere!\n".utf8)
         let ref = BlobRef(content: content, type: "text/plain")
         XCTAssertEqual(ref.sha256, "8ff2ca4079cee96a407a038a996ef5d0dd317f201fddc04174f0d89b763add65")
         XCTAssertEqual(ref.kind, .bin)
         let name = BlobName.name(digest: try XCTUnwrap(ref.digest), secret: secret)
-        XCTAssertEqual(name, "13ddeae851cf51d7e9a970d82ca2c99f1dbaa3efaf792248da32b8374d6869af")
+        // Under `blobNameKey` = HKDF-SHA256(K, "sempere/1 blob name") (format.md §15.2; checked with Python's hmac).
+        XCTAssertEqual(name, "540202258da1b7aa71188692543fcd1704765f5f52a89f9a7649e6d36878dda9")
         XCTAssertEqual(BlobName.fileName(name: name, kind: ref.kind), name + ".bin.age")
         let header = BlobFraming.header(digest: try XCTUnwrap(ref.digest), length: 16)
         XCTAssertEqual(header.map { String(format: "%02x", $0) }.joined(),
@@ -194,7 +196,7 @@ final class BlobStoreTests: VaultTestCase {
         try FileManager.default.copyItem(at: urlA, to: urlB)
         assertFails(refB, .referenceMismatch)
         // ...and read without a reference, the name does not verify.
-        XCTAssertThrowsError(try Vault.readBlobFile(urlB, identities: [id], secrets: vault.blobSecrets, expected: nil,
+        XCTAssertThrowsError(try Vault.readBlobFile(urlB, identities: vault.identities, secrets: vault.blobSecrets, expected: nil,
                                                     maxContent: 1 << 20)) {
             XCTAssertEqual($0 as? BlobError, .nameMismatch)
         }
@@ -241,14 +243,16 @@ final class BlobStoreTests: VaultTestCase {
             guard case .undecryptable? = $0 as? BlobError else { return XCTFail("tampered ciphertext: \($0)") }
         }
 
-        // A blob of another vault (same key, other secret) under its own name.
+        // A blob of another vault (same device, another key) under its own name, re-encrypted to this
+        // vault's identity: its name does not verify here.
         let other = try makeVault(id, name: "Other")
         let foreign = try other.writeBlob(note: testNote, b, type: "image/png")
         let foreignName = try other.blobFileName(for: foreign)
         XCTAssertNotEqual(foreignName, urlB.lastPathComponent, "names are keyed per vault")
         let planted = attDir(vault, testNote).appendingPathComponent(foreignName)
-        try FileManager.default.copyItem(at: try blobURL(other, testNote, foreign), to: planted)
-        XCTAssertThrowsError(try Vault.readBlobFile(planted, identities: [id], secrets: vault.blobSecrets, expected: nil,
+        let foreignPlain = try AgeFile.decrypt(Data(contentsOf: try blobURL(other, testNote, foreign)), with: other.identities)
+        try AgeFile.encrypt(foreignPlain, to: [try vault.vaultRecipient()]).write(to: planted)
+        XCTAssertThrowsError(try Vault.readBlobFile(planted, identities: vault.identities, secrets: vault.blobSecrets, expected: nil,
                                                     maxContent: 1 << 20)) {
             XCTAssertEqual($0 as? BlobError, .nameMismatch)
         }
@@ -269,7 +273,7 @@ final class BlobStoreTests: VaultTestCase {
             .appendingPathComponent(String(repeating: "0", count: 64) + ".audio.age")
         try FileManager.default.moveItem(at: url, to: bogus)
         var received = 0
-        XCTAssertThrowsError(try Vault.readBlobFile(bogus, identities: [id], secrets: vault.blobSecrets, expected: nil,
+        XCTAssertThrowsError(try Vault.readBlobFile(bogus, identities: vault.identities, secrets: vault.blobSecrets, expected: nil,
                                                     maxContent: BlobRef.maxSize, sink: { received += $0.count })) {
             XCTAssertEqual($0 as? BlobError, .nameMismatch)
         }
@@ -325,7 +329,7 @@ final class BlobStoreTests: VaultTestCase {
         // An unknown feature: readable, never written.
         var m = try Vault.open(at: vault.url).manifest
         m.features.append("holograms")
-        m.tagMarkers(secret: try vault.requireSecret())   // as the newer writer would (format.md §7.6)
+        m = try vault.resealed(m, home: id)   // as the newer writer would (format.md §7.6)
         try m.encoded().write(to: manifestURL)
         let newer = try Vault.open(at: vault.url, identities: [id])
         XCTAssertEqual(try newer.readBlob(note: testNote, ref), Data("x".utf8))
@@ -342,7 +346,7 @@ final class BlobStoreTests: VaultTestCase {
             XCTAssertEqual($0 as? VaultError, .readOnly(ReadOnlyReasons(unknownFeatures: ["holograms"])))
         }
         var changing = newer
-        XCTAssertThrowsError(try changing.addRecipient(pqIdentity().recipient, label: "x")) {
+        XCTAssertThrowsError(try TestVaults.approve(pqIdentity(), into: &changing)) {
             XCTAssertEqual($0 as? VaultError, .readOnly(ReadOnlyReasons(unknownFeatures: ["holograms"])))
         }
     }

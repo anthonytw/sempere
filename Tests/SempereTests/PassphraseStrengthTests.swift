@@ -31,8 +31,10 @@ final class PassphraseStrengthTests: XCTestCase {
         }
     }
 
-    func testFiveRandomWordsOrALongRandomPasswordPass() {
-        for strong in ["correct horse battery staple orbit", "lunar-pickle-tundra-mosaic-quiver",
+    /// The floor is about 70 bits (key-hierarchy design §8.2): six random words, a long random password,
+    /// or an Apple generated one pass.
+    func testSixRandomWordsOrALongRandomPasswordPass() {
+        for strong in ["correct horse battery staple orbit lantern", "lunar-pickle-tundra-mosaic-quiver-falcon",
                        "q7R#mK2v!pZx9%Lw", "J8t%wQ1z&Lr4nV^6", "Vela 47 cobre; tilde 902 ámbar!",
                        "xkqvbmzrtwplhgfdnc", "vuspot-Bekfu4-qobqag"] {
             XCTAssertNil(PassphraseStrength.storedKeyProblem(strong), "\(strong): \(PassphraseStrength.estimatedBits(strong))")
@@ -64,7 +66,9 @@ final class PassphraseStrengthTests: XCTestCase {
             if bits >= PassphraseStrength.storedKeyMinimumBits { passed += 1 }
             lowest = min(lowest, bits)
         }
-        XCTAssertGreaterThanOrEqual(Double(passed) / Double(samples), 0.99, "\(passed) of \(samples)")
+        // At the 70-bit floor of the passphrase copy (key-hierarchy design §8.2) a group that reads like a
+        // word costs a Diceware word, so about one in ten falls short (measured 91 %).
+        XCTAssertGreaterThanOrEqual(Double(passed) / Double(samples), 0.9, "\(passed) of \(samples)")
         XCTAssertGreaterThan(lowest, 50)
     }
 
@@ -75,9 +79,9 @@ final class PassphraseStrengthTests: XCTestCase {
         }
     }
 
-    func testFiveToSevenDicewareWordsPassAndFourDoNot() {
+    func testSixToEightDicewareWordsPassAndFiveDoNot() {
         var rng = SplitMix64(seed: 5)
-        for count in 5...7 {
+        for count in 6...8 {
             for separator in [" ", "-", ".", "_"] {
                 for _ in 0..<200 {
                     let phrase = (0..<count).map { _ in Self.words[Int(rng.next() % UInt64(Self.words.count))] }
@@ -89,35 +93,43 @@ final class PassphraseStrengthTests: XCTestCase {
                 }
             }
         }
-        // Four random words are about 52 bits: refused, nearly always.
+        // Five random words are about 65 bits: refused, nearly always (measured 94 %).
         var refused = 0
         for _ in 0..<500 {
-            let phrase = (0..<4).map { _ in Self.words[Int(rng.next() % UInt64(Self.words.count))] }.joined(separator: " ")
+            let phrase = (0..<5).map { _ in Self.words[Int(rng.next() % UInt64(Self.words.count))] }.joined(separator: " ")
             if PassphraseStrength.storedKeyProblem(phrase) != nil { refused += 1 }
         }
-        XCTAssertGreaterThanOrEqual(refused, 480)
+        XCTAssertGreaterThanOrEqual(refused, 450)
     }
 
     func testLongRandomPasswordsPass() {
         var rng = SplitMix64(seed: 16)
         let printable = Array((0x21...0x7E).compactMap(Unicode.Scalar.init).map(Character.init))
         let lower = Array("abcdefghijklmnopqrstuvwxyz")
+        // At the 70-bit floor (design §8.2): random printable passwords of 20 or more characters always pass,
+        // 16 nearly always.
+        var passedPrintable16 = 0
         for length in 16...24 {
             for _ in 0..<100 {
                 let password = String((0..<length).map { _ in printable[Int(rng.next() % UInt64(printable.count))] })
-                XCTAssertNil(PassphraseStrength.storedKeyProblem(password),
-                             "\(password): \(PassphraseStrength.estimatedBits(password))")
+                if length >= 20 {
+                    XCTAssertNil(PassphraseStrength.storedKeyProblem(password),
+                                 "\(password): \(PassphraseStrength.estimatedBits(password))")
+                } else if length == 16, PassphraseStrength.storedKeyProblem(password) == nil {
+                    passedPrintable16 += 1
+                }
             }
         }
-        // Twenty random lowercase letters (94 bits) always pass; sixteen (75 bits) nearly always.
-        var passed16 = 0
+        XCTAssertGreaterThanOrEqual(passedPrintable16, 90)
+        // Twenty-four random lowercase letters (113 bits) always pass; twenty (94 bits) nearly always.
+        var passed20 = 0
         for _ in 0..<300 {
+            let long = String((0..<24).map { _ in lower[Int(rng.next() % 26)] })
+            XCTAssertNil(PassphraseStrength.storedKeyProblem(long), "\(long): \(PassphraseStrength.estimatedBits(long))")
             let twenty = String((0..<20).map { _ in lower[Int(rng.next() % 26)] })
-            XCTAssertNil(PassphraseStrength.storedKeyProblem(twenty), "\(twenty): \(PassphraseStrength.estimatedBits(twenty))")
-            let sixteen = String((0..<16).map { _ in lower[Int(rng.next() % 26)] })
-            if PassphraseStrength.storedKeyProblem(sixteen) == nil { passed16 += 1 }
+            if PassphraseStrength.storedKeyProblem(twenty) == nil { passed20 += 1 }
         }
-        XCTAssertGreaterThanOrEqual(passed16, 240)
+        XCTAssertGreaterThanOrEqual(passed20, 240)
     }
 
     // MARK: - Findings
@@ -133,7 +145,8 @@ final class PassphraseStrengthTests: XCTestCase {
         XCTAssertEqual(PassphraseStrength.assess("q7R#mK2v!pZx9%Lw").findings, [])
         XCTAssertEqual(PassphraseStrength.assess("").bits, 0)
         XCTAssertFalse(PassphraseStrength.assess("").meetsStoredKeyFloor)
-        XCTAssertTrue(PassphraseStrength.assess("lunar-pickle-tundra-mosaic-quiver").meetsStoredKeyFloor)
+        XCTAssertFalse(PassphraseStrength.assess("lunar-pickle-tundra-mosaic-quiver").meetsStoredKeyFloor, "five words")
+        XCTAssertTrue(PassphraseStrength.assess("lunar-pickle-tundra-mosaic-quiver-falcon").meetsStoredKeyFloor)
     }
 
     // MARK: - Robustness

@@ -10,9 +10,12 @@ import UIKit
 ///
 /// - `SEMPERE_DEMO`: any value; builds the vault in the temporary directory and opens it.
 /// - `SEMPERE_DEMO_LOCKED`: leave it locked, so the unlock screen shows.
-/// - `SEMPERE_DEMO_PASSPHRASE`: store the key in the vault under this passphrase and leave
-///   it locked: a UI test unlocks it through the unlock sheet, as a user does (`LaunchSmokeUITests`).
+/// - `SEMPERE_DEMO_PASSPHRASE`: store the recovery key in the vault under this passphrase and leave
+///   it locked: a UI test unlocks it through the unlock sheet, as a user does (`LaunchSmokeUITests`):
+///   read-only with this passphrase, or writable with the key of `SEMPERE_DEMO_DEVICE_KEY`.
 ///   The sidebar and note choices apply once it is unlocked.
+/// - `SEMPERE_DEMO_DEVICE_KEY`: a device key file (`DeviceKeys.fileText`) to make the demo's home
+///   device instead of a fresh one; a UI test pastes the same text into the unlock sheet.
 /// - `SEMPERE_DEMO_NOTE`: a `DemoVault.Spec.key` (`respiration`, `atlas`, …) to open.
 /// - `SEMPERE_DEMO_SIDEBAR`: `all`, `notebook:School/Physics` or `tag:lecture`.
 /// - `SEMPERE_DEMO_PAPER_PICKER`: open the paper picker over the note.
@@ -56,9 +59,11 @@ enum DemoLaunch {
             let png = env["SEMPERE_DEMO_ITEMS"] != nil ? demoImage() : nil
             let dense = env["SEMPERE_DEMO_DENSE"].flatMap { Int($0) }
             let search = env["SEMPERE_DEMO_SEARCH"] != nil
+            let trust = model.trust
+            let device = try env["SEMPERE_DEMO_DEVICE_KEY"].map(DeviceKeys.parse)
             let built = try await Task.detached {
                 try await DemoVault.build(in: dir, passphrase: passphrase, itemsImage: png, denseStrokes: dense,
-                                          searchNotes: search)
+                                          searchNotes: search, trust: trust, device: device)
             }.value
             try await model.openVault(at: built.url)
             if passphrase != nil {

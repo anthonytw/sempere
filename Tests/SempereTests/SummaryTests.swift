@@ -367,7 +367,7 @@ final class SummaryTests: VaultTestCase {
         let (vault, dir, _) = try makeCachedVault()
         _ = try vault.summaries(of: nil, cache: try SummaryCache(directory: dir, vault: vault))
         // Same file under another secret: neither its name nor its key match.
-        let otherSecret = VaultSecret.random()
+        let otherSecret = VaultEpochKey.random()
         let other = SummaryCache(directory: dir, secret: otherSecret)
         XCTAssertNil(other.loadProblem)
         XCTAssertTrue(other.storedSummaries.isEmpty)
@@ -434,7 +434,7 @@ final class Locked<T>: @unchecked Sendable {
 
 /// `LocalCacheKey` (format.md §10.1): names and sealed files of per-device caches.
 final class LocalCacheKeyTests: XCTestCase {
-    func secret(_ byte: UInt8) throws -> VaultSecret { try VaultSecret(bytes: Data(repeating: byte, count: 32)) }
+    func secret(_ byte: UInt8) throws -> VaultEpochKey { try VaultEpochKey(bytes: Data(repeating: byte, count: 32)) }
 
     func testNamesDependOnTheSecretAndPurposeOnly() throws {
         let a = LocalCacheKey(secret: try secret(1), purpose: "drawing-cache", magic: Array("SMPD\u{1}".utf8))
@@ -455,9 +455,10 @@ final class LocalCacheKeyTests: XCTestCase {
     /// (format.md §10.1). Every HKDF info string the format uses over the
     /// vault secret, other than §10.1's own, is listed here.
     func testNoPurposeDerivesAVaultWideKey() throws {
-        let vaultWide = [SummaryCache.keyInfo, SummaryCache.nameInfo, RecipientsAuth.recipientsInfo,
-                         RecipientsAuth.linkEd25519Info,
-                         RecipientsAuth.linkMLDSA65Info, RecipientsAuth.secretIdInfo]
+        typealias I = VaultEpochKey.Info
+        let vaultWide = [SummaryCache.keyInfo, SummaryCache.nameInfo, I.identitySeed, I.tagKey, I.blobNameKey, I.listKey,
+                         I.markersKey, I.epochId, I.linkEd25519Seed, I.linkMLDSA65Seed, I.pendingKey, I.deviceCaptureKey]
+        XCTAssertTrue(vaultWide.contains("sempere/1 list key") && vaultWide.contains("sempere/1 blob name"))
         for info in vaultWide {
             XCTAssertTrue(info.hasPrefix("sempere/1 "), info)
             let rest = info.dropFirst("sempere/1 ".count)

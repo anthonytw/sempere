@@ -7,10 +7,11 @@ import XCTest
 /// app unlocked itself, with the preferences of the run before.
 ///
 /// Each launch here starts with no preferences, caches or saved windows
-/// (`SEMPERE_DEBUG_FRESH`), opens the synthetic demo vault locked with its
-/// key stored under a passphrase (`SEMPERE_DEMO_PASSPHRASE`), and unlocks it
-/// through the unlock sheet (then answers the remember-key offer), as a user
-/// does. Then, in each column layout, the library window must show what that
+/// (`SEMPERE_DEBUG_FRESH`), opens the synthetic demo vault locked (its
+/// recovery key stored under a passphrase, `SEMPERE_DEMO_PASSPHRASE`; its home
+/// device key the test's, `SEMPERE_DEMO_DEVICE_KEY`), and unlocks it writable
+/// through the unlock sheet by pasting that device key (then answers the
+/// remember-key offer), as a user does. Then, in each column layout, the library window must show what that
 /// layout shows (sidebar, note list, the note), and on the Mac the other
 /// windows and sheets must open: Settings (⌘,), Vault Keys (⌥⌘K), a note
 /// window (⌥⌘N), Export… (⇧⌘E), Export to Folder or Zip…, Restore from Backup… and, after
@@ -96,13 +97,7 @@ final class LaunchSmokeUITests: XCTestCase {
         requireSheet("restoreBackupSheet", titled: "Restore from Backup", "Restore from Backup sheet", in: app)
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
         requireRunning(app, "restore sheet")
-        // Save Key… (Sync & Devices ▸ Device Keys), a sheet of a section's row (on the section, it
-        // came and went at once on Catalyst 27, as Restore from Backup… did).
-        openSettingsGroup("sync", in: app)
-        clickInSettings("Save Key…", settings, in: app)
-        requireSheet("saveKeySheet", titled: "Save Key", "Save Key sheet", in: app)
-        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
-        requireRunning(app, "save key sheet")
+        // TODO(KH5): Save Key… (Sync & Devices ▸ Device Keys) comes back with device management.
         app.typeKey("w", modifierFlags: .command)   // closes the Settings window
         // The close is asynchronous: a shortcut typed while the window is still going is lost.
         XCTAssertTrue(settings.waitForNonExistence(timeout: 10), "the Settings window closed")
@@ -231,6 +226,7 @@ final class LaunchSmokeUITests: XCTestCase {
                                // No windows from an earlier run.
                                "-ApplePersistenceIgnoreState", "YES"]
         var env = ["SEMPERE_DEBUG_FRESH": "1", "SEMPERE_DEMO": "1", "SEMPERE_DEMO_PASSPHRASE": Self.passphrase,
+                   "SEMPERE_DEMO_DEVICE_KEY": DemoDeviceKey.text,
                    "SEMPERE_DEBUG_COLUMNS": columns, "SEMPERE_DEMO_SIDEBAR": "all", "SEMPERE_DEMO_NOTE": "respiration",
                    "TZ": "UTC"]
         #if targetEnvironment(macCatalyst)
@@ -244,30 +240,9 @@ final class LaunchSmokeUITests: XCTestCase {
         app.launchEnvironment = env
         app.launch()
 
-        let field = app.secureTextFields["Passphrase"].firstMatch
-        require(field, "unlock sheet's passphrase field", in: app, timeout: 90)
-        // A slow runner can drop the first tap while the sheet settles: tap until the field has the keyboard.
-        let focused = NSPredicate(format: "hasKeyboardFocus == true")
-        for _ in 0..<5 where !focused.evaluate(with: field) {
-            #if targetEnvironment(macCatalyst)
-            field.click()
-            #else
-            field.tap()
-            #endif
-            _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: focused, object: field)], timeout: 2)
-        }
-        field.typeText(Self.passphrase + "\n")   // onSubmit unlocks
-        // After a manual unlock the sheet offers to remember the key.
-        let notNow = app.buttons["Not Now"].firstMatch
-        if notNow.waitForExistence(timeout: 60) {
-            #if targetEnvironment(macCatalyst)
-            notNow.click()
-            #else
-            notNow.tap()
-            #endif
-        } else {
-            print("SMOKEDEBUG no remember-key offer after the unlock")
-        }
+        // The passphrase field is there too (the recovery key's copy: read-only); the device key writes.
+        require(app.secureTextFields["Passphrase"].firstMatch, "unlock sheet's passphrase field", in: app, timeout: 90)
+        DemoDeviceKey.unlock(app)
         requireRunning(app, "unlock")
         return app
     }

@@ -3,7 +3,7 @@
 // decrypted as a stream (age authenticates each 64 KiB chunk), the content
 // hashed as it passes, and nothing is handed out before the whole blob has
 // been checked: framing, length, zero padding, content hash, and the keyed
-// name binding to the vault secret.
+// name binding to the epoch key (blobNameKey).
 
 import { sha256 } from "@noble/hashes/sha2.js";
 import { maxBlobSize } from "../format/attachments.ts";
@@ -165,8 +165,8 @@ export async function verifyPlaintext(plain: ReadableStream<Uint8Array>, ref: Bl
 
 /**
  * Reads the blob `ref` of note `noteId` (§8.1.4). The file is looked up by
- * the name keyed from the reference's hash under the vault secret (then the
- * previous secret during a rewrap, §8.1.5); since the header's hash must
+ * the name keyed from the reference's hash under `blobNameKey` of the epoch
+ * key (format.md §8.1.2); since the header's hash must
  * equal the reference's, a file that verifies is bound to its name. Content
  * over `maxBytes` is refused before anything is read.
  */

@@ -554,28 +554,6 @@ struct QuickCaptureTests {
         #expect(model.inboxProblem == nil)
     }
 
-    /// Audit B34: unlocking a vault whose key change was interrupted ends
-    /// in `finishUnlock`, which adopts the inbox like any other unlock.
-    @Test func finishingAnInterruptedKeyChangeAdoptsVoiceNotes() async throws {
-        let (url, key, _, qc, _) = try Self.setUp(transcribe: false)
-        try await qc.start()
-        _ = try await qc.stop()
-        let keyText = try String(contentsOf: key, encoding: .utf8)
-        try KeyChangeResumeTests.addPendingChange(to: url, keyText: keyText)
-
-        let model = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .milliseconds(50))
-        model.blobCacheFolder = Self.temp("blobs")
-        model.quickCapture = qc
-        try await model.openVault(at: url)
-        try await model.unlock(identityText: keyText)
-        #expect(model.phase == .finishingKeyChange)
-        #expect(!Self.inbox(url).isEmpty)
-        try await model.finishKeyChange()
-        #expect(model.phase == .unlocked)
-        #expect(await TS.waitUntil(timeout: .seconds(10)) { model.capturesAdopted == 1 })
-        #expect(Self.inbox(url).isEmpty)
-    }
-
     @Test func enablingStoresAProfileWithoutTheIdentityAndRefreshFollowsKeyChanges() async throws {
         let (url, key) = try AppModelTests.fixtureVault()
         let model = AppModel(deviceStateURL: TS.deviceStateURL())
@@ -590,7 +568,9 @@ struct QuickCaptureTests {
         let stored = try #require(try qc.store.load())
         #expect(model.quickCaptureIsForOpenVault)
         #expect(stored.profile.notebook == "Voice/Inbox")
-        #expect(stored.profile.recipients == model.vault?.recipients.map(\.key))
+        let fresh = try #require(model.vault).captureProfile(device: try #require(DeviceID(stored.profile.device)))
+        #expect(stored.profile.recipients == fresh.recipients, "sealed to the vault identity alone")
+        #expect(stored.profile.recipients.count == 1)
         let data = try JSONEncoder().encode(stored)
         #expect(String(decoding: data, as: UTF8.self).contains("AGE-SECRET-KEY") == false, "never the identity")
         // A stale key in the profile is replaced on the next unlock.
@@ -604,31 +584,6 @@ struct QuickCaptureTests {
         #expect(stored.profile.recipient == CaptureKey.fingerprint(of: unlockedWith.recipient.string))
         try model.disableQuickCapture()
         #expect(try qc.store.load() == nil)
-    }
-
-    /// Removing a device key in the key window rotates the capture key; the
-    /// stored profile follows at once, not at the next unlock, so a voice note
-    /// recorded in between is still adopted.
-    @Test func removingADeviceKeyRefreshesTheProfileAtOnce() async throws {
-        let (url, key) = try AppModelTests.fixtureVault()
-        let model = AppModel(deviceStateURL: TS.deviceStateURL())
-        let qc = QuickCapture()
-        qc.store = MemoryCaptureProfileStore()
-        qc.showsActivity = false
-        model.quickCapture = qc
-        try await model.openVault(at: url)
-        try await model.unlock(identityText: try String(contentsOf: key, encoding: .utf8))
-        try model.enableQuickCapture()
-        let other = try NativeIdentity.generate(.postQuantum)
-        try await model.addDeviceKey(recipient: other.recipient.string, label: "Old iPad", authenticator: PassingOwnerAuthenticator())
-        #expect(try qc.store.load()?.profile.recipients.contains(other.recipient.string) == true, "added: the new key reads captures too")
-        let before = try #require(try qc.store.load()).profile.key
-        try await model.removeDeviceKey(other.recipient.string)
-        let after = try #require(try qc.store.load()).profile
-        #expect(after.key != before)
-        let vault = try #require(model.vault)
-        #expect(after.key == (try vault.captureProfile(device: try #require(DeviceID(after.device)))).key)
-        #expect(!after.recipients.contains(other.recipient.string))
     }
 
     /// A voice note interrupted by a crash is sealed from its finished

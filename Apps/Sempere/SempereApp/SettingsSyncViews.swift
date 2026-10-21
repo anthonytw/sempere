@@ -188,8 +188,6 @@ enum SettingsSyncText {
         case "photos.removeMetadata": return String(localized: "Remove Location and Camera Data")
         case "history.thinAfterDays": return String(localized: "Thin Autosaves Older Than")
         case "search.transcripts": return String(localized: "Search Recording Transcripts")
-        case "rewrap.onAdd": return String(localized: "When Adding a Device")
-        case "rewrap.onRemove": return String(localized: "When Removing or Replacing a Device")
         case "backup.reminderDays": return String(localized: "Remind Me")
         case "editor.keepScreenOn": return String(localized: "Keep Screen On")
         case "mouse.smoothing": return String(localized: "Smooth Mouse Strokes")

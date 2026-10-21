@@ -35,8 +35,6 @@ struct RootView: View {
     @State private var restoredVault: UUID?
     /// Settings ▸ Quick Voice Notes asked for by a widget or the control (`VoiceNoteLink.settings`).
     @State private var showingVoiceSettings = false
-    /// Choose Devices to Keep from the recipients alert (format.md §2.1 "Repair").
-    @State private var repairChoice: RecipientsRepairChoice?
 
     /// The stack column an iPhone shows (`CompactNavigation`); the other devices ignore it.
     @State private var compactColumn: NavigationSplitViewColumn = .sidebar
@@ -94,9 +92,6 @@ struct RootView: View {
                             openStored: { entry in
                                 Task { await model.report { try await model.openStored(entry, library: library) } }
                             })
-            } else if model.phase == .finishingKeyChange {
-                // An interrupted key change: nothing but finishing it (format.md §3.3.1).
-                FinishKeyChangeView()
             } else {
                 splitView
                 .onAppear {
@@ -182,9 +177,6 @@ struct RootView: View {
         .sheet(isPresented: $creatingVault) {
             NewVaultView()
         }
-        .sheet(item: $repairChoice) { choice in
-            RecipientsRepairView(choice: choice)
-        }
         .sheet(isPresented: .constant(model.phase == .locked || keys.holdsUnlockSheet(model))) {
             UnlockView()
                 .voiceNoteBanner()
@@ -236,32 +228,13 @@ struct RootView: View {
         .sheet(item: $sharingLeftover) { leftover in
             ShareSheet(items: [leftover.folder]) { sharingLeftover = nil }
         }
-        // format.md §2.1: never write to a list nobody with the key wrote.
-        .alert(model.recipientsAlert?.displayTitle ?? RecipientsAlert.title, isPresented: Binding(get: { model.recipientsAlert != nil },
-                                                           set: { if !$0 { model.dismissRecipientsAlert() } })) {
-            if model.recipientsAlert?.canRemove == true {
-                Button("Remove", role: .destructive) {
-                    Task { await model.report { try await model.repairRecipients() } }
-                }
-            }
-            if model.recipientsAlert?.canConfirm == true {
-                Button("Trust This List") {
-                    Task { await model.report { try await model.confirmRecipientsList() } }
-                }
-            }
-            if model.recipientsAlert?.canChoose == true {
-                Button("Choose Devices to Keep…") {
-                    // Taken now (the alert's dismissal clears it); shown once the alert is gone.
-                    let choice = model.recipientsRepairChoice()
-                    Task {
-                        try? await Task.sleep(for: .milliseconds(400))
-                        repairChoice = choice
-                    }
-                }
-            }
-            Button("Cancel", role: .cancel) { model.dismissRecipientsAlert() }
+        // Design §4.3: never write to a list nobody with the key wrote.
+        .alert(model.listAlert?.displayTitle ?? ListAlert.title, isPresented: Binding(get: { model.listAlert != nil },
+                                                                                     set: { if !$0 { model.dismissListAlert() } })) {
+            // TODO(KH5): repair (a new epoch from home, or a takeover with the recovery key).
+            Button("OK", role: .cancel) { model.dismissListAlert() }
         } message: {
-            Text(model.recipientsAlert?.message ?? "")
+            Text(model.listAlert?.message ?? "")
         }
         // A recent vault waited for (the launch reopen or a tap found it waiting for iCloud) arrived.
         .onChange(of: library.states) {
@@ -358,7 +331,6 @@ struct RootView: View {
         switch model.phase {
         case .noVault: context.vault = .none
         case .locked: context.vault = .locked
-        case .finishingKeyChange: context.vault = .finishingKeyChange
         case .unlocked: context.vault = .unlocked
         }
         let note = model.selectedNote

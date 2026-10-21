@@ -3,6 +3,7 @@ import Crypto
 import Foundation
 import FuzzSupport
 import XCTest
+import VaultTestSupport
 @testable import Sempere
 
 /// Getting attachments out without the app (format.md §8.1.7), and large
@@ -59,15 +60,27 @@ final class BlobRecoveryTests: VaultTestCase {
         }
     }
 
+    /// `vault-keys.txt` (format.md §15.13 step 1) from the device key of `identity`: its device key file
+    /// opens its wrap in `vault.json` with stock `age`.
+    func vaultKeys(age: URL, vault: Vault, identity: NativeIdentity) throws -> URL {
+        let deviceKey = tmp.appendingPathComponent("device-\(UUID().uuidString).key")
+        try TestVaults.deviceKeyFile(identity).write(to: deviceKey, atomically: true, encoding: .utf8)
+        let wrap = tmp.appendingPathComponent("wrap-\(UUID().uuidString).age")
+        try XCTUnwrap(vault.devices.first { $0.key == identity.recipient.string }?.wrap).write(to: wrap, atomically: true,
+                                                                                                 encoding: .utf8)
+        let out = tmp.appendingPathComponent("vault-keys-\(UUID().uuidString).txt")
+        _ = try bash("\(quote(age.path)) -d -i \(quote(deviceKey.path)) \(quote(wrap.path)) > \(quote(out.path))")
+        return out
+    }
+
     /// The stock `age` CLI (1.3+, post-quantum keys) recovers a blob's
-    /// content byte for byte.
+    /// content byte for byte, with the vault keys a device key's wrap gives.
     func testStockAgeRecoversBlobs() throws {
         guard postQuantumAvailable else { throw XCTSkip("no X-Wing on this OS") }
         let age = try age(atLeast: 3)
         let id = pqIdentity()
         let vault = try makeVault(id)
-        let key = tmp.appendingPathComponent("key.txt")
-        try IdentityFile.render(id, created: Date()).write(to: key, atomically: true, encoding: .utf8)
+        let key = try vaultKeys(age: age, vault: vault, identity: id)
         for (n, type) in [(0, "image/png"), (16, "text/plain"), (70_000, "application/pdf"), (200_001, "audio/mp4")] {
             let content = syntheticBytes(n, seed: UInt8(n % 251))
             let ref = try vault.writeBlob(note: testNote, content, type: type)
@@ -75,24 +88,23 @@ final class BlobRecoveryTests: VaultTestCase {
         }
     }
 
-    /// The same with a post-quantum vault (age 1.3+), after a header-only
-    /// rewrap and after a full re-encryption.
-    func testStockAgeRecoversPostQuantumBlobsAfterRewraps() throws {
+    /// A device approved later opens the same vault keys from its own wrap: blobs written before are
+    /// recovered with them unchanged (nothing is rewrapped when a device is added, format.md §15).
+    func testStockAgeRecoversBlobsForAnApprovedDevice() throws {
         guard postQuantumAvailable else { throw XCTSkip("no X-Wing on this OS") }
         let age = try age(atLeast: 3)
         let a = pqIdentity(), b = pqIdentity()
         var vault = try makeVault(a)
-        let keyA = tmp.appendingPathComponent("a.txt"), keyB = tmp.appendingPathComponent("b.txt")
-        try IdentityFile.render(a, created: Date()).write(to: keyA, atomically: true, encoding: .utf8)
-        try IdentityFile.render(b, created: Date()).write(to: keyB, atomically: true, encoding: .utf8)
         let content = syntheticBytes(150_000)
         let ref = try vault.writeBlob(note: testNote, content, type: "image/jpeg")
-        try assertStockRecovery(age: age, key: keyA, blob: try blobURL(vault, testNote, ref), content: content, ref: ref)
-        try vault.addRecipient(b.recipient, label: "B")
-        try assertStockRecovery(age: age, key: keyB, blob: try blobURL(vault, testNote, ref), content: content, ref: ref)
-        try vault.removeRecipient(a.recipient)
+        let blob = try blobURL(vault, testNote, ref)
+        let before = try Data(contentsOf: blob)
+        try assertStockRecovery(age: age, key: try vaultKeys(age: age, vault: vault, identity: a), blob: blob, content: content, ref: ref)
+        try TestVaults.approve(b, into: &vault, name: "B")
+        XCTAssertEqual(try Data(contentsOf: blob), before, "not rewrapped")
         let reopened = try Vault.open(at: vault.url, identities: [b])
-        try assertStockRecovery(age: age, key: keyB, blob: try blobURL(reopened, testNote, ref), content: content, ref: ref)
+        try assertStockRecovery(age: age, key: try vaultKeys(age: age, vault: reopened, identity: b), blob: blob, content: content,
+                                ref: ref)
         XCTAssertEqual(try reopened.readBlob(note: testNote, ref), content)
     }
 
@@ -109,7 +121,8 @@ final class BlobRecoveryTests: VaultTestCase {
         XCTAssertEqual(r.header.sha256, ref.sha256)
         XCTAssertTrue(r.nameVerified)
         out = Data()
-        r = try Recovery.decryptBlob(at: url, identities: [id], vault: nil) { out += $0 }
+        // Without the vault, the vault identity itself (what the kit's script puts in vault-keys.txt).
+        r = try Recovery.decryptBlob(at: url, identities: vault.identities, vault: nil) { out += $0 }
         XCTAssertEqual(out, content)
         XCTAssertFalse(r.nameVerified)
         let moved = url.deletingLastPathComponent().appendingPathComponent(String(repeating: "e", count: 64) + ".pdf.age")
@@ -117,7 +130,7 @@ final class BlobRecoveryTests: VaultTestCase {
         XCTAssertThrowsError(try Recovery.decryptBlob(at: moved, identities: [id], vault: vault) { _ in }) {
             XCTAssertEqual($0 as? BlobError, .nameMismatch)
         }
-        XCTAssertNoThrow(try Recovery.decryptBlob(at: moved, identities: [id], vault: nil) { _ in })
+        XCTAssertNoThrow(try Recovery.decryptBlob(at: moved, identities: vault.identities, vault: nil) { _ in })
     }
 
     // MARK: - Large blobs (format.md §8.1.4)
@@ -165,8 +178,7 @@ final class BlobRecoveryTests: VaultTestCase {
         }?.intValue, total)
         try vault.copyBlob(ref, from: testNote, to: otherNote)
         try FileManager.default.removeItem(at: try blobURL(vault, testNote, ref))
-        XCTAssertTrue(try vault.addRecipient(b.recipient, label: "B").isComplete)
-        XCTAssertTrue(try vault.removeRecipient(a.recipient).isComplete)
+        try TestVaults.approve(b, into: &vault, name: "B")
         let after = try Vault.open(at: vault.url, identities: [b])
         XCTAssertEqual(try streamedHash(after, otherNote), expected)
         XCTAssertTrue(after.verify().isHealthy)
@@ -176,43 +188,5 @@ final class BlobRecoveryTests: VaultTestCase {
         print("\(megabytes) MB blob: peak RSS grew by \(growth >> 20) MiB; sampled RSS range \(sampled.map { "\($0 >> 20) MiB" } ?? "n/a")")
         XCTAssertLessThan(growth, 64 << 20, "peak RSS grew by \(growth) bytes")
         if let sampled { XCTAssertLessThan(sampled, 64 << 20, "resident set grew by \(sampled) bytes") }
-    }
-}
-
-extension BlobRecoveryTests {
-    /// format.md §2.1 changes vault.json only: after a tamper and a repair
-    /// (secret rotated, every file rewrapped) the stock-CLI recovery of
-    /// revisions (§4) and blobs (§8.1.7) still works, with the new secret.
-    func testStockRecoveryAfterRecipientsRepair() throws {
-        let id = pqIdentity(), attacker = pqIdentity()
-        let store = MemoryRecipientsTrustStore()
-        let made = try Vault.create(at: vaultURL(), recipients: [id.recipient, pqIdentity().recipient],
-                                    identities: [id], trust: store)
-        let log = sampleLog()
-        for r in log { try made.write(r) }
-        let content = Data("recipients repair".utf8)
-        let ref = try made.writeBlob(note: testNote, content, type: "image/png")
-        try RecipientsTamper.addedRecipient.apply(to: made.url, attacker: attacker.recipient,
-                                                  other: made.manifest)
-        var vault = try Vault.open(at: made.url, identities: [id], trust: store)
-        XCTAssertTrue(try vault.repairRecipients().isComplete)
-
-        // The pipeline's steps through the library (always run).
-        for rev in log {
-            let plain = try AgeFile.decrypt(Data(contentsOf: fileURL(vault, testNote, rev.name)), with: [id])
-            XCTAssertEqual(try Gzip.decompress(Data(plain.dropFirst(37))), try InkJSON.encoder().encode(rev))
-        }
-
-        let age = try age(atLeast: 3)
-        let keyFile = tmp.appendingPathComponent("key.txt")
-        try IdentityFile.render(id, created: Date()).write(to: keyFile, atomically: true, encoding: .utf8)
-        for rev in log {
-            let file = fileURL(vault, testNote, rev.name)
-            let json = try bash("\(quote(age.path)) -d -i \(quote(keyFile.path)) \(quote(file.path)) | tail -c +38 | gunzip")
-            XCTAssertEqual(json, try InkJSON.encoder().encode(rev))
-        }
-        let blob = try vault.blobCandidates(note: testNote, ref)[0]
-        let out = try bash("\(quote(age.path)) -d -i \(quote(keyFile.path)) \(quote(blob.path)) | tail -c +46 | head -c \(ref.size)")
-        XCTAssertEqual(out, content)
     }
 }

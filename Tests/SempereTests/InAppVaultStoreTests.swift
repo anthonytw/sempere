@@ -2,6 +2,7 @@ import Age
 import Foundation
 import TempDirSupport
 import XCTest
+import VaultTestSupport
 @testable import Sempere
 
 /// The in-app vault store (`VaultStore`, docs/design/device-first-sync.md §2, §4.2): every vault is a
@@ -14,7 +15,7 @@ final class InAppVaultStoreTests: TempDirTestCase {
     override func setUpWithError() throws {
         try super.setUpWithError()
         store = VaultStore(root: tmp.appendingPathComponent("Vaults", isDirectory: true))
-        identity = try IdentityFile.parse(String(contentsOf: FixtureTests.bundled("sample.key"), encoding: .utf8))
+        identity = try DeviceKeys.parse(String(contentsOf: FixtureTests.bundled("sample.key"), encoding: .utf8)).nativeIdentity
     }
 
     /// A private copy of the sample vault, outside the store.
@@ -27,7 +28,7 @@ final class InAppVaultStoreTests: TempDirTestCase {
 
     private func newVault(_ name: String) throws -> VaultStore.Entry {
         try store.create(name: name) { url in
-            try Vault.create(at: url, recipients: [identity.recipient], identities: [identity])
+            try TestVaults.create(at: url, identities: [identity])
         }.entry
     }
 
@@ -72,7 +73,7 @@ final class InAppVaultStoreTests: TempDirTestCase {
     func testAFailedCreateLeavesNothing() throws {
         struct Boom: Error {}
         XCTAssertThrowsError(try store.create(name: "Broken") { url -> Void in
-            _ = try Vault.create(at: url, recipients: [identity.recipient])
+            _ = try TestVaults.create(at: url, identities: [identity])
             throw Boom()
         })
         XCTAssertTrue(store.list().isEmpty)

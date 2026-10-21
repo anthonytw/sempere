@@ -81,7 +81,7 @@ extension AppModel {
         await editGate.acquire()
         defer { editGate.release() }
         guard let vault else { throw ModelError.noVaultOpen }
-        guard vault.canRead else { throw vault.isLocked ? VaultError.locked : VaultError.noIdentities }
+        guard vault.canRead else { throw VaultError.locked }
         try requireWritableVault()   // format.md §7.3
         let gen = generation
         try await offMain { try write(vault) }

@@ -2,7 +2,7 @@
 // list a cold reader shows before (or instead of) decrypting every revision.
 // A hint: an entry is used only while the note's listing shows exactly its
 // revision names, and any problem with the file means only a slower listing.
-// AES-256-GCM (WebCrypto) under HKDF(vaultSecret, "sempere/1 published
+// AES-256-GCM (WebCrypto) under HKDF(K_e, "sempere/1 published
 // summaries key"), the vault id in the associated data.
 
 import { isLowercaseUUID } from "../format/json.ts";
@@ -61,7 +61,7 @@ export function summariesAAD(vaultId: string): Uint8Array {
   return out;
 }
 
-/** The AES-GCM key for raw secret bytes (tests and the format.md vector). */
+/** The AES-GCM key for raw epoch-key bytes (tests and the format.md vector). */
 export async function summariesKeyFromSecret(secret: Uint8Array): Promise<CryptoKey> {
   const k = await crypto.subtle.importKey("raw", bytes(secret), "HKDF", false, ["deriveKey"]);
   return crypto.subtle.deriveKey({ name: "HKDF", hash: "SHA-256", salt: new Uint8Array(0), info: encoder.encode(summariesKeyInfo) },
