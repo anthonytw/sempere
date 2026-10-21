@@ -128,6 +128,7 @@ extension Vault {
                 report.problems[e.path] = "the key of the epoch it was written under is not known"
                 continue
             }
+            if Self.epochMutations.contains(.skipCatchUp) { continue }
             n += 1
             do {
                 report.reencrypted.append(try reencryptOwn(e, key: key, n: n))
@@ -172,7 +173,9 @@ extension Vault {
         }
         let gzip = try BodyFraming.unframe(plain, noteId: scope, filename: name, secret: key).gzip
         let current = try requireSecret()
-        let fresh = try encrypt(BodyFraming.frame(gzip: gzip, noteId: scope, filename: name, secret: current))
+        let corrupt = Self.epochMutations.contains(.corruptReencryption)
+        let body = corrupt ? try Gzip.compress(Data("{}".utf8)) : gzip
+        let fresh = try encrypt(BodyFraming.frame(gzip: body, noteId: scope, filename: name, secret: current))
         let dir = file.deletingLastPathComponent()
         let tmp = FileIO.tempURL(in: dir)
         try FileIO.writeNewFile(tmp) { try $0(fresh) }
@@ -181,14 +184,17 @@ extension Vault {
         try faults.check(.catchUpWritten(n))
         // The copy decrypts under the current key and holds the same body before anything is replaced.
         let check = try BoundedRead.contents(of: tmp, maxBytes: BoundedRead.maxRevisionBytes)
-        guard let back = try? AgeFile.decrypt(check, with: identities),
-              (try? BodyFraming.unframe(back, noteId: scope, filename: name, secret: current).gzip) == gzip else {
+        guard corrupt || (try? AgeFile.decrypt(check, with: identities)).flatMap({
+            try? BodyFraming.unframe($0, noteId: scope, filename: name, secret: current).gzip
+        }) == gzip else {
             throw VaultError.epochChangeRefused("\(entry.path): the re-encrypted copy does not read back")
         }
         try faults.check(.catchUpVerified(n))
         // The old bytes are set aside first (J6), then the ledger knows the new ones, then they are in place.
         guard let setAsideStore else { throw VaultError.setAsideFailed("\(entry.path): this device keeps no set-aside store") }
-        try setAsideStore.keep(data, path: entry.path, vaultId: vaultId, reason: .notSealed, epochId: key.epochId)
+        if !Self.epochMutations.contains(.replaceWithoutSettingAside) {
+            try setAsideStore.keep(data, path: entry.path, vaultId: vaultId, reason: .notSealed, epochId: key.epochId)
+        }
         try recordWrite(path: entry.path, bytes: fresh)
         try FileIO.place(tmp, at: file)
         placed = true

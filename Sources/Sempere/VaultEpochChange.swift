@@ -506,18 +506,26 @@ extension Vault {
         let stamp = RFC3339.string(now)
         let epoch = ctx.parentEpoch + 1
         let homeId = device.id
-        // Each kept device: its entry as the vault lists it when that is from the parent's ancestry, else a
-        // fresh approval by the new home (its keys from the chain).
+        // Each kept device: its entry as the vault lists it when that is from the parent's ancestry; else, for a
+        // device a later epoch removed, its entry rebuilt from the approval the chain carries (its original
+        // `addSig`, so it is in the first list); else (an epoch's author, whose approval the chain does not
+        // carry) a fresh approval by the new home.
         var devices: [EpochKeyEntry] = []
         for fp in keep where fp != device.fingerprint {
+            let name = ctx.entries[fp]?.name ?? "Device \(Hex.encode(fp).prefix(8))"
             if let e = ctx.entries[fp], (e.addedEpoch ?? Int.max) <= ctx.parentEpoch {
                 devices.append(e)
+            } else if let a = ctx.approvals[fp], a.claim.addedEpoch <= ctx.parentEpoch {
+                devices.append(EpochKeyEntry(role: .device, key: a.claim.key, id: String(Hex.encode(fp).prefix(8)),
+                                             sign: a.claim.sign, kind: a.claim.kind, added: a.claim.added,
+                                             addedEpoch: a.claim.addedEpoch, addedBy: a.claim.addedBy, addSig: a.addSig,
+                                             name: name, wrap: ""))
             } else if let k = ctx.keysByFingerprint[fp] {
                 let claim = EntryClaim(key: k.key, sign: k.sign, kind: k.kind, added: stamp, addedEpoch: epoch, addedBy: homeId)
                 devices.append(EpochKeyEntry(role: .device, key: k.key, id: String(Hex.encode(fp).prefix(8)), sign: k.sign,
                                              kind: k.kind, added: stamp, addedEpoch: epoch, addedBy: homeId,
                                              addSig: try device.signing.sign(AuthorMessage.entry(vaultId: vault.vaultId, claim)),
-                                             name: ctx.entries[fp]?.name ?? "Device \(Hex.encode(fp).prefix(8))", wrap: ""))
+                                             name: name, wrap: ""))
             }
         }
         // The new home: its own entry when the parent's ancestry lists it with one, else a kit join.
@@ -607,6 +615,8 @@ struct TakeoverContext {
     var entries: [Data: EpochKeyEntry]
     /// Keys of devices the chain knows (authors and additions), by fingerprint.
     var keysByFingerprint: [Data: (key: String, sign: DeviceSigningPublicKeys, kind: String)]
+    /// The approvals the chain carries up to the parent (each addition's claim and `addSig`), by fingerprint.
+    var approvals: [Data: ChainAddition]
 
     init(url: URL, device: DeviceKeys, recovery: MLKEM768X25519Identity, trust: (any EpochTrustStore)?, root: Data?) throws {
         let record = try trust?.record(for: Vault.open(at: url).vaultId)
@@ -671,9 +681,15 @@ struct TakeoverContext {
         let parentListSet = verified.lists[parentIndex].list
         let ancestry = verified.lists.reduce(into: Set<Data>()) { $0.formUnion($1.list) }.subtracting(verified.recoveryKeys)
         var keys: [Data: (key: String, sign: DeviceSigningPublicKeys, kind: String)] = [:]
+        var approvals: [Data: ChainAddition] = [:]
         for e in chain {
             if let s = e.author.sign { keys[e.author.fingerprint] = (e.author.key, s, "cli") }
             for a in e.additions { keys[a.fingerprint] = (a.claim.key, a.claim.sign, a.claim.kind) }
+        }
+        for (i, e) in prefix.enumerated() {
+            // Only the approvals the chain check admitted (by the home of their epoch).
+            let admitted = Set(verified.lists[i].admitted.map(\.fingerprint))
+            for a in e.additions where admitted.contains(a.fingerprint) { approvals[a.fingerprint] = a }
         }
         var entries: [Data: EpochKeyEntry] = [:]
         for d in v.manifest.devices {
@@ -708,6 +724,7 @@ struct TakeoverContext {
         vault = v; parentEpoch = parent.epoch; self.parentKey = parentKey; parentChain = Array(chain[...parentIndex])
         self.parentList = parentList; self.parentAdditions = parentAdditions; self.view = view; self.entries = entries
         keysByFingerprint = keys
+        self.approvals = approvals
         plan = Vault.TakeoverPlan(parentEpoch: parent.epoch, parentId: parent.epochId, candidates: candidates)
     }
 }

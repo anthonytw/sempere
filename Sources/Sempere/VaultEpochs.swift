@@ -148,6 +148,26 @@ final class EpochKeyring: @unchecked Sendable {
     }
 }
 
+/// Test-only switches that break one safeguard each (`EpochInvariantTests` requires each to fail an invariant
+/// of design §11.2, so none is vacuous).
+enum EpochMutation: Hashable, Sendable, CaseIterable {
+    /// J3: a file under an earlier key is taken without the sealed-set check.
+    case acceptUnsealed
+    /// J1: catch-up ignores the ledger (re-encrypts nothing).
+    case skipCatchUp
+    /// J6: catch-up replaces a file without setting the old bytes aside.
+    case replaceWithoutSettingAside
+    /// J8: catch-up replaces before verifying, with another body.
+    case corruptReencryption
+    /// J2, J5a: a writer keeps the previous epoch's key for its writes.
+    case writeUnderOldKey
+}
+
+extension Vault {
+    /// The active `EpochMutation`s (tests only).
+    nonisolated(unsafe) static var epochMutations: Set<EpochMutation> = []
+}
+
 // MARK: - The acceptance rule (design §5.3)
 
 /// The outcome of decrypting a vault file under the epochs a reader holds.
@@ -183,7 +203,7 @@ extension Vault {
     /// record that closed that epoch seals `path` with exactly these bytes (rule 2), or when `older` is nil
     /// (the current epoch, rule 1).
     func setAsideReason(_ older: OlderEpoch?, path: String, sha256 hex: @autoclosure () -> String) -> SetAsideReason? {
-        guard let older else { return nil }
+        guard let older, !Self.epochMutations.contains(.acceptUnsealed) else { return nil }
         guard let sealed = older.sealed else { return .dropped }
         guard let digest = sealed[path] else { return .notSealed }
         return digest == hex() ? nil : .bytesDiffer

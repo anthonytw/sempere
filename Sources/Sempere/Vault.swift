@@ -571,6 +571,9 @@ public struct Vault: Sendable {
     /// The vault identity's recipient `v_e`, which every file of the epoch is encrypted to.
     func vaultRecipient() throws -> NativeRecipient {
         guard let secret else { throw VaultError.locked }
+        if Self.epochMutations.contains(.writeUnderOldKey), let older = keyring?.all().first {
+            return .mlkem768x25519(try older.key.vaultIdentity().recipient)
+        }
         return .mlkem768x25519(try secret.vaultIdentity().recipient)
     }
 

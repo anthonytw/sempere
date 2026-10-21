@@ -143,7 +143,7 @@ extension Vault {
             let verified: EpochChain.Verified
             do {
                 verified = try EpochChain.verify(epochRecord.chain, vaultId: manifest.vaultId, root: manifest.root,
-                                                 directory: directory, pinned: pinned)
+                                                 directory: directory, pinned: pinned, mutations: precedenceMutations)
             } catch ChainError.kitNotPinned(let at) {
                 var check = refused(.otherEpoch, "the takeover of epoch \(at) is signed by a recovery kit this device "
                     + "has not pinned yet: it is taken once the kit's replacement is pinned (write once, then open again)")
@@ -199,7 +199,7 @@ extension Vault {
             verified = Set(manifest.firstList)
         }
         let admitted: [EpochKeyEntry]
-        do { admitted = try manifest.check(key: key, verifiedList: verified, parent: parent) } catch let e as EpochManifest.ProblemError {
+        do { admitted = try manifest.check(key: key, verifiedList: verified, parent: parent, mutations: precedenceMutations) } catch let e as EpochManifest.ProblemError {
             return ListCheck(status: .refused(problem(e.problem)), chain: chain)
         } catch {
             return ListCheck(status: .refused(ListProblem(.listTag, "\(error)")), chain: chain)
