@@ -512,6 +512,54 @@
         }
       }
     },
+    "%lld changes, the latest %@" : {
+      "comment" : "A device on a sync target: its revisions there and when it wrote the newest (a relative date)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld change, the latest %@"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld changes, the latest %@"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld cambios, el último %@"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld cambio, el último %@"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld cambios, el último %@"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld could not be read" : {
       "comment" : "A number of notes whose handwriting could not be read",
       "extractionState" : "manual",
@@ -2532,6 +2580,17 @@
         }
       }
     },
+    "A sync never places a file that fails its checks: it keeps it here and never deletes it. Adopt checks it again under the vault's keys and places it only if it passes (a file from before a key change, say). Export copies it elsewhere; Delete removes it for good." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una sincronización nunca coloca un archivo que no supera sus comprobaciones: lo guarda aquí y nunca lo borra. Adoptar lo comprueba de nuevo con las claves de la bóveda y lo coloca solo si las supera (por ejemplo, un archivo de antes de un cambio de claves). Exportar lo copia a otro lugar; Eliminar lo borra para siempre."
+          }
+        }
+      }
+    },
     "A vault folder, not a backup" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2784,6 +2843,40 @@
         }
       }
     },
+    "Add This Server" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir este servidor"
+          }
+        }
+      }
+    },
+    "Add WebDAV Server" : {
+      "comment" : "Sheet title",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir servidor WebDAV"
+          }
+        }
+      }
+    },
+    "Add WebDAV Server…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir servidor WebDAV…"
+          }
+        }
+      }
+    },
     "Add a PNG for Each Page" : {
       "comment" : "Export option for Markdown (toggle)",
       "extractionState" : "manual",
@@ -2950,6 +3043,29 @@
         }
       }
     },
+    "Adopt" : {
+      "comment" : "Repair: check a quarantined file again and place it in the vault",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adoptar"
+          }
+        }
+      }
+    },
+    "Adopt, export or delete this file" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adoptar, exportar o eliminar este archivo"
+          }
+        }
+      }
+    },
     "After %lld days" : {
       "comment" : "Settings ▸ Backups ▸ Remind Me: remind after this many days without a backup",
       "extractionState" : "manual",
@@ -3077,6 +3193,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Una “Descargar de nuevo” anterior de “%@” se interrumpió. La copia anterior contiene notas o adjuntos que no están en la bóveda, así que se conservó, en %@. Intégrala con la herramienta de línea de comandos sempere (vault merge-copy) antes de borrarla."
+          }
+        }
+      }
+    },
+    "An empty or new WebDAV folder (https://…) for this vault, or one that already holds it. The password is kept only in this device's Keychain. The first sync uploads the vault; after that, changes go both ways." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una carpeta WebDAV (https://…) vacía o nueva para esta bóveda, o una que ya la contenga. La contraseña se guarda solo en el llavero de este dispositivo. La primera sincronización sube la bóveda; después, los cambios van en ambos sentidos."
           }
         }
       }
@@ -5582,6 +5709,17 @@
         }
       }
     },
+    "Delete this quarantined file?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Eliminar este archivo en cuarentena?"
+          }
+        }
+      }
+    },
     "Delete “%@” from this device?" : {
       "comment" : "%@ is the vault's name",
       "extractionState" : "manual",
@@ -5602,6 +5740,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Eliminación: %@."
+          }
+        }
+      }
+    },
+    "Delete…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminar…"
+          }
+        }
+      }
+    },
+    "Details and Repair" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detalles y reparación"
           }
         }
       }
@@ -5661,6 +5821,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dispositivos que pueden abrir esta bóveda"
+          }
+        }
+      }
+    },
+    "Devices whose notes or summaries this target held at this device's last sync with it. A device of the vault missing here never syncs with this target: add a target they share." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivos cuyas notas o resúmenes tenía este destino en la última sincronización de este dispositivo con él. Un dispositivo de la bóveda que no aparece aquí nunca se sincroniza con este destino: añade un destino que compartan."
           }
         }
       }
@@ -6919,6 +7090,18 @@
         }
       }
     },
+    "Files in Step" : {
+      "comment" : "Files both sides had at the last sync",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archivos al día"
+          }
+        }
+      }
+    },
     "Files in a Folder" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7045,6 +7228,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Carpeta"
+          }
+        }
+      }
+    },
+    "Folder Copy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copia en la carpeta"
           }
         }
       }
@@ -8457,6 +8651,17 @@
         }
       }
     },
+    "It is gone for good. Export it first to keep a copy." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se borra para siempre. Expórtalo antes para conservar una copia."
+          }
+        }
+      }
+    },
     "It is there already." : {
       "comment" : "Footer: moving the notebook would change nothing",
       "extractionState" : "manual",
@@ -8524,6 +8729,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sus notas se eliminan de este dispositivo. Si no tienes una copia de seguridad u otra copia, no se podrán recuperar."
+          }
+        }
+      }
+    },
+    "Joining from %@" : {
+      "comment" : "Welcome list: a WebDAV vault whose first download is not finished; %@ is the server",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uniéndose desde %@"
           }
         }
       }
@@ -8849,6 +9066,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Último informe de importación…"
+          }
+        }
+      }
+    },
+    "Last Sync" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Última sincronización"
           }
         }
       }
@@ -10020,6 +10248,17 @@
         }
       }
     },
+    "No devices known yet: this target has not synced." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no se conoce ningún dispositivo: este destino no se ha sincronizado."
+          }
+        }
+      }
+    },
     "No handwriting inside the loop. Circle the equation again." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10123,6 +10362,17 @@
         }
       }
     },
+    "No sync targets: this device holds the only copy." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin destinos de sincronización: este dispositivo tiene la única copia."
+          }
+        }
+      }
+    },
     "No tags yet" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10210,6 +10460,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ninguna: la bóveda solo está en este dispositivo. Elige una carpeta, por ejemplo en iCloud Drive, para sincronizarla con tus otros dispositivos."
+          }
+        }
+      }
+    },
+    "Not Downloaded" : {
+      "comment" : "Files of a folder target its provider has not downloaded",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin descargar"
           }
         }
       }
@@ -10330,6 +10592,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sin restaurar (dañados o ausentes en la copia): %lld."
+          }
+        }
+      }
+    },
+    "Not synced yet with %@" : {
+      "comment" : "%@ is the sync targets' names",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no sincronizada con %@"
           }
         }
       }
@@ -10576,6 +10850,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No hay nada en este cuaderno, etiqueta o lista."
+          }
+        }
+      }
+    },
+    "Nothing is quarantined." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay nada en cuarentena."
           }
         }
       }
@@ -11061,6 +11346,17 @@
         }
       }
     },
+    "Only on this device" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo en este dispositivo"
+          }
+        }
+      }
+    },
     "Only your key opens these notes" : {
       "comment" : "About Your Key: heading",
       "extractionState" : "manual",
@@ -11333,6 +11629,17 @@
         }
       }
     },
+    "Open and unlock this vault to check the file under its keys." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre y desbloquea esta bóveda para comprobar el archivo con sus claves."
+          }
+        }
+      }
+    },
     "Open from WebDAV" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11435,6 +11742,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "¿Abrir «%@»?"
+          }
+        }
+      }
+    },
+    "Opened %@" : {
+      "comment" : "Welcome list: when the vault was last opened on this device (a relative date)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abierta %@"
           }
         }
       }
@@ -11542,6 +11861,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Otro color"
+          }
+        }
+      }
+    },
+    "Other Files" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otros archivos"
           }
         }
       }
@@ -12584,6 +12914,17 @@
         }
       }
     },
+    "Publishes its note summaries here; no changes of it synced yet" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Publica aquí sus resúmenes de notas; aún no se ha sincronizado ningún cambio suyo"
+          }
+        }
+      }
+    },
     "Purple" : {
       "comment" : "Text color",
       "extractionState" : "manual",
@@ -12604,6 +12945,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Calidad"
+          }
+        }
+      }
+    },
+    "Quarantined Files" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archivos en cuarentena"
           }
         }
       }
@@ -13789,6 +14141,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reabrir última bóveda"
+          }
+        }
+      }
+    },
+    "Repair" : {
+      "comment" : "Alert title in Repair",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reparar"
+          }
+        }
+      }
+    },
+    "Repair: %@" : {
+      "comment" : "Repair view title; %@ is the sync target's name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reparar: %@"
           }
         }
       }
@@ -16110,6 +16486,17 @@
         }
       }
     },
+    "Storage on this device, the devices each target holds, and files a sync refused." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El espacio en este dispositivo, los dispositivos de cada destino y los archivos que una sincronización rechazó."
+          }
+        }
+      }
+    },
     "Store settings encrypted in this vault, so every device that opens it can use the same ones. Device keys and Face ID or Touch ID stay on each device." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -16347,6 +16734,17 @@
         }
       }
     },
+    "Sync State" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estado de sincr."
+          }
+        }
+      }
+    },
     "Sync Targets" : {
       "comment" : "Title of the sync targets sheet",
       "extractionState" : "manual",
@@ -16379,6 +16777,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Falló la sincronización: %@"
+          }
+        }
+      }
+    },
+    "Synced with %@ %@" : {
+      "comment" : "Welcome list: %1$@ is the sync targets' names, %2$@ when the last sync ended (a relative date)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronizada con %1$@ %2$@"
           }
         }
       }
@@ -16472,6 +16882,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sincronizando con el servidor…"
+          }
+        }
+      }
+    },
+    "Syncing…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronizando…"
           }
         }
       }
@@ -17469,6 +17890,17 @@
         }
       }
     },
+    "The folder already holds this vault: the first sync copies what either side lacks." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La carpeta ya contiene esta bóveda: la primera sincronización copia lo que le falte a cada lado."
+          }
+        }
+      }
+    },
     "The folder cannot be reached now. Changes are kept on this device and sync when it is back." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -17488,6 +17920,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No se pudo añadir la carpeta: %@"
+          }
+        }
+      }
+    },
+    "The folder does not exist yet: the first sync creates it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La carpeta aún no existe: la primera sincronización la crea."
+          }
+        }
+      }
+    },
+    "The folder holds another vault. Choose an empty or new folder." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La carpeta contiene otra bóveda. Elige una carpeta vacía o nueva."
+          }
+        }
+      }
+    },
+    "The folder holds other files. Choose an empty or new folder." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La carpeta contiene otros archivos. Elige una carpeta vacía o nueva."
+          }
+        }
+      }
+    },
+    "The folder is empty." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La carpeta está vacía."
           }
         }
       }
@@ -17855,6 +18331,17 @@
         }
       }
     },
+    "The server folder holds another vault or other files. Choose an empty or new folder." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La carpeta del servidor contiene otra bóveda u otros archivos. Elige una carpeta vacía o nueva."
+          }
+        }
+      }
+    },
     "The server folder is gone. Nothing was synced." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -18111,6 +18598,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "La bóveda no se descargó por completo: %@\n\nÁbrela de nuevo para continuar la descarga."
+          }
+        }
+      }
+    },
+    "The vault's copy inside the app, which you work on, online or not." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La copia de la bóveda dentro de la app, con la que trabajas, con conexión o sin ella."
           }
         }
       }
@@ -18473,6 +18971,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Este PDF es demasiado grande para añadirlo (%@; como máximo %@)."
+          }
+        }
+      }
+    },
+    "This Vault and Its Sync Targets" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta bóveda y sus destinos de sincronización"
           }
         }
       }
@@ -19239,6 +19748,10 @@
           }
         }
       }
+    },
+    "Total" : {
+      "extractionState" : "manual",
+      "shouldTranslate" : false
     },
     "Transcribe" : {
       "comment" : "Menu item: transcribe a recording",
@@ -20073,6 +20586,17 @@
         }
       }
     },
+    "Vault Details" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detalles de la bóveda"
+          }
+        }
+      }
+    },
     "Vault Key" : {
       "comment" : "Toolbar menu about the vault's remembered key",
       "extractionState" : "manual",
@@ -20354,6 +20878,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Las vulnerabilidades se comunican de forma privada en GitHub, como describe la política de seguridad (SECURITY.md)."
+          }
+        }
+      }
+    },
+    "Waiting for Unlock" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esperando el desbloqueo"
           }
         }
       }

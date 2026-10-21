@@ -759,6 +759,14 @@ private struct StorageSettingsSection: View {
             } else {
                 Text("Unlock a vault to see its unused attachments.").foregroundStyle(.secondary)
             }
+            if let vault = model.vault?.vaultId, model.syncStore.entry(id: vault) != nil {
+                NavigationLink {
+                    VaultDetailsView(vaultID: vault)
+                } label: {
+                    Text("This Vault and Its Sync Targets")
+                }
+                .accessibilityIdentifier("storageVaultDetails")
+            }
             LabeledContent("Drawing Cache", value: StorageText.bytes(sizes.drawings))
             LabeledContent("Attachment Cache", value: StorageText.bytes(sizes.attachments))
             Button("Clear Caches", role: .destructive) {

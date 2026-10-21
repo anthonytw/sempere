@@ -14,14 +14,21 @@ struct StoredVaultsSection: View {
 
     var body: some View {
         let vaults = library.storedVaultsByUse
-        if !vaults.isEmpty {
+        let joining = model.webdavLocations.locations.filter { l in
+            !vaults.contains { $0.vaultId.uuidString.lowercased() == l.vaultId.lowercased() }
+        }
+        if !vaults.isEmpty || !joining.isEmpty {
             Section {
                 ForEach(vaults, id: \.vaultId) { entry in
-                    Button { open(entry) } label: { StoredVaultRow(entry: entry, recent: recent(of: entry)) }
+                    Button { open(entry) } label: {
+                        StoredVaultRow(entry: entry, recent: recent(of: entry),
+                                       sessions: model.syncCoordinator.sessions(of: entry.vaultId))
+                    }
                         .help(String(localized: "Open this vault"))
                         .swipeActions { deleteButton(entry) }
                         .contextMenu { deleteButton(entry) }
                 }
+                JoiningWebDAVRows(locations: joining)
             } header: {
                 Text("On This Device")
             }
@@ -61,6 +68,8 @@ struct StoredVaultsSection: View {
 private struct StoredVaultRow: View {
     var entry: VaultStore.Entry
     var recent: RecentVault?
+    /// Its targets' sessions, for the status line.
+    var sessions: [SyncSession]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -70,9 +79,13 @@ private struct StoredVaultRow: View {
             }
             if let problem = entry.problem {
                 Label(problem, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
-            } else if let recent {
-                Text(recent.lastOpened, format: .relative(presentation: .named))
-                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                VaultListStatusLine(sessions: sessions)
+                if let recent {
+                    Text("Opened \(recent.lastOpened, format: .relative(presentation: .named))",
+                         comment: "Welcome list: when the vault was last opened on this device")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
             }
         }
         .accessibilityElement(children: .combine)

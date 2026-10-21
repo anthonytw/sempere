@@ -1466,6 +1466,17 @@ syncs with both ways.
   run's arrivals; the staging is removed after every placing attempt. The place needs no network: a vault
   opened offline is current up to its last staging. Tests: `LockedStagingTests` (package),
   `FolderTargetAppTests.aClosedVaultStages…`.
+- **Details, Storage and Repair** (P9; `TargetInspection.swift`, `AppModel+VaultDetails`, `VaultDetailsViews`;
+  `sempere store info`, `sempere store quarantine`). Vault Details (Sync Targets ▸ Details and Repair, and
+  Settings ▸ Storage) reads this device only: the copy's sizes and, per target, its last sync, files in step,
+  staged files, state size, the devices whose revisions or summaries it held at the last sync (devices per
+  target, design Q8: no format change) and its quarantine. Repair adopts a quarantined write-once file only
+  through a pull-only run from a scratch folder under the open vault's keys (`TargetQuarantine.adopt`), so it
+  gets every check a download gets, and reports what it placed as an arrival; root files are never adopted.
+  Add WebDAV Server… is the connect sheet in its add-target mode: the same server check and certificate
+  trust, then `WebDAVConnection.checkTargetFolder` accepts only an empty, missing or same-vault folder.
+  The welcome screen lists store vaults and WebDAV vaults still joining in one list, each with its targets'
+  status (`VaultListStatusLine`).
 - **Published summaries.** An unlocked two-way run of a complete copy creates and keeps current the
   target's `sempere-summaries.sealed` (`SyncOptions.publishSummaries`, without the web index): a device
   joining the vault lists the notes from it before they arrive (`JoinAppTests`). Never from a partial copy,
