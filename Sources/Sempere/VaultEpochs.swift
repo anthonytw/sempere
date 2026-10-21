@@ -1,0 +1,211 @@
+import Age
+import Crypto
+import Foundation
+
+// Vaults of several epochs (docs/design/key-hierarchy.md §5.2.1, §5.3; format.md §15.6, §15.14; phase
+// KH3): the keys of earlier epochs, read from the epoch records in `epochs/`, and the acceptance rule
+// that decides which files under them a reader takes.
+
+/// Why a vault file under an earlier key is not taken (design §5.3 rule 4, §5.8): it is **set aside**,
+/// kept and never placed.
+public enum SetAsideReason: String, Hashable, Sendable, Codable {
+    /// Under an earlier epoch's key, and the record that closed that epoch does not list its path.
+    case notSealed = "not-sealed"
+    /// The record that closed its epoch lists its path with other bytes.
+    case bytesDiffer = "bytes-differ"
+    /// Under the key of an epoch that is not on this device's chain (one a takeover dropped).
+    case dropped
+
+    /// One line for people.
+    public var text: String {
+        switch self {
+        case .notSealed: return "written under an earlier key after the device change that closed it (not sealed)"
+        case .bytesDiffer: return "sealed by a device change with other bytes"
+        case .dropped: return "written under the key of a device change that a takeover dropped"
+        }
+    }
+}
+
+/// One earlier epoch whose key this vault value holds.
+struct OlderEpoch: Sendable {
+    var epoch: Int
+    var epochId: Data
+    var key: VaultEpochKey
+    /// `V_j`, to decrypt its files.
+    var identity: NativeIdentity
+    /// Its sealed set (path → SHA-256 hex), from the record whose parent it is; nil for an epoch off the
+    /// chain (its files are set aside whatever they are).
+    var sealed: [String: String]?
+
+    init(epoch: Int, epochId: Data, key: VaultEpochKey, sealed: [String: String]?) throws {
+        self.epoch = epoch; self.epochId = epochId; self.key = key; self.sealed = sealed
+        identity = .mlkem768x25519(try key.vaultIdentity())
+    }
+}
+
+/// The keys of the earlier epochs of a vault's chain (design §5.3): read from the epoch records newest
+/// first, each record giving its parent's key and sealed set, only as far as a reader needs them. A record
+/// that is missing or does not open stops the walk: the keys below it are unknown, and files under them
+/// are **pending** (rule 3). Shared by a `Vault` value and its copies.
+final class EpochKeyring: @unchecked Sendable {
+    private let lock = NSLock()
+    private let url: URL
+    private let vaultId: UUID
+    /// The chain's epoch ids, epoch 1 first, up to the current epoch.
+    private let chainIds: [Data]
+    private let withoutLinks: Bool
+    private var loaded: [OlderEpoch] = []
+    /// The epoch whose record is opened next, and its key.
+    private var next: (epoch: Int, key: VaultEpochKey)?
+    private var stoppedEarly = false
+    /// Keys of epochs off the chain (this device's ledger), tried last.
+    private var offChain: [OlderEpoch] = []
+
+    /// - Parameters:
+    ///   - chainIds: the verified chain's ids, epoch 1 first.
+    ///   - parent: the current record's `parent` (its key and the sealed set of the epoch before).
+    init(url: URL, vaultId: UUID, chainIds: [Data], parent: EpochRecordParent?, withoutLinks: Bool) {
+        self.url = url; self.vaultId = vaultId; self.chainIds = chainIds; self.withoutLinks = withoutLinks
+        guard let parent else { return }
+        guard let key = parent.key, chainIds.count >= 2, key.epochId == chainIds[chainIds.count - 2],
+              let older = try? OlderEpoch(epoch: parent.epoch, epochId: key.epochId, key: key, sealed: parent.sealed) else {
+            // A re-encryption record carries no parent key (KH6): what is below it is not read here.
+            stoppedEarly = parent.epoch >= 1
+            return
+        }
+        loaded = [older]
+        next = parent.epoch >= 2 ? (parent.epoch, key) : nil
+    }
+
+    /// Adds keys of epochs that are not on the chain (set aside whatever they hold).
+    func addOffChain(_ keys: [(epoch: Int, key: VaultEpochKey)]) {
+        lock.lock(); defer { lock.unlock() }
+        let known = Set(loaded.map(\.epochId) + offChain.map(\.epochId) + chainIds)
+        for (e, k) in keys where !known.contains(k.epochId) {
+            if let o = try? OlderEpoch(epoch: e, epochId: k.epochId, key: k, sealed: nil) { offChain.append(o) }
+        }
+    }
+
+    /// True when a record on the way could not be read: some earlier keys are unknown (files under them
+    /// are pending, never set aside or accepted).
+    var isIncomplete: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return stoppedEarly
+    }
+
+    /// The first value `body` gives for an earlier epoch, newest first, opening records only until then;
+    /// then the off-chain keys.
+    func first<T>(_ body: (OlderEpoch) throws -> T?) rethrows -> T? {
+        var i = 0
+        while let o = epoch(at: i) {
+            if let v = try body(o) { return v }
+            i += 1
+        }
+        lock.lock()
+        let off = offChain
+        lock.unlock()
+        for o in off { if let v = try body(o) { return v } }
+        return nil
+    }
+
+    /// Every earlier epoch on the chain whose key could be read, newest first.
+    func all() -> [OlderEpoch] {
+        var out: [OlderEpoch] = []
+        var i = 0
+        while let o = epoch(at: i) { out.append(o); i += 1 }
+        return out
+    }
+
+    /// The off-chain keys.
+    func offChainEpochs() -> [OlderEpoch] {
+        lock.lock(); defer { lock.unlock() }
+        return offChain
+    }
+
+    /// The `i`-th earlier epoch (0: the one before the current), opening one more record when needed.
+    private func epoch(at i: Int) -> OlderEpoch? {
+        lock.lock(); defer { lock.unlock() }
+        while loaded.count <= i {
+            guard let (j, key) = next else { return nil }
+            next = nil
+            // Record j holds K_{j-1} and the sealed set of epoch j-1.
+            let name = EpochRecord.fileName(epoch: j, epochId: key.epochId)
+            let path = Vault.epochsName + "/" + name
+            guard let data = try? (withoutLinks
+                    ? BoundedRead.contents(under: url, path, maxBytes: EpochRecord.maxBytes)
+                    : BoundedRead.contents(of: url.appendingPathComponent(path), maxBytes: EpochRecord.maxBytes)),
+                  let record = try? EpochRecord.open(data, key: key, vaultId: vaultId, epoch: j),
+                  j - 1 >= 1, chainIds.count >= j, record.epochId == chainIds[j - 1],
+                  let parent = record.parent, let pk = parent.key, pk.epochId == chainIds[j - 2],
+                  let older = try? OlderEpoch(epoch: j - 1, epochId: pk.epochId, key: pk, sealed: parent.sealed) else {
+                stoppedEarly = true
+                return nil
+            }
+            loaded.append(older)
+            next = j - 1 >= 2 ? (j - 1, pk) : nil
+        }
+        return loaded[i]
+    }
+}
+
+// MARK: - The acceptance rule (design §5.3)
+
+/// The outcome of decrypting a vault file under the epochs a reader holds.
+enum EpochOpened {
+    /// It decrypted under `key`: the current epoch's (`older` nil) or an earlier one's.
+    case opened(plain: Data, key: VaultEpochKey, older: OlderEpoch?)
+    /// No key this device holds decrypts it, and a record on the chain could not be read: it may be under
+    /// an earlier key whose record has not arrived (rule 3).
+    case pending
+    /// No key decrypts it.
+    case undecryptable(String)
+}
+
+extension Vault {
+    /// Decrypts `data` with the current vault identity first, then with each earlier epoch's (newest first),
+    /// then with keys off the chain: at most one X-Wing decapsulation per epoch (design §5.3).
+    func openUnderEpochs(_ data: Data) -> EpochOpened {
+        guard let secret else { return .undecryptable("the vault is locked") }
+        let first: Error
+        do { return .opened(plain: try AgeFile.decrypt(data, with: identities), key: secret, older: nil) } catch {
+            first = error
+        }
+        guard let keyring else { return .undecryptable("\(first)") }
+        if let hit = keyring.first({ o -> (Data, OlderEpoch)? in
+            (try? AgeFile.decrypt(data, with: [o.identity])).map { ($0, o) }
+        }) {
+            return .opened(plain: hit.0, key: hit.1.key, older: hit.1)
+        }
+        return keyring.isIncomplete ? .pending : .undecryptable("\(first)")
+    }
+
+    /// Why a file that decrypted and verified under `older` (an earlier epoch) is set aside; nil when the
+    /// record that closed that epoch seals `path` with exactly these bytes (rule 2), or when `older` is nil
+    /// (the current epoch, rule 1).
+    func setAsideReason(_ older: OlderEpoch?, path: String, sha256 hex: @autoclosure () -> String) -> SetAsideReason? {
+        guard let older else { return nil }
+        guard let sealed = older.sealed else { return .dropped }
+        guard let digest = sealed[path] else { return .notSealed }
+        return digest == hex() ? nil : .bytesDiffer
+    }
+
+    /// The earlier epochs this vault value holds keys for (loading every record on the chain).
+    var olderEpochs: [OlderEpoch] { keyring?.all() ?? [] }
+
+    /// The vault identities a blob may be decrypted with: the current one, then every earlier one.
+    var blobIdentities: [any AgeIdentity] {
+        identities + olderEpochs.map { $0.identity as any AgeIdentity }
+            + (keyring?.offChainEpochs().map { $0.identity as any AgeIdentity } ?? [])
+    }
+
+    /// The epochs `blobSecrets` lists after the current one, in the same order.
+    var blobOlderEpochs: [OlderEpoch] { olderEpochs + (keyring?.offChainEpochs() ?? []) }
+
+    /// A path relative to the vault folder, as sealed sets and ledgers name files.
+    static func notePath(_ note: UUID, _ file: String) -> String { "\(notesName)/\(note.uuidString.lowercased())/\(file)" }
+
+    /// `notes/<id>/att/<file>`.
+    static func blobPath(_ note: UUID, _ file: String) -> String {
+        "\(notesName)/\(note.uuidString.lowercased())/\(attachmentsName)/\(file)"
+    }
+}

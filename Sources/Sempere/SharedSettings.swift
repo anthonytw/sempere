@@ -38,6 +38,10 @@ public enum SharedSettingsError: Error, Hashable, Sendable {
     /// (`SharedSettingsMigrations.current`): it must not be read, applied or
     /// written (docs/settings-sync.md §6.2 rule 4).
     case needsNewerReader(minReaderVersion: Int)
+    /// Under an earlier epoch's key and not taken by the acceptance rule (key-hierarchy design §5.3).
+    case setAside(SetAsideReason)
+    /// Under a key whose epoch record has not arrived (design §5.3 rule 3).
+    case pending
 }
 
 /// Where a slot is: one key at the top level (`block == nil`) or inside a type
@@ -439,15 +443,22 @@ extension Vault {
     public func openSharedSettings(_ data: Data, allowNewerReader: Bool = false) throws -> SharedSettings.Decoded {
         let secret = try requireReadable()
         guard data.count <= SharedSettings.maxFileBytes else { throw SharedSettingsError.tooLarge }
-        let plain: Data
-        do { plain = try AgeFile.decrypt(data, with: identities) } catch {
-            throw SharedSettingsError.undecryptable(SharedSettings.printable("\(error)"))
+        _ = secret
+        let plain: Data, key: VaultEpochKey, older: OlderEpoch?
+        switch openUnderEpochs(data) {
+        case .opened(let p, let k, let o): plain = p; key = k; older = o
+        case .pending: throw SharedSettingsError.pending
+        case .undecryptable(let why): throw SharedSettingsError.undecryptable(SharedSettings.printable(why))
         }
         let unframed: BodyFraming.Unframed
         do {
-            unframed = try Self.unframeSettings(plain, secret: secret)
+            unframed = try Self.unframeSettings(plain, secret: key)
         } catch let e as BodyFramingError {
             throw SharedSettingsError.framing(e)
+        }
+        // Key-hierarchy design §5.7: an accepted old copy is read; the next write is under the current key.
+        if let reason = setAsideReason(older, path: SharedSettings.fileName, sha256: FileDigest.sha256(data)) {
+            throw SharedSettingsError.setAside(reason)
         }
         let json: Data
         do { json = try Gzip.decompress(unframed.gzip, maxOutput: SharedSettings.maxJSONBytes) } catch {
@@ -480,7 +491,17 @@ extension Vault {
     /// recipients list (`requireWritable`).
     public func writeSharedSettings(_ settings: SharedSettings) throws {
         try requireWritable()
-        try FileIO.writeAtomically(try sealSharedSettings(settings), to: sharedSettingsURL, replacing: true)
+        let sealed = try sealSharedSettings(settings)
+        // The file it replaces, when the acceptance rule does not take it, is set aside first (design §5.8).
+        if let setAsideStore, let old = try? readFile(sharedSettingsURL, maxBytes: SharedSettings.maxFileBytes) {
+            switch Result(catching: { try openSharedSettings(old, allowNewerReader: true) }) {
+            case .failure(SharedSettingsError.setAside(let reason)):
+                try setAsideStore.keep(old, path: SharedSettings.fileName, vaultId: vaultId, reason: reason)
+            default: break
+            }
+        }
+        try recordWrite(path: SharedSettings.fileName, bytes: sealed)
+        try FileIO.writeAtomically(sealed, to: sharedSettingsURL, replacing: true)
     }
 
     /// The bytes `writeSharedSettings` would write (tagged under the vault

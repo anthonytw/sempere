@@ -80,6 +80,16 @@ public enum VaultError: Error, Hashable, Sendable {
     /// A note of a partial copy has not received all its revisions (format.md §1.2): nothing is written
     /// to it, or deleted from it, until they arrive. The value is the note id.
     case noteIncomplete(String)
+    /// This device is not on the device list of the vault's newest epoch, which it verified (design §5.5):
+    /// it writes nothing (CLI exit 8). A takeover that re-admits it undoes it. The value says who removed it.
+    case removedFromVault(String)
+    /// The write ledger cannot be read or written (design §5.4): it fails closed, and nothing that needs it
+    /// (a write, a catch-up) happens.
+    case ledgerUnreadable(String)
+    /// A copy could not be set aside (design §5.8): the replacement or removal that needed it does not happen.
+    case setAsideFailed(String)
+    /// An epoch change (removal, handoff, takeover, kit replacement) cannot be made as asked; the value says why.
+    case epochChangeRefused(String)
 }
 
 /// Why one revision file could not be read, by stage. (Vault-level preconditions, such as a locked
@@ -100,6 +110,11 @@ public enum RevisionReadError: Error, Hashable, Sendable {
     /// version, or a newer revision whose envelope or state does not decode. The vault is read-only
     /// once it is seen.
     case newer(String)
+    /// Under an earlier epoch's key, and not taken by the acceptance rule (key-hierarchy design §5.3): set
+    /// aside, never placed in the note.
+    case setAside(SetAsideReason)
+    /// Under a key whose epoch record has not arrived (design §5.3 rule 3): neither taken nor set aside yet.
+    case pending
 }
 
 /// A vault directory (`*.sempere`, format.md §1) opened with zero or more age identities.
@@ -155,6 +170,25 @@ public struct Vault: Sendable {
     var givenRoot: Data?
     /// The trust record this value (and its copies) last saved.
     let trustMemo = TrustMemo()
+    /// Above epoch 1: the keys of the earlier epochs of the chain, read from `epochs/` as readers need them
+    /// (design §5.3). Nil at epoch 1 and while locked.
+    var keyring: EpochKeyring?
+    /// Above epoch 1: the chain of the current epoch's record, verified at open (nil when it did not verify).
+    public internal(set) var verifiedChain: EpochChain.Verified?
+    /// Pinned epochs that the chain this value follows dropped (a takeover, design §5.6).
+    public internal(set) var droppedEpochs: [Data] = []
+    /// A verified prefix of the chain to pin before a takeover by a newer kit counts (`ListCheck.pinnable`).
+    var pinnable: EpochChain.Verified?
+    /// This device's write ledger (design §5.4); nil keeps none (tests, readers).
+    public internal(set) var ledger: (any WriteLedgerStore)?
+    /// Where this device sets files aside (design §5.8); nil keeps none (tests, readers).
+    public internal(set) var setAsideStore: SetAsideStore?
+    /// Test seam: where an epoch change or a catch-up stops, as a crash there would (`EpochFaults`).
+    var faults = EpochFaults()
+    /// The epoch keys this value (and its copies) gave its ledger.
+    let ledgerMemo = LedgerMemo()
+    /// Whether this value (and its copies) caught up to its epoch.
+    let catchUpMemo = CatchUpMemo()
 
     // `package`: SempereWebDAV walks the same layout.
     package static let manifestName = "vault.json"
@@ -236,8 +270,13 @@ public struct Vault: Sendable {
         case .recovery: throw VaultError.recoveryKeyReadOnly
         case .device: break
         }
+        // A takeover that waits for its kit to be pinned: pin the chain up to it now, so the next open
+        // takes it (design §5.6 rule 3); this write is still refused.
+        if listStatus.problem != nil, pinnable != nil { try? pinDeferredPrefix() }
         try requireTrustedList()
         if case .verified = listStatus { try rememberList() }
+        // The first write at a new epoch catches this device's own files up first (design §5.4).
+        try catchUpIfNeeded()
     }
 
     /// Records that `note` holds newer content (format.md §7.3): from now on every write through this
@@ -279,7 +318,8 @@ public struct Vault: Sendable {
                               recovery: MLKEM768X25519Identity, recoveryPassphrase: String? = nil,
                               workFactor: Int = RecoveryPassphraseCopy.workFactor, vaultId: UUID = UUID(),
                               created: Date = Date(), trust: (any EpochTrustStore)? = nil,
-                              label: String? = nil) throws -> Vault {
+                              label: String? = nil, ledger: (any WriteLedgerStore)? = nil,
+                              setAside: SetAsideStore? = nil) throws -> Vault {
         guard url.lastPathComponent.hasSuffix(".sempere"), url.lastPathComponent.count > ".sempere".count else {
             throw VaultError.invalidVaultName(url.lastPathComponent)
         }
@@ -348,6 +388,8 @@ public struct Vault: Sendable {
                           unlockIdentities: [device.nativeIdentity], secret: key, signing: device.signing,
                           trustStore: trust)
         vault.openedWith = .device(device.fingerprint)
+        vault.ledger = ledger
+        vault.setAsideStore = setAside
         vault.listStatus = .verified(.firstUse)
         try? vault.rememberList()   // else saved by the first write (requireWritable)
         return vault
@@ -367,15 +409,18 @@ public struct Vault: Sendable {
     ///   key of this vault), `unsupportedFormat`, `keyNotListed`; `classicIdentity` when only X25519
     ///   identities are given.
     public static func open(at url: URL, identities: [any AgeIdentity] = [], signing: DeviceSigningKeys? = nil,
-                            trust: (any EpochTrustStore)? = nil, root expectedRoot: Data? = nil) throws -> Vault {
+                            trust: (any EpochTrustStore)? = nil, root expectedRoot: Data? = nil,
+                            ledger: (any WriteLedgerStore)? = nil, setAside: SetAsideStore? = nil) throws -> Vault {
         let manifestURL = url.appendingPathComponent(manifestName)
         guard FileIO.exists(manifestURL) else { throw VaultError.notAVault(url.path) }
         let manifestBytes = readsWithoutLinks(url)
             ? try BoundedRead.contents(under: url, manifestName, maxBytes: BoundedRead.maxManifestBytes)
             : try FileIO.read(manifestURL, maxBytes: BoundedRead.maxManifestBytes)
         let manifest = try readManifest(manifestBytes)
-        let locked = Vault(url: url, manifest: manifest, identities: [], unlockIdentities: identities, secret: nil,
+        var locked = Vault(url: url, manifest: manifest, identities: [], unlockIdentities: identities, secret: nil,
                            signing: nil, trustStore: trust)
+        locked.ledger = ledger
+        locked.setAsideStore = setAside
         guard !identities.isEmpty else { return locked }
         let held = Set(identities.compactMap(recipientString))
         let opener: Opener
@@ -386,6 +431,10 @@ public struct Vault: Sendable {
             opener = .recovery; entry = recovery
         } else {
             if identities.allSatisfy(Self.isClassic) { throw VaultError.classicIdentity }
+            // A device this vault listed before: removed by a device change it can verify (design §5.5).
+            if let notice = removalNotice(manifest, held: held, signing: signing, trust: trust) {
+                throw VaultError.removedFromVault(notice)
+            }
             throw VaultError.keyNotListed("none of the keys is listed in vault.json: this device has not joined the vault")
         }
         let key: VaultEpochKey
@@ -396,9 +445,39 @@ public struct Vault: Sendable {
         var vault = Vault(url: url, manifest: manifest, identities: [try key.vaultIdentity()], unlockIdentities: identities,
                           secret: key, signing: entry.role == .device && signing.flatMap({ try? $0.publicKeys() }) == entry.sign
                             ? signing : nil, trustStore: trust)
+        vault.ledger = ledger
+        vault.setAsideStore = setAside
         vault.openedWith = opener
         vault.givenRoot = expectedRoot
-        vault.listStatus = Self.listStatus(manifest, key: key, trust: trust, root: expectedRoot)
+        let recordRead = readCurrentRecord(url, manifest: manifest, key: key)
+        let check = listCheck(manifest, key: key, trust: trust, root: expectedRoot, record: recordRead)
+        vault.listStatus = check.status
+        vault.verifiedChain = check.chain
+        vault.droppedEpochs = check.dropped
+        vault.pinnable = check.pinnable
+        if case .read(let record) = recordRead {
+            vault.keyring = EpochKeyring(url: url, vaultId: manifest.vaultId, chainIds: record.chain.map(\.epochId),
+                                         parent: record.parent, withoutLinks: readsWithoutLinks(url))
+        } else if manifest.epoch > 1 {
+            // The record has not arrived: earlier keys are unknown, files under them pending (design §5.3 rule 3).
+            vault.keyring = EpochKeyring(url: url, vaultId: manifest.vaultId, chainIds: [],
+                                         parent: EpochRecordParent(epoch: manifest.epoch - 1, epochId: manifest.parent ?? Data(),
+                                                                   key: nil, sealed: [:]),
+                                         withoutLinks: true)
+        }
+        // Keys of epochs off the chain that this device wrote under (its ledger's keyring): their files are
+        // set aside, and its own are caught up (design §5.4).
+        if let ledger, case .device = opener, let held = try? ledger.epochKeys() {
+            let onChain = Set(vault.verifiedChain?.entries.map(\.epochId) ?? [manifest.epochId])
+            let off = held.filter { !onChain.contains($0.key.epochId) && $0.key.epochId != key.epochId }
+            if !off.isEmpty {
+                if vault.keyring == nil {
+                    vault.keyring = EpochKeyring(url: url, vaultId: manifest.vaultId, chainIds: [manifest.epochId], parent: nil,
+                                                 withoutLinks: true)
+                }
+                vault.keyring?.addOffChain(off.map { ($0.epoch, $0.key) })
+            }
+        }
         return vault
     }
 

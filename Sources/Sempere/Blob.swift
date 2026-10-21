@@ -49,6 +49,11 @@ public enum BlobError: Error, Hashable, Sendable {
     case contentTooLarge(limit: Int64)
     /// The source file changed while it was being written as a blob.
     case sourceChanged
+    /// Under an earlier epoch's key, and not taken by the acceptance rule (key-hierarchy design §5.3): set
+    /// aside, never read as the note's attachment.
+    case setAside(SetAsideReason)
+    /// Under a key whose epoch record has not arrived (design §5.3 rule 3): neither taken nor set aside yet.
+    case pending
 }
 
 /// The 45-byte header at the start of a blob's plaintext (format.md §8.1.3).

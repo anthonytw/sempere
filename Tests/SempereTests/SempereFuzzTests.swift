@@ -495,8 +495,8 @@ final class SempereFuzzTests: VaultTestCase {
         try XCTSkipUnless(postQuantumAvailable, "X-Wing and ML-DSA need Apple OS 26")
         let vaultId = UUID(), k1 = VaultEpochKey.random(), k2 = VaultEpochKey.random()
         let wrap = Data(try EpochKeyWrap.plaintext(k2, vaultId: vaultId, epoch: 2).utf8)
-        let chain = [try EpochTrustRecord.ChainEpoch(epoch: 1, key: k1, parent: nil, list: [Data(repeating: 1, count: 32)]),
-                     try EpochTrustRecord.ChainEpoch(epoch: 2, key: k2, parent: k1.epochId, list: [])]
+        let chain = [try EpochTrustRecord.ChainEpoch(epoch: 1, key: k1, parent: nil, list: [Data(repeating: 1, count: 32)], recovery: Data(repeating: 2, count: 32), home: Data(repeating: 1, count: 32), reason: "create"),
+                     try EpochTrustRecord.ChainEpoch(epoch: 2, key: k2, parent: k1.epochId, list: [], recovery: Data(repeating: 2, count: 32), home: Data(repeating: 1, count: 32), reason: "remove")]
         let record = try JSONEncoder().encode(try EpochTrustRecord(
             vaultId: vaultId, root: try VaultRoot.fingerprint(vaultId: vaultId, epochOne: k1), chain: chain,
             list: [.init(role: "recovery", key: "age1pq1r", sign: nil, name: "Recovery kit")],

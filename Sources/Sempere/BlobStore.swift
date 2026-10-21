@@ -127,15 +127,15 @@ extension Vault {
         return BlobName.fileName(name: try blobName(sha256: digest), kind: ref.kind)
     }
 
-    /// The keys a blob name may verify under: the epoch's (format.md §8.1.2). Older epochs' come with
-    /// the acceptance rule (KH3).
+    /// The keys a blob name may verify under: the epoch's (format.md §8.1.2), then each earlier epoch's of
+    /// the chain and the keys off it this device holds (key-hierarchy design §5.3), in that order.
     var blobSecrets: [VaultEpochKey] {
         guard let secret else { return [] }
-        return [secret]
+        return [secret] + blobOlderEpochs.map(\.key)
     }
 
     /// The paths a reference may resolve to, in lookup order: the name under
-    /// the current secret, then (journal present) under the previous one.
+    /// the current key, then under each earlier one (`blobSecrets`).
     /// The kind always comes from the reference; no other kind is guessed.
     func blobCandidates(note: UUID, _ ref: BlobRef) throws -> [URL] {
         guard ref.isValid, let digest = ref.digest else { throw BlobError.invalidReference }
@@ -150,9 +150,59 @@ extension Vault {
     ///
     /// - Throws: `BlobError.missing` (with the current path) when none exists.
     func locateBlob(note: UUID, _ ref: BlobRef) throws -> URL {
+        try locateBlobEpoch(note: note, ref).url
+    }
+
+    /// The existing blob file for a reference and the earlier epoch whose name it has (nil: the current one).
+    func locateBlobEpoch(note: UUID, _ ref: BlobRef) throws -> (url: URL, older: OlderEpoch?) {
         let candidates = try blobCandidates(note: note, ref)
-        if let found = candidates.first(where: { FileIO.exists($0) }) { return found }
-        throw BlobError.missing(candidates[0].path)
+        guard let i = candidates.firstIndex(where: { FileIO.exists($0) }) else { throw BlobError.missing(candidates[0].path) }
+        return (candidates[i], i == 0 ? nil : blobOlderEpochs[i - 1])
+    }
+
+    /// Reads the blob file `url` of `note` under whichever epoch's key it is encrypted to and named under
+    /// (the current one first), as `readAcceptedBlob` does.
+    ///
+    /// - Throws: `BlobError.pending` when no key opens it and a record on the chain is missing; else the
+    ///   error of the current key's attempt.
+    func readAnyAcceptedBlob(_ url: URL, note: UUID, maxContent: Int64, sink: (Data) throws -> Void = { _ in }) throws
+        -> BlobHeader {
+        let first: Error
+        do { return try readAcceptedBlob(url, note: note, older: nil, expected: nil, maxContent: maxContent, sink: sink) } catch {
+            first = error
+        }
+        guard let keyring else { throw first }
+        if let header = try keyring.first({ o -> BlobHeader? in
+            do { return try readAcceptedBlob(url, note: note, older: o, expected: nil, maxContent: maxContent, sink: sink) } catch BlobError.setAside(let r) {
+                throw BlobError.setAside(r)
+            } catch {
+                return nil
+            }
+        }) {
+            return header
+        }
+        if keyring.isIncomplete { throw BlobError.pending }
+        throw first
+    }
+
+    /// Reads the blob file `url` of `note` (named under the current key, or under `older`'s), checking it
+    /// as `readBlobFile` does, and under an earlier key the acceptance rule (design §5.3): its exact bytes
+    /// sealed at its path by the record that closed that epoch. Content handed to `sink` is unusable if
+    /// this throws.
+    func readAcceptedBlob(_ url: URL, note: UUID, older: OlderEpoch?, expected: BlobRef?, maxContent: Int64,
+                          sink: (Data) throws -> Void = { _ in }, raw: (Data) throws -> Void = { _ in }) throws -> BlobHeader {
+        guard let older else {
+            return try Self.readBlobFile(url, identities: identities, secrets: [try requireSecret()], expected: expected,
+                                         maxContent: maxContent, sink: sink, raw: raw).header
+        }
+        var hasher = SHA256()
+        let header = try Self.readBlobFile(url, identities: [older.identity], secrets: [older.key], expected: expected,
+                                           maxContent: maxContent, sink: sink, raw: { hasher.update(data: $0); try raw($0) }).header
+        if let reason = setAsideReason(older, path: Self.blobPath(note, url.lastPathComponent),
+                                       sha256: Hex.encode(hasher.finalize())) {
+            throw BlobError.setAside(reason)
+        }
+        return header
     }
 
     // MARK: - Reading
@@ -182,9 +232,8 @@ extension Vault {
     public func streamBlob(note: UUID, _ ref: BlobRef, maxBytes: Int64 = BlobRef.maxSize,
                            _ sink: (Data) throws -> Void) throws {
         _ = try requireReadable()
-        let url = try locateBlob(note: note, ref)
-        _ = try Self.readBlobFile(url, identities: identities, secrets: blobSecrets, expected: ref,
-                                  maxContent: maxBytes, sink: sink)
+        let (url, older) = try locateBlobEpoch(note: note, ref)
+        _ = try readAcceptedBlob(url, note: note, older: older, expected: ref, maxContent: maxBytes, sink: sink)
     }
 
     /// Runs `body` with a private temporary file (mode 0600, in the system
@@ -284,16 +333,15 @@ extension Vault {
     public func copyBlob(_ ref: BlobRef, from: UUID, to: UUID) throws {
         _ = try requireReadable()
         try requireWritable()
-        let source = try locateBlob(note: from, ref)
+        let (source, older) = try locateBlobEpoch(note: from, ref)
         guard let digest = ref.digest else { throw BlobError.invalidReference }
         let target = try blobCandidates(note: to, ref)[0]
         if from == to && source == target { return }
         if FileIO.exists(target), isValidBlob(target, ref: ref) { return }
-        guard source.lastPathComponent == target.lastPathComponent else {
-            // Still under the outgoing secret's name: re-encrypt to the current name.
+        guard older == nil else {
+            // Under an earlier epoch's name (accepted, sealed): re-encrypted to the current name.
             try writeBlobStream(note: to, ref: ref, digest: digest) { emit in
-                _ = try Self.readBlobFile(source, identities: identities, secrets: blobSecrets, expected: ref,
-                                          maxContent: BlobRef.maxSize, sink: emit)
+                _ = try readAcceptedBlob(source, note: from, older: older, expected: ref, maxContent: BlobRef.maxSize, sink: emit)
             }
             return
         }
@@ -303,8 +351,7 @@ extension Vault {
         // One pass: the raw bytes are copied as the decryptor reads them, and
         // the copy is placed only once the whole source verified.
         try FileIO.writeNewFile(tmp) { write in
-            _ = try Self.readBlobFile(source, identities: identities, secrets: blobSecrets, expected: ref,
-                                      maxContent: BlobRef.maxSize, raw: write)
+            _ = try readAcceptedBlob(source, note: from, older: nil, expected: ref, maxContent: BlobRef.maxSize, raw: write)
         }
         try place(tmp, at: target, ref: ref)
     }
@@ -353,6 +400,11 @@ extension Vault {
     /// writer of the same content won), atomically over an invalid one
     /// (format.md §8.1.4 step 2).
     private func place(_ tmp: URL, at target: URL, ref: BlobRef) throws {
+        // Intent first (design §5.4): the ledger knows the file before it is in place.
+        if ledger != nil {
+            let parts = target.pathComponents.suffix(4)
+            try recordWrite(path: parts.joined(separator: "/"), sha256: try FileDigest.sha256(of: tmp).hex)
+        }
         if FileIO.exists(target), !isValidBlob(target, ref: ref) {
             try FileIO.place(tmp, at: target)
             return
