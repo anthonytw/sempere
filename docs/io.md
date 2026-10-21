@@ -1518,11 +1518,20 @@ syncs with both ways.
   passes, at the default bounds, until a pass changes nothing (at most three). iOS ending a task sets the
   task's cancel flag and the coordinator's app-wide one (`cancelAllRuns`), so every run going, a foreground
   one without a bound included, stops between files, saving its sync state first (`CancelledRunStateTests`);
-  a session whose run is already going is skipped by the task, never waited for. A pair is left out when it has
-  nothing to do: its vault is closed (runs only upload) with nothing unconfirmed and its last run did not
-  fail. Each run's errors, bound and backoff are its own session's (`BackgroundTargetsTests`). Not yet:
-  locked staging (design §4.1: a closed vault's downloads staged in its target's folder and placed at its
-  next unlock); until then what other devices wrote reaches a closed vault at its next unlock, as before.
+  a session whose run is already going is skipped by the task, never waited for. Each run's errors, bound
+  and backoff are its own session's (`BackgroundTargetsTests`).
+- **Locked staging** (P8b, design §4.1, `LockedStaging` in `SempereSync`). A closed or locked vault's
+  upload-only run also stages what other devices wrote: the target is synced, without a key, with a shadow
+  of the working copy (`<target state dir>/incoming/copy.sempere`, hard links of the copy's files, so it
+  costs little space), so received files are checked for their structure only, nothing is deleted, and
+  nothing reaches the working copy. Every background task's run stages; in the foreground at most every
+  15 minutes (`SyncSession.stageInterval`). The bar and the library say "n files from other devices are on
+  this device and arrive when the vault is unlocked" (`SyncSession.staged`). The first two-way run after the
+  unlock places them: one engine run of the working copy against the shadow as a local folder, with the
+  key, so every file is checked fully and placed or quarantined as any download is (format.md §9.1), its
+  state fresh (a union that deletes nothing); what it placed reaches the model with the run's arrivals,
+  then the staging is removed. The place needs no network: a vault opened offline is current up to its
+  last staging. Tests: `LockedStagingTests` (package), `FolderTargetAppTests.aClosedVaultStages…`.
 - **Network (WebDAV).** `WebDAVReachability` (`NWPathMonitor`, which only watches the device's interfaces)
   reports the network coming back: every WebDAV session forgets its backoff and runs soon
   (`SyncCoordinator.networkChanged`). Folder targets follow their provider instead.

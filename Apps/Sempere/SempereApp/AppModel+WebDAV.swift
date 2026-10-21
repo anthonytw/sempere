@@ -234,14 +234,29 @@ extension AppModel {
                     request.apply(to: &options)
                     let endpoint = try Self.endpoint(current, passwords: passwords)
                     guard copy.exists else { throw WebDAVVaultError.noSuchLocation }
+                    let staging = LockedStaging(targetState: copy.stateURL)
                     if request.mode == .twoWay, let vault, vault.canRead {
-                        return try remote.sync(endpoint, copy: copy, vault: vault, options: options)
+                        // The unlock places what locked runs staged (checked under the key), then the run goes on.
+                        let placed = try staging.place(vaultFolder: copy.folder, vault: vault, options: options)
+                        var report = try remote.sync(endpoint, copy: copy, vault: vault, options: options)
+                        if let placed { report.changed = Self.union(placed.changed, report.changed) }
+                        return report
                     }
-                    return try remote.push(endpoint, copy: copy, vault: nil, options: options)
+                    let report = try remote.push(endpoint, copy: copy, vault: nil, options: options)
+                    if request.stage {
+                        // Locked: what other devices wrote is staged, never placed (design §4.1). Best effort.
+                        _ = try? staging.stage(vaultFolder: copy.folder) { shadow, _ in
+                            try remote.sync(endpoint, copy: LocalCopy(folder: shadow, stateDirectory: staging.directory),
+                                            vault: nil, options: options)
+                        }
+                    }
+                    return report
                 }.value
             },
             countUnconfirmed: { await Task.detached(priority: .utility) { copy.unconfirmedChanges() }.value })
         session.onSuccess = { [weak store] date in store?.update(id) { $0.lastPush = date } }
+        let staging = LockedStaging(targetState: copy.stateURL), vaultFolder = copy.folder
+        session.countStaged = { await Task.detached(priority: .utility) { staging.pending(vaultFolder: vaultFolder).count }.value }
         return session
     }
 

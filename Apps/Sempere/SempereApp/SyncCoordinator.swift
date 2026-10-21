@@ -237,13 +237,14 @@ final class SyncCoordinator {
     @ObservationIgnored var clock: () -> Date = { Date() }
 
     /// The pairs a background task runs: every session whose vault has local changes the target has not
-    /// confirmed, the open vault's while it is unlocked here (two-way: what other devices wrote arrives), and
-    /// any that failed (it retries). A closed vault with nothing to upload is left out: its runs only upload
-    /// (nothing unverified is placed in a vault nobody unlocked, design §4.1), so there is nothing to do.
+    /// confirmed, the open vault's while it is unlocked here (two-way: what other devices wrote arrives), any
+    /// that failed (it retries), and every closed vault's that stages downloads for its next unlock
+    /// (`LockedStaging`, design §4.1). A session that neither uploads nor stages anything is left out.
     func backgroundCandidates() -> [BackgroundRunCandidate] {
         let tried = loadTried()
         return sessions.values.compactMap { s in
-            guard let vault = s.vaultID, s.unconfirmed > 0 || s.twoWay || !s.problems.isEmpty || s.failure != nil else {
+            guard let vault = s.vaultID,
+                  s.unconfirmed > 0 || s.twoWay || !s.problems.isEmpty || s.failure != nil || s.countStaged != nil else {
                 return nil
             }
             return BackgroundRunCandidate(vaultID: vault, targetID: s.locationID, hasUnconfirmed: s.unconfirmed > 0,

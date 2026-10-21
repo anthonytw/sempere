@@ -837,6 +837,18 @@
         }
       }
     },
+    "%lld files from other devices are on this device and arrive when the vault is unlocked" : {
+      "comment" : "Sync status; the number is a count of files",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld archivos de otros dispositivos ya están en este dispositivo y llegan cuando se desbloquee la bóveda"
+          }
+        }
+      }
+    },
     "%lld files of the backup could not be restored, so nothing was added. Check the backup, or restore from another copy of it." : {
       "comment" : "%lld is a number of files",
       "extractionState" : "manual",
