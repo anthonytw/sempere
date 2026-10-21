@@ -22,6 +22,9 @@ struct SyncRunRequest: Sendable {
     /// The run's time bound (`SyncLimits.maxDuration`); nil: the default. A background task shares its
     /// time out this way (`SyncCoordinator.runBackgroundRefresh`, design §4.2).
     var maxDuration: TimeInterval?
+    /// An upload-only run also stages what the target holds that this copy lacks (`LockedStaging`, P8b), for
+    /// the next unlock to place. Off between `SyncSession.stageInterval`s outside background tasks.
+    var stage = false
     /// Stop the run between files when any is set (`SyncOptions.isCancelled`): iOS took a background task's
     /// time back (the task's own flag, and the coordinator's app-wide one, which reaches every run going).
     var cancels: [SyncRunCancel] = []
@@ -81,6 +84,14 @@ final class SyncSession {
     private(set) var lastReport: SyncReport?
     /// Files the last runs left arriving on the target (a provider still delivering them).
     private(set) var arriving = 0
+    /// Files other devices wrote that are staged for this vault's next unlock (`LockedStaging`, P8b).
+    private(set) var staged = 0
+    /// When an upload-only run last staged downloads; staging runs at most every `stageInterval` outside
+    /// background tasks (each stages, design §4.1).
+    @ObservationIgnored private var lastStaged: Date?
+    @ObservationIgnored var stageInterval: TimeInterval = 15 * 60
+    /// Counts the staged files off the main actor (the model sets it; nil: no staging).
+    @ObservationIgnored var countStaged: (@Sendable () async -> Int)?
     /// The last run could not read the target's password: the device is locked and was not unlocked since it
     /// started. Not a problem and no backoff: the run waits for the unlock (review of #74, B1).
     private(set) var waitingForDeviceUnlock = false
@@ -211,7 +222,12 @@ final class SyncSession {
     private func runOnce(maxDuration: TimeInterval? = nil, cancel: SyncRunCancel? = nil) async -> SyncReport? {
         if let running { return await running.value }
         let mode: SyncRunMode = twoWay ? .twoWay : .uploadOnly
-        let request = SyncRunRequest(mode: mode, maxDuration: maxDuration, cancels: [cancel, appCancel()].compactMap { $0 })
+        var request = SyncRunRequest(mode: mode, maxDuration: maxDuration, cancels: [cancel, appCancel()].compactMap { $0 })
+        if mode == .uploadOnly, countStaged != nil {
+            let due = lastStaged.map { now().timeIntervalSince($0) >= stageInterval } ?? true
+            request.stage = maxDuration != nil || cancel != nil || due
+            if request.stage { lastStaged = now() }
+        }
         let task = Task { () -> SyncReport? in
             await admit { [weak self] in mode == .twoWay || self?.isOpenVault == true }
             defer { release() }
@@ -269,6 +285,7 @@ final class SyncSession {
 
     private func recount() async {
         unconfirmed = await countUnconfirmed()
+        if let countStaged { staged = await countStaged() }
     }
 
     // MARK: - Status
@@ -276,7 +293,8 @@ final class SyncSession {
     /// The status model (docs/design/device-first-sync.md §8.3).
     var status: SyncStatus {
         SyncStatus(syncing: isSyncing, problems: problems, unconfirmed: unconfirmed, arriving: arriving,
-                   twoWay: twoWay, lastSuccess: lastSuccess, folder: kind == .folder, deviceLocked: waitingForDeviceUnlock)
+                   twoWay: twoWay, lastSuccess: lastSuccess, folder: kind == .folder, deviceLocked: waitingForDeviceUnlock,
+                   staged: staged)
     }
 
     /// True when the bar has something to say beyond "synced".
@@ -315,6 +333,8 @@ struct SyncStatus: Equatable, Sendable {
     var folder = false
     /// The last run waited for the device's first unlock (its password could not be read yet).
     var deviceLocked = false
+    /// Files from other devices staged for the next unlock (`LockedStaging`).
+    var staged = 0
 
     /// The problem for a run that threw: a folder target's own failures first (a folder that went away
     /// is "not found", one that cannot be reached now is "offline"), then a server's.
@@ -358,6 +378,10 @@ struct SyncStatus: Equatable, Sendable {
         case .pending(let n):
             return String(localized: "\(n) changes not synced yet", comment: "Sync status; the number is a count of files")
         case .waitingForUnlock:
+            if staged > 0 {
+                return String(localized: "\(staged) files from other devices are on this device and arrive when the vault is unlocked",
+                              comment: "Sync status; the number is a count of files")
+            }
             return String(localized: "Changes from other devices arrive when the vault is unlocked")
         case .problem(let p):
             if folder, p == .notFound {

@@ -339,13 +339,38 @@ extension AppModel {
                     options.deviceID = FileManager.default.fileExists(atPath: deviceState.path)
                         ? (try? DeviceState.loadOrCreate(at: deviceState))?.device : nil
                     let twoWay = request.mode == .twoWay && vault?.canRead == true
-                    return try FolderTargetRun.run(vaultFolder: entry.url, folder: access.folder, provider: provider?(access.folder),
-                                                   vault: vault, stateURL: stateURL, twoWay: twoWay, options: options)
+                    // A complete copy keeps the target's sealed summaries current, so a device joining lists
+                    // the notes before they arrive; never a partial copy (its list is not whole).
+                    options.publishSummaries = twoWay && !PartialCopy.isPartial(entry.url)
+                    let folderProvider = provider?(access.folder)
+                    let staging = LockedStaging(targetState: stateURL)
+                    // The unlock places what locked runs staged (checked under the key), then the run goes on.
+                    let placed = twoWay ? try vault.flatMap { try staging.place(vaultFolder: entry.url, vault: $0, options: options) } : nil
+                    var report = try FolderTargetRun.run(vaultFolder: entry.url, folder: access.folder, provider: folderProvider,
+                                                         vault: vault, stateURL: stateURL, twoWay: twoWay, options: options)
+                    if let placed { report.changed = Self.union(placed.changed, report.changed) }
+                    if !twoWay, request.stage, !PartialCopy.isPartial(entry.url) {
+                        // Locked: what other devices wrote is staged, never placed (design §4.1). Best effort.
+                        _ = try? staging.stage(vaultFolder: entry.url, options: options) { shadow, state, pullOnly in
+                            try FolderTargetRun.run(vaultFolder: shadow, folder: access.folder, provider: folderProvider,
+                                                    vault: nil, stateURL: state, twoWay: true, options: pullOnly)
+                        }
+                    }
+                    return report
                 }.value
             },
             countUnconfirmed: { await Task.detached(priority: .utility) { counting.unconfirmedChanges() }.value })
         session.onSuccess = { date in try? store.targets.update(targetID, of: vaultID) { $0.lastSuccess = date } }
+        let staging = LockedStaging(targetState: stateURL), vaultFolder = entry.url
+        session.countStaged = { await Task.detached(priority: .utility) { staging.pending(vaultFolder: vaultFolder).count }.value }
         return session
+    }
+
+    /// Two runs' local changes as one report's (a placing of staged files, then the run).
+    nonisolated static func union(_ a: LocalChanges?, _ b: LocalChanges?) -> LocalChanges? {
+        guard var merged = a else { return b }
+        if let b { merged.formUnion(b) }
+        return merged.isEmpty ? nil : merged
     }
 
     /// The vault just opened: when it is a store vault, its targets' sessions become the open ones (two-way

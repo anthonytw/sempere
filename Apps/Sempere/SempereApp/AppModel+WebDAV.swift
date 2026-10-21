@@ -234,14 +234,33 @@ extension AppModel {
                     request.apply(to: &options)
                     let endpoint = try Self.endpoint(current, passwords: passwords)
                     guard copy.exists else { throw WebDAVVaultError.noSuchLocation }
+                    let staging = LockedStaging(targetState: copy.stateURL)
                     if request.mode == .twoWay, let vault, vault.canRead {
-                        return try remote.sync(endpoint, copy: copy, vault: vault, options: options)
+                        // The unlock places what locked runs staged (checked under the key), then the run goes on.
+                        let placed = try staging.place(vaultFolder: copy.folder, vault: vault, options: options)
+                        // A complete copy keeps the server's sealed summaries current (a joining device lists the
+                        // notes from them before they arrive); never a partial copy (its list is not whole).
+                        var twoWayOptions = options
+                        twoWayOptions.publishSummaries = !copy.isPartial
+                        var report = try remote.sync(endpoint, copy: copy, vault: vault, options: twoWayOptions)
+                        if let placed { report.changed = Self.union(placed.changed, report.changed) }
+                        return report
                     }
-                    return try remote.push(endpoint, copy: copy, vault: nil, options: options)
+                    let report = try remote.push(endpoint, copy: copy, vault: nil, options: options)
+                    if request.stage, !copy.isPartial {   // a join fills itself once unlocked
+                        // Locked: what other devices wrote is staged, never placed (design §4.1). Best effort.
+                        _ = try? staging.stage(vaultFolder: copy.folder, options: options) { shadow, _, pullOnly in
+                            try remote.sync(endpoint, copy: LocalCopy(folder: shadow, stateDirectory: staging.directory),
+                                            vault: nil, options: pullOnly)
+                        }
+                    }
+                    return report
                 }.value
             },
             countUnconfirmed: { await Task.detached(priority: .utility) { copy.unconfirmedChanges() }.value })
         session.onSuccess = { [weak store] date in store?.update(id) { $0.lastPush = date } }
+        let staging = LockedStaging(targetState: copy.stateURL), vaultFolder = copy.folder
+        session.countStaged = { await Task.detached(priority: .utility) { staging.pending(vaultFolder: vaultFolder).count }.value }
         return session
     }
 
