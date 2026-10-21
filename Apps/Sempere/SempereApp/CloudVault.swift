@@ -1,10 +1,10 @@
 import Foundation
 
-/// Reading and writing a vault that lives in iCloud Drive (docs/io.md,
-/// "iCloud Drive"). Files iCloud has not downloaded are placeholders that a
-/// plain directory listing skips, so before reading, every vault file is
-/// requested and awaited; reads and writes then go through
-/// `NSFileCoordinator` so iCloud sees them. Vaults elsewhere skip all of it.
+/// Downloading a vault folder that lives in iCloud Drive before the app copies it in (Open Vault…, a
+/// restore: `AppModel.downloadSourceFolder`). Files iCloud has not downloaded are placeholders that a plain
+/// directory listing skips, so every file is requested and awaited first. The app never reads a vault in
+/// place (docs/design/device-first-sync.md P7); folder targets in providers go through the sync engine's
+/// `FolderRemote` and `UbiquitousFolderHooks` instead.
 enum CloudVault {
     enum CloudError: Error, Equatable, CustomStringConvertible {
         /// No file finished downloading for `seconds`. (Each case names
@@ -12,21 +12,15 @@ enum CloudVault {
         case timedOut(CloudProgress, seconds: Int, source: CloudSource = .iCloudDrive)
         /// iCloud (or the WebDAV server) refused or failed to download a file.
         case failed(name: String, reason: String, source: CloudSource = .iCloudDrive)
-        /// A note was about to be read while `missing` of its `total` revision
-        /// files were not local (0 of 0: its folder is not listed yet).
-        case noteNotLocal(missing: Int, total: Int, source: CloudSource = .iCloudDrive)
-        /// An attachment was about to be read while its file was not local.
-        case blobNotLocal(name: String, source: CloudSource = .iCloudDrive)
 
         /// Where the files come from.
         var source: CloudSource {
             switch self {
-            case .timedOut(_, _, let s), .failed(_, _, let s), .noteNotLocal(_, _, let s), .blobNotLocal(_, let s): return s
+            case .timedOut(_, _, let s), .failed(_, _, let s): return s
             }
         }
 
         var description: String {
-            if let server = source.serverName { return serverDescription(server) }
             switch self {
             case let .timedOut(progress, seconds, _):
                 let wait = String(localized: "\(seconds) seconds", comment: "A number of seconds")
@@ -35,34 +29,6 @@ enum CloudVault {
             case let .failed(name, reason, _):
                 return String(localized: "iCloud Drive could not download “\(name)”: \(reason)",
                               comment: "%1$@ is a file name, %2$@ the reason iCloud gave")
-            case let .noteNotLocal(missing, total, _) where total == 0:
-                return String(localized: "iCloud Drive has not listed this note's files yet (\(missing) missing). Try again in a moment.",
-                              comment: "[not-plural] the number is files missing")
-            case let .noteNotLocal(missing, total, _):
-                let files = String(localized: "\(total) files", comment: "A number of files")
-                return String(localized: "\(missing) of this note's \(files) are not downloaded from iCloud Drive yet, so it was not opened (it would look empty or incomplete). Try again in a moment.",
-                              comment: "%@ is a number of files, e.g. “3 of this note's 5 files”")
-            case .blobNotLocal:
-                return String(localized: "This attachment is not downloaded from iCloud Drive yet. Try again in a moment.")
-            }
-        }
-
-        /// The same, for a partial WebDAV copy (`CloudSource.server`).
-        private func serverDescription(_ server: String) -> String {
-            switch self {
-            case let .timedOut(progress, seconds, _):
-                let wait = String(localized: "\(seconds) seconds", comment: "A number of seconds")
-                return String(localized: "\(server) did not deliver the vault's files: \(progress.total - progress.downloaded) of \(progress.total) are still not downloaded after \(wait) without progress. Check that this device is online, then try again.",
-                              comment: "First %@ is a server's host name; the numbers are files not downloaded and all files; last %@ is a number of seconds")
-            case let .failed(name, reason, _):
-                return String(localized: "“\(name)” could not be downloaded from \(server): \(reason)",
-                              comment: "%1$@ is a file name, %2$@ a server's host name, %3$@ the reason")
-            case .noteNotLocal:
-                return String(localized: "This note is not downloaded from \(server) yet, so it was not opened (it would look empty or incomplete). Try again in a moment.",
-                              comment: "%@ is a server's host name")
-            case .blobNotLocal:
-                return String(localized: "This attachment is not downloaded from \(server) yet. Try again in a moment.",
-                              comment: "%@ is a server's host name")
             }
         }
     }
@@ -102,13 +68,8 @@ enum CloudVault {
         var state: @Sendable (CloudScan.Item) -> CloudItemState
         /// Asks iCloud to download the file.
         var request: @Sendable (CloudScan.Item) throws -> Void
-        /// Where the files come from, for the texts (a partial WebDAV copy's fetcher names its server).
+        /// Where the files come from, for the texts.
         var source = CloudSource.iCloudDrive
-        /// The versions iCloud kept of the file or folder at the URL from a conflict
-        /// (`NSFileVersion.unresolvedConflictVersionsOfItem`); none outside iCloud.
-        var conflicts: @Sendable (URL) -> [CloudConflictVersion] = { _ in [] }
-        /// Marks those versions of the item resolved and removes them (after their content was merged).
-        var resolve: @Sendable (URL, [CloudConflictVersion]) throws -> Void = { _, _ in }
 
         static let live = Hooks(isUbiquitous: { CloudVault.isUbiquitous($0) },
                                 state: { CloudVault.state(of: $0) },
@@ -116,21 +77,7 @@ enum CloudVault {
             do { try FileManager.default.startDownloadingUbiquitousItem(at: item.url) } catch {
                 throw CloudError.failed(name: item.url.lastPathComponent, reason: error.localizedDescription)
             }
-        }, conflicts: { CloudConflicts.liveConflicts(of: $0) },
-           resolve: { try CloudConflicts.liveResolve($0, $1) })
-    }
-
-    /// Throws `noteNotLocal` unless every revision file of note `id` is
-    /// local, listing its folder fresh. Run inside the coordinated read that
-    /// loads the note, so a note is never shown from a partial log: plain
-    /// reads skip `.icloud` stand-ins, and a folder iCloud has not listed yet
-    /// reads as a note without pages.
-    static func requireLocal(note id: UUID, vault url: URL, hooks: Hooks) throws {
-        let items = try CloudScan.noteItems(inVault: url, id: id)
-        let missing = items.filter { !hooks.state($0).isSettled }.count
-        if items.isEmpty || missing > 0 {
-            throw CloudError.noteNotLocal(missing: missing, total: items.count, source: hooks.source)
-        }
+        })
     }
 
     /// Which files `download(vault:)` fetches.
@@ -145,9 +92,6 @@ enum CloudVault {
     /// iCloud for each file that is a placeholder or out of date, then waits
     /// for the missing ones, reporting progress (only when something is
     /// missing). Out-of-date files are requested but not waited for.
-    ///
-    /// The app fetches `.essentials` first (unlocking needs only those) and
-    /// lets `ProgressiveLoad` bring the notes in as they arrive.
     ///
     /// Cancel the calling task to stop waiting (throws `CancellationError`).
     ///

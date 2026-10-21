@@ -47,6 +47,22 @@ final class SyncTargetTests: SyncTestCase {
         XCTAssertEqual(registry.targets(of: vaultA).count, 2)
     }
 
+    /// "Choose Again" starts a target over: its state file and transfers go, its quarantine stays.
+    func testResetStateKeepsTheQuarantine() throws {
+        let target = try registry.add(.folder(tmp.appendingPathComponent("F")), to: vaultA)
+        let state = registry.stateURL(target.id, of: vaultA)
+        let quarantine = registry.quarantineDirectory(target.id, of: vaultA)
+        try FileManager.default.createDirectory(at: quarantine, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: state)
+        try Data("{}".utf8).write(to: SyncState.transfersURL(state))
+        try Data("x".utf8).write(to: quarantine.appendingPathComponent("x.age"))
+        registry.resetState(target.id, of: vaultA)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: state.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: SyncState.transfersURL(state).path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: quarantine.appendingPathComponent("x.age").path))
+        XCTAssertEqual(registry.targets(of: vaultA).count, 1)
+    }
+
     /// A kind this version does not know (a later transport) is kept, never dropped on a write.
     func testUnknownKindsAreKept() throws {
         try registry.add(SyncTarget(kind: SyncTargetKind(rawValue: "s3"), name: "bucket"), to: vaultA)

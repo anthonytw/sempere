@@ -31,8 +31,7 @@ struct AttachmentDeletion: Equatable, Sendable {
 /// from the summary cache) are indexed when Settings asks (`indexAttachments`).
 /// Deleting goes through `Vault.collectBlobs(note:records:only:)` with the
 /// entry's records, which reads the note again and honors the 30-day window.
-/// In iCloud Drive a note with a revision not on this device decides nothing
-/// (`CloudVault.requireLocal`).
+/// In a partial copy (a join) a note not downloaded yet decides nothing.
 extension AppModel {
     /// `Application Support/Sempere/AttachmentIndex`.
     nonisolated static var defaultAttachmentIndexRoot: URL { AppSupport.folder("AttachmentIndex") }
@@ -95,17 +94,15 @@ extension AppModel {
         guard let vault, let store = attachmentIndexStore() else { return }
         let previous = attachmentIndex[id]
         let source: any AttachmentIndexSource = attachmentIndexSource?(vault) ?? vault
-        let cloud = isCloudVault, url = vault.url, hooks = cloudHooks, coordinate = coordinationURL
+        let partial = partialCopyRoot
         let current = current ?? summaryBlobHashes(id)
         let now = attachmentNow()
         let entry = try? await offMain(priority: .utility) { () throws -> AttachmentIndexEntry in
             let previous = previous ?? store.load(id)
-            let entry = try CloudVault.coordinatedRead(coordinate) { () -> AttachmentIndexEntry in
-                // iCloud: never decide anything while a revision is not on this device.
-                let local = !cloud || (try? CloudVault.requireLocal(note: id, vault: url, hooks: hooks)) != nil
-                return AttachmentIndexer.update(note: id, previous: previous, source: source, current: current,
-                                                local: local, now: now)
-            }
+            // A partial copy: never decide anything while the note is not downloaded yet.
+            let local = partial.map { !Self.incompleteNoteIDs($0).contains(id) } ?? true
+            let entry = AttachmentIndexer.update(note: id, previous: previous, source: source, current: current,
+                                                 local: local, now: now)
             try? store.save(entry)
             return entry
         }
@@ -210,14 +207,10 @@ extension AppModel {
         for note in byNote.keys.sorted(by: { $0.uuidString < $1.uuidString }) {
             try ensureCurrent(gen)
             let names = Set(byNote[note]?.map(\.fileName) ?? [])
-            let cloud = isCloudVault, url = vault.url, hooks = cloudHooks
-            if cloud {
+            if let fetchBlob = partialBlobFetcher() {
                 do {
                     try await downloadNote(note)
-                    for name in names.sorted() {
-                        try await CloudVault.downloadBlob(note: note, fileName: name, vault: url, hooks: hooks,
-                                                          stallTimeout: cloudStallTimeout, pollInterval: cloudPollInterval)
-                    }
+                    for name in names.sorted() { try await fetchBlob(note, name) }
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
@@ -228,16 +221,14 @@ extension AppModel {
             }
             let records = attachmentIndex[note]?.unusedSince ?? [:]
             let now = attachmentNow()
-            let folder = cloud ? CloudScan.noteFolder(inVault: url, id: note) : nil
+            let verify = partialNoteVerifier(note)
             let outcome: (BlobCollectionReport, [String: Date])
             do {
                 outcome = try await offMain(priority: .userInitiated) { () throws -> (BlobCollectionReport, [String: Date]) in
-                    try CloudVault.coordinatedWrite(folder) { () throws -> (BlobCollectionReport, [String: Date]) in
-                        if cloud { try CloudVault.requireLocal(note: note, vault: url, hooks: hooks) }
-                        var r = records
-                        let report = try vault.collectBlobs(note: note, records: &r, only: names, now: now)
-                        return (report, r)
-                    }
+                    try verify?()
+                    var r = records
+                    let report = try vault.collectBlobs(note: note, records: &r, only: names, now: now)
+                    return (report, r)
                 }
             } catch {
                 try ensureCurrent(gen)
@@ -282,10 +273,7 @@ extension AppModel {
     /// it cannot be read.
     func attachmentPreviewData(note: UUID, fileName: String, kind: BlobKind) async -> Data? {
         guard kind == .image || kind == .pdf, let vault, phase == .unlocked else { return nil }
-        if isCloudVault {
-            try? await CloudVault.downloadBlob(note: note, fileName: fileName, vault: vault.url, hooks: cloudHooks,
-                                               stallTimeout: cloudStallTimeout, pollInterval: cloudPollInterval)
-        }
+        if let fetchBlob = partialBlobFetcher() { try? await fetchBlob(note, fileName) }
         let gen = generation
         let data = try? await offMain(priority: .utility) {
             try vault.readBlobFile(note: note, fileName: fileName, maxBytes: Self.maxPreviewBytes).content

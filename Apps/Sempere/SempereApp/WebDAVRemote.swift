@@ -1,6 +1,7 @@
 import Age
 import CryptoKit
 import Foundation
+import Network
 import Security
 import Sempere
 import SempereSync
@@ -176,4 +177,26 @@ enum WebDAVErrorText {
         let text = (error as? LocalizedError)?.errorDescription ?? "\(error)"
         return SyncReport.printable(text.split(whereSeparator: \.isNewline).joined(separator: " "))
     }
+}
+
+// MARK: - Reachability
+
+/// Tells the WebDAV targets when the network comes back (`SyncCoordinator.networkChanged`: a run soon, the
+/// backoff forgotten; docs/design/device-first-sync.md §4). `NWPathMonitor` only watches the device's own
+/// interfaces: it connects to nothing. Tests drive the coordinator directly.
+@MainActor
+final class WebDAVReachability {
+    private let monitor = NWPathMonitor()
+    private let queue = DispatchQueue(label: "io.github.anthonytw.sempere.reachability", qos: .utility)
+
+    /// Starts watching; `changed` gets every change (on the main actor), the first one at once.
+    func start(_ changed: @escaping @MainActor (Bool) -> Void) {
+        monitor.pathUpdateHandler = { path in
+            let reachable = path.status == .satisfied
+            Task { @MainActor in changed(reachable) }
+        }
+        monitor.start(queue: queue)
+    }
+
+    func stop() { monitor.cancel() }
 }

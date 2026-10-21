@@ -48,78 +48,6 @@
         }
       }
     },
-    "%@ did not deliver the vault's files: %lld of %lld are still not downloaded after %@ without progress. Check that this device is online, then try again." : {
-      "comment" : "First %@ is a server's host name; the numbers are files not downloaded and all files; last %@ is a number of seconds",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ no ha entregado los archivos de la bóveda (sin descargar: %2$lld de %3$lld) tras %4$@ sin avances. Comprueba que este dispositivo tiene conexión y vuelve a intentarlo."
-          }
-        }
-      }
-    },
-    "%@ has not delivered %@ for %@. Check that this device is online. Sempere keeps trying." : {
-      "comment" : "First %@ is a server's host name, second a number of notes, third a number of seconds",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ no ha entregado %2$@ en %3$@. Comprueba que este dispositivo tiene conexión. Sempere sigue intentándolo."
-          }
-        }
-      }
-    },
-    "%@ has not delivered %lld notes yet. Every note must be on this device first. Check that it is online and try again." : {
-      "comment" : "%@ is a server's host name, the number a count of notes",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%1$@ has not delivered %2$lld note yet. Every note must be on this device first. Check that it is online and try again."
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%1$@ has not delivered %2$lld notes yet. Every note must be on this device first. Check that it is online and try again."
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "plural" : {
-              "many" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%1$@ aún no ha entregado %2$lld notas. Todas las notas deben estar en este dispositivo antes. Comprueba que tiene conexión y vuelve a intentarlo."
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%1$@ aún no ha entregado %2$lld nota. Todas las notas deben estar en este dispositivo antes. Comprueba que tiene conexión y vuelve a intentarlo."
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%1$@ aún no ha entregado %2$lld notas. Todas las notas deben estar en este dispositivo antes. Comprueba que tiene conexión y vuelve a intentarlo."
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "%@ has not delivered all of this note's files yet. Try again in a moment." : {
       "comment" : "%@ is a server's host name",
       "extractionState" : "manual",
@@ -740,6 +668,18 @@
         }
       }
     },
+    "%lld files from other devices are on this device and arrive when the vault is unlocked" : {
+      "comment" : "Sync status; the number is a count of files",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld archivos de otros dispositivos ya están en este dispositivo y llegan cuando se desbloquee la bóveda"
+          }
+        }
+      }
+    },
     "%lld files of the backup could not be restored, so nothing was added. Check the backup, or restore from another copy of it." : {
       "comment" : "%lld is a number of files",
       "extractionState" : "manual",
@@ -973,54 +913,6 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld archivos multimedia"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "%lld note folders not listed yet" : {
-      "comment" : "iCloud Drive has not listed these note folders yet",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld note folder not listed yet"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld note folders not listed yet"
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "plural" : {
-              "many" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld de carpetas de notas aún sin listar"
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld carpeta de nota aún sin listar"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld carpetas de notas aún sin listar"
                 }
               }
             }
@@ -1568,18 +1460,6 @@
         }
       }
     },
-    "%lld of %@, %@" : {
-      "comment" : "Download progress; first %@ is a number of files, second “2 note folders not listed yet”",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld de %@, %@"
-          }
-        }
-      }
-    },
     "%lld of %lld matches" : {
       "comment" : "Search highlights: current match of the total (never 1 match) [not-plural] (never 1: the 1-match case has its own string)",
       "extractionState" : "manual",
@@ -1588,18 +1468,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld de %lld coincidencias"
-          }
-        }
-      }
-    },
-    "%lld of this note's %@ are not downloaded from iCloud Drive yet, so it was not opened (it would look empty or incomplete). Try again in a moment." : {
-      "comment" : "%@ is a number of files, e.g. “3 of this note's 5 files”",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esta nota no se ha abierto porque aún faltan archivos por descargar de iCloud Drive (%1$lld de %2$@) y se vería vacía o incompleta. Vuelve a intentarlo en un momento."
           }
         }
       }
@@ -5999,18 +5867,6 @@
         }
       }
     },
-    "Download Attachments in the Background" : {
-      "comment" : "WebDAV menu toggle: attachments of a vault opened before it was fully downloaded arrive in the background (otherwise only when a page shows them)",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Descargar adjuntos en segundo plano"
-          }
-        }
-      }
-    },
     "Download Language Model" : {
       "comment" : "Button",
       "extractionState" : "manual",
@@ -6053,6 +5909,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Descargado"
+          }
+        }
+      }
+    },
+    "Downloading every note from iCloud Drive…" : {
+      "comment" : "Progress",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descargando todas las notas de iCloud Drive…"
           }
         }
       }
@@ -6129,30 +5997,6 @@
         }
       }
     },
-    "Downloading from iCloud Drive: %lld of %lld notes…" : {
-      "comment" : "Progress: notes downloaded so far of all notes. [not-plural] (the English always says notes)",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Descargando de iCloud Drive: %1$lld de %2$lld notas…"
-          }
-        }
-      }
-    },
-    "Downloading from iCloud: %lld of %@" : {
-      "comment" : "Progress; %@ is a number of notes, e.g. “37 of 128 notes”",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Descargando de iCloud: %lld de %@"
-          }
-        }
-      }
-    },
     "Downloading from iCloud…" : {
       "comment" : "Note list row of a note not downloaded yet",
       "extractionState" : "manual",
@@ -6189,37 +6033,14 @@
         }
       }
     },
-    "Downloading this note from iCloud: %lld of %@" : {
-      "comment" : "Progress; %@ is “N files”",
+    "Downloading this note from %@…" : {
+      "comment" : "%@ is a server's host name",
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Descargando esta nota de iCloud: %lld de %@"
-          }
-        }
-      }
-    },
-    "Downloading this note from iCloud: %lld of %lld" : {
-      "comment" : "Progress: files of the note downloaded so far, of the total",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Descargando esta nota de iCloud: %lld de %lld"
-          }
-        }
-      }
-    },
-    "Downloading this note from iCloud…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Descargando esta nota de iCloud…"
+            "value" : "Descargando esta nota de %@…"
           }
         }
       }
@@ -9949,6 +9770,18 @@
         }
       }
     },
+    "New notebook, settings and closing the vault" : {
+      "comment" : "Help tag of the sidebar's More menu",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuevo cuaderno, ajustes y cerrar la bóveda"
+          }
+        }
+      }
+    },
     "New notebook, settings, sync targets and closing the vault" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10676,17 +10509,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Las notas ya escritas se quedan en la carpeta; al volver a exportar en ella se omiten."
-          }
-        }
-      }
-    },
-    "Notes appear here as iCloud Drive delivers them." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Las notas aparecen aquí a medida que iCloud Drive las entrega."
           }
         }
       }
@@ -13971,18 +13793,6 @@
         }
       }
     },
-    "Repair" : {
-      "comment" : "Recipients repair: destructive confirmation button",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reparar"
-          }
-        }
-      }
-    },
     "Repeat passphrase" : {
       "comment" : "Secure text field placeholder",
       "extractionState" : "manual",
@@ -14324,18 +14134,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reanudar la grabación"
-          }
-        }
-      }
-    },
-    "Retry" : {
-      "comment" : "Button: retry the iCloud download",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reintentar"
           }
         }
       }
@@ -18168,6 +17966,18 @@
         }
       }
     },
+    "The server's password can be read once this device is unlocked." : {
+      "comment" : "Sync status detail while the device has not been unlocked since it started",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La contraseña del servidor se podrá leer cuando se desbloquee este dispositivo."
+          }
+        }
+      }
+    },
     "The system does not trust it." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -18667,29 +18477,6 @@
         }
       }
     },
-    "This attachment is not downloaded from %@ yet. Try again in a moment." : {
-      "comment" : "%@ is a server's host name",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Este adjunto aún no se ha descargado de %@. Vuelve a intentarlo en un momento."
-          }
-        }
-      }
-    },
-    "This attachment is not downloaded from iCloud Drive yet. Try again in a moment." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Este adjunto aún no se ha descargado de iCloud Drive. Vuelve a intentarlo en un momento."
-          }
-        }
-      }
-    },
     "This build of Sempere cannot use the Keychain (missing entitlement)." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -19016,18 +18803,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Esta nota está en Eliminadas recientemente."
-          }
-        }
-      }
-    },
-    "This note is not downloaded from %@ yet, so it was not opened (it would look empty or incomplete). Try again in a moment." : {
-      "comment" : "%@ is a server's host name",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esta nota aún no se ha descargado de %@, así que no se ha abierto (se vería vacía o incompleta). Vuelve a intentarlo en un momento."
           }
         }
       }
@@ -20648,6 +20423,17 @@
       "extractionState" : "manual",
       "shouldTranslate" : false
     },
+    "WebDAV sync" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sincronización WebDAV"
+          }
+        }
+      }
+    },
     "Website and Privacy" : {
       "comment" : "About: section header",
       "extractionState" : "manual",
@@ -20998,66 +20784,6 @@
         }
       }
     },
-    "iCloud Drive has not delivered %@ for %@. Check that this device is online and signed in to iCloud Drive. Sempere keeps trying." : {
-      "comment" : "First %@ is a number of notes, second a number of seconds",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "iCloud Drive no ha entregado %@ en %@. Comprueba que este dispositivo tiene conexión y ha iniciado sesión en iCloud Drive. Sempere sigue intentándolo."
-          }
-        }
-      }
-    },
-    "iCloud Drive has not delivered %lld notes yet. Every note must be on this device before the vault can be re-encrypted. Check that it is online and try again." : {
-      "comment" : "Migration error",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "iCloud Drive has not delivered %lld note yet. Every note must be on this device before the vault can be re-encrypted. Check that it is online and try again."
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "iCloud Drive has not delivered %lld notes yet. Every note must be on this device before the vault can be re-encrypted. Check that it is online and try again."
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "plural" : {
-              "many" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "iCloud Drive aún no ha entregado %lld de notas. Todas las notas deben estar en este dispositivo antes de volver a cifrar la bóveda. Comprueba que tiene conexión y vuelve a intentarlo."
-                }
-              },
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "iCloud Drive aún no ha entregado %lld nota. Todas las notas deben estar en este dispositivo antes de volver a cifrar la bóveda. Comprueba que tiene conexión y vuelve a intentarlo."
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "iCloud Drive aún no ha entregado %lld notas. Todas las notas deben estar en este dispositivo antes de volver a cifrar la bóveda. Comprueba que tiene conexión y vuelve a intentarlo."
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "iCloud Drive has not delivered all of this note's files yet. Try again in a moment." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -21077,30 +20803,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "iCloud Drive aún no ha entregado todas las notas (faltan: %lld), y una copia debe contenerlas todas. Comprueba que este dispositivo tiene conexión y vuelve a intentarlo."
-          }
-        }
-      }
-    },
-    "iCloud Drive has not listed this note's files yet (%lld missing). Try again in a moment." : {
-      "comment" : "The number is files missing. [not-plural]: the Spanish avoids number agreement (sin listar: N)",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "iCloud Drive aún no ha listado los archivos de esta nota (sin listar: %lld). Vuelve a intentarlo en un momento."
-          }
-        }
-      }
-    },
-    "iCloud Drive holds two versions of “%@” that Sempere cannot merge (both devices changed the vault's keys). The version on this device is used." : {
-      "comment" : "%@ is a vault file name such as vault.json",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "iCloud Drive tiene dos versiones de «%@» que Sempere no puede combinar (los dos dispositivos cambiaron las claves de la bóveda). Se usa la versión de este dispositivo."
           }
         }
       }
@@ -21365,18 +21067,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ya no se encuentra “%@”. Puede que se haya movido o eliminado, o que su acceso haya caducado. Vuelve a elegir su carpeta."
-          }
-        }
-      }
-    },
-    "“%@” could not be downloaded from %@: %@" : {
-      "comment" : "%1$@ is a file name, %2$@ a server's host name, %3$@ the reason",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se ha podido descargar “%1$@” de %2$@: %3$@"
           }
         }
       }

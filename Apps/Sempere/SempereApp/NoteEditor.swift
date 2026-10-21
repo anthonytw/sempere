@@ -324,7 +324,7 @@ final class NoteEditor {
     /// `coordinated` (a vault in iCloud Drive): the note is read, and its
     /// deltas written, under `NSFileCoordinator` (`CloudVault`). `verify`
     /// runs inside that read before and after the note is loaded and throws
-    /// to refuse a note whose files are not all local (`CloudVault.requireLocal`).
+    /// to refuse a note not downloaded yet (a partial copy, `AppModel.partialNoteVerifier`).
     ///
     /// With a `cache` and the note's `listedNames` (its revision file names
     /// as just listed), a note whose layout is cached opens at once from the
@@ -356,8 +356,8 @@ final class NoteEditor {
                         do {
                             loaded = try await read(vault: vault, noteID: noteID, device: clock.device,
                                                     coordinated: coordinated, verify: verify)
-                        } catch CloudVault.CloudError.noteNotLocal where redownload != nil {
-                            // A file went missing (or a new one was listed) since the download: once more.
+                        } catch let error as AppModel.ModelError where redownload != nil && error.isNotDownloaded {
+                            // A partial copy's note still incomplete (`partialNoteVerifier`): fetched once more.
                             // Not for an editor closed meanwhile (the model may have another vault open).
                             try Task.checkCancellation()
                             try await redownload?()

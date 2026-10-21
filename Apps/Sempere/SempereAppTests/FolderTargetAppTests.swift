@@ -271,6 +271,38 @@ struct FolderTargetAppTests {
         w.a.model.close()
     }
 
+    /// P8b (design §4.1): while B's vault is closed, a background run stages what A wrote in B's target's
+    /// state folder and never places it in B's copy; B's unlock checks and places it, and the note is listed.
+    @Test func aClosedVaultStagesWhatArrivesAndTheUnlockPlacesIt() async throws {
+        let w = try await Self.world()
+        let bID = w.b.vaultID, bFolder = w.b.folder
+        let coordinator = w.b.model.syncCoordinator
+        coordinator.start()   // every vault syncs, as in the app
+        w.b.model.close()
+        await w.b.model.closingEditor?.value
+
+        let note = try await w.a.model.createNote(title: "While B was closed", paper: .ruled, notebook: nil)
+        await w.a.model.syncAllTargetsNow()
+        let before = Self.noteFiles(bFolder)
+        let session = try #require(coordinator.sessions(of: bID).first)
+        let target = try #require(w.b.store.targets.targets(of: bID).first)
+        let staging = LockedStaging(targetState: w.b.store.targets.stateURL(target.id, of: bID))
+        _ = await session.runInBackground(maxDuration: 30, cancel: SyncRunCancel())   // a background task stages
+        #expect(Self.noteFiles(bFolder) == before, "nothing is placed in a vault nobody unlocked")
+        #expect(staging.exists)
+        #expect(session.staged > 0)
+        #expect(session.status.kind == .waitingForUnlock)
+        #expect(session.headline.contains("\(session.staged)"))
+
+        let entry = try #require(w.b.store.entry(id: bID))
+        try await w.b.model.openStored(entry, library: w.b.library)
+        try await w.b.model.unlock(identityText: w.key)
+        #expect(await TS.waitUntil(timeout: .seconds(10)) { w.b.model.notes.contains { $0.id == note } })
+        #expect(await TS.waitUntil(timeout: .seconds(10)) { !staging.exists }, "placed, and the staging is gone")
+        #expect(Self.noteFiles(w.b.folder).isSuperset(of: Self.noteFiles(w.a.folder)))
+        w.a.model.close(); w.b.model.close()
+    }
+
     // MARK: Store
 
     /// WebDAV vaults of earlier builds become store vaults with a WebDAV target; their sync state and

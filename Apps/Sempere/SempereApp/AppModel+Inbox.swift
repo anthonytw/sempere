@@ -151,8 +151,7 @@ extension AppModel {
         // A read-only vault (format.md §7.3) adopts nothing: the captures wait in the inbox.
         guard let vault, vault.canRead, phase == .unlocked, !isVaultReadOnly, let url = vaultURL else { return 0 }
         let gen = generation
-        let cloud = isCloudVault, hooks = cloudHooks
-        quickCapture.flushQueue(into: url, vaultId: vault.vaultId, coordinated: cloud)
+        quickCapture.flushQueue(into: url, vaultId: vault.vaultId, coordinated: false)
         var done = 0
         do {
             // Not `offMain`: an empty inbox (the usual case) does no vault work,
@@ -161,10 +160,6 @@ extension AppModel {
             let items = try await Task.detached(priority: .utility) { try CloudScan.inboxItems(inVault: url) }.value
             guard !items.isEmpty else { return 0 }
             try ensureCurrent(gen)
-            if cloud {
-                try await CloudVault.download(items: items.map(\.item), hooks: hooks, stallTimeout: cloudStallTimeout,
-                                              pollInterval: cloudPollInterval) { _ in }
-            }
             // Cleared first, so a capture that fails below stays reported.
             if gen == generation { inboxProblem = nil }
             var seen = Set<UUID>()
@@ -185,21 +180,17 @@ extension AppModel {
     /// then the inbox files it consumed are deleted. A capture that does not
     /// verify is left in the inbox and reported.
     private func adoptCapture(_ id: UUID, from vault: Vault) async -> Bool {
-        let coordinate = coordinationURL
         let ids = CaptureAdoption.ids(for: id)
         let backoff = inboxBackoff
         do {
             // A file that failed before is not read again until its back-off
             // ends (it is reported below, as `backedOff`).
-            let pending = try await offMain {
-                try CloudVault.coordinatedRead(coordinate) { try vault.readCapture(id, backoff: backoff) }
-            }
-            // The note exists once it has a revision (in iCloud Drive, once one
-            // is listed, local or not); a folder holding only blobs is still new.
-            let url = vault.url, cloud = isCloudVault
+            let pending = try await offMain { try vault.readCapture(id, backoff: backoff) }
+            // The note exists once it has a revision (in a partial copy, also once it is listed as not
+            // downloaded yet); a folder holding only blobs is still new.
+            let folder = vault.url.appendingPathComponent("notes").appendingPathComponent(ids.note.uuidString.lowercased())
             let exists = try await offMain { () throws -> Bool in
-                if cloud { return try CloudScan.noteItems(inVault: url, id: ids.note).isEmpty == false }
-                return try vault.revisionNames(of: ids.note).isEmpty == false
+                try vault.revisionNames(of: ids.note).isEmpty == false || PartialCopy.isIncomplete(noteFolder: folder)
             }
             // A transcript whose capture has not arrived yet waits, and writes
             // nothing: a blob alone would make a note folder without revisions.
@@ -208,7 +199,7 @@ extension AppModel {
             // local before a delta is written to it.
             if exists { try await downloadNote(ids.note) }
             let clock = try deviceClockForWriting()
-            let writer = NoteWriter(vault: vault, noteID: ids.note, clock: clock, nextSeq: 1, coordinated: isCloudVault)
+            let writer = NoteWriter(vault: vault, noteID: ids.note, clock: clock, nextSeq: 1)
             let prepare = blobWritePreparer(note: ids.note)
             var audioRef: BlobRef?
             var transcriptRef: BlobRef?
@@ -227,15 +218,10 @@ extension AppModel {
                     CaptureAdoption.ops(pending, audio: audio, transcript: transcript, current: state)
                 }
             }
-            let after = try? await offMain {
-                try CloudVault.coordinatedRead(coordinate) { try vault.reconstruct(noteId: ids.note) }
-            }
+            let after = try? await offMain { try vault.reconstruct(noteId: ids.note) }
             let consumed = CaptureAdoption.consumed(pending, after: after)
             if !consumed.isEmpty {
-                let inbox = vault.inboxURL
-                try? await offMain {
-                    try CloudVault.coordinatedWrite(coordinate == nil ? nil : inbox) { vault.removeInboxFiles(consumed) }
-                }
+                _ = try? await offMain { vault.removeInboxFiles(consumed) }
             }
             if let r = after?.recordings.first(where: { $0.id == ids.recording }) {
                 for e in [editor].compactMap({ $0 }) + Array(windowEditors.values) where e.noteID == ids.note {

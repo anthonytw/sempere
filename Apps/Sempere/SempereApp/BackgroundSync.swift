@@ -2,27 +2,16 @@ import BackgroundTasks
 import Foundation
 import UIKit
 
-/// iOS's background time for the iCloud sync (TestFlight build 7: locking the
-/// iPhone mid-sync stopped the progress bar until the app was opened again).
+/// iOS's background time for the sync of every vault and target (docs/design/device-first-sync.md §4.2,
+/// docs/io.md "Sync targets in the app"). Both best effort, because iOS decides:
 ///
-/// Two mechanisms, both best effort, because iOS decides (docs/io.md
-/// "Background sync"):
-///
-/// - **Finishing the sync in flight** (`AppModel.enterBackground`): when the
-///   app leaves the screen while notes are still arriving, the sync loop keeps
-///   running under a `beginBackgroundTask` assertion until nothing is pending
-///   (then it pauses as before) or iOS ends the time it gave (about 30
-///   seconds today; never guaranteed).
-/// - **Continuing later** (`BGTaskScheduler`): a `BGProcessingTask` is asked
-///   for when that time ran out with notes still pending, and a
-///   `BGAppRefreshTask` whenever the app leaves the screen with an iCloud
-///   vault open. iOS runs them when it sees fit (charging, on Wi-Fi, how often
-///   the app is used; Low Power Mode and Background App Refresh switched off
-///   prevent them), for a few minutes at most. Each runs passes of the same
-///   sync (`AppModel.runScheduledSync`) until nothing is pending. They do
-///   work only while the vault is still open in the suspended app: a
-///   relaunch in the background has no unlocked vault (the key is behind
-///   Face ID) and ends at once.
+/// - **Finishing what is in flight** (`AppModel.enterBackground`): runs going or asked for when the app
+///   leaves the screen finish under a `beginBackgroundTask` assertion (about 30 seconds; never guaranteed).
+/// - **Continuing later** (`BGTaskScheduler`): a `BGAppRefreshTask` whenever a vault has a target, and a
+///   `BGProcessingTask` while one has changes to upload or the background time ran out. iOS runs them when
+///   it sees fit (charging, Wi-Fi, how often the app is used; Low Power Mode and Background App Refresh
+///   switched off prevent them). They run every vault's targets, open or not, and need no unlocked vault
+///   (closed vaults' runs only upload): `AppModel.runBackgroundTask`, `SyncCoordinator.runBackgroundRefresh`.
 ///
 /// The Mac (Catalyst) keeps apps running in the background, so it schedules nothing.
 enum BackgroundSync {
@@ -34,14 +23,12 @@ enum BackgroundSync {
     /// The app's model, which the scheduled tasks sync (set once at launch).
     @MainActor static weak var model: AppModel?
 
-    /// Runs one scheduled task: passes of the sync until it settles or iOS
-    /// takes the time back. The task's launch, expiration (which cancels this)
+    /// Runs one scheduled task: every vault's targets, until done or iOS takes the time back. The task's launch, expiration (which cancels this)
     /// and completion are SwiftUI's `.backgroundTask` (`SempereApp`), which
     /// also registers both identifiers with `BGTaskScheduler`.
-    @MainActor static func run() async {
+    @MainActor static func run(_ kind: BackgroundSyncRequest) async {
         guard let model else { return }
-        _ = await model.runScheduledSync()
-        model.scheduleBackgroundRefresh()
+        await model.runBackgroundTask(kind)
     }
 }
 
@@ -64,7 +51,7 @@ protocol BackgroundTaskRunning: AnyObject {
 enum BackgroundSyncRequest: Hashable, Sendable {
     /// `BGAppRefreshTask`: pick up what other devices wrote, from time to time.
     case refresh
-    /// `BGProcessingTask` (network required): finish a sync the background time did not.
+    /// `BGProcessingTask` (network required): full passes, finishing what the background time did not.
     case processing
 }
 

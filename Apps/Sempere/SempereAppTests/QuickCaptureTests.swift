@@ -554,47 +554,6 @@ struct QuickCaptureTests {
         #expect(model.inboxProblem == nil)
     }
 
-    /// Audit B35: closing a vault while its inbox is still downloading
-    /// (iCloud Drive) stops that adoption, so the next vault's inbox is
-    /// adopted on unlock.
-    @Test func closingStopsTheInboxAdoptionSoTheNextVaultAdoptsItsOwn() async throws {
-        let a = try Self.setUp(transcribe: false)
-        try await a.capture.start()
-        _ = try await a.capture.stop()
-        #expect(!Self.inbox(a.url).isEmpty)
-        let b = try Self.setUp(transcribe: false)
-        try await b.capture.start()
-        _ = try await b.capture.stop()
-        #expect(!Self.inbox(b.url).isEmpty)
-
-        // Vault A in iCloud Drive: its inbox files never arrive.
-        let cloud = FakeCloud(vault: a.url)
-        var hooks = cloud.hooks
-        hooks.state = { item in
-            item.url.path.contains("/\(CaptureFile.folderName)/") ? .missing : cloud.state(item)
-        }
-        let model = CloudSyncTests.model(cloud, stall: .seconds(120))
-        model.cloudHooks = hooks
-        model.blobCacheFolder = Self.temp("blobs")
-        model.quickCapture = a.capture
-        try await model.openVault(at: a.url)
-        try await model.unlock(identityText: try String(contentsOf: a.key, encoding: .utf8))
-        #expect(model.isCloudVault)
-        #expect(model.inboxAdoption != nil)
-        try await Task.sleep(for: .milliseconds(200))   // waiting for A's inbox to download
-        #expect(model.inboxAdoption != nil)
-        model.close()
-
-        model.cloudHooks = .live
-        model.quickCapture = b.capture
-        try await model.openVault(at: b.url)
-        try await model.unlock(identityText: try String(contentsOf: b.key, encoding: .utf8))
-        #expect(!model.isCloudVault)
-        #expect(await TS.waitUntil(timeout: .seconds(10)) { Self.inbox(b.url).isEmpty }, "B's voice note is adopted")
-        #expect(!Self.inbox(a.url).isEmpty)
-        model.close()
-    }
-
     @Test func enablingStoresAProfileWithoutTheIdentityAndRefreshFollowsKeyChanges() async throws {
         let (url, key) = try AppModelTests.fixtureVault()
         let model = AppModel(deviceStateURL: TS.deviceStateURL())

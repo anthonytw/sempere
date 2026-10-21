@@ -150,12 +150,8 @@ struct RootView: View {
             }
         }
         .onChange(of: scenePhase) { _, phase in
-            // iCloud may have delivered files while the app was away; no
-            // polling while it is in the background.
             if phase == .active { model.enterForeground() }
             if phase == .active { model.scheduleSettingsSync() }   // another device may have changed the vault's settings
-            if phase == .active, model.isCloudVault { model.startCloudSync() }
-            // A recent vault iCloud had not delivered yet (after a restart) may be there now.
             if phase == .active { library.refreshRecents() }
             if phase == .active {
                 // The widgets' status, queued voice notes, and recordings no seal could finish yet.
@@ -171,9 +167,6 @@ struct RootView: View {
         .onChange(of: keepScreenOn) { applyIdleTimer() }
         .onAppear { applyIdleTimer() }
         .overlay {
-            if let progress = model.cloudProgress {
-                CloudProgressView(progress: progress) { model.cancelCloudDownload() }
-            }
             if let status = model.webdavDownload {
                 WebDAVDownloadOverlay(status: status) { model.cancelWebDAVDownload() }
             }

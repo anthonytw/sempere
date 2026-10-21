@@ -133,7 +133,7 @@ struct NoteListView: View {
                 if let progress = model.recognitionProgress {
                     RecognitionBar(progress: progress) { model.cancelRecognizingNotes() }
                 }
-                VaultStatusBar(loading: model.loading, sync: model.cloudSync) { model.startCloudSync() }
+                VaultStatusBar(loading: model.loading, join: model.joinProgress)
                 // One bar per sync target (folder or server) of the open vault.
                 ForEach(model.syncSessions, id: \.locationID) { WebDAVStatusBar(session: $0) }
             }
@@ -169,7 +169,7 @@ struct NoteListView: View {
 
     private var notesList: some View {
         List(model.visibleNotes, id: \.id, selection: listSelection) { note in
-            NoteRow(note: note, placeholder: model.placeholderNoteIDs.contains(note.id), server: model.cloudSource.serverName,
+            NoteRow(note: note, placeholder: model.placeholderNoteIDs.contains(note.id), server: model.joinLocation?.host,
                     downloading: model.pendingNoteIDs.contains(note.id),
                     recognized: model.sidebarSelection == .recentlyRecognized ? model.recognizedEntry(of: note) : nil)
                 .modifier(NoteDragOut(note: note, enabled: model.phase == .unlocked
@@ -515,7 +515,7 @@ struct TagLine: View {
 }
 
 /// Why the list is empty: notes loading (with "Opening vault: N of M"),
-/// downloading from iCloud, a failure with a retry, no search match, or
+/// a join still downloading, a failure with a retry, no search match, or
 /// genuinely nothing there.
 struct EmptyListView: View {
     let reason: EmptyListReason
@@ -530,11 +530,11 @@ struct EmptyListView: View {
                 Text("Notes appear here as they are read.").font(.callout).foregroundStyle(.secondary)
             }
             .accessibilityElement(children: .combine)
-        case .downloading(let sync):
+        case .downloading(let join):
             VStack(spacing: 12) {
-                ProgressView(value: sync.fractionCompleted).frame(maxWidth: 240)
-                Text(sync.headline).font(.headline).monospacedDigit()
-                Text("Notes appear here as iCloud Drive delivers them.").font(.callout).foregroundStyle(.secondary)
+                ProgressView(value: join.fractionCompleted).frame(maxWidth: 240)
+                Text(join.headline).font(.headline).monospacedDigit()
+                Text("Notes appear here as they are read.").font(.callout).foregroundStyle(.secondary)
             }
             .accessibilityElement(children: .combine)
         case .failed(let message):
@@ -562,13 +562,12 @@ struct EmptyListView: View {
 /// one place. Hidden when there is nothing to report.
 struct VaultStatusBar: View {
     let loading: NoteLoading?
-    let sync: CloudSyncStatus?
-    let retry: () -> Void
+    /// A join's fill (a partial WebDAV copy): "Downloading from <server>: n of m notes…" over a bar.
+    let join: JoinProgress?
 
     var body: some View {
-        let showSync = sync.map { $0.showsBar || $0.problem != nil } ?? false
         let showLoading = loading?.showsBar ?? false
-        if showLoading || showSync {
+        if showLoading || join != nil {
             VStack(alignment: .leading, spacing: 10) {
                 if let loading, showLoading {
                     VStack(alignment: .leading, spacing: 6) {
@@ -577,8 +576,12 @@ struct VaultStatusBar: View {
                     }
                     .accessibilityElement(children: .combine)
                 }
-                if let sync, showSync {
-                    CloudSyncBar(status: sync, retry: retry)
+                if let join {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(join.headline).font(.footnote.weight(.semibold)).monospacedDigit()
+                        ProgressView(value: join.fractionCompleted)
+                    }
+                    .accessibilityElement(children: .combine)
                 }
             }
             .padding(.horizontal, 16)
@@ -586,35 +589,6 @@ struct VaultStatusBar: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.bar)
         }
-    }
-}
-
-/// The iCloud part of `VaultStatusBar`: "Downloading from iCloud: 37 of 128
-/// notes" over a bar, files below; or why it stopped, with a retry. Hidden
-/// once everything is local.
-struct CloudSyncBar: View {
-    let status: CloudSyncStatus
-    let retry: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if status.showsBar {
-                Text(status.headline).font(.footnote.weight(.semibold)).monospacedDigit()
-                ProgressView(value: status.fractionCompleted)
-                Text(status.detail).font(.caption).foregroundStyle(.secondary).monospacedDigit()
-            }
-            if let problem = status.problem {
-                HStack(alignment: .firstTextBaseline) {
-                    Label(problem, systemImage: "exclamationmark.icloud")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                    Spacer()
-                    Button("Retry", action: retry).font(.caption)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
     }
 }
 

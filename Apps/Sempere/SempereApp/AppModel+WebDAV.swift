@@ -143,9 +143,9 @@ extension AppModel {
             }
             webdavLocations.update(id) { $0.downloaded = true }
         }
-        let fetcher = copy.isPartial ? makeFetcher(location, copy: copy) : nil
-        try await openVault(at: copy.folder, fetcher: fetcher)
-        fetcher?.start()
+        // A partial copy opens at once: its two-way runs fill it, a note opened first is fetched alone
+        // (`AppModel+Join`).
+        try await openVault(at: copy.folder)
         // The vault's own label (vault.json, format.md §2) names it in the lists, not the server folder.
         let named = await Task.detached(priority: .utility) { copy.label }.value
         if let named, named != location.name { webdavLocations.update(id) { $0.name = named } }
@@ -166,61 +166,15 @@ extension AppModel {
         }?.id
     }
 
-    // MARK: - Filling a partial copy
+    // MARK: - Filling a partial copy (`AppModel+Join`)
 
-    /// Where the open vault's missing files come from, for the download texts:
-    /// the server of a partial WebDAV copy, else iCloud Drive.
-    var cloudSource: CloudSource { webdavFetcher.map { .server($0.serverName) } ?? .iCloudDrive }
-
-    /// `ModelError.noteNotDownloaded`, naming the server for a WebDAV copy.
-    var noteNotDownloadedError: ModelError {
-        cloudSource.serverName.map(ModelError.noteNotDownloadedFromServer) ?? .noteNotDownloaded
-    }
-
-    /// `UserDefaults` key of "Download Attachments in the Background" (on unless turned off).
-    static let webdavFillsBlobsKey = "Sempere.webdavFetchAttachments"
-
-    /// Whether a partial WebDAV copy fetches its attachments in the
-    /// background once every note is in (otherwise only when shown or played).
-    var webdavFillsBlobs: Bool {
-        get { UserDefaults.standard.object(forKey: Self.webdavFillsBlobsKey) as? Bool ?? true }
-        set {
-            UserDefaults.standard.set(newValue, forKey: Self.webdavFillsBlobsKey)
-            webdavFetcher?.setFillsBlobs(newValue)
-        }
-    }
-
-    /// The fetcher of a partial copy: fetches run off the main actor with the
-    /// location as stored at that moment (an edited password or pin applies at once).
-    private func makeFetcher(_ location: WebDAVLocation, copy: LocalCopy) -> WebDAVFetcher {
-        let remote = webdavRemote, passwords = webdavPasswords, store = webdavLocations, id = location.id
-        return WebDAVFetcher(copy: copy, serverName: location.host, fillsBlobs: webdavFillsBlobs, fetch: { scope, vault in
-            let current = await MainActor.run { store.location(id) }
-            guard let current else { throw WebDAVVaultError.noSuchLocation }
-            return try await Task.detached(priority: .utility) {
-                try remote.fetch(try Self.endpoint(current, passwords: passwords), copy: copy, vault: vault, scope: scope)
-            }.value
-        }, changed: { [weak self] fetcher, notes, complete in
-            self?.webdavFetched(fetcher, notes: notes, complete: complete)
-        })
-    }
-
-    /// A fetch run ended: the sync loop looks at the notes it touched now, so
-    /// their rows stop spinning as soon as they are in.
-    func webdavFetched(_ fetcher: WebDAVFetcher, notes: Set<UUID>, complete: Bool) {
-        guard webdavFetcher === fetcher else { return }
-        if !notes.isEmpty { noteFoldersChanged(notes) }
-    }
-
-    /// The vault was unlocked: a partial copy's fetches check each file under
-    /// the key from now on, and the notes not downloaded yet get their rows
+    /// The vault was unlocked: a partial copy's notes not downloaded yet get their rows
     /// from the server's sealed summaries (opened with the key, format.md §12;
     /// a missing or unreadable file only means they are listed as they arrive).
     func webdavUnlocked() async {
-        guard let fetcher = webdavFetcher, let vault, vault.canRead else { return }
-        fetcher.setVault(vault)
+        guard let root = partialCopyRoot, let vault, vault.canRead else { return }
         let gen = generation
-        let url = PartialCopyState.summariesURL(fetcher.copy.folder)
+        let url = PartialCopyState.summariesURL(root)
         let rows = await Task.detached(priority: .userInitiated) { () -> [UUID: NoteSummary] in
             guard let data = try? BoundedRead.contents(of: url, maxBytes: PublishedSummaries.maxFileBytes),
                   let entries = try? vault.openPublishedSummaries(data) else { return [:] }
@@ -254,7 +208,7 @@ extension AppModel {
         let session = SyncSession(
             locationID: id, vaultID: UUID(uuidString: location.vaultId), name: location.name,
             lastSuccess: location.lastPush,
-            run: { [weak self] mode in
+            run: { [weak self] request in
                 let (current, vault) = await MainActor.run { () -> (WebDAVLocation?, Vault?) in
                     // Two-way only with the open vault as the disk says it is: while a reopen after another
                     // device's key change is pending (or failed), runs only upload (review of #70, F1).
@@ -269,16 +223,36 @@ extension AppModel {
                     options.localWriteLock = lock
                     options.deviceID = FileManager.default.fileExists(atPath: deviceState.path)
                         ? (try? DeviceState.loadOrCreate(at: deviceState))?.device : nil
+                    request.apply(to: &options)
                     let endpoint = try Self.endpoint(current, passwords: passwords)
                     guard copy.exists else { throw WebDAVVaultError.noSuchLocation }
-                    if mode == .twoWay, let vault, vault.canRead {
-                        return try remote.sync(endpoint, copy: copy, vault: vault, options: options)
+                    let staging = LockedStaging(targetState: copy.stateURL)
+                    if request.mode == .twoWay, let vault, vault.canRead {
+                        // The unlock places what locked runs staged (checked under the key), then the run goes on.
+                        let placed = try staging.place(vaultFolder: copy.folder, vault: vault, options: options)
+                        // A complete copy keeps the server's sealed summaries current (a joining device lists the
+                        // notes from them before they arrive); never a partial copy (its list is not whole).
+                        var twoWayOptions = options
+                        twoWayOptions.publishSummaries = !copy.isPartial
+                        var report = try remote.sync(endpoint, copy: copy, vault: vault, options: twoWayOptions)
+                        if let placed { report.changed = Self.union(placed.changed, report.changed) }
+                        return report
                     }
-                    return try remote.push(endpoint, copy: copy, vault: nil, options: options)
+                    let report = try remote.push(endpoint, copy: copy, vault: nil, options: options)
+                    if request.stage, !copy.isPartial {   // a join fills itself once unlocked
+                        // Locked: what other devices wrote is staged, never placed (design §4.1). Best effort.
+                        _ = try? staging.stage(vaultFolder: copy.folder, options: options) { shadow, _, pullOnly in
+                            try remote.sync(endpoint, copy: LocalCopy(folder: shadow, stateDirectory: staging.directory),
+                                            vault: nil, options: pullOnly)
+                        }
+                    }
+                    return report
                 }.value
             },
             countUnconfirmed: { await Task.detached(priority: .utility) { copy.unconfirmedChanges() }.value })
         session.onSuccess = { [weak store] date in store?.update(id) { $0.lastPush = date } }
+        let staging = LockedStaging(targetState: copy.stateURL), vaultFolder = copy.folder
+        session.countStaged = { await Task.detached(priority: .utility) { staging.pending(vaultFolder: vaultFolder).count }.value }
         return session
     }
 
@@ -307,16 +281,14 @@ extension AppModel {
             syncVaultStale = true
             Task { await syncedVaultFileArrived() }
         }
-        let ids = changes.noteIDs
+        var ids = changes.noteIDs
+        // A partial copy's pending notes a run may have completed are looked at again (`AppModel+Join`).
+        if !ids.isEmpty || changes.summaries { ids.formUnion(pendingNoteIDs) }
         if !ids.isEmpty {
-            if isCloudVault {
-                noteFoldersChanged(ids)
-            } else {
-                let gen = generation
-                Task { [weak self] in
-                    guard let self, self.generation == gen else { return }
-                    _ = try? await self.reconcile(scope: ids)
-                }
+            let gen = generation
+            Task { [weak self] in
+                guard let self, self.generation == gen else { return }
+                _ = try? await self.reconcile(scope: ids)
             }
         }
         if changes.settings { scheduleSettingsSync() }
@@ -399,23 +371,20 @@ extension AppModel {
         await syncedVaultFileArrived()
     }
 
-    /// Stops the open WebDAV vault's fetches and puts its session back to upload-only (the coordinator
+    /// Puts the open vault's sessions back to upload-only (the coordinator
     /// keeps it running when every vault syncs). Whatever run is in progress finishes; nothing replaces
     /// or removes the copy before it has (`stoppingWebDAV`).
     func stopWebDAV() {
-        let fetching = webdavFetcher?.stop()
-        webdavFetcher = nil
         syncVaultStale = false
         if !syncSessions.isEmpty {
             for session in syncSessions { session.afterTwoWayRun = {} }
             let running = syncCoordinator.detachOpen()
-            if !running.isEmpty || fetching != nil {
+            if !running.isEmpty {
                 for session in syncSessions {
                     let earlier = stoppingWebDAV[session.locationID]
                     stoppingWebDAV[session.locationID] = Task {
                         await earlier?.value
                         for run in running { _ = await run.value }
-                        await fetching?.value
                     }
                 }
             }

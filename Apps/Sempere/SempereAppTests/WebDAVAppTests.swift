@@ -120,11 +120,16 @@ final class FakeWebDAVRemote: WebDAVRemote, @unchecked Sendable {
     private func leave() { lock.lock(); _inFlight -= 1; lock.unlock() }
 
     private var _twoWay = 0
+    private var _stagings = 0
+    /// Staging runs of a locked vault (`LockedStaging`).
+    var stagings: Int { lock.lock(); defer { lock.unlock() }; return _stagings }
     /// How many of the runs were two-way (`sync`); the others were upload-only pushes.
     var twoWayRuns: Int { lock.lock(); defer { lock.unlock() }; return _twoWay }
 
     /// A two-way run counts as a push here (the same scripted report), and is counted on its own too.
     func sync(_ endpoint: WebDAVEndpoint, copy: LocalCopy, vault: Vault?, options: SyncOptions) throws -> SyncReport {
+        // A locked vault's staging run (`LockedStaging`: no key, the shadow copy) is not one of the vault's runs.
+        if vault == nil { lock.lock(); _stagings += 1; lock.unlock(); return SyncReport() }
         lock.lock(); _twoWay += 1; lock.unlock()
         return try push(endpoint, copy: copy, vault: vault, options: options)
     }
@@ -206,7 +211,6 @@ struct WebDAVAppTests {
         // The copy is partial (W2): its background fetch marks a note complete as it places its
         // revisions but records them as synced only when the run ends, so mid-run the count is
         // higher. Let the run in flight end first, so the count read here is the one the model reads.
-        await s.model.webdavFetcher?.stop()?.value
         #expect(copy.unconfirmedChanges() > 0, "the fake push records no sync: the new note is unconfirmed")
         var other = s.listing
         other.vaultId = UUID().uuidString.lowercased()

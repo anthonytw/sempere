@@ -176,7 +176,7 @@ extension AppModel {
         let content = try transcript.encoded()
         let ref = BlobRef(content: content, type: BlobRef.transcriptType)
         if let prepare = blobWritePreparer(note: note) { try await prepare(ref) }
-        let writer = NoteWriter(vault: vault, noteID: note, clock: clock, nextSeq: 1, coordinated: isCloudVault)
+        let writer = NoteWriter(vault: vault, noteID: note, clock: clock, nextSeq: 1)
         let stored = try await writer.addBlob(content, type: BlobRef.transcriptType)
         let recording = transcript.recording
         // iCloud: a transcription can take minutes; the note's revisions must be local before the delta is written.

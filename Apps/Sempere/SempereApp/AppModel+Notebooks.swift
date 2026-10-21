@@ -8,28 +8,20 @@ private let notebookLog = Logger(subsystem: "io.github.anthonytw.sempere", categ
 /// `declaredNotebooks` and written by New Notebook, Delete Notebook and the notebook
 /// renames and moves. The rules and the files are the package's (`NotebookRecords`,
 /// `Vault.createNotebook`, the CLI's `notebooks create|delete`); this only runs them
-/// off the main actor, coordinated in iCloud Drive, under the edit gate.
+/// off the main actor, under the edit gate.
 extension AppModel {
-    /// Reads the notebook records and publishes `declaredNotebooks`. In iCloud Drive the
-    /// record files are downloaded first. Nothing is read when the folder lists the names
+    /// Reads the notebook records and publishes `declaredNotebooks`.
+    /// Nothing is read when the folder lists the names
     /// read last (unless `force`). Failures are logged, never shown: the notebooks notes
     /// name are still listed.
     func refreshNotebookRecords(force: Bool = false) async {
         guard phase == .unlocked, let vault, vault.canRead else { return }
         let gen = generation
-        let cloud = isCloudVault
-        let hooks = cloudHooks
-        let coordinate = coordinationURL
-        let url = vault.url
         do {
-            if cloud {
-                let items = try await offMain { try CloudScan.notebookItems(inVault: url) }
-                try await CloudVault.download(items: items, hooks: hooks, stallTimeout: .seconds(30)) { _ in }
-            }
-            let names = try await offMain { try CloudVault.coordinatedRead(coordinate) { try vault.notebookRecordNames() } }
+            let names = try await offMain { try vault.notebookRecordNames() }
             try ensureCurrent(gen)
             if !force, names == notebookRecordNamesRead { return }
-            let set = try await offMain { try CloudVault.coordinatedRead(coordinate) { try vault.readNotebookRecords() } }
+            let set = try await offMain { try vault.readNotebookRecords() }
             try ensureCurrent(gen)
             notebookRecordNamesRead = names
             declaredNotebooks = set.declared
@@ -84,7 +76,7 @@ extension AppModel {
     }
 
     /// Writes notebook records with `write` under the edit gate (no note edit runs
-    /// meanwhile), coordinated in iCloud Drive, then re-reads them.
+    /// meanwhile), then re-reads them.
     func writeNotebookRecords(_ write: @escaping @Sendable (Vault) throws -> Void) async throws {
         await editGate.acquire()
         defer { editGate.release() }
@@ -92,8 +84,7 @@ extension AppModel {
         guard vault.canRead else { throw VaultError.locked }
         try requireWritableVault()   // format.md §7.3
         let gen = generation
-        let coordinate = coordinationURL
-        try await offMain { try CloudVault.coordinatedWrite(coordinate) { try write(vault) } }
+        try await offMain { try write(vault) }
         try ensureCurrent(gen)
         await refreshNotebookRecords(force: true)
     }

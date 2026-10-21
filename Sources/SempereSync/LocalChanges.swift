@@ -49,6 +49,17 @@ public struct LocalChanges: Codable, Hashable, Sendable {
         notes.isEmpty && !manifest && !journal && !settings && !inbox && !notebooks && !summaries
     }
 
+    /// Adds what `other` changed (two runs reported as one: a placing of staged files, then a run).
+    public mutating func formUnion(_ other: LocalChanges) {
+        notes = Array(Set(notes).union(other.notes)).sorted()
+        manifest = manifest || other.manifest
+        journal = journal || other.journal
+        settings = settings || other.settings
+        inbox = inbox || other.inbox
+        notebooks = notebooks || other.notebooks
+        summaries = summaries || other.summaries
+    }
+
     /// The changed notes as ids.
     public var noteIDs: Set<UUID> { Set(notes.compactMap(UUID.init(uuidString:))) }
 }

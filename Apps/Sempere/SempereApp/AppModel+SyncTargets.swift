@@ -312,7 +312,7 @@ extension AppModel {
         let counting = LocalCopy(folder: entry.url, stateDirectory: stateURL.deletingLastPathComponent())
         let session = SyncSession(
             locationID: targetID, vaultID: vaultID, name: ref.vaultName, lastSuccess: ref.target.lastSuccess,
-            run: { [weak self] mode in
+            run: { [weak self] request in
                 let (target, vault) = await MainActor.run { () -> (SyncTarget?, Vault?) in
                     // Two-way only with the open vault as the disk says it is (review of #70, F1).
                     let open = self?.syncSessions.contains { $0.locationID == targetID } == true && self?.phase == .unlocked
@@ -335,16 +335,42 @@ extension AppModel {
                     options.localWriteLock = lock
                     options.quarantineDirectory = quarantine
                     options.arrivalWait = wait
+                    request.apply(to: &options)
                     options.deviceID = FileManager.default.fileExists(atPath: deviceState.path)
                         ? (try? DeviceState.loadOrCreate(at: deviceState))?.device : nil
-                    let twoWay = mode == .twoWay && vault?.canRead == true
-                    return try FolderTargetRun.run(vaultFolder: entry.url, folder: access.folder, provider: provider?(access.folder),
-                                                   vault: vault, stateURL: stateURL, twoWay: twoWay, options: options)
+                    let twoWay = request.mode == .twoWay && vault?.canRead == true
+                    // A complete copy keeps the target's sealed summaries current, so a device joining lists
+                    // the notes before they arrive; never a partial copy (its list is not whole).
+                    options.publishSummaries = twoWay && !PartialCopy.isPartial(entry.url)
+                    let folderProvider = provider?(access.folder)
+                    let staging = LockedStaging(targetState: stateURL)
+                    // The unlock places what locked runs staged (checked under the key), then the run goes on.
+                    let placed = twoWay ? try vault.flatMap { try staging.place(vaultFolder: entry.url, vault: $0, options: options) } : nil
+                    var report = try FolderTargetRun.run(vaultFolder: entry.url, folder: access.folder, provider: folderProvider,
+                                                         vault: vault, stateURL: stateURL, twoWay: twoWay, options: options)
+                    if let placed { report.changed = Self.union(placed.changed, report.changed) }
+                    if !twoWay, request.stage, !PartialCopy.isPartial(entry.url) {
+                        // Locked: what other devices wrote is staged, never placed (design §4.1). Best effort.
+                        _ = try? staging.stage(vaultFolder: entry.url, options: options) { shadow, state, pullOnly in
+                            try FolderTargetRun.run(vaultFolder: shadow, folder: access.folder, provider: folderProvider,
+                                                    vault: nil, stateURL: state, twoWay: true, options: pullOnly)
+                        }
+                    }
+                    return report
                 }.value
             },
             countUnconfirmed: { await Task.detached(priority: .utility) { counting.unconfirmedChanges() }.value })
         session.onSuccess = { date in try? store.targets.update(targetID, of: vaultID) { $0.lastSuccess = date } }
+        let staging = LockedStaging(targetState: stateURL), vaultFolder = entry.url
+        session.countStaged = { await Task.detached(priority: .utility) { staging.pending(vaultFolder: vaultFolder).count }.value }
         return session
+    }
+
+    /// Two runs' local changes as one report's (a placing of staged files, then the run).
+    nonisolated static func union(_ a: LocalChanges?, _ b: LocalChanges?) -> LocalChanges? {
+        guard var merged = a else { return b }
+        if let b { merged.formUnion(b) }
+        return merged.isEmpty ? nil : merged
     }
 
     /// The vault just opened: when it is a store vault, its targets' sessions become the open ones (two-way
@@ -399,7 +425,9 @@ extension AppModel {
             LegacyWebDAV.convert(list: list, root: root, store: store) { location, copy in
                 guard let endpoint = try? Self.endpoint(location.webdav, passwords: passwords) else { return false }
                 var options = SyncOptions(deviceLabel: "app")
-                options.limits.maxDuration = 120
+                // Bounded: a server that answers slowly must not hold up the launch for long (it is retried
+                // at the next launch).
+                options.limits.maxDuration = 15
                 guard let report = try? remote.push(endpoint, copy: copy, vault: nil, options: options) else { return false }
                 return report.errors.isEmpty && report.stoppedEarly == nil
             }
@@ -485,8 +513,7 @@ extension AppModel {
         } catch {
             throw SyncTargetProblem.other(String(describing: error))
         }
-        let state = store.targets.stateURL(id, of: vaultID)
-        try? FileManager.default.removeItem(at: state)
+        store.targets.resetState(id, of: vaultID)
         syncTargetsChanged()
         syncCoordinator.sessions[id]?.demand()
     }

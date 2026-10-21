@@ -211,44 +211,6 @@ struct ExportTests {
         #expect(files(dir).isEmpty)
     }
 
-    /// iCloud: a revision evicted (or newly listed) after `downloadNote` must
-    /// not give an export of an older note reported as a success.
-    @Test func anICloudNoteMissingARevisionIsReportedNotExportedStale() async throws {
-        let (url, key) = try AppModelTests.fixtureVault()
-        let cloud = FakeCloud(vault: url)
-        let armed = Flag(), evicted = Flag()
-        let folder = url.appendingPathComponent("notes/\(Self.lecture.uuidString.lowercased())")
-        func revisions() throws -> Set<String> {
-            Set(try FileManager.default.contentsOfDirectory(atPath: folder.path).filter { $0.hasSuffix(".age") && !$0.hasPrefix(".") })
-        }
-        let newest = NameBox()
-        let model = AppModel(deviceStateURL: TS.deviceStateURL(), afterIO: {
-            guard armed.isSet, !evicted.isSet, let name = newest.value else { return }
-            evicted.set()
-            let file = folder.appendingPathComponent(name)
-            try? FileManager.default.removeItem(at: file)
-            try? Data().write(to: CloudPlaceholder.placeholderURL(for: file))
-        })
-        model.cloudHooks = cloud.hooks
-        model.cloudPollInterval = .milliseconds(10)
-        model.cloudStallTimeout = .seconds(1)
-        try await model.openVault(at: url)
-        try await model.unlock(identityText: try String(contentsOf: key, encoding: .utf8))
-        #expect(model.isCloudVault)
-        let before = try revisions()
-        try await model.renameNote(Self.lecture, to: "Renamed before the export")
-        newest.value = try #require(try revisions().subtracting(before).first)
-        model.pauseCloudSync()
-        armed.set()
-
-        let r = try await export(model, [Self.lecture], ShareOptions(format: .pdf), into: try scratch())
-        #expect(evicted.isSet)
-        #expect(r.exported == 0)
-        #expect(r.items.isEmpty)
-        #expect(r.failures.count == 1)
-        model.close()
-    }
-
     @Test func progressGrowsFromReadingToRendering() async throws {
         let model = try await BrowserTests.unlockedFixtureModel()
         let recorder = ProgressRecorder()

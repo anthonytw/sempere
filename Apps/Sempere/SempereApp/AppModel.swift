@@ -77,12 +77,11 @@ final class AppModel {
         /// None of the given keys is listed in `vault.json`: this device has not joined the vault.
         case notJoined
         case noteNotFound
-        /// An iCloud note whose folder kept changing, or was never listed,
-        /// while it was being downloaded.
+        /// A note of a partial copy (a join) not downloaded yet, its server unknown.
         case noteNotDownloaded
         /// The same, from the WebDAV server (host) of a partial copy.
         case noteNotDownloadedFromServer(String)
-        /// An edit over many notes while some are still downloading from iCloud.
+        /// An edit over many notes while some are still downloading (a join), its server unknown.
         case notesStillDownloading
         /// The same, from the WebDAV server (host) of a partial copy.
         case notesStillDownloadingFromServer(String)
@@ -94,6 +93,14 @@ final class AppModel {
         case notebookNotEmpty
         /// A new notebook's name is longer than a notebook record allows.
         case notebookNameTooLong
+
+        /// A note not downloaded yet: a fetch may bring it.
+        var isNotDownloaded: Bool {
+            switch self {
+            case .noteNotDownloaded, .noteNotDownloadedFromServer: return true
+            default: return false
+            }
+        }
 
         var description: String {
             switch self {
@@ -337,14 +344,7 @@ final class AppModel {
     var thinningProgress: ThinningProgress?
     /// Notes thinning works on at once (`thinVault`).
     var thinningConcurrency = min(ProcessInfo.processInfo.activeProcessorCount, 4)
-    /// Set while vault files are being fetched from iCloud Drive (`AppModel+Cloud`).
-    var cloudProgress: CloudProgress?
-    /// True when the open vault is in iCloud Drive or another provider's
-    /// storage (`StorageLocation`): reads and writes are coordinated and
-    /// reloads fetch new files first (when the provider reports download states).
-    var isCloudVault = false
-    var cloudTask: Task<Bool, any Error>?
-    /// Notes of an iCloud vault whose files are still downloading.
+    /// Notes of a partial copy (a join, `AppModel+Join`) not downloaded yet.
     var pendingNoteIDs: Set<UUID> = []
     /// The pending notes that have no summary yet (listed as placeholders).
     var placeholderNoteIDs: Set<UUID> = []
@@ -359,71 +359,30 @@ final class AppModel {
     @ObservationIgnored var lastListApply: ContinuousClock.Instant?
     /// The shortest time between two list updates while notes are read.
     var listUpdateInterval = Duration.milliseconds(250)
-    /// Note folders a file presenter reported changed, for the next pass;
-    /// `dirtyAll` when it could not say which.
-    @ObservationIgnored var dirtyNoteIDs: Set<UUID> = []
-    @ObservationIgnored var dirtyAll = false
-    /// Wakes the sync loop early when a change is reported (`noteFoldersChanged`).
-    @ObservationIgnored let syncWakeup = SyncWakeup()
-    /// Reports changes inside the open iCloud vault's `notes/` folder.
-    @ObservationIgnored var notesPresenter: NotesFolderPresenter?
-    /// The background validation in progress (`validateIfDue`).
-    @ObservationIgnored var validationTask: Task<Void, Never>?
-    @ObservationIgnored var validationRun = 0
-    /// When the background validation (`validateVault`) last finished.
-    @ObservationIgnored var lastValidation: ContinuousClock.Instant?
-    /// Notes the last validation saw entirely local, with their listing
-    /// digests (`ProgressiveLoad.Pass.settled`): the next one does not ask
-    /// iCloud about them while their listing is the same.
-    @ObservationIgnored var settledCloudNotes: [UUID: Int] = [:]
-    /// Validations since the last one that asked about every file (0: none yet).
-    @ObservationIgnored var validationsSinceFull = 0
-    /// How often the background validation runs while the vault is open
-    /// (also once, shortly after the list settles).
-    var cloudValidationInterval = Duration.seconds(30 * 60)
-    /// Progress of the open iCloud vault's sync, for the list's progress bar;
-    /// nil outside iCloud Drive.
-    var cloudSync: CloudSyncStatus?
-    /// The note `downloadNote` is fetching, with its files' progress.
-    var noteDownload: (id: UUID, progress: CloudProgress)?
-    var cloudSyncTask: Task<Void, Never>?
+    /// How far a join's fill got (`AppModel+Join`), for the list's bar; nil when no partial copy is open.
+    var joinProgress: JoinProgress?
+    /// The note `downloadNote` is fetching (a partial copy), for the note pane's wait and its Cancel.
+    var noteDownload: UUID?
+    /// Cancels that wait (`cancelNoteDownload`); the fetch itself goes on.
+    @ObservationIgnored var noteDownloadCancel: (() -> Void)?
     /// Background time and scheduled tasks for the sync (`AppModel+Background`); tests pass fakes.
     @ObservationIgnored var backgroundTasks: any BackgroundTaskRunning = UIKitBackgroundTasks()
     @ObservationIgnored var syncScheduler: any BackgroundSyncScheduling = BGTaskSyncScheduler()
-    /// The background-time assertion held while a sync in flight finishes off screen.
-    @ObservationIgnored var backgroundSyncToken: BackgroundTaskToken?
-    /// The app is off screen and the sync loop is finishing what was in flight.
-    var syncingInBackground = false
-    /// The iCloud calls; tests replace them (`CloudVault.Hooks`). While a
-    /// partial WebDAV copy is open, its fetcher's hooks take their place
-    /// (`webdavFetcher`, docs/io.md "WebDAV vaults in the app"): the same
-    /// machinery then fetches from the server.
-    var cloudHooks: CloudVault.Hooks {
-        get { webdavFetcher?.hooks ?? iCloudHooks }
-        set { iCloudHooks = newValue }
-    }
+    /// The assertion held while sync targets' runs finish off screen (`finishTargetRunsInBackground`), and its wait.
+    @ObservationIgnored var targetsBackgroundToken: BackgroundTaskToken?
+    @ObservationIgnored var targetsBackgroundWait: Task<Void, Never>?
+    /// Watches the network for the WebDAV targets (`startReachability`); nil until started.
+    @ObservationIgnored var reachability: WebDAVReachability?
+    /// The iCloud calls for copying a vault in from iCloud Drive (`copyIn`, a restore); tests replace them.
     @ObservationIgnored var iCloudHooks = CloudVault.Hooks.live
-    /// What the last conflict pass did (`resolveCloudConflicts`), for tests.
-    @ObservationIgnored var lastConflictOutcome: CloudConflicts.Outcome?
-    /// The bar's line while a conflict no rule can merge is left unresolved (kept over "settled").
-    @ObservationIgnored var conflictProblem: String?
-    /// Fills the open WebDAV vault's partial copy (`AppModel+WebDAV`); nil
-    /// for any other vault, and for a complete copy.
-    @ObservationIgnored var webdavFetcher: WebDAVFetcher?
+    /// The last on-demand fetch into the open partial copy (`joinFetch`): the next waits for it.
+    @ObservationIgnored var joinFetchTail: Task<Void, Never>?
     /// The rows of notes not downloaded yet, by note id, from published summaries
-    /// (format.md §12): a WebDAV copy's from the server's file, an iCloud vault's
-    /// from every device's `summaries/<device>.sealed` (`AppModel+PublishedSummaries`).
+    /// (format.md §12): a partial WebDAV copy's from the server's file (`webdavUnlocked`).
     @ObservationIgnored var publishedRows: [UUID: NoteSummary] = [:]
     /// The published summary files the rows were last read from (name, size, date), so they are
     /// read again only when one changes.
     @ObservationIgnored var publishedRowsSignature: [String] = []
-    /// What this device last published (`summaries/<device>.sealed`) and when.
-    @ObservationIgnored var publishedOwnEntries: [UUID: PublishedSummaries.Entry]?
-    @ObservationIgnored var publishedOwnAt: ContinuousClock.Instant?
-    /// The shortest time between two writes of this device's published summaries.
-    var publishSummariesInterval = Duration.seconds(120)
-    /// Off: this device never writes its published summaries (tests that count vault files).
-    var publishesSummaries = true
     /// The WebDAV locations of this device (`AppModel+WebDAV`, docs/io.md
     /// "WebDAV vaults in the app"). The app passes the default store; without
     /// one (tests) a store in a folder of this model alone.
@@ -445,8 +404,9 @@ final class AppModel {
     var syncVaultStale = false
     /// A previous copy kept at launch (`recoverWebDAVLeftovers`), for its alert; nil when there is none.
     var webdavLeftover: WebDAVLeftover?
+    /// The coordinator once made (tests set their own).
+    @ObservationIgnored var coordinatorStorage: SyncCoordinator?
     /// Every in-app vault's sync sessions (`SyncCoordinator`, made on first use).
-    @ObservationIgnored private var coordinatorStorage: SyncCoordinator?
     var syncCoordinator: SyncCoordinator {
         if let coordinatorStorage { return coordinatorStorage }
         let made = SyncCoordinator(targets: { [weak self] in self?.allSyncTargets() ?? [] },
@@ -504,36 +464,13 @@ final class AppModel {
     @ObservationIgnored var settingsSyncObserver: (any NSObjectProtocol)?
     @ObservationIgnored var settingsSyncScheduled: Task<Void, Never>?
     @ObservationIgnored var settingsSyncRunning = false
-    /// Pause between progressive passes, passes with an unchanged note set
-    /// before the loop slows to `cloudIdleInterval` (doubling while nothing
-    /// changes, up to `cloudMaxIdleInterval`), and how long without progress
-    /// is a stall.
+    /// How long a copy-in or restore from iCloud Drive waits without progress, and how often it looks
+    /// (`downloadSourceFolder`); tests shorten them.
     var cloudPollInterval = Duration.seconds(1)
-    var cloudSettlePasses = 3
-    var cloudIdleInterval = Duration.seconds(15)
-    var cloudMaxIdleInterval = Duration.seconds(60)
     var cloudStallTimeout = Duration.seconds(90)
-    /// How long a note folder that lists nothing at all stays pending ("not listed yet").
-    /// After that it is set aside (`emptyNoteFolders`): not a row, not pending, so the
-    /// "Downloading" bar cannot wait forever on a folder left empty by an interrupted
-    /// write on another device. Every pass still looks at it and reads it once it lists a revision.
-    var cloudUnlistedTimeout = Duration.seconds(120)
-    /// When each note folder that lists nothing was first seen so (`cloudUnlistedTimeout`).
-    @ObservationIgnored var unlistedSince: [UUID: ContinuousClock.Instant] = [:]
-    /// Note folders that are not notes for now: no revision, and either other
-    /// entries (an `att/` written before the first revision) or nothing listed for
-    /// longer than `cloudUnlistedTimeout`. Not counted, not pending.
-    @ObservationIgnored var emptyNoteFolders: Set<UUID> = []
-    /// How many pending notes have downloads requested at once (`ProgressiveLoad`).
-    var cloudWindow = ProgressiveLoad.defaultWindow
-    /// How many notes already known to be arriving a pass re-checks with
-    /// iCloud (in rotation, `nextPendingChecks`).
-    var cloudCheckLimit = 64
-    /// Where the rotation of `nextPendingChecks` stopped (an id string).
-    @ObservationIgnored var pendingCheckCursor = ""
-    /// Notes the file presenter reported changed since the last pass: checked
-    /// with iCloud by the next pass even when already known to be arriving.
-    @ObservationIgnored var reportedNoteIDs: Set<UUID> = []
+    /// How long opening a note waits for its fetch in a partial copy before it says "not downloaded yet"
+    /// (the fetch goes on; opening it again shows it once it is in).
+    var noteFetchTimeout = Duration.seconds(60)
     /// The shortest time between two summary-cache saves while notes arrive.
     var summaryCacheSaveInterval = Duration.seconds(20)
     @ObservationIgnored var lastSummaryCacheSave: ContinuousClock.Instant?
@@ -800,19 +737,15 @@ final class AppModel {
 
     /// Opens the vault at `url` by name only (no key yet). Starts
     /// security-scoped access for URLs from the document picker and keeps
-    /// it until the vault is closed. A vault in iCloud Drive is downloaded
-    /// first (`fetchFromICloud`).
+    /// it until the vault is closed. Every vault the app opens is an in-app copy (`VaultStore`; tests and
+    /// debug launches open local folders): nothing is fetched first.
     ///
     /// - Parameter scope: the URL whose security scope covers `url` when it is
     ///   not `url` itself (the folder the user picked, when `url` was found
     ///   inside it). Held instead of `url`'s own.
     ///   - external: the URL came from outside the app (`vaultOpenedExternally`).
-    ///   - fetcher: a partial WebDAV copy's fetcher (`openWebDAV`): its hooks
-    ///     stand in for iCloud's while the vault is open.
-    func openVault(at url: URL, accessing scope: URL? = nil, external: Bool = false,
-                   fetcher: WebDAVFetcher? = nil) async throws {
+    func openVault(at url: URL, accessing scope: URL? = nil, external: Bool = false) async throws {
         close()
-        webdavFetcher = fetcher
         vaultOpenedExternally = external
         let gen = generation
         let holder = scope ?? url
@@ -825,30 +758,21 @@ final class AppModel {
                   (try? FileManager.default.contentsOfDirectory(atPath: url.path)) != nil ? 1 : 0)
             #endif
             try FolderAccess.check(url, scoped: scoped)
-            let ubiquitous = try await fetchFromICloud(url, scope: .essentials)
+            let opened = try await offMain { try Vault.open(at: url) }
             try ensureCurrent(gen)
-            // Another app's provider that does not report its files as ubiquitous still
-            // fetches and uploads only what is read and written coordinated (`StorageLocation`).
-            let cloud = ubiquitous || StorageLocation.classify(url).needsCoordination
-            let opened = try await offMain { try CloudVault.coordinatedRead(cloud ? url : nil) { try Vault.open(at: url) } }
-            try ensureCurrent(gen)
-            Perf.end(interval, "cloud=\(cloud)")
+            Perf.end(interval, "")
             if scoped { scopedURL = holder }
             if let store = vaultStore, let stored = store.entry(containing: url) {
                 storeLease = try? store.lease(stored.vaultId)
             }
-            isCloudVault = cloud
             vault = opened
             vaultURL = url
             phase = .locked
             // A store vault's targets: their sessions are the open ones (two-way once unlocked).
             attachSyncTargets(vaultID: opened.vaultId, at: url)
-            // The notes start downloading while the user enters the key.
-            startCloudSync()
         } catch {
             Perf.end(interval, "failed")
             if scoped { holder.stopAccessingSecurityScopedResource() }
-            webdavFetcher = nil
             throw error
         }
     }
@@ -887,17 +811,14 @@ final class AppModel {
     func unlock(with keys: UnlockKeys, awaitNotes: Bool = true) async throws {
         guard let url = vaultURL else { throw ModelError.noVaultOpen }
         let gen = generation
-        let coordinate = coordinationURL
         let trust = self.trust
         let opened: Vault
         do {
+            // The recovery key reads without a trust record (design §4.3 step 4), checked against
+            // the root when one came with it (the passphrase copy).
             opened = try await offMain {
-                try CloudVault.coordinatedRead(coordinate) {
-                    // The recovery key reads without a trust record (design §4.3 step 4), checked against
-                    // the root when one came with it (the passphrase copy).
-                    try Vault.open(at: url, identities: keys.identities, signing: keys.signing,
-                                   trust: keys.root == nil ? trust : nil, root: keys.root)
-                }
+                try Vault.open(at: url, identities: keys.identities, signing: keys.signing,
+                               trust: keys.root == nil ? trust : nil, root: keys.root)
             }
         } catch VaultError.keyNotListed {
             throw ModelError.notJoined
@@ -964,14 +885,11 @@ final class AppModel {
     func unlock(passphrase: String, awaitNotes: Bool = true) async throws {
         guard let locked = vault else { throw ModelError.noVaultOpen }
         let gen = generation
-        let coordinate = coordinationURL
-        let copy: RecoveryPassphraseCopy = try await offMain {
-            try CloudVault.coordinatedRead(coordinate) { () throws -> RecoveryPassphraseCopy in
-                do { return try locked.openPassphraseCopy(passphrase: passphrase) } catch VaultError.passphraseCopyMissing {
-                    throw ModelError.noStoredKeys
-                } catch VaultError.wrongPassphrase {
-                    throw ModelError.passphraseMatchesNoKey
-                }
+        let copy: RecoveryPassphraseCopy = try await offMain { () throws -> RecoveryPassphraseCopy in
+            do { return try locked.openPassphraseCopy(passphrase: passphrase) } catch VaultError.passphraseCopyMissing {
+                throw ModelError.noStoredKeys
+            } catch VaultError.wrongPassphrase {
+                throw ModelError.passphraseMatchesNoKey
             }
         }
         try ensureCurrent(gen)
@@ -995,15 +913,8 @@ final class AppModel {
         do {
             try await openSummaryCache()
             try ensureCurrent(gen)
-            if isCloudVault {
-                // Unlocking files first (small), then the notes that changed.
-                _ = try await fetchFromICloud(vault.url)
-                try ensureCurrent(gen)
-                try await reconcile(full: true)
-                startCloudSync()
-            } else {
-                try await listLocalNotes()
-            }
+            _ = vault
+            try await listLocalNotes()
             if gen == generation { loadFailure = nil }
         } catch is CancellationError {
             throw CancellationError()
@@ -1046,7 +957,7 @@ final class AppModel {
                 Perf.end(render, "\(Perf.short(noteID)) not shown")
             }
         }
-        // iCloud: this note first, before the rest of the vault.
+        // A partial copy: this note first, before the rest of the fill.
         let download = Perf.begin(.noteDownload)
         do { try await downloadNote(noteID) } catch {
             Perf.end(download, "\(Perf.short(noteID)) failed")
@@ -1060,30 +971,16 @@ final class AppModel {
         let listed = cache == nil ? nil : try? await offMain {
             try VaultEnumeration.listNotes(vault: url, only: [noteID]).first?.names
         }
-        var verify: (@Sendable () throws -> Void)?
-        if isCloudVault, let url = vaultURL {
-            let hooks = cloudHooks
-            verify = { try CloudVault.requireLocal(note: noteID, vault: url, hooks: hooks) }
-        }
-        let opened: NoteEditor
-        do {
-            opened = try await NoteEditor.open(vault: vault, noteID: noteID, clock: clock, debounce: editorDebounce,
+        let verify = partialNoteVerifier(noteID)
+        let opened = try await NoteEditor.open(vault: vault, noteID: noteID, clock: clock, debounce: editorDebounce,
                                                recognizer: recognizer, recognitionDelay: recognitionDelay,
-                                               coordinated: isCloudVault, verify: verify, cache: cache,
+                                               verify: verify, cache: cache,
                                                listedNames: listed, beforeFinishing: editorLoadHook,
                                                redownload: { [weak self] in
                                                    guard let self else { throw CancellationError() }
                                                    try self.ensureCurrent(gen)   // never into another vault
                                                    try await self.downloadNote(noteID)
                                                })
-        } catch CloudVault.CloudError.noteNotLocal {
-            // A file went missing (or a new one was listed) since `downloadNote`: once more.
-            try ensureCurrent(gen)
-            try await downloadNote(noteID)
-            opened = try await NoteEditor.open(vault: vault, noteID: noteID, clock: clock, debounce: editorDebounce,
-                                               recognizer: recognizer, recognitionDelay: recognitionDelay,
-                                               coordinated: isCloudVault, verify: verify, cache: cache)
-        }
         await afterIO?()
         guard gen == generation, selectedNoteID == noteID,   // closed, or the selection moved on meanwhile
               editor?.noteID != noteID else {                // a concurrent open won; keep its edits
@@ -1184,22 +1081,16 @@ final class AppModel {
     func close() {
         generation += 1
         stopSettingsSync()
-        cancelCloudDownload()
-        stopCloudSync()
+        stopJoin()
         stopWebDAV()
-        syncingInBackground = false
-        endBackgroundTime()
         cancelRemoteMerges()
         backupControl?.cancel()   // it reads the vault, whose access ends here
-        inboxAdoption?.cancel()   // it may wait minutes for iCloud; the next vault adopts its own inbox
+        inboxAdoption?.cancel()   // the next vault adopts its own inbox
         inboxAdoption = nil
         importCancellation?.cancel()   // a running import stops after its current note
         lastImportReport = nil
-        isCloudVault = false
         publishedRows = [:]
         publishedRowsSignature = []
-        publishedOwnEntries = nil
-        publishedOwnAt = nil
         isBusy = false
         let editor = self.editor
         let windowed = Array(windowEditors.values)
@@ -1238,13 +1129,6 @@ final class AppModel {
         summaryEpochs = [:]
         indexedNames = [:]
         discardListUpdates()
-        dirtyNoteIDs = []
-        dirtyAll = false
-        lastValidation = nil
-        settledCloudNotes = [:]
-        validationsSinceFull = 0
-        reportedNoteIDs = []
-        pendingCheckCursor = ""
         // Saves are throttled while notes arrive: what the last passes read is kept.
         saveSummaryCache()
         lastSummaryCacheSave = nil

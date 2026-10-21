@@ -9,19 +9,8 @@ extension AppModel {
 
     // MARK: - Opening and creating
 
-    /// Opens what the user picked (a `.sempere` vault, a plain folder, a folder
-    /// holding one vault, or a file inside a vault: `VaultLocator`) IN PLACE and
-    /// remembers it. Earlier builds' path, read until P7 (docs/design/device-first-sync.md):
-    /// "Open Vault…" now copies the vault into the store instead (`copyIn`).
-    func open(picked url: URL, library: VaultLibrary, external: Bool = false) async throws {
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        let vaultURL = try VaultLocator.resolve(url)
-        try await openVault(at: vaultURL, accessing: vaultURL == url ? nil : url, external: external)
-        remember(in: library)
-    }
-
-    /// Reopens a recent vault from its bookmark.
+    /// Reopens a recent vault: a store vault by its id, a WebDAV one by its location, an older bookmark by
+    /// copying its folder in.
     ///
     /// - Throws: `VaultLibrary.LibraryError.cannotResolve` when the bookmark
     ///   does not resolve; otherwise whatever opening throws. The entry is
@@ -38,9 +27,11 @@ extension AppModel {
         if let id = entry.storeID, let joining = joiningWebDAVLocation(of: id) {
             return try await openWebDAV(joining, library: library)
         }
+        // A recent of an earlier build that opened a vault in place (a bookmark, no store id): the app no
+        // longer reads vaults in place (P7), so the folder is copied in, as "Open Vault…" does, and the copy
+        // opens. The folder itself is left as it was.
         let url = try await library.resolved(entry)
-        try await openVault(at: url)
-        remember(in: library)
+        try await copyIn(picked: url, library: library)
     }
 
     /// Creates a vault in the in-app store (`VaultLibrary.create`), this device its home, and opens it
@@ -119,13 +110,12 @@ extension AppModel {
         // or shown from an earlier launch's cache), have no known notebook:
         // they would be left behind, or moved by a notebook they left.
         guard pendingNoteIDs.isEmpty, listLoaded, notes.allSatisfy({ verifiedNoteIDs.contains($0.id) }) else {
-            throw cloudSource.serverName.map(ModelError.notesStillDownloadingFromServer) ?? .notesStillDownloading
+            throw joinLocation.map { ModelError.notesStillDownloadingFromServer($0.host) } ?? .notesStillDownloading
         }
         let current = Dictionary(notes.map { ($0.id, $0.notebook) }, uniquingKeysWith: { a, _ in a })
         let edits = NoteOps.renameNotebook(old, to: target, notebooks: current)
-        // iCloud: a note shown from the index may be evicted (its names did not
-        // change, so it is not pending). Every note is made local before the
-        // first delta is written, so a rename never stops halfway.
+        // Every note is made complete (a partial copy) before the first delta is written, so a rename
+        // never stops halfway.
         let gen = generation
         for edit in edits {
             try await downloadNote(edit.noteId)
@@ -227,12 +217,11 @@ extension AppModel {
     /// before the vault closed is not written into it afterwards (and
     /// `close()` waits for one being written before access to the folder
     /// ends). Deltas go through `NoteWriter.append` with the canvas's device
-    /// clock; in iCloud Drive each is a coordinated write on its note's folder.
-    /// Callers that compute ops from a note's summary make the note local
-    /// first (`downloadNote`), so a placeholder's empty summary is never
-    /// written back over the real one; in iCloud Drive each append re-checks
-    /// inside its coordinated read that the note is still all local
-    /// (`CloudVault.requireLocal`) and refuses to write otherwise.
+    /// clock. Callers that compute ops from a note's summary make the note
+    /// complete first (`downloadNote`), so a placeholder's empty summary is never
+    /// written back over the real one; in a partial copy each append re-checks
+    /// that the note is not marked incomplete (`partialNoteVerifier`) and
+    /// refuses to write otherwise.
     private func commit(_ edits: [(id: UUID, ops: [Op])], creating: Set<UUID> = []) async throws {
         let batch = edits
         try await commit(ids: batch.map(\.id), creating: creating) { vault, clock, cloud, verifier in
@@ -260,12 +249,11 @@ extension AppModel {
         }
     }
 
-    /// `write` gets the vault, the clock, whether the vault is in iCloud Drive,
-    /// and the check each note's append runs inside its coordinated read.
-    /// Notes in `creating` are new: they have no files to be local yet, so
-    /// they get no check (requireLocal would refuse an empty, unlisted folder)
-    /// as long as their folder lists no revision; one that does (an id that
-    /// is not new after all) is checked like any other note.
+    /// `write` gets the vault, the clock, whether writes are coordinated (never, since every vault is an
+    /// in-app copy; the parameter goes with the rest of the coordination plumbing), and the check each
+    /// note's append runs before it writes: in a partial copy, a note still marked incomplete is refused
+    /// (`partialNoteVerifier`, review of #75; core refuses such a write too, format.md §1.2). A note in
+    /// `creating` is new and is never marked incomplete, so the same check passes for it.
     func commit(ids: [UUID], creating: Set<UUID> = [],
                         write: (Vault, DeviceClock, Bool, @Sendable (UUID) -> (@Sendable () throws -> Void)?) async throws -> Void)
         async throws {
@@ -277,25 +265,17 @@ extension AppModel {
         let clock = try deviceClockForWriting()
         isEditing = true
         defer { isEditing = false }
-        let cloud = isCloudVault
-        let hooks = cloudHooks
-        let url = vault.url
-        // iCloud: every revision file must still be local when the delta's
-        // seq is picked (a file can be evicted, or a new one listed, after
-        // `downloadNote`; a notebook rename does not download at all).
+        // A partial copy: every note written to must be complete when the delta's seq is picked (a
+        // notebook rename does not fetch a pending note first).
+        let partial = partialCopyRoot
+        let missing = joinNotDownloadedError
         let verifier: @Sendable (UUID) -> (@Sendable () throws -> Void)? = { id in
-            guard cloud else { return nil }
-            if creating.contains(id) {
-                return {
-                    let listed = try CloudScan.noteItems(inVault: url, id: id)
-                    guard !listed.isEmpty else { return }
-                    try CloudVault.requireLocal(note: id, vault: url, hooks: hooks)
-                }
-            }
-            return { try CloudVault.requireLocal(note: id, vault: url, hooks: hooks) }
+            guard let partial else { return nil }
+            return { if Self.incompleteNoteIDs(partial).contains(id) { throw missing } }
         }
+        _ = creating
         do {
-            try await write(vault, clock, cloud, verifier)
+            try await write(vault, clock, false, verifier)
         } catch {
             try? await refresh(ids)   // some deltas may have landed
             throw error
@@ -307,13 +287,10 @@ extension AppModel {
     func refresh(_ ids: [UUID]) async throws {
         guard let vault else { throw ModelError.noVaultOpen }
         let gen = generation
-        let coordinate = coordinationURL
         let cache = summaryCache
         let entries = try await offMain {
-            try CloudVault.coordinatedRead(coordinate) {
-                try vault.summaryEntries(of: ids, cache: cache, saveCache: false)
-                    .map { NamedSummary(summary: $0.summary, revisions: $0.revisions) }
-            }
+            try vault.summaryEntries(of: ids, cache: cache, saveCache: false)
+                .map { NamedSummary(summary: $0.summary, revisions: $0.revisions) }
         }
         try ensureCurrent(gen)
         for id in ids { summaryEpochs[id, default: 0] += 1 }

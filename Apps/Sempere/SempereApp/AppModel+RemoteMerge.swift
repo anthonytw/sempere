@@ -76,12 +76,8 @@ extension AppModel {
             return .skipped
         }
         let clock = try deviceClockForWriting()
-        var verify: (@Sendable () throws -> Void)?
-        if isCloudVault, let url = vaultURL {
-            let hooks = cloudHooks
-            verify = { try CloudVault.requireLocal(note: id, vault: url, hooks: hooks) }
-        }
-        let outcome = try await open.mergeRevisions(vault: vault, clock: clock, coordinated: isCloudVault, verify: verify)
+        let outcome = try await open.mergeRevisions(vault: vault, clock: clock, coordinated: false,
+                                                    verify: partialNoteVerifier(id))
         try ensureCurrent(gen)
         switch outcome {
         case .merged(let other):

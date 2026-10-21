@@ -36,6 +36,19 @@ final class IndexTestClock: @unchecked Sendable {
 @Suite(.serialized)
 struct AttachmentIndexAppTests {
     static let lecture = AppModelTests.lecture
+
+    /// The fixture with an image (shown on the lecture's first page) and an audio blob (unused) in the lecture.
+    static func vaultWithBlobs() throws -> (url: URL, key: URL, image: BlobRef, audio: BlobRef) {
+        let (url, key) = try AppModelTests.fixtureVault()
+        let identity = try IdentityFile.parse(try String(contentsOf: key, encoding: .utf8))
+        let vault = try Vault.open(at: url, identities: [identity])
+        let image = try vault.writeBlob(note: lecture, AttachmentEditorTests.png(), type: "image/png")
+        let audio = try vault.writeBlob(note: lecture, Data(repeating: 1, count: 500), type: "audio/mp4")
+        let page = try #require(try vault.reconstruct(noteId: lecture).pages.first).id
+        _ = try vault.apply([.addItem(page: page, item: AttachmentEditorTests.imageItem(image))], to: lecture,
+                            deviceState: TS.deviceStateURL(), app: "test/1")
+        return (url, key, image, audio)
+    }
     static let other = AppModelTests.deleted
     let day: TimeInterval = 86400
     let t0 = Date(timeIntervalSince1970: 1_800_000_000)
@@ -43,7 +56,7 @@ struct AttachmentIndexAppTests {
     /// The fixture with an image (shown) and an audio blob (unused) in the lecture, unlocked and indexed.
     func indexedModel(clock: IndexTestClock, counting: Bool = false)
         async throws -> (AppModel, URL, URL, image: BlobRef, audio: BlobRef, CountingAttachmentSource?) {
-        let (url, key, image, audio) = try AttachmentCloudTests.vaultWithBlobs()
+        let (url, key, image, audio) = try Self.vaultWithBlobs()
         let model = AppModel(deviceStateURL: TS.deviceStateURL(), editorDebounce: .milliseconds(10))
         model.attachmentIndexDelay = .zero
         model.attachmentNow = { clock.now }
@@ -191,39 +204,10 @@ struct AttachmentIndexAppTests {
         model.close()
     }
 
-    /// iCloud Drive: while a revision of the note is not on this device, nothing is decided.
-    @Test func aNoteNotLocalDecidesNothing() async throws {
-        let clock = IndexTestClock(t0)
-        // A vault copy the model takes for one in iCloud Drive.
-        let (url, key, _, _) = try AttachmentCloudTests.vaultWithBlobs()
-        let fakeCloud = FakeCloud(vault: url)
-        let model = AppModel(deviceStateURL: TS.deviceStateURL())
-        model.attachmentIndexDelay = .zero
-        model.attachmentNow = { clock.now }
-        model.cloudHooks = fakeCloud.hooks
-        model.cloudPollInterval = .milliseconds(10)
-        model.cloudIdleInterval = .milliseconds(20)
-        try await model.openVault(at: url)
-        #expect(model.isCloudVault)
-        try await model.unlock(identityText: try String(contentsOf: key, encoding: .utf8))
-        #expect(await TS.waitUntil { model.attachmentIndex[Self.lecture]?.isComplete == true })
-        #expect(!model.attachmentStorage().unused.isEmpty)
-        try fakeCloud.evictDataless(Self.lecture)
-        model.noteChanged(Self.lecture, current: nil)
-        await model.attachmentIndexIdle()
-        let entry = try #require(model.attachmentIndex[Self.lecture])
-        #expect(!entry.isComplete)
-        #expect(entry.unusedSince.isEmpty)
-        let report = model.attachmentStorage()
-        #expect(report.unused.isEmpty)
-        #expect(report.unchecked[Self.lecture] != nil)
-        model.close()
-    }
-
     @Test func entriesPersistPerVaultAcrossModels() async throws {
         let clock = IndexTestClock(t0)
         let root = TestTemp.root.appendingPathComponent(UUID().uuidString)
-        let (url, key, _, _) = try AttachmentCloudTests.vaultWithBlobs()
+        let (url, key, _, _) = try Self.vaultWithBlobs()
         let first = AppModel(deviceStateURL: TS.deviceStateURL(), attachmentIndexRoot: root)
         first.attachmentIndexDelay = .zero
         first.attachmentNow = { clock.now }

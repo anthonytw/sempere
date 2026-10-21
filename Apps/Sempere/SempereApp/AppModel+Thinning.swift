@@ -179,6 +179,8 @@ extension AppModel {
     func thinVault(rule: ThinningRule, dryRun: Bool, skipOpen: Bool = false, now: Date = Date()) async throws -> ThinningReport {
         guard let vault, phase == .unlocked else { throw ModelError.noVaultOpen }
         try requireWritableVault()   // format.md §7.3: no thinning, not even a preview
+        // While a join fills the copy, thinning waits (design §8.2): its notes are not all here.
+        if partialCopyRoot != nil { throw joinNotDownloadedError }
         let gen = generation
         let open = Set([editor?.noteID].compactMap { $0 } + windowEditors.keys + openingNoteIDs.keys)
         if !skipOpen {
@@ -186,9 +188,6 @@ extension AppModel {
             for e in windowEditors.values { await e.flush() }
         }
         let clock = try deviceClockForWriting()
-        let cloud = isCloudVault
-        let hooks = cloudHooks
-        let url = vault.url
         let cache = summaryCache
         let mode = rule.mode
         let titles = Dictionary(notes.map { ($0.id, $0.title) }, uniquingKeysWith: { a, _ in a })
@@ -209,8 +208,6 @@ extension AppModel {
         defer { if !dryRun { editGate.release() } }
         try ensureCurrent(gen)
         let tasks = work.map { id in
-            let verify: (@Sendable () throws -> Void)? = cloud
-                ? { @Sendable in try CloudVault.requireLocal(note: id, vault: url, hooks: hooks) } : nil
             // A note opened since the run started is left alone too (asked again before anything is written).
             let isOpen: (@Sendable () async -> Bool)? = skipOpen
                 ? { @Sendable [weak self] in await self?.isNoteOpen(id) ?? true } : nil
@@ -218,7 +215,7 @@ extension AppModel {
                 do {
                     if let isOpen, await isOpen() { throw ThinningSkippedOpen() }
                     return (id, .success(try await NoteWriter.thin(id, mode: mode, vault: vault, clock: clock, cache: cache,
-                                                                  coordinated: cloud, verify: verify, dryRun: dryRun, now: now,
+                                                                  coordinated: false, verify: nil, dryRun: dryRun, now: now,
                                                                   isOpen: isOpen)))
                 } catch is CancellationError {
                     throw CancellationError()
@@ -279,7 +276,8 @@ extension AppModel {
     /// with `automaticThinning` does this, so tests write nothing unasked.
     func thinIfDue(now: Date = Date()) {
         // Never in a vault of a newer format version (format.md §7.3).
-        guard automaticThinning, phase == .unlocked, !isVaultReadOnly, let id = vault?.vaultId else { return }
+        guard automaticThinning, phase == .unlocked, !isVaultReadOnly, partialCopyRoot == nil,
+              let id = vault?.vaultId else { return }
         #if DEBUG
         // Scripted runs (screenshots, device probes) must not change the vault they open.
         if DemoLaunch.isActive || DebugLaunch.isActive { return }

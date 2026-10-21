@@ -47,6 +47,10 @@ public struct SyncSchedule: Sendable, Equatable {
     /// Ask for a run as soon as possible.
     public mutating func demand() { demanded = true }
 
+    /// Forget the backoff of earlier failures (the network came back): the next automatic run is at the
+    /// normal pace again.
+    public mutating func resetBackoff() { failures = 0 }
+
     /// A run starts now.
     public mutating func started(at date: Date) {
         running = true

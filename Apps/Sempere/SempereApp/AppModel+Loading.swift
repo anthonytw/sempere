@@ -51,9 +51,9 @@ struct NoteLoading: Equatable, Sendable {
 enum EmptyListReason: Equatable, Sendable {
     /// Notes are being read; nothing to show yet.
     case loading(NoteLoading?)
-    /// Notes are still downloading from iCloud Drive.
-    case downloading(CloudSyncStatus)
-    /// The listing failed or iCloud stalled; the text says why.
+    /// A join is still downloading the notes (a partial copy).
+    case downloading(JoinProgress)
+    /// The listing failed; the text says why.
     case failed(String)
     /// The search matches nothing among the notes shown.
     case noMatches(String)
@@ -111,9 +111,8 @@ extension AppModel {
             if !query.isEmpty && liveNotes { return .noMatches(query) }
             return .loading(loading)
         }
-        if let sync = cloudSync, sync.isDownloading, !(liveNotes && !query.isEmpty) { return .downloading(sync) }
+        if let join = joinProgress, !(liveNotes && !query.isEmpty) { return .downloading(join) }
         if let failure = loadFailure { return .failed(failure) }
-        if let problem = cloudSync?.problem, notes.isEmpty { return .failed(problem) }
         if !query.isEmpty { return .noMatches(query) }
         if notes.isEmpty { return .emptyVault }
         return .emptySelection
@@ -211,7 +210,6 @@ extension AppModel {
         guard !ids.isEmpty else { return }
         let gen = generation
         let cache = summaryCache
-        let coordinate = coordinationURL
         let width = max(1, loadConcurrency)
         let known = Set(notes.map(\.id)).subtracting(placeholderNoteIDs)
         loading = NoteLoading(done: 0, total: ids.count, refreshing: ids.allSatisfy(known.contains))
@@ -226,10 +224,8 @@ extension AppModel {
             // The cache file is written once per listing (`saveSummaryCache`), not per batch.
             let entries = try await offMain {
                 try Perf.measure(.reconcileRead, "notes=\(batch.count)") {
-                    try CloudVault.coordinatedRead(coordinate) {
-                        try vault.summaryEntries(of: batch, cache: cache, maxConcurrency: width, saveCache: false)
-                            .map { NamedSummary(summary: $0.summary, revisions: $0.revisions) }
-                    }
+                    try vault.summaryEntries(of: batch, cache: cache, maxConcurrency: width, saveCache: false)
+                        .map { NamedSummary(summary: $0.summary, revisions: $0.revisions) }
                 }
             }
             let read = entries.map(\.summary)

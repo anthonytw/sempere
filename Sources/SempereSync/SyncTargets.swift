@@ -227,6 +227,14 @@ public struct SyncTargetRegistry: Sendable {
         }
     }
 
+    /// Starts target `id`'s sync over: deletes its state file and the transfers in progress (the folder was
+    /// chosen again), keeping its quarantine. The next run is a union that deletes nothing.
+    public func resetState(_ id: UUID, of vault: UUID) {
+        let state = stateURL(id, of: vault)
+        try? FileManager.default.removeItem(at: state)
+        SyncState.removeTransfers(state)
+    }
+
     /// Forgets the target `id` of `vault` and deletes its sync state on this device. Nothing at the target
     /// itself is touched.
     public func remove(_ id: UUID, of vault: UUID) throws {
