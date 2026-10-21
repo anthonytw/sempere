@@ -119,6 +119,16 @@ final class FakeWebDAVRemote: WebDAVRemote, @unchecked Sendable {
     private func enter() { lock.lock(); _inFlight += 1; _mostInFlight = max(_mostInFlight, _inFlight); lock.unlock() }
     private func leave() { lock.lock(); _inFlight -= 1; lock.unlock() }
 
+    private var _twoWay = 0
+    /// How many of the runs were two-way (`sync`); the others were upload-only pushes.
+    var twoWayRuns: Int { lock.lock(); defer { lock.unlock() }; return _twoWay }
+
+    /// A two-way run counts as a push here (the same scripted report), and is counted on its own too.
+    func sync(_ endpoint: WebDAVEndpoint, copy: LocalCopy, vault: Vault?, options: SyncOptions) throws -> SyncReport {
+        lock.lock(); _twoWay += 1; lock.unlock()
+        return try push(endpoint, copy: copy, vault: vault, options: options)
+    }
+
     func push(_ endpoint: WebDAVEndpoint, copy: LocalCopy, vault: Vault?, options: SyncOptions) throws -> SyncReport {
         enter()
         defer { leave() }
@@ -247,9 +257,10 @@ struct WebDAVAppTests {
         #expect(location.folderName == "Notes.sempere")
         #expect(s.model.vaultURL?.standardizedFileURL == s.model.webdavLocations.copy(of: location).folder.standardizedFileURL)
         #expect(s.library.recents.first?.webdav == id)
-        // Nothing is pushed while the vault is locked.
+        // Nothing is taken from the server while the vault is locked: runs only upload.
         try await Task.sleep(for: .milliseconds(150))
-        #expect(s.remote.pushes == 0)
+        #expect(s.remote.twoWayRuns == 0)
+        #expect(s.remote.pushedUnlocked.allSatisfy { !$0 })
         // The same folder and user again: the location is reused, not duplicated.
         s.model.close()
         let again = try await s.model.connectWebDAV(s.listing, user: "me", password: "new", pin: nil, library: s.library)
@@ -263,17 +274,18 @@ struct WebDAVAppTests {
         let s = try Self.setup()
         _ = try await s.model.connectWebDAV(s.listing, user: "me", password: "pw", pin: nil, library: s.library)
         try await s.model.unlock(identityText: s.key)
-        #expect(await TS.waitUntil { s.remote.pushes == 1 })
-        #expect(s.remote.pushedUnlocked == [true], "deletions are checked against the unlocked vault")
+        #expect(await TS.waitUntil { s.remote.twoWayRuns == 1 }, "an unlocked vault syncs both ways")
+        #expect(s.remote.pushedUnlocked.last == true, "deletions are checked against the unlocked vault")
         let session = try #require(s.model.webdav)
-        #expect(await TS.waitUntil { !session.isPushing && session.lastPush != nil })
+        #expect(await TS.waitUntil { !session.isSyncing && session.lastSuccess != nil })
         #expect(s.model.webdavLocations.locations.first?.lastPush != nil)
+        let before = s.remote.twoWayRuns
         _ = try await s.model.createNote(title: "Written on the iPad", paper: .ruled, notebook: nil)
-        #expect(await TS.waitUntil { s.remote.pushes == 2 })
+        #expect(await TS.waitUntil { s.remote.twoWayRuns > before })
         // Sync Now runs one more (a write landing meanwhile may have added one).
-        let before = s.remote.pushes
+        let runs = s.remote.pushes
         await s.model.webdavSyncNow()
-        #expect(s.remote.pushes > before)
+        #expect(s.remote.pushes > runs)
     }
 
     @Test func offlineKeepsWorkingAndSaysSo() async throws {
@@ -288,7 +300,7 @@ struct WebDAVAppTests {
         try await s.model.openWebDAV(id, library: s.library)
         try await s.model.unlock(identityText: s.key)
         let session = try #require(s.model.webdav)
-        #expect(await TS.waitUntil { session.problems == [.offline] && !session.isPushing })
+        #expect(await TS.waitUntil { session.problems == [.offline] && !session.isSyncing })
         #expect(session.headline.hasPrefix("Offline."))
         #expect(!session.needsAttention)
         #expect(session.schedule.failures >= 1)
@@ -463,53 +475,10 @@ struct WebDAVAppTests {
         #expect(s.model.webdavLocations.locations.isEmpty)
     }
 
-    @Test func downloadingAgainPushesFirstAndReopensUnlocked() async throws {
-        let s = try Self.setup()
-        _ = try await s.model.connectWebDAV(s.listing, user: nil, password: "", pin: nil, library: s.library)
-        try await s.model.unlock(identityText: s.key)
-        #expect(await TS.waitUntil { s.remote.pushes == 1 && s.model.webdav?.isPushing == false })
-        try await s.model.downloadWebDAVAgain(library: s.library)
-        #expect(s.remote.pushes >= 2, "a push before the download")
-        #expect(s.remote.redownloads == 1)
-        #expect(s.remote.redownloadKeys == [1], "the new copy is checked under the vault's key")
-        #expect(s.model.phase == .unlocked)
-        #expect(s.model.isWebDAVVault)
-
-        // A push that fails: nothing is downloaded, the vault is open again.
-        var bad = SyncReport()
-        bad.errors = [.init(path: "notes/a/b.age", message: "HTTP 507")]
-        s.remote.set { $0.pushReport = bad }
-        await #expect(throws: WebDAVVaultError.self) { try await s.model.downloadWebDAVAgain(library: s.library) }
-        #expect(s.remote.redownloads == 1)
-        #expect(s.model.phase == .unlocked)
-        #expect(s.model.isWebDAVVault)
-    }
-
-    /// A push still running when "Download Again" starts finishes first: two
-    /// runs on the copy's one state file would undo each other's work.
-    @Test func downloadingAgainWaitsForThePushInFlight() async throws {
-        let s = try Self.setup()
-        _ = try await s.model.connectWebDAV(s.listing, user: nil, password: "", pin: nil, library: s.library)
-        let gate = DispatchSemaphore(value: 0)
-        s.remote.set { $0.pushGate = gate }
-        try await s.model.unlock(identityText: s.key)
-        #expect(await TS.waitUntil { s.remote.pushes == 1 })
-        let again = Task { try await s.model.downloadWebDAVAgain(library: s.library) }
-        try await Task.sleep(for: .milliseconds(300))
-        #expect(s.remote.pushes == 1, "no second push while the first runs")
-        s.remote.set { $0.pushGate = nil }
-        gate.signal()
-        gate.signal()   // a second push already waiting, if any
-        try await again.value
-        #expect(s.remote.mostInFlight == 1)
-        #expect(s.remote.redownloads == 1)
-        #expect(s.model.phase == .unlocked)
-    }
-
     @Test func statusTextsSayWhatToDo() {
-        #expect(WebDAVSession.text(for: .unauthorized).contains("password"))
-        #expect(WebDAVSession.text(for: .serverChangedManifest).contains("Download the vault again"))
-        #expect(WebDAVSession.text(for: .redirect("https://x/")).contains("https://x/"))
+        #expect(SyncStatus.text(for: .unauthorized).contains("password"))
+        #expect(SyncStatus.text(for: .serverChangedManifest).contains("Both copies were kept"))
+        #expect(SyncStatus.text(for: .redirect("https://x/")).contains("https://x/"))
     }
 
     @Test func locationURLsCompareAsFolders() {

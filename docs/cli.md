@@ -2456,6 +2456,9 @@ also cuts a request in flight (a download the server trickles), keeping a
 blob's partial file for the next run. A note
 folder whose listing fails is an error for that note only: it is left out of
 the run (nothing is copied or deleted for it) and the rest syncs.
+The `--json` report's `changed` says what the run wrote in the vault folder (`notes`: the ids of the
+notes that got or lost a file; `manifest`, `journal`, `settings`, `inbox`, `notebooks`, `summaries`:
+whether those changed), the same summary the app uses to read again only what arrived.
 `--dry-run` makes no request that changes anything and writes nothing; it
 lists `would upload`, `would download` and `would delete` lines. It cannot see
 files it would first download, so it may under-report deletions.

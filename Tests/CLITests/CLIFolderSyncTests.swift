@@ -29,6 +29,10 @@ final class CLIFolderSyncTests: CLITestCase {
         let down = try cli(["sync", "folder", folder, "--vault", b, "--identity", key, "--json"])
         XCTAssertEqual(down.status, 0, down.err)
         XCTAssertEqual(noteFiles(b), noteFiles(a))
+        // What the run wrote here, as the app reads it again (`LocalChanges`).
+        let changed = try XCTUnwrap((down.json as? [String: Any])?["changed"] as? [String: Any], down.out)
+        XCTAssertEqual(Set(changed["notes"] as? [String] ?? []), Set(noteFiles(a).map { String($0.prefix(36)) }))
+        XCTAssertEqual(changed["manifest"] as? Bool, true)
         XCTAssertFalse(noteFiles(a).isEmpty)
 
         let edit = try cli(["notes", "rename", "Groceries", "Shopping", "--vault", b, "--identity", key])

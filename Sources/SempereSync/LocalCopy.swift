@@ -134,7 +134,7 @@ public struct LocalCopy: Sendable {
 
     /// Uploads what the server lacks and removes there what local
     /// compaction or blob collection explains; never changes the copy
-    /// (`SyncOptions.pushOnly`). A `vault.json` or rewrap journal the
+    /// (`SyncOptions.pushOnly`). A `vault.json` the
     /// server got from someone else since this copy's last sync is kept and
     /// reported in `conflicts` (`keepServerChanges`).
     ///
@@ -146,6 +146,23 @@ public struct LocalCopy: Sendable {
         o.pushOnly = true
         o.keepServerChanges = true
         // The app pushes after every write and every few minutes: list only the notes that changed.
+        o.skipUnchangedNotes = true
+        let sync = SyncEngine(directory: folder, vault: vault, remote: remote, stateURL: stateURL, options: o)
+        return try sync.run()
+    }
+
+    /// A two-way run (docs/io.md "WebDAV sync"): takes what other devices wrote (checked before it is
+    /// placed, format.md §9.1), merges `settings.age`, uploads what the copy has, and follows the
+    /// deletions the rules explain. A partial copy (format.md §1.2) is completed by it.
+    ///
+    /// - Parameter vault: the copy, unlocked; locked, received files are checked for their structure
+    ///   only and nothing is deleted.
+    public func sync(remote: any SyncRemote, vault: Vault?, options: SyncOptions = SyncOptions()) throws -> SyncReport {
+        guard exists else { throw SyncError.io("no local copy of the vault to sync") }
+        var o = runOptions(options)
+        o.pushOnly = false
+        o.keepServerChanges = false
+        // The app syncs after every write and every few minutes: list only the notes that changed.
         o.skipUnchangedNotes = true
         let sync = SyncEngine(directory: folder, vault: vault, remote: remote, stateURL: stateURL, options: o)
         return try sync.run()
@@ -335,5 +352,88 @@ public struct LocalCopy: Sendable {
         guard root.contains(where: { $0.name == Vault.manifestName && !$0.isCollection }) else {
             throw SyncError.io("there is no vault at \(SyncReport.printable(remote.location)) (no vault.json)")
         }
+    }
+}
+
+// MARK: - Leftovers of an interrupted re-download
+
+extension LocalCopy {
+    /// What `recoverInterruptedRedownload` found and did.
+    public struct RedownloadLeftovers: Sendable, Equatable {
+        /// The copy was missing and its previous folder (`<copy>.old`) was put back in its place.
+        public var restored = false
+        /// Removed: a re-download that never replaced the copy (`<copy>.download`, its sync state), or a
+        /// previous folder holding nothing the copy lacks.
+        public var removed: [String] = []
+        /// The previous folder, kept because it holds files the copy lacks: never deleted silently. Nil
+        /// when there is none or it went.
+        public var keptOld: URL?
+        /// Those files, as paths below it.
+        public var keptFiles: [String] = []
+
+        public var isEmpty: Bool { !restored && removed.isEmpty && keptOld == nil }
+    }
+
+    /// The previous copy a swap set aside (`swapIn`).
+    public var oldFolder: URL { folder.appendingPathExtension("old") }
+
+    /// Recovers what an interrupted "Download Again" (`redownload`, `swapIn`) of an earlier build left:
+    ///
+    /// - the copy missing and `<copy>.old` there (a crash between the two moves): it is put back;
+    /// - `<copy>.download` and its sync state (a re-download that never replaced the copy): removed, the
+    ///   copy is the one in use;
+    /// - `<copy>.old` beside the copy (a crash before it was removed): removed when every revision, blob,
+    ///   inbox file and notebook record in it is in the copy too; otherwise kept, with its extra files listed for the
+    ///   caller to show. It is never deleted with something only it holds.
+    ///
+    /// It holds the copy's state file (`SyncRunLock`), so no run of the copy goes meanwhile.
+    public func recoverInterruptedRedownload() -> RedownloadLeftovers {
+        SyncRunLock.shared.withLock(stateURL) { () -> RedownloadLeftovers in
+            let fm = FileManager.default
+            var out = RedownloadLeftovers()
+            let old = oldFolder
+            if !fm.fileExists(atPath: folder.path), fm.fileExists(atPath: old.path) {
+                if (try? fm.moveItem(at: old, to: folder)) != nil { out.restored = true }
+            }
+            guard fm.fileExists(atPath: folder.path) else { return out }
+            for url in [stagingFolder, stagingStateURL, SyncState.transfersURL(stagingStateURL),
+                        stagingStateURL.deletingPathExtension().appendingPathExtension("quarantine")]
+            where fm.fileExists(atPath: url.path) {
+                if (try? fm.removeItem(at: url)) != nil { out.removed.append(url.lastPathComponent) }
+            }
+            if fm.fileExists(atPath: old.path) {
+                let extra = Self.vaultFiles(in: old).subtracting(Self.vaultFiles(in: folder)).sorted()
+                if extra.isEmpty {
+                    if (try? fm.removeItem(at: old)) != nil { out.removed.append(old.lastPathComponent) }
+                } else {
+                    out.keptOld = old
+                    out.keptFiles = extra
+                }
+            }
+            return out
+        }
+    }
+
+    /// The revisions, blobs, inbox files and notebook records of a vault folder, as paths below it.
+    static func vaultFiles(in root: URL) -> Set<String> {
+        var out = Set<String>()
+        let notes = root.appendingPathComponent(Vault.notesName)
+        for id in ((try? LocalFS.entries(notes)) ?? []) where Vault.isNoteDirectoryName(id) {
+            let dir = notes.appendingPathComponent(id)
+            for f in (try? LocalFS.entries(dir)) ?? [] where RevisionName(f)?.filename == f { out.insert("notes/\(id)/\(f)") }
+            for f in (try? LocalFS.entries(dir.appendingPathComponent(Vault.attachmentsName))) ?? []
+            where SyncEngine.isBlobName(f) {
+                out.insert("notes/\(id)/att/\(f)")
+            }
+        }
+        for f in (try? LocalFS.entries(root.appendingPathComponent(CaptureFile.folderName))) ?? []
+        where CaptureFile.parse(name: f) != nil {
+            out.insert("inbox/\(f)")
+        }
+        for f in (try? LocalFS.entries(root.appendingPathComponent(NotebookRecords.folderName))) ?? []
+        where NotebookRecords.id(ofFileName: f) != nil {
+            out.insert("\(NotebookRecords.folderName)/\(f)")
+        }
+        return out
     }
 }

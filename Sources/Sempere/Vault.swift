@@ -151,6 +151,8 @@ public struct Vault: Sendable {
     public internal(set) var listStatus: ListStatus = .notChecked
     /// Where this device keeps its trust record (format.md §15.10); nil keeps none (tests).
     var trustStore: (any EpochTrustStore)?
+    /// The root the vault was opened against (`open(…, root:)`), kept for `reopened()`.
+    var givenRoot: Data?
     /// The trust record this value (and its copies) last saved.
     let trustMemo = TrustMemo()
 
@@ -395,6 +397,7 @@ public struct Vault: Sendable {
                           secret: key, signing: entry.role == .device && signing.flatMap({ try? $0.publicKeys() }) == entry.sign
                             ? signing : nil, trustStore: trust)
         vault.openedWith = opener
+        vault.givenRoot = expectedRoot
         vault.listStatus = Self.listStatus(manifest, key: key, trust: trust, root: expectedRoot)
         return vault
     }

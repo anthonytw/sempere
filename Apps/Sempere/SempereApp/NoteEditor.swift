@@ -49,6 +49,10 @@ final class NoteEditor {
     /// Merges that brought another device's changes on screen
     /// (`mergeRevisions`): the canvas shows "Updated from another device".
     private(set) var remoteUpdates = 0
+
+    /// The note was opened again because another device changed the vault's keys (the editor before it
+    /// was closed): the canvas says "Updated from another device", as after a merge.
+    func noteReopenedForRemoteChange() { remoteUpdates += 1 }
     /// When the last of them happened.
     private(set) var lastRemoteUpdate: Date?
     /// Canvases showing this note's ink (`attachInkView`).

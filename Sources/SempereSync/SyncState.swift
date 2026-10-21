@@ -140,6 +140,9 @@ struct SyncState: Codable, Equatable {
         /// and whether the vault was unlocked: either changing checks it again.
         var manifest: String?
         var unlocked: Bool
+        /// Which key checked it (`SyncEngine.checkerKeyID`: derived from the epoch id, revealing
+        /// nothing): a run under another key checks it again. Nil in older records, and when locked.
+        var key: String?
     }
 
     /// The keys of `files` grouped by note: for each note id (the key up to

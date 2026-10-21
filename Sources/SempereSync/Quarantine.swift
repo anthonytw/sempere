@@ -156,13 +156,24 @@ extension SyncEngine {
         guard !options.retryQuarantined, let record = state.quarantined?[key] else { return false }
         let checker = checker()
         guard record.stamp == Self.quarantineStamp(entry), record.manifest == manifestHash(),
-              record.unlocked == (checker?.canRead ?? false) else {
+              record.unlocked == (checker?.canRead ?? false), record.key == Self.checkerKeyID(checker) else {
             state.quarantined?[key] = nil
             return false
         }
         report.skipped.append(.init(path: path, message: "quarantined by an earlier run and unchanged on the server; "
                                     + "not downloaded again (--retry-quarantined)"))
         return true
+    }
+
+    /// Names the key a file was checked under (the epoch key the checker holds, by its public `epochId`,
+    /// format.md §15.2), so a quarantine record made under one key never keeps a file out of a run under
+    /// another: 16 hex digits of a SHA-256 of a label and the epoch id. Nil when locked.
+    static func checkerKeyID(_ checker: Vault?) -> String? {
+        guard let checker, checker.canRead else { return nil }
+        var data = Data("sempere/1 quarantine key id".utf8)
+        data.append(0)
+        data.append(checker.manifest.epochId)
+        return String(FileDigest.sha256(data).prefix(16))
     }
 
     static func quarantineStamp(_ entry: RemoteEntry?) -> String? {
@@ -209,8 +220,9 @@ extension SyncEngine {
         if let file { try? fm.removeItem(at: file) }
         report.quarantined.append(.init(path: path, message: SyncReport.printable(reason) + " (\(kept))"))
         state.quarantined = state.quarantined ?? [:]
+        let checker = checker()
         state.quarantined?[key] = .init(stamp: Self.quarantineStamp(entry), manifest: manifestHash(),
-                                        unlocked: checker()?.canRead ?? false)
+                                        unlocked: checker?.canRead ?? false, key: Self.checkerKeyID(checker))
     }
 
     /// Keeps one refused copy (`data`, or the file `file`) beside the copies of

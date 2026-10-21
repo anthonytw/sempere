@@ -843,17 +843,23 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   lookups; docs/localization.md "Checking layouts" has the limits). A new screen worth checking
   gets a `Screen` case there. `scripts/app.sh pseudo` (iPad, in `local-ci.sh --release`) and
   `pseudo-mac` (by hand) run the UI-test version.
-- WebDAV vaults in the app (`AppModel+WebDAV`, `WebDAVSession`, docs/io.md "WebDAV vaults in the
-  app"): a local copy in Application Support (`LocalCopy` in `SempereSync`, `WebDAVLocationStore`) opened like any
-  folder, and a push-only sync (`LocalCopy.push`: `pushOnly` + `keepServerChanges`) scheduled by
-  `WebDAVPushSchedule`; never take anything from the server except through a download into a new copy
-  (`download`, `redownload`). The password is only in the Keychain (`KeychainWebDAVPasswordStore`);
+- WebDAV vaults in the app (`AppModel+WebDAV`, docs/io.md "WebDAV vaults in the app", "Sync targets in
+  the app"): a local copy in Application Support (`LocalCopy` in `SempereSync`, `WebDAVLocationStore`) opened like
+  any folder, synced by the app's one `SyncCoordinator` (a `SyncSession` per location, every vault open or not,
+  isolated per vault, at most two runs at once). Only the open, unlocked vault's runs are two-way (`LocalCopy.sync`);
+  every other run is upload-only (`LocalCopy.push`: `pushOnly` + `keepServerChanges`), so nothing unverified is
+  placed in a copy nobody unlocked. What a two-way run wrote locally (`SyncReport.changed`, `LocalChanges`) goes
+  through `applySyncChanges`: `reconcile(scope:)` for the notes (open editors merge in place, RemoteMerge), the
+  settings pass, inbox adoption, notebooks; a new device list or secret reopens the vault like a key change, and until
+  that reopen is applied (or for good if it fails) the open vault's runs only upload (`syncVaultStale`). Never
+  write the copy's `vault.json` or `settings.age` without its `VaultFileLock` (`vaultWriteLock`; the engine holds
+  it through `SyncOptions.localWriteLock`). The password is only in the Keychain (`KeychainWebDAVPasswordStore`);
   certificate pins are checked by `PinnedServerTrust` (Security, app only) behind the library's
-  `WebDAVServerTrust` hook, never by disabling evaluation. A push never takes `vault.json` from the server (a
-  changed one is kept there, `keepServerChanges`); `epochs/`, `joins/` and `keys/` are not synced until KH4.
-  App tests use
-  `FakeWebDAVRemote` and `MemoryWebDAVPasswordStore`; the library's sync runs against wsgidav
-  (`scripts/test-webdav.sh`). A recent WebDAV vault is a `RecentVault` with `webdav` set and no bookmark.
+  `WebDAVServerTrust` hook, never by disabling evaluation. `epochs/`, `joins/` and `keys/` are not synced
+  until KH4; key management in the app waits for KH5. App tests use `FakeWebDAVRemote` (scripted) or
+  `EngineWebDAVRemote` (the real engine on a shared `MemoryStore`: `TwoDeviceSyncAppTests`) and
+  `MemoryWebDAVPasswordStore`; the library's sync runs against wsgidav (`scripts/test-webdav.sh`). A recent WebDAV
+  vault is a `RecentVault` with `webdav` set and no bookmark.
 - Vaults in another app's provider storage (`StorageLocation`) are coordinated like iCloud ones
   (`isCloudVault`), even when the provider does not report its files as ubiquitous.
 - Folder targets (`FolderRemote`, `sempere sync folder`, docs/io.md "Folder targets in providers"): a

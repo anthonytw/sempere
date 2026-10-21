@@ -174,6 +174,26 @@ final class SingleEpochVaultTests: VaultTestCase {
         XCTAssertNil(vault.laterVersion(before))
     }
 
+    /// `reopened()` (after a sync took a later vault.json) opens with what opened the vault: the device
+    /// key and its signing keys (home stays home), the trust store, the recovery key and its root.
+    func testReopenedKeepsTheKeysTheVaultWasOpenedWith() throws {
+        let recovery = try MLKEM768X25519Identity()
+        var vault = try TestVaults.create(at: vaultURL(), identities: [home], recovery: recovery, trust: homeTrust)
+        try vault.approveDevice(TestVaults.device(laptop).joinRequest(vaultId: vault.vaultId, name: "Laptop", kind: "mac"))
+        let stale = try TestVaults.open(at: vault.url, identity: home, trust: homeTrust)
+        try vault.renameDevice(id: try XCTUnwrap(vault.manifest.devices.last?.id), to: "Renamed")
+        let fresh = try stale.reopened()
+        XCTAssertTrue(fresh.isHome)
+        XCTAssertEqual(fresh.openedWith, stale.openedWith)
+        XCTAssertNil(fresh.listStatus.problem, "\(fresh.listStatus)")
+        XCTAssertEqual(fresh.manifest.devices.last?.name, "Renamed")
+
+        let kit = try Vault.open(at: vault.url, identities: [NativeIdentity.mlkem768x25519(recovery)],
+                                 root: Data(repeating: 0xab, count: 32))
+        XCTAssertEqual(try kit.reopened().listStatus.problem?.reason, .rootMismatch, "the given root is kept")
+        XCTAssertEqual(try kit.reopened().openedWith, .recovery)
+    }
+
     func testApprovalRefusesRequestsForAnotherVaultOrABadKind() throws {
         var vault = try TestVaults.create(at: vaultURL(), identities: [home], trust: homeTrust)
         let device = TestVaults.device(laptop)

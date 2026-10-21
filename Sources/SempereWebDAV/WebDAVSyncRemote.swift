@@ -126,6 +126,11 @@ extension LocalCopy {
         try push(remote: WebDAVSyncRemote(client), vault: vault, options: options)
     }
 
+    /// `sync(remote:vault:options:)` with a WebDAV collection.
+    public func sync(client: WebDAVClient, vault: Vault?, options: SyncOptions = SyncOptions()) throws -> SyncReport {
+        try sync(remote: WebDAVSyncRemote(client), vault: vault, options: options)
+    }
+
     /// `redownload(remote:identities:partial:options:)` from a WebDAV collection.
     public func redownload(client: WebDAVClient, identities: [any AgeIdentity], partial: Bool = false,
                            options: SyncOptions = SyncOptions()) throws -> (report: SyncReport, replaced: Bool) {

@@ -21,11 +21,11 @@ public struct IncomingFileProblem: Error, Hashable, Sendable, CustomStringConver
 }
 
 extension Vault {
-    /// The vault opened again from disk with the same identities and trust
-    /// store: after `vault.json` was replaced (a sync took a newer one), so
-    /// files are checked under the secret it carries now.
+    /// The vault opened again from disk with what opened it (the device key or recovery key, the
+    /// signing keys, the trust store and the given root): after `vault.json` was replaced (a sync took a
+    /// later version), so the list is checked again and files under the key it carries now.
     public func reopened() throws -> Vault {
-        try Vault.open(at: url, identities: identities, trust: trustStore)
+        try Vault.open(at: url, identities: unlockIdentities, signing: signing, trust: trustStore, root: givenRoot)
     }
 
     /// Checks a revision file received from elsewhere before it is placed as

@@ -434,9 +434,25 @@ final class AppModel {
     private let ownedScratch: URL
 
     deinit { try? FileManager.default.removeItem(at: ownedScratch) }
-    /// The push-only sync of the open vault when it is a WebDAV location's
-    /// local copy; nil for any other vault.
-    var webdav: WebDAVSession?
+    /// The sync session of the open vault when it is a WebDAV location's local copy (the
+    /// coordinator's, two-way while the vault is unlocked); nil for any other vault.
+    var webdav: SyncSession?
+    /// The open vault's `vault.json` changed on disk (a sync took another device's key change) and the
+    /// open `Vault` has not been opened again under it yet: its runs only upload (review of #70, F1).
+    var syncVaultStale = false
+    /// A previous copy kept at launch (`recoverWebDAVLeftovers`), for its alert; nil when there is none.
+    var webdavLeftover: WebDAVLeftover?
+    /// Every in-app vault's sync sessions (`SyncCoordinator`, made on first use).
+    @ObservationIgnored private var coordinatorStorage: SyncCoordinator?
+    var syncCoordinator: SyncCoordinator {
+        if let coordinatorStorage { return coordinatorStorage }
+        let store = webdavLocations
+        let made = SyncCoordinator(locations: { store.locations },
+                                   makeSession: { [weak self] location in self?.makeSyncSession(location) })
+        made.tick = webdavTick
+        coordinatorStorage = made
+        return made
+    }
     /// The WebDAV vault being downloaded and how far it is, for the overlay; nil when none is.
     var webdavDownload: WebDAVDownloadStatus?
     /// The Cancel of that download (`cancelWebDAVDownload`).
@@ -874,6 +890,18 @@ final class AppModel {
         listAlert = ListAlert(vault: opened)
         phase = .unlocked
         try await didUnlock(awaitNotes: awaitNotes)
+    }
+
+    /// The vault opened again after its `vault.json` changed (`syncedVaultFileArrived`): its list is
+    /// checked again (`listAlert`), the quick-capture profile follows the list's capture keys, and the
+    /// views open their notes again (`keyEpoch`).
+    func adoptReopened(_ next: Vault) {
+        guard phase == .unlocked, next.vaultId == vault?.vaultId else { return }
+        vault = next
+        listAlert = ListAlert(vault: next)
+        refreshQuickCaptureProfile()
+        keyEpoch += 1
+        scheduleSettingsSync()
     }
 
     /// What every unlock does once the vault is open: lists the notes
