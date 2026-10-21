@@ -13,6 +13,9 @@ import Sempere
 public struct TargetDevice: Codable, Hashable, Sendable {
     /// The device id (8 hex digits).
     public var device: String
+    /// Its name in the vault's device list (`vault.json` `keys`, format.md §15.3), control characters escaped;
+    /// nil for a device the list does not name (removed, or from before the key hierarchy).
+    public var name: String?
     /// Revisions by this device that both sides had at the last sync.
     public var revisions: Int
     /// The clock of its newest such revision.
@@ -22,8 +25,9 @@ public struct TargetDevice: Codable, Hashable, Sendable {
     /// It is this device.
     public var isThisDevice: Bool
 
-    public init(device: String, revisions: Int, newest: Date?, publishesSummaries: Bool, isThisDevice: Bool) {
-        self.device = device; self.revisions = revisions; self.newest = newest
+    public init(device: String, name: String? = nil, revisions: Int, newest: Date?, publishesSummaries: Bool,
+                isThisDevice: Bool) {
+        self.device = device; self.name = name; self.revisions = revisions; self.newest = newest
         self.publishesSummaries = publishesSummaries; self.isThisDevice = isThisDevice
     }
 }
@@ -290,8 +294,8 @@ public struct TargetQuarantine: Sendable {
 /// Reads a target's state folder and a vault's copy for the details, Storage and Repair views.
 public enum TargetInspection {
     /// The devices whose revisions or summaries file the target held at this device's last sync with it,
-    /// the most recent first. `thisDevice` marks this device.
-    public static func devices(stateURL: URL, thisDevice: DeviceID? = nil) -> [TargetDevice] {
+    /// the most recent first. `thisDevice` marks this device; `names` (device id → name) names them.
+    public static func devices(stateURL: URL, thisDevice: DeviceID? = nil, names: [String: String] = [:]) -> [TargetDevice] {
         guard let state = try? SyncState.load(stateURL) else { return [] }
         var counts: [String: (n: Int, newest: Int64)] = [:]
         for key in state.files.keys {
@@ -305,10 +309,22 @@ public enum TargetInspection {
         let mine = thisDevice?.description
         return Set(counts.keys).union(withSummaries).map { d in
             let c = counts[d]
-            return TargetDevice(device: d, revisions: c?.n ?? 0,
+            return TargetDevice(device: d, name: names[d], revisions: c?.n ?? 0,
                                 newest: c.map { Date(timeIntervalSince1970: Double($0.newest) / 1000) },
                                 publishesSummaries: withSummaries.contains(d), isThisDevice: d == mine)
         }.sorted { ($0.newest ?? .distantPast, $0.device) > ($1.newest ?? .distantPast, $1.device) }
+    }
+
+    /// The names of the vault's devices (device id → name) from its `vault.json`, read without the key, for
+    /// display only; empty when it does not open.
+    public static func deviceNames(of vaultFolder: URL) -> [String: String] {
+        guard let vault = try? Vault.open(at: vaultFolder) else { return [:] }
+        var out: [String: String] = [:]
+        for entry in vault.devices {
+            guard let id = entry.id?.lowercased() else { continue }
+            out[id] = SyncReport.printable(entry.name)
+        }
+        return out
     }
 
     /// Revisions and blobs both sides had at the last sync.
@@ -367,12 +383,13 @@ extension VaultStore {
                               folder: (SyncTarget) -> URL? = { $0.path.map { URL(fileURLWithPath: $0, isDirectory: true) } })
         throws -> [TargetDetails] {
         let registry = targets
+        let names = TargetInspection.deviceNames(of: entry.url)
         return try registry.load(entry.vaultId).map { t in
             let stateURL = registry.stateURL(t.id, of: entry.vaultId)
             var measured: (bytes: Int64, notDownloaded: Int)?
             if measureFolders, t.kind == .folder, let url = folder(t) { measured = TargetInspection.measureFolder(url) }
             return TargetDetails(target: t, syncedFiles: TargetInspection.syncedFiles(stateURL: stateURL),
-                                 devices: TargetInspection.devices(stateURL: stateURL, thisDevice: thisDevice),
+                                 devices: TargetInspection.devices(stateURL: stateURL, thisDevice: thisDevice, names: names),
                                  quarantined: quarantine(t.id, of: entry.vaultId).list(),
                                  staged: LockedStaging(targetState: stateURL).pending(vaultFolder: entry.url).count,
                                  stateBytes: TargetInspection.bytes(of: registry.stateDirectory(t.id, of: entry.vaultId)),

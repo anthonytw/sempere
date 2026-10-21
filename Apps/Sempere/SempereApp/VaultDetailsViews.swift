@@ -111,7 +111,12 @@ private struct DeviceOnTargetRow: View {
                 Image(systemName: device.isThisDevice ? "ipad.and.iphone" : "desktopcomputer")
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
-                Text(verbatim: device.device).font(.body.monospaced())
+                if let name = device.name {
+                    Text(verbatim: name)
+                    Text(verbatim: device.device).font(.caption.monospaced()).foregroundStyle(.secondary)
+                } else {
+                    Text(verbatim: device.device).font(.body.monospaced())
+                }
                 if device.isThisDevice { Text("This Device").font(.caption).foregroundStyle(.secondary) }
             }
             Group {

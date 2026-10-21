@@ -528,10 +528,11 @@ a unique id prefix (4 characters or more), its name, path or URL.
   machine only, never a target: the vault folder's sizes (notes, attachments, other files) and, per target,
   its last sync, the files both sides had then, the files staged for the next unlock, the bytes of its
   state folder and (`--measure-folders`) of a folder target's copy, its quarantined files, and the devices
-  whose revisions or `summaries/<device>.sealed` it held at the last sync, with their revision count and
+  whose revisions or `summaries/<device>.sealed` it held at the last sync, named from the vault's device list
+  (`vault.json`, read without the key; none for a device it does not list), with their revision count and
   newest revision's clock. A device of the vault missing from a target never syncs with it (an island, §5.6).
   `--json`: `{vault, name, storage: {notes, attachments, other}, targets: [{target, syncedFiles, devices:
-  [{device, revisions, newest, publishesSummaries, isThisDevice}], quarantined, staged, stateBytes,
+  [{device, name, revisions, newest, publishesSummaries, isThisDevice}], quarantined, staged, stateBytes,
   folderBytes}]}`.
 - `quarantine` works on the files sync runs refused (format.md §9.1), kept per target and never removed
   by a run (the app's Repair). `list` prints each with its target, path in the quarantine, size, date and
