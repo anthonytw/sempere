@@ -13,7 +13,7 @@ final class BackgroundRunLog: @unchecked Sendable {
 
     func record(_ target: UUID, _ request: SyncRunRequest) {
         lock.lock(); defer { lock.unlock() }
-        entries.append((target, request.maxDuration, request.cancel != nil))
+        entries.append((target, request.maxDuration, !request.cancels.isEmpty))
     }
     var targets: [UUID] { lock.lock(); defer { lock.unlock() }; return entries.map(\.target) }
     var bounds: [TimeInterval?] { lock.lock(); defer { lock.unlock() }; return entries.map(\.maxDuration) }
@@ -174,5 +174,67 @@ struct BackgroundTargetsTests {
         #expect(log.targets == [refs[0].id, refs[0].id], "the failed target is retried; the idle one is left out")
         #expect(scheduler.requests == [.refresh])
         for r in refs { _ = coordinator.stop(r.id) }
+    }
+
+    /// Review of #74, B2: a background task never waits for a foreground run without a bound; the task's
+    /// expiry stops that run too (the coordinator's app-wide flag).
+    @Test func aTaskSkipsAForegroundRunAndExpiryStopsIt() async throws {
+        let busy = Self.ref(), other = Self.ref()
+        let started = RunCounter(), stopped = RunCounter()
+        let coordinator = SyncCoordinator(targets: { [busy, other] }, makeSession: { ref in
+            SyncSession(locationID: ref.id, vaultID: ref.vaultID, name: ref.vaultName, lastSuccess: nil,
+                        run: { request in
+                            guard ref.id == busy.id else { return SyncReport() }
+                            _ = started.add(1)
+                            var options = SyncOptions(deviceLabel: "t")
+                            request.apply(to: &options)
+                            // No bound: runs until a cancel flag is set (polled between "files").
+                            while options.isCancelled?() != true { try await Task.sleep(for: .milliseconds(10)) }
+                            _ = stopped.add(1)
+                            return SyncReport()
+                        }, countUnconfirmed: { 1 })
+        })
+        coordinator.maxConcurrentRuns = 3
+        var tried: [String: Double] = [:]
+        coordinator.loadTried = { tried }
+        coordinator.saveTried = { tried = $0 }
+        coordinator.tick = .milliseconds(10)
+        coordinator.setInBackground(true)
+        coordinator.start()
+        let session = try #require(coordinator.sessions[busy.id])
+        session.runsAutomatically = false
+        coordinator.sessions[other.id]?.runsAutomatically = false
+        let foreground = Task { await session.syncNow() }
+        #expect(await TS.waitUntil { started.value == 1 })
+        let clock = ContinuousClock.now
+        let ran = await coordinator.runBackgroundRefresh(cancel: SyncRunCancel())
+        #expect(ran == [other.id], "the busy session is skipped")
+        #expect(ContinuousClock.now - clock < .seconds(2), "the task did not wait for the foreground run")
+        #expect(stopped.value == 0)
+        coordinator.cancelAllRuns()   // the task's expiry
+        _ = await foreground.value
+        #expect(stopped.value == 1, "the foreground run stopped between files")
+        for r in [busy, other] { _ = coordinator.stop(r.id) }
+    }
+
+    /// Review of #74, B1: before the device's first unlock the Keychain refuses the password; the session
+    /// waits for the unlock, with no problem shown and no backoff.
+    @Test func aLockedDeviceIsWaitingNotAProblem() async throws {
+        let ref = Self.ref()
+        let passwords = MemoryWebDAVPasswordStore()
+        passwords.deviceLocked = true
+        let session = SyncSession(locationID: ref.id, vaultID: ref.vaultID, name: "V", lastSuccess: nil,
+                                  run: { _ in _ = try passwords.password(for: ref.id); return SyncReport() },
+                                  countUnconfirmed: { 0 })
+        _ = await session.syncNow()
+        #expect(session.waitingForDeviceUnlock)
+        #expect(session.problems.isEmpty && session.failure == nil && !session.needsAttention)
+        #expect(session.schedule.failures == 0, "no backoff")
+        #expect(session.status.kind == .waitingForUnlock)
+        passwords.deviceLocked = false
+        try passwords.save("pw", for: ref.id, label: "t")
+        _ = await session.syncNow()
+        #expect(!session.waitingForDeviceUnlock)
+        #expect(session.lastSuccess != nil)
     }
 }

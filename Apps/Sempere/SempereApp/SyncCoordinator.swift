@@ -106,6 +106,7 @@ final class SyncCoordinator {
         configure(&made.schedule)
         made.admit = { [weak self] priority in await self?.admit(priority: priority) }
         made.release = { [weak self] in self?.releaseRun() }
+        made.appCancel = { [weak self] in self?.runCancel }
         made.periodicPaused = inBackground && ref.vaultID != openVault
         sessions[ref.id] = made
         made.start()
@@ -274,7 +275,8 @@ final class SyncCoordinator {
             if cancel.isSet || Task.isCancelled { break }
             let remaining = budget - clock().timeIntervalSince(start)
             guard let bound = BackgroundBudget.runTime(remaining: remaining, runsLeft: order.count - i) else { break }
-            guard let session = sessions[candidate.targetID] else { continue }
+            // A session whose run is going (a foreground one, maybe without a bound) is skipped, never waited for.
+            guard let session = sessions[candidate.targetID], session.currentRun == nil else { continue }
             markTried(candidate.targetID)
             _ = await session.runInBackground(maxDuration: bound, cancel: cancel)
             ran.append(candidate.targetID)
@@ -290,7 +292,7 @@ final class SyncCoordinator {
             var changed = false
             for candidate in BackgroundBudget.order(backgroundCandidates()) {
                 if cancel.isSet || Task.isCancelled { return }
-                guard let session = sessions[candidate.targetID] else { continue }
+                guard let session = sessions[candidate.targetID], session.currentRun == nil else { continue }
                 markTried(candidate.targetID)
                 changed = await session.runInBackground(maxDuration: nil, cancel: cancel).changed || changed
             }
@@ -304,6 +306,21 @@ final class SyncCoordinator {
         var tried = loadTried().filter { current.contains($0.key) }
         tried[id.uuidString] = clock().timeIntervalSince1970
         saveTried(tried)
+    }
+
+    /// The flag every run started now polls along with its own (`SyncRunRequest.cancels`).
+    @ObservationIgnored private(set) var runCancel = SyncRunCancel()
+
+    /// iOS takes the background time back: every run going stops between files (a foreground run without a
+    /// bound included, review of #74, B2), and runs started from now on get a fresh flag.
+    func cancelAllRuns() {
+        runCancel.cancel()
+        runCancel = SyncRunCancel()
+    }
+
+    /// After a task whose expiry set `flag` (from outside the main actor): runs from now on get a fresh flag.
+    func renewRunCancel(ifSet flag: SyncRunCancel) {
+        if flag.isSet, flag === runCancel { runCancel = SyncRunCancel() }
     }
 
     /// True while a run goes or one was asked for and has not started.

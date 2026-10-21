@@ -93,6 +93,7 @@ extension AppModel {
         guard !coordinator.sessions.isEmpty, targetsBackgroundToken == nil else { return }
         guard let token = backgroundTasks.begin(name: "Sempere sync", expired: { [weak self] in
             guard let self else { return }
+            coordinator.cancelAllRuns()   // runs going stop between files, saving their state
             self.targetsBackgroundWait?.cancel()
             self.endTargetsBackgroundTime()
             self.syncScheduler.schedule(.processing)
@@ -123,15 +124,18 @@ extension AppModel {
         if isCloudVault, vaultURL != nil { _ = await runScheduledSync() }
         let coordinator = syncCoordinator
         if await coordinator.waitUntilStarted() {
-            let cancel = SyncRunCancel()
+            let cancel = SyncRunCancel(), all = coordinator.runCancel
             await withTaskCancellationHandler {
                 switch kind {
                 case .refresh: await coordinator.runBackgroundRefresh(cancel: cancel)
                 case .processing: await coordinator.runBackgroundProcessing(cancel: cancel)
                 }
             } onCancel: {
+                // Every run going stops, foreground ones included (review of #74, B2).
                 cancel.cancel()
+                all.cancel()
             }
+            coordinator.renewRunCancel(ifSet: all)
         }
         scheduleBackgroundRefresh()
     }

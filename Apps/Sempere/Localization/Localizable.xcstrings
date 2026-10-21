@@ -19281,6 +19281,18 @@
         }
       }
     },
+    "The server's password can be read once this device is unlocked." : {
+      "comment" : "Sync status detail while the device has not been unlocked since it started",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La contraseña del servidor se podrá leer cuando se desbloquee este dispositivo."
+          }
+        }
+      }
+    },
     "The system does not trust it." : {
       "extractionState" : "manual",
       "localizations" : {

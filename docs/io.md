@@ -1785,7 +1785,9 @@ syncs with both ways.
   refresh shares 25 s out: each run is bounded by `remaining / runs left`, at least 5 s
   (`SyncLimits.maxDuration`), and runs that do not fit wait for the next task. A processing task runs full
   passes, at the default bounds, until a pass changes nothing (at most three). iOS ending a task sets the
-  runs' cancel flag (`SyncOptions.isCancelled`), so they stop between files. A pair is left out when it has
+  task's cancel flag and the coordinator's app-wide one (`cancelAllRuns`), so every run going, a foreground
+  one without a bound included, stops between files, saving its sync state first (`CancelledRunStateTests`);
+  a session whose run is already going is skipped by the task, never waited for. A pair is left out when it has
   nothing to do: its vault is closed (runs only upload) with nothing unconfirmed and its last run did not
   fail. Each run's errors, bound and backoff are its own session's (`BackgroundTargetsTests`). Not yet:
   locked staging (design §4.1: a closed vault's downloads staged in its target's folder and placed at its
@@ -1887,7 +1889,9 @@ and what other devices wrote arrives at the next unlock.
   Credentials in the URL are refused.
 - The password is stored only in the Keychain (generic password, service
   `io.github.anthonytw.sempere.webdav`, account the target id,
-  `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, never synchronizable), is
+  `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` so background tasks can run while the device is locked;
+  items of earlier builds (`WhenUnlocked`) are moved over when next read; before the first unlock after a
+  restart a run says "waiting for unlock", with no backoff and no problem; never synchronizable), is
   never logged and never written to a file or `UserDefaults`. The rest of the
   target (URL, user, certificate pin) is in the store's target registry
   (`<store>/.sync/<vault id>/targets.json`), holding no secret.

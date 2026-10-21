@@ -22,13 +22,15 @@ struct SyncRunRequest: Sendable {
     /// The run's time bound (`SyncLimits.maxDuration`); nil: the default. A background task shares its
     /// time out this way (`SyncCoordinator.runBackgroundRefresh`, design §4.2).
     var maxDuration: TimeInterval?
-    /// Stops the run between files (`SyncOptions.isCancelled`): iOS took the task's time back.
-    var cancel: SyncRunCancel?
+    /// Stop the run between files when any is set (`SyncOptions.isCancelled`): iOS took a background task's
+    /// time back (the task's own flag, and the coordinator's app-wide one, which reaches every run going).
+    var cancels: [SyncRunCancel] = []
 
     /// Applies the bounds to a run's options.
     func apply(to options: inout SyncOptions) {
         if let maxDuration { options.limits.maxDuration = maxDuration }
-        if let cancel { options.isCancelled = { cancel.isSet } }
+        let cancels = self.cancels
+        if !cancels.isEmpty { options.isCancelled = { cancels.contains { $0.isSet } } }
     }
 }
 
@@ -79,6 +81,9 @@ final class SyncSession {
     private(set) var lastReport: SyncReport?
     /// Files the last runs left arriving on the target (a provider still delivering them).
     private(set) var arriving = 0
+    /// The last run could not read the target's password: the device is locked and was not unlocked since it
+    /// started. Not a problem and no backoff: the run waits for the unlock (review of #74, B1).
+    private(set) var waitingForDeviceUnlock = false
 
     /// Runs one sync off the main actor and returns its report (the coordinator supplies it: endpoint,
     /// copy, vault, options).
@@ -97,6 +102,8 @@ final class SyncSession {
     @ObservationIgnored var release: @MainActor () -> Void = {}
     /// The open vault's session (the coordinator sets it): its runs take the slot kept for it.
     @ObservationIgnored var isOpenVault = false
+    /// The coordinator's app-wide cancel flag, read when a run starts (`SyncCoordinator.cancelAllRuns`).
+    @ObservationIgnored var appCancel: @MainActor () -> SyncRunCancel? = { nil }
     /// Runs automatically at all (the coordinator's background sessions; the open vault's always do).
     @ObservationIgnored var runsAutomatically = true
     /// The periodic pace is paused (a closed vault while the app is in the background): only a write
@@ -181,9 +188,11 @@ final class SyncSession {
     }
 
     /// One run for a background task (`SyncCoordinator`): bounded by `maxDuration`, stopped between files when
-    /// `cancel` is set. A run already going is waited for instead (its own bounds hold). Returns whether the
-    /// run ended without problems, and whether it changed anything.
+    /// `cancel` is set. A session whose run is already going is skipped, never waited for: that run may be a
+    /// foreground one without a bound (review of #74, B2; the task's expiry stops it through the app-wide flag).
+    /// Returns whether the run ended without problems, and whether it changed anything.
     func runInBackground(maxDuration: TimeInterval?, cancel: SyncRunCancel?) async -> (ok: Bool, changed: Bool) {
+        guard running == nil else { return (false, false) }
         let report = await runOnce(maxDuration: maxDuration, cancel: cancel)
         guard let report else { return (false, false) }
         let changed = !report.uploaded.isEmpty || !report.downloaded.isEmpty || !report.deleted.isEmpty
@@ -202,7 +211,7 @@ final class SyncSession {
     private func runOnce(maxDuration: TimeInterval? = nil, cancel: SyncRunCancel? = nil) async -> SyncReport? {
         if let running { return await running.value }
         let mode: SyncRunMode = twoWay ? .twoWay : .uploadOnly
-        let request = SyncRunRequest(mode: mode, maxDuration: maxDuration, cancel: cancel)
+        let request = SyncRunRequest(mode: mode, maxDuration: maxDuration, cancels: [cancel, appCancel()].compactMap { $0 })
         let task = Task { () -> SyncReport? in
             await admit { [weak self] in mode == .twoWay || self?.isOpenVault == true }
             defer { release() }
@@ -221,6 +230,7 @@ final class SyncSession {
                 let found = WebDAVSyncProblem.from(report: report).filter { mode == .twoWay || $0 != .serverChangedManifest }
                 problems = found
                 failure = nil
+                waitingForDeviceUnlock = false
                 arriving = report.arriving.count
                 let ok = found.isEmpty
                 let changed = !report.uploaded.isEmpty || !report.downloaded.isEmpty || !report.deleted.isEmpty
@@ -236,7 +246,16 @@ final class SyncSession {
             } catch is CancellationError {
                 schedule.finished(at: now(), success: false)
                 return nil
+            } catch WebDAVPasswordError.locked {
+                // Waiting for the device's first unlock: no problem shown, no backoff (the app becoming active
+                // asks every session for a run).
+                waitingForDeviceUnlock = true
+                problems = []
+                failure = nil
+                schedule.finished(at: now(), success: true)
+                return nil
             } catch {
+                waitingForDeviceUnlock = false
                 problems = [SyncStatus.problem(from: error)]
                 failure = WebDAVErrorText.message(error)
                 schedule.finished(at: now(), success: false)
@@ -257,7 +276,7 @@ final class SyncSession {
     /// The status model (docs/design/device-first-sync.md §8.3).
     var status: SyncStatus {
         SyncStatus(syncing: isSyncing, problems: problems, unconfirmed: unconfirmed, arriving: arriving,
-                   twoWay: twoWay, lastSuccess: lastSuccess, folder: kind == .folder)
+                   twoWay: twoWay, lastSuccess: lastSuccess, folder: kind == .folder, deviceLocked: waitingForDeviceUnlock)
     }
 
     /// True when the bar has something to say beyond "synced".
@@ -294,6 +313,8 @@ struct SyncStatus: Equatable, Sendable {
     var lastSuccess: Date?
     /// The target is a folder (iCloud Drive, any folder), not a server: the wording says so.
     var folder = false
+    /// The last run waited for the device's first unlock (its password could not be read yet).
+    var deviceLocked = false
 
     /// The problem for a run that threw: a folder target's own failures first (a folder that went away
     /// is "not found", one that cannot be reached now is "offline"), then a server's.
@@ -308,6 +329,7 @@ struct SyncStatus: Equatable, Sendable {
 
     var kind: Kind {
         if syncing { return .syncing }
+        if deviceLocked { return .waitingForUnlock }
         if problems.contains(.offline) { return .offline }
         if let problem = problems.first { return .problem(problem) }
         if unconfirmed > 0 { return .pending(unconfirmed) }
