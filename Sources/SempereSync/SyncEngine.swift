@@ -11,9 +11,10 @@ public struct SyncOptions: Sendable {
     /// per-device file is treated as another device's.
     public var deviceID: DeviceID?
     /// The vault's write lock on this device (`VaultFileLock`, docs/design/device-first-sync.md §4): held
-    /// while the run settles and replaces the local mutable files (`vault.json`,
-    /// `settings.age`), so a writer of them in the same process (the app's settings) or another (the
-    /// CLI) never interleaves with the read, merge and write. Nil: no lock.
+    /// while the run judges and replaces the local mutable files (`vault.json`, `settings.age`), so a writer
+    /// of them in the same process (the app's settings) or another (the CLI) never interleaves with the read,
+    /// merge and write. Never held across a request (F7): the server's copies are read before it is taken
+    /// and the uploads it decides are made after it is released (`MutableLockScope.swift`). Nil: no lock.
     public var localWriteLock: VaultFileLock?
     /// How long a run waits for `localWriteLock` before it leaves the mutable files to the next run.
     public var localWriteLockTimeout: TimeInterval = 30
@@ -243,6 +244,11 @@ public final class SyncEngine {
     /// The remote `vault.json` as `checkSameVault` fetched it this run, for
     /// the mutable-file sync to compare instead of fetching it again.
     var fetchedManifest: (data: Data, etag: String?)?
+    /// The server's mutable files read before the write lock was taken, consumed by the judging under it (F7).
+    var mutablePrefetch: [String: (data: Data, etag: String?)] = [:]
+    /// Under the write lock: uploads are recorded here instead of made, and made once it is released (F7).
+    var deferringUploads = false
+    var deferredUploads: [DeferredUpload] = []
     /// Push-only on a partial copy: server files kept because the copy has
     /// not fetched them yet (format.md §1.2).
     var pendingKept = 0
@@ -365,35 +371,9 @@ public final class SyncEngine {
         try awaitRootFiles(remoteRoot)
         try checkSameVault(remoteRoot)
         removeLeftoverRemoteTemps()
-        // The local mutable files are judged and replaced under the vault's write lock (`localWriteLock`).
-        do {
-            try withLocalWriteLock {
-                // A provider's conflict versions of the root files, merged or kept, then resolved (`ConflictVersions.swift`).
-                settleConflictVersions(remoteRoot)
-
-                for name in [Vault.manifestName] {
-                    let remote = remoteRoot[name].flatMap { $0.isCollection ? nil : $0 }
-                    do {
-                        // Listed but not downloaded yet: neither taken nor replaced this run.
-                        if try !available([name], entry: remote) { continue }
-                        options.pushOnly ? try pushMutable(name, remote: remote) : try syncMutable(name, remote: remote)
-                    } catch {
-                        report.errors.append(.init(path: name, message: Self.describe(error)))
-                    }
-                }
-
-                // Shared settings (format.md §13): merged per key when both sides changed.
-                let remoteSettings = remoteRoot[SharedSettings.fileName].flatMap { $0.isCollection ? nil : $0 }
-                do { if try available([SharedSettings.fileName], entry: remoteSettings) { try syncSharedSettings(remote: remoteSettings) } } catch {
-                    report.errors.append(.init(path: SharedSettings.fileName, message: Self.describe(error)))
-                }
-            }
-        } catch {
-            // Another writer held the lock for the whole wait: the mutable files wait for the next run.
-            for name in [Vault.manifestName, SharedSettings.fileName] {
-                report.skipped.append(.init(path: name, message: "not synced this run: \(Self.describe(error))"))
-            }
-        }
+        // The local mutable files are judged and replaced under the vault's write lock (`localWriteLock`), which
+        // is never held across a request (F7): the server's copies are read first, the uploads made after.
+        syncMutableFiles(remoteRoot)
 
         // Notebook records (format.md §14): write-once, so the union of both sides. (Epoch records, §15.6,
         // go to every target from KH4, key-hierarchy design §12; a vault of one epoch opens without them.)
@@ -665,6 +645,7 @@ public final class SyncEngine {
             fetchedManifest = nil
             return fetched
         }
+        if let fetched = mutablePrefetch.removeValue(forKey: name) { return fetched }
         return try transport.read([name], maxBytes: Self.maxMutableReadBytes)
     }
 
@@ -702,6 +683,11 @@ public final class SyncEngine {
     /// Uploads a mutable file; false when the precondition failed.
     func push(_ name: String, _ data: Data, condition: PutCondition) throws -> Bool {
         if options.dryRun { report.uploaded.append(name); return true }
+        if deferringUploads {
+            // Under the write lock: made once it is released (`flushDeferredUploads`).
+            deferredUploads.append(DeferredUpload(name: name, data: data, condition: condition))
+            return true
+        }
         try ensureCollection([])
         guard try transport.write([name], .data(data), condition: condition) else { return false }
         report.uploaded.append(name)
@@ -710,6 +696,10 @@ public final class SyncEngine {
 
     func recordMutable(_ name: String, hash: String) throws {
         guard !options.dryRun else { return }
+        if deferringUploads, let i = deferredUploads.lastIndex(where: { $0.name == name }) {
+            deferredUploads[i].recordHash = hash   // recorded when the upload is made
+            return
+        }
         let entry = try transport.stat([name])
         state.mutable[name] = .init(hash: hash, stamp: entry?.stamp)
     }
