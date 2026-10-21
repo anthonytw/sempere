@@ -232,6 +232,12 @@ final class QuickCapture {
     @ObservationIgnored var root = QuickCapture.defaultRoot
     /// Sealed captures waiting for the vault folder, per vault id.
     @ObservationIgnored var queueRoot = QuickCapture.defaultQueueRoot
+    /// The in-app vault store (the app sets it at launch): a voice note for a store vault goes straight into
+    /// its in-app inbox, found by vault id, open or not (docs/design/device-first-sync.md §5.3).
+    @ObservationIgnored var vaultStore: VaultStore?
+    /// Told when a voice note was written into a vault's inbox (its sync targets then upload it soon,
+    /// whether or not the vault is open: `SyncCoordinator.vaultWritten`).
+    @ObservationIgnored var delivered: @MainActor (UUID) -> Void = { _ in }
     /// Starts a Live Activity while recording (off in tests).
     @ObservationIgnored var showsActivity = true
     /// Where the widgets read `VoiceNoteStatus` (the App Group; nil without one, and in tests unless set).
@@ -898,7 +904,7 @@ final class QuickCapture {
     /// read-only (a newer format: this version writes nothing into its
     /// `inbox/`, format.md §7.3; security review 2026-10, N2).
     func deliver(_ sealed: SealedCapture, _ stored: StoredCaptureProfile) throws -> Delivery {
-        if let url = Self.resolve(stored.bookmark) {
+        if let url = vaultFolder(stored) {
             let scoped = url.startAccessingSecurityScopedResource()
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
             if Self.acceptsCaptures(at: url, vaultId: stored.profile.vaultId) {
@@ -907,6 +913,8 @@ final class QuickCapture {
                     try CloudVault.coordinatedWrite(CloudVault.isUbiquitous(url) ? inbox : nil) {
                         try CaptureWriter.store(sealed, in: inbox)
                     }
+                    let id = stored.profile.vaultId, told = delivered
+                    Task { @MainActor in told(id) }
                     return .vault
                 } catch {
                     // Not reachable now: queued below.
@@ -927,6 +935,12 @@ final class QuickCapture {
     }
 
     func queueFolder(_ vault: UUID) -> URL { queueRoot.appendingPathComponent(vault.uuidString.lowercased(), isDirectory: true) }
+
+    /// The folder of the profile's vault: its in-app copy when the store holds it (found by id, so a moved
+    /// store or a stale bookmark does not matter), else the folder its bookmark names.
+    func vaultFolder(_ stored: StoredCaptureProfile) -> URL? {
+        vaultStore?.entry(id: stored.profile.vaultId)?.url ?? Self.resolve(stored.bookmark)
+    }
 
     /// The vault folder a bookmark names (nil when it cannot be resolved).
     nonisolated static func resolve(_ bookmark: Data) -> URL? {
@@ -969,10 +983,15 @@ final class QuickCapture {
     func flushStoredQueue() throws -> Int {
         let stored: StoredCaptureProfile
         do { stored = try storedProfile() } catch QuickCaptureError.notSetUp { return 0 }
-        guard let url = Self.resolve(stored.bookmark) else { return 0 }
+        guard let url = vaultFolder(stored) else { return 0 }
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        return flushQueue(into: url, vaultId: stored.profile.vaultId, coordinated: CloudVault.isUbiquitous(url))
+        let moved = flushQueue(into: url, vaultId: stored.profile.vaultId, coordinated: CloudVault.isUbiquitous(url))
+        if moved > 0 {
+            let id = stored.profile.vaultId, told = delivered
+            Task { @MainActor in told(id) }
+        }
+        return moved
     }
 
     /// Recordings a crash or a failed seal left in `root`: sealed when the

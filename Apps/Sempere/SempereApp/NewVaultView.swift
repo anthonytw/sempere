@@ -32,6 +32,9 @@ struct NewVaultView: View {
     @State private var working = false
     @State private var failure: String?
     @State private var created: CreatedVault?
+    /// "Keep a copy in": the folder the vault also syncs with (a sync target), if any.
+    @State private var copyFolder: URL?
+    @State private var pickingCopyFolder = false
 
     var body: some View {
         NavigationStack {
@@ -73,6 +76,7 @@ struct NewVaultView: View {
                 Text("Sempere keeps the vault on this device, inside the app, so it opens without a connection.")
             }
             keySection
+            copySection
             if source != .recipient {
                 storeSection
             }
@@ -83,6 +87,35 @@ struct NewVaultView: View {
         }
         .disabled(working)
         .overlay { if working { ProgressView() } }
+    }
+
+    // MARK: - Keep a copy in
+
+    /// "Keep a copy in: None / A folder…" (docs/design/device-first-sync.md §8.1): a folder in iCloud Drive,
+    /// another provider or anywhere becomes a sync target of the new vault.
+    private var copySection: some View {
+        Section {
+            if let copyFolder {
+                HStack {
+                    Label(copyFolder.lastPathComponent, systemImage: "folder")
+                    Spacer()
+                    Button("None", systemImage: "xmark.circle") { self.copyFolder = nil }
+                        .labelStyle(.iconOnly)
+                        .help("Keep no copy outside the app")
+                }
+            }
+            Button(copyFolder == nil ? "Choose Folder…" : "Choose Another Folder…") { pickingCopyFolder = true }
+                .accessibilityIdentifier("newVault.copyFolder")
+                .fileImporter(isPresented: $pickingCopyFolder, allowedContentTypes: [.folder]) { result in
+                    if case .success(let url) = result { copyFolder = url }
+                }
+        } header: {
+            Text("Keep a Copy In")
+        } footer: {
+            Text(copyFolder == nil
+                 ? "None: the vault is only on this device. Choose a folder, for example in iCloud Drive, to sync it with your other devices."
+                 : "The vault syncs both ways with a copy in this folder. Add or remove folders later in Sync Targets.")
+        }
     }
 
     // MARK: - Key
@@ -274,6 +307,11 @@ struct NewVaultView: View {
             defer { working = false }
             do {
                 let result = try await model.createVault(request, library: library)
+                if let copyFolder, let vault = model.vault?.vaultId {
+                    do { try model.addPickedFolderTarget(copyFolder, to: vault) } catch {
+                        model.errorMessage = String(describing: error)
+                    }
+                }
                 if result.secretKey == nil { dismiss() } else { created = result }
             } catch {
                 failure = "\(error)"

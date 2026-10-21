@@ -452,9 +452,14 @@ sempere vault merge-copy FROM [--dry-run] [--json]
 sempere store list [--store DIR] [--json]
 sempere store path VAULT [--store DIR] [--json]
 sempere store create NAME --recipient age1pq1... [vault init's options] [--store DIR] [--json]
-sempere store import SOURCE [--name NAME] [--store DIR] [--json]
+sempere store import SOURCE [--name NAME] [--keep-syncing] [--store DIR] [--json]
 sempere store restore BACKUP [--name NAME] [--replace] [--store DIR] [--json]
 sempere store remove VAULT --yes [--store DIR] [--json]
+sempere store target list VAULT [--store DIR] [--json]
+sempere store target add VAULT (--folder PATH | --webdav URL [--user NAME]) [--name NAME] [--store DIR] [--json]
+sempere store target remove VAULT TARGET [--store DIR] [--json]
+sempere store sync VAULT [--target TARGET ...] [--identity FILE | --passphrase-env VAR] [--password-env VAR]
+                         [--wait SECONDS] [--store DIR] [--json]
 ```
 
 A store is a folder of complete vaults, one per vault id, laid out as `<store>/<vault id>/<name>.sempere`
@@ -482,7 +487,8 @@ by its folder: `--vault "$(sempere store path Notes)"`.
   moved there in one rename. Any failure, or an interruption, leaves nothing listed (what it left in the
   store's staging folder is removed by the next store command). A vault id the store already holds is
   refused (exit 1). `--name` names the copy (default: the source folder's name); `-q` prints only the new
-  path; `-v` reports progress on stderr.
+  path; `-v` reports progress on stderr. `--keep-syncing` makes the source a folder target of the copy (the
+  app's "Keep syncing with this folder"): `store sync` then syncs the two both ways.
 - `restore BACKUP` restores a backup folder (or any vault folder) into the store, every file checked
   against `backup.json` as `sempere restore` does. The restore is built in the store's staging folder and
   must bring back every file, else nothing is added (exit 1). A vault id the store already holds is
@@ -494,6 +500,38 @@ by its folder: `--vault "$(sempere store path Notes)"`.
 - `remove VAULT --yes` deletes the vault from the store, permanently: with no other copy, its notes are
   gone. Without `--yes` it exits 2 and deletes nothing. It is refused (exit 1) while the vault is open in
   the app or by another command, which hold a lease on it.
+
+#### Sync targets
+
+A store vault may have any number of sync targets, outside copies it syncs with both ways
+([device-first sync](design/device-first-sync.md) §2, §8.1): a **folder** (iCloud Drive or another
+provider's folder, a drive, a share, any folder) or a **WebDAV** server folder. They are kept in
+`<store>/.sync/<vault id>/targets.json`, which the app reads and writes too (its folder targets also carry
+a bookmark), and each target's sync state, quarantine and transfers in `<store>/.sync/<vault id>/<target
+id>/`, so targets and vaults never share state. Removing the vault removes them. `TARGET` is a target's id,
+a unique id prefix (4 characters or more), its name, path or URL.
+
+- `target list` prints id, kind, name, place and the last successful sync. `--json`: an array of `{id,
+  kind, name, path, url, user, added, lastSuccess}`.
+- `target add` adds a target. `--folder PATH` may be missing or empty (the first sync copies the vault into
+  it) or hold the same vault (the first sync is a union: what either side lacks is copied, nothing is
+  deleted); it must not overlap the store and must not be a file (exit 1). `--webdav URL [--user NAME]`: https,
+  or http to localhost (exit 2 otherwise); no password is stored. A target at the same place (the same
+  folder, or the same server folder and user) is refused (exit 1). `--json` prints the new target; `-q` only
+  its id.
+- `target remove` forgets a target and deletes its sync state on this machine; the folder or server is not
+  touched.
+- `sync` runs the vault with each target in turn (or only the `--target` ones): the two-way sync of
+  `sync folder` or `sync webdav` (every rule there applies), each with its own state and quarantine, under the
+  vault's write lock. Unlocked (`--identity`, or the stored key's passphrase), received files are checked
+  fully and explained deletions follow; locked, only their structure is checked and nothing is deleted. A
+  machine with two targets bridges them: what one brings goes to the other on the next run. A folder target
+  synced before that is gone is not recreated ("the folder is gone"), and one whose parent folder is gone (a
+  drive not connected) is skipped ("cannot be reached now"); both are errors of that target only. WebDAV
+  passwords come from `--password-env` (default `SEMPERE_WEBDAV_PASSWORD`); `--wait` bounds the wait for
+  files a provider is downloading (default 30 s). `--json`: an array of `{target, kind, name, report,
+  error}`, `report` being `sync folder`'s object. Exit 1 when a target could not run, else `sync folder`'s
+  codes, the worst first. A target kind a later version added is reported, never run.
 
 Each vault has its own lock (`<store>/.locks/<vault id>.write`, `flock(2)`): the store takes it to install
 or remove a vault, and it is the one lock every writer of that vault on the device shares

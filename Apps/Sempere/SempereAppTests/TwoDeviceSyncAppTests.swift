@@ -339,14 +339,14 @@ struct SyncCoordinatorTests {
     /// One vault's failing target never delays or fails another's, and at most two runs go at once.
     @Test func vaultsAreIsolatedAndTheBudgetHolds() async throws {
         let inFlight = RunCounter(), most = RunCounter()
-        func location() -> WebDAVLocation {
-            WebDAVLocation(id: UUID(), url: "https://dav.example.org/\(UUID().uuidString)/", user: nil,
-                           vaultId: UUID().uuidString.lowercased(), name: "V", folderName: "V.sempere")
+        func location() -> SyncTargetRef {
+            SyncTargetRef(vaultID: UUID(), vaultName: "V",
+                          target: .webdav("https://dav.example.org/\(UUID().uuidString)/", user: nil, name: "V"))
         }
         let failing = location(), fine = [location(), location(), location()]
         let all = [failing] + fine
-        let coordinator = SyncCoordinator(locations: { all }, makeSession: { loc in
-            SyncSession(locationID: loc.id, vaultID: nil, name: loc.name, lastSuccess: nil, run: { _ in
+        let coordinator = SyncCoordinator(targets: { all }, makeSession: { loc in
+            SyncSession(locationID: loc.id, vaultID: loc.vaultID, name: loc.vaultName, lastSuccess: nil, run: { _ in
                 most.raise(to: inFlight.add(1))
                 defer { _ = inFlight.add(-1) }
                 try await Task.sleep(for: .milliseconds(50))

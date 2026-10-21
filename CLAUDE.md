@@ -849,22 +849,27 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   lookups; docs/localization.md "Checking layouts" has the limits). A new screen worth checking
   gets a `Screen` case there. `scripts/app.sh pseudo` (iPad, in `local-ci.sh --release`) and
   `pseudo-mac` (by hand) run the UI-test version.
-- WebDAV vaults in the app (`AppModel+WebDAV`, docs/io.md "WebDAV vaults in the app", "Sync targets in
-  the app"): a local copy in Application Support (`LocalCopy` in `SempereSync`, `WebDAVLocationStore`) opened like
-  any folder, synced by the app's one `SyncCoordinator` (a `SyncSession` per location, every vault open or not,
-  isolated per vault, at most two runs at once). Only the open, unlocked vault's runs are two-way (`LocalCopy.sync`);
-  every other run is upload-only (`LocalCopy.push`: `pushOnly` + `keepServerChanges`), so nothing unverified is
-  placed in a copy nobody unlocked. What a two-way run wrote locally (`SyncReport.changed`, `LocalChanges`) goes
-  through `applySyncChanges`: `reconcile(scope:)` for the notes (open editors merge in place, RemoteMerge), the
-  settings pass, inbox adoption, notebooks; a new device list or secret reopens the vault like a key change. Never
-  write the copy's `vault.json` or `settings.age` without its `VaultFileLock` (`vaultWriteLock`; the engine holds
-  it through `SyncOptions.localWriteLock`). The password is only in the Keychain (`KeychainWebDAVPasswordStore`);
-  certificate pins are checked by `PinnedServerTrust` (Security, app only) behind the library's
-  `WebDAVServerTrust` hook, never by disabling evaluation. Key changes are refused for a WebDAV copy
-  (`requireLocalKeyChanges`) until the key hierarchy (KH5). App tests use `FakeWebDAVRemote` (scripted) or
-  `EngineWebDAVRemote` (the real engine on a shared `MemoryStore`: `TwoDeviceSyncAppTests`) and
-  `MemoryWebDAVPasswordStore`; the library's sync runs against wsgidav (`scripts/test-webdav.sh`). A recent WebDAV
-  vault is a `RecentVault` with `webdav` set and no bookmark.
+- Sync targets (`AppModel+SyncTargets`, `AppModel+WebDAV`, docs/io.md "Sync targets in the app", "WebDAV vaults in
+  the app"): every vault is a store vault (`VaultStore`, in the App Group container on iPhone and iPad,
+  `VaultStoreRoot`); its targets (folder or WebDAV, any number) are `SyncTarget`s in the store's registry
+  (`SyncTargetRegistry`, `<store>/.sync/<vault id>/`, shared with `sempere store target`), each with its own sync
+  state and quarantine. A WebDAV vault is a store vault with a WebDAV target (`WebDAVLocationStore` is a view of
+  the registry; `LocalCopy(folder:stateDirectory:)`). The app's one `SyncCoordinator` runs a `SyncSession` per
+  (vault, target), every vault open or not, at most two runs at once; only the open, unlocked vault's runs are
+  two-way, every other run is upload-only (nothing unverified is placed in a vault nobody unlocked). Folder runs
+  go through `FolderTargetRun` (the CLI's `store sync`); never open a target folder in place. What a two-way run
+  wrote locally (`SyncReport.changed`, `LocalChanges`) goes through `applySyncChanges`: `reconcile(scope:)` for the
+  notes (open editors merge in place, RemoteMerge), the settings pass, inbox adoption, notebooks; a new device list
+  or secret reopens the vault like a key change. Never write a store vault's `vault.json` or `settings.age` without
+  its `VaultStore.writeLock` (`vaultWriteLock`; the engine holds it through `SyncOptions.localWriteLock`). The
+  WebDAV password is only in the Keychain (`KeychainWebDAVPasswordStore`, keyed by target id); certificate pins
+  are checked by `PinnedServerTrust` (Security, app only) behind the library's `WebDAVServerTrust` hook, never by
+  disabling evaluation. Key changes are refused for a vault with any target (`requireLocalKeyChanges`) until the
+  key hierarchy (KH5). A folder target synced before that is gone is never recreated (`FolderTargetRun.check`).
+  App tests use `FakeWebDAVRemote` (scripted), `EngineWebDAVRemote` (the real engine on a shared `MemoryStore`:
+  `TwoDeviceSyncAppTests`), folders under `EvictingFolderProvider` (`AppModel.folderProvider`:
+  `FolderTargetAppTests`) and `MemoryWebDAVPasswordStore`; the library's sync runs against wsgidav
+  (`scripts/test-webdav.sh`).
 - Vaults in another app's provider storage (`StorageLocation`) are coordinated like iCloud ones
   (`isCloudVault`), even when the provider does not report its files as ubiquitous.
 - Folder targets (`FolderRemote`, `sempere sync folder`, docs/io.md "Folder targets in providers"): a

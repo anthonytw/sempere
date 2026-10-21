@@ -15,6 +15,8 @@ struct SidebarView: View {
     @Environment(WindowUI.self) private var ui: WindowUI?
     @State private var forgettingKey = false
     @State private var showingSettings = false
+    /// Sync Targets… (`SyncTargetsSheet`): where the iPad and iPhone reach it (the Mac also has File > Sync Targets…).
+    @State private var showingSyncTargets = false
     @State private var renaming: String?
     /// The notebook a "Move Notebook To…" sheet is open for.
     @State private var movingNotebook: MovingNotebook?
@@ -201,6 +203,7 @@ struct SidebarView: View {
         .overlay(alignment: .bottomLeading) { DropTraceLabel() }
         #endif
         .navigationTitle(model.vaultName ?? "Sempere")
+        .sheet(isPresented: $showingSyncTargets) { SyncTargetsSheet() }
         .toolbar {
             ToolbarItem {
                 // New Notebook and Settings live here, Close Vault always last (TestFlight 1.0.0 (6) feedback).
@@ -211,10 +214,12 @@ struct SidebarView: View {
                     .disabled(model.phase != .unlocked || model.isVaultReadOnly)
                     .accessibilityIdentifier("sidebar-new-notebook")
                     Button("Settings", systemImage: "gearshape") { showingSettings = true }
+                    Button("Sync Targets…", systemImage: "arrow.triangle.2.circlepath") { showingSyncTargets = true }
+                        .accessibilityIdentifier("sidebar-sync-targets")
                     Divider()
                     Button("Close Vault", systemImage: "xmark.circle") { model.close() }
                 }
-                .help("New notebook, settings and closing the vault")
+                .help("New notebook, settings, sync targets and closing the vault")
                 .accessibilityIdentifier("sidebar-more")
             }
             ToolbarItem {

@@ -12,6 +12,8 @@ import SempereImport
 enum MenuCommand: String, CaseIterable, Sendable {
     // File
     case newNote, newNotebook, openNoteInWindow, newVault, openVault, reopenVault, closeVault, reloadVault
+    /// The open vault's sync targets (`SyncTargetsSheet`, docs/design/device-first-sync.md §8.1).
+    case syncTargets
     case importPDF, importFromApp, lastImportReport, insertPDFPages, insertPhoto, exportNotes
     case bulkExport
     /// Start or stop a quick voice note (`toggleVoiceNote`, docs/quick-capture.md "Surfaces").
@@ -129,6 +131,7 @@ enum MenuCommand: String, CaseIterable, Sendable {
         case .reopenVault: return String(localized: "Reopen Last Vault")
         case .closeVault: return String(localized: "Close Vault")
         case .reloadVault: return String(localized: "Reload Vault")
+        case .syncTargets: return String(localized: "Sync Targets…")
         case .importPDF: return String(localized: "Import PDF as New Note…")
         case .importFromApp:
             // The registered importer's name ("Import from Notability…"); a build without importers has no such entry.
@@ -208,6 +211,7 @@ enum MenuCommand: String, CaseIterable, Sendable {
         case .reopenVault: return Shortcut("t", shift)
         case .closeVault: return Shortcut("w", shift)
         case .reloadVault: return Shortcut("r", cmd)
+        case .syncTargets: return nil
         // ⌘I is UIKit's Italic (Format menu); ⌘E its "Use Selection for Find".
         case .importPDF: return Shortcut("i", shift)
         case .importFromApp: return nil
@@ -335,6 +339,7 @@ enum MenuCommand: String, CaseIterable, Sendable {
         case .reopenVault: return context.hasNoteList && context.vault == .none && context.hasRecents
         case .closeVault: return context.vault != .none
         case .reloadVault: return unlocked && context.hasNoteList
+        case .syncTargets: return context.vault != .none && context.hasNoteList
         // The ticked notes, the sidebar's notebook or the vault of the library window.
         case .bulkExport: return unlocked && context.hasNoteList
         case .newNote: return unlocked && context.hasNoteList
@@ -402,7 +407,7 @@ enum MenuLayout {
         [.importPDF] + (AppImporters.primary == nil ? [] : [.importFromApp, .lastImportReport]),
         [.insertPDFPages, .insertPhoto],
         [.exportNotes, .bulkExport],
-        [.reloadVault],
+        [.syncTargets, .reloadVault],
         [.toggleVoiceNote],
     ]
     static let note: [[MenuCommand]] = [

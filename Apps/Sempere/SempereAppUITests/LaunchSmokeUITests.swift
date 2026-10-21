@@ -80,7 +80,8 @@ final class LaunchSmokeUITests: XCTestCase {
         #if !targetEnvironment(macCatalyst)
         throw XCTSkip("Mac Catalyst only (the iPad has one window)")
         #else
-        let app = launchUnlocked(columns: "all")
+        // Open Vault… takes the demo vault instead of the system picker (another process).
+        let app = launchUnlocked(columns: "all", extra: ["SEMPERE_DEBUG_PICK_VAULT": "demo"])
         defer { app.terminate() }
         requireSidebar(app)
         requireNoteList(app)
@@ -136,9 +137,26 @@ final class LaunchSmokeUITests: XCTestCase {
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
         requireRunning(app, "bulk export sheet")
 
-        // Close Vault (⇧⌘W), then Open from WebDAV… on the welcome screen.
+        // File > Sync Targets… (the open vault's targets; no shortcut).
+        focusLibrary(app)
+        app.menuBars.menuBarItems["File"].click()
+        let targets = app.menuItems["Sync Targets…"].firstMatch
+        require(targets, "File > Sync Targets…", in: app)
+        targets.click()
+        requireSheet("syncTargetsSheet", titled: "Sync Targets", "sync targets sheet", in: app)
+        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+        requireRunning(app, "sync targets sheet")
+
+        // Close Vault (⇧⌘W), then Open Vault… (the demo vault stands in for the picker: the choice to
+        // keep syncing with the folder, `OpenVaultSheet`), then Open from WebDAV… on the welcome screen.
         focusLibrary(app)
         app.typeKey("w", modifierFlags: [.command, .shift])
+        let open = app.buttons["Open Vault…"].firstMatch
+        require(open, "Open Vault… button", in: app)
+        open.click()
+        requireSheet("openVaultSheet", titled: "Open Vault", "Open Vault sheet", in: app)
+        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+        requireRunning(app, "open vault sheet")
         let webdav = app.buttons["openWebDAV"].firstMatch
         require(webdav, "Open from WebDAV… button", in: app)
         webdav.click()

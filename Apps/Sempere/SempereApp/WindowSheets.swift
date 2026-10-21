@@ -131,6 +131,10 @@ struct WindowSheets: ViewModifier {
             .sheet(isPresented: Binding(get: { ui.tagsNoteID != nil }, set: { if !$0 { ui.tagsNoteID = nil } })) {
                 if let id = ui.tagsNoteID { TagEditorView(noteID: id) }
             }
+            // File > Sync Targets… and the sync bar's menu (docs/design/device-first-sync.md §8.1).
+            .sheet(isPresented: Binding(get: { ui.showingSyncTargets }, set: { ui.showingSyncTargets = $0 })) {
+                SyncTargetsSheet()
+            }
             // Version History: the toolbar's button, Note > Version History… and the note window's.
             .sheet(isPresented: Binding(get: { ui.historyNoteID != nil }, set: { if !$0 { ui.historyNoteID = nil } })) {
                 if let id = ui.historyNoteID { HistoryView(noteID: id) }

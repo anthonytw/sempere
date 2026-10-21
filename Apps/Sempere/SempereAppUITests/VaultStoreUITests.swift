@@ -62,6 +62,10 @@ final class VaultStoreUITests: XCTestCase {
         let app = launch(fresh: true, extra: ["SEMPERE_DEBUG_PICK_VAULT": "demo", "SEMPERE_DEMO_PASSPHRASE": Self.passphrase])
         defer { app.terminate() }
         click(button(app, "Open Vault…"))
+        // The choice: copy only, or keep syncing with the folder (`OpenVaultSheet`).
+        let copy = element(app, "openVaultCopy")
+        require(copy, "Open Vault's Copy button", in: app)
+        click(copy)
         // Copied, then opened locked: the unlock sheet.
         let close = app.buttons["Close Vault"].firstMatch
         require(close, "the unlock sheet of the copied vault", in: app, timeout: 180)
@@ -71,6 +75,8 @@ final class VaultStoreUITests: XCTestCase {
 
         // The same vault again: not copied twice, the copy on this device opens; it stays listed once.
         click(button(app, "Open Vault…"))
+        require(copy, "Open Vault's Copy button", in: app)
+        click(copy)
         require(close, "the unlock sheet of the copy on this device", in: app, timeout: 60)
         XCTAssertFalse(element(app, "vaultCopyProgress").exists, "nothing is copied")
         click(close)

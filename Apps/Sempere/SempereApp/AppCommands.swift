@@ -271,6 +271,8 @@ final class WindowUI {
     var choosingPaper = false
     /// The open note's Recordings list (`RecordingsListView`).
     var showingRecordings = false
+    /// File > Sync Targets… (`SyncTargetsSheet`).
+    var showingSyncTargets = false
     var searchPresented = false
     /// A PDF being imported that needs its password (`PDFImportRequest`).
     var pdfPassword: PDFImportRequest?

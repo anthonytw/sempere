@@ -363,7 +363,6 @@ public enum FolderTargetRun {
         o.publishForWebViewer = false
         o.pushOnly = !twoWay
         o.keepServerChanges = !twoWay
-        o.skipUnchangedNotes = true
         if o.quarantineDirectory == nil {
             o.quarantineDirectory = stateURL.deletingPathExtension().appendingPathExtension("quarantine")
         }
