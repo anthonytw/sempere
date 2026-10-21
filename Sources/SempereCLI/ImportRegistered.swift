@@ -109,7 +109,7 @@ struct RegisteredImportCommand<Tag: ImporterTag>: ParsableCommand {
                 state.clock = clock
                 try? state.save(to: stateURL)
             }
-            result = try importer.run(request(vault, state.device), clock: &clock)
+            result = try importer.run(request(vault, vault.writerDevice ?? state.device), clock: &clock)
             // Recognition writes through the device state file: save the import's clock first.
             state.clock = clock
             try state.save(to: stateURL)

@@ -8,7 +8,7 @@ struct VaultCommand: ParsableCommand {
         commandName: "vault",
         abstract: "Create, inspect and verify a vault.",
         subcommands: [VaultInit.self, VaultInfo.self, VaultLabelCommand.self, VaultVerify.self, VaultIndex.self,
-                      VaultSummaries.self, VaultMergeCopy.self]
+                      VaultSummaries.self, VaultMergeCopy.self, VaultCatchUp.self]
     )
 }
 

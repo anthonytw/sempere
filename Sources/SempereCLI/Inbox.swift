@@ -63,7 +63,7 @@ struct InboxEnable: ParsableCommand {
 
     func run() throws {
         let vault = try access.openVault(.required)
-        let device = try DeviceState.loadOrCreate(at: DeviceState.defaultURL()).device
+        let device = try vault.writerDevice ?? DeviceState.loadOrCreate(at: DeviceState.defaultURL()).device
         let p = try vault.captureProfile(device: device, notebook: notebook)
         let url = profile.url(vaultId: vault.vaultId)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true,

@@ -145,7 +145,11 @@ public final class MemoryWriteLedger: WriteLedgerStore, @unchecked Sendable {
 public final class FileWriteLedger: WriteLedgerStore, @unchecked Sendable {
     public let folder: URL
     let vaultId: UUID
-    private let key: SymmetricKey
+    private let directory: URL
+    private enum KeySource { case fixed(SymmetricKey), device(MLKEM768X25519Identity) }
+    private let source: KeySource
+    private let keyLock = NSLock()
+    private var cachedKey: SymmetricKey?
     private let lock: VaultFileLock
 
     /// The largest log read (the ledger lives until kit replacements make seals final).
@@ -159,24 +163,46 @@ public final class FileWriteLedger: WriteLedgerStore, @unchecked Sendable {
             .appendingPathComponent("ledger", isDirectory: true)
     }
 
-    /// The ledger of `vaultId` under `directory`, keyed by `key`.
-    public init(directory: URL, vaultId: UUID, key: SymmetricKey) throws {
-        folder = directory.appendingPathComponent(vaultId.uuidString.lowercased(), isDirectory: true)
-        self.vaultId = vaultId
-        self.key = key
-        lock = VaultFileLock.at(folder.appendingPathComponent("lock"))
-        try FileIO.createPrivateDirectory(directory)
-        try FileIO.createPrivateDirectory(folder)
+    /// The ledger of `vaultId` under `directory`, keyed by `key` (the app's, from a Keychain item).
+    public convenience init(directory: URL, vaultId: UUID, key: SymmetricKey) {
+        self.init(directory: directory, vaultId: vaultId, source: .fixed(key))
     }
 
-    /// The ledger of `vaultId`, keyed by a key sealed to `device` (made on first use).
-    public convenience init(directory: URL, vaultId: UUID, device: MLKEM768X25519Identity) throws {
-        let folder = directory.appendingPathComponent(vaultId.uuidString.lowercased(), isDirectory: true)
-        try FileIO.createPrivateDirectory(directory)
-        try FileIO.createPrivateDirectory(folder)
-        let keyURL = folder.appendingPathComponent("key.age")
-        let raw: Data
-        if FileIO.exists(keyURL) {
+    /// The ledger of `vaultId`, keyed by a key sealed to `device` in `key.age` (made with the first record).
+    /// Nothing is created on disk until something is recorded.
+    public convenience init(directory: URL, vaultId: UUID, device: MLKEM768X25519Identity) {
+        self.init(directory: directory, vaultId: vaultId, source: .device(device))
+    }
+
+    private init(directory: URL, vaultId: UUID, source: KeySource) {
+        self.directory = directory
+        folder = directory.appendingPathComponent(vaultId.uuidString.lowercased(), isDirectory: true)
+        self.vaultId = vaultId
+        self.source = source
+        lock = VaultFileLock.at(folder.appendingPathComponent("lock"))
+    }
+
+    /// The ledger's key; with `creating`, its folder and (for a device-sealed key) `key.age` are made when
+    /// missing. Nil when there is none yet and `creating` is false.
+    private func key(creating: Bool) throws -> SymmetricKey? {
+        keyLock.lock(); defer { keyLock.unlock() }
+        if let cachedKey { return cachedKey }
+        if creating {
+            try FileIO.createPrivateDirectory(directory)
+            try FileIO.createPrivateDirectory(folder)
+        }
+        switch source {
+        case .fixed(let k):
+            cachedKey = k
+        case .device(let device):
+            let keyURL = folder.appendingPathComponent("key.age")
+            if !FileIO.exists(keyURL) {
+                guard creating else { return nil }
+                let raw = SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }
+                let sealed = try AgeFile.encrypt(raw, to: [NativeRecipient.mlkem768x25519(device.recipient)])
+                do { try FileIO.writeAtomically(sealed, to: keyURL, replacing: false) } catch VaultError.alreadyExists {}
+            }
+            let raw: Data
             do {
                 raw = try AgeFile.decrypt(try BoundedRead.contents(of: keyURL, maxBytes: 16 * 1024),
                                           with: [NativeIdentity.mlkem768x25519(device)])
@@ -184,16 +210,9 @@ public final class FileWriteLedger: WriteLedgerStore, @unchecked Sendable {
                 throw VaultError.ledgerUnreadable("the ledger key \(keyURL.path) does not open with this device's key: \(error)")
             }
             guard raw.count == 32 else { throw VaultError.ledgerUnreadable("the ledger key is not 32 bytes") }
-        } else {
-            raw = SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }
-            let sealed = try AgeFile.encrypt(raw, to: [NativeRecipient.mlkem768x25519(device.recipient)])
-            do { try FileIO.writeAtomically(sealed, to: keyURL, replacing: false) } catch VaultError.alreadyExists {
-                // Another process made it first: use theirs.
-                try self.init(directory: directory, vaultId: vaultId, device: device)
-                return
-            }
+            cachedKey = SymmetricKey(data: raw)
         }
-        try self.init(directory: directory, vaultId: vaultId, key: SymmetricKey(data: raw))
+        return cachedKey
     }
 
     private var logURL: URL { folder.appendingPathComponent("log") }
@@ -202,10 +221,12 @@ public final class FileWriteLedger: WriteLedgerStore, @unchecked Sendable {
     private var associated: Data { Data("sempere/1 write ledger \(vaultId.uuidString.lowercased())".utf8) }
 
     private func box(_ plain: Data) throws -> Data {
-        try ChaChaPoly.seal(plain, using: key, authenticating: associated).combined
+        guard let key = try key(creating: true) else { throw VaultError.ledgerUnreadable("no ledger key") }
+        return try ChaChaPoly.seal(plain, using: key, authenticating: associated).combined
     }
 
     private func open(_ sealed: Data) throws -> Data {
+        guard let key = try key(creating: false) else { throw VaultError.ledgerUnreadable("the ledger key is missing") }
         do { return try ChaChaPoly.open(try ChaChaPoly.SealedBox(combined: sealed), using: key, authenticating: associated) } catch {
             throw VaultError.ledgerUnreadable("a ledger record does not authenticate")
         }
@@ -259,7 +280,7 @@ public final class FileWriteLedger: WriteLedgerStore, @unchecked Sendable {
 
     private func appendRecords(_ records: [Record]) throws {
         guard !records.isEmpty else { return }
-        let bytes = try frame(records)
+        let bytes = try frame(records)   // makes the key (and the folder) on first use
         try lock.withLock {
             let fd = logURL.withUnsafeFileSystemRepresentation { p -> Int32 in
                 p.map { posixOpen($0, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0o600) } ?? -1
