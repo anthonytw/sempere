@@ -392,6 +392,11 @@ final class AppModel {
     @ObservationIgnored var syncScheduler: any BackgroundSyncScheduling = BGTaskSyncScheduler()
     /// The background-time assertion held while a sync in flight finishes off screen.
     @ObservationIgnored var backgroundSyncToken: BackgroundTaskToken?
+    /// The assertion held while sync targets' runs finish off screen (`finishTargetRunsInBackground`), and its wait.
+    @ObservationIgnored var targetsBackgroundToken: BackgroundTaskToken?
+    @ObservationIgnored var targetsBackgroundWait: Task<Void, Never>?
+    /// Watches the network for the WebDAV targets (`startReachability`); nil until started.
+    @ObservationIgnored var reachability: WebDAVReachability?
     /// The app is off screen and the sync loop is finishing what was in flight.
     var syncingInBackground = false
     /// The iCloud calls; tests replace them (`CloudVault.Hooks`). While a
@@ -445,8 +450,9 @@ final class AppModel {
     var syncVaultStale = false
     /// A previous copy kept at launch (`recoverWebDAVLeftovers`), for its alert; nil when there is none.
     var webdavLeftover: WebDAVLeftover?
+    /// The coordinator once made (tests set their own).
+    @ObservationIgnored var coordinatorStorage: SyncCoordinator?
     /// Every in-app vault's sync sessions (`SyncCoordinator`, made on first use).
-    @ObservationIgnored private var coordinatorStorage: SyncCoordinator?
     var syncCoordinator: SyncCoordinator {
         if let coordinatorStorage { return coordinatorStorage }
         let made = SyncCoordinator(targets: { [weak self] in self?.allSyncTargets() ?? [] },

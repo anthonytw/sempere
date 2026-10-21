@@ -22,6 +22,7 @@ extension AppModel {
         // a run cut off by the suspension is retried when the app comes back.
         syncSessions.forEach { $0.demand() }
         syncCoordinator.setInBackground(true)   // closed vaults' periodic runs pause meanwhile
+        finishTargetRunsInBackground()
         guard isCloudVault, cloudSyncTask != nil, syncInFlight, backgroundSyncToken == nil else {
             pauseCloudSync()
             scheduleBackgroundRefresh()
@@ -44,6 +45,7 @@ extension AppModel {
     func enterForeground() {
         syncingInBackground = false
         endBackgroundTime()
+        endTargetsBackgroundTime()
         syncCoordinator.setInBackground(false)
         syncCoordinator.demandAll()   // every synced vault runs when the app comes back
     }
@@ -68,10 +70,74 @@ extension AppModel {
         syncScheduler.schedule(.processing)
     }
 
-    /// Asks for a background refresh while an iCloud vault is open.
+    /// Asks for a background refresh while an iCloud vault is open in place, or any vault has a sync target
+    /// (every vault and target, design §4.2); a processing task too while a target has changes to upload.
     func scheduleBackgroundRefresh() {
-        guard isCloudVault, vaultURL != nil else { return }
-        syncScheduler.schedule(syncInFlight ? .processing : .refresh)
+        if isCloudVault, vaultURL != nil {
+            syncScheduler.schedule(syncInFlight ? .processing : .refresh)
+            return
+        }
+        let sessions = syncCoordinator.sessions.values
+        guard !sessions.isEmpty else { return }
+        syncScheduler.schedule(.refresh)
+        if sessions.contains(where: { $0.unconfirmed > 0 }) { syncScheduler.schedule(.processing) }
+    }
+
+    // MARK: - Every vault's targets (P8)
+
+    /// The app left the screen with target runs going or asked for (the last edits, a voice note): they finish
+    /// under background time (`beginBackgroundTask`), then it ends. When iOS takes the time back first, a
+    /// processing task is asked for.
+    func finishTargetRunsInBackground() {
+        let coordinator = syncCoordinator
+        guard !coordinator.sessions.isEmpty, targetsBackgroundToken == nil else { return }
+        guard let token = backgroundTasks.begin(name: "Sempere sync", expired: { [weak self] in
+            guard let self else { return }
+            coordinator.cancelAllRuns()   // runs going stop between files, saving their state
+            self.targetsBackgroundWait?.cancel()
+            self.endTargetsBackgroundTime()
+            self.syncScheduler.schedule(.processing)
+        }) else { return }
+        targetsBackgroundToken = token
+        targetsBackgroundWait = Task { [weak self] in
+            // Let the demands just made start their runs, then wait for every run to end.
+            try? await Task.sleep(for: .milliseconds(100))
+            await coordinator.waitForRunsToEnd()
+            guard !Task.isCancelled else { return }
+            self?.endTargetsBackgroundTime()
+        }
+    }
+
+    /// Ends the targets' background-time assertion, if one is held.
+    func endTargetsBackgroundTime() {
+        targetsBackgroundWait?.cancel()
+        targetsBackgroundWait = nil
+        if let token = targetsBackgroundToken { backgroundTasks.end(token) }
+        targetsBackgroundToken = nil
+    }
+
+    /// A scheduled task (`BackgroundSync`): the in-place iCloud vault's passes first, while one is open
+    /// (`runScheduledSync`, until P7), then every vault's targets through the coordinator: a refresh shares its
+    /// time out (`SyncCoordinator.runBackgroundRefresh`), a processing task runs full passes. iOS ending the
+    /// task cancels this, which stops the runs between files. The next task is asked for at the end.
+    func runBackgroundTask(_ kind: BackgroundSyncRequest) async {
+        if isCloudVault, vaultURL != nil { _ = await runScheduledSync() }
+        let coordinator = syncCoordinator
+        if await coordinator.waitUntilStarted() {
+            let cancel = SyncRunCancel(), all = coordinator.runCancel
+            await withTaskCancellationHandler {
+                switch kind {
+                case .refresh: await coordinator.runBackgroundRefresh(cancel: cancel)
+                case .processing: await coordinator.runBackgroundProcessing(cancel: cancel)
+                }
+            } onCancel: {
+                // Every run going stops, foreground ones included (review of #74, B2).
+                cancel.cancel()
+                all.cancel()
+            }
+            coordinator.renewRunCancel(ifSet: all)
+        }
+        scheduleBackgroundRefresh()
     }
 
     /// Ends the background-time assertion, if one is held.
@@ -105,5 +171,15 @@ extension AppModel {
         }
         if gen == generation { saveSummaryCacheIfDue(force: true) }
         return false
+    }
+}
+
+extension AppModel {
+    /// Starts watching the network for the WebDAV targets (once, at launch): coming back, they run soon.
+    func startReachability() {
+        guard reachability == nil else { return }
+        let monitor = WebDAVReachability()
+        reachability = monitor
+        monitor.start { [weak self] reachable in self?.syncCoordinator.networkChanged(reachable: reachable) }
     }
 }

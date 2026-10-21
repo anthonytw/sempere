@@ -136,12 +136,16 @@ final class WebDAVLocationStore {
 enum WebDAVPasswordError: Error, Equatable, CustomStringConvertible {
     case notFound
     case missingEntitlement
+    /// The device is locked and has not been unlocked since it started (`errSecInteractionNotAllowed`): the
+    /// password can be read once it is. A sync waits for that; it is not a problem (review of #74, B1).
+    case locked
     case keychain(Int32)
 
     var description: String {
         switch self {
         case .notFound: return String(localized: "No password is saved for this server. Enter it again.")
         case .missingEntitlement: return String(localized: "This build of Sempere cannot use the Keychain (missing entitlement).")
+        case .locked: return String(localized: "The server's password can be read once this device is unlocked.")
         case .keychain(let status):
             let text = SecCopyErrorMessageString(status, nil) as String? ?? "error"
             return String(localized: "Keychain error \(status): \(text)", comment: "The values are the status code and the system's message")
@@ -160,8 +164,9 @@ protocol WebDAVPasswordStore: Sendable {
 
 /// `WebDAVPasswordStore` on the Keychain: a generic-password item per
 /// location (service `KeychainWebDAVPasswordStore.service`, account the
-/// location id), `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, never
-/// synchronizable, no access control (pushes read it without a prompt). The
+/// location id), `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` (background tasks run while the device is
+/// locked, P8; an item saved by an earlier build as `WhenUnlocked` is moved over when it is next read), never
+/// synchronizable, no access control (runs read it without a prompt). The
 /// password is never logged and never written anywhere but the Keychain.
 struct KeychainWebDAVPasswordStore: WebDAVPasswordStore {
     static let service = "io.github.anthonytw.sempere.webdav"
@@ -174,15 +179,26 @@ struct KeychainWebDAVPasswordStore: WebDAVPasswordStore {
          kSecUseDataProtectionKeychain as String: true]
     }
 
+    /// The accessibility every item gets (and earlier builds' items are moved to).
+    static var accessible: CFString { kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly }
+
     func password(for location: UUID) throws -> String {
         var query = Self.baseQuery(location)
         query[kSecReturnData as String] = true
+        query[kSecReturnAttributes as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         guard status == errSecSuccess else { throw Self.error(status) }
-        guard let data = result as? Data, let text = String(data: data, encoding: .utf8) else {
+        guard let item = result as? [String: Any], let data = item[kSecValueData as String] as? Data,
+              let text = String(data: data, encoding: .utf8) else {
             throw WebDAVPasswordError.notFound
+        }
+        if let current = item[kSecAttrAccessible as String] as? String, current != Self.accessible as String {
+            // Saved by an earlier build (`WhenUnlocked`): readable after the first unlock from now on. Best
+            // effort: a failure leaves the item as it was, and the next read tries again.
+            _ = SecItemUpdate(Self.baseQuery(location) as CFDictionary,
+                              [kSecAttrAccessible as String: Self.accessible] as CFDictionary)
         }
         return text
     }
@@ -192,14 +208,14 @@ struct KeychainWebDAVPasswordStore: WebDAVPasswordStore {
         var item = Self.baseQuery(location)
         item[kSecAttrLabel as String] = "Sempere WebDAV — \(label)"
         item[kSecAttrDescription as String] = "Sempere WebDAV password"
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        item[kSecAttrAccessible as String] = Self.accessible
         item[kSecValueData as String] = data
         var status = SecItemAdd(item as CFDictionary, nil)
         if status == errSecDuplicateItem {
             // Updated in place: the old password is never deleted before the new one is stored.
             status = SecItemUpdate(Self.baseQuery(location) as CFDictionary,
-                                   [kSecValueData as String: data, kSecAttrLabel as String: "Sempere WebDAV — \(label)"]
-                                       as CFDictionary)
+                                   [kSecValueData as String: data, kSecAttrLabel as String: "Sempere WebDAV — \(label)",
+                                    kSecAttrAccessible as String: Self.accessible] as CFDictionary)
         }
         guard status == errSecSuccess else { throw Self.error(status) }
     }
@@ -213,6 +229,7 @@ struct KeychainWebDAVPasswordStore: WebDAVPasswordStore {
         switch status {
         case errSecItemNotFound: return .notFound
         case errSecMissingEntitlement: return .missingEntitlement
+        case errSecInteractionNotAllowed: return .locked
         default: return .keychain(status)
         }
     }
@@ -222,11 +239,19 @@ struct KeychainWebDAVPasswordStore: WebDAVPasswordStore {
 final class MemoryWebDAVPasswordStore: WebDAVPasswordStore, @unchecked Sendable {
     private let lock = NSLock()
     private var passwords: [UUID: String] = [:]
+    private var locked = false
 
     init() {}
 
+    /// Reads fail as the Keychain's do while the device is locked before its first unlock.
+    var deviceLocked: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return locked }
+        set { lock.lock(); locked = newValue; lock.unlock() }
+    }
+
     func password(for location: UUID) throws -> String {
         lock.lock(); defer { lock.unlock() }
+        if locked { throw WebDAVPasswordError.locked }
         guard let p = passwords[location] else { throw WebDAVPasswordError.notFound }
         return p
     }

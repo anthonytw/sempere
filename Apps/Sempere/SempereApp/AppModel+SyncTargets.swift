@@ -312,7 +312,7 @@ extension AppModel {
         let counting = LocalCopy(folder: entry.url, stateDirectory: stateURL.deletingLastPathComponent())
         let session = SyncSession(
             locationID: targetID, vaultID: vaultID, name: ref.vaultName, lastSuccess: ref.target.lastSuccess,
-            run: { [weak self] mode in
+            run: { [weak self] request in
                 let (target, vault) = await MainActor.run { () -> (SyncTarget?, Vault?) in
                     // Two-way only with the open vault as the disk says it is (review of #70, F1).
                     let open = self?.syncSessions.contains { $0.locationID == targetID } == true && self?.phase == .unlocked
@@ -335,9 +335,10 @@ extension AppModel {
                     options.localWriteLock = lock
                     options.quarantineDirectory = quarantine
                     options.arrivalWait = wait
+                    request.apply(to: &options)
                     options.deviceID = FileManager.default.fileExists(atPath: deviceState.path)
                         ? (try? DeviceState.loadOrCreate(at: deviceState))?.device : nil
-                    let twoWay = mode == .twoWay && vault?.canRead == true
+                    let twoWay = request.mode == .twoWay && vault?.canRead == true
                     return try FolderTargetRun.run(vaultFolder: entry.url, folder: access.folder, provider: provider?(access.folder),
                                                    vault: vault, stateURL: stateURL, twoWay: twoWay, options: options)
                 }.value

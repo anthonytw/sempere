@@ -24,6 +24,10 @@ import UIKit
 ///   relaunch in the background has no unlocked vault (the key is behind
 ///   Face ID) and ends at once.
 ///
+/// Sync targets (P8, docs/design/device-first-sync.md §4.2): the same two tasks also run every in-app vault's
+/// targets, open or not (`AppModel.runBackgroundTask`, `SyncCoordinator.runBackgroundRefresh`), with a
+/// relaunch in the background included: those runs need no unlocked vault (closed vaults' runs only upload).
+///
 /// The Mac (Catalyst) keeps apps running in the background, so it schedules nothing.
 enum BackgroundSync {
     static let refreshIdentifier = "io.github.anthonytw.sempere.sync.refresh"
@@ -34,14 +38,13 @@ enum BackgroundSync {
     /// The app's model, which the scheduled tasks sync (set once at launch).
     @MainActor static weak var model: AppModel?
 
-    /// Runs one scheduled task: passes of the sync until it settles or iOS
+    /// Runs one scheduled task: the in-place iCloud passes, then every vault's targets, until done or iOS
     /// takes the time back. The task's launch, expiration (which cancels this)
     /// and completion are SwiftUI's `.backgroundTask` (`SempereApp`), which
     /// also registers both identifiers with `BGTaskScheduler`.
-    @MainActor static func run() async {
+    @MainActor static func run(_ kind: BackgroundSyncRequest) async {
         guard let model else { return }
-        _ = await model.runScheduledSync()
-        model.scheduleBackgroundRefresh()
+        await model.runBackgroundTask(kind)
     }
 }
 
