@@ -43,6 +43,7 @@ enum LibraryCommands {
             if let last = recents.first { outcome.effect = .reopen(last) }
         case .closeVault: model.close()
         case .reloadVault: Task { await model.report { try await model.reload() } }
+        case .syncTargets: ui.showingSyncTargets = true
         case .bulkExport: model.requestBulkExport(model.bulkExportScope, window: ui.id)
         case .renameNote: ui.renameNoteID = selected
         case .editTags: ui.tagsNoteID = selected

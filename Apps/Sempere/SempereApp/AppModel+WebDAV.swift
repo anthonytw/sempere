@@ -89,6 +89,11 @@ extension AppModel {
         }
         location.pinnedCertificate = pin
         location.name = listing.name
+        if let id = UUID(uuidString: listing.vaultId), syncStore.entry(id: id) != nil {
+            // The vault is on this device already (opened from a folder, or another server): the server
+            // becomes one more target of it, and the first run is a union. Nothing is downloaded first.
+            location.downloaded = true
+        }
         if user != nil {
             let passwords = webdavPasswords, id = location.id, label = "\(location.name) (\(location.host))"
             try await offMain { try passwords.save(password, for: id, label: label) }
@@ -140,12 +145,25 @@ extension AppModel {
         }
         let fetcher = copy.isPartial ? makeFetcher(location, copy: copy) : nil
         try await openVault(at: copy.folder, fetcher: fetcher)
-        startWebDAVSession(location, copy: copy)
         fetcher?.start()
         // The vault's own label (vault.json, format.md §2) names it in the lists, not the server folder.
         let named = await Task.detached(priority: .utility) { copy.label }.value
         if let named, named != location.name { webdavLocations.update(id) { $0.name = named } }
-        library.rememberWebDAV(id, name: named ?? location.name)
+        if let entry = syncStore.entry(id: UUID(uuidString: location.vaultId) ?? UUID()) {
+            library.forgetWebDAV(id)
+            library.rememberStored(entry)
+        } else {
+            library.rememberWebDAV(id, name: named ?? location.name)
+        }
+    }
+
+    /// The WebDAV target of store vault `vault` whose join is not finished (its first download, or a
+    /// partial copy still filling): opening the vault goes through `openWebDAV`, which continues it.
+    func joiningWebDAVLocation(of vault: UUID) -> UUID? {
+        webdavLocations.locations.first { location in
+            UUID(uuidString: location.vaultId) == vault
+                && (!location.downloaded || webdavLocations.copy(of: location).isPartial)
+        }?.id
     }
 
     // MARK: - Filling a partial copy
@@ -224,26 +242,6 @@ extension AppModel {
         return s
     }
 
-    /// The session of the copy just opened (`openVault` closed the last one): the coordinator's for that
-    /// location, now the open one (two-way once the vault is unlocked).
-    private func startWebDAVSession(_ location: WebDAVLocation, copy: LocalCopy) {
-        guard let session = syncCoordinator.attachOpen(location) else { return }
-        session.schedule.writeDelay = webdavWriteDelay
-        let gen = generation
-        session.onChanges = { [weak self] changes in
-            guard let self, self.generation == gen else { return }
-            self.applySyncChanges(changes)
-        }
-        // After every two-way run, whatever it reported (a run that stopped or threw may still have taken a
-        // new vault.json): the open vault is compared with the disk.
-        session.afterTwoWayRun = { [weak self] in
-            guard let self, self.generation == gen else { return }
-            Task { await self.checkOpenVaultAgainstDisk() }
-        }
-        syncVaultStale = false
-        webdav = session
-    }
-
     /// Builds the session of `location` for the coordinator: two-way runs with the vault the model has
     /// open and unlocked (only for the open location), upload-only runs otherwise. Every run reads the
     /// location as stored at that moment (an edited password or pin applies at once).
@@ -252,7 +250,7 @@ extension AppModel {
         let store = webdavLocations, id = location.id
         let copy = webdavLocations.copy(of: location)
         let deviceState = deviceStateURL
-        let lock = Self.writeLock(of: copy)
+        let lock = syncStore.writeLock(for: UUID(uuidString: location.vaultId) ?? UUID())
         let session = SyncSession(
             locationID: id, vaultID: UUID(uuidString: location.vaultId), name: location.name,
             lastSuccess: location.lastPush,
@@ -260,7 +258,8 @@ extension AppModel {
                 let (current, vault) = await MainActor.run { () -> (WebDAVLocation?, Vault?) in
                     // Two-way only with the open vault as the disk says it is: while a reopen after another
                     // device's key change is pending (or failed), runs only upload (review of #70, F1).
-                    let open = self?.webdav?.locationID == id && self?.phase == .unlocked && self?.syncVaultStale == false
+                    let open = self?.syncSessions.contains { $0.locationID == id } == true && self?.phase == .unlocked
+                        && self?.syncVaultStale == false
                     return (store.location(id), open ? self?.vault : nil)
                 }
                 guard let current else { throw WebDAVVaultError.noSuchLocation }
@@ -283,23 +282,18 @@ extension AppModel {
         return session
     }
 
-    /// The open vault's write lock when a sync engine also writes its mutable files (a WebDAV copy);
-    /// nil for any other vault.
+    /// The open vault's write lock when it is a store vault (`VaultStore.writeLock`: the one lock every
+    /// writer of its mutable files takes, the sync engine's runs of each target included); nil for a
+    /// vault opened in place.
     var vaultWriteLock: VaultFileLock? {
-        guard let id = webdav?.locationID, let location = webdavLocations.location(id) else { return nil }
-        return Self.writeLock(of: webdavLocations.copy(of: location))
+        guard let url = vaultURL, let entry = syncStore.entry(containing: url) else { return nil }
+        return syncStore.writeLock(for: entry.vaultId)
     }
 
     /// Runs `body` holding `lock` (none: just runs it), waiting at most 30 seconds for a sync run.
     nonisolated static func withWriteLock<T>(_ lock: VaultFileLock?, _ body: () throws -> T) throws -> T {
         guard let lock else { return try body() }
         return try lock.withLock(timeout: 30, body)
-    }
-
-    /// The lock every writer of the copy's mutable files takes (the engine replacing `vault.json` or
-    /// `settings.age`, the model writing settings): `<location>/vault.write`.
-    nonisolated static func writeLock(of copy: LocalCopy) -> VaultFileLock {
-        VaultFileLock.at(copy.directory.appendingPathComponent("vault.write"))
     }
 
     /// What a two-way run of the open vault changed in its copy (design §4 "Arrivals"): the notes it
@@ -373,7 +367,7 @@ extension AppModel {
             guard generation == gen else { return }
             adoptReopened(next)
             syncVaultStale = false
-            webdav?.demand()   // two-way again, under the new keys
+            syncSessions.forEach { $0.demand() }   // two-way again, under the new keys
             if let shown {
                 try? await openEditor(for: shown)
                 editor?.noteReopenedForRemoteChange()
@@ -412,19 +406,21 @@ extension AppModel {
         let fetching = webdavFetcher?.stop()
         webdavFetcher = nil
         syncVaultStale = false
-        if let session = webdav {
-            session.onChanges = { _ in }
-            session.afterTwoWayRun = {}
-            let running = syncCoordinator.detachOpen() ?? session.currentRun
-            if running != nil || fetching != nil {
-                let earlier = stoppingWebDAV[session.locationID]
-                stoppingWebDAV[session.locationID] = Task {
-                    await earlier?.value
-                    _ = await running?.value
-                    await fetching?.value
+        if !syncSessions.isEmpty {
+            for session in syncSessions { session.afterTwoWayRun = {} }
+            let running = syncCoordinator.detachOpen()
+            if !running.isEmpty || fetching != nil {
+                for session in syncSessions {
+                    let earlier = stoppingWebDAV[session.locationID]
+                    stoppingWebDAV[session.locationID] = Task {
+                        await earlier?.value
+                        for run in running { _ = await run.value }
+                        await fetching?.value
+                    }
                 }
             }
         }
+        syncSessions = []
         webdav = nil
         webdavRemote.releaseConnections()
     }
@@ -492,9 +488,12 @@ extension AppModel {
         await syncCoordinator.stop(id)?.value
         let passwords = webdavPasswords
         try await offMain { try passwords.delete(for: id) }
+        let vault = webdavLocations.location(id).flatMap { UUID(uuidString: $0.vaultId) }
         try webdavLocations.remove(id)
-        syncCoordinator.refresh()
         library.forgetWebDAV(id)
+        // A copy the first download never completed goes with its only target.
+        if let vault, syncStore.entry(id: vault) == nil { library.forgetStored(vault) }
+        syncTargetsChanged()
     }
 
     /// At launch, before any copy syncs: what an interrupted "Download Again" of an earlier build left in

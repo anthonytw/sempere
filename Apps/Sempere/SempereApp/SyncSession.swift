@@ -24,12 +24,18 @@ enum SyncRunMode: Sendable, Equatable {
 @MainActor
 @Observable
 final class SyncSession {
-    /// The target (a WebDAV location's id).
+    /// The target's id (a `SyncTarget`, which a WebDAV location also is).
     let locationID: UUID
     /// The vault (its `vaultId`), when known.
     let vaultID: UUID?
     /// The vault's name, for the bar.
     let name: String
+    /// The target's kind: the bar's wording (a folder or a server).
+    var kind = SyncTargetKind.webdav
+    /// The target's name (the folder's or the host), for the target list.
+    var targetName = ""
+    /// When the target was added (the order of a vault's sessions).
+    var added = Date.distantPast
     /// When runs happen; the session tells it about writes, demands and runs. Tests shorten its delays.
     var schedule = SyncSchedule()
     /// A run is going.
@@ -68,6 +74,9 @@ final class SyncSession {
     @ObservationIgnored var isOpenVault = false
     /// Runs automatically at all (the coordinator's background sessions; the open vault's always do).
     @ObservationIgnored var runsAutomatically = true
+    /// The periodic pace is paused (a closed vault while the app is in the background): only a write
+    /// (a voice note delivered into it) or a demand starts a run (review of #72).
+    @ObservationIgnored var periodicPaused = false
     @ObservationIgnored var now: () -> Date = { Date() }
     /// How often the loop looks at the schedule.
     @ObservationIgnored var tick = Duration.seconds(1)
@@ -95,7 +104,10 @@ final class SyncSession {
         loop = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
-                if self.runsAutomatically, self.schedule.isDue(now: self.now()) { _ = await self.runOnce() }
+                if self.runsAutomatically, self.schedule.isDue(now: self.now()),
+                   !self.periodicPaused || self.schedule.pendingWrite != nil || self.schedule.demanded {
+                    _ = await self.runOnce()
+                }
                 try? await Task.sleep(for: self.tick)
             }
         }
@@ -182,7 +194,7 @@ final class SyncSession {
                 schedule.finished(at: now(), success: false)
                 return nil
             } catch {
-                problems = [WebDAVSyncProblem.from(error: error)]
+                problems = [SyncStatus.problem(from: error)]
                 failure = WebDAVErrorText.message(error)
                 schedule.finished(at: now(), success: false)
                 await recount()
@@ -202,7 +214,7 @@ final class SyncSession {
     /// The status model (docs/design/device-first-sync.md §8.3).
     var status: SyncStatus {
         SyncStatus(syncing: isSyncing, problems: problems, unconfirmed: unconfirmed, arriving: arriving,
-                   twoWay: twoWay, lastSuccess: lastSuccess)
+                   twoWay: twoWay, lastSuccess: lastSuccess, folder: kind == .folder)
     }
 
     /// True when the bar has something to say beyond "synced".
@@ -237,6 +249,19 @@ struct SyncStatus: Equatable, Sendable {
     var arriving: Int
     var twoWay: Bool
     var lastSuccess: Date?
+    /// The target is a folder (iCloud Drive, any folder), not a server: the wording says so.
+    var folder = false
+
+    /// The problem for a run that threw: a folder target's own failures first (a folder that went away
+    /// is "not found", one that cannot be reached now is "offline"), then a server's.
+    static func problem(from error: Error) -> WebDAVSyncProblem {
+        switch error {
+        case FolderTargetError.missing: return .notFound
+        case FolderTargetError.unavailable: return .offline
+        case let e as FolderRemoteError where e.isTransient: return .offline
+        default: return WebDAVSyncProblem.from(error: error)
+        }
+    }
 
     var kind: Kind {
         if syncing { return .syncing }
@@ -256,8 +281,11 @@ struct SyncStatus: Equatable, Sendable {
     var headline: String {
         switch kind {
         case .syncing:
-            return String(localized: "Syncing with the server…")
+            return folder ? String(localized: "Syncing with the folder…") : String(localized: "Syncing with the server…")
         case .offline:
+            if folder {
+                return String(localized: "The folder cannot be reached now. Changes are kept on this device and sync when it is back.")
+            }
             return unconfirmed > 0
                 ? String(localized: "Offline. \(unconfirmed) changes are kept on this device and sync when the server can be reached.",
                          comment: "Sync status; the number is a count of files")
@@ -267,11 +295,17 @@ struct SyncStatus: Equatable, Sendable {
         case .waitingForUnlock:
             return String(localized: "Changes from other devices arrive when the vault is unlocked")
         case .problem(let p):
+            if folder, p == .notFound {
+                return String(localized: "The folder is gone or can no longer be opened. Nothing was synced. Choose it again, or remove it from Sync Targets.")
+            }
+            if folder, p == .offline {
+                return String(localized: "The folder cannot be reached now. Changes are kept on this device and sync when it is back.")
+            }
             return Self.text(for: p)
         case .synced:
             return arriving > 0
                 ? String(localized: "Synced. \(arriving) files are still on their way.", comment: "Sync status; a count of files")
-                : String(localized: "Synced with the server")
+                : (folder ? String(localized: "Synced with the folder") : String(localized: "Synced with the server"))
         }
     }
 

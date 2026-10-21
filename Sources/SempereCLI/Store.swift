@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import Sempere
+import SempereSync
 
 /// `sempere store`: the vaults kept in a store folder (`VaultStore`), as the app keeps its own
 /// (docs/design/device-first-sync.md §2; docs/cli.md "Vault store").
@@ -15,7 +16,8 @@ struct StoreCommand: ParsableCommand {
             store only complete: it is built or copied in a staging folder, checked, and moved into place at \
             once. Any other command works on a store vault through --vault "$(sempere store path NAME)".
             """,
-        subcommands: [StoreList.self, StorePath.self, StoreCreate.self, StoreImport.self, StoreRestore.self, StoreRemove.self]
+        subcommands: [StoreList.self, StorePath.self, StoreCreate.self, StoreImport.self, StoreRestore.self, StoreRemove.self,
+                      StoreTargetCommand.self, StoreSync.self]
     )
 }
 
@@ -134,6 +136,10 @@ struct StoreImport: ParsableCommand {
                                             valueName: "name"))
     var name: String?
 
+    @Flag(name: .customLong("keep-syncing"),
+          help: "Keep syncing with the source: it becomes a folder target of the copy (sempere store sync).")
+    var keepSyncing = false
+
     @OptionGroup var location: StoreOptions
     @OptionGroup var output: OutputOptions
 
@@ -151,7 +157,13 @@ struct StoreImport: ParsableCommand {
                 if done == total || done % 100 == 0 { printStderr("copied \(done) of \(total) files") }
             }
         }
-        let entry = try location.open().importVault(from: URL(fileURLWithPath: source, isDirectory: true), options: options)
+        let store = location.open()
+        let sourceURL = URL(fileURLWithPath: source, isDirectory: true).standardizedFileURL
+        let entry = try store.importVault(from: sourceURL, options: options)
+        if keepSyncing {
+            // The source was a complete copy of this vault: the first sync finds both sides equal.
+            try store.targets.add(.folder(sourceURL), to: entry.vaultId)
+        }
         if output.json { return try output.emitJSON(entry) }
         output.info("Copied into the store as “\(entry.name)” (\(entry.vaultId.uuidString.lowercased()))")
         if output.quiet { print(entry.url.path) } else { output.info("Path: \(entry.url.path)") }

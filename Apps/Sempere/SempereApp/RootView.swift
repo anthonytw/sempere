@@ -10,6 +10,8 @@ struct RootView: View {
     @AppEnvironmentObject private var library: VaultLibrary
     @AppEnvironmentObject private var keys: RememberedKeys
     @State private var pickingVault = false
+    /// The vault folder "Open Vault…" picked, until the user chose how to open it.
+    @State private var pickedVault: PickedVault?
     /// A vault opened from outside that would replace the open one (S16).
     @State private var openedVaultToConfirm: AppModel.OpenedVaultConfirmation?
     @State private var creatingVault = false
@@ -33,7 +35,6 @@ struct RootView: View {
     @State private var restoredVault: UUID?
     /// Settings ▸ Quick Voice Notes asked for by a widget or the control (`VoiceNoteLink.settings`).
     @State private var showingVoiceSettings = false
-    /// Choose Devices to Keep from the recipients alert (format.md §2.1 "Repair").
 
     /// The stack column an iPhone shows (`CompactNavigation`); the other devices ignore it.
     @State private var compactColumn: NavigationSplitViewColumn = .sidebar
@@ -107,12 +108,13 @@ struct RootView: View {
         }
         // "Open Vault…" copies the picked vault onto this device (docs/design/device-first-sync.md §8.1).
         .fileImporter(isPresented: $pickingVault, allowedContentTypes: UTType.vaultPickerTypes) { result in
-            Task {
-                await model.report {
-                    try await model.copyIn(picked: try result.get(), library: library)
-                }
+            switch result {
+            case .success(let url): pickedVault = PickedVault(url: url)
+            case .failure(let error): model.errorMessage = String(describing: error)
             }
         }
+        // Then: copy only, or keep syncing with the folder (`OpenVaultSheet`).
+        .sheet(item: $pickedVault) { OpenVaultSheet(picked: $0) }
         .openedVaultAlert($openedVaultToConfirm)
         .onOpenURL { url in
             switch VoiceNoteLink.route(url) {
@@ -391,7 +393,7 @@ struct RootView: View {
         if DebugLaunch.environment["SEMPERE_DEBUG_PICK_VAULT"] != nil {
             Task {
                 guard let picked = await DebugLaunch.vaultPick() else { return }
-                await model.report { try await model.copyIn(picked: picked, library: library) }
+                pickedVault = PickedVault(url: picked)
             }
             return
         }

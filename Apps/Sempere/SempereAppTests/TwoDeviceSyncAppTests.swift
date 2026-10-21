@@ -426,16 +426,15 @@ struct SyncCoordinatorTests {
     /// vault's slot free (at most `maxConcurrentRuns - 1` of them at once).
     @Test func vaultsAreIsolatedAndTheBudgetHolds() async throws {
         let inFlight = RunCounter(), most = RunCounter()
-        func location() -> WebDAVLocation {
-            var l = WebDAVLocation(id: UUID(), url: "https://dav.example.org/\(UUID().uuidString)/", user: nil,
-                                   vaultId: UUID().uuidString.lowercased(), name: "V", folderName: "V.sempere")
-            l.downloaded = true
-            return l
+        func location() -> SyncTargetRef {
+            var t = SyncTarget.webdav("https://dav.example.org/\(UUID().uuidString)/", user: nil, name: "V")
+            t.joined = true
+            return SyncTargetRef(vaultID: UUID(), vaultName: "V", target: t)
         }
         let failing = location(), fine = [location(), location(), location()]
         let all = [failing] + fine
-        let coordinator = SyncCoordinator(locations: { all }, makeSession: { loc in
-            SyncSession(locationID: loc.id, vaultID: nil, name: loc.name, lastSuccess: nil, run: { _ in
+        let coordinator = SyncCoordinator(targets: { all }, makeSession: { loc in
+            SyncSession(locationID: loc.id, vaultID: loc.vaultID, name: loc.vaultName, lastSuccess: nil, run: { _ in
                 most.raise(to: inFlight.add(1))
                 defer { _ = inFlight.add(-1) }
                 try await Task.sleep(for: .milliseconds(50))
@@ -457,15 +456,15 @@ struct SyncCoordinatorTests {
     /// Review of #70, F2 (its probe): two closed vaults whose runs take long held both slots, and the open
     /// vault's Sync Now waited for them. One slot is the open vault's.
     @Test func theOpenVaultIsNeverStarvedBySlowBackgroundRuns() async throws {
-        func location() -> WebDAVLocation {
-            WebDAVLocation(id: UUID(), url: "https://dav.example.org/\(UUID().uuidString)/", user: nil,
-                           vaultId: UUID().uuidString.lowercased(), name: "V", folderName: "V.sempere")
+        func location() -> SyncTargetRef {
+            SyncTargetRef(vaultID: UUID(), vaultName: "V",
+                          target: .webdav("https://dav.example.org/\(UUID().uuidString)/", user: nil, name: "V"))
         }
         let slow = [location(), location()], open = location()
         let slowIDs = Set(slow.map(\.id))
         let inFlight = RunCounter()
-        let coordinator = SyncCoordinator(locations: { slow + [open] }, makeSession: { loc in
-            SyncSession(locationID: loc.id, vaultID: nil, name: loc.name, lastSuccess: nil, run: { _ in
+        let coordinator = SyncCoordinator(targets: { slow + [open] }, makeSession: { loc in
+            SyncSession(locationID: loc.id, vaultID: loc.vaultID, name: loc.vaultName, lastSuccess: nil, run: { _ in
                 _ = inFlight.add(1)
                 defer { _ = inFlight.add(-1) }
                 if slowIDs.contains(loc.id) { try await Task.sleep(for: .seconds(4)) }
@@ -475,7 +474,7 @@ struct SyncCoordinatorTests {
         coordinator.tick = .milliseconds(10)
         for l in slow { coordinator.session(for: l) }
         #expect(await TS.waitUntil(timeout: .seconds(3)) { inFlight.value >= 1 })
-        let session = try #require(coordinator.attachOpen(open))
+        let session = try #require(coordinator.attachOpen(open.vaultID).first)
         session.vaultUnlocked()
         let finished = RunCounter()
         Task { _ = await session.syncNow(); _ = finished.add(1) }
@@ -488,14 +487,14 @@ struct SyncCoordinatorTests {
     /// priority, so the unlock's run and Sync Now waited behind another closed vault's slow upload.
     /// Priority is asked again when slots are handed out, and opening the vault hands them out.
     @Test func aRunQueuedBeforeItsVaultOpenedTakesTheOpenVaultsSlot() async throws {
-        func location() -> WebDAVLocation {
-            WebDAVLocation(id: UUID(), url: "https://dav.example.org/\(UUID().uuidString)/", user: nil,
-                           vaultId: UUID().uuidString.lowercased(), name: "V", folderName: "V.sempere")
+        func location() -> SyncTargetRef {
+            SyncTargetRef(vaultID: UUID(), vaultName: "V",
+                          target: .webdav("https://dav.example.org/\(UUID().uuidString)/", user: nil, name: "V"))
         }
         let blocked = location(), queued = location()
         let released = RunCounter()
-        let coordinator = SyncCoordinator(locations: { [blocked, queued] }, makeSession: { loc in
-            SyncSession(locationID: loc.id, vaultID: nil, name: loc.name, lastSuccess: nil, run: { _ in
+        let coordinator = SyncCoordinator(targets: { [blocked, queued] }, makeSession: { loc in
+            SyncSession(locationID: loc.id, vaultID: loc.vaultID, name: loc.vaultName, lastSuccess: nil, run: { _ in
                 if loc.id == blocked.id {
                     // A slow upload of a closed vault, until the test releases it.
                     while released.value == 0 { try await Task.sleep(for: .milliseconds(10)) }
@@ -509,7 +508,7 @@ struct SyncCoordinatorTests {
         let waiting = try #require(coordinator.session(for: queued))
         try await Task.sleep(for: .milliseconds(100))
         #expect(waiting.lastSuccess == nil, "queued behind the background slot")
-        let open = try #require(coordinator.attachOpen(queued))
+        let open = try #require(coordinator.attachOpen(queued.vaultID).first)
         open.vaultUnlocked()
         let finished = RunCounter()
         Task { _ = await open.syncNow(); _ = finished.add(1) }
@@ -518,15 +517,42 @@ struct SyncCoordinatorTests {
         for l in [blocked, queued] { _ = coordinator.stop(l.id) }
     }
 
+    /// Review of #72: in the background, closed vaults' periodic runs pause, but a write into one (a voice
+    /// note) still runs; the open vault's sessions keep their pace; back in the foreground all run again.
+    @Test func closedVaultsPauseTheirPaceInTheBackground() async throws {
+        let runs = RunCounter()
+        let closed = SyncTargetRef(vaultID: UUID(), vaultName: "Closed",
+                                   target: { var t = SyncTarget.webdav("https://dav.example.org/c/", user: nil, name: "C"); t.joined = true; return t }())
+        let coordinator = SyncCoordinator(targets: { [closed] }, makeSession: { l in
+            SyncSession(locationID: l.id, vaultID: l.vaultID, name: l.vaultName, lastSuccess: nil,
+                        run: { _ in _ = runs.add(1); return SyncReport() }, countUnconfirmed: { 0 })
+        })
+        coordinator.tick = .milliseconds(10)
+        coordinator.configure = { $0.idleInterval = 0.05; $0.maxIdleInterval = 0.05; $0.arrivingInterval = 0.05; $0.writeDelay = 0.01 }
+        coordinator.start()
+        #expect(await TS.waitUntil { runs.value >= 2 }, "the idle pace runs")
+        coordinator.setInBackground(true)
+        try await Task.sleep(for: .milliseconds(100))   // a run already going ends
+        let paused = runs.value
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(runs.value == paused, "no periodic run in the background")
+        coordinator.sessions[closed.id]?.noteWrite()
+        #expect(await TS.waitUntil { runs.value > paused }, "a write still runs")
+        coordinator.setInBackground(false)
+        let after = runs.value
+        #expect(await TS.waitUntil { runs.value > after + 1 }, "the pace is back")
+        _ = coordinator.stop(closed.id)
+    }
+
     /// The reviewer's Q4: a voice note delivered into a closed vault's copy asks its session for a run
     /// soon (a write), not at the idle pace.
     @Test func aCaptureIntoAClosedVaultAsksForARun() async throws {
         let vault = UUID()
-        var loc = WebDAVLocation(id: UUID(), url: "https://dav.example.org/x/", user: nil,
-                                 vaultId: vault.uuidString.lowercased(), name: "V", folderName: "V.sempere")
-        loc.downloaded = true
-        let coordinator = SyncCoordinator(locations: { [loc] }, makeSession: { l in
-            SyncSession(locationID: l.id, vaultID: UUID(uuidString: l.vaultId), name: l.name, lastSuccess: nil,
+        var target = SyncTarget.webdav("https://dav.example.org/x/", user: nil, name: "V")
+        target.joined = true
+        let loc = SyncTargetRef(vaultID: vault, vaultName: "V", target: target)
+        let coordinator = SyncCoordinator(targets: { [loc] }, makeSession: { l in
+            SyncSession(locationID: l.id, vaultID: l.vaultID, name: l.vaultName, lastSuccess: nil,
                         run: { _ in SyncReport() }, countUnconfirmed: { 0 })
         })
         coordinator.tick = .seconds(60)   // the loop does not run meanwhile

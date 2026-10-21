@@ -256,7 +256,7 @@ struct WebDAVAppTests {
         #expect(location.downloaded)
         #expect(location.folderName == "Notes.sempere")
         #expect(s.model.vaultURL?.standardizedFileURL == s.model.webdavLocations.copy(of: location).folder.standardizedFileURL)
-        #expect(s.library.recents.first?.webdav == id)
+        #expect(s.library.recents.first?.storeID?.uuidString.lowercased() == s.listing.vaultId.lowercased())
         // Nothing is taken from the server while the vault is locked: runs only upload.
         try await Task.sleep(for: .milliseconds(150))
         #expect(s.remote.twoWayRuns == 0)
@@ -389,16 +389,18 @@ struct WebDAVAppTests {
         listing.name = "dav"
         let id = try await s.model.connectWebDAV(listing, user: nil, password: "", pin: nil, library: s.library)
         #expect(s.model.webdavLocations.location(id)?.name == "Server Notes")
-        #expect(s.library.recents.first { $0.webdav == id }?.name == "Server Notes")
+        #expect(s.library.recents.contains { $0.storeID?.uuidString.lowercased() == listing.vaultId.lowercased() })
         s.model.close()
 
         // Renamed on the server: a fresh pull of the copy brings it.
         try label("Renamed")
         let location = try #require(s.model.webdavLocations.location(id))
+        // The store vault and the target's state gone (as after an interrupted first download was cleared).
+        try FileManager.default.removeItem(at: s.model.webdavLocations.copy(of: location).folder.deletingLastPathComponent())
         try FileManager.default.removeItem(at: s.model.webdavLocations.copy(of: location).directory)
+        s.model.webdavLocations.update(id) { $0.downloaded = false }
         try await s.model.openWebDAV(id, library: s.library)
         #expect(s.model.webdavLocations.location(id)?.name == "Renamed")
-        #expect(s.library.recents.first { $0.webdav == id }?.name == "Renamed")
         s.model.close()
     }
 
@@ -453,8 +455,8 @@ struct WebDAVAppTests {
         s.model.close()
         #expect(!s.model.isWebDAVVault)
         let entry = try #require(s.library.recents.first)
-        #expect(entry.webdav == id)
-        #expect(throws: VaultLibrary.LibraryError.self) { try s.library.resolve(entry) }
+        // A WebDAV vault is a store vault with a WebDAV target: its recent entry names the store vault.
+        #expect(entry.storeID?.uuidString.lowercased() == s.listing.vaultId.lowercased())
         try await s.model.open(recent: entry, library: s.library)
         #expect(s.model.isWebDAVVault)
         #expect(s.model.webdav?.locationID == id)
