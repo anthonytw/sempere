@@ -1108,15 +1108,19 @@ server, never write locally.
 is written only by its device (`Vault.writeDevicePublishedSummaries`, `sempere vault summaries
 --device-file`), named by its id in the vault (`writerDevice`), with its device id and a `version`
 inside the sealed content and a P-256 + ML-DSA-65 signature by the device's signing pair over the
-vault, epoch, device, version and sealed bytes (`SMPU` `0x03`, `AuthorMessage.summaries`). A copy is
+vault, epoch, device, version and sealed bytes (`SMPU` `0x04`: epoch and version in the clear header,
+signature checked before anything is decrypted; `AuthorMessage.summaries`). A copy is
 ordered when it opens, names the device, its signature verifies under the `sign` keys of a device
 with that id in this device's opened and checked `vault.json` (`Vault.summariesSigningKeys`; never
-keys from a received file), and its version is at most 7 days ahead of this device's clock (a
+keys from a received file; none when two entries share the id, which approval and takeover prevent,
+`DeviceIds`), and its version is at most 7 days ahead of this device's clock (a
 clock-skew guard, `PublishedSummaries.accepted`). Another device's file is copied to the side that
 lacks it only when it is ordered; when both sides hold different copies, the later ordered copy wins
 (equal versions: the greater SHA-256), so an older copy never replaces a newer one, an unsigned or
 badly signed copy never replaces a signed one and is repaired by it, and a device with two targets
-carries the newer one from one to the other. "The side that changed since the last run wins", the
+carries the newer one from one to the other. Signed means authentic, not current: whoever can write to
+one target can put an older genuine copy back there, and it stays until a run with a later copy
+replaces it. "The side that changed since the last run wins", the
 earlier rule, has no order between versions and let two versions circle two bridges for ever
 (`testTwoBridgesSettleAnotherDevicesSummaries`). This device's own file (`SyncOptions.deviceID`, the
 vault device's id) replaces the remote's whenever they differ, is never taken from the remote, and
@@ -1134,7 +1138,7 @@ cannot take the server's `vault.json` for that check says so in `skipped`. Locke
 `vault.json` that did not check, a differing copy is left on both sides, except that a locked staging
 run (pull-only) stages the remote copy for the placing run to order; push-only runs never replace a
 later copy. A received file is placed only when it is ordered (unlocked) or starts with `SMPU` `0x01`
-or `0x03` (locked); otherwise it is listed in `skipped` (a hint, not quarantined: after a key change
+or `0x04` (locked); otherwise it is listed in `skipped` (a hint, not quarantined: after a key change
 an older file is only stale). Nothing is deleted.
 
 **Push-only mirror** (`--push-only`, `SyncOptions.pushOnly`). A two-way

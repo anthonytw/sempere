@@ -3395,19 +3395,21 @@ write per-device files (§12.5).
 A vault may also hold `summaries/<device>.sealed`, where `<device>` is a
 writer's device id in the vault (§15.4: the first 8 hex digits of its
 fingerprint): the content of §12.2, sealed as in §12.1 (same key) behind a
-longer header that carries the epoch in the clear, and signed by the device:
+longer header that carries the epoch and the version in the clear, and
+signed by the device:
 
 | Offset | Size | Content |
 | --- | --- | --- |
 | 0 | 4 | ASCII `SMPU` |
-| 4 | 1 | version `0x03` |
+| 4 | 1 | version `0x04` |
 | 5 | 4 | the epoch (§15.2) whose key sealed it, big-endian |
-| 9 | 12 | nonce, random per write |
-| 21 | n | AES-256-GCM ciphertext under `key`, then its 16-byte tag |
-| 21 + n | 64 | P-256 ECDSA signature `r ‖ s` |
-| 85 + n | 3309 | ML-DSA-65 signature |
+| 9 | 8 | the file's `version` (1 … 2^53 − 1), big-endian |
+| 17 | 12 | nonce, random per write |
+| 29 | n | AES-256-GCM ciphertext under `key`, then its 16-byte tag |
+| 29 + n | 64 | P-256 ECDSA signature `r ‖ s` |
+| 93 + n | 3309 | ML-DSA-65 signature |
 
-The associated data is the first 9 bytes ‖ `"sempere/1"` ‖ `0x00` ‖ `vaultId`.
+The associated data is the first 17 bytes ‖ `"sempere/1"` ‖ `0x00` ‖ `vaultId`.
 Call every byte before the signatures (header, nonce, ciphertext, tag) `sealed`.
 Both signatures are by the device's signing pair (§15.5, design §4.1), made
 as `authorSig` is (P-256 over SHA-256 of the message, ML-DSA-65 pure with an
@@ -3419,23 +3421,48 @@ empty context), over:
 
 with `lp()` of §15.1: `vaultId` lowercase, `epoch` and `version` decimal
 ASCII, `epochId` 64 lowercase hex digits, `device` its 8 hex digits, the
-digest its 32 raw bytes. The `device` and `version` are those of the content.
+digest its 32 raw bytes. `epoch` and `version` are the header's, `device` the
+file name's; the content's `device` and `version` (§12.2) must equal them.
 
-A reader takes a copy as that device's file only when all of these hold: it
-starts with `SMPU` `0x03` and is long enough for the signatures; its epoch is
-the one of the key the reader holds and it opens under it; its content's
-`device` is the file name's and it has a valid `version` (§12.2); both
-signatures verify under the `sign` keys of a device entry with that id in
-the reader's own `vault.json`, as opened and checked (§15.3), never keys
-from any other file; and the version is no more than 7 days ahead of the
-reader's clock (a guard against a writer's clock far ahead: a later one
-would hold the file at that version until the clock caught up). Anything
-else is not that device's file: not placed, not ordered, and not read for
-entries. Only the device's own signing keys make such a file, so no other
-listed device and no storage can write or alter one, and a removed device's
-files stop verifying once its entry is gone from the list (removals are new
-epochs, §15.14, so its old files do not open either). An earlier header
-(`SMPU` `0x02`, unsigned) is not a per-device file.
+A reader takes a copy as that device's file only when all of these hold, in
+this order, so that nothing is decrypted before the signature verified: it
+starts with `SMPU` `0x04` and is long enough for the signatures; its header
+epoch is the one of the key the reader holds and its header version is
+valid; both signatures verify, over the message for the file name's device
+and the header's epoch and version, under the `sign` keys of the one device
+entry with that id in the reader's own `vault.json`, as opened and checked
+(§15.3), never keys from any other file (ids are unique, §15.12: a list with
+two entries of one id names no signer); the version is no more than 7 days
+ahead of the reader's clock (a guard against a writer's clock far ahead: a
+later one would hold the file at that version until the clock caught up);
+and it opens under the key, with the content's `device` and `version` equal
+to the file name's and the header's. Anything else is not that device's
+file: not placed, not ordered, and not read for entries. Only the device's
+own signing keys make such a file, so no other listed device and no storage
+can write or alter one, and a removed device's files stop verifying once its
+entry is gone from the list (removals are new epochs, §15.14, so its old
+files do not open either). Earlier headers (`SMPU` `0x02`, unsigned, and
+`0x03`, with the version only inside) are not per-device files.
+
+**Signed means authentic, not current.** A signature proves which device
+wrote a copy and at which version; nothing proves it is that device's latest.
+Anyone who can write to a storage location (its server, or a device that
+keeps the storage password after its removal) can put an older genuine copy
+of the same epoch back there, and a reader that only syncs with that location
+shows those older hints until the device, or a device that syncs both it and
+another location, puts the later version back (a later version always wins,
+below). Summaries are hints: a note's own revisions are what it shows once
+they are read (§12.3).
+
+Test vector (`vaultId` and nonce as in §12.1, epoch 1, `epochId` 32 bytes
+`0x11`, device `aaaaaaaa`, version 1790000000000, ciphertext empty and the tag
+16 zero bytes, which do not open: only the header and the message are fixed,
+the signatures are randomized):
+
+```
+header            = 534d50550400000001000001a0c4506c00
+SHA-256(message)  = d4e08dd4bc1132fd3b046dffc878de1e621a3def942c29fd9c47a0cde69a4896
+```
 
 A device that cannot open a copy reads the epoch to tell a copy of a later epoch it knows of (above
 its key's epoch, and no later than the epoch its own `vault.json` names, or than the next epoch when
@@ -3490,7 +3517,7 @@ after it (only the device's own keys can have signed one: another install of
 it), which is left until the device writes a later version, or until that
 copy's version is more than 7 days in the past: the device then seals and signs
 its own entries again at the clock and puts them (at most once per 7 days per
-install). A received file is placed only when it starts with `SMPU` `0x03` and,
+install). A received file is placed only when it starts with `SMPU` `0x04` and,
 with the vault unlocked, is that device's file; otherwise it is skipped (a hint,
 never quarantined). Nothing is ever deleted.
 
@@ -4047,8 +4074,11 @@ with the public key the identity's. Stock `age -i` reads it as an identity file.
   give, appends the entry with a wrap of `K_e` and its `addSig` (§2), deletes the request and shows the
   reverse code; the joining device types it. Until then it reads but does not write (§2.1
   `rootUnconfirmed`). Home refuses a request of another vault, a key that is not `age1pq1…`, a bad
-  `kind`, a key already listed, or an `id` a listed device has (the joining device generates another
-  key).
+  `kind`, a key already listed, or an `id` that another device the vault lists or ever listed has (the
+  current list, and every first list, parent list and addition of the chain it verified; the joining
+  device generates another key). A device may be approved again under its own key. A takeover refuses
+  to keep two devices with one id. So no list ever holds two devices with one id, and no device takes
+  the id of one a takeover may re-admit: the id names that device's summaries file (§12.5).
 - A join with the recovery key is a `takeover` (§15.7 rule 3, design §6.3); not in this version (KH4).
 
 ### 15.13 The recovery kit

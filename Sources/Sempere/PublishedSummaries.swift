@@ -113,10 +113,11 @@ public enum PublishedSummaries {
         HKDF<SHA256>.deriveKey(inputKeyMaterial: secret.key, info: Data(keyInfo.utf8), outputByteCount: 32)
     }
 
-    /// `SMPU` then version 3: a signed per-device file (format.md §12.5), whose header also carries its epoch.
-    static let deviceMagic: [UInt8] = [0x53, 0x4D, 0x50, 0x55, 0x03]
-    /// `deviceMagic` and the epoch (4 bytes, big-endian).
-    static let deviceHeaderSize = 9
+    /// `SMPU` then version 4: a signed per-device file (format.md §12.5), whose header also carries its epoch
+    /// and its version, so its signature is checked before anything is decrypted.
+    static let deviceMagic: [UInt8] = [0x53, 0x4D, 0x50, 0x55, 0x04]
+    /// `deviceMagic`, the epoch (4 bytes, big-endian) and the version (8 bytes, big-endian).
+    static let deviceHeaderSize = 17
     /// The signature after a per-device file's tag: P-256 `r ‖ s` (64 bytes), then ML-DSA-65 (3309 bytes).
     static let signatureSize = AuthorSignature.p256Size + AuthorSignature.mldsa65Size
 
@@ -126,23 +127,41 @@ public enum PublishedSummaries {
         header + Data("sempere/1".utf8) + Data([0]) + Data(vaultId.uuidString.lowercased().utf8)
     }
 
-    /// True when `data` starts like a sealed summaries file (`SMPU` `0x01`, or `0x03` for a per-device file).
+    /// True when `data` starts like a sealed summaries file (`SMPU` `0x01`, or `0x04` for a per-device file).
     public static func looksSealed(_ data: Data) -> Bool {
         data.starts(with: magic) || data.starts(with: deviceMagic)
     }
 
-    /// The epoch in the clear header of a per-device file (`SMPU` `0x03`, format.md §12.5), nil for any other
+    /// The epoch in the clear header of a per-device file (`SMPU` `0x04`, format.md §12.5), nil for any other
     /// bytes. It is bound to the content as associated data and covered by the signature, so a file whose
     /// header was changed does not open; read without the key, it tells whether a file that does not open
     /// is of a later epoch.
     public static func sealedEpoch(_ data: Data) -> Int? {
         guard data.count >= deviceHeaderSize, data.starts(with: deviceMagic) else { return nil }
-        let b = Array(data.prefix(deviceHeaderSize).suffix(4))
+        let b = Array(data.prefix(9).suffix(4))
         return Int(b[0]) << 24 | Int(b[1]) << 16 | Int(b[2]) << 8 | Int(b[3])
     }
 
+    /// The version in the clear header of a per-device file (format.md §12.5), nil for any other bytes or a
+    /// version outside 1 … `maxVersion`. Covered by the signature and bound as associated data; a reader
+    /// trusts it only once the signature verified (`Vault.openDevicePublishedSummaries`).
+    public static func sealedVersion(_ data: Data) -> Int64? {
+        guard data.count >= deviceHeaderSize, data.starts(with: deviceMagic) else { return nil }
+        let v = data.prefix(deviceHeaderSize).suffix(8).reduce(UInt64(0)) { $0 << 8 | UInt64($1) }
+        return v >= 1 && v <= UInt64(maxVersion) ? Int64(v) : nil
+    }
+
+    /// `deviceMagic ‖ epoch (u32 BE) ‖ version (u64 BE)`.
+    static func deviceHeader(epoch: Int, version: Int64) throws -> Data {
+        guard (0...Int(UInt32.max)).contains(epoch) else { throw PublishedSummariesError.damaged("epoch out of range") }
+        guard (1...maxVersion).contains(version) else { throw PublishedSummariesError.damaged("version out of range") }
+        let e = UInt32(epoch), v = UInt64(version)
+        return Data(deviceMagic) + Data((0..<4).reversed().map { UInt8(e >> (8 * UInt32($0)) & 0xff) })
+            + Data((0..<8).reversed().map { UInt8(v >> (8 * UInt64($0)) & 0xff) })
+    }
+
     /// A per-device file split into its sealed part (header, nonce, ciphertext, tag) and its signature; nil
-    /// when it is not `SMPU` `0x03` or too short to hold both.
+    /// when it is not `SMPU` `0x04` or too short to hold both.
     static func split(_ data: Data) -> (sealed: Data, signature: AuthorSignature)? {
         guard data.starts(with: deviceMagic), data.count >= deviceHeaderSize + nonceSize + tagSize + signatureSize else {
             return nil
@@ -161,17 +180,14 @@ public enum PublishedSummaries {
 
     // MARK: - Sealing
 
-    /// `SMPU 0x01 ‖ nonce ‖ AES-256-GCM(plaintext) ‖ tag`, or with `epoch` the sealed part of a per-device
-    /// file (§12.5), `SMPU 0x03 ‖ epoch (u32 BE) ‖ nonce ‖ … ‖ tag`, which its signature then follows
-    /// (`attach`); the header is the associated data's start.
+    /// `SMPU 0x01 ‖ nonce ‖ AES-256-GCM(plaintext) ‖ tag`, or with `device` (an epoch and a version) the
+    /// sealed part of a per-device file (§12.5), `SMPU 0x04 ‖ epoch (u32 BE) ‖ version (u64 BE) ‖ nonce ‖ …
+    /// ‖ tag`, which its signature then follows (`attach`); the header is the associated data's start.
     /// `nonce` is random unless given (test vectors).
-    static func seal(_ plaintext: Data, secret: VaultEpochKey, vaultId: UUID, epoch: Int? = nil, nonce: Data? = nil) throws -> Data {
+    static func seal(_ plaintext: Data, secret: VaultEpochKey, vaultId: UUID, device: (epoch: Int, version: Int64)? = nil,
+                     nonce: Data? = nil) throws -> Data {
         var header = Data(magic)
-        if let epoch {
-            guard (0...Int(UInt32.max)).contains(epoch) else { throw PublishedSummariesError.damaged("epoch out of range") }
-            let e = UInt32(epoch)
-            header = Data(deviceMagic) + Data([UInt8(e >> 24), UInt8(e >> 16 & 0xff), UInt8(e >> 8 & 0xff), UInt8(e & 0xff)])
-        }
+        if let device { header = try deviceHeader(epoch: device.epoch, version: device.version) }
         let n = try nonce.map { try AES.GCM.Nonce(data: $0) } ?? AES.GCM.Nonce()
         let box = try AES.GCM.seal(plaintext, using: key(secret), nonce: n, authenticating: aad(header: header, vaultId: vaultId))
         guard let combined = box.combined else { throw PublishedSummariesError.damaged("cannot seal") }
@@ -429,7 +445,7 @@ extension Vault {
                         nonce: Data? = nil) throws -> Data {
         let json = try PublishedSummaries.encode(entries, vaultId: vaultId, device: device, version: version)
         return try PublishedSummaries.seal(try Gzip.compress(json), secret: try requireSecret(), vaultId: vaultId,
-                                           epoch: manifest.epoch, nonce: nonce)
+                                           device: (manifest.epoch, version), nonce: nonce)
     }
 
     /// The valid entries of the root file (§12.1, `SMPU` `0x01`). A per-device file is read only through
@@ -469,22 +485,27 @@ extension Vault {
         return try PublishedSummaries.decodeContents(json, vaultId: vaultId)
     }
 
-    /// The signing keys a per-device file of `device` must verify under (format.md §12.5): those of every
+    /// The signing keys a per-device file of `device` must verify under (format.md §12.5): those of the one
     /// device entry with that id in this vault's `vault.json`, as opened and checked (`listStatus`
-    /// verified), never a list from anywhere else. Empty when the list did not check or no listed device
-    /// has that id (a removed device's signatures stop verifying once its entry is gone).
+    /// verified), never a list from anywhere else. Empty when the list did not check, no listed device has
+    /// that id (a removed device's signatures stop verifying once its entry is gone), or more than one
+    /// does (ids are unique, `DeviceIds`: such a list names no signer).
     public func summariesSigningKeys(of device: DeviceID) -> [DeviceSigningPublicKeys] {
         guard case .verified = listStatus else { return [] }
-        return manifest.devices(withId: device.rawValue).compactMap(\.sign)
+        // Ids are unique in every list (`DeviceIds`); a list where two devices share one names no signer.
+        let entries = manifest.devices(withId: device.rawValue)
+        guard entries.count == 1, let keys = entries[0].sign else { return [] }
+        return [keys]
     }
 
-    /// A per-device file of `device` (format.md §12.5): `SMPU` `0x03` of this vault's epoch, it opens under
-    /// the epoch's key, names `device` and carries a version, its signature verifies under the signing keys
-    /// of a device of the checked list with that id (`summariesSigningKeys`) over the message for this
-    /// vault, epoch, device, version and sealed bytes (`AuthorMessage.summaries`), and its version is no
-    /// more than `PublishedSummaries.futureWindow` ahead of `now` (a clock-skew guard). Anything else
-    /// throws `damaged`: such a copy is never placed, never ordered against another and never read for
-    /// entries.
+    /// A per-device file of `device` (format.md §12.5), checked in this order, the signature before any
+    /// decryption: `SMPU` `0x04` with this vault's epoch and a version in its clear header; both signatures
+    /// verify under the signing keys of the one device of the checked list with that id
+    /// (`summariesSigningKeys`) over the message for this vault, epoch, device, header version and sealed
+    /// bytes (`AuthorMessage.summaries`); the version is no more than `PublishedSummaries.futureWindow` ahead
+    /// of `now` (a clock-skew guard); and only then it opens under the epoch's key, names `device` and
+    /// carries the header's version. Anything else throws `damaged`: such a copy is never placed, never
+    /// ordered against another and never read for entries.
     public func openDevicePublishedSummaries(_ data: Data, device: DeviceID, now: Date = Date()) throws
         -> PublishedSummaries.Contents {
         guard data.count <= PublishedSummaries.maxFileBytes else {
@@ -493,11 +514,12 @@ extension Vault {
         guard let (sealed, signature) = PublishedSummaries.split(data) else {
             throw PublishedSummariesError.damaged("not a signed per-device file")
         }
-        let contents = try decryptSealed(sealed)
-        guard contents.device == device else {
-            throw PublishedSummariesError.damaged("written for another device than its name says")
+        guard PublishedSummaries.sealedEpoch(sealed) == manifest.epoch else {
+            throw PublishedSummariesError.damaged("not sealed under this vault's epoch \(manifest.epoch)")
         }
-        guard let version = contents.version else { throw PublishedSummariesError.damaged("no version") }
+        guard let version = PublishedSummaries.sealedVersion(sealed) else {
+            throw PublishedSummariesError.damaged("no valid version in its header")
+        }
         let keys = summariesSigningKeys(of: device)
         guard !keys.isEmpty else {
             throw PublishedSummariesError.damaged("no device \(device) on the checked device list to verify it")
@@ -509,6 +531,14 @@ extension Vault {
         }
         guard PublishedSummaries.accepted(version, now: now) != nil else {
             throw PublishedSummariesError.damaged("a version too far ahead of this device's clock")
+        }
+        // Signed by the device: only now is anything decrypted.
+        let contents = try decryptSealed(sealed)
+        guard contents.device == device else {
+            throw PublishedSummariesError.damaged("written for another device than its name says")
+        }
+        guard contents.version == version else {
+            throw PublishedSummariesError.damaged("its content's version is not its header's")
         }
         return contents
     }
