@@ -152,6 +152,12 @@ extension Vault {
         }
         let ours = ownChain()
         if ours.ids.contains(incoming.epochId) { return .behind }
+        // A child of a pinned epoch is checked against it before anything else, with or without its record: one
+        // whose link or signatures do not verify is refused, never waited for (a forged vault.json whose record
+        // is missing would otherwise hold every device back).
+        if pinnedParentRefuses(incoming) {
+            return .refused("it claims to follow epoch \(incoming.epoch - 1) but is not linked and signed as that epoch requires")
+        }
         if Self.epochMutations.contains(.takeoverByArrival), incoming.epochReason == EpochReason.takeover.rawValue,
            manifest.epochReason == EpochReason.takeover.rawValue {
             return .behind
@@ -211,6 +217,18 @@ extension Vault {
         }
     }
 
+    /// True when `m`'s parent is an epoch of this device's pinned chain and `m` does not verify from it (its link
+    /// under the parent's link keys, and its signatures: by the parent's home, or for a takeover by the kit the
+    /// takeover rule names and its new home). False when it verifies, or its parent is not pinned here.
+    func pinnedParentRefuses(_ m: EpochManifest) -> Bool {
+        guard let record = trustedRecord(), let parent = m.parent,
+              let c = record.chain.first(where: { $0.epochId == parent }) else { return false }
+        let frontier = EpochFrontier(vaultId: record.vaultId, root: record.root, epoch: c.epoch, epochId: c.epochId,
+                                     linkPublicKeys: c.linkPublicKeys, recovery: c.recovery, home: c.home)
+        if frontier.verifiedChild(m) != nil { return false }
+        return !takeoverVerifiesFromPinned(m, record: record)
+    }
+
     /// This device's trust record of this vault, nil when it has none or it cannot be read.
     func trustedRecord() -> EpochTrustRecord? {
         guard let trustStore else { return nil }
@@ -264,7 +282,18 @@ extension Vault {
     func takeoverWithoutThisDevice(_ m: EpochManifest) -> String? {
         // A direct child of the frontier is `removalNotice`'s (the shared `EpochFrontier.verifiedChild`); this covers
         // a takeover under an older pinned epoch.
-        guard EpochReason(rawValue: m.epochReason) == .takeover, let record = trustedRecord(), m.parent != record.pinned?.epochId,
+        guard let record = trustedRecord(), m.parent != record.pinned?.epochId, takeoverVerifiesFromPinned(m, record: record),
+              let home = m.homeEntry
+        else { return nil }
+        return "this device is not on the newest device list of the vault: \(DeviceName.display(home.name)) (\(home.id ?? "?")) "
+            + "took over with the recovery kit (epoch \(m.epoch)). It writes nothing to the vault. If that is a mistake, a "
+            + "takeover with the recovery kit undoes it, and this device rejoins when the vault shows it."
+    }
+
+    /// `m` is a takeover whose parent is pinned here, verified from the trust record alone: its link, `recoverySig`
+    /// by the kit `TakeoverRule` names, `epochSig` by its new home.
+    func takeoverVerifiesFromPinned(_ m: EpochManifest, record: EpochTrustRecord) -> Bool {
+        guard EpochReason(rawValue: m.epochReason) == .takeover,
               let i = record.chain.firstIndex(where: { $0.epochId == m.parent }), m.epoch == record.chain[i].epoch + 1,
               EpochLinks.verify(m.epochLink, keys: record.chain[i].linkPublicKeys, epoch: m.epoch, childEpochId: m.epochId,
                                 vaultId: m.vaultId),
@@ -273,10 +302,8 @@ extension Vault {
                                        pinned: record.chain.map { TakeoverRule.PinnedEpoch(epochId: $0.epochId, recovery: $0.recovery) })
                 == recovery.fingerprint,
               rs.verifies(message, keys: rk), let home = m.homeEntry, let hk = home.sign, m.epochSig.verifies(message, keys: hk)
-        else { return nil }
-        return "this device is not on the newest device list of the vault: \(DeviceName.display(home.name)) (\(home.id ?? "?")) "
-            + "took over with the recovery kit (epoch \(m.epoch)). It writes nothing to the vault. If that is a mistake, a "
-            + "takeover with the recovery kit undoes it, and this device rejoins when the vault shows it."
+        else { return false }
+        return true
     }
 
     /// The precedence rule's view of a `vault.json` whose record this device cannot read, from its own signed

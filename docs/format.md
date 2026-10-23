@@ -4293,8 +4293,10 @@ changed since the last run:
     `vault.json`; it writes nothing (`VaultError.removedFromVault`, CLI exit 8), uploads nothing, keeps pulling
     `epochs/` and `vault.json`, and takes a later takeover that lists it again;
   - this device's chain is the later one (an older version of its epoch, an ancestor epoch, a branch the
-    precedence rule drops) or the target's does not check (tampered, forged by a device that is not home): its
-    own replaces the target's, under the version read (`If-Match`);
+    precedence rule drops) or the target's does not check (tampered, forged by a device that is not home; a
+    child of a pinned epoch is checked against it first, whether or not its record is here, so a forged one
+    whose record is missing is refused, not waited for): its own replaces the target's, under the version read
+    (`If-Match`);
   - a home conflict, or versions that are not one writer's: both kept, never merged, reported.
   A run without the key (a locked vault's upload-only run) compares only epoch numbers: a target holding a later
   or another epoch makes it upload nothing new.
