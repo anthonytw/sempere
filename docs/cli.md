@@ -213,7 +213,7 @@ sempere devices approve WORD WORD WORD WORD WORD WORD
 sempere devices rename ID NAME
 sempere devices remove ID...
 sempere devices handoff ID
-sempere recovery takeover --recovery-key FILE [--root HEX] [--keep ID]... [--keep-listed] [--name TEXT] [--kind WORD] [--yes]
+sempere devices takeover --recovery-key FILE [--root HEX] [--keep ID]... [--keep-listed] [--name TEXT] [--kind WORD] [--yes]
 sempere recovery replace --recovery-out FILE [--keep ID]... [--remove ID]... [--old-recovery-key FILE] [--recovery-passphrase] [--yes]
 sempere set-aside list | export [SHA...] --to DIR | keep SHA... --yes | clear (SHA... | --superseded) --yes
 ```
@@ -290,7 +290,7 @@ device id in the vault (`<hlc>-<device id>-<seq>`).
 - `devices handoff ID` (home only) makes another listed device home: an epoch
   with the same devices, signed by the old home. From then on only the new home
   approves, renames, removes or replaces the kit. `--json`: as `remove`.
-- `recovery takeover --recovery-key FILE` is for a lost or stolen home: the
+- `devices takeover --recovery-key FILE` (also `recovery takeover`) is for a lost or stolen home: the
   holder of the recovery key (the kit's identity file, or the vault's
   passphrase copy `keys/recovery-*.key.age`, which carries the root) makes this
   machine home under a `takeover` epoch signed by the recovery key and by this
@@ -2843,9 +2843,9 @@ needs that device to join (below), which needs the home device; when home is
 lost, the kit takes over instead:
 
 ```bash
-sempere recovery takeover --vault ~/notes.sempere --recovery-key key.txt \
+sempere devices takeover --vault ~/notes.sempere --recovery-key key.txt \
     --root "THE 16 GROUPS ON THE SHEET"                 # shows the devices to keep
-sempere recovery takeover --vault ~/notes.sempere --recovery-key key.txt \
+sempere devices takeover --vault ~/notes.sempere --recovery-key key.txt \
     --root "THE 16 GROUPS ON THE SHEET" --keep-listed --yes   # this machine is home now
 ```
 

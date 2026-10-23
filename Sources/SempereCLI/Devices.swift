@@ -211,8 +211,9 @@ struct DeviceConfirm: ParsableCommand {
 struct DevicesCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "devices",
-        abstract: "List the vault's devices; approve, rename, remove them and hand the home role over (on the home device).",
-        subcommands: [DevicesList.self, DevicesApprove.self, DevicesRename.self, DevicesRemove.self, DevicesHandoff.self]
+        abstract: "List the vault's devices; approve, rename, remove them and hand the home role over (on the home device); take over with the recovery kit.",
+        subcommands: [DevicesList.self, DevicesApprove.self, DevicesRename.self, DevicesRemove.self, DevicesHandoff.self,
+                      RecoveryTakeover.self]
     )
 }
 

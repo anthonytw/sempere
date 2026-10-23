@@ -103,7 +103,7 @@ final class CLIEpochTests: CLITestCase {
         // No root: refused.
         XCTAssertEqual(try cli(["recovery", "takeover", "--keep-listed", "--yes"] + v, env: machine("new")).status, 6)
         let home = try homeId(vault)
-        let take = try cli(["recovery", "takeover", "--root", root, "--keep", laptop, "--name", "New Mac", "--yes", "--json"] + v,
+        let take = try cli(["devices", "takeover", "--root", root, "--keep", laptop, "--name", "New Mac", "--yes", "--json"] + v,
                            env: machine("new"))
         XCTAssertEqual(take.status, 0, take.err)
         let json = try XCTUnwrap(take.json as? [String: Any])
@@ -133,5 +133,66 @@ final class CLIEpochTests: CLITestCase {
         XCTAssertEqual(try cli(["notes", "list", "--root", root, "--recovery-key", path("recovery.key")] + v).status, 4)
         XCTAssertEqual(try cli(["notes", "list", "--root", root, "--recovery-key", path("new.key")] + v).status, 0)
         XCTAssertEqual(try cli(["notes", "new", "Laptop", "--vault", vault], env: machine("laptop")).status, 0)
+    }
+
+    /// Joins one more machine `name` to `vault`; returns its id.
+    func join(_ name: String, _ vault: String) throws -> String {
+        let v = ["--vault", vault]
+        let ask = try cli(["device", "init", "--name", name, "--json"] + v, env: machine(name))
+        let words = try XCTUnwrap((ask.json as? [String: Any])?["words"] as? [String])
+        let id = try XCTUnwrap((ask.json as? [String: Any])?["device"] as? String)
+        let approve = try cli(["devices", "approve", "--json"] + words + v, env: machine("home"))
+        let reply = try XCTUnwrap((approve.json as? [String: Any])?["reply"] as? [String])
+        XCTAssertEqual(try cli(["device", "confirm"] + reply + v, env: machine(name)).status, 0)
+        return id
+    }
+
+    /// Copies every note folder of `from` into `to` (files another device wrote while it had not seen a change).
+    func copyNotes(from: String, to: String) throws {
+        let fm = FileManager.default
+        let src = URL(fileURLWithPath: from).appendingPathComponent("notes")
+        let dst = URL(fileURLWithPath: to).appendingPathComponent("notes")
+        for note in try fm.contentsOfDirectory(atPath: src.path) {
+            let d = dst.appendingPathComponent(note)
+            try fm.createDirectory(at: d, withIntermediateDirectories: true)
+            for f in try fm.contentsOfDirectory(atPath: src.appendingPathComponent(note).path)
+            where !fm.fileExists(atPath: d.appendingPathComponent(f).path) {
+                try fm.copyItem(at: src.appendingPathComponent(note).appendingPathComponent(f), to: d.appendingPathComponent(f))
+            }
+        }
+    }
+
+    /// `vault catch-up` re-encrypts what a listed machine wrote under the old key from its ledger; what a removed
+    /// machine wrote after its removal is set aside (`set-aside list`), and `set-aside keep` puts it back on the
+    /// user's word.
+    func testCatchUpAndSetAsideFromTheCLI() throws {
+        let (vault, _, _) = try twoMachines()
+        let x = try join("x", vault)
+        let v = ["--vault", vault]
+        // A copy of the vault from before the removal: the laptop and x write there, as if offline.
+        let old = path("old.sempere")
+        try FileManager.default.copyItem(atPath: vault, toPath: old)
+        XCTAssertEqual(try cli(["devices", "remove", x] + v, env: machine("home")).status, 0)
+        XCTAssertEqual(try cli(["notes", "new", "Laptop offline", "--vault", old], env: machine("laptop")).status, 0)
+        XCTAssertEqual(try cli(["notes", "new", "X after removal", "--vault", old], env: machine("x")).status, 0)
+        try copyNotes(from: old, to: vault)
+        func titles(_ m: String) throws -> Set<String> {
+            let list = try XCTUnwrap(try cli(["notes", "list", "--json"] + v, env: machine(m)).json as? [[String: Any]])
+            return Set(list.compactMap { $0["title"] as? String })
+        }
+        XCTAssertFalse(try titles("home").contains("Laptop offline"), "set aside until the laptop catches up")
+        let caught = try cli(["vault", "catch-up", "--json"] + v, env: machine("laptop"))
+        XCTAssertEqual(caught.status, 0, caught.err)
+        XCTAssertEqual(((caught.json as? [String: Any])?["reencrypted"] as? [String])?.count, 1, caught.out)
+        XCTAssertTrue(try titles("home").contains("Laptop offline"))
+        XCTAssertFalse(try titles("home").contains("X after removal"))
+        XCTAssertEqual(try cli(["vault", "catch-up"] + v, env: machine("home")).status, 0)
+        let aside = try XCTUnwrap(try cli(["set-aside", "list", "--json"] + v, env: machine("home")).json as? [[String: Any]])
+        XCTAssertEqual(aside.count, 1, "\(aside)")
+        XCTAssertEqual(aside.first?["reason"] as? String, "not-sealed")
+        let sha = try XCTUnwrap(aside.first?["sha256"] as? String)
+        XCTAssertEqual(try cli(["set-aside", "keep", sha] + v, env: machine("home")).status, 2, "needs --yes")
+        XCTAssertEqual(try cli(["set-aside", "keep", sha, "--yes"] + v, env: machine("home")).status, 0)
+        XCTAssertTrue(try titles("home").contains("X after removal"), "kept on the user's word")
     }
 }

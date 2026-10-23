@@ -172,6 +172,42 @@ final class EpochScenarioTests: VaultTestCase {
         XCTAssertTrue(a3.verify().isHealthy)
     }
 
+    /// Locked captures (design §5.7, §11.1 "locked widget captures appended to the ledger, caught up at
+    /// unlock"): a profile of the old epoch keeps sealing after a removal; each capture is in the device's
+    /// ledger before it is placed, set aside elsewhere until the device catches up, then re-sealed under the
+    /// current key and adopted. A removed device's capture under its old profile stays aside for good.
+    func testCapturesUnderAnOldProfileAreCaughtUpFromTheLedger() throws {
+        let w = try EpochWorld(in: tmp, names: ["A", "C", "X"])
+        let audio = Data((0..<3000).map { UInt8(truncatingIfNeeded: $0 &* 7 &+ 3) })
+        let profileC = try w.open("C").captureProfile(device: DeviceID("0c0c0c0c")!)
+        let profileX = try w.open("X").captureProfile(device: DeviceID("0d0d0d0d")!)
+        XCTAssertEqual(profileC.epoch, 1)
+        var a = try w.open("A")
+        try a.removeDevices([w["X"].id])
+
+        let writerC = try CaptureWriter(profile: profileC)
+        let id = UUID()
+        let sealed = try writerC.seal(audio: audio, started: Date(), id: id)
+        try writerC.record(sealed, in: w["C"].ledger)   // the extension, while the device is locked
+        try CaptureWriter.store(sealed, in: a.inboxURL)
+        XCTAssertEqual(try w["C"].ledger.entries().last?.path, "inbox/\(sealed.name)")
+        let writerX = try CaptureWriter(profile: profileX)
+        let xid = UUID()
+        try CaptureWriter.store(try writerX.seal(audio: audio, started: Date(), id: xid), in: a.inboxURL)
+
+        XCTAssertThrowsError(try w.open("A").readCapture(id), "not sealed: not adopted before C catches up")
+        let c = try w.open("C")
+        let report = try c.catchUp()
+        XCTAssertTrue(report.problems.isEmpty, "\(report.problems)")
+        XCTAssertTrue(report.reencrypted.contains("inbox/\(sealed.name)"), "\(report)")
+        XCTAssertTrue(report.setAside.contains("inbox/\(CaptureFile.name(xid, .capture))"), "\(report)")
+        let pending = try w.open("A").readCapture(id)
+        XCTAssertEqual(pending.audio, audio)
+        XCTAssertThrowsError(try w.open("A").readCapture(xid), "X's capture after its removal is never adopted (J3)")
+        XCTAssertTrue(w["C"].setAside.items(vaultId: c.vaultId).contains { $0.path == "inbox/\(sealed.name)" },
+                      "the old bytes were set aside before the re-sealed copy replaced them (J6)")
+    }
+
     /// J6: nothing replaces an unaccepted file whose copy could not be set aside.
     func testASetAsideThatFailsStopsTheReplacement() throws {
         let w = try EpochWorld(in: tmp, names: ["A", "C", "X"])
@@ -227,6 +263,36 @@ final class EpochScenarioTests: VaultTestCase {
             guard case VaultError.removedFromVault = $0 else { return XCTFail("\($0)") }
         }
         XCTAssertEqual(try w.open("C").listStatus, .verified(.newEpoch))
+    }
+
+    /// After a handoff the old home approves nothing (design §11.1 "a handoff, then the old home approving
+    /// (refused)"): the API refuses, and an approval it signs anyway is tampering on every device.
+    func testAfterAHandoffTheOldHomeCannotApprove() throws {
+        let w = try EpochWorld(in: tmp, names: ["A", "B", "C"])
+        var a = try w.open("A")
+        try a.handOff(to: w["B"].id)
+        _ = try w.open("C").requireWritable()   // C pins the handoff
+        let newcomer = EpochDevice("N", root: tmp)
+        let request = newcomer.keys.joinRequest(vaultId: a.vaultId, name: "N", kind: "cli")
+        XCTAssertThrowsError(try a.approveDevice(request))
+        var b = try w.open("B")
+        XCTAssertNoThrow(try b.approveDevice(request), "the new home approves")
+        XCTAssertEqual(try w.open("C").listStatus, .verified(.added))
+    }
+
+    /// An offline device verifies a removal whose first list carries a device added while it was away
+    /// (design §4.1 "parent's list", §11.1): the addition is admitted from the parent's chain entry.
+    func testARemovalAfterAnAdditionTheDeviceMissedVerifies() throws {
+        let w = try EpochWorld(in: tmp, names: ["A", "B", "X"])
+        _ = try w.open("B").requireWritable()   // B pins epoch 1 as it was
+        var a = try w.open("A")
+        let newcomer = EpochDevice("N", root: tmp)
+        try a.approveDevice(newcomer.keys.joinRequest(vaultId: a.vaultId, name: "N", kind: "cli"))
+        try a.removeDevices([w["X"].id])
+        let b = try w.open("B")
+        XCTAssertEqual(b.listStatus, .verified(.newEpoch), "\(b.listStatus)")
+        XCTAssertTrue(b.manifest.devices.contains { $0.fingerprint == newcomer.fingerprint })
+        XCTAssertNoThrow(try w["B"].newNote(b, "after"))
     }
 
     /// A former home signing after its handoff (a copied or stolen key) is not followed: the chain check

@@ -32,13 +32,26 @@ final class EpochInvariantTests: VaultTestCase {
         XCTAssertTrue(all.isEmpty, all.prefix(12).joined(separator: "\n"))
     }
 
-    func testEachMutationBreaksAnInvariant() throws {
+    /// The invariant each mutation breaks (design §11.2's table): a run must report THAT invariant, on a seed
+    /// whose unmutated run is clean, so the failure comes from the broken rule and not from something else.
+    static let expected: [EpochMutation: [String]] = [
+        .acceptUnsealed: ["J3"], .skipCatchUp: ["J1"], .replaceWithoutSettingAside: ["J6"],
+        .corruptReencryption: ["J8"], .writeUnderOldKey: ["J2", "J5a"],
+    ]
+
+    func testEachMutationBreaksItsInvariant() throws {
         for m in EpochMutation.allCases {
+            let labels = try XCTUnwrap(Self.expected[m], "no invariant named for \(m)")
             var caught: [String] = []
-            for seed in 0..<UInt64(10) where caught.isEmpty {
-                caught = try run(seed: seed &+ 500, steps: 22, mutation: m)
+            for seed in 0..<UInt64(12) where caught.isEmpty {
+                let mutated = try run(seed: seed &+ 500, steps: 22, mutation: m)
+                    .filter { v in labels.contains { v.hasPrefix($0) || v.contains(": \($0)") } }
+                guard !mutated.isEmpty else { continue }
+                let clean = try run(seed: seed &+ 500, steps: 22)
+                XCTAssertTrue(clean.isEmpty, "seed \(seed &+ 500) fails without \(m): \(clean.prefix(3))")
+                caught = mutated
             }
-            XCTAssertFalse(caught.isEmpty, "the mutation \(m) went unnoticed")
+            XCTAssertFalse(caught.isEmpty, "the mutation \(m) did not break \(labels.joined(separator: " or "))")
         }
     }
 
@@ -56,7 +69,7 @@ final class EpochInvariantTests: VaultTestCase {
     private enum Op: CaseIterable { case write, write2, refresh, remove, catchUp, crashedCatchUp }
 
     private func run(seed: UInt64, steps: Int, mutation: EpochMutation? = nil) throws -> [String] {
-        let dir = tmp.appendingPathComponent("inv-\(seed)-\(mutation.map { "\($0)" } ?? "none")")
+        let dir = tmp.appendingPathComponent("inv-\(seed)-\(mutation.map { "\($0)" } ?? "none")-\(UUID().uuidString.prefix(8))")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let names = ["A", "B", "C", "X", "Y"]
         let w = try EpochWorld(in: dir, names: names)

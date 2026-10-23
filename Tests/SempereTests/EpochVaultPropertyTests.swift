@@ -48,14 +48,22 @@ final class EpochVaultPropertyTests: VaultTestCase {
         }
     }
 
-    /// (e): each mutation must break an invariant on some seed.
+    /// The invariant each mutation breaks: a non-home signer is followed (a), takeovers lose to home epochs
+    /// (b), and the home from before a takeover (which the takeover kept listed) signs again (a).
+    static let expected: [PrecedenceMutation: String] = [.nonHomeSignerAccepted: "(a)", .takeoverIgnored: "(b)", .olderHomeKept: "(a)"]
+
+    /// (e): each mutation must break ITS invariant on a seed whose unmutated run is clean.
     func testEachMutationIsCaught() throws {
-        for m: PrecedenceMutation in [.nonHomeSignerAccepted, .takeoverIgnored, .olderHomeKept] {
-            var caught = false
-            for seed in 0..<UInt64(12) where !caught {
-                caught = !(try run(seed: seed &+ 1000, steps: 12, mutation: m)).violations.isEmpty
+        for (m, label) in Self.expected.sorted(by: { $0.value < $1.value }) {
+            var caught: [String] = []
+            for seed in 0..<UInt64(16) where caught.isEmpty {
+                let mutated = try run(seed: seed &+ 1000, steps: 12, mutation: m).violations.filter { $0.contains(label) }
+                guard !mutated.isEmpty else { continue }
+                let clean = try run(seed: seed &+ 1000, steps: 12).violations
+                XCTAssertTrue(clean.isEmpty, "seed \(seed &+ 1000) fails without \(m): \(clean.prefix(3))")
+                caught = mutated
             }
-            XCTAssertTrue(caught, "the mutation \(m) went unnoticed")
+            XCTAssertFalse(caught.isEmpty, "the mutation \(m) did not break \(label)")
         }
     }
 
@@ -65,7 +73,7 @@ final class EpochVaultPropertyTests: VaultTestCase {
 
     private func run(seed: UInt64, steps: Int, mutation: PrecedenceMutation? = nil) throws
         -> (violations: [String], stats: [String: Int]) {
-        let dir = tmp.appendingPathComponent("run-\(seed)-\(mutation.map { "\($0)" } ?? "none")")
+        let dir = tmp.appendingPathComponent("run-\(seed)-\(mutation.map { "\($0)" } ?? "none")-\(UUID().uuidString.prefix(8))")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let w = try EpochWorld(in: dir, names: ["A", "B", "C", "D"])
         var rng = SplitMix64(seed: seed)

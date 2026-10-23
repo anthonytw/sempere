@@ -152,7 +152,11 @@ struct InboxCapture: ParsableCommand {
             t.recording = CaptureAdoption.ids(for: id).recording
             sealed.append(try writer.seal(transcript: t, capture: id, audio: audioRef))
         }
-        for s in sealed { try CaptureWriter.store(s, in: vault.inboxURL) }
+        let ledger = captureLedger(vaultId: vault.vaultId)
+        for s in sealed {
+            try writer.record(s, in: ledger)   // intent first (design §5.4)
+            try CaptureWriter.store(s, in: vault.inboxURL)
+        }
         let ids = CaptureAdoption.ids(for: id)
         if output.json {
             struct Out: Encodable { var capture: String; var note: String; var files: [String] }
@@ -208,6 +212,7 @@ struct InboxTranscript: ParsableCommand {
             throw CLIError.failure("cannot read \(audio): \(CLIError.from(error).message)")
         }
         let sealed = try writer.seal(transcript: t, capture: id, audio: BlobRef(content: audioData, type: "audio/mp4"))
+        try writer.record(sealed, in: captureLedger(vaultId: vault.vaultId))
         try CaptureWriter.store(sealed, in: vault.inboxURL)
         if output.json {
             struct Out: Encodable { var capture: String; var file: String }
@@ -353,4 +358,13 @@ struct InboxImport: ParsableCommand {
         let failed = results.filter { $0.error != nil }.count
         if failed > 0 { throw CLIError.failure("\(failed) capture(s) could not be adopted") }
     }
+}
+
+/// This machine's write ledger for captures of `vaultId` (key-hierarchy design §5.4, §5.7), when its device key
+/// is stored without a passphrase (the ledger's key is sealed to it); nil otherwise, and captures are then not
+/// caught up after a device change (run `inbox import` before one, or re-capture).
+func captureLedger(vaultId: UUID) -> FileWriteLedger? {
+    guard case .plain(let path) = DeviceKeyStore.stored(vaultId: vaultId),
+          let keys = try? readAccessKeyFile(path), case .mlkem768x25519(let pq) = keys.identity else { return nil }
+    return FileWriteLedger(directory: FileWriteLedger.cliDirectory(environment: Env.vars), vaultId: vaultId, device: pq)
 }

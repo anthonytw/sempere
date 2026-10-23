@@ -161,9 +161,12 @@ extension Vault {
             let made = Set((try? FileIO.entries(attURL(note))) ?? []).subtracting(before)
             return made.first.map { Self.blobPath(note, $0) } ?? entry.path
         }
+        if parts.count == 2, parts[0] == CaptureFile.folderName, let parsed = CaptureFile.parse(name: parts[1]) {
+            return try reencryptOwnCapture(entry, file: file, name: parts[1], kind: parsed.kind, key: key, n: n)
+        }
         guard let (scope, name) = Self.framing(entry.path) else {
-            throw VaultError.epochChangeRefused("\(entry.path): this version catches up revisions, blobs, notebook records "
-                + "and settings.age")
+            throw VaultError.epochChangeRefused("\(entry.path): this version catches up revisions, blobs, notebook records, "
+                + "inbox files and settings.age")
         }
         let data = try readFile(file, maxBytes: BoundedRead.maxRevisionBytes)
         let identity = NativeIdentity.mlkem768x25519(try key.vaultIdentity())
@@ -191,6 +194,53 @@ extension Vault {
         }
         try faults.check(.catchUpVerified(n))
         // The old bytes are set aside first (J6), then the ledger knows the new ones, then they are in place.
+        guard let setAsideStore else { throw VaultError.setAsideFailed("\(entry.path): this device keeps no set-aside store") }
+        if !Self.epochMutations.contains(.replaceWithoutSettingAside) {
+            try setAsideStore.keep(data, path: entry.path, vaultId: vaultId, reason: .notSealed, epochId: key.epochId)
+        }
+        try recordWrite(path: entry.path, bytes: fresh)
+        try FileIO.place(tmp, at: file)
+        placed = true
+        try faults.check(.catchUpPlaced(n))
+        return entry.path
+    }
+
+    /// Re-seals this device's own inbox file (a quick capture sealed with a profile of the epoch of `key`,
+    /// design §5.7) under the current key: the same JSON line and payload, tagged with this device's capture
+    /// key of the current epoch and encrypted to the current vault identity, verified before anything is
+    /// replaced, the old bytes set aside first.
+    func reencryptOwnCapture(_ entry: LedgerEntry, file: URL, name: String, kind: CaptureFile.Kind, key: VaultEpochKey,
+                             n: Int) throws -> String {
+        guard let me = deviceEntry else { throw VaultError.removedFromVault("this device is not on the list") }
+        let fingerprint = CaptureKey.fingerprint(of: me.key)
+        let data = try FileIO.read(file, maxBytes: CaptureFile.maxSealedBytes(kind))
+        let plain: Data
+        do { plain = try AgeFile.decrypt(data, with: [NativeIdentity.mlkem768x25519(try key.vaultIdentity())]) } catch {
+            throw VaultError.epochChangeRefused("\(entry.path) does not decrypt under the key it was written under")
+        }
+        let current = try requireSecret()
+        let newKey = CaptureKey.derive(from: current, device: fingerprint)
+        guard let retagged = CaptureFile.retag(plain, filename: name, verifiedBy: CaptureKey.derive(from: key, device: fingerprint),
+                                               to: newKey) else {
+            throw VaultError.epochChangeRefused("\(entry.path) is not this device's capture under the key it was written under")
+        }
+        let corrupt = Self.epochMutations.contains(.corruptReencryption)
+        let fresh = try encrypt(corrupt ? Data(retagged.dropLast()) : retagged)
+        let dir = file.deletingLastPathComponent()
+        let tmp = FileIO.tempURL(in: dir)
+        try FileIO.writeNewFile(tmp) { try $0(fresh) }
+        var placed = false
+        defer { if !placed { try? FileManager.default.removeItem(at: tmp) } }
+        try faults.check(.catchUpWritten(n))
+        let check = try FileIO.read(tmp, maxBytes: CaptureFile.maxSealedBytes(kind))
+        guard corrupt || (try? AgeFile.decrypt(check, with: identities)).flatMap({
+            try? CaptureFile.unframe($0, filename: name, key: newKey)
+        }).map({ $0.line + [0x0A] + $0.payload }) == (try? CaptureFile.unframe(plain, filename: name,
+                                                                               key: CaptureKey.derive(from: key, device: fingerprint)))
+            .map({ $0.line + [0x0A] + $0.payload }) else {
+            throw VaultError.epochChangeRefused("\(entry.path): the re-sealed copy does not read back")
+        }
+        try faults.check(.catchUpVerified(n))
         guard let setAsideStore else { throw VaultError.setAsideFailed("\(entry.path): this device keeps no set-aside store") }
         if !Self.epochMutations.contains(.replaceWithoutSettingAside) {
             try setAsideStore.keep(data, path: entry.path, vaultId: vaultId, reason: .notSealed, epochId: key.epochId)
@@ -244,6 +294,19 @@ extension Vault {
             do { _ = try openSharedSettings(data, allowNewerReader: true) } catch SharedSettingsError.setAside(let r) {
                 try keep(SharedSettings.fileName, sharedSettingsURL, r)
             } catch {}
+        }
+        // Inbox files under an earlier key that no record seals (design §5.3 rule 4): never adopted, kept aside.
+        if let ring = try? captureKeyRing() {
+            for name in (try? FileIO.entries(inboxURL)) ?? [] {
+                guard let parsed = CaptureFile.parse(name: name) else { continue }
+                let file = inboxURL.appendingPathComponent(name)
+                if (try? verifyInboxFile(file, name: name, kind: parsed.kind, ring: ring)) != nil { continue }
+                if sealedEarlierInboxFile(file, name: name, kind: parsed.kind) != nil { continue }
+                guard let data = try? FileIO.read(file, maxBytes: CaptureFile.maxSealedBytes(parsed.kind)),
+                      case .opened(_, _, let older?) = openUnderEpochs(data) else { continue }
+                try keep("\(CaptureFile.folderName)/\(name)", file, older.sealed == nil ? .dropped
+                         : older.sealed?["\(CaptureFile.folderName)/\(name)"] == nil ? .notSealed : .bytesDiffer)
+            }
         }
         return out
     }
