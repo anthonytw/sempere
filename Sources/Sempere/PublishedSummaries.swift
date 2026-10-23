@@ -469,13 +469,17 @@ extension Vault {
         return try PublishedSummaries.decodeContents(json, vaultId: vaultId)
     }
 
-    /// The signing keys a per-device file of `device` must verify under (format.md §12.5): those of every
+    /// The signing keys a per-device file of `device` must verify under (format.md §12.5): those of the one
     /// device entry with that id in this vault's `vault.json`, as opened and checked (`listStatus`
-    /// verified), never a list from anywhere else. Empty when the list did not check or no listed device
-    /// has that id (a removed device's signatures stop verifying once its entry is gone).
+    /// verified), never a list from anywhere else. Empty when the list did not check, no listed device has
+    /// that id (a removed device's signatures stop verifying once its entry is gone), or more than one
+    /// does (ids are unique, `DeviceIds`: such a list names no signer).
     public func summariesSigningKeys(of device: DeviceID) -> [DeviceSigningPublicKeys] {
         guard case .verified = listStatus else { return [] }
-        return manifest.devices(withId: device.rawValue).compactMap(\.sign)
+        // Ids are unique in every list (`DeviceIds`); a list where two devices share one names no signer.
+        let entries = manifest.devices(withId: device.rawValue)
+        guard entries.count == 1, let keys = entries[0].sign else { return [] }
+        return [keys]
     }
 
     /// A per-device file of `device` (format.md §12.5): `SMPU` `0x03` of this vault's epoch, it opens under

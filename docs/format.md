@@ -4047,8 +4047,11 @@ with the public key the identity's. Stock `age -i` reads it as an identity file.
   give, appends the entry with a wrap of `K_e` and its `addSig` (§2), deletes the request and shows the
   reverse code; the joining device types it. Until then it reads but does not write (§2.1
   `rootUnconfirmed`). Home refuses a request of another vault, a key that is not `age1pq1…`, a bad
-  `kind`, a key already listed, or an `id` a listed device has (the joining device generates another
-  key).
+  `kind`, a key already listed, or an `id` that another device the vault lists or ever listed has (the
+  current list, and every first list, parent list and addition of the chain it verified; the joining
+  device generates another key). A device may be approved again under its own key. A takeover refuses
+  to keep two devices with one id. So no list ever holds two devices with one id, and no device takes
+  the id of one a takeover may re-admit: the id names that device's summaries file (§12.5).
 - A join with the recovery key is a `takeover` (§15.7 rule 3, design §6.3); not in this version (KH4).
 
 ### 15.13 The recovery kit
