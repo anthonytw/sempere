@@ -4075,7 +4075,9 @@ compaction or adoption). Catch-up acts on live entries only, so a crash after a 
 and before the copy is placed never drops the entry that still names the file (review M2). The writer
 prunes this way every 512 appends, so the ledger follows the vault's live files, and the CLI warns above
 256 MiB (review S5). An append of an entry of another epoch than the one caught up to clears that mark,
-so the next write catches it up (a locked capture with an older profile, review M3). The
+so the next write catches it up (a locked capture with an older profile, review M3); a catch-up sets the
+mark only when no such entry was appended while it ran (review R1). An automatic catch-up that leaves
+problems is not tried again by writes for five minutes (`vault catch-up` runs at once). The
 reference CLI keeps it in `$XDG_STATE_HOME/sempere/ledger/<key>/<vaultId>/` (`<key>`: the first 16 hex digits of the device key's §11.1 fingerprint, so two device keys on one machine never share one): `key.age` (32 random bytes,
 age-encrypted to the device key), `log` (records of a 4-byte big-endian length and a ChaCha20-Poly1305
 box of one JSON object, authenticated with `"sempere/1 write ledger <vaultId>"`; a record cut off at
@@ -4100,8 +4102,10 @@ is stored without a passphrase, the app always). Making a profile records its ep
 is then copied into the set-aside store. The app keeps its ledger and set-aside store in its App Group
 container, the ledger sealed with a key in a this-device-only Keychain item of class
 `AfterFirstUnlockThisDeviceOnly`; a release build has no other place for it and fails closed (debug builds
-without the Keychain entitlement keep it in a 0600 file), and it never makes a new key while a ledger
-exists (review S1).
+without the Keychain entitlement keep it in a 0600 file). A key store that cannot be read fails closed;
+one that holds no key while ledgers exist (a backup restored onto another device: the item is
+this-device-only) has those ledgers moved aside, kept and never read again, and the device starts a fresh
+ledger with a new key, as a new device does (design §5.4 "Restores"; reviews S1, R2).
 
 **The set-aside store** (design §5.8): device-local, outside the vault
 (`$XDG_STATE_HOME/sempere/setaside/<vaultId>/<vault path>/<sha256>.age`, with a `<sha256>.json` holding
