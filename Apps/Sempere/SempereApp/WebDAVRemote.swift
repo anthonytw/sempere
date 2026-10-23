@@ -40,10 +40,17 @@ enum WebDAVProbe: Sendable {
     case failed(WebDAVSyncProblem, message: String, certificate: ServerCertificate?)
 }
 
+extension WebDAVRemote {
+    /// Fakes that do not model folders: an empty folder.
+    func checkTarget(_ endpoint: WebDAVEndpoint, vaultID: UUID) -> WebDAVTargetProbe { .checked(.empty) }
+}
+
 /// The server operations the app makes, all blocking (call them off the
 /// main actor). `LiveWebDAVRemote` is the network; tests use a fake.
 protocol WebDAVRemote: Sendable {
     func check(_ endpoint: WebDAVEndpoint) -> WebDAVProbe
+    /// Add WebDAV Server…: what the folder holds (`WebDAVConnection.checkTargetFolder`).
+    func checkTarget(_ endpoint: WebDAVEndpoint, vaultID: UUID) -> WebDAVTargetProbe
     func download(_ endpoint: WebDAVEndpoint, into copy: LocalCopy) throws -> SyncReport
     /// The root files, sealed summaries and note list into a partial copy (format.md §1.2). `options`
     /// carry the progress callback and the Cancel (`AppModel.withWebDAVDownload`).
@@ -94,6 +101,18 @@ struct LiveWebDAVRemote: WebDAVRemote {
         let recorder = CertificateRecorder()
         do {
             return .reachable(try WebDAVConnection.check(try client(endpoint, recorder: recorder)))
+        } catch {
+            let problem = WebDAVSyncProblem.from(error: error)
+            var certificate: ServerCertificate?
+            if case .certificate = problem { certificate = recorder.certificate }
+            return .failed(problem, message: WebDAVErrorText.message(error), certificate: certificate)
+        }
+    }
+
+    func checkTarget(_ endpoint: WebDAVEndpoint, vaultID: UUID) -> WebDAVTargetProbe {
+        let recorder = CertificateRecorder()
+        do {
+            return .checked(try WebDAVConnection.checkTargetFolder(try client(endpoint, recorder: recorder), vaultId: vaultID))
         } catch {
             let problem = WebDAVSyncProblem.from(error: error)
             var certificate: ServerCertificate?

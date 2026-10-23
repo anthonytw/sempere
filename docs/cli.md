@@ -522,10 +522,16 @@ sempere store import SOURCE [--name NAME] [--keep-syncing] [--store DIR] [--json
 sempere store restore BACKUP [--name NAME] [--replace] [--store DIR] [--json]
 sempere store remove VAULT --yes [--store DIR] [--json]
 sempere store target list VAULT [--store DIR] [--json]
-sempere store target add VAULT (--folder PATH | --webdav URL [--user NAME]) [--name NAME] [--store DIR] [--json]
+sempere store target add VAULT (--folder PATH | --webdav URL [--user NAME] [--password-env VAR | --no-check])
+                         [--name NAME] [--store DIR] [--json]
 sempere store target remove VAULT TARGET [--store DIR] [--json]
 sempere store sync VAULT [--target TARGET ...] [--identity FILE | --passphrase-env VAR] [--password-env VAR]
                          [--wait SECONDS] [--store DIR] [--json]
+sempere store info VAULT [--measure-folders] [--store DIR] [--json]
+sempere store quarantine list VAULT [--target TARGET] [--store DIR] [--json]
+sempere store quarantine adopt VAULT PATH... [--target TARGET] [--identity FILE | --passphrase-env VAR] [--store DIR] [--json]
+sempere store quarantine export VAULT PATH... --to DIR [--target TARGET] [--store DIR] [--json]
+sempere store quarantine delete VAULT PATH... [--target TARGET] [--store DIR]
 ```
 
 A store is a folder of complete vaults, one per vault id, laid out as `<store>/<vault id>/<name>.sempere`
@@ -584,7 +590,11 @@ a unique id prefix (4 characters or more), its name, path or URL.
   deleted); it must not overlap the store and must not be a file (exit 1). `--webdav URL [--user NAME]`: https,
   or http to localhost (exit 2 otherwise); no password is stored. A target at the same place (the same
   folder, or the same server folder and user) is refused (exit 1). `--json` prints the new target; `-q` only
-  its id.
+  its id. A WebDAV target's server folder is listed first, with the password from `--password-env`
+  (default `SEMPERE_WEBDAV_PASSWORD`, needed with `--user`), and one that holds another vault or other files
+  is refused (exit 1): it must be empty, missing (the first sync creates it) or hold this vault
+  (`WebDAVConnection.checkTargetFolder`, which the app's Add WebDAV Server… runs too). `--no-check` adds it
+  without contacting the server.
 - `target remove` forgets a target and deletes its sync state on this machine; the folder or server is not
   touched.
 - `sync` runs the vault with each target in turn (or only the `--target` ones): the two-way sync of
@@ -598,6 +608,26 @@ a unique id prefix (4 characters or more), its name, path or URL.
   files a provider is downloading (default 30 s). `--json`: an array of `{target, kind, name, report,
   error}`, `report` being `sync folder`'s object. Exit 1 when a target could not run, else `sync folder`'s
   codes, the worst first. A target kind a later version added is reported, never run.
+- `info` (the app's Vault Details, [device-first sync](design/device-first-sync.md) §8.3, §8.4) reads this
+  machine only, never a target: the vault folder's sizes (notes, attachments, other files) and, per target,
+  its last sync, the files both sides had then, the files staged for the next unlock, the bytes of its
+  state folder and (`--measure-folders`) of a folder target's copy, its quarantined files, and the devices
+  whose revisions or `summaries/<device>.sealed` it held at the last sync, named from the vault's device list
+  (`vault.json`, read without the key; none for a device it does not list), with their revision count and
+  newest revision's clock. A device of the vault missing from a target never syncs with it (an island, §5.6).
+  `--json`: `{vault, name, storage: {notes, attachments, other}, targets: [{target, syncedFiles, devices:
+  [{device, name, revisions, newest, publishesSummaries, isThisDevice}], quarantined, staged, stateBytes,
+  folderBytes}]}`.
+- `quarantine` works on the files sync runs refused (format.md §9.1), kept per target and never removed
+  by a run (the app's Repair). `list` prints each with its target, path in the quarantine, size, date and
+  whether it can be adopted (`--json`: `[{target, file: {path, vaultPath, size, quarantined, adoptable}}]`).
+  `adopt PATH...` needs the key: each file is checked again under the vault's current keys by a pull-only
+  run from a scratch folder holding only the vault's root files and that file, and placed only if it
+  passes, then removed from the quarantine; one the vault already holds with the same bytes is just
+  removed; one that still fails, or a root file (`vault.json`, settings: they arrive only through a sync
+  run), stays (exit 1, the reason printed; `--json`: `[{path, adopted, error}]`). `export PATH... --to DIR`
+  copies files out, never over a file there (`" 2"`, `" 3"`… added); they stay. `delete PATH...` removes
+  them for good. A path held by several targets' quarantines needs `--target`.
 
 Each vault has its own lock (`<store>/.locks/<vault id>.write`, `flock(2)`): the store takes it to install
 or remove a vault, and it is the one lock every writer of that vault on the device shares
