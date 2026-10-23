@@ -134,11 +134,11 @@ final class WebDAVIntegrationTests: SyncTestCase {
         _ = try delta(a, device: devA, t: 5, title: "other note", note: other)
         let r1 = try run("A", c)
         XCTAssertTrue(r1.errors.isEmpty && r1.conflicts.isEmpty, "\(r1)")
-        XCTAssertEqual(r1.uploaded.count, 3, "\(r1)")
+        XCTAssertEqual(r1.uploaded.count, 4, "the epoch record, vault.json and two revisions: \(r1)")
 
         let r2 = try run("B", c)
         XCTAssertTrue(r2.errors.isEmpty && r2.conflicts.isEmpty, "\(r2)")
-        XCTAssertEqual(r2.downloaded.count, 3, "\(r2)")
+        XCTAssertEqual(r2.downloaded.count, 4, "\(r2)")
 
         // Concurrent deltas on both devices, including same note and new notes.
         let a1 = try openVault("A"), b1 = try openVault("B")
