@@ -186,7 +186,7 @@ struct NotesRestore: ParsableCommand {
         let stateURL = DeviceState.defaultURL()
         var device = try DeviceState.loadOrCreate(at: stateURL)
         var clock = device.clock
-        let result = try vault.restore(note: id, toRevision: point, device: vault.writerDevice ?? device.device, clock: &clock,
+        let result = try vault.restore(note: id, toRevision: point, device: device.device, clock: &clock,
                                        wall: Date(), app: appName, dryRun: dryRun)
         if result.written {
             device.clock = clock

@@ -278,8 +278,9 @@ listed device that had not seen the change) is **set aside**: never read as a
 note, never deleted. A machine that had not seen the change re-encrypts its own
 such files (**catch-up**: its write ledger in `$XDG_STATE_HOME/sempere/ledger`
 lists every file it wrote; the first write after it verifies the new epoch does
-it, or `vault catch-up`). Revisions this machine writes are named with its
-device id in the vault (`<hlc>-<device id>-<seq>`).
+it, or `vault catch-up`). Revisions keep the machine's own id from
+`device.json` in their names; its published summaries file and sync state use
+its device id in the vault.
 
 - `devices remove ID...` (home only, never itself) removes devices: it first
   catches up its own files, then starts the epoch. The removed machine gets
@@ -1937,7 +1938,11 @@ capture key). It refuses (exit
 ever made from a checked one. `capture` reads
 only `vault.json` and the profile, no identity or passphrase. It seals the
 audio file into `inbox/<id>.capture.age` (encrypted to the vault identity, tagged
-with the capture key) and prints the capture id. `--transcript` seals a
+with the capture key) and prints the capture id. When this machine's device key
+is stored without a passphrase, each file is first recorded in its write ledger
+(Devices, "New epochs"), so a capture sealed with a profile of an earlier epoch
+is re-sealed under the current key by `vault catch-up` (or the next write); else
+such a capture stays set aside. `--transcript` seals a
 `sempere-transcript/1` file with it, and `transcript` seals one later; either
 way its recording id is replaced by the capture's, and it is bound to the
 capture's audio (`format.md` §11.2): `transcript` needs that audio file

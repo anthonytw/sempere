@@ -867,6 +867,23 @@ struct QuickCaptureTests {
         await qc.sweep()
         #expect(Self.leftovers(qc.root).isEmpty)
     }
+
+    /// A voice note is recorded in its vault's ledger, under the profile's epoch, before it is placed in the
+    /// inbox (design §5.4, §5.7): a device change before it is adopted is caught up from there.
+    @Test func voiceNotesAreRecordedInTheLedgerBeforeTheInbox() async throws {
+        let (url, _, _, qc, _) = try Self.setUp()
+        let stores = DeviceWriteStores.inMemoryKey(root: try TestTemp.directory("ledger-capture"))
+        qc.writeStores = stores
+        try await qc.start()
+        let outcome = try await qc.stop()
+        #expect(outcome.delivery == .vault)
+        let vault = try Vault.open(at: url)
+        let entries = try stores.ledger(for: vault.vaultId).entries()
+        let name = CaptureFile.name(outcome.id, .capture)
+        let entry = try #require(entries.first { $0.path == "inbox/\(name)" })
+        #expect(entry.epoch == vault.manifest.epoch)
+        #expect(entry.sha256 == FileDigest.sha256(try Data(contentsOf: url.appendingPathComponent("inbox/\(name)"))))
+    }
 }
 
 /// A profile store whose item cannot be read (the Keychain before the first unlock).

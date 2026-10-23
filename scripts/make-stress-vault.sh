@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Builds a seeded synthetic vault with the CLI, for the sync stress tests (docs/ci.md "Sync stress").
 #   scripts/make-stress-vault.sh OUT_DIR [SEED] [NOTES]      (defaults: seed 1, 640 notes)
-# OUT_DIR gets key-a.txt and key-b.txt (two devices' identities, both recipients of the vault),
-# state-a/ and state-b/ (each device's XDG_STATE_HOME: device id and clock) and Stress.sempere.
+# OUT_DIR gets key-a.txt and key-b.txt (two devices' key files: A is the vault's home, B joined by approval),
+# state-a/ and state-b/ (each device's XDG_STATE_HOME: device key, trust record, ledger, device id and clock),
+# recovery.txt (the vault's recovery key) and Stress.sempere.
 # The same seed and count give the same notes (titles, notebooks, tags, texts, image bytes); file
 # names differ, since revisions carry the time they were written. About a minute for 640 notes.
 # Contents: every note has a title, a notebook (12, nested) and one to three tags; one in four
@@ -29,12 +30,18 @@ mkdir -p "$out/img"
 out="$(cd "$out" && pwd)"   # XDG_STATE_HOME must be absolute, or the CLI uses ~/.local/state
 vault="$out/Stress.sempere"
 export XDG_CACHE_HOME="$out/cache"
-"$bin" keys generate --out "$out/key-a.txt" >/dev/null 2>&1
-"$bin" keys generate --out "$out/key-b.txt" >/dev/null 2>&1
-ra="$(grep -o 'age1pq1[a-z0-9]*' "$out/key-a.txt" | head -1)"
-rb="$(grep -o 'age1pq1[a-z0-9]*' "$out/key-b.txt" | head -1)"
-XDG_STATE_HOME="$out/state-a" "$bin" vault init "$vault" --recipient "$ra" --recipient "$rb" \
-  --label "device A" --label "device B" --vault-label "Stress $seed" >/dev/null
+# Device A creates the vault (its home); device B joins by approval (format.md §15.12). Each device's key
+# file (identity and signing seeds) is copied to key-a.txt / key-b.txt for the tests.
+XDG_STATE_HOME="$out/state-a" "$bin" vault init "$vault" --name "device A" --vault-label "Stress $seed" \
+  --recovery-out "$out/recovery.txt" >/dev/null
+words="$(XDG_STATE_HOME="$out/state-b" "$bin" device init --vault "$vault" --name "device B" --json \
+  | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)["words"]))')"
+# shellcheck disable=SC2086
+reply="$(XDG_STATE_HOME="$out/state-a" "$bin" devices approve $words --vault "$vault" --json \
+  | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)["reply"]))')"
+# shellcheck disable=SC2086
+XDG_STATE_HOME="$out/state-b" "$bin" device confirm $reply --vault "$vault" >/dev/null
+for d in a b; do cp "$(ls "$out/state-$d"/sempere/devices/*/device.key)" "$out/key-$d.txt"; done
 
 # Deterministic image bytes: noise PNGs (stdlib only).
 python3 - "$out/img" "$seed" "$count" <<'PY'
@@ -61,7 +68,7 @@ nb=("Work" "Work/Projects" "Work/Projects/Atlas" "Home" "Home/Recipes" "Reading"
 tags=(todo idea draft review math physics travel family)
 run() { # device, args...
   local dev="$1"; shift
-  XDG_STATE_HOME="$out/state-$dev" "$bin" "$@" --vault "$vault" --identity "$out/key-$dev.txt" -q
+  XDG_STATE_HOME="$out/state-$dev" "$bin" "$@" --vault "$vault" -q
 }
 for i in $(seq 0 $((count - 1))); do
   title="${words[RANDOM % ${#words[@]}]} ${words[RANDOM % ${#words[@]}]} $i"

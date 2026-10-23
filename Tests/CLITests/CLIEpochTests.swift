@@ -7,7 +7,7 @@ import XCTest
 /// New epochs from the CLI (docs/design/key-hierarchy.md §5.2, §5.6, §6.3, §6.5; phase KH3): `devices remove`
 /// and `devices handoff` on home, `recovery takeover` (a kit join, choices printed without `--yes`) and
 /// `recovery replace` (the device review), `vault catch-up`, `set-aside`, exit 8 for a removed machine, and the
-/// vault device's id in revision names.
+/// machine's own id in revision names.
 final class CLIEpochTests: CLITestCase {
     override func setUpWithError() throws {
         try super.setUpWithError()
@@ -67,14 +67,19 @@ final class CLIEpochTests: CLITestCase {
         XCTAssertEqual((aside.json as? [Any])?.count, 0)
     }
 
-    func testRevisionNamesCarryTheVaultDevicesId() throws {
+    /// Revision names keep the machine's own id (its state file's), not the vault device's: two installs that
+    /// share a copied device key never number revisions alike.
+    func testRevisionNamesCarryTheMachinesStateId() throws {
         let (vault, _, laptop) = try twoMachines()
         let made = try cli(["notes", "new", "Named", "--json", "--vault", vault], env: machine("laptop"))
         XCTAssertEqual(made.status, 0, made.err)
         let notes = URL(fileURLWithPath: vault).appendingPathComponent("notes")
         let note = try XCTUnwrap(try FileManager.default.contentsOfDirectory(atPath: notes.path).first)
         let files = try FileManager.default.contentsOfDirectory(atPath: notes.appendingPathComponent(note).path)
-        XCTAssertEqual(files.compactMap { RevisionName($0)?.device.rawValue }, [laptop])
+        let state = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath:
+            path("state-laptop/sempere/device.json")))) as? [String: Any])
+        XCTAssertEqual(files.compactMap { RevisionName($0)?.device.rawValue }, [try XCTUnwrap(state["device"] as? String)])
+        XCTAssertNotEqual(state["device"] as? String, laptop)
     }
 
     func testHandoffMovesTheHomeRole() throws {

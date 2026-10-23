@@ -102,7 +102,7 @@ struct CompactCommand: ParsableCommand {
         // Read, planned and carried out in parallel; notes whose revision metadata shows nothing to
         // delete are not read in full (the summary cache usually has that metadata).
         var clock = state.clock
-        let prepared = vault.prepareCompactions(ids, mode: mode, now: now, device: vault.writerDevice ?? state.device, clock: &clock,
+        let prepared = vault.prepareCompactions(ids, mode: mode, now: now, device: state.device, clock: &clock,
                                                 app: appName, cache: summaries, execute: !dryRun)
         if !dryRun, clock != state.clock {
             state.clock = clock
@@ -177,7 +177,7 @@ func takeSnapshot(_ vault: Vault, loaded: LoadedNote) throws -> (Revision, Devic
     let stateURL = DeviceState.defaultURL()
     var state = try DeviceState.loadOrCreate(at: stateURL)
     var clock = state.clock
-    let snap = try vault.snapshot(loaded: loaded, device: vault.writerDevice ?? state.device, clock: &clock, wall: Date(), app: appName)
+    let snap = try vault.snapshot(loaded: loaded, device: state.device, clock: &clock, wall: Date(), app: appName)
     state.clock = clock
     try state.save(to: stateURL)
     return (snap, state)
@@ -203,7 +203,7 @@ struct SnapshotCommand: ParsableCommand {
         if output.json {
             struct Out: Encodable { var note: String; var file: String; var device: String }
             try output.emitJSON(Out(note: id.uuidString.lowercased(), file: snap.name.filename,
-                                    device: (vault.writerDevice ?? state.device).rawValue))
+                                    device: state.device.rawValue))
         } else {
             output.info("Wrote \(id.uuidString.lowercased())/\(snap.name.filename)")
         }

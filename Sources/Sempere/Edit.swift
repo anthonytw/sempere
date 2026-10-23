@@ -176,9 +176,9 @@ extension NoteOps {
 }
 
 extension Vault {
-    /// The `<device>` of this device's revision names (format.md §5): its id in the vault, the first 8 hex
-    /// digits of its fingerprint (format.md §15.4; key-hierarchy design §3). Nil unless the vault was opened
-    /// as a listed device.
+    /// This device's id in the vault, the first 8 hex digits of its fingerprint (format.md §15.4;
+    /// key-hierarchy design §3): it names its published summaries file and sync state. Nil unless the vault
+    /// was opened as a listed device. Revision names keep the machine's state-file id (`writeDelta`).
     public var writerDevice: DeviceID? { deviceEntry?.id.flatMap(DeviceID.init) }
 
     /// Writes one delta for an existing note whose ops `build` computes from
@@ -235,9 +235,9 @@ extension Vault {
     func writeDelta(_ ops: [Op], to noteId: UUID, loaded: LoadedNote, deviceState: URL, app: String,
                     wall: Date, checkpoint: Checkpoint? = nil) throws -> Revision {
         var state = try DeviceState.loadOrCreate(at: deviceState)
-        // Revisions carry this device's id in the vault (format.md §5, §15.4); the state file's own id names
-        // only what a machine writes without a device key (never a vault write under the key hierarchy).
-        let device = writerDevice ?? state.device
+        // Revision names carry the machine's own device id (its state file's): two installs sharing one
+        // device key (a copied CLI state directory, design §6.1) never number revisions alike.
+        let device = state.device
         var clock = state.clock
         for r in loaded.revisions { clock.observe(r.hlc, wall: wall) }
         let hlc = clock.tick(wall: wall)
