@@ -137,7 +137,7 @@ final class EpochInterleavingTests: SyncTestCase {
         let only = ProcessInfo.processInfo.environment["SEMPERE_EPOCH_MUTATION"]
         for m in Mutation.allCases where only.map({ "\(m)" == $0 }) ?? true {
             var caught = false
-            for seed in UInt64(100)..<UInt64(108) where !caught {
+            for seed in UInt64(100)..<UInt64(124) where !caught {
                 let mutated = try run(seed: seed, steps: 26, devices: 4, kind: .memory, mutation: m)
                     .filter { v in m.breaks.contains { v.hasPrefix($0 + ":") || v.hasPrefix($0 + " ") } }
                 guard !mutated.isEmpty else { continue }
@@ -253,7 +253,7 @@ final class EpochInterleavingTests: SyncTestCase {
             if tracing { trace.append("\(step) op \(op) home \(home) listed \(listed.sorted())") }
             switch op {
             case .write:
-                let n = listed.randomElement(using: &rng) ?? "A"
+                let n = listed.sorted().randomElement(using: &rng) ?? "A"
                 let title = "\(n)-\(step)"
                 let before = hashes(n)
                 defer { checkAside(n, before: before, step: step); checkBodies(n, before: before, step: step) }
@@ -278,8 +278,9 @@ final class EpochInterleavingTests: SyncTestCase {
                 // A bridge stays listed (both targets meet through it), and so do at least two devices.
                 let bridges = listed.filter { (reach[$0]?.count ?? 0) > 1 }
                 let removable = listed.subtracting([home]).filter { !(bridges.count == 1 && bridges.contains($0)) }
-                guard listed.count > 2, let victim = removable.randomElement(using: &rng) else { break }
+                guard listed.count > 2, let victim = removable.sorted().randomElement(using: &rng) else { break }
                 guard var a = try? w[home].open(), a.isHome else { break }
+                let before = a.manifest.epochId
                 _ = EpochChangePull.run(vault: a, folder: w[home].folder,
                                         targets: (reach[home] ?? []).map { .init(name: $0.name, remote: $0.remote(for: home)) },
                                         scratch: w[home].root.appendingPathComponent("pull"))
@@ -293,6 +294,13 @@ final class EpochInterleavingTests: SyncTestCase {
                 if lean == .forge, let forged = try? forge(w[victim]) {
                     // The removed device strikes at once, on the target home is not about to update.
                     for tg in targets where tg !== tgHome { tg.put(forged.1.path, forged.1.data); tg.put(Vault.manifestName, forged.0) }
+                    // A listed device that has not seen the removal meets the forgery first.
+                    for tg in targets where tg !== tgHome {
+                        let stale = listed.subtracting([home]).sorted().filter {
+                            (reach[$0] ?? []).contains { $0 === tg } && (try? w[$0].open().manifest.epochId) == before
+                        }
+                        if let d = stale.first { sync(d, tg, step: step) }
+                    }
                 }
                 if let tgHome { sync(home, tgHome, step: step) }
             case .takeover, .twoTakeovers:
@@ -314,12 +322,12 @@ final class EpochInterleavingTests: SyncTestCase {
                 for (taker, _) in made { if let tg = reach[taker]?.randomElement(using: &rng) { sync(taker, tg, step: step) } }
             case .withhold:
                 guard let tg = targets.randomElement(using: &rng),
-                      let r = tg.paths.filter({ $0.hasPrefix(Vault.epochsName + "/") && !$0.contains("/1-") }).randomElement(using: &rng)
+                      let r = tg.paths.filter({ $0.hasPrefix(Vault.epochsName + "/") && !$0.contains("/1-") }).sorted().randomElement(using: &rng)
                 else { break }
                 tg.remove(r)
             case .rogueWrite:
                 // A removed device keeps writing under the key it holds and plants the files on a target.
-                guard let x = Set(names).subtracting(listed).randomElement(using: &rng), let tg = targets.randomElement(using: &rng),
+                guard let x = Set(names).subtracting(listed).sorted().randomElement(using: &rng), let tg = targets.randomElement(using: &rng),
                       let v = try? Vault.open(at: w[x].folder, identities: [w[x].identity], signing: TestVaults.signing(w[x].identity))
                 else { break }
                 held[x, default: []] += v.identities
@@ -333,7 +341,7 @@ final class EpochInterleavingTests: SyncTestCase {
                 }
             case .forge:
                 // A removed device forges an epoch under one where it was listed, names itself home, plants it.
-                guard let x = Set(names).subtracting(listed).randomElement(using: &rng), let tg = targets.randomElement(using: &rng) else { break }
+                guard let x = Set(names).subtracting(listed).sorted().randomElement(using: &rng), let tg = targets.randomElement(using: &rng) else { break }
                 guard let (manifest, record) = try? forge(w[x]) else { break }
                 tg.put(record.path, record.data)
                 tg.put(Vault.manifestName, manifest)

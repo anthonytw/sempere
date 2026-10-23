@@ -190,13 +190,9 @@ extension SyncEngine {
             noteEpochTaken(remoteData, recordPending: judgment == .laterRecordPending)
         case .behind:
             // This device's chain is the later one: its vault.json replaces the target's, under the version read.
-            guard let etag, Self.isStrong(etag) || options.dryRun else {
-                if try push(name, local, condition: .unconditional) { try recordMutable(name, hash: FileDigest.sha256(local)) }
-                return
-            }
-            if try push(name, local, condition: Self.replaceCondition(etag: etag)) {
-                try recordMutable(name, hash: FileDigest.sha256(local))
-            }
+            // Deferred until the write lock is released, under the version this round read (lock scope).
+            try push(name, local, condition: Self.replaceCondition(etag: etag))
+            try recordMutable(name, hash: FileDigest.sha256(local))
         case .waiting(let why):
             remember(remoteData, v)
             v.pinDeferredTakeover(remoteData)
@@ -210,8 +206,8 @@ extension SyncEngine {
         case .refused(let why):
             // Tampered or forged: never taken. This device's own verified copy replaces it on the target.
             report.rejected.append(.init(path: name, message: SyncReport.printable(why)))
-            if v.listStatus.allowsWriting, v.unlistedNotice == nil, let etag, Self.isStrong(etag),
-               try push(name, local, condition: .replace(etag: etag)) {
+            if v.listStatus.allowsWriting, v.unlistedNotice == nil {
+                try push(name, local, condition: Self.replaceCondition(etag: etag))
                 try recordMutable(name, hash: FileDigest.sha256(local))
             }
         }

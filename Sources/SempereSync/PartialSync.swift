@@ -199,16 +199,8 @@ extension SyncEngine {
         var record = PartialCopyState.readRecord(root) ?? .init()
         if PartialCopyState.readRecord(root) == nil { try PartialCopyState.writeRecord(record, root) }
         checkerBaseManifest = manifestHash()
-        for name in [Vault.manifestName] {
-            let remote = remoteRoot[name].flatMap { $0.isCollection ? nil : $0 }
-            do { try syncMutable(name, remote: remote) } catch {
-                report.errors.append(.init(path: name, message: Self.describe(error)))
-            }
-        }
-        let remoteSettings = remoteRoot[SharedSettings.fileName].flatMap { $0.isCollection ? nil : $0 }
-        do { try syncSharedSettings(remote: remoteSettings) } catch {
-            report.errors.append(.init(path: SharedSettings.fileName, message: Self.describe(error)))
-        }
+        // Judged and replaced under the vault's write lock, like a full run's (no request is made under it).
+        syncMutableFiles(remoteRoot, settleVersions: false)
         // Notebook records are root files of a partial copy (format.md §1.2, §14).
         do { try syncNotebookRecords(remoteRoot: remoteRoot) } catch {
             report.errors.append(.init(path: NotebookRecords.folderName, message: Self.describe(error)))

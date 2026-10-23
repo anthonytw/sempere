@@ -48,7 +48,8 @@ extension SyncEngine {
         }
         let localHash = FileDigest.sha256(local)
         guard let remote else {
-            if try push(name, local, condition: .create) { try recordMutable(name, hash: localHash) }
+            try push(name, local, condition: .create)
+            try recordMutable(name, hash: localHash)
             return
         }
         // A server file that cannot be read (too large, malformed) is just different.
@@ -78,10 +79,10 @@ extension SyncEngine {
                 return
             }
         }
-        if try push(name, local, condition: .unconditional) {
-            report.overwritten.append(name)
-            try recordMutable(name, hash: localHash)
-        }
+        // Over the copy read just above (`push` makes it conditional on that copy), also with `keepServerChanges`.
+        try push(name, local, condition: .unconditional)
+        afterUpload(name) { [self] in report.overwritten.append(name) }
+        try recordMutable(name, hash: localHash)
     }
 
     // MARK: Notes
