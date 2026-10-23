@@ -33,7 +33,7 @@ final class SyncTests: SyncTestCase {
                                stateURL: tmp.appendingPathComponent("st.json"))
             return try s.run()
         }()
-        XCTAssertEqual(report.uploaded, ["vault.json"])
+        XCTAssertEqual(report.uploaded.filter { !$0.hasPrefix("epochs/") }, ["vault.json"])
         let bad = SyncEngine(directory: dir("A"), vault: nil, client: try client(server, auth: .init(user: "me", password: "no")),
                              stateURL: tmp.appendingPathComponent("st2.json"))
         XCTAssertThrowsError(try bad.run()) {
@@ -49,9 +49,9 @@ final class SyncTests: SyncTestCase {
         _ = try delta(a, device: devA, t: 0, title: "one")
         let report = try sync("A", server)
         XCTAssertTrue(report.errors.isEmpty, "\(report)")
-        XCTAssertEqual(report.uploaded.count, 2)
+        XCTAssertEqual(report.uploaded.count, 3, "the epoch record, vault.json, the revision")
         XCTAssertNotNil(server.file("vault.json"))
-        XCTAssertEqual(try sync("B", server).downloaded.count, 2)
+        XCTAssertEqual(try sync("B", server).downloaded.count, 3)
     }
 
     // MARK: transfer
@@ -61,12 +61,14 @@ final class SyncTests: SyncTestCase {
         let a = try makeVault("A")
         _ = try delta(a, device: devA, t: 0, title: "one")
         let r1 = try sync("A", server)
-        XCTAssertEqual(r1.uploaded.sorted(), ["notes/\(noteID.uuidString.lowercased())/\(try fileNames(a)[0])", "vault.json"].sorted())
+        XCTAssertEqual(r1.uploaded.filter { !$0.hasPrefix("epochs/") }.sorted(),
+                       ["notes/\(noteID.uuidString.lowercased())/\(try fileNames(a)[0])", "vault.json"].sorted())
+        XCTAssertEqual(r1.uploaded.filter { $0.hasPrefix("epochs/") }.count, 1, "epoch 1's record (KH4)")
         XCTAssertTrue(r1.errors.isEmpty && r1.conflicts.isEmpty)
 
         // B starts from nothing.
         let r2 = try sync("B", server)
-        XCTAssertEqual(r2.downloaded.count, 2, "\(r2)")
+        XCTAssertEqual(r2.downloaded.count, 3, "\(r2)")
         let b = try openVault("B")
         XCTAssertEqual(try title(b), "one")
 
@@ -145,12 +147,12 @@ final class SyncTests: SyncTestCase {
         server.putDirect("%2e%2e/x", Data("x".utf8))
         let report = try sync("B", server)
         XCTAssertTrue(report.errors.isEmpty, "\(report)")
-        XCTAssertEqual(report.downloaded.count, 2)          // vault.json + the real revision
+        XCTAssertEqual(report.downloaded.count, 3)          // the epoch record, vault.json, the real revision
         XCTAssertGreaterThanOrEqual(report.ignored.count, 4)
         let b = try openVault("B")
         XCTAssertEqual(try fileNames(b).count, 1)
         XCTAssertEqual(try b.noteIDs(), [noteID])
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir("B").path).sorted(), ["notes", "vault.json"])
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir("B").path).sorted(), ["epochs", "notes", "vault.json"])
     }
 
     func testBadXMLFailsCleanly() throws {
@@ -189,13 +191,13 @@ final class SyncTests: SyncTestCase {
         let a = try makeVault("A")
         _ = try delta(a, device: devA, t: 0, title: "one")
         let plan = try sync("A", server, dryRun: true)
-        XCTAssertEqual(plan.uploaded.count, 2)
+        XCTAssertEqual(plan.uploaded.count, 3)
         XCTAssertTrue(server.requestLog.allSatisfy { $0.method == "PROPFIND" || $0.method == "GET" })
         XCTAssertNil(server.file("vault.json"))
         XCTAssertFalse(FileManager.default.fileExists(atPath: tmp.appendingPathComponent("state-A.json").path))
         try sync("A", server)
         let pull = try sync("B", server, dryRun: true)
-        XCTAssertEqual(pull.downloaded.count, 2)
+        XCTAssertEqual(pull.downloaded.count, 3)
         XCTAssertFalse(FileManager.default.fileExists(atPath: dir("B").path))
     }
 

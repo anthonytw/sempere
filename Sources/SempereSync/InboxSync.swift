@@ -214,7 +214,7 @@ extension SyncEngine {
         guard let kind = Self.parsedKind(name) else { return nil }
         let limit = CaptureFile.maxSealedBytes(kind)
         if let size = entry.size, size > limit { throw SyncError.responseTooLarge(path: path, limit: limit) }
-        if skipQuarantined(path, path: path, entry: entry) { return nil }
+        if skipQuarantined(path, path: path, entry: entry) || skipPendingEpoch(path, path: path, entry: entry) { return nil }
         if try !available([folder, name], entry: entry) { return nil }
         let reserved = try locked { try budget.willDownload(entry.size) }
         var counted = false
@@ -248,12 +248,12 @@ extension SyncEngine {
         let folder = CaptureFile.folderName
         let path = "\(folder)/\(name)"
         try requireLocalWrite("write \(path)")
-        var problem: String?
+        var problem: IncomingFileProblem?
         if (try? LocalFS.prefix(of: staged, count: Self.ageMagic.count)) != Self.ageMagic {
-            problem = "not an age file"
+            problem = IncomingFileProblem("not an age file")
         } else if let checker = checker() {
             do { try checker.checkIncomingInboxFile(at: staged, name: name) } catch let e as IncomingFileProblem {
-                problem = e.reason
+                problem = e
             } catch {
                 // The vault cannot judge it now (a tampered device list, I/O): neither placed nor quarantined.
                 report.skipped.append(.init(path: path, message: SyncReport.printable("not placed: \(Self.describe(error))")))
@@ -261,10 +261,11 @@ extension SyncEngine {
             }
         }
         if let problem {
-            quarantine(path, path: path, entry: entry, reason: problem, file: staged)
+            // Set aside, pending or quarantined (`refuseIncoming`, key-hierarchy design §5.3).
+            refuseIncoming(path, path: path, entry: entry, problem: problem, file: staged)
             return nil
         }
-        locked { state.quarantined?[path] = nil }
+        locked { state.quarantined?[path] = nil; state.pendingEpoch?[path] = nil }
         let hash = try FileDigest.sha256(of: staged).hex
         let target = root.appendingPathComponent(folder, isDirectory: true).appendingPathComponent(name)
         guard try LocalFS.placeNew(staged, at: target) else { return nil }

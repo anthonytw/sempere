@@ -43,7 +43,7 @@ final class SampledTreeCheckTests: BlobSyncTestCase {
         XCTAssertEqual(try state("A")?.treeListing?.supported, true)
         mark = server.headers.count
         XCTAssertTrue(try run("A", server).isEmpty)
-        XCTAssertEqual(propfinds(server, since: mark), 3, "a no-change run")
+        XCTAssertEqual(propfinds(server, since: mark), 4, "a no-change run (epochs/ is listed too, KH4)")
     }
 
     func testAFirstPullOfASampledServerIsCorrectAndCheap() throws {
@@ -69,7 +69,7 @@ final class SampledTreeCheckTests: BlobSyncTestCase {
         let mark = server.headers.count
         let r = try run("A", server)
         XCTAssertEqual(r.uploaded.count, 1, "\(r)")
-        XCTAssertEqual(propfinds(server, since: mark), 3)
+        XCTAssertEqual(propfinds(server, since: mark), 4, "with epochs/ (KH4)")
         XCTAssertLessThanOrEqual(server.headers.count - mark, 8, "\(server.headers[mark...].map(\.method))")
     }
 

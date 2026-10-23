@@ -134,7 +134,14 @@ extension Vault {
             let epochRecord: EpochRecord
             switch recordRead {
             case .read(let r): epochRecord = r
-            case .problem(let p): return ListCheck(status: .refused(p))
+            case .problem(let p):
+                // Not arrived: a direct child of the pinned epoch, linked and signed from it, is taken; files
+                // under the older key stay pending until the record arrives (design §4.3 step 2, KH4).
+                if p.reason == .otherEpoch, let record, expected.map({ $0 == record.root }) ?? true,
+                   recordPendingCheck(manifest, key: key, trusted: record) != nil {
+                    return ListCheck(status: .verified(.newEpochRecordPending))
+                }
+                return ListCheck(status: .refused(p))
             case .notRead: return refused(.otherEpoch, "the record of epoch \(manifest.epoch) was not read")
             }
             let pinned = record?.chain.map { TakeoverRule.PinnedEpoch(epochId: $0.epochId, recovery: $0.recovery) } ?? []
@@ -262,7 +269,10 @@ extension Vault {
     /// keep one, so a record that cannot be saved is an error, tried again by the next write.
     func rememberList() throws {
         guard trustStore != nil, let secret else { return }
-        guard case .verified = listStatus else { return }
+        guard case .verified(let how) = listStatus else { return }
+        // A direct child whose record has not arrived is followed but not pinned: its link keys are in the
+        // record (design §4.3 step 2). The record's arrival pins it.
+        if how == .newEpochRecordPending { return }
         let chain: [EpochTrustRecord.ChainEpoch]
         if let verifiedChain {
             chain = verifiedChain.entries.map(EpochTrustRecord.ChainEpoch.init)

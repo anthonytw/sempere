@@ -165,15 +165,21 @@ extension Vault {
     ///
     /// - Throws: `BlobError.pending` when no key opens it and a record on the chain is missing; else the
     ///   error of the current key's attempt.
-    func readAnyAcceptedBlob(_ url: URL, note: UUID, maxContent: Int64, sink: (Data) throws -> Void = { _ in }) throws
-        -> BlobHeader {
+    func readAnyAcceptedBlob(_ url: URL, note: UUID, maxContent: Int64, fileName: String? = nil,
+                             sink: (Data) throws -> Void = { _ in }) throws -> BlobHeader {
         let first: Error
-        do { return try readAcceptedBlob(url, note: note, older: nil, expected: nil, maxContent: maxContent, sink: sink) } catch {
+        do {
+            return try readAcceptedBlob(url, note: note, older: nil, expected: nil, maxContent: maxContent, fileName: fileName,
+                                        sink: sink)
+        } catch {
             first = error
         }
         guard let keyring else { throw first }
         if let header = try keyring.first({ o -> BlobHeader? in
-            do { return try readAcceptedBlob(url, note: note, older: o, expected: nil, maxContent: maxContent, sink: sink) } catch BlobError.setAside(let r) {
+            do {
+                return try readAcceptedBlob(url, note: note, older: o, expected: nil, maxContent: maxContent, fileName: fileName,
+                                            sink: sink)
+            } catch BlobError.setAside(let r) {
                 throw BlobError.setAside(r)
             } catch {
                 return nil
@@ -190,15 +196,18 @@ extension Vault {
     /// sealed at its path by the record that closed that epoch. Content handed to `sink` is unusable if
     /// this throws.
     func readAcceptedBlob(_ url: URL, note: UUID, older: OlderEpoch?, expected: BlobRef?, maxContent: Int64,
+                          fileName: String? = nil,
                           sink: (Data) throws -> Void = { _ in }, raw: (Data) throws -> Void = { _ in }) throws -> BlobHeader {
+        let name = fileName ?? url.lastPathComponent
         guard let older else {
             return try Self.readBlobFile(url, identities: identities, secrets: [try requireSecret()], expected: expected,
-                                         maxContent: maxContent, sink: sink, raw: raw).header
+                                         maxContent: maxContent, name: name, sink: sink, raw: raw).header
         }
         var hasher = SHA256()
         let header = try Self.readBlobFile(url, identities: [older.identity], secrets: [older.key], expected: expected,
-                                           maxContent: maxContent, sink: sink, raw: { hasher.update(data: $0); try raw($0) }).header
-        if let reason = setAsideReason(older, path: Self.blobPath(note, url.lastPathComponent),
+                                           maxContent: maxContent, name: name, sink: sink,
+                                           raw: { hasher.update(data: $0); try raw($0) }).header
+        if let reason = setAsideReason(older, path: Self.blobPath(note, name),
                                        sha256: Hex.encode(hasher.finalize())) {
             throw BlobError.setAside(reason)
         }

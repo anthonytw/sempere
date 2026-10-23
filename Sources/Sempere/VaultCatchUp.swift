@@ -93,6 +93,12 @@ extension Vault {
         var finished = false
         defer { if owner { catchUpMemo.end(finished ? secret.epochId : nil) } }
         try requireWritable()
+        // The record of this epoch has not arrived (design §4.3 step 2): what it sealed is not known yet, so
+        // nothing is re-encrypted or set aside on its account.
+        if isRecordPending {
+            report.problems[manifest.epochRecord] = "waiting for the device-change record of epoch \(manifest.epoch)"
+            return report
+        }
         let entries = try ledger.entries()
         let current = secret.epochId
         let chain = verifiedChain?.entries ?? []

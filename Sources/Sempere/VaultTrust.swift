@@ -36,6 +36,10 @@ public enum ListStatus: Hashable, Sendable {
         /// a removal, a handoff, a takeover or a kit replacement since. Files of this device's ledger that
         /// the change did not seal are caught up (`Vault.catchUp`).
         case newEpoch
+        /// A later epoch that is a direct child of the pinned one, linked and signed from it, whose record has
+        /// not arrived (design §4.3 step 2, KH4): followed (writes are under its key), not pinned; files under
+        /// the older key are pending and catch-up waits until the record arrives.
+        case newEpochRecordPending = "new-epoch-record-pending"
     }
 
     /// True unless refused.
@@ -116,6 +120,13 @@ public protocol EpochTrustStore: Sendable {
     func record(for vaultId: UUID) throws -> EpochTrustRecord?
     /// Saves (replaces) the record of its vault.
     func save(_ record: EpochTrustRecord) throws
+    /// The `vault.json` versions of later epochs this device saw on a sync target and did not take
+    /// (key-hierarchy design §4.3 "unverified-pending", §5.5 unlisted; KH4), oldest first.
+    ///
+    /// - Throws: when they exist but cannot be read: a device that forgot a sighting would upload again.
+    func sightings(for vaultId: UUID) throws -> [EpochSighting]
+    /// Replaces the sightings of `vaultId` (empty: removes them).
+    func saveSightings(_ sightings: [EpochSighting], for vaultId: UUID) throws
 }
 
 /// Trust records as files `<directory>/<vaultId>.json` (mode 0600 in a 0700 folder).
@@ -156,12 +167,40 @@ public struct FileEpochTrustStore: EpochTrustStore {
     /// Writes the record atomically. It holds only public values; it stays private anyway: it names the
     /// vault and its devices.
     public func save(_ record: EpochTrustRecord) throws {
-        try FileIO.createDirectory(directory)
-        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try enc.encode(record)
-        let url = fileURL(record.vaultId)
+        try write(try enc.encode(record), to: fileURL(record.vaultId))
+    }
+
+    /// `<directory>/<vaultId>.seen.json` (format.md §15.10 "Sightings").
+    func sightingsURL(_ vaultId: UUID) -> URL {
+        directory.appendingPathComponent("\(vaultId.uuidString.lowercased()).seen.json")
+    }
+
+    public func sightings(for vaultId: UUID) throws -> [EpochSighting] {
+        let url = sightingsURL(vaultId)
+        guard (try? FileManager.default.attributesOfItem(atPath: url.path)) != nil else { return [] }
+        do {
+            let data = try BoundedRead.contents(of: url, maxBytes: EpochSighting.maxFileBytes)
+            return try EpochSighting.decodeFile(data, vaultId: vaultId)
+        } catch {
+            throw VaultError.io("sightings \(url.path) are unreadable: \(error)")
+        }
+    }
+
+    public func saveSightings(_ sightings: [EpochSighting], for vaultId: UUID) throws {
+        let url = sightingsURL(vaultId)
+        guard !sightings.isEmpty else {
+            if FileIO.exists(url) { try FileIO.remove(url) }
+            return
+        }
+        try write(try EpochSighting.encodeFile(sightings, vaultId: vaultId), to: url)
+    }
+
+    /// Writes `data` at `url` atomically (mode 0600, the folder 0700).
+    private func write(_ data: Data, to url: URL) throws {
+        try FileIO.createDirectory(directory)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         let tmp = FileIO.tempURL(in: directory)
         try FileIO.writeNewFile(tmp) { write in try write(data) }
         guard rename(tmp.path, url.path) == 0 else {
@@ -177,8 +216,19 @@ public final class MemoryEpochTrustStore: EpochTrustStore, @unchecked Sendable {
     private let lock = NSLock()
     private var records: [UUID: EpochTrustRecord] = [:]
     private var unreadable: [UUID: String] = [:]
+    private var seen: [UUID: [EpochSighting]] = [:]
 
     public init() {}
+
+    public func sightings(for vaultId: UUID) throws -> [EpochSighting] {
+        lock.lock(); defer { lock.unlock() }
+        return seen[vaultId] ?? []
+    }
+
+    public func saveSightings(_ sightings: [EpochSighting], for vaultId: UUID) throws {
+        lock.lock(); defer { lock.unlock() }
+        seen[vaultId] = sightings.isEmpty ? nil : sightings
+    }
 
     public func record(for vaultId: UUID) throws -> EpochTrustRecord? {
         lock.lock(); defer { lock.unlock() }
@@ -204,6 +254,7 @@ public final class MemoryEpochTrustStore: EpochTrustStore, @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         records = [:]
         unreadable = [:]
+        seen = [:]
     }
 }
 

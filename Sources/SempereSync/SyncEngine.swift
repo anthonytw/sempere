@@ -57,6 +57,10 @@ public struct SyncOptions: Sendable {
     /// Never write anything to the remote (`PullOnlyRemote`): the run only downloads. A locked vault's
     /// staging run (`LockedStaging`, review of #77, S1).
     public var pullOnly = false
+    /// Record this device's `synced` time in its own `summaries/<device>.sealed` at the end of a complete
+    /// two-way run (key-hierarchy design §5.5: the removal sheet's stale-sync warning), at most once per
+    /// `SyncEngine.syncedInterval`. The CLI's sync commands and the app set it.
+    public var recordSynced = false
     /// Where notes are summarized for that file through the summary cache
     /// (format.md §10); nil reads every changed note.
     public var summaryCacheDirectory: URL?
@@ -180,7 +184,7 @@ public final class SyncEngine {
     let root: URL
     /// The vault the run checks against: the caller's, or (when the caller's no longer matches the
     /// `vault.json` on disk, a key change another run took) the same vault opened again (`runLocked`).
-    private(set) var vault: Vault?
+    var vault: Vault?
     /// The run's remote: `interrupt` set to the run's bound and cancellation (`runLocked`).
     private(set) var transport: any SyncRemote
     let stateURL: URL
@@ -248,6 +252,27 @@ public final class SyncEngine {
     var pendingKept = 0
     /// Files and folders a provider has not downloaded yet (`Arrivals.swift`). Under `mutex`.
     var arrivals = ArrivalTracker()
+    /// Device changes (KH4, `EpochSync.swift`): why this run uploads nothing new and syncs only `epochs/` and
+    /// `vault.json` (a later epoch this device cannot verify yet, J5b; or it is unlisted, design §5.5).
+    var epochHold: String?
+    /// True once this run took a later epoch's `vault.json`: the vault is reopened, pinned and caught up.
+    var epochTaken = false
+    /// What the run met about device changes (`SyncReport.epoch`).
+    var epochStatus = SyncReport.EpochStatus()
+    /// The remote `vault.json` as this run read it (for the `keys/` deletion rule).
+    var remoteManifestData: Data?
+    /// A digest of the local `epochs/` names after the epoch step: a file that waited for a record is fetched
+    /// again only when it changes (`SyncState.pendingEpoch`).
+    var epochsDigest = ""
+    /// The epoch records the target holds after the epoch step (nil: not known): a `vault.json` is never
+    /// uploaded to a target that lacks its record (design §5.2: record first, then `vault.json`).
+    var remoteEpochRecords: Set<String>?
+    /// Working-copy files this device set aside that are still in place (path → SHA-256): an accepted copy on
+    /// the remote replaces them (design §5.4 step 4).
+    var unacceptedHere: [String: String] = [:]
+    /// The latest bytes (SHA-256) this device's write ledger holds per path: a shared file whose bytes changed
+    /// here since both sides last matched (a catch-up's re-encryption) is compared with the remote's.
+    var ledgerShas: [String: String] = [:]
 
     /// Guards what concurrent listings and downloads share (`TransferPool`):
     /// `state`, `report`, `budget`, `progress`, the checker cache and the
@@ -273,6 +298,8 @@ public final class SyncEngine {
     var blobsHeldBack = Set<String>()
     /// The keys it uploaded, per note: the note loop counts them as its own uploads.
     var preuploaded: [String: Set<String>] = [:]
+    /// SHA-256 of the revisions this run uploaded or placed, by key: recorded with them (`FileRecord.sha256`).
+    var placedShas: [String: String] = [:]
 
     /// - Parameters:
     ///   - directory: the local vault; it may be missing or empty for a first pull.
@@ -358,6 +385,8 @@ public final class SyncEngine {
         }
         checkerBaseManifest = manifestHash()
         budget = RunBudget(options.limits)
+        // A device this device's sightings say is unlisted uploads nothing (design §5.5).
+        if let notice = vault?.unlistedNotice { holdForEpoch(unlisted: notice) }
         let rootEntries = try transport.list([]) ?? []
         try budget.list(rootEntries.count)
         let remoteRoot = Dictionary(rootEntries.map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })
@@ -365,6 +394,19 @@ public final class SyncEngine {
         try awaitRootFiles(remoteRoot)
         try checkSameVault(remoteRoot)
         removeLeftoverRemoteTemps()
+        // Epoch records first, both ways (design §5.2: every device that holds one pushes it to every target),
+        // so a later epoch's vault.json finds its record here (KH4, `EpochSync.swift`). A run bound reached here
+        // stops the run as one reached in the notes does (reported, never thrown).
+        var stoppedBefore: SyncError?
+        do { try syncEpochRecords(remoteRoot: remoteRoot) } catch {
+            if let e = error as? SyncError, e.isRunLimit { stoppedBefore = e } else {
+                report.errors.append(.init(path: Vault.epochsName, message: Self.describe(error)))
+            }
+        }
+        // The record of a vault.json taken before it arrived is here now: pinned and caught up below.
+        if let v = vault, v.isRecordPending, FileManager.default.fileExists(atPath: root.appendingPathComponent(v.manifest.epochRecord).path) {
+            epochTaken = true
+        }
         // The local mutable files are judged and replaced under the vault's write lock (`localWriteLock`).
         do {
             try withLocalWriteLock {
@@ -395,15 +437,42 @@ public final class SyncEngine {
             }
         }
 
-        // Notebook records (format.md §14): write-once, so the union of both sides. (Epoch records, §15.6,
-        // go to every target from KH4, key-hierarchy design §12; a vault of one epoch opens without them.)
+        // A later epoch taken: the vault reopened under it, pinned, and this device's own files caught up
+        // (design §5.4), before anything else is judged or uploaded.
+        afterEpochTaken()
+        if let hold = epochHold {
+            // Unverified-pending or unlisted (design §4.3, §5.5): nothing new is uploaded (J5b), nothing else
+            // is synced until the change is verified (or a takeover lists this device again).
+            report.skipped.append(.init(path: Vault.notesName, message: SyncReport.printable(hold)))
+            if epochStatus.unlisted != nil { epochStatus.unsyncedChanges = unsyncedChangeCount() }
+            return finishRun()
+        }
+        // Join requests and passphrase copies (format.md §15.11, §15.12; KH4).
+        if stoppedBefore == nil {
+            do { try syncJoinRequests(remoteRoot: remoteRoot) } catch {
+                if let e = error as? SyncError, e.isRunLimit { stoppedBefore = e } else {
+                    report.errors.append(.init(path: Vault.joinsName, message: Self.describe(error)))
+                }
+            }
+        }
+        if stoppedBefore == nil {
+            do { try syncPassphraseCopies(remoteRoot: remoteRoot) } catch {
+                if let e = error as? SyncError, e.isRunLimit { stoppedBefore = e } else {
+                    report.errors.append(.init(path: Vault.keysName, message: Self.describe(error)))
+                }
+            }
+        }
+        prepareReplacements()
+
+        // Notebook records (format.md §14): write-once, so the union of both sides.
         // A run bound reached here stops the run like one reached in the notes below: reported (`stoppedEarly`),
         // never thrown, so what the run already replaced (vault.json, settings) still reaches the caller.
-        var stoppedBefore: SyncError?
+        if stoppedBefore == nil {
         do { try syncNotebookRecords(remoteRoot: remoteRoot) } catch {
             if let e = error as? SyncError, e.isRunLimit { stoppedBefore = e } else {
                 report.errors.append(.init(path: NotebookRecords.folderName, message: Self.describe(error)))
             }
+        }
         }
 
         do {
@@ -456,6 +525,8 @@ public final class SyncEngine {
                 report.errors.append(.init(path: CaptureFile.folderName, message: Self.describe(error)))
             }
         }
+        // A complete two-way run: this device's `synced` time in its own summaries file (design §5.5).
+        if report.stoppedEarly == nil, notesListed { recordOwnSynced() }
         if report.stoppedEarly == nil {
             do { try syncDeviceSummaries(remoteRoot: remoteRoot) } catch {
                 if let e = error as? SyncError, e.isRunLimit { report.stoppedEarly = Self.describe(e) }
@@ -493,6 +564,11 @@ public final class SyncEngine {
             status.keptOnServer = pendingKept
             report.partial = status
         }
+        return finishRun()
+    }
+
+    /// The end of every run: arrivals settled, the state saved, the report finished.
+    func finishRun() -> SyncReport {
         finishArrivals()
         if !options.dryRun {
             do {
@@ -503,6 +579,7 @@ public final class SyncEngine {
                 report.errors.append(.init(path: stateURL.path, message: "cannot save sync state: \(Self.describe(error))"))
             }
         }
+        if epochStatus != SyncReport.EpochStatus() { report.epoch = epochStatus }
         report.progress = locked { var p = progress; p.stage = .done; return p }
         return report
     }
@@ -560,6 +637,8 @@ public final class SyncEngine {
     }
 
     func syncMutable(_ name: String, remote: RemoteEntry?) throws {
+        // A later epoch seen on another target whose record has arrived since is taken first (KH4).
+        if name == Vault.manifestName { try takeSettledSightings() }
         let local = try localMutable(name)
         let record = state.mutable[name]
 
@@ -580,9 +659,15 @@ public final class SyncEngine {
         try budget.downloaded(remoteData.count)
         let remoteHash = FileDigest.sha256(remoteData)
         let stamp = remote.etag ?? getETag ?? remote.lastModified
+        if name == Vault.manifestName { remoteManifestData = remoteData }
         if remoteHash == localHash {
             state.mutable[name] = .init(hash: localHash, stamp: stamp)
             return
+        }
+        // Another epoch on the remote (KH4): judged by the device-change rules, never by which side moved.
+        if name == Vault.manifestName, Self.otherEpochs(local, remoteData) {
+            return try syncManifestAcrossEpochs(local: local, remoteData: remoteData, stamp: stamp,
+                                                etag: remote.etag ?? getETag)
         }
         let localChanged = record.map { $0.hash != localHash } ?? true
         let remoteChanged = record.map { $0.hash != remoteHash } ?? true
@@ -674,9 +759,9 @@ public final class SyncEngine {
         try accept(name, data, stamp: remote.etag ?? etag ?? remote.lastModified)
     }
 
-    private func accept(_ name: String, _ data: Data, stamp: String?) throws {
+    func accept(_ name: String, _ data: Data, stamp: String?, judged: Bool = false) throws {
         try requireLocalWrite("write \(name)")
-        if name == Vault.manifestName {
+        if name == Vault.manifestName, !judged {
             // Never let a list nobody with the key wrote replace ours (design §4.3, §5.1).
             let local = try localMutable(name)
             if let why = Vault.incomingManifestProblem(data, local: local, vault: vault) {
@@ -701,6 +786,13 @@ public final class SyncEngine {
 
     /// Uploads a mutable file; false when the precondition failed.
     func push(_ name: String, _ data: Data, condition: PutCondition) throws -> Bool {
+        if name == Vault.manifestName, let records = remoteEpochRecords, let m = try? EpochManifest.parse(data),
+           !records.contains(String(m.epochRecord.dropFirst(Vault.epochsName.count + 1))) {
+            // Its record did not reach the target (the epoch step reported why): vault.json waits for it.
+            report.skipped.append(.init(path: name, message: "not uploaded: its device-change record \(m.epochRecord) is not "
+                + "on the target yet"))
+            return false
+        }
         if options.dryRun { report.uploaded.append(name); return true }
         try ensureCollection([])
         guard try transport.write([name], .data(data), condition: condition) else { return false }
@@ -1071,6 +1163,12 @@ public final class SyncEngine {
             }
         }
 
+        // Both sides hold the path, with other bytes (design §5.4 step 4): the accepted copy replaces an
+        // unaccepted one, after it is set aside (KH4, `EpochSync.swift`).
+        for n in L.intersection(R).sorted() {
+            try attempt(n) { try replaceUnacceptedRevision(id, n, entry: entries[n]) }
+        }
+
         // Blob deletions are judged against the revisions both sides hold now.
         try syncBlobDeletions(id, &blobs, remoteRevisions: R)
         // A partial copy's note that now holds what the server listed is complete (format.md §1.2).
@@ -1088,7 +1186,8 @@ public final class SyncEngine {
         }
         for n in shared {
             let k = key(id, n)
-            state.files[k] = SyncState.FileRecord(included: coverage[n] ?? state.files[k]?.included)
+            state.files[k] = SyncState.FileRecord(included: coverage[n] ?? state.files[k]?.included,
+                                                  sha256: locked({ placedShas[k] }) ?? state.files[k]?.sha256)
             // In step on both sides again: no longer a settled deletion.
             state.thinned?[k] = nil
         }
@@ -1201,7 +1300,7 @@ public final class SyncEngine {
         try ensureCollection([Vault.notesName, id])
         // A 412 means the server already has it: write-once, so it is the same file.
         try transport.write([Vault.notesName, id, n.filename], .data(data), condition: .create)
-        locked { report.uploaded.append(path) }
+        locked { report.uploaded.append(path); placedShas[key(id, n)] = FileDigest.sha256(data) }
     }
 
     /// True when this run must not upload `id`'s revisions (`blobsHeldBack`).
@@ -1221,7 +1320,9 @@ public final class SyncEngine {
         let path = "notes/\(key(id, n))"
         let size = entry?.size
         if let size, size > options.maxFileBytes { throw SyncError.responseTooLarge(path: path, limit: options.maxFileBytes) }
-        if skipQuarantined(key(id, n), path: path, entry: entry) { return false }
+        if skipQuarantined(key(id, n), path: path, entry: entry) || skipPendingEpoch(key(id, n), path: path, entry: entry) {
+            return false
+        }
         // Listed but not downloaded by its provider yet: asked for, waited for a while, else left for later.
         let remotePath = [Vault.notesName, id, n.filename]
         if try !available(remotePath, entry: entry) { return false }
@@ -1252,22 +1353,26 @@ public final class SyncEngine {
         guard data.count <= options.maxFileBytes else {
             throw SyncError.responseTooLarge(path: path, limit: options.maxFileBytes)
         }
-        var problem: String?
+        var problem: IncomingFileProblem?
         if !data.starts(with: Self.ageMagic) {
-            problem = "not an age file"
+            problem = IncomingFileProblem("not an age file")
         } else if let checker = checker(), let uuid = UUID(uuidString: id) {
-            do { try checker.checkIncomingRevision(data, noteId: uuid, name: n) } catch {
-                problem = "\(error)"
+            do { try checker.checkIncomingRevision(data, noteId: uuid, name: n) } catch let e as IncomingFileProblem {
+                problem = e
+            } catch {
+                problem = IncomingFileProblem("\(error)")
             }
         }
         if let problem {
-            quarantine(key(id, n), path: path, entry: entry, reason: problem, data: data)
+            // Set aside (an old key the acceptance rule does not take), pending (its record has not arrived),
+            // or quarantined (format.md §9.1; key-hierarchy design §5.3).
+            refuseIncoming(key(id, n), path: path, entry: entry, problem: problem, data: data)
             return false
         }
-        locked { state.quarantined?[key(id, n)] = nil }
+        locked { state.quarantined?[key(id, n)] = nil; state.pendingEpoch?[key(id, n)] = nil }
         let url = root.appendingPathComponent("notes/\(id)/\(n.filename)")
         if try !LocalFS.write(data, to: url, replacing: false) { return false }
-        locked { report.downloaded.append(path) }
+        locked { report.downloaded.append(path); placedShas[key(id, n)] = FileDigest.sha256(data) }
         return true
     }
 

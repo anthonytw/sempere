@@ -23,6 +23,11 @@ struct SyncState: Codable, Equatable {
         /// every look since agreeing. The deletion is followed here only once
         /// that is `blobRetention` ago (rule 4; `BlobSync.swift`).
         var unreferencedSince: Date?
+        /// SHA-256 (hex) of the bytes both sides held when this device last knew them equal (an upload, a
+        /// download, a comparison): a local copy with other bytes since (a catch-up's re-encryption) is
+        /// compared with the remote's, and the accepted one replaces an unaccepted one (key-hierarchy design
+        /// §5.4 step 4). Nil in older state files and for blobs.
+        var sha256: String?
     }
 
     /// A blob download that was interrupted: its partial file
@@ -94,6 +99,25 @@ struct SyncState: Codable, Equatable {
     /// §12.5) as both sides held them at the end of the last run, keyed by file
     /// name (`DeviceSummariesSync.swift`). Nil in older state files.
     var deviceSummaries: [String: MutableRecord]?
+    /// Join requests (`joins/`, format.md §15.12) both sides held at the end of the last run: one a side lacks
+    /// since was deleted there (home approved or expired it), and is deleted on the other (KH4).
+    var joins: [String]?
+    /// Notebook records (`notebooks/<name>`) whose bytes both sides held when this device last knew them
+    /// equal, as `FileRecord.sha256` does for revisions (key-hierarchy design §5.4 step 4; KH4).
+    var notebookShas: [String: String]?
+    /// `epochs/` as the last run left it in step on both sides: the remote folder's strong ETag and a digest of
+    /// the local names. With `skipUnchangedNotes` on a server seen to change folder ETags, an unchanged pair is
+    /// not listed again (KH4).
+    var epochsStamp: EpochsStamp?
+
+    struct EpochsStamp: Codable, Equatable {
+        var etag: String
+        var local: String
+    }
+    /// Remote files that waited for a device-change record (key-hierarchy design §5.3 rule 3), keyed like
+    /// `files`: the remote version and the local `epochs/` and `vault.json` they were judged against. Not
+    /// downloaded again until one of them changes (KH4).
+    var pendingEpoch: [String: String]?
 
     /// An inbox file as both sides held it.
     struct InboxRecord: Codable, Equatable {
@@ -143,6 +167,9 @@ struct SyncState: Codable, Equatable {
         /// Which key checked it (`SyncEngine.checkerKeyID`: derived from the epoch id, revealing
         /// nothing): a run under another key checks it again. Nil in older records, and when locked.
         var key: String?
+        /// True when the file was kept in the set-aside store rather than the quarantine (an earlier key the
+        /// acceptance rule does not take, key-hierarchy design §5.3 rule 4; KH4). Nil in older records.
+        var setAside: Bool?
     }
 
     /// The keys of `files` grouped by note: for each note id (the key up to

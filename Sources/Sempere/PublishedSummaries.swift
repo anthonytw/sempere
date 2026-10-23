@@ -160,6 +160,8 @@ public enum PublishedSummaries {
         var format: String
         var vaultId: String
         var notes: [String: WireEntry]
+        /// Per-device files only (format.md §12.5): the end of the device's last complete two-way sync.
+        var synced: String?
     }
 
     /// Decodes an entry, or nil when it is malformed (only that entry is dropped).
@@ -174,10 +176,11 @@ public enum PublishedSummaries {
         var format: String
         var vaultId: String
         var notes: [String: Lenient]
+        var synced: String?
     }
 
     /// The JSON content: sorted keys, no escaped slashes, so equal entries give equal bytes.
-    public static func encode(_ entries: [UUID: Entry], vaultId: UUID) throws -> Data {
+    public static func encode(_ entries: [UUID: Entry], vaultId: UUID, synced: Date? = nil) throws -> Data {
         var notes: [String: WireEntry] = [:]
         for (id, e) in entries {
             guard let created = RFC3339.string(from: e.created), let modified = RFC3339.string(from: e.modified) else {
@@ -190,7 +193,8 @@ public enum PublishedSummaries {
         }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        var data = try encoder.encode(WireFile(format: format, vaultId: vaultId.uuidString.lowercased(), notes: notes))
+        var data = try encoder.encode(WireFile(format: format, vaultId: vaultId.uuidString.lowercased(), notes: notes,
+                                               synced: synced.flatMap { RFC3339.string(from: $0) }))
         data.append(0x0A)
         return data
     }
@@ -199,6 +203,11 @@ public enum PublishedSummaries {
     ///
     /// - Throws: `damaged` when the content is not JSON of this format and vault.
     public static func decode(_ json: Data, vaultId: UUID) throws -> [UUID: Entry] {
+        try decodeFile(json, vaultId: vaultId).entries
+    }
+
+    /// The valid entries and the `synced` time (per-device files, format.md §12.5) of a JSON content.
+    public static func decodeFile(_ json: Data, vaultId: UUID) throws -> (entries: [UUID: Entry], synced: Date?) {
         let file: ReadFile
         do { file = try JSONDecoder().decode(ReadFile.self, from: json) } catch {
             throw PublishedSummariesError.damaged("not a summaries document")
@@ -213,7 +222,7 @@ public enum PublishedSummaries {
                   let e = validate(w) else { continue }
             out[id] = e
         }
-        return out
+        return (out, file.synced.flatMap { RFC3339.parse($0) })
     }
 
     private static func validate(_ w: WireEntry) -> Entry? {
@@ -270,9 +279,48 @@ extension Vault {
     }
 
     /// The sealed file for `entries`.
-    public func sealPublishedSummaries(_ entries: [UUID: PublishedSummaries.Entry]) throws -> Data {
-        let json = try PublishedSummaries.encode(entries, vaultId: vaultId)
+    public func sealPublishedSummaries(_ entries: [UUID: PublishedSummaries.Entry], synced: Date? = nil) throws -> Data {
+        let json = try PublishedSummaries.encode(entries, vaultId: vaultId, synced: synced)
         return try PublishedSummaries.seal(try Gzip.compress(json), secret: try requireSecret(), vaultId: vaultId)
+    }
+
+    /// The entries and `synced` time of a sealed file of this vault (format.md §12.5).
+    public func openPublishedSummariesFile(_ data: Data) throws -> (entries: [UUID: PublishedSummaries.Entry], synced: Date?) {
+        let plain = try PublishedSummaries.open(data, secret: try requireSecret(), vaultId: vaultId)
+        let json: Data
+        do { json = try Gzip.decompress(plain, maxOutput: PublishedSummaries.maxJSONBytes) } catch {
+            throw PublishedSummariesError.damaged("does not gunzip")
+        }
+        return try PublishedSummaries.decodeFile(json, vaultId: vaultId)
+    }
+
+    /// When the device `id` (its 8 hex digits) last completed a two-way sync, from its own
+    /// `summaries/<id>.sealed` (format.md §12.5, key-hierarchy design §5.5): nil when it has none, or its
+    /// file does not open under the current key (an older epoch's, or not written yet).
+    public func lastSynced(device id: String) -> Date? {
+        guard let device = DeviceID(id) else { return nil }
+        let url = devicePublishedSummariesURL(device)
+        guard FileIO.exists(url), let data = try? FileIO.read(url, maxBytes: PublishedSummaries.maxFileBytes) else { return nil }
+        return (try? openPublishedSummariesFile(data))?.synced
+    }
+
+    /// Records in this device's own `summaries/<device>.sealed` that it completed a two-way sync at `now`
+    /// (design §5.5): its entries are kept, `synced` set. Nothing is written while the recorded time is less
+    /// than `granularity` old (each write is uploaded to every target). A file that does not open under the
+    /// current key (an earlier epoch's) is rewritten with no entries. Returns true when it wrote.
+    @discardableResult
+    public func recordSynced(device: DeviceID, now: Date, granularity: TimeInterval) throws -> Bool {
+        try requireWritable()
+        let url = devicePublishedSummariesURL(device)
+        var entries: [UUID: PublishedSummaries.Entry] = [:]
+        if FileIO.exists(url), let data = try? FileIO.read(url, maxBytes: PublishedSummaries.maxFileBytes),
+           let file = try? openPublishedSummariesFile(data) {
+            if let synced = file.synced, now.timeIntervalSince(synced) < granularity, synced <= now { return false }
+            entries = file.entries
+        }
+        try FileIO.createDirectory(url.deletingLastPathComponent())
+        try FileIO.writeAtomically(try sealPublishedSummaries(entries, synced: now), to: url, replacing: true)
+        return true
     }
 
     /// The valid entries of a sealed file of this vault.

@@ -354,7 +354,8 @@ extension SyncEngine {
         let path = blobPath(id, name)
         let limit = options.maxBlobBytes
         if let size = entry?.size, size > limit { throw SyncError.responseTooLarge(path: path, limit: limit) }
-        if skipQuarantined(blobKey(id, name), path: path, entry: entry) { return nil }
+        if skipQuarantined(blobKey(id, name), path: path, entry: entry)
+            || skipPendingEpoch(blobKey(id, name), path: path, entry: entry) { return nil }
         let remote = [Vault.notesName, id, Vault.attachmentsName, name]
         // Listed but not downloaded by its provider yet: asked for, waited for a while, else left for later.
         if try !available(remote, entry: entry) { return nil }
@@ -431,18 +432,23 @@ extension SyncEngine {
         }
         // Checked before it is placed (format.md §9.1): a failure is
         // quarantined, never placed and never silently dropped.
-        var problem: String?
+        var problem: IncomingFileProblem?
         if try LocalFS.prefix(of: part, count: Self.ageMagic.count) != Self.ageMagic {
-            problem = "not an age file"
+            problem = IncomingFileProblem("not an age file")
         } else if let checker = checker() {
-            do { try checker.checkIncomingBlob(at: part, fileName: name) } catch { problem = "\(error)" }
+            do { try checker.checkIncomingBlob(at: part, fileName: name, note: UUID(uuidString: id)) } catch let e as IncomingFileProblem {
+                problem = e
+            } catch {
+                problem = IncomingFileProblem("\(error)")
+            }
         }
         defer { locked { state.partials[key] = nil } }
         if let problem {
-            quarantine(key, path: path, entry: entry, reason: problem, file: part)
+            // Set aside, pending or quarantined (`refuseIncoming`, key-hierarchy design §5.3).
+            refuseIncoming(key, path: path, entry: entry, problem: problem, file: part)
             return nil
         }
-        locked { state.quarantined?[key] = nil }
+        locked { state.quarantined?[key] = nil; state.pendingEpoch?[key] = nil }
         guard try LocalFS.placeNew(part, at: att.appendingPathComponent(name)) else { return nil }
         locked { report.downloaded.append(path) }
         return size
