@@ -63,6 +63,20 @@ public protocol WriteLedgerStore: Sendable {
     func caughtUp() throws -> Data?
     /// Records that this device caught up to `epochId`.
     func setCaughtUp(_ epochId: Data) throws
+    /// Records it only when no entry of another epoch than `epochId` was appended beyond `known` (the entries the
+    /// catch-up read when it started); returns whether it did (review R1: a capture recorded while a catch-up
+    /// runs must not be hidden by the mark that catch-up sets at its end). Implementations make it atomic with
+    /// `append`; the default reads, then sets.
+    func setCaughtUp(_ epochId: Data, unlessAppendedBeyond known: Set<LedgerEntry>) throws -> Bool
+}
+
+extension WriteLedgerStore {
+    public func setCaughtUp(_ epochId: Data, unlessAppendedBeyond known: Set<LedgerEntry>) throws -> Bool {
+        let hex = Hex.encode(epochId)
+        guard !(try entries()).contains(where: { $0.epochId != hex && !known.contains($0) }) else { return false }
+        try setCaughtUp(epochId)
+        return true
+    }
 }
 
 /// A ledger in memory (tests).
@@ -119,6 +133,14 @@ public final class MemoryWriteLedger: WriteLedgerStore, @unchecked Sendable {
     public func setCaughtUp(_ epochId: Data) throws {
         lock.lock(); defer { lock.unlock() }
         caught = epochId
+    }
+
+    public func setCaughtUp(_ epochId: Data, unlessAppendedBeyond known: Set<LedgerEntry>) throws -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        let hex = Hex.encode(epochId)
+        guard !list.contains(where: { $0.epochId != hex && !known.contains($0) }) else { return false }
+        caught = epochId
+        return true
     }
 
     /// Makes the ledger unreadable (`why`) until `repair`.
@@ -421,6 +443,18 @@ public final class FileWriteLedger: WriteLedgerStore, @unchecked Sendable {
     public func caughtUp() throws -> Data? { try readState().caughtUp.flatMap { Hex.decode($0) } }
 
     public func setCaughtUp(_ epochId: Data) throws { try updateState { $0.caughtUp = Hex.encode(epochId) } }
+
+    public func setCaughtUp(_ epochId: Data, unlessAppendedBeyond known: Set<LedgerEntry>) throws -> Bool {
+        let hex = Hex.encode(epochId)
+        return try lock.withLock {
+            // Under the lock `append` takes: nothing lands between this read and the state write.
+            guard !(try readLog()).contains(where: { $0.epochId != hex && !known.contains($0) }) else { return false }
+            var s = try readState()
+            s.caughtUp = hex
+            try writeState(s)
+            return true
+        }
+    }
 }
 
 /// `open(2)`, named apart from `FileWriteLedger.open(_:)`.

@@ -36,15 +36,19 @@ final class EpochVaultPropertyTests: VaultTestCase {
     func testTheSingleWriterHoldsOnRealVaults() throws {
         var all: [String] = []
         var seen: [String: Int] = [:]
-        for seed in 0..<UInt64(Self.seeds) {
+        // Not vacuous: every kind of step happened, and devices followed and refused takeovers. The vault keys are
+        // random, so a kind may miss the first seeds: more seeds run (up to three times as many) until each did.
+        let kinds = ["remove", "handoff", "takeover", "forgeByNonHome", "followedTakeover", "refusedForged", "dropped"]
+        var seed: UInt64 = 0
+        while seed < UInt64(Self.seeds) || (seed < UInt64(3 * Self.seeds) && kinds.contains { seen[$0, default: 0] == 0 }) {
             let (violations, stats) = try run(seed: seed, steps: 10)
             all += violations.map { "seed \(seed): \($0)" }
             seen.merge(stats, uniquingKeysWith: +)
+            seed += 1
         }
         XCTAssertTrue(all.isEmpty, all.prefix(10).joined(separator: "\n"))
-        // Not vacuous: every kind of step happened, and devices followed and refused takeovers.
-        for key in ["remove", "handoff", "takeover", "forgeByNonHome", "followedTakeover", "refusedForged", "dropped"] {
-            XCTAssertGreaterThan(seen[key, default: 0], 0, "no \(key) in \(Self.seeds) seeds: \(seen)")
+        for key in kinds {
+            XCTAssertGreaterThan(seen[key, default: 0], 0, "no \(key) in \(seed) seeds: \(seen)")
         }
     }
 

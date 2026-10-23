@@ -35,10 +35,21 @@ final class CatchUpMemo: @unchecked Sendable {
     private var running = false
     private var done: Data?
 
-    /// True when no catch-up is running (the ledger's own mark says whether one is needed: review M3).
-    func shouldRun(_ epochId: Data) -> Bool {
+    private var backOff: (epochId: Data, until: Date)?
+
+    /// True when no catch-up is running, and none of `epochId` left problems within the back-off (the ledger's
+    /// own mark says whether one is needed: review M3).
+    func shouldRun(_ epochId: Data, now: Date = Date()) -> Bool {
         lock.lock(); defer { lock.unlock() }
+        if let b = backOff, b.epochId == epochId, now < b.until { return false }
         return !running
+    }
+
+    /// An automatic catch-up of `epochId` left problems: the next writes do not scan the vault again for a while
+    /// (review nit: a persistent problem made every autosave rescan). `vault catch-up` still runs at once.
+    func backOff(_ epochId: Data, for interval: TimeInterval, now: Date = Date()) {
+        lock.lock(); defer { lock.unlock() }
+        backOff = (epochId, now.addingTimeInterval(interval))
     }
 
     /// Marks a catch-up running; false when one already is (a nested call).
@@ -67,8 +78,11 @@ extension Vault {
               catchUpMemo.shouldRun(secret.epochId) else { return }
         // The ledger's own mark decides, read at every write (an append of another epoch's entry clears it).
         if try ledger?.caughtUp() == secret.epochId { return }
-        try catchUp()
+        if !(try catchUp()).problems.isEmpty { catchUpMemo.backOff(secret.epochId, for: Self.catchUpBackOff) }
     }
+
+    /// How long writes skip an automatic catch-up of an epoch after one left problems.
+    static let catchUpBackOff: TimeInterval = 300
 
     /// Catches this device up to the current epoch (design §5.4): for every entry of its write ledger under
     /// an earlier epoch,
@@ -156,8 +170,9 @@ extension Vault {
         try ledger.remove(gone)
         sweepSupersededPassphraseCopies()
         report.setAside = try setAsideScan(skipping: Set(report.problems.keys))
-        if report.problems.isEmpty {
-            try ledger.setCaughtUp(current)
+        // The mark only when nothing of an older epoch was recorded meanwhile (review R1); else the next write
+        // catches that up too.
+        if report.problems.isEmpty, try ledger.setCaughtUp(current, unlessAppendedBeyond: Set(entries)) {
             finished = true
         }
         return report
@@ -312,11 +327,14 @@ extension Vault {
         defer { if !placed { try? FileManager.default.removeItem(at: tmp) } }
         try faults.check(.catchUpWritten(n))
         let check = try FileIO.read(tmp, maxBytes: CaptureFile.maxSealedBytes(kind))
-        guard corrupt || (try? AgeFile.decrypt(check, with: identities)).flatMap({
-            try? CaptureFile.unframe($0, filename: name, key: newKey)
-        }).map({ $0.line + [0x0A] + $0.payload }) == (try? CaptureFile.unframe(plain, filename: name,
-                                                                               key: CaptureKey.derive(from: key, device: fingerprint)))
-            .map({ $0.line + [0x0A] + $0.payload }) else {
+        // Split up: the macOS CI compiler cannot type-check this as one expression in time.
+        func framed(_ sealed: Data?, _ captureKey: CaptureKey) -> Data? {
+            guard let sealed, let capture = try? CaptureFile.unframe(sealed, filename: name, key: captureKey) else { return nil }
+            return capture.line + [0x0A] + capture.payload
+        }
+        let readBack: Data? = framed(try? AgeFile.decrypt(check, with: identities), newKey)
+        let original: Data? = framed(plain, CaptureKey.derive(from: key, device: fingerprint))
+        guard corrupt || readBack == original else {
             throw VaultError.epochChangeRefused("\(entry.path): the re-sealed copy does not read back")
         }
         try faults.check(.catchUpVerified(n))
