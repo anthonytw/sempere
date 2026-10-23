@@ -113,10 +113,12 @@ public enum PublishedSummaries {
         HKDF<SHA256>.deriveKey(inputKeyMaterial: secret.key, info: Data(keyInfo.utf8), outputByteCount: 32)
     }
 
-    /// `SMPU` then version 2: a per-device file (format.md §12.5), whose header also carries its epoch.
-    static let deviceMagic: [UInt8] = [0x53, 0x4D, 0x50, 0x55, 0x02]
+    /// `SMPU` then version 3: a signed per-device file (format.md §12.5), whose header also carries its epoch.
+    static let deviceMagic: [UInt8] = [0x53, 0x4D, 0x50, 0x55, 0x03]
     /// `deviceMagic` and the epoch (4 bytes, big-endian).
     static let deviceHeaderSize = 9
+    /// The signature after a per-device file's tag: P-256 `r ‖ s` (64 bytes), then ML-DSA-65 (3309 bytes).
+    static let signatureSize = AuthorSignature.p256Size + AuthorSignature.mldsa65Size
 
     static func aad(vaultId: UUID) -> Data { aad(header: Data(magic), vaultId: vaultId) }
 
@@ -124,24 +126,44 @@ public enum PublishedSummaries {
         header + Data("sempere/1".utf8) + Data([0]) + Data(vaultId.uuidString.lowercased().utf8)
     }
 
-    /// True when `data` starts like a sealed summaries file (`SMPU` `0x01` or `0x02`).
+    /// True when `data` starts like a sealed summaries file (`SMPU` `0x01`, or `0x03` for a per-device file).
     public static func looksSealed(_ data: Data) -> Bool {
         data.starts(with: magic) || data.starts(with: deviceMagic)
     }
 
-    /// The epoch in the clear header of a per-device file (`SMPU` `0x02`, format.md §12.5), nil for any other
-    /// bytes. It is bound to the content as associated data, so a file whose header was changed does not
-    /// open; read without the key, it tells whether a file that does not open is of a later epoch.
+    /// The epoch in the clear header of a per-device file (`SMPU` `0x03`, format.md §12.5), nil for any other
+    /// bytes. It is bound to the content as associated data and covered by the signature, so a file whose
+    /// header was changed does not open; read without the key, it tells whether a file that does not open
+    /// is of a later epoch.
     public static func sealedEpoch(_ data: Data) -> Int? {
         guard data.count >= deviceHeaderSize, data.starts(with: deviceMagic) else { return nil }
         let b = Array(data.prefix(deviceHeaderSize).suffix(4))
         return Int(b[0]) << 24 | Int(b[1]) << 16 | Int(b[2]) << 8 | Int(b[3])
     }
 
+    /// A per-device file split into its sealed part (header, nonce, ciphertext, tag) and its signature; nil
+    /// when it is not `SMPU` `0x03` or too short to hold both.
+    static func split(_ data: Data) -> (sealed: Data, signature: AuthorSignature)? {
+        guard data.starts(with: deviceMagic), data.count >= deviceHeaderSize + nonceSize + tagSize + signatureSize else {
+            return nil
+        }
+        let sealed = Data(data.prefix(data.count - signatureSize))
+        let sig = Data(data.suffix(signatureSize))
+        guard let signature = AuthorSignature(p256: Data(sig.prefix(AuthorSignature.p256Size)),
+                                              mldsa65: Data(sig.suffix(AuthorSignature.mldsa65Size))) else { return nil }
+        return (sealed, signature)
+    }
+
+    /// `sealed` followed by `signature` (P-256, then ML-DSA-65): a per-device file.
+    static func attach(_ signature: AuthorSignature, to sealed: Data) -> Data {
+        sealed + signature.p256 + signature.mldsa65
+    }
+
     // MARK: - Sealing
 
-    /// `SMPU 0x01 ‖ nonce ‖ AES-256-GCM(plaintext) ‖ tag`, or with `epoch` (a per-device file, §12.5)
-    /// `SMPU 0x02 ‖ epoch (u32 BE) ‖ nonce ‖ … ‖ tag`; the header is the associated data's start.
+    /// `SMPU 0x01 ‖ nonce ‖ AES-256-GCM(plaintext) ‖ tag`, or with `epoch` the sealed part of a per-device
+    /// file (§12.5), `SMPU 0x03 ‖ epoch (u32 BE) ‖ nonce ‖ … ‖ tag`, which its signature then follows
+    /// (`attach`); the header is the associated data's start.
     /// `nonce` is random unless given (test vectors).
     static func seal(_ plaintext: Data, secret: VaultEpochKey, vaultId: UUID, epoch: Int? = nil, nonce: Data? = nil) throws -> Data {
         var header = Data(magic)
@@ -156,7 +178,8 @@ public enum PublishedSummaries {
         return header + combined
     }
 
-    /// The plaintext of a sealed file; throws `damaged` for anything that is not one of this vault's.
+    /// The plaintext of a sealed file (a per-device file's sealed part, without its signature: `split`);
+    /// throws `damaged` for anything that is not one of this vault's. Checks no signature.
     static func open(_ data: Data, secret: VaultEpochKey, vaultId: UUID) throws -> Data {
         guard data.count <= maxFileBytes else { throw PublishedSummariesError.damaged("larger than \(maxFileBytes) bytes") }
         let headerSize = data.starts(with: deviceMagic) ? deviceHeaderSize : magic.count
@@ -339,6 +362,8 @@ public enum PublishedSummaries {
 /// Why a published summaries file was ignored.
 public enum PublishedSummariesError: Error, Hashable, Sendable {
     case damaged(String)
+    /// A per-device file cannot be written: the vault was not opened as a listed device with its signing keys.
+    case cannotSign(String)
 }
 
 extension Vault {
@@ -367,25 +392,54 @@ extension Vault {
     /// The valid entries of every published summaries file of the vault that is
     /// here and opens (`publishedSummaryFiles`), one dictionary per file; a
     /// file that is missing, too large or does not open is skipped.
-    public func readEveryPublishedSummaries() -> [[UUID: PublishedSummaries.Entry]] {
+    public func readEveryPublishedSummaries(now: Date = Date()) -> [[UUID: PublishedSummaries.Entry]] {
         publishedSummaryFiles().compactMap { file in
             guard let data = try? BoundedRead.contents(of: file, maxBytes: PublishedSummaries.maxFileBytes) else { return nil }
+            // A per-device file counts only when it is that device's, signed (§12.5).
+            if let device = PublishedSummaries.device(ofFileName: file.lastPathComponent),
+               file.deletingLastPathComponent().lastPathComponent == PublishedSummaries.deviceFolderName {
+                return try? openDevicePublishedSummaries(data, device: device, now: now).entries
+            }
             return try? openPublishedSummaries(data)
         }
     }
 
-    /// The sealed file for `entries`.
+    /// The sealed root file (§12.1) for `entries`.
     public func sealPublishedSummaries(_ entries: [UUID: PublishedSummaries.Entry]) throws -> Data {
-        try sealPublishedSummaries(PublishedSummaries.Contents(entries: entries))
+        let json = try PublishedSummaries.encode(entries, vaultId: vaultId)
+        return try PublishedSummaries.seal(try Gzip.compress(json), secret: try requireSecret(), vaultId: vaultId)
     }
 
-    /// The sealed file for `contents` (a per-device file names its device and version, §12.5).
-    public func sealPublishedSummaries(_ contents: PublishedSummaries.Contents) throws -> Data {
-        let json = try PublishedSummaries.encode(contents.entries, vaultId: vaultId, device: contents.device,
-                                                 version: contents.version, synced: contents.synced)
-        // A per-device file carries its epoch in the clear (format.md §12.5).
+    /// This device's per-device file (format.md §12.5) for `entries` at `version`: sealed under the epoch's
+    /// key with the epoch in its header, then signed by this device (`writerDevice`) with its signing pair.
+    ///
+    /// - Throws: `PublishedSummariesError.cannotSign` when the vault was not opened as a listed device with
+    ///   its signing keys; `VaultError.locked` without the key.
+    package func sealDevicePublishedSummaries(_ entries: [UUID: PublishedSummaries.Entry], version: Int64,
+                                              synced: Date? = nil) throws -> Data {
+        guard let device = writerDevice, let signing else {
+            throw PublishedSummariesError.cannotSign("needs this device's own entry and signing keys")
+        }
+        return try sealDeviceFile(entries, device: device, version: version, signer: signing, synced: synced)
+    }
+
+    /// `entries` as `device`'s file at `version`, signed by `signer` over the message for `device` and
+    /// `version` (tests forge with it; `sealDevicePublishedSummaries` is the writer).
+    func sealDeviceFile(_ entries: [UUID: PublishedSummaries.Entry], device: DeviceID, version: Int64,
+                        signer: DeviceSigningKeys, nonce: Data? = nil, synced: Date? = nil) throws -> Data {
+        let sealed = try sealDeviceBody(entries, device: device, version: version, nonce: nonce, synced: synced)
+        let message = AuthorMessage.summaries(vaultId: vaultId, epoch: manifest.epoch, epochId: manifest.epochId,
+                                              device: device, version: version, sealed: sealed)
+        return PublishedSummaries.attach(try signer.sign(message), to: sealed)
+    }
+
+    /// The sealed part of a per-device file (header, nonce, ciphertext, tag), without its signature.
+    func sealDeviceBody(_ entries: [UUID: PublishedSummaries.Entry], device: DeviceID, version: Int64,
+                        nonce: Data? = nil, synced: Date? = nil) throws -> Data {
+        let json = try PublishedSummaries.encode(entries, vaultId: vaultId, device: device, version: version,
+                                                 synced: synced)
         return try PublishedSummaries.seal(try Gzip.compress(json), secret: try requireSecret(), vaultId: vaultId,
-                                           epoch: contents.device == nil ? nil : manifest.epoch)
+                                           epoch: manifest.epoch, nonce: nonce)
     }
 
     /// When the device `id` (its 8 hex digits) last completed a two-way sync, from its own
@@ -419,7 +473,8 @@ extension Vault {
         contents.version = version
         contents.synced = now
         try FileIO.createDirectory(url.deletingLastPathComponent())
-        try FileIO.writeAtomically(try sealPublishedSummaries(contents), to: url, replacing: true)
+        try FileIO.writeAtomically(try sealDevicePublishedSummaries(contents.entries, version: version, synced: now), to: url,
+                                   replacing: true)
         return true
     }
 
@@ -429,31 +484,42 @@ extension Vault {
     public func resealOwnSummaries(_ previous: PublishedSummaries.Contents, device: DeviceID, now: Date = Date()) throws {
         try requireWritable()
         guard let version = PublishedSummaries.nextVersion(after: previous.version, now: now) else { return }
-        var contents = previous
-        contents.device = device
-        contents.version = version
         let url = devicePublishedSummariesURL(device)
         try FileIO.createDirectory(url.deletingLastPathComponent())
-        try FileIO.writeAtomically(try sealPublishedSummaries(contents), to: url, replacing: true)
+        try FileIO.writeAtomically(try sealDevicePublishedSummaries(previous.entries, version: version, synced: previous.synced),
+                                   to: url, replacing: true)
     }
 
-    /// The valid entries of a sealed file of this vault.
+    /// The valid entries of the root file (§12.1, `SMPU` `0x01`). A per-device file is read only through
+    /// `openDevicePublishedSummaries`, which checks its signature.
     ///
     /// - Throws: `PublishedSummariesError.damaged` for a file that is not
-    ///   this vault's (or is damaged); `VaultError.locked` without the secret.
+    ///   this vault's root file (or is damaged); `VaultError.locked` without the secret.
     public func openPublishedSummaries(_ data: Data) throws -> [UUID: PublishedSummaries.Entry] {
-        try openPublishedSummariesContents(data).entries
+        guard data.starts(with: PublishedSummaries.magic) else {
+            throw PublishedSummariesError.damaged("not a root summaries file")
+        }
+        return try decryptPublishedSummaries(data).entries
     }
 
-    /// A sealed file of this vault with its `device` and `version` (format.md §12.5).
-    ///
-    /// - Throws: as `openPublishedSummaries`.
-    public func openPublishedSummariesContents(_ data: Data) throws -> PublishedSummaries.Contents {
+    /// The content of a sealed file of this vault (a per-device file's sealed part, or the whole file:
+    /// its signature is ignored) with its `device` and `version`. Checks NO signature: diagnostics and
+    /// `openDevicePublishedSummaries` only.
+    func decryptPublishedSummaries(_ data: Data) throws -> PublishedSummaries.Contents {
+        guard data.starts(with: PublishedSummaries.deviceMagic) else { return try decryptSealed(data) }
+        guard let (sealed, _) = PublishedSummaries.split(data) else {
+            throw PublishedSummariesError.damaged("too short for a signed per-device file")
+        }
+        return try decryptSealed(sealed)
+    }
+
+    /// The content of a root file, or of a per-device file's sealed part (no signature).
+    private func decryptSealed(_ body: Data) throws -> PublishedSummaries.Contents {
         // A per-device file's header names the epoch of the key that sealed it: this vault's, or it is not one.
-        if let epoch = PublishedSummaries.sealedEpoch(data), epoch != manifest.epoch {
+        if let epoch = PublishedSummaries.sealedEpoch(body), epoch != manifest.epoch {
             throw PublishedSummariesError.damaged("sealed under epoch \(epoch), not this vault's \(manifest.epoch)")
         }
-        let plain = try PublishedSummaries.open(data, secret: try requireSecret(), vaultId: vaultId)
+        let plain = try PublishedSummaries.open(body, secret: try requireSecret(), vaultId: vaultId)
         let json: Data
         do { json = try Gzip.decompress(plain, maxOutput: PublishedSummaries.maxJSONBytes) } catch {
             throw PublishedSummariesError.damaged("does not gunzip")
@@ -461,35 +527,65 @@ extension Vault {
         return try PublishedSummaries.decodeContents(json, vaultId: vaultId)
     }
 
-    /// A per-device file of `device` (format.md §12.5): it must open, name `device` and carry a version
-    /// no more than `PublishedSummaries.futureWindow` ahead of `now`; all of it is authenticated with the
-    /// rest. Anything else throws `damaged`: such a copy is never placed and never ordered against another.
+    /// The signing keys a per-device file of `device` must verify under (format.md §12.5): those of every
+    /// device entry with that id in this vault's `vault.json`, as opened and checked (`listStatus`
+    /// verified), never a list from anywhere else. Empty when the list did not check or no listed device
+    /// has that id (a removed device's signatures stop verifying once its entry is gone).
+    public func summariesSigningKeys(of device: DeviceID) -> [DeviceSigningPublicKeys] {
+        guard case .verified = listStatus else { return [] }
+        return manifest.devices(withId: device.rawValue).compactMap(\.sign)
+    }
+
+    /// A per-device file of `device` (format.md §12.5): `SMPU` `0x03` of this vault's epoch, it opens under
+    /// the epoch's key, names `device` and carries a version, its signature verifies under the signing keys
+    /// of a device of the checked list with that id (`summariesSigningKeys`) over the message for this
+    /// vault, epoch, device, version and sealed bytes (`AuthorMessage.summaries`), and its version is no
+    /// more than `PublishedSummaries.futureWindow` ahead of `now` (a clock-skew guard). Anything else
+    /// throws `damaged`: such a copy is never placed, never ordered against another and never read for
+    /// entries.
     public func openDevicePublishedSummaries(_ data: Data, device: DeviceID, now: Date = Date()) throws
         -> PublishedSummaries.Contents {
-        guard data.starts(with: PublishedSummaries.deviceMagic) else {
-            throw PublishedSummariesError.damaged("not a per-device file (no epoch header)")
+        guard data.count <= PublishedSummaries.maxFileBytes else {
+            throw PublishedSummariesError.damaged("larger than \(PublishedSummaries.maxFileBytes) bytes")
         }
-        let contents = try openPublishedSummariesContents(data)
+        guard let (sealed, signature) = PublishedSummaries.split(data) else {
+            throw PublishedSummariesError.damaged("not a signed per-device file")
+        }
+        let contents = try decryptSealed(sealed)
         guard contents.device == device else {
             throw PublishedSummariesError.damaged("written for another device than its name says")
         }
-        guard contents.version != nil else { throw PublishedSummariesError.damaged("no version") }
-        guard PublishedSummaries.accepted(contents.version, now: now) != nil else {
+        guard let version = contents.version else { throw PublishedSummariesError.damaged("no version") }
+        let keys = summariesSigningKeys(of: device)
+        guard !keys.isEmpty else {
+            throw PublishedSummariesError.damaged("no device \(device) on the checked device list to verify it")
+        }
+        let message = AuthorMessage.summaries(vaultId: vaultId, epoch: manifest.epoch, epochId: manifest.epochId,
+                                              device: device, version: version, sealed: sealed)
+        guard keys.contains(where: { signature.verifies(message, keys: $0) }) else {
+            throw PublishedSummariesError.damaged("its signature does not verify as device \(device)'s")
+        }
+        guard PublishedSummaries.accepted(version, now: now) != nil else {
             throw PublishedSummariesError.damaged("a version too far ahead of this device's clock")
         }
         return contents
     }
 
-    /// Writes this device's `summaries/<device>.sealed` (format.md §12.5) with `entries`, under the next
-    /// version after the one there (`PublishedSummaries.nextVersion`). Returns the bytes written. A file
-    /// there that does not open as this device's (sealed under an earlier epoch's key, damaged, or with a
-    /// version beyond the window) gives no previous version: the new one starts at the clock.
+    /// Writes this device's `summaries/<device>.sealed` (format.md §12.5, `<device>` its `writerDevice`)
+    /// with `entries`, signed, under the next version after the one there (`PublishedSummaries.nextVersion`).
+    /// Returns the bytes written. A file there that does not open as this device's (sealed under an earlier
+    /// epoch's key, damaged, unsigned, or with a version beyond the window) gives no previous version: the
+    /// new one starts at the clock.
+    ///
+    /// - Throws: `PublishedSummariesError.cannotSign` without this device's entry and signing keys.
     ///
     /// A device that takes a new epoch reseals its file under the new key at once (`resealOwnSummaries`, KH4).
     @discardableResult
-    public func writeDevicePublishedSummaries(_ entries: [UUID: PublishedSummaries.Entry], device: DeviceID,
-                                              now: Date = Date()) throws -> Data {
+    public func writeDevicePublishedSummaries(_ entries: [UUID: PublishedSummaries.Entry], now: Date = Date()) throws -> Data {
         try requireWritable()
+        guard let device = writerDevice, signing != nil else {
+            throw PublishedSummariesError.cannotSign("needs this device's own entry and signing keys")
+        }
         let url = devicePublishedSummariesURL(device)
         let previous = FileIO.exists(url)
             ? (try? BoundedRead.contents(of: url, maxBytes: PublishedSummaries.maxFileBytes))
@@ -498,8 +594,7 @@ extension Vault {
             throw PublishedSummariesError.damaged("the previous version is the greatest there is")
         }
         // The device's last sync (`synced`, KH4) stays as it was.
-        let data = try sealPublishedSummaries(PublishedSummaries.Contents(entries: entries, device: device, version: version,
-                                                                          synced: previous?.synced))
+        let data = try sealDevicePublishedSummaries(entries, version: version, synced: previous?.synced)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileIO.writeAtomically(data, to: url, replacing: true)
         return data

@@ -114,7 +114,7 @@ except these, which are replaced whole (atomically):
 | `vault.json` | the home device (§15.3); for `label` alone, any listed device | creation, a device approved or renamed (§2), a label change (§2) |
 | `settings.age` | devices that opted in | when a shared setting changes, or a device's merged copy is newer (§13.3) |
 | `sempere-summaries.sealed` | the CLI and the WebDAV sync | when a listed note changed (§12.4) |
-| `summaries/<device>.sealed` | that device only | when its listing changed (§12.5) |
+| `summaries/<device>.sealed` | that device only (signed by it) | when its listing changed (§12.5) |
 
 A file-sync service may keep two versions of one of them, written by two
 devices at once (iCloud Drive's conflict versions), or a whole other copy of
@@ -3353,7 +3353,7 @@ file = 534d505501a0a1a2a3a4a5a6a7a8a9aaabb466bcf027fe45b94f3fe195f6e0b57d9c6e
   without such text are left out. Dates are as in §6.
 
 A per-device file (§12.5) also has `"device"`, its writer's device id, and `"version"`, an integer
-from 1 to 2^53 − 1 that its writer raises with every write (§12.5). The root file has neither; a reader
+from 1 to 2^53 − 1 that its writer raises with every write (§12.5); both are covered by its signature. The root file has neither; a reader
 ignores a malformed value of either.
 
 Unknown fields are ignored. Writers emit no others under `format`
@@ -3393,41 +3393,68 @@ write per-device files (§12.5).
 ### 12.5 Per-device files
 
 A vault may also hold `summaries/<device>.sealed`, where `<device>` is a
-writer's device id (§5, 8 lowercase hex digits): the file of §12.1 and §12.2
-(same key, same content) with a longer header that carries the epoch in the
-clear:
+writer's device id in the vault (§15.4: the first 8 hex digits of its
+fingerprint): the content of §12.2, sealed as in §12.1 (same key) behind a
+longer header that carries the epoch in the clear, and signed by the device:
 
 | Offset | Size | Content |
 | --- | --- | --- |
 | 0 | 4 | ASCII `SMPU` |
-| 4 | 1 | version `0x02` |
+| 4 | 1 | version `0x03` |
 | 5 | 4 | the epoch (§15.2) whose key sealed it, big-endian |
 | 9 | 12 | nonce, random per write |
-| 21 | rest | AES-256-GCM ciphertext under `key`, then its 16-byte tag |
+| 21 | n | AES-256-GCM ciphertext under `key`, then its 16-byte tag |
+| 21 + n | 64 | P-256 ECDSA signature `r ‖ s` |
+| 85 + n | 3309 | ML-DSA-65 signature |
 
-The associated data is the first 9 bytes ‖ `"sempere/1"` ‖ `0x00` ‖ `vaultId`,
-so a changed epoch does not open, and a reader opens a file only when its
-epoch is the one of the key it holds. A device that cannot open a copy reads
-the epoch to tell a copy of a later epoch it knows of (above its key's epoch,
-and no later than the epoch its own `vault.json` names, or than the next epoch
-when the other side's `vault.json` is that epoch with an `epochSig` by the home
-device it knows over a parent that is its own epoch: sealed under a key it does
-not hold, left as it is) from a damaged or stale one, or a header nobody with
-the key wrote (anything else: replaced). A header of a file that does not open
-is not authenticated, which is why only a `vault.json` the device checked can
-make it believe one. It is written only by that device, from its own listing, when the
-notes it has read change. Since no two
-devices ever write one file, a file-sync service never has two versions of
-it to reconcile (§1.3), whatever the devices do at once. Names that are not
-`<device>.sealed` with a valid device id are ignored. Its content names that device in `device` and
-carries a `version` (§12.2): the writer's previous version plus one, and at least the milliseconds
-since 1970 of its clock (so a device that lost its file still writes a later one). A file whose
-`device` is not its name's, or that has no valid `version`, is not that device's file. A reader
-treats a `version` more than 7 days ahead of its own clock as none: every holder of the vault key can
-seal any device's file, and a far-future version must never win or push its device's versions toward
-the limit. Two installs that share a device id (a copied CLI state folder) are one writer to the
-format: whichever wrote the later version is kept, until one of them writes again (or seals its
-own again once the other's is more than 7 days old, below).
+The associated data is the first 9 bytes ‖ `"sempere/1"` ‖ `0x00` ‖ `vaultId`.
+Call every byte before the signatures (header, nonce, ciphertext, tag) `sealed`.
+Both signatures are by the device's signing pair (§15.5, design §4.1), made
+as `authorSig` is (P-256 over SHA-256 of the message, ML-DSA-65 pure with an
+empty context), over:
+
+```
+"sempere/1 author summaries" ‖ lp(vaultId) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(device) ‖ lp(version) ‖ lp(SHA-256(sealed))
+```
+
+with `lp()` of §15.1: `vaultId` lowercase, `epoch` and `version` decimal
+ASCII, `epochId` 64 lowercase hex digits, `device` its 8 hex digits, the
+digest its 32 raw bytes. The `device` and `version` are those of the content.
+
+A reader takes a copy as that device's file only when all of these hold: it
+starts with `SMPU` `0x03` and is long enough for the signatures; its epoch is
+the one of the key the reader holds and it opens under it; its content's
+`device` is the file name's and it has a valid `version` (§12.2); both
+signatures verify under the `sign` keys of a device entry with that id in
+the reader's own `vault.json`, as opened and checked (§15.3), never keys
+from any other file; and the version is no more than 7 days ahead of the
+reader's clock (a guard against a writer's clock far ahead: a later one
+would hold the file at that version until the clock caught up). Anything
+else is not that device's file: not placed, not ordered, and not read for
+entries. Only the device's own signing keys make such a file, so no other
+listed device and no storage can write or alter one, and a removed device's
+files stop verifying once its entry is gone from the list (removals are new
+epochs, §15.14, so its old files do not open either). An earlier header
+(`SMPU` `0x02`, unsigned) is not a per-device file.
+
+A device that cannot open a copy reads the epoch to tell a copy of a later epoch it knows of (above
+its key's epoch, and no later than the epoch its own `vault.json` names, or than the next epoch when
+the other side's `vault.json` is a direct child of the epoch the device pinned whose `epochLink` and
+`epochSig` verify from its trust record: the check of a removal notice, §15.14 "Unlisted devices";
+sealed under a key it does not hold, left as it is) from a damaged or stale one, or a header nobody
+with the key wrote (anything else: replaced). A header of a file that does not open is not
+authenticated, which is why only a `vault.json` the device checked can make it believe one.
+
+The file is written only by its device, from its own listing, when the notes
+it has read change. Since no two devices ever write one file, a file-sync
+service never has two versions of it to reconcile (§1.3), whatever the
+devices do at once. Names that are not `<device>.sealed` with a valid device
+id are ignored. Its `version` is the writer's previous version plus one, and
+at least the milliseconds since 1970 of its clock (so a device that lost its
+file still writes a later one). Two installs that share a device's keys (a
+copied CLI state folder) are one writer to the format: whichever wrote the
+later version is kept, until one of them writes again (or seals and signs
+its own again once the other's is more than 7 days old, below).
 
 A reader may read all of them, and the root file, before the notes arrive
 (a device opening a vault that a file-sync service is still delivering):
@@ -3446,27 +3473,26 @@ ignored. A writer that no longer exists leaves a file that only goes stale.
 A sync (§1.3) copies every device's file to the side that lacks it, and when
 both sides hold different copies of another device's file, keeps the later
 `version` on both (equal versions: the copy with the greater SHA-256, so every
-device keeps the same one). The version is read only from a copy that opens,
-names the device and is within the 7-day window, so storage cannot forge one; a
-copy without one never replaces one with. "The side that changed since the last
-sync" is not an order: two devices that each sync two places can hand two
-versions round them for ever. A copy a device cannot open is never replaced by
-it when its header names a later epoch than the device's own (sealed under a key
-the device lacks); one of the device's epoch or an earlier one is damaged or
-stale and is replaced. Without the key nothing is ordered, and differing copies
-stay as they are (a locked staging run takes the other side's copy, which the
-run that places it orders).
+device keeps the same one). The version is read only from a copy that is that
+device's file (above), so neither storage nor another key holder can forge or
+roll one; a copy that is not never replaces one that is, and is replaced by it.
+"The side that changed since the last sync" is not an order: two devices that
+each sync two places can hand two versions round them for ever. A copy a device
+cannot open is never replaced by it when its header names a later epoch than the
+device's own (sealed under a key the device lacks); one of the device's epoch or
+an earlier one is damaged or stale and is replaced. Without the key, or with a
+`vault.json` that did not check (no signing key to verify against), nothing is
+ordered, and differing copies stay as they are (a locked staging run takes the
+other side's copy, which the run that places it orders).
 A device's own file is only ever written by that device: a sync never replaces
 it with another copy, and replaces any other copy with it except one ordered
-after it, which is left until the device writes a later version, or until that
-copy's version is more than 7 days in the past: the device then seals its own
-entries again at the clock and puts them (at most once per 7 days per install).
-Another key holder can therefore hold back a device's file with a forged
-version for at most twice the 7-day window (summaries are hints; a device
-signature over the version would end this, and is not in this version). A received file is placed only
-when it starts with `SMPU` `0x02` and, with the vault unlocked, opens as that
-device's file (§12.3); otherwise it is skipped (a hint, never quarantined).
-Nothing is ever deleted.
+after it (only the device's own keys can have signed one: another install of
+it), which is left until the device writes a later version, or until that
+copy's version is more than 7 days in the past: the device then seals and signs
+its own entries again at the clock and puts them (at most once per 7 days per
+install). A received file is placed only when it starts with `SMPU` `0x03` and,
+with the vault unlocked, is that device's file; otherwise it is skipped (a hint,
+never quarantined). Nothing is ever deleted.
 
 A per-device file may carry, at the top level next to `notes`, `synced`: the time (RFC 3339) its device last
 completed a two-way sync (key-hierarchy design §5.5; §15.15). Its device rewrites the file to update it (at the
@@ -3834,6 +3860,7 @@ that is not an addition of the current epoch (review M3).
 | `addSig` | `"sempere/1 author entry"` ‖ lp(vaultId) ‖ lp(addedEpoch) ‖ lp(key) ‖ lp(sign.p256) ‖ lp(sign.mldsa65) ‖ lp(kind) ‖ lp(added) ‖ lp(addedBy) |
 | `epochSig`, `recoverySig` | `"sempere/1 author epoch"` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(parent) ‖ lp(reason) ‖ lp(recovery) ‖ lp(home) ‖ the first list ‖ the parent list as the author saw it (lists as §15.1; `parent` empty at epoch 1; `recovery` the epoch's recovery fingerprint, review M1; `home` the home's fingerprint after the epoch). `recoverySig`, in a `takeover` only, is by the recovery key's pair over the same message |
 | `authorSig` | `"sempere/1 author manifest"` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(epochRecordHash) ‖ lp(SHA-256(listMessage)) ‖ lp(format) ‖ the distinct `features` (a list, §15.1) |
+| per-device summaries (§12.5) | `"sempere/1 author summaries"` ‖ lp(vaultId) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(device) ‖ lp(version) ‖ lp(SHA-256(sealed)), by the device the file names (any listed device, for its own file only) |
 
 ### 15.6 Epoch records
 
@@ -4193,7 +4220,8 @@ is never placed.
 trust record pins the parent epoch, and which verifies the change from that record alone (the link
 under the pinned link keys, `epochSig` by the pinned home, or a takeover's signatures by its new home and
 the pinned kit) knows it was removed: it writes nothing (`VaultError.removedFromVault`, CLI exit 8). A
-change it cannot verify is not taken as its removal.
+change it cannot verify is not taken as its removal. The same check, and only it, makes a device believe
+the next epoch a server's `vault.json` names when it orders per-device summaries files (§12.5).
 
 **Revision names** keep the writing machine's own id (its device state, §5), as before the key
 hierarchy; ids decide nothing. Its `summaries/<device>.sealed` (§12.5) and sync state use its id in the

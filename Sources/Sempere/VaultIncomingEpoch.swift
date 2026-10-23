@@ -254,7 +254,9 @@ extension Vault {
     /// verified from the pinned chain alone (design §5.6 rule 3): the link under that epoch's link keys,
     /// `recoverySig` by the kit `TakeoverRule` names for this device, `epochSig` by the new home. Why, or nil.
     func takeoverWithoutThisDevice(_ m: EpochManifest) -> String? {
-        guard EpochReason(rawValue: m.epochReason) == .takeover, let record = trustedRecord(),
+        // A direct child of the frontier is `removalNotice`'s (the shared `EpochFrontier.verifiedChild`); this covers
+        // a takeover under an older pinned epoch.
+        guard EpochReason(rawValue: m.epochReason) == .takeover, let record = trustedRecord(), m.parent != record.pinned?.epochId,
               let i = record.chain.firstIndex(where: { $0.epochId == m.parent }), m.epoch == record.chain[i].epoch + 1,
               EpochLinks.verify(m.epochLink, keys: record.chain[i].linkPublicKeys, epoch: m.epoch, childEpochId: m.epochId,
                                 vaultId: m.vaultId),
@@ -329,9 +331,9 @@ extension Vault {
     /// `EpochManifest.check` against the pinned epoch as this device verified it. Returns the entries
     /// admitted, nil when it fails.
     static func recordPendingCheck(_ m: EpochManifest, key: VaultEpochKey, trusted record: EpochTrustRecord) -> [EpochKeyEntry]? {
-        guard let pinned = record.pinned, record.root == m.root, m.parent == pinned.epochId, m.epoch == pinned.epoch + 1,
-              EpochLinks.verify(m.epochLink, keys: pinned.linkPublicKeys, epoch: m.epoch, childEpochId: m.epochId,
-                                vaultId: m.vaultId) else { return nil }
+        // The shared "believe this next epoch" predicate first (link, signer, kit), then every check under the key.
+        guard let pinned = record.pinned, let frontier = EpochFrontier(record: record), frontier.verifiedChild(m) != nil
+        else { return nil }
         let list = Set(record.list.map(\.fingerprint))
         let ancestry = record.chain.reduce(into: list) { $0.formUnion($1.list) }
         let parent = EpochManifest.VerifiedParent(list: list, home: record.home, recovery: pinned.recovery, ancestry: ancestry)

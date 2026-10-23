@@ -170,7 +170,10 @@ extension GzipError: CustomStringConvertible {
 extension PublishedSummariesError: CustomStringConvertible {
     /// A human sentence for each case.
     public var description: String {
-        switch self { case .damaged(let why): return "the published summaries file is damaged: \(why)" }
+        switch self {
+        case .damaged(let why): return "the published summaries file is damaged: \(why)"
+        case .cannotSign(let why): return "this device cannot sign its published summaries file: \(why)"
+        }
     }
 }
 

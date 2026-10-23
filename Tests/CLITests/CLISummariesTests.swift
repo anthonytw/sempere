@@ -102,6 +102,7 @@ final class CLIDeviceSummariesFileTests: CLITestCase {
             return (device, try Data(contentsOf: url))
         }
         let (device, first) = try write()
+        XCTAssertEqual(device, vault.writerDevice, "named by this device's id in the vault")
         let opened = try vault.openDevicePublishedSummaries(first, device: device)
         XCTAssertEqual(opened.device, device)
         XCTAssertEqual(opened.entries.count, try vault.noteIDs().count)
