@@ -253,8 +253,12 @@ extension Vault {
             throw VaultError.setAsideFailed("\(item.path) does not verify under any key this device holds")
         }
         let target = url.appendingPathComponent(item.path)
-        if let current = try? readFile(target, maxBytes: BoundedRead.maxRevisionBytes), acceptedBody(of: current, path: item.path) == gzip {
-            return   // already in the vault, accepted
+        if let current = try? readFile(target, maxBytes: BoundedRead.maxRevisionBytes), let body = acceptedBody(of: current, path: item.path) {
+            // An accepted file is never replaced (design §5.4 step 4, J8; review S7): the same body is kept
+            // already, another body wins over the set-aside one.
+            if body == gzip { return }
+            throw VaultError.setAsideFailed("\(item.path) holds an accepted file with another body: it is not replaced "
+                + "(export the set-aside copy instead)")
         }
         let fresh = try encrypt(BodyFraming.frame(gzip: gzip, noteId: scope, filename: name, secret: try requireSecret()))
         // What is at the path now is unaccepted (else it would be the same body): it is set aside first.
@@ -276,10 +280,14 @@ extension Vault {
 
     /// Writes the content of the blob file `source` (under any key this vault holds) as a blob of `note`
     /// under the current key and name; nothing when it is there already.
-    func reencryptBlob(at source: URL, note: UUID, fileName: String) throws {
-        let secrets = [try requireSecret()] + blobOlderEpochs.map(\.key)
+    @discardableResult
+    func reencryptBlob(at source: URL, note: UUID, fileName: String, extraKeys: [VaultEpochKey] = []) throws -> BlobRef {
+        let known = Set(([try requireSecret()] + blobOlderEpochs.map(\.key)).map(\.epochId))
+        let extra = extraKeys.filter { !known.contains($0.epochId) }
+        let secrets = [try requireSecret()] + blobOlderEpochs.map(\.key) + extra
+        let identities = blobIdentities + (try extra.map { NativeIdentity.mlkem768x25519(try $0.vaultIdentity()) as any AgeIdentity })
         let peek: BlobPeek
-        do { peek = try Self.peekBlobFile(source, identities: blobIdentities) } catch {
+        do { peek = try Self.peekBlobFile(source, identities: identities) } catch {
             throw VaultError.setAsideFailed("\(fileName) does not open under any key this device holds")
         }
         guard let kind = BlobName.parse(fileName)?.kind, let type = Self.mediaType(of: kind) else {
@@ -287,8 +295,9 @@ extension Vault {
         }
         let ref = BlobRef(sha256: peek.header.sha256, size: peek.header.length, type: type)
         try writeBlobStream(note: note, ref: ref, digest: peek.header.digest) { emit in
-            _ = try Self.readBlobFile(source, identities: blobIdentities, secrets: secrets, expected: nil,
+            _ = try Self.readBlobFile(source, identities: identities, secrets: secrets, expected: nil,
                                       maxContent: BlobRef.maxSize, name: fileName, sink: emit)
         }
+        return ref
     }
 }

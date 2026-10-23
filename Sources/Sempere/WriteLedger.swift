@@ -47,7 +47,9 @@ public struct LedgerEntry: Hashable, Sendable, Codable {
 /// Where a device keeps its write ledger for one vault (design §5.4). Every method fails closed: an
 /// unreadable ledger throws, never reads as empty.
 public protocol WriteLedgerStore: Sendable {
-    /// Appends `entries` durably (intent first: the caller places the files only after this returns).
+    /// Appends `entries` durably (intent first: the caller places the files only after this returns). An entry
+    /// of another epoch than the one `caughtUp` names clears that mark, so the next writer catches it up
+    /// (review M3: a locked capture with an older profile, another process writing in a sealing window).
     func append(_ entries: [LedgerEntry]) throws
     /// Removes `entries` (pruned once sealed for good, re-encrypted under a later epoch, or with no file).
     func remove(_ entries: [LedgerEntry]) throws
@@ -80,6 +82,7 @@ public final class MemoryWriteLedger: WriteLedgerStore, @unchecked Sendable {
         if let unreadable { throw VaultError.ledgerUnreadable(unreadable) }
         if failNextAppend { failNextAppend = false; throw VaultError.io("ledger: no space left (test)") }
         list += entries
+        if let caught, entries.contains(where: { $0.epochId != Hex.encode(caught) }) { self.caught = nil }
     }
 
     public func remove(_ entries: [LedgerEntry]) throws {
@@ -247,9 +250,13 @@ public final class FileWriteLedger: WriteLedgerStore, @unchecked Sendable {
         }
     }
 
+    /// One log record: `add` an entry, or `mark` (after a rewrite) the sequence number the state has reached.
+    /// Every record carries a sequence number; `state` keeps the last one appended, so a log cut at a record
+    /// boundary (entries deleted from its end) no longer reaches it and fails closed (review nit).
     private struct Record: Codable {
         var op: String
-        var entry: LedgerEntry
+        var entry: LedgerEntry?
+        var seq: Int?
     }
 
     private func frame(_ records: [Record]) throws -> Data {
@@ -266,12 +273,22 @@ public final class FileWriteLedger: WriteLedgerStore, @unchecked Sendable {
     }
 
     private func readLog() throws -> [LedgerEntry] {
-        guard FileIO.exists(logURL) else { return [] }
+        let (live, last) = try readLogRecords()
+        let expected = try readState().seq ?? 0
+        guard last >= expected else {
+            throw VaultError.ledgerUnreadable("the ledger log ends before its last recorded append (cut or rolled back)")
+        }
+        return live
+    }
+
+    private func readLogRecords() throws -> (live: [LedgerEntry], lastSeq: Int) {
+        guard FileIO.exists(logURL) else { return ([], 0) }
         let data: Data
         do { data = try BoundedRead.contents(of: logURL, maxBytes: Self.maxLogBytes) } catch {
             throw VaultError.ledgerUnreadable("\(error)")
         }
         var live: [LedgerEntry] = []
+        var last = 0
         var i = data.startIndex
         let dec = JSONDecoder()
         while i < data.endIndex {
@@ -283,20 +300,36 @@ public final class FileWriteLedger: WriteLedgerStore, @unchecked Sendable {
             guard let r = try? dec.decode(Record.self, from: plain) else {
                 throw VaultError.ledgerUnreadable("a ledger record does not decode")
             }
-            switch r.op {
-            case "add": live.append(r.entry)
-            case "remove": if let k = live.firstIndex(of: r.entry) { live.remove(at: k) }
+            switch (r.op, r.entry) {
+            case ("add", let e?): live.append(e)
+            case ("remove", let e?): if let k = live.firstIndex(of: e) { live.remove(at: k) }
+            case ("mark", nil): break
             default: throw VaultError.ledgerUnreadable("a ledger record has an unknown op")
             }
+            last = max(last, r.seq ?? 0)
             i += 4 + n
         }
-        return live
+        return (live, last)
     }
 
-    private func appendRecords(_ records: [Record]) throws {
-        guard !records.isEmpty else { return }
-        let bytes = try frame(records)   // makes the key (and the folder) on first use
+    /// Appends `entries` and moves the state's sequence number past them (one lock), clearing `caughtUp` when one
+    /// is of another epoch (review M3).
+    private func appendEntries(_ entries: [LedgerEntry]) throws {
+        guard !entries.isEmpty else { return }
+        _ = try key(creating: true)   // makes the key (and the folder) on first use
         try lock.withLock {
+            var state = try readState()
+            let first = (state.seq ?? 0) + 1
+            let records = entries.enumerated().map { Record(op: "add", entry: $1, seq: first + $0) }
+            try writeToLog(try frame(records))
+            state.seq = first + entries.count - 1
+            if let caught = state.caughtUp, entries.contains(where: { $0.epochId != caught }) { state.caughtUp = nil }
+            try writeState(state)
+        }
+    }
+
+    private func writeToLog(_ bytes: Data) throws {
+        do {
             let fd = logURL.withUnsafeFileSystemRepresentation { p -> Int32 in
                 p.map { posixOpen($0, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0o600) } ?? -1
             }
@@ -316,7 +349,7 @@ public final class FileWriteLedger: WriteLedgerStore, @unchecked Sendable {
     }
 
     public func append(_ entries: [LedgerEntry]) throws {
-        try appendRecords(entries.map { Record(op: "add", entry: $0) })
+        try appendEntries(entries)
     }
 
     public func remove(_ entries: [LedgerEntry]) throws {
@@ -325,16 +358,28 @@ public final class FileWriteLedger: WriteLedgerStore, @unchecked Sendable {
             // Rewritten whole: removals are rare (catch-up, pruning) and keep the log short.
             var live = try readLog()
             for e in entries { if let k = live.firstIndex(of: e) { live.remove(at: k) } }
-            try FileIO.writePrivate(try frame(live.map { Record(op: "add", entry: $0) }), to: logURL)
+            let seq = try readState().seq ?? 0
+            try FileIO.writePrivate(try frame(live.map { Record(op: "add", entry: $0, seq: nil) } + [Record(op: "mark", entry: nil, seq: seq)]),
+                                    to: logURL)
         }
     }
 
     public func entries() throws -> [LedgerEntry] { try readLog() }
 
+    /// The log's size in bytes (0 when there is none).
+    public var logBytes: Int64 {
+        ((try? FileManager.default.attributesOfItem(atPath: logURL.path))?[.size] as? NSNumber)?.int64Value ?? 0
+    }
+
+    /// Above this the CLI warns (a quarter of `maxLogBytes`): the ledger should stay near the vault's live files.
+    public static let warnLogBytes = Int64(maxLogBytes / 4)
+
     private struct State: Codable {
         struct Key: Codable { var epoch: Int; var key: String }
         var keys: [Key] = []
         var caughtUp: String?
+        /// The sequence number of the last record appended.
+        var seq: Int?
     }
 
     private func readState() throws -> State {
@@ -353,10 +398,14 @@ public final class FileWriteLedger: WriteLedgerStore, @unchecked Sendable {
         try lock.withLock {
             var s = try readState()
             change(&s)
-            let enc = JSONEncoder()
-            enc.outputFormatting = [.sortedKeys]
-            try FileIO.writePrivate(try box(try enc.encode(s)), to: stateURL)
+            try writeState(s)
         }
+    }
+
+    private func writeState(_ s: State) throws {
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.sortedKeys]
+        try FileIO.writePrivate(try box(try enc.encode(s)), to: stateURL)
     }
 
     public func rememberKey(epoch: Int, key: VaultEpochKey) throws {
@@ -389,8 +438,13 @@ extension Vault {
             try ledger.rememberKey(epoch: manifest.epoch, key: secret)
             ledgerMemo.keyRemembered(secret.epochId)
         }
-        try ledger.append([LedgerEntry(path: path, sha256: sha256, epoch: manifest.epoch, epochId: secret.epochId)])
+        let entry = LedgerEntry(path: path, sha256: sha256, epoch: manifest.epoch, epochId: secret.epochId)
+        try ledger.append([entry])
+        if Self.epochMutations.contains(.ledgerPrunedOnWrite) { try ledger.remove([entry]) }
         try faults.check(.afterLedgerIntent)
+        // Bounded growth (review S5): every so often the entries of deleted or superseded files go. A prune that
+        // fails is tried again later; it never stops the write.
+        if ledgerMemo.countAppend() % Self.ledgerPruneEvery == 0 { _ = try? pruneLedger() }
     }
 
     func recordWrite(path: String, bytes: Data) throws {
@@ -402,6 +456,9 @@ extension Vault {
 final class LedgerMemo: @unchecked Sendable {
     private let lock = NSLock()
     private var remembered: Set<Data> = []
+    private var appends = 0
+    /// Counts one append; returns the count so far.
+    func countAppend() -> Int { lock.lock(); defer { lock.unlock() }; appends += 1; return appends }
     func needsKey(_ id: Data) -> Bool { lock.lock(); defer { lock.unlock() }; return !remembered.contains(id) }
     func keyRemembered(_ id: Data) { lock.lock(); remembered.insert(id); lock.unlock() }
 }

@@ -35,10 +35,10 @@ final class CatchUpMemo: @unchecked Sendable {
     private var running = false
     private var done: Data?
 
-    /// True when a catch-up for `epochId` is neither running nor done.
+    /// True when no catch-up is running (the ledger's own mark says whether one is needed: review M3).
     func shouldRun(_ epochId: Data) -> Bool {
         lock.lock(); defer { lock.unlock() }
-        return !running && done != epochId
+        return !running
     }
 
     /// Marks a catch-up running; false when one already is (a nested call).
@@ -65,10 +65,8 @@ extension Vault {
     func catchUpIfNeeded() throws {
         guard ledger != nil, case .device = openedWith, case .verified = listStatus, let secret,
               catchUpMemo.shouldRun(secret.epochId) else { return }
-        if try ledger?.caughtUp() == secret.epochId {
-            catchUpMemo.markDone(secret.epochId)
-            return
-        }
+        // The ledger's own mark decides, read at every write (an append of another epoch's entry clears it).
+        if try ledger?.caughtUp() == secret.epochId { return }
         try catchUp()
     }
 
@@ -86,7 +84,7 @@ extension Vault {
     /// Then every other unaccepted file of the working copy is copied into the set-aside store. An
     /// unreadable ledger fails closed (`VaultError.ledgerUnreadable`): nothing is re-encrypted or set aside.
     @discardableResult
-    public func catchUp() throws -> CatchUpReport {
+    public func catchUp(now: Date = Date()) throws -> CatchUpReport {
         var report = CatchUpReport()
         guard let ledger, case .device = openedWith, let secret else { return report }
         let owner = catchUpMemo.enter()
@@ -102,14 +100,13 @@ extension Vault {
         var keys: [Data: VaultEpochKey] = [:]
         for o in older { keys[o.epochId] = o.key }
         for (_, k) in try ledger.epochKeys() where keys[k.epochId] == nil { keys[k.epochId] = k }
-        var latest: [String: LedgerEntry] = [:]
-        for e in entries { latest[e.path] = e }
-        var gone: [LedgerEntry] = []
+        let (liveEntries, stale) = ledgerLiveness(entries, now: now)
+        var gone = stale
+        report.dropped = stale.map(\.path)
         var n = 0
-        for e in entries {
+        for e in liveEntries {
             guard let ref = e.fileRef else { gone.append(e); continue }
             if ref.epochId == current { continue }
-            guard latest[e.path] == e else { gone.append(e); continue }   // a later write of the same path
             if let i = chainIds.firstIndex(of: ref.epochId), i + 1 < chainIds.count,
                older.first(where: { $0.epochId == ref.epochId })?.sealed?[e.path] == e.sha256 {
                 if LedgerRule.sealIsFinal(sealer: chainIds[i + 1], pinned: pinned) {
@@ -117,11 +114,6 @@ extension Vault {
                 } else {
                     report.sealedKept += 1
                 }
-                continue
-            }
-            let file = url.appendingPathComponent(e.path)
-            guard FileIO.exists(file), (try? FileDigest.sha256(of: file).hex) == e.sha256 else {
-                gone.append(e); report.dropped.append(e.path)
                 continue
             }
             guard let key = keys[ref.epochId] else {
@@ -139,7 +131,24 @@ extension Vault {
                 report.problems[e.path] = "\(error)"
             }
         }
+        if Self.epochMutations.contains(.catchUpByDeviceId), let me = writerDevice {
+            // The broken rule: files named with this device's id count as its own, whoever wrote them.
+            for note in (try? noteDirectoryNames()) ?? [] {
+                guard let id = UUID(uuidString: note) else { continue }
+                for name in (try? revisionFileNames(in: noteURL(id))) ?? [] where RevisionName(name)?.device == me {
+                    let path = Self.notePath(id, name)
+                    guard let data = try? readFile(noteURL(id).appendingPathComponent(name), maxBytes: BoundedRead.maxRevisionBytes),
+                          case .opened(_, let k, let o?) = openUnderEpochs(data), setAsideReason(o, path: path,
+                                                                                          sha256: FileDigest.sha256(data)) != nil
+                    else { continue }
+                    n += 1
+                    let e = LedgerEntry(path: path, sha256: FileDigest.sha256(data), epoch: o.epoch, epochId: o.epochId)
+                    if (try? reencryptOwn(e, key: k, n: n)) != nil { report.reencrypted.append(path) }
+                }
+            }
+        }
         try ledger.remove(gone)
+        sweepSupersededPassphraseCopies()
         report.setAside = try setAsideScan(skipping: Set(report.problems.keys))
         if report.problems.isEmpty {
             try ledger.setCaughtUp(current)
@@ -148,18 +157,81 @@ extension Vault {
         return report
     }
 
+    /// How long an entry whose bytes are not (or no longer) at its path is kept: it may be the intent of a write
+    /// still in flight in another process (design §5.4, intent first). After that it is a crash's leftover, or
+    /// its file was deleted (compaction, thinning, adoption), and it goes.
+    static let ledgerIntentGrace: TimeInterval = 3600
+
+    /// Splits the ledger into the entries that matter and those to drop (review M2, S5). Per path, the live
+    /// entry is the NEWEST one whose digest is the file's bytes now: entries before it are superseded (dropped);
+    /// entries after it are intents not placed (a crash between the entry and the file, or a write in flight),
+    /// kept for `ledgerIntentGrace`, then dropped. A path whose file holds none of its digests (or is gone) keeps
+    /// its entries for the grace period too. So a crash after a catch-up's new entry and before its file is
+    /// placed drops the new entry, never the old one that still names the file.
+    ///
+    /// - Parameter hashSingles: false for the routine prune (`pruneLedger`): a path with one entry and a file is
+    ///   kept without hashing it; catch-up hashes every file it may re-encrypt.
+    func ledgerLiveness(_ entries: [LedgerEntry], now: Date, hashSingles: Bool = true) -> (live: [LedgerEntry], drop: [LedgerEntry]) {
+        var byPath: [String: [LedgerEntry]] = [:]
+        var order: [String] = []
+        for e in entries {
+            if byPath[e.path] == nil { order.append(e.path) }
+            byPath[e.path, default: []].append(e)
+        }
+        var live: [LedgerEntry] = [], drop: [LedgerEntry] = []
+        func expired(_ e: LedgerEntry) -> Bool {
+            guard let t = RFC3339.parse(e.time) else { return true }
+            return now.timeIntervalSince(t) > Self.ledgerIntentGrace
+        }
+        for path in order {
+            let list = byPath[path] ?? []
+            let file = url.appendingPathComponent(path)
+            if !hashSingles, list.count == 1, let e = list.first, FileIO.exists(file) { live.append(e); continue }
+            let sha = FileIO.exists(file) ? (try? FileDigest.sha256(of: file).hex) : nil
+            let liveIndex = sha.flatMap { s in list.lastIndex { $0.sha256 == s } }
+            for (i, e) in list.enumerated() {
+                if let liveIndex {
+                    if i == liveIndex { live.append(e) } else if i < liveIndex || expired(e) { drop.append(e) }
+                } else if expired(e) {
+                    drop.append(e)
+                }
+            }
+        }
+        return (live, drop)
+    }
+
+    /// Drops the ledger entries whose files are gone or superseded (review S5): the ledger then grows with the
+    /// vault's live files, not with every write. Run every `ledgerPruneEvery` appends by `recordWrite`, and by
+    /// `vault catch-up`. Returns how many went.
+    @discardableResult
+    public func pruneLedger(now: Date = Date()) throws -> Int {
+        guard let ledger else { return 0 }
+        let drop = ledgerLiveness(try ledger.entries(), now: now, hashSingles: false).drop
+        try ledger.remove(drop)
+        return drop.count
+    }
+
+    /// How many appends between two routine prunes.
+    static let ledgerPruneEvery = 512
+
     /// Re-encrypts this device's own file of `entry` (under `key`) under the current key; returns its path.
     func reencryptOwn(_ entry: LedgerEntry, key: VaultEpochKey, n: Int) throws -> String {
         let file = url.appendingPathComponent(entry.path)
         let parts = entry.path.split(separator: "/").map(String.init)
         if parts.count == 4, parts[0] == Self.notesName, parts[2] == Self.attachmentsName, let note = UUID(uuidString: parts[1]) {
-            try faults.check(.catchUpWritten(n))
-            try faults.check(.catchUpVerified(n))
+            // A blob goes to its new name (the old one stays until collection): written and placed as one
+            // atomic step that records its own ledger entry first, then read back, then the old entry goes.
             let before = Set((try? FileIO.entries(attURL(note))) ?? [])
-            try reencryptBlob(at: file, note: note, fileName: parts[3])
-            try faults.check(.catchUpPlaced(n))
+            let ref = try reencryptBlob(at: file, note: note, fileName: parts[3], extraKeys: [key])
+            try faults.check(.catchUpWritten(n))
             let made = Set((try? FileIO.entries(attURL(note))) ?? []).subtracting(before)
-            return made.first.map { Self.blobPath(note, $0) } ?? entry.path
+            let target = try blobCandidates(note: note, ref)[0]
+            guard Self.epochMutations.contains(.corruptReencryption) || isValidBlob(target, ref: ref) else {
+                throw VaultError.epochChangeRefused("\(entry.path): the re-encrypted blob does not read back")
+            }
+            try faults.check(.catchUpVerified(n))
+            try faults.check(.catchUpPlaced(n))
+            return made.first.map { Self.blobPath(note, $0) } ?? Self.blobPath(note, target.lastPathComponent)
         }
         if parts.count == 2, parts[0] == CaptureFile.folderName, let parsed = CaptureFile.parse(name: parts[1]) {
             return try reencryptOwnCapture(entry, file: file, name: parts[1], kind: parsed.kind, key: key, n: n)
@@ -199,6 +271,7 @@ extension Vault {
             try setAsideStore.keep(data, path: entry.path, vaultId: vaultId, reason: .notSealed, epochId: key.epochId)
         }
         try recordWrite(path: entry.path, bytes: fresh)
+        try faults.check(.catchUpRecorded(n))
         try FileIO.place(tmp, at: file)
         placed = true
         try faults.check(.catchUpPlaced(n))
@@ -246,6 +319,7 @@ extension Vault {
             try setAsideStore.keep(data, path: entry.path, vaultId: vaultId, reason: .notSealed, epochId: key.epochId)
         }
         try recordWrite(path: entry.path, bytes: fresh)
+        try faults.check(.catchUpRecorded(n))
         try FileIO.place(tmp, at: file)
         placed = true
         try faults.check(.catchUpPlaced(n))

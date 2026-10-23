@@ -533,8 +533,9 @@ note id, file name and body, §4), and cannot make the viewer run code:
   numbers) and a bad entry is dropped alone; a fuzz test covers it.
 - **The device list** (`format.md` §2, §2.1, §15.3). Above epoch 1 the viewer
   takes the earlier epochs' keys from the epoch records (the current one, named
-  and hashed by `vault.json`, gives its parent's key and sealed set, and so on
-  down the chain), only when `vault.json` checks. A file under an earlier key
+  and hashed by `vault.json`, gives its parent's key, sealed set and the hash
+  of the parent's record, and so on down the chain: a record that does not
+  hash to its link stops the walk), only when `vault.json` checks. A file under an earlier key
   is read only when the record that closed its epoch seals its path with
   exactly its bytes (`format.md` §15.14); any other is reported as set aside
   (`setAside`), never shown. A record that is missing or does not open stops

@@ -177,7 +177,7 @@ final class EpochVaultPropertyTests: VaultTestCase {
             reason: .remove, parentKey: try v.requireSecret(), parentChain: try v.currentChain(),
             parentList: v.manifest.keys.map(\.fingerprint), parentAdditions: v.currentAdditions(), devices: v.manifest.devices,
             recovery: recovery, home: author.fingerprint, author: entry, signing: author.keys.signing, recoverySigner: nil,
-            sealed: [:], created: Date(), label: nil, features: [])
+            sealed: [:], parentRecordHash: v.manifest.epochRecordHash, created: Date(), label: nil, features: [])
         _ = try v.writeEpoch(plan)
     }
 

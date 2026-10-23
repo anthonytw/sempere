@@ -200,4 +200,51 @@ final class CLIEpochTests: CLITestCase {
         XCTAssertEqual(try cli(["set-aside", "keep", sha, "--yes"] + v, env: machine("home")).status, 0)
         XCTAssertTrue(try titles("home").contains("X after removal"), "kept on the user's word")
     }
+
+    /// Before KH4 syncs `epochs/`, a device change on a store vault with sync targets is refused unless asked
+    /// for (review S4): no other device could read what is written after it.
+    func testAnEpochChangeOnASyncedStoreVaultNeedsTheFlag() throws {
+        let (vault, _, laptop) = try twoMachines()
+        let store = path("store")
+        XCTAssertEqual(try cli(["store", "import", vault, "--name", "Synced", "--store", store], env: machine("home")).status, 0)
+        let copy = try cli(["store", "path", "Synced", "--store", store], env: machine("home")).out
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        try FileManager.default.createDirectory(atPath: path("target"), withIntermediateDirectories: true)
+        let added = try cli(["store", "target", "add", "Synced", "--folder", path("target"), "--no-check", "--store", store],
+                            env: machine("home"))
+        XCTAssertEqual(added.status, 0, added.err)
+        let refused = try cli(["devices", "remove", laptop, "--vault", copy], env: machine("home"))
+        XCTAssertEqual(refused.status, 1, refused.err)
+        XCTAssertTrue(refused.err.contains("--unsynced-epoch"), refused.err)
+        let forced = try cli(["devices", "remove", laptop, "--unsynced-epoch", "--vault", copy], env: machine("home"))
+        XCTAssertEqual(forced.status, 0, forced.err)
+    }
+
+    /// The takeover screen from a stale machine (review S3): it names the epochs the takeover drops and the
+    /// devices they removed, does not keep those with --keep-listed, and takes names from the machine's own
+    /// trust record rather than from the newer vault.json.
+    func testATakeoverFromAStaleMachineShowsWhatItDrops() throws {
+        let (vault, root, laptop) = try twoMachines()
+        let x = try join("x", vault)
+        let v = ["--vault", vault]
+        XCTAssertEqual(try cli(["devices", "rename", x, "Trusted name"] + v, env: machine("home")).status, 0)
+        // The laptop writes, so its trust record pins epoch 1 with that list (readers keep no record).
+        XCTAssertEqual(try cli(["notes", "new", "Laptop"] + v, env: machine("laptop")).status, 0)
+        XCTAssertEqual(try cli(["devices", "rename", x, "Thief renamed"] + v, env: machine("home")).status, 0)
+        XCTAssertEqual(try cli(["devices", "remove", x] + v, env: machine("home")).status, 0)   // epoch 2
+        let show = try cli(["devices", "takeover", "--recovery-key", path("recovery.key"), "--root", root, "--keep-listed",
+                            "--json"] + v, env: machine("laptop"))
+        XCTAssertEqual(show.status, 2, show.err)
+        let json = try XCTUnwrap(show.json as? [String: Any])
+        XCTAssertEqual(json["parentEpoch"] as? Int, 1)
+        let dropped = try XCTUnwrap(json["dropped"] as? [[String: Any]])
+        XCTAssertEqual(dropped.first?["removed"] as? [String], [x])
+        let choices = try XCTUnwrap(json["choices"] as? [[String: Any]])
+        let row = try XCTUnwrap(choices.first { $0["id"] as? String == x })
+        XCTAssertEqual(row["removedByDroppedEpoch"] as? Bool, true)
+        XCTAssertEqual(row["checkedByDefault"] as? Bool, false)
+        XCTAssertEqual(row["name"] as? String, "Trusted name")
+        XCTAssertEqual(row["nameTrusted"] as? Bool, true)
+        XCTAssertFalse((json["keep"] as? [String] ?? []).contains(x), "--keep-listed leaves it out")
+    }
 }

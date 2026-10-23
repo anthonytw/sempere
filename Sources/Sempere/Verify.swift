@@ -436,7 +436,15 @@ extension Vault {
             // name, an orphan record included, is an unknown file (design §5.2 step 4).
             if let chain = verifiedChain?.entries.dropLast(),
                chain.contains(where: { EpochRecord.fileName(epoch: $0.epoch, epochId: $0.epochId) == name }) {
-                return .init(path: path, status: .ok, detail: "an earlier epoch's record")
+                // Bound by the hash link of the record above it (format.md §15.6).
+                guard let o = olderEpochs.first(where: { EpochRecord.fileName(epoch: $0.epoch, epochId: $0.epochId) == name }),
+                      let expected = o.recordHash else {
+                    return .init(path: path, status: .notChecked, detail: "an earlier epoch's record below one that did not open")
+                }
+                let actual = try? FileDigest.sha256(of: epochsURL.appendingPathComponent(name)).hex
+                return actual == Hex.encode(expected)
+                    ? .init(path: path, status: .ok, detail: "an earlier epoch's record")
+                    : .init(path: path, status: .invalid, detail: "its hash is not the one the record above it links")
             }
             return .init(path: path, status: .unknownFile, detail: nil)
         }

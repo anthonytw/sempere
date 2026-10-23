@@ -922,8 +922,26 @@ final class QuickCapture {
                 }
             }
         }
-        try CaptureWriter.store(sealed, in: queueFolder(stored.profile.vaultId))
+        let queue = queueFolder(stored.profile.vaultId)
+        try CaptureWriter.store(sealed, in: queue)
+        // The epoch it was sealed under goes with it: the flush records that one, never a newer profile's (M4).
+        if let epoch = sealed.epoch, let id = sealed.epochId {
+            try Data("\(epoch) \(Hex.encode(id))\n".utf8).write(to: Self.epochSidecar(queue.appendingPathComponent(sealed.name)),
+                                                              options: .atomic)
+        }
         return .queued
+    }
+
+    /// `<queued file>.epoch`: "<epoch> <epoch id hex>", the epoch of the profile that sealed it.
+    nonisolated static func epochSidecar(_ file: URL) -> URL { file.appendingPathExtension("epoch") }
+
+    /// The epoch a queued file was sealed under, from its sidecar.
+    nonisolated static func queuedEpoch(_ file: URL) -> (Int, Data)? {
+        guard let data = try? BoundedRead.contents(of: epochSidecar(file), maxBytes: 256),
+              let text = String(data: data, encoding: .utf8) else { return nil }
+        let parts = text.split(whereSeparator: { $0 == " " || $0 == "\n" })
+        guard parts.count == 2, let e = Int(parts[0]), let id = Hex.decode(String(parts[1])), id.count == 32 else { return nil }
+        return (e, id)
     }
 
     /// Records `sealed` in the write ledger of the profile's vault (design §5.4); nothing without stores.
@@ -967,7 +985,9 @@ final class QuickCapture {
         let dir = queueFolder(vaultId)
         let names = ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).filter { CaptureFile.parse(name: $0) != nil }
         let inbox = vaultURL.appendingPathComponent(CaptureFile.folderName, isDirectory: true)
-        // The profile they were sealed with, for the ledger (design §5.4): without it they stay queued.
+        // A profile of this vault, to record them in its ledger (design §5.4) under the epoch each was sealed
+        // with (its sidecar; a file queued before sidecars existed takes the profile's); without a profile they
+        // stay queued, never placed unrecorded.
         let profile = (try? store.load())?.profile
         var moved = 0
         for name in names {
@@ -975,7 +995,8 @@ final class QuickCapture {
             guard let kind = CaptureFile.parse(name: name)?.kind,
                   let data = try? BoundedRead.contents(of: file, maxBytes: CaptureFile.maxSealedBytes(kind)) else { continue }
             do {
-                let sealed = SealedCapture(name: name, data: data)
+                let epoch = Self.queuedEpoch(file)
+                let sealed = SealedCapture(name: name, data: data, epoch: epoch?.0, epochId: epoch?.1)
                 if writeStores != nil {
                     guard let profile, profile.vaultId == vaultId else { continue }
                     try record(sealed, profile)
@@ -984,6 +1005,7 @@ final class QuickCapture {
                     try CaptureWriter.store(sealed, in: inbox)
                 }
                 try? FileManager.default.removeItem(at: file)
+                try? FileManager.default.removeItem(at: Self.epochSidecar(file))
                 moved += 1
             } catch {
                 continue

@@ -2,6 +2,7 @@ import Age
 import ArgumentParser
 import Foundation
 import Sempere
+import SempereSync
 
 // New epochs from the CLI (docs/design/key-hierarchy.md §5.2, §5.4, §5.6, §5.8, §6.3, §6.5; phase KH3):
 // `sempere devices remove|handoff` on the home device, `sempere recovery takeover|replace`, `sempere vault
@@ -52,6 +53,9 @@ struct DevicesRemove: ParsableCommand {
     var ids: [String] = []
 
     @OptionGroup var output: OutputOptions
+    @Flag(name: .customLong("unsynced-epoch"), help: ArgumentHelp("Start the new epoch even though this store vault has sync "
+          + "targets (they carry no epoch record before key hierarchy KH4: other devices cannot read what is written after it)."))
+    var unsyncedEpoch = false
 
     func validate() throws {
         guard !ids.isEmpty else { throw ValidationError("name at least one device to remove") }
@@ -59,6 +63,7 @@ struct DevicesRemove: ParsableCommand {
 
     func run() throws {
         var vault = try access.openVault(.required)
+        try refuseUnsyncedEpoch(vault.url, vaultId: vault.vaultId, allowed: unsyncedEpoch)
         let names = Dictionary(vault.devices.compactMap { d in d.id.map { ($0, DeviceName.display(d.name)) } },
                                uniquingKeysWith: { a, _ in a })
         let report = try vault.removeDevices(ids)
@@ -89,9 +94,13 @@ struct DevicesHandoff: ParsableCommand {
     var id: String
 
     @OptionGroup var output: OutputOptions
+    @Flag(name: .customLong("unsynced-epoch"), help: ArgumentHelp("Start the new epoch even though this store vault has sync "
+          + "targets (they carry no epoch record before key hierarchy KH4: other devices cannot read what is written after it)."))
+    var unsyncedEpoch = false
 
     func run() throws {
         var vault = try access.openVault(.required)
+        try refuseUnsyncedEpoch(vault.url, vaultId: vault.vaultId, allowed: unsyncedEpoch)
         let target = try vault.resolveDevice(id)
         let report = try vault.handOff(to: target.id ?? id)
         if output.json { return try output.emitJSON(EpochChangeOutput(report)) }
@@ -121,9 +130,11 @@ struct RecoveryTakeover: ParsableCommand {
 
             The takeover is a new epoch under this machine's pinned epoch, signed by this machine and by the \
             recovery key, listing this machine, the recovery key and the devices you keep: --keep ID for each \
-            (devices of the current list, and devices an earlier epoch removed, for example by a stolen home), \
-            or --keep-listed for every device of the current list. Without --yes it prints the choices and \
-            writes nothing. It beats every epoch by the old home that is not its ancestor. Only the kit of the \
+            (devices of the parent epoch's list, and devices an earlier epoch removed, for example by a stolen \
+            home), or --keep-listed for every device of the parent epoch's list except those an epoch the takeover \
+            drops removed. Without --yes it prints the choices, the epochs it drops and whom they removed, and \
+            writes nothing; names come from this machine's trust record where it has them (a stolen home may have \
+            renamed devices). It beats every epoch by the old home that is not its ancestor. Only the kit of the \
             epoch this machine pinned takes over: a retired kit, or one this machine has not pinned yet, is \
             refused.
             """
@@ -134,7 +145,8 @@ struct RecoveryTakeover: ParsableCommand {
     @Option(name: .long, help: ArgumentHelp("A device to keep (its id or 4+ leading hex digits); repeat.", valueName: "id"))
     var keep: [String] = []
 
-    @Flag(name: .customLong("keep-listed"), help: "Keep every device of the current list.")
+    @Flag(name: .customLong("keep-listed"), help: ArgumentHelp("Keep every device of the parent epoch's list, except those an "
+          + "epoch the takeover drops removed (name those with --keep)."))
     var keepListed = false
 
     @Option(name: .long, help: ArgumentHelp("This device's name, when it joins (at most 40 characters).", valueName: "text"))
@@ -148,6 +160,9 @@ struct RecoveryTakeover: ParsableCommand {
     var yes = false
 
     @OptionGroup var output: OutputOptions
+    @Flag(name: .customLong("unsynced-epoch"), help: ArgumentHelp("Start the new epoch even though this store vault has sync "
+          + "targets (they carry no epoch record before key hierarchy KH4: other devices cannot read what is written after it)."))
+    var unsyncedEpoch = false
 
     func validate() throws {
         guard access.recoveryKey != nil else { throw ValidationError("give the recovery key with --recovery-key FILE") }
@@ -157,6 +172,7 @@ struct RecoveryTakeover: ParsableCommand {
     func run() throws {
         let url = try access.vaultURL()
         let locked = try Vault.open(at: url)
+        try refuseUnsyncedEpoch(url, vaultId: locked.vaultId, allowed: unsyncedEpoch)
         guard let (identity, copyRoot) = try access.recoveryIdentity(), case .mlkem768x25519(let recovery) = identity else {
             throw CLIError.usage("the recovery key is not a post-quantum key (AGE-SECRET-KEY-PQ-1...)")
         }
@@ -172,7 +188,7 @@ struct RecoveryTakeover: ParsableCommand {
         let trust = trustStore()
         let plan = try Vault.takeoverPlan(at: url, device: device, recovery: recovery, trust: trust, root: root)
         var kept = Set<Data>()
-        if keepListed { kept.formUnion(plan.candidates.filter(\.listed).map(\.fingerprint)) }
+        if keepListed { kept.formUnion(plan.candidates.filter(\.checkedByDefault).map(\.fingerprint)) }
         for q in keep {
             let matches = plan.candidates.filter { $0.id == q.lowercased() || (q.count >= 4 && $0.id.hasPrefix(q.lowercased())) }
             guard matches.count == 1, let m = matches.first else {
@@ -182,16 +198,34 @@ struct RecoveryTakeover: ParsableCommand {
         }
         guard yes else {
             if output.json {
-                struct Choice: Encodable { var id: String; var name: String; var listed: Bool }
-                struct Out: Encodable { var parentEpoch: Int; var choices: [Choice]; var keep: [String] }
-                try output.emitJSON(Out(parentEpoch: plan.parentEpoch,
-                                        choices: plan.candidates.map { Choice(id: $0.id, name: $0.name, listed: $0.listed) },
-                                        keep: plan.candidates.filter { kept.contains($0.fingerprint) }.map(\.id)))
+                struct Choice: Encodable {
+                    var id: String; var name: String; var nameTrusted: Bool; var listed: Bool; var removedByDroppedEpoch: Bool
+                    var checkedByDefault: Bool
+                }
+                struct Dropped: Encodable { var epoch: Int; var reason: String; var author: String; var removed: [String] }
+                struct Out: Encodable { var parentEpoch: Int; var choices: [Choice]; var dropped: [Dropped]; var keep: [String] }
+                try output.emitJSON(Out(
+                    parentEpoch: plan.parentEpoch,
+                    choices: plan.candidates.map {
+                        Choice(id: $0.id, name: $0.name, nameTrusted: $0.nameTrusted, listed: $0.listed,
+                               removedByDroppedEpoch: $0.removedByDroppedEpoch, checkedByDefault: $0.checkedByDefault)
+                    },
+                    dropped: plan.dropped.map { d in
+                        Dropped(epoch: d.epoch, reason: d.reason, author: d.author, removed: d.removed.map { String(Hex.encode($0).prefix(8)) })
+                    },
+                    keep: plan.candidates.filter { kept.contains($0.fingerprint) }.map(\.id)))
             } else {
-                print("A takeover under epoch \(plan.parentEpoch) makes this machine home. Devices to keep:")
+                print("A takeover under epoch \(plan.parentEpoch) makes this machine home.")
+                for d in plan.dropped {
+                    let gone = d.removed.map { String(Hex.encode($0).prefix(8)) }
+                    print("It drops epoch \(d.epoch) (\(d.reason) by \(d.author))"
+                        + (gone.isEmpty ? "." : ", which removed \(gone.joined(separator: ", ")): check why before keeping them."))
+                }
+                print("Devices to keep:")
                 var rows: [[String]] = [["ID", "NAME", "", ""]]
                 for c in plan.candidates {
-                    rows.append([c.id, c.name, c.listed ? "on the current list" : "removed earlier",
+                    let state = c.removedByDroppedEpoch ? "removed by a dropped epoch" : c.listed ? "on the parent's list" : "removed earlier"
+                    rows.append([c.id, c.name + (c.nameTrusted ? "" : " (name from the current vault.json)"), state,
                                  kept.contains(c.fingerprint) ? "kept" : "dropped"])
                 }
                 print(Format.table(rows))
@@ -205,8 +239,7 @@ struct RecoveryTakeover: ParsableCommand {
         do {
             result = try Vault.takeover(
                 at: url, device: device, recovery: recovery, keep: kept, name: name, kind: kind, trust: trust, root: root,
-                ledger: FileWriteLedger(directory: FileWriteLedger.cliDirectory(environment: Env.vars), vaultId: locked.vaultId,
-                                        device: device.identity),
+                ledger: cliLedger(vaultId: locked.vaultId, device: device.identity),
                 setAside: SetAsideStore(directory: SetAsideStore.cliDirectory(environment: Env.vars)))
         } catch {
             if madeKeys { try? FileManager.default.removeItem(at: DeviceKeyStore.directory(vaultId: locked.vaultId)) }
@@ -267,9 +300,13 @@ struct RecoveryReplace: ParsableCommand {
     var workFactor = RecoveryPassphraseCopy.workFactor
 
     @OptionGroup var output: OutputOptions
+    @Flag(name: .customLong("unsynced-epoch"), help: ArgumentHelp("Start the new epoch even though this store vault has sync "
+          + "targets (they carry no epoch record before key hierarchy KH4: other devices cannot read what is written after it)."))
+    var unsyncedEpoch = false
 
     func run() throws {
         var vault = try access.openVault(.required)
+        try refuseUnsyncedEpoch(vault.url, vaultId: vault.vaultId, allowed: unsyncedEpoch)
         guard vault.isHome else { throw CLIError.failure("only the home device replaces the recovery kit") }
         let review = try vault.kitReview()
         let named = Set(try (keep + remove).map { try vault.resolveDevice($0).fingerprint })
@@ -347,6 +384,11 @@ struct VaultCatchUp: ParsableCommand {
     func run() throws {
         let vault = try access.openVault(.required)
         let r = try vault.catchUp()
+        _ = try? vault.pruneLedger()
+        if let file = vault.ledger as? FileWriteLedger, file.logBytes > FileWriteLedger.warnLogBytes {
+            printStderr("sempere: warning: this machine's write ledger is \(file.logBytes >> 20) MiB (\(file.folder.path)); "
+                + "it should stay near the size of the vault's live files")
+        }
         if output.json {
             struct Out: Encodable {
                 var reencrypted: [String]; var pruned: Int; var sealedKept: Int; var dropped: [String]; var setAside: [String]
@@ -501,5 +543,24 @@ struct SetAsideClear: ParsableCommand {
         for s in picked { try store.remove(s.item) }
         if output.json { return try output.emitJSON(picked.map(\.item.path)) }
         output.info("Cleared \(picked.count) set-aside file(s).")
+    }
+}
+
+/// Refuses a new epoch on a store vault that has sync targets (review S4): until key hierarchy KH4 syncs
+/// `epochs/`, no other device can take the change, and what this machine writes after it is unreadable there.
+/// `--unsynced-epoch` goes ahead anyway. A plain folder (synced by `sync folder|webdav` with state elsewhere) is
+/// not detected: the command's help says so.
+func refuseUnsyncedEpoch(_ url: URL, vaultId: UUID, allowed: Bool) throws {
+    guard !allowed else { return }
+    let idFolder = url.standardizedFileURL.deletingLastPathComponent()
+    guard idFolder.lastPathComponent == vaultId.uuidString.lowercased() else { return }
+    let registry = SyncTargetRegistry(root: idFolder.deletingLastPathComponent().appendingPathComponent(VaultStore.syncName))
+    let targets: [SyncTarget]
+    do { targets = try registry.load(vaultId) } catch {
+        throw CLIError.failure("cannot read this store vault's sync targets (\(error)): pass --unsynced-epoch to go ahead")
+    }
+    guard targets.isEmpty else {
+        throw CLIError.failure("this store vault syncs with \(targets.count) target(s), and device changes are not synced "
+            + "before key hierarchy KH4: other devices could not read what is written after it. Pass --unsynced-epoch to go ahead")
     }
 }

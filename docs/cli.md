@@ -211,10 +211,10 @@ sempere device confirm WORD WORD WORD WORD WORD WORD
 sempere devices list
 sempere devices approve WORD WORD WORD WORD WORD WORD
 sempere devices rename ID NAME
-sempere devices remove ID...
-sempere devices handoff ID
-sempere devices takeover --recovery-key FILE [--root HEX] [--keep ID]... [--keep-listed] [--name TEXT] [--kind WORD] [--yes]
-sempere recovery replace --recovery-out FILE [--keep ID]... [--remove ID]... [--old-recovery-key FILE] [--recovery-passphrase] [--yes]
+sempere devices remove ID... [--unsynced-epoch]
+sempere devices handoff ID [--unsynced-epoch]
+sempere devices takeover --recovery-key FILE [--root HEX] [--keep ID]... [--keep-listed] [--name TEXT] [--kind WORD] [--unsynced-epoch] [--yes]
+sempere recovery replace --recovery-out FILE [--keep ID]... [--remove ID]... [--old-recovery-key FILE] [--recovery-passphrase] [--unsynced-epoch] [--yes]
 sempere set-aside list | export [SHA...] --to DIR | keep SHA... --yes | clear (SHA... | --superseded) --yes
 ```
 
@@ -282,6 +282,10 @@ it, or `vault catch-up`). Revisions keep the machine's own id from
 `device.json` in their names; its published summaries file and sync state use
 its device id in the vault.
 
+- **Before key hierarchy KH4** the sync engine does not carry `epochs/`: every command
+  below that starts an epoch refuses a store vault that has sync targets (other
+  devices could not read what is written after it), unless `--unsynced-epoch` is
+  given. A plain folder synced with `sync folder|webdav` is not detected.
 - `devices remove ID...` (home only, never itself) removes devices: it first
   catches up its own files, then starts the epoch. The removed machine gets
   exit 8 from then on (it still reads nothing new: the new key is not wrapped to
@@ -305,8 +309,13 @@ its device id in the vault.
   catch up their own files. Only the kit of the epoch this machine pinned takes
   over: a kit a replacement retired, or one this machine has not pinned yet, is
   refused (exit 1). A machine with no device key for the vault gets one (as
-  `device init`, `--name`, `--kind`). `--json` without `--yes`: `parentEpoch`,
-  `choices` (`[{id, name, listed}]`), `keep`; with it, as `remove`
+  `device init`, `--name`, `--kind`). The choices name the epochs above the
+  parent that the takeover drops and the devices they removed; those are not
+  kept by `--keep-listed` (name them with `--keep` if they should stay). Names come
+  from this machine's trust record where it has them (a stolen home may have
+  renamed devices). `--json` without `--yes`: `parentEpoch`, `choices`
+  (`[{id, name, nameTrusted, listed, removedByDroppedEpoch, checkedByDefault}]`),
+  `dropped` (`[{epoch, reason, author, removed}]`), `keep`; with it, as `remove`
   (`reason: takeover`).
 - `recovery replace --recovery-out FILE` (home only) replaces the recovery kit
   after the device review: every listed device but this one must be named with
@@ -325,7 +334,8 @@ its device id in the vault.
   vault holds the same body accepted); `export [SHA...] --to DIR` copies them
   as they are (age files) under their vault paths; `keep SHA... --yes` puts
   them back in the vault re-encrypted under the current key (they may come
-  from a removed device: keep only what you recognize); `clear (SHA... |
+  from a removed device: keep only what you recognize; refused when the path
+  holds an accepted file with another body); `clear (SHA... |
   --superseded) --yes` deletes them from this machine. Items are named by their
   SHA-256 or 8 or more leading hex digits. The store is
   `$XDG_STATE_HOME/sempere/setaside/<vault id>/`.
@@ -447,7 +457,7 @@ sempere vault catch-up [--json]
   (it is not decrypted: that needs its passphrase).
 - `catch-up` re-encrypts under the current key the files this machine wrote
   under an earlier key that no device change sealed (its write ledger,
-  `$XDG_STATE_HOME/sempere/ledger/<vault id>/`, sealed to its device key), each
+  `$XDG_STATE_HOME/sempere/ledger/<key>/<vault id>/`, one per device key, sealed to it), each
   verified and its old bytes set aside before it replaces them, and copies
   every other unsealed file under an earlier key into the set-aside store. The
   first write after this machine verifies a new epoch does it by itself; the

@@ -501,8 +501,7 @@ extension AccessOptions {
         // This device's write ledger and set-aside store (design §5.4, §5.8), sealed to its key.
         let ledger = keys.lazy.compactMap { k -> FileWriteLedger? in
             guard case .mlkem768x25519(let pq) = k.identity else { return nil }
-            return FileWriteLedger(directory: FileWriteLedger.cliDirectory(environment: Env.vars), vaultId: locked.vaultId,
-                                   device: pq)
+            return cliLedger(vaultId: locked.vaultId, device: pq)
         }.first
         let vault = try Vault.open(at: url, identities: keys.map(\.identity), signing: keys.compactMap(\.signing).first,
                                    trust: trust ?? trustStore(), root: given, ledger: ledger,
@@ -545,4 +544,13 @@ enum ReadOnlyNotice {
         printStderr("sempere: warning: read-only: " + vault.readOnlyReasons.descriptions.joined(separator: "; ")
             + "; this version can read it but not change it")
     }
+}
+
+/// This machine's write ledger of `vaultId` for the device key `device`: `$XDG_STATE_HOME/sempere/ledger/<first 16
+/// hex of the key's fingerprint>/<vault id>/`, so two device keys used on one machine (`--identity`) never share a
+/// ledger sealed to the other's key.
+func cliLedger(vaultId: UUID, device: MLKEM768X25519Identity) -> FileWriteLedger {
+    let dir = FileWriteLedger.cliDirectory(environment: Env.vars)
+        .appendingPathComponent(String(CaptureKey.fingerprint(of: device.recipient.string).prefix(16)), isDirectory: true)
+    return FileWriteLedger(directory: dir, vaultId: vaultId, device: device)
 }

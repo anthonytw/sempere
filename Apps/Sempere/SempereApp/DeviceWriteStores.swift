@@ -43,15 +43,25 @@ enum LedgerKeychain {
     static let service = "io.github.anthonytw.sempere.write-ledger"
     static let account = "key"
 
-    enum Failure: Error, Equatable { case status(OSStatus), badKey }
+    enum Failure: Error, Equatable {
+        case status(OSStatus)
+        case badKey
+        /// The ledger holds records but its key is gone: a new key would orphan them. Fails closed.
+        case keyLostForExistingLedger
+    }
 
     private static let lock = NSLock()
 
-    /// The key, made and stored when there is none. A build without the Keychain entitlement (an unsigned or
-    /// ad-hoc signed build: CI, UI tests) keeps it in `unsignedFallback` (mode 0600) instead; a signed build
-    /// never does.
+    /// The key, made and stored when there is none and no ledger exists yet under `ledgerDirectory`.
+    ///
+    /// Release builds use the Keychain only and fail closed on any error (review S1). DEBUG builds (CI, the test
+    /// hosts, ad-hoc signed UI-test runs, which have no Keychain entitlement) keep it in `unsignedFallback`
+    /// (mode 0600) instead; once one of the two holds a key, that one is used and the other is never minted.
     static func key(unsignedFallback: URL) throws -> Data {
         lock.lock(); defer { lock.unlock() }
+        #if DEBUG
+        if let data = try? BoundedRead.contents(of: unsignedFallback, maxBytes: 64), data.count == 32 { return data }
+        #endif
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                     kSecAttrAccount as String: account]
         var read = query
@@ -63,17 +73,35 @@ enum LedgerKeychain {
             guard let data = out as? Data, data.count == 32 else { throw Failure.badKey }
             return data
         }
+        #if DEBUG
         if status == errSecMissingEntitlement { return try fileKey(unsignedFallback) }
+        #endif
         guard status == errSecItemNotFound else { throw Failure.status(status) }
+        // A ledger that already holds records was sealed with a key this Keychain no longer has: never mint a new
+        // one over it (it would orphan every entry); the ledger stays unreadable and writes fail closed.
+        if hasLedgerData(unsignedFallback.deletingLastPathComponent()) { throw Failure.keyLostForExistingLedger }
         let bytes = randomKey()
         var add = query
         add[kSecValueData as String] = bytes
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         add[kSecAttrLabel as String] = "Sempere — write ledger"
         let added = SecItemAdd(add as CFDictionary, nil)
+        #if DEBUG
         if added == errSecMissingEntitlement { return try fileKey(unsignedFallback) }
+        #endif
         guard added == errSecSuccess else { throw Failure.status(added) }
         return bytes
+    }
+
+    /// True when any vault's ledger folder under `directory` holds a log or a state file.
+    static func hasLedgerData(_ directory: URL) -> Bool {
+        let fm = FileManager.default
+        for name in (try? fm.contentsOfDirectory(atPath: directory.path)) ?? [] where UUID(uuidString: name) != nil {
+            let folder = directory.appendingPathComponent(name)
+            if fm.fileExists(atPath: folder.appendingPathComponent("log").path)
+                || fm.fileExists(atPath: folder.appendingPathComponent("state").path) { return true }
+        }
+        return false
     }
 
     /// 32 bytes from the system's secure generator.
@@ -82,8 +110,9 @@ enum LedgerKeychain {
         return Data((0..<32).map { _ in UInt8.random(in: .min ... .max, using: &g) })
     }
 
+    #if DEBUG
     private static func fileKey(_ url: URL) throws -> Data {
-        if let data = try? BoundedRead.contents(of: url, maxBytes: 64), data.count == 32 { return data }
+        if hasLedgerData(url.deletingLastPathComponent()) { throw Failure.keyLostForExistingLedger }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
         let bytes = randomKey()
@@ -95,4 +124,5 @@ enum LedgerKeychain {
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         return bytes
     }
+    #endif
 }

@@ -235,8 +235,8 @@ extension Vault {
     func writeDelta(_ ops: [Op], to noteId: UUID, loaded: LoadedNote, deviceState: URL, app: String,
                     wall: Date, checkpoint: Checkpoint? = nil) throws -> Revision {
         var state = try DeviceState.loadOrCreate(at: deviceState)
-        // Revision names carry the machine's own device id (its state file's): two installs sharing one
-        // device key (a copied CLI state directory, design §6.1) never number revisions alike.
+        // Revision names keep the machine's own id (its state file's), as before the key hierarchy: ids decide
+        // nothing (format.md §15.14 "Revision names").
         let device = state.device
         var clock = state.clock
         for r in loaded.revisions { clock.observe(r.hlc, wall: wall) }

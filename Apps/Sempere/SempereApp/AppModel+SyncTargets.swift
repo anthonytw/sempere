@@ -336,8 +336,10 @@ extension AppModel {
                     options.quarantineDirectory = quarantine
                     options.arrivalWait = wait
                     request.apply(to: &options)
-                    options.deviceID = FileManager.default.fileExists(atPath: deviceState.path)
-                        ? (try? DeviceState.loadOrCreate(at: deviceState))?.device : nil
+                    // The vault device's id names its summaries file and sync state, as in the CLI (review nit); the
+                    // state file's only when the vault is not open here.
+                    options.deviceID = vault?.writerDevice ?? (FileManager.default.fileExists(atPath: deviceState.path)
+                        ? (try? DeviceState.loadOrCreate(at: deviceState))?.device : nil)
                     let twoWay = request.mode == .twoWay && vault?.canRead == true
                     // A complete copy keeps the target's sealed summaries current, so a device joining lists
                     // the notes before they arrive; never a partial copy (its list is not whole).

@@ -3787,7 +3787,7 @@ without `epochs/`), tagged under `tagKey` of `K_e`; so `tail -c +38 | gunzip` gi
 ```json
 { "format": "sempere-epoch/1", "vaultId": "…", "root": "…(64 hex)…", "epoch": 4, "epochId": "…",
   "parent": { "epoch": 3, "epochId": "…", "key": "…(64 hex: K_3)…", "identity": "AGE-SECRET-KEY-PQ-1…",
-              "sealed": { "<path>": "<sha256 hex>", … } },
+              "sealed": { "<path>": "<sha256 hex>", … }, "recordHash": "…(64 hex: SHA-256 of record 3)…" },
   "chain": [ <chain entry>, … from epoch 1 up to and including this epoch ],
   "created": "…", "by": "<author id>", "reason": "remove", "removed": ["<fingerprint>", …] }
 ```
@@ -3796,6 +3796,13 @@ without `epochs/`), tagged under `tagKey` of `K_e`; so `tail -c +38 | gunzip` gi
   otherwise both or neither, and `identity` is the one derived from `key`, whose `epochId` is
   `parent.epochId`.
 - `chain` has `epoch` entries, the last being this epoch, and `parent.epochId` is the previous one.
+- `parent.recordHash` is the SHA-256 of the parent epoch's own record file. The current record is bound
+  by `vault.json`'s `epochRecordHash` (under `authorSig`), and every earlier one by the `recordHash` of the
+  record above it: a reader walking down to earlier keys and sealed sets takes a record only when it
+  hashes to that link, and stops otherwise (its keys and everything below are then unknown, files under
+  them pending). Without the link, a device removed later, which holds that record's key, could rewrite
+  its sealed set to cover what it wrote after its removal (review of KH3, M1). Every record above epoch 1
+  carries it; a reader stops at a record without one.
 - `reason` equals the last chain entry's, and `by` is its author's id (review M6). `removed` is
   informational (§15.7 computes removals). Readers use the chain entry, never these fields.
 - Readers bound the file and its gunzipped JSON at 64 MiB.
@@ -4060,12 +4067,21 @@ device writes (`path`, `sha256`, `epoch`, `epochId`, `time`), appended durably *
 placed; it also keeps the key of every epoch the device wrote under, and the epoch it last caught up to.
 An entry lives until the record whose parent is its epoch seals its path with its digest and that seal
 is final (§15.9: a kit replacement pinned at or above the sealer), or until its file is re-encrypted
-under a later epoch (the new file gets an entry), or until its file is gone or holds other bytes. The
-reference CLI keeps it in `$XDG_STATE_HOME/sempere/ledger/<vaultId>/`: `key.age` (32 random bytes,
+under a later epoch (the new file gets an entry), or until it is superseded or stale. Per path, the
+**live** entry is the newest whose digest is the file's bytes now: older entries of the path are
+superseded and go; newer ones are intents not placed (a crash between the entry and the file, or a write
+still in flight in another process) and go after an hour, as do entries whose file is gone (deleted by
+compaction or adoption). Catch-up acts on live entries only, so a crash after a re-encrypted copy's entry
+and before the copy is placed never drops the entry that still names the file (review M2). The writer
+prunes this way every 512 appends, so the ledger follows the vault's live files, and the CLI warns above
+256 MiB (review S5). An append of an entry of another epoch than the one caught up to clears that mark,
+so the next write catches it up (a locked capture with an older profile, review M3). The
+reference CLI keeps it in `$XDG_STATE_HOME/sempere/ledger/<key>/<vaultId>/` (`<key>`: the first 16 hex digits of the device key's §11.1 fingerprint, so two device keys on one machine never share one): `key.age` (32 random bytes,
 age-encrypted to the device key), `log` (records of a 4-byte big-endian length and a ChaCha20-Poly1305
 box of one JSON object, authenticated with `"sempere/1 write ledger <vaultId>"`; a record cut off at
-the end is an append that never returned and is ignored, any other damage fails closed) and `state`
-(one such box). A ledger that cannot be read fails closed: nothing is caught up or set aside on its
+the end is an append that never returned and is ignored, any other damage fails closed; each record
+carries a sequence number) and `state` (one such box, with the last sequence number appended: a log
+that ends before it was cut and fails closed). A ledger that cannot be read fails closed: nothing is caught up or set aside on its
 account.
 
 **Catch-up** (design §5.4). The first write after a device verifies an epoch above the one it last
@@ -4077,19 +4093,24 @@ the old bytes are set aside, the new entry is recorded, and only then the copy r
 inbox file (§11) is re-sealed the same way: its plaintext's tag is checked under the device's own
 capture key of the epoch it was written under, re-tagged under the device's capture key of the current
 epoch (the JSON line and payload unchanged), and the result encrypted to the current `v_e`. A capturing
-device records each inbox file in the ledger before placing it, under its profile's epoch (a profile
-records `epoch` and `epochId`; the CLI's `inbox capture` does so when the device key is stored without
-a passphrase, the app always). Every other file the acceptance rule sets aside (inbox files included)
+device records each inbox file in the ledger before placing it, under the epoch of the profile that
+sealed it (a profile records `epoch` and `epochId`; a capture queued outside the vault keeps its own, never
+the profile current when it is moved in, review M4; the CLI's `inbox capture` records when the device key
+is stored without a passphrase, the app always). Making a profile records its epoch's key in the ledger. Every other file the acceptance rule sets aside (inbox files included)
 is then copied into the set-aside store. The app keeps its ledger and set-aside store in its App Group
 container, the ledger sealed with a key in a this-device-only Keychain item of class
-`AfterFirstUnlockThisDeviceOnly`.
+`AfterFirstUnlockThisDeviceOnly`; a release build has no other place for it and fails closed (debug builds
+without the Keychain entitlement keep it in a 0600 file), and it never makes a new key while a ledger
+exists (review S1).
 
 **The set-aside store** (design §5.8): device-local, outside the vault
 (`$XDG_STATE_HOME/sempere/setaside/<vaultId>/<vault path>/<sha256>.age`, with a `<sha256>.json` holding
 `path`, `reason` (`not-sealed`, `bytes-differ`, `dropped`), `epoch`, `epochId` and `setAside`), at most
 16 copies per path. A copy is durable before anything replaces or removes the original, and a copy that
 cannot be kept stops that replacement. Nothing leaves it but by the user: export (as it is), keep
-(re-encrypted under the current key), clear. In this version the original of a set-aside file stays in
+(re-encrypted under the current key; refused when the path holds an accepted file with another body,
+which is never replaced), clear. Earlier keys come only from a chain that verified: a `vault.json` that
+does not check is still read, but files under earlier keys are then not taken through its record. In this version the original of a set-aside file stays in
 the working copy, unread; a sync engine that never places one comes with KH4.
 
 **Unlisted devices** (design §5.5). A device whose key the current `vault.json` does not list, whose
@@ -4098,5 +4119,7 @@ under the pinned link keys, `epochSig` by the pinned home, or a takeover's signa
 the pinned kit) knows it was removed: it writes nothing (`VaultError.removedFromVault`, CLI exit 8). A
 change it cannot verify is not taken as its removal.
 
-**Revision names** carry the writing device's id in the vault (`<device>` of §5 is the first 8 hex
-digits of its fingerprint, §15.4), and so does its `summaries/<device>.sealed` (§12.5).
+**Revision names** keep the writing machine's own id (its device state, §5), as before the key
+hierarchy; ids decide nothing. Its `summaries/<device>.sealed` (§12.5) and sync state use its id in the
+vault (the first 8 hex digits of its fingerprint, §15.4). The join-time id check (§15.12) therefore
+covers summaries files, not revision names.

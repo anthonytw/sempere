@@ -102,6 +102,104 @@ final class EpochScenarioTests: VaultTestCase {
         XCTAssertTrue(try w.open("B").setAsideReport().first?.superseded == true)
     }
 
+    /// Keep never replaces an accepted file with another body (review S7, J8): the set-aside copy stays aside.
+    func testKeepingASetAsideFileNeverReplacesAnAcceptedOne() throws {
+        let w = try EpochWorld(in: tmp, names: ["A", "B", "X"])
+        var a = try w.open("A")
+        let stale = try w.open("X")
+        try a.removeDevices([w["X"].id])
+        var bad = SharedSettings()
+        try bad.set(SettingSlotKey("photos.removeMetadata"), to: .bool(false), type: .mac, now: Date())
+        try stale.writeSharedSettings(bad)   // X, removed, under K_1
+        let b = try w.open("B")
+        _ = try b.setAsideScan()
+        let item = try XCTUnwrap(b.setAsideReport().first { $0.item.path == SharedSettings.fileName })
+        var good = SharedSettings()
+        try good.set(SettingSlotKey("photos.removeMetadata"), to: .bool(true), type: .mac, now: Date())
+        try w.open("A").writeSharedSettings(good)   // accepted, another body
+        let before = try Data(contentsOf: w.url.appendingPathComponent(SharedSettings.fileName))
+        XCTAssertThrowsError(try w.open("B").keepSetAside(item.item)) {
+            guard case VaultError.setAsideFailed = $0 else { return XCTFail("\($0)") }
+        }
+        XCTAssertEqual(try Data(contentsOf: w.url.appendingPathComponent(SharedSettings.fileName)), before)
+    }
+
+    /// An earlier epoch's record is bound by the hash link of the record above it (review M1): rewriting it
+    /// (here: a removed device that holds its key) makes nothing below it readable through it, and `verify` says so.
+    func testAnEarlierRecordThatDoesNotHashToItsLinkIsNotUsed() throws {
+        let w = try EpochWorld(in: tmp, names: ["A", "B", "C", "X"])
+        let n1 = try w["A"].newNote(try w.open("A"), "epoch 1")
+        var a = try w.open("A")
+        try a.removeDevices([w["C"].id])   // epoch 2
+        try a.removeDevices([w["X"].id])   // epoch 3
+        XCTAssertEqual(try w.titles(try w.open("B"))[n1], "epoch 1")
+        let v2 = try XCTUnwrap(a.olderEpochs.first { $0.epoch == 2 })
+        let url = w.url.appendingPathComponent("epochs").appendingPathComponent(EpochRecord.fileName(epoch: 2, epochId: v2.epochId))
+        var rec = try EpochRecord.open(Data(contentsOf: url), key: v2.key, vaultId: a.vaultId, epoch: 2)
+        rec.created = "2026-10-23T00:00:00Z"
+        try rec.seal(key: v2.key).write(to: url)
+        let b = try w.open("B")
+        XCTAssertNil(try w.titles(b)[n1], "epoch 1's key is not taken from a record that does not hash to its link")
+        let line = b.verify().files.first { $0.path.hasPrefix("epochs/2-") }
+        XCTAssertEqual(line?.status, .invalid, "\(String(describing: line))")
+    }
+
+    /// An untrusted `vault.json` is still read, but its record's sealed sets launder nothing (review S2).
+    func testNoEarlierKeysFromAChainThatDoesNotVerify() throws {
+        let w = try EpochWorld(in: tmp, names: ["A", "B", "X"])
+        let n1 = try w["A"].newNote(try w.open("A"), "epoch 1")
+        var a = try w.open("A")
+        try a.removeDevices([w["X"].id])
+        try forgeEpoch(w, author: w["B"], removing: [])   // a non-home signer: the chain does not verify
+        let b = try w.open("B")
+        XCTAssertFalse(b.listStatus.allowsWriting)
+        XCTAssertTrue(b.olderEpochs.isEmpty)
+        XCTAssertNil(try w.titles(b)[n1])
+    }
+
+    /// A kit replacement that crashed after its vault.json leaves the old passphrase copy; home's next write
+    /// deletes it (review S6).
+    func testASupersededPassphraseCopyGoesOnHomesNextWrite() throws {
+        let w = try EpochWorld(in: tmp, names: ["A", "B"], passphrase: "correct horse battery staple orbit ninja")
+        var a = try w.open("A")
+        let old = a.passphraseCopyNames()
+        a.faults = EpochFaults(stop: .afterManifest)
+        XCTAssertThrowsError(try a.replaceRecoveryKit(try MLKEM768X25519Identity(), keep: [w["B"].id], remove: [],
+                                                      passphrase: "tangerine wombat quarry velvet mosaic lantern"))
+        let again = try w.open("A")
+        XCTAssertTrue(Set(again.passphraseCopyNames()).isSuperset(of: old), "still there after the crash")
+        try w["A"].newNote(again, "next write")
+        let after = again.passphraseCopyNames()
+        XCTAssertTrue(Set(after).isDisjoint(with: old), "\(after)")
+        XCTAssertEqual(after.count, 1, "the new kit's copy stays")
+    }
+
+    /// A ledger log cut at a record boundary (entries deleted from its end) no longer reaches the sequence
+    /// number its state recorded: it fails closed (review nit).
+    func testATruncatedLedgerFailsClosed() throws {
+        let dir = tmp.appendingPathComponent("ledger")
+        let device = try MLKEM768X25519Identity()
+        let vaultId = UUID()
+        let ledger = FileWriteLedger(directory: dir, vaultId: vaultId, device: device)
+        let k = VaultEpochKey.random()
+        try ledger.append([LedgerEntry(path: "notes/a", sha256: String(repeating: "0", count: 64), epoch: 1, epochId: k.epochId)])
+        let log = ledger.folder.appendingPathComponent("log")
+        let one = try Data(contentsOf: log)
+        try ledger.append([LedgerEntry(path: "notes/b", sha256: String(repeating: "1", count: 64), epoch: 1, epochId: k.epochId)])
+        XCTAssertEqual(try ledger.entries().count, 2)
+        try one.write(to: log)   // the last record cut away at its boundary
+        XCTAssertThrowsError(try ledger.entries()) {
+            guard case VaultError.ledgerUnreadable = $0 else { return XCTFail("\($0)") }
+        }
+        // Removing entries rewrites the log with a mark, which still reaches the state's number.
+        let fresh = FileWriteLedger(directory: tmp.appendingPathComponent("ledger2"), vaultId: vaultId, device: device)
+        let e1 = LedgerEntry(path: "notes/a", sha256: String(repeating: "0", count: 64), epoch: 1, epochId: k.epochId)
+        let e2 = LedgerEntry(path: "notes/b", sha256: String(repeating: "1", count: 64), epoch: 1, epochId: k.epochId)
+        try fresh.append([e1]); try fresh.append([e2])
+        try fresh.remove([e2])
+        XCTAssertEqual(try fresh.entries(), [e1])
+    }
+
     // MARK: - Catch-up (design §5.4)
 
     /// J1 (no loss) and J8 (body integrity): a still-listed device that wrote under the old key after the
@@ -341,7 +439,7 @@ final class EpochScenarioTests: VaultTestCase {
             parentList: v.manifest.keys.map(\.fingerprint), parentAdditions: v.currentAdditions(),
             devices: v.manifest.devices.filter { !removing.contains($0.fingerprint) }, recovery: try XCTUnwrap(v.manifest.recoveryEntry),
             home: author.fingerprint, author: entry, signing: author.keys.signing, recoverySigner: nil,
-            sealed: try v.sealedSet(try v.currentSealView()), created: Date(), label: nil, features: [])
+            sealed: try v.sealedSet(try v.currentSealView()), parentRecordHash: v.manifest.epochRecordHash, created: Date(), label: nil, features: [])
         _ = try v.writeEpoch(plan)
     }
 
@@ -571,13 +669,69 @@ final class EpochScenarioTests: VaultTestCase {
         XCTAssertEqual(try w["C"].ledger.entries().count, 1)
         var a = try w.open("A")
         try a.removeDevices([w["X"].id])
-        let report = try w.open("C").catchUp()
+        // Kept while it may still be a write in flight elsewhere, dropped once that cannot be (review M2).
+        XCTAssertTrue(try w.open("C").catchUp().dropped.isEmpty)
+        XCTAssertEqual(try w["C"].ledger.entries().count, 1)
+        let report = try w.open("C").catchUp(now: Date().addingTimeInterval(Vault.ledgerIntentGrace + 60))
         XCTAssertEqual(report.dropped.count, 1)
         XCTAssertTrue(try w["C"].ledger.entries().isEmpty)
     }
 
+    /// Every kind of file, crashed at every catch-up point, the M2 window included (`catchUpRecorded`: the new
+    /// entry durable, the copy not placed): the next run finishes, the listed home reads it, and the ledger
+    /// keeps one entry of the current epoch per file (review M2, S6).
+    func testCatchUpOfEveryKindResumesAfterACrashAtEachPoint() throws {
+        enum Kind: String, CaseIterable { case revision, blob, notebook, settings, capture }
+        let points: [EpochFaults.Point] = [.catchUpWritten(1), .catchUpVerified(1), .catchUpRecorded(1), .catchUpPlaced(1)]
+        let audio = Data((0..<2000).map { UInt8(truncatingIfNeeded: $0 &* 3 &+ 1) })
+        for kind in Kind.allCases {
+            for point in points where !(kind == .blob && point == .catchUpRecorded(1)) {
+                let dir = tmp.appendingPathComponent("\(kind)-\(point)")
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                let w = try EpochWorld(in: dir, names: ["A", "C", "X"])
+                let profile = try w.open("C").captureProfile(device: DeviceID("0c0c0c0c")!)
+                var a = try w.open("A")
+                let staleC = try w.open("C")
+                try a.removeDevices([w["X"].id])
+                var check: () throws -> Bool
+                switch kind {
+                case .revision:
+                    let note = try w["C"].newNote(staleC, "offline")
+                    check = { try w.titles(try w.open("A"))[note] == "offline" }
+                case .blob:
+                    let note = try w["A"].newNote(try w.open("A"), "host")
+                    let ref = try staleC.writeBlob(note: note, Data("attachment".utf8), type: "image/png")
+                    check = { (try? w.open("A").readBlob(note: note, ref)) == Data("attachment".utf8) }
+                case .notebook:
+                    _ = try staleC.createNotebook("Offline")
+                    check = { try w.open("A").readNotebookRecords().records.count == 1 }
+                case .settings:
+                    var settings = SharedSettings()
+                    try settings.set(SettingSlotKey("photos.removeMetadata"), to: .bool(false), type: .mac, now: Date())
+                    try staleC.writeSharedSettings(settings)
+                    check = { (try? w.open("A").readSharedSettingsFile()) != nil }
+                case .capture:
+                    let writer = try CaptureWriter(profile: profile)
+                    let id = UUID()
+                    let sealed = try writer.seal(audio: audio, started: Date(), id: id)
+                    try writer.record(sealed, in: w["C"].ledger)
+                    try CaptureWriter.store(sealed, in: a.inboxURL)
+                    check = { (try? w.open("A").readCapture(id).audio) == audio }
+                }
+                var c = try w.open("C")
+                c.faults = EpochFaults(stop: point)
+                XCTAssertThrowsError(try c.catchUp(), "\(kind) \(point)")
+                let report = try w.open("C").catchUp()
+                XCTAssertTrue(report.problems.isEmpty, "\(kind) \(point): \(report)")
+                XCTAssertTrue(try check(), "\(kind) \(point): lost (J1)")
+                let epochs = try w["C"].ledger.entries().map(\.epoch)
+                XCTAssertTrue(epochs.allSatisfy { $0 == 2 } && !epochs.isEmpty, "\(kind) \(point): \(epochs)")
+            }
+        }
+    }
+
     func testCatchUpResumesAfterACrashAtEachPoint() throws {
-        for point: EpochFaults.Point in [.catchUpWritten(1), .catchUpVerified(1), .catchUpPlaced(1)] {
+        for point: EpochFaults.Point in [.catchUpWritten(1), .catchUpVerified(1), .catchUpRecorded(1), .catchUpPlaced(1)] {
             let dir = tmp.appendingPathComponent("\(point)")
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let w = try EpochWorld(in: dir, names: ["A", "C", "X"])
@@ -593,7 +747,7 @@ final class EpochScenarioTests: VaultTestCase {
             let report = try resumed.catchUp()
             XCTAssertTrue(report.problems.isEmpty, "\(point): \(report)")
             XCTAssertEqual(try w.titles(try w.open("A"))[note], "offline", "\(point)")
-            XCTAssertEqual(try w["C"].ledger.entries().map(\.epoch), [2], "\(point)")
+            XCTAssertTrue(try w["C"].ledger.entries().map(\.epoch).allSatisfy { $0 == 2 }, "\(point)")
         }
     }
 
