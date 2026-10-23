@@ -333,11 +333,21 @@ public enum EpochChain {
     public static func verify(_ chain: [ChainEntry], vaultId: UUID, root: Data,
                               directory extra: DeviceDirectory = DeviceDirectory(),
                               pinned: [TakeoverRule.PinnedEpoch] = []) throws -> Verified {
+        try verify(chain, vaultId: vaultId, root: root, directory: extra, pinned: pinned, mutations: [])
+    }
+
+    /// `verify` with test-only mutations (`PrecedenceMutation`): `nonHomeSignerAccepted` takes an epoch
+    /// signed by any device of its parent's list, `olderHomeKept` one signed by the home from before the last
+    /// takeover, `takeoverIgnored` refuses every takeover. The vault-level property test
+    /// (`EpochVaultPropertyTests`) requires each to make it fail.
+    static func verify(_ chain: [ChainEntry], vaultId: UUID, root: Data, directory extra: DeviceDirectory,
+                       pinned: [TakeoverRule.PinnedEpoch], mutations mut: Set<PrecedenceMutation>) throws -> Verified {
         guard !chain.isEmpty, chain.count <= maxEpochs else { throw ChainError.empty }
         var directory = extra
         directory.add(chain: chain)
         var lists: [AdmittedAdditions] = []
         var removals: [Set<Data>] = []
+        var homeBeforeTakeover: Data?
         for (i, e) in chain.enumerated() {
             guard e.epoch == i + 1 else { throw ChainError.badSequence(epoch: e.epoch) }
             guard let reason = EpochReason(rawValue: e.reason) else { throw ChainError.badReason(epoch: e.epoch) }
@@ -370,6 +380,8 @@ public enum EpochChain {
                     // Signed by the recovery key `TakeoverRule` names and by the new home, which may be a
                     // device the parent never listed (a kit join); the list is the user's pick, from the
                     // devices of the takeover's ancestry (design §5.6).
+                    if mut.contains(.takeoverIgnored) { throw ChainError.badTakeover(epoch: e.epoch) }
+                    homeBeforeTakeover = prev.home
                     guard authorFP == e.home else { throw ChainError.notHome(epoch: e.epoch) }
                     // First the signature under the parent's own kit (round 9, L3): a bad or wrong-kit
                     // signature is tampering at once, and only a valid one whose kit this device has not
@@ -393,11 +405,14 @@ public enum EpochChain {
                     }
                     guard e.recovery == prev.recovery else { throw ChainError.badRecovery(epoch: e.epoch) }
                 default:
-                    guard authorFP == prev.home else { throw ChainError.notHome(epoch: e.epoch) }
+                    let mutated = authorFP != prev.home
+                        && ((mut.contains(.nonHomeSignerAccepted) && lists[i - 1].list.contains(authorFP))
+                            || (mut.contains(.olderHomeKept) && homeBeforeTakeover == authorFP))
+                    guard authorFP == prev.home || mutated else { throw ChainError.notHome(epoch: e.epoch) }
                     if reason == .handoff {
                         guard e.home != prev.home, e.home != e.recovery else { throw ChainError.badHome(epoch: e.epoch) }
                     } else {
-                        guard e.home == prev.home else { throw ChainError.badHome(epoch: e.epoch) }
+                        guard e.home == prev.home || (mutated && e.home == authorFP) else { throw ChainError.badHome(epoch: e.epoch) }
                     }
                     if reason.mayAddRecovery {
                         // When the user still holds the old kit, the replacement also carries the old key's

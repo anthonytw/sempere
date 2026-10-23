@@ -32,6 +32,10 @@ public enum NotebookRecordError: Error, Hashable, Sendable {
     case framing(BodyFramingError)
     /// Not a record: bad gzip or JSON, another `format`, a broken limit.
     case invalid(String)
+    /// Under an earlier epoch's key and not taken by the acceptance rule (key-hierarchy design §5.3).
+    case setAside(SetAsideReason)
+    /// Under a key whose epoch record has not arrived (design §5.3 rule 3).
+    case pending
 }
 
 /// The rules of notebook records (format.md §14): names, limits, the JSON,
@@ -228,16 +232,22 @@ extension Vault {
     /// Decrypts, verifies and decodes the bytes of the record `fileName`
     /// (a file of this vault, or a copy from a sync server).
     public func openNotebookRecord(_ data: Data, fileName: String) throws -> NotebookRecord {
-        let secret = try requireReadable()
+        _ = try requireReadable()
         guard let id = NotebookRecords.id(ofFileName: fileName) else { throw NotebookRecordError.invalid("not a record name") }
         guard data.count <= NotebookRecords.maxFileBytes else { throw NotebookRecordError.tooLarge }
-        let plain: Data
-        do { plain = try AgeFile.decrypt(data, with: identities) } catch {
-            throw NotebookRecordError.undecryptable("\(error)")
+        let plain: Data, key: VaultEpochKey, older: OlderEpoch?
+        switch openUnderEpochs(data) {
+        case .opened(let p, let k, let o): plain = p; key = k; older = o
+        case .pending: throw NotebookRecordError.pending
+        case .undecryptable(let why): throw NotebookRecordError.undecryptable(why)
         }
         let unframed: BodyFraming.Unframed
-        do { unframed = try unframeNotebookRecord(plain, fileName: fileName, secret: secret) } catch let e as BodyFramingError {
+        do { unframed = try unframeNotebookRecord(plain, fileName: fileName, secret: key) } catch let e as BodyFramingError {
             throw NotebookRecordError.framing(e)
+        }
+        // Key-hierarchy design §5.3: under an earlier key only when sealed with these bytes.
+        if let reason = setAsideReason(older, path: "\(NotebookRecords.folderName)/\(fileName)", sha256: FileDigest.sha256(data)) {
+            throw NotebookRecordError.setAside(reason)
         }
         let json: Data
         do { json = try Gzip.decompress(unframed.gzip, maxOutput: NotebookRecords.maxFileBytes) } catch {
@@ -266,6 +276,7 @@ extension Vault {
         guard !record.add.isEmpty || !record.remove.isEmpty else { return }
         let data = try sealNotebookRecord(record)
         try FileManager.default.createDirectory(at: notebooksURL, withIntermediateDirectories: true)
+        try recordWrite(path: "\(NotebookRecords.folderName)/\(record.fileName)", bytes: data)
         try FileIO.writeAtomically(data, to: notebooksURL.appendingPathComponent(record.fileName), replacing: false)
     }
 

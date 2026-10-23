@@ -201,8 +201,9 @@ the tag or name uses changes.
   bytes), lowercase hex; for the recovery entry, the recovery key's derived pair (§5.6), which a
   takeover's `recoverySig` verifies under. They never change for an entry: a device whose signing keys
   are lost leaves and joins again (§6.1).
-- `id`: the first 8 hex digits of the device fingerprint. It is the `<device>` of revision names (§5)
-  and of `summaries/<device>.sealed` (§12.5). **Ids are for file names and the interface only**: no
+- `id`: the first 8 hex digits of the device fingerprint. It is the `<device>` of
+  `summaries/<device>.sealed` (§12.5) and of sync state; revision names keep the writing machine's own id
+  (format.md §5), as before (KH3 review, deviation a). **Ids are for file names and the interface only**: no
   security decision reads one. A join is refused if the id equals that of a fingerprint in the current
   list or in any `list` of the epoch record's `chain` (§5.2), which keeps every list since epoch 1,
   re-encryption included; the joining device then generates another key. Eight hex digits keep file
@@ -383,8 +384,12 @@ A device that is not home and about to be removed cannot add anything: it never 
 
 On home A (only home removes, §5.6; home itself is removed only after a handoff or by a takeover),
 in this order, each step durable before the next. A holds the vault's write
-lock (`VaultFileLock`) from step 3 to step 5, so no write lands between sealing and the new
-`vault.json`.
+lock (`VaultFileLock`; the store's for a store vault) from step 3 to step 5. It excludes the other
+writers of `vault.json` and `settings.age`, not every note write: a file another process writes under
+`K_e` between the seal and the new `vault.json` (the app or the widget of home itself, another device on
+the same folder) is not sealed, and its writer re-encrypts it from its ledger (§5.4). Its ledger entry is
+of epoch `e`, which clears the device's caught-up mark, so the next write catches it up (J1; KH3 review,
+deviation b and M3).
 
 1. **Preconditions**: the working copy is complete (format.md §1.2 rule 3) and `vault.json`
    verifies. Nothing about targets or re-encryption: a removal never waits for a network or for other
@@ -431,7 +436,8 @@ revision). The JSON:
 { "format": "sempere-epoch/1", "vaultId": "…", "root": "…", "epoch": 4, "epochId": "…",
   "parent": { "epoch": 3, "epochId": "…", "key": "…(64 hex: K_3)…",
               "identity": "AGE-SECRET-KEY-PQ-1…",
-              "sealed": { "notes/<id>/<name>.delta.age": "<sha256 hex>", … } },
+              "sealed": { "notes/<id>/<name>.delta.age": "<sha256 hex>", … },
+              "recordHash": "…(64 hex: SHA-256 of the parent epoch's record)…" },
   "chain": [ { "epoch": 1, "epochId": "…", "linkPublicKeys": { "ed25519": "…", "mldsa65": "…" },
                "reason": "create", "list": ["<fingerprint>", …], "parentList": [],
                "author": { "key": "age1pq1…", "p256": "…", "mldsa65": "…" }, "epochSig": { … },
@@ -449,7 +455,9 @@ revision). The JSON:
   "removed": ["<fingerprint>", …] }
 ```
 
-- `parent` carries the parent's key, identity and sealed set. A re-encryption epoch carries no `key`
+- `parent` carries the parent's key, identity, sealed set and `recordHash`, the SHA-256 of the parent's
+  own record: the current record is bound by `epochRecordHash`, each earlier one by the link above it,
+  so a holder of an earlier key cannot rewrite an earlier sealed set (KH3 review, M1). A re-encryption epoch carries no `key`
   or `identity` there (§7). Epoch 1 has no `parent`.
 - `chain` holds only public values, one entry per epoch on this epoch's ancestry from epoch 1, each
   with the first list and the signed parent list of §4.1, the author's public keys (whose
@@ -1252,7 +1260,7 @@ Sizes as in device-first-sync.md §10: S < 300 changed lines, M 300 to 1,000, L 
 | --- | --- | --- | --- | --- |
 | **KH1** | **Key schedule, identities, signatures, the single writer and the frozen kit.** Pure types and functions, no `Vault` wiring: `VaultEpochKey` (`K_e` → identity seed → vault identity, the §2.2 derivations); wraps; `vault.json` model with `keys[]`, fingerprints, `listMessage`/`listTag`, `epochLink`, `root`; the three signature messages of §4.1 (`lp()` encoding, no JSON canonicalization) and their checks (`addSig` by home ⇒ `addedBy`, first lists within the parent list **including the parent's carried additions**, the 256-addition bound); `home`, handoff and takeover, the recovery key's derived signing pair and `recoverySig`; the epoch record model, chain check and computed removals; **the precedence rule as a pure function** over an epoch tree (§5.6: linear following of home-signed epochs, takeover precedence, the deterministic tie between takeovers, home conflicts); join commitment, words and reverse code; trust record v3 with the home. Shared vectors `Fixtures/epoch-vectors.json`: seed → identity → derived keys → tags, links, root, fingerprints, all three signatures (including a device name with non-ASCII, a slash and an emoji), join words; the recovery key's derived signing keys; **negative vectors** (a broken link, a wrong root, a signature by a device that is not home, an `addedBy` that is not the signer, an epoch introducing a device, a takeover by another recovery key); **precedence vectors** (the §11.1 home and takeover scenarios, with the expected chain, dropped and ignored epochs and home conflicts). Mirrored in `web/src/vault/`. format.md: §2, §2.1, §3, §4, §8.1.2, §11.1 rewritten, and **new sections for `epochs/` (§5.2.1 here), the re-encryption journal (§7.4), the passphrase copy's plaintext (§8.2) and the signature messages (§4.1)**. The kit layout (key, root) and the recovery script (§8.1) frozen; CLAUDE.md's recovery rule updated | M to L | — | vectors from two implementations (Swift, TypeScript); `age` interop: a file to `v_e` opens with `age -d -i` the wrap's plaintext; enclave signatures verify in software (Mac test behind `#if canImport(CryptoKit)`); the recovery script on a hand-built fixture (two epochs, an orphan, a dropped epoch, a journal, the passphrase copy); the precedence property test with its mutations; fuzz targets for the `vault.json`, epoch record, journal and join request readers |
 | KH2 (implemented) | **Single-epoch vaults.** `Vault.create`/`open` on the new manifest: one stanza per file to `v_e`, tags and blob names under derived keys, epoch 1's record written at creation, recovery entry, passphrase copy (work factor 20, 70 bits, root inside), add (join by approval, §6.2) and rename by home (signed), CLI `device init/confirm`, `devices list/approve/rename`, `--recovery-key [--root]` read-only; old vault format removed (no migration); fixtures regenerated; web viewer reads the new format | L | KH1 | full `swift test`; the kit's recovery script in CI on a generated fixture; web goldens |
-| KH3 | **Removal, handoff and the acceptance rule.** Epoch records (final name first), sealed sets, §5.2 under the write lock, §5.3, the set-aside store (moved from P4a's quarantine), the write ledger (intent first, lifetime, App Group, AfterFirstUnlock key), catch-up (§5.4), unlisted devices (§5.5), handoff (§5.6, a new epoch), recovery kit replacement with the device review, blob-collection conditions (§5.7); CLI `devices remove`, `devices handoff`, `recovery replace` | L | KH2 | `EpochFaults` (core points), the scenarios that need no sync over in-process devices sharing a folder, J1, J2, J3, J5a, J6, J8 |
+| KH3 (implemented) | **Removal, handoff and the acceptance rule.** Epoch records (final name first), sealed sets, §5.2 under the write lock, §5.3, the set-aside store (moved from P4a's quarantine), the write ledger (intent first, lifetime, App Group, AfterFirstUnlock key), catch-up (§5.4), unlisted devices (§5.5), handoff (§5.6, a new epoch), recovery kit replacement with the device review, blob-collection conditions (§5.7); CLI `devices remove`, `devices handoff`, `recovery replace`. Landed with it, ahead of KH4: the takeover on a shared folder (`Vault.takeover`, CLI `devices takeover`, also `recovery takeover`), `vault catch-up`, `set-aside`, the web viewer reading earlier epochs by the acceptance rule | L | KH2 | `EpochFaults` (core points), the scenarios that need no sync over in-process devices sharing a folder, J1, J2, J3, J5a, J6, J8 |
 | KH4 | **Engine.** Sync of `epochs/` (to every target), `joins/`, `keys/` deletions (§8.2's rule); the remover's best-effort pull; pending-until-record and unverified-pending (J5b); current-replaces-unaccepted (§5.4 step 4); the epoch tree and KH1's precedence function applied, takeovers (CLI `devices takeover`); unlisted devices keep pulling; `synced` timestamps | L | KH3, P3 | engine faults, every scenario, `EpochInterleavingTests` J1 to J6 and J8 to J10 with mutation checks; 60 seeds in sync-stress |
 | KH5 | **App.** Device keys in the Keychain and signing pairs in the Secure Enclave, join by approval on home (typed words both ways, QR commitments) and the takeover screen (kit or passphrase with the root, a checkbox per device), takeover alerts, device list and history with "Manages devices" and Make Home, removal with the stale and password warnings, the unlisted-device screen with Export, home-conflict notices, set-aside view in Repair, recovery kit replacement; delete remembered-key and key-replace UI | L | KH4, P5 | Mac Catalyst unit tests (gate); `scripts/app.sh test-mac-smoke` with the new sheets; owner device checks below |
 | KH6 | **Re-encrypt everything.** §7 on P4a's coordinator, claims, journal binding, rewrap-replace and keyring; removals during the pass; takeovers against it; CLI `vault reencrypt [--resume]`, app sheet with the device review and progress | L | KH4 (app part: KH5) | `EpochFaults` re-encryption points, J7 and J9, the F11 cut-upload test over wsgidav, 60 seeds in sync-stress |

@@ -531,9 +531,16 @@ note id, file name and body, §4), and cannot make the viewer run code:
   shows its revisions. The file is bounded (64 MiB, 256 MiB after gunzip),
   each entry is checked (canonical sorted revision names, dates, counts, page
   numbers) and a bad entry is dropped alone; a fuzz test covers it.
-- **The device list** (`format.md` §2, §2.1, §15.3). The viewer reads only
-  the current epoch: files under an earlier epoch's key are unreadable, and
-  epoch records of earlier epochs and the re-encryption journal are not read.
+- **The device list** (`format.md` §2, §2.1, §15.3). Above epoch 1 the viewer
+  takes the earlier epochs' keys from the epoch records (the current one, named
+  and hashed by `vault.json`, gives its parent's key, sealed set and the hash
+  of the parent's record, and so on down the chain: a record that does not
+  hash to its link stops the walk), only when `vault.json` checks. A file under an earlier key
+  is read only when the record that closed its epoch seals its path with
+  exactly its bytes (`format.md` §15.14); any other is reported as set aside
+  (`setAside`), never shown. A record that is missing or does not open stops
+  the walk: files under the keys below it are unreadable. The re-encryption
+  journal is not read.
   It refuses the vault (`tamperedList`) when `listTag` does not verify under
   `K_e` or the wrap's epoch id differs, after the structural checks Swift's
   `EpochManifest.parse` makes. It warns (a banner; the vault stays readable)
@@ -807,9 +814,10 @@ are missing: download the vault first.
   (`format.md` §3.2 allows readers to stop there). The vault's passphrase copy
   is written at 20, where scrypt needs 1 GiB, which a phone's browser may not
   give a worker; the viewer then says so (use the printed kit's key).
-- **Only the current epoch** is read: files written under an earlier epoch's
-  key (after a removal, key hierarchy KH3) are unreadable here, and the chain,
-  takeovers and precedence are not checked ("Security").
+- **Earlier epochs by the records alone**: files under an earlier epoch's key
+  are read by the acceptance rule (above), but the chain's links and
+  signatures, takeovers and precedence are not checked, and no trust record is
+  kept ("Security"): the viewer trusts the chain the current `vault.json` names.
 - **Transcript search** reads and decrypts every transcript of the vault the
   first time it is ticked in a tab (seconds for hundreds of notes; the
   encrypted files are cached, decryption is not), and keeps them in memory

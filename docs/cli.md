@@ -66,6 +66,7 @@ machine: no command prints or exports them. Secret keys are printed only by
 | 4 | Cannot decrypt: wrong key or passphrase, no key available (no device key, no identity, no passphrase and no terminal to ask, or a `--passphrase-env` variable that is not set), or a key `vault.json` does not list (this machine has not joined, or its approval has not arrived). |
 | 6 | Untrusted device list: `vault.json` does not check on this machine (`format.md` §2.1: changed without the vault key, not signed by the home device, an entry gone under the same epoch, older version markers, another root or epoch than the one this machine pinned, a trust record that does not read, or a join this machine has not confirmed yet: `sempere device confirm`). Every command that would write refuses (nothing is written), `vault verify` exits 6, and `sync webdav` exits 6 when it rejected a remote `vault.json`. Reading notes still works. |
 | 7 | Read-only vault: it holds content of a newer format version (format.md §7), so this version may read it but not change it; or it was opened with the recovery key (`--recovery-key`), which never writes. The message says why (`format`, `features`, notes a newer version wrote, or the recovery key). |
+| 8 | Removed: this machine's device is not on the vault's newest device list, and it verified the change that left it out (key hierarchy design §5.5: a removal by the home device, or a takeover). It writes nothing. The message names who made the change. A takeover that re-admits the device undoes it. |
 
 Exit code 5 is unused. A `vault.json` that lists a classic X25519 key is
 invalid (`format.md` §2, §3.1): every command that opens the vault fails with
@@ -210,6 +211,11 @@ sempere device confirm WORD WORD WORD WORD WORD WORD
 sempere devices list
 sempere devices approve WORD WORD WORD WORD WORD WORD
 sempere devices rename ID NAME
+sempere devices remove ID... [--unsynced-epoch]
+sempere devices handoff ID [--unsynced-epoch]
+sempere devices takeover --recovery-key FILE [--root HEX] [--keep ID]... [--keep-listed] [--name TEXT] [--kind WORD] [--unsynced-epoch] [--yes]
+sempere recovery replace --recovery-out FILE [--keep ID]... [--remove ID]... [--old-recovery-key FILE] [--recovery-passphrase] [--unsynced-epoch] [--yes]
+sempere set-aside list | export [SHA...] --to DIR | keep SHA... --yes | clear (SHA... | --superseded) --yes
 ```
 
 A vault has one **home** device, the one that changes its device list: the
@@ -258,11 +264,81 @@ device takes words typed both ways (`format.md` §15.12, design §6.2):
   rename a device. `--json`: the device as in `devices list`.
 
 Device keys never leave the machine: there is no command to export them, and a
-copied state directory makes two installs one device. Removing a device,
-handing the home role to another device, taking over with the recovery key
-(when home is lost) and replacing the recovery kit start a new epoch of the
-vault key; they come with phases KH3 and KH4 of the key hierarchy and are not
-in this version.
+copied state directory makes two installs one device.
+
+**New epochs** (`format.md` §15.14, design §5.2, §5.6, §6.3, §6.5). Removing a
+device, handing the home role over, a takeover with the recovery key and
+replacing the recovery kit each start a new epoch: a new vault key, an epoch
+record in `epochs/` (written under its final name first) and a new `vault.json`,
+under the vault's write lock. Files written before keep their key; the record
+seals every file the machine holds that verifies, so every listed device keeps
+reading them. From that moment every write is under the new key. A file written
+later under an older key that no record seals (by a removed device, or by a
+listed device that had not seen the change) is **set aside**: never read as a
+note, never deleted. A machine that had not seen the change re-encrypts its own
+such files (**catch-up**: its write ledger in `$XDG_STATE_HOME/sempere/ledger`
+lists every file it wrote; the first write after it verifies the new epoch does
+it, or `vault catch-up`). Revisions keep the machine's own id from
+`device.json` in their names; its published summaries file and sync state use
+its device id in the vault.
+
+- **Before key hierarchy KH4** the sync engine does not carry `epochs/`: every command
+  below that starts an epoch refuses a store vault that has sync targets (other
+  devices could not read what is written after it), unless `--unsynced-epoch` is
+  given. A plain folder synced with `sync folder|webdav` is not detected.
+- `devices remove ID...` (home only, never itself) removes devices: it first
+  catches up its own files, then starts the epoch. The removed machine gets
+  exit 8 from then on (it still reads nothing new: the new key is not wrapped to
+  it). A key change cannot take storage access away: change the password of a
+  WebDAV target the device used, or sign it out of iCloud. `--json`: `epoch`,
+  `epochId`, `reason` (`remove`), `removed` (ids), `home`, `sealed` (files).
+- `devices handoff ID` (home only) makes another listed device home: an epoch
+  with the same devices, signed by the old home. From then on only the new home
+  approves, renames, removes or replaces the kit. `--json`: as `remove`.
+- `devices takeover --recovery-key FILE` (also `recovery takeover`) is for a lost or stolen home: the
+  holder of the recovery key (the kit's identity file, or the vault's
+  passphrase copy `keys/recovery-*.key.age`, which carries the root) makes this
+  machine home under a `takeover` epoch signed by the recovery key and by this
+  machine, whose parent is the epoch this machine pinned (a machine that never
+  joined: the current one, checked against `--root`, the kit's 16 groups; a kit
+  join). Without `--yes` it prints the devices to choose from (those of the
+  current list, and those an earlier epoch removed, for example by a stolen
+  home) and writes nothing (exit 2); `--keep ID` (repeat) or `--keep-listed`
+  picks them. A takeover beats every epoch of the old home that is not its
+  ancestor: devices that followed the stolen home's later epochs drop them and
+  catch up their own files. Only the kit of the epoch this machine pinned takes
+  over: a kit a replacement retired, or one this machine has not pinned yet, is
+  refused (exit 1). A machine with no device key for the vault gets one (as
+  `device init`, `--name`, `--kind`). The choices name the epochs above the
+  parent that the takeover drops and the devices they removed; those are not
+  kept by `--keep-listed` (name them with `--keep` if they should stay). Names come
+  from this machine's trust record where it has them (a stolen home may have
+  renamed devices). `--json` without `--yes`: `parentEpoch`, `choices`
+  (`[{id, name, nameTrusted, listed, removedByDroppedEpoch, checkedByDefault}]`),
+  `dropped` (`[{epoch, reason, author, removed}]`), `keep`; with it, as `remove`
+  (`reason: takeover`).
+- `recovery replace --recovery-out FILE` (home only) replaces the recovery kit
+  after the device review: every listed device but this one must be named with
+  `--keep ID` or `--remove ID` (devices a takeover added since the current kit
+  are marked "TAKEOVER"). Without `--yes` it prints the review and writes nothing
+  (exit 2); `--yes` confirms you are at the device (the app asks for Face ID or
+  the passcode). The new key goes to `FILE` (mode 0600; print the kit with `keys
+  paper --identity FILE`, then delete it); the epoch drops the old key and the
+  removed devices, and from then on no machine that saw it takes a takeover by
+  the old kit. `--old-recovery-key FILE` (the old kit or the passphrase copy)
+  adds the old key's signature as evidence; `--recovery-passphrase` writes the
+  passphrase copy for the new key and deletes the old copy. `--json`: as
+  `remove` (`reason: recovery`).
+- `set-aside list` shows the files this machine set aside (SHA-256, vault path,
+  reason: `not-sealed`, `bytes-differ` or `dropped`, and `superseded` when the
+  vault holds the same body accepted); `export [SHA...] --to DIR` copies them
+  as they are (age files) under their vault paths; `keep SHA... --yes` puts
+  them back in the vault re-encrypted under the current key (they may come
+  from a removed device: keep only what you recognize; refused when the path
+  holds an accepted file with another body); `clear (SHA... |
+  --superseded) --yes` deletes them from this machine. Items are named by their
+  SHA-256 or 8 or more leading hex digits. The store is
+  `$XDG_STATE_HOME/sempere/setaside/<vault id>/`.
 
 ### Vault
 
@@ -275,6 +351,7 @@ sempere vault verify
 sempere vault index [--out PATH|-]
 sempere vault summaries [--out PATH|- | --device-file] [--plaintext] [--no-cache]
 sempere vault merge-copy FROM [--dry-run] [--json]
+sempere vault catch-up [--json]
 ```
 
 - `init` creates the vault (`PATH` must end in `.sempere`), with this machine
@@ -328,10 +405,14 @@ sempere vault merge-copy FROM [--dry-run] [--json]
   `unlocked`, `openedWith`, `format`, `features`, `readOnly`,
   `readOnlyReasons` and `list`: `status` (`verified`, `refused`, or
   `not-checked`), for `verified` a `verification` (`unchanged`, `firstUse`,
-  `added`: home approved devices since this machine's trust record, `renamed`),
-  for `refused` a `reason` (`listTag`, `markersTag`, `markersRolledBack`,
-  `authorSig`, `epochSig`, `introducesDevice`, `addSig`, `rootMismatch`,
-  `otherEpoch`, `entriesChanged`, `recordUnreadable`, `rootUnconfirmed`) and a
+  `added`: home approved devices since this machine's trust record, `renamed`,
+  `newEpoch`: a removal, handoff, takeover or kit replacement since, whose
+  chain this machine follows), for `refused` a `reason` (`listTag`,
+  `markersTag`, `markersRolledBack`, `authorSig`, `epochSig` (also a chain of
+  device changes that does not verify), `introducesDevice`, `addSig`,
+  `rootMismatch`, `otherEpoch` (an epoch record that has not arrived, a chain
+  this machine does not follow, or a takeover waiting for its kit to be
+  pinned), `entriesChanged`, `recordUnreadable`, `rootUnconfirmed`) and a
   `detail`.
 - **The device list is authenticated** (`format.md` §2.1, §15.3).
   `vault.json` carries `listTag` (an HMAC of the list under a key derived from
@@ -352,7 +433,11 @@ sempere vault merge-copy FROM [--dry-run] [--json]
   does not check on this machine (including a join not confirmed yet), else
   3. It works with the recovery key (`--recovery-key FILE --root HEX`,
   read-only). `-q` lists only the problem files (the healthy `unreferenced`,
-  `unknownFile`, `notChecked` and `newer` are not listed). `--json` emits
+  `unknownFile`, `notChecked`, `newer`, `setAside` and `pending` are not
+  listed). Above epoch 1 a file under an earlier key is `ok` when the record
+  that closed its epoch seals it, `setAside` when not (healthy: never read as
+  a note; see Devices, "New epochs"), and `pending` when that record has not
+  arrived. `--json` emits
   `healthy`, `manifestProblems`, `counts`, `files` (`{path, status,
   detail}`), `readOnly`, `readOnlyReasons` and `list` (as in `info`).
   Attachment blobs are decrypted and hashed in full: `ok`, `unreferenced`
@@ -365,10 +450,20 @@ sempere vault merge-copy FROM [--dry-run] [--json]
   device list does not check; other names there are `unknownFile`. The epoch
   record named by `vault.json` must hash to `epochRecordHash`, open under the
   key and carry a chain from the vault's root ending at this epoch (`ok` or
-  `invalid`; other names in `epochs/` are `unknownFile`). Join requests in
+  `invalid`); earlier epochs' records of that chain are `ok`, other names in
+  `epochs/` (an orphan record of a change that crashed) are `unknownFile`. Join requests in
   `joins/` are `ok` when they parse and name this vault under their own name,
   else `invalid`. In `keys/`, only the passphrase copy's name is expected
   (it is not decrypted: that needs its passphrase).
+- `catch-up` re-encrypts under the current key the files this machine wrote
+  under an earlier key that no device change sealed (its write ledger,
+  `$XDG_STATE_HOME/sempere/ledger/<key>/<vault id>/`, one per device key, sealed to it), each
+  verified and its old bytes set aside before it replaces them, and copies
+  every other unsealed file under an earlier key into the set-aside store. The
+  first write after this machine verifies a new epoch does it by itself; the
+  command reports. Exit 1 when a file could not be caught up (tried again by
+  the next writer). `--json`: `reencrypted`, `pruned`, `sealedKept`, `dropped`,
+  `setAside`, `problems`.
 - `index` writes `sempere-index.json` at the vault root (or `--out PATH`;
   `--out -` prints it): every note id and its revision file names, the
   listing the web viewer reads on a static server that cannot list folders
@@ -425,8 +520,8 @@ format, with a recipients list and a vault secret, are not read): `vault
 recipients add|remove|replace|repair|confirm`, `vault markers`, `vault
 rewrap-resume`, `vault rewrap-discard`, `keys export`, and `vault init`'s
 `--recipient`, `--label`, `--store-key` and `--allow-weak-passphrase`. Adding a device is `device init` and `devices
-approve`; removing or replacing keys arrives with phases KH3 to KH5 of the key
-hierarchy (`docs/design/key-hierarchy.md` §12).
+approve`; removing one is `devices remove`, and replacing the recovery key `recovery replace` (Devices, "New
+epochs"); re-encrypting everything comes with phase KH6 of the key hierarchy (`docs/design/key-hierarchy.md` §12).
 
 ### Vault store
 
@@ -1847,13 +1942,17 @@ captures and never reads anything) to
 listed device's key (not the recovery key). Captures are
 **attributed** to that device (`format.md` §11.1): another machine's
 profile cannot seal one that passes as this one's. Run it again after the
-vault starts a new epoch (a device removed, key hierarchy KH3: that changes the
+vault starts a new epoch (a device removed or another change, Devices, "New epochs": that changes the
 capture key). It refuses (exit
 6) a device list that does not check (`format.md` §2.1), so a profile is only
 ever made from a checked one. `capture` reads
 only `vault.json` and the profile, no identity or passphrase. It seals the
 audio file into `inbox/<id>.capture.age` (encrypted to the vault identity, tagged
-with the capture key) and prints the capture id. `--transcript` seals a
+with the capture key) and prints the capture id. When this machine's device key
+is stored without a passphrase, each file is first recorded in its write ledger
+(Devices, "New epochs"), so a capture sealed with a profile of an earlier epoch
+is re-sealed under the current key by `vault catch-up` (or the next write); else
+such a capture stays set aside. `--transcript` seals a
 `sempere-transcript/1` file with it, and `transcript` seals one later; either
 way its recording id is replaced by the capture's, and it is bound to the
 capture's audio (`format.md` §11.2): `transcript` needs that audio file
@@ -2454,9 +2553,9 @@ the local file; `--device` names this machine, default the host name) and exits
 3; a `vault.json` that differs only in its label (the vault renamed on both
 sides) is the same vault and is taken from the server. The epoch records
 (`epochs/`), join requests (`joins/`) and the passphrase copy (`keys/`) are
-not synced yet (key hierarchy KH4): a vault of one epoch opens without its
-record, and a join request reaches the home device through a shared folder or
-`vault merge-copy`. `settings.age` changed on both sides is merged per key with the
+not synced yet (key hierarchy KH4): a received `vault.json` of another epoch is not taken (it waits for
+its record, which only a shared folder or `vault merge-copy` brings so far), and a join request reaches the
+home device the same way. `settings.age` changed on both sides is merged per key with the
 vault unlocked and the result written to both sides (listed in `merged`; `docs/settings-sync.md` §8); locked, both
 copies are kept and a conflict is reported, as for `vault.json`. The notebook records (`notebooks/`, `format.md` §14)
 are write-once, so both sides end with the union. Deletions follow only compaction: a file removed on one side is removed on
@@ -2755,8 +2854,19 @@ sempere export --all --format pdf --out ~/notes-pdf --vault ~/notes.sempere \
 ```
 
 The recovery key reads; it never writes. Writing again from a new device
-needs that device to join (below), which needs the home device; a takeover
-with the recovery key, when home is lost, comes with key hierarchy KH4.
+needs that device to join (below), which needs the home device; when home is
+lost, the kit takes over instead:
+
+```bash
+sempere devices takeover --vault ~/notes.sempere --recovery-key key.txt \
+    --root "THE 16 GROUPS ON THE SHEET"                 # shows the devices to keep
+sempere devices takeover --vault ~/notes.sempere --recovery-key key.txt \
+    --root "THE 16 GROUPS ON THE SHEET" --keep-listed --yes   # this machine is home now
+```
+
+If the device was stolen, remove it from the list (leave it out of the
+takeover), then replace the kit (`recovery replace`): whoever holds the old kit
+could take over too.
 
 ### Join a second device
 

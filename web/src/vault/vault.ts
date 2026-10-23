@@ -3,9 +3,12 @@
 // age decryption with typage under the vault identity V_e, the `SMPR` framing, the HMAC tag under
 // `tagKey`, gunzip and JSON. Nothing here touches the network or the DOM.
 //
-// The viewer reads the CURRENT epoch only: files still encrypted under an earlier epoch's key (an
-// unfinished re-encryption, §15.8) do not open and are reported like any unreadable file. It keeps
-// no trust record and walks no chain, so it reports what vault.json says by itself (`ListStatus`).
+// Above epoch 1 the viewer also reads files under earlier epochs' keys, by the acceptance rule of
+// format.md §15.14: the keys come from the epoch records (each holds its parent's key and sealed set),
+// and a file under an earlier key is read only when the record that closed its epoch seals its path with
+// exactly its bytes; anything else under an old key is "set aside" (reported, never shown). A record that
+// does not arrive or open stops the walk: files under the keys below it are reported as unreadable. It
+// keeps no trust record, so it reports what vault.json says by itself (`ListStatus`).
 
 import { t } from "../i18n/index.ts";
 import { Decrypter, armor, identityToRecipient } from "age-encryption";
@@ -46,7 +49,8 @@ export class VaultError extends Error {
 }
 
 /** `newer`: written by a newer version and not readable by this one (format.md §7.2, §7.4). */
-export type RevisionErrorCode = "undecryptable" | "tagMismatch" | "corruptBody" | "undecodable" | "newer";
+/** `setAside`: under an earlier epoch's key and not sealed with these bytes (format.md §15.14): never read. */
+export type RevisionErrorCode = "undecryptable" | "tagMismatch" | "corruptBody" | "undecodable" | "newer" | "setAside";
 
 /** Why one revision file could not be read; reported, never silently dropped (§4). */
 export class RevisionReadError extends Error {
@@ -494,8 +498,88 @@ async function openFrame(plain: Uint8Array, label: string, filename: string, tag
   return gz;
 }
 
+/** One earlier epoch of the vault's chain (format.md §15.14): its keys and the sealed set of the record that closed it. */
+export interface OlderEpoch {
+  epoch: number;
+  decrypter: Decrypter;
+  tagKey: Uint8Array;
+  blobNameKey: CryptoKey;
+  /** Vault path → lowercase hex SHA-256 of the exact bytes the change kept. */
+  sealed: Map<string, string>;
+}
+
+/** `epochs/<e>-<first 16 hex of epochId>.epoch.age`. */
+export function epochRecordPath(epoch: number, epochId: Uint8Array): string {
+  return `epochs/${epoch}-${hex(epochId).slice(0, 16)}.epoch.age`;
+}
+
+/**
+ * Opens one epoch record (format.md §15.6): decrypted under its epoch's identity, framed under its `tagKey`, and
+ * naming that epoch; returns its parent's key and sealed set (undefined at epoch 1 or without a key).
+ */
+async function recordParent(bytes: Uint8Array, path: string, epoch: number, keys: EpochKeys, vaultId: string):
+  Promise<{ epoch: number; key: Uint8Array; sealed: Map<string, string>; recordHash: string } | undefined> {
+  if (bytes.length > limits.epochRecordBytes) throw new Error("record too large");
+  const d = new Decrypter();
+  d.addIdentity(keys.identity);
+  const gz = await openFrame(await d.decrypt(bytes), "epochs", path.slice("epochs/".length), keys.tagKey);
+  const json: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(await gunzip(gz, limits.epochRecordBytes)));
+  if (!isObject(json) || json.vaultId !== vaultId || json.epoch !== epoch || json.epochId !== hex(keys.epochId)) {
+    throw new Error("the record names another epoch");
+  }
+  const parent = json.parent;
+  if (!isObject(parent)) return undefined;
+  const key = unhex(parent.key, 32);
+  if (!key || typeof parent.epoch !== "number" || parent.epoch !== epoch - 1 || !isObject(parent.sealed)) return undefined;
+  if (parent.epochId !== hex(epochKeys(key).epochId)) throw new Error("the parent's key is not its epoch's");
+  // The hash link to the parent's own record (format.md §15.6): without it the walk stops here.
+  if (typeof parent.recordHash !== "string" || !/^[0-9a-f]{64}$/.test(parent.recordHash)) return undefined;
+  const sealed = new Map<string, string>();
+  for (const [p, v] of Object.entries(parent.sealed)) if (typeof v === "string") sealed.set(p, v);
+  return { epoch: parent.epoch, key, sealed, recordHash: parent.recordHash };
+}
+
+/**
+ * The earlier epochs of the chain, newest first (format.md §15.14): the current record (bound by vault.json's
+ * `epochRecordHash`) gives the parent's key, sealed set and the SHA-256 of the parent's own record; each earlier
+ * record is taken only when it hashes to that link (§15.6), so a holder of an earlier key cannot rewrite an earlier
+ * sealed set. Stops at the first record that cannot be read, does not hash to its link or does not open.
+ */
+async function olderEpochs(manifest: VaultManifest, current: EpochKeys, record: Uint8Array,
+  readRecord: (path: string) => Promise<Uint8Array | undefined>): Promise<OlderEpoch[]> {
+  const out: OlderEpoch[] = [];
+  let bytes: Uint8Array | undefined = record, path = manifest.epochRecord, epoch = manifest.epoch, keys = current;
+  while (bytes && epoch > 1 && out.length < 4096) {
+    let parent;
+    try {
+      parent = await recordParent(bytes, path, epoch, keys, manifest.vaultId);
+    } catch {
+      break;
+    }
+    if (!parent) break;
+    const pk = epochKeys(parent.key);
+    const decrypter = new Decrypter();
+    decrypter.addIdentity(pk.identity);
+    out.push({ epoch: parent.epoch, decrypter, tagKey: pk.tagKey, blobNameKey: await hmacKey(pk.blobNameKey), sealed: parent.sealed });
+    epoch = parent.epoch;
+    keys = pk;
+    path = epochRecordPath(epoch, pk.epochId);
+    if (epoch <= 1) break;
+    try {
+      bytes = await readRecord(path);
+    } catch {
+      bytes = undefined;
+    }
+    if (bytes && hex(sha256(bytes)) !== parent.recordHash) bytes = undefined;
+  }
+  return out;
+}
+
 /** An unlocked vault: the epoch key's derived keys and identity, in memory only. */
 export class UnlockedVault {
+  /** The earlier epochs of the chain whose keys the records gave, newest first (format.md §15.14). */
+  older: OlderEpoch[] = [];
+
   private constructor(
     readonly manifest: VaultManifest,
     private readonly decrypter: Decrypter,
@@ -523,7 +607,8 @@ export class UnlockedVault {
    * verify under it, else the vault is refused. `epochRecord` is the file `manifest.epochRecord` names, if it
    * could be read (an absent one is reported in `listStatus`).
    */
-  static async unlock(manifest: VaultManifest, identity: string, epochRecord?: Uint8Array): Promise<UnlockedVault> {
+  static async unlock(manifest: VaultManifest, identity: string, epochRecord?: Uint8Array,
+    readRecord?: (path: string) => Promise<Uint8Array | undefined>): Promise<UnlockedVault> {
     let recipient: string;
     try {
       recipient = await identityToRecipient(identity);
@@ -552,8 +637,13 @@ export class UnlockedVault {
     const decrypter = new Decrypter();
     decrypter.addIdentity(keys.identity);
     const listStatus = await checkManifest(manifest, key, keys, epochRecord, (d) => decrypter.decrypt(d));
-    return new UnlockedVault(manifest, decrypter, keys.tagKey, await hmacKey(keys.blobNameKey), recipient, entry.role, listStatus,
-      await hkdfKey(key));
+    const vault = new UnlockedVault(manifest, decrypter, keys.tagKey, await hmacKey(keys.blobNameKey), recipient, entry.role,
+      listStatus, await hkdfKey(key));
+    // Earlier keys only from a vault.json that checks (its record is the one it names, by hash).
+    if (epochRecord && manifest.epoch > 1 && listStatus.status === "verified") {
+      vault.older = await olderEpochs(manifest, keys, epochRecord, readRecord ?? (() => Promise.resolve(undefined)));
+    }
+    return vault;
   }
 
   /**
@@ -561,8 +651,19 @@ export class UnlockedVault {
    * one, the epoch's (older epochs' names are not read).
    */
   async blobNames(sha256: Uint8Array): Promise<string[]> {
+    return (await this.blobCandidates(sha256)).map((c) => c.name);
+  }
+
+  /**
+   * The blob names of a content hash under the current epoch's key, then under each earlier epoch's
+   * (format.md §15.14), with the epoch they belong to (undefined: the current one).
+   */
+  async blobCandidates(sha256: Uint8Array): Promise<{ name: string; older?: OlderEpoch }[]> {
     const message = concat([encoder.encode("sempere/1"), Uint8Array.of(0), encoder.encode("blob"), Uint8Array.of(0), sha256]);
-    return [hex(new Uint8Array(await crypto.subtle.sign("HMAC", this.blobNameKey, buf(message))))];
+    const name = async (k: CryptoKey) => hex(new Uint8Array(await crypto.subtle.sign("HMAC", k, buf(message))));
+    const out: { name: string; older?: OlderEpoch }[] = [{ name: await name(this.blobNameKey) }];
+    for (const o of this.older) out.push({ name: await name(o.blobNameKey), older: o });
+    return out;
   }
 
   /** Decrypts an age file as a stream (blobs, format.md §8.1.3): authenticated chunk by chunk. */
@@ -579,12 +680,30 @@ export class UnlockedVault {
     if (!name || revisionFilename(name) !== filename) throw new RevisionReadError("undecodable", "not a revision file name");
     if (data.length > limits.revisionBytes) throw new RevisionReadError("undecryptable", "file larger than 256 MiB");
     let plain: Uint8Array;
+    let tagKey = this.tagKey;
+    let older: OlderEpoch | undefined;
     try {
       plain = await this.decrypter.decrypt(data);
     } catch (e) {
-      throw new RevisionReadError("undecryptable", e instanceof Error ? e.message : String(e));
+      // An earlier epoch's key (format.md §15.14), newest first: at most one decapsulation per epoch.
+      let opened: Uint8Array | undefined;
+      for (const o of this.older) {
+        try {
+          opened = await o.decrypter.decrypt(data);
+          older = o;
+          break;
+        } catch {
+          continue;
+        }
+      }
+      if (!opened || !older) throw new RevisionReadError("undecryptable", e instanceof Error ? e.message : String(e));
+      plain = opened;
+      tagKey = older.tagKey;
     }
-    const gz = await openFrame(plain, noteId, filename, this.tagKey);
+    const gz = await openFrame(plain, noteId, filename, tagKey);
+    if (older && older.sealed.get(`notes/${noteId}/${filename}`) !== hex(sha256(data))) {
+      throw new RevisionReadError("setAside", "written under an earlier key after the device change that closed it (set aside)");
+    }
     let json: unknown;
     try {
       const text = new TextDecoder("utf-8", { fatal: true }).decode(await gunzip(gz));

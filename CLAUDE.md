@@ -470,8 +470,16 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   is `Vault.writeJoinRequest` → home's `approveDevice` → `confirmJoin` with the reply words; until
   then the device reads but never writes (`rootUnconfirmed`). The recovery key opens read-only
   (`recoveryKeyReadOnly`, CLI exit 7). Removal, handoff, takeover and kit replacement are new epochs
-  (KH3, KH4): not implemented; there is no rewrap, no recipients list, no vault secret, no rewrap
-  journal, no migration from the old format. The app creates vaults (this device home, a recovery kit,
+  (KH3: `VaultEpochChange.swift`; record final name first, then `vault.json`, under the write lock), and
+  files under earlier keys go by the acceptance rule (`VaultEpochs.swift`: accepted only when the record
+  closing their epoch seals their exact bytes, else set aside in `SetAsideStore`, never deleted). Every
+  own write is in the device's write ledger BEFORE it is placed (`recordWrite`, `WriteLedger.swift`;
+  captures via `CaptureWriter.record`), and `catchUp` re-encrypts its unsealed entries after a change;
+  a ledger that cannot record fails the write closed. The app's ledger and set-aside store are
+  `DeviceWriteStores` (App Group, Keychain key `AfterFirstUnlockThisDeviceOnly`); tests pass none.
+  `EpochInvariantTests` (J1–J8) and `EpochVaultPropertyTests` require each test-only mutation to break ITS
+  invariant. Syncing `epochs/` between targets is KH4; there is no rewrap, no recipients list, no vault
+  secret, no rewrap journal, no migration from the old format. The app creates vaults (this device home, a recovery kit,
   an optional passphrase copy) and unlocks with the remembered device key (`DeviceKeys.fileText` in the
   Keychain); the recovery key and its passphrase copy open read-only. Its key management (adding,
   removing, replacing keys, joining devices, list repair) is stubbed with `TODO(KH5)`.
@@ -757,8 +765,9 @@ Branch per task, PR to `main`, squash merge, CI green. Commit messages:
   `MemoryCaptureProfileStore`). Plaintext audio lives only in `QuickCapture.root`
   (`completeUntilFirstUserAuthentication`, `QuickCapture.protection`: Lock Screen notes are sealed from closed
   files before any unlock, which `completeUnlessOpen` forbids) until sealed and transcribed; running out of
-  background time leaves it for `sweep()` rather than losing the note. Nothing rewrites `inbox/` files; a new
-  epoch (KH3) changes the capture key, and the profile must then be made again. A note "exists" for adoption once it has a revision (a folder holding only `att/` is still
+  background time leaves it for `sweep()` rather than losing the note. Nothing rewrites `inbox/` files except
+  catch-up, which re-seals this device's own captures of an earlier epoch from its ledger (format.md §15.14); a
+  new epoch changes the capture key, and the profile must then be made again. A note "exists" for adoption once it has a revision (a folder holding only `att/` is still
   new), and a waiting transcript writes nothing. Quick-capture segments are ADTS (`QuickCapture.segmentExtension`:
   an MPEG-4 segment cut off by a restart or force quit does not decode at all), and a start activates the audio
   session BEFORE requesting the Live Activity (iOS ends the intent's fake-foreground assertion when the activity

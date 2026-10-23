@@ -194,6 +194,33 @@ def setting_values(name):
     pat = re.compile(r'^\s*"?' + re.escape(name) + r'(\[[^\]]*\])?"?\s*=\s*(.*?);\s*$', re.M)
     return [m.group(2).strip().strip('"') for m in pat.finditer(pbx)]
 
+# The write ledger's unsigned-build key file (DeviceWriteStores.swift, review S1) exists only under DEBUG: no
+# Release configuration may define DEBUG (as a compilation condition or a -D flag), and every use of the fallback
+# must sit in the true branch of an `#if DEBUG` (nested conditions and #else/#elseif branches understood).
+for block in re.findall(r'^\t\t[0-9A-F]{24} /\* Release \*/ = \{(.*?)^\t\t\};', pbx, re.S | re.M):
+    for setting in ("SWIFT_ACTIVE_COMPILATION_CONDITIONS", "OTHER_SWIFT_FLAGS"):
+        for m in re.finditer(r'"?' + setting + r'(\[[^\]]*\])?"?\s*=\s*(\((?:[^()]*)\)|"[^"]*"|[^;]*);', block):
+            value = m.group(2)
+            debug = (re.search(r'(?<![\w-])DEBUG\b', value) if setting == "SWIFT_ACTIVE_COMPILATION_CONDITIONS"
+                     else re.search(r'-D\s*"?DEBUG\b', value))
+            if debug:
+                errors.append(f"a Release configuration sets DEBUG ({setting}): it would enable debug-only code, among "
+                              "it the write ledger's unsigned-build key file")
+ledger_keys = os.path.join(app_dir, "SempereApp", "DeviceWriteStores.swift")
+if os.path.isfile(ledger_keys):
+    stack = []   # one frame per open #if: is it `#if DEBUG`, and are we in its true branch
+    for i, line in enumerate(read(ledger_keys).splitlines(), 1):
+        t = line.split("//", 1)[0].strip()
+        if t.startswith("#if"):
+            stack.append([re.fullmatch(r'#if\s+DEBUG', t) is not None, True])
+        elif t.startswith("#elseif") or t.startswith("#else"):
+            if stack: stack[-1][1] = False
+        elif t.startswith("#endif"):
+            if stack: stack.pop()
+        elif ("fileKey(" in t or "unsignedFallback, " in t) and "func fileKey" not in t:
+            if not any(is_debug and in_true for is_debug, in_true in stack):
+                errors.append(f"{rel(ledger_keys)}:{i}: the write ledger's key file fallback outside `#if DEBUG` (review S1)")
+
 # Objects are the entries two tabs deep (`\t\tID /* name */ = {`); a duplicate is a silent clash (one
 # definition wins, the other's references now point at it), which plutil does not report.
 object_ids = re.findall(r'^\t\t([0-9A-F]{24})\b[^\n]*= \{', pbx, re.M)

@@ -67,6 +67,10 @@ extension VaultError: CustomStringConvertible {
         case .noteIncomplete(let note):
             return "note \(note) is not completely downloaded yet (partial copy, format.md §1.2); fetch it first "
                 + "(sempere sync webdav <url> --fetch --note \(note))"
+        case .removedFromVault(let why): return why
+        case .ledgerUnreadable(let why): return "this device's write ledger cannot be used (\(why)); nothing was written"
+        case .setAsideFailed(let why): return "a file could not be set aside (\(why)); nothing was replaced"
+        case .epochChangeRefused(let why): return why
         }
     }
 }
@@ -92,6 +96,8 @@ extension BlobError: CustomStringConvertible {
         case .referenceMismatch: return "the attachment is not the content the note references"
         case .contentTooLarge(let limit): return "the attachment is larger than \(limit) bytes"
         case .sourceChanged: return "the source file changed while it was being stored"
+        case .setAside(let reason): return "the attachment is set aside: \(reason.text)"
+        case .pending: return "the attachment waits for a device-change record (its key is not known yet)"
         }
     }
 }
@@ -106,6 +112,8 @@ extension RevisionReadError: CustomStringConvertible {
         case .corruptBody(let why): return "damaged body: \(why)"
         case .undecodable(let why): return "cannot decode the revision: \(why)"
         case .newer(let why): return "written by a newer version of Sempere (\(why)): update Sempere to read it"
+        case .setAside(let reason): return "set aside: \(reason.text)"
+        case .pending: return "waiting for a device-change record (its key is not known yet)"
         }
     }
 }
@@ -188,6 +196,8 @@ extension NotebookRecordError: CustomStringConvertible {
         case .undecryptable(let why): return "the notebook records file cannot be decrypted: \(why)"
         case .framing(let e): return "the notebook records file does not check: \(e)"
         case .invalid(let why): return "the notebook records file is not valid: \(why)"
+        case .setAside(let reason): return "the notebook record is set aside: \(reason.text)"
+        case .pending: return "the notebook record waits for a device-change record (its key is not known yet)"
         }
     }
 }
@@ -202,6 +212,8 @@ extension SharedSettingsError: CustomStringConvertible {
         case .framing(let e): return "the settings file does not check: \(e)"
         case .clockExhausted(let key): return "the setting \(key) cannot be written: its time would pass the largest the format allows"
         case .needsNewerReader(let min): return "the settings need a newer reader (settings reader \(min) or later)"
+        case .setAside(let reason): return "the settings file is set aside: \(reason.text)"
+        case .pending: return "the settings file waits for a device-change record (its key is not known yet)"
         }
     }
 }

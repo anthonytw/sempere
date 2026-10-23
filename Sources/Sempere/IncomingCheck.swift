@@ -154,6 +154,8 @@ extension Vault {
         case .corruptBody(let s): return "corrupt body: \(s)"
         case .undecodable(let s): return "not a revision of this note and name: \(s)"
         case .newer(let s): return "written by a newer version: \(s)"
+        case .setAside(let r): return "set aside: \(r.text)"
+        case .pending: return "waits for a device-change record (its key is not known yet)"
         }
     }
 

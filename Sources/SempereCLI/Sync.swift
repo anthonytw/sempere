@@ -193,6 +193,7 @@ struct SyncWebDAVCommand: ParsableCommand {
         if pushOnly && !hasManifest { throw CLIError.usage("--push-only needs an existing vault (no vault.json in \(dir.path))") }
         if !pushOnly { OpenedVaults.shared.record(dir) }   // a first pull creates the vault here
         let vault = hasManifest ? try access.openVault(.ifPossible) : nil
+        if let id = vault?.writerDevice { options.deviceID = id }   // the vault device's id names its summaries file
         // A mirror never writes in the vault: not even the local index or summaries refresh at exit.
         if pushOnly { OpenedVaults.shared.forget(dir) }
         if webViewer && vault?.canRead != true {

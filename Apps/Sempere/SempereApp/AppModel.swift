@@ -581,6 +581,10 @@ final class AppModel {
     /// without one (tests) none is kept, and a list that checks under the
     /// vault's key is taken as it is (`ListStatus.Verification.firstUse`).
     let trust: (any EpochTrustStore)?
+    /// This device's write ledger and set-aside store per vault (key-hierarchy design §5.4, §5.8): the app
+    /// sets them at launch (`DeviceWriteStores.app`); without them (tests) nothing is recorded and a device
+    /// change is not caught up.
+    @ObservationIgnored var writeStores: DeviceWriteStores?
     /// The open vault's `vault.json` did not check at unlock (design §4.3): the
     /// blocking alert (`ListAlert`). Nothing is written to the vault meanwhile.
     var listAlert: ListAlert?
@@ -816,9 +820,12 @@ final class AppModel {
         do {
             // The recovery key reads without a trust record (design §4.3 step 4), checked against
             // the root when one came with it (the passphrase copy).
+            let stores = writeStores
             opened = try await offMain {
-                try Vault.open(at: url, identities: keys.identities, signing: keys.signing,
-                               trust: keys.root == nil ? trust : nil, root: keys.root)
+                let id = try stores.map { _ in try Vault.open(at: url).vaultId }
+                return try Vault.open(at: url, identities: keys.identities, signing: keys.signing,
+                                      trust: keys.root == nil ? trust : nil, root: keys.root,
+                                      ledger: id.flatMap { stores?.ledger(for: $0) }, setAside: stores?.setAside)
             }
         } catch VaultError.keyNotListed {
             throw ModelError.notJoined

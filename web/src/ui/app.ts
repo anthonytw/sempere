@@ -214,7 +214,9 @@ export class App {
       } catch {
         record = undefined;
       }
-      this.vault = await UnlockedVault.unlock(m, identity, record);
+      // Earlier epochs' records (format.md §15.14), read only when the vault is above epoch 1.
+      this.vault = await UnlockedVault.unlock(m, identity, record,
+        (path) => readOptional(src, path, limits.epochRecordBytes).catch(() => undefined));
       return identity;
     };
     const failed = (err: unknown) =>

@@ -235,6 +235,10 @@ final class QuickCapture {
     /// The in-app vault store (the app sets it at launch): a voice note for a store vault goes straight into
     /// its in-app inbox, found by vault id, open or not (docs/design/device-first-sync.md §5.3).
     @ObservationIgnored var vaultStore: VaultStore?
+    /// This device's write ledgers (the app sets them at launch): a voice note is recorded in its vault's ledger
+    /// before it is placed in the vault's inbox (key-hierarchy design §5.4, §5.7), so one sealed under an
+    /// earlier epoch's profile is re-sealed at the next unlock. Nil in tests unless set.
+    @ObservationIgnored var writeStores: DeviceWriteStores?
     /// Starts a Live Activity while recording (off in tests).
     @ObservationIgnored var showsActivity = true
     /// Where the widgets read `VoiceNoteStatus` (the App Group; nil without one, and in tests unless set).
@@ -907,6 +911,7 @@ final class QuickCapture {
             if Self.acceptsCaptures(at: url, vaultId: stored.profile.vaultId) {
                 let inbox = url.appendingPathComponent(CaptureFile.folderName, isDirectory: true)
                 do {
+                    try record(sealed, stored.profile)   // intent first: never placed unrecorded
                     try CaptureWriter.store(sealed, in: inbox)
                     // A synced copy runs soon, open or not (`SyncCoordinator.captureDelivered`).
                     NotificationCenter.default.post(name: Self.deliveredNotification, object: nil,
@@ -917,8 +922,42 @@ final class QuickCapture {
                 }
             }
         }
-        try CaptureWriter.store(sealed, in: queueFolder(stored.profile.vaultId))
+        let queue = queueFolder(stored.profile.vaultId)
+        // The epoch it was sealed under goes with it, written BEFORE the file (review nit): a crash between the two
+        // leaves a sidecar without a file (ignored), never a file without its epoch. The flush records that epoch,
+        // never a newer profile's (M4).
+        if let epoch = sealed.epoch, let id = sealed.epochId {
+            try FileManager.default.createDirectory(at: queue, withIntermediateDirectories: true)
+            try Data("\(epoch) \(id.map { String(format: "%02x", $0) }.joined())\n".utf8)
+                .write(to: Self.epochSidecar(queue.appendingPathComponent(sealed.name)), options: .atomic)
+        }
+        try CaptureWriter.store(sealed, in: queue)
         return .queued
+    }
+
+    /// `<queued file>.epoch`: "<epoch> <epoch id hex>", the epoch of the profile that sealed it.
+    nonisolated static func epochSidecar(_ file: URL) -> URL { file.appendingPathExtension("epoch") }
+
+    /// The epoch a queued file was sealed under, from its sidecar.
+    nonisolated static func queuedEpoch(_ file: URL) -> (Int, Data)? {
+        guard let data = try? BoundedRead.contents(of: epochSidecar(file), maxBytes: 256),
+              let text = String(data: data, encoding: .utf8) else { return nil }
+        let parts = text.split(whereSeparator: { $0 == " " || $0 == "\n" })
+        guard parts.count == 2, let e = Int(parts[0]) else { return nil }
+        let hex: [UInt8] = Array(parts[1].utf8)
+        guard hex.count == 64 else { return nil }
+        var id = Data()
+        for i in stride(from: 0, to: 64, by: 2) {
+            guard let byte = UInt8(String(decoding: hex[i..<i + 2], as: UTF8.self), radix: 16) else { return nil }
+            id.append(byte)
+        }
+        return (e, id)
+    }
+
+    /// Records `sealed` in the write ledger of the profile's vault (design §5.4); nothing without stores.
+    func record(_ sealed: SealedCapture, _ profile: CaptureProfile) throws {
+        guard let writeStores else { return }
+        try CaptureWriter(profile: profile).record(sealed, in: writeStores.ledger(for: profile.vaultId))
     }
 
     /// True when the folder at `url` is vault `vaultId` and this version may
@@ -956,16 +995,27 @@ final class QuickCapture {
         let dir = queueFolder(vaultId)
         let names = ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).filter { CaptureFile.parse(name: $0) != nil }
         let inbox = vaultURL.appendingPathComponent(CaptureFile.folderName, isDirectory: true)
+        // A profile of this vault, to record them in its ledger (design §5.4) under the epoch each was sealed
+        // with (its sidecar; a file queued before sidecars existed takes the profile's); without a profile they
+        // stay queued, never placed unrecorded.
+        let profile = (try? store.load())?.profile
         var moved = 0
         for name in names {
             let file = dir.appendingPathComponent(name)
             guard let kind = CaptureFile.parse(name: name)?.kind,
                   let data = try? BoundedRead.contents(of: file, maxBytes: CaptureFile.maxSealedBytes(kind)) else { continue }
             do {
+                let epoch = Self.queuedEpoch(file)
+                let sealed = SealedCapture(name: name, data: data, epoch: epoch?.0, epochId: epoch?.1)
+                if writeStores != nil {
+                    guard let profile, profile.vaultId == vaultId else { continue }
+                    try record(sealed, profile)
+                }
                 try CloudVault.coordinatedWrite(coordinated ? inbox : nil) {
-                    try CaptureWriter.store(SealedCapture(name: name, data: data), in: inbox)
+                    try CaptureWriter.store(sealed, in: inbox)
                 }
                 try? FileManager.default.removeItem(at: file)
+                try? FileManager.default.removeItem(at: Self.epochSidecar(file))
                 moved += 1
             } catch {
                 continue

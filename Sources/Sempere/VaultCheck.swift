@@ -18,71 +18,231 @@ extension Vault {
     ///   once the join's reply code (or the kit's root) confirmed it.
     static func listStatus(_ manifest: EpochManifest, key: VaultEpochKey, trust: (any EpochTrustStore)?,
                            root expected: Data?) -> ListStatus {
-        guard manifest.epoch == 1 else {
-            return .refused(ListProblem(.otherEpoch, "epoch \(manifest.epoch): this version reads vaults of one epoch only"))
+        listCheck(manifest, key: key, trust: trust, root: expected, record: .notRead).status
+    }
+
+    /// The current epoch's record as `open` found it.
+    enum RecordRead {
+        /// Epoch 1: its record is not needed to check `vault.json`.
+        case notRead
+        case read(EpochRecord)
+        /// Missing, or its bytes are not the ones `vault.json` names, or it does not open.
+        case problem(ListProblem)
+    }
+
+    /// What `listCheck` found: the status, and above epoch 1 the verified chain (nil when refused before it
+    /// verified) and the pinned epochs a takeover dropped.
+    struct ListCheck {
+        var status: ListStatus
+        var chain: EpochChain.Verified?
+        var dropped: [Data] = []
+        /// When a takeover waits for its kit to be pinned (`ChainError.kitNotPinned`): the chain up to the
+        /// takeover's parent, verified and followed. A writer pins it, and the next open takes the takeover
+        /// (design §5.6 rule 3: "a run later").
+        var pinnable: EpochChain.Verified?
+    }
+
+    /// Reads and opens the current epoch's record (design §5.2.1): bounded, its SHA-256 the one
+    /// `vault.json` names, opened under `key`.
+    static func readCurrentRecord(_ url: URL, manifest: EpochManifest, key: VaultEpochKey) -> RecordRead {
+        guard manifest.epoch > 1 else { return .notRead }
+        let data: Data
+        do {
+            data = readsWithoutLinks(url)
+                ? try BoundedRead.contents(under: url, manifest.epochRecord, maxBytes: EpochRecord.maxBytes)
+                : try BoundedRead.contents(of: url.appendingPathComponent(manifest.epochRecord), maxBytes: EpochRecord.maxBytes)
+        } catch {
+            return .problem(ListProblem(.otherEpoch, "waiting for the device-change record \(manifest.epochRecord) "
+                + "(epoch \(manifest.epoch)): it has not arrived"))
         }
-        guard let derived = try? VaultRoot.fingerprint(vaultId: manifest.vaultId, epochOne: key), derived == manifest.root else {
-            return .refused(ListProblem(.rootMismatch, "root is not the one epoch 1's key gives"))
+        guard Data(SHA256.hash(data: data)) == manifest.epochRecordHash else {
+            return .problem(ListProblem(.epochSig, "\(manifest.epochRecord) is not the record vault.json names"))
+        }
+        do { return .read(try EpochRecord.open(data, key: key, vaultId: manifest.vaultId, epoch: manifest.epoch)) } catch {
+            return .problem(ListProblem(.epochSig, "\(manifest.epochRecord) does not open under the epoch's key: \(error)"))
+        }
+    }
+
+    /// The precedence rule's view of a pinned epoch (its signatures were verified when it was pinned).
+    static func node(_ c: EpochTrustRecord.ChainEpoch, parentHome: Data?) -> EpochNode? {
+        guard let reason = EpochReason(rawValue: c.reason) else { return nil }
+        let signer = (reason == .takeover || reason == .create) ? c.home : (parentHome ?? c.home)
+        return EpochNode(epochId: c.epochId, parent: c.parent, signer: signer, reason: reason, home: c.home,
+                         list: Set(c.list), recovery: c.recovery, recoverySigner: reason == .takeover ? c.recovery : nil)
+    }
+
+    /// The precedence rule's view of a verified chain.
+    static func nodes(_ v: EpochChain.Verified) -> [EpochNode] {
+        v.entries.enumerated().compactMap { i, e in
+            guard let reason = EpochReason(rawValue: e.reason) else { return nil }
+            return EpochNode(epochId: e.epochId, parent: e.parent, signer: e.author.fingerprint, reason: reason, home: e.home,
+                             list: v.lists[i].list, recovery: e.recovery,
+                             recoverySigner: e.recoveryAuthor?.recoveryFingerprint)
+        }
+    }
+
+    /// Test-only: mutations of the precedence rule as this vault applies it (`EpochMutationTests`).
+    nonisolated(unsafe) static var precedenceMutations: Set<PrecedenceMutation> = []
+
+    /// Whether this device follows the verified chain `chain` given its pinned chain (design §5.6): the
+    /// precedence rule over the union of both must keep exactly `chain`. Returns the pinned epochs it
+    /// drops, or nil when it does not follow `chain`.
+    static func follows(_ chain: EpochChain.Verified, pinned: [EpochTrustRecord.ChainEpoch]) -> [Data]? {
+        var nodes = Self.nodes(chain)
+        let ids = Set(chain.entries.map(\.epochId))
+        var homeOf: [Data: Data] = [:]
+        for c in pinned { homeOf[c.epochId] = c.home }
+        for c in pinned where !ids.contains(c.epochId) {
+            guard let n = node(c, parentHome: c.parent.flatMap { homeOf[$0] }) else { return nil }
+            nodes.append(n)
+        }
+        guard let result = try? EpochPrecedence.resolve(nodes, pinned: pinned.map(\.epochId), mutations: precedenceMutations),
+              result.keptChain == chain.entries.map(\.epochId) else { return nil }
+        return result.dropped
+    }
+
+    /// Classifies `manifest` for a device holding `key` (from its own wrap), above epoch 1 with the record
+    /// `record` (design §4.3):
+    ///
+    /// - epoch 1: the root is the one `K_1` gives; above: the record's chain verifies from the root
+    ///   (`EpochChain.verify`, with the trust record's pinned chain for takeovers), its last entry is this
+    ///   `vault.json`'s epoch, and the precedence rule over the pinned chain and it keeps it;
+    /// - the root is the trust record's and `root` when given;
+    /// - at the pinned epoch, as before (home and first list the record's, entries only added or renamed);
+    /// - every check of `EpochManifest.check`, against the list this device verified (or the epoch's first
+    ///   list from the chain) and the parent as the chain gives it.
+    static func listCheck(_ manifest: EpochManifest, key: VaultEpochKey, trust: (any EpochTrustStore)?,
+                          root expected: Data?, record recordRead: RecordRead) -> ListCheck {
+        func refused(_ r: ListProblem.Reason, _ why: String) -> ListCheck { ListCheck(status: .refused(ListProblem(r, why))) }
+        if manifest.epoch == 1 {
+            guard let derived = try? VaultRoot.fingerprint(vaultId: manifest.vaultId, epochOne: key), derived == manifest.root else {
+                return refused(.rootMismatch, "root is not the one epoch 1's key gives")
+            }
         }
         if let expected, expected != manifest.root {
-            return .refused(ListProblem(.rootMismatch, "root is not the one given (the kit's, or the reply code's)"))
+            return refused(.rootMismatch, "root is not the one given (the kit's, or the reply code's)")
         }
         let record: EpochTrustRecord?
         do { record = try trust?.record(for: manifest.vaultId) } catch {
-            return .refused(ListProblem(.recordUnreadable, "this device's trust record cannot be read: \(error)"))
+            return refused(.recordUnreadable, "this device's trust record cannot be read: \(error)")
+        }
+        if let record, record.root != manifest.root { return refused(.rootMismatch, "root is not the one this device pinned") }
+        var chain: EpochChain.Verified?
+        var dropped: [Data] = []
+        var parent: EpochManifest.VerifiedParent?
+        if manifest.epoch > 1 {
+            let epochRecord: EpochRecord
+            switch recordRead {
+            case .read(let r): epochRecord = r
+            case .problem(let p): return ListCheck(status: .refused(p))
+            case .notRead: return refused(.otherEpoch, "the record of epoch \(manifest.epoch) was not read")
+            }
+            let pinned = record?.chain.map { TakeoverRule.PinnedEpoch(epochId: $0.epochId, recovery: $0.recovery) } ?? []
+            var directory = DeviceDirectory()
+            for d in manifest.devices { if let s = d.sign { directory.add(key: d.key, sign: s) } }
+            let verified: EpochChain.Verified
+            do {
+                verified = try EpochChain.verify(epochRecord.chain, vaultId: manifest.vaultId, root: manifest.root,
+                                                 directory: directory, pinned: pinned, mutations: precedenceMutations)
+            } catch ChainError.kitNotPinned(let at) {
+                var check = refused(.otherEpoch, "the takeover of epoch \(at) is signed by a recovery kit this device "
+                    + "has not pinned yet: it is taken once the kit's replacement is pinned (write once, then open again)")
+                let prefix = Array(epochRecord.chain.prefix(at - 1))
+                if let v = try? EpochChain.verify(prefix, vaultId: manifest.vaultId, root: manifest.root,
+                                                  directory: directory, pinned: pinned),
+                   record.map({ follows(v, pinned: $0.chain) != nil }) ?? true {
+                    check.pinnable = v
+                }
+                return check
+            } catch let e as ChainError {
+                return ListCheck(status: .refused(chainProblem(e)))
+            } catch {
+                return refused(.epochSig, "\(error)")
+            }
+            guard let last = verified.entries.last, last.epochId == manifest.epochId, last.epoch == manifest.epoch,
+                  last.parent == manifest.parent, last.home == manifest.home, last.reason == manifest.epochReason,
+                  last.epochSig == manifest.epochSig, last.recoverySig == manifest.recoverySig,
+                  last.link == manifest.epochLink, last.recovery == manifest.recoveryFingerprint,
+                  Set(last.list) == Set(manifest.firstList), Set(last.parentList) == Set(manifest.parentList) else {
+                return refused(.epochSig, "vault.json's epoch is not the one its record's chain ends with")
+            }
+            if let record, record.pinned?.epochId != manifest.epochId {
+                guard let d = follows(verified, pinned: record.chain) else {
+                    return ListCheck(status: .refused(ListProblem(.otherEpoch, "this device follows another chain: "
+                        + "vault.json's epoch \(manifest.epoch) is older than the one it pinned, on a branch it does not "
+                        + "follow, or a home conflict (design §5.6)")), chain: verified)
+                }
+                dropped = d
+            }
+            let i = manifest.epoch - 2
+            parent = EpochManifest.VerifiedParent(
+                list: verified.lists[i].list, home: verified.entries[i].home, recovery: verified.entries[i].recovery,
+                ancestry: verified.lists[...i].reduce(into: Set<Data>()) { $0.formUnion($1.list) })
+            chain = verified
         }
         var verified: Set<Data>
-        if let record {
-            guard record.root == manifest.root else {
-                return .refused(ListProblem(.rootMismatch, "root is not the one this device pinned"))
-            }
-            guard record.pinned?.epochId == manifest.epochId else {
-                return .refused(ListProblem(.otherEpoch, "another epoch than the one this device pinned"))
-            }
+        let samePinned = record?.pinned?.epochId == manifest.epochId
+        if let record, samePinned {
             // The pinned epoch's home and first list come from the record, never from the file (design
             // §4.3): within one epoch only home's additions and renames change the list. With them fixed,
             // `epochSig` and every `addSig` verify under the home this device verified.
             guard record.home == manifest.home else {
-                return .refused(ListProblem(.entriesChanged, "the home device is not the one this device verified: "
-                    + "only a handoff (a new epoch) changes it"))
+                return ListCheck(status: .refused(ListProblem(.entriesChanged, "the home device is not the one this device "
+                    + "verified: only a handoff (a new epoch) changes it")), chain: chain)
             }
             guard let pinned = record.pinned, Set(pinned.list) == Set(manifest.firstList) else {
-                return .refused(ListProblem(.entriesChanged, "the epoch's first list is not the one this device verified"))
+                return ListCheck(status: .refused(ListProblem(.entriesChanged, "the epoch's first list is not the one this "
+                    + "device verified")), chain: chain)
             }
             verified = Set(record.list.map(\.fingerprint))
         } else {
             verified = Set(manifest.firstList)
         }
         let admitted: [EpochKeyEntry]
-        do { admitted = try manifest.check(key: key, verifiedList: verified) } catch let e as EpochManifest.ProblemError {
-            return .refused(problem(e.problem))
+        do { admitted = try manifest.check(key: key, verifiedList: verified, parent: parent, mutations: precedenceMutations) } catch let e as EpochManifest.ProblemError {
+            return ListCheck(status: .refused(problem(e.problem)), chain: chain)
         } catch {
-            return .refused(ListProblem(.listTag, "\(error)"))
+            return ListCheck(status: .refused(ListProblem(.listTag, "\(error)")), chain: chain)
         }
         verified.formUnion(admitted.map(\.fingerprint))
         guard let record else {
             if trust != nil, expected == nil {
-                return .refused(ListProblem(.rootUnconfirmed, "this device has not confirmed the vault: type the "
-                    + "home device's reply words (sempere device confirm), or give the kit's root"))
+                return ListCheck(status: .refused(ListProblem(.rootUnconfirmed, "this device has not confirmed the vault: "
+                    + "type the home device's reply words (sempere device confirm), or give the kit's root")), chain: chain)
             }
-            return .verified(.firstUse)
+            return ListCheck(status: .verified(.firstUse), chain: chain)
         }
+        guard record.markers.isCovered(by: manifest) else {
+            return ListCheck(status: .refused(ListProblem(.markersRolledBack, "format or features are older than this "
+                + "device verified")), chain: chain)
+        }
+        guard samePinned else { return ListCheck(status: .verified(.newEpoch), chain: chain, dropped: dropped) }
         // Under one epoch the list only grows (design §5.1): an entry this device verified is still
         // there, with the same key and signing keys (its name may change).
         let now = Dictionary(manifest.keys.map { ($0.fingerprint, $0) }, uniquingKeysWith: { a, _ in a })
         var renamed = false
         for entry in record.list {
             guard let current = now[entry.fingerprint] else {
-                return .refused(ListProblem(.entriesChanged, "\(entry.role) \(ListProblem.abbreviate(entry.key)) "
-                    + "is gone under the same epoch: a removal always starts a new epoch"))
+                return ListCheck(status: .refused(ListProblem(.entriesChanged, "\(entry.role) "
+                    + "\(ListProblem.abbreviate(entry.key)) is gone under the same epoch: a removal always starts a new "
+                    + "epoch")), chain: chain)
             }
             if current.name != entry.name { renamed = true }
         }
-        guard record.markers.isCovered(by: manifest) else {
-            return .refused(ListProblem(.markersRolledBack, "format or features are older than this device verified"))
+        if !admitted.isEmpty { return ListCheck(status: .verified(.added), chain: chain) }
+        return ListCheck(status: .verified(renamed ? .renamed : .unchanged), chain: chain)
+    }
+
+    /// A chain that does not verify, as a list problem (the reasons the app already explains).
+    static func chainProblem(_ e: ChainError) -> ListProblem {
+        switch e {
+        case .notRooted: return ListProblem(.rootMismatch, "the chain of device changes is not rooted at this vault's root")
+        case .introducesDevice(let n):
+            return ListProblem(.introducesDevice, "the device change of epoch \(n) introduces a device")
+        case .kitNotPinned(let n):
+            return ListProblem(.otherEpoch, "the takeover of epoch \(n) waits for its recovery kit to be pinned")
+        default: return ListProblem(.epochSig, "the chain of device changes does not verify (\(e))")
         }
-        if !admitted.isEmpty { return .verified(.added) }
-        return .verified(renamed ? .renamed : .unchanged)
     }
 
     static func problem(_ p: EpochManifest.Problem) -> ListProblem {
@@ -101,14 +261,36 @@ extension Vault {
     /// Saves this device's trust record for the current (verified) list (format.md §15.10). Writers
     /// keep one, so a record that cannot be saved is an error, tried again by the next write.
     func rememberList() throws {
-        guard let trustStore, let secret else { return }
+        guard trustStore != nil, let secret else { return }
         guard case .verified = listStatus else { return }
+        let chain: [EpochTrustRecord.ChainEpoch]
+        if let verifiedChain {
+            chain = verifiedChain.entries.map(EpochTrustRecord.ChainEpoch.init)
+        } else {
+            guard manifest.epoch == 1, let recovery = manifest.recoveryFingerprint else {
+                throw VaultError.untrustedList(ListProblem(.otherEpoch, "the chain of epoch \(manifest.epoch) did not verify"))
+            }
+            chain = [try .init(epoch: 1, key: secret, parent: nil, list: manifest.firstList.sorted { $0.lexicographicallyPrecedes($1) },
+                               recovery: recovery, home: manifest.home, reason: manifest.epochReason)]
+        }
+        try saveTrust(chain: chain, list: manifest.keys, home: manifest.home)
+    }
+
+    /// Pins `pinnable` (design §5.6 rule 3): the verified chain up to the parent of a takeover signed by a
+    /// kit this device has not pinned yet. The next open then takes the takeover.
+    func pinDeferredPrefix() throws {
+        guard let pinnable, trustStore != nil, let last = pinnable.entries.last else { return }
+        let listed = Set(pinnable.lists.last?.list ?? [])
+        try saveTrust(chain: pinnable.entries.map(EpochTrustRecord.ChainEpoch.init),
+                      list: manifest.keys.filter { listed.contains($0.fingerprint) }, home: last.home)
+    }
+
+    private func saveTrust(chain: [EpochTrustRecord.ChainEpoch], list: [EpochKeyEntry], home: Data) throws {
+        guard let trustStore else { return }
         var record = try EpochTrustRecord(
-            vaultId: vaultId, root: manifest.root,
-            chain: [try .init(epoch: manifest.epoch, key: secret, parent: manifest.parent,
-                              list: manifest.firstList.sorted { $0.lexicographicallyPrecedes($1) })],
-            list: manifest.keys.map { EpochTrustRecord.Entry(role: $0.role.rawValue, key: $0.key, sign: $0.sign, name: $0.name) },
-            markers: VaultMarkers(manifest), home: manifest.home)
+            vaultId: vaultId, root: manifest.root, chain: chain,
+            list: list.map { EpochTrustRecord.Entry(role: $0.role.rawValue, key: $0.key, sign: $0.sign, name: $0.name) },
+            markers: VaultMarkers(manifest), home: home)
         if let memo = trustMemo.last, memo.vaultId == vaultId { record.markers = record.markers.merged(with: memo.markers) }
         guard trustMemo.last != record else { return }
         if let stored = try trustStore.record(for: vaultId) { record.markers = record.markers.merged(with: stored.markers) }
@@ -129,9 +311,19 @@ extension Vault {
         let commitment = JoinRequest.commitment(vaultId: vaultId, key: claim.key, sign: claim.sign, kind: claim.kind)
         let reply = JoinCodes.reply(vaultId: vaultId, commitment: commitment, root: manifest.root, frontier: manifest.epochId)
         guard JoinCodes.matches(words, reply) else { throw VaultError.replyMismatch }
-        listStatus = Self.listStatus(manifest, key: secret, trust: trustStore, root: manifest.root)
+        recheck(root: manifest.root, key: secret)
         try requireTrustedList()
         try rememberList()
+    }
+
+    /// Checks `vault.json` again (`listCheck`), against `root` (nil: the root given at open).
+    mutating func recheck(root: Data? = nil, key: VaultEpochKey) {
+        let check = Self.listCheck(manifest, key: key, trust: trustStore, root: root ?? givenRoot,
+                                   record: Self.readCurrentRecord(url, manifest: manifest, key: key))
+        listStatus = check.status
+        verifiedChain = check.chain
+        droppedEpochs = check.dropped
+        pinnable = check.pinnable
     }
 
     /// `data` parsed, when it is a later version of this vault's `vault.json` by its home (design §5.1,
@@ -186,8 +378,8 @@ extension Vault {
         if EpochManifest.sameExceptLabel(data, local) { return nil }
         guard incoming.root == mine.root else { return "the incoming vault.json has another root: not this vault" }
         guard incoming.epoch == mine.epoch, incoming.epochId == mine.epochId else {
-            return "the incoming vault.json is of another epoch (epoch \(incoming.epoch)); this version reads vaults of "
-                + "one epoch only"
+            return "the incoming vault.json is of another epoch (epoch \(incoming.epoch)): a device change is taken only "
+                + "with its epoch record, through a shared folder (key hierarchy KH4 syncs them)"
         }
         guard let vault, vault.canRead, vault.vaultId == mine.vaultId else {
             return "the incoming vault.json changes the device list; unlock (--identity) so it can be checked (design §4.3)"

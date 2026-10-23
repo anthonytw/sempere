@@ -13,7 +13,8 @@ struct SempereCLI: ParsableCommand {
 
             Exit codes: 0 ok, 1 failure, 2 usage error, 3 unhealthy verify (vault or backup), \
             4 cannot decrypt (wrong key or passphrase), 6 untrusted device list (vault.json does \
-            not check on this machine, design §4.3), 7 read-only vault (newer format).
+            not check on this machine, design §4.3), 7 read-only vault (newer format, or the recovery key), 8 removed \
+            (this machine is not on the vault's newest device list, design §5.5).
 
             Environment (docs/cli.md, "Environment"): SEMPERE_VAULT, SEMPERE_STORE, SEMPERE_IDENTITY, SEMPERE_PASSPHRASE, \
             SEMPERE_TITLE_FORMAT, SEMPERE_PDFTOPPM, SEMPERE_PDFTOTEXT, SEMPERE_WEBDAV_PASSWORD, \
@@ -21,7 +22,7 @@ struct SempereCLI: ParsableCommand {
             """,
         version: SempereAbout.versionText(program: "sempere", version: sempereVersion),
         subcommands: [
-            KeysCommand.self, VaultCommand.self, DeviceCommand.self, DevicesCommand.self, StoreCommand.self, NotesCommand.self,
+            KeysCommand.self, VaultCommand.self, DeviceCommand.self, DevicesCommand.self, RecoveryCommand.self, SetAsideCommand.self, StoreCommand.self, NotesCommand.self,
             NotebooksCommand.self, TagsCommand.self,
             PagesCommand.self, AttachCommand.self, ItemsCommand.self, RecordingsCommand.self, ExportCommand.self,
             RecoverCommand.self, BlobsCommand.self, CompactCommand.self, SnapshotCommand.self, ImportCommand.self, SearchCommand.self, RecognizeCommand.self, RecognizeMathCommand.self, TranscribeCommand.self, InboxCommand.self,

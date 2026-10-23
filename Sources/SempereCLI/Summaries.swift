@@ -46,7 +46,7 @@ struct VaultSummaries: ParsableCommand {
         if out == nil { try vault.requireWritable() }
         var inVault = vault.publishedSummariesURL
         if deviceFile {
-            let device = try DeviceState.loadOrCreate(at: DeviceState.defaultURL()).device
+            let device = try vault.writerDevice ?? DeviceState.loadOrCreate(at: DeviceState.defaultURL()).device
             inVault = vault.devicePublishedSummariesURL(device)
             try FileManager.default.createDirectory(at: inVault.deletingLastPathComponent(), withIntermediateDirectories: true)
         }

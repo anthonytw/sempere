@@ -179,21 +179,32 @@ extension Vault {
     /// Decrypts a revision file, verifies its tag (format.md §4) and gunzips it.
     ///
     /// - Throws: `RevisionReadError`, one case per failing stage.
-    func revisionJSON(_ data: Data, note: String, name: RevisionName, secret: VaultEpochKey) throws -> Data {
-        let plain: Data
+    ///
+    /// Under the acceptance rule (key-hierarchy design §5.3): a file that decrypts under the current key is
+    /// taken; one under an earlier key of the chain only when the record that closed that epoch seals this
+    /// path with exactly these bytes, else it is set aside (`RevisionReadError.setAside`); one that no key
+    /// opens while a record on the chain is missing is pending. `secret` is the current key.
+    func revisionJSON(_ data: Data, note: String, name: RevisionName, secret: VaultEpochKey, accepting: Bool = true) throws -> Data {
         revisionDecrypts.add()
-        do { plain = try AgeFile.decrypt(data, with: identities) } catch {
-            throw RevisionReadError.undecryptable("\(error)")
+        let plain: Data, key: VaultEpochKey, older: OlderEpoch?
+        switch openUnderEpochs(data) {
+        case .opened(let p, let k, let o): plain = p; key = k; older = o
+        case .pending: throw RevisionReadError.pending
+        case .undecryptable(let why): throw RevisionReadError.undecryptable(why)
         }
         let unframed: BodyFraming.Unframed
         do {
-            unframed = try BodyFraming.unframe(plain, noteId: note, filename: name.filename, secret: secret)
+            unframed = try BodyFraming.unframe(plain, noteId: note, filename: name.filename, secret: key)
         } catch BodyFramingError.unsupportedVersion(let v) where v > SempereFormat.bodyVersion {
             throw RevisionReadError.newer("body version \(v)")
         } catch BodyFramingError.tagMismatch {
             throw RevisionReadError.tagMismatch
         } catch {
             throw RevisionReadError.corruptBody("\(error)")
+        }
+        if accepting, let reason = setAsideReason(older, path: "\(Self.notesName)/\(note)/\(name.filename)",
+                                       sha256: FileDigest.sha256(data)) {
+            throw RevisionReadError.setAside(reason)
         }
         do { return try Gzip.decompress(unframed.gzip) } catch {
             throw RevisionReadError.corruptBody("\(error)")
@@ -255,6 +266,7 @@ extension Vault {
         try requireNoteComplete(revision.noteId)
         let dir = noteURL(revision.noteId)
         try FileIO.createDirectory(dir)
+        try recordWrite(path: Self.notePath(revision.noteId, revision.name.filename), bytes: encrypted)
         try FileIO.writeAtomically(encrypted, to: dir.appendingPathComponent(revision.name.filename), replacing: false)
     }
 
@@ -296,6 +308,13 @@ extension Vault {
                 // (format.md §5, security review 2026-10, W2). Any other
                 // failure may hide real coverage and still throws.
                 continue
+            } catch RevisionReadError.setAside {
+                // Set aside (key-hierarchy design §5.3), yet written by a holder of an earlier key, perhaps
+                // this device before a catch-up: its coverage still counts, so no seq is reused.
+                let data = try readFile(noteURL(noteId).appendingPathComponent(n.filename), maxBytes: BoundedRead.maxRevisionBytes)
+                let json = try revisionJSON(data, note: noteId.uuidString.lowercased(), name: n, secret: try requireSecret(),
+                                            accepting: false)
+                r = try Self.decodeRevisionJSON(json, note: noteId.uuidString.lowercased(), name: n, detail: .withoutStrokePoints)
             } catch let e as RevisionReadError {
                 throw VaultError.revision(name: n.filename, e)
             }
@@ -396,7 +415,14 @@ extension Vault {
     /// left out instead (format.md §7.4): it is reported in `loaded.newer`,
     /// and the vault, having seen it, is read-only.
     static func strictRevisions(of loaded: LoadedNote) throws -> [Revision] {
-        let failures = loaded.failures.filter { if case .newer = $0.value { return false } else { return true } }
+        // Newer revisions are reported in `loaded.newer`; set-aside and pending ones are never placed in
+        // the note (key-hierarchy design §5.3): neither fails the note.
+        let failures = loaded.failures.filter {
+            switch $0.value {
+            case .newer, .setAside, .pending: return false
+            default: return true
+            }
+        }
         if let (name, err) = failures.min(by: { $0.key < $1.key }) {
             throw VaultError.revision(name: name.filename, err)
         }

@@ -8,7 +8,7 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { maxBlobSize } from "../format/attachments.ts";
 import { isObject } from "../format/json.ts";
-import { type UnlockedVault } from "./vault.ts";
+import { type OlderEpoch, type UnlockedVault } from "./vault.ts";
 import { SourceError, type VaultSource, openStream } from "./source.ts";
 
 /** A blob reference (§8.1.1), from a validated item or recording. */
@@ -67,7 +67,8 @@ function equalBytes(a: Uint8Array, b: Uint8Array): boolean {
   return d === 0;
 }
 
-export type BlobErrorCode = "missing" | "tooLarge" | "undecryptable" | "corrupt" | "hashMismatch" | "unreadable";
+/** `setAside`: under an earlier epoch's key and not sealed with these bytes (format.md §15.14). */
+export type BlobErrorCode = "missing" | "tooLarge" | "undecryptable" | "corrupt" | "hashMismatch" | "unreadable" | "setAside";
 
 /** Why a blob cannot be used; the item is then drawn as a placeholder (§8.5.2). */
 export class BlobError extends Error {
@@ -175,10 +176,19 @@ export async function readBlob(source: VaultSource, vault: UnlockedVault, noteId
   if (ref.size > Math.min(maxBytes, maxBlobSize)) {
     throw new BlobError("tooLarge", `attachment of ${ref.size} bytes is over this viewer's ${Math.floor(maxBytes / 2 ** 20)} MiB limit`);
   }
-  const names = await vault.blobNames(hexToBytes(ref.sha256));
+  // Under the current key's name first, then under each earlier epoch's (format.md §15.14).
+  const candidates = await vault.blobCandidates(hexToBytes(ref.sha256));
   const kind = blobKind(ref.type);
-  for (const name of names) {
+  for (const { name, older } of candidates) {
     const path = `notes/${noteId}/att/${name}.${kind}.age`;
+    if (older) {
+      try {
+        return await readOlderBlobFile(source, older, path, ref);
+      } catch (e) {
+        if (e instanceof BlobError && e.code === "missing") continue;
+        throw e;
+      }
+    }
     try {
       return await readBlobFile(source, vault, path, ref);
     } catch (e) {
@@ -212,6 +222,35 @@ async function readBlobFile(source: VaultSource, vault: UnlockedVault, path: str
     throw new BlobError("undecryptable", e instanceof Error ? e.message : String(e));
   }
   return await verifyPlaintext(plain, ref);
+}
+
+/**
+ * A blob under an earlier epoch's key (format.md §15.14): read whole (bounded), taken only when the record that
+ * closed its epoch seals its path with exactly these bytes, then decrypted under that epoch's identity.
+ */
+async function readOlderBlobFile(source: VaultSource, older: OlderEpoch, path: string, ref: BlobRef): Promise<Blob> {
+  let bytes: Uint8Array;
+  try {
+    bytes = await source.read(path, maxFileBytes(ref.size));
+  } catch (e) {
+    if (e instanceof SourceError && e.notFound) throw new BlobError("missing", "attachment file is missing");
+    if (e instanceof SourceError) throw new BlobError("unreadable", e.message);
+    throw e;
+  }
+  if (older.sealed.get(path) !== toHex(sha256(bytes))) {
+    throw new BlobError("setAside", "written under an earlier key after the device change that closed it (set aside)");
+  }
+  let plain: ReadableStream<Uint8Array>;
+  try {
+    plain = await older.decrypter.decrypt(new Blob([bytes as Uint8Array<ArrayBuffer>]).stream());
+  } catch (e) {
+    throw new BlobError("undecryptable", e instanceof Error ? e.message : String(e));
+  }
+  return await verifyPlaintext(plain, ref);
+}
+
+function toHex(b: Uint8Array): string {
+  return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
 }
 
 /**

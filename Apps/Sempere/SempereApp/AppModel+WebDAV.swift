@@ -221,8 +221,10 @@ extension AppModel {
                     var options = SyncOptions(deviceLabel: "app")
                     options.summaryCacheDirectory = cacheDirectory
                     options.localWriteLock = lock
-                    options.deviceID = FileManager.default.fileExists(atPath: deviceState.path)
-                        ? (try? DeviceState.loadOrCreate(at: deviceState))?.device : nil
+                    // The vault device's id names its summaries file and sync state, as in the CLI (review nit); the
+                    // state file's only when the vault is not open here.
+                    options.deviceID = vault?.writerDevice ?? (FileManager.default.fileExists(atPath: deviceState.path)
+                        ? (try? DeviceState.loadOrCreate(at: deviceState))?.device : nil)
                     request.apply(to: &options)
                     let endpoint = try Self.endpoint(current, passwords: passwords)
                     guard copy.exists else { throw WebDAVVaultError.noSuchLocation }
@@ -324,11 +326,14 @@ extension AppModel {
         let keys = unlockKeys
         let trust = keys.root == nil ? self.trust : nil
         let url = start.url
+        let stores = writeStores
+        let vaultId = vault?.vaultId
         do {
             let next: Vault
             do {
                 next = try await offMain {
-                    try Vault.open(at: url, identities: keys.identities, signing: keys.signing, trust: trust, root: keys.root)
+                    try Vault.open(at: url, identities: keys.identities, signing: keys.signing, trust: trust, root: keys.root,
+                                   ledger: vaultId.flatMap { stores?.ledger(for: $0) }, setAside: stores?.setAside)
                 }
             } catch VaultError.keyNotListed {
                 guard generation == gen else { return }

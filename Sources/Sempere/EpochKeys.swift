@@ -451,7 +451,9 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
     /// The record format. A file of any other format does not decode.
     public static let formatName = "sempere-trust/3"
 
-    /// One verified epoch of the kept chain (design §4 table: number, id, parent, link keys, first list).
+    /// One verified epoch of the kept chain (design §4 table: number, id, parent, link keys, first list),
+    /// with what the precedence rule needs to weigh it against another chain (KH3, design §5.6): its
+    /// recovery key's fingerprint, its home and its reason, all signed in its `epochSig`.
     public struct ChainEpoch: Hashable, Sendable {
         public var epoch: Int
         /// 32 bytes.
@@ -461,18 +463,35 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
         public var linkPublicKeys: LinkPublicKeys
         /// The epoch's first list: fingerprints (32 bytes each), sorted.
         public var list: [Data]
+        /// The epoch's recovery fingerprint (32 bytes).
+        public var recovery: Data
+        /// The home device after this epoch (32 bytes).
+        public var home: Data
+        /// The epoch's reason (`create`, `remove`, `recovery`, `reencrypt`, `handoff`, `takeover`).
+        public var reason: String
 
-        public init(epoch: Int, epochId: Data, parent: Data?, linkPublicKeys: LinkPublicKeys, list: [Data]) {
+        public init(epoch: Int, epochId: Data, parent: Data?, linkPublicKeys: LinkPublicKeys, list: [Data],
+                    recovery: Data, home: Data, reason: String) {
             self.epoch = epoch; self.epochId = epochId; self.parent = parent
             self.linkPublicKeys = linkPublicKeys; self.list = list
+            self.recovery = recovery; self.home = home; self.reason = reason
         }
 
         /// The chain entry of the epoch keyed `key`.
         ///
         /// - Throws: `AgeError.postQuantumUnavailable` where the platform has no ML-DSA.
-        public init(epoch: Int, key: VaultEpochKey, parent: Data?, list: [Data]) throws {
+        public init(epoch: Int, key: VaultEpochKey, parent: Data?, list: [Data], recovery: Data, home: Data,
+                    reason: String) throws {
             self.init(epoch: epoch, epochId: key.epochId, parent: parent,
-                      linkPublicKeys: try LinkPublicKeys(epochKey: key), list: list)
+                      linkPublicKeys: try LinkPublicKeys(epochKey: key), list: list, recovery: recovery, home: home,
+                      reason: reason)
+        }
+
+        /// The verified chain entry `e`, as a trust record keeps it.
+        public init(_ e: ChainEntry) {
+            self.init(epoch: e.epoch, epochId: e.epochId, parent: e.parent, linkPublicKeys: e.linkPublicKeys,
+                      list: e.list.sorted { $0.lexicographicallyPrecedes($1) }, recovery: e.recovery, home: e.home,
+                      reason: e.reason)
         }
     }
 
@@ -528,7 +547,8 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
     static func wellFormed(_ chain: [ChainEpoch]) -> Bool {
         guard !chain.isEmpty else { return false }
         for (i, c) in chain.enumerated() {
-            guard c.epoch == i + 1, c.epochId.count == 32, c.list.allSatisfy({ $0.count == 32 }) else { return false }
+            guard c.epoch == i + 1, c.epochId.count == 32, c.list.allSatisfy({ $0.count == 32 }), c.recovery.count == 32,
+                  c.home.count == 32, EpochReason(rawValue: c.reason) != nil else { return false }
             if i == 0 {
                 guard c.parent == nil else { return false }
             } else {
@@ -541,7 +561,7 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
     enum CodingKeys: String, CodingKey {
         case format, vaultId, root, chain, list, markers, reencryptFinished, home
     }
-    enum ChainKeys: String, CodingKey { case epoch, epochId, parent, linkPublicKeys, list }
+    enum ChainKeys: String, CodingKey { case epoch, epochId, parent, linkPublicKeys, list, recovery, home, reason }
     enum LinkKeys: String, CodingKey { case ed25519, mldsa65 }
     enum EntryKeys: String, CodingKey { case role, key, sign, name }
     enum SignKeys: String, CodingKey { case p256, mldsa65 }
@@ -578,7 +598,8 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
             }
             chain.append(ChainEpoch(epoch: try e.decode(Int.self, forKey: .epoch), epochId: try Self.hex32(e, .epochId),
                                     parent: try e.contains(.parent) ? Self.hex32(e, .parent) : nil,
-                                    linkPublicKeys: keys, list: list))
+                                    linkPublicKeys: keys, list: list, recovery: try Self.hex32(e, .recovery),
+                                    home: try Self.hex32(e, .home), reason: try e.decode(String.self, forKey: .reason)))
         }
         guard Self.wellFormed(chain) else {
             throw DecodingError.dataCorruptedError(forKey: .chain, in: c, debugDescription: "not a chain from epoch 1")
@@ -625,6 +646,9 @@ public struct EpochTrustRecord: Codable, Hashable, Sendable {
             try k.encode(Hex.encode(epoch.linkPublicKeys.ed25519), forKey: .ed25519)
             try k.encode(Hex.encode(epoch.linkPublicKeys.mldsa65), forKey: .mldsa65)
             try e.encode(epoch.list.map { Hex.encode($0) }, forKey: .list)
+            try e.encode(Hex.encode(epoch.recovery), forKey: .recovery)
+            try e.encode(Hex.encode(epoch.home), forKey: .home)
+            try e.encode(epoch.reason, forKey: .reason)
         }
         var l = c.nestedUnkeyedContainer(forKey: .list)
         for entry in list {

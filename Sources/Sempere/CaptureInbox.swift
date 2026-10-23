@@ -118,10 +118,17 @@ public struct CaptureProfile: Codable, Hashable, Sendable {
     /// The fingerprint (`CaptureKey.fingerprint(of:)`, format.md §11.1) of the key of the device this
     /// profile was made for: its captures are attributed to it.
     public var recipient: String
+    /// The epoch whose key the profile holds, and its id (lowercase hex), so a capture can be recorded in the
+    /// device's write ledger before it is placed (key-hierarchy design §5.4, §5.7): after a device change the
+    /// device re-seals its own captures of an earlier epoch. Absent in a profile made before KH3.
+    public var epoch: Int?
+    public var epochId: String?
 
-    public init(vaultId: UUID, recipients: [String], key: Data, device: String, notebook: String, recipient: String) {
+    public init(vaultId: UUID, recipients: [String], key: Data, device: String, notebook: String, recipient: String,
+                epoch: Int? = nil, epochId: Data? = nil) {
         self.vaultId = vaultId; self.recipients = recipients; self.key = key; self.device = device
         self.notebook = notebook; self.recipient = recipient
+        self.epoch = epoch; self.epochId = epochId.map { Hex.encode($0) }
     }
 
     /// The default inbox notebook.
@@ -148,9 +155,13 @@ extension Vault {
         guard let entry else { throw CaptureError.notARecipient }
         let fingerprint = CaptureKey.fingerprint(of: entry.key)
         let nb = NoteOps.normalizedNotebook(notebook) ?? CaptureProfile.defaultNotebook
+        // The ledger keeps the key of every epoch this device may write under, a profile's included: its captures
+        // are caught up even if a takeover drops that epoch before this device writes anything else under it.
+        try ledger?.rememberKey(epoch: manifest.epoch, key: secret)
         return CaptureProfile(vaultId: vaultId, recipients: [try vaultRecipient().string],
                               key: CaptureKey.derive(from: secret, device: fingerprint).bytes,
-                              device: device.rawValue, notebook: nb, recipient: fingerprint)
+                              device: device.rawValue, notebook: nb, recipient: fingerprint,
+                              epoch: manifest.epoch, epochId: secret.epochId)
     }
 
     /// The capture keys a reader tries (format.md §11.2), in one streamed pass: the device capture key
@@ -434,11 +445,17 @@ public enum CaptureFile {
 public struct SealedCapture: Hashable, Sendable {
     public var name: String
     public var data: Data
+    /// The epoch of the profile that sealed it (key-hierarchy design §5.4): the one its ledger entry names,
+    /// whatever profile is current when it reaches the vault (review M4). Nil from a profile without one.
+    public var epoch: Int?
+    public var epochId: Data?
 
-    /// A sealed file as read back, e.g. from a device-local queue.
-    public init(name: String, data: Data) {
+    /// A sealed file as read back, e.g. from a device-local queue, with the epoch it was sealed under when known.
+    public init(name: String, data: Data, epoch: Int? = nil, epochId: Data? = nil) {
         self.name = name
         self.data = data
+        self.epoch = epoch
+        self.epochId = epochId
     }
 }
 
@@ -475,7 +492,8 @@ public struct CaptureWriter: Sendable {
                                        audio: BlobRef(content: audio, type: type), info: info, recipient: profile.recipient)
         let name = CaptureFile.name(id, .capture)
         let plain = try CaptureFile.frame(line: try InkJSON.encoder().encode(manifest), payload: audio, filename: name, key: key)
-        return SealedCapture(name: name, data: try Vault.encrypt(plain, to: recipients))
+        return SealedCapture(name: name, data: try Vault.encrypt(plain, to: recipients), epoch: profile.epoch,
+                             epochId: profile.epochId.flatMap { Hex.decode($0) })
     }
 
     /// Seals the transcript of capture `id` (its `recording` must be the
@@ -492,7 +510,21 @@ public struct CaptureWriter: Sendable {
         let name = CaptureFile.name(id, .transcript)
         let plain = try CaptureFile.frame(line: try transcript.encoded(), payload: Data(audio.sha256.utf8), filename: name,
                                           key: key)
-        return SealedCapture(name: name, data: try Vault.encrypt(plain, to: recipients))
+        return SealedCapture(name: name, data: try Vault.encrypt(plain, to: recipients), epoch: profile.epoch,
+                             epochId: profile.epochId.flatMap { Hex.decode($0) })
+    }
+
+    /// Records `sealed` in this device's write ledger (key-hierarchy design §5.4, intent first: before the
+    /// file is placed anywhere in a vault) under the profile's epoch, so a device change before it is adopted
+    /// is caught up (`Vault.catchUp` re-seals it). Nothing without a ledger or with a profile that names no
+    /// epoch; a ledger that cannot record throws, and the caller must not place the file.
+    public func record(_ sealed: SealedCapture, in ledger: (any WriteLedgerStore)?) throws {
+        // The epoch it was sealed under (never the current profile's, which may be newer: review M4).
+        let sealedUnder: (Int, Data)? = sealed.epoch.flatMap { e in sealed.epochId.map { (e, $0) } }
+            ?? profile.epoch.flatMap { e in profile.epochId.flatMap { Hex.decode($0) }.map { (e, $0) } }
+        guard let ledger, let (epoch, id) = sealedUnder else { return }
+        try ledger.append([LedgerEntry(path: "\(CaptureFile.folderName)/\(sealed.name)", sha256: FileDigest.sha256(sealed.data),
+                                       epoch: epoch, epochId: id)])
     }
 
     /// Writes `sealed` into the folder `inbox` (created if missing) under its
@@ -674,19 +706,26 @@ extension Vault {
                 throw CaptureError.backedOff(failures: e.failures, retryAfter: e.retryAfter, lastError: e.lastError)
             }
             let entry: CaptureKeyEntry
+            var under = identities
             do {
                 // The tag first, streamed in constant memory: only a file that
                 // verifies is then read whole (security review 2026-10, C5).
                 // The key that verifies says which device sealed it (C2).
                 entry = try verifyInboxFile(url, name: name, kind: kind, ring: ring)
             } catch let e as CaptureError {
-                if let backoff, let mark { backoff.recordFailure(vault: vaultId, name: name, mark: mark, error: e.description, now: now) }
-                throw e
+                // Sealed before a device change (key-hierarchy design §5.3, §5.7): taken under that epoch's key.
+                if let (older, olderEntry) = sealedEarlierInboxFile(url, name: name, kind: kind) {
+                    entry = olderEntry
+                    under = [older.identity]
+                } else {
+                    if let backoff, let mark { backoff.recordFailure(vault: vaultId, name: name, mark: mark, error: e.description, now: now) }
+                    throw e
+                }
             }
             if let backoff { backoff.clear(vault: vaultId, name: name) }
             let sealed = try FileIO.read(url, maxBytes: CaptureFile.maxSealedBytes(kind))
             let plain: Data
-            do { plain = try AgeFile.decrypt(sealed, with: identities) } catch {
+            do { plain = try AgeFile.decrypt(sealed, with: under) } catch {
                 throw CaptureError.notCapture("cannot decrypt: \(error)")
             }
             let (line, payload) = try CaptureFile.unframe(plain, filename: name, key: entry.key)
@@ -738,14 +777,34 @@ extension Vault {
     ///
     /// - Throws: `CaptureError` (`tooLarge`, `notCapture`, `badTag`) for the
     ///   file's own faults; `VaultError.io` when it cannot be read.
-    func verifyInboxFile(_ url: URL, name: String, kind: CaptureFile.Kind, ring: [CaptureKeyEntry]) throws -> CaptureKeyEntry {
+    /// An inbox file under an earlier epoch's key that the record closing that epoch seals with exactly its
+    /// bytes (key-hierarchy design §5.3 rule 2), and the capture key it verifies under (that epoch's key of a
+    /// device the vault or its chain knows); nil otherwise.
+    func sealedEarlierInboxFile(_ url: URL, name: String, kind: CaptureFile.Kind) -> (OlderEpoch, CaptureKeyEntry)? {
+        guard let keyring, let sha = try? FileDigest.sha256(of: url).hex else { return nil }
+        var deviceKeys = Set(manifest.devices.map(\.key))
+        for e in verifiedChain?.entries ?? [] {
+            deviceKeys.insert(e.author.key)
+            for a in e.additions { deviceKeys.insert(a.claim.key) }
+        }
+        let path = "\(CaptureFile.folderName)/\(name)"
+        return keyring.first { o -> (OlderEpoch, CaptureKeyEntry)? in
+            guard o.sealed?[path] == sha else { return nil }
+            let ring = deviceKeys.map { CaptureKey.fingerprint(of: $0) }
+                .map { CaptureKeyEntry(key: .derive(from: o.key, device: $0), recipient: $0) }
+            return (try? verifyInboxFile(url, name: name, kind: kind, ring: ring, identities: [o.identity])).map { (o, $0) }
+        }
+    }
+
+    func verifyInboxFile(_ url: URL, name: String, kind: CaptureFile.Kind, ring: [CaptureKeyEntry],
+                         identities given: [any AgeIdentity]? = nil) throws -> CaptureKeyEntry {
         let sealedCap = CaptureFile.maxSealedBytes(kind), plainCap = CaptureFile.maxPlaintextBytes(kind)
         if let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber,
            size.intValue > sealedCap {
             throw CaptureError.tooLarge(plainCap)
         }
         let decryptor: AgeDecryptor, handle: FileHandle
-        do { (decryptor, handle) = try Self.openBlobFile(url, identities: identities) } catch BlobError.unreadable(let why) {
+        do { (decryptor, handle) = try Self.openBlobFile(url, identities: given ?? identities) } catch BlobError.unreadable(let why) {
             throw VaultError.io(why)   // I/O, not the file's fault: never backed off
         } catch {
             throw CaptureError.notCapture("cannot decrypt: \(error)")
