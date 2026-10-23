@@ -45,4 +45,55 @@ struct DeviceWriteStoresTests {
             _ = try await model.createNote(title: "Unrecorded", paper: Paper(kind: .ruled), notebook: nil)
         }
     }
+
+    /// A backup restored onto another device brings the ledgers back but not the this-device-only key (review
+    /// R2): the old ledgers are moved aside (kept), a new key is made, and writes work, as for a new device.
+    @Test func aRestoreOntoAnotherDeviceStartsAFreshLedger() async throws {
+        let trust = MemoryEpochTrustStore()
+        let (url, keyText) = try ListAlertTests.trustedFixture(trust)
+        let root = try TestTemp.directory("ledger-restore")
+        let ledgerDir = root.appendingPathComponent("Ledger", isDirectory: true)
+        let vaultId = try Vault.open(at: url).vaultId
+        // The restored ledger: records sealed with a key this device does not have.
+        let lostKey = LedgerKeychain.randomKey()
+        let old = FileWriteLedger(directory: ledgerDir, vaultId: vaultId, keyBytes: { lostKey })
+        try old.append([LedgerEntry(path: "notes/x", sha256: String(repeating: "0", count: 64), epoch: 1, epochId: Data(count: 32))])
+        let items = MemoryLedgerKeyItems()
+        let fallback = root.appendingPathComponent("never-used-key")
+        let model = AppModel(deviceStateURL: TS.deviceStateURL(), trust: trust)
+        model.writeStores = DeviceWriteStores(ledgerDirectory: ledgerDir, setAside: SetAsideStore(directory: root.appendingPathComponent("SetAside")),
+                                              key: { try LedgerKeychain.key(items: items, ledgerDirectory: ledgerDir, unsignedFallback: fallback) })
+        try await model.openVault(at: url)
+        try await model.unlock(identityText: keyText)
+        _ = try await model.createNote(title: "After the restore", paper: Paper(kind: .ruled), notebook: nil)
+        #expect(try items.read() != nil, "a new key")
+        #expect(!FileManager.default.fileExists(atPath: fallback.path))
+        let entries = try #require(model.writeStores).ledger(for: vaultId).entries()
+        #expect(!entries.isEmpty && !entries.contains { $0.path == "notes/x" }, "a fresh ledger")
+        let aside = try FileManager.default.contentsOfDirectory(atPath: ledgerDir.path).filter { $0.hasPrefix(".orphaned-") }
+        #expect(aside.count == 1)
+        let kept = ledgerDir.appendingPathComponent(aside[0]).appendingPathComponent(vaultId.uuidString.lowercased())
+        #expect(FileManager.default.fileExists(atPath: kept.appendingPathComponent("log").path), "kept, never deleted")
+    }
+
+    /// A key store that cannot be read (locked, an error) is not a missing key: nothing is moved or made, and the
+    /// write fails closed (review R2).
+    @Test func anUnreadableKeyStoreFailsClosedAndMovesNothing() throws {
+        let root = try TestTemp.directory("ledger-locked")
+        let ledgerDir = root.appendingPathComponent("Ledger", isDirectory: true)
+        let vaultId = UUID()
+        let key = LedgerKeychain.randomKey()
+        try FileWriteLedger(directory: ledgerDir, vaultId: vaultId, keyBytes: { key })
+            .append([LedgerEntry(path: "notes/x", sha256: String(repeating: "0", count: 64), epoch: 1, epochId: Data(count: 32))])
+        let items = MemoryLedgerKeyItems(key: key)
+        items.failRead = true
+        #expect(throws: (any Error).self) {
+            try LedgerKeychain.key(items: items, ledgerDirectory: ledgerDir, unsignedFallback: root.appendingPathComponent("k"))
+        }
+        let names = try FileManager.default.contentsOfDirectory(atPath: ledgerDir.path)
+        #expect(names.contains(vaultId.uuidString.lowercased()) && !names.contains { $0.hasPrefix(".orphaned-") })
+        items.failRead = false
+        #expect(try LedgerKeychain.key(items: items, ledgerDirectory: ledgerDir, unsignedFallback: root.appendingPathComponent("k")) == key)
+        #expect(try FileWriteLedger(directory: ledgerDir, vaultId: vaultId, keyBytes: { key }).entries().count == 1, "the same ledger")
+    }
 }

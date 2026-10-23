@@ -923,12 +923,15 @@ final class QuickCapture {
             }
         }
         let queue = queueFolder(stored.profile.vaultId)
-        try CaptureWriter.store(sealed, in: queue)
-        // The epoch it was sealed under goes with it: the flush records that one, never a newer profile's (M4).
+        // The epoch it was sealed under goes with it, written BEFORE the file (review nit): a crash between the two
+        // leaves a sidecar without a file (ignored), never a file without its epoch. The flush records that epoch,
+        // never a newer profile's (M4).
         if let epoch = sealed.epoch, let id = sealed.epochId {
-            try Data("\(epoch) \(id.map { String(format: "%02x", $0) }.joined())\n".utf8).write(to: Self.epochSidecar(queue.appendingPathComponent(sealed.name)),
-                                                              options: .atomic)
+            try FileManager.default.createDirectory(at: queue, withIntermediateDirectories: true)
+            try Data("\(epoch) \(id.map { String(format: "%02x", $0) }.joined())\n".utf8)
+                .write(to: Self.epochSidecar(queue.appendingPathComponent(sealed.name)), options: .atomic)
         }
+        try CaptureWriter.store(sealed, in: queue)
         return .queued
     }
 
