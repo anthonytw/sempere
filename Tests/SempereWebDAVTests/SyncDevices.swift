@@ -47,7 +47,13 @@ final class SyncDevice: @unchecked Sendable {
     var device: DeviceID { (try? DeviceState.loadOrCreate(at: deviceStateURL).device) ?? DeviceID("00000000")! }
     var hasVault: Bool { FileManager.default.fileExists(atPath: folder.appendingPathComponent(Vault.manifestName).path) }
 
-    func vault() throws -> Vault { try Vault.open(at: folder, identities: [identity]) }
+    /// The vault, opened as this device with its signing keys (it signs its summaries file, format.md §12.5).
+    func vault() throws -> Vault { try Vault.open(at: folder, identities: [identity], signing: TestVaults.signing(identity)) }
+
+    /// This device's id in the vault (the first 8 hex digits of its fingerprint): what names its summaries
+    /// file and what `SyncOptions.deviceID` is, as the CLI and the app set it (`Vault.writerDevice`).
+    /// Revision names keep `device`, the device state's id.
+    var vaultDevice: DeviceID { DeviceID(TestVaults.device(identity).id)! }
 
     // MARK: Writes (one delta each, with this device's clock, as the CLI and the app write)
 
@@ -130,7 +136,7 @@ final class SyncDevice: @unchecked Sendable {
     @discardableResult
     func publishSummaries() throws -> Data {
         let v = try vault()
-        return try v.writeDevicePublishedSummaries(try v.publishedSummaryEntries().entries, device: device, now: now)
+        return try v.writeDevicePublishedSummaries(try v.publishedSummaryEntries().entries, now: now)
     }
 
     /// The visible files of a root folder (`inbox`, `summaries`) with their bytes.
@@ -147,7 +153,7 @@ final class SyncDevice: @unchecked Sendable {
 
     func options(_ edit: (inout SyncOptions) -> Void = { _ in }) -> SyncOptions {
         var o = SyncOptions(deviceLabel: name, now: now)
-        o.deviceID = device
+        o.deviceID = vaultDevice
         if !hasVault { o.firstPullIdentities = [identity] }
         tune(&o)
         edit(&o)

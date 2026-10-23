@@ -47,13 +47,18 @@ struct VaultSummaries: ParsableCommand {
         var inVault = vault.publishedSummariesURL
         var device: DeviceID?
         if deviceFile {
-            let id = try vault.writerDevice ?? DeviceState.loadOrCreate(at: DeviceState.defaultURL()).device
+            // The file is named by this device's id in the vault and signed with its signing keys (§12.5).
+            guard let id = vault.writerDevice else {
+                throw CLIError.usage("--device-file needs this device's own key (a listed device, with its signing keys)")
+            }
             device = id
             inVault = vault.devicePublishedSummariesURL(id)
         }
         let target = out.map { $0 == "-" ? nil : URL(fileURLWithPath: $0) } ?? inVault
         let reuse = target.map { url -> [UUID: PublishedSummaries.Entry] in
             guard let data = try? BoundedRead.contents(of: url, maxBytes: PublishedSummaries.maxFileBytes) else { return [:] }
+            // The device file is reused only when it is this device's, signed.
+            if let device { return (try? vault.openDevicePublishedSummaries(data, device: device).entries) ?? [:] }
             return (try? vault.openPublishedSummaries(data)) ?? [:]
         } ?? [:]
         let (entries, read) = try vault.publishedSummaryEntries(reuse: reuse, cache: cache.cache(for: vault))
@@ -62,7 +67,7 @@ struct VaultSummaries: ParsableCommand {
         if let device {
             // The device's own file names it and carries its next version (format.md §12.5), or no other
             // device takes it.
-            data = try vault.writeDevicePublishedSummaries(entries, device: device)
+            data = try vault.writeDevicePublishedSummaries(entries)
         } else {
             data = plaintext ? try PublishedSummaries.encode(entries, vaultId: vault.vaultId)
                 : try vault.sealPublishedSummaries(entries)

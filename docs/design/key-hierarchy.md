@@ -276,6 +276,7 @@ unforgeable while either holds.
 | `epochSig` | `epoch` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(parent) ‖ lp(reason) ‖ lp(recovery fingerprint) ‖ lp(home fingerprint after this epoch) ‖ lp(n) ‖ the epoch's **first list**: n fingerprints, sorted ‖ lp(m) ‖ the parent list as the author saw it: m fingerprints, sorted | the parent epoch's home; at epoch 1, the creating device (its own home, in epoch 1's first list; the root anchors it); in a takeover, the new home |
 | `recoverySig` (takeover only) | the same message as `epochSig` | the recovery key's derived pair (§5.6), under the `sign` keys whose recovery fingerprint is the parent's `recovery` |
 | `authorSig` | `manifest` ‖ lp(vaultId) ‖ lp(root) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(epochRecordHash) ‖ lp(SHA-256(listMessage)) ‖ lp(format) ‖ lp(k) ‖ the k distinct features, sorted | home (or the old home, for the `vault.json` of its own handoff) |
+| per-device summaries (format.md §12.5) | `summaries` ‖ lp(vaultId) ‖ lp(epoch) ‖ lp(epochId) ‖ lp(device) ‖ lp(version) ‖ lp(SHA-256(sealed bytes)) | the device the file names, verified under the `sign` keys of the entry with that id in the reader's checked list |
 
 ECDSA signs the message with SHA-256 and stores `r ‖ s` (64 bytes); ML-DSA-65 signs the message
 itself (pure, empty context), as links do. Both must verify. `authorSig` covers the record's hash, so
@@ -763,7 +764,9 @@ stale device meeting a takeover.
   keep their own merged copy (format.md §13.3), so a set-aside settings file loses nothing.
 - **Notebook records** (§14): write-once, like revisions.
 - **Published summaries** (§12): hints under the current epoch's key. Old ones are ignored and
-  rewritten by their devices.
+  rewritten by their devices. A device's own file is signed by it (format.md §12.5), so its version
+  orders copies and no other key holder can forge one; a removed device's signatures stop verifying
+  with its entry.
 - **`keys/`**: holds only the passphrase copy of the recovery key (§8.2).
 - **Blob collection** (format.md §8.1.6) gains two conditions. No blob is collected while any revision
   of its note is pending or set aside on this device and might reference it (a set-aside revision is

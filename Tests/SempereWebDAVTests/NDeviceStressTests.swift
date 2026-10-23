@@ -187,7 +187,7 @@ final class NDeviceStressTests: TempDirTestCase {
             quiet = last.isEmpty
         }
         XCTAssertTrue(quiet, "never quiet: \(last.joined(separator: "\n"))")
-        let name = PublishedSummaries.deviceFileName(DeviceID("aaaaaaaa")!)
+        let name = PublishedSummaries.deviceFileName(x.vaultDevice)
         XCTAssertEqual(try r0.read([PublishedSummaries.deviceFolderName, name], maxBytes: 1 << 26).data, later)
         XCTAssertEqual(y.rootFolderFiles(PublishedSummaries.deviceFolderName)[name], later)
     }
@@ -242,7 +242,7 @@ final class NDeviceStressTests: TempDirTestCase {
             quiet = last.isEmpty
         }
         XCTAssertTrue(quiet, "never quiet: \(last.joined(separator: "\n"))")
-        let name = PublishedSummaries.deviceFileName(c.device)
+        let name = PublishedSummaries.deviceFileName(c.vaultDevice)
         for d in [a, b, c] { XCTAssertEqual(d.rootFolderFiles(PublishedSummaries.deviceFolderName)[name], latest, d.name) }
         for r in [r0, r1] {
             XCTAssertEqual(try r.read([PublishedSummaries.deviceFolderName, name], maxBytes: 1 << 26).data, latest, r.location)
@@ -697,11 +697,11 @@ final class StressWorld {
         for d in devices {
             if Set(d.rootFolderFiles(CaptureFile.folderName).keys) != Set(inbox.keys) { fail("\(d.name) holds another inbox than A") }
             if d.rootFolderFiles(PublishedSummaries.deviceFolderName) != summaries { fail("\(d.name) holds other summaries than A") }
-            if let mine = published[d.name], summaries[PublishedSummaries.deviceFileName(d.device)] != mine {
+            if let mine = published[d.name], summaries[PublishedSummaries.deviceFileName(d.vaultDevice)] != mine {
                 let va = try a.vault()
-                func info(_ x: Data?) -> String { x.map { (try? va.openPublishedSummariesContents($0)).map { "v\($0.version ?? -1) dev \($0.device?.rawValue ?? "-") n\($0.entries.count)" } ?? "unreadable" } ?? "nil" }
-                let own = d.rootFolderFiles(PublishedSummaries.deviceFolderName)[PublishedSummaries.deviceFileName(d.device)]
-                fail("\(d.name)'s own summaries file is not the one it wrote: A has \(info(summaries[PublishedSummaries.deviceFileName(d.device)])), wrote \(info(mine)), own now \(info(own)), now \(d.now.timeIntervalSince1970)")
+                func info(_ x: Data?) -> String { x.map { (try? va.decryptPublishedSummaries($0)).map { "v\($0.version ?? -1) dev \($0.device?.rawValue ?? "-") n\($0.entries.count)" } ?? "unreadable" } ?? "nil" }
+                let own = d.rootFolderFiles(PublishedSummaries.deviceFolderName)[PublishedSummaries.deviceFileName(d.vaultDevice)]
+                fail("\(d.name)'s own summaries file is not the one it wrote: A has \(info(summaries[PublishedSummaries.deviceFileName(d.vaultDevice)])), wrote \(info(mine)), own now \(info(own)), now \(d.now.timeIntervalSince1970)")
             }
         }
         for t in targets {

@@ -611,36 +611,98 @@ extension Vault {
     // MARK: - Removed devices (design §5.5)
 
     /// Why this device (one of `held` keys) is not on the newest list, when it can tell (design §4.3 step 2,
-    /// §5.5): its trust record pins the vault, the `vault.json` at hand is a direct child of the pinned epoch
-    /// that links from it and is signed by the pinned home (or is a takeover signed by its new home and the
-    /// pinned kit), and its first list omits this device. Nil otherwise (a key never listed, an epoch it
-    /// cannot verify).
+    /// §5.5): its trust record pins the vault, the `vault.json` at hand is a verified next epoch after the
+    /// pinned one (`EpochFrontier.verifiedChild`), and its first list omits this device. Nil otherwise (a key
+    /// never listed, an epoch it cannot verify).
     static func removalNotice(_ m: EpochManifest, held: Set<String>, signing: DeviceSigningKeys?,
                               trust: (any EpochTrustStore)?) -> String? {
         guard let trust, let record = try? trust.record(for: m.vaultId), let pinned = record.pinned,
-              record.root == m.root, m.epoch == pinned.epoch + 1, m.parent == pinned.epochId,
+              let frontier = EpochFrontier(record: record), let child = frontier.verifiedChild(m),
               let mine = record.list.first(where: { $0.role == EpochKeyEntry.Role.device.rawValue && held.contains($0.key) }),
               pinned.list.contains(mine.fingerprint) || record.list.contains(mine),
-              !m.firstList.contains(mine.fingerprint),
-              EpochLinks.verify(m.epochLink, keys: pinned.linkPublicKeys, epoch: m.epoch, childEpochId: m.epochId,
+              !m.firstList.contains(mine.fingerprint)
+        else { return nil }
+        let signer = child.signer
+        let who = DeviceName.display(signer.name)
+        let what = child.reason == .takeover ? "took over with the recovery kit" : "removed this device"
+        return "this device is not on the newest device list of the vault: \(who) (\(signer.id ?? "?")) \(what) "
+            + "(epoch \(m.epoch)). It writes nothing to the vault. If that is a mistake (a lost device that was "
+            + "managing devices), a takeover with the recovery kit undoes it, and this device rejoins when the vault shows it."
+    }
+
+    /// The epoch this device has verified, to check a claim of the next one against (`EpochFrontier`): its
+    /// trust record's pinned epoch when it keeps one for this vault, else this value's own epoch when it is
+    /// unlocked and its `vault.json` checked (a reader without a record). Nil otherwise.
+    public var epochFrontier: EpochFrontier? {
+        if let trustStore, let record = try? trustStore.record(for: vaultId) { return EpochFrontier(record: record) }
+        guard case .verified = listStatus, let secret, let links = try? LinkPublicKeys(epochKey: secret),
+              let recovery = manifest.recoveryEntry?.fingerprint else { return nil }
+        return EpochFrontier(vaultId: vaultId, root: manifest.root, epoch: manifest.epoch, epochId: manifest.epochId,
+                             linkPublicKeys: links, recovery: recovery, home: manifest.home)
+    }
+}
+
+/// An epoch a device has verified (its trust record's pinned epoch, design §4): what a `vault.json` that
+/// claims to be the next epoch is checked against, by both the removal notice (design §5.5) and the
+/// per-device summaries sync (format.md §12.5), so the two can never disagree about which next epoch to
+/// believe.
+public struct EpochFrontier: Hashable, Sendable {
+    public var vaultId: UUID
+    public var root: Data
+    public var epoch: Int
+    public var epochId: Data
+    /// The epoch's link public keys: what the child's `epochLink` must verify under.
+    public var linkPublicKeys: LinkPublicKeys
+    /// The epoch's recovery fingerprint: the only kit a takeover child may be signed by.
+    public var recovery: Data
+    /// The home device after the epoch: the only device a removal, handoff or kit-replacement child may be
+    /// signed by.
+    public var home: Data
+
+    public init(vaultId: UUID, root: Data, epoch: Int, epochId: Data, linkPublicKeys: LinkPublicKeys, recovery: Data,
+                home: Data) {
+        self.vaultId = vaultId; self.root = root; self.epoch = epoch; self.epochId = epochId
+        self.linkPublicKeys = linkPublicKeys; self.recovery = recovery; self.home = home
+    }
+
+    /// The pinned epoch of `record` with the record's root and home; nil without one.
+    public init?(record: EpochTrustRecord) {
+        guard let pinned = record.pinned else { return nil }
+        self.init(vaultId: record.vaultId, root: record.root, epoch: pinned.epoch, epochId: pinned.epochId,
+                  linkPublicKeys: pinned.linkPublicKeys, recovery: pinned.recovery, home: record.home)
+    }
+
+    /// A next epoch that verifies from this frontier alone.
+    public struct Child: Sendable {
+        public var epoch: Int
+        public var reason: EpochReason?
+        /// The child's author: the frontier's home, or for a takeover the new home.
+        public var signer: EpochKeyEntry
+    }
+
+    /// `m` when it is the direct child of this epoch (design §4.3 step 2, §5.5, §5.6): the same vault and
+    /// root, epoch + 1, `parent` this `epochId`, its `epochLink` verifies under this epoch's link keys, and
+    /// its `epochSig` verifies under the frontier's home (a listed entry whose fingerprint is `home`, which
+    /// binds its signing keys), or, for a takeover, its `recoverySig` under the recovery entry whose
+    /// fingerprint is this epoch's kit and its `epochSig` under its new home. Nil otherwise: nothing from
+    /// `m` is believed.
+    public func verifiedChild(_ m: EpochManifest) -> Child? {
+        guard m.vaultId == vaultId, m.root == root, m.epoch == epoch + 1, m.parent == epochId,
+              EpochLinks.verify(m.epochLink, keys: linkPublicKeys, epoch: m.epoch, childEpochId: m.epochId,
                                 vaultId: m.vaultId),
               let message = m.epochMessage
         else { return nil }
         let reason = EpochReason(rawValue: m.epochReason)
         let signer: EpochKeyEntry?
         if reason == .takeover {
-            guard let rs = m.recoverySig, let recovery = m.recoveryEntry, let rk = recovery.sign,
-                  recovery.fingerprint == pinned.recovery, rs.verifies(message, keys: rk) else { return nil }
+            guard let rs = m.recoverySig, let recoveryEntry = m.recoveryEntry, let rk = recoveryEntry.sign,
+                  recoveryEntry.fingerprint == recovery, rs.verifies(message, keys: rk) else { return nil }
             signer = m.homeEntry
         } else {
-            signer = m.keys.first { $0.role == .device && $0.fingerprint == record.home }
+            signer = m.keys.first { $0.role == .device && $0.fingerprint == home }
         }
         guard let signer, let keys = signer.sign, m.epochSig.verifies(message, keys: keys) else { return nil }
-        let who = DeviceName.display(signer.name)
-        let what = reason == .takeover ? "took over with the recovery kit" : "removed this device"
-        return "this device is not on the newest device list of the vault: \(who) (\(signer.id ?? "?")) \(what) "
-            + "(epoch \(m.epoch)). It writes nothing to the vault. If that is a mistake (a lost device that was "
-            + "managing devices), a takeover with the recovery kit undoes it, and this device rejoins when the vault shows it."
+        return Child(epoch: m.epoch, reason: reason, signer: signer)
     }
 }
 

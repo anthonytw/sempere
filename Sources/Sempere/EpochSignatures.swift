@@ -299,4 +299,17 @@ public enum AuthorMessage {
         for f in distinct { m.field(f) }
         return m.bytes
     }
+
+    /// A per-device published summaries file's signature (format.md §12.5): `summaries` ‖ lp(vaultId)
+    /// ‖ lp(epoch) ‖ lp(epochId) ‖ lp(device) ‖ lp(version) ‖ lp(SHA-256(sealed)). `epochId` hex,
+    /// `device` its 8 hex digits, `epoch` and `version` decimal; `sealed` is every byte of the file before
+    /// the signature (header, nonce, ciphertext, tag), its digest raw (32 bytes). Made by the device the
+    /// file names, with its signing pair.
+    public static func summaries(vaultId: UUID, epoch: Int, epochId: Data, device: DeviceID, version: Int64,
+                                 sealed: Data) -> Data {
+        var m = LPMessage("sempere/1 author summaries")
+        m.field(vaultId.uuidString.lowercased()); m.field(epoch); m.field(Hex.encode(epochId))
+        m.field(device.rawValue); m.field(String(version)); m.field(Data(SHA256.hash(data: sealed)))
+        return m.bytes
+    }
 }
