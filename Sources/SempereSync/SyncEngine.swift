@@ -273,6 +273,10 @@ public final class SyncEngine {
     /// The latest bytes (SHA-256) this device's write ledger holds per path: a shared file whose bytes changed
     /// here since both sides last matched (a catch-up's re-encryption) is compared with the remote's.
     var ledgerShas: [String: String] = [:]
+    /// Paths this device holds set-aside copies of: when the local bytes differ from what a target was last
+    /// known to hold (the accepted copy replaced them here, from another target), the target's is compared, so
+    /// a device that bridges two targets carries the replacement across.
+    var asidePaths: Set<String> = []
 
     /// Guards what concurrent listings and downloads share (`TransferPool`):
     /// `state`, `report`, `budget`, `progress`, the checker cache and the

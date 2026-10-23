@@ -21,16 +21,63 @@ final class EpochTarget: @unchecked Sendable {
         self.store = store
     }
 
+    /// Reads the target for checks (never faulted); nil: the memory store.
+    var inspector: (any SyncRemote)?
+
     func remote(for device: String) -> any SyncRemote {
         if !reachable { return UnreachableRemote(location: "memory:\(name)") }
         return reach?(device) ?? MemoryRemote(store: store)
     }
 
+    /// A target over `t` (memory, the WebDAV mock, wsgidav): devices reach it through `t.remote`, or through
+    /// `t.faulty` while `faults` returns a rate above 0.
+    static func over(_ t: TransportUnderTest, name: String, seed: UInt64, faults: @escaping () -> Double) -> EpochTarget {
+        let target = EpochTarget(name)
+        target.inspector = t.inspector
+        let counter = Locked(UInt64(0))
+        target.reach = { _ in
+            let p = faults()
+            guard p > 0 else { return t.remote }
+            counter.value &+= 1
+            return t.faulty(seed &* 1_000_003 &+ counter.value, .all(p))
+        }
+        return target
+    }
+
     /// The bytes of the target's file at `path` (slash-separated).
-    func file(_ path: String) -> Data? { store.file(path.split(separator: "/").map(String.init)) }
+    func file(_ path: String) -> Data? {
+        let comps = path.split(separator: "/").map(String.init)
+        guard let inspector else { return store.file(comps) }
+        return try? inspector.read(comps, maxBytes: 64 << 20).data
+    }
 
     /// Every file path on the target.
-    var paths: Set<String> { Set(store.filePaths().map { $0.joined(separator: "/") }) }
+    var paths: Set<String> {
+        guard let inspector else { return Set(store.filePaths().map { $0.joined(separator: "/") }) }
+        var out = Set<String>()
+        func walk(_ p: [String]) {
+            for e in (try? inspector.list(p)) ?? [] ?? [] where !e.name.hasPrefix(".") {
+                if e.isCollection { walk(p + [e.name]) } else { out.insert((p + [e.name]).joined(separator: "/")) }
+            }
+        }
+        walk([])
+        return out
+    }
+
+    /// Writes `data` at `path` on the target, over whatever is there (another writer: storage credentials).
+    func put(_ path: String, _ data: Data) {
+        let comps = path.split(separator: "/").map(String.init)
+        guard let inspector else { return store.putDirect(comps, data) }
+        for i in 1..<comps.count { _ = try? inspector.makeCollection(Array(comps.prefix(i))) }
+        _ = try? inspector.write(comps, .data(data), condition: .unconditional)
+    }
+
+    /// Removes the file at `path` from the target (withheld or lost).
+    func remove(_ path: String) {
+        let comps = path.split(separator: "/").map(String.init)
+        guard let inspector else { return store.removeDirect(comps) }
+        _ = try? inspector.delete(comps, ifETag: nil)
+    }
 }
 
 /// A remote that cannot be reached: every request fails as a dropped connection would.
@@ -165,9 +212,13 @@ final class EpochSyncWorld {
     let root: Data
     let vaultId: UUID
 
-    init(in dir: URL, names: [String], targets targetNames: [String] = ["T1"]) throws {
+    convenience init(in dir: URL, names: [String], targets targetNames: [String] = ["T1"]) throws {
+        try self.init(in: dir, names: names, made: targetNames.map { EpochTarget($0) })
+    }
+
+    init(in dir: URL, names: [String], made: [EpochTarget]) throws {
         devices = names.map { EpochSyncDevice($0, root: dir) }
-        targets = targetNames.map { EpochTarget($0) }
+        targets = made
         recovery = try MLKEM768X25519Identity()
         let home = devices[0]
         var vault = try Vault.create(at: home.folder, device: home.keys, deviceName: home.name, recovery: recovery,

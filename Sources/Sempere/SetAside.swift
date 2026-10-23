@@ -337,6 +337,12 @@ extension Vault {
         for (path, shas) in bySha {
             let file = url.appendingPathComponent(path)
             guard FileIO.exists(file), let sha = try? FileDigest.sha256(of: file).hex, shas.contains(sha) else { continue }
+            // Judged again now: a later chain (a takeover's) may seal what an earlier one did not.
+            if Self.framing(path) != nil, let data = try? readFile(file, maxBytes: BoundedRead.maxRevisionBytes),
+               acceptance(of: data, path: path).isAccepted { continue }
+            let parts = path.split(separator: "/").map(String.init)
+            if parts.count == 4, parts[2] == Self.attachmentsName, let note = UUID(uuidString: parts[1]),
+               (try? readAnyAcceptedBlob(file, note: note, maxContent: BlobRef.maxSize)) != nil { continue }
             out[path] = sha
         }
         return out

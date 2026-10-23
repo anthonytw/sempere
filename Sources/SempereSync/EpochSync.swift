@@ -31,8 +31,6 @@ enum SyncEpochMutation: Hashable, Sendable, CaseIterable {
     case uploadWhileWaiting
     /// J1: an uploaded file's ledger entry is dropped (as if the target kept it for good).
     case pruneLedgerOnUpload
-    /// J6: an unaccepted local copy is replaced without being set aside first.
-    case replaceWithoutKeeping
 }
 
 extension SyncEngine {
@@ -402,14 +400,16 @@ extension SyncEngine {
     // MARK: An accepted copy replaces an unaccepted one (design §5.4 step 4)
 
     /// What this run compares on shared paths: the working copy's set-aside files still in place, and the
-    /// latest bytes of this device's own writes at the current epoch (catch-up re-encryptions among them).
+    /// latest bytes of this device's own writes (catch-up re-encryptions among them).
     func prepareReplacements() {
         guard let v = epochJudge else { return }
         unacceptedHere = v.unacceptedInPlace()
+        asidePaths = Set(v.setAsideStore?.items(vaultId: v.vaultId).map(\.path) ?? [])
         guard v.manifest.epoch > 1, let ledger = v.ledger, let entries = try? ledger.entries() else { return }
-        let current = Hex.encode(v.manifest.epochId)
+        // The latest bytes this device wrote at each path, whatever the epoch (a re-encryption made under an
+        // epoch since replaced is still to be carried to a target that holds the older copy).
         var latest: [String: String] = [:]
-        for e in entries where e.epochId == current { latest[e.path] = e.sha256 }
+        for e in entries { latest[e.path] = e.sha256 }
         ledgerShas = latest
     }
 
@@ -439,13 +439,14 @@ extension SyncEngine {
         guard !options.dryRun, let v = epochJudge, v.setAsideStore != nil else { return }
         let here = unacceptedHere[path]
         let rewritten = ledgerShas[path]
-        guard here != nil || (rewritten != nil && rewritten != recorded) else { return }
+        let wasAside = asidePaths.contains(path)
+        guard here != nil || (rewritten != nil && rewritten != recorded) || wasAside else { return }
         // A copy set aside here is compared again only when the remote's version changed.
         if here != nil, let stamp = entry?.stamp, locked({ state.comparedAside?[path] }) == stamp { return }
         let file = root.appendingPathComponent(path)
         let local = try BoundedRead.contents(of: file, maxBytes: options.maxFileBytes)
         let localSha = FileDigest.sha256(local)
-        guard localSha == here || (localSha == rewritten && localSha != recorded) else { return }
+        guard localSha == here || (localSha != recorded && (localSha == rewritten || wasAside)) else { return }
         defer {
             if here != nil, let stamp = entry?.stamp {
                 locked { state.comparedAside = state.comparedAside ?? [:]; state.comparedAside?[path] = stamp }
@@ -484,9 +485,7 @@ extension SyncEngine {
             guard !options.pushOnly else { return }
             let reason: SetAsideReason
             if case .setAside(let r) = mine { reason = r } else { reason = .notSealed }
-            if !Self.epochMutations.contains(.replaceWithoutKeeping) {
-                try store.keep(local, path: path, vaultId: v.vaultId, reason: reason)
-            }
+            try store.keep(local, path: path, vaultId: v.vaultId, reason: reason)
             do { try check(got.data) } catch {
                 report.skipped.append(.init(path: path, message: SyncReport.printable("the target's copy does not check: \(error)")))
                 return

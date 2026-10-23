@@ -284,6 +284,13 @@ extension Vault {
                                recovery: recovery, home: manifest.home, reason: manifest.epochReason)]
         }
         try saveTrust(chain: chain, list: manifest.keys, home: manifest.home)
+        // The key of every epoch this device pinned (not only those it wrote under): a takeover may drop the
+        // epoch later, and its files here then read as set aside (dropped) rather than unreadable, so an
+        // accepted copy replaces them (design §5.4 step 4; KH4).
+        if let ledger, ledgerMemo.needsKey(secret.epochId) {
+            try? ledger.rememberKey(epoch: manifest.epoch, key: secret)
+            ledgerMemo.keyRemembered(secret.epochId)
+        }
     }
 
     /// Pins `pinnable` (design §5.6 rule 3): the verified chain up to the parent of a takeover signed by a
