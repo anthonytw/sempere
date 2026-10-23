@@ -926,7 +926,7 @@ final class QuickCapture {
         try CaptureWriter.store(sealed, in: queue)
         // The epoch it was sealed under goes with it: the flush records that one, never a newer profile's (M4).
         if let epoch = sealed.epoch, let id = sealed.epochId {
-            try Data("\(epoch) \(Hex.encode(id))\n".utf8).write(to: Self.epochSidecar(queue.appendingPathComponent(sealed.name)),
+            try Data("\(epoch) \(id.map { String(format: "%02x", $0) }.joined())\n".utf8).write(to: Self.epochSidecar(queue.appendingPathComponent(sealed.name)),
                                                               options: .atomic)
         }
         return .queued
@@ -940,7 +940,14 @@ final class QuickCapture {
         guard let data = try? BoundedRead.contents(of: epochSidecar(file), maxBytes: 256),
               let text = String(data: data, encoding: .utf8) else { return nil }
         let parts = text.split(whereSeparator: { $0 == " " || $0 == "\n" })
-        guard parts.count == 2, let e = Int(parts[0]), let id = Hex.decode(String(parts[1])), id.count == 32 else { return nil }
+        guard parts.count == 2, let e = Int(parts[0]) else { return nil }
+        let hex: [UInt8] = Array(parts[1].utf8)
+        guard hex.count == 64 else { return nil }
+        var id = Data()
+        for i in stride(from: 0, to: 64, by: 2) {
+            guard let byte = UInt8(String(decoding: hex[i..<i + 2], as: UTF8.self), radix: 16) else { return nil }
+            id.append(byte)
+        }
         return (e, id)
     }
 
