@@ -4252,7 +4252,9 @@ changed since the last run:
     every check of §2.1 against the pinned list: **taken, record pending**. It is followed (writes are under
     its key) but not pinned, files under older keys are pending, catch-up and device changes wait; when the
     record arrives, the next run pins it and catches up;
-  - a later epoch this device cannot verify yet: **unverified-pending**. It keeps its own `vault.json`, keeps
+  - a later epoch this device cannot verify yet, or one of its own number that does not list it and whose parent
+    it never pinned (a fork further back) unless that one's signed fields already lose to its own chain:
+    **unverified-pending**. It keeps its own `vault.json`, keeps
     writing locally, and the run uploads nothing new (J5b): only `epochs/` is synced, both ways, and
     `vault.json` is judged. It is remembered as a sighting (§15.10), so runs with every target hold back too,
     until it is verified;
@@ -4279,7 +4281,11 @@ changed since the last run:
   while no record it waits for is missing: a dropped epoch it never held), on the
   target under its strong version tag (a target without one keeps its copy, reported) or here; the unaccepted
   copy is set aside on this device first, and a copy that cannot be kept stops the replacement. An accepted
-  copy is never replaced. A file this device set aside is never uploaded.
+  copy is never replaced. A file this device set aside is never uploaded. A target's copy is replaced only by a
+  run whose `vault.json` stands there (not one that met a conflict or is held back). A copy set aside here is
+  compared again when the target's version, or the epoch this device judges under, changes. After a device
+  replaced a target's `vault.json` of another branch (or a refused one), every file both sides hold is compared
+  once, in the next complete run, as that branch's devices may have replaced accepted copies there.
 - **`joins/`**: the union, and a request one side deleted since both held it (home approved it, or it expired)
   is deleted on the other. A received request must parse, name this vault and be named after its own key.
   Home deletes requests older than 7 days and those of keys already listed.

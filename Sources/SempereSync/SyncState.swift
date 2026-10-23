@@ -121,6 +121,10 @@ struct SyncState: Codable, Equatable {
     /// files the acceptance rule no longer takes (`Vault.setAsideScan`): once per epoch and record set, whoever made
     /// the change (KH4).
     var scannedEpoch: String?
+    /// Set when this device's `vault.json` replaced the target's of another epoch (a branch its chain beats, or a
+    /// refused one): until a complete run over every note, each revision both sides hold is read and compared, as
+    /// the losing branch's devices may have replaced accepted copies there (design §5.4 step 4; KH4).
+    var compareShared: Bool?
 
     struct EpochsStamp: Codable, Equatable {
         var etag: String

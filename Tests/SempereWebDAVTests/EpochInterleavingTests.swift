@@ -234,7 +234,8 @@ final class EpochInterleavingTests: SyncTestCase {
                 let e = r.epoch.map { "taken \($0.taken.map(String.init) ?? "-") wait \($0.waiting != nil) unl \($0.unlisted != nil) cu \($0.caughtUp ?? -1)" } ?? ""
                 trace.append("\(step) sync \(n)/\(tg.name): up \(r.uploaded.count) down \(r.downloaded.count) aside \(r.setAside.map(\.path)) "
                     + "pend \(r.pending.count) repl \(r.replaced.map { "\($0.side):\($0.path.suffix(30))" }) err \(r.errors.map(\.message).prefix(2)) "
-                    + "q \(r.quarantined.map(\.message).prefix(2)) rej \(r.rejected.map(\.message).prefix(1)) \(e)")
+                    + "q \(r.quarantined.map(\.message).prefix(2)) rej \(r.rejected.map(\.message).prefix(1)) \(e) "
+                    + "sk \(r.skipped.filter { $0.path.hasPrefix("notes/") && $0.path.count > 10 }.map { "\($0.path.suffix(30)): \($0.message.prefix(60))" }.prefix(3))")
             }
             hold(n)
             // J5b: a run that met a change it cannot verify (or found this device removed) uploads nothing new.
@@ -385,6 +386,7 @@ final class EpochInterleavingTests: SyncTestCase {
             }
             for tg in targets { for p in tg.paths where p.hasPrefix("notes/\(id)/") { if let d = tg.file(p) { copies.append((tg.name, String(p.split(separator: "/").last ?? ""), d)) } } }
             let items = w[reader].setAside.items(vaultId: w.vaultId).filter { $0.path.contains(id) }
+            lines.append("DIAG  \(reader) in place unaccepted: \(((try? w[reader].open().unacceptedInPlace()) ?? [:]).filter { $0.key.contains(id) }.mapValues { $0.prefix(8) })")
             lines.append("DIAG  \(reader) set aside: \(items.map { "\($0.sha256.prefix(8)) \($0.reason)" }) scanned-ledger "
                 + "\((try? w[reader].ledger.entries().filter { $0.path.contains(id) }.map { "\($0.epoch):\($0.sha256.prefix(8))" }) ?? [])")
             for (src, f, d) in copies {
@@ -402,6 +404,23 @@ final class EpochInterleavingTests: SyncTestCase {
         if Set(epochs.values).count > 1 { out.append("J4: listed devices hold different epochs: \(epochs.mapValues { $0.prefix(8) })") }
         if let first = readers.first, readers.contains(where: { titles[$0] != titles[first] }) {
             out.append("J4: listed devices read different notes")
+            if tracing, let first = readers.first {
+                for n in names.sorted() where !listed.contains(n) {
+                    guard let v = try? w[n].open() else { continue }
+                    for tg in reach[n] ?? [] {
+                        guard let d = tg.file(Vault.manifestName) else { continue }
+                        if let m = try? EpochManifest.parse(d), let rec = try? v.trustStore?.record(for: v.vaultId) {
+                            trace.append("DIAG  \(n) pinned \(rec.chain.map { "\($0.epoch)/\(Hex.encode($0.epochId).prefix(6))" }) incoming \(m.epoch)/\(Hex.encode(m.epochId).prefix(6)) parent \(m.parent.map { Hex.encode($0).prefix(6) } ?? "-") reason \(m.epochReason)")
+                        }
+                        trace.append("DIAG judge \(n)@\(tg.name): \(v.judgeIncoming(d)) unlisted=\(v.unlistedNotice != nil) waiting=\(v.waitingNotice ?? "-")")
+                    }
+                }
+                let all = Set(readers.flatMap { titles[$0]?.keys.map { $0 } ?? [] })
+                for note in all.sorted(by: { $0.uuidString < $1.uuidString }) where Set(readers.map { titles[$0]?[note] }).count > 1 {
+                    trace.append("DIAG J4 \(note.uuidString.prefix(8)): " + readers.map { "\($0)=\(titles[$0]?[note] ?? "-")" }.joined(separator: " "))
+                    trace += diagnose(note: note, reader: readers.first { titles[$0]?[note] == nil } ?? first)
+                }
+            }
         }
         for tg in targets {
             if let d = tg.file(Vault.manifestName), let m = try? EpochManifest.parse(d), let e = epochs[home], Hex.encode(m.epochId) != e {

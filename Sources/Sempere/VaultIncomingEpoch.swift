@@ -168,9 +168,17 @@ extension Vault {
                 }
                 return .unlisted(notice)
             }
-            return incoming.epoch > manifest.epoch
-                ? .waiting("epoch \(incoming.epoch) does not list this device and cannot be verified from here")
-                : .conflict("epoch \(incoming.epoch) does not list this device and is not on its chain")
+            // Not verifiable from here (its parent is not pinned: a fork further back). At this device's epoch or
+            // later it may be the branch that dropped this device: it holds this device back (J5b), unless its
+            // signed fields already lose to this device's own chain.
+            if incoming.epoch >= manifest.epoch {
+                if incoming.epoch == manifest.epoch, let node = manifestNode(incoming),
+                   Self.keptChain(extra: [node], ours: ours, pinned: trustedRecord()?.chain ?? []) == ours.ids {
+                    return .behind
+                }
+                return .waiting("epoch \(incoming.epoch) does not list this device and cannot be verified from here")
+            }
+            return .conflict("epoch \(incoming.epoch) does not list this device and is not on its chain")
         }
         let key: VaultEpochKey
         do { key = try EpochKeyWrap.open(entry.wrap, with: unlockIdentities, vaultId: vaultId, epoch: incoming.epoch) } catch {
