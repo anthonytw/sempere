@@ -20,6 +20,12 @@ import Sempere
 // read again, judged again under the lock (the same bytes under a new version token are retried; other bytes
 // are a change on both sides: merged, taken or kept as a conflict). After `SyncEngine.stampRetries` rounds it
 // is left to the next run, with nothing recorded for it.
+//
+// One exception, by design: a provider's conflict versions (`settleConflictVersions`) are read and resolved
+// under the lock. They exist only on a folder target (iCloud Drive, a local folder: local files, no network
+// request); a WebDAV target has none. They merge into the local `settings.age`, so they need the lock.
+//
+// `WriteLockScopeTests.testNoRequestIsMadeUnderTheLock` fails if any other request is made under the lock.
 
 /// An upload of a mutable file decided under the write lock and made after it (F7).
 struct DeferredUpload {

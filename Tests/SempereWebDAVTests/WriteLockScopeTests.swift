@@ -115,6 +115,109 @@ final class WriteLockScopeTests: SyncTestCase {
     }
 }
 
+extension WriteLockScopeTests {
+    /// Every request of every kind, over runs that take, merge, keep and upload the mutable files, finds the
+    /// write lock free: the tripwire for any request added under the lock later (F7). Conflict versions are a
+    /// folder provider's local files (WebDAV has none), so those three verbs are not network requests.
+    func testNoRequestIsMadeUnderTheLock() throws {
+        let w = try world()
+        let watch = { (remote: any SyncRemote) in LockWatchingRemote(base: remote, lock: self.lock) }
+        func check(_ label: String, _ r: LockWatchingRemote, _ report: SyncReport) {
+            XCTAssertTrue(r.violations.isEmpty, "\(label): requests under the write lock: \(r.violations)")
+            XCTAssertGreaterThan(r.requests, 0, label)
+            XCTAssertTrue(report.errors.isEmpty, "\(label): \(report.errors)")
+        }
+        // Server moved on (settings, label): taken.
+        try changeSettings(w.a, "pixel")
+        var a = w.a
+        try a.setLabel("Renamed on A")
+        try run("A", a, w.remote)
+        var r = watch(w.remote)
+        check("pull", r, try run("B", w.b, r, locked: true))
+        // Only this side changed: uploaded after the lock.
+        try changeSettings(w.b, "object")
+        r = watch(w.remote)
+        check("push", r, try run("B", try openVault("B"), r, locked: true))
+        // Both sides changed: merged under the lock, uploaded after it.
+        try changeSettings(w.a, "tip")
+        try run("A", try openVault("A"), w.remote)
+        try changeSettings(w.b, "ink")
+        r = watch(w.remote)
+        check("merge", r, try run("B", try openVault("B"), r, locked: true))
+        // Nothing changed: in step.
+        r = watch(w.remote)
+        check("in step", r, try run("B", try openVault("B"), r, locked: true))
+        // The server's copy moves between the read and the upload: judged again, still never under the lock.
+        try changeSettings(w.b, "late")
+        try changeSettings(w.a, "later")
+        let store = w.remote.store, path = w.remote.base + [SharedSettings.fileName]
+        let aSettings = try BoundedRead.contents(of: dir("A").appendingPathComponent(SharedSettings.fileName), maxBytes: 1 << 20)
+        let fired = CallCounter()
+        let racing = InterposedRemote(base: w.remote) { written in
+            if written == [SharedSettings.fileName], fired.next() == 1 { store.putDirect(path, aSettings) }
+        }
+        r = watch(racing)
+        check("refused upload", r, try run("B", try openVault("B"), r, locked: true))
+    }
+}
+
+/// A remote that records every request made while `lock` is held by the caller (a lock-free `try` fails then).
+final class LockWatchingRemote: SyncRemote, @unchecked Sendable {
+    var base: any SyncRemote
+    let lock: VaultFileLock
+    private let guardLock = NSLock()
+    private var _violations: [String] = []
+    private var _requests = 0
+    var violations: [String] { guardLock.withLock { _violations } }
+    var requests: Int { guardLock.withLock { _requests } }
+
+    init(base: any SyncRemote, lock: VaultFileLock) { self.base = base; self.lock = lock }
+
+    private func note(_ verb: String, _ path: [String]) {
+        let free = (try? lock.withLockIfFree { true }) ?? nil
+        guardLock.withLock {
+            _requests += 1
+            if free != true { _violations.append("\(verb) \(path.joined(separator: "/"))") }
+        }
+    }
+
+    var location: String { base.location }
+    var capabilities: RemoteCapabilities { base.capabilities }
+    var interrupt: (@Sendable () -> (any Error)?)? {
+        get { base.interrupt }
+        set { base.interrupt = newValue }
+    }
+    func list(_ path: [String]) throws -> [RemoteEntry]? { note("list", path); return try base.list(path) }
+    func listTree(_ path: [String], maxBytes: Int) throws -> RemoteTree? { note("listTree", path); return try base.listTree(path, maxBytes: maxBytes) }
+    func stat(_ path: [String]) throws -> RemoteEntry? { note("stat", path); return try base.stat(path) }
+    func read(_ path: [String], maxBytes: Int) throws -> (data: Data, etag: String?) { note("read", path); return try base.read(path, maxBytes: maxBytes) }
+    func download(_ path: [String], to file: URL, resumeFrom: Int, ifETag: String?, maxBytes: Int,
+                  segmentBytes: Int, progress: ((Int) throws -> Void)?) throws -> DownloadResult {
+        note("download", path)
+        return try base.download(path, to: file, resumeFrom: resumeFrom, ifETag: ifETag, maxBytes: maxBytes,
+                                 segmentBytes: segmentBytes, progress: progress)
+    }
+    func requestDownload(_ paths: [[String]]) throws { note("requestDownload", paths.first ?? []); try base.requestDownload(paths) }
+    func conflictVersions(_ path: [String]) -> [RemoteVersion] { base.conflictVersions(path) }
+    func readVersion(_ path: [String], _ version: RemoteVersion, maxBytes: Int) throws -> Data {
+        try base.readVersion(path, version, maxBytes: maxBytes)
+    }
+    func changes() -> AsyncStream<RemoteChange>? { base.changes() }
+    func missingCollectionError(_ path: [String]) -> any Error { base.missingCollectionError(path) }
+    func write(_ path: [String], _ body: RemoteBody, condition: PutCondition) throws -> Bool {
+        note("write", path); return try base.write(path, body, condition: condition)
+    }
+    func moveNoOverwrite(_ path: [String], to destination: [String]) throws -> Bool {
+        note("move", path); return try base.moveNoOverwrite(path, to: destination)
+    }
+    func makeCollection(_ path: [String]) throws -> CollectionResult { note("mkcol", path); return try base.makeCollection(path) }
+    func createBase() throws { note("createBase", []); try base.createBase() }
+    func delete(_ path: [String], ifETag: String?) throws -> Bool { note("delete", path); return try base.delete(path, ifETag: ifETag) }
+    func resolveConflicts(_ path: [String], _ versions: [RemoteVersion]) throws {
+        try base.resolveConflicts(path, versions)
+    }
+}
+
 /// A remote that stops at the first `verb` of root file `file`, signalling `stalled` and waiting for `release`.
 struct StallingRemote: SyncRemote {
     enum Verb { case read, write }
