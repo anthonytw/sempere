@@ -251,15 +251,15 @@ final class TwoDeviceStressTests: SyncTestCase {
         for d in set.devices {
             let dir = d.folder.appendingPathComponent(PublishedSummaries.deviceFolderName)
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            try Data("\(d.name)".utf8).write(to: dir.appendingPathComponent("\(d.device.rawValue).sealed"))
+            try Data("\(d.name)".utf8).write(to: dir.appendingPathComponent("\(d.vaultDevice.rawValue).sealed"))
         }
         try set.converge()
         for d in set.devices {
             let names = try FileManager.default.contentsOfDirectory(atPath: d.folder.appendingPathComponent("summaries").path)
-            XCTAssertEqual(names, ["\(d.device.rawValue).sealed"], d.name)
+            XCTAssertEqual(names, ["\(d.vaultDevice.rawValue).sealed"], d.name)
         }
         XCTAssertEqual(Set((try set.inspector.list(["summaries"]) ?? []).map(\.name)),
-                       Set(set.devices.map { "\($0.device.rawValue).sealed" }))
+                       Set(set.devices.map { "\($0.vaultDevice.rawValue).sealed" }))
         let merged = try set.a.vault().mergeCopy(from: set.b.folder)
         XCTAssertTrue(merged.added.isEmpty, "\(merged)")
     }

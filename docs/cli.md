@@ -491,11 +491,12 @@ sempere vault catch-up [--json]
   file it writes is readable by its owner only (created 0600 next to the
   target, then renamed over it). `--json` emits `path`, `notes`, `entries`,
   `read` (notes summarized again) and `bytes`. `--device-file` writes this
-  machine's own copy instead, `summaries/<device>.sealed` (`format.md` §12.5,
-  the device id of the CLI's device state), naming that device and under the
-  next version (one more than the file there, at least the clock in
-  milliseconds): the per-device files the apps publish so that another device
-  lists a vault's notes before they arrive.
+  device's own copy instead, `summaries/<device>.sealed` (`format.md` §12.5,
+  the device's id in the vault), naming that device, under the next version
+  (one more than the file there, at least the clock in milliseconds) and
+  signed with the device's signing keys (from its device key file; a key
+  without them cannot write it): the per-device files the apps publish so
+  that another device lists a vault's notes before they arrive.
 - `merge-copy FROM` merges another copy of the same vault into the vault
   (`format.md` §1.3): the losing side of an iCloud Drive conflict, a copy taken
   from another device, a folder restored from a backup. Every revision, blob,

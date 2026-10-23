@@ -179,13 +179,23 @@ extension WriteLockScopeTests {
     /// Per-device summaries (format.md §12.5): another device's file placed, and this device's own file sealed
     /// again over an old later copy (a local write under the lock) and uploaded, with no request under the lock.
     func testDeviceSummariesMakeNoRequestUnderTheLock() throws {
-        let w = try world()
+        // Two listed devices, each signing its own file (format.md §12.5).
+        let idB = pqIdentity()
+        let a = try TestVaults.create(at: dir("A"), identities: [identity, idB], names: ["A", "B"])
+        try delta(a, device: devA, t: 1, title: "first")
+        let remote = MemoryRemote(store: MemoryStore(name: "lock-scope-summaries"), base: ["dav", "v"])
+        XCTAssertTrue(try run("A", a, remote).errors.isEmpty)
+        try FileManager.default.copyItem(at: dir("A"), to: dir("B"))
+        let b = try TestVaults.open(at: dir("B"), identity: idB)
+        XCTAssertTrue(try run("B", b, remote).errors.isEmpty)
+        let w = World(remote: remote, a: a, b: b)
+        let devA = try XCTUnwrap(a.writerDevice), devB = try XCTUnwrap(b.writerDevice)
         let day: TimeInterval = 86_400
-        try w.a.writeDevicePublishedSummaries([:], device: devA)
+        try w.a.writeDevicePublishedSummaries([:])
         try run("A", w.a, w.remote)
-        let mine = try w.b.writeDevicePublishedSummaries([:], device: devB, now: Date().addingTimeInterval(-30 * day))
-        let held = try w.a.sealPublishedSummaries(PublishedSummaries.Contents(
-            entries: [:], device: devB, version: PublishedSummaries.millis(Date().addingTimeInterval(-20 * day))))
+        let mine = try w.b.writeDevicePublishedSummaries([:], now: Date().addingTimeInterval(-30 * day))
+        // A later copy by B's own keys (another install of B), now more than the window old.
+        let held = try w.b.sealDevicePublishedSummaries([:], version: PublishedSummaries.millis(Date().addingTimeInterval(-20 * day)))
         try w.remote.write([PublishedSummaries.deviceFolderName, PublishedSummaries.deviceFileName(devB)], .data(held),
                            condition: .unconditional)
         let r = watched(w.remote)
