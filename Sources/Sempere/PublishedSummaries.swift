@@ -159,6 +159,9 @@ public enum PublishedSummaries {
     private struct WireFile: Encodable {
         var format: String
         var vaultId: String
+        /// Per-device files only (format.md §12.5): the writer's device id and its version of the file.
+        var device: String?
+        var version: Int64?
         var notes: [String: WireEntry]
     }
 
@@ -170,14 +173,52 @@ public enum PublishedSummaries {
         }
     }
 
+    /// A field decoded leniently: nil when absent or malformed (only that field is dropped).
+    private struct LenientField<T: Decodable>: Decodable {
+        var value: T?
+        init(from decoder: Decoder) throws {
+            value = try? decoder.singleValueContainer().decode(T.self)
+        }
+    }
+
     private struct ReadFile: Decodable {
         var format: String
         var vaultId: String
+        var device: LenientField<String>?
+        var version: LenientField<Int64>?
         var notes: [String: Lenient]
     }
 
+    /// The greatest `version` (format.md §12.5): 2^53 − 1, exact in every JSON reader (the web viewer's too).
+    public static let maxVersion: Int64 = (1 << 53) - 1
+
+    /// What a sealed file holds: its entries and, in a per-device file, its writer and version.
+    public struct Contents: Hashable, Sendable {
+        public var entries: [UUID: Entry]
+        /// The writer's device id (`device`), nil when absent or malformed.
+        public var device: DeviceID?
+        /// The writer's version of its file (`version`, 1 … `maxVersion`), nil when absent or out of range.
+        public var version: Int64?
+
+        public init(entries: [UUID: Entry], device: DeviceID? = nil, version: Int64? = nil) {
+            self.entries = entries; self.device = device; self.version = version
+        }
+    }
+
+    /// The version a device gives the file it writes now (format.md §12.5): one more than its previous
+    /// one, and at least the milliseconds since 1970 of `now`, so a device that lost its file (and with it
+    /// its last version) still writes a later one. Nil only when the previous one is already `maxVersion`.
+    public static func nextVersion(after previous: Int64?, now: Date) -> Int64? {
+        let floor = now.timeIntervalSince1970 * 1000
+        let clock: Int64 = floor.isFinite && floor >= 1 ? (floor < Double(maxVersion) ? Int64(floor) : maxVersion) : 1
+        guard let previous, previous >= 1 else { return clock }
+        guard previous < maxVersion else { return nil }
+        return max(previous + 1, clock)
+    }
+
     /// The JSON content: sorted keys, no escaped slashes, so equal entries give equal bytes.
-    public static func encode(_ entries: [UUID: Entry], vaultId: UUID) throws -> Data {
+    public static func encode(_ entries: [UUID: Entry], vaultId: UUID, device: DeviceID? = nil,
+                              version: Int64? = nil) throws -> Data {
         var notes: [String: WireEntry] = [:]
         for (id, e) in entries {
             guard let created = RFC3339.string(from: e.created), let modified = RFC3339.string(from: e.modified) else {
@@ -190,7 +231,8 @@ public enum PublishedSummaries {
         }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        var data = try encoder.encode(WireFile(format: format, vaultId: vaultId.uuidString.lowercased(), notes: notes))
+        var data = try encoder.encode(WireFile(format: format, vaultId: vaultId.uuidString.lowercased(),
+                                               device: device?.rawValue, version: version, notes: notes))
         data.append(0x0A)
         return data
     }
@@ -199,6 +241,13 @@ public enum PublishedSummaries {
     ///
     /// - Throws: `damaged` when the content is not JSON of this format and vault.
     public static func decode(_ json: Data, vaultId: UUID) throws -> [UUID: Entry] {
+        try decodeContents(json, vaultId: vaultId).entries
+    }
+
+    /// The valid entries of a JSON content, with its `device` and `version` (format.md §12.3, §12.5).
+    ///
+    /// - Throws: `damaged` when the content is not JSON of this format and vault.
+    public static func decodeContents(_ json: Data, vaultId: UUID) throws -> Contents {
         let file: ReadFile
         do { file = try JSONDecoder().decode(ReadFile.self, from: json) } catch {
             throw PublishedSummariesError.damaged("not a summaries document")
@@ -213,7 +262,8 @@ public enum PublishedSummaries {
                   let e = validate(w) else { continue }
             out[id] = e
         }
-        return out
+        let version = file.version?.value.flatMap { (1...maxVersion).contains($0) ? $0 : nil }
+        return Contents(entries: out, device: file.device?.value.flatMap { DeviceID($0) }, version: version)
     }
 
     private static func validate(_ w: WireEntry) -> Entry? {
@@ -271,7 +321,13 @@ extension Vault {
 
     /// The sealed file for `entries`.
     public func sealPublishedSummaries(_ entries: [UUID: PublishedSummaries.Entry]) throws -> Data {
-        let json = try PublishedSummaries.encode(entries, vaultId: vaultId)
+        try sealPublishedSummaries(PublishedSummaries.Contents(entries: entries))
+    }
+
+    /// The sealed file for `contents` (a per-device file names its device and version, §12.5).
+    public func sealPublishedSummaries(_ contents: PublishedSummaries.Contents) throws -> Data {
+        let json = try PublishedSummaries.encode(contents.entries, vaultId: vaultId, device: contents.device,
+                                                 version: contents.version)
         return try PublishedSummaries.seal(try Gzip.compress(json), secret: try requireSecret(), vaultId: vaultId)
     }
 
@@ -280,12 +336,50 @@ extension Vault {
     /// - Throws: `PublishedSummariesError.damaged` for a file that is not
     ///   this vault's (or is damaged); `VaultError.locked` without the secret.
     public func openPublishedSummaries(_ data: Data) throws -> [UUID: PublishedSummaries.Entry] {
+        try openPublishedSummariesContents(data).entries
+    }
+
+    /// A sealed file of this vault with its `device` and `version` (format.md §12.5).
+    ///
+    /// - Throws: as `openPublishedSummaries`.
+    public func openPublishedSummariesContents(_ data: Data) throws -> PublishedSummaries.Contents {
         let plain = try PublishedSummaries.open(data, secret: try requireSecret(), vaultId: vaultId)
         let json: Data
         do { json = try Gzip.decompress(plain, maxOutput: PublishedSummaries.maxJSONBytes) } catch {
             throw PublishedSummariesError.damaged("does not gunzip")
         }
-        return try PublishedSummaries.decode(json, vaultId: vaultId)
+        return try PublishedSummaries.decodeContents(json, vaultId: vaultId)
+    }
+
+    /// A per-device file of `device` (format.md §12.5): it must open, name `device` and carry a version,
+    /// which are authenticated with the rest. Anything else throws `damaged`: such a copy is never placed
+    /// and never ordered against another.
+    public func openDevicePublishedSummaries(_ data: Data, device: DeviceID) throws -> PublishedSummaries.Contents {
+        let contents = try openPublishedSummariesContents(data)
+        guard contents.device == device else {
+            throw PublishedSummariesError.damaged("written for another device than its name says")
+        }
+        guard contents.version != nil else { throw PublishedSummariesError.damaged("no version") }
+        return contents
+    }
+
+    /// Writes this device's `summaries/<device>.sealed` (format.md §12.5) with `entries`, under the next
+    /// version after the one there (`PublishedSummaries.nextVersion`). Returns the bytes written.
+    @discardableResult
+    public func writeDevicePublishedSummaries(_ entries: [UUID: PublishedSummaries.Entry], device: DeviceID,
+                                              now: Date = Date()) throws -> Data {
+        try requireWritable()
+        let url = devicePublishedSummariesURL(device)
+        let previous = FileIO.exists(url)
+            ? (try? BoundedRead.contents(of: url, maxBytes: PublishedSummaries.maxFileBytes))
+                .flatMap { try? openDevicePublishedSummaries($0, device: device).version } : nil
+        guard let version = PublishedSummaries.nextVersion(after: previous, now: now) else {
+            throw PublishedSummariesError.damaged("the previous version is the greatest there is")
+        }
+        let data = try sealPublishedSummaries(PublishedSummaries.Contents(entries: entries, device: device, version: version))
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileIO.writeAtomically(data, to: url, replacing: true)
+        return data
     }
 
     /// The local file's valid entries; empty when it is missing or unusable.

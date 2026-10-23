@@ -138,7 +138,8 @@ kept, and is the same whatever the order of copies merged:
   that list's entries are all still there, and it adds a device or renames one. Anything else is never merged:
   a writer keeps its own version and reports the other.
 - **Published summaries** (§12): the version kept stays; they are hints and
-  are rewritten by their writers.
+  are rewritten by their writers. Of two copies of a per-device file, the later
+  `version` is kept (§12.5).
 
 A writer that resolves such conflicts by itself never needs to ask the user
 to pick a version, and must not pick one by whole-vault or last-writer-wins
@@ -3333,6 +3334,10 @@ file = 534d505501a0a1a2a3a4a5a6a7a8a9aaabb466bcf027fe45b94f3fe195f6e0b57d9c6e
   ones joined by `\n`, in page order. Pages
   without such text are left out. Dates are as in §6.
 
+A per-device file (§12.5) also has `"device"`, its writer's device id, and `"version"`, an integer
+from 1 to 2^53 − 1 that its writer raises with every write (§12.5). The root file has neither; a reader
+ignores a malformed value of either.
+
 Unknown fields are ignored. Writers emit no others under `format`
 `sempere-summaries/1`; a change readers must not misread changes `format`.
 
@@ -3375,7 +3380,10 @@ writer's device id (§5, 8 lowercase hex digits): the same file as §12.1 and
 device, from its own listing, when the notes it has read change. Since no two
 devices ever write one file, a file-sync service never has two versions of
 it to reconcile (§1.3), whatever the devices do at once. Names that are not
-`<device>.sealed` with a valid device id are ignored.
+`<device>.sealed` with a valid device id are ignored. Its content names that device in `device` and
+carries a `version` (§12.2): the writer's previous version plus one, and at least the milliseconds
+since 1970 of its clock (so a device that lost its file still writes a later one). A file whose
+`device` is not its name's, or that has no valid `version`, is not that device's file.
 
 A reader may read all of them, and the root file, before the notes arrive
 (a device opening a vault that a file-sync service is still delivering):
@@ -3392,11 +3400,19 @@ that no longer opens (a new epoch) is rewritten by its device or
 ignored. A writer that no longer exists leaves a file that only goes stale.
 
 A sync (§1.3) copies every device's file to the side that lacks it, and when
-both sides hold different copies of another device's file, takes the side that
-changed since its last sync (the remote's if both did). A device's own file is
-only ever written by that device: a sync never replaces it with another copy.
-A received file is placed only when it starts with `SMPU` `0x01` and, with the
-vault unlocked, opens (§12.3); otherwise it is skipped (a hint, never
+both sides hold different copies of another device's file, keeps the later
+`version` on both (equal versions: the copy with the greater SHA-256, so every
+device keeps the same one). The version is read only from a copy that opens and
+names the device, so storage cannot forge one; a copy without one never
+replaces one with. "The side that changed since the last sync" is not an order:
+two devices that each sync two places can hand two versions round them for ever.
+Without the key nothing is ordered, and differing copies stay as they are. A
+device's own file is only ever written by that device: a sync never replaces
+it with another copy, and when the other side holds a copy of it with the same
+or a later version, the device writes its own again one version above that
+one, so no other key holder can pin an older one. A received file is placed
+only when it starts with `SMPU` `0x01` and, with the vault unlocked, opens as
+that device's file (§12.3); otherwise it is skipped (a hint, never
 quarantined). Nothing is ever deleted.
 
 ## 13. Shared settings

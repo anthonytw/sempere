@@ -151,6 +151,63 @@ final class NDeviceStressTests: TempDirTestCase {
         XCTAssertEqual(try x.vault().reconstruct(noteId: id), try y.vault().reconstruct(noteId: id))
         XCTAssertEqual(try x.vault().reconstruct(noteId: id).meta.title, "title 6")
     }
+
+    /// Found by this run (seeds 41 and 46, long mode): A and B bridge R0 and R1, C syncs R0 only. C
+    /// wrote its summaries file twice in a row (c2, then c3) with one run on R0 between. Merged by "the
+    /// side that changed since the last run wins", c2 and c3 then circled R0 → B → R1 → A → R0 for ever:
+    /// each bridge saw one copy changed on one side only and carried it on, and only R0 was ever put right
+    /// by C. A per-device file carries its writer's version inside the sealed content, and a copy only
+    /// ever replaces an older one.
+    func testTwoBridgesSettleAnotherDevicesSummaries() throws {
+        let r0 = MemoryRemote(store: MemoryStore(name: "R0"), base: ["vault"])
+        let r1 = MemoryRemote(store: MemoryStore(name: "R1"), base: ["vault"])
+        let ids = [pqIdentity(), pqIdentity(), pqIdentity()]
+        let a = try SyncDevice(name: "A", root: tmp.appendingPathComponent("A"), identity: ids[0], remote: r0,
+                               device: DeviceID("aaaaaaaa"))
+        let b = try SyncDevice(name: "B", root: tmp.appendingPathComponent("B"), identity: ids[1], remote: r0,
+                               device: DeviceID("bbbbbbbb"))
+        let c = try SyncDevice(name: "C", root: tmp.appendingPathComponent("C"), identity: ids[2], remote: r0,
+                               device: DeviceID("cccccccc"))
+        let start = Date(timeIntervalSince1970: 1_790_000_000)
+        let tick = Locked(0)
+        for d in [a, b, c] { d.clock = { start.addingTimeInterval(Double(tick.value * 60)) } }
+        _ = try TestVaults.create(at: a.folder, identities: ids, names: ["A", "B", "C"])
+        func sync(_ d: SyncDevice, _ r: MemoryRemote, _ name: String) throws -> SyncReport {
+            try d.sync(via: r, state: d.root.appendingPathComponent("sync-\(name).json"))
+        }
+        let runs: [(SyncDevice, MemoryRemote, String)] = [(a, r0, "R0"), (a, r1, "R1"), (c, r0, "R0"), (b, r0, "R0"), (b, r1, "R1")]
+        func round() throws -> [String] {
+            try runs.compactMap { d, r, name in
+                let rep = try sync(d, r, name)
+                return rep.isEmpty ? nil : "\(d.name)/\(name): \(StressWorld.brief(rep))"
+            }
+        }
+        try a.newNote("one")
+        for _ in 0..<3 { _ = try round() }
+        tick.value = 1
+        _ = try c.publishSummaries()
+        for _ in 0..<3 { _ = try round() }
+        XCTAssertEqual(try round(), [], "in step with C's first file")
+
+        tick.value = 2
+        _ = try c.publishSummaries()
+        _ = try sync(c, r0, "R0")
+        tick.value = 3
+        let latest = try c.publishSummaries()
+
+        var last: [String] = []
+        var quiet = false
+        for _ in 0..<6 where !quiet {
+            last = try round()
+            quiet = last.isEmpty
+        }
+        XCTAssertTrue(quiet, "never quiet: \(last.joined(separator: "\n"))")
+        let name = PublishedSummaries.deviceFileName(c.device)
+        for d in [a, b, c] { XCTAssertEqual(d.rootFolderFiles(PublishedSummaries.deviceFolderName)[name], latest, d.name) }
+        for r in [r0, r1] {
+            XCTAssertEqual(try r.read([PublishedSummaries.deviceFolderName, name], maxBytes: 1 << 26).data, latest, r.location)
+        }
+    }
 }
 
 /// One remote of the stress run and how each device reaches it.

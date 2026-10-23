@@ -105,6 +105,57 @@ final class PublishedSummariesTests: VaultTestCase {
         XCTAssertEqual(locked.readPublishedSummaries(), [:])
     }
 
+    /// A per-device file (format.md §12.5) names its device and carries a version, both inside the sealed
+    /// content; each write is a later version, and a file naming another device or without a version does
+    /// not open as that device's.
+    func testDeviceFilesCarryTheirDeviceAndAVersion() throws {
+        let vault = try makeVault(pqIdentity())
+        let (entries, _) = try vault.publishedSummaryEntries()
+        let t0 = Date(timeIntervalSince1970: 1_790_000_000)
+        let first = try vault.writeDevicePublishedSummaries(entries, device: devA, now: t0)
+        let opened = try vault.openDevicePublishedSummaries(first, device: devA)
+        XCTAssertEqual(opened.device, devA)
+        XCTAssertEqual(opened.version, 1_790_000_000_000)
+        XCTAssertEqual(opened.entries, entries)
+        XCTAssertEqual(try Data(contentsOf: vault.devicePublishedSummariesURL(devA)), first)
+        // The clock went back: still one more than the last one.
+        let second = try vault.writeDevicePublishedSummaries(entries, device: devA, now: t0.addingTimeInterval(-3600))
+        XCTAssertEqual(try vault.openDevicePublishedSummaries(second, device: devA).version, 1_790_000_000_001)
+        // The file lost: the clock still gives a later one than before.
+        try FileManager.default.removeItem(at: vault.devicePublishedSummariesURL(devA))
+        let third = try vault.writeDevicePublishedSummaries(entries, device: devA, now: t0.addingTimeInterval(60))
+        XCTAssertEqual(try vault.openDevicePublishedSummaries(third, device: devA).version, 1_790_000_060_000)
+
+        XCTAssertThrowsError(try vault.openDevicePublishedSummaries(first, device: devB)) { XCTAssert($0 is PublishedSummariesError) }
+        let plain = try vault.sealPublishedSummaries(entries)
+        XCTAssertNil(try vault.openPublishedSummariesContents(plain).version)
+        XCTAssertThrowsError(try vault.openDevicePublishedSummaries(plain, device: devA)) { XCTAssert($0 is PublishedSummariesError) }
+        // The root file's JSON is unchanged (no `device`, no `version`).
+        let json = String(decoding: try PublishedSummaries.encode([:], vaultId: vault.vaultId), as: UTF8.self)
+        XCTAssertFalse(json.contains("version") || json.contains("device"), json)
+    }
+
+    func testVersionsAreBoundedAndMalformedOnesAreDroppedAlone() throws {
+        XCTAssertNil(PublishedSummaries.nextVersion(after: PublishedSummaries.maxVersion, now: Date()))
+        XCTAssertEqual(PublishedSummaries.nextVersion(after: nil, now: Date(timeIntervalSince1970: -5)), 1)
+        XCTAssertEqual(PublishedSummaries.nextVersion(after: PublishedSummaries.maxVersion - 1, now: .distantFuture),
+                       PublishedSummaries.maxVersion)
+        let vid = UUID()
+        func contents(_ extra: String) throws -> PublishedSummaries.Contents {
+            try PublishedSummaries.decodeContents(Data(#"{"format":"sempere-summaries/1","vaultId":"\#(vid.uuidString.lowercased())","notes":{}\#(extra)}"#.utf8),
+                                                  vaultId: vid)
+        }
+        XCTAssertEqual(try contents(#","device":"aaaaaaaa","version":42"#).version, 42)
+        XCTAssertEqual(try contents(#","device":"aaaaaaaa","version":42"#).device, DeviceID("aaaaaaaa"))
+        for bad in [#","version":0"#, #","version":-1"#, #","version":9007199254740992"#, #","version":1.5"#,
+                    #","version":"7""#, #","version":1e300"#] {
+            let c = try contents(bad)
+            XCTAssertNil(c.version, bad)
+        }
+        XCTAssertNil(try contents(#","device":"AAAAAAAA""#).device)
+        XCTAssertNil(try contents(#","device":7"#).device)
+    }
+
     func testMalformedEntriesAreDroppedAlone() throws {
         let vid = UUID()
         let good = #""revisions":["17596320000000000-a1b2c3d4-1.delta.age"],"title":"T","tags":[],"favorite":false,"deleted":false,"created":"2026-10-04T16:20:00.000Z","modified":"2026-10-04T16:20:00.000Z","pages":1,"pageTexts":[{"page":1,"text":"x"}]"#

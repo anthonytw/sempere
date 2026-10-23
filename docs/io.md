@@ -1105,14 +1105,20 @@ hashed or fetched again every run. Push-only runs upload and follow explained de
 server, never write locally.
 
 **Per-device summaries** (`DeviceSummariesSync.swift`, format.md §12.5). `summaries/<device>.sealed`
-is written only by its device. This device's own file (`SyncOptions.deviceID`; the CLI's device id
-when it has one) replaces the remote's whenever they differ and is never taken from the remote.
-Another device's file is copied to the side that lacks it; when both sides hold different copies,
-the side that changed since the last run (`SyncState.deviceSummaries`) wins, the remote's if both did,
-so a device with two targets carries a newer copy from one to the other. A received file is placed
-only when it starts with `SMPU` `0x01` and, unlocked, opens under the vault's secret; otherwise it is
-listed in `skipped` (a hint, not quarantined: after a key change an older file is only stale).
-Nothing is deleted.
+is written only by its device (`Vault.writeDevicePublishedSummaries`), with its device id and a
+`version` inside the sealed content. This device's own file (`SyncOptions.deviceID`; the CLI's device
+id when it has one) replaces the remote's whenever they differ and is never taken from the remote;
+when the remote's copy has the same or a later version (forged, or written before this device lost its
+file), a two-way run first rewrites its own one version above it. Another device's file is copied to
+the side that lacks it; when both sides hold different copies, the later version wins (equal versions:
+the greater SHA-256), read only after the copy opened and named that device, so an older copy never
+replaces a newer one and a device with two targets carries the newer one from one to the other. "The
+side that changed since the last run wins", the earlier rule, has no order between versions and let two
+versions circle two bridges for ever (`testTwoBridgesSettleAnotherDevicesSummaries`). Locked, a
+differing copy is left on both sides; push-only runs never replace a later copy. A received file is
+placed only when it starts with `SMPU` `0x01` and, unlocked, opens under the vault's secret as that
+device's file; otherwise it is listed in `skipped` (a hint, not quarantined: after a key change an older
+file is only stale). Nothing is deleted.
 
 **Push-only mirror** (`--push-only`, `SyncOptions.pushOnly`). A two-way
 sync rejects a `vault.json` that is not a later version by the home device
