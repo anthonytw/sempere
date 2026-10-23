@@ -321,11 +321,14 @@ extension Vault {
         defer { if !placed { try? FileManager.default.removeItem(at: tmp) } }
         try faults.check(.catchUpWritten(n))
         let check = try FileIO.read(tmp, maxBytes: CaptureFile.maxSealedBytes(kind))
-        guard corrupt || (try? AgeFile.decrypt(check, with: identities)).flatMap({
-            try? CaptureFile.unframe($0, filename: name, key: newKey)
-        }).map({ $0.line + [0x0A] + $0.payload }) == (try? CaptureFile.unframe(plain, filename: name,
-                                                                               key: CaptureKey.derive(from: key, device: fingerprint)))
-            .map({ $0.line + [0x0A] + $0.payload }) else {
+        // Split up: the macOS CI compiler cannot type-check this as one expression in time.
+        func framed(_ sealed: Data?, _ captureKey: CaptureKey) -> Data? {
+            guard let sealed, let capture = try? CaptureFile.unframe(sealed, filename: name, key: captureKey) else { return nil }
+            return capture.line + [0x0A] + capture.payload
+        }
+        let readBack: Data? = framed(try? AgeFile.decrypt(check, with: identities), newKey)
+        let original: Data? = framed(plain, CaptureKey.derive(from: key, device: fingerprint))
+        guard corrupt || readBack == original else {
             throw VaultError.epochChangeRefused("\(entry.path): the re-sealed copy does not read back")
         }
         try faults.check(.catchUpVerified(n))
