@@ -205,12 +205,29 @@ public enum PublishedSummaries {
         }
     }
 
+    /// How far ahead of a reader's clock a `version` may be (format.md §12.5): 7 days. A later one counts
+    /// as no version, so a key holder who seals another device's file at a far-future version (or at the
+    /// cap) never wins over the real one, and no writer ever climbs toward `maxVersion`.
+    public static let futureWindow: TimeInterval = 7 * 24 * 3600
+
+    /// The milliseconds since 1970 of `date`, clamped to 1 … `maxVersion`.
+    static func millis(_ date: Date) -> Int64 {
+        let ms = date.timeIntervalSince1970 * 1000
+        return ms.isFinite && ms >= 1 ? (ms < Double(maxVersion) ? Int64(ms) : maxVersion) : 1
+    }
+
+    /// `version` when a reader whose clock says `now` takes it (at most `futureWindow` ahead), else nil.
+    public static func accepted(_ version: Int64?, now: Date) -> Int64? {
+        guard let version else { return nil }
+        return version <= millis(now.addingTimeInterval(futureWindow)) ? version : nil
+    }
+
     /// The version a device gives the file it writes now (format.md §12.5): one more than its previous
     /// one, and at least the milliseconds since 1970 of `now`, so a device that lost its file (and with it
-    /// its last version) still writes a later one. Nil only when the previous one is already `maxVersion`.
+    /// its last version) still writes a later one. Nil only when the previous one is already `maxVersion`
+    /// (which `accepted` keeps out of reach: a previous version beyond the window is no version).
     public static func nextVersion(after previous: Int64?, now: Date) -> Int64? {
-        let floor = now.timeIntervalSince1970 * 1000
-        let clock: Int64 = floor.isFinite && floor >= 1 ? (floor < Double(maxVersion) ? Int64(floor) : maxVersion) : 1
+        let clock = millis(now)
         guard let previous, previous >= 1 else { return clock }
         guard previous < maxVersion else { return nil }
         return max(previous + 1, clock)
@@ -351,20 +368,29 @@ extension Vault {
         return try PublishedSummaries.decodeContents(json, vaultId: vaultId)
     }
 
-    /// A per-device file of `device` (format.md §12.5): it must open, name `device` and carry a version,
-    /// which are authenticated with the rest. Anything else throws `damaged`: such a copy is never placed
-    /// and never ordered against another.
-    public func openDevicePublishedSummaries(_ data: Data, device: DeviceID) throws -> PublishedSummaries.Contents {
+    /// A per-device file of `device` (format.md §12.5): it must open, name `device` and carry a version
+    /// no more than `PublishedSummaries.futureWindow` ahead of `now`; all of it is authenticated with the
+    /// rest. Anything else throws `damaged`: such a copy is never placed and never ordered against another.
+    public func openDevicePublishedSummaries(_ data: Data, device: DeviceID, now: Date = Date()) throws
+        -> PublishedSummaries.Contents {
         let contents = try openPublishedSummariesContents(data)
         guard contents.device == device else {
             throw PublishedSummariesError.damaged("written for another device than its name says")
         }
         guard contents.version != nil else { throw PublishedSummariesError.damaged("no version") }
+        guard PublishedSummaries.accepted(contents.version, now: now) != nil else {
+            throw PublishedSummariesError.damaged("a version too far ahead of this device's clock")
+        }
         return contents
     }
 
     /// Writes this device's `summaries/<device>.sealed` (format.md §12.5) with `entries`, under the next
-    /// version after the one there (`PublishedSummaries.nextVersion`). Returns the bytes written.
+    /// version after the one there (`PublishedSummaries.nextVersion`). Returns the bytes written. A file
+    /// there that does not open as this device's (sealed under an earlier epoch's key, damaged, or with a
+    /// version beyond the window) gives no previous version: the new one starts at the clock.
+    ///
+    /// TODO(KH4): when a device moves to a new epoch, rewrite its file under the new key at once (today it
+    /// is rewritten at its next write, and until then other devices cannot read it).
     @discardableResult
     public func writeDevicePublishedSummaries(_ entries: [UUID: PublishedSummaries.Entry], device: DeviceID,
                                               now: Date = Date()) throws -> Data {
@@ -372,7 +398,7 @@ extension Vault {
         let url = devicePublishedSummariesURL(device)
         let previous = FileIO.exists(url)
             ? (try? BoundedRead.contents(of: url, maxBytes: PublishedSummaries.maxFileBytes))
-                .flatMap { try? openDevicePublishedSummaries($0, device: device).version } : nil
+                .flatMap { try? openDevicePublishedSummaries($0, device: device, now: now).version } : nil
         guard let version = PublishedSummaries.nextVersion(after: previous, now: now) else {
             throw PublishedSummariesError.damaged("the previous version is the greatest there is")
         }

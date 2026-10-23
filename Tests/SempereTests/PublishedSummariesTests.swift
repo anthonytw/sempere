@@ -135,6 +135,30 @@ final class PublishedSummariesTests: VaultTestCase {
         XCTAssertFalse(json.contains("version") || json.contains("device"), json)
     }
 
+    /// The previous own file does not open (sealed under an earlier epoch's key, here another vault's) or
+    /// has a version beyond the window: the next write starts at the clock, on purpose (review of #83).
+    func testAnUnreadableOrFarFuturePreviousFileRestartsAtTheClock() throws {
+        let vault = try makeVault(pqIdentity())
+        let other = try makeVault(pqIdentity(), name: "Other")
+        let t0 = Date(timeIntervalSince1970: 1_790_000_000)
+        let url = vault.devicePublishedSummariesURL(devA)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try other.sealPublishedSummaries(PublishedSummaries.Contents(entries: [:], device: devA, version: 1_890_000_000_000))
+            .write(to: url)
+        let first = try vault.writeDevicePublishedSummaries([:], device: devA, now: t0)
+        XCTAssertEqual(try vault.openDevicePublishedSummaries(first, device: devA, now: t0).version, 1_790_000_000_000)
+        // One beyond the 7-day window is no version, for the writer as for readers.
+        let ahead = try vault.sealPublishedSummaries(PublishedSummaries.Contents(
+            entries: [:], device: devA, version: 1_790_000_000_000 + 8 * 86_400_000))
+        XCTAssertThrowsError(try vault.openDevicePublishedSummaries(ahead, device: devA, now: t0))
+        XCTAssertNoThrow(try vault.openDevicePublishedSummaries(ahead, device: devA, now: t0.addingTimeInterval(2 * 86_400)))
+        try ahead.write(to: url)
+        let second = try vault.writeDevicePublishedSummaries([:], device: devA, now: t0.addingTimeInterval(1))
+        XCTAssertEqual(try vault.openDevicePublishedSummaries(second, device: devA, now: t0).version, 1_790_000_001_000)
+        XCTAssertNil(PublishedSummaries.accepted(PublishedSummaries.maxVersion, now: t0))
+        XCTAssertEqual(PublishedSummaries.accepted(1_790_000_000_000 + 7 * 86_400_000, now: t0), 1_790_000_000_000 + 7 * 86_400_000)
+    }
+
     func testVersionsAreBoundedAndMalformedOnesAreDroppedAlone() throws {
         XCTAssertNil(PublishedSummaries.nextVersion(after: PublishedSummaries.maxVersion, now: Date()))
         XCTAssertEqual(PublishedSummaries.nextVersion(after: nil, now: Date(timeIntervalSince1970: -5)), 1)

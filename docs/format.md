@@ -3383,7 +3383,11 @@ it to reconcile (§1.3), whatever the devices do at once. Names that are not
 `<device>.sealed` with a valid device id are ignored. Its content names that device in `device` and
 carries a `version` (§12.2): the writer's previous version plus one, and at least the milliseconds
 since 1970 of its clock (so a device that lost its file still writes a later one). A file whose
-`device` is not its name's, or that has no valid `version`, is not that device's file.
+`device` is not its name's, or that has no valid `version`, is not that device's file. A reader
+treats a `version` more than 7 days ahead of its own clock as none: every holder of the vault key can
+seal any device's file, and a far-future version must never win or push its device's versions toward
+the limit. Two installs that share a device id (a copied CLI state folder) are one writer to the
+format: whichever wrote the later version is kept, until one of them writes again.
 
 A reader may read all of them, and the root file, before the notes arrive
 (a device opening a vault that a file-sync service is still delivering):
@@ -3402,18 +3406,22 @@ ignored. A writer that no longer exists leaves a file that only goes stale.
 A sync (§1.3) copies every device's file to the side that lacks it, and when
 both sides hold different copies of another device's file, keeps the later
 `version` on both (equal versions: the copy with the greater SHA-256, so every
-device keeps the same one). The version is read only from a copy that opens and
-names the device, so storage cannot forge one; a copy without one never
-replaces one with. "The side that changed since the last sync" is not an order:
-two devices that each sync two places can hand two versions round them for ever.
-Without the key nothing is ordered, and differing copies stay as they are. A
-device's own file is only ever written by that device: a sync never replaces
-it with another copy, and when the other side holds a copy of it with the same
-or a later version, the device writes its own again one version above that
-one, so no other key holder can pin an older one. A received file is placed
-only when it starts with `SMPU` `0x01` and, with the vault unlocked, opens as
-that device's file (§12.3); otherwise it is skipped (a hint, never
-quarantined). Nothing is ever deleted.
+device keeps the same one). The version is read only from a copy that opens,
+names the device and is within the 7-day window, so storage cannot forge one; a
+copy without one never replaces one with. "The side that changed since the last
+sync" is not an order: two devices that each sync two places can hand two
+versions round them for ever. A sealed copy (`SMPU` `0x01`) a device cannot open
+is never replaced by it: it may be sealed under a later epoch's key that device
+lacks. Without the key nothing is ordered, and differing copies stay as they are.
+A device's own file is only ever written by that device: a sync never replaces
+it with another copy, and replaces any other copy with it except one ordered
+after it, which is left until the device writes a later version. Another key
+holder can therefore hold back a device's file with a forged version for at
+most the 7-day window (summaries are hints; a device signature over the version
+would end this, and is not in this version). A received file is placed only
+when it starts with `SMPU` `0x01` and, with the vault unlocked, opens as that
+device's file (§12.3); otherwise it is skipped (a hint, never quarantined).
+Nothing is ever deleted.
 
 ## 13. Shared settings
 

@@ -316,36 +316,128 @@ class InboxSummariesScenarioCase: SyncTestCase {
         try settle("A"); try settle("B")
     }
 
-    /// A copy of A's file that another key holder sealed with a later version (or a copy of B's file put
-    /// under A's name) cannot pin A's file: A writes its own again above it, and that copy travels.
-    func scenarioAForgedVersionCannotPinTheOwnersFile() throws {
+    func remoteA() throws -> Data { try t.inspector.read(["summaries", "aaaaaaaa.sealed"], maxBytes: 1 << 26).data }
+    var nowMillis: Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
+
+    /// Review of #83 (S1): another key holder seals A's file at the version cap. Beyond the 7-day window it
+    /// is no version: it never wins, B takes A's real file back, and the runs go quiet at once.
+    func scenarioAForgedCapVersionNeverWins() throws {
         try twoDevices()
         let a1 = try publish("A")
         try run("A"); try run("B")
-        let a1Version = try XCTUnwrap(try version(a1, of: "A"))
-        let b = try openVault("B")
-        let forged = try b.sealPublishedSummaries(PublishedSummaries.Contents(entries: [:], device: device("A"),
-                                                                              version: a1Version + 1000))
+        let forged = try openVault("B").sealPublishedSummaries(
+            PublishedSummaries.Contents(entries: [:], device: device("A"), version: PublishedSummaries.maxVersion))
+        try forged.write(to: dir("B").appendingPathComponent("summaries/aaaaaaaa.sealed"))
+        var uploads = 0
+        for _ in 0..<5 {
+            for name in ["A", "B"] where try run(name).uploaded.contains("summaries/aaaaaaaa.sealed") { uploads += 1 }
+        }
+        XCTAssertEqual(uploads, 0, label)
+        XCTAssertEqual(summaries("B")["aaaaaaaa.sealed"], a1, "\(label): B takes A's real file back")
+        XCTAssertEqual(try remoteA(), a1, label)
+        try settle("A"); try settle("B")
+    }
+
+    /// Review of #83 (S1): a forged copy one below the cap, put on the remote, is no version either: A puts
+    /// its own back and goes on writing ordinary versions.
+    func scenarioAForgedNearCapVersionDoesNotFreezeTheOwner() throws {
+        try twoDevices()
+        let a1 = try publish("A")
+        try run("A"); try run("B")
+        let forged = try openVault("B").sealPublishedSummaries(
+            PublishedSummaries.Contents(entries: [:], device: device("A"), version: PublishedSummaries.maxVersion - 1))
         if t.deviations.contains(.etagKeepsTheSecond) { Thread.sleep(forTimeInterval: 1.1) }
         try t.inspector.write(["summaries", "aaaaaaaa.sealed"], .data(forged), condition: .unconditional)
-        try run("B")
-        XCTAssertEqual(summaries("B")["aaaaaaaa.sealed"], forged, "\(label): B takes the later copy; it cannot tell")
-        try run("A")
-        let mine = try XCTUnwrap(summaries("A")["aaaaaaaa.sealed"])
-        XCTAssertEqual(try version(mine, of: "A"), a1Version + 1001, label)
-        XCTAssertEqual(try openVault("A").openPublishedSummaries(mine), try openVault("A").openPublishedSummaries(a1), label)
-        XCTAssertEqual(try t.inspector.read(["summaries", "aaaaaaaa.sealed"], maxBytes: 1 << 26).data, mine, label)
-        try run("B")
-        XCTAssertEqual(summaries("B")["aaaaaaaa.sealed"], mine, label)
-
-        // B's own file under A's name names another device: it opens, but is never placed.
-        let b1 = try publish("B")
-        if t.deviations.contains(.etagKeepsTheSecond) { Thread.sleep(forTimeInterval: 1.1) }
-        try t.inspector.write(["summaries", "aaaaaaaa.sealed"], .data(b1), condition: .unconditional)
-        try run("B")
-        XCTAssertEqual(summaries("B")["aaaaaaaa.sealed"], mine, label)
+        let r = try run("A")
+        XCTAssertTrue(r.uploaded.contains("summaries/aaaaaaaa.sealed"), "\(label): \(StressWorld.brief(r))")
+        XCTAssertEqual(summaries("A")["aaaaaaaa.sealed"], a1, "\(label): A's own file is untouched")
+        XCTAssertEqual(try remoteA(), a1, label)
+        let a2 = try publish("A")
+        let v2 = try XCTUnwrap(try version(a2, of: "A"))
+        XCTAssertLessThan(v2, nowMillis + 1000, "\(label): an ordinary version, nowhere near the cap")
+        try run("A"); try run("B")
+        XCTAssertEqual(summaries("B")["aaaaaaaa.sealed"], a2, label)
         try settle("A"); try settle("B")
-        XCTAssertEqual(try t.inspector.read(["summaries", "aaaaaaaa.sealed"], maxBytes: 1 << 26).data, mine, label)
+    }
+
+    /// Review of #83 (M2): a sealed copy B cannot open (here sealed under another vault's key, as a copy
+    /// under a later epoch is for a removed or lagging device) is never replaced by B's older readable one;
+    /// B reports it and goes quiet.
+    func scenarioAnUnreadableCopyIsNeverReplaced() throws {
+        try twoDevices()
+        let a1 = try publish("A")
+        try run("A"); try run("B")
+        XCTAssertEqual(summaries("B")["aaaaaaaa.sealed"], a1, label)
+        let other = try makeVault("X")
+        let later = try other.sealPublishedSummaries(
+            PublishedSummaries.Contents(entries: [:], device: device("A"), version: nowMillis + 10_000))
+        if t.deviations.contains(.etagKeepsTheSecond) { Thread.sleep(forTimeInterval: 1.1) }
+        try t.inspector.write(["summaries", "aaaaaaaa.sealed"], .data(later), condition: .unconditional)
+        let r = try run("B")
+        XCTAssertFalse(r.uploaded.contains("summaries/aaaaaaaa.sealed"), "\(label): \(StressWorld.brief(r))")
+        XCTAssertTrue(r.skipped.contains { $0.path == "summaries/aaaaaaaa.sealed" }, "\(label): \(r.skipped)")
+        XCTAssertEqual(try remoteA(), later, label)
+        XCTAssertEqual(summaries("B")["aaaaaaaa.sealed"], a1, label)
+        // The owner leaves it too (it may be its own file under a key it no longer holds).
+        XCTAssertFalse(try run("A").uploaded.contains("summaries/aaaaaaaa.sealed"), label)
+        XCTAssertEqual(try remoteA(), later, label)
+        try settle("A"); try settle("B")
+    }
+
+    /// Review of #83 (M1): a per-device file without `device` and `version` (what `vault summaries
+    /// --device-file` wrote before) is never placed; the file `writeDevicePublishedSummaries` writes (what
+    /// it writes now) is.
+    func scenarioOnlyAVersionedDeviceFileTravels() throws {
+        try twoDevices()
+        let v = try openVault("A")
+        let entries = try v.publishedSummaryEntries().entries
+        let unversioned = try v.sealPublishedSummaries(entries)
+        let url = v.devicePublishedSummariesURL(device("A"))
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try unversioned.write(to: url)
+        try run("A")
+        try run("B")
+        XCTAssertNil(summaries("B")["aaaaaaaa.sealed"], label)
+        let versioned = try v.writeDevicePublishedSummaries(entries, device: device("A"))
+        try run("A"); try run("B")
+        XCTAssertEqual(summaries("B")["aaaaaaaa.sealed"], versioned, label)
+        try settle("A"); try settle("B")
+    }
+
+    /// A copy forged within the window, or one written by another install with A's device id, is ordered
+    /// after A's own: A leaves it rather than rewriting above it (two installs would otherwise outbid each
+    /// other on every run), and the runs go quiet. It holds until A writes a later version (at most the window).
+    func scenarioALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() throws {
+        try twoDevices()
+        let a1 = try publish("A")
+        try run("A"); try run("B")
+        let ahead = try openVault("B").sealPublishedSummaries(
+            PublishedSummaries.Contents(entries: [:], device: device("A"), version: nowMillis + 3_600_000))
+        if t.deviations.contains(.etagKeepsTheSecond) { Thread.sleep(forTimeInterval: 1.1) }
+        try t.inspector.write(["summaries", "aaaaaaaa.sealed"], .data(ahead), condition: .unconditional)
+        let r = try run("A")
+        XCTAssertFalse(r.uploaded.contains("summaries/aaaaaaaa.sealed"), "\(label): \(StressWorld.brief(r))")
+        XCTAssertEqual(summaries("A")["aaaaaaaa.sealed"], a1, "\(label): A's own file is never taken")
+        try run("B")
+        XCTAssertEqual(summaries("B")["aaaaaaaa.sealed"], ahead, label)
+        try settle("A"); try settle("B")
+        XCTAssertEqual(try remoteA(), ahead, label)
+    }
+
+    /// Locked, nothing is ordered: a two-way locked run leaves a differing copy; a locked staging run
+    /// (pull-only) stages the remote copy for the placing run to order (review of #83, nit).
+    func scenarioLockedRunsLeaveAndStagingStages() throws {
+        try twoDevices()
+        _ = try publish("A")
+        try run("A"); try run("B")
+        let a2 = try publish("A")
+        try run("A")
+        let left = try run("B", locked: true)
+        XCTAssertFalse(left.downloaded.contains("summaries/aaaaaaaa.sealed"), "\(label): \(StressWorld.brief(left))")
+        XCTAssertNotEqual(summaries("B")["aaaaaaaa.sealed"], a2, label)
+        let staged = try run("B", locked: true, state: "B-staging") { $0.pullOnly = true }
+        XCTAssertTrue(staged.downloaded.contains("summaries/aaaaaaaa.sealed"), "\(label): \(StressWorld.brief(staged))")
+        XCTAssertEqual(summaries("B")["aaaaaaaa.sealed"], a2, label)
     }
 
     /// A device with two targets carries another device's newer file from one to the other.
@@ -431,7 +523,12 @@ final class InboxSummariesOverMemoryTests: InboxSummariesScenarioCase {
     func testForeignSummariesAreNotPlaced() throws { try scenarioForeignSummariesAreNotPlaced() }
     func testABridgeCarriesSummaries() throws { try scenarioABridgeCarriesSummaries() }
     func testAnOlderCopyNeverReplacesANewer() throws { try scenarioAnOlderCopyNeverReplacesANewer() }
-    func testAForgedVersionCannotPinTheOwnersFile() throws { try scenarioAForgedVersionCannotPinTheOwnersFile() }
+    func testAForgedCapVersionNeverWins() throws { try scenarioAForgedCapVersionNeverWins() }
+    func testAForgedNearCapVersionDoesNotFreezeTheOwner() throws { try scenarioAForgedNearCapVersionDoesNotFreezeTheOwner() }
+    func testAnUnreadableCopyIsNeverReplaced() throws { try scenarioAnUnreadableCopyIsNeverReplaced() }
+    func testOnlyAVersionedDeviceFileTravels() throws { try scenarioOnlyAVersionedDeviceFileTravels() }
+    func testALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() throws { try scenarioALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() }
+    func testLockedRunsLeaveAndStagingStages() throws { try scenarioLockedRunsLeaveAndStagingStages() }
 }
 
 final class InboxSummariesOverWebDAVMockTests: InboxSummariesScenarioCase {
@@ -447,7 +544,12 @@ final class InboxSummariesOverWebDAVMockTests: InboxSummariesScenarioCase {
     func testForeignSummariesAreNotPlaced() throws { try scenarioForeignSummariesAreNotPlaced() }
     func testABridgeCarriesSummaries() throws { try scenarioABridgeCarriesSummaries() }
     func testAnOlderCopyNeverReplacesANewer() throws { try scenarioAnOlderCopyNeverReplacesANewer() }
-    func testAForgedVersionCannotPinTheOwnersFile() throws { try scenarioAForgedVersionCannotPinTheOwnersFile() }
+    func testAForgedCapVersionNeverWins() throws { try scenarioAForgedCapVersionNeverWins() }
+    func testAForgedNearCapVersionDoesNotFreezeTheOwner() throws { try scenarioAForgedNearCapVersionDoesNotFreezeTheOwner() }
+    func testAnUnreadableCopyIsNeverReplaced() throws { try scenarioAnUnreadableCopyIsNeverReplaced() }
+    func testOnlyAVersionedDeviceFileTravels() throws { try scenarioOnlyAVersionedDeviceFileTravels() }
+    func testALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() throws { try scenarioALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() }
+    func testLockedRunsLeaveAndStagingStages() throws { try scenarioLockedRunsLeaveAndStagingStages() }
 }
 
 final class InboxSummariesOverFolderTests: InboxSummariesScenarioCase {
@@ -461,7 +563,12 @@ final class InboxSummariesOverFolderTests: InboxSummariesScenarioCase {
     func testDeviceSummariesTravelAndOwnFileIsNeverTaken() throws { try scenarioDeviceSummariesTravelAndOwnFileIsNeverTaken() }
     func testABridgeCarriesSummaries() throws { try scenarioABridgeCarriesSummaries() }
     func testAnOlderCopyNeverReplacesANewer() throws { try scenarioAnOlderCopyNeverReplacesANewer() }
-    func testAForgedVersionCannotPinTheOwnersFile() throws { try scenarioAForgedVersionCannotPinTheOwnersFile() }
+    func testAForgedCapVersionNeverWins() throws { try scenarioAForgedCapVersionNeverWins() }
+    func testAForgedNearCapVersionDoesNotFreezeTheOwner() throws { try scenarioAForgedNearCapVersionDoesNotFreezeTheOwner() }
+    func testAnUnreadableCopyIsNeverReplaced() throws { try scenarioAnUnreadableCopyIsNeverReplaced() }
+    func testOnlyAVersionedDeviceFileTravels() throws { try scenarioOnlyAVersionedDeviceFileTravels() }
+    func testALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() throws { try scenarioALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() }
+    func testLockedRunsLeaveAndStagingStages() throws { try scenarioLockedRunsLeaveAndStagingStages() }
 }
 
 final class InboxSummariesOverEvictingFolderTests: InboxSummariesScenarioCase {

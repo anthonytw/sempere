@@ -3,21 +3,34 @@ import Sempere
 
 // MARK: - Per-device published summaries (format.md §12.5, design §5.1)
 //
-// `summaries/<device>.sealed` is written only by its device, so the remote
-// never holds two versions of one to reconcile. A run:
+// `summaries/<device>.sealed` is written only by its device. Each copy carries,
+// inside its sealed (authenticated) content, the device it belongs to and a
+// `version` its writer raises with every write. A copy is *ordered* when it
+// opens under the vault's key, names the device of its file name, and has a
+// version at most `PublishedSummaries.futureWindow` (7 days) ahead of this
+// device's clock. A run:
 //
+// - another device's file: copied to the side that lacks it; when both hold
+//   one that differs, the later ordered copy wins on both sides (equal
+//   versions: the greater SHA-256, so every device picks the same one). An
+//   unordered copy never replaces an ordered one.
 // - this device's own file (`SyncOptions.deviceID`): the local copy is the
-//   truth; it replaces the remote one whenever they differ, and is never taken
-//   from the remote (another device or a restore cannot overwrite it here);
-// - every other device's file: copied to the side that lacks it, and when
-//   both hold one that differs, the later version wins: the `version` its
-//   writer put inside the sealed content, read only after the file opened and
-//   named that device (an older copy never replaces a newer one, and a device
-//   with two targets carries the newer one from one to the other). Equal
-//   versions with different bytes (two copies no honest writer makes) go to
-//   the greater SHA-256, so every device picks the same one. A copy that has
-//   no version or does not open never replaces one that does. Locked, nothing
-//   can be ordered: a differing copy is left on both sides for an unlocked run.
+//   truth and replaces the remote one, unless the remote one is ordered after
+//   it (another install with this device id, or a copy another key holder
+//   forged within the window): that one is left, and neither side rewrites
+//   above the other, so the runs go quiet; the next later write travels. A
+//   forged copy can hold another device's file for at most the window, and one
+//   beyond it (the cap included) never wins. Device signatures over the
+//   version would end forgery: TODO(KH4/KH5), once summaries use the vault's
+//   device ids and their signing keys.
+// - a sealed copy (`SMPU` `0x01`) this device cannot open is never replaced,
+//   own file or not: it may be sealed under a later epoch's key (a removed or
+//   lagging device would otherwise put its stale copy back on every run).
+//   TODO(KH4): an epoch number in the clear (bound as associated data) would
+//   let a device replace copies of earlier epochs only.
+// - locked, nothing is ordered: a differing copy is left on both sides, except
+//   that a locked staging run (pull-only, `LockedStaging`) stages the remote
+//   copy, which the placing run then orders under the key.
 //
 // "The side that changed since the last run wins", the rule before, has no
 // order between versions: with C syncing only R0 and A and B bridging R0 and
@@ -25,17 +38,11 @@ import Sempere
 // was ever put right by C (NDeviceStressTests seeds 41 and 46,
 // `testTwoBridgesSettleAnotherDevicesSummaries`).
 //
-// Its own file is the device's truth, but when the remote holds a copy of it
-// with the same or a later version (a forged one, or one written before this
-// device lost its file and its clock went back), a two-way run first writes its
-// own again one version above it, so its latest is ordered above every copy
-// and no other device can pin an older one there.
-//
-// Files are hints (§12.3): a received one must start like a sealed file and,
-// with the vault unlocked, open under the vault's secret and name its device,
-// or it is not placed (and is not quarantined: a file sealed under an earlier
-// secret is expected after a key change, and is only stale). Nothing is ever
-// deleted. Push-only runs only upload, and never replace a later version.
+// Files are hints (§12.3): a received one is placed only when it is ordered
+// (unlocked) or at least starts like a sealed file (locked), and is never
+// quarantined (a file sealed under an earlier secret is expected after a key
+// change, and is only stale). Nothing is ever deleted. Push-only runs only
+// upload, and never replace a later version.
 
 extension SyncEngine {
     static let sealedMagic = Data("SMPU".utf8) + Data([1])
@@ -99,21 +106,38 @@ extension SyncEngine {
         if remoteHash == localHash { return .init(hash: localHash, stamp: stamp) }
         let condition = stamp.flatMap { Self.isStrong($0) ? PutCondition.replace(etag: $0) : nil } ?? .unconditional
         guard let device = PublishedSummaries.device(ofFileName: name), let v = checker(), v.canRead else {
-            // Locked: no version can be read. The own file is still this device's truth.
+            // Locked: no version can be read. The own file is still this device's truth; a locked staging run
+            // (pull-only, `LockedStaging`) stages the remote copy, which the placing run orders under the key.
             if own { return try putDeviceSummary(name, localData, hash: localHash, condition: condition) }
+            if options.pullOnly, !options.pushOnly {
+                return try placeDeviceSummary(name, got.data, stamp: stamp, replacing: true)
+            }
             report.skipped.append(.init(path: path, message: "differs on the two sides; ordered when the vault is unlocked"))
             return record
         }
-        let localVersion = (try? v.openDevicePublishedSummaries(localData, device: device))?.version
-        let remoteVersion = (try? v.openDevicePublishedSummaries(got.data, device: device))?.version
+        let local = classifySummary(localData, device: device, vault: v)
+        let remoteCopy = classifySummary(got.data, device: device, vault: v)
+        // Never replace a sealed copy this device cannot open: it may be sealed under a later epoch's key that
+        // this device does not hold (a removed or lagging device would otherwise fight the others for ever).
+        if case .unreadable = remoteCopy {
+            report.skipped.append(.init(path: path, message: "the remote copy does not open under this device's keys "
+                                        + "(a later key, or damaged); left as it is"))
+            return .init(hash: localHash, stamp: stamp)
+        }
+        let later = Self.laterSummary(local: (local.version, localHash), remote: (remoteCopy.version, remoteHash))
         if own {
-            if let r = remoteVersion, let l = localVersion, r >= l, !options.pushOnly,
-               let bumped = try rewriteOwnDeviceSummary(name, localData, device: device, above: r) {
-                return try putDeviceSummary(name, bumped.data, hash: bumped.hash, condition: condition)
+            // The device's own file replaces any other copy, except one ordered after it: another install with
+            // this device id (a copied state folder), or a copy another key holder forged within the window.
+            // That one is left, and no side rewrites above the other, so the runs go quiet; the device's next
+            // write that is later again travels (format.md §12.5).
+            if later == .remote {
+                report.skipped.append(.init(path: path, message: "the remote holds a later copy of this device's own "
+                                            + "file (another install with this device id, or a forged copy); left until this device writes a later one"))
+                return .init(hash: localHash, stamp: stamp)
             }
             return try putDeviceSummary(name, localData, hash: localHash, condition: condition)
         }
-        switch Self.laterSummary(local: (localVersion, localHash), remote: (remoteVersion, remoteHash)) {
+        switch later {
         case .local?:
             return try putDeviceSummary(name, localData, hash: localHash, condition: condition)
         case .remote? where !options.pushOnly:
@@ -122,17 +146,42 @@ extension SyncEngine {
             // A later copy a push-only run leaves there; the next two-way run takes it.
             return record
         case nil:
-            // Neither copy opens as this device's file: recorded, so neither is fetched again until one side changes.
+            // Neither copy is ordered: each opens but names another device (another device's file put under
+            // this name), has no version or one beyond the window, or is not a sealed file at all. Recorded,
+            // so neither is fetched again until one side changes.
             report.skipped.append(.init(path: path, message: "neither copy opens as this device's file; neither is replaced"))
             return .init(hash: localHash, stamp: stamp)
         }
     }
 
+    /// What one copy of a device's file is to this run.
+    enum SummaryCopy {
+        /// Opens, names the device, and has a version within the window (`PublishedSummaries.accepted`).
+        case ordered(Int64)
+        /// Opens under the key but is not ordered: another device's name, no version, or one too far ahead.
+        case unordered
+        /// A sealed file (`SMPU` `0x01`) that does not open: never replaced.
+        case unreadable
+        /// Not a sealed file at all.
+        case junk
+
+        var version: Int64? { if case .ordered(let v) = self { return v } else { return nil } }
+    }
+
+    func classifySummary(_ data: Data, device: DeviceID, vault v: Vault) -> SummaryCopy {
+        guard data.starts(with: Self.sealedMagic) else { return .junk }
+        guard let contents = try? v.openPublishedSummariesContents(data) else { return .unreadable }
+        guard contents.device == device, let version = PublishedSummaries.accepted(contents.version, now: options.now) else {
+            return .unordered
+        }
+        return .ordered(version)
+    }
+
     enum SummarySide { case local, remote }
 
-    /// The side holding the later copy of another device's file (format.md §12.5): the greater version; for
+    /// The side holding the later copy of a device's file (format.md §12.5): the greater version; for
     /// equal versions the greater SHA-256 (hex), so every device decides alike; a copy without a version
-    /// (it does not open as that device's file) never wins over one with. Nil when neither has one.
+    /// (it is not ordered) never wins over one with. Nil when neither has one.
     static func laterSummary(local: (version: Int64?, hash: String), remote: (version: Int64?, hash: String)) -> SummarySide? {
         switch (local.version, remote.version) {
         case (nil, nil): return nil
@@ -142,21 +191,6 @@ extension SyncEngine {
             if l != r { return l > r ? .local : .remote }
             return local.hash > remote.hash ? .local : .remote
         }
-    }
-
-    /// Writes this device's own file again, the same entries one version above `above` (the remote's copy
-    /// has that version or a later one than ours). Nil when it cannot (locked, read-only, or no version is left).
-    private func rewriteOwnDeviceSummary(_ name: String, _ local: Data, device: DeviceID,
-                                         above: Int64) throws -> (data: Data, hash: String)? {
-        guard !options.dryRun, let v = checker(), v.canRead, above < PublishedSummaries.maxVersion,
-              var contents = try? v.openDevicePublishedSummaries(local, device: device) else { return nil }
-        contents.version = above + 1
-        let data = try v.sealPublishedSummaries(contents)
-        let path = "\(PublishedSummaries.deviceFolderName)/\(name)"
-        try requireLocalWrite("write \(path)")
-        let url = root.appendingPathComponent(PublishedSummaries.deviceFolderName, isDirectory: true).appendingPathComponent(name)
-        guard try LocalFS.write(data, to: url, replacing: true) else { return nil }
-        return (data, FileDigest.sha256(data))
     }
 
     private func fetchDeviceSummary(_ name: String, remote: RemoteEntry) throws -> (data: Data, etag: String?) {
@@ -193,7 +227,7 @@ extension SyncEngine {
             return nil
         }
         if let v = checker(), v.canRead, let device = PublishedSummaries.device(ofFileName: name) {
-            do { _ = try v.openDevicePublishedSummaries(data, device: device) } catch {
+            do { _ = try v.openDevicePublishedSummaries(data, device: device, now: options.now) } catch {
                 report.skipped.append(.init(path: path, message: "does not open as this device's file under the vault's secret; not placed"))
                 return nil
             }

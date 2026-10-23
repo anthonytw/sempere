@@ -152,6 +152,46 @@ final class NDeviceStressTests: TempDirTestCase {
         XCTAssertEqual(try x.vault().reconstruct(noteId: id).meta.title, "title 6")
     }
 
+    /// Two installs with one device id (a copied CLI state folder: one device to the format) each write
+    /// `summaries/<device>.sealed`. Neither rewrites above the other's later copy, so the runs go quiet and
+    /// the later version is the one every copy holds (review of #83, S2).
+    func testTwoInstallsWithOneDeviceIDGoQuiet() throws {
+        let r0 = MemoryRemote(store: MemoryStore(name: "R0"), base: ["vault"])
+        let ids = [pqIdentity(), pqIdentity()]
+        let x = try SyncDevice(name: "X", root: tmp.appendingPathComponent("X"), identity: ids[0], remote: r0,
+                               device: DeviceID("aaaaaaaa"))
+        let x2 = try SyncDevice(name: "X2", root: tmp.appendingPathComponent("X2"), identity: ids[0], remote: r0,
+                                device: DeviceID("aaaaaaaa"))
+        let y = try SyncDevice(name: "Y", root: tmp.appendingPathComponent("Y"), identity: ids[1], remote: r0,
+                               device: DeviceID("bbbbbbbb"))
+        let start = Date(timeIntervalSince1970: 1_790_000_000)
+        let tick = Locked(0)
+        for d in [x, x2, y] { d.clock = { start.addingTimeInterval(Double(tick.value * 60)) } }
+        _ = try TestVaults.create(at: x.folder, identities: ids, names: ["X", "Y"])
+        func round() throws -> [String] {
+            try [x, x2, y].compactMap { d in
+                let rep = try d.sync(via: r0, state: d.stateURL)
+                return rep.isEmpty ? nil : "\(d.name): \(StressWorld.brief(rep))"
+            }
+        }
+        try x.newNote("one")
+        for _ in 0..<3 { _ = try round() }
+        tick.value = 1
+        _ = try x.publishSummaries()
+        tick.value = 2
+        let later = try x2.publishSummaries()
+        var last: [String] = []
+        var quiet = false
+        for _ in 0..<6 where !quiet {
+            last = try round()
+            quiet = last.isEmpty
+        }
+        XCTAssertTrue(quiet, "never quiet: \(last.joined(separator: "\n"))")
+        let name = PublishedSummaries.deviceFileName(DeviceID("aaaaaaaa")!)
+        XCTAssertEqual(try r0.read([PublishedSummaries.deviceFolderName, name], maxBytes: 1 << 26).data, later)
+        XCTAssertEqual(y.rootFolderFiles(PublishedSummaries.deviceFolderName)[name], later)
+    }
+
     /// Found by this run (seeds 41 and 46, long mode): A and B bridge R0 and R1, C syncs R0 only. C
     /// wrote its summaries file twice in a row (c2, then c3) with one run on R0 between. Merged by "the
     /// side that changed since the last run wins", c2 and c3 then circled R0 → B → R1 → A → R0 for ever:
