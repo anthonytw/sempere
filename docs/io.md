@@ -1116,10 +1116,12 @@ versions and let two versions circle two bridges for ever (`testTwoBridgesSettle
 This device's own file (`SyncOptions.deviceID`; the CLI's device id when it has one) replaces the
 remote's whenever they differ, is never taken from the remote, and leaves a remote copy ordered after
 it (another install with the same device id, or a copy forged within the window) until its next later
-write: neither side rewrites above the other, so runs go quiet. A copy this device cannot open is
-never replaced when its clear header (`SMPU` `0x02`, format.md §12.5) names a later epoch than this
-device's (it holds no key for it; read again every run); one of its own epoch or an earlier one is
-damaged or stale, and is replaced. Locked, a differing copy is left on both sides,
+write, or until that copy's version is more than the window in the past, when it seals its own entries
+again at the clock and puts them (`SyncState.MutableRecord.recheckAfter`; a forgery holds a quiet
+device's file back for at most twice the window). Runs go quiet meanwhile. A copy this device cannot
+open is never replaced when its clear header (`SMPU` `0x02`, format.md §12.5) names an epoch above its
+key's and no later than its local `vault.json`'s (a lagging device holds no key for it; recorded);
+anything else that does not open (damaged, stale, or a header nobody with the key wrote) is replaced. Locked, a differing copy is left on both sides,
 except that a locked staging run (pull-only) stages the remote copy for the placing run to order;
 push-only runs never replace a later copy. A received file is placed only when it is ordered
 (unlocked) or starts with `SMPU` `0x01` or `0x02` (locked); otherwise it is listed in `skipped` (a hint, not

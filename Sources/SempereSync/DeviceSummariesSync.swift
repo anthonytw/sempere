@@ -18,17 +18,23 @@ import Sempere
 //   truth and replaces the remote one, unless the remote one is ordered after
 //   it (another install with this device id, or a copy another key holder
 //   forged within the window): that one is left, and neither side rewrites
-//   above the other, so the runs go quiet; the next later write travels. A
-//   forged copy can hold another device's file for at most the window, and one
-//   beyond it (the cap included) never wins. Device signatures over the
+//   above the other at once, so the runs go quiet; the next later write
+//   travels, and once that copy's version is more than the window in the past
+//   the device seals its own entries again at the clock and puts them (at most
+//   once per window per install). A forged copy can hold another device's file
+//   for at most twice the window, and one beyond it (the cap included) never
+//   wins. Device signatures over the
 //   version would end forgery: TODO(KH4/KH5), once summaries use the vault's
 //   device ids and their signing keys.
 // - a copy that does not open and whose clear header (`SMPU` `0x02`, bound as
-//   associated data) names a later epoch than this device's is never
-//   replaced, own file or not: this device holds no key for it (a removed or
-//   lagging device would otherwise put its stale copy back on every run). One
-//   that does not open but is of this epoch or an earlier one is damaged or
-//   stale, and is replaced like any unordered copy.
+//   associated data) names an epoch above this device's key's, and no later
+//   than the one its local vault.json names, is never replaced, own file or
+//   not: this device holds no key for it (a removed or lagging device would
+//   otherwise put its stale copy back on every run). The header of a copy
+//   that does not open is not authenticated, so for a current device (its
+//   vault.json names its key's epoch) nothing is believed later: any copy that
+//   does not open is damaged, stale or forged, and is replaced like any
+//   unordered copy.
 // - locked, nothing is ordered: a differing copy is left on both sides, except
 //   that a locked staging run (pull-only, `LockedStaging`) stages the remote
 //   copy, which the placing run then orders under the key.
@@ -95,7 +101,8 @@ extension SyncEngine {
         }
         if try !available([folder, name], entry: remote) { return record }
         // Unchanged on the remote since the last run (its token) and here (its hash): nothing to do.
-        if let record, record.stamp != nil, record.stamp == remote.stamp, record.hash == localHash { return record }
+        if let record, record.stamp != nil, record.stamp == remote.stamp, record.hash == localHash,
+           record.recheckAfter.map({ options.now < $0 }) ?? true { return record }
         guard let localData, let localHash else {
             if own || options.pushOnly { return nil }
             return try takeDeviceSummary(name, remote: remote, replacing: false)
@@ -117,23 +124,30 @@ extension SyncEngine {
         }
         let local = classifySummary(localData, device: device, vault: v)
         let remoteCopy = classifySummary(got.data, device: device, vault: v)
-        // Never replace a copy sealed under a later epoch than this device's: it holds no key for it (a removed
-        // or lagging device would otherwise put its stale copy back on every run). Not recorded, so it is read
-        // again next run (a server's changed answer can make a copy look like one).
+        // Never replace a copy sealed under a later epoch than this device's key, up to the epoch its vault.json
+        // names: it holds no key for it (a removed or lagging device would otherwise put its stale copy back on
+        // every run). Recorded, so it is not fetched again until one side changes.
         if case .laterEpoch = remoteCopy {
             report.skipped.append(.init(path: path, message: "the remote copy is sealed under a later epoch's key; left as it is"))
-            return record
+            return .init(hash: localHash, stamp: stamp)
         }
         let later = Self.laterSummary(local: (local.version, localHash), remote: (remoteCopy.version, remoteHash))
         if own {
             // The device's own file replaces any other copy, except one ordered after it: another install with
             // this device id (a copied state folder), or a copy another key holder forged within the window.
-            // That one is left, and no side rewrites above the other, so the runs go quiet; the device's next
-            // write that is later again travels (format.md §12.5).
-            if later == .remote {
+            // That one is left, and no side rewrites above it at once, so the runs go quiet; the device's next
+            // write travels. Once that copy's version is more than the window in the past, the device seals its
+            // own entries again at the clock and puts them (at most once per window per install): a forged copy
+            // holds a quiet device's file back for at most twice the window (format.md §12.5).
+            if later == .remote, let r = remoteCopy.version {
+                let expires = Date(timeIntervalSince1970: Double(r) / 1000 + PublishedSummaries.futureWindow)
+                if options.now >= expires, !options.pushOnly,
+                   let resealed = try resealOwnDeviceSummary(name, localData, device: device, vault: v, above: r) {
+                    return try putDeviceSummary(name, resealed.data, hash: resealed.hash, condition: condition)
+                }
                 report.skipped.append(.init(path: path, message: "the remote holds a later copy of this device's own "
                                             + "file (another install with this device id, or a forged copy); left until this device writes a later one"))
-                return .init(hash: localHash, stamp: stamp)
+                return .init(hash: localHash, stamp: stamp, recheckAfter: expires)
             }
             return try putDeviceSummary(name, localData, hash: localHash, condition: condition)
         }
@@ -163,7 +177,8 @@ extension SyncEngine {
         /// ahead; or it does not open and its clear header names this device's epoch or an earlier one (or
         /// none: damaged, cut, or not a sealed file at all).
         case unordered
-        /// Does not open, and its clear header names a later epoch than this device's: never replaced.
+        /// Does not open, and its clear header names a later epoch than this device's key, no later than the
+        /// local vault.json's: never replaced.
         case laterEpoch
 
         var version: Int64? { if case .ordered(let v) = self { return v } else { return nil } }
@@ -171,13 +186,41 @@ extension SyncEngine {
 
     func classifySummary(_ data: Data, device: DeviceID, vault v: Vault) -> SummaryCopy {
         guard let contents = try? v.openDevicePublishedSummaries(data, device: device, now: options.now) else {
+            // The clear epoch is believed only up to the one the local vault.json names (synced earlier in the
+            // run, and taken only as home's later version): anyone who can write to the storage can put any
+            // header on bytes that do not open. For a current device that is its key's epoch, so such a copy is
+            // repaired; a removed or lagging device leaves copies of the epochs it knows of but has no key for.
             if let epoch = PublishedSummaries.sealedEpoch(data), epoch > v.manifest.epoch,
-               (try? v.openPublishedSummariesContents(data)) == nil {
+               let known = localManifestEpoch(), epoch <= known {
                 return .laterEpoch
             }
             return .unordered
         }
         return contents.version.map { .ordered($0) } ?? .unordered
+    }
+
+    /// The epoch the local `vault.json` names (its `epoch` field alone; the file was checked when it was
+    /// taken), nil when it is missing or has none.
+    func localManifestEpoch() -> Int? {
+        struct EpochField: Decodable { var epoch: Int }
+        guard let data = try? localMutable(Vault.manifestName) else { return nil }
+        return (try? JSONDecoder().decode(EpochField.self, from: data))?.epoch
+    }
+
+    /// This device's own file sealed again with the same entries at the next version after `above` (at least
+    /// the clock), written locally; nil when its local copy is not ordered or this run may not write.
+    private func resealOwnDeviceSummary(_ name: String, _ local: Data, device: DeviceID, vault v: Vault,
+                                        above: Int64) throws -> (data: Data, hash: String)? {
+        guard !options.dryRun, var contents = try? v.openDevicePublishedSummaries(local, device: device, now: options.now),
+              let version = PublishedSummaries.nextVersion(after: max(above, contents.version ?? 0), now: options.now)
+        else { return nil }
+        contents.version = version
+        let data = try v.sealPublishedSummaries(contents)
+        let path = "\(PublishedSummaries.deviceFolderName)/\(name)"
+        try requireLocalWrite("write \(path)")
+        let url = root.appendingPathComponent(PublishedSummaries.deviceFolderName, isDirectory: true).appendingPathComponent(name)
+        guard try LocalFS.write(data, to: url, replacing: true) else { return nil }
+        return (data, FileDigest.sha256(data))
     }
 
     enum SummarySide { case local, remote }

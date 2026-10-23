@@ -360,11 +360,12 @@ class InboxSummariesScenarioCase: SyncTestCase {
         try settle("A"); try settle("B")
     }
 
-    /// Review of #83 (M2): a copy B cannot open whose clear header names a later epoch (here sealed under
-    /// another vault's key with epoch 2 in the header, as a copy of a later epoch is for a removed or lagging
-    /// device) is never replaced by B's older readable one, nor by the owner; B reports it and goes quiet.
-    /// One of B's own epoch that does not open (damaged, cut short by a server) is replaced.
-    func scenarioALaterEpochCopyIsNeverReplaced() throws {
+    /// Review of #83 (M2, re-check 1): a copy that does not open is left only when its clear epoch is later
+    /// than the device's key but no later than its vault.json's (a removed or lagging device, whose vault.json
+    /// moved on, holds no key for it). For a current device, whose vault.json names its key's epoch, any
+    /// header above it is a claim anyone with storage access can write: repaired. So is a damaged copy of
+    /// its own epoch.
+    func scenarioALaterEpochCopyIsLeftOnlyByALaggingDevice() throws {
         try twoDevices()
         let a1 = try publish("A")
         try run("A"); try run("B")
@@ -375,27 +376,76 @@ class InboxSummariesScenarioCase: SyncTestCase {
             return try PublishedSummaries.seal(try Gzip.compress(json), secret: try other.requireSecret(), vaultId: a.vaultId,
                                                epoch: epoch)
         }
-        let later = try sealed(epoch: a.manifest.epoch + 1)
-        XCTAssertEqual(PublishedSummaries.sealedEpoch(later), a.manifest.epoch + 1)
-        if t.deviations.contains(.etagKeepsTheSecond) { Thread.sleep(forTimeInterval: 1.1) }
-        try t.inspector.write(["summaries", "aaaaaaaa.sealed"], .data(later), condition: .unconditional)
-        let r = try run("B")
-        XCTAssertFalse(r.uploaded.contains("summaries/aaaaaaaa.sealed"), "\(label): \(StressWorld.brief(r))")
-        XCTAssertTrue(r.skipped.contains { $0.path == "summaries/aaaaaaaa.sealed" }, "\(label): \(r.skipped)")
-        XCTAssertEqual(try remoteA(), later, label)
-        XCTAssertEqual(summaries("B")["aaaaaaaa.sealed"], a1, label)
-        // The owner leaves it too (it may be its own file under a key it no longer holds).
-        XCTAssertFalse(try run("A").uploaded.contains("summaries/aaaaaaaa.sealed"), label)
-        XCTAssertEqual(try remoteA(), later, label)
-        try settle("A"); try settle("B")
+        func put(_ data: Data) throws {
+            if t.deviations.contains(.etagKeepsTheSecond) { Thread.sleep(forTimeInterval: 1.1) }
+            try t.inspector.write(["summaries", "aaaaaaaa.sealed"], .data(data), condition: .unconditional)
+        }
+        // Keyless garbage behind a huge epoch, a copy "of epoch 2", and a damaged one of epoch 1: all repaired.
+        let garbage = Data([0x53, 0x4D, 0x50, 0x55, 0x02, 0xFF, 0xFF, 0xFF, 0xFF]) + Data((0..<64).map { UInt8($0) })
+        XCTAssertEqual(PublishedSummaries.sealedEpoch(garbage), Int(UInt32.max))
+        for (n, bad) in [garbage, try sealed(epoch: a.manifest.epoch + 1), try sealed(epoch: a.manifest.epoch)].enumerated() {
+            try put(bad)
+            let r = try run(n == 1 ? "A" : "B")
+            XCTAssertTrue(r.uploaded.contains("summaries/aaaaaaaa.sealed"), "\(label) #\(n): \(StressWorld.brief(r))")
+            XCTAssertEqual(try remoteA(), a1, "\(label) #\(n)")
+            try settle("A"); try settle("B")
+        }
 
-        // Of this epoch but not opening (damaged): replaced by the readable copy.
-        let damaged = try sealed(epoch: a.manifest.epoch)
+        // B lags: its vault.json names epoch 2 (a key change it has no key for yet); its key is epoch 1.
+        let later = try sealed(epoch: a.manifest.epoch + 1)
+        try put(later)
+        let b = try openVault("B")
+        let manifest = dir("B").appendingPathComponent("vault.json")
+        let original = try Data(contentsOf: manifest)
+        var json = try XCTUnwrap(try JSONSerialization.jsonObject(with: original) as? [String: Any])
+        json["epoch"] = a.manifest.epoch + 1
+        try JSONSerialization.data(withJSONObject: json).write(to: manifest)
+        defer { try? original.write(to: manifest) }
+        XCTAssertEqual(SyncEngine(directory: dir("B"), vault: b, remote: t.remote,
+                                  stateURL: tmp.appendingPathComponent("state-B-lag.json"), options: lagOptions()).localManifestEpoch(),
+                       a.manifest.epoch + 1)
+        for _ in 0..<2 {
+            let r = try SyncEngine(directory: dir("B"), vault: b, remote: t.remote,
+                                   stateURL: tmp.appendingPathComponent("state-B-lag.json"), options: lagOptions()).run()
+            XCTAssertFalse(r.uploaded.contains("summaries/aaaaaaaa.sealed"), "\(label): \(StressWorld.brief(r))")
+            XCTAssertEqual(try remoteA(), later, label)
+        }
+        XCTAssertEqual(summaries("B")["aaaaaaaa.sealed"], a1, label)
+    }
+
+    func lagOptions() -> SyncOptions {
+        var o = SyncOptions(deviceLabel: "B")
+        o.deviceID = device("B")
+        o.pushOnly = true   // never brings the changed vault.json anywhere
+        tune(&o)
+        return o
+    }
+
+    /// Review of #83 (S1, re-check 2): a copy of A's file forged 6 days ahead is left by A while it is
+    /// recent, but once its version is more than the window in the past, a quiet A seals its own entries
+    /// again at the clock and puts them, and B takes them.
+    func scenarioAForgedOwnCopyIsReplacedOnceItIsOld() throws {
+        try twoDevices()
+        let a1 = try publish("A")
+        try run("A"); try run("B")
+        let forged = try openVault("B").sealPublishedSummaries(
+            PublishedSummaries.Contents(entries: [:], device: device("A"), version: nowMillis + 6 * 86_400_000))
         if t.deviations.contains(.etagKeepsTheSecond) { Thread.sleep(forTimeInterval: 1.1) }
-        try t.inspector.write(["summaries", "aaaaaaaa.sealed"], .data(damaged), condition: .unconditional)
-        XCTAssertTrue(try run("B").uploaded.contains("summaries/aaaaaaaa.sealed"), label)
-        XCTAssertEqual(try remoteA(), a1, label)
-        try settle("A"); try settle("B")
+        try t.inspector.write(["summaries", "aaaaaaaa.sealed"], .data(forged), condition: .unconditional)
+        XCTAssertFalse(try run("A").uploaded.contains("summaries/aaaaaaaa.sealed"), label)
+        XCTAssertTrue(try run("A").isEmpty, "\(label): quiet while it is recent")
+        let later = Date().addingTimeInterval(30 * 86_400)
+        let r = try run("A") { $0.now = later }
+        XCTAssertTrue(r.uploaded.contains("summaries/aaaaaaaa.sealed"), "\(label): \(StressWorld.brief(r))")
+        let mine = try XCTUnwrap(summaries("A")["aaaaaaaa.sealed"])
+        let a = try openVault("A")
+        XCTAssertEqual(try a.openDevicePublishedSummaries(mine, device: device("A"), now: later).entries,
+                       try a.openDevicePublishedSummaries(a1, device: device("A")).entries, label)
+        XCTAssertEqual(try remoteA(), mine, label)
+        try run("B") { $0.now = later }
+        XCTAssertEqual(summaries("B")["aaaaaaaa.sealed"], mine, label)
+        XCTAssertTrue(try run("A") { $0.now = later }.isEmpty, label)
+        XCTAssertTrue(try run("B") { $0.now = later }.isEmpty, label)
     }
 
     /// Review of #83 (M1): a per-device file without `device` and `version` (what `vault summaries
@@ -539,7 +589,8 @@ final class InboxSummariesOverMemoryTests: InboxSummariesScenarioCase {
     func testAnOlderCopyNeverReplacesANewer() throws { try scenarioAnOlderCopyNeverReplacesANewer() }
     func testAForgedCapVersionNeverWins() throws { try scenarioAForgedCapVersionNeverWins() }
     func testAForgedNearCapVersionDoesNotFreezeTheOwner() throws { try scenarioAForgedNearCapVersionDoesNotFreezeTheOwner() }
-    func testALaterEpochCopyIsNeverReplaced() throws { try scenarioALaterEpochCopyIsNeverReplaced() }
+    func testALaterEpochCopyIsLeftOnlyByALaggingDevice() throws { try scenarioALaterEpochCopyIsLeftOnlyByALaggingDevice() }
+    func testAForgedOwnCopyIsReplacedOnceItIsOld() throws { try scenarioAForgedOwnCopyIsReplacedOnceItIsOld() }
     func testOnlyAVersionedDeviceFileTravels() throws { try scenarioOnlyAVersionedDeviceFileTravels() }
     func testALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() throws { try scenarioALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() }
     func testLockedRunsLeaveAndStagingStages() throws { try scenarioLockedRunsLeaveAndStagingStages() }
@@ -560,7 +611,8 @@ final class InboxSummariesOverWebDAVMockTests: InboxSummariesScenarioCase {
     func testAnOlderCopyNeverReplacesANewer() throws { try scenarioAnOlderCopyNeverReplacesANewer() }
     func testAForgedCapVersionNeverWins() throws { try scenarioAForgedCapVersionNeverWins() }
     func testAForgedNearCapVersionDoesNotFreezeTheOwner() throws { try scenarioAForgedNearCapVersionDoesNotFreezeTheOwner() }
-    func testALaterEpochCopyIsNeverReplaced() throws { try scenarioALaterEpochCopyIsNeverReplaced() }
+    func testALaterEpochCopyIsLeftOnlyByALaggingDevice() throws { try scenarioALaterEpochCopyIsLeftOnlyByALaggingDevice() }
+    func testAForgedOwnCopyIsReplacedOnceItIsOld() throws { try scenarioAForgedOwnCopyIsReplacedOnceItIsOld() }
     func testOnlyAVersionedDeviceFileTravels() throws { try scenarioOnlyAVersionedDeviceFileTravels() }
     func testALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() throws { try scenarioALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() }
     func testLockedRunsLeaveAndStagingStages() throws { try scenarioLockedRunsLeaveAndStagingStages() }
@@ -579,7 +631,8 @@ final class InboxSummariesOverFolderTests: InboxSummariesScenarioCase {
     func testAnOlderCopyNeverReplacesANewer() throws { try scenarioAnOlderCopyNeverReplacesANewer() }
     func testAForgedCapVersionNeverWins() throws { try scenarioAForgedCapVersionNeverWins() }
     func testAForgedNearCapVersionDoesNotFreezeTheOwner() throws { try scenarioAForgedNearCapVersionDoesNotFreezeTheOwner() }
-    func testALaterEpochCopyIsNeverReplaced() throws { try scenarioALaterEpochCopyIsNeverReplaced() }
+    func testALaterEpochCopyIsLeftOnlyByALaggingDevice() throws { try scenarioALaterEpochCopyIsLeftOnlyByALaggingDevice() }
+    func testAForgedOwnCopyIsReplacedOnceItIsOld() throws { try scenarioAForgedOwnCopyIsReplacedOnceItIsOld() }
     func testOnlyAVersionedDeviceFileTravels() throws { try scenarioOnlyAVersionedDeviceFileTravels() }
     func testALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() throws { try scenarioALaterCopyOfTheOwnFileIsLeftAndRunsGoQuiet() }
     func testLockedRunsLeaveAndStagingStages() throws { try scenarioLockedRunsLeaveAndStagingStages() }

@@ -176,6 +176,11 @@ final class PublishedSummariesTests: VaultTestCase {
         XCTAssertNil(PublishedSummaries.sealedEpoch(root))
         XCTAssertThrowsError(try vault.openDevicePublishedSummaries(root, device: devA), "a per-device file has the epoch header")
         XCTAssertNil(PublishedSummaries.sealedEpoch(Data([0x53, 0x4D, 0x50, 0x55, 0x02, 0])))
+        // Sealed with this vault's key under another epoch number: authentic, but not this epoch's file.
+        let json = try PublishedSummaries.encode([:], vaultId: vault.vaultId, device: devA, version: 5)
+        let otherEpoch = try PublishedSummaries.seal(try Gzip.compress(json), secret: try vault.requireSecret(),
+                                                     vaultId: vault.vaultId, epoch: vault.manifest.epoch + 1)
+        XCTAssertThrowsError(try vault.openPublishedSummaries(otherEpoch)) { XCTAssert($0 is PublishedSummariesError) }
     }
 
     func testVersionsAreBoundedAndMalformedOnesAreDroppedAlone() throws {

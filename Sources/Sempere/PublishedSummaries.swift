@@ -241,7 +241,7 @@ public enum PublishedSummaries {
     public static let futureWindow: TimeInterval = 7 * 24 * 3600
 
     /// The milliseconds since 1970 of `date`, clamped to 1 … `maxVersion`.
-    static func millis(_ date: Date) -> Int64 {
+    public static func millis(_ date: Date) -> Int64 {
         let ms = date.timeIntervalSince1970 * 1000
         return ms.isFinite && ms >= 1 ? (ms < Double(maxVersion) ? Int64(ms) : maxVersion) : 1
     }
@@ -392,6 +392,10 @@ extension Vault {
     ///
     /// - Throws: as `openPublishedSummaries`.
     public func openPublishedSummariesContents(_ data: Data) throws -> PublishedSummaries.Contents {
+        // A per-device file's header names the epoch of the key that sealed it: this vault's, or it is not one.
+        if let epoch = PublishedSummaries.sealedEpoch(data), epoch != manifest.epoch {
+            throw PublishedSummariesError.damaged("sealed under epoch \(epoch), not this vault's \(manifest.epoch)")
+        }
         let plain = try PublishedSummaries.open(data, secret: try requireSecret(), vaultId: vaultId)
         let json: Data
         do { json = try Gzip.decompress(plain, maxOutput: PublishedSummaries.maxJSONBytes) } catch {
