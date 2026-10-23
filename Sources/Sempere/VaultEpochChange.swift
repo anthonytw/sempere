@@ -587,6 +587,10 @@ extension Vault {
             throw VaultError.joinRequestRefused("this device's id \(homeId) is a listed device's: generate another key")
         }
         devices.insert(homeEntry, at: 0)
+        // No two kept devices share an id (`DeviceIds`): a re-admitted device and one that took its id meanwhile.
+        if let dup = DeviceIds.duplicate(in: devices) {
+            throw VaultError.epochChangeRefused("two kept devices share the id \(dup): keep only one of them")
+        }
         var result: (EpochManifest, Int)?
         try vault.epochWriteLock.withLock(timeout: 30) {
             _ = try vault.requireUnchangedOnDisk()

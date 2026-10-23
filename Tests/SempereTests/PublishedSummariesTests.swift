@@ -1,3 +1,4 @@
+import Crypto
 import Foundation
 import Age
 import FuzzSupport
@@ -177,44 +178,77 @@ final class PublishedSummariesTests: VaultTestCase {
         XCTAssertEqual(PublishedSummaries.accepted(1_790_000_000_000 + 7 * 86_400_000, now: t0), 1_790_000_000_000 + 7 * 86_400_000)
     }
 
-    /// A per-device file is `SMPU 0x03 ‖ epoch (u32 BE) ‖ nonce ‖ ciphertext ‖ tag ‖ signature`, the header
-    /// bound as associated data and the whole sealed part signed (format.md §12.5); the root file keeps
-    /// `SMPU 0x01`.
-    func testDeviceFilesCarryTheirEpochInAnAuthenticatedHeader() throws {
+    /// A per-device file is `SMPU 0x04 ‖ epoch (u32 BE) ‖ version (u64 BE) ‖ nonce ‖ ciphertext ‖ tag ‖
+    /// signature`, the header bound as associated data and the whole sealed part signed (format.md §12.5), so
+    /// the signature is checked from the header before anything is decrypted; the root file keeps `SMPU 0x01`.
+    func testDeviceFilesCarryTheirEpochAndVersionInASignedHeader() throws {
         let vault = try makeVault(pqIdentity())
         let me = try XCTUnwrap(vault.writerDevice)
-        let file = try vault.sealDevicePublishedSummaries([:], version: 5)
-        XCTAssertEqual(Array(file.prefix(9)), [0x53, 0x4D, 0x50, 0x55, 0x03, 0, 0, 0, UInt8(vault.manifest.epoch)])
+        let signing = TestVaults.signing(try identity(of: vault))
+        let t0 = Date(timeIntervalSince1970: 0)
+        let file = try vault.sealDevicePublishedSummaries([:], version: 0x0102_0304_0506)
+        XCTAssertEqual(Array(file.prefix(17)), [0x53, 0x4D, 0x50, 0x55, 0x04, 0, 0, 0, UInt8(vault.manifest.epoch),
+                                                0, 0, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
         XCTAssertEqual(PublishedSummaries.sealedEpoch(file), vault.manifest.epoch)
-        XCTAssertEqual(try vault.openDevicePublishedSummaries(file, device: me, now: Date(timeIntervalSince1970: 0)).version, 5)
-        var changed = file
-        changed[8] ^= 0x02
-        XCTAssertEqual(PublishedSummaries.sealedEpoch(changed), vault.manifest.epoch ^ 2)
-        XCTAssertThrowsError(try vault.openDevicePublishedSummaries(changed, device: me, now: Date(timeIntervalSince1970: 0)),
-                             "the header is authenticated")
+        XCTAssertEqual(PublishedSummaries.sealedVersion(file), 0x0102_0304_0506)
+        let five = try vault.sealDevicePublishedSummaries([:], version: 5)
+        XCTAssertEqual(try vault.openDevicePublishedSummaries(five, device: me, now: t0).version, 5)
+        for (i, flip) in [(8, UInt8(0x02)), (16, UInt8(0x01)), (12, UInt8(0x80))] {
+            var changed = five
+            changed[i] ^= flip
+            XCTAssertThrowsError(try vault.openDevicePublishedSummaries(changed, device: me, now: t0), "header byte \(i) is signed")
+        }
+        // A version outside 1 … 2^53 − 1 in the header is no version.
+        var huge = five
+        huge.replaceSubrange(9..<17, with: Data(repeating: 0xFF, count: 8))
+        XCTAssertNil(PublishedSummaries.sealedVersion(huge))
+        XCTAssertThrowsError(try PublishedSummaries.deviceHeader(epoch: 1, version: 0))
+        XCTAssertThrowsError(try PublishedSummaries.deviceHeader(epoch: 1, version: PublishedSummaries.maxVersion + 1))
         let root = try vault.sealPublishedSummaries([:])
         XCTAssertEqual(Array(root.prefix(5)), [0x53, 0x4D, 0x50, 0x55, 0x01])
         XCTAssertNil(PublishedSummaries.sealedEpoch(root))
+        XCTAssertNil(PublishedSummaries.sealedVersion(root))
         XCTAssertThrowsError(try vault.openDevicePublishedSummaries(root, device: me), "a per-device file has the epoch header")
-        XCTAssertNil(PublishedSummaries.sealedEpoch(Data([0x53, 0x4D, 0x50, 0x55, 0x03, 0])))
-        // The format of #83 (`SMPU 0x02`, unsigned) is gone: not a per-device file any more.
-        var old = file
-        old[4] = 0x02
-        XCTAssertNil(PublishedSummaries.sealedEpoch(old))
-        XCTAssertFalse(PublishedSummaries.looksSealed(old))
-        XCTAssertThrowsError(try vault.openDevicePublishedSummaries(old, device: me))
+        XCTAssertNil(PublishedSummaries.sealedEpoch(Data([0x53, 0x4D, 0x50, 0x55, 0x04, 0, 0, 0, 1])), "too short")
+        // The earlier formats (`SMPU 0x02`, unsigned; `0x03`, version only inside) are not per-device files.
+        for byte: UInt8 in [0x02, 0x03] {
+            var old = five
+            old[4] = byte
+            XCTAssertNil(PublishedSummaries.sealedEpoch(old))
+            XCTAssertFalse(PublishedSummaries.looksSealed(old))
+            XCTAssertThrowsError(try vault.openDevicePublishedSummaries(old, device: me, now: t0))
+        }
+        func signed(_ body: Data, epoch: Int, version: Int64) throws -> Data {
+            PublishedSummaries.attach(try signing.sign(AuthorMessage.summaries(
+                vaultId: vault.vaultId, epoch: epoch, epochId: vault.manifest.epochId, device: me, version: version,
+                sealed: body)), to: body)
+        }
         // Sealed and signed with this vault's key and this device's keys under another epoch number: not this
         // epoch's file.
-        let json = try PublishedSummaries.encode([:], vaultId: vault.vaultId, device: me, version: 5)
-        let body = try PublishedSummaries.seal(try Gzip.compress(json), secret: try vault.requireSecret(),
-                                               vaultId: vault.vaultId, epoch: vault.manifest.epoch + 1)
-        let otherEpoch = PublishedSummaries.attach(try TestVaults.signing(try identity(of: vault)).sign(AuthorMessage.summaries(
-            vaultId: vault.vaultId, epoch: vault.manifest.epoch + 1, epochId: vault.manifest.epochId, device: me, version: 5,
-            sealed: body)), to: body)
-        XCTAssertThrowsError(try vault.openDevicePublishedSummaries(otherEpoch, device: me, now: Date(timeIntervalSince1970: 0))) {
-            XCTAssert($0 is PublishedSummariesError)
-        }
+        let json5 = try Gzip.compress(try PublishedSummaries.encode([:], vaultId: vault.vaultId, device: me, version: 5))
+        let otherEpoch = try PublishedSummaries.seal(json5, secret: try vault.requireSecret(), vaultId: vault.vaultId,
+                                                     device: (vault.manifest.epoch + 1, 5))
+        XCTAssertThrowsError(try vault.openDevicePublishedSummaries(try signed(otherEpoch, epoch: vault.manifest.epoch + 1, version: 5),
+                                                                    device: me, now: t0)) { XCTAssert($0 is PublishedSummariesError) }
+        // Signed over the header's version 6 while the content says 5: refused after decryption.
+        let mismatch = try PublishedSummaries.seal(json5, secret: try vault.requireSecret(), vaultId: vault.vaultId,
+                                                   device: (vault.manifest.epoch, 6))
+        XCTAssertThrowsError(try vault.openDevicePublishedSummaries(try signed(mismatch, epoch: vault.manifest.epoch, version: 6),
+                                                                    device: me, now: t0)) { XCTAssert($0 is PublishedSummariesError) }
     }
+
+    /// The vector in format.md §12.5: the header and the signed message's SHA-256 for fixed inputs (the
+    /// signatures themselves are randomized, so the vector stops at the message).
+    func testDeviceFileHeaderAndMessageVector() throws {
+        let header = try PublishedSummaries.deviceHeader(epoch: 1, version: 1_790_000_000_000)
+        XCTAssertEqual(Self.hex(header), "534d50550400000001000001a0c4506c00")
+        let sealed = header + Self.vectorNonce + Data(repeating: 0, count: 16)
+        let message = AuthorMessage.summaries(vaultId: Self.vectorVault, epoch: 1, epochId: Data(repeating: 0x11, count: 32),
+                                              device: DeviceID("aaaaaaaa")!, version: 1_790_000_000_000, sealed: sealed)
+        XCTAssertEqual(Self.hex(Data(SHA256.hash(data: message))), Self.vectorMessageDigestHex)
+    }
+
+    static let vectorMessageDigestHex = "d4e08dd4bc1132fd3b046dffc878de1e621a3def942c29fd9c47a0cde69a4896"
 
     /// The identity a test vault was made with (its only device).
     func identity(of vault: Vault) throws -> NativeIdentity {

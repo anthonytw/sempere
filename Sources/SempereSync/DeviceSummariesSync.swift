@@ -4,7 +4,7 @@ import Sempere
 // MARK: - Per-device published summaries (format.md §12.5, design §5.1)
 //
 // `summaries/<device>.sealed` is written only by its device, which signs it
-// (`SMPU` `0x03`): its sealed content names the device and a `version` its
+// (`SMPU` `0x04`): its clear header carries its epoch and a `version` its
 // writer raises with every write, and a P-256 + ML-DSA-65 signature by the
 // device covers the vault, the epoch, the device, the version and the sealed
 // bytes (`AuthorMessage.summaries`). A copy is *ordered* when it opens under
@@ -29,7 +29,7 @@ import Sempere
 //   copy's version is more than the window in the past the device seals and
 //   signs its own entries again at the clock and puts them (at most once per
 //   window per install).
-// - a copy that does not open and whose clear header (`SMPU` `0x03`, bound as
+// - a copy that does not open and whose clear header (`SMPU` `0x04`, bound as
 //   associated data) names an epoch above this device's key's, and no later
 //   than the one its local vault.json names (or the next one, when the
 //   server's vault.json is a verified child of the epoch this device pinned,

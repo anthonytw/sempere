@@ -68,7 +68,8 @@ extension Vault {
     ///
     /// - Returns: the six words of the reply (design §6.2 step 3) the new device types to confirm.
     /// - Throws: `notHome`, what `requireWritable` throws, `joinRequestRefused` (another vault, a key
-    ///   that is not post-quantum, a bad kind, an id that is a listed device's, too many additions),
+    ///   that is not post-quantum, a bad kind, an id that is a device's the vault lists or listed, too many
+    ///   additions),
     ///   `deviceAlreadyListed`, `manifestCorrupt` when `vault.json` changed since it was opened.
     @discardableResult
     public mutating func approveDevice(_ request: JoinRequest, added: Date = Date()) throws -> [String] {
@@ -87,10 +88,11 @@ extension Vault {
         guard !manifest.keys.contains(where: { $0.key == request.key || $0.fingerprint == fingerprint }) else {
             throw VaultError.deviceAlreadyListed(id)
         }
-        // Ids are for names only, but two listed devices never share one (design §3, K11): the device
+        // Ids are for names only, but no two devices of the vault ever share one (design §3, K11; `DeviceIds`):
+        // not a listed device's, nor one the chain ever listed (a takeover may re-admit it). The device
         // generates another key.
-        guard !manifest.devices.contains(where: { $0.id == id }) else {
-            throw VaultError.joinRequestRefused("its id \(id) is a listed device's: generate another key")
+        guard DeviceIds.collision(fingerprint, in: DeviceIds.everListed(manifest: manifest, chain: verifiedChain)) == nil else {
+            throw VaultError.joinRequestRefused("its id \(id) is a device's this vault lists or listed: generate another key")
         }
         guard manifest.keys.count < EpochChain.maxListSize,
               manifest.devices.filter({ $0.addedEpoch == manifest.epoch && $0.fingerprint != manifest.home }).count
