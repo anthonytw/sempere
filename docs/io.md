@@ -741,9 +741,9 @@ the home device (`Sources/Sempere/VaultDevices.swift`):
 
 A joining device (`writeJoinRequest`, `confirmJoin`) writes only its request,
 and its trust record once the reply words match. Removal, handoff, takeover
-and recovery-kit replacement are new epochs (KH3, KH4), and re-encrypting
+and recovery-kit replacement are new epochs (KH3; over sync, KH4), and re-encrypting
 everything (KH6) brings back a resumable journal (`reencrypt-journal.age`,
-`format.md` §15.8); none is in this version.
+`format.md` §15.8), not in this version.
 
 ## Reading and verification
 
@@ -1142,11 +1142,17 @@ back:
   note the local listing missed, so they are only listed (as skipped). The
   flag can still delete a legitimate file another writer added since.
 
-**Limits.** The epoch records (`epochs/`), join requests (`joins/`) and the
-passphrase copy (`keys/`) are not synced yet (key hierarchy KH4): a vault of
-one epoch opens without its record, a join request reaches the home device through a
-shared folder or `vault merge-copy`, and a local copy made from another
-(`LocalCopy`) seeds `keys/` and `epochs/` from it.
+**Device changes** (key hierarchy KH4, `format.md` §15.15, `EpochSync.swift`). Every run syncs `epochs/`
+first (the union, pushed to every target; a `vault.json` never goes to a target without its record), then
+judges a `vault.json` of another epoch by the chain and the precedence rule (`Vault.judgeIncoming`): a later
+epoch it verifies is taken, the vault reopened, pinned and this device's own files caught up before the notes;
+one it cannot verify yet (its record has not arrived) is remembered as a sighting in the trust store and holds
+every run back to `epochs/` and `vault.json` (J5b); one that does not list this device makes it unlisted (it
+uploads nothing, keeps pulling); when its own chain is the later one it replaces the target's. Received files
+the acceptance rule does not take are kept aside, never placed; files whose record has not arrived are pending.
+An accepted copy replaces an unaccepted one of the same path on either side, after it is set aside, under a
+strong version tag. `joins/` follows deletions by home, `keys/` drops superseded passphrase copies. The
+remover's best-effort pull is `EpochChangePull` (pull-only, a throwaway state, 10 s per target).
 
 **Bounds per run** (`SyncLimits`, security review 2026-10, W5). Each
 request is bounded on its own; the run as a whole is bounded too: at most
@@ -1411,7 +1417,8 @@ syncs with both ways.
   found in the store by vault id whatever the profile's bookmark says, open or not; its targets upload
   them at once (`QuickCapture.deliveredNotification` → `SyncCoordinator.captureDelivered`).
 - **Key changes**: the app makes none yet (KH5); approvals and renames made elsewhere arrive as a later
-  `vault.json` and reopen the vault. `epochs/`, `joins/` and `keys/` reach targets from KH4.
+  `vault.json` and reopen the vault. `epochs/`, `joins/` and `keys/` reach every target (KH4); a later epoch
+  arrives the same way, and the vault reopens under it (`format.md` §15.15).
 - **`SyncCoordinator`** (one per app, started at launch) owns one `SyncSession` per (vault, target). The
   open vault's sessions run two-way while the vault is unlocked here; every other session runs
   upload-only. At most two runs go at once across the app (`maxConcurrentRuns`), at most one per
@@ -1661,9 +1668,9 @@ The copy is a store vault like any other; while it is partial (`partialCopyRoot`
 **When it syncs, the status, other writers**: "Sync targets in the app" below.
 
 **Key changes for a WebDAV vault**: the app's key management is stubbed
-until key hierarchy KH5, and the sync does not carry `joins/`, `epochs/` or
-`keys/` until KH4, so joining a device to a WebDAV vault is not possible from
-the app in this version.
+until key hierarchy KH5. The sync carries `joins/`, `epochs/` and `keys/` (KH4),
+so the CLI can join a device or take a device change over a WebDAV target; the
+app's screens for it come with KH5.
 
 **Removing** ("Remove from This Device", on the welcome screen) deletes the
 local copy, its sync state, the Keychain password and the recent entry. When

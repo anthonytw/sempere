@@ -11,7 +11,8 @@ P6/P7 delete the app's copies. The protocol gained `readVersion` (the engine rea
 version's bytes) and `TransientRemoteError.isUnavailable`. Not ported: merging a conflict version of
 the whole vault folder (package-era vaults; no migration, Q5). P4's engine parity for `inbox/` and
 `summaries/<device>.sealed` is implemented (format.md §11.4, §12.5; docs/io.md "The capture inbox",
-"Per-device summaries"); `keys/` and rewrap-replace belong to the key hierarchy (KH4, KH6). One
+"Per-device summaries"); `keys/` sync is implemented with the key hierarchy (KH4, `format.md` §15.15), and
+rewrap-replace belongs to KH6. One
 change from §5.3 came out of the N-device stress run: an inbox file that adoption explains is never
 copied, whether or not both sides held it before (two bridges handed an adopted capture back and
 forth otherwise). The

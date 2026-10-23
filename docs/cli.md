@@ -211,8 +211,9 @@ sempere device confirm WORD WORD WORD WORD WORD WORD
 sempere devices list
 sempere devices approve WORD WORD WORD WORD WORD WORD
 sempere devices rename ID NAME
-sempere devices remove ID...
-sempere devices handoff ID
+sempere devices remove ID... [--no-pull] [--password-env VAR]
+sempere devices handoff ID [--no-pull] [--password-env VAR]
+sempere devices status [--export DIR]
 sempere devices takeover --recovery-key FILE [--root HEX] [--keep ID]... [--keep-listed] [--name TEXT] [--kind WORD] [--yes]
 sempere recovery replace --recovery-out FILE [--keep ID]... [--remove ID]... [--old-recovery-key FILE] [--recovery-passphrase] [--yes]
 sempere set-aside list | export [SHA...] --to DIR | keep SHA... --yes | clear (SHA... | --superseded) --yes
@@ -232,8 +233,8 @@ device takes words typed both ways (`format.md` §15.12, design §6.2):
    machine already has a device key for the vault. `--json`: `device`,
    `deviceKey`, `request`, `words`.
 2. The request must reach the home device's copy of the folder (a shared
-   folder, or `vault merge-copy`; `sync webdav` and `sync folder` do not carry
-   `joins/` yet, key hierarchy KH4). There, `devices approve --vault V WORD…`
+   folder, `vault merge-copy`, or a sync: `sync webdav`, `sync folder` and
+   `store sync` carry `joins/`). There, `devices approve --vault V WORD…`
    finds the request whose commitment the typed words give (typing, not
    comparing, so a near match is not waved through), appends the device to
    `vault.json` with a wrap of the vault key and home's signature, deletes the
@@ -241,7 +242,9 @@ device takes words typed both ways (`format.md` §15.12, design §6.2):
    approves (exit 1 elsewhere, naming the home device). It refuses a request
    of another vault, a key that is not post-quantum, a key already listed, or
    one whose id is a listed device's. `--json`: `device`, `name`, `reply`.
-3. Once the new `vault.json` reaches the new machine, `device confirm --vault V
+3. Once the new `vault.json` reaches the new machine (a sync with its device
+   key takes the approval that lists it, although the machine's copy does not
+   list it yet), `device confirm --vault V
    WORD…` checks the words against its own commitment and the vault's root and
    epoch, and pins the vault in this machine's trust record: from then on it
    writes to the vault. Exit 4 when this machine is not listed yet, 1 when the
@@ -249,14 +252,17 @@ device takes words typed both ways (`format.md` §15.12, design §6.2):
    every write exits 6 (`rootUnconfirmed`). `--json`: `device`, `root`.
 
 - `devices list` prints every device (id, kind, name, when it was added and
-  by whom, "manages devices" for home, "this device"), the recovery kit
+  by whom, when it last completed a two-way sync (from its own summaries file,
+  with the key), "manages devices" for home, "this device"), the recovery kit
   (when it was created, and whether a passphrase copy is in `keys/`), and the
   join requests waiting in `joins/`. It works without a key (names as stored,
   unchecked); with one, `vault.json` is checked first and the `Device list:`
-  line says how. `--json`: `devices` (`[{device: {id, name, kind, added,
-  addedBy, home, fingerprint}, thisDevice}]`), `recovery` (`{added,
-  passphraseCopy}`), `joinRequests` (`[{file, id, name, kind, created,
-  problem}]`), `list` (as in `vault info`) and `thisDeviceIsHome`.
+  line says how, and a line says when this machine is not on the newest list
+  or waits for a device change to be verified. `--json`: `devices` (`[{device:
+  {id, name, kind, added, addedBy, home, fingerprint}, thisDevice, lastSynced}]`),
+  `recovery` (`{added, passphraseCopy}`), `joinRequests` (`[{file, id, name,
+  kind, created, problem}]`), `list` (as in `vault info`), `thisDeviceIsHome`,
+  `unlisted` and `waiting`.
 - `devices rename ID NAME` renames a device (on home only); `ID` is the
   device's id or 4 or more leading hex digits of it. Names are stored
   unencrypted in `vault.json`, at most 40 characters, cleaned as the vault
@@ -282,15 +288,36 @@ it, or `vault catch-up`). Revisions keep the machine's own id from
 `device.json` in their names; its published summaries file and sync state use
 its device id in the vault.
 
-- `devices remove ID...` (home only, never itself) removes devices: it first
-  catches up its own files, then starts the epoch. The removed machine gets
+- `devices remove ID...` (home only, never itself) removes devices: for a store
+  vault with sync targets it first pulls from each (design §5.2 step 2: a
+  pull-only pass, at most 10 seconds each, that places what verifies, so the
+  change seals it; an unreachable target is named on stderr, and the devices
+  that wrote there catch their files up themselves; `--no-pull` skips it,
+  `--password-env` gives a WebDAV target's password), then catches up its own
+  files, then starts the epoch. A removed device that last completed a two-way
+  sync more than a day ago (or never, as far as its summaries file says) is
+  named: changes it made since will not reach the vault. The removed machine gets
   exit 8 from then on (it still reads nothing new: the new key is not wrapped to
-  it). A key change cannot take storage access away: change the password of a
-  WebDAV target the device used, or sign it out of iCloud. `--json`: `epoch`,
-  `epochId`, `reason` (`remove`), `removed` (ids), `home`, `sealed` (files).
+  it); over a sync it learns it at its next run. The change reaches the targets
+  with the next sync. A key change cannot take storage access away: change the
+  password of a WebDAV target the device used, or sign it out of iCloud.
+  `--json`: `epoch`, `epochId`, `reason` (`remove`), `removed` (ids), `home`,
+  `sealed` (files), `pulled` (`[{target, reached, downloaded, error}]`, store
+  vaults) and `removedDevices` (`[{id, name, lastSynced, stale}]`).
+- `devices status [--export DIR]`: this machine's state in the vault: `listed`;
+  `waiting` (a sync met a later device list it cannot verify yet: it writes
+  here, uploads nothing new until it can, `format.md` §15.15); `record-pending`
+  (it took a change whose record has not arrived: files from before it are not
+  read yet); or `unlisted` (the newest list it verified does not hold it: it
+  writes nothing, exit 8, and keeps pulling; a takeover that lists it again
+  undoes that). It also lists this machine's own files (its write ledger) that
+  no sync target of the store vault holds; `--export DIR` copies them as they
+  are under their vault paths. `--json`: `state`, `notice`, `unsynced`,
+  `exported`.
 - `devices handoff ID` (home only) makes another listed device home: an epoch
   with the same devices, signed by the old home. From then on only the new home
-  approves, renames, removes or replaces the kit. `--json`: as `remove`.
+  approves, renames, removes or replaces the kit. It pulls from a store vault's
+  targets first, as `remove` does (`--no-pull`). `--json`: as `remove`.
 - `devices takeover --recovery-key FILE` (also `recovery takeover`) is for a lost or stolen home: the
   holder of the recovery key (the kit's identity file, or the vault's
   passphrase copy `keys/recovery-*.key.age`, which carries the root) makes this
@@ -307,7 +334,10 @@ its device id in the vault.
   refused (exit 1). A machine with no device key for the vault gets one (as
   `device init`, `--name`, `--kind`). `--json` without `--yes`: `parentEpoch`,
   `choices` (`[{id, name, listed}]`), `keep`; with it, as `remove`
-  (`reason: takeover`).
+  (`reason: takeover`). A listed machine taking over a store vault pulls from its
+  targets first (`--no-pull`); the takeover reaches the targets with the next
+  sync, and devices that followed the old home take it there (`format.md`
+  §15.15).
 - `recovery replace --recovery-out FILE` (home only) replaces the recovery kit
   after the device review: every listed device but this one must be named with
   `--keep ID` or `--remove ID` (devices a takeover added since the current kit
@@ -318,7 +348,9 @@ its device id in the vault.
   removed devices, and from then on no machine that saw it takes a takeover by
   the old kit. `--old-recovery-key FILE` (the old kit or the passphrase copy)
   adds the old key's signature as evidence; `--recovery-passphrase` writes the
-  passphrase copy for the new key and deletes the old copy. `--json`: as
+  passphrase copy for the new key and deletes the old copy (and a sync deletes
+  the superseded copy from every target, `format.md` §15.15). With `--yes` it
+  pulls from a store vault's targets first (`--no-pull`). `--json`: as
   `remove` (`reason: recovery`).
 - `set-aside list` shows the files this machine set aside (SHA-256, vault path,
   reason: `not-sealed`, `bytes-differ` or `dropped`, and `superseded` when the
@@ -2542,10 +2574,9 @@ copies (`vault.conflict-<device>-<time>.json` next to
 the local file; `--device` names this machine, default the host name) and exits
 3; a `vault.json` that differs only in its label (the vault renamed on both
 sides) is the same vault and is taken from the server. The epoch records
-(`epochs/`), join requests (`joins/`) and the passphrase copy (`keys/`) are
-not synced yet (key hierarchy KH4): a received `vault.json` of another epoch is not taken (it waits for
-its record, which only a shared folder or `vault merge-copy` brings so far), and a join request reaches the
-home device the same way. `settings.age` changed on both sides is merged per key with the
+(`epochs/`, first, before `vault.json`), join requests (`joins/`) and the passphrase copy (`keys/`) are
+synced, and a `vault.json` of another epoch is judged by the device-change rules (`format.md` §15.15; above,
+under "Sync"). `settings.age` changed on both sides is merged per key with the
 vault unlocked and the result written to both sides (listed in `merged`; `docs/settings-sync.md` §8); locked, both
 copies are kept and a conflict is reported, as for `vault.json`. The notebook records (`notebooks/`, `format.md` §14)
 are write-once, so both sides end with the union. Deletions follow only compaction: a file removed on one side is removed on
@@ -2588,9 +2619,25 @@ only when it is a later version of the local one by the home device and
 checks (`format.md` §1.3, §2.1): the same vault, root and epoch, every tag and
 signature verifying, and the local list's entries all still there. That needs
 the key; without it only a copy that differs in its label alone is taken.
-Another epoch, an older version, or a list that does not hold the local one
-is never taken (no merge). Anything else is reported as `rejected` (stderr line and `--json`
+An older version, or a list that does not hold the local one, is never taken
+(no merge). Anything else is reported as `rejected` (stderr line and `--json`
 `rejected: [{path, message}]`), the local copy stays, and the exit code is 6.
+A `vault.json` of another epoch is judged by the device-change rules
+(`format.md` §15.15), with the vault unlocked: a later epoch whose chain
+verifies is taken (`--json` `epoch.taken`; the vault is reopened, pinned and
+this machine's own files caught up: `epoch.caughtUp`); one that cannot be
+verified yet (its record has not arrived) leaves the local copy, uploads nothing
+new and exits 3 (`epoch.waiting`, until a run finds the record); one that does
+not list this machine exits 8 (`epoch.unlisted`, with `unsyncedChanges`), and
+nothing is uploaded; when the local chain is the later one, the local copy
+replaces the server's. `epochs/`, `joins/` and the passphrase copy in `keys/`
+are synced too (`format.md` §15.15). Received files under an earlier key that no
+device change sealed are kept aside on this machine (`setAside`, `sempere
+set-aside`), never placed; files whose key's record has not arrived are
+`pending` (fetched again once it does); an accepted copy that replaced an
+unaccepted one (here or on the server) is listed in `replaced`. A complete
+two-way run records this machine's `synced` time in its own summaries file
+(at most hourly), which the home device's `devices remove` reads.
 Every downloaded revision and blob is checked before it is placed
 (`format.md` §9.1): with the vault unlocked (or, on a first pull, with
 `--identity`) it must decrypt, verify its tag (a blob: its keyed name and
@@ -2748,7 +2795,8 @@ files are not taken (listed as ignored with `-v`), reads are bounded. In a plain
 writes (`vault.json`, `settings.age`) take an advisory lock on `.sempere-lock` in `PATH`, so the CLI and
 the app on one machine take turns; on a file system without hard links (FAT) new files are checked and
 renamed under it. Exit codes: 0 ok, 1 errors, quarantined files or files still arriving, 2 usage, 3
-conflicts, 6 a rejected `vault.json`.
+conflicts or a device change waiting to be verified, 6 a rejected `vault.json`, 8 this machine is not on the
+newest device list.
 
 ```
 sempere webdav check URL [--user U --password-env VAR] [--json]

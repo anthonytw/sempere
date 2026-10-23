@@ -720,10 +720,9 @@ SEMPERE_WEBDAV_PASSWORD=… sempere sync webdav https://notes.example.org/vault/
 The run keeps `sempere-summaries.sealed` and `sempere-index.json` on the server
 describing what the server holds, rewriting them only when that changed;
 without a key the summaries are left as they are (stale entries only
-mean more decryption in the viewer). `sync webdav` does not upload `epochs/`
-or `keys/` yet (key hierarchy KH4): copy them to the server once (they do not
-change in a vault of one epoch), or the viewer warns that the epoch record is
-missing (the vault stays readable).
+mean more decryption in the viewer). `sync webdav` uploads `epochs/` and
+`keys/` too (key hierarchy KH4), so the viewer finds the epoch records it reads
+earlier epochs through.
 
 Uploads go `--jobs` at a time (default 6). Where the server answers a
 `Depth: infinity` `PROPFIND` of `notes/` in full, an idle run lists the whole share

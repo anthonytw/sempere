@@ -493,8 +493,9 @@ key (`format.md` §2), read-only (`KeysWindowView`). Under the key hierarchy
 list. The app's key management (adding, approving, renaming, removing and
 replacing devices, joining this device) is stubbed with `TODO(KH5)`; until
 then the window says to use the CLI from a terminal (`sempere device init`,
-`sempere devices approve|rename`, `docs/cli.md` "Devices"). Removing and
-replacing keys are new epochs (KH3, KH4) and not in this version.
+`sempere devices approve|rename|remove|handoff|takeover`, `docs/cli.md` "Devices"). Removing and
+replacing keys are new epochs (KH3); the sync carries them between devices (KH4); the app's screens come
+with KH5.
 
 ## Mouse and trackpad
 
