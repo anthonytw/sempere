@@ -674,19 +674,26 @@ extension Vault {
                 throw CaptureError.backedOff(failures: e.failures, retryAfter: e.retryAfter, lastError: e.lastError)
             }
             let entry: CaptureKeyEntry
+            var under = identities
             do {
                 // The tag first, streamed in constant memory: only a file that
                 // verifies is then read whole (security review 2026-10, C5).
                 // The key that verifies says which device sealed it (C2).
                 entry = try verifyInboxFile(url, name: name, kind: kind, ring: ring)
             } catch let e as CaptureError {
-                if let backoff, let mark { backoff.recordFailure(vault: vaultId, name: name, mark: mark, error: e.description, now: now) }
-                throw e
+                // Sealed before a device change (key-hierarchy design §5.3, §5.7): taken under that epoch's key.
+                if let (older, olderEntry) = sealedEarlierInboxFile(url, name: name, kind: kind) {
+                    entry = olderEntry
+                    under = [older.identity]
+                } else {
+                    if let backoff, let mark { backoff.recordFailure(vault: vaultId, name: name, mark: mark, error: e.description, now: now) }
+                    throw e
+                }
             }
             if let backoff { backoff.clear(vault: vaultId, name: name) }
             let sealed = try FileIO.read(url, maxBytes: CaptureFile.maxSealedBytes(kind))
             let plain: Data
-            do { plain = try AgeFile.decrypt(sealed, with: identities) } catch {
+            do { plain = try AgeFile.decrypt(sealed, with: under) } catch {
                 throw CaptureError.notCapture("cannot decrypt: \(error)")
             }
             let (line, payload) = try CaptureFile.unframe(plain, filename: name, key: entry.key)
@@ -738,14 +745,34 @@ extension Vault {
     ///
     /// - Throws: `CaptureError` (`tooLarge`, `notCapture`, `badTag`) for the
     ///   file's own faults; `VaultError.io` when it cannot be read.
-    func verifyInboxFile(_ url: URL, name: String, kind: CaptureFile.Kind, ring: [CaptureKeyEntry]) throws -> CaptureKeyEntry {
+    /// An inbox file under an earlier epoch's key that the record closing that epoch seals with exactly its
+    /// bytes (key-hierarchy design §5.3 rule 2), and the capture key it verifies under (that epoch's key of a
+    /// device the vault or its chain knows); nil otherwise.
+    func sealedEarlierInboxFile(_ url: URL, name: String, kind: CaptureFile.Kind) -> (OlderEpoch, CaptureKeyEntry)? {
+        guard let keyring, let sha = try? FileDigest.sha256(of: url).hex else { return nil }
+        var deviceKeys = Set(manifest.devices.map(\.key))
+        for e in verifiedChain?.entries ?? [] {
+            deviceKeys.insert(e.author.key)
+            for a in e.additions { deviceKeys.insert(a.claim.key) }
+        }
+        let path = "\(CaptureFile.folderName)/\(name)"
+        return keyring.first { o -> (OlderEpoch, CaptureKeyEntry)? in
+            guard o.sealed?[path] == sha else { return nil }
+            let ring = deviceKeys.map { CaptureKey.fingerprint(of: $0) }
+                .map { CaptureKeyEntry(key: .derive(from: o.key, device: $0), recipient: $0) }
+            return (try? verifyInboxFile(url, name: name, kind: kind, ring: ring, identities: [o.identity])).map { (o, $0) }
+        }
+    }
+
+    func verifyInboxFile(_ url: URL, name: String, kind: CaptureFile.Kind, ring: [CaptureKeyEntry],
+                         identities given: [any AgeIdentity]? = nil) throws -> CaptureKeyEntry {
         let sealedCap = CaptureFile.maxSealedBytes(kind), plainCap = CaptureFile.maxPlaintextBytes(kind)
         if let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber,
            size.intValue > sealedCap {
             throw CaptureError.tooLarge(plainCap)
         }
         let decryptor: AgeDecryptor, handle: FileHandle
-        do { (decryptor, handle) = try Self.openBlobFile(url, identities: identities) } catch BlobError.unreadable(let why) {
+        do { (decryptor, handle) = try Self.openBlobFile(url, identities: given ?? identities) } catch BlobError.unreadable(let why) {
             throw VaultError.io(why)   // I/O, not the file's fault: never backed off
         } catch {
             throw CaptureError.notCapture("cannot decrypt: \(error)")

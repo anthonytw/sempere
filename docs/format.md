@@ -11,7 +11,7 @@ A vault is a directory whose name ends in `.sempere`.
 Notes.sempere/
   vault.json                              plaintext manifest: the device list and the wrapped vault key (§2, §15.3)
   epochs/
-    <e>-<idprefix>.epoch.age              the epoch record, written once at creation (§15.6)
+    <e>-<idprefix>.epoch.age              one record per epoch: at creation, then at each device change (§15.6, §15.14)
   joins/
     <id>.join.json                        a device's request to join, until the home device approves it (§15.12)
   keys/
@@ -34,9 +34,11 @@ Notes.sempere/
 ```
 
 Everything under `notes/` (revisions and `att/` blobs alike), `notebooks/` and `epochs/` is
-written once and never modified (`settings.age`, at the root, is a mutable file, §13). This version
-rewrites no vault file in place; re-encrypting everything (key-hierarchy design §7, phase KH6) will be
-the one exception.
+written once and never modified (`settings.age`, at the root, is a mutable file, §13), with one
+exception in this version: a device's **catch-up** (§15.14) replaces a revision or notebook record that
+it wrote itself under an earlier epoch's key, and that no device change sealed, with the same body
+under the current key (verified first, the old bytes set aside). Re-encrypting everything
+(key-hierarchy design §7, phase KH6) will be the other.
 
 A vault is a plain directory, never a package (a bundle that file-sync
 services such as iCloud Drive treat as one document): such a service syncs
@@ -149,7 +151,9 @@ rules, which lose notes.
 `vault.json` is the plaintext manifest of the key hierarchy (§15; design in
 `docs/design/key-hierarchy.md`). It lists the vault's devices and its one
 recovery key, and wraps the epoch's vault key `K_e` (§15.2) once to each of
-them. This version writes vaults of one epoch, epoch 1:
+them. A vault starts at epoch 1; each device change (a removal, a handoff, a
+takeover, a recovery-kit replacement: §15.14) starts the next epoch, with a new
+key. At epoch 1:
 
 ```json
 {
@@ -217,9 +221,10 @@ them. This version writes vaults of one epoch, epoch 1:
   why, which device is home (the one device that changes the list, §15.3),
   and the author's signature (§15.5). `author`, `authorSig`: the device that
   wrote this version of `vault.json` (home) and its signature.
-- `parent`, `epochLink`, `parentList`, `recoverySig` and `reencryptPending`
-  appear only above epoch 1 or during a re-encryption (§15.3, §15.8); this
-  version writes none of them.
+- `parent`, `epochLink` and `parentList` appear exactly above epoch 1, and
+  `recoverySig` in a takeover (or, optionally, a kit replacement) (§15.3);
+  `reencryptPending` only during a re-encryption (§15.8), which this version
+  never writes.
 - `features` (optional): array of strings naming format extensions the vault
   uses. This version defines none: its writers write no `features`, and
   absent means `[]`. A later version adds an extension's name here so that
@@ -244,22 +249,30 @@ atomic write. The one exception is `label`: any listed device whose list
 checks (§2.1) may set or clear it, writing every other member back as it is.
 A writer starts from the `vault.json` on disk and stops if it is no longer
 the version it opened (but for `label`). Removing a device, handing the home
-role to another device, a takeover with the recovery key and replacing the
-recovery key each start a new epoch (key-hierarchy design §5, phases KH3 and
-KH4); this version writes none of them.
+role to another device and replacing the recovery key are home's too, and each
+starts a new epoch (§15.14); a takeover with the recovery key starts one by
+the device that becomes home.
 
 ### 2.1 Checking `vault.json`
 
 `vault.json` is plaintext that anyone who can write the folder (a sync
 server, a shared folder, a backup put back) can change. A device holding
 `K_e` (from its own wrap) checks it before it writes anything, against what
-it verified before. This version reads vaults of one epoch:
+it verified before:
 
-1. `epoch` must be 1 (a later epoch is refused: `otherEpoch`), and `root`
-   must be the one `K_1` gives (§15.7 rule 2), the trust record's, and the
-   root given by the user when one is (the kit's, the join's reply code,
-   `--root`): otherwise `rootMismatch`.
-2. With a trust record (§15.10): `epochId` is the pinned one; `home` and the
+1. At epoch 1, `root` must be the one `K_1` gives (§15.7 rule 2). Above epoch
+   1, the epoch record `vault.json` names must be there (else `otherEpoch`: the
+   change waits for its record) with the SHA-256 `epochRecordHash` gives, open
+   under `K_e`, and carry a chain that verifies from `root` (§15.7, with this
+   device's pinned chain for takeovers; else `epochSig`, `introducesDevice` or
+   `rootMismatch`), whose last entry is this file's epoch (its id, parent, home,
+   reason, recovery key, first and parent lists and signatures). The precedence
+   rule (§15.9) over this device's pinned chain and that chain must keep exactly
+   that chain (else `otherEpoch`: an older epoch, a branch this device does not
+   follow, or a takeover by a kit it has not pinned yet). In every case `root`
+   must be the trust record's and the root given by the user when one is (the
+   kit's, the join's reply code, `--root`): otherwise `rootMismatch`.
+2. With a trust record (§15.10) pinning this epoch: `home` and the
    epoch's first list are the record's, never the file's (another home is
    only a handoff, a new epoch: `entriesChanged` otherwise), so `epochSig`
    and every `addSig` verify under the home the device verified; every check
@@ -267,8 +280,10 @@ it verified before. This version reads vaults of one epoch:
    additions, each with a valid `addSig`); every entry it verified is still there with
    the same key and signing keys (`entriesChanged` otherwise: a removal always
    starts a new epoch; only `name` may change); and the version markers are
-   at least those it verified (below).
-3. Without one: the checks of §15.3 against epoch 1's first list. A device
+   at least those it verified (below). Pinning an earlier epoch: every check
+   of §15.3 against the epoch's first list from the chain and its parent as the
+   chain gives it, and the markers at least those it verified (`newEpoch`).
+3. Without one: the checks of §15.3 against the epoch's first list. A device
    that keeps trust records and was given no root cannot tell this vault from
    one storage built around its public key (`rootUnconfirmed`): it reads, and
    writes once the home device's reply code confirmed its join (§15.12) or
@@ -401,13 +416,14 @@ identity file stock `age -i` reads.
 
 ### 3.3 Key changes
 
-In this version the list changes in two ways only, both by home and both
-within epoch 1 (§2): approving a device that asked to join (§15.12) and
-renaming a device. Neither re-encrypts a file. Removing or replacing a key,
-handing the home role over, a takeover and replacing the recovery key start a
-new epoch (key-hierarchy design §5, §6; phases KH3 to KH5), and re-encrypting
-every file is phase KH6. Earlier drafts of this format changed recipients by
-rewrapping every file; that mechanism is gone, with no migration.
+Within an epoch the list changes in two ways, both by home (§2): approving a
+device that asked to join (§15.12) and renaming a device. Neither re-encrypts a
+file. Removing a device, handing the home role over, a takeover with the
+recovery key and replacing the recovery key start a new epoch (§15.14): a new
+key for every file written afterward, while the files written before keep
+theirs and stay readable through the epoch records. Re-encrypting every file is
+phase KH6. Earlier drafts of this format changed recipients by rewrapping every
+file; that mechanism is gone, with no migration.
 
 ## 4. Encrypted file bodies
 
@@ -3603,12 +3619,12 @@ their final name (atomically, docs/io.md "Atomic writes").
 
 ## 15. Key hierarchy
 
-Status: **normative. KH2: vaults of one epoch are written by this version** (§2, §2.1, §3, the tags
+Status: **normative. KH3: this version writes and reads vaults of any epoch** (§2, §2.1, §3, the tags
 of §4, §13.1 and §14.1, the blob names of §8.1.2 and the capture keys of §11.1 use it; vaults of the
-earlier format, with a recipients list and a vault secret, are not read, with no migration before v1).
-Later epochs (removal, handoff, takeover, recovery-kit replacement: KH3 and KH4) and the re-encryption
-journal (§15.8, KH6) are specified here but not written yet; a vault of a later epoch is never
-written (§2.1 step 1). This section freezes the bytes of the key
+earlier format, with a recipients list and a vault secret, are not read, with no migration before v1):
+removals, handoffs, takeovers and recovery-kit replacements start new epochs, with the acceptance rule,
+the write ledger and the set-aside store of §15.14. Syncing epoch records and join requests between
+targets is KH4, and the re-encryption journal (§15.8, KH6) is specified here but not written yet. This section freezes the bytes of the key
 hierarchy designed in `docs/design/key-hierarchy.md`, so that the printed recovery kit and
 a second implementation can rely on them. Where the design leaves an encoding open, this section decides it, and the
 shared vectors pin it: `Tests/SempereTests/Fixtures/epoch-vectors.json` (key schedule, wraps, lists,
@@ -3901,7 +3917,9 @@ round-7 seal rule) must each fail it; `Fixtures/epoch-precedence-vectors.json` h
 ### 15.10 Trust record v3
 
 `sempere-trust/3`, outside the vault: `vaultId`, `root`, `chain` (from epoch 1: `epoch`, `epochId`,
-`parent`, `linkPublicKeys`, `list` of the first list's fingerprints), `list` (the current list: `role`,
+`parent`, `linkPublicKeys`, `list` of the first list's fingerprints, and, since KH3, `recovery`, `home` and
+`reason`, so the precedence rule can weigh the pinned chain against a takeover that drops part of it; a
+record without them does not read, and fails closed), `list` (the current list: `role`,
 `key`, `sign`, `name`), `markers`, `reencryptFinished` (written only when true) and `home` (the
 fingerprint of the pinned epoch's home). Readers refuse a chain that does not start at epoch 1 or
 whose `parent`s do not follow, and a missing or malformed `home`.
@@ -3981,3 +3999,96 @@ age -d -i vault-keys.txt notes/ID/NAME.delta.age | tail -c +38 | gunzip | jq .
 
 Step 0 needs a terminal (`age -d` reads passphrases from one only), so CI runs steps 1 to 3 with the
 passphrase copy's plaintext as `recovery.txt`.
+
+### 15.14 Epochs above 1: changes, acceptance, the write ledger, set aside
+
+(Design §5.2 to §5.8, §6.3, §6.5; `Sources/Sempere/VaultEpochChange.swift`, `VaultEpochs.swift`,
+`VaultCatchUp.swift`, `WriteLedger.swift`, `SetAside.swift`.)
+
+**A device change** writes, under the vault's write lock and in this order, each durable before the next:
+
+1. the parent epoch's **sealed set**: the path (relative to the vault folder) and SHA-256 of the exact
+   bytes of every file of the working copy that the acceptance rule (below) takes under the parent's key
+   or an earlier one: revisions, blobs, notebook records, `settings.age`, and inbox files of the parent
+   epoch whose tag verifies under a listed device's capture key. Files set aside or pending are left out.
+   A removal first catches up the remover's own files (below), so they are sealed too;
+2. the new epoch's record (§15.6) under its **final name**, with the parent's key, identity and sealed
+   set, and the chain: the parent's chain, whose last entry gains the parent epoch's additions approved by
+   its home, plus the new entry signed as §15.7 requires. A crash after this step leaves an **orphan**
+   record that no `vault.json` names: readers ignore it and nothing deletes it;
+3. `vault.json` at the new epoch, with a wrap of the new key to every key of its list, in one atomic
+   write. From then on the writer encrypts and tags every new file under the new key.
+
+| Change | By | List | `home` | Signed by |
+| --- | --- | --- | --- | --- |
+| `remove` | home | the parent's, minus the removed devices (never home itself) | unchanged | home |
+| `handoff` | home | the parent's | another listed device | the old home, which also writes this `vault.json` |
+| `recovery` | home | the parent's minus the devices removed in the device review, the new recovery key instead of the old | unchanged | home; optionally also the old kit (`recoverySig`, evidence only) |
+| `takeover` | the holder of the recovery key on the device that becomes home | the user's pick among the devices of the parent's ancestry, plus the new home | the taking-over device | the new home and the recovery key (`recoverySig`) |
+
+A takeover's parent is the taking-over device's pinned frontier (a device that never joined: the
+current epoch, checked against the kit's root); its recovery key must be the frontier's kit (§15.7's
+takeover rule). A kept device keeps its entry when the parent's list has it; a device a later epoch
+removed is re-admitted with its entry rebuilt from the approval the chain carries (its claim and
+`addSig`); one whose approval the chain does not carry (an epoch's author) is approved again by the new
+home in the takeover's own epoch. A new home the parent's ancestry did not list joins with `addedBy:
+"recovery"` and an `addSig` by the recovery key's pair (a kit join). A kit replacement's new passphrase
+copy is written before `vault.json`, and superseded copies (whose fingerprint no key of `vault.json` has)
+are deleted after it.
+
+**The acceptance rule** (design §5.3). A reader holds the current key and, through the records (each
+gives its parent's key and sealed set; read newest first, only as far as needed), the keys of the
+earlier epochs of its chain; its write ledger also holds the keys of epochs it wrote under that are off
+the chain (dropped by a takeover). A vault file:
+
+1. that decrypts under the current vault identity and verifies under the current key is **accepted**;
+2. that decrypts and verifies under an earlier epoch `j` of the chain is accepted when the record whose
+   parent is `j` seals its path with exactly its SHA-256;
+3. that no held key decrypts while a record of the chain could not be read is **pending**: neither
+   accepted nor set aside, and blob collection of its note waits;
+4. that decrypts and verifies under a held key otherwise (not sealed, other bytes, or a key off the
+   chain) is **set aside**: never placed (a note reads without it, `RevisionReadError.setAside`), never
+   deleted, and it blocks blob collection of its note (rule 1 of §8.1.6);
+5. anything else is unreadable, as before.
+
+A file's tag (or a blob's name) is checked under the key it decrypted with before rule 2's seal.
+
+**The write ledger** (design §5.4): device-local, never in the vault, per vault. One entry per file the
+device writes (`path`, `sha256`, `epoch`, `epochId`, `time`), appended durably **before** the file is
+placed; it also keeps the key of every epoch the device wrote under, and the epoch it last caught up to.
+An entry lives until the record whose parent is its epoch seals its path with its digest and that seal
+is final (§15.9: a kit replacement pinned at or above the sealer), or until its file is re-encrypted
+under a later epoch (the new file gets an entry), or until its file is gone or holds other bytes. The
+reference CLI keeps it in `$XDG_STATE_HOME/sempere/ledger/<vaultId>/`: `key.age` (32 random bytes,
+age-encrypted to the device key), `log` (records of a 4-byte big-endian length and a ChaCha20-Poly1305
+box of one JSON object, authenticated with `"sempere/1 write ledger <vaultId>"`; a record cut off at
+the end is an append that never returned and is ignored, any other damage fails closed) and `state`
+(one such box). A ledger that cannot be read fails closed: nothing is caught up or set aside on its
+account.
+
+**Catch-up** (design §5.4). The first write after a device verifies an epoch above the one it last
+caught up to (or `sempere vault catch-up`) first takes each ledger entry of an earlier epoch: sealed on
+the chain, it is kept (or pruned when final); otherwise its file is re-encrypted under the current key
+(revisions, notebook records and `settings.age` keep their name and get a new file key and tag; a blob
+is written under its new name and the old name stays), the copy is decrypted and its body compared,
+the old bytes are set aside, the new entry is recorded, and only then the copy replaces the file. Inbox
+files are not caught up by this version (a capture profile seals without the vault key; the app's
+capture extension keeps its own ledger, KH5). Every other file the acceptance rule sets aside is then
+copied into the set-aside store.
+
+**The set-aside store** (design §5.8): device-local, outside the vault
+(`$XDG_STATE_HOME/sempere/setaside/<vaultId>/<vault path>/<sha256>.age`, with a `<sha256>.json` holding
+`path`, `reason` (`not-sealed`, `bytes-differ`, `dropped`), `epoch`, `epochId` and `setAside`), at most
+16 copies per path. A copy is durable before anything replaces or removes the original, and a copy that
+cannot be kept stops that replacement. Nothing leaves it but by the user: export (as it is), keep
+(re-encrypted under the current key), clear. In this version the original of a set-aside file stays in
+the working copy, unread; a sync engine that never places one comes with KH4.
+
+**Unlisted devices** (design §5.5). A device whose key the current `vault.json` does not list, whose
+trust record pins the parent epoch, and which verifies the change from that record alone (the link
+under the pinned link keys, `epochSig` by the pinned home, or a takeover's signatures by its new home and
+the pinned kit) knows it was removed: it writes nothing (`VaultError.removedFromVault`, CLI exit 8). A
+change it cannot verify is not taken as its removal.
+
+**Revision names** carry the writing device's id in the vault (`<device>` of §5 is the first 8 hex
+digits of its fingerprint, §15.4), and so does its `summaries/<device>.sealed` (§12.5).

@@ -378,8 +378,8 @@ extension Vault {
         if EpochManifest.sameExceptLabel(data, local) { return nil }
         guard incoming.root == mine.root else { return "the incoming vault.json has another root: not this vault" }
         guard incoming.epoch == mine.epoch, incoming.epochId == mine.epochId else {
-            return "the incoming vault.json is of another epoch (epoch \(incoming.epoch)); this version reads vaults of "
-                + "one epoch only"
+            return "the incoming vault.json is of another epoch (epoch \(incoming.epoch)): a device change is taken only "
+                + "with its epoch record, through a shared folder (key hierarchy KH4 syncs them)"
         }
         guard let vault, vault.canRead, vault.vaultId == mine.vaultId else {
             return "the incoming vault.json changes the device list; unlock (--identity) so it can be checked (design §4.3)"
