@@ -161,6 +161,8 @@ enum EpochMutation: Hashable, Sendable, CaseIterable {
     case corruptReencryption
     /// J2, J5a: a writer keeps the previous epoch's key for its writes.
     case writeUnderOldKey
+    /// J4 (KH4): two takeovers are settled by which a device met first, not by `epochId`.
+    case takeoverByArrival
 }
 
 extension Vault {

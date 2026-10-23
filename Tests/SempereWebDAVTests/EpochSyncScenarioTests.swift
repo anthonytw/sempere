@@ -543,4 +543,32 @@ final class EpochSyncScenarioTests: SyncTestCase {
         let out = tmp.appendingPathComponent("export")
         XCTAssertNoThrow(try n.open().exportSetAside(item, to: out))
     }
+
+    // MARK: - Record first, then vault.json (design §5.2; F7's deferred uploads)
+
+    func testTheRecordReachesATargetBeforeVaultJsonAndAFailedRecordUploadHoldsVaultJsonBack() throws {
+        let w = try EpochSyncWorld(in: tmp, names: ["A", "B", "X"])
+        let t1 = w.target("T1")
+        var a = try w["A"].open()
+        try a.removeDevices([w["X"].id])
+        // The record's upload fails (the connection drops before every request under epochs/).
+        let faults = MemoryFaults(seed: 7, rates: MemoryFaults.Rates([.dropBefore: 1]))
+        faults.eligible = { _, _, path in path.first == Vault.epochsName }
+        t1.reach = { _ in MemoryRemote(store: t1.store, faults: faults) }
+        let failed = try w["A"].sync(t1)
+        XCTAssertFalse(failed.uploaded.contains(Vault.manifestName), "never a vault.json without its record: \(failed)")
+        XCTAssertTrue(failed.skipped.contains { $0.path == Vault.manifestName }, "\(failed.skipped)")
+        let onTarget = try XCTUnwrap(t1.file(Vault.manifestName))
+        XCTAssertEqual(try EpochManifest.parse(onTarget).epoch, 1)
+        XCTAssertFalse(t1.paths.contains { $0.hasPrefix("epochs/2-") })
+        // B meanwhile sees no change and keeps working at epoch 1.
+        XCTAssertNil(try w["B"].sync(t1).epoch)
+        // The fault gone: the record first, then vault.json, in one run.
+        t1.reach = nil
+        let ok = try w["A"].sync(t1)
+        let record = try XCTUnwrap(ok.uploaded.firstIndex { $0.hasPrefix("epochs/2-") }, "\(ok.uploaded)")
+        let manifest = try XCTUnwrap(ok.uploaded.firstIndex(of: Vault.manifestName))
+        XCTAssertLessThan(record, manifest)
+        XCTAssertEqual(try w["B"].sync(t1).epoch?.taken, 2)
+    }
 }

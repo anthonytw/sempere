@@ -152,6 +152,10 @@ extension Vault {
         }
         let ours = ownChain()
         if ours.ids.contains(incoming.epochId) { return .behind }
+        if Self.epochMutations.contains(.takeoverByArrival), incoming.epochReason == EpochReason.takeover.rawValue,
+           manifest.epochReason == EpochReason.takeover.rawValue {
+            return .behind
+        }
         let held = identityRecipients
         guard let entry = incoming.devices.first(where: { held.contains($0.key) }) else {
             if let notice = Self.removalNotice(incoming, held: held, signing: signing, trust: trustStore)

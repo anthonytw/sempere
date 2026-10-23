@@ -24,7 +24,21 @@ import Sempere
 // - `keys/`: the union, except passphrase copies whose fingerprint neither `vault.json` names: deleted on the
 //   target by a device whose verified epoch is at least the target's, never brought back (§8.2).
 
+/// Test-only switches that break one safeguard of the engine each (`EpochInterleavingTests` requires each to
+/// break its own invariant of design §11.2).
+enum SyncEpochMutation: Hashable, Sendable, CaseIterable {
+    /// J5b: a run that waits for a device change still uploads.
+    case uploadWhileWaiting
+    /// J1: an uploaded file's ledger entry is dropped (as if the target kept it for good).
+    case pruneLedgerOnUpload
+    /// J6: an unaccepted local copy is replaced without being set aside first.
+    case replaceWithoutKeeping
+}
+
 extension SyncEngine {
+    /// The active `SyncEpochMutation`s (tests only).
+    nonisolated(unsafe) static var epochMutations: Set<SyncEpochMutation> = []
+
     /// How long a device's `synced` time (design §5.5) may age before a complete two-way run writes it again:
     /// each write is an upload to every target, so not on every run.
     static let syncedInterval: TimeInterval = 3600
@@ -196,7 +210,12 @@ extension SyncEngine {
             epochStatus.conflict = SyncReport.printable(why)
             try conflict(name, remote: remoteData, detail: why)
         case .refused(let why):
+            // Tampered or forged: never taken. This device's own verified copy replaces it on the target.
             report.rejected.append(.init(path: name, message: SyncReport.printable(why)))
+            if v.listStatus.allowsWriting, v.unlistedNotice == nil, let etag, Self.isStrong(etag),
+               try push(name, local, condition: .replace(etag: etag)) {
+                try recordMutable(name, hash: FileDigest.sha256(local))
+            }
         }
     }
 
@@ -465,7 +484,9 @@ extension SyncEngine {
             guard !options.pushOnly else { return }
             let reason: SetAsideReason
             if case .setAside(let r) = mine { reason = r } else { reason = .notSealed }
-            try store.keep(local, path: path, vaultId: v.vaultId, reason: reason)
+            if !Self.epochMutations.contains(.replaceWithoutKeeping) {
+                try store.keep(local, path: path, vaultId: v.vaultId, reason: reason)
+            }
             do { try check(got.data) } catch {
                 report.skipped.append(.init(path: path, message: SyncReport.printable("the target's copy does not check: \(error)")))
                 return

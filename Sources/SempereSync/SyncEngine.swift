@@ -440,7 +440,7 @@ public final class SyncEngine {
         // A later epoch taken: the vault reopened under it, pinned, and this device's own files caught up
         // (design §5.4), before anything else is judged or uploaded.
         afterEpochTaken()
-        if let hold = epochHold {
+        if let hold = epochHold, !Self.epochMutations.contains(.uploadWhileWaiting) {
             // Unverified-pending or unlisted (design §4.3, §5.5): nothing new is uploaded (J5b), nothing else
             // is synced until the change is verified (or a takeover lists this device again).
             report.skipped.append(.init(path: Vault.notesName, message: SyncReport.printable(hold)))
@@ -1314,6 +1314,9 @@ public final class SyncEngine {
         // A 412 means the server already has it: write-once, so it is the same file.
         try transport.write([Vault.notesName, id, n.filename], .data(data), condition: .create)
         locked { report.uploaded.append(path); placedShas[key(id, n)] = FileDigest.sha256(data) }
+        if Self.epochMutations.contains(.pruneLedgerOnUpload), let ledger = vault?.ledger, let entries = try? ledger.entries() {
+            try? ledger.remove(entries.filter { $0.path == path })
+        }
     }
 
     /// True when this run must not upload `id`'s revisions (`blobsHeldBack`).
