@@ -80,7 +80,7 @@ final class SignedSummariesAdversarialTests: VaultTestCase {
         let aDev = try device(a)
         let file = try a.sealDevicePublishedSummaries([:], version: version)
         let epoch = UInt8(a.manifest.epoch)
-        let garbage = Data([0x53, 0x4D, 0x50, 0x55, 0x03, 0, 0, 0, epoch]) + Data(repeating: 0x42, count: 4000)
+        let garbage = Data([0x53, 0x4D, 0x50, 0x55, 0x04, 0, 0, 0, epoch]) + Data(repeating: 0x42, count: 4000)
         refused(garbage, as: aDev, by: [a, b], "garbage")
         var zeroed = file
         zeroed.replaceSubrange((file.count - PublishedSummaries.signatureSize)..<file.count,

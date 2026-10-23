@@ -393,14 +393,14 @@ class InboxSummariesScenarioCase: SyncTestCase {
         func sealed(epoch: Int) throws -> Data {
             let json = try PublishedSummaries.encode([:], vaultId: a.vaultId, device: device("A"), version: nowMillis + 10_000)
             return try PublishedSummaries.seal(try Gzip.compress(json), secret: try other.requireSecret(), vaultId: a.vaultId,
-                                               epoch: epoch)
+                                               device: (epoch, nowMillis + 10_000))
         }
         func put(_ data: Data) throws {
             if t.deviations.contains(.etagKeepsTheSecond) { Thread.sleep(forTimeInterval: 1.1) }
             try t.inspector.write(["summaries", fileA], .data(data), condition: .unconditional)
         }
         // Keyless garbage behind a huge epoch, a copy "of epoch 2", and a damaged one of epoch 1: all repaired.
-        let garbage = Data([0x53, 0x4D, 0x50, 0x55, 0x03, 0xFF, 0xFF, 0xFF, 0xFF]) + Data((0..<64).map { UInt8($0) })
+        let garbage = Data([0x53, 0x4D, 0x50, 0x55, 0x04, 0xFF, 0xFF, 0xFF, 0xFF]) + Data((0..<64).map { UInt8($0) })
         XCTAssertEqual(PublishedSummaries.sealedEpoch(garbage), Int(UInt32.max))
         for (n, bad) in [garbage, try sealed(epoch: a.manifest.epoch + 1), try sealed(epoch: a.manifest.epoch)].enumerated() {
             try put(bad)
@@ -542,7 +542,7 @@ class InboxSummariesScenarioCase: SyncTestCase {
         let wrongVersion = PublishedSummaries.attach(try TestVaults.signing(identity).sign(AuthorMessage.summaries(
             vaultId: a.vaultId, epoch: a.manifest.epoch, epochId: a.manifest.epochId, device: device("A"),
             version: nowMillis + 120_000, sealed: body)), to: body)
-        let garbage = Data([0x53, 0x4D, 0x50, 0x55, 0x03, 0, 0, 0, UInt8(a.manifest.epoch)]) + Data(repeating: 9, count: 4000)
+        let garbage = Data([0x53, 0x4D, 0x50, 0x55, 0x04, 0, 0, 0, UInt8(a.manifest.epoch)]) + Data(repeating: 9, count: 4000)
         for (n, forged) in [byB, badSig, wrongVersion, garbage].enumerated() {
             // On the remote: B repairs it with A's real (ordered) file, and so does A.
             for repairer in ["B", "A"] {
